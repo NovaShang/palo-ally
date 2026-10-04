@@ -79,11 +79,13 @@ struct ChatView: View {
         }
         .navigationTitle("PaloAlly")
         .navigationBarTitleDisplayMode(.inline)
-        // Immersive: the system bar stays, but without its blurred backdrop
-        // or the scroll-edge blur — the conversation runs under three glass
-        // pieces (two round buttons, the title capsule).
+        // Immersive, the iOS 26 look: the system bar stays but without its
+        // material backdrop (iOS 27 gives the bar one by default); the
+        // conversation runs under three floating glass pieces (two round
+        // buttons, the title capsule) with only the soft scroll-edge fade,
+        // which keeps text from colliding with the clock and the title.
         .toolbarBackground(.hidden, for: .navigationBar)
-        .scrollEdgeEffectHidden(true, for: .top)
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 0) {
