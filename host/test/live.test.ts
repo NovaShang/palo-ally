@@ -101,6 +101,17 @@ d(`live harness (${MODEL})`, () => {
   );
 
   test(
+    "image out: the assistant shows the owner a picture in the chat",
+    async () => {
+      const png = hub.media.read(hub.media.save("image/png", "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==").id)!;
+      writeFileSync(join(paths.home, "chart.png"), Buffer.from(png.data, "base64"));
+      const msgs = await ask("把工作目录里的 chart.png 发给我看看。");
+      expect(msgs.some((m) => m.role === "assistant" && (m.attachments?.length ?? 0) > 0)).toBe(true);
+    },
+    T,
+  );
+
+  test(
     "task: dispatches a subagent, report_task fills the row, detail captured",
     async () => {
       await ask("请派一个子 agent 在后台算一下 1 到 50 的整数和，算完告诉我结果。");

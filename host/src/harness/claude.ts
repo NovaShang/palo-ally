@@ -88,6 +88,12 @@ export function paloallyMcpServer(h: ToolHandlers) {
         async (a) => text(await h.publish_artifact(a)),
       ),
       tool(
+        "send_image",
+        "把本机的一张图片（截图、图表、找到的照片）直接显示在主人的 App 对话里。太大或格式不对会自动压成 JPEG。",
+        { path: z.string().describe("图片的绝对路径"), caption: z.string().optional().describe("配一句话（可选）") },
+        async (a) => text(await h.send_image(a)),
+      ),
+      tool(
         "send_wechat_file",
         "把本机的一个文件（图片、视频或任意文件）发到主人的微信。长内容先写成文件再用它发。",
         { path: z.string().describe("文件的绝对路径") },

@@ -724,3 +724,24 @@ describe("Hub: images from the app", () => {
     cleanup(paths);
   });
 });
+
+describe("Hub: images to the owner", () => {
+  test("send_image shows a picture in the app chat; big or odd files are converted", async () => {
+    const { hub, paths } = makeHub();
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==", "base64");
+    const file = `${paths.root}/shot.png`;
+    writeFileSync(file, png);
+    expect(await hub.toolHandlers().send_image({ path: file, caption: "截图" })).toContain("已发");
+    const msg = hub.chat.since(0).at(-1)!;
+    expect(msg.role).toBe("assistant");
+    expect(msg.text).toBe("截图");
+    expect(hub.media.read(msg.attachments![0]!.id)!.data).toBe(png.toString("base64"));
+    // a TIFF (not something the app/model takes) goes through sips → JPEG
+    const tiff = `${paths.root}/x.tiff`;
+    Bun.spawnSync(["sips", "-s", "format", "tiff", file, "--out", tiff]);
+    expect(await hub.toolHandlers().send_image({ path: tiff })).toContain("已发");
+    expect(hub.chat.since(0).at(-1)!.attachments![0]!.mediaType).toBe("image/jpeg");
+    expect(await hub.toolHandlers().send_image({ path: `${paths.root}/nope.txt` })).toContain("没发出去");
+    cleanup(paths);
+  });
+});

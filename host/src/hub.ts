@@ -282,7 +282,7 @@ export class Hub {
   // ---------------- what the harness offers ----------------
 
   toolHandlers(): ToolHandlers {
-    return makeShellTools({ tasks: this.tasks, watches: this.watches, artifacts: this.artifacts, chat: this.chat, router: this.router, audit: this.audit, wechat: this.wechat });
+    return makeShellTools({ tasks: this.tasks, watches: this.watches, artifacts: this.artifacts, chat: this.chat, router: this.router, audit: this.audit, wechat: this.wechat, media: this.media });
   }
 
   extraMcpServers(): Record<string, unknown> {

@@ -6,6 +6,7 @@ import type { Router } from "./router.ts";
 import type { TaskTracker } from "./tasks.ts";
 import type { WatchStore } from "./watches.ts";
 import type { WechatChannel } from "./channels/types.ts";
+import type { MediaStore } from "./media.ts";
 
 export interface ShellToolDeps {
   tasks: TaskTracker;
@@ -15,6 +16,7 @@ export interface ShellToolDeps {
   router: Router;
   audit: Audit;
   wechat?: WechatChannel | null;
+  media: MediaStore;
 }
 
 // The tools the shell gives the main agent (the in-process `paloally` MCP
@@ -40,6 +42,16 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
     publish_artifact: async ({ slug, title, main_file, type, pinned }) => {
       const a = d.artifacts.publish(slug, title, main_file, type, pinned);
       return `ok: ${a.id}（${a.files.length} 个文件）`;
+    },
+    send_image: async ({ path, caption }) => {
+      try {
+        const a = d.media.saveFile(path);
+        d.chat.add({ role: "assistant", kind: "text", text: caption?.trim() ?? "", channel: "app", attachments: [a] });
+        d.audit.log("image.sent", { path });
+        return "已发到主人的 App 对话里";
+      } catch (e) {
+        return `没发出去：${e instanceof Error ? e.message : e}`;
+      }
     },
     send_wechat_file: async ({ path }) => {
       const target = d.wechat?.ownerTarget?.();

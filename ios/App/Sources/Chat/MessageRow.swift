@@ -90,10 +90,15 @@ private struct AssistantMessage: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                MarkdownText(source: message.text, streaming: message.isStreaming)
-                    .contextMenu {
-                        Button("复制", systemImage: "doc.on.doc") { Clipboard.copy(message.text) }
-                    }
+                if let atts = message.attachments, !atts.isEmpty {
+                    AttachmentStrip(attachments: atts)
+                }
+                if !message.text.isEmpty || message.isStreaming {
+                    MarkdownText(source: message.text, streaming: message.isStreaming)
+                        .contextMenu {
+                            Button("复制", systemImage: "doc.on.doc") { Clipboard.copy(message.text) }
+                        }
+                }
                 if Self.pointer, !message.isStreaming, !message.text.isEmpty {
                     // Space is kept so the row doesn't jump when it appears.
                     CopyButton(text: message.text)
