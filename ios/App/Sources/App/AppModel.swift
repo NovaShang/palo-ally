@@ -3,6 +3,9 @@ import Observation
 import PaloAllyKit
 import SwiftUI
 import UIKit
+import os
+
+let appLog = Logger(subsystem: "com.novashang.paloally", category: "app")
 
 /// Launch options parsed from arguments / UserDefaults:
 ///   -demo YES            run against the in-memory demo host
@@ -133,10 +136,20 @@ final class AppModel {
 
     func pair(with link: PairingLink) async throws {
         let identity = try DeviceIdentity.loadOrCreate(store: secrets)
-        let host = try await PairingClient().pair(link: link, identity: identity, deviceLabel: UIDevice.current.name)
+        let host = try await PairingClient().pair(link: link, identity: identity, deviceLabel: Self.deviceLabel)
         try host.save(to: secrets)
         connect(to: host)
         showPairingSheet = false
+    }
+
+    /// On Mac Catalyst UIDevice.name is a generic "iPad"; use the Mac's host name.
+    static var deviceLabel: String {
+        #if targetEnvironment(macCatalyst)
+        let host = ProcessInfo.processInfo.hostName.replacingOccurrences(of: ".local", with: "")
+        return host.isEmpty ? "Mac" : host
+        #else
+        return UIDevice.current.name
+        #endif
     }
 
     func unpair() {
@@ -158,6 +171,7 @@ final class AppModel {
 
     func handle(url: URL) {
         guard url.scheme?.lowercased() == "paloally" else { return }
+        appLog.info("pairing link received (mode \(String(describing: self.mode), privacy: .public))")
         pendingPairingLink = url.absoluteString
         if mode != .unpaired { showPairingSheet = true }
     }

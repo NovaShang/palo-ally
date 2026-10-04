@@ -33,12 +33,13 @@ public struct KeychainSecretStore: SecretStore {
     public init(service: String = "com.novashang.paloally") { self.service = service }
 
     private func base(_ account: String) -> [String: Any] {
-        [
+        var q: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecUseDataProtectionKeychain as String: true,
         ]
+        q[kSecUseDataProtectionKeychain as String] = true
+        return q
     }
 
     public func load(_ account: String) throws -> Data? {

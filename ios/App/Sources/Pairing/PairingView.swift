@@ -159,11 +159,13 @@ struct PairingView: View {
                     try await model.pair(with: link)
                     if isSheet { dismiss() }
                 } catch {
+                    appLog.error("pairing failed: \(String(describing: error), privacy: .public)")
                     self.error = error.localizedDescription
                 }
                 working = false
             }
         } catch {
+            appLog.error("bad pairing link: \(String(describing: error), privacy: .public)")
             self.error = (error as? LocalizedError)?.errorDescription ?? "这不是配对链接"
             showManual = true
         }
