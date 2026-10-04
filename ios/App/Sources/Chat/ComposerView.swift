@@ -51,6 +51,34 @@ struct ComposerView: View {
 
     private static let capsuleSpace = "composerCapsule"
 
+    // Placement. Keyboard down ("docked"): the capsule floats concentric with
+    // the display corners, like ChatGPT and the iOS 26 system bars — equal
+    // inset from the bottom edge and both sides, and its corner radius is the
+    // screen's radius minus that inset, so the curves share a centre. A 56 pt
+    // pill (radius 28) gets inset = displayRadius − 28 (34 pt on a 62 pt
+    // display). Keyboard up: a plain capsule just above the keyboard.
+    @State private var keyboardUp = false
+    @State private var displayRadius: CGFloat = 0
+    @State private var homeInset: CGFloat = 0
+    private static let dockedRadius: CGFloat = 28
+    private static let dockedHeight: CGFloat = 56
+    private static let editingRadius: CGFloat = 22
+    private static let editingHeight: CGFloat = 44
+    private static let minInset: CGFloat = 12
+
+    private var docked: Bool { !keyboardUp }
+    private var sideInset: CGFloat {
+        guard docked, displayRadius > 0 else { return Self.minInset }
+        return max(Self.minInset, displayRadius - Self.dockedRadius)
+    }
+    private var capsuleRadius: CGFloat { docked ? Self.dockedRadius : Self.editingRadius }
+    private var rowHeight: CGFloat { docked ? Self.dockedHeight : Self.editingHeight }
+    /// The composer sits above the home-indicator inset; docked, the capsule
+    /// goes `sideInset` from the screen's bottom edge — into that inset when
+    /// the inset is the larger of the two.
+    private var bottomPadding: CGFloat { docked ? max(0, sideInset - homeInset) : 8 }
+    private var bottomOffset: CGFloat { docked ? max(0, homeInset - sideInset) : 0 }
+
     /// From touch-down to "listening". Recording runs the whole time; this
     /// only tells a tap (keyboard) from a hold (voice), and is long enough for
     /// the arming animation to read.
@@ -88,9 +116,10 @@ struct ComposerView: View {
             }
             capsule
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, sideInset)
         .padding(.top, 6)
-        .padding(.bottom, 8)
+        .padding(.bottom, bottomPadding)
+        .offset(y: bottomOffset)
         .animation(.snappy, value: slashQuery)
         .animation(.snappy, value: staged.count)
         .onChange(of: focusToken) { focused = true }
@@ -98,7 +127,15 @@ struct ComposerView: View {
             if q != nil { Task { await store.loadCommands() } }
         }
         // Warm the audio path ahead of the first press (no mic indicator).
-        .onAppear { voice.prewarm() }
+        .onAppear {
+            voice.prewarm()
+            displayRadius = DisplayCorners.radius
+            homeInset = DisplayCorners.bottomInset
+        }
+        // Rotation changes the home-indicator inset.
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _ in homeInset = DisplayCorners.bottomInset }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { keyboardMoved($0) }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { keyboardMoved($0, hiding: true) }
         .onChange(of: scenePhase) { _, phase in
             guard phase != .active else { voice.prewarm(); return }
             if dictating { voice.dictation.cancel(); dictating = false }
@@ -134,14 +171,14 @@ struct ComposerView: View {
 
     private var capsule: some View {
         HStack(alignment: .bottom, spacing: 2) {
-            plusButton
+            plusButton.padding(.bottom, buttonLift)
             field
-            trailingButton
+            trailingButton.padding(.bottom, buttonLift)
         }
-        .frame(minHeight: 44)
+        .frame(minHeight: rowHeight)
         // The capsule brightens as the recording UI grows out of it.
         .background {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: capsuleRadius, style: .continuous)
                 .fill(Color.accentColor.opacity(0.24 * Double(voice.presence)))
                 .allowsHitTesting(false)
         }
@@ -149,7 +186,7 @@ struct ComposerView: View {
         .onGeometryChange(for: CGSize.self) { $0.size } action: { voice.capsuleSize = $0 }
         // Swells with the same hold-driven motion as everything else.
         .scaleEffect(1 + 0.035 * voice.presence)
-        .glassEffect(capsuleGlass, in: .rect(cornerRadius: 22))
+        .glassEffect(capsuleGlass, in: .rect(cornerRadius: capsuleRadius, style: .continuous))
         .animation(.snappy, value: voice.target)
         .animation(.snappy, value: dictating)
         .animation(.snappy, value: canSend)
@@ -164,6 +201,23 @@ struct ComposerView: View {
                     .padding(.bottom, voice.capsuleSize.height + 18)
             }
         }
+    }
+
+    /// Keeps the 44 pt buttons centred on a one-line docked capsule (they
+    /// stay at the bottom as the field grows to more lines).
+    private var buttonLift: CGFloat { (rowHeight - 44) / 2 }
+
+    /// Follows the keyboard: docked when it's down (or only the hardware
+    /// keyboard's shortcut bar is showing), a plain capsule above it otherwise.
+    private func keyboardMoved(_ note: Notification, hiding: Bool = false) {
+        let info = note.userInfo ?? [:]
+        let end = (info[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect) ?? .zero
+        let screenHeight = (note.object as? UIScreen)?.bounds.height
+            ?? UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.screen.bounds.height }.first ?? 0
+        let up = !hiding && end.height > 80 && end.minY < screenHeight - 80
+        guard up != keyboardUp else { return }
+        let duration = (info[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
+        withAnimation(.smooth(duration: max(0.2, duration))) { keyboardUp = up }
     }
 
     private var capsuleGlass: Glass {
@@ -223,7 +277,7 @@ struct ComposerView: View {
                         .truncationMode(.head)
                         .contentTransition(.opacity)
                 }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: rowHeight, alignment: .leading)
                 .allowsHitTesting(false)
                 .transition(.opacity)
             } else if idle && draft.isEmpty {
@@ -255,7 +309,7 @@ struct ComposerView: View {
                 .allowsHitTesting(false)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 44)
+        .frame(maxWidth: .infinity, minHeight: rowHeight)
         .overlay {
             if idle {
                 // Catches tap vs press-and-hold while not editing; while
