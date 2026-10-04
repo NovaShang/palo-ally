@@ -26,6 +26,8 @@ targets:
       - path: Resources
     dependencies:
       - package: PaloAllyKit
+      - package: PaloAllyKit
+        product: PaloAllyVoice
       - package: MarkdownUI
     entitlements:
       path: PaloAlly.entitlements

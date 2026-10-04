@@ -20,7 +20,11 @@ struct ComposerView: View {
     @State private var voiceStarted = false
 
     /// Hold this long before voice input starts.
-    private let holdDelay: Duration = .milliseconds(280)
+    /// Short: the capsule reacts on touch-down, so this only has to tell a
+    /// tap (keyboard) from a hold (voice).
+    private static let capsuleSpace = "composerCapsule"
+
+    private let holdDelay: Duration = .milliseconds(160)
 
     /// Typing "/" (and nothing after a space yet) opens command suggestions.
     /// Nothing in the UI mentions this: it's for people who already know.
@@ -64,11 +68,25 @@ struct ComposerView: View {
                             return .handled
                         }
                     if idle && draft.isEmpty {
-                        Text("按住 说话")
-                            .font(.body.weight(.medium))
-                            .foregroundStyle(.tertiary)
-                            .frame(maxWidth: .infinity)
-                            .allowsHitTesting(false)
+                        Group {
+                            if voiceStarted {
+                                HStack(spacing: 10) {
+                                    LevelBars(level: voice.dictation.level, bars: 4).frame(height: 18)
+                                    Text(voice.target == .send ? "松开 发送" : "松开 \(voice.target == .cancel ? "取消" : "编辑")")
+                                        .contentTransition(.opacity)
+                                    LevelBars(level: voice.dictation.level, bars: 4).frame(height: 18)
+                                }
+                                .foregroundStyle(voice.target == .send ? Color.primary : .secondary)
+                                .transition(.scale(scale: 0.85).combined(with: .opacity))
+                            } else {
+                                Text("按住 说话")
+                                    .foregroundStyle(pressing ? .secondary : .tertiary)
+                                    .transition(.opacity)
+                            }
+                        }
+                        .font(.body.weight(.medium))
+                        .frame(maxWidth: .infinity)
+                        .allowsHitTesting(false)
                     }
                 }
                 .frame(maxWidth: .infinity, minHeight: 44)
@@ -101,8 +119,25 @@ struct ComposerView: View {
                 }
             }
             .frame(minHeight: 44)
-            .scaleEffect(pressing && voiceStarted ? 0.97 : 1)
-            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
+            .coordinateSpace(.named(Self.capsuleSpace))
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { voice.capsuleSize = $0 }
+            // Reacts the instant the finger lands; lights up once it's listening.
+            .scaleEffect(pressing ? (voiceStarted ? 1.03 : 0.97) : 1)
+            .glassEffect(voiceStarted && voice.target == .send ? .regular.tint(Color.accentColor.opacity(0.35)).interactive()
+                                                               : .regular.interactive(),
+                         in: .rect(cornerRadius: 22))
+            .animation(.spring(response: 0.22, dampingFraction: 0.7), value: pressing)
+            .animation(.spring(response: 0.3, dampingFraction: 0.75), value: voiceStarted)
+            .animation(.snappy, value: voice.target)
+            // The voice panel floats just above the capsule, anchored to it.
+            .overlay(alignment: .bottom) {
+                if voice.isActive {
+                    VoiceInputPanel(voice: voice)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, voice.capsuleSize.height + 18)
+                        .transition(.opacity)
+                }
+            }
             .animation(.snappy, value: canSend)
             .animation(.snappy, value: idle)
         }
@@ -117,7 +152,7 @@ struct ComposerView: View {
     }
 
     private var pressGesture: some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.capsuleSpace))
             .onChanged { v in
                 if !pressing {
                     pressing = true

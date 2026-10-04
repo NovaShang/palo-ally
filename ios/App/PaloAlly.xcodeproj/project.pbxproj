@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		08BF7949F94B89DDD05C3319 /* AssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056B108C0177A1156F312E84 /* AssistantView.swift */; };
+		12AEBFDF8D57FB231AAEC5EA /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 15DEAD73806EBE1C701B9FCB /* MarkdownUI */; };
 		1F13B32F1A120C451958B347 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D85821DAF90FE3998B520913 /* LibraryView.swift */; };
 		31D752A67A0592C5BA7B46B1 /* PaloAllyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C0D86FFE5D13BEF644D76F /* PaloAllyApp.swift */; };
 		32876775778CD8C38491FBB0 /* ApprovalCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CC0C56E78F856900F1C91A8 /* ApprovalCard.swift */; };
@@ -27,7 +28,7 @@
 		D556694E027BD986AB400215 /* ApprovalsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3E3EFECDEF03091588F1AA /* ApprovalsSection.swift */; };
 		E0748A27FBA8E1FD9DDEA652 /* MemorySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A047E4D10313D33DC6FA1B11 /* MemorySection.swift */; };
 		E72CE394982E8B194DFF27E9 /* ArtifactDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFF3C59774AD6CD3FE7F5AAA /* ArtifactDetailView.swift */; };
-		E895FF8F3C53A7D71EC25855 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 15DEAD73806EBE1C701B9FCB /* MarkdownUI */; };
+		E895FF8F3C53A7D71EC25855 /* PaloAllyVoice in Frameworks */ = {isa = PBXBuildFile; productRef = 78B5E75CCEFAF248ABE90838 /* PaloAllyVoice */; };
 		F10B59DC6D408555F64C2858 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 711BC1712E3CB0B810C91022 /* PairingView.swift */; };
 		F342DE1D9A6DFB66245308B9 /* ModelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C624CE9D781D137068B2536 /* ModelPicker.swift */; };
 		F7BB5BDB265CB2F858DDF473 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C8BBDD7B0248070C25E81AB /* RootView.swift */; };
@@ -69,7 +70,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				42A52F693D0C3EF2BF03E594 /* PaloAllyKit in Frameworks */,
-				E895FF8F3C53A7D71EC25855 /* MarkdownUI in Frameworks */,
+				E895FF8F3C53A7D71EC25855 /* PaloAllyVoice in Frameworks */,
+				12AEBFDF8D57FB231AAEC5EA /* MarkdownUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -214,6 +216,7 @@
 			name = PaloAlly;
 			packageProductDependencies = (
 				C72366410B2F41DC5EBD75BE /* PaloAllyKit */,
+				78B5E75CCEFAF248ABE90838 /* PaloAllyVoice */,
 				15DEAD73806EBE1C701B9FCB /* MarkdownUI */,
 			);
 			productName = PaloAlly;
@@ -524,6 +527,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 47F9F72DABBE2C3890791634 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
 			productName = MarkdownUI;
+		};
+		78B5E75CCEFAF248ABE90838 /* PaloAllyVoice */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PaloAllyVoice;
 		};
 		C72366410B2F41DC5EBD75BE /* PaloAllyKit */ = {
 			isa = XCSwiftPackageProductDependency;

@@ -4,6 +4,7 @@ import SwiftUI
 struct ChatView: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
+    @Environment(VoiceInputController.self) private var voice
     @State private var draft = ""
 
     var body: some View {
@@ -65,6 +66,15 @@ struct ChatView: View {
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             StatusBanner()
+        }
+        // While holding to talk, a light veil sets the conversation back.
+        .overlay {
+            if voice.isActive {
+                Color.black.opacity(0.14)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ComposerView(draft: $draft) { text in

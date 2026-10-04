@@ -32,12 +32,6 @@ struct MainScreen: View {
                 }
         }
         .environment(voice)
-        // Hold-to-talk screen dims everything, nav bar included.
-        .overlay {
-            if voice.isActive {
-                VoiceInputOverlay(voice: voice)
-            }
-        }
         .animation(.easeOut(duration: 0.15), value: voice.isActive)
         .onChange(of: scenePhase) { _, phase in
             if phase != .active && voice.previewText == nil { voice.abort() }
