@@ -368,13 +368,17 @@ public final class VoiceSession {
         }
 
         // Start the mic immediately so the opening words are captured while the
-        // (slower) WSS handshake runs.
-        do {
-            try audioCapture.start(targetSampleRate: asr.sampleRate)
-            dlog("[voice] mic capture started @\(Int(asr.sampleRate))Hz")
-        } catch {
-            dlog("[voice] mic capture FAILED: \(error.localizedDescription)")
-            onError(error.localizedDescription)
+        // (slower) WSS handshake runs. PaloAlly: off the main thread — the
+        // audio session + engine start can take hundreds of ms on a device and
+        // must not hold up the press animation.
+        let rate = asr.sampleRate
+        audioCapture.startAsync(targetSampleRate: rate) { error in
+            if let error {
+                dlog("[voice] mic capture FAILED: \(error.localizedDescription)")
+                Task { @MainActor in onError(error.localizedDescription) }
+            } else {
+                dlog("[voice] mic capture started @\(Int(rate))Hz")
+            }
         }
         Task {
             do {

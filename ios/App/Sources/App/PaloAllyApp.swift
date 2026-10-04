@@ -38,7 +38,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
-        voiceLogSink = { debugLog("[voice] \($0)") }
+        // Voice logs already carry "[voice]"; append the time since the press.
+        voiceLogSink = { debugLog("\($0)\(VoiceTiming.suffix)") }
         return true
     }
 

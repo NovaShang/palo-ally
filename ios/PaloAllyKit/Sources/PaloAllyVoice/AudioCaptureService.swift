@@ -25,6 +25,14 @@ public final class AudioCaptureService: @unchecked Sendable {
     /// Called on the audio queue with each PCM chunk as it arrives.
     public var onPCM: (@Sendable (Data) -> Void)?
 
+    /// PaloAlly: every engine / session operation runs here, in order.
+    /// `setActive(true)` + `engine.start()` can take hundreds of ms on a device
+    /// (more when the category changes); on the main thread that froze the
+    /// press animation until the mic was live. Serial, so a stop queued right
+    /// after a start still lands after it.
+    private let control = DispatchQueue(label: "paloally.audio.control", qos: .userInteractive)
+    private var loggedFirstBuffer = false
+
     public init() {}
 
     /// Pre-allocate the engine's resources WITHOUT going live, so the later
@@ -34,6 +42,10 @@ public final class AudioCaptureService: @unchecked Sendable {
     /// already waiting through. Never lights the mic indicator — only `start()`
     /// activates input. No-op once running.
     public func prewarm() {
+        control.async { self.prewarmNow() }
+    }
+
+    private func prewarmNow() {
         guard !isRunning else { return }
         #if os(iOS)
         // Pre-set the record category so start() skips the (re)configure cost.
@@ -46,11 +58,30 @@ public final class AudioCaptureService: @unchecked Sendable {
         engine.prepare()
     }
 
+    /// Starts capture off the main thread; `completion` runs on the control
+    /// queue (nil = the mic is live).
+    public func startAsync(targetSampleRate: Double = 16000, completion: @escaping @Sendable (Error?) -> Void) {
+        control.async {
+            do {
+                try self.startNow(targetSampleRate: targetSampleRate)
+                completion(nil)
+            } catch {
+                completion(error)
+            }
+        }
+    }
+
     public func start(targetSampleRate: Double = 16000) throws {
+        try control.sync { try startNow(targetSampleRate: targetSampleRate) }
+    }
+
+    private func startNow(targetSampleRate: Double) throws {
+        let t0 = Date()
+        let ms = { Int(Date().timeIntervalSince(t0) * 1000) }
         // Never stack a second engine/tap on top of a running one: installing two
         // taps on the same input bus corrupts CoreAudio and hangs the main thread.
         // A prior session that failed without a clean stop must be torn down first.
-        if isRunning { stop() }
+        if isRunning { stopNow() }
         engine.inputNode.removeTap(onBus: 0)   // belt-and-suspenders: drop any stale tap
         self.targetRate = targetSampleRate
         self.outputFormat = AVAudioFormat(
@@ -68,7 +99,9 @@ public final class AudioCaptureService: @unchecked Sendable {
         // duck, and the audible dip made recordings feel different.
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.record, mode: .default)
+        let afterCategory = ms()
         try session.setActive(true, options: .notifyOthersOnDeactivation)
+        dlog("[voice] audio session: category \(afterCategory)ms, setActive \(ms() - afterCategory)ms")
         #endif
 
         let input = engine.inputNode
@@ -93,12 +126,19 @@ public final class AudioCaptureService: @unchecked Sendable {
             self?.handleBuffer(buffer)
         }
 
+        loggedFirstBuffer = false
+        let beforeEngine = ms()
         engine.prepare()
         try engine.start()
         isRunning = true
+        dlog("[voice] engine.start \(ms() - beforeEngine)ms (capture start total \(ms())ms)")
     }
 
     public func stop() {
+        control.async { self.stopNow() }
+    }
+
+    private func stopNow() {
         guard isRunning else { return }
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
@@ -113,6 +153,10 @@ public final class AudioCaptureService: @unchecked Sendable {
 
     private func handleBuffer(_ inputBuffer: AVAudioPCMBuffer) {
         guard let outputFormat else { return }
+        if !loggedFirstBuffer {
+            loggedFirstBuffer = true
+            dlog("[voice] first mic buffer (\(inputBuffer.frameLength) frames @\(Int(inputBuffer.format.sampleRate))Hz)")
+        }
         // Build / rebuild the converter to match the ACTUAL incoming format. The
         // nil-format tap delivers the node's live format, which may differ from
         // what we saw at start() (or change mid-session on a route switch), so the

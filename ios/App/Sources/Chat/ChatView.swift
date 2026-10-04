@@ -53,7 +53,7 @@ struct ChatView: View {
                 .padding(.vertical, 12)
             }
             .defaultScrollAnchor(.bottom)
-            .scrollDismissesKeyboard(.interactively)
+            .scrollDismissesKeyboard(.immediately)
             .onChange(of: store.messages.last?.id) {
                 withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
@@ -79,6 +79,11 @@ struct ChatView: View {
         }
         .navigationTitle("PaloAlly")
         .navigationBarTitleDisplayMode(.inline)
+        // Immersive: the system bar stays, but without its blurred backdrop
+        // or the scroll-edge blur — the conversation runs under three glass
+        // pieces (two round buttons, the title capsule).
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .scrollEdgeEffectHidden(true, for: .top)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 0) {
@@ -92,7 +97,12 @@ struct ChatView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 5)
+                .frame(minHeight: 44)
+                .glassEffect(.regular, in: .capsule)
             }
+            .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .topBarLeading) {
                 Button {
                     model.showAssistant = true

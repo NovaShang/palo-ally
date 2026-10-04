@@ -42,8 +42,7 @@ struct ComposerView: View {
     @State private var dictating = false
     @State private var finishingDictation = false
 
-    // Press tracking for hold-to-talk on the field.
-    @State private var pressTask: Task<Void, Never>?
+    // Press tracking for hold-to-talk on the field (ComposerPressGesture).
     @State private var pressing = false
     @State private var moved = false
     @State private var voiceStarted = false
@@ -56,7 +55,6 @@ struct ComposerView: View {
     /// only tells a tap (keyboard) from a hold (voice), and is long enough for
     /// the arming animation to read.
     private static let holdSeconds = 0.22
-    private let holdDelay: Duration = .milliseconds(220)
 
     /// Typing "/" (and nothing after a space yet) opens command suggestions.
     /// Nothing in the UI mentions this: it's for people who already know.
@@ -99,8 +97,10 @@ struct ComposerView: View {
         .onChange(of: slashQuery) { _, q in
             if q != nil { Task { await store.loadCommands() } }
         }
+        // Warm the audio path ahead of the first press (no mic indicator).
+        .onAppear { voice.prewarm() }
         .onChange(of: scenePhase) { _, phase in
-            guard phase != .active else { return }
+            guard phase != .active else { voice.prewarm(); return }
             if dictating { voice.dictation.cancel(); dictating = false }
             if pressing { resetPress() }
         }
@@ -200,6 +200,9 @@ struct ComposerView: View {
             TextField("", text: $draft, prompt: Text(focused ? "想让我做点什么？" : ""), axis: .vertical)
                 .lineLimit(1...6)
                 .focused($focused)
+                // While idle the press layer owns every touch: the text
+                // field's own long-press / selection recognizers must not see it.
+                .allowsHitTesting(!idle)
                 .padding(.vertical, 11)
                 .onKeyPress(keys: [.return], phases: .down) { press in
                     if press.modifiers.contains(.shift) || press.modifiers.contains(.option) { return .ignored }
@@ -257,7 +260,13 @@ struct ComposerView: View {
                 // editing it's gone so text selection works normally.
                 Color.clear
                     .contentShape(.rect)
-                    .gesture(pressGesture)
+                    .gesture(ComposerPressGesture(
+                        holdThreshold: Self.holdSeconds,
+                        space: .named(Self.capsuleSpace),
+                        onTouchDown: pressBegan,
+                        onTap: { pressLifted(tap: true) },
+                        onAbandon: { pressLifted(tap: false) },
+                        onHold: pressHeld))
                     .accessibilityElement()
                     .accessibilityLabel("按住说话，轻点打字")
                     .accessibilityAddTraits(.isButton)
@@ -321,61 +330,70 @@ struct ComposerView: View {
 
     // MARK: - Voice
 
-    private var pressGesture: some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.capsuleSpace))
-            .onChanged { v in
-                if !pressing {
-                    guard !finishingHold else { return }
-                    pressing = true
-                    moved = false
-                    voiceStarted = false
-                    // Record from the very first instant; no permission yet →
-                    // the system asks, nothing records, and this press is spent.
-                    guard voice.arm() else { moved = true; return }
-                    // Arming: the recording UI starts growing out of the capsule
-                    // right away, paced by the hold.
-                    voice.panelMounted = true
-                    withAnimation(.easeOut(duration: Self.holdSeconds)) { voice.presence = 0.72 }
-                    pressTask = Task { @MainActor in
-                        try? await Task.sleep(for: holdDelay)
-                        guard !Task.isCancelled, pressing, !moved else { return }
-                        voiceStarted = true
-                        voice.commit()
-                        // Committed: settle into place.
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.74)) { voice.presence = 1 }
-                    }
-                } else if voiceStarted {
-                    voice.track(v.location)
-                } else if !moved, hypot(v.translation.width, v.translation.height) > 12 {
-                    // Moved before the hold committed: a scroll, not a hold.
-                    moved = true
-                    pressTask?.cancel()
-                    disarm()
-                }
+    /// The finger just landed (ComposerPressGesture, straight from UIKit's
+    /// touchesBegan). Feedback first, in this very frame; then recording,
+    /// whose audio session / engine start runs off the main thread.
+    private func pressBegan(touchTime: TimeInterval) -> Bool {
+        guard !finishingHold, idle else { return false }
+        VoiceTiming.begin("touch-down", touchTime: touchTime)
+        pressing = true
+        moved = false
+        voiceStarted = false
+        // Arming: the recording UI starts growing out of the capsule right
+        // away, paced by the hold.
+        voice.panelMounted = true
+        withAnimation(.easeOut(duration: Self.holdSeconds)) { voice.presence = 0.72 }
+        // Record from the very first instant; no permission yet → the system
+        // asks, nothing records, and this press is spent.
+        guard voice.arm() else {
+            pressing = false
+            moved = true
+            collapse(.spring(response: 0.26, dampingFraction: 0.92))
+            return false
+        }
+        VoiceTiming.mark("recording requested (arm returned)")
+        return true
+    }
+
+    /// Lifted (tap) or moved away (scroll) before the hold committed.
+    private func pressLifted(tap: Bool) {
+        guard pressing else { return }
+        pressing = false
+        moved = !tap
+        VoiceTiming.mark(tap ? "tap (audio discarded)" : "moved away (audio discarded)")
+        disarm()
+        if tap { focusToken += 1 }
+    }
+
+    /// After the hold committed: dragging between zones, then release.
+    private func pressHeld(_ state: UIGestureRecognizer.State, at point: CGPoint) {
+        switch state {
+        case .began:
+            guard pressing else { return }
+            voiceStarted = true
+            voice.commit()
+            VoiceTiming.mark("hold committed")
+            // Committed: settle into place.
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.74)) { voice.presence = 1 }
+        case .changed:
+            if voiceStarted { voice.track(point) }
+        case .ended:
+            guard voiceStarted else { return }
+            voice.track(point)
+            pressing = false
+            voiceStarted = false
+            finishingHold = true
+            // Released: the recording UI folds back into the capsule (send,
+            // cancel, edit alike) while the final text resolves.
+            collapse(.spring(response: 0.36, dampingFraction: 0.86))
+            Task {
+                await finishVoice()
+                finishingHold = false
             }
-            .onEnded { v in
-                pressTask?.cancel()
-                pressTask = nil
-                let wasVoice = voiceStarted
-                let wasMoved = moved
-                pressing = false
-                voiceStarted = false
-                if wasVoice {
-                    voice.track(v.location)
-                    finishingHold = true
-                    // Released: the recording UI folds back into the capsule
-                    // (send, cancel, edit alike) while the final text resolves.
-                    collapse(.spring(response: 0.36, dampingFraction: 0.86))
-                    Task {
-                        await finishVoice()
-                        finishingHold = false
-                    }
-                } else {
-                    // Lifted before the threshold: a tap. Drop the audio, reverse.
-                    disarm()
-                    if !wasMoved { focusToken += 1 }
-                }
-            }
+        default: // .cancelled — the system took the touch away
+            resetPress()
+            withAnimation(.spring(response: 0.26, dampingFraction: 0.92)) { voice.presence = 0 }
+        }
     }
 
     /// Cancels an arming press: recording discarded, the motion plays backwards.
@@ -395,8 +413,6 @@ struct ComposerView: View {
 
     /// Gesture interrupted (app left the foreground).
     private func resetPress() {
-        pressTask?.cancel()
-        pressTask = nil
         pressing = false
         voiceStarted = false
         moved = false
@@ -435,6 +451,7 @@ struct ComposerView: View {
             // Typing → dictating → typing: the words land at the end of the
             // draft and the keyboard comes back when it's done.
             focused = false
+            VoiceTiming.begin("mic tap")
             voice.dictation.prewarm()
             voice.dictation.start()
             dictating = true
