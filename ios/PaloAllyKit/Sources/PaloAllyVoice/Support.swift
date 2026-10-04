@@ -10,6 +10,11 @@ private let log = Logger(subsystem: "com.novashang.paloally", category: "voice")
 /// `coreDlogFileSink`). Set once at launch.
 public nonisolated(unsafe) var voiceLogSink: (@Sendable (String) -> Void)?
 
+/// The current press's touch-down time (ProcessInfo.systemUptime, the same
+/// mach-absolute base as AVAudioTime host time), set by the app so the voice
+/// logs can say when the first sample was actually captured. 0 = unknown.
+public nonisolated(unsafe) var voiceTouchUptime: TimeInterval = 0
+
 /// Debug log (bento's `dlog`).
 func dlog(_ s: String) {
     log.debug("\(s, privacy: .public)")

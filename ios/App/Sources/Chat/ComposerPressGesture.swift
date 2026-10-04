@@ -1,4 +1,5 @@
 import PaloAllyKit
+import PaloAllyVoice
 import SwiftUI
 import UIKit
 import UIKit.UIGestureRecognizerSubclass
@@ -171,6 +172,7 @@ enum VoiceTiming {
     static func begin(_ what: String, touchTime: TimeInterval? = nil) {
         let now = ProcessInfo.processInfo.systemUptime
         origin = touchTime ?? now
+        voiceTouchUptime = origin
         debugLog("[voice-timing] \(what), heard \(Int((now - origin) * 1000))ms after the touch")
     }
 

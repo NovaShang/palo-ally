@@ -103,6 +103,8 @@ struct ComposerView: View {
             guard phase != .active else { voice.prewarm(); return }
             if dictating { voice.dictation.cancel(); dictating = false }
             if pressing { resetPress() }
+            // After any recording is stopped (same serial audio queue).
+            if phase == .background { voice.dictation.coolDown() }
         }
         .sensoryFeedback(.impact(weight: .light), trigger: pressing) { _, down in down }
         .sensoryFeedback(.impact(weight: .medium), trigger: voiceStarted) { _, started in started }

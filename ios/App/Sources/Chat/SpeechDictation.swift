@@ -22,6 +22,9 @@ final class SpeechDictation {
     /// Finger down, before we know it's a hold: no mic indicator, just warm-up.
     func prewarm() { session.prewarm() }
 
+    /// App left the foreground: let the audio session go (others get it back).
+    func coolDown() { AudioCaptureService.setSessionWarm(false) }
+
     func start() {
         errorMessage = nil
         transcript = ""
