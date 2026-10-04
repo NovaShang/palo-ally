@@ -91,7 +91,8 @@ export interface Status {
   killed: boolean;
   busy: boolean;
   activity?: string; // what it is doing right now, in plain words (only while busy)
-  model: string;
+  model: string; // the model actually running (reported by the harness)
+  effort?: string; // chosen effort level; absent = the model's default
   sessionId?: string;
   wechat: "off" | "connected" | "expired";
   version: string;

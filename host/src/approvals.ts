@@ -37,6 +37,11 @@ const IRREVERSIBLE_CLICK = /(pay|buy|purchase|checkout|place order|submit|send|d
 // Reading and searching change nothing; never interrupt the owner for them.
 const READ_ONLY_TOOLS = new Set(["Read", "Glob", "Grep", "LS", "NotebookRead", "WebSearch", "ToolSearch", "TodoWrite", "TaskOutput", "ListMcpResourcesTool", "ReadMcpResourceTool"]);
 
+// Claude in Chrome (the owner's own browser): reading the page is harmless;
+// running script or uploading files in a logged-in browser always asks.
+const CHROME_READ_ONLY = /^mcp__claude-in-chrome__(read_page|get_page_text|find|tabs_context_mcp|read_console_messages|read_network_requests|list_connected_browsers|shortcuts_list)$/;
+const CHROME_ALWAYS_ASK = /^mcp__claude-in-chrome__(javascript_tool|file_upload|upload_image)$/;
+
 // Looking at the current page changes nothing.
 const BROWSER_READ_ONLY = /^mcp__[^_]+(?:_[^_]+)*__browser_(snapshot|take_screenshot|console_messages|network_requests|wait_for)$/;
 const BROWSER_INTERACT = /browser_(click|type|press_key|fill_form|select_option|file_upload|drag)/;
@@ -49,6 +54,7 @@ export function isIrreversible(tool: string, input: Record<string, unknown>): bo
     const cmd = String(input.command ?? "");
     return IRREVERSIBLE_BASH.some((r) => r.test(cmd));
   }
+  if (CHROME_ALWAYS_ASK.test(tool)) return true;
   if (tool.startsWith("mcp__")) {
     const leaf = tool.split("__").slice(2).join("__");
     if (BROWSER_INTERACT.test(leaf)) {
@@ -204,7 +210,7 @@ export class ApprovalManager {
   }
 
   isSensitiveNavigation(tool: string, input: Record<string, unknown>): boolean {
-    if (!/browser_navigate|browser_tabs|WebFetch/.test(tool)) return false;
+    if (!/browser_navigate|browser_tabs|WebFetch|claude-in-chrome__(navigate|tabs_create)/.test(tool)) return false;
     const d = domainOf(input.url);
     if (!d) return false;
     return this.hooks.sensitiveDomains().some((s) => d === s || d.endsWith("." + s));
@@ -216,7 +222,7 @@ export class ApprovalManager {
     // The shell's own tools (report_task, register_watch…) only touch PaloAlly state.
     if (tool.startsWith(OWN_SERVER)) return { decision: "allow" };
     if (this.isSensitiveNavigation(tool, input)) return { decision: "deny", reason: SENSITIVE_MSG };
-    if (BROWSER_READ_ONLY.test(tool) || READ_ONLY_TOOLS.has(tool)) return { decision: "allow" };
+    if (BROWSER_READ_ONLY.test(tool) || CHROME_READ_ONLY.test(tool) || READ_ONLY_TOOLS.has(tool)) return { decision: "allow" };
     if (isIrreversible(tool, input)) return { decision: "ask", reason: "这一步做了撤不回，要主人点头" };
     return { decision: "pass" };
   }

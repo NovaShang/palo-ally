@@ -3,7 +3,10 @@
 // tests. Only the Hub talks to a driver.
 
 export type HarnessEvent =
-  | { type: "init"; sessionId: string; model: string; tools: string[] }
+  | { type: "init"; sessionId: string; model: string; tools: string[]; terminalCommands?: string[] }
+  // the harness' slash commands (built-ins, skills, plugins…); replaces any earlier list
+  | { type: "commands"; commands: SlashCommandInfo[] }
+  | { type: "models"; models: ModelOption[] }
   | { type: "text_delta"; text: string }
   // the model began writing a tool call (its input may stream for minutes, e.g. a big Write)
   | { type: "tool_start"; name: string; parentToolUseId: string | null }
@@ -25,6 +28,19 @@ export type HarnessEvent =
       consumedUuids?: string[]; // user messages this turn answered (absent on older CLIs)
     }
   | { type: "error"; message: string };
+
+export interface ModelOption {
+  value: string; // what to pass as model
+  displayName: string;
+  description: string;
+  efforts: string[]; // supported effort levels, empty if the model has none
+}
+
+export interface SlashCommandInfo {
+  name: string;
+  description: string;
+  argumentHint?: string;
+}
 
 export interface PermissionRequest {
   toolName: string;
@@ -67,6 +83,7 @@ export interface ToolHandlers {
 export interface MainSessionOptions {
   cwd: string;
   model?: string;
+  effort?: string;
   resumeSessionId?: string;
   priorCostUsd?: number; // the resumed session's running total, so per-turn cost stays a delta
   permissionMode: string;
@@ -76,6 +93,7 @@ export interface MainSessionOptions {
   preToolGate: PreToolGate;
   postToolUse: (call: { toolName: string; input: unknown; response: unknown; toolUseId: string; agentId?: string }) => void;
   mcpServers: Record<string, unknown>;
+  sharedChrome?: boolean; // enable Claude in Chrome on the owner's own browser
   onEvent: (e: HarnessEvent) => void;
   stderr?: (s: string) => void;
 }
@@ -88,6 +106,9 @@ export interface MainSession {
   send(text: string, uuid: string): void;
   interrupt(): Promise<void>;
   stopTask(taskId: string): Promise<void>;
+  // live switches; take effect from the next model call
+  setModel(model?: string): Promise<void>;
+  setEffort(effort?: string): Promise<void>;
   close(): void;
   readonly closed: boolean;
 }

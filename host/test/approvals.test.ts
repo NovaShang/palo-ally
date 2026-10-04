@@ -146,3 +146,24 @@ describe("ApprovalManager", () => {
 
   test("cleanup", () => cleanup(paths));
 });
+
+describe("Claude in Chrome (shared browser)", () => {
+  test("reads pass, script/upload always ask, sensitive sites refused", () => {
+    const paths = tmpPaths();
+    const m = new ApprovalManager(`${paths.state}/a.json`, `${paths.state}/r.json`, new Bus(), new Audit(paths.audit), {
+      isKilled: () => false,
+      taskForToolUse: () => undefined,
+      onCreated: () => {},
+      timeoutMinutes: () => 30,
+      sensitiveDomains: () => ["bank.com"],
+    });
+    expect(m.preGate("mcp__claude-in-chrome__get_page_text", {}).decision).toBe("allow");
+    expect(m.preGate("mcp__claude-in-chrome__read_page", {}).decision).toBe("allow");
+    expect(m.preGate("mcp__claude-in-chrome__javascript_tool", { text: "1+1" }).decision).toBe("ask");
+    expect(m.preGate("mcp__claude-in-chrome__file_upload", {}).decision).toBe("ask");
+    expect(m.preGate("mcp__claude-in-chrome__navigate", { url: "https://www.bank.com/login" }).decision).toBe("deny");
+    expect(m.preGate("mcp__claude-in-chrome__navigate", { url: "https://example.com" }).decision).toBe("pass");
+    expect(m.preGate("mcp__claude-in-chrome__computer", { action: "left_click" }).decision).toBe("pass");
+    cleanup(paths);
+  });
+});

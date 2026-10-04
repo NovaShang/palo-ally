@@ -127,6 +127,10 @@ function toolResultText(content: unknown): string {
   return content == null ? "" : JSON.stringify(content);
 }
 
+function toCommands(list: any[] | undefined) {
+  return (list ?? []).map((c) => ({ name: String(c.name), description: String(c.description ?? ""), argumentHint: c.argumentHint || undefined }));
+}
+
 // mapMessage turns one SDK message into zero or more harness events.
 export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTokens: number }): HarnessEvent[] {
   // total_cost_usd is cumulative for the session (including what a resume replays)
@@ -134,7 +138,11 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
   const m = msg as any;
   switch (m.type) {
     case "system":
-      if (m.subtype === "init") out.push({ type: "init", sessionId: m.session_id, model: m.model, tools: m.tools ?? [] });
+      if (m.subtype === "init")
+        out.push({ type: "init", sessionId: m.session_id, model: m.model, tools: m.tools ?? [], terminalCommands: m.terminal_slash_commands });
+      else if (m.subtype === "commands_changed") out.push({ type: "commands", commands: toCommands(m.commands) });
+      else if (m.subtype === "local_command_output" && m.content)
+        out.push({ type: "assistant_text", text: String(m.content), parentToolUseId: null });
       else if (m.subtype === "task_started")
         out.push({ type: "task_started", taskId: m.task_id, toolUseId: m.tool_use_id, description: m.description ?? "", background: m.is_backgrounded });
       else if (m.subtype === "task_progress")
@@ -215,6 +223,7 @@ class ClaudeMainSession implements MainSession {
       options: {
         cwd: opts.cwd,
         model: opts.model,
+        ...(opts.effort ? { effort: opts.effort as any } : {}),
         resume: opts.resumeSessionId,
         permissionMode: opts.permissionMode as any,
         systemPrompt: { type: "preset", preset: "claude_code", append: opts.appendSystemPrompt },
@@ -252,10 +261,29 @@ class ClaudeMainSession implements MainSession {
           ],
         },
         env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: `paloally/${VERSION}` },
+        extraArgs: opts.sharedChrome ? { chrome: null } : {},
         stderr: opts.stderr,
       },
     });
     void this.pump(opts);
+    this.q
+      .supportedModels()
+      .then((ms) =>
+        opts.onEvent({
+          type: "models",
+          models: ms.map((m) => ({
+            value: m.value,
+            displayName: m.displayName,
+            description: m.description,
+            efforts: m.supportsEffort ? (m.supportedEffortLevels ?? []) : [],
+          })),
+        }),
+      )
+      .catch(() => {});
+    this.q
+      .supportedCommands()
+      .then((cs) => opts.onEvent({ type: "commands", commands: toCommands(cs) }))
+      .catch(() => {});
   }
 
   private async pump(opts: MainSessionOptions): Promise<void> {
@@ -281,6 +309,14 @@ class ClaudeMainSession implements MainSession {
 
   async stopTask(taskId: string): Promise<void> {
     await this.q.stopTask(taskId);
+  }
+
+  async setModel(model?: string): Promise<void> {
+    await this.q.setModel(model);
+  }
+
+  async setEffort(effort?: string): Promise<void> {
+    await this.q.applyFlagSettings({ effortLevel: (effort ?? null) as any });
   }
 
   close(): void {

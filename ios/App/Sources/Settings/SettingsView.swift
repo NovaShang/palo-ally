@@ -12,9 +12,20 @@ struct SettingsView: View {
     @State private var loaded = false
     @State private var error: String?
     @State private var confirmUnpair = false
+    @State private var showModels = false
 
     var body: some View {
         Form {
+            Section {
+                Button {
+                    showModels = true
+                } label: {
+                    LabeledContent("模型与思考", value: "\(ModelName.short(store.status?.model ?? "")) · \(EffortName.label(store.status?.effort))")
+                }
+                .foregroundStyle(.primary)
+            }
+            .sheet(isPresented: $showModels) { ModelPickerSheet().environment(store) }
+
             Section {
                 Toggle("免打扰", isOn: $quietOn)
                 if quietOn {

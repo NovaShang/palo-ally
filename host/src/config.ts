@@ -57,6 +57,7 @@ export interface Settings {
 export interface Config {
   hostName: string;
   model?: string; // main agent model; undefined = CLI default
+  effort?: "low" | "medium" | "high" | "xhigh" | "max"; // undefined = the model's default
   probeModel: string; // cheap model for the probe
   // Let the probe see claude.ai connectors (Gmail, Calendar…) when logged in with a subscription.
   // Off by default: those connectors add ~100k tokens to every probe run.
@@ -82,6 +83,10 @@ export interface Config {
   };
   browser: {
     enabled: boolean;
+    // shared: drive the owner's everyday Chrome through Claude in Chrome (needs a
+    // claude.ai login + the extension); dedicated: a separate Playwright profile
+    // (works with any model / API key).
+    mode: "shared" | "dedicated";
     sensitiveDomains: string[]; // never navigated by the assistant's browser
     command?: string[]; // MCP server command; default Playwright MCP
   };
@@ -105,7 +110,8 @@ export function defaultConfig(): Config {
     wechat: { enabled: false, baseUrl: "https://ilinkai.weixin.qq.com" },
     apns: { enabled: false, bundleId: "com.novashang.paloally" },
     browser: {
-      enabled: false,
+      enabled: true,
+      mode: "shared",
       sensitiveDomains: [],
     },
     extraMcpServers: {},

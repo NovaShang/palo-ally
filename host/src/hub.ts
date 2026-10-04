@@ -5,7 +5,7 @@ import { Bus } from "./bus.ts";
 import { ChatLog } from "./chat.ts";
 import { type Config, type Paths, type Settings, VERSION, saveConfig } from "./config.ts";
 import { BEHAVIOR } from "./home.ts";
-import type { HarnessDriver, HarnessEvent, MainSession, ToolHandlers } from "./harness/types.ts";
+import type { HarnessDriver, HarnessEvent, MainSession, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
 import { MemoryView, autoMemoryDir } from "./memory.ts";
 import { ProbeScheduler, type ProbeTrigger } from "./probe.ts";
 import { Router, type Pusher, type WechatOut } from "./router.ts";
@@ -121,6 +121,9 @@ export class Hub {
   private inflight = new Map<string, { origin: Channel; wechat?: WechatReplyTarget }>();
   private implicitTimer: ReturnType<typeof setTimeout> | null = null;
   private activity = "";
+  private terminalCommands = new Set(["doctor", "color", "focus", "reload-plugins", "exit", "quit", "statusline", "terminal-setup", "vim", "ide"]);
+  private commandWaiters: (() => void)[] = [];
+  private modelWaiters: (() => void)[] = [];
 
   constructor(deps: HubDeps) {
     this.paths = deps.paths;
@@ -204,6 +207,7 @@ export class Hub {
       busy: this.busy,
       activity: this.busy ? this.activity || "正在想" : undefined,
       model: this.model || this.config.model || "",
+      effort: this.config.effort,
       sessionId: this.runtime.sessionId,
       wechat: this.wechat?.status() ?? "off",
       version: VERSION,
@@ -232,7 +236,8 @@ export class Hub {
       this.reply("我现在处于急停状态，什么都不会做。发送 /resume（或在 App 里点恢复）让我继续。", channel, wechat);
       return msg;
     }
-    const prefix = channel === "wechat" ? "[来自微信] " : "";
+    // Slash commands must reach the harness verbatim, so they get no prefix.
+    const prefix = channel === "wechat" && !t.startsWith("/") ? "[来自微信] " : "";
     this.sendUser(prefix + t, channel, wechat);
     return msg;
   }
@@ -358,6 +363,7 @@ export class Hub {
     this.session = this.driver.startMain({
       cwd: this.paths.home,
       model: this.config.model,
+      effort: this.config.effort,
       resumeSessionId: this.runtime.sessionId,
       priorCostUsd: this.runtime.sessionId ? this.runtime.sessionCostUsd : undefined,
       permissionMode: this.config.permissionMode,
@@ -366,10 +372,11 @@ export class Hub {
       canUseTool: (req) => this.approvals.request(req),
       preToolGate: ({ toolName, input }) => this.approvals.preGate(toolName, input),
       postToolUse: (c) => {
-        if (/browser_navigate/.test(c.toolName)) this.approvals.noteNavigation((c.input as any)?.url);
+        if (/browser_navigate|claude-in-chrome__navigate/.test(c.toolName)) this.approvals.noteNavigation((c.input as any)?.url);
         this.audit.log("tool", { tool: c.toolName, input: c.input, agent: c.agentId, toolUseId: c.toolUseId });
       },
       mcpServers: this.extraMcpServers(),
+      sharedChrome: this.config.browser.enabled && this.config.browser.mode === "shared",
       onEvent: (e) => this.onHarnessEvent(e),
       stderr: (s) => appendJsonl(`${this.paths.logs}/harness-stderr.jsonl`, { ts: Date.now(), s: truncate(s, 2000) }),
     });
@@ -378,7 +385,7 @@ export class Hub {
 
   extraMcpServers(): Record<string, unknown> {
     const servers: Record<string, unknown> = { ...this.config.extraMcpServers };
-    if (this.config.browser.enabled) {
+    if (this.config.browser.enabled && this.config.browser.mode === "dedicated") {
       const cmd = this.config.browser.command ?? [
         "npx",
         "-y",
@@ -411,8 +418,16 @@ export class Hub {
     }
     const turn = this.current;
     switch (e.type) {
+      case "commands":
+        this.saveCommands(e.commands);
+        break;
+      case "models":
+        writeJson(`${this.paths.state}/models.json`, e.models);
+        for (const w of this.modelWaiters.splice(0)) w();
+        break;
       case "init":
         this.model = e.model;
+        if (e.terminalCommands) this.terminalCommands = new Set(e.terminalCommands);
         if (this.runtime.sessionId !== e.sessionId) {
           this.runtime.sessionId = e.sessionId;
           this.saveRuntime();
@@ -639,6 +654,71 @@ export class Hub {
       proactive: true,
     });
     void this.router.proactive(msg, { title: "需要你确认" });
+  }
+
+  // ---------------- slash commands (a hidden entry: no hints in the UI) ----------------
+
+  private saveCommands(cmds: SlashCommandInfo[]): void {
+    writeJson(`${this.paths.state}/commands.json`, cmds);
+    this.bus.emit("commands.updated", { commands: this.commandList() });
+    for (const w of this.commandWaiters.splice(0)) w();
+  }
+
+  // commandList merges the harness' commands with PaloAlly's own (which win on
+  // a name clash) and drops the ones that only make sense in a terminal.
+  commandList(): SlashCommandInfo[] {
+    const own: SlashCommandInfo[] = [
+      { name: "kill", description: "全部停下（急停）" },
+      { name: "resume", description: "从急停恢复" },
+      { name: "status", description: "看看我在忙什么" },
+    ];
+    const ownNames = new Set(own.map((c) => c.name));
+    const harness = readJson<SlashCommandInfo[]>(`${this.paths.state}/commands.json`, []).filter(
+      (c) => !ownNames.has(c.name) && !this.terminalCommands.has(c.name) && c.name !== "help",
+    );
+    return [...own, ...harness.sort((a, b) => a.name.localeCompare(b.name))];
+  }
+
+  // The list comes from a running harness; start one if we've never seen it.
+  async loadCommands(timeoutMs = 8000): Promise<SlashCommandInfo[]> {
+    if (readJson<SlashCommandInfo[]>(`${this.paths.state}/commands.json`, []).length === 0 && !this.killed) {
+      const ready = new Promise<void>((r) => this.commandWaiters.push(r));
+      this.ensureSession();
+      await Promise.race([ready, new Promise((r) => setTimeout(r, timeoutMs))]);
+    }
+    return this.commandList();
+  }
+
+  // ---------------- model & effort (shown quietly, changed from a second-level page) ----------------
+
+  async modelInfo(timeoutMs = 8000): Promise<{ model: string; setting: string | null; effort: string | null; models: ModelOption[] }> {
+    const path = `${this.paths.state}/models.json`;
+    if (readJson<ModelOption[]>(path, []).length === 0 && !this.killed) {
+      const ready = new Promise<void>((r) => this.modelWaiters.push(r));
+      this.ensureSession();
+      await Promise.race([ready, new Promise((r) => setTimeout(r, timeoutMs))]);
+    }
+    return { model: this.status().model, setting: this.config.model ?? null, effort: this.config.effort ?? null, models: readJson<ModelOption[]>(path, []) };
+  }
+
+  // setModel persists the choice and applies it to the running conversation.
+  // `null` goes back to the default.
+  async setModel(patch: { model?: string | null; effort?: string | null }): Promise<Status> {
+    const efforts = ["low", "medium", "high", "xhigh", "max"];
+    if (patch.effort != null && !efforts.includes(patch.effort)) throw new Error("思考深度不对");
+    if ("model" in patch) {
+      this.config.model = patch.model || undefined;
+      if (patch.model) this.model = "";
+      await this.session?.setModel(this.config.model).catch((e) => this.log(`setModel failed: ${e}`));
+    }
+    if ("effort" in patch) {
+      this.config.effort = (patch.effort || undefined) as Config["effort"];
+      await this.session?.setEffort(this.config.effort).catch((e) => this.log(`setEffort failed: ${e}`));
+    }
+    saveConfig(this.paths, this.config);
+    this.audit.log("model.set", { model: this.config.model ?? "default", effort: this.config.effort ?? "default" });
+    this.emitStatus();
+    return this.status();
   }
 
   // ---------------- kill switch ----------------

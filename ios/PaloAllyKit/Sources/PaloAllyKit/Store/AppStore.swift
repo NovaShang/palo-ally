@@ -31,6 +31,9 @@ public final class AppStore {
     public private(set) var artifacts: [Artifact] = []
     public private(set) var settings: HostSettings?
     public private(set) var status: HostStatus?
+    /// Slash commands, fetched the first time the user types "/".
+    public private(set) var commands: [SlashCommand] = []
+    public private(set) var modelInfo: ModelInfo?
     /// Highest contiguous chat seq we hold — the `sync{sinceSeq}` cursor.
     public private(set) var lastSeq: Int64 = 0
     /// True between a send and the first sign of a reply (drives the
@@ -209,6 +212,8 @@ public final class AppStore {
             if let a = try? (data["artifact"] ?? data).decode(Artifact.self) { upsert(artifact: a) }
         case RPCEventName.settingsUpdated:
             if let s = try? (data["settings"] ?? data).decode(HostSettings.self) { settings = s }
+        case RPCEventName.commandsUpdated:
+            if let r = try? data.decode(CommandsResult.self) { commands = r.commands }
         case RPCEventName.status:
             if let s = try? (data["status"] ?? data).decode(HostStatus.self) {
                 status = s
@@ -538,6 +543,26 @@ public final class AppStore {
     public func updateSettings(patch: JSONValue) async throws {
         let r: SettingsResult = try await rpc.call(RPCMethod.settingsUpdate, params: PatchParams(patch: patch))
         if let s = r.settings { settings = s }
+    }
+
+    public func loadCommands() async {
+        guard commands.isEmpty else { return }
+        if let r: CommandsResult = try? await rpc.call(RPCMethod.commandsList, params: EmptyParams()) { commands = r.commands }
+    }
+
+    public func loadModels() async throws {
+        let info: ModelInfo = try await rpc.call(RPCMethod.modelGet, params: EmptyParams())
+        modelInfo = info
+    }
+
+    /// Pass `.some(nil)` to go back to the default.
+    public func setModel(_ model: String?? = .none, effort: String?? = .none) async throws {
+        var params: [String: JSONValue] = [:]
+        if case .some(let m) = model { params["model"] = m.map { .string($0) } ?? .null }
+        if case .some(let e) = effort { params["effort"] = e.map { .string($0) } ?? .null }
+        let r: KillResult = try await rpc.call(RPCMethod.modelSet, params: JSONValue.object(params))
+        if let s = r.status { status = s }
+        try? await loadModels()
     }
 
     public func kill() async throws {

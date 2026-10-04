@@ -2,15 +2,30 @@ import PaloAllyKit
 import SwiftUI
 
 struct ComposerView: View {
+    @Environment(AppStore.self) private var store
     @Binding var draft: String
     let dictation: SpeechDictation
     let onSend: () -> Void
     @FocusState private var focused: Bool
 
+    /// Typing "/" (and nothing after a space yet) opens command suggestions.
+    /// Nothing in the UI mentions this: it's for people who already know.
+    private var slashQuery: String? {
+        guard draft.hasPrefix("/"), !draft.contains(where: \.isWhitespace) else { return nil }
+        return String(draft.dropFirst())
+    }
+
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         VStack(spacing: 6) {
+            if let typed = slashQuery {
+                SlashSuggestions(commands: SlashCommand.filter(store.commands, typed: typed)) { cmd in
+                    draft = "/\(cmd.name) "
+                    focused = true
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             if let msg = dictation.errorMessage {
                 Text(msg)
                     .font(.caption)
@@ -61,6 +76,10 @@ struct ComposerView: View {
         .padding(.horizontal, 12)
         .padding(.top, 6)
         .padding(.bottom, 8)
+        .animation(.snappy, value: slashQuery)
+        .onChange(of: slashQuery) { _, q in
+            if q != nil { Task { await store.loadCommands() } }
+        }
         .onChange(of: dictation.transcript) { _, text in
             if dictation.isRecording { draft = dictation.prefix + text }
         }
@@ -78,6 +97,34 @@ struct ComposerView: View {
         } else {
             dictation.prefix = draft.isEmpty ? "" : draft + " "
             Task { await dictation.start() }
+        }
+    }
+}
+
+private struct SlashSuggestions: View {
+    let commands: [SlashCommand]
+    let pick: (SlashCommand) -> Void
+
+    var body: some View {
+        if !commands.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(commands) { c in
+                    Button { pick(c) } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text("/\(c.name)").font(.callout.monospaced()).foregroundStyle(.primary)
+                            if let hint = c.argumentHint { Text(hint).font(.caption.monospaced()).foregroundStyle(.tertiary) }
+                            Text(c.description).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 4)
+            .glassEffect(.regular, in: .rect(cornerRadius: 18))
         }
     }
 }

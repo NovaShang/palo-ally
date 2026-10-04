@@ -32,7 +32,25 @@ export class FakeMainSession implements MainSession {
 
   constructor(readonly opts: MainSessionOptions, private script: FakeScript, private driver: FakeDriver) {
     this.sessionId = opts.resumeSessionId ?? `sess-${++idCounter}`;
-    queueMicrotask(() => opts.onEvent({ type: "init", sessionId: this.sessionId, model: opts.model ?? "fake-model", tools: [] }));
+    queueMicrotask(() => {
+      opts.onEvent({ type: "init", sessionId: this.sessionId, model: opts.model ?? "fake-model", tools: [], terminalCommands: ["doctor"] });
+      opts.onEvent({
+        type: "commands",
+        commands: [
+          { name: "compact", description: "Clear conversation history but keep a summary" },
+          { name: "status", description: "harness status" },
+          { name: "doctor", description: "terminal only" },
+          { name: "pdf", description: "PDF skill", argumentHint: "<file>" },
+        ],
+      });
+      opts.onEvent({
+        type: "models",
+        models: [
+          { value: "default", displayName: "Default (recommended)", description: "Opus 5.5", efforts: ["low", "medium", "high", "xhigh", "max"] },
+          { value: "haiku", displayName: "Haiku", description: "fast", efforts: [] },
+        ],
+      });
+    });
   }
 
   send(text: string, uuid: string): void {
@@ -94,6 +112,14 @@ export class FakeMainSession implements MainSession {
     this.queue = [];
   }
 
+  async setModel(model?: string): Promise<void> {
+    this.driver.liveSwitches.push(`model:${model}`);
+  }
+
+  async setEffort(effort?: string): Promise<void> {
+    this.driver.liveSwitches.push(`effort:${effort}`);
+  }
+
   async stopTask(_taskId: string): Promise<void> {
     this.driver.stoppedTasks.push(_taskId);
   }
@@ -108,6 +134,7 @@ export class FakeDriver implements HarnessDriver {
   sessions: FakeMainSession[] = [];
   probes: ProbeRequest[] = [];
   stoppedTasks: string[] = [];
+  liveSwitches: string[] = [];
   turnCost = 0.001;
   probeResponder: (req: ProbeRequest) => ProbeResult = () => ({ output: { results: [] }, costUsd: 0.0001 });
 

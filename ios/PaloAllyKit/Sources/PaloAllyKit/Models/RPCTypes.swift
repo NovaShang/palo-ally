@@ -24,6 +24,9 @@ public enum RPCMethod {
     public static let resume = "resume"
     public static let pushRegister = "push.register"
     public static let auditTail = "audit.tail"
+    public static let commandsList = "commands.list"
+    public static let modelGet = "model.get"
+    public static let modelSet = "model.set"
 }
 
 public enum RPCEventName {
@@ -35,6 +38,7 @@ public enum RPCEventName {
     public static let artifactUpdated = "artifact.updated"
     public static let settingsUpdated = "settings.updated"
     public static let status = "status"
+    public static let commandsUpdated = "commands.updated"
 }
 
 public struct EmptyParams: Codable, Sendable { public init() {} }

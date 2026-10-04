@@ -41,6 +41,16 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       if (!msg) throw new Error("空消息");
       return { id: msg.id, seq: msg.seq };
     }
+    case "model.get":
+      return await hub.modelInfo();
+    case "model.set": {
+      const patch: { model?: string | null; effort?: string | null } = {};
+      if ("model" in p) patch.model = p.model == null ? null : String(p.model);
+      if ("effort" in p) patch.effort = p.effort == null ? null : String(p.effort);
+      return { status: await hub.setModel(patch) };
+    }
+    case "commands.list":
+      return { commands: await hub.loadCommands() };
     case "chat.history":
       return { messages: hub.chat.before(Number(p.beforeSeq ?? Infinity), Math.min(Number(p.limit ?? 50), 200)) };
     case "task.get": {

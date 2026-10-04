@@ -427,7 +427,9 @@ public struct HostStatus: Codable, Sendable, Hashable {
     public var wechat: WechatState
     public var version: String
 
-    enum CodingKeys: String, CodingKey { case online, killed, busy, activity, model, sessionId, wechat, version }
+    enum CodingKeys: String, CodingKey { case online, killed, busy, activity, model, effort, sessionId, wechat, version }
+
+    public var effort: String?
 
     public init(online: Bool = true, killed: Bool = false, busy: Bool = false, model: String = "",
                 sessionId: String? = nil, wechat: WechatState = .off, version: String = "") {
@@ -442,6 +444,7 @@ public struct HostStatus: Codable, Sendable, Hashable {
         busy = l.bool("busy") ?? false
         activity = l.string("activity")
         model = l.string("model") ?? ""
+        effort = l.string("effort")
         sessionId = l.string("sessionId")
         wechat = l.decode(WechatState.self, "wechat") ?? .off
         version = l.string("version") ?? ""

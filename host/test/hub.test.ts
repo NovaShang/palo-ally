@@ -482,3 +482,50 @@ describe("Hub: interruptions", () => {
     cleanup(paths);
   });
 });
+
+describe("Hub: slash commands", () => {
+  test("list merges harness commands, ours win, terminal-only ones hidden; loads on demand", async () => {
+    const { hub, driver, paths } = makeHub();
+    const list = await hub.loadCommands();
+    expect(driver.sessions).toHaveLength(1); // started a session just to learn the list
+    const names = list.map((c) => c.name);
+    expect(names.slice(0, 3)).toEqual(["kill", "resume", "status"]);
+    expect(names).toContain("compact");
+    expect(names).toContain("pdf");
+    expect(names).not.toContain("doctor");
+    expect(names.filter((n) => n === "status")).toHaveLength(1);
+    expect(list.find((c) => c.name === "pdf")!.argumentHint).toBe("<file>");
+    cleanup(paths);
+  });
+
+  test("slash commands from WeChat reach the harness verbatim", async () => {
+    const wechat = new FakeWechat();
+    const { hub, driver, paths } = makeHub({ wechat });
+    hub.userMessage("/compact", "wechat", { userId: "u", contextToken: "c" });
+    await hub.idle();
+    expect(driver.last!.sent[0]).toBe("/compact");
+    cleanup(paths);
+  });
+});
+
+describe("Hub: model & effort", () => {
+  test("lists models, switches live, persists, and new sessions start with it", async () => {
+    const { hub, driver, paths } = makeHub();
+    const info = await hub.modelInfo();
+    expect(info.models.map((m) => m.value)).toEqual(["default", "haiku"]);
+    expect(info.effort).toBeNull();
+    const st = await hub.setModel({ model: "haiku", effort: "low" });
+    expect(st.effort).toBe("low");
+    expect(driver.liveSwitches).toEqual(["model:haiku", "effort:low"]);
+    expect(JSON.parse(await Bun.file(paths.config).text())).toMatchObject({ model: "haiku", effort: "low" });
+    await hub.setModel({ effort: null });
+    expect(hub.status().effort).toBeUndefined();
+    hub.onIdle(); // close the process; the next one must start with the saved choice
+    driver.last!.close();
+    hub.userMessage("hi", "app");
+    await hub.idle();
+    expect(driver.last!.opts.model).toBe("haiku");
+    await expect(hub.setModel({ effort: "turbo" })).rejects.toThrow();
+    cleanup(paths);
+  });
+});

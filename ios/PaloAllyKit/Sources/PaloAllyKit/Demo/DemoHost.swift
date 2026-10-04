@@ -116,6 +116,7 @@ public actor DemoHost {
     }
 
     struct DemoError: Error { let message: String }
+    private var demoModel: String?
 
     private func dispatch(_ method: String, _ p: JSONValue) async throws -> JSONValue {
         switch method {
@@ -251,6 +252,37 @@ public actor DemoHost {
             return ["ok": true]
         case RPCMethod.auditTail:
             return ["entries": []]
+        case RPCMethod.commandsList:
+            let cmds: [JSONValue] = [
+                ["name": "kill", "description": "全部停下（急停）"],
+                ["name": "resume", "description": "从急停恢复"],
+                ["name": "status", "description": "看看我在忙什么"],
+                ["name": "compact", "description": "Clear conversation history but keep a summary"],
+                ["name": "context", "description": "Show current context usage"],
+                ["name": "cost", "description": "Show usage"],
+                ["name": "model", "description": "Set the AI model"],
+                ["name": "pdf", "description": "Work with PDF files", "argumentHint": "<file>"],
+            ]
+            return ["commands": .array(cmds)]
+        case RPCMethod.modelGet:
+            return [
+                "model": .string(status.model.isEmpty ? "claude-opus-5-5[1m]" : status.model),
+                "setting": demoModel.map { .string($0) } ?? .null,
+                "effort": status.effort.map { .string($0) } ?? .null,
+                "models": .array([
+                    ["value": "default", "displayName": "默认（推荐）", "description": "Opus 5.5", "efforts": ["low", "medium", "high", "xhigh", "max"]],
+                    ["value": "sonnet", "displayName": "Sonnet", "description": "Sonnet 5 · 日常够用", "efforts": ["low", "medium", "high", "xhigh", "max"]],
+                    ["value": "haiku", "displayName": "Haiku", "description": "Haiku 4.5 · 最快", "efforts": []],
+                ]),
+            ]
+        case RPCMethod.modelSet:
+            if let m = p["model"] {
+                demoModel = m.stringValue
+                status.model = ["sonnet": "claude-sonnet-5", "haiku": "claude-haiku-4-5"][m.stringValue ?? ""] ?? "claude-opus-5-5[1m]"
+            }
+            if let e = p["effort"] { status.effort = e.stringValue }
+            emit(RPCEventName.status, status)
+            return ["status": try .from(status)]
         default:
             throw DemoError(message: "unknown method \(method)")
         }
