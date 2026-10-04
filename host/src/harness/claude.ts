@@ -87,6 +87,12 @@ export function paloallyMcpServer(h: ToolHandlers) {
         async (a) => text(await h.publish_artifact(a)),
       ),
       tool(
+        "send_wechat_file",
+        "把本机的一个文件（图片、视频或任意文件）发到主人的微信。长内容先写成文件再用它发。",
+        { path: z.string().describe("文件的绝对路径") },
+        async (a) => text(await h.send_wechat_file(a)),
+      ),
+      tool(
         "notify_user",
         "主动推送一条消息给主人（手机通知）。只在真正要紧时用。",
         { text: z.string(), urgent: z.boolean().optional() },

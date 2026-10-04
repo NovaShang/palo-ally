@@ -74,7 +74,7 @@ describe("WeChat iLink", () => {
     srv.push({ message_type: 2, from_user_id: "bot1", item_list: [] }); // bot echo
     srv.push({ ...userMsg("owner", ""), item_list: [{ type: 3, voice_item: { text: "语音转的文字" } }], context_token: "ctx-2" });
     expect(await w.pollOnce()).toBe(2);
-    expect(got).toEqual(["帮我订个餐厅|ctx-1", "语音转的文字|ctx-2"]);
+    expect(got).toEqual(["帮我订个餐厅|ctx-1", "[语音转文字] 语音转的文字|ctx-2"]);
 
     const h = srv.headers.at(-1)!;
     expect(h.AuthorizationType).toBe("ilink_bot_token");
@@ -112,6 +112,43 @@ describe("WeChat iLink", () => {
     const parts = splitText("a".repeat(1000) + "\n" + "b".repeat(1500), 1800);
     expect(parts).toHaveLength(2);
     expect(parts.join("\n")).toBe("a".repeat(1000) + "\n" + "b".repeat(1500));
+    cleanup(paths);
+  });
+
+  test("quoted messages, media in and out through the encrypted CDN", async () => {
+    const paths = tmpPaths();
+    const srv = ilink();
+    const crypto = await import("node:crypto");
+    const key = crypto.randomBytes(16);
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47]), crypto.randomBytes(40)]);
+    const enc = (k: Buffer, b: Buffer) => { const c = crypto.createCipheriv("aes-128-ecb", k, null); return Buffer.concat([c.update(b), c.final()]); };
+    let uploaded: Buffer | null = null;
+    const sent = srv.sent;
+    const fetchFn = async (url: string, init?: RequestInit) => {
+      const u = new URL(url);
+      if (u.pathname === "/c2c/download") return new Response(new Uint8Array(enc(key, png)));
+      if (u.pathname === "/c2c/upload") {
+        uploaded = Buffer.from(init!.body as Uint8Array);
+        return new Response("", { headers: { "x-encrypted-param": "DL" } });
+      }
+      if (u.pathname === "/ilink/bot/getuploadurl") return new Response(JSON.stringify({ upload_param: "UP" }));
+      return srv.fetchFn(url, init);
+    };
+    writeJson(paths.wechat, { botToken: "TOK", ownerUserId: "owner" });
+    const w = new WechatILink(paths.wechat, "https://ilink.test", fetchFn, Date.now, async () => {}, join(paths.root, "media"));
+    const got: string[] = [];
+    w.onMessage = (t) => got.push(t);
+    srv.push({ ...userMsg("owner", ""), item_list: [{ type: 1, text_item: { text: "这个呢" }, ref_msg: { title: "上一条" } }] });
+    srv.push({ ...userMsg("owner", ""), item_list: [{ type: 2, image_item: { media: { encrypt_query_param: "Q" }, aeskey: key.toString("hex") } }] });
+    await w.pollOnce();
+    expect(got[0]).toBe("[引用: 上一条]\n这个呢");
+    const path = got[1]!.replace("[图片] ", "");
+    expect(path.endsWith(".png")).toBe(true);
+    expect((await import("node:fs")).readFileSync(path).equals(png)).toBe(true);
+
+    expect(await w.sendFile(w.ownerTarget()!, path)).toBe(true);
+    expect(uploaded!.length % 16).toBe(0);
+    expect(sent.at(-1).item_list[0]).toMatchObject({ type: 2, image_item: { media: { encrypt_query_param: "DL" } } });
     cleanup(paths);
   });
 

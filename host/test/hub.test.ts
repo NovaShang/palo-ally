@@ -24,6 +24,13 @@ class FakeWechat implements WechatChannel {
     this.proactive.push(text);
     return true;
   }
+  typing: string[] = [];
+  async startTyping() {
+    this.typing.push("on");
+  }
+  async stopTyping() {
+    this.typing.push("off");
+  }
 }
 
 describe("Hub: main conversation", () => {
@@ -330,6 +337,24 @@ describe("Hub: WeChat routing", () => {
     hub.userMessage("hi", "app");
     await hub.idle();
     expect(wechat.replies).toHaveLength(1);
+    cleanup(paths);
+  });
+
+  test("each paragraph reaches WeChat as it's written, with typing in between; no duplicate final", async () => {
+    const wechat = new FakeWechat();
+    const script: FakeScript = async (_t, ctx) => {
+      ctx.emit({ type: "assistant_text", text: "收到，我去查一下。", parentToolUseId: null });
+      await ctx.useTool("WebSearch", { query: "q" });
+      ctx.emit({ type: "assistant_text", text: "查到了三家，正在比价。", parentToolUseId: null });
+      ctx.emit({ type: "assistant_text", text: "结论：选第二家。", parentToolUseId: null });
+    };
+    const { hub, paths } = makeHub({ script, wechat });
+    hub.userMessage("帮我订餐厅", "wechat", { userId: "owner", contextToken: "c" });
+    await hub.idle();
+    await tick(20);
+    expect(wechat.replies.map((r) => r.text)).toEqual(["收到，我去查一下。", "查到了三家，正在比价。", "结论：选第二家。"]);
+    expect(wechat.typing[0]).toBe("on");
+    expect(wechat.typing.at(-1)).toBe("off");
     cleanup(paths);
   });
 });

@@ -15,4 +15,10 @@ export interface WechatReplyTarget {
 export interface WechatChannel extends WechatOut {
   status(): "off" | "connected" | "expired";
   reply(target: WechatReplyTarget, text: string): Promise<void>;
+  // "对方正在输入…" while a WeChat turn runs.
+  startTyping?(target: WechatReplyTarget): Promise<void>;
+  stopTyping?(): Promise<void>;
+  sendFile?(target: WechatReplyTarget, file: string): Promise<boolean>;
+  /** Where a message to the owner can go right now, if anywhere. */
+  ownerTarget?(): WechatReplyTarget | null;
 }

@@ -5,6 +5,7 @@ import type { ToolHandlers } from "./harness/types.ts";
 import type { Router } from "./router.ts";
 import type { TaskTracker } from "./tasks.ts";
 import type { WatchStore } from "./watches.ts";
+import type { WechatChannel } from "./channels/types.ts";
 
 export interface ShellToolDeps {
   tasks: TaskTracker;
@@ -13,6 +14,7 @@ export interface ShellToolDeps {
   chat: ChatLog;
   router: Router;
   audit: Audit;
+  wechat?: WechatChannel | null;
 }
 
 // The tools the shell gives the main agent (the in-process `paloally` MCP
@@ -38,6 +40,13 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
     publish_artifact: async ({ slug, title, main_file, type, pinned }) => {
       const a = d.artifacts.publish(slug, title, main_file, type, pinned);
       return `ok: ${a.id}（${a.files.length} 个文件）`;
+    },
+    send_wechat_file: async ({ path }) => {
+      const target = d.wechat?.ownerTarget?.();
+      if (!d.wechat?.sendFile || !target) return "微信现在发不了（没开、过期，或主人超过 24 小时没在微信说话）";
+      const ok = await d.wechat.sendFile(target, path);
+      d.audit.log("wechat.file", { path, ok });
+      return ok ? "已发到微信" : "没发出去";
     },
     notify_user: async ({ text, urgent }) => {
       const msg = d.chat.add({ role: "assistant", kind: "notice", text, channel: "system", proactive: true });

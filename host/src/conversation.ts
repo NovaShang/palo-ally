@@ -74,6 +74,9 @@ export class Conversation {
   private queue: Turn[] = [];
   private current: Turn | null = null;
   private turnTexts: string[] = [];
+  // WeChat turns get each paragraph as it's written (in order), not just the end.
+  private wechatStreamed = 0;
+  private wechatChain: Promise<void> = Promise.resolve();
   private deltaId: string | null = null;
   private deltaText = ""; // streamed text of the current delta id, to finalize if the turn dies
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -156,6 +159,8 @@ export class Conversation {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.current = turn;
     this.turnTexts = [];
+    this.wechatStreamed = 0;
+    if (turn.wechat && !turn.proactive) void this.d.wechat?.startTyping?.(turn.wechat);
     this.deltaId = null;
     this.deltaText = "";
     this.openTools.clear();
@@ -265,6 +270,7 @@ export class Conversation {
           break;
         }
         this.turnTexts.push(e.text);
+        if (turn?.wechat && !turn.proactive) this.streamToWechat(turn, e.text);
         if (turn && !turn.proactive) {
           chat.add({ id: this.deltaId ?? undefined, role: "assistant", kind: "text", text: e.text, channel: turn.origin });
         }
@@ -313,6 +319,23 @@ export class Conversation {
         if (this.current) this.endTurn(0, this.lastContextTokens, e.message);
         break;
     }
+  }
+
+  // From wechat-agent: the owner on WeChat sees progress mid-task instead of
+  // waiting for the end. Sends are chained so paragraphs arrive in order; the
+  // typing indicator comes back between them while the turn is still going.
+  private streamToWechat(turn: Turn, raw: string): void {
+    const wechat = this.d.wechat;
+    const target = turn.wechat;
+    const text = stripSkip(raw.trim());
+    if (!wechat || !target || !text) return;
+    this.wechatStreamed++;
+    this.wechatChain = this.wechatChain.then(async () => {
+      await wechat.reply(target, text).catch((err) => this.d.log(`wechat reply failed: ${err}`));
+      this.d.audit.log("wechat.reply", { chars: text.length });
+      await wechat.stopTyping?.();
+      if (this.current === turn) void wechat.startTyping?.(target);
+    });
   }
 
   private setActivity(a: string): void {
@@ -370,10 +393,14 @@ export class Conversation {
         }
       }
       const wechatTarget = answered.find((a) => a.wechat)?.wechat ?? (turn.proactive ? undefined : turn.wechat);
-      if (wechatTarget && wechat && shown) {
-        void wechat.reply(wechatTarget, shown).catch((err) => this.d.log(`wechat reply failed: ${err}`));
+      // Already streamed paragraph by paragraph? Then nothing more to send.
+      if (wechatTarget && wechat && shown && !this.wechatStreamed) {
+        const text = shown;
+        this.wechatChain = this.wechatChain.then(() => wechat.reply(wechatTarget, text).catch((err) => this.d.log(`wechat reply failed: ${err}`)));
         audit.log("wechat.reply", { chars: shown.length });
       }
+      if (wechat) this.wechatChain = this.wechatChain.then(() => wechat.stopTyping?.());
+      this.wechatStreamed = 0;
     }
     this.d.statusChanged();
     this.scheduleIdle();
