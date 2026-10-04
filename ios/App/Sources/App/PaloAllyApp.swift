@@ -6,30 +6,31 @@ import UserNotifications
 @main
 struct PaloAllyApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environment(model)
+                .environment(appDelegate.model)
                 .environment(\.locale, Locale(identifier: "zh-Hans"))
-                .onOpenURL { model.handle(url: $0) }
-                .onAppear { appDelegate.model = model }
+                .onOpenURL { appDelegate.model.handle(url: $0) }
                 .onChange(of: scenePhase) { _, phase in
-                    if phase == .active { model.didBecomeActive() }
+                    switch phase {
+                    case .active: appDelegate.model.didBecomeActive()
+                    case .background: appDelegate.model.didEnterBackground()
+                    default: break
+                    }
                 }
         }
     }
 }
 
+/// Owns the model so it exists before the system can deliver a notification
+/// response (a tap that cold-launches the app arrives right after
+/// didFinishLaunching, before any view appears).
+@MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    @MainActor weak var model: AppModel? {
-        didSet {
-            if let token = pendingToken { model?.didRegisterPush(token: token); pendingToken = nil }
-        }
-    }
-    @MainActor private var pendingToken: Data?
+    let model = AppModel()
 
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
@@ -46,9 +47,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     }
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
-        Task { @MainActor in
-            if let model { model.didRegisterPush(token: deviceToken) } else { pendingToken = deviceToken }
-        }
+        model.didRegisterPush(token: deviceToken)
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
@@ -66,6 +65,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         let sendable = info.reduce(into: [String: String]()) { acc, kv in
             if let k = kv.key as? String { acc[k] = "\(kv.value)" }
         }
-        await MainActor.run { self.model?.handleNotification(userInfo: sendable) }
+        await MainActor.run { self.model.handleNotification(userInfo: sendable) }
     }
 }

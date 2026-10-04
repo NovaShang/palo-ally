@@ -27,9 +27,11 @@
 		D556694E027BD986AB400215 /* ApprovalsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3E3EFECDEF03091588F1AA /* ApprovalsSection.swift */; };
 		E0748A27FBA8E1FD9DDEA652 /* MemorySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A047E4D10313D33DC6FA1B11 /* MemorySection.swift */; };
 		E72CE394982E8B194DFF27E9 /* ArtifactDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFF3C59774AD6CD3FE7F5AAA /* ArtifactDetailView.swift */; };
+		E895FF8F3C53A7D71EC25855 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 15DEAD73806EBE1C701B9FCB /* MarkdownUI */; };
 		F10B59DC6D408555F64C2858 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 711BC1712E3CB0B810C91022 /* PairingView.swift */; };
 		F342DE1D9A6DFB66245308B9 /* ModelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C624CE9D781D137068B2536 /* ModelPicker.swift */; };
 		F7BB5BDB265CB2F858DDF473 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C8BBDD7B0248070C25E81AB /* RootView.swift */; };
+		FC44EDAAB240F3EB2DFA924B /* VoiceInputOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98B9C22CB72F4B7250A63D55 /* VoiceInputOverlay.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -49,6 +51,7 @@
 		90A1D0CBFE081417EB16EEB3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		90E9946A58A404E7087D10BB /* TasksSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksSection.swift; sourceTree = "<group>"; };
 		97B4D23870E594B624074F8D /* ComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerView.swift; sourceTree = "<group>"; };
+		98B9C22CB72F4B7250A63D55 /* VoiceInputOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInputOverlay.swift; sourceTree = "<group>"; };
 		9C1205FC1B401AE4865CFE52 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		A047E4D10313D33DC6FA1B11 /* MemorySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemorySection.swift; sourceTree = "<group>"; };
 		AD3E3EFECDEF03091588F1AA /* ApprovalsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalsSection.swift; sourceTree = "<group>"; };
@@ -66,6 +69,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				42A52F693D0C3EF2BF03E594 /* PaloAllyKit in Frameworks */,
+				E895FF8F3C53A7D71EC25855 /* MarkdownUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -137,6 +141,7 @@
 				97B4D23870E594B624074F8D /* ComposerView.swift */,
 				51926AB68F34CBF76C2C1507 /* MessageRow.swift */,
 				F881AEFDC8F959F0506046DD /* SpeechDictation.swift */,
+				98B9C22CB72F4B7250A63D55 /* VoiceInputOverlay.swift */,
 			);
 			path = Chat;
 			sourceTree = "<group>";
@@ -209,6 +214,7 @@
 			name = PaloAlly;
 			packageProductDependencies = (
 				C72366410B2F41DC5EBD75BE /* PaloAllyKit */,
+				15DEAD73806EBE1C701B9FCB /* MarkdownUI */,
 			);
 			productName = PaloAlly;
 			productReference = 0B2339DF9459035E591FCB19 /* PaloAlly.app */;
@@ -238,6 +244,7 @@
 			mainGroup = A8CFB74D95C7496EBA124D8B;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				47F9F72DABBE2C3890791634 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 				3535BBA74E6F8E20A576426D /* XCLocalSwiftPackageReference "../PaloAllyKit" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -286,6 +293,7 @@
 				58FA01FB519DE507B656FDAE /* SettingsView.swift in Sources */,
 				7FA2E7E1309D4680A571ACCC /* SpeechDictation.swift in Sources */,
 				D3720B2AD3344F09581611E1 /* TasksSection.swift in Sources */,
+				FC44EDAAB240F3EB2DFA924B /* VoiceInputOverlay.swift in Sources */,
 				3615E6CE5D1C09A3629F48B6 /* WatchesSection.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -500,7 +508,23 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		47F9F72DABBE2C3890791634 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.4.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
+		15DEAD73806EBE1C701B9FCB /* MarkdownUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 47F9F72DABBE2C3890791634 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
+			productName = MarkdownUI;
+		};
 		C72366410B2F41DC5EBD75BE /* PaloAllyKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PaloAllyKit;

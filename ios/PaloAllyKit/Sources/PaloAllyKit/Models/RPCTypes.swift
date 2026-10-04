@@ -23,6 +23,8 @@ public enum RPCMethod {
     public static let kill = "kill"
     public static let resume = "resume"
     public static let pushRegister = "push.register"
+    public static let pushUnregister = "push.unregister"
+    public static let deviceUnpair = "device.unpair"
     public static let auditTail = "audit.tail"
     public static let commandsList = "commands.list"
     public static let modelGet = "model.get"
@@ -229,15 +231,38 @@ public struct PathParams: Codable, Sendable {
     public init(path: String) { self.path = path }
 }
 
-public struct MemoryContentResult: Decodable, Sendable {
+/// `memory.read → {content, updatedAt}`.
+public struct MemoryContentResult: Decodable, Sendable, Equatable {
     public var content: String
-    public init(from decoder: Decoder) throws { content = try Lenient(decoder).string("content") ?? "" }
+    /// Host's modification time; send it back as `baseUpdatedAt` on write.
+    public var updatedAt: Int64?
+    public init(content: String, updatedAt: Int64?) { self.content = content; self.updatedAt = updatedAt }
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        content = l.string("content") ?? ""
+        updatedAt = l.millis("updatedAt")
+    }
 }
 
+/// `memory.write {path, content, baseUpdatedAt}`. The host refuses the write
+/// if the file changed after `baseUpdatedAt`.
 public struct MemoryWriteParams: Codable, Sendable {
     public var path: String
     public var content: String
-    public init(path: String, content: String) { self.path = path; self.content = content }
+    public var baseUpdatedAt: Int64?
+    public init(path: String, content: String, baseUpdatedAt: Int64? = nil) {
+        self.path = path; self.content = content; self.baseUpdatedAt = baseUpdatedAt
+    }
+}
+
+public struct MemoryWriteResult: Decodable, Sendable {
+    public var updatedAt: Int64?
+    public init(from decoder: Decoder) throws { updatedAt = try Lenient(decoder).millis("updatedAt") }
+}
+
+public struct PushUnregisterParams: Codable, Sendable {
+    public var token: String
+    public init(token: String) { self.token = token }
 }
 
 public struct SettingsResult: Decodable, Sendable {

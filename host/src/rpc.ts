@@ -72,10 +72,6 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       if (!a) throw new Error("没有这个确认请求");
       return { status: a.status };
     }
-    case "approval.rules":
-      return { rules: hub.approvals.listRules() };
-    case "approval.removeRule":
-      return { ok: hub.approvals.removeRule(String(p.id)) };
     case "watch.add":
       return { watch: hub.watches.add(p, "user") };
     case "watch.update":
@@ -101,11 +97,10 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return { ok: true };
     case "settings.update":
       return { settings: hub.updateSettings(p.patch ?? {}) };
-    case "kill":
-      hub.kill(ctx.channel);
+    case "kill": // the stop button
+      hub.stopAll(ctx.channel);
       return { status: hub.status() };
-    case "resume":
-      hub.resume(ctx.channel);
+    case "resume": // nothing stays blocked after a stop; kept for older clients
       return { status: hub.status() };
     case "push.register": {
       const tokens = readJson<{ token: string; env: string; at: number }[]>(hub.paths.pushTokens, []);

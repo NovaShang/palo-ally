@@ -9,7 +9,7 @@ let appLog = Logger(subsystem: "com.novashang.paloally", category: "app")
 
 /// Launch options parsed from arguments / UserDefaults:
 ///   -demo YES            run against the in-memory demo host
-///   -demoScreen <name>   chat | library | assistant | settings | pairing | artifact
+///   -demoScreen <name>   chat | library | assistant | settings | pairing | artifact | voice
 ///   -demoTab <name>      tasks | approvals | watches | memory
 ///   -pairLink <url>      start pairing with this paloally:// link (automation; skips the open-URL prompt)
 struct LaunchOptions {
@@ -64,6 +64,8 @@ final class AppModel {
     var showPairingSheet = false
     var pendingPairingLink: String?
     var libraryPath: [String] = []
+    /// Task whose detail should open on the assistant page (notification tap).
+    var openTaskID: String?
 
     let secrets: SecretStore = KeychainSecretStore()
     let launch: LaunchOptions
@@ -127,7 +129,7 @@ final class AppModel {
             mode = .paired
             s.start()
             AppDelegate.requestPushPermission()
-            if let token = pushToken { s.registerPush(token: token, environment: Self.pushEnvironment) }
+            if let token = pushToken { s.registerPush(token: token, environment: PushEnv.current) }
         } catch {
             mode = .unpaired
         }
@@ -135,23 +137,39 @@ final class AppModel {
 
     func pair(with link: PairingLink) async throws {
         let identity = try DeviceIdentity.loadOrCreate(store: secrets)
-        let host = try await PairingClient().pair(link: link, identity: identity, deviceLabel: Self.deviceLabel)
+        let label = await Self.deviceLabel()
+        let host = try await PairingClient().pair(link: link, identity: identity, deviceLabel: label)
         try host.save(to: secrets)
+        // Switching to a different computer: say goodbye to the old one.
+        if mode == .paired, let old = pairedHost, old.daemonID != host.daemonID, let oldStore = store {
+            await oldStore.unregisterDevice(pushToken: pushToken)
+        }
         connect(to: host)
         showPairingSheet = false
     }
 
-    /// On Mac Catalyst UIDevice.name is a generic "iPad"; use the Mac's host name.
-    static var deviceLabel: String {
+    /// On Mac Catalyst UIDevice.name is a generic "iPad"; use the Mac's host
+    /// name. `ProcessInfo.hostName` can block on DNS, so it runs off-main.
+    static func deviceLabel() async -> String {
         #if targetEnvironment(macCatalyst)
-        let host = ProcessInfo.processInfo.hostName.replacingOccurrences(of: ".local", with: "")
-        return host.isEmpty ? "Mac" : host
+        let host = await Task.detached(priority: .userInitiated) {
+            ProcessInfo.processInfo.hostName
+        }.value.replacingOccurrences(of: ".local", with: "")
+        return host.isEmpty || host == "localhost" ? "Mac" : host
         #else
         return UIDevice.current.name
         #endif
     }
 
-    func unpair() {
+    /// Tells the host to drop this device (best-effort), then forgets it.
+    func unpair() async {
+        if mode == .paired, let store {
+            await store.unregisterDevice(pushToken: pushToken)
+        }
+        forgetHost()
+    }
+
+    private func forgetHost() {
         store?.stop()
         store = nil
         PairedHost.forget(in: secrets)
@@ -160,10 +178,19 @@ final class AppModel {
         mode = .unpaired
         showAssistant = false
         showSettings = false
+        showLibrary = false
+        libraryPath = []
+        Self.clearTemporaryFiles()
+    }
+
+    /// Artifact copies written for previews / sharing.
+    static func clearTemporaryFiles() {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("artifacts", isDirectory: true)
+        try? FileManager.default.removeItem(at: dir)
     }
 
     func exitDemo() {
-        unpair()
+        forgetHost()
     }
 
     // MARK: system hooks
@@ -176,35 +203,64 @@ final class AppModel {
     }
 
     func didBecomeActive() {
-        store?.reconnectNow()
+        // Long stays in the background leave a stale socket: the store forces
+        // a fresh connection after 30 s away.
+        store?.didBecomeActive()
     }
 
-    static var pushEnvironment: PushEnvironment {
-        #if DEBUG
-        .sandbox
-        #else
-        .production
-        #endif
+    func didEnterBackground() {
+        store?.didEnterBackground()
     }
 
     func didRegisterPush(token: Data) {
         pushToken = token
-        store?.registerPush(token: token, environment: Self.pushEnvironment)
+        store?.registerPush(token: token, environment: PushEnv.current)
     }
 
     /// Notification tap: payload carries seq / id / taskId / approvalId.
+    /// Works on cold launch too (the store may not have synced yet), so it
+    /// navigates by id without checking what's loaded.
     func handleNotification(userInfo: [AnyHashable: Any]) {
         showSettings = false
-        if userInfo["approvalId"] != nil, store?.pendingApprovals.isEmpty == false {
-            showLibrary = false
+        showLibrary = false
+        if let approvalId = userInfo["approvalId"] as? String, !approvalId.isEmpty {
+            openTaskID = nil
             assistantTab = .approvals
             showAssistant = true
         } else if let taskId = userInfo["taskId"] as? String, !taskId.isEmpty {
             assistantTab = .tasks
             showAssistant = true
+            openTaskID = taskId
         } else {
-            showLibrary = false
+            openTaskID = nil
             showAssistant = false
         }
+    }
+}
+
+/// APNs environment: whatever the embedded provisioning profile says
+/// (`aps-environment`), falling back to the build configuration.
+enum PushEnv {
+    static let current: PushEnvironment = fromProfile() ?? {
+        #if DEBUG
+        .sandbox
+        #else
+        .production
+        #endif
+    }()
+
+    private static func fromProfile() -> PushEnvironment? {
+        let bundle = Bundle.main
+        let candidates: [URL?] = [
+            bundle.url(forResource: "embedded", withExtension: "mobileprovision"),
+            bundle.bundleURL.appendingPathComponent("Contents/embedded.provisionprofile"),
+            bundle.bundleURL.appendingPathComponent("embedded.provisionprofile"),
+        ]
+        for case let url? in candidates {
+            if let data = try? Data(contentsOf: url), let env = ProvisioningProfile.pushEnvironment(from: data) {
+                return env
+            }
+        }
+        return nil
     }
 }

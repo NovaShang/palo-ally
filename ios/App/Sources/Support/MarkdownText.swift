@@ -1,73 +1,81 @@
+@preconcurrency import MarkdownUI
 import SwiftUI
 
-/// Lightweight block-level markdown renderer. Inline styling (bold, italic,
-/// code, links) comes from `AttributedString(markdown:)`; blocks (headings,
-/// lists, quotes, code fences, rules) are laid out natively.
+/// Chat and library markdown, rendered by MarkdownUI (GitHub-flavored:
+/// headings, nested lists, tables, code blocks, quotes, task lists, links).
+/// Sized for chat bubbles; tables and code scroll sideways instead of wrapping.
 struct MarkdownText: View {
     let source: String
     var streaming: Bool = false
+    var compact: Bool = true
 
     var body: some View {
-        let blocks = MarkdownBlock.parse(source)
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
-                blockView(block, isLast: index == blocks.count - 1)
-            }
-        }
-        .textSelection(.enabled)
+        Markdown(streaming ? source + " ▍" : source)
+            .markdownTheme(compact ? .paloAlly : .paloAllyDocument)
+            .markdownCodeSyntaxHighlighter(.plainText)
+            .textSelection(.enabled)
     }
+}
 
-    @ViewBuilder
-    private func blockView(_ block: MarkdownBlock, isLast: Bool) -> some View {
-        switch block {
-        case .heading(let level, let text):
-            inline(text, cursor: isLast)
-                .font(level == 1 ? .title2.bold() : level == 2 ? .title3.bold() : .headline)
-                .padding(.top, level <= 2 ? 4 : 0)
-        case .paragraph(let text):
-            inline(text, cursor: isLast)
-        case .bullet(let items):
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(items.enumerated()), id: \.offset) { i, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("•").foregroundStyle(.secondary)
-                        inline(item, cursor: isLast && i == items.count - 1)
-                    }
-                }
-            }
-        case .numbered(let items):
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(items.enumerated()), id: \.offset) { i, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("\(item.0).").monospacedDigit().foregroundStyle(.secondary)
-                        inline(item.1, cursor: isLast && i == items.count - 1)
-                    }
-                }
-            }
-        case .quote(let text):
-            HStack(spacing: 10) {
-                Capsule().fill(.tint.opacity(0.5)).frame(width: 3)
-                inline(text, cursor: isLast).foregroundStyle(.secondary)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-        case .code(let text):
+extension Theme {
+    /// Chat: body-sized text, modest headings.
+    @MainActor static var paloAlly: Theme { Theme.gitHub
+        .text { FontSize(.em(1.0)); BackgroundColor(nil) }
+        .heading1 { configuration in
+            configuration.label.markdownMargin(top: 8, bottom: 4).markdownTextStyle { FontWeight(.bold); FontSize(.em(1.3)) }
+        }
+        .heading2 { configuration in
+            configuration.label.markdownMargin(top: 8, bottom: 4).markdownTextStyle { FontWeight(.bold); FontSize(.em(1.15)) }
+        }
+        .heading3 { configuration in
+            configuration.label.markdownMargin(top: 6, bottom: 2).markdownTextStyle { FontWeight(.semibold); FontSize(.em(1.05)) }
+        }
+        .paragraph { configuration in
+            configuration.label.relativeLineSpacing(.em(0.2)).markdownMargin(top: 0, bottom: 8)
+        }
+        .codeBlock { configuration in
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(text)
-                    .font(.system(.callout, design: .monospaced))
+                configuration.label
+                    .relativeLineSpacing(.em(0.2))
+                    .markdownTextStyle { FontFamilyVariant(.monospaced); FontSize(.em(0.85)) }
                     .padding(10)
             }
-            .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        case .rule:
-            Divider()
+            .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .markdownMargin(top: 0, bottom: 8)
+        }
+        .table { configuration in
+            ScrollView(.horizontal, showsIndicators: false) {
+                configuration.label
+                    .fixedSize(horizontal: false, vertical: true)
+                    .markdownTableBorderStyle(.init(color: .secondary.opacity(0.3)))
+                    .markdownTableBackgroundStyle(.alternatingRows(Color.clear, Color.secondary.opacity(0.06)))
+            }
+            .markdownMargin(top: 0, bottom: 8)
+        }
+        .blockquote { configuration in
+            HStack(spacing: 0) {
+                RoundedRectangle(cornerRadius: 2).fill(Color.accentColor.opacity(0.5)).frame(width: 3)
+                configuration.label.markdownTextStyle { ForegroundColor(.secondary) }.padding(.leading, 10)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .markdownMargin(top: 0, bottom: 8)
         }
     }
 
-    private func inline(_ text: String, cursor: Bool) -> Text {
-        let t = Text(MarkdownBlock.attributed(text))
-        if cursor && streaming {
-            return Text("\(t)\(Text(" ▍").foregroundStyle(.tint))")
+    /// Library documents: a little roomier.
+    @MainActor static var paloAllyDocument: Theme { Theme.gitHub
+        .text { BackgroundColor(nil) }
+        .codeBlock { configuration in
+            ScrollView(.horizontal, showsIndicators: false) {
+                configuration.label.markdownTextStyle { FontFamilyVariant(.monospaced); FontSize(.em(0.85)) }.padding(12)
+            }
+            .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .markdownMargin(top: 0, bottom: 12)
         }
-        return t
+        .table { configuration in
+            ScrollView(.horizontal, showsIndicators: false) { configuration.label }
+                .markdownMargin(top: 0, bottom: 12)
+        }
     }
 }
 

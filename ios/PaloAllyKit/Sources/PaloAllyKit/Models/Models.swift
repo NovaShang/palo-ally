@@ -68,7 +68,11 @@ public enum WechatState: String, TolerantStringEnum {
 
 public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     /// Local delivery state for optimistic echoes. Not on the wire.
-    public enum Delivery: Sendable, Hashable { case sending, sent, failed }
+    public enum Delivery: Sendable, Hashable {
+        case sending, sent, failed
+        /// Couldn't go out because we're offline; resent automatically on reconnect.
+        case queued
+    }
 
     /// 0 means "no seq yet" (optimistic echo or an in-flight stream).
     public var seq: Int64
@@ -224,8 +228,38 @@ public struct Approval: Codable, Sendable, Hashable, Identifiable {
     }
 
     public var isPending: Bool { status == .pending }
-    /// "以后这类都允许" is only offered for reversible actions.
-    public var canRemember: Bool { !irreversible }
+    /// "以后这类都允许" is only offered for reversible actions that the host
+    /// can describe as a rule (a suggested scope).
+    public var canRemember: Bool {
+        guard !irreversible, let s = suggestedScope?.trimmingCharacters(in: .whitespaces) else { return false }
+        return !s.isEmpty
+    }
+
+    /// The suggested scope in plain words: `cmd:git` → 「git」这类命令,
+    /// `domain:x.com` → x.com 这个网站, `path:/a/b` → 这个文件夹,
+    /// `recipient:a@b` → 发给 a@b. Never shows the raw prefix.
+    public var friendlyScope: String? { suggestedScope.flatMap(Self.friendlyScope) }
+
+    public static func friendlyScope(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let colon = trimmed.firstIndex(of: ":") else { return nil }
+        let kind = trimmed[..<colon].lowercased()
+        let value = String(trimmed[trimmed.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+        switch kind {
+        case "cmd", "command":
+            return value.isEmpty ? "这类命令" : "「\(value)」这类命令"
+        case "domain", "host", "site":
+            return value.isEmpty ? "这个网站" : "\(value) 这个网站"
+        case "path", "dir", "folder":
+            let name = (value as NSString).lastPathComponent
+            return name.isEmpty || name == "/" ? "这个文件夹" : "「\(name)」这个文件夹"
+        case "recipient", "to", "email":
+            return value.isEmpty ? "发给同一个人" : "发给 \(value)"
+        default:
+            return nil
+        }
+    }
 }
 
 // MARK: - Watch
@@ -294,6 +328,29 @@ public struct WatchDraft: Codable, Sendable, Hashable {
     public init(_ w: Watch) {
         self.init(title: w.title, kind: w.kind, instruction: w.instruction, intervalMinutes: w.intervalMinutes,
                   at: w.at, enabled: w.enabled, skipIfActiveMinutes: w.skipIfActiveMinutes)
+    }
+}
+
+/// Interval stepping for "every N minutes": 5-minute steps up to an hour,
+/// 30-minute steps above. Stepping down from 60 goes to 55 (not 30).
+public enum IntervalStep {
+    public static let range = 5...1440
+
+    public static func up(_ v: Int) -> Int {
+        let next = v < 60 ? v + 5 : v + 30
+        return min(range.upperBound, next)
+    }
+
+    public static func down(_ v: Int) -> Int {
+        let next = v <= 60 ? v - 5 : v - 30
+        return max(range.lowerBound, next)
+    }
+}
+
+extension Watch {
+    /// A schedule watch that runs every N minutes instead of at fixed times.
+    public var isIntervalSchedule: Bool {
+        kind == .schedule && (at ?? []).isEmpty && (intervalMinutes ?? 0) > 0
     }
 }
 

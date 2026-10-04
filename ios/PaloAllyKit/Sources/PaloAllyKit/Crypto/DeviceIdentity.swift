@@ -22,7 +22,7 @@ public final class InMemorySecretStore: SecretStore, @unchecked Sendable {
 
 public struct KeychainError: Error, LocalizedError, Sendable {
     public let status: OSStatus
-    public var errorDescription: String? { "Keychain error \(status)" }
+    public var errorDescription: String? { "这台设备没法安全保存配对信息" }
 }
 
 /// Generic-password Keychain storage. Items are device-only and readable after

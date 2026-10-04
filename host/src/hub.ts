@@ -45,7 +45,6 @@ interface Turn {
 interface Runtime {
   sessionId?: string;
   sessionCostUsd?: number; // running total the harness reports for this session
-  killed?: boolean;
   lastHeartbeat?: number;
 }
 
@@ -134,7 +133,6 @@ export class Hub {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
   private lastContextTokens = 0;
-  private rollPending = false;
   private clients = new Map<string, { conn: ClientConn; off: () => void }>();
   private turnWaiters: (() => void)[] = [];
   // Every owner message sent to the harness and not yet answered, by uuid.
@@ -175,23 +173,19 @@ export class Hub {
       () => this.chat.lastUserActivity(),
       `${this.paths.state}/push-count.json`,
     );
-    this.approvals = new ApprovalManager(this.paths.approvals, this.paths.rules, this.bus, this.audit, {
-      isKilled: () => this.killed,
+    this.approvals = new ApprovalManager(this.paths.approvals, this.bus, this.audit, {
       taskForToolUse: (id) => (id ? this.tasks.taskIdForToolUse(id) : undefined),
       onCreated: (a) => this.onApprovalCreated(a),
       timeoutMinutes: () => this.config.settings.approvalTimeoutMinutes,
-      sensitiveDomains: () => this.config.browser.sensitiveDomains,
     });
     this.probe = new ProbeScheduler({
       driver: this.driver,
       watches: this.watches,
-      isKilled: () => this.killed,
       timezone: () => this.config.settings.timezone,
       probeModel: () => this.config.probeModel,
       cwd: () => this.paths.home,
       mcpServers: () => this.extraMcpServers(),
       inheritConnectors: () => this.config.probeInheritConnectors,
-      sensitiveDomains: () => this.config.browser.sensitiveDomains,
       lastUserActivity: () => this.chat.lastUserActivity(),
       budgetLeftUsd: () => this.config.budget.probeDailyUsd - this.usage().probeUsd,
       spend: (usd) => this.addUsage("probeUsd", usd),
@@ -227,10 +221,6 @@ export class Hub {
     for (const c of this.clients.values()) c.off();
   }
 
-  get killed(): boolean {
-    return !!this.runtime.killed;
-  }
-
   get busy(): boolean {
     return this.current !== null;
   }
@@ -238,7 +228,7 @@ export class Hub {
   status(): Status {
     return {
       online: true,
-      killed: this.killed,
+      killed: false, // kept for older clients; nothing stays blocked any more
       busy: this.busy,
       activity: this.busy ? this.activity || "正在想" : undefined,
       model: this.model || this.config.model || "",
@@ -267,10 +257,6 @@ export class Hub {
       this.reply(cmd, channel, wechat);
       return msg;
     }
-    if (this.killed) {
-      this.reply("我现在处于急停状态，什么都不会做。发送 /resume（或在 App 里点恢复）让我继续。", channel, wechat);
-      return msg;
-    }
     // Slash commands must reach the harness verbatim, so they get no prefix.
     const prefix = channel === "wechat" && !t.startsWith("/") ? "[来自微信] " : "";
     this.sendUser(prefix + t, channel, wechat);
@@ -284,25 +270,21 @@ export class Hub {
     const uuid = randomUUID();
     this.pending.set(uuid, { origin, wechat, sentAt: Date.now() });
     if (!this.current) this.beginTurn({ text, origin, proactive: false, wechat, uuids: [uuid] });
-    else if (this.current.hidden) this.rollPending = false; // the owner is back: don't roll now
     this.ensureSession().send(text, uuid);
   }
 
   private tryCommand(t: string, channel: Channel, wechat?: WechatReplyTarget): string | null {
     const by = channel;
-    if (/^\/(kill|stop|急停)$/i.test(t)) {
-      this.kill(by);
-      return "已急停：当前的事都停下了，之后的操作一律拒绝。发送 /resume 恢复。";
+    if (/^\/(kill|stop|急停|停)$/i.test(t)) {
+      this.stopAll(by);
+      return "好，手上的事都停下了。";
     }
-    if (/^\/(resume|恢复)$/i.test(t)) {
-      this.resume(by);
-      return "好，我回来了。";
-    }
+    if (/^\/(resume|恢复)$/i.test(t)) return "我在，直接说要做什么就行。";
     if (/^\/status$/i.test(t)) {
       const s = this.status();
       const running = this.tasks.running().length;
       const pending = this.approvals.listPending().length;
-      return `${s.killed ? "急停中" : s.busy ? "忙着" : "空闲"}；进行中的任务 ${running} 个，待确认 ${pending} 个。`;
+      return `${s.busy ? "忙着" : "空闲"}；进行中的任务 ${running} 个，待确认 ${pending} 个。`;
     }
     // Answering an approval in text needs its 4-character code ("同意 3f2a"), so
     // an ordinary "ok"/"yes" in conversation can never approve anything.
@@ -336,11 +318,6 @@ export class Hub {
     this.expirePending();
     if (this.current || this.pending.size || !this.queue.length) {
       this.flushWaitersIfIdle();
-      return;
-    }
-    if (this.killed) {
-      this.queue = [];
-      this.flushWaiters();
       return;
     }
     const turn = this.queue.shift()!;
@@ -400,11 +377,6 @@ export class Hub {
       appendSystemPrompt: BEHAVIOR + `\n\n主人所在时区：${this.config.settings.timezone}。`,
       tools: this.toolHandlers(),
       canUseTool: (req) => this.approvals.request(req),
-      preToolGate: ({ toolName, input }) => this.approvals.preGate(toolName, input),
-      postToolUse: (c) => {
-        if (/browser_navigate|claude-in-chrome__navigate/.test(c.toolName)) this.approvals.noteNavigation((c.input as any)?.url);
-        this.audit.log("tool", { tool: c.toolName, input: c.input, agent: c.agentId, toolUseId: c.toolUseId });
-      },
       mcpServers: this.extraMcpServers(),
       sharedChrome: this.config.browser.enabled && this.config.browser.mode === "shared",
       onEvent: (e) => this.onHarnessEvent(e),
@@ -575,7 +547,6 @@ export class Hub {
       const ownerFolded = (turn.proactive || turn.hidden) && answered.length > 0;
       if (ownerFolded) {
         if (shown) this.chat.add({ role: "assistant", kind: "text", text: shown, channel: answered[0]!.origin });
-        if (turn.hidden) this.rollPending = false;
       } else if (turn.proactive && !turn.hidden) {
         if (shown) {
           const msg = this.chat.add({ role: "assistant", kind: "text", text: shown, channel: turn.origin, proactive: true });
@@ -589,7 +560,6 @@ export class Hub {
         void this.wechat.reply(wechatTarget, shown).catch((err) => this.log(`wechat reply failed: ${err}`));
         this.audit.log("wechat.reply", { chars: shown.length });
       }
-      if (turn.hidden && this.rollPending) this.finishRoll();
     }
     this.emitStatus();
     this.scheduleIdle();
@@ -616,35 +586,13 @@ export class Hub {
 
   onIdle(): void {
     if (this.current || this.queue.length || !this.session) return;
-    const roll = this.config.session.rollAfterTokens;
-    if (roll > 0 && this.lastContextTokens > roll && !this.tasks.live().length) {
-      // Flush before rolling: let the model write what matters to native memory.
-      this.rollPending = true;
-      this.enqueue({
-        text: "[系统] 这段对话要收尾换新了。把其中值得长期记住的事写进你的记忆（没有就算了），然后只回复 [skip]。",
-        origin: "system",
-        proactive: true,
-        hidden: true,
-      });
-      return;
-    }
     // Close the CLI process; the next message resumes the same conversation.
+    // (Keeping the context in shape is the harness' job: it compacts on its own.)
     if (!this.tasks.live().length && !this.approvals.listPending().length) {
       this.session.close();
       this.session = null;
       this.metric({ type: "idle_close", contextTokens: this.lastContextTokens });
     }
-  }
-
-  private finishRoll(): void {
-    this.rollPending = false;
-    this.session?.close();
-    this.session = null;
-    this.metric({ type: "roll", fromSession: this.runtime.sessionId, contextTokens: this.lastContextTokens });
-    this.runtime.sessionId = undefined;
-    this.runtime.sessionCostUsd = undefined;
-    this.lastContextTokens = 0;
-    this.saveRuntime();
   }
 
   // ---------------- tool handlers (the paloally MCP server) ----------------
@@ -756,7 +704,7 @@ export class Hub {
 
   // The list comes from a running harness; start one if we've never seen it.
   async loadCommands(timeoutMs = 8000): Promise<SlashCommandInfo[]> {
-    if (readJson<SlashCommandInfo[]>(`${this.paths.state}/commands.json`, []).length === 0 && !this.killed) {
+    if (readJson<SlashCommandInfo[]>(`${this.paths.state}/commands.json`, []).length === 0) {
       const ready = new Promise<void>((r) => this.commandWaiters.push(r));
       this.ensureSession();
       await Promise.race([ready, new Promise((r) => setTimeout(r, timeoutMs))]);
@@ -769,7 +717,7 @@ export class Hub {
 
   async modelInfo(timeoutMs = 8000): Promise<{ model: string; setting: string | null; effort: string | null; models: ModelOption[] }> {
     const path = `${this.paths.state}/models.json`;
-    if (readJson<ModelOption[]>(path, []).length === 0 && !this.killed) {
+    if (readJson<ModelOption[]>(path, []).length === 0) {
       const ready = new Promise<void>((r) => this.modelWaiters.push(r));
       this.ensureSession();
       await Promise.race([ready, new Promise((r) => setTimeout(r, timeoutMs))]);
@@ -806,32 +754,27 @@ export class Hub {
     return this.status();
   }
 
-  // ---------------- kill switch ----------------
+  // ---------------- stop button ----------------
 
-  kill(by: string): void {
-    this.runtime.killed = true;
-    this.saveRuntime();
-    this.audit.log("kill", { by });
+  // stopAll interrupts what the harness is doing right now (its own interrupt
+  // and stopTask). Nothing stays blocked afterwards: the next message works as usual.
+  stopAll(by: string): void {
+    this.audit.log("stop", { by });
     this.queue = [];
-    this.pending.clear();
-    this.approvals.denyAll(`kill:${by}`);
+    this.approvals.denyAll(`stop:${by}`);
     for (const t of this.tasks.running()) {
       if (t.sdkTaskId) void this.session?.stopTask(t.sdkTaskId).catch(() => {});
       this.tasks.markStopped(t.id);
     }
     void this.session?.interrupt();
-    // interrupt() alone can't unstick a turn whose tool never returns: end it
-    // here and start a fresh process next time.
-    if (this.current) this.endTurn(0, this.lastContextTokens);
-    this.session?.close();
-    this.session = null;
-    this.emitStatus();
-  }
-
-  resume(by: string): void {
-    this.runtime.killed = false;
-    this.saveRuntime();
-    this.audit.log("resume", { by });
+    // A tool that never returns can't be interrupted: end the turn here and
+    // let the next message start a fresh process (same conversation, resumed).
+    if (this.current) {
+      this.pending.clear();
+      this.endTurn(0, this.lastContextTokens);
+      this.session?.close();
+      this.session = null;
+    }
     this.emitStatus();
   }
 

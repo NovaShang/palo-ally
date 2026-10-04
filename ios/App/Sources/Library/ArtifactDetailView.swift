@@ -9,6 +9,10 @@ struct ArtifactDetailView: View {
     @State private var selectedPath: String?
     @State private var content: Loaded?
     @State private var error: String?
+    /// A refresh of the file already on screen failed (shown as a small note).
+    @State private var refreshError: String?
+    /// Download progress (0…1) for files bigger than one chunk.
+    @State private var progress: Double?
 
     struct Loaded: Equatable {
         let path: String
@@ -24,8 +28,34 @@ struct ArtifactDetailView: View {
             if let artifact {
                 if let content {
                     preview(artifact, content)
+                        .overlay(alignment: .bottom) {
+                            if let refreshError {
+                                Text(refreshError)
+                                    .font(.footnote)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 8)
+                                    .glassEffect(.regular, in: .capsule)
+                                    .padding(.bottom, 12)
+                            }
+                        }
                 } else if let error {
-                    ContentUnavailableView("打不开", systemImage: "exclamationmark.triangle", description: Text(error))
+                    ContentUnavailableView {
+                        Label("打不开", systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(error)
+                    } actions: {
+                        Button("再试一次") { Task { await load() } }
+                            .buttonStyle(.glass)
+                    }
+                } else if let progress {
+                    VStack(spacing: 10) {
+                        ProgressView(value: progress)
+                            .frame(maxWidth: 240)
+                        Text("正在取… \(Int(progress * 100))%")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
                 } else {
                     ProgressView("正在取…")
                 }
@@ -48,6 +78,7 @@ struct ArtifactDetailView: View {
                         } label: {
                             Image(systemName: "doc.on.doc")
                         }
+                        .accessibilityLabel("换一个文件看")
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -80,7 +111,7 @@ struct ArtifactDetailView: View {
         let ext = (c.path as NSString).pathExtension.lowercased()
         if ["md", "markdown", "txt"].contains(ext) || (c.path == a.mainFile && a.previewStyle == .markdown) {
             ScrollView {
-                MarkdownText(source: String(decoding: c.data, as: UTF8.self))
+                MarkdownText(source: String(decoding: c.data, as: UTF8.self), compact: false)
                     .padding(20)
                     .frame(maxWidth: 720, alignment: .leading)
                     .frame(maxWidth: .infinity)
@@ -97,18 +128,45 @@ struct ArtifactDetailView: View {
     private func load() async {
         guard let a = artifact else { return }
         let path = currentPath(a)
+        let switching = content?.path != path
         error = nil
+        refreshError = nil
+        if switching {
+            // Don't keep showing the previous file under the new name.
+            content = nil
+            progress = nil
+        }
+        let expected = a.files.first { $0.path == path }?.size ?? 0
         do {
-            let r = try await store.readArtifact(id: a.id, path: path)
-            let dir = FileManager.default.temporaryDirectory
+            let r = try await store.readArtifact(id: a.id, path: path) { received, total in
+                let size = max(total, expected)
+                guard size > ArtifactChunk.maxChunk, content == nil || switching else { return }
+                progress = min(1, Double(received) / Double(size))
+            }
+            // A fresh file name per load: QuickLook caches by URL, so reusing
+            // one would keep showing the old revision of a live artifact.
+            let base = FileManager.default.temporaryDirectory
                 .appendingPathComponent("artifacts", isDirectory: true)
                 .appendingPathComponent(a.id, isDirectory: true)
-            let url = dir.appendingPathComponent((path as NSString).lastPathComponent.isEmpty ? "file" : (path as NSString).lastPathComponent)
+            let dir = base.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            let name = (path as NSString).lastPathComponent.isEmpty ? "file" : (path as NSString).lastPathComponent
+            let url = dir.appendingPathComponent(name)
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             try r.data.write(to: url, options: .atomic)
+            let old = content?.fileURL.deletingLastPathComponent()
             content = Loaded(path: path, data: r.data, fileURL: url, revision: a.updatedAt)
+            progress = nil
+            if let old, old != dir, old.deletingLastPathComponent() == base { try? FileManager.default.removeItem(at: old) }
+        } catch is CancellationError {
+            return
         } catch {
-            if content == nil { self.error = error.localizedDescription }
+            progress = nil
+            let msg = Copy.error(error)
+            if content == nil {
+                self.error = msg
+            } else {
+                refreshError = "没刷新成功：\(msg)"
+            }
         }
     }
 }

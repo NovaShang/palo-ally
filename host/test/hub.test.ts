@@ -78,31 +78,6 @@ describe("Hub: main conversation", () => {
     cleanup(paths);
   });
 
-  test("roll: flush turn (hidden) then a fresh session", async () => {
-    const { hub, driver, paths, events } = makeHub({
-      config: testConfig((c) => {
-        c.session.idleCloseMinutes = 1;
-        c.session.rollAfterTokens = 500; // fake reports 1000 context tokens
-      }),
-      script: async (t, ctx) => ctx.emit({ type: "assistant_text", text: t.startsWith("[系统]") ? "[skip]" : "ok", parentToolUseId: null }),
-    });
-    hub.userMessage("hi", "app");
-    await hub.idle();
-    const before = events.filter((e) => e.event === "chat.message").length;
-    hub.onIdle();
-    await hub.idle();
-    expect(driver.last!.sent.at(-1)).toContain("写进你的记忆");
-    expect(events.filter((e) => e.event === "chat.message").length).toBe(before); // flush is invisible
-    expect(readJson<any>(paths.runtime, {}).sessionId).toBeUndefined();
-    hub.userMessage("again", "app");
-    await hub.idle();
-    expect(driver.last!.opts.resumeSessionId).toBeUndefined();
-    const metrics = readJsonl<any>(paths.metrics);
-    expect(metrics.some((m) => m.type === "roll")).toBe(true);
-    hub.stop();
-    cleanup(paths);
-  });
-
   test("harness error surfaces a notice and the next message restarts the session", async () => {
     let n = 0;
     const { hub, driver, paths } = makeHub({
@@ -254,11 +229,11 @@ describe("Hub: tasks via report_task", () => {
   });
 });
 
-describe("Hub: safety", () => {
-  test("irreversible action asks; WeChat '同意' answers it (first answer wins)", async () => {
+describe("Hub: relaying the harness' approvals", () => {
+  test("a harness prompt becomes a card + push; WeChat '同意 xxxx' answers it (first answer wins)", async () => {
     let ran = null as boolean | null;
     const script: FakeScript = async (_t, ctx) => {
-      ran = await ctx.useTool("Bash", { command: "git push origin main" });
+      ran = await ctx.useTool("Bash", { command: "git push origin main" }, { ask: true, defaultToNo: true });
       ctx.emit({ type: "assistant_text", text: ran ? "推上去了" : "没推", parentToolUseId: null });
     };
     const wechat = new FakeWechat();
@@ -267,48 +242,58 @@ describe("Hub: safety", () => {
     await tick(10);
     const pending = hub.approvals.listPending();
     expect(pending).toHaveLength(1);
-    expect(pending[0]!.irreversible).toBe(true);
+    expect(pending[0]!.irreversible).toBe(true); // the harness' defaultToNo
     const card = hub.chat.recent(5).find((m) => m.kind === "approval")!;
     expect(card.approvalId).toBe(pending[0]!.id);
     expect(pusher.pushes.some((p) => p.title === "需要你确认")).toBe(true);
-    // WeChat only gets a hint, not the command
     expect(wechat.proactive[0]).toContain("有个操作等你确认");
     expect(wechat.proactive[0]).not.toContain("git push");
-
     hub.userMessage(`同意 ${pending[0]!.id.slice(-4)}`, "wechat", { userId: "u", contextToken: "c" });
     await hub.idle();
     expect(ran).toBe(true);
     expect(hub.approvals.answer(pending[0]!.id, false, "app")!.status).toBe("allowed");
-    const audit = hub.audit.tail(50);
-    expect(audit.some((e) => e.type === "approval.decided" && e.by === "wechat")).toBe(true);
-    expect(audit.some((e) => e.type === "tool" && String(e.input).includes("git push"))).toBe(true);
+    expect(hub.audit.tail(50).some((e) => e.type === "approval.decided" && e.by === "wechat")).toBe(true);
     cleanup(paths);
   });
 
-  test("kill switch: interrupts, denies pending, refuses new work until resume", async () => {
+  test("tools the harness doesn't ask about just run (no gate of our own)", async () => {
+    let ran = null as boolean | null;
+    const { hub, paths } = makeHub({ script: async (_t, ctx) => void (ran = await ctx.useTool("Bash", { command: "rm -rf /tmp/x" })) });
+    hub.userMessage("清理", "app");
+    await hub.idle();
+    expect(ran).toBe(true);
+    expect(hub.approvals.list()).toHaveLength(0);
+    cleanup(paths);
+  });
+
+  test("'always allow' returns the harness' own suggested rule", async () => {
+    const rule = [{ type: "addRules", behavior: "allow", destination: "localSettings", rules: [{ toolName: "Bash", ruleContent: "npm test:*" }] }];
+    const { hub, driver, paths } = makeHub({ script: async (_t, ctx) => void (await ctx.useTool("Bash", { command: "npm test" }, { ask: true, suggestions: rule })) });
+    hub.userMessage("跑测试", "app");
+    await tick(10);
+    const a = hub.approvals.listPending()[0]!;
+    expect(a.suggestedScope).toBe("cmd:npm test");
+    hub.approvals.answer(a.id, true, "app", true);
+    await hub.idle();
+    expect(driver.appliedPermissions).toEqual(rule);
+    cleanup(paths);
+  });
+
+  test("stop: interrupts and denies open prompts, and nothing stays blocked", async () => {
     let result = null as boolean | null;
     const script: FakeScript = async (t, ctx) => {
-      if (t === "push") result = await ctx.useTool("Bash", { command: "rm -rf /tmp/x" });
+      if (t === "push") result = await ctx.useTool("Bash", { command: "rm -rf /tmp/x" }, { ask: true });
       else ctx.emit({ type: "assistant_text", text: "ok", parentToolUseId: null });
     };
-    const { hub, driver, paths } = makeHub({ script });
+    const { hub, paths } = makeHub({ script });
     hub.userMessage("push", "app");
     await tick(10);
     expect(hub.approvals.listPending()).toHaveLength(1);
-    hub.userMessage("/kill", "wechat", { userId: "u", contextToken: "c" });
+    hub.userMessage("/stop", "wechat", { userId: "u", contextToken: "c" });
     await hub.idle();
     await tick(10);
     expect(result).toBe(false);
-    expect(hub.status().killed).toBe(true);
-    expect(hub.approvals.preGate("Read", {}).decision).toBe("deny");
-    hub.userMessage("在吗", "app");
-    await hub.idle();
-    expect(hub.chat.recent(1)[0]!.text).toContain("急停");
-    expect(driver.last!.sent).toEqual(["push"]);
-    // persisted across restart
-    const { hub: again } = makeHub({ paths });
-    expect(again.status().killed).toBe(true);
-    hub.userMessage("/resume", "app");
+    expect(hub.status().killed).toBe(false);
     hub.userMessage("在吗", "app");
     await hub.idle();
     expect(hub.chat.recent(1)[0]!.text).toBe("ok");
@@ -317,15 +302,15 @@ describe("Hub: safety", () => {
 
   test("approvals answer only with their code; a bare 'ok'/'同意' is just conversation", async () => {
     const script: FakeScript = async (_t, ctx) => {
-      if (_t === "x") await Promise.all([ctx.useTool("Bash", { command: "rm a" }), ctx.useTool("Bash", { command: "rm b" })]);
+      if (_t === "x") await Promise.all([ctx.useTool("Bash", { command: "a" }, { ask: true }), ctx.useTool("Bash", { command: "b" }, { ask: true })]);
     };
     const { hub, driver, paths } = makeHub({ script });
     hub.userMessage("x", "app");
     await tick(10);
     hub.userMessage("ok", "app");
     hub.userMessage("同意", "app");
-    expect(hub.approvals.listPending()).toHaveLength(2); // nothing approved
-    expect(driver.last!.sent).toEqual(["x", "ok", "同意"]); // the assistant heard them
+    expect(hub.approvals.listPending()).toHaveLength(2);
+    expect(driver.last!.sent).toEqual(["x", "ok", "同意"]);
     const [a, b] = hub.approvals.listPending();
     hub.userMessage(`拒绝 ${a!.id.slice(-4)}`, "app");
     hub.userMessage(`同意 ${b!.id.slice(-4)}`, "app");
@@ -481,10 +466,8 @@ describe("Hub: restarts", () => {
 });
 
 describe("Hub: interruptions", () => {
-  test("read-only tools never ask; quiet hours don't apply while the owner is active", async () => {
+  test("quiet hours don't apply while the owner is active", async () => {
     const { hub, pusher, paths } = makeHub({ config: testConfig((c) => (c.settings.quietHours = { start: "00:00", end: "23:59" })) });
-    for (const t of ["Read", "Grep", "Glob", "WebSearch"]) expect(hub.approvals.preGate(t, {}).decision).toBe("allow");
-    expect(hub.approvals.preGate("Bash", { command: "ls" }).decision).toBe("pass");
     hub.chat.add({ role: "user", kind: "text", text: "在", channel: "app" });
     expect(await hub.toolHandlers().notify_user({ text: "有事" })).toBe("已推送");
     expect(pusher.pushes).toHaveLength(1);
@@ -585,7 +568,7 @@ describe("Hub: review regressions", () => {
     cleanup(paths);
   });
 
-  test("a stream cut off by an error is finalized; kill unsticks a hung tool", async () => {
+  test("a stream cut off by an error is finalized; stop unsticks a hung tool", async () => {
     const { hub, driver, paths, events } = makeHub({
       script: async (t, ctx) => {
         if (t === "hang") {
@@ -603,9 +586,8 @@ describe("Hub: review regressions", () => {
     hub.userMessage("hang", "app");
     await tick(10);
     expect(hub.status().busy).toBe(true);
-    hub.kill("test");
+    hub.stopAll("test");
     expect(hub.status().busy).toBe(false);
-    hub.resume("test");
     void driver;
     cleanup(paths);
   });

@@ -15,8 +15,13 @@ export type FakeScript = (text: string, ctx: FakeCtx) => Promise<void>;
 export interface FakeCtx {
   opts: MainSessionOptions;
   emit(e: HarnessEvent): void;
-  // simulate the harness calling a tool: gate → (maybe) canUseTool → postToolUse
-  useTool(name: string, input: Record<string, unknown>, opts?: { id?: string; parent?: string | null; needsPermission?: boolean }): Promise<boolean>;
+  // simulate the harness calling a tool. `ask` = the harness decided to ask
+  // the owner (with its own suggestions / defaultToNo); otherwise it just runs.
+  useTool(
+    name: string,
+    input: Record<string, unknown>,
+    opts?: { id?: string; parent?: string | null; ask?: boolean; defaultToNo?: boolean; suggestions?: unknown[] },
+  ): Promise<boolean>;
 }
 
 let idCounter = 0;
@@ -70,14 +75,19 @@ export class FakeMainSession implements MainSession {
         useTool: async (name, input, o = {}) => {
           const id = o.id ?? fakeId();
           this.opts.onEvent({ type: "tool_use", id, name, input, parentToolUseId: o.parent ?? null });
-          const gate = this.opts.preToolGate({ toolName: name, input, toolUseId: id });
-          let allowed = gate.decision === "allow";
-          if (gate.decision === "deny") allowed = false;
-          else if (gate.decision === "ask" || (gate.decision === "pass" && o.needsPermission)) {
-            const d = await this.opts.canUseTool({ toolName: name, input, toolUseId: id, signal: new AbortController().signal });
+          let allowed = true;
+          if (o.ask) {
+            const d = await this.opts.canUseTool({
+              toolName: name,
+              input,
+              toolUseId: id,
+              signal: new AbortController().signal,
+              defaultToNo: o.defaultToNo,
+              suggestions: o.suggestions,
+            });
             allowed = d.behavior === "allow";
-          } else if (gate.decision === "pass") allowed = true;
-          if (allowed) this.opts.postToolUse({ toolName: name, input, response: "ok", toolUseId: id });
+            if (d.behavior === "allow" && d.updatedPermissions) this.driver.appliedPermissions.push(...d.updatedPermissions);
+          }
           this.opts.onEvent({
             type: "tool_result",
             toolUseId: id,
@@ -135,6 +145,7 @@ export class FakeDriver implements HarnessDriver {
   probes: ProbeRequest[] = [];
   stoppedTasks: string[] = [];
   liveSwitches: string[] = [];
+  appliedPermissions: unknown[] = []; // rules the owner chose to remember (harness-side)
   turnCost = 0.001;
   probeResponder: (req: ProbeRequest) => ProbeResult = () => ({ output: { results: [] }, costUsd: 0.0001 });
 

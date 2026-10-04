@@ -51,20 +51,16 @@ export interface PermissionRequest {
   reason?: string;
   agentId?: string; // set when a subagent asks
   signal: AbortSignal;
+  // the harness' own "always allow" rules for this call; return them to accept
+  suggestions?: unknown[];
+  // the harness says this one must not be approved casually / not remembered
+  defaultToNo?: boolean;
+  suppressAlwaysAllowRule?: boolean;
 }
 
 export type PermissionDecision =
-  | { behavior: "allow"; updatedInput?: Record<string, unknown> }
+  | { behavior: "allow"; updatedInput?: Record<string, unknown>; updatedPermissions?: unknown[] }
   | { behavior: "deny"; message: string };
-
-// PreToolGate runs before every tool call (main thread and subagents) and can
-// force a prompt or deny regardless of the harness' own rules.
-export type PreToolGate = (call: {
-  toolName: string;
-  input: Record<string, unknown>;
-  toolUseId: string;
-  agentId?: string;
-}) => { decision: "allow" | "deny" | "ask" | "pass"; reason?: string };
 
 export interface ToolHandlers {
   report_task(args: { id: string; summary: string; status: string; title?: string }): Promise<string>;
@@ -90,9 +86,8 @@ export interface MainSessionOptions {
   permissionMode: string;
   appendSystemPrompt: string;
   tools: ToolHandlers;
+  // the harness asks the owner something; safety decisions are the harness' own
   canUseTool: (req: PermissionRequest) => Promise<PermissionDecision>;
-  preToolGate: PreToolGate;
-  postToolUse: (call: { toolName: string; input: unknown; response: unknown; toolUseId: string; agentId?: string }) => void;
   mcpServers: Record<string, unknown>;
   sharedChrome?: boolean; // enable Claude in Chrome on the owner's own browser
   onEvent: (e: HarnessEvent) => void;
@@ -120,13 +115,11 @@ export interface ProbeRequest {
   systemPrompt: string;
   prompt: string;
   mcpServers: Record<string, unknown>;
-  allowedTools: string[];
+  tools: string[]; // which built-in tools to load (context size, not a safety list)
   outputSchema: Record<string, unknown>;
   maxTurns: number;
   // true: only mcpServers above (no claude.ai connectors / user config / skills) — keeps context ~2k tokens
   strictMcp: boolean;
-  canUseTool: (req: PermissionRequest) => Promise<PermissionDecision>;
-  preToolGate: PreToolGate;
 }
 
 export interface ProbeResult {

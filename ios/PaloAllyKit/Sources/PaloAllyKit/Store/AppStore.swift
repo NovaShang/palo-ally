@@ -58,9 +58,17 @@ public final class AppStore {
     private var resyncRequested = false
     private var pushRegistration: PushRegisterParams?
     private var inboundTask: Task<Void, Never>?
+    /// Bumped on every connect / disconnect; stale catch-up loops stop.
+    private var connectGeneration = 0
+    private var backgroundedAt: Date?
+    /// First retry delay when `hello` / `sync` fails on a live link.
+    public var syncRetryBase: Double = 1
+    /// After this many failed catch-up attempts, drop the link and reconnect.
+    public var syncRetryLimit = 3
 
-    public init(transport: any HostTransport, clientKind: String = "ios", clientVersion: String = "1.0") {
-        self.rpc = RPCClient(transport: transport)
+    public init(transport: any HostTransport, clientKind: String = "ios", clientVersion: String = "1.0",
+                rpcTimeout: Double = 20) {
+        self.rpc = RPCClient(transport: transport, defaultTimeout: rpcTimeout)
         self.clientKind = clientKind
         self.clientVersion = clientVersion
     }
@@ -90,18 +98,40 @@ public final class AppStore {
         connection = .idle
     }
 
-    /// Call when the app returns to the foreground.
+    /// Skip any pending backoff and try right away.
     public func reconnectNow() {
         let transport = rpc.transport
         Task { await transport.reconnectNow() }
     }
 
+    /// Drop the current link (it may be stale) and reconnect immediately.
+    public func forceReconnect() {
+        let transport = rpc.transport
+        Task { await transport.forceReconnect() }
+    }
+
+    public func didEnterBackground(at date: Date = Date()) {
+        backgroundedAt = date
+    }
+
+    /// Call when the app returns to the foreground. After a long stay in the
+    /// background the socket is usually dead even if it looks open, so we
+    /// force a fresh connection instead of trusting it.
+    public func didBecomeActive(at date: Date = Date(), staleAfter: TimeInterval = 30) {
+        let away = backgroundedAt.map { date.timeIntervalSince($0) } ?? 0
+        backgroundedAt = nil
+        if away > staleAfter && started { forceReconnect() } else { reconnectNow() }
+    }
+
     private func handle(_ item: RPCInbound) {
         switch item {
         case .connected:
+            connectGeneration += 1
             connection = .syncing
-            Task { await self.onConnected() }
+            let gen = connectGeneration
+            Task { await self.onConnected(generation: gen) }
         case .disconnected(let reason):
+            connectGeneration += 1
             switch reason {
             case .closed: connection = .offline(nil)
             case .network(let m): connection = .offline(m)
@@ -112,23 +142,39 @@ public final class AppStore {
         }
     }
 
-    private func onConnected() async {
-        do {
-            let hello: HelloResult = try await rpc.call(RPCMethod.hello,
-                                                        params: HelloParams(client: clientKind, version: clientVersion))
-            hostName = hello.hostName
-            hostVersion = hello.version
-            if let s = hello.status { status = s }
-            try await performSync()
-            connection = .online
-            if let push = pushRegistration {
-                _ = try? await rpc.call(RPCMethod.pushRegister, params: push, as: OKResult.self)
+    /// Catch-up after every (re)connect: `hello`, `sync`, push re-register,
+    /// then resend anything queued while offline. If it fails on a link that
+    /// is still up, retry with backoff; after `syncRetryLimit` failures drop
+    /// the link and reconnect rather than sitting there half-connected.
+    private func onConnected(generation gen: Int) async {
+        var failures = 0
+        while gen == connectGeneration {
+            do {
+                let hello: HelloResult = try await rpc.call(RPCMethod.hello,
+                                                            params: HelloParams(client: clientKind, version: clientVersion))
+                guard gen == connectGeneration else { return }
+                hostName = hello.hostName
+                hostVersion = hello.version
+                if let s = hello.status { applyStatus(s) }
+                try await performSync()
+                guard gen == connectGeneration else { return }
+                connection = .online
+                lastError = nil
+                if let push = pushRegistration {
+                    _ = try? await rpc.call(RPCMethod.pushRegister, params: push, as: OKResult.self)
+                }
+                resendQueued()
+                return
+            } catch {
+                guard gen == connectGeneration else { return }
+                lastError = Friendly.message(error)
+                failures += 1
+                if failures >= syncRetryLimit {
+                    await rpc.transport.forceReconnect()
+                    return
+                }
+                try? await Task.sleep(for: .seconds(syncRetryBase * pow(2, Double(failures - 1))))
             }
-        } catch {
-            // The transport will emit .disconnected if the link died; if it
-            // was just a slow host, try again shortly.
-            lastError = error.localizedDescription
-            if case .syncing = connection { connection = .offline(error.localizedDescription) }
         }
     }
 
@@ -160,29 +206,57 @@ public final class AppStore {
         if let w = r.watches { watches = w }
         if let a = r.artifacts { artifacts = a }
         if let s = r.settings { settings = s }
-        if let s = r.status { status = s }
 
         let maxSeq = r.messages.map(\.seq).max() ?? 0
         if since == nil {
             // Fresh snapshot: server messages replace ours; keep unsent echoes.
-            let local = messages.filter { $0.seq == 0 && $0.delivery != .sent }
-            let streaming = messages.filter { $0.isStreaming && !r.messages.map(\.id).contains($0.id) }
+            let serverIDs = Set(r.messages.map(\.id))
+            let serverCIDs = Set(r.messages.compactMap(\.clientMsgId))
+            // Unsent echoes the host already has (matched by clientMsgId) are
+            // replaced by the server copy.
+            let local = messages.filter {
+                $0.seq == 0 && $0.delivery != .sent && !($0.clientMsgId.map(serverCIDs.contains) ?? false)
+            }
+            let streaming = messages.filter { $0.isStreaming && !serverIDs.contains($0.id) }
             messages = r.messages
             for m in streaming + local { messages.append(m) }
             sortMessages()
             lastSeq = max(r.seq, maxSeq)
             hasOlderMessages = (r.messages.map(\.seq).min() ?? 1) > 1
             hasSynced = true
+            afterSync(r)
             return false
         }
         for m in r.messages { upsert(m) }
         hasSynced = true
+        afterSync(r)
         if r.messages.count >= SyncResult.pageLimit && maxSeq > lastSeq {
             lastSeq = maxSeq
             return maxSeq < r.seq
         }
         lastSeq = max(lastSeq, r.seq, maxSeq)
         return false
+    }
+
+    /// A reply that landed while we weren't listening still ends the wait.
+    private func afterSync(_ r: SyncResult) {
+        if let s = r.status { applyStatus(s) }
+        guard awaitingReply else { return }
+        let lastUser = messages.last(where: { $0.role == .user && $0.seq > 0 })?.seq ?? 0
+        let pendingEcho = messages.contains { $0.role == .user && $0.seq == 0 && $0.delivery == .sending }
+        if !pendingEcho, messages.contains(where: { $0.role != .user && $0.seq > lastUser }) {
+            awaitingReply = false
+        }
+    }
+
+    /// Applies a status snapshot. `busy == false` means the turn is over:
+    /// anything still streaming is finished (a turn can end without a final
+    /// `chat.message`, e.g. after an error or a kill) and the wait ends.
+    private func applyStatus(_ s: HostStatus) {
+        status = s
+        guard !s.busy else { return }
+        for i in messages.indices where messages[i].isStreaming { messages[i].isStreaming = false }
+        awaitingReply = false
     }
 
     private func requestResync() {
@@ -215,10 +289,7 @@ public final class AppStore {
         case RPCEventName.commandsUpdated:
             if let r = try? data.decode(CommandsResult.self) { commands = r.commands }
         case RPCEventName.status:
-            if let s = try? (data["status"] ?? data).decode(HostStatus.self) {
-                status = s
-                if s.busy == false, !messages.contains(where: \.isStreaming) { awaitingReply = false }
-            }
+            if let s = try? (data["status"] ?? data).decode(HostStatus.self) { applyStatus(s) }
         default:
             break // unknown events are ignored
         }
@@ -240,8 +311,9 @@ public final class AppStore {
     func applyDelta(_ d: ChatDelta) {
         awaitingReply = false
         if let i = messages.firstIndex(where: { $0.id == d.id }) {
-            // A late delta after the final message is ignored.
-            guard messages[i].isStreaming || messages[i].seq == 0 else { return }
+            // A late delta after the final message (or after the turn
+            // ended) is ignored.
+            guard messages[i].isStreaming else { return }
             messages[i].text += d.text
             messages[i].isStreaming = true
         } else {
@@ -279,13 +351,25 @@ public final class AppStore {
         return messages.firstIndex(where: { $0.seq == 0 && $0.delivery == .sending && $0.role == .user && $0.text == m.text })
     }
 
+    /// Server messages in seq order; local ones (seq 0: echoes, failed or
+    /// queued sends, in-flight streams) slotted in by timestamp, so an unsent
+    /// message doesn't stay pinned below newer replies.
     private func sortMessages() {
-        let indexed = messages.enumerated().map { ($0.offset, $0.element) }
-        messages = indexed.sorted { a, b in
-            let ka = a.1.seq == 0 ? Int64.max : a.1.seq
-            let kb = b.1.seq == 0 ? Int64.max : b.1.seq
-            return ka != kb ? ka < kb : a.0 < b.0
-        }.map(\.1)
+        let indexed = messages.enumerated()
+        let real = indexed.filter { $0.element.seq > 0 }
+            .sorted { ($0.element.seq, $0.offset) < ($1.element.seq, $1.offset) }.map(\.element)
+        let local = indexed.filter { $0.element.seq == 0 }
+            .sorted { ($0.element.ts, $0.offset) < ($1.element.ts, $1.offset) }.map(\.element)
+        guard !local.isEmpty else { messages = real; return }
+        var out: [ChatMessage] = []
+        out.reserveCapacity(messages.count)
+        var li = 0
+        for m in real {
+            while li < local.count && local[li].ts < m.ts { out.append(local[li]); li += 1 }
+            out.append(m)
+        }
+        out.append(contentsOf: local[li...])
+        messages = out
     }
 
     func upsert(task t: AllyTask) {
@@ -355,9 +439,9 @@ public final class AppStore {
         Task { await self.deliver(clientMsgId: cid, text: text) }
     }
 
-    /// Re-sends a failed echo.
+    /// Re-sends a failed or queued echo (same clientMsgId: the host de-dupes).
     public func retry(_ message: ChatMessage) {
-        guard message.delivery == .failed, let cid = message.clientMsgId,
+        guard message.delivery == .failed || message.delivery == .queued, let cid = message.clientMsgId,
               let i = messages.firstIndex(where: { $0.id == message.id }) else { return }
         messages[i].delivery = .sending
         awaitingReply = true
@@ -379,12 +463,21 @@ public final class AppStore {
             sortMessages()
             if r.seq == lastSeq + 1 { lastSeq = r.seq } else if r.seq > lastSeq + 1 { requestResync() }
         } catch {
+            // Offline / dropped / no answer: keep it queued and resend after
+            // the next reconnect. Anything else the user retries by hand.
+            let offline = [RPCError.notConnected, .disconnected, .timeout].contains(error as? RPCError)
             if let i = messages.firstIndex(where: { $0.clientMsgId == cid && $0.seq == 0 }) {
-                messages[i].delivery = .failed
+                messages[i].delivery = offline ? .queued : .failed
             }
             awaitingReply = false
-            lastError = error.localizedDescription
+            lastError = Friendly.message(error)
         }
+    }
+
+    /// Resends everything queued while offline, oldest first.
+    private func resendQueued() {
+        let queued = messages.filter { $0.seq == 0 && $0.delivery == .queued && $0.clientMsgId != nil }
+        for m in queued { retry(m) }
     }
 
     /// Loads an older page of history (scroll-to-top).
@@ -505,7 +598,9 @@ public final class AppStore {
     }
 
     /// Reads a whole artifact file, following `artifact.read` chunks.
-    public func readArtifact(id: String, path: String? = nil, maxBytes: Int64 = 64 * 1024 * 1024) async throws -> (data: Data, mime: String) {
+    /// `progress(received, total)` is called after each chunk.
+    public func readArtifact(id: String, path: String? = nil, maxBytes: Int64 = 64 * 1024 * 1024,
+                             progress: ((Int64, Int64) -> Void)? = nil) async throws -> (data: Data, mime: String) {
         var out = Data()
         var mime = "application/octet-stream"
         var offset: Int64 = 0
@@ -517,6 +612,7 @@ public final class AppStore {
             mime = chunk.mime
             out.append(chunk.data)
             offset += Int64(chunk.data.count)
+            progress?(offset, max(chunk.size, offset))
             if chunk.eof || chunk.data.isEmpty || (chunk.size > 0 && offset >= chunk.size) || offset >= maxBytes { break }
         }
         return (out, mime)
@@ -529,13 +625,18 @@ public final class AppStore {
         return r.files
     }
 
-    public func readMemory(path: String) async throws -> String {
-        let r: MemoryContentResult = try await rpc.call(RPCMethod.memoryRead, params: PathParams(path: path))
-        return r.content
+    public func readMemory(path: String) async throws -> MemoryContentResult {
+        try await rpc.call(RPCMethod.memoryRead, params: PathParams(path: path))
     }
 
-    public func writeMemory(path: String, content: String) async throws {
-        _ = try await rpc.call(RPCMethod.memoryWrite, params: MemoryWriteParams(path: path, content: content), as: OKResult.self)
+    /// Writes a memory file. Pass the `updatedAt` from `readMemory` as
+    /// `baseUpdatedAt`; the host refuses the write if the file changed since.
+    /// Returns the new `updatedAt` when the host reports it.
+    @discardableResult
+    public func writeMemory(path: String, content: String, baseUpdatedAt: Int64?) async throws -> Int64? {
+        let r: MemoryWriteResult = try await rpc.call(
+            RPCMethod.memoryWrite, params: MemoryWriteParams(path: path, content: content, baseUpdatedAt: baseUpdatedAt))
+        return r.updatedAt
     }
 
     // MARK: settings / safety
@@ -573,6 +674,21 @@ public final class AppStore {
     public func resume() async throws {
         let r: KillResult = try await rpc.call(RPCMethod.resume, params: EmptyParams())
         if let s = r.status { status = s } else { status?.killed = false }
+    }
+
+    // MARK: unpair
+
+    /// Best-effort goodbye before forgetting this host: drop our push token
+    /// and ask the host to remove this device's pairing. Errors are ignored.
+    public func unregisterDevice(pushToken: Data?) async {
+        guard connection == .online else { return }
+        let token = pushToken?.hexString ?? pushRegistration?.token
+        if let token {
+            _ = try? await rpc.call(RPCMethod.pushUnregister, params: PushUnregisterParams(token: token), as: OKResult.self,
+                                    timeout: 5)
+        }
+        _ = try? await rpc.call(RPCMethod.deviceUnpair, params: EmptyParams(), as: OKResult.self, timeout: 5)
+        pushRegistration = nil
     }
 
     // MARK: push

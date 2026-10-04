@@ -8,6 +8,9 @@ options:
 packages:
   PaloAllyKit:
     path: ../PaloAllyKit
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    from: 2.4.1
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -23,6 +26,7 @@ targets:
       - path: Resources
     dependencies:
       - package: PaloAllyKit
+      - package: MarkdownUI
     entitlements:
       path: PaloAlly.entitlements
       properties:
@@ -54,9 +58,9 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         UIBackgroundModes:
           - remote-notification
-        NSMicrophoneUsageDescription: 按住说话时需要用到麦克风，把你说的话变成文字。
+        NSMicrophoneUsageDescription: 按住输入框说话时需要用到麦克风，把你说的话变成文字。
         NSSpeechRecognitionUsageDescription: 用来把你说的话转成文字，发给助理。
-        NSCameraUsageDescription: 扫一扫电脑上的二维码，把手机和电脑连起来。
+        NSCameraUsageDescription: 扫一扫电脑上的二维码，把这台设备和电脑连起来。
         CFBundleURLTypes:
           - CFBundleURLName: com.novashang.paloally.pair
             CFBundleURLSchemes:

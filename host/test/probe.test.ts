@@ -20,13 +20,11 @@ function mk(over: Partial<ProbeHost> = {}) {
   const host: ProbeHost = {
     driver,
     watches,
-    isKilled: () => false,
     timezone: () => "UTC",
     probeModel: () => "cheap",
     cwd: () => paths.home,
     mcpServers: () => ({}),
     inheritConnectors: () => false,
-    sensitiveDomains: () => ["bank.com"],
     lastUserActivity: () => lastActivity,
     budgetLeftUsd: () => 1 - spent,
     spend: (u) => (spent += u),
@@ -130,22 +128,13 @@ describe("ProbeScheduler", () => {
     cleanup(paths);
   });
 
-  test("probe is read-only: our tools denied, prompts refused", async () => {
+  test("probe asks the harness for short context and loads only read tools", async () => {
     const { probe, driver, watches, paths } = mk();
     watches.add({ title: "x", instruction: "y", intervalMinutes: 5 }, "agent");
     await probe.tick(T0);
     const req = driver.probes[0]!;
-    expect(req.preToolGate({ toolName: "mcp__paloally__report_task", input: {}, toolUseId: "1" }).decision).toBe("deny");
-    expect((await req.canUseTool({ toolName: "Bash", input: {}, signal: new AbortController().signal })).behavior).toBe("deny");
-    expect((await req.canUseTool({ toolName: "WebFetch", input: { url: "https://news.com/a" }, signal: new AbortController().signal })).behavior).toBe("allow");
-    const g = (toolName: string, input: Record<string, unknown>) => req.preToolGate({ toolName, input, toolUseId: "1" }).decision;
-    expect(g("Read", { file_path: `${paths.home}/inbox.txt` })).toBe("allow");
-    expect(g("Read", { file_path: "/Users/x/.ssh/id_rsa" })).toBe("deny");
-    expect(g("Read", { file_path: `${paths.home}/../identity.json` })).toBe("deny");
-    expect(g("WebFetch", { url: "https://login.bank.com" })).toBe("deny");
-    expect(g("mcp__claude_ai_Gmail__search_threads", {})).toBe("allow");
-    expect(g("mcp__claude_ai_Gmail__send_message", {})).toBe("deny");
-    expect(g("Bash", { command: "ls" })).toBe("deny");
+    expect(req.tools).toEqual(["Read", "Glob", "Grep", "WebFetch", "WebSearch"]);
+    expect(req.strictMcp).toBe(true);
     cleanup(paths);
   });
 
@@ -184,13 +173,7 @@ describe("ProbeScheduler", () => {
     cleanup(paths);
   });
 
-  test("killed: nothing runs", async () => {
-    const { probe, driver, watches, paths } = mk({ isKilled: () => true });
-    watches.add({ title: "x", instruction: "y", intervalMinutes: 5 }, "agent");
-    await probe.tick(T0);
-    expect(driver.probes).toHaveLength(0);
-    cleanup(paths);
-  });
+
 
   test("watch validation", () => {
     const { watches, paths } = mk();

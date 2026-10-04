@@ -36,9 +36,9 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>NSCameraUsageDescription</key>
-	<string>扫一扫电脑上的二维码，把手机和电脑连起来。</string>
+	<string>扫一扫电脑上的二维码，把这台设备和电脑连起来。</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>按住说话时需要用到麦克风，把你说的话变成文字。</string>
+	<string>按住输入框说话时需要用到麦克风，把你说的话变成文字。</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>用来把你说的话转成文字，发给助理。</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

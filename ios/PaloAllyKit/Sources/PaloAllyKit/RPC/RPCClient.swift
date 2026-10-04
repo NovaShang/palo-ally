@@ -11,7 +11,7 @@ public enum RPCError: Error, LocalizedError, Equatable {
         switch self {
         case .notConnected, .disconnected: "暂时连不上，等连上了再试"
         case .timeout: "等太久了，稍后再试"
-        case .remote(let m): m
+        case .remote(let m): Friendly.remote(m)
         case .badResponse: "收到的回复看不懂"
         }
     }
@@ -135,9 +135,24 @@ public actor RPCClient {
         for (_, c) in all { c.resume(throwing: error) }
     }
 
+    /// Number of requests that hit their deadline (for tests / diagnostics).
+    public private(set) var timeoutCount = 0
+
     private func expire(_ id: Int) {
-        pending.removeValue(forKey: id)?.resume(throwing: RPCError.timeout)
+        guard let c = pending.removeValue(forKey: id) else { return }
+        c.resume(throwing: RPCError.timeout)
+        timeoutCount += 1
+        // No answer in time usually means a stale socket that still looks
+        // open. Drop it and reconnect; the store re-syncs on `.connected`.
+        if isConnected && reconnectOnTimeout {
+            let transport = transport
+            Task { await transport.forceReconnect() }
+        }
     }
+
+    /// Force a reconnect when a request times out (on by default).
+    public var reconnectOnTimeout = true
+    public func setReconnectOnTimeout(_ on: Bool) { reconnectOnTimeout = on }
 
     /// Sends a request and waits for its result.
     public func callRaw<P: Encodable & Sendable>(_ method: String, params: P, timeout: Double? = nil) async throws -> JSONValue {

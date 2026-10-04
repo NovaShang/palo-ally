@@ -99,7 +99,7 @@ struct ModelPickerSheet: View {
                 ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
             }
             .task {
-                do { try await store.loadModels() } catch { self.error = "没取到可选模型：\(error.localizedDescription)" }
+                do { try await store.loadModels() } catch { self.error = "没取到可选模型：\(Copy.error(error))" }
             }
         }
         .presentationDetents([.medium, .large])
@@ -109,7 +109,7 @@ struct ModelPickerSheet: View {
         working = true
         error = nil
         Task {
-            do { try await store.setModel(model, effort: effort) } catch { self.error = error.localizedDescription }
+            do { try await store.setModel(model, effort: effort) } catch { self.error = Copy.error(error) }
             working = false
         }
     }

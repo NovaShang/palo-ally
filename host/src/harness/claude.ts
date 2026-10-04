@@ -6,7 +6,6 @@ import type {
   HarnessEvent,
   MainSession,
   MainSessionOptions,
-  PreToolGate,
   ProbeRequest,
   ProbeResult,
   ToolHandlers,
@@ -95,26 +94,6 @@ export function paloallyMcpServer(h: ToolHandlers) {
       ),
     ],
   });
-}
-
-function gateHook(gate: PreToolGate) {
-  return async (input: any) => {
-    const r = gate({
-      toolName: input.tool_name,
-      input: (input.tool_input ?? {}) as Record<string, unknown>,
-      toolUseId: input.tool_use_id,
-      agentId: input.agent_id,
-    });
-    if (r.decision === "pass") return { continue: true };
-    return {
-      continue: true,
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse" as const,
-        permissionDecision: r.decision,
-        permissionDecisionReason: r.reason,
-      },
-    };
-  };
 }
 
 function toolResultText(content: unknown): string {
@@ -242,26 +221,10 @@ class ClaudeMainSession implements MainSession {
             reason: o.decisionReason,
             agentId: o.agentID,
             signal: o.signal,
-          }),
-        hooks: {
-          PreToolUse: [{ hooks: [gateHook(opts.preToolGate) as any] }],
-          PostToolUse: [
-            {
-              hooks: [
-                (async (input: any) => {
-                  opts.postToolUse({
-                    toolName: input.tool_name,
-                    input: input.tool_input,
-                    response: input.tool_response,
-                    toolUseId: input.tool_use_id,
-                    agentId: input.agent_id,
-                  });
-                  return { continue: true };
-                }) as any,
-              ],
-            },
-          ],
-        },
+            suggestions: o.suggestions,
+            defaultToNo: o.defaultToNo,
+            suppressAlwaysAllowRule: o.suppressAlwaysAllowRule,
+          }) as any,
         env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: `paloally/${VERSION}` },
         extraArgs: opts.sharedChrome ? { chrome: null } : {},
         stderr: opts.stderr,
@@ -348,16 +311,16 @@ export class ClaudeCodeDriver implements HarnessDriver {
           model: req.model,
           systemPrompt: req.systemPrompt, // short custom prompt, not the full Claude Code one
           settingSources: [], // no CLAUDE.md / user settings: keep the context short
-          tools: req.allowedTools,
+          tools: req.tools,
           mcpServers: req.mcpServers as any,
           ...(req.strictMcp ? { strictMcpConfig: true, skills: [] } : {}),
           persistSession: false,
           maxTurns: req.maxTurns,
-          permissionMode: "default",
+          // Unattended: the harness' classifier decides each call, and anything it
+          // would ask a human about is denied at once (nobody is there to answer).
+          permissionMode: "auto",
+          permissionPrompts: "none",
           outputFormat: { type: "json_schema", schema: req.outputSchema },
-          canUseTool: async (toolName, input, o) =>
-            req.canUseTool({ toolName, input, toolUseId: o.toolUseID, signal: o.signal }),
-          hooks: { PreToolUse: [{ hooks: [gateHook(req.preToolGate) as any] }] },
           env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: `paloally-probe/${VERSION}` },
         },
       });

@@ -48,14 +48,13 @@ relay/       不新写：复用 ~/code/bento/relay（bento-relay-acp，relay.ben
 | `publish_artifact(slug, title, main_file, type?, pinned?)` | 登记/更新 artifact 元数据 |
 | `notify_user(text, urgent?)` | 主动推送（经路由器：App 推送；微信只发非敏感回执） |
 
-## 4. 安全
+## 4. 安全（全部依赖 harness）
 
-- `canUseTool` → 审批卡片（多端先答先得，超时默认拒绝）。
-- `PreToolUse` hook：kill 状态下一律 deny；不可逆/对外动作（发送、付款、删除、push、对外 POST…）强制 `ask`，即使 auto 规则或 CC 自身规则允许也不放行。
-- auto 规则：`{tool, scope}`，scope 必须是域名 / 收件人 / 路径前缀 / 命令前缀之一，拒绝 `*` 和空 scope（不允许整类放行）；不可逆动作不可进 auto。
-- 审计：`~/.paloally/audit/YYYY-MM-DD.jsonl`，记录每次工具调用（Pre/Post）、审批决定、对外消息、kill/resume。
-- kill switch：中断主会话、停所有任务、暂停探针、拒绝一切工具调用，直到 `resume`。持久化，重启后仍生效。
-- 浏览器（可选）：注入 Playwright MCP + 专属 profile；`sensitiveDomains` 里的域名一律拒绝导航。
+- 判断哪些操作能做、哪些要问：Claude Code 的 `auto` 模式和它自己的权限规则。外壳没有自己的闸门、规则或分类器。
+- `canUseTool` → 审批卡片，转到 App / 微信 / 终端，多端先答先得，超时默认拒绝。卡片标「做了撤不回」= harness 给的 `defaultToNo`；「以后都允许」= 原样交回 harness 的 `suggestions`（`updatedPermissions`），规则存在 Claude Code 自己的设置里。
+- 停下：harness 的 `interrupt()` + `stopTask()`；卡死的轮次直接结束、换新进程（resume 同一会话），不留阻塞状态。
+- 探针：`permissionMode: "auto"` + `permissionPrompts: "none"`，只加载读类工具（为了上下文短，不是安全名单）。
+- 审计：工具调用以 harness 的会话记录为准；外壳只记自己的事件（确认决定、推送、重启）。
 
 ## 5. 线协议（host ↔ 客户端）
 

@@ -65,15 +65,64 @@ public struct Backoff: Sendable {
     }
 }
 
-func withTimeout<T: Sendable>(_ seconds: Double, _ op: @escaping @Sendable () async throws -> T) async throws -> T {
-    try await withThrowingTaskGroup(of: T.self) { group in
-        group.addTask { try await op() }
-        group.addTask {
-            try await Task.sleep(for: .seconds(seconds))
-            throw TransportError.timeout
+/// Resume-once box shared by the racing tasks in `withTimeout`.
+final class RaceBox<T: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<T, Error>?
+    private var early: Result<T, Error>?
+    private var done = false
+    var work: Task<Void, Never>?
+    var timer: Task<Void, Never>?
+
+    func install(_ c: CheckedContinuation<T, Error>) {
+        let pending: Result<T, Error>? = lock.withLock {
+            if let early { self.early = nil; return early }
+            continuation = c
+            return nil
         }
-        defer { group.cancelAll() }
-        return try await group.next()!
+        if let pending { c.resume(with: pending) }
+    }
+
+    /// Returns true if this call won the race.
+    @discardableResult
+    func finish(_ r: Result<T, Error>) -> Bool {
+        let (won, c): (Bool, CheckedContinuation<T, Error>?) = lock.withLock {
+            guard !done else { return (false, nil) }
+            done = true
+            let c = continuation
+            continuation = nil
+            if c == nil { early = r }
+            return (true, c)
+        }
+        guard won else { return false }
+        c?.resume(with: r)
+        work?.cancel()
+        timer?.cancel()
+        return true
+    }
+}
+
+/// Runs `op` with a deadline. Unlike a task group, this returns on time even
+/// if `op` ignores cancellation (e.g. a `sendPing` whose callback never fires
+/// on a half-open socket). `onTimeout` runs when the deadline wins, so the
+/// caller can tear down whatever `op` is stuck on.
+func withTimeout<T: Sendable>(_ seconds: Double, onTimeout: (@Sendable () -> Void)? = nil,
+                              _ op: @escaping @Sendable () async throws -> T) async throws -> T {
+    let box = RaceBox<T>()
+    return try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<T, Error>) in
+            box.install(c)
+            box.work = Task {
+                do { box.finish(.success(try await op())) } catch { box.finish(.failure(error)) }
+            }
+            box.timer = Task {
+                try? await Task.sleep(for: .seconds(seconds))
+                if Task.isCancelled { return }
+                if box.finish(.failure(TransportError.timeout)) { onTimeout?() }
+            }
+        }
+    } onCancel: {
+        box.finish(.failure(CancellationError()))
     }
 }
 
@@ -88,6 +137,7 @@ public actor RelayTransport: HostTransport {
     let backoff: Backoff
     let handshakeTimeout: Double
     let pingInterval: Double
+    let pingTimeout: Double
 
     private var runTask: Task<Void, Never>?
     private var link: (any UnitLink)?
@@ -95,15 +145,18 @@ public actor RelayTransport: HostTransport {
     private var stopped = true
     private var wakeup: CheckedContinuation<Void, Never>?
     private var attempt = 0
+    private var skipNextBackoff = false
 
     public init(host: PairedHost, identity: DeviceIdentity, linkFactory: @escaping UnitLinkFactory = WebSocketUnitLink.factory,
-                backoff: Backoff = Backoff(), handshakeTimeout: Double = 15, pingInterval: Double = 20) {
+                backoff: Backoff = Backoff(), handshakeTimeout: Double = 15, pingInterval: Double = 20,
+                pingTimeout: Double = 10) {
         self.host = host
         self.identity = identity
         self.linkFactory = linkFactory
         self.backoff = backoff
         self.handshakeTimeout = handshakeTimeout
         self.pingInterval = pingInterval
+        self.pingTimeout = pingTimeout
         (events, continuation) = AsyncStream.makeStream(of: TransportEvent.self, bufferingPolicy: .unbounded)
     }
 
@@ -128,6 +181,26 @@ public actor RelayTransport: HostTransport {
     public func reconnectNow() {
         attempt = 0
         wake()
+    }
+
+    /// Treats the current link as dead: closes it and reconnects right away
+    /// (no backoff). Used after a ping / RPC timeout and when the app returns
+    /// from a long stay in the background, where the socket is often stale.
+    public func forceReconnect() {
+        guard !stopped else { return }
+        attempt = 0
+        skipNextBackoff = true
+        if let link {
+            link.close()
+        }
+        wake()
+    }
+
+    private var linkGeneration: UUID?
+
+    private func pingFailed(_ generation: UUID) {
+        guard linkGeneration == generation else { return }
+        forceReconnect()
     }
 
     public func send(_ message: Data) async throws {
@@ -156,12 +229,17 @@ public actor RelayTransport: HostTransport {
 
     private func runLoop() async {
         while !stopped && !Task.isCancelled {
+            skipNextBackoff = false
             let reason = await connectAndPump()
             channel = nil
             link?.close()
             link = nil
             if stopped { break }
             continuation.yield(.disconnected(reason))
+            if skipNextBackoff {
+                skipNextBackoff = false
+                continue
+            }
             let d = backoff.delay(attempt: attempt)
             attempt += 1
             await sleep(seconds: d)
@@ -179,7 +257,7 @@ public actor RelayTransport: HostTransport {
             l = try await linkFactory(url)
             link = l
             try await l.send(try handshake.helloUnit())
-            let welcome = try await withTimeout(handshakeTimeout) { try await l.receive() }
+            let welcome = try await withTimeout(handshakeTimeout, onTimeout: { l.close() }) { try await l.receive() }
             channel = try handshake.finish(welcomeUnit: welcome)
         } catch let e as E2EError {
             switch e {
@@ -193,11 +271,22 @@ public actor RelayTransport: HostTransport {
         attempt = 0
         continuation.yield(.connected)
 
-        let pinger = Task { [pingInterval] in
+        let generation = UUID()
+        linkGeneration = generation
+        let pinger = Task { [pingInterval, pingTimeout, weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(pingInterval))
                 if Task.isCancelled { break }
-                do { try await withTimeout(10) { try await l.ping() } } catch { l.close(); break }
+                do {
+                    try await withTimeout(pingTimeout) { try await l.ping() }
+                } catch {
+                    if Task.isCancelled { break }
+                    // Dead link: close it so the pump's receive fails and the
+                    // run loop reconnects immediately.
+                    l.close()
+                    await self?.pingFailed(generation)
+                    break
+                }
             }
         }
         defer { pinger.cancel() }

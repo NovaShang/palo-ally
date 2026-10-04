@@ -1,35 +1,7 @@
-import { resolve } from "node:path";
 import type { HarnessDriver } from "./harness/types.ts";
 import type { Watch } from "./types.ts";
 import type { WatchStore } from "./watches.ts";
 import { parseHHMM, truncate, zonedParts } from "./util.ts";
-
-const READ_VERBS = new Set(["get", "list", "search", "read", "fetch", "query", "find", "lookup", "view", "show", "describe", "count"]);
-
-// probeMayUse: read-only tools, files only inside the assistant's home, no
-// sensitive sites, and MCP tools whose name starts with a read verb.
-export function probeMayUse(tool: string, input: Record<string, unknown>, host: Pick<ProbeHost, "cwd" | "sensitiveDomains">): boolean {
-  if (tool === "Read" || tool === "Glob" || tool === "Grep") {
-    const p = String(input.file_path ?? input.path ?? host.cwd());
-    const full = resolve(host.cwd(), p);
-    return full === host.cwd() || full.startsWith(host.cwd() + "/");
-  }
-  if (tool === "WebSearch") return true;
-  if (tool === "WebFetch") {
-    let d = "";
-    try {
-      d = new URL(String(input.url)).hostname.toLowerCase();
-    } catch {
-      return false;
-    }
-    return !host.sensitiveDomains().some((s) => d === s || d.endsWith("." + s));
-  }
-  if (tool.startsWith("mcp__") && !tool.startsWith("mcp__paloally__")) {
-    const leaf = tool.split("__").slice(2).join("_").toLowerCase();
-    return READ_VERBS.has(leaf.split(/[^a-z0-9]+/)[0] ?? "");
-  }
-  return false;
-}
 
 // How long after a missed schedule slot we still catch it up (host was asleep).
 const CATCHUP_MS = 6 * 3600_000;
@@ -42,13 +14,11 @@ export interface ProbeTrigger {
 export interface ProbeHost {
   driver: HarnessDriver;
   watches: WatchStore;
-  isKilled(): boolean;
   timezone(): string;
   probeModel(): string;
   cwd(): string;
   mcpServers(): Record<string, unknown>;
   inheritConnectors(): boolean;
-  sensitiveDomains(): string[];
   lastUserActivity(): number;
   budgetLeftUsd(): number; // probe budget remaining today
   spend(usd: number): void;
@@ -111,7 +81,7 @@ export class ProbeScheduler {
 
   async tick(now = Date.now()): Promise<{ scheduled: number; checked: number; triggered: number }> {
     const out = { scheduled: 0, checked: 0, triggered: 0 };
-    if (this.running || this.host.isKilled()) return out;
+    if (this.running) return out;
     this.running = true;
     try {
       out.scheduled = this.fireSchedules(now);
@@ -179,17 +149,10 @@ export class ProbeScheduler {
       systemPrompt: PROBE_SYSTEM,
       prompt,
       mcpServers: this.host.mcpServers(),
-      allowedTools: ["Read", "Glob", "Grep", "WebFetch", "WebSearch"],
+      tools: ["Read", "Glob", "Grep", "WebFetch", "WebSearch"],
       outputSchema: PROBE_SCHEMA as unknown as Record<string, unknown>,
       maxTurns: 12,
       strictMcp: !this.host.inheritConnectors(),
-      // Unattended: read-only tools run, anything else that would need a human is refused.
-      canUseTool: async ({ toolName, input }) =>
-        probeMayUse(toolName, input, this.host) ? { behavior: "allow", updatedInput: input } : { behavior: "deny", message: "探针只能读，不能做别的" },
-      // Gate everything (not just prompts): the probe reads untrusted pages and
-      // must not be talked into reading secrets or sending them anywhere.
-      preToolGate: ({ toolName, input }) =>
-        probeMayUse(toolName, input, this.host) ? { decision: "allow" } : { decision: "deny", reason: "探针只能读，不能做别的" },
     });
     this.host.spend(res.costUsd);
     this.host.log(`probe run: ${due.length} watch(es), $${res.costUsd.toFixed(4)} ${res.usage ? JSON.stringify(res.usage) : ""}`);

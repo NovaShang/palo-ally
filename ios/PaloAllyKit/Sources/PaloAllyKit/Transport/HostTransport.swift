@@ -42,6 +42,8 @@ public protocol HostTransport: AnyObject, Sendable {
     func send(_ message: Data) async throws
     /// Skip any pending backoff and try right away (e.g. app foregrounded).
     func reconnectNow() async
+    /// Treat the link as dead (e.g. after a timeout) and reconnect right away.
+    func forceReconnect() async
 }
 
 /// In-process transport. The "host side" is whatever sets `onSend`; it talks
@@ -90,6 +92,16 @@ public final class InMemoryTransport: HostTransport, @unchecked Sendable {
 
     public func reconnectNow() async {
         if !isConnected { await simulateConnect() }
+    }
+
+    /// Number of `forceReconnect()` calls (for tests).
+    public var forcedReconnects: Int { lock.withLock { _forced } }
+    private var _forced = 0
+
+    public func forceReconnect() async {
+        lock.withLock { _forced += 1 }
+        if isConnected { simulateDisconnect(.network("timeout")) }
+        if autoConnect { await simulateConnect() }
     }
 
     public func send(_ message: Data) async throws {

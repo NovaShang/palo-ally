@@ -106,9 +106,16 @@ struct TaskDetailView: View {
                         Button("停下这件事", role: .destructive) { confirmStop = true }
                             .confirmationDialog("停下「\(task.title)」？", isPresented: $confirmStop, titleVisibility: .visible) {
                                 Button("停下", role: .destructive) {
-                                    Task { try? await store.stopTask(id: task.id) }
+                                    Task {
+                                        do { try await store.stopTask(id: task.id) } catch {
+                                            self.error = "没停下来：\(Copy.error(error))"
+                                        }
+                                    }
                                 }
                             }
+                        if let error, !activity.isEmpty {
+                            Text(error).font(.footnote).foregroundStyle(.red)
+                        }
                     }
                 }
 
@@ -142,7 +149,7 @@ struct TaskDetailView: View {
             activity = d.activity
             error = nil
         } catch {
-            self.error = error.localizedDescription
+            self.error = Copy.error(error)
         }
     }
 }

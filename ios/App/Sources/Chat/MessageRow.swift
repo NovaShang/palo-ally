@@ -12,11 +12,8 @@ struct MessageRow: View {
         case .system:
             NoticeRow(text: message.text)
         default:
-            if message.kind == .notice {
-                NoticeRow(text: message.text)
-            } else {
-                AssistantMessage(message: message)
-            }
+            // Anything the assistant says (including pushes it sends) gets full markdown.
+            AssistantMessage(message: message)
         }
     }
 }
@@ -40,6 +37,12 @@ private struct UserBubble: View {
                 Image(systemName: "clock")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+            } else if message.delivery == .queued {
+                Image(systemName: "icloud.slash")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("还没发出去，连上后会自动发")
+                    .help("连上后会自动发")
             }
             VStack(alignment: .trailing, spacing: 4) {
                 Text(MarkdownBlock.attributed(message.text))
@@ -55,7 +58,7 @@ private struct UserBubble: View {
                 }
             }
         }
-        .opacity(message.delivery == .sending ? 0.75 : 1)
+        .opacity(message.delivery == .sending || message.delivery == .queued ? 0.75 : 1)
     }
 }
 

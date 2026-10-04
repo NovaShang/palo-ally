@@ -13,6 +13,9 @@ struct SettingsView: View {
     @State private var error: String?
     @State private var confirmUnpair = false
     @State private var showModels = false
+    @State private var unpairing = false
+    /// Pending quiet-hours save; DatePickers fire on every tick of the wheel.
+    @State private var quietSave: Task<Void, Never>?
 
     var body: some View {
         Form {
@@ -64,9 +67,13 @@ struct SettingsView: View {
                 } else {
                     LabeledContent("电脑", value: store.hostName.isEmpty ? (model.pairedHost?.hostLabel ?? "—") : store.hostName)
                     Button("换一台电脑配对") { model.showPairingSheet = true }
-                    Button("解除配对", role: .destructive) { confirmUnpair = true }
+                    Button(unpairing ? "正在解除…" : "解除配对", role: .destructive) { confirmUnpair = true }
+                        .disabled(unpairing)
                         .confirmationDialog("解除和这台电脑的配对？", isPresented: $confirmUnpair, titleVisibility: .visible) {
-                            Button("解除配对", role: .destructive) { model.unpair() }
+                            Button("解除配对", role: .destructive) {
+                                unpairing = true
+                                Task { await model.unpair() }
+                            }
                         } message: {
                             Text("之后要重新扫码才能连回来。")
                         }
@@ -84,10 +91,17 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: prefill)
         .onChange(of: store.settings) { prefill() }
-        .onChange(of: quietOn) { if loaded { push(["quietHours": quietValue]) } }
-        .onChange(of: quietStart) { if loaded && quietOn { push(["quietHours": quietValue]) } }
-        .onChange(of: quietEnd) { if loaded && quietOn { push(["quietHours": quietValue]) } }
+        .onChange(of: quietOn) { if loaded { quietSave?.cancel(); push(["quietHours": quietValue]) } }
+        .onChange(of: quietStart) { if loaded && quietOn { scheduleQuietSave() } }
+        .onChange(of: quietEnd) { if loaded && quietOn { scheduleQuietSave() } }
         .onChange(of: maxPerDay) { if loaded { push(["maxProactivePerDay": .number(Double(maxPerDay))]) } }
+        .onDisappear {
+            // Leaving mid-debounce: save right away.
+            if let pending = quietSave, !pending.isCancelled {
+                pending.cancel()
+                push(["quietHours": quietValue])
+            }
+        }
     }
 
     private var quietValue: JSONValue {
@@ -106,10 +120,26 @@ struct SettingsView: View {
         DispatchQueue.main.async { loaded = true }
     }
 
+    private func scheduleQuietSave() {
+        quietSave?.cancel()
+        quietSave = Task {
+            try? await Task.sleep(for: .milliseconds(800))
+            guard !Task.isCancelled else { return }
+            quietSave = nil
+            push(["quietHours": quietValue])
+        }
+    }
+
     private func push(_ patch: JSONValue) {
         error = nil
         Task {
-            do { try await store.updateSettings(patch: patch) } catch { self.error = "没改成：\(error.localizedDescription)" }
+            do {
+                try await store.updateSettings(patch: patch)
+            } catch {
+                self.error = "没改成：\(Copy.error(error))"
+                // Put the controls back to what the computer actually has.
+                prefill()
+            }
         }
     }
 }

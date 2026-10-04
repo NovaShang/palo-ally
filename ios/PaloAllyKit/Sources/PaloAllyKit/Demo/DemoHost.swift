@@ -222,12 +222,16 @@ public actor DemoHost {
         case RPCMethod.memoryRead:
             let path = p["path"]?.stringValue ?? ""
             guard let f = memory[path] else { throw DemoError(message: "没有这个文件") }
-            return ["content": .string(f.content)]
+            return ["content": .string(f.content), "updatedAt": .number(Double(f.updatedAt))]
         case RPCMethod.memoryWrite:
             let path = p["path"]?.stringValue ?? ""
+            if let base = p["baseUpdatedAt"]?.doubleValue, let cur = memory[path], cur.updatedAt > Int64(base) {
+                throw DemoError(message: "这个文件刚被助理改过，请重新打开再改")
+            }
             let scope = memory[path]?.scope ?? .auto
-            memory[path] = (scope, p["content"]?.stringValue ?? "", Date().epochMillis)
-            return ["ok": true]
+            let now = max(Date().epochMillis, (memory[path]?.updatedAt ?? 0) + 1)
+            memory[path] = (scope, p["content"]?.stringValue ?? "", now)
+            return ["ok": true, "updatedAt": .number(Double(now))]
         case RPCMethod.settingsUpdate:
             guard case .object(let patch)? = p["patch"] else { throw DemoError(message: "bad patch") }
             var obj = try JSONValue.from(settings)
@@ -249,6 +253,12 @@ public actor DemoHost {
             return ["status": try .from(status)]
         case RPCMethod.pushRegister:
             pushTokens.append(p["token"]?.stringValue ?? "")
+            return ["ok": true]
+        case RPCMethod.pushUnregister:
+            let token = p["token"]?.stringValue ?? ""
+            pushTokens.removeAll { $0 == token }
+            return ["ok": true]
+        case RPCMethod.deviceUnpair:
             return ["ok": true]
         case RPCMethod.auditTail:
             return ["entries": []]
@@ -435,7 +445,7 @@ public actor DemoHost {
                      taskId: nil, irreversible: true, status: .pending, createdAt: now - 20 * min),
             Approval(id: "a2", tool: "browser_navigate", title: "打开大众点评查餐厅",
                      detail: "要打开 dianping.com 搜索周五晚上可订位的餐厅", taskId: "t3", irreversible: false,
-                     status: .pending, createdAt: now - 25 * min, suggestedScope: "dianping.com"),
+                     status: .pending, createdAt: now - 25 * min, suggestedScope: "domain:dianping.com"),
             Approval(id: "a0", tool: "read_file", title: "读取下载文件夹里的发票", detail: "~/Downloads/发票/*.pdf",
                      taskId: "t2", irreversible: false, status: .allowed, createdAt: now - hour,
                      decidedAt: now - hour + min, decidedBy: "app"),

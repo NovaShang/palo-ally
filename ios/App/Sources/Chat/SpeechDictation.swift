@@ -2,15 +2,16 @@ import AVFoundation
 import Observation
 import Speech
 
-/// Tap-to-talk dictation via the Speech framework (on-device when possible).
+/// Hold-to-talk dictation via the Speech framework (on-device when possible).
 @MainActor
 @Observable
 final class SpeechDictation {
     private(set) var isRecording = false
     private(set) var transcript = ""
-    private(set) var errorMessage: String?
-    /// Text that was already in the field when dictation began.
-    var prefix = ""
+    var errorMessage: String?
+    /// Recent input loudness, 0…1 (drives the waveform).
+    private(set) var level: Float = 0
+    private var gotFinal = false
 
     private let engine = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -44,12 +45,15 @@ final class SpeechDictation {
             input.removeTap(onBus: 0)
             // The tap runs on the audio thread: keep the closure nonisolated.
             nonisolated(unsafe) let sink = request
-            input.installTap(onBus: 0, bufferSize: 1024, format: format) { @Sendable buffer, _ in
+            input.installTap(onBus: 0, bufferSize: 1024, format: format) { @Sendable [weak self] buffer, _ in
                 sink.append(buffer)
+                let rms = Self.rms(buffer)
+                Task { @MainActor in self?.level = rms }
             }
             engine.prepare()
             try engine.start()
             transcript = ""
+            gotFinal = false
             isRecording = true
 
             task = recognizer.recognitionTask(with: request) { @Sendable [weak self] result, error in
@@ -58,13 +62,48 @@ final class SpeechDictation {
                 Task { @MainActor in
                     guard let self else { return }
                     if let text { self.transcript = text }
-                    if error != nil || final { self.stop() }
+                    if error != nil || final {
+                        self.gotFinal = true
+                        self.stop()
+                    }
                 }
             }
         } catch {
             errorMessage = "麦克风没打开，再试一次"
             stop()
         }
+    }
+
+    /// Stops listening and waits briefly for the recognizer's final text.
+    func finish(timeout: Double = 1.5) async -> String {
+        guard isRecording || task != nil else { return transcript.trimmingCharacters(in: .whitespacesAndNewlines) }
+        engine.stop()
+        engine.inputNode.removeTap(onBus: 0)
+        request?.endAudio()
+        let deadline = Date().addingTimeInterval(timeout)
+        while !gotFinal && Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        stop()
+        return transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Stops and throws the text away.
+    func cancel() {
+        task?.cancel()
+        stop()
+        transcript = ""
+    }
+
+    nonisolated static func rms(_ buffer: AVAudioPCMBuffer) -> Float {
+        guard let data = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return 0 }
+        let n = Int(buffer.frameLength)
+        var sum: Float = 0
+        for i in 0..<n { sum += data[i] * data[i] }
+        let rms = (sum / Float(n)).squareRoot()
+        // Map roughly -50 dB…-10 dB to 0…1.
+        let db = 20 * log10(max(rms, 0.000_01))
+        return max(0, min(1, (db + 50) / 40))
     }
 
     func stop() {
@@ -76,6 +115,7 @@ final class SpeechDictation {
         request = nil
         task = nil
         isRecording = false
+        level = 0
         #if !os(macOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         #endif

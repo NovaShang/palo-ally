@@ -18,7 +18,7 @@ struct WatchesSection: View {
                     .swipeActions {
                         Button(role: .destructive) {
                             Task {
-                                do { try await store.removeWatch(id: w.id) } catch { self.error = error.localizedDescription }
+                                do { try await store.removeWatch(id: w.id) } catch { self.error = Copy.error(error) }
                             }
                         } label: {
                             Label("删除", systemImage: "trash")
@@ -94,6 +94,8 @@ struct WatchEditor: View {
     @State private var kind: WatchKind = .schedule
     @State private var instruction = ""
     @State private var interval = 30
+    /// "到点做" can also run every N minutes instead of at fixed times.
+    @State private var scheduleByInterval = false
     @State private var times: [Date] = []
     @State private var enabled = true
     @State private var saving = false
@@ -117,6 +119,18 @@ struct WatchEditor: View {
 
             if kind == .schedule {
                 Section {
+                    Picker("怎么算时间", selection: $scheduleByInterval) {
+                        Text("每天几点").tag(false)
+                        Text("每隔一段时间").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
+
+            if kind == .schedule && scheduleByInterval {
+                Section("多久做一次") { intervalStepper }
+            } else if kind == .schedule {
+                Section {
                     ForEach(times.indices, id: \.self) { i in
                         DatePicker("时间 \(i + 1)", selection: $times[i], displayedComponents: .hourAndMinute)
                     }
@@ -132,11 +146,7 @@ struct WatchEditor: View {
                     Text("按电脑那边的时区。")
                 }
             } else {
-                Section("多久看一次") {
-                    Stepper(value: $interval, in: 5...1440, step: interval < 60 ? 5 : 30) {
-                        Text(interval % 60 == 0 ? "每 \(interval / 60) 小时" : "每 \(interval) 分钟")
-                    }
-                }
+                Section("多久看一次") { intervalStepper }
             }
 
             Section {
@@ -161,8 +171,22 @@ struct WatchEditor: View {
         .onAppear(perform: prefill)
     }
 
+    /// 5-minute steps up to an hour, 30-minute steps above (60 → 55 going
+    /// down, not 30).
+    private var intervalStepper: some View {
+        Stepper {
+            Text(Copy.every(interval))
+        } onIncrement: {
+            interval = IntervalStep.up(interval)
+        } onDecrement: {
+            interval = IntervalStep.down(interval)
+        }
+    }
+
+    private var usesInterval: Bool { kind == .check || scheduleByInterval }
+
     private var canSave: Bool {
-        !instruction.trimmingCharacters(in: .whitespaces).isEmpty && (kind == .check || !times.isEmpty)
+        !instruction.trimmingCharacters(in: .whitespaces).isEmpty && (usesInterval || !times.isEmpty)
     }
 
     private func prefill() {
@@ -173,7 +197,8 @@ struct WatchEditor: View {
         title = w.title
         kind = w.kind == .unknown ? .schedule : w.kind
         instruction = w.instruction
-        interval = w.intervalMinutes ?? 30
+        interval = min(max(w.intervalMinutes ?? 30, IntervalStep.range.lowerBound), IntervalStep.range.upperBound)
+        scheduleByInterval = w.isIntervalSchedule
         enabled = w.enabled
         times = (w.at ?? []).compactMap(Self.parse)
         if times.isEmpty { times = [Self.date(hour: 8, minute: 30)] }
@@ -186,8 +211,8 @@ struct WatchEditor: View {
             title: title.trimmingCharacters(in: .whitespaces).isEmpty ? String(instruction.prefix(16)) : title,
             kind: kind,
             instruction: instruction,
-            intervalMinutes: kind == .check ? interval : nil,
-            at: kind == .schedule ? times.map(Self.format).sorted() : nil,
+            intervalMinutes: usesInterval ? interval : nil,
+            at: usesInterval ? nil : times.map(Self.format).sorted(),
             enabled: enabled,
             skipIfActiveMinutes: existing?.skipIfActiveMinutes
         )
@@ -200,7 +225,7 @@ struct WatchEditor: View {
                 }
                 dismiss()
             } catch {
-                self.error = "没保存上：\(error.localizedDescription)"
+                self.error = "没保存上：\(Copy.error(error))"
             }
             saving = false
         }

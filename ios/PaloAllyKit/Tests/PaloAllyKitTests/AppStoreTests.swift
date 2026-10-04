@@ -191,13 +191,15 @@ struct AppStoreTests {
         host.transport.simulateDisconnect()
         #expect(await until { store.connection != .online })
         store.send("断网了")
-        #expect(await until { store.messages.first?.delivery == .failed })
+        #expect(await until { store.messages.first?.delivery == .queued })
         #expect(!store.awaitingReply)
+        let cid = store.messages[0].clientMsgId
         await host.transport.simulateConnect()
         #expect(await until { store.connection == .online })
-        store.retry(store.messages[0])
-        #expect(store.messages[0].delivery == .sending)
+        // Queued while offline → resent automatically, same clientMsgId.
         #expect(await until { host.request("chat.send") != nil })
+        #expect(store.messages[0].delivery == .sending)
+        #expect(host.request("chat.send")?.params["clientMsgId"]?.stringValue == cid)
         host.respond(host.request("chat.send")!.id, ["id": "s1", "seq": 1])
         #expect(await until { store.messages.first?.delivery == .sent })
     }
@@ -246,7 +248,7 @@ struct AppStoreTests {
         host.transport.simulateDisconnect()
         #expect(await until { store.connection != .online })
         store.send("离线时说的")
-        #expect(await until { store.messages.last?.delivery == .failed })
+        #expect(await until { store.messages.last?.delivery == .queued })
         // A fresh snapshot (as after re-pair) must not drop the failed echo.
         store.applySync(host.syncResult, since: nil)
         #expect(store.messages.map(\.text) == ["1", "2", "离线时说的"])
@@ -332,8 +334,10 @@ struct AppStoreTests {
         let (store, _) = await demoStore()
         let files = try await store.memoryFiles()
         #expect(files.first?.scope == .core)
-        try await store.writeMemory(path: "user.md", content: "# 新的我")
-        #expect(try await store.readMemory(path: "user.md") == "# 新的我")
+        let before = try await store.readMemory(path: "user.md")
+        #expect(before.updatedAt != nil)
+        try await store.writeMemory(path: "user.md", content: "# 新的我", baseUpdatedAt: before.updatedAt)
+        #expect(try await store.readMemory(path: "user.md").content == "# 新的我")
     }
 
     @Test func settingsKillResumeAndPush() async throws {
@@ -412,6 +416,9 @@ struct AppStoreTests {
             _ = try await rpc.callRaw("task.get", params: IDParams(id: "x"), timeout: 0.1)
         }
         #expect(await rpc.pendingCount == 0)
+        // A timeout drops the (possibly stale) link and reconnects.
+        #expect(await until { host.transport.forcedReconnects == 1 })
+        #expect(await until { await rpc.isConnected })
         let r = Task { try await rpc.callRaw("memory.read", params: PathParams(path: "nope")) }
         _ = await until { host.request("memory.read") != nil }
         host.transport.deliver(json: ["id": .number(Double(host.request("memory.read")!.id)), "error": ["message": "没有这个文件"]])

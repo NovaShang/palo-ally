@@ -13,6 +13,9 @@ struct PairingView: View {
     @State private var showManual = false
     @State private var working = false
     @State private var error: String?
+    /// A link that arrived from outside (URL open / launch option) while this
+    /// device is already paired: ask before switching computers.
+    @State private var confirmSwitch = false
 
     var body: some View {
         NavigationStack {
@@ -26,7 +29,7 @@ struct PairingView: View {
                             .glassEffect(.regular.tint(.accentColor.opacity(0.18)), in: .circle)
                         Text("你好，我是 PaloAlly")
                             .font(.title.bold())
-                        Text("住在你电脑上的私人助理。把手机和电脑连起来，随时找我办事。")
+                        Text("住在你电脑上的私人助理。把这台设备和电脑连起来，随时找我办事。")
                             .font(.body)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -35,8 +38,8 @@ struct PairingView: View {
 
                     VStack(alignment: .leading, spacing: 12) {
                         step(1, "在电脑上运行 paloally pair，屏幕上会出现一个二维码。")
-                        step(2, "用这台手机扫一扫，或者把链接复制过来。")
-                        step(3, "连上之后，数据只在你的电脑和手机之间加密传送。")
+                        step(2, QRScannerView.isAvailable ? "用这台设备扫一扫，或者把链接复制过来。" : "把电脑上显示的配对链接复制过来。")
+                        step(3, "连上之后，数据只在你的电脑和这台设备之间加密传送。")
                     }
                     .padding(18)
                     .background(.background.secondary, in: .rect(cornerRadius: 22, style: .continuous))
@@ -121,13 +124,38 @@ struct PairingView: View {
                     submit()
                 }
             }
-            .onAppear {
-                if let pending = model.pendingPairingLink {
-                    model.pendingPairingLink = nil
-                    linkText = pending
-                    submit()
+            .onAppear(perform: takePendingLink)
+            // A link can also arrive while this screen is already showing.
+            .onChange(of: model.pendingPairingLink) { takePendingLink() }
+            .confirmationDialog(switchTitle, isPresented: $confirmSwitch, titleVisibility: .visible) {
+                Button("换过去") { submit() }
+                Button("不换", role: .cancel) {
+                    linkText = ""
+                    if isSheet { dismiss() }
                 }
+            } message: {
+                Text("收到了一个配对链接。换过去之后，这台设备就不再连「\(currentHostLabel)」了。")
             }
+        }
+    }
+
+    private var currentHostLabel: String {
+        let name = model.store?.hostName ?? ""
+        if !name.isEmpty { return name }
+        let label = model.pairedHost?.hostLabel ?? ""
+        return label.isEmpty ? "现在的电脑" : label
+    }
+
+    private var switchTitle: String { "从「\(currentHostLabel)」换到另一台电脑？" }
+
+    private func takePendingLink() {
+        guard let pending = model.pendingPairingLink else { return }
+        model.pendingPairingLink = nil
+        linkText = pending
+        if model.mode == .paired {
+            confirmSwitch = true
+        } else {
+            submit()
         }
     }
 
@@ -160,7 +188,7 @@ struct PairingView: View {
                     if isSheet { dismiss() }
                 } catch {
                     appLog.error("pairing failed: \(String(describing: error), privacy: .public)")
-                    self.error = error.localizedDescription
+                    self.error = (error as? PairingError)?.errorDescription ?? Copy.error(error)
                 }
                 working = false
             }

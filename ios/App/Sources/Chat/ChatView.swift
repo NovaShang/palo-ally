@@ -5,7 +5,6 @@ struct ChatView: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var draft = ""
-    @State private var dictation = SpeechDictation()
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -42,8 +41,8 @@ struct ChatView: View {
                         ApprovalCard(approval: approval)
                     }
 
-                    if store.awaitingReply {
-                        ThinkingIndicator()
+                    if showsBusyIndicator {
+                        ThinkingIndicator(activity: busyActivity, justSent: store.awaitingReply && store.status?.busy != true)
                             .id("thinking")
                     }
 
@@ -60,7 +59,7 @@ struct ChatView: View {
             .onChange(of: store.messages.last?.text) {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
-            .onChange(of: store.awaitingReply) {
+            .onChange(of: showsBusyIndicator) {
                 withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
         }
@@ -68,9 +67,7 @@ struct ChatView: View {
             StatusBanner()
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            ComposerView(draft: $draft, dictation: dictation) {
-                let text = draft
-                draft = ""
+            ComposerView(draft: $draft) { text in
                 store.send(text)
             }
         }
@@ -110,6 +107,17 @@ struct ChatView: View {
         }
     }
 
+    /// Shown whenever the host is working (not just right after a send).
+    private var showsBusyIndicator: Bool {
+        store.connection.isOnline && !store.isKilled && (store.awaitingReply || store.status?.busy == true)
+    }
+
+    private var busyActivity: String? {
+        guard store.status?.busy == true, let a = store.status?.activity?.trimmingCharacters(in: .whitespaces), !a.isEmpty
+        else { return nil }
+        return a.hasSuffix("…") || a.hasSuffix("...") ? a : a + "…"
+    }
+
     private var subtitle: String {
         if store.connection.isOnline {
             if store.isKilled { return "已暂停" }
@@ -132,6 +140,7 @@ struct StatusBanner: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var resuming = false
+    @State private var error: String?
 
     var body: some View {
         Group {
@@ -139,7 +148,11 @@ struct StatusBanner: View {
                 banner(icon: "pause.circle.fill", tint: .orange, text: "助理已暂停，什么都不会做") {
                     Button(resuming ? "正在恢复…" : "继续工作") {
                         resuming = true
-                        Task { try? await store.resume(); resuming = false }
+                        error = nil
+                        Task {
+                            do { try await store.resume() } catch { self.error = "没恢复成功：\(Friendly.message(error))" }
+                            resuming = false
+                        }
                     }
                     .buttonStyle(.glassProminent)
                     .disabled(resuming)
@@ -154,6 +167,21 @@ struct StatusBanner: View {
                     Button("重试") { store.reconnectNow() }
                         .buttonStyle(.glass)
                 }
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let error {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    .glassEffect(.regular, in: .capsule)
+                    .offset(y: 30)
+                    .task {
+                        try? await Task.sleep(for: .seconds(4))
+                        self.error = nil
+                    }
             }
         }
         .animation(.snappy, value: store.isKilled)
@@ -175,14 +203,23 @@ struct StatusBanner: View {
     }
 }
 
-/// Shows within 2s of sending so the user knows they were heard.
+/// "Working on it" line: what the host is doing right now (status.activity),
+/// or a quick "收到" right after a send.
 struct ThinkingIndicator: View {
+    var activity: String?
+    var justSent = false
     @State private var slow = false
+
+    private var text: String {
+        if let activity { return activity }
+        if justSent { return slow ? "收到啦，正在想…" : "收到" }
+        return "正在想…"
+    }
 
     var body: some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
-            Text(slow ? "收到啦，正在想…" : "收到")
+            Text(text)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .contentTransition(.opacity)
@@ -221,4 +258,5 @@ struct EmptyChatHint: View {
     NavigationStack { ChatView() }
         .environment(model)
         .environment(model.store!)
+        .environment(VoiceInputController())
 }

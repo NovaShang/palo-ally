@@ -64,30 +64,28 @@ enum Copy {
         }
     }
 
-    /// Friendly names for common tool identifiers.
-    static func tool(_ raw: String?) -> String {
-        guard let raw, !raw.isEmpty else { return "" }
-        let lower = raw.lowercased()
-        let table: [(String, String)] = [
-            ("send_email", "发邮件"), ("email", "邮件"), ("bash", "运行命令"), ("read", "读文件"),
-            ("write", "写文件"), ("edit", "改文件"), ("webfetch", "看网页"), ("websearch", "上网搜索"),
-            ("grep", "找文件"), ("glob", "找文件"), ("navigate", "打开网页"), ("browser", "操作浏览器"),
-            ("click", "点网页"), ("task", "分派小帮手"), ("agent", "分派小帮手"), ("notify", "提醒你"),
-            ("wechat", "微信"), ("pay", "付款"), ("delete", "删除"), ("remove", "删除"), ("post", "发出去"),
-        ]
-        for (k, v) in table where lower.contains(k) { return v }
-        return raw
+    /// Friendly names for tool identifiers ("用一个工具" when unknown).
+    static func tool(_ raw: String?) -> String { Friendly.tool(raw) }
+
+    /// Any error as a short plain sentence (no paths, codes or errno names).
+    static func error(_ e: Error) -> String { Friendly.message(e) }
+
+    static func every(_ m: Int) -> String {
+        if m % 60 == 0 { return "每 \(m / 60) 小时" }
+        if m > 60 { return "每 \(m / 60) 小时 \(m % 60) 分钟" }
+        return "每 \(m) 分钟"
     }
 
     static func watchSchedule(_ w: Watch) -> String {
         switch w.kind {
         case .schedule:
             let times = (w.at ?? []).joined(separator: "、")
-            return times.isEmpty ? "到点做" : "每天 \(times)"
+            if !times.isEmpty { return "每天 \(times)" }
+            if let m = w.intervalMinutes, m > 0 { return "\(every(m))做一次" }
+            return "到点做"
         case .check:
             guard let m = w.intervalMinutes, m > 0 else { return "隔一阵看看" }
-            if m % 60 == 0 { return "每 \(m / 60) 小时看一次" }
-            return "每 \(m) 分钟看一次"
+            return "\(every(m))看一次"
         case .unknown:
             return ""
         }

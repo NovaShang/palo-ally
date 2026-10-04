@@ -20,7 +20,7 @@ describe("daemon over the local socket", () => {
       return;
     }
     if (t === "risky") {
-      await ctx.useTool("Bash", { command: "rm -rf ~/tmp/thing" });
+      await ctx.useTool("Bash", { command: "rm -rf ~/tmp/thing" }, { ask: true, defaultToNo: true });
       return;
     }
     ctx.emit({ type: "assistant_text", text: `回声：${t}`, parentToolUseId: null });
@@ -55,7 +55,7 @@ describe("daemon over the local socket", () => {
     c.close();
   });
 
-  test("CLI: chat one-shot, status, tasks, watch, settings, kill/resume, audit", async () => {
+  test("CLI: chat one-shot, status, tasks, watch, settings, stop, audit", async () => {
     let r = await cli("chat", "你好呀");
     expect(r.out).toContain("回声：你好呀");
 
@@ -78,15 +78,11 @@ describe("daemon over the local socket", () => {
     expect(r.out).toContain("空闲");
     expect(r.out).toContain("远程：关闭");
 
-    r = await cli("kill");
-    expect(r.out).toContain("急停");
-    expect(d.hub.status().killed).toBe(true);
-    r = await cli("resume");
-    expect(d.hub.status().killed).toBe(false);
+    r = await cli("stop");
+    expect(r.out).toContain("停下");
 
     r = await cli("audit", "50");
-    expect(r.out).toContain("kill");
-    expect(r.out).toContain("resume");
+    expect(r.out).toContain("stop");
 
     r = await cli("metrics", "7");
     expect(r.out).toContain("任务：1 个");

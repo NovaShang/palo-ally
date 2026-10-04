@@ -49,6 +49,10 @@ struct AssistantView: View {
         .navigationDestination(isPresented: $model.showSettings) {
             SettingsView()
         }
+        // Notification tap on a task opens its detail.
+        .navigationDestination(item: $model.openTaskID) { id in
+            TaskDetailView(taskID: id)
+        }
         .animation(.snappy, value: model.assistantTab)
     }
 
@@ -71,6 +75,7 @@ private struct AssistantHeader: View {
     @Environment(AppStore.self) private var store
     @State private var confirmStop = false
     @State private var working = false
+    @State private var error: String?
 
     var body: some View {
         VStack(spacing: 14) {
@@ -92,7 +97,7 @@ private struct AssistantHeader: View {
             if store.isKilled {
                 Button {
                     working = true
-                    Task { try? await store.resume(); working = false }
+                    Task { await run { try await store.resume() } }
                 } label: {
                     Label("继续工作", systemImage: "play.fill")
                         .frame(maxWidth: 240)
@@ -114,16 +119,29 @@ private struct AssistantHeader: View {
                 .confirmationDialog("让助理马上全部停下？", isPresented: $confirmStop, titleVisibility: .visible) {
                     Button("全部停下", role: .destructive) {
                         working = true
-                        Task { try? await store.kill(); working = false }
+                        Task { await run { try await store.kill() } }
                     }
                     Button("再想想", role: .cancel) {}
                 } message: {
                     Text("正在办的事会中断，之后它什么都不会做，直到你让它继续。")
                 }
             }
+
+            if let error {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
+    }
+
+    private func run(_ op: () async throws -> Void) async {
+        error = nil
+        do { try await op() } catch { self.error = "没成功：\(Friendly.message(error))" }
+        working = false
     }
 
     private var statusLine: String {

@@ -7,6 +7,7 @@ struct ApprovalCard: View {
     let approval: Approval
     @State private var working = false
     @State private var error: String?
+    @State private var expanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -28,7 +29,15 @@ struct ApprovalCard: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
-                    .lineLimit(approval.isPending ? 8 : 3)
+                    // While pending show everything: the tail of a long
+                    // command is often the part that matters.
+                    .lineLimit(approval.isPending || expanded ? nil : 3)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !approval.isPending && approval.detail.count > 120 {
+                    Button(expanded ? "收起" : "展开") { expanded.toggle() }
+                        .font(.caption)
+                        .buttonStyle(.borderless)
+                }
             }
 
             HStack(spacing: 6) {
@@ -93,8 +102,8 @@ struct ApprovalCard: View {
     }
 
     private var rememberTitle: String {
-        if let scope = approval.suggestedScope, !scope.isEmpty {
-            return "以后这类都允许（\(scope)）"
+        if let scope = approval.friendlyScope {
+            return "以后都允许：\(scope)"
         }
         return "以后这类都允许"
     }
@@ -114,7 +123,7 @@ struct ApprovalCard: View {
             do {
                 try await store.answer(approval, allow: allow, remember: remember)
             } catch {
-                self.error = "没发出去：\(error.localizedDescription)"
+                self.error = "没发出去：\(Friendly.message(error))"
             }
             working = false
         }

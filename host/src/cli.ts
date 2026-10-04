@@ -25,12 +25,11 @@ const HELP = `PaloAlly ${VERSION} — 把 Claude Code 变成常驻、会主动�
   tasks [id]             任务列表 / 某个任务的详情
   approvals              待确认的操作
   approve <id> [--remember] / deny <id>
-  rules [rm <id>]        自动批准规则
   watch [list|add|rm|on|off] 盯梢与定时
   artifacts              产物资料库
   memory [路径]          记忆文件
   settings [key value]   打扰频率、免打扰时段等
-  kill / resume          急停 / 恢复
+  stop                   手上的事全部停下
   restart [--now]        等手头的事办完再重启（--now 立刻重启，会打断正在办的事）
   audit [n]              审计日志
   metrics [天数]         Phase 0 验收数据（主动频率、任务、压缩、花费）
@@ -131,7 +130,7 @@ async function chat(): Promise<void> {
     process.exit(0);
   }
 
-  console.log(`已连上 ${hello.hostName}。直接打字说话；/tasks /approvals /y <id> /n <id> /kill /resume /quit`);
+  console.log(`已连上 ${hello.hostName}。直接打字说话；/tasks /approvals /y <id> /n <id> /stop /quit`);
   const sync = await c.call("sync", {});
   for (const m of (sync.messages as ChatMessage[]).slice(-10)) printMessage(m);
   const rl = createInterface({ input: process.stdin, output: process.stdout, prompt: "" });
@@ -246,7 +245,7 @@ async function main(): Promise<void> {
       const sync = await c.call("sync", {});
       c.close();
       const s = hello.status;
-      console.log(`${hello.hostName} · ${s.killed ? "🛑 急停中" : s.busy ? "忙" : "空闲"} · 模型 ${s.model || "默认"}`);
+      console.log(`${hello.hostName} · ${s.busy ? "忙" : "空闲"} · 模型 ${s.model || "默认"}`);
       console.log(`进行中任务 ${sync.tasks.filter((t: Task) => t.status === "running").length} · 待确认 ${sync.approvals.filter((a: any) => a.status === "pending").length} · 盯梢 ${sync.watches.length}`);
       console.log(`远程：${relay.enabled ? `${relay.state}（${relay.streams} 个设备在线）${relay.lastError ? " " + relay.lastError : ""}` : "关闭"} · 微信：${wechat.status}`);
       console.log(`今日花费：主对话 $${usage.mainUsd.toFixed(3)} · 探针 $${usage.probeUsd.toFixed(4)}`);
@@ -272,13 +271,6 @@ async function main(): Promise<void> {
       const r = await c.call("approval.answer", { id, allow: cmd === "approve", remember: flag("--remember") });
       c.close();
       console.log(r.status);
-      return;
-    }
-    case "rules": {
-      if (args[0] === "rm") return console.log((await call("approval.removeRule", { id: args[1] })).ok ? "已删除" : "没找到");
-      const { rules } = await call("approval.rules");
-      if (!rules.length) return console.log("没有自动批准规则。");
-      for (const r of rules) console.log(`${r.id}  ${r.tool}  ${r.scope}`);
       return;
     }
     case "watch": {
@@ -342,13 +334,10 @@ async function main(): Promise<void> {
       console.log(r.status === "timeout" ? "等了 30 分钟还在忙，没重启。要强制重启：paloally restart --now" : "重启中。");
       return;
     }
+    case "stop":
     case "kill":
       await call("kill");
-      console.log("🛑 已急停。所有操作停下并拒绝，直到 paloally resume。");
-      return;
-    case "resume":
-      await call("resume");
-      console.log("已恢复。");
+      console.log("已停下手上的事。");
       return;
     case "audit": {
       const { entries } = await call("audit.tail", { limit: Number(args[0] ?? 30) });
