@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { x25519 } from "@noble/curves/ed25519.js";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
+import { checkFixture } from "./helpers.ts";
 import {
   Opener,
   Sealer,
@@ -105,11 +105,6 @@ describe("E2E", () => {
       h2c_unit0_hex: hex(new Sealer(h2c).seal(plaintext)),
     };
     expect(welcome.eph).toBe(vectors.eph_h_pub_b64);
-    const out = resolve(import.meta.dir, "../../ios/PaloAllyKit/Tests/PaloAllyKitTests/Fixtures/e2e-vectors.json");
-    if (existsSync(resolve(import.meta.dir, "../../ios/PaloAllyKit"))) {
-      mkdirSync(dirname(out), { recursive: true });
-      writeFileSync(out, JSON.stringify(vectors, null, 2) + "\n");
-    }
-    writeFileSync(resolve(import.meta.dir, "e2e-vectors.json"), JSON.stringify(vectors, null, 2) + "\n");
+    checkFixture(resolve(import.meta.dir, "../../ios/PaloAllyKit/Tests/PaloAllyKitTests/Fixtures/e2e-vectors.json"), vectors);
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import type { WechatChannel, WechatReplyTarget } from "../src/hub.ts";
-import type { FakeScript } from "../src/harness/fake.ts";
+import type { FakeScript } from "./fakeDriver.ts";
 import type { ChatMessage } from "../src/types.ts";
 import { readJson, readJsonl, writeJson } from "../src/util.ts";
 import { cleanup, makeHub, testConfig, tick } from "./helpers.ts";
@@ -46,7 +46,7 @@ describe("Hub: main conversation", () => {
     cleanup(paths);
   });
 
-  test("turns are serialized: a second message waits for the first", async () => {
+  test("the harness answers owner messages in the order they were sent", async () => {
     const order: string[] = [];
     const script: FakeScript = async (t, ctx) => {
       order.push(`start ${t}`);

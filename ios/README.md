@@ -20,7 +20,7 @@ ios/
     Sources/App               entry point, AppModel (unpaired / paired / demo), push, RootView
     Sources/Chat              main chat, markdown, composer + dictation, approval cards
     Sources/Library           artifact library + preview (markdown / offline WKWebView / QuickLook)
-    Sources/Assistant         assistant page: 任务 / 审批 / 定时 / 记忆, kill switch
+    Sources/Assistant         assistant page: 任务 / 审批 / 定时 / 记忆, stop button
     Sources/Settings          quiet hours, proactive limit, pairing management
     Sources/Pairing           QR scan (VisionKit) / paste link / manual code
   screenshots/                demo-mode screenshots from the simulator
@@ -51,6 +51,15 @@ PALOALLY_LIVE_LINK='paloally://pair?...'   swift test --filter LiveHost   # or a
 ```
 
 Each pairing code works only once, so every run needs a fresh link.
+
+### Protocol contract test
+
+`ProtocolContractTests` checks the client against `PaloAllyKit/Tests/PaloAllyKitTests/Fixtures/protocol.json`. The host test suite writes that file by driving a real Hub through every RPC method and event, so don't edit it by hand. The test checks two things:
+
+- The method names in `RPCMethod.all` and the event names in `RPCEventName.all` must equal the fixture's sets exactly.
+- Every sample result and event payload must decode into the Swift type the client uses for it, in strict mode. Production decoders are tolerant and fall back to defaults; under `LenientDiagnostics.collect` every such fallback is recorded (a missing required key, an unknown enum value, a dropped array element), and any recorded fallback fails the test. The test file holds the method → type mapping.
+
+If `protocol.json` is absent, the test uses the hand-written `protocol.sample.json`. Set `PALOALLY_PROTOCOL_FIXTURE=sample` to check the sample even when `protocol.json` exists.
 
 ## Demo mode and screenshots
 
@@ -88,7 +97,10 @@ SwiftUI previews use `AppModel.demo()`. On first launch an unpaired app also off
   In every case only one copy stays.
 - **Streaming.** A `chat.delta{id,text}` appends `text` to the message with that id, creating it if needed (seq 0, still streaming). The `chat.message` with the same id replaces the text and finishes the message. Deltas that arrive after that are ignored.
 - **Event payloads.** `settings.updated` and `status` are accepted either as the bare object or wrapped as `{settings}` / `{status}`. `artifact.updated` is accepted bare or wrapped as `{artifact}`. `watch.updated` is accepted as `{watch}`, `{removed}`, or a bare watch.
-- **Approvals.** The client sends `remember:true` only when the user allows the action and `irreversible == false`; otherwise the field is left out. If an approval arrives without `irreversible`, the client treats it as irreversible.
+- **Approvals.** Safety decisions belong to the harness (Claude Code); the host only relays its permission prompts. `careful` means the harness marked the prompt as needing care (it defaults to "no"). It does not mean the action can't be undone. A careful card shows 「这一步需要你仔细看一下」 and never offers "always allow". The client sends `remember:true` only when the user allows, `careful == false` and a `suggestedScope` exists; otherwise the field is left out. An approval that arrives without `careful` is treated as careful. `suggestedScope` is one of `cmd:<prefix>`, `domain:<host>`, `path:<dir>` or `tool:<toolName>`, shown as 「X」这类命令 / X 这个网站 / 「folder」这个文件夹 / 这个工具. Any other value is not described.
+- **Stop.** `stop{}` → `{status}` is the stop button: the assistant drops what it is doing. Nothing stays blocked afterwards, and the next message works as usual. There is no paused state and no resume.
+- **Memory.** `memory.write{path, content, baseUpdatedAt}` → `{ok, updatedAt}`. The editor uses the returned `updatedAt` as the base for the next save. The host refuses a write if the file changed after `baseUpdatedAt`.
+- **Settings.** `HostSettings` carries `wechatProactive` (`off` / `hint` / `full`) along with the other fields, so it round-trips.
 
 ## Running against a real host in the simulator
 

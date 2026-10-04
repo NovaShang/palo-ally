@@ -2,7 +2,8 @@ import type { Audit } from "./audit.ts";
 import type { Bus } from "./bus.ts";
 import type { PermissionDecision, PermissionRequest } from "./harness/types.ts";
 import type { Approval } from "./types.ts";
-import { newId, readJson, truncate, writeJson } from "./util.ts";
+import { describeInput, describeTool } from "./copy.ts";
+import { newId, readJson, writeJson } from "./util.ts";
 
 // Safety is the harness' job (PRD revision 2026-10-04: "全部依赖 harness").
 // Claude Code decides what runs, what is denied, and what needs the owner;
@@ -115,6 +116,7 @@ export class ApprovalManager {
 }
 
 // ---------------- presentation only (no decisions are made here) ----------------
+// Card wording lives in copy.ts.
 
 // describeSuggestion renders the harness' "always allow" suggestion in the
 // scope vocabulary the app shows ("cmd:", "domain:", "path:", "tool:").
@@ -131,51 +133,4 @@ export function describeSuggestion(suggestions: unknown[] | undefined): string |
     return `tool:${r.toolName}`;
   }
   return null;
-}
-
-function domainOf(url: unknown): string | null {
-  if (typeof url !== "string") return null;
-  try {
-    return new URL(url).hostname.toLowerCase();
-  } catch {
-    return null;
-  }
-}
-
-function nameTokens(name: string): string[] {
-  return name
-    .replace(/([a-z])([A-Z])/g, "$1_$2")
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter(Boolean);
-}
-
-export function describeTool(tool: string, input: Record<string, unknown>): string {
-  if (tool === "Bash") return "在电脑上运行一条命令";
-  if (tool === "Write") return "写入文件";
-  if (tool === "Edit") return "修改文件";
-  if (tool === "Read") return "看一个文件";
-  if (tool === "WebFetch") return `打开网页 ${domainOf(input.url) ?? ""}`.trim();
-  if (tool.startsWith("mcp__")) {
-    const leaf = tool.split("__").slice(2).join(" ");
-    if (/browser_navigate|claude-in-chrome__navigate/.test(tool)) return `浏览器打开 ${domainOf(input.url) ?? ""}`.trim();
-    if (/browser_click/.test(tool)) return `在网页上点击「${truncate(String(input.element ?? ""), 30)}」`;
-    if (/browser_type|fill_form|form_input/.test(tool)) return "在网页上填写内容";
-    if (/claude-in-chrome__computer/.test(tool)) return "在你的浏览器里操作";
-    if (/javascript_tool|browser_evaluate/.test(tool)) return "在你的浏览器里运行一段脚本";
-    if (/file_upload|upload_image/.test(tool)) return "往网页上传文件";
-    const t = nameTokens(leaf);
-    if (t.includes("send") || t.includes("reply") || t.includes("forward")) return "替你发出一条消息";
-    if (t.includes("delete") || t.includes("trash") || t.includes("remove")) return "删除一些东西";
-    if (t.includes("create") || t.includes("add")) return "替你新建一项内容";
-    return "使用一个连接的服务";
-  }
-  return "做一步操作";
-}
-
-function describeInput(tool: string, input: Record<string, unknown>): string {
-  if (tool === "Bash") return truncate(String(input.command ?? ""), 4000);
-  if (tool === "Write" || tool === "Edit" || tool === "Read") return String(input.file_path ?? "");
-  if (input.url) return String(input.url);
-  return truncate(JSON.stringify(input), 1000);
 }

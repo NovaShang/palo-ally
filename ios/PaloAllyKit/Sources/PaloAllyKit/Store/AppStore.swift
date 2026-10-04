@@ -90,7 +90,9 @@ public final class AppStore {
         Task { await rpc.start() }
     }
 
-    public func stop() {
+    /// Disconnects and stops listening (the store's lifecycle, not the
+    /// assistant's stop button — that is `stop()`).
+    public func shutdown() {
         inboundTask?.cancel()
         let rpc = rpc
         Task { await rpc.stop() }
@@ -251,7 +253,7 @@ public final class AppStore {
 
     /// Applies a status snapshot. `busy == false` means the turn is over:
     /// anything still streaming is finished (a turn can end without a final
-    /// `chat.message`, e.g. after an error or a kill) and the wait ends.
+    /// `chat.message`, e.g. after an error or a stop) and the wait ends.
     private func applyStatus(_ s: HostStatus) {
         status = s
         guard !s.busy else { return }
@@ -420,7 +422,6 @@ public final class AppStore {
         return pendingApprovals.filter { !anchored.contains($0.id) }
     }
 
-    public var isKilled: Bool { status?.killed ?? false }
     public var isBusy: Bool { awaitingReply || (status?.busy ?? false) || messages.contains(where: \.isStreaming) }
 
     // MARK: chat
@@ -631,7 +632,7 @@ public final class AppStore {
 
     /// Writes a memory file. Pass the `updatedAt` from `readMemory` as
     /// `baseUpdatedAt`; the host refuses the write if the file changed since.
-    /// Returns the new `updatedAt` when the host reports it.
+    /// Returns the new `updatedAt`: the base for the next write.
     @discardableResult
     public func writeMemory(path: String, content: String, baseUpdatedAt: Int64?) async throws -> Int64? {
         let r: MemoryWriteResult = try await rpc.call(
@@ -639,7 +640,7 @@ public final class AppStore {
         return r.updatedAt
     }
 
-    // MARK: settings / safety
+    // MARK: settings / model / stop
 
     public func updateSettings(patch: JSONValue) async throws {
         let r: SettingsResult = try await rpc.call(RPCMethod.settingsUpdate, params: PatchParams(patch: patch))
@@ -661,19 +662,16 @@ public final class AppStore {
         var params: [String: JSONValue] = [:]
         if case .some(let m) = model { params["model"] = m.map { .string($0) } ?? .null }
         if case .some(let e) = effort { params["effort"] = e.map { .string($0) } ?? .null }
-        let r: KillResult = try await rpc.call(RPCMethod.modelSet, params: JSONValue.object(params))
+        let r: StatusResult = try await rpc.call(RPCMethod.modelSet, params: JSONValue.object(params))
         if let s = r.status { status = s }
         try? await loadModels()
     }
 
-    public func kill() async throws {
-        let r: KillResult = try await rpc.call(RPCMethod.kill, params: EmptyParams())
-        if let s = r.status { status = s } else { status?.killed = true }
-    }
-
-    public func resume() async throws {
-        let r: KillResult = try await rpc.call(RPCMethod.resume, params: EmptyParams())
-        if let s = r.status { status = s } else { status?.killed = false }
+    /// The stop button: the assistant drops whatever it is doing. Nothing
+    /// stays blocked; the next message works as usual.
+    public func stop() async throws {
+        let r: StatusResult = try await rpc.call(RPCMethod.stop, params: EmptyParams())
+        if let s = r.status { applyStatus(s) }
     }
 
     // MARK: unpair

@@ -17,7 +17,7 @@ public actor DemoHost {
     public private(set) var memory: [String: (scope: MemoryScope, content: String, updatedAt: Int64)] = [:]
     public private(set) var settings = HostSettings(timezone: "Asia/Shanghai", quietHours: QuietHours(start: "23:00", end: "08:00"),
                                                     maxProactivePerDay: 6, probeIntervalMinutes: 10, approvalTimeoutMinutes: 30)
-    public private(set) var status = HostStatus(online: true, killed: false, busy: false, model: "glm-4.6",
+    public private(set) var status = HostStatus(online: true, busy: false, model: "glm-4.6",
                                                 sessionId: "demo", wechat: .connected, version: "0.1.0-demo")
     public private(set) var pushTokens: [String] = []
     public private(set) var requestLog: [String] = []
@@ -239,16 +239,12 @@ public actor DemoHost {
             settings = try obj.decode(HostSettings.self)
             emit(RPCEventName.settingsUpdated, settings)
             return ["settings": try .from(settings)]
-        case RPCMethod.kill:
-            status.killed = true
+        case RPCMethod.stop:
             status.busy = false
+            status.activity = nil
             for t in tasks where t.isActive {
                 var s = t; s.status = .stopped; s.updatedAt = Date().epochMillis; upsertTask(s)
             }
-            emit(RPCEventName.status, status)
-            return ["status": try .from(status)]
-        case RPCMethod.resume:
-            status.killed = false
             emit(RPCEventName.status, status)
             return ["status": try .from(status)]
         case RPCMethod.pushRegister:
@@ -264,8 +260,7 @@ public actor DemoHost {
             return ["entries": []]
         case RPCMethod.commandsList:
             let cmds: [JSONValue] = [
-                ["name": "kill", "description": "全部停下（急停）"],
-                ["name": "resume", "description": "从急停恢复"],
+                ["name": "stop", "description": "停下手上的事"],
                 ["name": "status", "description": "看看我在忙什么"],
                 ["name": "compact", "description": "Clear conversation history but keep a summary"],
                 ["name": "context", "description": "Show current context usage"],
@@ -306,10 +301,6 @@ public actor DemoHost {
     }
 
     private func respond(to text: String) async {
-        if status.killed {
-            post("我现在是暂停状态，点「继续工作」我就回来。", role: .system, kind: .notice)
-            return
-        }
         status.busy = true
         emit(RPCEventName.status, status)
         await pause(0.6)
@@ -442,12 +433,12 @@ public actor DemoHost {
         let approvals = [
             Approval(id: "a1", tool: "send_email", title: "给王老师回邮件",
                      detail: "收件人：王老师 <wang@example.com>\n内容：王老师好，周四下午 3 点的会我可以参加，谢谢！",
-                     taskId: nil, irreversible: true, status: .pending, createdAt: now - 20 * min),
+                     taskId: nil, careful: true, status: .pending, createdAt: now - 20 * min),
             Approval(id: "a2", tool: "browser_navigate", title: "打开大众点评查餐厅",
-                     detail: "要打开 dianping.com 搜索周五晚上可订位的餐厅", taskId: "t3", irreversible: false,
+                     detail: "要打开 dianping.com 搜索周五晚上可订位的餐厅", taskId: "t3", careful: false,
                      status: .pending, createdAt: now - 25 * min, suggestedScope: "domain:dianping.com"),
             Approval(id: "a0", tool: "read_file", title: "读取下载文件夹里的发票", detail: "~/Downloads/发票/*.pdf",
-                     taskId: "t2", irreversible: false, status: .allowed, createdAt: now - hour,
+                     taskId: "t2", careful: false, status: .allowed, createdAt: now - hour,
                      decidedAt: now - hour + min, decidedBy: "app"),
         ]
         let watches = [

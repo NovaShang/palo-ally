@@ -12,8 +12,8 @@ struct ApprovalCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Image(systemName: approval.irreversible ? "exclamationmark.shield.fill" : "hand.raised.fill")
-                    .foregroundStyle(approval.irreversible ? .orange : Color.accentColor)
+                Image(systemName: approval.careful ? "exclamationmark.shield.fill" : "hand.raised.fill")
+                    .foregroundStyle(approval.careful ? .orange : Color.accentColor)
                 Text(approval.title.isEmpty ? "需要你点个头" : approval.title)
                     .font(.headline)
                 Spacer(minLength: 0)
@@ -53,8 +53,8 @@ struct ApprovalCard: View {
             .lineLimit(1)
 
             if approval.isPending {
-                if approval.irreversible {
-                    Label("这一步做了就撤不回，所以每次都会问你。", systemImage: "info.circle")
+                if approval.careful {
+                    Label("这一步需要你仔细看一下。", systemImage: "info.circle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

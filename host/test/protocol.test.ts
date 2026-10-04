@@ -2,11 +2,11 @@
 // real Hub, check the method list matches the implementation, and write the
 // samples to the Swift test fixtures (decoded strictly on the client side).
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { RPC_EVENTS, RPC_METHODS, handleRpc } from "../src/rpc.ts";
-import type { FakeScript } from "../src/harness/fake.ts";
-import { cleanup, makeHub, tick } from "./helpers.ts";
+import type { FakeScript } from "./fakeDriver.ts";
+import { checkFixture, cleanup, makeHub, shape, tick } from "./helpers.ts";
 
 const script: FakeScript = async (t, ctx) => {
   if (t === "派个任务") {
@@ -85,11 +85,7 @@ describe("host ↔ app protocol", () => {
     expect(Object.keys(sampleEvents).sort()).toEqual([...RPC_EVENTS].sort());
 
     const fixture = { methods, events: sampleEvents };
-    const out = resolve(import.meta.dir, "../../ios/PaloAllyKit/Tests/PaloAllyKitTests/Fixtures/protocol.json");
-    if (existsSync(resolve(import.meta.dir, "../../ios/PaloAllyKit"))) {
-      mkdirSync(dirname(out), { recursive: true });
-      writeFileSync(out, JSON.stringify(fixture, null, 2) + "\n");
-    }
+    checkFixture(resolve(import.meta.dir, "../../ios/PaloAllyKit/Tests/PaloAllyKitTests/Fixtures/protocol.json"), fixture, shape);
     cleanup(paths);
   });
 });

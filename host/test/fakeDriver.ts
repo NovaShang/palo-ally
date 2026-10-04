@@ -5,7 +5,7 @@ import type {
   MainSessionOptions,
   ProbeRequest,
   ProbeResult,
-} from "./types.ts";
+} from "../src/harness/types.ts";
 
 // A scripted turn: given the user text and the session's tools/permission
 // hooks, emit events. Lets tests drive the Hub deterministically, including

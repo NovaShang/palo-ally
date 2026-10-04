@@ -15,8 +15,8 @@ public struct SlashCommand: Codable, Sendable, Hashable, Identifiable {
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        name = l.string("name") ?? ""
-        description = l.string("description") ?? ""
+        name = l.string("name", or: "")
+        description = l.string("description", or: "")
         argumentHint = l.string("argumentHint")
     }
 
@@ -33,7 +33,7 @@ public struct SlashCommand: Codable, Sendable, Hashable, Identifiable {
 public struct CommandsResult: Decodable, Sendable {
     public var commands: [SlashCommand]
     public init(from decoder: Decoder) throws {
-        commands = try Lenient(decoder).array(SlashCommand.self, "commands") ?? []
+        commands = try Lenient(decoder).array(SlashCommand.self, "commands", or: [])
     }
 }
 
@@ -51,10 +51,10 @@ public struct ModelOption: Codable, Sendable, Hashable, Identifiable {
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        value = l.string("value") ?? ""
-        displayName = l.string("displayName") ?? value
-        description = l.string("description") ?? ""
-        efforts = l.array(String.self, "efforts") ?? []
+        value = l.string("value", or: "")
+        displayName = l.string("displayName", or: value)
+        description = l.string("description", or: "")
+        efforts = l.array(String.self, "efforts", or: [])
     }
 }
 
@@ -72,10 +72,10 @@ public struct ModelInfo: Decodable, Sendable, Hashable {
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        model = l.string("model") ?? ""
+        model = l.string("model", or: "")
         setting = l.string("setting")
         effort = l.string("effort")
-        models = l.array(ModelOption.self, "models") ?? []
+        models = l.array(ModelOption.self, "models", or: [])
     }
 }
 

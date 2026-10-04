@@ -79,7 +79,7 @@ struct ChatView: View {
                     Text("PaloAlly").font(.headline)
                     HStack(spacing: 4) {
                         Circle()
-                            .fill(store.connection.isOnline ? (store.isKilled ? Color.orange : Color.green) : Color.secondary)
+                            .fill(store.connection.isOnline ? Color.green : Color.secondary)
                             .frame(width: 6, height: 6)
                         Text(subtitle)
                     }
@@ -109,7 +109,7 @@ struct ChatView: View {
 
     /// Shown whenever the host is working (not just right after a send).
     private var showsBusyIndicator: Bool {
-        store.connection.isOnline && !store.isKilled && (store.awaitingReply || store.status?.busy == true)
+        store.connection.isOnline && (store.awaitingReply || store.status?.busy == true)
     }
 
     private var busyActivity: String? {
@@ -120,7 +120,6 @@ struct ChatView: View {
 
     private var subtitle: String {
         if store.connection.isOnline {
-            if store.isKilled { return "已暂停" }
             if store.isBusy { return (store.status?.activity).map { "\($0)…" } ?? "正在忙…" }
             return model.mode == .demo ? "演示中" : "在线"
         }
@@ -135,29 +134,14 @@ struct ChatView: View {
     }
 }
 
-/// Banner for connection trouble and the paused state.
+/// Banner for connection trouble.
 struct StatusBanner: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
-    @State private var resuming = false
-    @State private var error: String?
 
     var body: some View {
         Group {
-            if store.isKilled {
-                banner(icon: "pause.circle.fill", tint: .orange, text: "助理已暂停，什么都不会做") {
-                    Button(resuming ? "正在恢复…" : "继续工作") {
-                        resuming = true
-                        error = nil
-                        Task {
-                            do { try await store.resume() } catch { self.error = "没恢复成功：\(Friendly.message(error))" }
-                            resuming = false
-                        }
-                    }
-                    .buttonStyle(.glassProminent)
-                    .disabled(resuming)
-                }
-            } else if case .rejected = store.connection {
+            if case .rejected = store.connection {
                 banner(icon: "link.badge.plus", tint: .red, text: "这台设备需要重新配对") {
                     Button("去配对") { model.showPairingSheet = true }
                         .buttonStyle(.glassProminent)
@@ -169,22 +153,6 @@ struct StatusBanner: View {
                 }
             }
         }
-        .overlay(alignment: .bottom) {
-            if let error {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
-                    .glassEffect(.regular, in: .capsule)
-                    .offset(y: 30)
-                    .task {
-                        try? await Task.sleep(for: .seconds(4))
-                        self.error = nil
-                    }
-            }
-        }
-        .animation(.snappy, value: store.isKilled)
     }
 
     private func banner(icon: String, tint: Color, text: String, @ViewBuilder action: () -> some View) -> some View {

@@ -261,25 +261,26 @@ struct AppStoreTests {
         #expect(await until { store.connection == .online })
         host.event("task.updated", ["id": "t1", "title": "订票", "summary": "进行中", "status": "running", "createdAt": 1, "updatedAt": 1])
         host.event("task.updated", ["id": "t1", "title": "订票", "summary": "好了", "status": "done", "createdAt": 1, "updatedAt": 2])
-        host.event("approval.updated", ["id": "a1", "tool": "send", "title": "发邮件", "detail": "", "irreversible": true, "status": "pending", "createdAt": 1])
+        host.event("approval.updated", ["id": "a1", "tool": "send", "title": "发邮件", "detail": "", "careful": true, "status": "pending", "createdAt": 1])
         host.event("watch.updated", ["watch": ["id": "w1", "title": "晨报", "kind": "schedule", "at": ["08:30"], "enabled": true]])
         host.event("watch.updated", ["watch": ["id": "w2", "title": "x", "kind": "check", "intervalMinutes": 30]])
         host.event("watch.updated", ["removed": "w2"])
         host.event("artifact.updated", ["id": "ar1", "title": "晨报", "type": "markdown", "mainFile": "a.md", "pinned": true, "updatedAt": 5])
-        host.event("settings.updated", ["timezone": "UTC", "quietHours": nil, "maxProactivePerDay": 2, "probeIntervalMinutes": 5, "approvalTimeoutMinutes": 10])
-        host.event("status", ["online": true, "killed": true, "busy": false, "model": "m", "wechat": "off", "version": "2"])
+        host.event("settings.updated", ["timezone": "UTC", "quietHours": nil, "maxProactivePerDay": 2, "probeIntervalMinutes": 5, "approvalTimeoutMinutes": 10, "wechatProactive": "full"])
+        host.event("status", ["online": true, "busy": false, "model": "m", "wechat": "off", "version": "2"])
         host.event("some.future.event", ["x": 1])
-        #expect(await until { store.status?.killed == true })
+        #expect(await until { store.status?.version == "2" })
         #expect(store.tasks.count == 1 && store.tasks[0].status == .done && store.tasks[0].summary == "好了")
         #expect(store.pendingApprovals.map(\.id) == ["a1"])
         #expect(store.watches.map(\.id) == ["w1"])
         #expect(store.pinnedArtifacts.map(\.id) == ["ar1"])
         #expect(store.settings?.maxProactivePerDay == 2)
         #expect(store.settings?.quietHours == nil)
-        #expect(store.isKilled)
+        #expect(store.settings?.wechatProactive == .full)
+        #expect(store.status?.model == "m")
     }
 
-    @Test func approvalAnswerSendsRememberOnlyWhenReversible() async throws {
+    @Test func approvalAnswerSendsRememberOnlyWhenNotCareful() async throws {
         let (store, host) = await demoStore()
         let a2 = try #require(store.approval(id: "a2"))
         try await store.answer(a2, allow: true, remember: true)
@@ -287,7 +288,7 @@ struct AppStoreTests {
         #expect(await host.lastParams["approval.answer"]?["remember"] == .bool(true))
 
         let a1 = try #require(store.approval(id: "a1"))
-        #expect(a1.irreversible)
+        #expect(a1.careful)
         try await store.answer(a1, allow: false, remember: true)
         #expect(store.approval(id: "a1")?.status == .denied)
         let p = await host.lastParams["approval.answer"]
@@ -336,20 +337,26 @@ struct AppStoreTests {
         #expect(files.first?.scope == .core)
         let before = try await store.readMemory(path: "user.md")
         #expect(before.updatedAt != nil)
-        try await store.writeMemory(path: "user.md", content: "# 新的我", baseUpdatedAt: before.updatedAt)
-        #expect(try await store.readMemory(path: "user.md").content == "# 新的我")
+        let stamp = try await store.writeMemory(path: "user.md", content: "# 新的我", baseUpdatedAt: before.updatedAt)
+        let after = try await store.readMemory(path: "user.md")
+        #expect(after.content == "# 新的我")
+        // The stamp memory.write returns is the next base: saving again works.
+        #expect(stamp == after.updatedAt)
+        try await store.writeMemory(path: "user.md", content: "# 再改一次", baseUpdatedAt: stamp)
     }
 
-    @Test func settingsKillResumeAndPush() async throws {
+    @Test func settingsStopAndPush() async throws {
         let (store, host) = await demoStore()
         try await store.updateSettings(patch: ["quietHours": nil, "maxProactivePerDay": 3])
         #expect(store.settings?.quietHours == nil)
         #expect(store.settings?.maxProactivePerDay == 3)
-        try await store.kill()
-        #expect(store.isKilled)
+        try await store.stop()
+        #expect(await host.requestLog.contains("stop"))
+        #expect(store.status?.busy == false)
         #expect(await until { store.tasks.allSatisfy { !$0.isActive } })
-        try await store.resume()
-        #expect(!store.isKilled)
+        // Nothing stays blocked: the next message gets a reply as usual.
+        store.send("你好")
+        #expect(await until { store.messages.last?.role == .assistant && store.messages.last?.isStreaming == false })
 
         store.registerPush(token: Data([0xde, 0xad, 0xbe, 0xef]), environment: .sandbox)
         _ = await until { await host.pushTokens == ["deadbeef"] }

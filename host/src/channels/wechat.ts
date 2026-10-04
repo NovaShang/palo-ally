@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import type { WechatChannel as WechatChannelIface, WechatReplyTarget } from "../hub.ts";
+import type { WechatChannel as WechatChannelIface, WechatReplyTarget } from "./types.ts";
 import { readJson, writeJson } from "../util.ts";
 
 // WeChat via Tencent's iLink bot API (the ClawBot channel). Wire shapes follow

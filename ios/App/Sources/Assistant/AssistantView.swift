@@ -94,37 +94,24 @@ private struct AssistantHeader: View {
                 ModelStatusButton()
             }
 
-            if store.isKilled {
-                Button {
+            Button(role: .destructive) {
+                confirmStop = true
+            } label: {
+                Label("停下", systemImage: "stop.fill")
+                    .frame(maxWidth: 240)
+            }
+            .buttonStyle(.glass)
+            .tint(.red)
+            .controlSize(.large)
+            .disabled(working || !store.connection.isOnline)
+            .confirmationDialog("让助理停下手上的事？", isPresented: $confirmStop, titleVisibility: .visible) {
+                Button("停下", role: .destructive) {
                     working = true
-                    Task { await run { try await store.resume() } }
-                } label: {
-                    Label("继续工作", systemImage: "play.fill")
-                        .frame(maxWidth: 240)
+                    Task { await run { try await store.stop() } }
                 }
-                .buttonStyle(.glassProminent)
-                .controlSize(.large)
-                .disabled(working || !store.connection.isOnline)
-            } else {
-                Button(role: .destructive) {
-                    confirmStop = true
-                } label: {
-                    Label("全部停下", systemImage: "stop.fill")
-                        .frame(maxWidth: 240)
-                }
-                .buttonStyle(.glass)
-                .tint(.red)
-                .controlSize(.large)
-                .disabled(working || !store.connection.isOnline)
-                .confirmationDialog("让助理马上全部停下？", isPresented: $confirmStop, titleVisibility: .visible) {
-                    Button("全部停下", role: .destructive) {
-                        working = true
-                        Task { await run { try await store.kill() } }
-                    }
-                    Button("再想想", role: .cancel) {}
-                } message: {
-                    Text("正在办的事会中断，之后它什么都不会做，直到你让它继续。")
-                }
+                Button("再想想", role: .cancel) {}
+            } message: {
+                Text("正在办的事会中断。之后你再说话，它照常工作。")
             }
 
             if let error {
@@ -148,7 +135,6 @@ private struct AssistantHeader: View {
         let place = store.hostName.isEmpty ? (model.pairedHost?.hostLabel ?? "") : store.hostName
         let base = place.isEmpty ? "" : "住在「\(place)」上 · "
         if !store.connection.isOnline { return base + Copy.connection(store.connection) }
-        if store.isKilled { return base + "已暂停" }
         let active = store.tasks.filter(\.isActive).count
         return base + (active > 0 ? "正在办 \(active) 件事" : "空闲中")
     }

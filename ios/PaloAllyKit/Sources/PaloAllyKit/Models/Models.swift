@@ -64,6 +64,12 @@ public enum WechatState: String, TolerantStringEnum {
     public static let fallback = WechatState.unknown
 }
 
+/// How much the assistant may reach out on WeChat on its own.
+public enum WechatProactive: String, TolerantStringEnum {
+    case off, hint, full, unknown
+    public static let fallback = WechatProactive.unknown
+}
+
 // MARK: - ChatMessage
 
 public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
@@ -110,13 +116,13 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        seq = l.int64("seq") ?? 0
-        id = l.string("id") ?? UUID().uuidString
-        role = l.decode(ChatRole.self, "role") ?? .unknown
-        kind = l.decode(ChatKind.self, "kind") ?? .text
-        text = l.string("text") ?? ""
-        channel = l.decode(ChatChannel.self, "channel") ?? .unknown
-        ts = l.millis("ts") ?? 0
+        seq = l.int64("seq", or: 0)
+        id = l.string("id", or: UUID().uuidString)
+        role = l.decode(ChatRole.self, "role", or: .unknown)
+        kind = l.decode(ChatKind.self, "kind", or: .text)
+        text = l.string("text", or: "")
+        channel = l.decode(ChatChannel.self, "channel", or: .unknown)
+        ts = l.millis("ts", or: 0)
         proactive = l.bool("proactive")
         taskId = l.string("taskId")
         approvalId = l.string("approvalId")
@@ -149,14 +155,14 @@ public struct AllyTask: Codable, Sendable, Hashable, Identifiable {
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        id = l.string("id") ?? UUID().uuidString
-        title = l.string("title") ?? ""
-        summary = l.string("summary") ?? ""
-        status = l.decode(TaskStatus.self, "status") ?? .unknown
-        source = l.decode(TaskSource.self, "source") ?? .unknown
-        createdAt = l.millis("createdAt") ?? 0
-        updatedAt = l.millis("updatedAt") ?? createdAt
-        activityCount = l.int("activityCount") ?? 0
+        id = l.string("id", or: UUID().uuidString)
+        title = l.string("title", or: "")
+        summary = l.string("summary", or: "")
+        status = l.decode(TaskStatus.self, "status", or: .unknown)
+        source = l.decode(TaskSource.self, "source", or: .unknown)
+        createdAt = l.millis("createdAt", or: 0)
+        updatedAt = l.millis("updatedAt", or: createdAt)
+        activityCount = l.int("activityCount", or: 0)
     }
 
     public var isActive: Bool { status == .running || status == .needsInput }
@@ -176,10 +182,10 @@ public struct TaskActivity: Codable, Sendable, Hashable {
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        ts = l.millis("ts") ?? 0
-        kind = l.decode(ActivityKind.self, "kind") ?? .unknown
+        ts = l.millis("ts", or: 0)
+        kind = l.decode(ActivityKind.self, "kind", or: .unknown)
         tool = l.string("tool")
-        text = l.string("text") ?? ""
+        text = l.string("text", or: "")
     }
 }
 
@@ -191,7 +197,9 @@ public struct Approval: Codable, Sendable, Hashable, Identifiable {
     public var title: String
     public var detail: String
     public var taskId: String?
-    public var irreversible: Bool
+    /// The harness marked this prompt as needing care (it defaults to "no").
+    /// Such prompts never offer "always allow".
+    public var careful: Bool
     public var status: ApprovalStatus
     public var createdAt: Int64
     public var decidedAt: Int64?
@@ -199,45 +207,45 @@ public struct Approval: Codable, Sendable, Hashable, Identifiable {
     public var suggestedScope: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, tool, title, detail, taskId, irreversible, status, createdAt, decidedAt, decidedBy, suggestedScope
+        case id, tool, title, detail, taskId, careful, status, createdAt, decidedAt, decidedBy, suggestedScope
     }
 
     public init(id: String, tool: String, title: String, detail: String, taskId: String? = nil,
-                irreversible: Bool, status: ApprovalStatus = .pending, createdAt: Int64,
+                careful: Bool, status: ApprovalStatus = .pending, createdAt: Int64,
                 decidedAt: Int64? = nil, decidedBy: String? = nil, suggestedScope: String? = nil) {
         self.id = id; self.tool = tool; self.title = title; self.detail = detail; self.taskId = taskId
-        self.irreversible = irreversible; self.status = status; self.createdAt = createdAt
+        self.careful = careful; self.status = status; self.createdAt = createdAt
         self.decidedAt = decidedAt; self.decidedBy = decidedBy; self.suggestedScope = suggestedScope
     }
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        id = l.string("id") ?? UUID().uuidString
-        tool = l.string("tool") ?? ""
-        title = l.string("title") ?? ""
-        detail = l.string("detail") ?? ""
+        id = l.string("id", or: UUID().uuidString)
+        tool = l.string("tool", or: "")
+        title = l.string("title", or: "")
+        detail = l.string("detail", or: "")
         taskId = l.string("taskId")
-        // Fail safe: if the host omits the flag, treat it as irreversible so
-        // the "always allow" shortcut is never offered by mistake.
-        irreversible = l.bool("irreversible") ?? true
-        status = l.decode(ApprovalStatus.self, "status") ?? .unknown
-        createdAt = l.millis("createdAt") ?? 0
+        // Fail safe: if the host omits the flag, treat it as careful so the
+        // "always allow" shortcut is never offered by mistake.
+        careful = l.bool("careful", or: true)
+        status = l.decode(ApprovalStatus.self, "status", or: .unknown)
+        createdAt = l.millis("createdAt", or: 0)
         decidedAt = l.millis("decidedAt")
         decidedBy = l.string("decidedBy")
         suggestedScope = l.string("suggestedScope")
     }
 
     public var isPending: Bool { status == .pending }
-    /// "以后这类都允许" is only offered for reversible actions that the host
-    /// can describe as a rule (a suggested scope).
+    /// "以后这类都允许" is only offered when the harness didn't mark the prompt
+    /// as needing care and the host can describe it as a rule (a suggested scope).
     public var canRemember: Bool {
-        guard !irreversible, let s = suggestedScope?.trimmingCharacters(in: .whitespaces) else { return false }
+        guard !careful, let s = suggestedScope?.trimmingCharacters(in: .whitespaces) else { return false }
         return !s.isEmpty
     }
 
     /// The suggested scope in plain words: `cmd:git` → 「git」这类命令,
-    /// `domain:x.com` → x.com 这个网站, `path:/a/b` → 这个文件夹,
-    /// `recipient:a@b` → 发给 a@b. Never shows the raw prefix.
+    /// `domain:x.com` → x.com 这个网站, `path:/a/b` → 「b」这个文件夹,
+    /// `tool:Name` → 这个工具. Never shows the raw prefix.
     public var friendlyScope: String? { suggestedScope.flatMap(Self.friendlyScope) }
 
     public static func friendlyScope(_ raw: String) -> String? {
@@ -247,15 +255,15 @@ public struct Approval: Codable, Sendable, Hashable, Identifiable {
         let kind = trimmed[..<colon].lowercased()
         let value = String(trimmed[trimmed.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
         switch kind {
-        case "cmd", "command":
+        case "cmd":
             return value.isEmpty ? "这类命令" : "「\(value)」这类命令"
-        case "domain", "host", "site":
+        case "domain":
             return value.isEmpty ? "这个网站" : "\(value) 这个网站"
-        case "path", "dir", "folder":
+        case "path":
             let name = (value as NSString).lastPathComponent
             return name.isEmpty || name == "/" ? "这个文件夹" : "「\(name)」这个文件夹"
-        case "recipient", "to", "email":
-            return value.isEmpty ? "发给同一个人" : "发给 \(value)"
+        case "tool":
+            return "这个工具"
         default:
             return nil
         }
@@ -294,14 +302,14 @@ public struct Watch: Codable, Sendable, Hashable, Identifiable {
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        id = l.string("id") ?? UUID().uuidString
-        title = l.string("title") ?? ""
-        kind = l.decode(WatchKind.self, "kind") ?? .unknown
-        instruction = l.string("instruction") ?? ""
+        id = l.string("id", or: UUID().uuidString)
+        title = l.string("title", or: "")
+        kind = l.decode(WatchKind.self, "kind", or: .unknown)
+        instruction = l.string("instruction", or: "")
         intervalMinutes = l.int("intervalMinutes")
         at = l.array(String.self, "at")
-        enabled = l.bool("enabled") ?? true
-        createdBy = l.decode(WatchCreator.self, "createdBy") ?? .unknown
+        enabled = l.bool("enabled", or: true)
+        createdBy = l.decode(WatchCreator.self, "createdBy", or: .unknown)
         lastCheckedAt = l.millis("lastCheckedAt")
         lastTriggeredAt = l.millis("lastTriggeredAt")
         skipIfActiveMinutes = l.int("skipIfActiveMinutes")
@@ -366,8 +374,8 @@ public struct ArtifactFile: Codable, Sendable, Hashable {
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        path = l.string("path") ?? ""
-        size = l.int64("size") ?? 0
+        path = l.string("path", or: "")
+        size = l.int64("size", or: 0)
     }
 }
 
@@ -391,13 +399,13 @@ public struct Artifact: Codable, Sendable, Hashable, Identifiable {
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        id = l.string("id") ?? UUID().uuidString
-        title = l.string("title") ?? ""
-        type = l.string("type") ?? ""
-        mainFile = l.string("mainFile") ?? ""
-        pinned = l.bool("pinned") ?? false
-        updatedAt = l.millis("updatedAt") ?? 0
-        files = l.array(ArtifactFile.self, "files") ?? []
+        id = l.string("id", or: UUID().uuidString)
+        title = l.string("title", or: "")
+        type = l.string("type", or: "")
+        mainFile = l.string("mainFile", or: "")
+        pinned = l.bool("pinned", or: false)
+        updatedAt = l.millis("updatedAt", or: 0)
+        files = l.array(ArtifactFile.self, "files", or: [])
     }
 
     /// File extension of the main file, lowercased ("md", "html", "pdf", …).
@@ -428,8 +436,8 @@ public struct QuietHours: Codable, Sendable, Hashable {
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        start = l.string("start") ?? "22:00"
-        end = l.string("end") ?? "08:00"
+        start = l.string("start", or: "22:00")
+        end = l.string("end", or: "08:00")
     }
 }
 
@@ -439,25 +447,29 @@ public struct HostSettings: Codable, Sendable, Hashable {
     public var maxProactivePerDay: Int
     public var probeIntervalMinutes: Int
     public var approvalTimeoutMinutes: Int
+    public var wechatProactive: WechatProactive
 
     enum CodingKeys: String, CodingKey {
-        case timezone, quietHours, maxProactivePerDay, probeIntervalMinutes, approvalTimeoutMinutes
+        case timezone, quietHours, maxProactivePerDay, probeIntervalMinutes, approvalTimeoutMinutes, wechatProactive
     }
 
     public init(timezone: String = TimeZone.current.identifier, quietHours: QuietHours? = nil,
-                maxProactivePerDay: Int = 8, probeIntervalMinutes: Int = 15, approvalTimeoutMinutes: Int = 30) {
+                maxProactivePerDay: Int = 8, probeIntervalMinutes: Int = 15, approvalTimeoutMinutes: Int = 30,
+                wechatProactive: WechatProactive = .hint) {
         self.timezone = timezone; self.quietHours = quietHours; self.maxProactivePerDay = maxProactivePerDay
         self.probeIntervalMinutes = probeIntervalMinutes; self.approvalTimeoutMinutes = approvalTimeoutMinutes
+        self.wechatProactive = wechatProactive
     }
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
         let d = HostSettings()
-        timezone = l.string("timezone") ?? d.timezone
+        timezone = l.string("timezone", or: d.timezone)
         quietHours = l.decode(QuietHours.self, "quietHours")
-        maxProactivePerDay = l.int("maxProactivePerDay") ?? d.maxProactivePerDay
-        probeIntervalMinutes = l.int("probeIntervalMinutes") ?? d.probeIntervalMinutes
-        approvalTimeoutMinutes = l.int("approvalTimeoutMinutes") ?? d.approvalTimeoutMinutes
+        maxProactivePerDay = l.int("maxProactivePerDay", or: d.maxProactivePerDay)
+        probeIntervalMinutes = l.int("probeIntervalMinutes", or: d.probeIntervalMinutes)
+        approvalTimeoutMinutes = l.int("approvalTimeoutMinutes", or: d.approvalTimeoutMinutes)
+        wechatProactive = l.decode(WechatProactive.self, "wechatProactive", or: d.wechatProactive)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -468,6 +480,8 @@ public struct HostSettings: Codable, Sendable, Hashable {
         try c.encode(maxProactivePerDay, forKey: .maxProactivePerDay)
         try c.encode(probeIntervalMinutes, forKey: .probeIntervalMinutes)
         try c.encode(approvalTimeoutMinutes, forKey: .approvalTimeoutMinutes)
+        // Never send a value we didn't understand back to the host.
+        if wechatProactive != .unknown { try c.encode(wechatProactive, forKey: .wechatProactive) }
     }
 }
 
@@ -475,7 +489,6 @@ public struct HostSettings: Codable, Sendable, Hashable {
 
 public struct HostStatus: Codable, Sendable, Hashable {
     public var online: Bool
-    public var killed: Bool
     public var busy: Bool
     /// What it is doing right now in plain words ("正在写文件"), only while busy.
     public var activity: String?
@@ -484,27 +497,26 @@ public struct HostStatus: Codable, Sendable, Hashable {
     public var wechat: WechatState
     public var version: String
 
-    enum CodingKeys: String, CodingKey { case online, killed, busy, activity, model, effort, sessionId, wechat, version }
+    enum CodingKeys: String, CodingKey { case online, busy, activity, model, effort, sessionId, wechat, version }
 
     public var effort: String?
 
-    public init(online: Bool = true, killed: Bool = false, busy: Bool = false, model: String = "",
+    public init(online: Bool = true, busy: Bool = false, model: String = "",
                 sessionId: String? = nil, wechat: WechatState = .off, version: String = "") {
-        self.online = online; self.killed = killed; self.busy = busy; self.model = model
+        self.online = online; self.busy = busy; self.model = model
         self.sessionId = sessionId; self.wechat = wechat; self.version = version
     }
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        online = l.bool("online") ?? true
-        killed = l.bool("killed") ?? false
-        busy = l.bool("busy") ?? false
+        online = l.bool("online", or: true)
+        busy = l.bool("busy", or: false)
         activity = l.string("activity")
-        model = l.string("model") ?? ""
+        model = l.string("model", or: "")
         effort = l.string("effort")
         sessionId = l.string("sessionId")
-        wechat = l.decode(WechatState.self, "wechat") ?? .off
-        version = l.string("version") ?? ""
+        wechat = l.decode(WechatState.self, "wechat", or: .off)
+        version = l.string("version", or: "")
     }
 }
 
@@ -525,9 +537,9 @@ public struct MemoryFile: Codable, Sendable, Hashable, Identifiable {
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        path = l.string("path") ?? ""
-        scope = l.decode(MemoryScope.self, "scope") ?? .unknown
-        size = l.int64("size") ?? 0
-        updatedAt = l.millis("updatedAt") ?? 0
+        path = l.string("path", or: "")
+        scope = l.decode(MemoryScope.self, "scope", or: .unknown)
+        size = l.int64("size", or: 0)
+        updatedAt = l.millis("updatedAt", or: 0)
     }
 }

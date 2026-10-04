@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { LocalClient } from "../src/channels/local.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
-import { FakeDriver } from "../src/harness/fake.ts";
+import { FakeDriver } from "./fakeDriver.ts";
 import { launchdPlist, systemdUnit } from "../src/service.ts";
 import { cleanup, testConfig, tmpPaths } from "./helpers.ts";
 import { waitFor } from "./relayClient.ts";

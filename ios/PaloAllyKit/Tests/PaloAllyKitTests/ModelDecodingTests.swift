@@ -60,16 +60,16 @@ struct ModelDecodingTests {
     }
 
     @Test func approval() throws {
-        let a = try decode(Approval.self, #"{"id":"a","tool":"send","title":"t","detail":"d","irreversible":false,"status":"pending","createdAt":5,"suggestedScope":"example.com"}"#)
+        let a = try decode(Approval.self, #"{"id":"a","tool":"send","title":"t","detail":"d","careful":false,"status":"pending","createdAt":5,"suggestedScope":"domain:example.com"}"#)
         #expect(a.isPending)
         #expect(a.canRemember)
-        #expect(a.suggestedScope == "example.com")
-        // Missing irreversible flag is treated as irreversible (fail safe).
+        #expect(a.suggestedScope == "domain:example.com")
+        // Missing careful flag is treated as careful (fail safe).
         let b = try decode(Approval.self, #"{"id":"b","status":"allowed"}"#)
-        #expect(b.irreversible)
+        #expect(b.careful)
         #expect(!b.canRemember)
         #expect(b.status == .allowed)
-        let c = try decode(Approval.self, #"{"id":"c","status":"withdrawn","irreversible":true}"#)
+        let c = try decode(Approval.self, #"{"id":"c","status":"withdrawn","careful":true}"#)
         #expect(c.status == .unknown)
     }
 
@@ -102,13 +102,18 @@ struct ModelDecodingTests {
         #expect(s.maxProactivePerDay == 5)
         let json = String(data: try JSONEncoder().encode(s), encoding: .utf8)!
         #expect(json.contains(#""quietHours":null"#))
+        #expect(s.wechatProactive == .hint) // absent → host default
+        let w = try decode(HostSettings.self, #"{"wechatProactive":"off"}"#)
+        #expect(w.wechatProactive == .off)
+        let wj = String(data: try JSONEncoder().encode(w), encoding: .utf8)!
+        #expect(wj.contains(#""wechatProactive":"off""#))
         let q = try decode(HostSettings.self, #"{"quietHours":{"start":"23:00","end":"07:30"}}"#)
         #expect(q.quietHours == QuietHours(start: "23:00", end: "07:30"))
     }
 
     @Test func status() throws {
-        let s = try decode(HostStatus.self, #"{"online":true,"killed":true,"busy":false,"model":"glm","wechat":"expired","version":"1"}"#)
-        #expect(s.killed)
+        let s = try decode(HostStatus.self, #"{"online":true,"busy":false,"model":"glm","wechat":"expired","version":"1"}"#)
+        #expect(!s.busy)
         #expect(s.wechat == .expired)
         let t = try decode(HostStatus.self, #"{"wechat":"pending_qr"}"#)
         #expect(t.wechat == .unknown)
@@ -123,7 +128,7 @@ struct ModelDecodingTests {
     @Test func syncResultSkipsBadElements() throws {
         let r = try decode(SyncResult.self, """
         {"seq":10,"messages":[{"seq":9,"id":"a","role":"user","text":"x"},42,{"seq":10,"id":"b","role":"assistant"}],
-         "tasks":[],"approvals":[{"id":"p","status":"pending","irreversible":false}],"watches":[],"artifacts":[],
+         "tasks":[],"approvals":[{"id":"p","status":"pending","careful":false}],"watches":[],"artifacts":[],
          "settings":{"maxProactivePerDay":3},"status":{"busy":true},"future":"field"}
         """)
         #expect(r.seq == 10)

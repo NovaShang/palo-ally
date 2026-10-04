@@ -1,0 +1,103 @@
+{
+  "_comment": "Hand-written sample for developing ProtocolContractTests. The real contract is protocol.json, written by the host test suite; the test prefers it when present.",
+  "methods": {
+    "hello": {
+      "params": { "client": "ios", "version": "1.0" },
+      "result": {
+        "hostName": "studio", "version": "0.3.0",
+        "status": { "online": true, "busy": false, "model": "claude-opus-5-5[1m]", "wechat": "off", "version": "0.3.0" }
+      }
+    },
+    "sync": {
+      "params": {},
+      "result": {
+        "seq": 2,
+        "messages": [
+          { "seq": 1, "id": "m1", "role": "user", "kind": "text", "text": "你好", "channel": "app", "ts": 1759550000000, "clientMsgId": "c1" },
+          { "seq": 2, "id": "m2", "role": "assistant", "kind": "approval", "text": "需要你点个头", "channel": "app", "ts": 1759550001000, "approvalId": "a1" }
+        ],
+        "tasks": [
+          { "id": "t1", "title": "订票", "summary": "进行中", "status": "running", "source": "report", "createdAt": 1759550000000, "updatedAt": 1759550000000, "activityCount": 1 }
+        ],
+        "approvals": [
+          { "id": "a1", "tool": "Bash", "title": "运行命令", "detail": "git status", "careful": false, "status": "pending", "createdAt": 1759550001000, "suggestedScope": "cmd:git" }
+        ],
+        "watches": [
+          { "id": "w1", "title": "晨报", "kind": "schedule", "instruction": "写晨报", "at": ["08:30"], "enabled": true, "createdBy": "user", "createdAt": 1759550000000 }
+        ],
+        "artifacts": [
+          { "id": "ar1", "title": "晨报", "type": "markdown", "mainFile": "index.md", "pinned": false, "updatedAt": 1759550000000, "files": [{ "path": "index.md", "size": 12 }] }
+        ],
+        "settings": { "timezone": "Asia/Shanghai", "quietHours": { "start": "23:00", "end": "08:00" }, "maxProactivePerDay": 8, "probeIntervalMinutes": 10, "approvalTimeoutMinutes": 30, "wechatProactive": "hint" },
+        "status": { "online": true, "busy": false, "model": "claude-opus-5-5[1m]", "wechat": "off", "version": "0.3.0" }
+      }
+    },
+    "chat.send": { "params": { "text": "你好", "clientMsgId": "c1" }, "result": { "id": "m1", "seq": 1 } },
+    "chat.history": {
+      "params": { "beforeSeq": 2, "limit": 50 },
+      "result": { "messages": [ { "seq": 1, "id": "m1", "role": "user", "kind": "text", "text": "你好", "channel": "app", "ts": 1759550000000 } ] }
+    },
+    "commands.list": {
+      "params": {},
+      "result": { "commands": [ { "name": "stop", "description": "停下手上的事" }, { "name": "pdf", "description": "PDF", "argumentHint": "<file>" } ] }
+    },
+    "model.get": {
+      "params": {},
+      "result": { "model": "claude-opus-5-5[1m]", "setting": null, "effort": null, "models": [ { "value": "default", "displayName": "Default", "description": "Opus 5.5", "efforts": ["low", "high"] } ] }
+    },
+    "model.set": {
+      "params": { "effort": "high" },
+      "result": { "status": { "online": true, "busy": false, "model": "claude-opus-5-5[1m]", "effort": "high", "wechat": "off", "version": "0.3.0" } }
+    },
+    "task.get": {
+      "params": { "id": "t1" },
+      "result": {
+        "task": { "id": "t1", "title": "订票", "summary": "进行中", "status": "running", "source": "report", "createdAt": 1759550000000, "updatedAt": 1759550000000, "activityCount": 1 },
+        "activity": [ { "ts": 1759550000000, "kind": "tool_use", "tool": "Bash", "text": "ls" } ]
+      }
+    },
+    "task.stop": { "params": { "id": "t1" }, "result": { "ok": true } },
+    "approval.answer": { "params": { "id": "a1", "allow": true }, "result": { "status": "allowed" } },
+    "watch.add": {
+      "params": { "title": "喝水", "kind": "check", "instruction": "提醒喝水", "intervalMinutes": 60, "enabled": true },
+      "result": { "watch": { "id": "w2", "title": "喝水", "kind": "check", "instruction": "提醒喝水", "intervalMinutes": 60, "enabled": true, "createdBy": "user" } }
+    },
+    "watch.update": {
+      "params": { "id": "w2", "patch": { "enabled": false } },
+      "result": { "watch": { "id": "w2", "title": "喝水", "kind": "check", "instruction": "提醒喝水", "intervalMinutes": 60, "enabled": false, "createdBy": "user" } }
+    },
+    "watch.remove": { "params": { "id": "w2" }, "result": { "ok": true } },
+    "artifact.list": {
+      "params": {},
+      "result": { "artifacts": [ { "id": "ar1", "title": "晨报", "type": "markdown", "mainFile": "index.md", "pinned": false, "updatedAt": 1759550000000, "files": [] } ] }
+    },
+    "artifact.read": { "params": { "id": "ar1" }, "result": { "data": "IyDmmajmiqUK", "size": 9, "mime": "text/markdown", "eof": true } },
+    "artifact.pin": {
+      "params": { "id": "ar1", "pinned": true },
+      "result": { "artifact": { "id": "ar1", "title": "晨报", "type": "markdown", "mainFile": "index.md", "pinned": true, "updatedAt": 1759550000000, "files": [] } }
+    },
+    "memory.list": { "params": {}, "result": { "files": [ { "path": "user.md", "scope": "core", "size": 10, "updatedAt": 1759550000000 } ], "coreSize": 10 } },
+    "memory.read": { "params": { "path": "user.md" }, "result": { "content": "# 我", "updatedAt": 1759550000000 } },
+    "memory.write": { "params": { "path": "user.md", "content": "# 新的我", "baseUpdatedAt": 1759550000000 }, "result": { "ok": true, "updatedAt": 1759550005000 } },
+    "settings.update": {
+      "params": { "patch": { "maxProactivePerDay": 3 } },
+      "result": { "settings": { "timezone": "Asia/Shanghai", "quietHours": null, "maxProactivePerDay": 3, "probeIntervalMinutes": 10, "approvalTimeoutMinutes": 30, "wechatProactive": "hint" } }
+    },
+    "stop": { "params": {}, "result": { "status": { "online": true, "busy": false, "model": "claude-opus-5-5[1m]", "wechat": "off", "version": "0.3.0" } } },
+    "push.register": { "params": { "token": "deadbeefdeadbeefdeadbeefdeadbeef", "env": "sandbox" }, "result": { "ok": true } },
+    "push.unregister": { "params": { "token": "deadbeefdeadbeefdeadbeefdeadbeef" }, "result": { "ok": true } },
+    "device.unpair": { "params": {}, "result": { "ok": true } },
+    "audit.tail": { "params": { "limit": 10 }, "result": { "entries": [ { "ts": 1759550000000, "type": "memory.write", "path": "user.md" } ] } }
+  },
+  "events": {
+    "chat.message": { "seq": 3, "id": "m3", "role": "assistant", "kind": "text", "text": "好的", "channel": "app", "ts": 1759550002000 },
+    "chat.delta": { "id": "r1", "text": "好" },
+    "task.updated": { "id": "t1", "title": "订票", "summary": "好了", "status": "done", "source": "report", "createdAt": 1759550000000, "updatedAt": 1759550003000, "activityCount": 2 },
+    "approval.updated": { "id": "a2", "tool": "Write", "title": "写文件", "detail": "~/notes.md", "careful": true, "status": "pending", "createdAt": 1759550001000 },
+    "watch.updated": { "watch": { "id": "w1", "title": "晨报", "kind": "schedule", "instruction": "写晨报", "at": ["08:30"], "enabled": false, "createdBy": "user" } },
+    "artifact.updated": { "id": "ar1", "title": "晨报", "type": "markdown", "mainFile": "index.md", "pinned": true, "updatedAt": 1759550004000, "files": [ { "path": "index.md", "size": 12 } ] },
+    "settings.updated": { "timezone": "Asia/Shanghai", "quietHours": null, "maxProactivePerDay": 3, "probeIntervalMinutes": 10, "approvalTimeoutMinutes": 30, "wechatProactive": "full" },
+    "status": { "online": true, "busy": true, "activity": "正在想", "model": "claude-opus-5-5[1m]", "wechat": "connected", "version": "0.3.0" },
+    "commands.updated": { "commands": [ { "name": "stop", "description": "停下手上的事" } ] }
+  }
+}

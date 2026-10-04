@@ -173,15 +173,10 @@ struct MemoryEditorView: View {
         message = nil
         Task {
             do {
-                let stamp = try await store.writeMemory(path: file.path, content: text, baseUpdatedAt: baseUpdatedAt)
+                // The returned stamp is the base for the next save, so it
+                // isn't refused as a conflict with ourselves.
+                baseUpdatedAt = try await store.writeMemory(path: file.path, content: text, baseUpdatedAt: baseUpdatedAt)
                 original = text
-                if let stamp {
-                    baseUpdatedAt = stamp
-                } else if let fresh = try? await store.readMemory(path: file.path) {
-                    // Host didn't report the new stamp: re-read it so the next
-                    // save isn't refused as a conflict with ourselves.
-                    baseUpdatedAt = fresh.updatedAt
-                }
                 message = "存好了"
                 onSaved()
             } catch RPCError.remote(let m) where m.contains("刚被助理改过") {

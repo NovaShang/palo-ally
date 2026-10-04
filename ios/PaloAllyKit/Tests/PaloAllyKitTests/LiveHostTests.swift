@@ -52,6 +52,6 @@ struct LiveHostTests {
         await transport.start()
         #expect(await until(10) { store.connection == .online })
         #expect(store.lastSeq == reply.seq)
-        store.stop()
+        store.shutdown()
     }
 }

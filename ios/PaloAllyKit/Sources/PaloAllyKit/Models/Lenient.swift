@@ -10,7 +10,12 @@ public protocol TolerantStringEnum: RawRepresentable, Codable, Sendable, Hashabl
 extension TolerantStringEnum {
     public init(from decoder: Decoder) throws {
         let s = (try? decoder.singleValueContainer().decode(String.self)) ?? ""
-        self = Self(rawValue: s) ?? Self.fallback
+        if let v = Self(rawValue: s), v != Self.fallback {
+            self = v
+        } else {
+            LenientDiagnostics.record(decoder.codingPath, "unknown \(Self.self) value \"\(s)\"")
+            self = Self.fallback
+        }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -28,13 +33,70 @@ struct AnyKey: CodingKey {
     init?(intValue: Int) { return nil }
 }
 
+/// Strict-mode diagnostics for the tolerant decoders. Production decoding
+/// never throws on a missing or malformed field; it falls back to a default.
+/// Contract tests run decoding inside `LenientDiagnostics.collect` to learn
+/// every place such a fallback happened (a required key missing, an unknown
+/// enum value, a dropped array element).
+public final class LenientDiagnostics: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _issues: [String] = []
+
+    public init() {}
+
+    public var issues: [String] { lock.withLock { _issues } }
+
+    func add(_ issue: String) { lock.withLock { _issues.append(issue) } }
+
+    @TaskLocal static var current: LenientDiagnostics?
+
+    static func record(_ path: [CodingKey], _ what: String) {
+        guard let current else { return }
+        let p = path.map { $0.intValue.map { "[\($0)]" } ?? $0.stringValue }.joined(separator: ".")
+        current.add(p.isEmpty ? what : "\(p): \(what)")
+    }
+
+    /// Runs `body` (synchronous decoding) and returns every fallback it hit.
+    public static func collect<T>(_ body: () throws -> T) rethrows -> (value: T, issues: [String]) {
+        let d = LenientDiagnostics()
+        let v = try $current.withValue(d) { try body() }
+        return (v, d.issues)
+    }
+}
+
 /// Field accessors that never throw: a malformed field becomes nil, and the
-/// caller supplies a default.
+/// caller supplies a default. The `or:` variants mark a field as required by
+/// the protocol: they fall back the same way, but report the fallback when
+/// strict diagnostics are on.
 struct Lenient {
     let c: KeyedDecodingContainer<AnyKey>
+    let path: [CodingKey]
 
     init(_ decoder: Decoder) throws {
         c = try decoder.container(keyedBy: AnyKey.self)
+        path = decoder.codingPath
+    }
+
+    /// Marks `key` as required: reports a missing / malformed value in strict mode.
+    func expect<T>(_ key: String, _ value: T?) -> T? {
+        if value == nil { LenientDiagnostics.record(path, "missing required \"\(key)\"") }
+        return value
+    }
+
+    private func required<T>(_ key: String, _ value: T?, _ fallback: () -> T) -> T {
+        expect(key, value) ?? fallback()
+    }
+
+    func string(_ key: String, or fallback: @autoclosure () -> String) -> String { required(key, string(key), fallback) }
+    func int(_ key: String, or fallback: @autoclosure () -> Int) -> Int { required(key, int(key), fallback) }
+    func int64(_ key: String, or fallback: @autoclosure () -> Int64) -> Int64 { required(key, int64(key), fallback) }
+    func bool(_ key: String, or fallback: @autoclosure () -> Bool) -> Bool { required(key, bool(key), fallback) }
+    func millis(_ key: String, or fallback: @autoclosure () -> Int64) -> Int64 { required(key, millis(key), fallback) }
+    func decode<T: Decodable>(_ type: T.Type, _ key: String, or fallback: @autoclosure () -> T) -> T {
+        required(key, decode(type, key), fallback)
+    }
+    func array<T: Decodable>(_ type: T.Type, _ key: String, or fallback: @autoclosure () -> [T]) -> [T] {
+        required(key, array(type, key), fallback)
     }
 
     func has(_ key: String) -> Bool { c.contains(AnyKey(key)) }
@@ -90,7 +152,12 @@ struct Lenient {
     /// Decode an array, skipping (not failing on) malformed elements.
     func array<T: Decodable>(_ type: T.Type, _ key: String) -> [T]? {
         guard let raw = decode([JSONValue].self, key) else { return nil }
-        return raw.compactMap { try? $0.decode(T.self) }
+        return raw.enumerated().compactMap { i, v in
+            do { return try v.decode(T.self) } catch {
+                LenientDiagnostics.record(path, "dropped \(key)[\(i)] (\(error))")
+                return nil
+            }
+        }
     }
 
     nonisolated(unsafe) static let iso: ISO8601DateFormatter = {

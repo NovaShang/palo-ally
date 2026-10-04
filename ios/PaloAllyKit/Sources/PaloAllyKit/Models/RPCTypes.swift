@@ -20,8 +20,9 @@ public enum RPCMethod {
     public static let memoryRead = "memory.read"
     public static let memoryWrite = "memory.write"
     public static let settingsUpdate = "settings.update"
-    public static let kill = "kill"
-    public static let resume = "resume"
+    /// The stop button: interrupts whatever the assistant is doing. Nothing
+    /// stays blocked afterwards; the next message works as usual.
+    public static let stop = "stop"
     public static let pushRegister = "push.register"
     public static let pushUnregister = "push.unregister"
     public static let deviceUnpair = "device.unpair"
@@ -29,6 +30,15 @@ public enum RPCMethod {
     public static let commandsList = "commands.list"
     public static let modelGet = "model.get"
     public static let modelSet = "model.set"
+
+    /// Every method the client knows. The contract test checks this equals
+    /// the host's method set exactly.
+    public static let all: [String] = [
+        hello, sync, chatSend, chatHistory, commandsList, modelGet, modelSet, taskGet, taskStop,
+        approvalAnswer, watchAdd, watchUpdate, watchRemove, artifactList, artifactRead, artifactPin,
+        memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
+        deviceUnpair, auditTail,
+    ]
 }
 
 public enum RPCEventName {
@@ -41,6 +51,11 @@ public enum RPCEventName {
     public static let settingsUpdated = "settings.updated"
     public static let status = "status"
     public static let commandsUpdated = "commands.updated"
+
+    public static let all: [String] = [
+        chatMessage, chatDelta, taskUpdated, approvalUpdated, watchUpdated, artifactUpdated, settingsUpdated,
+        status, commandsUpdated,
+    ]
 }
 
 public struct EmptyParams: Codable, Sendable { public init() {} }
@@ -49,7 +64,7 @@ public struct OKResult: Decodable, Sendable {
     public var ok: Bool
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        ok = l.bool("ok") ?? true
+        ok = l.bool("ok", or: true)
     }
 }
 
@@ -65,9 +80,9 @@ public struct HelloResult: Decodable, Sendable {
     public var status: HostStatus?
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        hostName = l.string("hostName") ?? ""
-        version = l.string("version") ?? ""
-        status = l.decode(HostStatus.self, "status")
+        hostName = l.string("hostName", or: "")
+        version = l.string("version", or: "")
+        status = l.expect("status", l.decode(HostStatus.self, "status"))
     }
 }
 
@@ -95,14 +110,14 @@ public struct SyncResult: Codable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        seq = l.int64("seq") ?? 0
-        messages = l.array(ChatMessage.self, "messages") ?? []
-        tasks = l.array(AllyTask.self, "tasks")
-        approvals = l.array(Approval.self, "approvals")
-        watches = l.array(Watch.self, "watches")
-        artifacts = l.array(Artifact.self, "artifacts")
-        settings = l.decode(HostSettings.self, "settings")
-        status = l.decode(HostStatus.self, "status")
+        seq = l.int64("seq", or: 0)
+        messages = l.array(ChatMessage.self, "messages", or: [])
+        tasks = l.expect("tasks", l.array(AllyTask.self, "tasks"))
+        approvals = l.expect("approvals", l.array(Approval.self, "approvals"))
+        watches = l.expect("watches", l.array(Watch.self, "watches"))
+        artifacts = l.expect("artifacts", l.array(Artifact.self, "artifacts"))
+        settings = l.expect("settings", l.decode(HostSettings.self, "settings"))
+        status = l.expect("status", l.decode(HostStatus.self, "status"))
     }
 
     /// Max messages a `sync{sinceSeq}` returns per call (design.md §5.3).
@@ -120,8 +135,8 @@ public struct ChatSendResult: Decodable, Sendable {
     public var seq: Int64
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        id = l.string("id") ?? ""
-        seq = l.int64("seq") ?? 0
+        id = l.string("id", or: "")
+        seq = l.int64("seq", or: 0)
     }
 }
 
@@ -134,7 +149,7 @@ public struct ChatHistoryParams: Codable, Sendable {
 public struct MessagesResult: Decodable, Sendable {
     public var messages: [ChatMessage]
     public init(from decoder: Decoder) throws {
-        messages = try Lenient(decoder).array(ChatMessage.self, "messages") ?? []
+        messages = try Lenient(decoder).array(ChatMessage.self, "messages", or: [])
     }
 }
 
@@ -149,8 +164,8 @@ public struct TaskDetail: Decodable, Sendable {
     public init(task: AllyTask?, activity: [TaskActivity]) { self.task = task; self.activity = activity }
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        task = l.decode(AllyTask.self, "task")
-        activity = l.array(TaskActivity.self, "activity") ?? []
+        task = l.expect("task", l.decode(AllyTask.self, "task"))
+        activity = l.array(TaskActivity.self, "activity", or: [])
     }
 }
 
@@ -163,12 +178,15 @@ public struct ApprovalAnswerParams: Codable, Sendable {
 
 public struct StatusStringResult: Decodable, Sendable {
     public var status: String
-    public init(from decoder: Decoder) throws { status = try Lenient(decoder).string("status") ?? "" }
+    public init(from decoder: Decoder) throws { status = try Lenient(decoder).string("status", or: "") }
 }
 
 public struct WatchResult: Decodable, Sendable {
     public var watch: Watch?
-    public init(from decoder: Decoder) throws { watch = try Lenient(decoder).decode(Watch.self, "watch") }
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        watch = l.expect("watch", l.decode(Watch.self, "watch"))
+    }
 }
 
 public struct PatchParams: Codable, Sendable {
@@ -180,7 +198,7 @@ public struct PatchParams: Codable, Sendable {
 public struct ArtifactsResult: Decodable, Sendable {
     public var artifacts: [Artifact]
     public init(from decoder: Decoder) throws {
-        artifacts = try Lenient(decoder).array(Artifact.self, "artifacts") ?? []
+        artifacts = try Lenient(decoder).array(Artifact.self, "artifacts", or: [])
     }
 }
 
@@ -201,10 +219,10 @@ public struct ArtifactChunk: Decodable, Sendable {
     public var eof: Bool
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        data = Data(base64Encoded: l.string("data") ?? "", options: .ignoreUnknownCharacters) ?? Data()
-        size = l.int64("size") ?? 0
-        mime = l.string("mime") ?? "application/octet-stream"
-        eof = l.bool("eof") ?? true
+        data = Data(base64Encoded: l.string("data", or: ""), options: .ignoreUnknownCharacters) ?? Data()
+        size = l.int64("size", or: 0)
+        mime = l.string("mime", or: "application/octet-stream")
+        eof = l.bool("eof", or: true)
     }
     /// design.md §5.3: each chunk ≤ 256 KiB.
     public static let maxChunk: Int64 = 256 * 1024
@@ -218,12 +236,15 @@ public struct ArtifactPinParams: Codable, Sendable {
 
 public struct ArtifactResult: Decodable, Sendable {
     public var artifact: Artifact?
-    public init(from decoder: Decoder) throws { artifact = try Lenient(decoder).decode(Artifact.self, "artifact") }
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        artifact = l.expect("artifact", l.decode(Artifact.self, "artifact"))
+    }
 }
 
 public struct MemoryFilesResult: Decodable, Sendable {
     public var files: [MemoryFile]
-    public init(from decoder: Decoder) throws { files = try Lenient(decoder).array(MemoryFile.self, "files") ?? [] }
+    public init(from decoder: Decoder) throws { files = try Lenient(decoder).array(MemoryFile.self, "files", or: []) }
 }
 
 public struct PathParams: Codable, Sendable {
@@ -239,8 +260,8 @@ public struct MemoryContentResult: Decodable, Sendable, Equatable {
     public init(content: String, updatedAt: Int64?) { self.content = content; self.updatedAt = updatedAt }
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        content = l.string("content") ?? ""
-        updatedAt = l.millis("updatedAt")
+        content = l.string("content", or: "")
+        updatedAt = l.expect("updatedAt", l.millis("updatedAt"))
     }
 }
 
@@ -255,9 +276,15 @@ public struct MemoryWriteParams: Codable, Sendable {
     }
 }
 
+/// `memory.write → {ok, updatedAt}`; `updatedAt` is the base for the next write.
 public struct MemoryWriteResult: Decodable, Sendable {
+    public var ok: Bool
     public var updatedAt: Int64?
-    public init(from decoder: Decoder) throws { updatedAt = try Lenient(decoder).millis("updatedAt") }
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        ok = l.bool("ok", or: true)
+        updatedAt = l.expect("updatedAt", l.millis("updatedAt"))
+    }
 }
 
 public struct PushUnregisterParams: Codable, Sendable {
@@ -267,13 +294,19 @@ public struct PushUnregisterParams: Codable, Sendable {
 
 public struct SettingsResult: Decodable, Sendable {
     public var settings: HostSettings?
-    public init(from decoder: Decoder) throws { settings = try Lenient(decoder).decode(HostSettings.self, "settings") }
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        settings = l.expect("settings", l.decode(HostSettings.self, "settings"))
+    }
 }
 
-/// `kill` / `resume` return `{status}`; we accept a Status object or a string.
-public struct KillResult: Decodable, Sendable {
+/// `stop` / `model.set` return `{status}`.
+public struct StatusResult: Decodable, Sendable {
     public var status: HostStatus?
-    public init(from decoder: Decoder) throws { status = try Lenient(decoder).decode(HostStatus.self, "status") }
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        status = l.expect("status", l.decode(HostStatus.self, "status"))
+    }
 }
 
 public enum PushEnvironment: String, Codable, Sendable { case sandbox, production }
@@ -291,7 +324,7 @@ public struct AuditTailParams: Codable, Sendable {
 
 public struct AuditResult: Decodable, Sendable {
     public var entries: [JSONValue]
-    public init(from decoder: Decoder) throws { entries = try Lenient(decoder).decode([JSONValue].self, "entries") ?? [] }
+    public init(from decoder: Decoder) throws { entries = try Lenient(decoder).decode([JSONValue].self, "entries", or: []) }
 }
 
 /// `chat.delta` payload.
@@ -301,8 +334,8 @@ public struct ChatDelta: Codable, Sendable {
     public init(id: String, text: String) { self.id = id; self.text = text }
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        id = l.string("id") ?? ""
-        text = l.string("text") ?? ""
+        id = l.string("id", or: "")
+        text = l.string("text", or: "")
     }
 }
 

@@ -21,11 +21,11 @@ struct StoreRegressionTests {
     @Test func busyFalseFinalizesStreamingMessages() async throws {
         let host = ManualHost()
         let store = await online(host)
-        host.event("status", ["online": true, "killed": false, "busy": true, "activity": "正在想", "model": "", "wechat": "off", "version": "1"])
+        host.event("status", ["online": true, "busy": true, "activity": "正在想", "model": "", "wechat": "off", "version": "1"])
         host.event("chat.delta", ["id": "m_x", "text": "我先看看"])
         #expect(await until { store.messages.contains { $0.isStreaming } })
         host.event("chat.message", ["seq": 1, "id": "m_n", "role": "system", "kind": "notice", "text": "出了点问题：x", "channel": "system", "ts": 1])
-        host.event("status", ["online": true, "killed": false, "busy": false, "model": "", "wechat": "off", "version": "1"])
+        host.event("status", ["online": true, "busy": false, "model": "", "wechat": "off", "version": "1"])
         #expect(await until { store.isBusy == false })
         #expect(store.messages.filter(\.isStreaming).isEmpty)
         #expect(store.messages.first { $0.id == "m_x" }?.text == "我先看看")
@@ -319,15 +319,15 @@ struct SilentPingLink: UnitLink {
 
 @Suite("Regressions: wording")
 struct WordingRegressionTests {
-    @Test func rememberNeedsScopeAndReversible() {
-        let noScope = Approval(id: "a", tool: "Bash", title: "t", detail: "ls && cat x", irreversible: false, createdAt: 1)
+    @Test func rememberNeedsScopeAndNotCareful() {
+        let noScope = Approval(id: "a", tool: "Bash", title: "t", detail: "ls && cat x", careful: false, createdAt: 1)
         #expect(!noScope.canRemember)
-        let withScope = Approval(id: "a", tool: "Bash", title: "t", detail: "git status", irreversible: false, createdAt: 1,
+        let withScope = Approval(id: "a", tool: "Bash", title: "t", detail: "git status", careful: false, createdAt: 1,
                                  suggestedScope: "cmd:git")
         #expect(withScope.canRemember)
-        var irr = withScope
-        irr.irreversible = true
-        #expect(!irr.canRemember)
+        var careful = withScope
+        careful.careful = true
+        #expect(!careful.canRemember)
     }
 
     @Test func scopesInPlainWords() {
@@ -335,11 +335,16 @@ struct WordingRegressionTests {
         #expect(Approval.friendlyScope("domain:example.com") == "example.com 这个网站")
         #expect(Approval.friendlyScope("path:/Users/me/Projects/x")?.contains("这个文件夹") == true)
         #expect(Approval.friendlyScope("path:/Users/me/Projects/x")?.contains("/") == false)
-        #expect(Approval.friendlyScope("recipient:a@b.com") == "发给 a@b.com")
+        #expect(Approval.friendlyScope("path:/Users/me/Projects/x") == "「x」这个文件夹")
+        #expect(Approval.friendlyScope("tool:mcp__gmail__send") == "这个工具")
         #expect(Approval.friendlyScope("weird") == nil)
-        for raw in ["cmd:ls", "domain:x.y", "path:/a/b", "recipient:z"] {
+        // Old / unknown kinds are not described (no "always allow" wording for them).
+        #expect(Approval.friendlyScope("recipient:a@b.com") == nil)
+        #expect(Approval.friendlyScope("email:a@b.com") == nil)
+        for raw in ["cmd:ls", "domain:x.y", "path:/a/b", "tool:Write"] {
             let s = Approval.friendlyScope(raw) ?? ""
-            #expect(!s.contains("cmd:") && !s.contains("path:") && !s.contains("domain:"))
+            #expect(!s.isEmpty)
+            #expect(!s.contains("cmd:") && !s.contains("path:") && !s.contains("domain:") && !s.contains("tool:"))
         }
     }
 

@@ -108,7 +108,7 @@ final class AppModel {
     // MARK: modes
 
     func startDemo() {
-        store?.stop()
+        store?.shutdown()
         let host = DemoHost(speed: 1)
         demoHost = host
         let s = AppStore(transport: host.transport, clientKind: clientKind, clientVersion: clientVersion)
@@ -118,7 +118,7 @@ final class AppModel {
     }
 
     func connect(to host: PairedHost) {
-        store?.stop()
+        store?.shutdown()
         do {
             let identity = try DeviceIdentity.loadOrCreate(store: secrets)
             let transport = RelayTransport(host: host, identity: identity)
@@ -170,7 +170,7 @@ final class AppModel {
     }
 
     private func forgetHost() {
-        store?.stop()
+        store?.shutdown()
         store = nil
         PairedHost.forget(in: secrets)
         pairedHost = nil

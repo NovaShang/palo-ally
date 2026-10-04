@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Bus } from "../src/bus.ts";
-import { FakeDriver } from "../src/harness/fake.ts";
+import { FakeDriver } from "./fakeDriver.ts";
 import { ProbeScheduler, dueSlot, type ProbeHost, type ProbeTrigger } from "../src/probe.ts";
 import type { Watch } from "../src/types.ts";
 import { inWindow, parseHHMM, zonedParts } from "../src/util.ts";

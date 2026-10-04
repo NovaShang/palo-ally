@@ -99,7 +99,6 @@ public enum Friendly {
         if lower.contains("timeout") || lower.contains("timed out") || lower.contains("etimedout") { return "等太久了，稍后再试" }
         if lower.contains("too large") || lower.contains("e2big") { return "文件太大了" }
         if lower.contains("unknown method") { return "电脑上的 PaloAlly 版本太旧，需要更新一下" }
-        if lower.contains("killed") || lower.contains("paused") { return "助理已暂停" }
         if containsCJK(m) && !looksTechnical(m) { return m }
         return "电脑那边出了点问题，稍后再试"
     }

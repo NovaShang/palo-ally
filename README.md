@@ -48,6 +48,7 @@ config.json      config (models, budgets, quiet hours, relay / WeChat / APNs / b
 
 ```sh
 cd host && bun test                      # unit + integration; relay tests need the local relay below
+cd host && bun run fixtures              # regenerate the protocol/crypto fixtures the iOS tests decode (commit them)
 (cd ~/code/bento/relay && npx wrangler dev --port 8789)   # the real relay, run locally
 PALOALLY_LIVE=1 bun test test/live.test.ts               # against the real Claude Code harness (uses tokens)
 cd ios/PaloAllyKit && swift test
