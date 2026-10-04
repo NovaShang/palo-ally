@@ -15,6 +15,7 @@ struct SettingsView: View {
     @State private var unpairing = false
     /// Pending quiet-hours save; DatePickers fire on every tick of the wheel.
     @State private var quietSave: Task<Void, Never>?
+    @AppStorage(AppTheme.storageKey) private var theme = AppTheme.default
 
     var body: some View {
         Form {
@@ -27,6 +28,14 @@ struct SettingsView: View {
                 .foregroundStyle(.primary)
             }
             .sheet(isPresented: $showModels) { ModelPickerSheet().environment(store) }
+
+            Section {
+                ThemePicker(selection: $theme)
+            } header: {
+                Text("主题色")
+            } footer: {
+                Text("App 的颜色和桌面图标都会换成这个颜色。")
+            }
 
             Section {
                 Toggle("免打扰", isOn: $quietOn)
@@ -84,6 +93,9 @@ struct SettingsView: View {
         .onChange(of: quietStart) { if loaded && quietOn { scheduleQuietSave() } }
         .onChange(of: quietEnd) { if loaded && quietOn { scheduleQuietSave() } }
         .onDisappear {
+            // The icon switches once on the way out, not on every swatch tap
+            // (iOS confirms each switch with its own alert).
+            AppTheme.applyIcon(theme)
             // Leaving mid-debounce: save right away.
             if let pending = quietSave, !pending.isCancelled {
                 pending.cancel()
@@ -128,5 +140,47 @@ struct SettingsView: View {
                 prefill()
             }
         }
+    }
+}
+
+/// The theme swatches: glass circles in each color, a checkmark on the
+/// current one. Picking one recolors the app right away.
+private struct ThemePicker: View {
+    @Binding var selection: AppTheme
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: 10)], spacing: 14) {
+            ForEach(AppTheme.allCases) { t in
+                Button {
+                    withAnimation(.snappy) { selection = t }
+                } label: {
+                    VStack(spacing: 6) {
+                        Circle()
+                            .fill(t.color.gradient)
+                            .frame(width: 40, height: 40)
+                            .overlay {
+                                if t == selection {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 15, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .transition(.scale.combined(with: .opacity))
+                                }
+                            }
+                            .padding(4)
+                            .glassEffect(t == selection ? .regular.tint(t.color.opacity(0.25)).interactive() : .regular.interactive(), in: .circle)
+                        Text(t.name)
+                            .font(.caption)
+                            .foregroundStyle(t == selection ? .primary : .secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(t.name)
+                .accessibilityAddTraits(t == selection ? .isSelected : [])
+            }
+        }
+        .padding(.vertical, 6)
+        .sensoryFeedback(.selection, trigger: selection)
     }
 }

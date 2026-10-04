@@ -20,6 +20,7 @@ struct MessageRow: View {
 
 private struct UserBubble: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.appTheme) private var theme
     let message: ChatMessage
 
     var body: some View {
@@ -53,7 +54,7 @@ private struct UserBubble: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
-                    .background(Color.accentColor.gradient, in: .rect(cornerRadius: 20, style: .continuous))
+                    .background(theme.fill, in: .rect(cornerRadius: 20, style: .continuous))
                     .contextMenu {
                         Button("复制", systemImage: "doc.on.doc") { Clipboard.copy(message.text) }
                     }

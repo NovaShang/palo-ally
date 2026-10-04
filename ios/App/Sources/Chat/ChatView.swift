@@ -67,14 +67,10 @@ struct ChatView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             StatusBanner()
         }
-        // While holding to talk, a light veil sets the conversation back.
+        // While holding to talk, the screen's background rises from the
+        // bottom so the live transcript reads cleanly (same hold-driven motion).
         .overlay {
-            if voice.isActive {
-                Color.black.opacity(0.14)
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-            }
+            if voice.panelMounted { VoiceScrim(presence: voice.presence) }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ComposerView(draft: $draft) { text, images, files in

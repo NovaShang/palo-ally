@@ -21,10 +21,10 @@
 		771DA9C8AA0708C69B5C0D2B /* MessageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51926AB68F34CBF76C2C1507 /* MessageRow.swift */; };
 		7FA2E7E1309D4680A571ACCC /* SpeechDictation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F881AEFDC8F959F0506046DD /* SpeechDictation.swift */; };
 		81A11C9A7F625540126701DA /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5458CC8523AA61D0A0852ABA /* ChatView.swift */; };
+		9B34F0015CBA0682AF1B48BC /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32922EB865184F7F70CAB365 /* AppTheme.swift */; };
 		9E8BAB6F1769D57EC0C617C0 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97B4D23870E594B624074F8D /* ComposerView.swift */; };
 		B7DF0900ABDDFACC50FFF6B2 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7769E0FBCB029211A3B7B532 /* QRScannerView.swift */; };
 		B8976F3E44EC1376603FA764 /* CopyButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDCE2B703ACB5F034BAA47C0 /* CopyButton.swift */; };
-		B9359B5F6288A66AEEC8DF67 /* ComposerTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A359815C25995DA0A3C73712 /* ComposerTextEditor.swift */; };
 		CCF61F9E84E355E2B02DCE4C /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C1205FC1B401AE4865CFE52 /* AppModel.swift */; };
 		D3720B2AD3344F09581611E1 /* TasksSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90E9946A58A404E7087D10BB /* TasksSection.swift */; };
 		D556694E027BD986AB400215 /* ApprovalsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3E3EFECDEF03091588F1AA /* ApprovalsSection.swift */; };
@@ -42,6 +42,7 @@
 		056B108C0177A1156F312E84 /* AssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantView.swift; sourceTree = "<group>"; };
 		0B2339DF9459035E591FCB19 /* PaloAlly.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PaloAlly.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0CC0C56E78F856900F1C91A8 /* ApprovalCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalCard.swift; sourceTree = "<group>"; };
+		32922EB865184F7F70CAB365 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
 		36184756C7B818CDFB8CB839 /* ImagePrep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePrep.swift; sourceTree = "<group>"; };
 		362F66DA10216A79F79CBB11 /* Copy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Copy.swift; sourceTree = "<group>"; };
 		3C8BBDD7B0248070C25E81AB /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
@@ -59,7 +60,6 @@
 		98B9C22CB72F4B7250A63D55 /* VoiceInputOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInputOverlay.swift; sourceTree = "<group>"; };
 		9C1205FC1B401AE4865CFE52 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		A047E4D10313D33DC6FA1B11 /* MemorySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemorySection.swift; sourceTree = "<group>"; };
-		A359815C25995DA0A3C73712 /* ComposerTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerTextEditor.swift; sourceTree = "<group>"; };
 		AD3E3EFECDEF03091588F1AA /* ApprovalsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalsSection.swift; sourceTree = "<group>"; };
 		D85821DAF90FE3998B520913 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
@@ -146,7 +146,6 @@
 			children = (
 				0CC0C56E78F856900F1C91A8 /* ApprovalCard.swift */,
 				5458CC8523AA61D0A0852ABA /* ChatView.swift */,
-				A359815C25995DA0A3C73712 /* ComposerTextEditor.swift */,
 				97B4D23870E594B624074F8D /* ComposerView.swift */,
 				51926AB68F34CBF76C2C1507 /* MessageRow.swift */,
 				F881AEFDC8F959F0506046DD /* SpeechDictation.swift */,
@@ -166,6 +165,7 @@
 		A5A39901D00EEDD568BA7FA7 /* Support */ = {
 			isa = PBXGroup;
 			children = (
+				32922EB865184F7F70CAB365 /* AppTheme.swift */,
 				362F66DA10216A79F79CBB11 /* Copy.swift */,
 				EDCE2B703ACB5F034BAA47C0 /* CopyButton.swift */,
 				36184756C7B818CDFB8CB839 /* ImagePrep.swift */,
@@ -286,12 +286,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				CCF61F9E84E355E2B02DCE4C /* AppModel.swift in Sources */,
+				9B34F0015CBA0682AF1B48BC /* AppTheme.swift in Sources */,
 				32876775778CD8C38491FBB0 /* ApprovalCard.swift in Sources */,
 				D556694E027BD986AB400215 /* ApprovalsSection.swift in Sources */,
 				E72CE394982E8B194DFF27E9 /* ArtifactDetailView.swift in Sources */,
 				08BF7949F94B89DDD05C3319 /* AssistantView.swift in Sources */,
 				81A11C9A7F625540126701DA /* ChatView.swift in Sources */,
-				B9359B5F6288A66AEEC8DF67 /* ComposerTextEditor.swift in Sources */,
 				9E8BAB6F1769D57EC0C617C0 /* ComposerView.swift in Sources */,
 				6581CEDB42117DA61968E352 /* Copy.swift in Sources */,
 				B8976F3E44EC1376603FA764 /* CopyButton.swift in Sources */,
@@ -319,8 +319,10 @@
 		259A35521F65461FDA23A41C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-orchid AppIcon-rose AppIcon-berry AppIcon-blue AppIcon-violet AppIcon-teal AppIcon-orange AppIcon-graphite";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = PaloAlly.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
@@ -469,8 +471,10 @@
 		E0ECE91D4289E98B71A4725D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-orchid AppIcon-rose AppIcon-berry AppIcon-blue AppIcon-violet AppIcon-teal AppIcon-orange AppIcon-graphite";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = PaloAlly.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;

@@ -60,9 +60,9 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         UIBackgroundModes:
           - remote-notification
-        NSMicrophoneUsageDescription: 按住输入框说话时需要用到麦克风，把你说的话变成文字。
+        NSMicrophoneUsageDescription: 语音输入时需要用到麦克风，把你说的话变成文字。
         NSSpeechRecognitionUsageDescription: 用来把你说的话转成文字，发给助理。
-        NSCameraUsageDescription: 扫一扫电脑上的二维码，把这台设备和电脑连起来。
+        NSCameraUsageDescription: 扫电脑上的二维码把这台设备连上电脑，或者拍照发给助理。
         CFBundleURLTypes:
           - CFBundleURLName: com.novashang.paloally.pair
             CFBundleURLSchemes:
@@ -76,6 +76,9 @@ targets:
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         TARGETED_DEVICE_FAMILY: "1,2,6"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Theme-colored icons (设置 → 主题色), rendered by scripts/make_icons.py.
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "AppIcon-orchid AppIcon-rose AppIcon-berry AppIcon-blue AppIcon-violet AppIcon-teal AppIcon-orange AppIcon-graphite"
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: NO
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         SWIFT_EMIT_LOC_STRINGS: NO
         ENABLE_PREVIEWS: YES

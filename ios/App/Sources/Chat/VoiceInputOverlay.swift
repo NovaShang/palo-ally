@@ -19,20 +19,58 @@ final class VoiceInputController {
         previewText = text
         self.target = target
         isActive = true
+        presence = 1
+        panelMounted = true
     }
+
+    /// 0…1: how far the composer has turned into the recording UI. One value
+    /// drives the whole transition — capsule glow, the panel growing out of
+    /// the capsule, the screen scrim — so arming, committing, and going back
+    /// (early release, send, cancel) are one continuous motion. Set inside
+    /// `withAnimation` by the composer.
+    var presence: CGFloat = 0
+    /// The panel and scrim stay up while `presence` animates back to 0.
+    var panelMounted = false
     let dictation = SpeechDictation()
 
     /// The composer capsule's size (measured by it).
     var capsuleSize: CGSize = .zero
 
+    /// Recording, but the hold hasn't committed yet (finger just landed).
+    private(set) var isArmed = false
+
     /// Finger down, before we know it's a hold: warm the audio path.
     func prewarm() { dictation.prewarm() }
 
-    func begin() {
-        guard !isActive else { return }
-        isActive = true
+    /// Finger landed on the field: start recording right away, so words
+    /// spoken before the hold threshold aren't lost. Returns false (and asks
+    /// for the mic once) when permission isn't granted yet — nothing records.
+    @discardableResult
+    func arm() -> Bool {
+        guard !isActive, !isArmed else { return isArmed }
+        guard MicPermission.micAuthorizedSync() else {
+            Task { _ = await MicPermission.ensureMic() }
+            return false
+        }
+        isArmed = true
         target = .send
         dictation.start()
+        return true
+    }
+
+    /// Held past the threshold: the same recording becomes the hold-to-talk session.
+    func commit() {
+        guard isArmed, !isActive else { return }
+        isArmed = false
+        isActive = true
+        target = .send
+    }
+
+    /// Released or scrolled before the threshold: it was a tap — throw the audio away.
+    func disarm() {
+        guard isArmed else { return }
+        isArmed = false
+        dictation.cancel()
     }
 
     /// `point` is in the composer capsule's coordinates.
@@ -56,8 +94,9 @@ final class VoiceInputController {
 
     /// Gesture interrupted (e.g. app went to background).
     func abort() {
-        guard isActive else { return }
+        guard isActive || isArmed else { return }
         isActive = false
+        isArmed = false
         dictation.cancel()
     }
 }
@@ -73,37 +112,37 @@ struct VoiceLayout {
     }
 }
 
-/// Hold-to-talk panel in our glass language (after bento's VoiceGlassPanel):
-/// a glass transcript bubble and two glass drop zones, floating just above
-/// the composer, which is itself the "release to send" zone. Drawn by the
+/// Hold-to-talk panel: the live transcript (bare text over the screen
+/// scrim) and two glass drop zones, floating above the composer — which is
+/// itself the "release to send" zone. It grows out of the capsule as
+/// `voice.presence` rises and folds back into it as it falls. Drawn by the
 /// composer (anchored to it), purely visual — the composer's gesture keeps
 /// tracking the finger.
 struct VoiceInputPanel: View {
     let voice: VoiceInputController
-    @State private var shown = false
 
     var body: some View {
-        VStack(spacing: 14) {
-            VoiceBubble(text: voice.transcript,
-                        error: voice.dictation.errorMessage,
-                        level: voice.dictation.level,
-                        cancelling: voice.target == .cancel)
-                .frame(maxWidth: 420)
-                .scaleEffect(shown ? 1 : 0.86, anchor: .bottom)
-                .offset(y: shown ? 0 : 30)
-                .opacity(shown ? 1 : 0)
+        let p = voice.presence
+        VStack(spacing: 18) {
+            VoiceTranscript(text: voice.transcript,
+                            error: voice.dictation.errorMessage,
+                            level: voice.dictation.level,
+                            cancelling: voice.target == .cancel)
+                .frame(maxWidth: 520)
+                .opacity(Double(max(0, p * 1.4 - 0.4)))
+                .offset(y: (1 - p) * 36)
             HStack(spacing: 16) {
                 VoiceZone(icon: "xmark", title: "取消", tint: .red, hot: voice.target == .cancel)
                 VoiceZone(icon: "character.cursor.ibeam", title: "编辑", tint: .accentColor, hot: voice.target == .edit)
             }
             .frame(height: 50)
             .padding(.horizontal, 6)
-            .scaleEffect(shown ? 1 : 0.7, anchor: .bottom)
-            .offset(y: shown ? 0 : 20)
-            .opacity(shown ? 1 : 0)
+            // The zones rise out of the capsule's top edge.
+            .scaleEffect(x: 0.55 + 0.45 * p, y: 0.4 + 0.6 * p, anchor: .bottom)
+            .offset(y: (1 - p) * 34)
+            .opacity(Double(min(1, p * 1.6)))
         }
         .allowsHitTesting(false)
-        .onAppear { withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) { shown = true } }
         .sensoryFeedback(.selection, trigger: voice.target)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("正在听你说话，\(hint)")
@@ -118,8 +157,10 @@ struct VoiceInputPanel: View {
     }
 }
 
-/// The glass live-transcript bubble: newest lines pinned at the bottom.
-private struct VoiceBubble: View {
+/// The live transcript, straight on the screen (the scrim behind keeps it
+/// readable): a small 「在听」 line with the level, then the words, large,
+/// newest lines pinned at the bottom.
+private struct VoiceTranscript: View {
     let text: String
     let error: String?
     let level: Float
@@ -131,11 +172,11 @@ private struct VoiceBubble: View {
                 Circle().fill(cancelling ? Color.secondary : .red).frame(width: 7, height: 7)
                     .opacity(cancelling ? 1 : 0.6 + 0.4 * Double(level))
                 Text(cancelling ? "松开 取消" : "在听")
-                    .font(.caption.weight(.semibold))
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(cancelling ? Color.red : .secondary)
                     .contentTransition(.opacity)
+                LevelBars(level: level, bars: 5).frame(height: 14)
                 Spacer(minLength: 0)
-                LevelBars(level: level).frame(height: 16)
             }
             Group {
                 if let error, text.isEmpty {
@@ -146,22 +187,42 @@ private struct VoiceBubble: View {
                     Text(text).foregroundStyle(.primary)
                 }
             }
-            .font(.title3)
-            .lineSpacing(3)
+            .font(.title2.weight(.medium))
+            .lineSpacing(4)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             // Window the newest lines, like a log tail.
-            .frame(maxHeight: 200, alignment: .bottom)
+            .frame(maxHeight: 260, alignment: .bottom)
             .clipped()
         }
         .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, 18)
-        .padding(.vertical, 16)
-        .modifier(VoiceGlassChrome(shape: .roundedRect)) // bento's voice glass
-        .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
-        .opacity(cancelling ? 0.55 : 1)
+        .padding(.horizontal, 10)
+        .opacity(cancelling ? 0.4 : 1)
         .animation(.snappy, value: text)
         .animation(.snappy, value: cancelling)
+    }
+}
+
+/// Full-screen scrim behind the recording UI: the screen's own background
+/// rising from the bottom (strong where the transcript and zones sit, clear
+/// toward the top), so the live words never blend into the conversation.
+/// Follows light / dark mode.
+struct VoiceScrim: View {
+    let presence: CGFloat
+
+    var body: some View {
+        LinearGradient(
+            stops: [
+                .init(color: Color(.systemBackground).opacity(0), location: 0),
+                .init(color: Color(.systemBackground).opacity(0.6), location: 0.28),
+                .init(color: Color(.systemBackground).opacity(0.94), location: 0.5),
+                .init(color: Color(.systemBackground).opacity(0.98), location: 1),
+            ],
+            startPoint: .top, endPoint: .bottom)
+            .ignoresSafeArea()
+            .opacity(Double(presence))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

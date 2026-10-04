@@ -4,12 +4,18 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// One Liquid Glass capsule: [+] [message field] [mic / send].
-/// - tap the field → keyboard (Return sends on a hardware keyboard / Mac,
-///   Shift+Return is a newline);
-/// - press and hold the field → hold-to-talk: release sends, slide onto
-///   取消 / 编辑 first to cancel or edit;
-/// - tap the mic → dictation into the field: tap again to stop, the text stays
-///   in the field to edit (never auto-sent); with text, the mic becomes send;
+/// - tap the field → keyboard (the system TextField; the on-screen Return is a
+///   newline, on a hardware keyboard / Mac Return sends, Shift+Return is a
+///   newline);
+/// - press and hold the field → hold-to-talk: recording starts the instant
+///   the finger lands (so the first words are never lost) while an arming
+///   animation runs; release before it completes = a tap (audio discarded,
+///   animation reverses, keyboard); held past it = listening — release sends,
+///   slide onto 取消 / 编辑 first to cancel or edit;
+/// - tap the mic (always there, also while typing) → dictation into the
+///   field: tap again to stop, the words land at the end of the draft to
+///   edit (never auto-sent); a send button appears beside it when there's
+///   something to send;
 /// - [+] → photos or files, staged above the capsule.
 struct ComposerView: View {
     @Environment(AppStore.self) private var store
@@ -22,13 +28,16 @@ struct ComposerView: View {
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var showPhotos = false
     @State private var showFiles = false
+    @State private var showCamera = false
+    /// 拍照 only where there is a camera (not on Mac).
+    private static let cameraAvailable = !ProcessInfo.processInfo.isMacCatalystApp
+        && UIImagePickerController.isSourceTypeAvailable(.camera)
     private static let maxStaged = 6
     private static let maxFileBytes = 100 * 1024 * 1024
     /// Editing (keyboard up). Reported by the text view.
-    @State private var focused = false
+    @FocusState private var focused: Bool
+    /// Bump to raise the keyboard (tap on the idle field, after editing a dictation).
     @State private var focusToken = 0
-    @State private var editorHeight: CGFloat = 0
-    @State private var composing = false
     /// Mic-button dictation (tap to start, tap to stop) — distinct from hold-to-talk.
     @State private var dictating = false
     @State private var finishingDictation = false
@@ -38,13 +47,16 @@ struct ComposerView: View {
     @State private var pressing = false
     @State private var moved = false
     @State private var voiceStarted = false
+    /// A finished hold is still resolving its final text: ignore new presses.
+    @State private var finishingHold = false
 
     private static let capsuleSpace = "composerCapsule"
-    private static let maxEditorHeight: CGFloat = 160
 
-    /// Short: the capsule reacts on touch-down, so this only has to tell a
-    /// tap (keyboard) from a hold (voice).
-    private let holdDelay: Duration = .milliseconds(160)
+    /// From touch-down to "listening". Recording runs the whole time; this
+    /// only tells a tap (keyboard) from a hold (voice), and is long enough for
+    /// the arming animation to read.
+    private static let holdSeconds = 0.22
+    private let holdDelay: Duration = .milliseconds(220)
 
     /// Typing "/" (and nothing after a space yet) opens command suggestions.
     /// Nothing in the UI mentions this: it's for people who already know.
@@ -54,7 +66,7 @@ struct ComposerView: View {
     }
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !staged.isEmpty }
-    /// Idle: not editing — the field reads 「按住 语音输入」 and takes presses.
+    /// Idle: not editing — the field reads 「按住说话，轻点打字」 and takes presses.
     private var idle: Bool { !focused && !dictating }
 
     var body: some View {
@@ -83,12 +95,16 @@ struct ComposerView: View {
         .padding(.bottom, 8)
         .animation(.snappy, value: slashQuery)
         .animation(.snappy, value: staged.count)
+        .onChange(of: focusToken) { focused = true }
         .onChange(of: slashQuery) { _, q in
             if q != nil { Task { await store.loadCommands() } }
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active, dictating { voice.dictation.cancel(); dictating = false }
+            guard phase != .active else { return }
+            if dictating { voice.dictation.cancel(); dictating = false }
+            if pressing { resetPress() }
         }
+        .sensoryFeedback(.impact(weight: .light), trigger: pressing) { _, down in down }
         .sensoryFeedback(.impact(weight: .medium), trigger: voiceStarted) { _, started in started }
         .sensoryFeedback(.impact(weight: .light), trigger: dictating)
         .photosPicker(isPresented: $showPhotos, selection: $pickerItems,
@@ -105,6 +121,13 @@ struct ComposerView: View {
         .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { addFiles(urls) }
         }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker { image in
+                showCamera = false
+                if let image, let data = image.jpegData(compressionQuality: 0.9) { addImages([data]) }
+            }
+            .ignoresSafeArea()
+        }
     }
 
     private var capsule: some View {
@@ -114,30 +137,34 @@ struct ComposerView: View {
             trailingButton
         }
         .frame(minHeight: 44)
+        // The capsule brightens as the recording UI grows out of it.
+        .background {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Color.accentColor.opacity(0.24 * Double(voice.presence)))
+                .allowsHitTesting(false)
+        }
         .coordinateSpace(.named(Self.capsuleSpace))
         .onGeometryChange(for: CGSize.self) { $0.size } action: { voice.capsuleSize = $0 }
-        // Reacts the instant the finger lands; lights up once it's listening.
-        .scaleEffect(pressing ? (voiceStarted ? 1.03 : 0.97) : 1)
+        // Swells with the same hold-driven motion as everything else.
+        .scaleEffect(1 + 0.035 * voice.presence)
         .glassEffect(capsuleGlass, in: .rect(cornerRadius: 22))
-        .animation(.spring(response: 0.22, dampingFraction: 0.7), value: pressing)
-        .animation(.spring(response: 0.3, dampingFraction: 0.75), value: voiceStarted)
         .animation(.snappy, value: voice.target)
         .animation(.snappy, value: dictating)
         .animation(.snappy, value: canSend)
         .animation(.snappy, value: idle)
         // The hold-to-talk panel floats just above the capsule, anchored to it.
         .overlay(alignment: .bottom) {
-            if voice.isActive {
+            // One view from arming through listening and back: it grows out
+            // of the capsule with `presence` and folds back into it.
+            if voice.panelMounted {
                 VoiceInputPanel(voice: voice)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.bottom, voice.capsuleSize.height + 18)
-                    .transition(.opacity)
             }
         }
     }
 
     private var capsuleGlass: Glass {
-        if voiceStarted && voice.target == .send { return .regular.tint(Color.accentColor.opacity(0.35)).interactive() }
         if dictating { return .regular.tint(Color.accentColor.opacity(0.18)).interactive() }
         return .regular.interactive()
     }
@@ -146,6 +173,9 @@ struct ComposerView: View {
 
     private var plusButton: some View {
         Menu {
+            if Self.cameraAvailable {
+                Button("拍照", systemImage: "camera") { showCamera = true }
+            }
             Button("照片", systemImage: "photo.on.rectangle") { showPhotos = true }
             Button("文件", systemImage: "doc") { showFiles = true }
         } label: {
@@ -163,19 +193,19 @@ struct ComposerView: View {
 
     private var field: some View {
         ZStack(alignment: .leading) {
-            // bento's UITextView-backed editor: smooth with big pastes,
-            // and Return never sends while picking a pinyin candidate.
-            ComposerTextEditor(text: $draft, measuredHeight: $editorHeight, isComposing: $composing,
-                               isFocused: $focused, maxHeight: Self.maxEditorHeight,
-                               focusToken: focusToken, onReturn: send,
-                               onPasteImages: { addImages($0) })
-                .frame(height: min(max(editorHeight, 44), Self.maxEditorHeight))
-                .overlay(alignment: .leading) {
-                    if focused && draft.isEmpty && !composing && !dictating {
-                        Text("想让我做点什么？")
-                            .foregroundStyle(.tertiary)
-                            .allowsHitTesting(false)
-                    }
+            // The system text field: the input method (pinyin and friends)
+            // works exactly as everywhere else. The on-screen keyboard's
+            // Return is a newline; sending is the send button. On a hardware
+            // keyboard / Mac, Return sends and Shift/Option+Return is a newline.
+            TextField("", text: $draft, prompt: Text(focused ? "想让我做点什么？" : ""), axis: .vertical)
+                .lineLimit(1...6)
+                .focused($focused)
+                .padding(.vertical, 11)
+                .onKeyPress(keys: [.return], phases: .down) { press in
+                    if press.modifiers.contains(.shift) || press.modifiers.contains(.option) { return .ignored }
+                    guard canSend else { return .ignored }
+                    send()
+                    return .handled
                 }
                 .opacity(dictating ? 0 : 1)
             if dictating {
@@ -203,9 +233,16 @@ struct ComposerView: View {
                         .foregroundStyle(voice.target == .send ? Color.primary : .secondary)
                         .transition(.scale(scale: 0.85).combined(with: .opacity))
                     } else {
-                        Text("按住 语音输入")
-                            .foregroundStyle(pressing ? .secondary : .tertiary)
-                            .transition(.opacity)
+                        // Morphs toward 「松开 发送」 as the hold arms.
+                        ZStack {
+                            Text("按住说话，轻点打字")
+                                .foregroundStyle(pressing ? .secondary : .tertiary)
+                                .opacity(1 - Double(voice.presence))
+                            Text("松开 发送")
+                                .foregroundStyle(.primary)
+                                .opacity(Double(voice.presence))
+                        }
+                        .transition(.opacity)
                     }
                 }
                 .font(.body.weight(.medium))
@@ -222,7 +259,7 @@ struct ComposerView: View {
                     .contentShape(.rect)
                     .gesture(pressGesture)
                     .accessibilityElement()
-                    .accessibilityLabel("按住语音输入，轻点打字")
+                    .accessibilityLabel("按住说话，轻点打字")
                     .accessibilityAddTraits(.isButton)
                     .accessibilityAction { focusToken += 1 }
             }
@@ -235,46 +272,51 @@ struct ComposerView: View {
         return finishingDictation ? "识别中…" : "在听…再点一下麦克风结束"
     }
 
-    @ViewBuilder private var trailingButton: some View {
-        if canSend && !dictating {
-            Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 30))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.tint)
-                    .frame(width: 44, height: 44)
-            }
-            .buttonStyle(.plain)
-            .padding(.trailing, 2)
-            .keyboardShortcut(.return, modifiers: .command)
-            .accessibilityLabel("发送")
-            .transition(.scale.combined(with: .opacity))
-        } else {
-            Button(action: toggleDictation) {
-                Group {
-                    if dictating {
-                        // Listening: a tinted glass stop button — tap again to finish.
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 34, height: 34)
-                            .glassEffect(.regular.tint(Color.accentColor.opacity(0.9)).interactive(), in: .circle)
-                            .symbolEffect(.pulse, isActive: !finishingDictation)
-                    } else {
-                        Image(systemName: "mic")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
+    /// Mic (always there, also while typing) and, when there's something to
+    /// send, the send button to its right.
+    private var trailingButton: some View {
+        HStack(spacing: 0) {
+            micButton
+            if canSend && !dictating {
+                Button(action: send) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 30))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.tint)
+                        .frame(width: 40, height: 44)
                 }
-                .frame(width: 44, height: 44)
-                .contentShape(.rect)
+                .buttonStyle(.plain)
+                .keyboardShortcut(.return, modifiers: .command)
+                .accessibilityLabel("发送")
+                .transition(.scale.combined(with: .opacity))
             }
-            .buttonStyle(.plain)
-            .padding(.trailing, 2)
-            .disabled(finishingDictation || voice.isActive)
-            .accessibilityLabel(dictating ? "结束语音输入" : "语音输入")
-            .transition(.scale.combined(with: .opacity))
         }
+        .padding(.trailing, 2)
+    }
+
+    private var micButton: some View {
+        Button(action: toggleDictation) {
+            Group {
+                if dictating {
+                    // Listening: a tinted glass stop button — tap again to finish.
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 34, height: 34)
+                        .glassEffect(.regular.tint(Color.accentColor.opacity(0.9)).interactive(), in: .circle)
+                        .symbolEffect(.pulse, isActive: !finishingDictation)
+                } else {
+                    Image(systemName: "mic")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 44, height: 44)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(finishingDictation || voice.isActive || voice.isArmed)
+        .accessibilityLabel(dictating ? "结束语音输入" : "语音输入")
     }
 
     // MARK: - Voice
@@ -283,22 +325,32 @@ struct ComposerView: View {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.capsuleSpace))
             .onChanged { v in
                 if !pressing {
+                    guard !finishingHold else { return }
                     pressing = true
                     moved = false
                     voiceStarted = false
-                    voice.prewarm()
+                    // Record from the very first instant; no permission yet →
+                    // the system asks, nothing records, and this press is spent.
+                    guard voice.arm() else { moved = true; return }
+                    // Arming: the recording UI starts growing out of the capsule
+                    // right away, paced by the hold.
+                    voice.panelMounted = true
+                    withAnimation(.easeOut(duration: Self.holdSeconds)) { voice.presence = 0.72 }
                     pressTask = Task { @MainActor in
                         try? await Task.sleep(for: holdDelay)
                         guard !Task.isCancelled, pressing, !moved else { return }
                         voiceStarted = true
-                        voice.begin()
+                        voice.commit()
+                        // Committed: settle into place.
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.74)) { voice.presence = 1 }
                     }
                 } else if voiceStarted {
                     voice.track(v.location)
-                } else if hypot(v.translation.width, v.translation.height) > 12 {
-                    // Moved before the hold kicked in: not a press-and-hold.
+                } else if !moved, hypot(v.translation.width, v.translation.height) > 12 {
+                    // Moved before the hold committed: a scroll, not a hold.
                     moved = true
                     pressTask?.cancel()
+                    disarm()
                 }
             }
             .onEnded { v in
@@ -310,11 +362,47 @@ struct ComposerView: View {
                 voiceStarted = false
                 if wasVoice {
                     voice.track(v.location)
-                    Task { await finishVoice() }
-                } else if !wasMoved {
-                    focusToken += 1
+                    finishingHold = true
+                    // Released: the recording UI folds back into the capsule
+                    // (send, cancel, edit alike) while the final text resolves.
+                    collapse(.spring(response: 0.36, dampingFraction: 0.86))
+                    Task {
+                        await finishVoice()
+                        finishingHold = false
+                    }
+                } else {
+                    // Lifted before the threshold: a tap. Drop the audio, reverse.
+                    disarm()
+                    if !wasMoved { focusToken += 1 }
                 }
             }
+    }
+
+    /// Cancels an arming press: recording discarded, the motion plays backwards.
+    private func disarm() {
+        voice.disarm()
+        collapse(.spring(response: 0.26, dampingFraction: 0.92))
+    }
+
+    /// Plays the recording UI back into the capsule, then unmounts it.
+    private func collapse(_ animation: Animation) {
+        withAnimation(animation) {
+            voice.presence = 0
+        } completion: {
+            if !voice.isArmed && !voice.isActive && voice.presence == 0 { voice.panelMounted = false }
+        }
+    }
+
+    /// Gesture interrupted (app left the foreground).
+    private func resetPress() {
+        pressTask?.cancel()
+        pressTask = nil
+        pressing = false
+        voiceStarted = false
+        moved = false
+        voice.abort()
+        voice.presence = 0
+        voice.panelMounted = false
     }
 
     private func finishVoice() async {
@@ -344,6 +432,9 @@ struct ComposerView: View {
                 focusToken += 1
             }
         } else {
+            // Typing → dictating → typing: the words land at the end of the
+            // draft and the keyboard comes back when it's done.
+            focused = false
             voice.dictation.prewarm()
             voice.dictation.start()
             dictating = true
@@ -397,6 +488,35 @@ struct ComposerView: View {
             }
         }
         if let problem { voice.dictation.errorMessage = problem }
+    }
+}
+
+/// The system camera (UIImagePickerController); hands back the photo, or nil
+/// when cancelled.
+private struct CameraPicker: UIViewControllerRepresentable {
+    let done: (UIImage?) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(done: done) }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ controller: UIImagePickerController, context: Context) {}
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let done: (UIImage?) -> Void
+        init(done: @escaping (UIImage?) -> Void) { self.done = done }
+
+        func imagePickerController(_ picker: UIImagePickerController,
+                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            done(info[.originalImage] as? UIImage)
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { done(nil) }
     }
 }
 
