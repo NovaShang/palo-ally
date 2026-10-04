@@ -73,23 +73,33 @@ struct ChatView: View {
             .defaultScrollAnchor(.bottom, for: .alignment)
             .defaultScrollAnchor(pinned ? .bottom : .top, for: .sizeChanges)
             .scrollDismissesKeyboard(.immediately)
-            .onScrollPhaseChange { _, phase in
-                userScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+            .onScrollPhaseChange { old, phase in
+                let moving = phase == .tracking || phase == .interacting || phase == .decelerating
+                userScrolling = moving
+                // A scroll of the reader's that comes to rest near the end
+                // (after any fling) follows the live bottom again.
+                if !moving, old == .tracking || old == .interacting || old == .decelerating,
+                   distanceFromBottom <= ChatScroll.reattachDistance, !pinned {
+                    pinned = true
+                }
             }
-            .onScrollGeometryChange(for: CGFloat.self) { g in
-                max(0, g.contentSize.height + g.contentInsets.bottom - g.containerSize.height - g.contentOffset.y)
+            .onScrollGeometryChange(for: ChatScroll.Metrics.self) { g in
+                ChatScroll.Metrics(g)
             } action: { old, new in
-                distanceFromBottom = new
+                distanceFromBottom = new.distanceFromBottom
                 if userScrolling {
                     // Like the ChatGPT / Claude apps: the slightest drag up
                     // stops following; drifting back down near the end resumes.
-                    if new > old + 0.5, new > ChatScroll.detachDistance {
+                    if new.distanceFromBottom > old.distanceFromBottom + 0.5, new.distanceFromBottom > ChatScroll.detachDistance {
                         if pinned { pinned = false }
-                    } else if new < old, new <= ChatScroll.reattachDistance {
+                    } else if new.distanceFromBottom < old.distanceFromBottom, new.distanceFromBottom <= ChatScroll.reattachDistance {
                         if !pinned { pinned = true }
                     }
-                } else if new <= 2, !pinned {
-                    pinned = true
+                } else if new.bottomInset > old.bottomInset + 1, pinned {
+                    // The keyboard (or a taller composer) took space at the
+                    // bottom: keep the newest text right above it. Detached,
+                    // nothing moves — the reader's place stays put.
+                    withAnimation(.smooth(duration: 0.3)) { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
             }
             .onChange(of: store.messages.last?.id) {
