@@ -34,6 +34,8 @@ public enum RPCMethod {
     /// references the returned ids.
     public static let mediaUpload = "media.upload"
     public static let mediaGet = "media.get"
+    /// A file the assistant sent, in 256 KiB chunks (same shape as artifact.read).
+    public static let mediaRead = "media.read"
 
     /// Every method the client knows. The contract test checks this equals
     /// the host's method set exactly.
@@ -41,7 +43,7 @@ public enum RPCMethod {
         hello, sync, chatSend, chatHistory, commandsList, modelGet, modelSet, taskGet, taskStop,
         approvalAnswer, watchAdd, watchUpdate, watchRemove, artifactList, artifactRead, artifactPin,
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
-        deviceUnpair, auditTail, mediaUpload, mediaGet,
+        deviceUnpair, auditTail, mediaUpload, mediaGet, mediaRead,
     ]
 }
 
@@ -141,6 +143,13 @@ public struct MediaUploadParams: Codable, Sendable {
     public var mediaType: String
     public var data: String // base64
     public init(mediaType: String, data: String) { self.mediaType = mediaType; self.data = data }
+}
+
+public struct MediaReadParams: Codable, Sendable {
+    public var id: String
+    public var offset: Int64
+    public var length: Int64
+    public init(id: String, offset: Int64, length: Int64) { self.id = id; self.offset = offset; self.length = length }
 }
 
 public struct MediaGetParams: Codable, Sendable {

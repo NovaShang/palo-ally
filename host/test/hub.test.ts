@@ -725,23 +725,45 @@ describe("Hub: images from the app", () => {
   });
 });
 
-describe("Hub: images to the owner", () => {
-  test("send_image shows a picture in the app chat; big or odd files are converted", async () => {
-    const { hub, paths } = makeHub();
+describe("Hub: files to the owner (SendUserFile / Artifact)", () => {
+  test("files go to the library and show as cards; temporary ones don't; odd images are converted", async () => {
+    const { hub, pusher, paths } = makeHub();
+    const h = hub.toolHandlers();
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==", "base64");
-    const file = `${paths.root}/shot.png`;
-    writeFileSync(file, png);
-    expect(await hub.toolHandlers().send_image({ path: file, caption: "截图" })).toContain("已发");
-    const msg = hub.chat.since(0).at(-1)!;
-    expect(msg.role).toBe("assistant");
-    expect(msg.text).toBe("截图");
-    expect(hub.media.read(msg.attachments![0]!.id)!.data).toBe(png.toString("base64"));
-    // a TIFF (not something the app/model takes) goes through sips → JPEG
-    const tiff = `${paths.root}/x.tiff`;
-    Bun.spawnSync(["sips", "-s", "format", "tiff", file, "--out", tiff]);
-    expect(await hub.toolHandlers().send_image({ path: tiff })).toContain("已发");
-    expect(hub.chat.since(0).at(-1)!.attachments![0]!.mediaType).toBe("image/jpeg");
-    expect(await hub.toolHandlers().send_image({ path: `${paths.root}/nope.txt` })).toContain("没发出去");
+    writeFileSync(`${paths.home}/chart.png`, png);
+    writeFileSync(`${paths.home}/report.pdf`, "%PDF-1.4 x");
+
+    // kept: relative path, two files, one card each, both in the library
+    expect(await h.SendUserFile({ files: ["chart.png", "report.pdf"], caption: "周报", status: "normal" })).toContain("产出物库");
+    const card = hub.chat.since(0).at(-1)!;
+    expect(card.text).toBe("周报");
+    expect(card.attachments!.map((a) => a.kind)).toEqual(["artifact", "artifact"]);
+    expect(card.attachments![1]!.mediaType).toBe("application/pdf");
+    expect(hub.artifacts.list().map((a) => a.title).sort()).toEqual(["chart.png", "report.pdf"]);
+    // same path again updates, not duplicates
+    await h.SendUserFile({ files: ["report.pdf"], status: "normal" });
+    expect(hub.artifacts.list()).toHaveLength(2);
+
+    // temporary: in the conversation only; a TIFF becomes a JPEG
+    Bun.spawnSync(["sips", "-s", "format", "tiff", `${paths.home}/chart.png`, "--out", `${paths.home}/x.tiff`]);
+    await h.SendUserFile({ files: ["x.tiff"], status: "normal", temporary: true });
+    const tmp = hub.chat.since(0).at(-1)!.attachments![0]!;
+    expect(tmp).toMatchObject({ kind: "image", mediaType: "image/jpeg" });
+    expect(hub.artifacts.list()).toHaveLength(2);
+    // proactive reaches the phone
+    await h.SendUserFile({ files: ["chart.png"], status: "proactive", temporary: true });
+    await tick(20);
+    expect(pusher.pushes.length).toBeGreaterThan(0);
+    expect(await h.SendUserFile({ files: ["nope.txt"], status: "normal" })).toContain("没发出去");
+
+    // Artifact: a multi-file page, published again = updated
+    writeFileSync(`${paths.home}/page.html`, '<img src="img/c.png">');
+    expect(await h.Artifact({ file_path: "page.html", title: "看板", files: { "img/c.png": "chart.png" } })).toContain("看板");
+    const page = hub.artifacts.list().find((a) => a.title === "看板")!;
+    expect(page.files.map((f) => f.path).sort()).toEqual(["img/c.png", "page.html"]);
+    expect(await h.Artifact({ file_path: "page.html", files: { "../evil": "chart.png" } })).toContain("没发布成功");
+    await h.Artifact({ file_path: "page.html" });
+    expect(hub.artifacts.list().filter((a) => a.title === "看板")).toHaveLength(1);
     cleanup(paths);
   });
 });

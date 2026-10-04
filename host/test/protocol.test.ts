@@ -43,6 +43,9 @@ describe("host ↔ app protocol", () => {
     const img = await run("media.upload", { mediaType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==" });
     await run("chat.send", { text: "你好", clientMsgId: "c-1", attachments: [img.id] });
     await run("media.get", { id: img.id });
+    writeFileSync(`${paths.home}/note.txt`, "hello");
+    await hub.toolHandlers().SendUserFile({ files: ["note.txt"], status: "normal", temporary: true });
+    await run("media.read", { id: hub.chat.since(0).at(-1)!.attachments![0]!.id, offset: 0 });
     await hub.idle();
     await run("sync", {});
     await run("chat.history", { beforeSeq: 99, limit: 10 });

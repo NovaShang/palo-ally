@@ -169,30 +169,30 @@ private struct NoticeRow: View {
     }
 }
 
-/// Images sent with a message: thumbnails, tap for full size.
+/// What came with a message: pictures inline (tap for full size), other
+/// files and library items as cards. Library items open in the library — the
+/// place to find them again later; temporary files open in a preview.
 private struct AttachmentStrip: View {
     @Environment(AppStore.self) private var store
+    @Environment(AppModel.self) private var model
     let attachments: [Attachment]
     @State private var viewing: Data?
+    @State private var previewing: URL?
+    @State private var loadingFile: String?
+
+    private var pictures: [Attachment] { attachments.filter(\.showsInline) }
+    private var cards: [Attachment] { attachments.filter { !$0.showsInline } }
 
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(attachments) { a in
-                Group {
-                    if let data = store.images[a.id], let ui = UIImage(data: data) {
-                        Button { viewing = data } label: {
-                            Image(uiImage: ui).resizable().scaledToFill()
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        Rectangle().fill(.quaternary)
-                            .overlay { ProgressView().controlSize(.small) }
-                            .task { await store.loadImage(a.id) }
-                    }
+        VStack(alignment: .leading, spacing: 6) {
+            if !pictures.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(pictures) { a in picture(a) }
                 }
-                .frame(width: attachments.count == 1 ? 180 : 96, height: attachments.count == 1 ? 180 : 96)
-                .clipShape(.rect(cornerRadius: 16, style: .continuous))
-                .accessibilityLabel("图片")
+            }
+            ForEach(cards) { a in
+                Button { open(a) } label: { FileCard(attachment: a, loading: loadingFile == a.id) }
+                    .buttonStyle(.plain)
             }
         }
         .fullScreenCover(isPresented: Binding(get: { viewing != nil }, set: { if !$0 { viewing = nil } })) {
@@ -200,6 +200,108 @@ private struct AttachmentStrip: View {
                 ImageViewer(image: ui) { viewing = nil }
             }
         }
+        .sheet(isPresented: Binding(get: { previewing != nil }, set: { if !$0 { previewing = nil } })) {
+            if let url = previewing {
+                NavigationStack {
+                    QuickLookView(url: url, revision: 0)
+                        .ignoresSafeArea(edges: .bottom)
+                        .navigationTitle(url.lastPathComponent)
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) { ShareLink(item: url) }
+                        }
+                }
+            }
+        }
+    }
+
+    private func key(_ a: Attachment) -> String { a.kind == "artifact" ? "artifact:\(a.id)" : a.id }
+
+    @ViewBuilder private func picture(_ a: Attachment) -> some View {
+        let side: CGFloat = pictures.count == 1 ? 180 : 96
+        Group {
+            if let data = store.images[key(a)], let ui = UIImage(data: data) {
+                Button {
+                    if a.kind == "artifact" { open(a) } else { viewing = data }
+                } label: {
+                    Image(uiImage: ui).resizable().scaledToFill()
+                }
+                .buttonStyle(.plain)
+            } else {
+                Rectangle().fill(.quaternary)
+                    .overlay { ProgressView().controlSize(.small) }
+                    .task {
+                        if a.kind == "artifact" { await store.loadArtifactImage(a.id) } else { await store.loadImage(a.id) }
+                    }
+            }
+        }
+        .frame(width: side, height: side)
+        .clipShape(.rect(cornerRadius: 16, style: .continuous))
+        .accessibilityLabel(a.name ?? "图片")
+    }
+
+    private func open(_ a: Attachment) {
+        if a.kind == "artifact" {
+            model.libraryPath = [a.id]
+            model.showLibrary = true
+            return
+        }
+        guard loadingFile == nil else { return }
+        loadingFile = a.id
+        Task {
+            defer { loadingFile = nil }
+            guard let data = try? await store.readMedia(id: a.id) else { return }
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("sent", isDirectory: true)
+                .appendingPathComponent(a.id, isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent(a.name ?? "file")
+            guard (try? data.write(to: url, options: .atomic)) != nil else { return }
+            previewing = url
+        }
+    }
+}
+
+/// A file or library item in the conversation: icon, name, size.
+private struct FileCard: View {
+    let attachment: Attachment
+    let loading: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.title3)
+                .foregroundStyle(.tint)
+                .frame(width: 40, height: 40)
+                .glassEffect(.regular.tint(.accentColor.opacity(0.12)), in: .rect(cornerRadius: 10))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(attachment.name ?? "文件").font(.callout.weight(.medium)).lineLimit(1)
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            if loading { ProgressView().controlSize(.small) }
+            else { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
+        }
+        .padding(10)
+        .frame(maxWidth: 300, alignment: .leading)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 16))
+        .contentShape(.rect)
+    }
+
+    private var symbol: String {
+        let t = attachment.mediaType
+        if t.hasPrefix("image/") { return "photo" }
+        if t == "application/pdf" { return "doc.richtext" }
+        if t.contains("html") { return "globe" }
+        if t.contains("sheet") || t.contains("csv") || t.contains("excel") { return "tablecells" }
+        if t.hasPrefix("text/") || t.contains("markdown") { return "doc.text" }
+        return "doc"
+    }
+
+    private var detail: String {
+        var parts: [String] = []
+        if attachment.kind == "artifact" { parts.append("在产出物库") }
+        if let s = attachment.size { parts.append(ByteCountFormatter.string(fromByteCount: s, countStyle: .file)) }
+        return parts.isEmpty ? "点开查看" : parts.joined(separator: " · ")
     }
 }
 

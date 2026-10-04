@@ -7,6 +7,9 @@ import type { TaskTracker } from "./tasks.ts";
 import type { WatchStore } from "./watches.ts";
 import type { WechatChannel } from "./channels/types.ts";
 import type { MediaStore } from "./media.ts";
+import { join, resolve } from "node:path";
+import { mimeOf } from "./artifacts.ts";
+import type { Attachment, Channel } from "./types.ts";
 
 export interface ShellToolDeps {
   tasks: TaskTracker;
@@ -17,6 +20,10 @@ export interface ShellToolDeps {
   audit: Audit;
   wechat?: WechatChannel | null;
   media: MediaStore;
+  /** Where the owner is talking from in the current turn. */
+  ownerChannel: () => Channel;
+  /** The assistant's working directory: relative paths resolve against it. */
+  cwd: string;
 }
 
 // The tools the shell gives the main agent (the in-process `paloally` MCP
@@ -39,26 +46,62 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
         d.watches.list().map((w) => ({ id: w.id, title: w.title, kind: w.kind, enabled: w.enabled, instruction: w.instruction, intervalMinutes: w.intervalMinutes, at: w.at })),
       ),
     remove_watch: async ({ id }) => (d.watches.remove(id) ? "ok" : "not found"),
-    publish_artifact: async ({ slug, title, main_file, type, pinned }) => {
-      const a = d.artifacts.publish(slug, title, main_file, type, pinned);
-      return `ok: ${a.id}（${a.files.length} 个文件）`;
-    },
-    send_image: async ({ path, caption }) => {
-      try {
-        const a = d.media.saveFile(path);
-        d.chat.add({ role: "assistant", kind: "text", text: caption?.trim() ?? "", channel: "app", attachments: [a] });
-        d.audit.log("image.sent", { path });
-        return "已发到主人的 App 对话里";
-      } catch (e) {
-        return `没发出去：${e instanceof Error ? e.message : e}`;
+    // Modelled on Claude Code's own SendUserFile (same parameters, plus
+    // `temporary`): each file is kept in the library unless the assistant is
+    // sure it's throwaway, shown in the conversation as a card, pushed when
+    // proactive, and sent to WeChat when the owner is there.
+    SendUserFile: async ({ files, caption, status, display, temporary }) => {
+      const atts: Attachment[] = [];
+      const sent: string[] = [];
+      for (const f of files) {
+        const path = resolve(d.cwd, f);
+        try {
+          if (temporary) {
+            atts.push({ ...d.media.saveFile(path), ...(display ? { display } : {}) });
+          } else {
+            const a = d.artifacts.publishFile(path);
+            const size = a.files.find((x) => x.path === a.mainFile)?.size;
+            atts.push({ id: a.id, kind: "artifact", mediaType: mimeOf(path), name: a.title, ...(size != null ? { size } : {}), ...(display ? { display } : {}) });
+          }
+          sent.push(path);
+        } catch (e) {
+          return `没发出去（${f}）：${e instanceof Error ? e.message : e}`;
+        }
       }
+      const proactive = status === "proactive";
+      const msg = d.chat.add({
+        role: "assistant",
+        kind: "text",
+        text: caption?.trim() ?? "",
+        channel: d.ownerChannel(),
+        attachments: atts,
+        ...(proactive ? { proactive: true } : {}),
+      });
+      d.audit.log("file.sent", { files: sent, temporary: !!temporary, proactive });
+      if (proactive) void d.router.proactive(msg);
+      const target = d.ownerChannel() === "wechat" ? d.wechat?.ownerTarget?.() : null;
+      if (target && d.wechat?.sendFile) {
+        for (const p of sent) await d.wechat.sendFile(target, p).catch(() => false);
+      }
+      return temporary ? "已发给主人" : "已发给主人，也存进了产出物库";
     },
-    send_wechat_file: async ({ path }) => {
-      const target = d.wechat?.ownerTarget?.();
-      if (!d.wechat?.sendFile || !target) return "微信现在发不了（没开、过期，或主人超过 24 小时没在微信说话）";
-      const ok = await d.wechat.sendFile(target, path);
-      d.audit.log("wechat.file", { path, ok });
-      return ok ? "已发到微信" : "没发出去";
+    // Modelled on Claude Code's own Artifact publish: a page or document the
+    // owner keeps and revisits; same path again = an update of the same one.
+    Artifact: async ({ file_path, title, description, files }) => {
+      try {
+        const a = d.artifacts.publishFile(resolve(d.cwd, file_path), { title, files });
+        d.chat.add({
+          role: "assistant",
+          kind: "text",
+          text: description?.trim() ?? "",
+          channel: d.ownerChannel(),
+          attachments: [{ id: a.id, kind: "artifact", mediaType: mimeOf(join(a.id, a.mainFile)), name: a.title, display: "render" }],
+        });
+        d.audit.log("artifact.published", { id: a.id, files: a.files.length });
+        return `已发布：${a.title}（${a.files.length} 个文件，在主人的产出物库里）`;
+      } catch (e) {
+        return `没发布成功：${e instanceof Error ? e.message : e}`;
+      }
     },
     notify_user: async ({ text, urgent }) => {
       const msg = d.chat.add({ role: "assistant", kind: "notice", text, channel: "system", proactive: true });

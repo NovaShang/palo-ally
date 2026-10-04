@@ -101,12 +101,16 @@ d(`live harness (${MODEL})`, () => {
   );
 
   test(
-    "image out: the assistant shows the owner a picture in the chat",
+    "image out: SendUserFile and Artifact land in the chat and the library",
     async () => {
       const png = hub.media.read(hub.media.save("image/png", "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==").id)!;
       writeFileSync(join(paths.home, "chart.png"), Buffer.from(png.data, "base64"));
       const msgs = await ask("把工作目录里的 chart.png 发给我看看。");
       expect(msgs.some((m) => m.role === "assistant" && (m.attachments?.length ?? 0) > 0)).toBe(true);
+      // a page to keep goes to the library through Artifact
+      const page = await ask("写一个很短的 HTML 页面，标题是「本周待办」，列三条示例待办，发布成产出物给我，以后我要回来看。");
+      expect(page.some((m) => m.attachments?.some((x) => x.kind === "artifact"))).toBe(true);
+      expect(hub.artifacts.list().some((x) => x.mainFile.endsWith(".html"))).toBe(true);
     },
     T,
   );

@@ -338,6 +338,12 @@ export class Conversation {
     });
   }
 
+  /** The channel the owner is on in the current turn (proactive turns: the app). */
+  ownerChannel(): Channel {
+    const o = this.current?.origin;
+    return o === "wechat" || o === "cli" ? o : "app";
+  }
+
   private setActivity(a: string): void {
     if (a === this.activity) return;
     this.activity = a;

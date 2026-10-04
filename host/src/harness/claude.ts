@@ -75,29 +75,31 @@ export function paloallyMcpServer(h: ToolHandlers) {
       ),
       tool("list_watches", "列出所有盯梢。", {}, async () => text(await h.list_watches())),
       tool("remove_watch", "删除一条盯梢。", { id: z.string() }, async (a) => text(await h.remove_watch(a))),
+      // The next two mirror Claude Code's own SendUserFile and Artifact
+      // tools (names, wording, parameters), so the model uses them the way
+      // it already knows how.
       tool(
-        "publish_artifact",
-        "登记/更新一个产物（artifacts/<slug>/ 下的文件夹）的标题和主文件，主人的资料库里就能看到。",
+        "SendUserFile",
+        "Send files to the user. Use this for any file the user would want to see — a generated diagram, a report, a screenshot, a built artifact — and you want it surfaced, not just mentioned. Send deliverables as they are produced, not batched at the end of the task. Do NOT send routine working files — scratch files, debug output, partial fragments, or every incremental save; each call renders a file card in the conversation. Re-send a file only when it has meaningfully changed. Paths can be absolute or relative to the current working directory.\n\nAdd a `caption` when a one-liner of context helps. Set `status` on every call: `proactive` when you're initiating (it reaches the user's phone), `normal` when replying. `display`: 'render' to show the content inline (images, charts, PDFs, HTML), 'attach' for a file card only; omit to decide by file type.\n\nEvery file sent is also kept in the user's library (产出物库) so it can be found again — the conversation is one endless timeline. Set `temporary: true` only when you're sure it never needs to be found again (an image you grabbed off the web to show in passing, a throwaway screenshot).",
         {
-          slug: z.string(),
-          title: z.string(),
-          main_file: z.string().describe("相对 artifacts/<slug>/ 的主文件路径"),
-          type: z.string().optional(),
-          pinned: z.boolean().optional(),
+          files: z.array(z.string()).min(1).describe("File paths (absolute or relative to cwd). Always pass an array."),
+          caption: z.string().optional().describe("Optional short caption for the file(s)."),
+          status: z.enum(["normal", "proactive"]),
+          display: z.enum(["render", "attach"]).optional(),
+          temporary: z.boolean().optional().describe("true = show it now, don't keep it in the library"),
         },
-        async (a) => text(await h.publish_artifact(a)),
+        async (a) => text(await h.SendUserFile(a)),
       ),
       tool(
-        "send_image",
-        "把本机的一张图片（截图、图表、找到的照片）直接显示在主人的 App 对话里。太大或格式不对会自动压成 JPEG。",
-        { path: z.string().describe("图片的绝对路径"), caption: z.string().optional().describe("配一句话（可选）") },
-        async (a) => text(await h.send_image(a)),
-      ),
-      tool(
-        "send_wechat_file",
-        "把本机的一个文件（图片、视频或任意文件）发到主人的微信。长内容先写成文件再用它发。",
-        { path: z.string().describe("文件的绝对路径") },
-        async (a) => text(await h.send_wechat_file(a)),
+        "Artifact",
+        "Publish a page or document the user will keep and come back to — a report, a dashboard, a write-up (HTML, Markdown, PDF, or any file) — into the user's library (产出物库), with a card in the conversation. Publishing the same file_path again updates the same artifact (periodic ones like a morning brief: overwrite the file and publish again). A multi-file artifact passes its other files through `files`, mapping each published path (relative, as the main file references it) to a source file.",
+        {
+          file_path: z.string().describe("The main file to publish (absolute or relative to cwd)."),
+          title: z.string().optional().describe("A short name for it."),
+          description: z.string().optional().describe("One sentence about it, shown with the card."),
+          files: z.record(z.string(), z.string()).optional().describe("Supporting files: published path → source path."),
+        },
+        async (a) => text(await h.Artifact(a)),
       ),
       tool(
         "notify_user",

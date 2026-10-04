@@ -22,7 +22,7 @@ export const RPC_METHODS = [
   "task.get", "task.stop", "approval.answer", "watch.add", "watch.update", "watch.remove",
   "artifact.list", "artifact.read", "artifact.pin", "memory.list", "memory.read", "memory.write",
   "settings.update", "stop", "push.register", "push.unregister", "device.unpair", "audit.tail",
-  "media.upload", "media.get",
+  "media.upload", "media.get", "media.read",
 ] as const;
 
 export const RPC_EVENTS = [
@@ -70,6 +70,8 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     }
     case "media.upload":
       return hub.media.save(String(p.mediaType ?? ""), String(p.data ?? ""));
+    case "media.read":
+      return hub.media.readChunk(String(p.id ?? ""), Number(p.offset ?? 0), Number(p.length ?? 256 * 1024));
     case "media.get": {
       const m = hub.media.read(String(p.id ?? ""));
       if (!m) throw new Error("找不到这张图片");

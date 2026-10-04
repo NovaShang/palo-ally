@@ -549,6 +549,29 @@ public final class AppStore {
         return done.map(\.id)
     }
 
+    /// A file the assistant sent (media.read, chunked like artifacts).
+    public func readMedia(id: String, maxBytes: Int64 = 100 * 1024 * 1024) async throws -> Data {
+        var out = Data()
+        var offset: Int64 = 0
+        while true {
+            let chunk: ArtifactChunk = try await rpc.call(
+                RPCMethod.mediaRead, params: MediaReadParams(id: id, offset: offset, length: ArtifactChunk.maxChunk), timeout: 60)
+            out.append(chunk.data)
+            offset += Int64(chunk.data.count)
+            if chunk.eof || chunk.data.isEmpty || (chunk.size > 0 && offset >= chunk.size) || offset >= maxBytes { break }
+        }
+        return out
+    }
+
+    /// The picture of an image artifact, for its card in the conversation.
+    public func loadArtifactImage(_ id: String) async {
+        let key = "artifact:\(id)"
+        guard images[key] == nil, !imageLoads.contains(key) else { return }
+        imageLoads.insert(key)
+        defer { imageLoads.remove(key) }
+        if let r = try? await readArtifact(id: id) { images[key] = r.data }
+    }
+
     /// Fetches an attachment's bytes if they aren't here yet (history, other devices).
     public func loadImage(_ id: String) async {
         guard images[id] == nil, !imageLoads.contains(id), !id.hasPrefix(Self.localImagePrefix) else { return }

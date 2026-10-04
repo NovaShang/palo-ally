@@ -135,14 +135,20 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     public var date: Date { ts.msDate }
 }
 
-/// An image sent with a message; its bytes are fetched by id (`media.get`).
+/// Something sent with a message. `image` / `file`: bytes by id
+/// (`media.get` / `media.read`); `artifact`: an id in the library.
 public struct Attachment: Codable, Sendable, Hashable, Identifiable {
     public var id: String
     public var kind: String
     public var mediaType: String
+    public var name: String?
+    public var size: Int64?
+    /// SendUserFile's hint: "render" shows the content, "attach" just a card.
+    public var display: String?
 
-    public init(id: String, kind: String = "image", mediaType: String) {
+    public init(id: String, kind: String = "image", mediaType: String, name: String? = nil, size: Int64? = nil, display: String? = nil) {
         self.id = id; self.kind = kind; self.mediaType = mediaType
+        self.name = name; self.size = size; self.display = display
     }
 
     public init(from decoder: Decoder) throws {
@@ -150,7 +156,14 @@ public struct Attachment: Codable, Sendable, Hashable, Identifiable {
         id = l.string("id", or: "")
         kind = l.string("kind", or: "image")
         mediaType = l.string("mediaType", or: "image/jpeg")
+        name = l.string("name")
+        size = l.int64("size")
+        display = l.string("display")
     }
+
+    public var isImage: Bool { mediaType.hasPrefix("image/") }
+    /// Shown inline as a picture (not just a file card).
+    public var showsInline: Bool { isImage && display != "attach" }
 }
 
 // MARK: - Task

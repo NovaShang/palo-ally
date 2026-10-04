@@ -78,10 +78,9 @@ export interface ToolHandlers {
   }): Promise<string>;
   list_watches(): Promise<string>;
   remove_watch(args: { id: string }): Promise<string>;
-  publish_artifact(args: { slug: string; title: string; main_file: string; type?: string; pinned?: boolean }): Promise<string>;
   notify_user(args: { text: string; urgent?: boolean }): Promise<string>;
-  send_wechat_file(args: { path: string }): Promise<string>;
-  send_image(args: { path: string; caption?: string }): Promise<string>;
+  SendUserFile(args: { files: string[]; caption?: string; status: "normal" | "proactive"; display?: "render" | "attach"; temporary?: boolean }): Promise<string>;
+  Artifact(args: { file_path: string; title?: string; description?: string; files?: Record<string, string> }): Promise<string>;
 }
 
 export interface ImageInput {

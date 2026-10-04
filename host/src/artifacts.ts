@@ -1,5 +1,6 @@
-import { existsSync, lstatSync, openSync, readSync, closeSync, readdirSync, statSync } from "node:fs";
-import { extname, join, relative, resolve, sep } from "node:path";
+import { copyFileSync, existsSync, lstatSync, openSync, readSync, closeSync, readdirSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import type { Bus } from "./bus.ts";
 import type { Artifact } from "./types.ts";
 import { ensureDir, readJson, writeJson } from "./util.ts";
@@ -86,6 +87,42 @@ export class ArtifactLibrary {
       updatedAt: Math.max(meta.updatedAt ?? 0, newest),
       files: files.map((f) => ({ path: f.path, size: f.size })),
     };
+  }
+
+  /**
+   * Publishes a file the way Claude Code's own Artifact tool does: the page
+   * (or any file) at `filePath`, plus supporting files mapped published path →
+   * source. Publishing the same path again updates the same artifact. A file
+   * already inside artifacts/<slug>/ is published in place.
+   */
+  publishFile(filePath: string, opts: { title?: string; files?: Record<string, string> } = {}): Artifact {
+    const full = resolve(filePath);
+    if (!existsSync(full) || !statSync(full).isFile()) throw new Error(`找不到文件：${filePath}`);
+    const name = basename(full);
+    let slug: string;
+    let main: string;
+    const inside = relative(this.dir, full);
+    if (!inside.startsWith("..") && !inside.startsWith(sep) && inside.includes(sep)) {
+      slug = inside.split(sep)[0]!;
+      main = inside.slice(slug.length + 1);
+    } else {
+      const stem = name.slice(0, name.length - extname(name).length) || "file";
+      const tag = createHash("sha1").update(dirname(full)).digest("hex").slice(0, 4);
+      slug = `${stem.replace(/[^\w.\-一-龥]+/g, "-").replace(/^[-.]+/, "").slice(0, 50) || "file"}-${tag}`;
+      main = name;
+      ensureDir(join(this.dir, slug));
+      copyFileSync(full, join(this.dir, slug, name));
+    }
+    const folder = join(this.dir, slug);
+    for (const [published, source] of Object.entries(opts.files ?? {})) {
+      const dest = resolve(folder, published);
+      if (!dest.startsWith(folder + sep)) throw new Error(`文件路径不能跳出产物文件夹：${published}`);
+      ensureDir(dirname(dest));
+      copyFileSync(resolve(dirname(full), source), dest);
+    }
+    // Keep an earlier title on re-publish (not the folder-name guess list() makes).
+    const prevTitle = readJson<Meta>(join(folder, META), {}).title;
+    return this.publish(slug, opts.title?.trim() || prevTitle || name, main);
   }
 
   publish(slug: string, title: string, mainFile: string, type?: string, pinned?: boolean): Artifact {

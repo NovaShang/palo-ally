@@ -17,10 +17,16 @@ export interface ChatMessage {
   attachments?: Attachment[]; // images the owner sent with the message
 }
 
+// Something sent along with a message. "image"/"file" live in the media
+// store (owner uploads, and assistant sends marked temporary); "artifact"
+// points into the library, where it can be found again.
 export interface Attachment {
   id: string;
-  kind: "image";
+  kind: "image" | "file" | "artifact";
   mediaType: string;
+  name?: string;
+  size?: number;
+  display?: "render" | "attach"; // SendUserFile's hint: show it, or just a file card
 }
 
 export type TaskStatus = "running" | "done" | "failed" | "needs_input" | "stopped";

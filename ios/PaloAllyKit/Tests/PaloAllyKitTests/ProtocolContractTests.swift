@@ -92,6 +92,7 @@ private let resultTypes: [String: Check] = [
     RPCMethod.auditTail: strict(AuditResult.self),
     RPCMethod.mediaUpload: strict(Attachment.self),
     RPCMethod.mediaGet: strict(MediaData.self),
+    RPCMethod.mediaRead: strict(ArtifactChunk.self),
 ]
 
 /// Event → how AppStore.apply(event:) reads the payload.

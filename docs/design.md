@@ -45,7 +45,8 @@ relay/       不新写：复用 ~/code/bento/relay（bento-relay-acp，relay.ben
 | `report_task(id, summary, status, title?)` | 任务列表权威来源；驱动列表 / 主对话「收到」「结果」/ 完成推送 |
 | `register_watch(title, instruction, interval_minutes? , at?, kind?)` | 自注册 watch，外壳持久化 |
 | `list_watches()` / `remove_watch(id)` | |
-| `publish_artifact(slug, title, main_file, type?, pinned?)` | 登记/更新 artifact 元数据 |
+| `SendUserFile(files, caption?, status, display?, temporary?)` | 照 Claude Code 原生 SendUserFile 定义（多一个 `temporary`）：文件在对话里显示成卡片（图片直接显示），默认同时进产出物库；`status: proactive` 推送；主人在微信上时也发到微信 |
+| `Artifact(file_path, title?, description?, files?)` | 照 Claude Code 原生 Artifact 发布：要长期留存的页面/文档进产出物库并在对话里出卡片；同一路径再发布 = 更新 |
 | `notify_user(text, urgent?)` | 主动推送（经路由器：App 推送；微信只发非敏感回执） |
 
 ## 4. 安全（全部依赖 harness）
