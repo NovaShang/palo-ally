@@ -82,8 +82,8 @@ export class Hub {
       this.audit,
       deps.now,
       () => this.chat.lastUserActivity(),
-      `${this.paths.state}/push-count.json`,
     );
+    this.router.onRunaway = (reason) => this.proactive?.onRunaway(reason);
     this.approvals = new ApprovalManager(this.paths.approvals, this.bus, this.audit, {
       taskForToolUse: (id) => (id ? this.tasks.taskIdForToolUse(id) : undefined),
       onCreated: (a) => this.proactive.onApprovalCreated(a),

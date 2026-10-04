@@ -128,7 +128,7 @@ describe("Hub: proactive", () => {
     cleanup(paths);
   });
 
-  test("quiet hours and the daily cap suppress pushes but keep the chat", async () => {
+  test("quiet hours suppress pushes but keep the chat; no daily total", async () => {
     const { hub, pusher, paths } = makeHub({
       config: testConfig((c) => {
         c.settings.quietHours = { start: "00:00", end: "23:59" };
@@ -139,10 +139,9 @@ describe("Hub: proactive", () => {
     expect(pusher.pushes).toHaveLength(0);
     expect(await h.notify_user({ text: "紧急！", urgent: true })).toBe("已推送");
     expect(pusher.pushes).toHaveLength(1);
-    hub.updateSettings({ quietHours: null, maxProactivePerDay: 1 });
-    expect(await h.notify_user({ text: "a" })).toBe("已推送");
-    expect(await h.notify_user({ text: "b" })).toContain("上限");
-    expect(hub.chat.recent(10).filter((m) => m.proactive)).toHaveLength(4);
+    hub.updateSettings({ quietHours: null });
+    for (let i = 0; i < 12; i++) expect(await h.notify_user({ text: `提醒 ${i}` })).toBe("已推送"); // heavy use is fine
+    expect(pusher.pushes).toHaveLength(13);
     cleanup(paths);
   });
 
@@ -550,10 +549,10 @@ describe("Hub: settings can't break it", () => {
     const { hub, paths } = makeHub();
     const raw = JSON.parse((await Bun.file(paths.config).exists()) ? await Bun.file(paths.config).text() : "{}");
     writeJson(paths.config, { ...raw, wechat: { enabled: true, baseUrl: "https://x" } });
-    hub.updateSettings({ maxProactivePerDay: 3 });
+    hub.updateSettings({ probeIntervalMinutes: 3 });
     const after = JSON.parse(await Bun.file(paths.config).text());
     expect(after.wechat.enabled).toBe(true);
-    expect(after.settings.maxProactivePerDay).toBe(3);
+    expect(after.settings.probeIntervalMinutes).toBe(3);
     cleanup(paths);
   });
 });
@@ -619,6 +618,33 @@ describe("Hub: review regressions", () => {
     await handleRpc(hub, { method: "device.unpair", params: {} }, ctx);
     await tick(150);
     expect(dropped).toBe("dev-x");
+    cleanup(paths);
+  });
+});
+
+describe("Hub: runaway guard (no daily cap)", () => {
+  test("a burst of schedule/probe pushes is held back after 5 in 10 minutes; same text isn't pushed twice", async () => {
+    let n = 0;
+    const { hub, pusher, paths } = makeHub({ script: async (_t, ctx) => ctx.emit({ type: "assistant_text", text: `晨报 ${++n}`, parentToolUseId: null }) });
+    for (let i = 0; i < 7; i++) {
+      (hub as any).onSchedule(hub.watches.add({ title: `定时 ${i}`, instruction: "写点什么", at: ["08:30"] }, "user"));
+      await hub.idle();
+    }
+    expect(pusher.pushes).toHaveLength(5);
+    expect(hub.chat.recent(30).filter((m) => m.proactive && m.channel === "schedule")).toHaveLength(7); // all still in the chat
+    expect(hub.chat.recent(30).filter((m) => m.text.includes("异常频繁"))).toHaveLength(1); // told once
+    // task results and notify_user are never held back by the guard
+    expect(await hub.toolHandlers().notify_user({ text: "要紧事" })).toBe("已推送");
+    cleanup(paths);
+  });
+
+  test("identical guarded text within an hour is pushed once", async () => {
+    const { hub, pusher, paths } = makeHub({ script: async (_t, ctx) => ctx.emit({ type: "assistant_text", text: "一模一样", parentToolUseId: null }) });
+    for (let i = 0; i < 2; i++) {
+      (hub as any).onSchedule(hub.watches.add({ title: `x${i}`, instruction: "y", at: ["08:30"] }, "user"));
+      await hub.idle();
+    }
+    expect(pusher.pushes).toHaveLength(1);
     cleanup(paths);
   });
 });

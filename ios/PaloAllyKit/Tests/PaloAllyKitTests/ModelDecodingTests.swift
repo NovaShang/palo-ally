@@ -97,9 +97,9 @@ struct ModelDecodingTests {
     }
 
     @Test func settingsQuietHoursNullRoundTrip() throws {
-        let s = try decode(HostSettings.self, #"{"timezone":"Asia/Shanghai","quietHours":null,"maxProactivePerDay":5,"probeIntervalMinutes":10,"approvalTimeoutMinutes":30}"#)
+        let s = try decode(HostSettings.self, #"{"timezone":"Asia/Shanghai","quietHours":null,"probeIntervalMinutes":10,"approvalTimeoutMinutes":30}"#)
         #expect(s.quietHours == nil)
-        #expect(s.maxProactivePerDay == 5)
+        #expect(s.probeIntervalMinutes == 10)
         let json = String(data: try JSONEncoder().encode(s), encoding: .utf8)!
         #expect(json.contains(#""quietHours":null"#))
         #expect(s.wechatProactive == .hint) // absent → host default
@@ -129,12 +129,12 @@ struct ModelDecodingTests {
         let r = try decode(SyncResult.self, """
         {"seq":10,"messages":[{"seq":9,"id":"a","role":"user","text":"x"},42,{"seq":10,"id":"b","role":"assistant"}],
          "tasks":[],"approvals":[{"id":"p","status":"pending","careful":false}],"watches":[],"artifacts":[],
-         "settings":{"maxProactivePerDay":3},"status":{"busy":true},"future":"field"}
+         "settings":{"probeIntervalMinutes":3},"status":{"busy":true},"future":"field"}
         """)
         #expect(r.seq == 10)
         #expect(r.messages.map(\.id) == ["a", "b"])
         #expect(r.approvals?.count == 1)
-        #expect(r.settings?.maxProactivePerDay == 3)
+        #expect(r.settings?.probeIntervalMinutes == 3)
         #expect(r.status?.busy == true)
     }
 

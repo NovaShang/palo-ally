@@ -44,7 +44,7 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
       // Decide synchronously, deliver in the background: a slow push must never block the turn.
       const delivery = d.router.proactive(msg, { urgent });
       const r = await Promise.race([delivery, new Promise<null>((res) => setTimeout(() => res(null), 1500))]);
-      if (r?.suppressed) return `已记入对话（${r.suppressed === "quiet" ? "免打扰时段" : "今日推送已达上限"}，未推送）`;
+      if (r?.suppressed) return `已记入对话（${r.suppressed === "quiet" ? "免打扰时段" : "短时间内推送太多"}，未推送）`;
       return "已推送";
     },
   };

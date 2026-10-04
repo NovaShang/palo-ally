@@ -41,8 +41,8 @@ struct LiveHostTests {
 
         let files = try await store.memoryFiles()
         #expect(!files.isEmpty)
-        try await store.updateSettings(patch: ["maxProactivePerDay": 4])
-        #expect(store.settings?.maxProactivePerDay == 4)
+        try await store.updateSettings(patch: ["probeIntervalMinutes": 4])
+        #expect(store.settings?.probeIntervalMinutes == 4)
         let w = try #require(try await store.addWatch(WatchDraft(title: "live", kind: .check, instruction: "看看", intervalMinutes: 60)))
         try await store.removeWatch(id: w.id)
 

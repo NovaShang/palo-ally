@@ -16,7 +16,7 @@ public actor DemoHost {
     public private(set) var files: [String: Data] = [:] // "<artifactId>/<path>"
     public private(set) var memory: [String: (scope: MemoryScope, content: String, updatedAt: Int64)] = [:]
     public private(set) var settings = HostSettings(timezone: "Asia/Shanghai", quietHours: QuietHours(start: "23:00", end: "08:00"),
-                                                    maxProactivePerDay: 6, probeIntervalMinutes: 10, approvalTimeoutMinutes: 30)
+                                                    probeIntervalMinutes: 10, approvalTimeoutMinutes: 30)
     public private(set) var status = HostStatus(online: true, busy: false, model: "glm-4.6",
                                                 sessionId: "demo", wechat: .connected, version: "0.1.0-demo")
     public private(set) var pushTokens: [String] = []

@@ -69,8 +69,8 @@ describe("daemon over the local socket", () => {
     expect(r.out).toContain("晨报");
     expect(r.out).toContain("08:30");
 
-    r = await cli("settings", "maxProactivePerDay", "3");
-    expect(JSON.parse(r.out).maxProactivePerDay).toBe(3);
+    r = await cli("settings", "probeIntervalMinutes", "15");
+    expect(JSON.parse(r.out).probeIntervalMinutes).toBe(15);
     r = await cli("settings", "quietHours", "22:00-07:30");
     expect(JSON.parse(r.out).quietHours).toEqual({ start: "22:00", end: "07:30" });
 

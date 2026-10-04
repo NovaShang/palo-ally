@@ -5,6 +5,7 @@ import type { Turn } from "./conversation.ts";
 import {
   PUSH_TITLE_APPROVAL,
   PUSH_TITLE_BACK,
+  runawayNotice,
   approvalCardText,
   offlineNotice,
   probeTurnText,
@@ -78,6 +79,14 @@ export class Proactive {
       proactive: true,
     });
     void this.d.router.proactive(msg, { title: PUSH_TITLE_APPROVAL });
+  }
+
+  // The runaway guard held a push back: say so once per window, in the chat only.
+  private lastRunawayNote = 0;
+  onRunaway(reason: "burst" | "duplicate"): void {
+    if (reason !== "burst" || Date.now() - this.lastRunawayNote < 30 * 60_000) return;
+    this.lastRunawayNote = Date.now();
+    this.d.chat.add({ role: "system", kind: "notice", text: runawayNotice, channel: "system" });
   }
 
   // ---- liveness ----

@@ -1,7 +1,7 @@
 import type { Audit } from "./audit.ts";
 import type { Settings } from "./config.ts";
 import type { ChatMessage } from "./types.ts";
-import { inWindow, minuteOfDay, parseHHMM, readJson, truncate, writeJson, zonedParts } from "./util.ts";
+import { inWindow, minuteOfDay, parseHHMM, truncate } from "./util.ts";
 
 export interface Pusher {
   readonly name: string;
@@ -34,11 +34,20 @@ export function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-export type DeliveryResult = { pushed: boolean; wechat: boolean; suppressed?: "quiet" | "cap" };
+export type DeliveryResult = { pushed: boolean; wechat: boolean; suppressed?: "quiet" | "burst" | "duplicate" };
+
+// Runaway guard for pushes the assistant starts on its own (schedule / probe
+// turns). There is no daily total — heavy use is fine; only abnormal patterns
+// are held back: a burst in a short window, or the same text again.
+export const runaway = { burstWindowMs: 10 * 60_000, burstMax: 5, duplicateWindowMs: 60 * 60_000 };
+const GUARDED: ReadonlySet<string> = new Set(["probe", "schedule"]);
 
 // Router decides where an outbound proactive message goes (design §6). The
 // chat log already has it; this only adds interrupts (push / WeChat).
 export class Router {
+  private recent: { ts: number; key: string }[] = []; // guarded pushes actually sent
+  onRunaway: (reason: "burst" | "duplicate") => void = () => {};
+
   constructor(
     private settings: () => Settings,
     private pushers: Pusher[],
@@ -46,23 +55,18 @@ export class Router {
     private audit: Audit,
     private now: () => number = Date.now,
     private lastOwnerActivity: () => number = () => 0,
-    // where today's push count is kept, so a restart doesn't reset the allowance
-    private counterPath?: string,
   ) {}
 
-  private counter(): { day: string; count: number } {
-    const day = zonedParts(this.now(), this.settings().timezone).dateKey;
-    const c = this.counterPath ? readJson<{ day: string; count: number }>(this.counterPath, { day, count: 0 }) : this.mem;
-    return c.day === day ? c : { day, count: 0 };
-  }
-
-  private mem = { day: "", count: 0 };
-
-  private bump(): void {
-    const c = this.counter();
-    c.count++;
-    if (this.counterPath) writeJson(this.counterPath, c);
-    else this.mem = c;
+  // runawayCheck returns why a guarded push should be held back, if at all.
+  private runawayCheck(msg: ChatMessage): "burst" | "duplicate" | null {
+    if (!GUARDED.has(msg.channel)) return null;
+    const t = this.now();
+    this.recent = this.recent.filter((r) => t - r.ts < runaway.duplicateWindowMs);
+    const key = msg.text.replace(/\s+/g, " ").trim();
+    if (this.recent.some((r) => r.key === key)) return "duplicate";
+    if (this.recent.filter((r) => t - r.ts < runaway.burstWindowMs).length >= runaway.burstMax) return "burst";
+    this.recent.push({ ts: t, key });
+    return null;
   }
 
   isQuiet(): boolean {
@@ -83,13 +87,11 @@ export class Router {
         this.audit.log("deliver.suppressed", { reason: "quiet", msg: msg.id });
         return { pushed: false, wechat: false, suppressed: "quiet" };
       }
-      // An approval is the assistant waiting on the owner: never capped.
-      if (msg.kind !== "approval") {
-        if (this.counter().count >= s.maxProactivePerDay) {
-          this.audit.log("deliver.suppressed", { reason: "cap", msg: msg.id });
-          return { pushed: false, wechat: false, suppressed: "cap" };
-        }
-        this.bump();
+      const runawayReason = this.runawayCheck(msg);
+      if (runawayReason) {
+        this.audit.log("deliver.suppressed", { reason: runawayReason, msg: msg.id });
+        this.onRunaway(runawayReason);
+        return { pushed: false, wechat: false, suppressed: runawayReason };
       }
     }
 

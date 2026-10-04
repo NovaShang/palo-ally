@@ -444,19 +444,18 @@ public struct QuietHours: Codable, Sendable, Hashable {
 public struct HostSettings: Codable, Sendable, Hashable {
     public var timezone: String
     public var quietHours: QuietHours?
-    public var maxProactivePerDay: Int
     public var probeIntervalMinutes: Int
     public var approvalTimeoutMinutes: Int
     public var wechatProactive: WechatProactive
 
     enum CodingKeys: String, CodingKey {
-        case timezone, quietHours, maxProactivePerDay, probeIntervalMinutes, approvalTimeoutMinutes, wechatProactive
+        case timezone, quietHours, probeIntervalMinutes, approvalTimeoutMinutes, wechatProactive
     }
 
     public init(timezone: String = TimeZone.current.identifier, quietHours: QuietHours? = nil,
-                maxProactivePerDay: Int = 8, probeIntervalMinutes: Int = 15, approvalTimeoutMinutes: Int = 30,
+                probeIntervalMinutes: Int = 15, approvalTimeoutMinutes: Int = 30,
                 wechatProactive: WechatProactive = .hint) {
-        self.timezone = timezone; self.quietHours = quietHours; self.maxProactivePerDay = maxProactivePerDay
+        self.timezone = timezone; self.quietHours = quietHours
         self.probeIntervalMinutes = probeIntervalMinutes; self.approvalTimeoutMinutes = approvalTimeoutMinutes
         self.wechatProactive = wechatProactive
     }
@@ -466,7 +465,6 @@ public struct HostSettings: Codable, Sendable, Hashable {
         let d = HostSettings()
         timezone = l.string("timezone", or: d.timezone)
         quietHours = l.decode(QuietHours.self, "quietHours")
-        maxProactivePerDay = l.int("maxProactivePerDay", or: d.maxProactivePerDay)
         probeIntervalMinutes = l.int("probeIntervalMinutes", or: d.probeIntervalMinutes)
         approvalTimeoutMinutes = l.int("approvalTimeoutMinutes", or: d.approvalTimeoutMinutes)
         wechatProactive = l.decode(WechatProactive.self, "wechatProactive", or: d.wechatProactive)
@@ -477,7 +475,6 @@ public struct HostSettings: Codable, Sendable, Hashable {
         try c.encode(timezone, forKey: .timezone)
         // quietHours: null means "off" — encode it explicitly.
         if let q = quietHours { try c.encode(q, forKey: .quietHours) } else { try c.encodeNil(forKey: .quietHours) }
-        try c.encode(maxProactivePerDay, forKey: .maxProactivePerDay)
         try c.encode(probeIntervalMinutes, forKey: .probeIntervalMinutes)
         try c.encode(approvalTimeoutMinutes, forKey: .approvalTimeoutMinutes)
         // Never send a value we didn't understand back to the host.

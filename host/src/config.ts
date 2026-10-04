@@ -47,7 +47,6 @@ export function defaultRoot(): string {
 export interface Settings {
   timezone: string;
   quietHours: { start: string; end: string } | null;
-  maxProactivePerDay: number;
   probeIntervalMinutes: number;
   approvalTimeoutMinutes: number;
   wechatProactive: "off" | "hint" | "full";
@@ -114,7 +113,6 @@ export function defaultConfig(): Config {
     settings: {
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Los_Angeles",
       quietHours: { start: "23:00", end: "08:00" },
-      maxProactivePerDay: 8,
       probeIntervalMinutes: 10,
       approvalTimeoutMinutes: 30,
       wechatProactive: "hint",
@@ -139,7 +137,6 @@ export function validateSettings(current: Settings, patch: Record<string, unknow
     if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max) throw new Error(`${name}要在 ${min} 到 ${max} 之间`);
     return Math.round(v);
   };
-  next.maxProactivePerDay = int(next.maxProactivePerDay, 0, 100, "每天主动找你的次数");
   next.probeIntervalMinutes = int(next.probeIntervalMinutes, 1, 1440, "检查间隔（分钟）");
   next.approvalTimeoutMinutes = int(next.approvalTimeoutMinutes, 1, 24 * 60, "确认等待时间（分钟）");
   if (!["off", "hint", "full"].includes(next.wechatProactive)) throw new Error("微信主动消息只能是 off / hint / full");
@@ -151,6 +148,7 @@ export function validateSettings(current: Settings, patch: Record<string, unknow
 export function loadConfig(paths: Paths): Config {
   const saved = readJson<Partial<Config>>(paths.config, {});
   const cfg = deepMerge(defaultConfig(), saved) as Config;
+  delete (cfg.settings as any).maxProactivePerDay; // removed 2026-10-04 (runaway guard instead)
   // A hand-edited bad value falls back to its default instead of crash-looping.
   const defaults = defaultConfig().settings as any;
   for (const k of Object.keys(defaults)) {

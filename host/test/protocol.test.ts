@@ -67,7 +67,7 @@ describe("host ↔ app protocol", () => {
     await run("memory.list");
     const mem = await run("memory.read", { path: "user.md" });
     await run("memory.write", { path: "user.md", content: "# 关于主人\n", baseUpdatedAt: mem.updatedAt });
-    await run("settings.update", { patch: { maxProactivePerDay: 5 } });
+    await run("settings.update", { patch: { probeIntervalMinutes: 15 } });
     await run("push.register", { token: "a".repeat(64), env: "sandbox" });
     await run("push.unregister", { token: "a".repeat(64) });
     await run("audit.tail", { limit: 3 });

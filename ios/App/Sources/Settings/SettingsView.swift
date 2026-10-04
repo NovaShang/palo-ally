@@ -8,7 +8,6 @@ struct SettingsView: View {
     @State private var quietOn = false
     @State private var quietStart = WatchEditor.date(hour: 23, minute: 0)
     @State private var quietEnd = WatchEditor.date(hour: 8, minute: 0)
-    @State private var maxPerDay = 6
     @State private var loaded = false
     @State private var error: String?
     @State private var confirmUnpair = false
@@ -39,20 +38,6 @@ struct SettingsView: View {
                 Text("什么时候别打扰我")
             } footer: {
                 Text("这段时间里，不急的事只放进对话，不推送。")
-            }
-
-            Section {
-                Stepper(value: $maxPerDay, in: 0...30) {
-                    HStack {
-                        Text("每天最多主动找我")
-                        Spacer()
-                        Text(maxPerDay == 0 ? "不主动" : "\(maxPerDay) 次")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
-            } footer: {
-                Text("超过之后的提醒会留在对话里，等你来看。")
             }
 
             if let error {
@@ -94,7 +79,6 @@ struct SettingsView: View {
         .onChange(of: quietOn) { if loaded { quietSave?.cancel(); push(["quietHours": quietValue]) } }
         .onChange(of: quietStart) { if loaded && quietOn { scheduleQuietSave() } }
         .onChange(of: quietEnd) { if loaded && quietOn { scheduleQuietSave() } }
-        .onChange(of: maxPerDay) { if loaded { push(["maxProactivePerDay": .number(Double(maxPerDay))]) } }
         .onDisappear {
             // Leaving mid-debounce: save right away.
             if let pending = quietSave, !pending.isCancelled {
@@ -116,7 +100,6 @@ struct SettingsView: View {
             quietStart = WatchEditor.parse(q.start) ?? quietStart
             quietEnd = WatchEditor.parse(q.end) ?? quietEnd
         }
-        maxPerDay = s.maxProactivePerDay
         DispatchQueue.main.async { loaded = true }
     }
 

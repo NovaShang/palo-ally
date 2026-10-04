@@ -51,6 +51,8 @@ export const approvalAnswerReply = (allow: boolean) => (allow ? "好，已同意
 export const statusReply = (busy: boolean, running: number, pending: number) =>
   `${busy ? "忙着" : "空闲"}；进行中的任务 ${running} 个，待确认 ${pending} 个。`;
 
+export const runawayNotice = "定时和盯梢这阵子触发得异常频繁，我先把后面的通知压住了，只放在对话里，你有空看看。";
+
 export const budgetNotice = (label?: string) =>
   `今天的花费到了你设的上限，定时和盯梢的事先停下了（比如「${label ?? "定时任务"}」）。明天会恢复。`;
 
