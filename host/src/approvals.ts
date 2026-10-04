@@ -207,7 +207,8 @@ export class ApprovalManager {
   // preGate runs on every tool call before the harness decides.
   preGate(tool: string, input: Record<string, unknown>): { decision: "allow" | "deny" | "ask" | "pass"; reason?: string } {
     if (this.hooks.isKilled()) return { decision: "deny", reason: "助理已被急停，所有操作暂停" };
-    if (tool.startsWith(OWN_SERVER)) return { decision: "pass" };
+    // The shell's own tools (report_task, register_watch…) only touch PaloAlly state.
+    if (tool.startsWith(OWN_SERVER)) return { decision: "allow" };
     if (this.isSensitiveNavigation(tool, input)) return { decision: "deny", reason: "该网站在敏感账号名单里，助理的浏览器不碰它" };
     if (isIrreversible(tool, input)) return { decision: "ask", reason: "不可逆/对外动作，需要你单独确认" };
     return { decision: "pass" };
@@ -216,6 +217,7 @@ export class ApprovalManager {
   // request is the harness' canUseTool: the harness wants to prompt.
   request(req: PermissionRequest): Promise<PermissionDecision> {
     if (this.hooks.isKilled()) return Promise.resolve({ behavior: "deny", message: "助理已被急停" });
+    if (req.toolName.startsWith(OWN_SERVER)) return Promise.resolve({ behavior: "allow", updatedInput: req.input });
     if (this.isSensitiveNavigation(req.toolName, req.input)) {
       return Promise.resolve({ behavior: "deny", message: "该网站在敏感账号名单里" });
     }

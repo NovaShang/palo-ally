@@ -62,6 +62,15 @@ export class TaskTracker {
     if (!SUBAGENT_TOOLS.has(name)) return;
     const title = String(input.description ?? "") || truncate(String(input.prompt ?? "后台任务"), 40);
     const now = Date.now();
+    // The agent often reports first and dispatches right after: attach to that row.
+    const reported = this.unlinkedReport(title);
+    if (reported) {
+      reported.toolUseId = id;
+      this.toolUseToTask.set(id, reported.id);
+      if (input.run_in_background === true) this.background.add(reported.id);
+      this.save(reported);
+      return;
+    }
     const task: Task = {
       id: newId("t_"),
       title,
@@ -205,6 +214,14 @@ export class TaskTracker {
       if (m) return m;
     }
     return cands.sort((a, b) => b.createdAt - a.createdAt)[0];
+  }
+
+  // A report_task row with no subagent attached yet, from the last few minutes.
+  private unlinkedReport(title: string): Task | undefined {
+    const cands = this.tasks.filter(
+      (t) => t.source === "report" && !t.toolUseId && !TERMINAL.includes(t.status) && Date.now() - t.createdAt < LINK_WINDOW_MS,
+    );
+    return cands.find((t) => t.title === title) ?? cands.sort((a, b) => b.createdAt - a.createdAt)[0];
   }
 
   private finish(task: Task, status: TaskStatus, summary: string): void {

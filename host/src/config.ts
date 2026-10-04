@@ -52,6 +52,9 @@ export interface Config {
   hostName: string;
   model?: string; // main agent model; undefined = CLI default
   probeModel: string; // cheap model for the probe
+  // Let the probe see claude.ai connectors (Gmail, Calendar…) when logged in with a subscription.
+  // Off by default: those connectors add ~100k tokens to every probe run.
+  probeInheritConnectors: boolean;
   permissionMode: "default" | "auto" | "acceptEdits";
   session: {
     idleCloseMinutes: number; // close the CLI process after idle; resume on next message
@@ -86,7 +89,10 @@ export function defaultConfig(): Config {
   return {
     hostName: hostname().replace(/\.local$/, ""),
     probeModel: "claude-haiku-4-5",
-    permissionMode: "default",
+    probeInheritConnectors: false,
+    // File edits inside the assistant's own home pass; Bash, web and MCP actions
+    // still ask, and irreversible ones always ask (PreToolUse gate).
+    permissionMode: "acceptEdits",
     session: { idleCloseMinutes: 30, rollAfterTokens: 0 },
     budget: { probeDailyUsd: 1, mainDailyUsd: 0 },
     relay: { enabled: true, url: "https://relay.bentoai.dev" },

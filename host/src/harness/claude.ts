@@ -217,6 +217,7 @@ class ClaudeMainSession implements MainSession {
         includePartialMessages: true,
         forwardSubagentText: true,
         mcpServers: { ...extra, paloally: paloallyMcpServer(opts.tools) },
+        allowedTools: ["mcp__paloally"],
         canUseTool: async (toolName, input, o) =>
           opts.canUseTool({
             toolName,
@@ -307,6 +308,7 @@ export class ClaudeCodeDriver implements HarnessDriver {
           settingSources: [], // no CLAUDE.md / user settings: keep the context short
           tools: req.allowedTools,
           mcpServers: req.mcpServers as any,
+          ...(req.strictMcp ? { strictMcpConfig: true, skills: [] } : {}),
           persistSession: false,
           maxTurns: req.maxTurns,
           permissionMode: "default",

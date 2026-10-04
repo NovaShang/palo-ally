@@ -130,6 +130,7 @@ export class Hub {
       probeModel: () => this.config.probeModel,
       cwd: () => this.paths.home,
       mcpServers: () => this.extraMcpServers(),
+      inheritConnectors: () => this.config.probeInheritConnectors,
       lastUserActivity: () => this.chat.lastUserActivity(),
       budgetLeftUsd: () => this.config.budget.probeDailyUsd - this.usage().probeUsd,
       spend: (usd) => this.addUsage("probeUsd", usd),

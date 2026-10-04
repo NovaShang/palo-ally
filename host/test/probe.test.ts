@@ -25,6 +25,7 @@ function mk(over: Partial<ProbeHost> = {}) {
     probeModel: () => "cheap",
     cwd: () => paths.home,
     mcpServers: () => ({}),
+    inheritConnectors: () => false,
     lastUserActivity: () => lastActivity,
     budgetLeftUsd: () => 1 - spent,
     spend: (u) => (spent += u),
@@ -110,6 +111,7 @@ describe("ProbeScheduler", () => {
     expect(r.triggered).toBe(1);
     expect(driver.probes).toHaveLength(1);
     expect(driver.probes[0]!.model).toBe("cheap");
+    expect(driver.probes[0]!.strictMcp).toBe(true);
     expect(driver.probes[0]!.prompt).toContain("boss@x.com");
     expect(triggers[0]![0]!.summary).toBe("老板发来合同");
     expect(watches.get(a.id)!.cursor).toBe("c1");

@@ -94,6 +94,8 @@ export interface ProbeRequest {
   allowedTools: string[];
   outputSchema: Record<string, unknown>;
   maxTurns: number;
+  // true: only mcpServers above (no claude.ai connectors / user config / skills) — keeps context ~2k tokens
+  strictMcp: boolean;
   canUseTool: (req: PermissionRequest) => Promise<PermissionDecision>;
   preToolGate: PreToolGate;
 }

@@ -99,6 +99,9 @@ describe("ApprovalManager", () => {
     expect(m.listRules()).toHaveLength(0);
     // and the gate forces a prompt
     expect(m.preGate("Bash", { command: "git push" }).decision).toBe("ask");
+    // the shell's own tools never prompt
+    expect(m.preGate("mcp__paloally__report_task", {}).decision).toBe("allow");
+    expect((await m.request(req("mcp__paloally__register_watch", {}))).behavior).toBe("allow");
   });
 
   test("deny, timeout, kill", async () => {

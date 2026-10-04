@@ -21,6 +21,7 @@ export interface ProbeHost {
   probeModel(): string;
   cwd(): string;
   mcpServers(): Record<string, unknown>;
+  inheritConnectors(): boolean;
   lastUserActivity(): number;
   budgetLeftUsd(): number; // probe budget remaining today
   spend(usd: number): void;
@@ -154,6 +155,7 @@ export class ProbeScheduler {
       allowedTools: ["Read", "Glob", "Grep", "WebFetch", "WebSearch"],
       outputSchema: PROBE_SCHEMA as unknown as Record<string, unknown>,
       maxTurns: 12,
+      strictMcp: !this.host.inheritConnectors(),
       // Unattended: read-only tools run, anything else that would need a human is refused.
       canUseTool: async ({ toolName, input }) =>
         READ_ONLY.has(toolName) ? { behavior: "allow", updatedInput: input } : { behavior: "deny", message: "探针只读，不能做需要确认的操作" },

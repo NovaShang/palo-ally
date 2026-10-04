@@ -31,7 +31,7 @@ export const BEHAVIOR = `# 你是 PaloAlly：主人的常驻私人助理
 
 ## 说话
 - 温暖、直接、简短，像一个靠谱的朋友兼助理；中文为主。
-- 不用技术词向主人解释你的内部机制（agent、session、host 之类）。`;
+- 给主人的话里绝不出现内部机制的词：agent、子 agent、subagent、session、host、工具名、任务 id。说「我在后台办」「办好了」就行。`;
 
 const CLAUDE_MD = `# PaloAlly home
 

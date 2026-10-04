@@ -32,6 +32,7 @@ const HELP = `PaloAlly ${VERSION} — 把 Claude Code 变成常驻、会主动�
   settings [key value]   打扰频率、免打扰时段等
   kill / resume          急停 / 恢复
   audit [n]              审计日志
+  metrics [天数]         Phase 0 验收数据（主动频率、任务、压缩、花费）
   pair                   配对手机 App
   devices [rm <id>]      已配对的设备
   wechat login|logout|status   微信入口
@@ -369,6 +370,11 @@ async function main(): Promise<void> {
       if (sub === "install") return console.log(installService(paths));
       if (sub === "uninstall") return console.log(uninstallService());
       return console.log(serviceStatus());
+    }
+    case "metrics": {
+      const { phase0Report } = await import("./metrics.ts");
+      console.log(phase0Report(paths, Number(args[0] ?? 7), loadConfig(paths).settings.timezone));
+      return;
     }
     case "doctor":
       return doctor();

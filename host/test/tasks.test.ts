@@ -26,6 +26,24 @@ describe("TaskTracker", () => {
     cleanup(paths);
   });
 
+  test("report first, dispatch after: one row, activity attached", () => {
+    const { t, paths } = mk();
+    const r = t.report("sum", "派人去算", "running", "算和");
+    t.onToolUse("tu1", "Agent", { description: "计算和", run_in_background: true }, null);
+    expect(t.list()).toHaveLength(1);
+    t.onSubagentText("= 1275", "tu1");
+    t.onTaskStarted("sdk1", "tu1", true);
+    t.onTaskNotification("sdk1", "tu1", "completed", "1275");
+    t.report("sum", "和是 1275", "done");
+    t.finalizePending();
+    const task = t.get(r.id)!;
+    expect(task.status).toBe("done");
+    expect(task.summary).toBe("和是 1275");
+    expect(task.activityCount).toBe(1);
+    expect(task.sdkTaskId).toBe("sdk1");
+    cleanup(paths);
+  });
+
   test("legacy Task tool name is also detected", () => {
     const { t, paths } = mk();
     t.onToolUse("tu1", "Task", { description: "x" }, null);

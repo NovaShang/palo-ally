@@ -88,6 +88,10 @@ describe("daemon over the local socket", () => {
     expect(r.out).toContain("kill");
     expect(r.out).toContain("resume");
 
+    r = await cli("metrics", "7");
+    expect(r.out).toContain("任务：1 个");
+    expect(r.out).toContain("对话：");
+
     r = await cli("memory");
     expect(r.out).toContain("user.md");
   }, 60_000);
