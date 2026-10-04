@@ -35,11 +35,11 @@ struct ClipboardCard: View {
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(copied ? .secondary : .primary)
                         .contentTransition(.symbolEffect(.replace))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .glassEffect(.regular.interactive(), in: .capsule)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .controlSize(.small)
+                .tint(.primary)
                 .sensoryFeedback(.success, trigger: justCopied) { _, now in now }
                 .accessibilityLabel(copied ? "已复制，再复制一次" : "复制")
             }
@@ -62,7 +62,12 @@ struct ClipboardCard: View {
         }
         .padding(14)
         .frame(maxWidth: 420, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        // In-content: a quiet card, same family as approval / file cards.
+        .background(.background.secondary, in: .rect(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        }
         .task(id: justCopied) {
             guard justCopied else { return }
             try? await Task.sleep(for: .seconds(1.5))

@@ -1,9 +1,9 @@
 import SwiftUI
 import UIKit
 
-// Ported from bento (AgentChatView.swift: AcpClipboard / AcpCopyButton), in
-// our glass look. Markdown blocks can't be drag-selected across, so one-tap
-// copy is the way to lift a whole answer or a code block.
+// Ported from bento (AgentChatView.swift: AcpClipboard / AcpCopyButton).
+// Deliberately plain: a quiet glyph, no glass or container — it sits under
+// every answer and shouldn't compete with the text.
 
 enum Clipboard {
     static func copy(_ text: String) {
@@ -15,6 +15,9 @@ enum Clipboard {
 struct CopyButton: View {
     let text: String
     var label = "复制"
+    /// Where the glyph sits inside its (larger, invisible) tap area — `.leading`
+    /// lines it up with text above it.
+    var glyphAlignment: Alignment = .center
     @State private var copied = false
 
     var body: some View {
@@ -23,11 +26,11 @@ struct CopyButton: View {
             copied = true
         } label: {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 14, weight: .regular))
                 .foregroundStyle(copied ? Color.green : Color.secondary)
                 .contentTransition(.symbolEffect(.replace))
-                .frame(width: 28, height: 28)
-                .glassEffect(.regular.interactive(), in: .circle)
+                .frame(width: 32, height: 32, alignment: glyphAlignment)
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(copied ? "已复制" : label)

@@ -13,6 +13,7 @@ let package = Package(
         // Voice input ported from bento's BentoVoiceKit; built in the Swift 5
         // language mode it was written for.
         .target(name: "PaloAllyVoice", swiftSettings: [.swiftLanguageMode(.v5)]),
+        .testTarget(name: "PaloAllyVoiceTests", dependencies: ["PaloAllyVoice"]),
         .testTarget(
             name: "PaloAllyKitTests",
             dependencies: ["PaloAllyKit"],

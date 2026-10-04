@@ -43,7 +43,7 @@ extension Theme {
             }
             .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(alignment: .topTrailing) {
-                CopyButton(text: configuration.content, label: "复制代码").scaleEffect(0.85).padding(4)
+                CopyButton(text: configuration.content, label: "复制代码").padding(2)
             }
             .markdownMargin(top: 0, bottom: 8)
         }

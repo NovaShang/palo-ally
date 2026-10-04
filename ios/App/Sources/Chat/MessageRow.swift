@@ -98,8 +98,7 @@ private struct AssistantMessage: View {
                 }
                 if !message.isStreaming, !message.text.isEmpty, message.kind == .text {
                     // The whole answer in one tap; small and quiet.
-                    CopyButton(text: message.text, label: "复制这条回答")
-                        .scaleEffect(0.85, anchor: .leading)
+                    CopyButton(text: message.text, label: "复制这条回答", glyphAlignment: .leading)
                 }
                 if message.kind == .task, let taskId = message.taskId {
                     TaskChip(taskId: taskId)
@@ -140,7 +139,8 @@ private struct TaskChip: View {
                 .font(.footnote)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
-                .glassEffect(.regular.interactive(), in: .capsule)
+                .background(Color(.tertiarySystemFill), in: .capsule)
+                .contentShape(.capsule)
             }
             .buttonStyle(.plain)
         }
@@ -203,7 +203,7 @@ private struct AttachmentStrip: View {
                     if loading == a.id {
                         ProgressView().controlSize(.small)
                             .padding(8)
-                            .glassEffect(.regular, in: .circle)
+                            .background(Color(.systemBackground).opacity(0.85), in: .circle)
                     }
                 }
             } else {
@@ -285,7 +285,7 @@ private struct FileCard: View {
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .frame(width: 40, height: 40)
-                .glassEffect(.regular, in: .rect(cornerRadius: 10))
+                .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(attachment.name ?? "文件").font(.callout.weight(.medium)).lineLimit(1)
                 Text(detail).font(.caption).foregroundStyle(.secondary)
@@ -296,7 +296,12 @@ private struct FileCard: View {
         }
         .padding(10)
         .frame(maxWidth: 300, alignment: .leading)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 16))
+        // In-content: a quiet card, not glass (glass is for chrome above content).
+        .background(.background.secondary, in: .rect(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        }
         .contentShape(.rect)
     }
 

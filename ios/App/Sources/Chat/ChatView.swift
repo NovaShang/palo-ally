@@ -281,9 +281,8 @@ struct ThinkingIndicator: View {
                 .foregroundStyle(.secondary)
                 .contentTransition(.opacity)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .glassEffect(.regular, in: .capsule)
+        // In-content: just the spinner and words, no container.
+        .padding(.vertical, 4)
         .task {
             try? await Task.sleep(for: .seconds(2))
             withAnimation { slow = true }

@@ -71,17 +71,18 @@ struct ApprovalCard: View {
                     } label: {
                         Text("拒绝").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.glass)
-                    .tint(.primary) // only the primary action (允许) carries the theme color
+                    .buttonStyle(.bordered)
+                    .tint(.secondary) // lighter than 允许; only the primary action carries the theme color
 
                     Button {
                         answer(allow: true)
                     } label: {
                         Text("允许").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.borderedProminent)
                 }
                 .controlSize(.large)
+                .buttonBorderShape(.capsule)
                 .disabled(working)
 
                 if approval.canRemember {

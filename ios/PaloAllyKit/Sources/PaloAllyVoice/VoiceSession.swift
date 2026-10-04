@@ -50,6 +50,9 @@ public final class VoiceSession {
     /// PaloAlly: live input loudness 0…1 for the level meter (realtime engine).
     public var onLevel: (@MainActor (Float) -> Void)?
 
+    /// PaloAlly: which recording callbacks belong to (see VoiceGeneration).
+    private var generation = VoiceGeneration()
+
     /// Set when the realtime engine delivers a non-empty final / emits its
     /// `completed` event after a commit — so `finish()` stops waiting promptly.
     private var realtimeFinalArrived = false
@@ -83,8 +86,8 @@ public final class VoiceSession {
 
     /// Begin recording after ensuring permissions. `onPartial` streams the live
     /// transcript on the main actor; `onError` reports a user-facing message.
-    public func start(onPartial: @escaping @MainActor (String) -> Void,
-                      onError: @escaping @MainActor (String) -> Void) {
+    public func start(onPartial rawPartial: @escaping @MainActor (String) -> Void,
+                      onError rawError: @escaping @MainActor (String) -> Void) {
         // Defensive: never overlap sessions. If a prior recording is still active
         // (e.g. a failed one a caller didn't stop), tear it down first so we don't
         // leave a second mic engine / ASR socket running.
@@ -92,6 +95,20 @@ public final class VoiceSession {
         // Never let two recordings share the input bus (CoreAudio corruption).
         if let other = Self.activeRecording, other !== self { other.cancel() }
         Self.activeRecording = self
+        // PaloAlly: callbacks from a recording that was since cancelled (a quick
+        // tap) or replaced are dropped, so its teardown never reads as a failure.
+        let token = generation.next()
+        let onPartial: @MainActor (String) -> Void = { [weak self] text in
+            guard let self, self.generation.isCurrent(token) else { return }
+            rawPartial(text)
+        }
+        let onError: @MainActor (String) -> Void = { [weak self] message in
+            guard let self, self.generation.isCurrent(token) else {
+                dlog("[voice] dropped an error from a cancelled recording: \(message)")
+                return
+            }
+            rawError(message)
+        }
         engine = .current()
         isActive = true
         lastTranscript = ""
@@ -160,6 +177,9 @@ public final class VoiceSession {
     /// wait a short grace for the tail, falling back to a whole-clip batch
     /// transcription if streaming caught nothing. `language` is the batch hint.
     public func finish(language: String) async -> String {
+        // PaloAlly: once the final text is returned, this recording is over —
+        // late callbacks from its teardown are dropped.
+        defer { generation.invalidate() }
         isActive = false
         if Self.activeRecording === self { Self.activeRecording = nil }
         // Qwen's interims are a rolling window (they reset mid-utterance), NOT the
@@ -232,6 +252,7 @@ public final class VoiceSession {
     /// error / right-swipe, which re-transcribes the clip itself / defensive
     /// re-entry). Preserves `recordedPCM` so a caller can still batch it.
     public func cancel() {
+        generation.invalidate()
         switch engine {
         case .apple:
             _ = apple?.stopRecording()
@@ -302,6 +323,7 @@ public final class VoiceSession {
                 }
                 dlog("[voice] apple startRecording returned ok")
             } catch {
+                if VoiceErrors.isCancellation(error) { return }
                 dlog("[voice] apple startRecording FAILED: \(error.localizedDescription)")
                 await MainActor.run { onError(error.localizedDescription) }
             }
@@ -341,6 +363,10 @@ public final class VoiceSession {
         } }
         asr.onCompleted = { Task { @MainActor in self.realtimeCompleted = true } }
         asr.onError = { err in
+            if VoiceErrors.isCancellation(err) {
+                dlog("[voice] realtime asr cancelled (not an error)")
+                return
+            }
             dlog("[voice] realtime asr error: \(err.localizedDescription)")
             Task { @MainActor in onError(err.localizedDescription) }
         }
@@ -374,6 +400,7 @@ public final class VoiceSession {
         let rate = asr.sampleRate
         audioCapture.startAsync(targetSampleRate: rate) { error in
             if let error {
+                if VoiceErrors.isCancellation(error) { return }
                 dlog("[voice] mic capture FAILED: \(error.localizedDescription)")
                 Task { @MainActor in onError(error.localizedDescription) }
             } else {
@@ -389,6 +416,10 @@ public final class VoiceSession {
                 dlog("[voice] realtime WSS connected; flushing \(buffered.count) buffered chunks")
                 for pcm in buffered { await asr.sendAudio(pcm) }
             } catch {
+                if VoiceErrors.isCancellation(error) {
+                    dlog("[voice] realtime WSS start cancelled (not an error)")
+                    return
+                }
                 dlog("[voice] realtime WSS start FAILED: \(error.localizedDescription)")
                 await MainActor.run { onError(error.localizedDescription) }
             }

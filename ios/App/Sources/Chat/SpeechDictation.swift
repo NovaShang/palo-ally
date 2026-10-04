@@ -18,6 +18,9 @@ final class SpeechDictation {
     private(set) var level: Float = 0
 
     @ObservationIgnored private let session = VoiceSession()
+    /// Which recording callbacks belong to: a quick tap arms and cancels a
+    /// recording, and its teardown must never show up as an error.
+    @ObservationIgnored private var generation = VoiceGeneration()
 
     /// Finger down, before we know it's a hold: no mic indicator, just warm-up.
     func prewarm() { session.prewarm() }
@@ -29,12 +32,20 @@ final class SpeechDictation {
         errorMessage = nil
         transcript = ""
         isRecording = true
+        let token = generation.next()
         session.onLevel = { [weak self] l in self?.level = l }
         session.start(
-            onPartial: { [weak self] text in self?.transcript = text },
+            onPartial: { [weak self] text in
+                guard let self, self.generation.isCurrent(token) else { return }
+                self.transcript = text
+            },
             onError: { [weak self] message in
+                guard let self, self.generation.isCurrent(token) else {
+                    debugLog("voice error from a cancelled recording ignored: \(message)")
+                    return
+                }
                 debugLog("voice error: \(message)")
-                self?.errorMessage = Self.friendly(message)
+                self.errorMessage = Self.friendly(message)
             }
         )
     }
@@ -52,6 +63,7 @@ final class SpeechDictation {
 
     /// Stops and throws the text away.
     func cancel() {
+        generation.invalidate()
         session.cancel()
         isRecording = false
         level = 0
