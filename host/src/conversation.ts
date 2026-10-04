@@ -211,6 +211,18 @@ export class Conversation {
   // ---------------- harness events ----------------
 
   onHarnessEvent(e: HarnessEvent): void {
+    // The harness names the owner messages a turn answers on its first frames:
+    // start that turn with exactly those, instead of guessing.
+    if (e.type === "answering" && !this.current) {
+      const mine = e.uuids.filter((u) => this.pending.has(u));
+      if (mine.length) {
+        const first = this.pending.get(mine[0]!)!;
+        const wechat = mine.map((u) => this.pending.get(u)!.wechat).find(Boolean);
+        this.beginTurn({ text: "", origin: first.origin, proactive: false, wechat, uuids: mine });
+      }
+      return;
+    }
+    if (e.type === "answering") return;
     if (!this.current && (e.type === "text_delta" || e.type === "assistant_text" || e.type === "tool_use" || e.type === "tool_start")) {
       if (this.pending.size) {
         // The harness is now answering owner messages it had queued.
@@ -272,6 +284,12 @@ export class Conversation {
         break;
       case "task_started":
         tasks.onTaskStarted(e.taskId, e.toolUseId, e.background);
+        break;
+      case "task_progress":
+        if (e.summary) tasks.onProgress(e.taskId, e.summary);
+        break;
+      case "background_tasks":
+        tasks.setLiveSet(e.taskIds);
         break;
       case "task_backgrounded":
         tasks.onTaskBackgrounded(e.taskId);

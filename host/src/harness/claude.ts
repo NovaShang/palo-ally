@@ -51,7 +51,7 @@ export function paloallyMcpServer(h: ToolHandlers) {
     tools: [
       tool(
         "report_task",
-        "登记/更新一个后台任务在主人任务列表里的那一行。派子 agent 时 status=running；结束时 done/failed/needs_input。summary 一句话。",
+        "（可选）润色主人任务列表里某个后台任务那一行：给它一句话的说明和状态。任务本身由系统自动跟踪，不调用也会出现在列表里。",
         {
           id: z.string().describe("你给这个任务起的短 id，同一任务前后要一致"),
           summary: z.string().describe("一句话：在做什么 / 结果是什么"),
@@ -123,7 +123,9 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
       else if (m.subtype === "local_command_output" && m.content)
         out.push({ type: "assistant_text", text: String(m.content), parentToolUseId: null });
       else if (m.subtype === "task_started")
-        out.push({ type: "task_started", taskId: m.task_id, toolUseId: m.tool_use_id, description: m.description ?? "", background: m.is_backgrounded });
+        out.push({ type: "task_started", taskId: m.task_id, toolUseId: m.tool_use_id, description: m.description ?? "", background: m.is_backgrounded, taskType: m.task_type });
+      else if (m.subtype === "background_tasks_changed")
+        out.push({ type: "background_tasks", taskIds: (m.tasks ?? []).map((t: any) => String(t.task_id)) });
       else if (m.subtype === "task_progress")
         out.push({ type: "task_progress", taskId: m.task_id, toolUseId: m.tool_use_id, summary: m.summary });
       else if (m.subtype === "task_updated" && m.patch?.is_backgrounded === true)
@@ -135,6 +137,8 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
       break;
     case "stream_event": {
       const ev = m.event;
+      // stamped on a turn's first stream event: which owner messages it answers
+      if (m.parent_tool_use_id == null && m.user_message_uuid) out.push({ type: "answering", uuids: [m.user_message_uuid] });
       if (m.parent_tool_use_id == null && ev?.type === "content_block_delta" && ev.delta?.type === "text_delta") {
         out.push({ type: "text_delta", text: ev.delta.text });
       } else if (ev?.type === "content_block_start" && ev.content_block?.type === "tool_use") {
@@ -144,6 +148,7 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
     }
     case "assistant": {
       const parent = m.parent_tool_use_id ?? null;
+      if (!parent && Array.isArray(m.user_message_uuids) && m.user_message_uuids.length) out.push({ type: "answering", uuids: m.user_message_uuids });
       const usage = m.message?.usage;
       if (!parent && usage) {
         state.contextTokens =
@@ -211,6 +216,7 @@ class ClaudeMainSession implements MainSession {
         settingSources: ["user", "project", "local"],
         includePartialMessages: true,
         forwardSubagentText: true,
+        agentProgressSummaries: true, // live one-line progress for subagent tasks
         mcpServers: { ...extra, paloally: paloallyMcpServer(opts.tools) },
         canUseTool: async (toolName, input, o) =>
           opts.canUseTool({

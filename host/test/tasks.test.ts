@@ -178,3 +178,60 @@ describe("TaskTracker review fixes", () => {
     cleanup(paths);
   });
 });
+
+describe("TaskTracker: harness task events are authoritative", () => {
+  test("rows appear without report_task; progress summaries update them; notification finishes", () => {
+    const { t, transitions, paths } = mk();
+    t.onToolUse("tu1", "Agent", { description: "整理周报", run_in_background: true }, null);
+    t.onTaskStarted("sdk1", "tu1", true);
+    t.onProgress("sdk1", "在读本周的会议纪要");
+    expect(t.list()[0]).toMatchObject({ title: "整理周报", summary: "在读本周的会议纪要", status: "running", source: "auto" });
+    t.onTaskNotification("sdk1", "tu1", "completed", "周报写好了");
+    t.finalizePending();
+    expect(t.list()[0]).toMatchObject({ status: "done", summary: "周报写好了" });
+    expect(transitions.filter(([, k]) => k === "finished")).toHaveLength(1);
+    cleanup(paths);
+  });
+
+  test("live() follows the harness' background set", () => {
+    const { t, paths } = mk();
+    t.onToolUse("tu1", "Agent", { description: "a", run_in_background: true }, null);
+    t.onTaskStarted("sdk1", "tu1", true);
+    expect(t.live()).toHaveLength(1);
+    t.setLiveSet([]); // the harness says nothing is running in the background any more
+    expect(t.live()).toHaveLength(0);
+    cleanup(paths);
+  });
+
+  test("report_task without an id attaches to the newest live harness row, not by title", () => {
+    const { t, paths } = mk();
+    t.onToolUse("tu1", "Agent", { description: "查机票" }, null);
+    const r = t.report("anything", "去比价", "running", "完全不同的标题");
+    expect(t.list()).toHaveLength(1);
+    expect(r.toolUseId).toBe("tu1");
+    expect(r.title).toBe("完全不同的标题");
+    cleanup(paths);
+  });
+});
+
+test("a handback note isn't shown as the result: the subagent's last words are", () => {
+  const { t, paths } = mk();
+  t.onToolUse("tu1", "Agent", { description: "算和", run_in_background: true }, null);
+  t.onTaskStarted("sdk1", "tu1", true);
+  t.onSubagentText("1 到 50 的和是 1275。\n过程：…", "tu1");
+  t.onTaskNotification("sdk1", "tu1", "completed", "This agent's report was delivered to you as a message from \"abc\" (its SubagentHandback call). Read it there");
+  t.finalizePending();
+  expect(t.list()[0]!.summary).toBe("1 到 50 的和是 1275。");
+  cleanup(paths);
+});
+
+test("the report handed back via SubagentHandback becomes the result", () => {
+  const { t, paths } = mk();
+  t.onToolUse("tu1", "Agent", { description: "算和", run_in_background: true }, null);
+  t.onTaskStarted("sdk1", "tu1", true);
+  t.onToolUse("h1", "SubagentHandback", { message: "和是 1275" }, "tu1");
+  t.onTaskNotification("sdk1", "tu1", "completed", "This agent's report was delivered to you as a message (its SubagentHandback call)");
+  t.finalizePending();
+  expect(t.list()[0]!.summary).toBe("和是 1275");
+  cleanup(paths);
+});

@@ -648,3 +648,19 @@ describe("Hub: runaway guard (no daily cap)", () => {
     cleanup(paths);
   });
 });
+
+describe("Hub: harness says which messages a turn answers", () => {
+  test("a queued owner turn starts with exactly the uuids the harness names", async () => {
+    const { hub, driver, paths } = makeHub({ script: async () => {} });
+    hub.userMessage("hi", "app");
+    await hub.idle();
+    const s = driver.last!;
+    // two owner messages in flight; the harness answers only the second first
+    (hub as any).conversation.pending.set("u-a", { origin: "app", sentAt: Date.now() });
+    (hub as any).conversation.pending.set("u-b", { origin: "wechat", wechat: { userId: "x", contextToken: "y" }, sentAt: Date.now() });
+    s.opts.onEvent({ type: "answering", uuids: ["u-b"] });
+    expect((hub as any).conversation.current.uuids).toEqual(["u-b"]);
+    expect((hub as any).conversation.current.origin).toBe("wechat");
+    cleanup(paths);
+  });
+});

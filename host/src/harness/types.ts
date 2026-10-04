@@ -13,7 +13,11 @@ export type HarnessEvent =
   | { type: "assistant_text"; text: string; parentToolUseId: string | null }
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown>; parentToolUseId: string | null }
   | { type: "tool_result"; toolUseId: string; content: string; isError: boolean; parentToolUseId: string | null }
-  | { type: "task_started"; taskId: string; toolUseId?: string; description: string; background?: boolean }
+  | { type: "task_started"; taskId: string; toolUseId?: string; description: string; background?: boolean; taskType?: string }
+  // the harness' full set of background tasks right now (replace, don't merge)
+  | { type: "background_tasks"; taskIds: string[] }
+  // the harness says this turn is answering these owner messages (by uuid)
+  | { type: "answering"; uuids: string[] }
   | { type: "task_progress"; taskId: string; toolUseId?: string; summary?: string }
   | { type: "task_backgrounded"; taskId: string }
   | { type: "task_notification"; taskId: string; toolUseId?: string; status: "completed" | "failed" | "stopped"; summary: string }
