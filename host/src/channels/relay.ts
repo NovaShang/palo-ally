@@ -113,7 +113,11 @@ export class RelayChannel {
     this.state = "connecting";
     const base = this.relayUrl.replace(/\/$/, "");
     try {
-      await fetch(`${base}/v1/daemon/register`, { method: "POST", headers: { "x-bento-daemon-id": this.daemonId } });
+      await fetch(`${base}/v1/daemon/register`, {
+        method: "POST",
+        headers: { "x-bento-daemon-id": this.daemonId },
+        signal: AbortSignal.timeout(15_000),
+      });
     } catch (e) {
       this.fail(`register failed: ${e}`);
       return;
@@ -126,19 +130,41 @@ export class RelayChannel {
     const ws = new WebSocket(wsUrl);
     ws.binaryType = "arraybuffer";
     this.ws = ws;
+    // After bento's daemon (relay/client.go, liveness.go): a dial that never
+    // opens is retried, backoff resets only once a session has proven stable,
+    // any inbound frame counts as liveness, and a socket replaced by another
+    // host with the same identity backs off instead of fighting it.
+    const dialTimer = setTimeout(() => {
+      if (this.ws === ws && ws.readyState === WebSocket.CONNECTING) {
+        this.log("dial timeout");
+        ws.close();
+      }
+    }, 20_000);
+    let stableTimer: ReturnType<typeof setTimeout> | null = null;
     ws.onopen = () => {
+      clearTimeout(dialTimer);
       this.state = "connected";
-      this.backoff = 1000;
       this.lastError = "";
       this.lastPong = Date.now();
       this.log(`connected as ${this.daemonId}`);
+      stableTimer = setTimeout(() => (this.backoff = 1000), 60_000);
       this.pingTimer = setInterval(() => this.ping(), 30_000);
     };
-    ws.onmessage = (ev) => this.onMessage(new Uint8Array(ev.data as ArrayBuffer));
+    ws.onmessage = (ev) => {
+      this.lastPong = Date.now();
+      this.onMessage(new Uint8Array(ev.data as ArrayBuffer));
+    };
     ws.onclose = (ev) => {
+      clearTimeout(dialTimer);
+      if (stableTimer) clearTimeout(stableTimer);
+      if (this.ws !== ws) return; // a stale socket
       if (this.pingTimer) clearInterval(this.pingTimer);
       for (const id of [...this.streams.keys()]) this.dropStream(id);
       if (ev.code === 4002) this.lastError = "relay 不支持当前协议版本，请更新 paloally";
+      if (ev.code === 4000) {
+        this.lastError = "另一个 paloally 用同一个身份连上了 relay（同一份 ~/.paloally 跑了两份？）";
+        this.backoff = 60_000;
+      }
       this.fail(`closed ${ev.code} ${ev.reason}`);
     };
     ws.onerror = () => {
@@ -150,14 +176,15 @@ export class RelayChannel {
     this.state = "disconnected";
     if (!this.lastError) this.lastError = why;
     if (this.stopped) return;
-    const delay = this.backoff;
+    // ±25% jitter so hosts don't reconnect in lockstep after a relay blip.
+    const delay = Math.round(this.backoff * (0.75 + Math.random() * 0.5));
     this.backoff = Math.min(this.backoff * 2, 60_000);
     this.log(`${why}; retry in ${delay}ms`);
     setTimeout(() => void this.connect(), delay);
   }
 
   private ping(): void {
-    if (Date.now() - this.lastPong > 120_000) {
+    if (Date.now() - this.lastPong > 75_000) {
       this.log("pong timeout; reconnecting");
       this.ws?.close();
       return;
