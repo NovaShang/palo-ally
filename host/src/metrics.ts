@@ -27,7 +27,7 @@ export function phase0Report(paths: Paths, days: number, timeZone: string, now =
     `主动触发：${proactiveTurns.length} 次，其中判断「不值得打扰」${skips} 次`,
     `任务：${tasks.length} 个（完成 ${count("done")} / 失败 ${count("failed")} / 等你 ${count("needs_input")} / 停止 ${count("stopped")}）；由 report_task 登记 ${tasks.filter((t) => t.source === "report").length} 个`,
     `对话：${turns.length} 轮，上下文最大 ${ctxMax} tokens；自动压缩 ${compacts.length} 次${compacts.length ? `（压缩前平均 ${Math.round(compacts.reduce((n, m) => n + m.preTokens, 0) / compacts.length)} tokens）` : ""}`,
-    `换新会话 ${metrics.filter((m) => m.type === "roll").length} 次；掉线 ${metrics.filter((m) => m.type === "offline").length} 次`,
+    `掉线 ${metrics.filter((m) => m.type === "offline").length} 次`,
     `主对话花费约 $${cost.toFixed(2)}`,
   ].join("\n");
 }

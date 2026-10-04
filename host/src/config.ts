@@ -20,7 +20,6 @@ export class Paths {
   get tasks() { return join(this.state, "tasks.json"); }
   get taskActivity() { return join(this.state, "task-activity"); }
   get approvals() { return join(this.state, "approvals.json"); }
-  get rules() { return join(this.state, "auto-rules.json"); }
   get watches() { return join(this.state, "watches.json"); }
   get runtime() { return join(this.state, "runtime.json"); }
   get usage() { return join(this.state, "usage.json"); }
@@ -65,7 +64,6 @@ export interface Config {
   permissionMode: "default" | "auto" | "acceptEdits" | "dontAsk";
   session: {
     idleCloseMinutes: number; // close the CLI process after idle; resume on next message
-    rollAfterTokens: number; // 0 = never roll to a fresh session (Phase 0: observe only)
   };
   budget: {
     probeDailyUsd: number; // probe stops for the day after this
@@ -87,7 +85,6 @@ export interface Config {
     // claude.ai login + the extension); dedicated: a separate Playwright profile
     // (works with any model / API key).
     mode: "shared" | "dedicated";
-    sensitiveDomains: string[]; // never navigated by the assistant's browser
     command?: string[]; // MCP server command; default Playwright MCP
   };
   extraMcpServers: Record<string, unknown>;
@@ -101,10 +98,10 @@ export function defaultConfig(): Config {
     hostName: hostname().replace(/\.local$/, ""),
     probeModel: "claude-haiku-4-5",
     probeInheritConnectors: false,
-    // Claude Code's own classifier approves safe calls and asks only when it
-    // can't tell; irreversible/outward actions always ask (our PreToolUse gate).
+    // Claude Code's own classifier approves safe calls and asks the owner only
+    // when it can't tell. Safety is the harness' job (PRD §6.5).
     permissionMode: "auto",
-    session: { idleCloseMinutes: 30, rollAfterTokens: 0 },
+    session: { idleCloseMinutes: 30 },
     budget: { probeDailyUsd: 1, mainDailyUsd: 0 },
     relay: { enabled: true, url: "https://relay.bentoai.dev" },
     wechat: { enabled: false, baseUrl: "https://ilinkai.weixin.qq.com" },
@@ -112,7 +109,6 @@ export function defaultConfig(): Config {
     browser: {
       enabled: true,
       mode: "shared",
-      sensitiveDomains: [],
     },
     extraMcpServers: {},
     settings: {

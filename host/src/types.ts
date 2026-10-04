@@ -47,7 +47,7 @@ export interface Approval {
   title: string;
   detail: string;
   taskId?: string;
-  irreversible: boolean;
+  careful: boolean; // the harness marked this prompt as needing care (defaultToNo)
   status: ApprovalStatus;
   createdAt: number;
   decidedAt?: number;
@@ -88,7 +88,6 @@ export interface Artifact {
 
 export interface Status {
   online: boolean;
-  killed: boolean;
   busy: boolean;
   activity?: string; // what it is doing right now, in plain words (only while busy)
   model: string; // the model actually running (reported by the harness)

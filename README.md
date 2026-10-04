@@ -27,9 +27,10 @@ paloally wechat login   # optional
 ## Everyday use
 
 ```sh
-paloally chat                 # talk in the terminal (/tasks /approvals /y id /n id /kill)
+paloally chat                 # talk in the terminal (/tasks /approvals /y id /n id /stop)
 paloally status | tasks | approvals | watch | artifacts | memory | audit
-paloally kill / resume        # kill switch / resume
+paloally stop                 # stop what it's doing (the harness' interrupt)
+paloally restart              # restart once it's idle (--now to force)
 paloally doctor               # health check
 ```
 
@@ -37,7 +38,7 @@ paloally doctor               # health check
 
 ```
 home/            the assistant's working directory: CLAUDE.md, user.md, soul.md, artifacts/
-state/           chat log, tasks, approvals, auto-approve rules, watches, usage, metrics
+state/           chat log, tasks, approvals, watches, usage, metrics
 audit/           daily JSONL audit log
 identity.json    host Ed25519 key + remote ID
 config.json      config (models, budgets, quiet hours, relay / WeChat / APNs / browser)

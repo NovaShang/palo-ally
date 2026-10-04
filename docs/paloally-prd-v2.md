@@ -23,7 +23,7 @@
 3. **记忆 = 小核心常驻 + 按需取回 + 任务后固化**，存浓缩笔记不是全文。Muse 的「Stored / Searchable / Loaded 是三种不同状态」，Dots 的「condensed notes, not transcripts」。
 4. **干活下沉**。重活交给子 agent（短、有界的独立会话），主对话只留轻量来回和一句话摘要，所以主对话涨得慢。
 5. **后台任务的执行、交回、用户收到是三件独立的事**。一个成功的后台任务不代表用户收到了结果。
-6. **能力靠 harness 与其生态**。现代 agent 通过内置工具 / 插件机制几乎无所不能；外壳不跟它抢能力，只补它做不到的（常驻、触达手机、可视化、安全闸）。
+6. **能力靠 harness 与其生态**。现代 agent 通过内置工具 / 插件机制几乎无所不能；外壳不跟它抢能力，只补它做不到的（常驻、触达手机、可视化、把 harness 的确认请求送到人手上）。安全判断、上下文与压缩、斜杠命令、模型切换都交给 harness（2026-10-04 修订）。
 
 ---
 
@@ -76,8 +76,8 @@
 1. 文字 + 语音输入；收到 2 秒内有反馈；markdown 渲染；轮内每段文字实时到达（已在 wechat-agent 验证）。
 2. **会话模型（吸收理念、原生落地）**：
    - 用 CC 原生 session + resume，不自造每请求上下文组装器。
-   - 不让主会话无限长：重活下沉子 agent（§6.2）；主会话按 idle 滚动（歇一段就收尾换新，用 resume 维持连续），而不是固定到点换、也不是无限滚。
-   - CC 自己的压缩接受、不替换，但靠「主会话轻 + idle 滚动」把压缩降到边缘而非主力。
+   - 不让主会话无限长：重活下沉子 agent（§6.2）；上下文与压缩全部交给 harness（2026-10-04 修订：不自己做滚动换会话）。
+   - 外壳只在空闲时关掉 CLI 进程省资源，下条消息 resume 同一会话。
    - 连续感来自客户端始终一个对话 + 记忆，不来自一根不断长的线。
 3. 待核实（§7.6）：CC SDK 对每轮上下文的控制边界，决定我们能向 Muse 靠多近。
 
@@ -99,7 +99,6 @@
 2. **所以不自建 memory_search**。搜索召回全靠原生。
 3. 外壳在记忆上只剩两件：
    - 维护小而精的核心（user.md / soul），通过 CLAUDE.md 注入（注意：只走一条注入路，避免和 CC 自动加载重复）。
-   - 可选的滚动前 flush，提醒模型把要紧的写进原生记忆再换会话；auto memory 本就边干边写，这条甚至可能不用特地做。
 4. 纪律（Hermes 教训）：核心文件小。啰嗦的进可搜索的记忆文件，不全注入，保证开局便宜、吃 prefix cache。（现 user.md 约 1.9 万字节，偏大，需瘦身。）
 
 ### 6.5 审批与安全（2026-10-04 修订：全部依赖 harness）
@@ -110,7 +109,10 @@
 5. **探针**：无人值守，用 harness 的 `auto` 模式加 `permissionPrompts: none`（拿不准的直接拒绝，不等人）。
 6. **想屏蔽某些网站或操作**：写进 Claude Code 自己的 deny 规则（`/permissions`），由 harness 执行。
 
-### 6.6 浏览器 / computer use（外壳自带能力，通过注入 MCP，不依赖 harness）
+### 6.6 浏览器 / computer use
+
+> 2026-10-04 修订：有 claude.ai 订阅的用户（人群 A），助理直接与主人**共用平常用的 Chrome**（harness 的 Claude in Chrome，`--chrome`），登录状态共享，判断交给 harness。下面第 2、3 条的专属 profile 方案保留给没有订阅的用户（人群 B），配置 `browser.mode = "dedicated"`。
+
 1. 已核实：Claude in Chrome 要 claude.ai 付费订阅；CC 内置 computer use 要 Pro/Max、仅 macOS/Windows、无 Linux、研究预览、不支持 API key。所以人群 B 用不了官方那套，不能依赖。
 2. 浏览器就活在 host 上，一个持久化专属 profile 的真实 Chrome，用户登录一次长期有效，用户随时可自己打开管理（桌面本机 / server 走已有 RDP/SSH）。这正是相对 Muse 的便宜之处：环境是用户自己的，不用我们造远程操控。
 3. 能力通过注入 MCP 提供：优先用现成的 CDP / 无障碍树类浏览器 MCP（Playwright MCP / Chrome DevTools MCP），对任何模型 / harness 可用、不要 claude.ai 账号。A、B 类统一走这套。
@@ -154,15 +156,15 @@ Apple 原生 App ─┐                      ┌── Host（用户常开的机
 3. **必须先定清、逐条核实的 SDK vs CLI 区别**：`canUseTool` 是 SDK 原语（wechat-agent 已验证可用）；`PushNotification`、`CronCreate` 是 Claude Code 的 harness/CLI 级工具，不是 SDK 原语，且 CronCreate 仅会话内存、7 天过期、仅空闲触发。到底是「SDK 驱动 CLI」还是「基于 SDK 自建」，能力集不同，开工前必须定并逐条验证（见 §7.6）。
 
 ### 7.3 PaloAlly 三件事 + 能力归属
-外壳只做三件 harness 做不到的事：**活着**（常驻托管进程、崩溃重启、恢复会话、idle 滚动、探针调度、watch 持久化）、**够得着人**（Relay + APNs + 微信）、**看得见**（客户端 + 对 harness 状态的只读投影 + 审批 / 审计）。
+外壳只做三件 harness 做不到的事：**活着**（常驻托管进程、崩溃重启、恢复会话、空闲关进程、探针调度、watch 持久化）、**够得着人**（Relay + APNs + 微信）、**看得见**（客户端 + 对 harness 状态的只读投影 + 把 harness 的确认请求送到人手上）。
 
 | 外壳（自己做） | Harness / 生态（复用） |
 |---|---|
 | 何时唤醒（探针 / watch 调度） | 推理、执行、工具调用、派子 agent |
 | 任务的只读投影 + report_task | 子 agent 的创建与生命周期 |
-| 审批展示 / 审计 / 停机 | 自身权限判断（auto 分类器） |
+| 确认请求的转达 / 停下按钮（调 harness 的 interrupt） | 全部权限判断（auto 分类器、规则、defaultToNo） |
 | 输出路由（主对话 / 推送 / 微信） | 记忆的内容与搜索（原生 auto memory） |
-| 会话 idle 滚动 | 会话内上下文与压缩 |
+| 空闲关进程、下次 resume | 会话内上下文与压缩 |
 | home 核心文件（CLAUDE.md / user.md）维护 | 读写记忆、Grep 搜索 |
 | 浏览器 / computer use 的 MCP 封装 + 专属 Chrome | 操作得好不好（吃模型） |
 | artifact 约定与资料库界面 | 生产 artifact 内容 |
@@ -187,13 +189,13 @@ Apple 原生 App ─┐                      ┌── Host（用户常开的机
 1. SDK 驱动下，`PushNotification` / `CronCreate` 等 harness 工具是否可用、行为如何；主动推送到底走哪条机制。
 2. CC SDK 对每轮上下文的控制边界（能否影响注入 / 裁剪），决定会话模型能向 Muse 靠多近、要不要自建更薄的上下文层。
 3. 探针 agent 如何以短上下文复用主 agent 的工具 / 连接器。
-4. idle 滚动 + resume 的连续性实测（resume 回放成本、断点体验）。
+4. 空闲关进程 + resume 的连续性实测（resume 回放成本、断点体验）。
 
 ---
 
 ## 8. 边界（V1 in/out）
 
-**IN**：Claude Code（SDK）单 harness；单 host 单用户；桌面 host = 一个 CLI 程序（含 onboarding）；复用 bento 的 relay；客户端 Apple 原生（iOS + Mac Catalyst）；主对话入口（微信 + CLI 先行，后续 App）；任务只读投影 + report_task；探针 + 自注册 watch 主动性；原生 auto memory + 核心文件维护；审批 + 安全（细粒度 / 单独确认 / 审计 / 停机）；浏览器自带 MCP + 专属 profile；artifact 文件约定。
+**IN**：Claude Code（SDK）单 harness；单 host 单用户；桌面 host = 一个 CLI 程序（含 onboarding）；复用 bento 的 relay；客户端 Apple 原生（iOS + Mac Catalyst）；主对话入口（微信 + CLI 先行，后续 App）；任务只读投影 + report_task；探针 + 自注册 watch 主动性；原生 auto memory + 核心文件维护；确认请求转达（安全判断交给 harness）+ 停下按钮；浏览器（订阅用户共用主人自己的 Chrome，经 Claude in Chrome；其他用户用专属 profile 的浏览器 MCP）；artifact 文件约定。
 
 **OUT**：ACP 与其他 agent；Android / 桌面主界面；托管 / 多用户；自建记忆搜索 / 上下文组装器 / 压缩 / 向量库；自管任务引擎；全屏 computer use；跨设备浏览器同步 / 镜像 / 串流；支付通道；产物分享；Relay 侧离线兜底执行。
 
@@ -215,12 +217,12 @@ Apple 原生 App ─┐                      ┌── Host（用户常开的机
 2. 「说一件事 → harness 原生派子 agent 办 → report_task 回摘要」。任务先不做完整状态机。
 3. 探针：小间隔、短上下文、便宜模型；读一个手写的 watch 列表（先 1-2 条，如「盯 X 的邮件」「每天晨报」）；没事就结束。验证频率与打扰感。
 4. 记忆：全用 CC 原生 auto memory，不动；核心 user.md 瘦身一次。
-5. 会话：先不做 idle 滚动，观察一个长会话多久撑不住、压缩损失多大，用数据决定要不要上滚动。
+5. 会话：不做滚动，压缩交给 harness；观察一个长会话多久压缩一次、压缩损失多大。
 6. artifact：往一个文件夹写 markdown，终端 / 微信直接读。
-7. 安全：dogfood 期作者本人是唯一操作者、跑在可信目录，终端手动确认即可；细粒度 auto 规则等有外部用户再做。
+7. 安全：全部交给 harness（`auto` 模式），外壳只转达确认请求。
 
 **OUT（本轮不做）**
-iOS App / APNs / 全部 tab UI；浏览器 MCP + 专属 Chrome（整块推后）；自注册 watch 的完整机制（先手写列表）；Gmail/日历打包连接器（OAuth 审核塞不进两周）；idle 滚动与滚动前 flush（先观察再做）；ACP 驱动层。
+iOS App / APNs / 全部 tab UI；浏览器 MCP + 专属 Chrome（整块推后）；自注册 watch 的完整机制（先手写列表）；Gmail/日历打包连接器（OAuth 审核塞不进两周）；ACP 驱动层。
 
 一句话：Phase 0 从「验证 6 件事」收敛成「验证 2 件事」，其余现成兜底，两周可达。
 
@@ -241,5 +243,5 @@ iOS App / APNs / 全部 tab UI；浏览器 MCP + 专属 Chrome（整块推后）
 作者本人连续用，替代现有微信通道。量化目标（上线后按真实数据校准阈值）：
 1. 任务办偏率低于某阈值（如每周 ≤X 次需要返工）。
 2. 主动推送频率可接受（如每天 ≤Y 条，0 条该发没发的晨报 / deadline）。
-3. 长会话稳定性：记录多久触发一次压缩、压缩后有无明显丢上下文，用于决定是否上 idle 滚动。
+3. 长会话稳定性：记录多久触发一次压缩、压缩后有无明显丢上下文，用于评估 harness 压缩是否够用。
 4. 主观：30 天内是否真的替代了现有通道、是否愿意继续用。

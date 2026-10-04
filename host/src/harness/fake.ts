@@ -9,7 +9,7 @@ import type {
 
 // A scripted turn: given the user text and the session's tools/permission
 // hooks, emit events. Lets tests drive the Hub deterministically, including
-// tool calls that go through the real approval gate.
+// tool calls that ask the owner through the real approval relay.
 export type FakeScript = (text: string, ctx: FakeCtx) => Promise<void>;
 
 export interface FakeCtx {

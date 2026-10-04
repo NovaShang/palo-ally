@@ -62,7 +62,7 @@ export class ApprovalManager {
       detail: describeInput(req.toolName, req.input),
       taskId: this.hooks.taskForToolUse(req.toolUseId),
       // the harness marks prompts that must not be approved casually
-      irreversible: !!req.defaultToNo,
+      careful: !!req.defaultToNo,
       status: "pending",
       createdAt: Date.now(),
       suggestedScope: remember ?? undefined,

@@ -102,7 +102,7 @@ d(`live harness (${MODEL})`, () => {
       await ask(`这个缓存文件没用了，帮我用 rm 删掉：${victim}`);
       approvalPolicy = () => null;
       const asked = hub.approvals.list();
-      console.log(`[live] harness asked: ${JSON.stringify(asked.map((a) => [a.tool, a.irreversible, a.status]))} file exists: ${existsSync(victim)}`);
+      console.log(`[live] harness asked: ${JSON.stringify(asked.map((a) => [a.tool, a.careful, a.status]))} file exists: ${existsSync(victim)}`);
       // The harness decides whether to ask. If it asked and we said no, the file must survive.
       if (asked.some((a) => a.status === "denied")) expect(existsSync(victim)).toBe(true);
     },
@@ -184,16 +184,13 @@ dBrowser("live browser MCP (headless Playwright, dedicated profile)", () => {
   const config = testConfig((c) => {
     c.model = MODEL;
     c.browser.enabled = true;
-    c.browser.sensitiveDomains = ["example.org"];
+    c.browser.mode = "dedicated";
     c.browser.command = ["npx", "-y", "@playwright/mcp@latest", "--headless", "--browser", "chrome", "--user-data-dir", paths.browserProfile];
   });
   const hub = new Hub({ paths, config, driver: new ClaudeCodeDriver(), log: (s) => console.log(`[hub] ${s}`) });
-  const asked: string[] = [];
+  // whatever the harness asks, say yes (safety decisions are the harness' own)
   hub.bus.on((event, data: any) => {
-    if (event === "approval.updated" && data.status === "pending") {
-      asked.push(`${data.tool} ${data.detail}`);
-      setTimeout(() => hub.approvals.answer(data.id, true, "test"), 50);
-    }
+    if (event === "approval.updated" && data.status === "pending") setTimeout(() => hub.approvals.answer(data.id, true, "test"), 50);
   });
   afterAll(() => {
     hub.stop();
@@ -203,17 +200,13 @@ dBrowser("live browser MCP (headless Playwright, dedicated profile)", () => {
   });
 
   test(
-    "navigates with approval, refuses sensitive domains",
+    "opens a page in the assistant's browser and reads it",
     async () => {
-      hub.userMessage("用浏览器打开 https://example.com ，告诉我页面的大标题是什么。然后再打开 https://example.org 看看。", "app");
+      hub.userMessage("用浏览器打开 https://example.com ，告诉我页面的大标题是什么。", "app");
       await hub.idle();
       const text = hub.chat.recent(20).filter((m) => m.role === "assistant").map((m) => m.text).join("\n");
-      console.log(`[live] browser asked: ${JSON.stringify(asked)}\n[live] reply: ${text.slice(0, 400)}`);
-      expect(asked.some((a) => a.includes("browser_navigate") && a.includes("example.com"))).toBe(true);
+      console.log(`[live] reply: ${text.slice(0, 300)}`);
       expect(text).toContain("Example Domain");
-      expect(asked.some((a) => a.includes("example.org"))).toBe(false); // denied by the gate, never reaches a card
-      const audit = hub.audit.tail(100);
-      expect(audit.some((e) => e.type === "tool" && String(e.tool).includes("browser_navigate"))).toBe(true);
       expect(existsSync(paths.browserProfile)).toBe(true);
     },
     T,

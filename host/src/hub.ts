@@ -35,7 +35,6 @@ interface Turn {
   text: string; // what the model sees
   origin: Channel;
   proactive: boolean; // output is filtered for [skip] and routed as a push
-  hidden?: boolean; // internal (flush): never shown
   wechat?: WechatReplyTarget;
   implicit?: boolean; // harness started a turn on its own (e.g. a background task finished)
   label?: string;
@@ -228,7 +227,6 @@ export class Hub {
   status(): Status {
     return {
       online: true,
-      killed: false, // kept for older clients; nothing stays blocked any more
       busy: this.busy,
       activity: this.busy ? this.activity || "正在想" : undefined,
       model: this.model || this.config.model || "",
@@ -275,11 +273,10 @@ export class Hub {
 
   private tryCommand(t: string, channel: Channel, wechat?: WechatReplyTarget): string | null {
     const by = channel;
-    if (/^\/(kill|stop|急停|停)$/i.test(t)) {
+    if (/^\/(stop|停)$/i.test(t)) {
       this.stopAll(by);
       return "好，手上的事都停下了。";
     }
-    if (/^\/(resume|恢复)$/i.test(t)) return "我在，直接说要做什么就行。";
     if (/^\/status$/i.test(t)) {
       const s = this.status();
       const running = this.tasks.running().length;
@@ -297,8 +294,6 @@ export class Hub {
         return allow ? "好，已同意。" : "好，已拒绝。";
       }
     }
-    void by;
-    void wechat;
     return null;
   }
 
@@ -321,7 +316,7 @@ export class Hub {
       return;
     }
     const turn = this.queue.shift()!;
-    if (turn.proactive && !turn.hidden && this.overMainBudget()) {
+    if (turn.proactive && this.overMainBudget()) {
       this.log(`proactive turn dropped: main budget used up (${turn.label ?? turn.origin})`);
       if (this.budgetNoticeDay !== this.usage().day) {
         this.budgetNoticeDay = this.usage().day;
@@ -437,7 +432,7 @@ export class Hub {
         this.emitStatus();
         break;
       case "text_delta":
-        if (turn && !turn.proactive && !turn.hidden) {
+        if (turn && !turn.proactive) {
           if (!this.deltaId) this.deltaId = `m_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
           this.deltaText += e.text;
           this.chat.delta(this.deltaId, e.text);
@@ -449,7 +444,7 @@ export class Hub {
           break;
         }
         this.turnTexts.push(e.text);
-        if (turn && !turn.proactive && !turn.hidden) {
+        if (turn && !turn.proactive) {
           this.chat.add({ id: this.deltaId ?? undefined, role: "assistant", kind: "text", text: e.text, channel: turn.origin });
         }
         this.deltaId = null;
@@ -538,16 +533,16 @@ export class Hub {
     if (turn) {
       this.metric({ type: "turn", origin: turn.origin, proactive: turn.proactive, costUsd, contextTokens, error });
       const text = this.turnTexts.join("\n\n").trim();
-      if (error && !turn.hidden) {
+      if (error) {
         this.chat.add({ role: "system", kind: "notice", text: friendlyError(error), channel: "system" });
       }
       const shown = stripSkip(text);
       // The owner spoke while this proactive turn ran and it answered them too:
       // show it as a normal reply (no push), not as something it brought up.
-      const ownerFolded = (turn.proactive || turn.hidden) && answered.length > 0;
+      const ownerFolded = turn.proactive && answered.length > 0;
       if (ownerFolded) {
         if (shown) this.chat.add({ role: "assistant", kind: "text", text: shown, channel: answered[0]!.origin });
-      } else if (turn.proactive && !turn.hidden) {
+      } else if (turn.proactive) {
         if (shown) {
           const msg = this.chat.add({ role: "assistant", kind: "text", text: shown, channel: turn.origin, proactive: true });
           void this.router.proactive(msg);
@@ -575,7 +570,7 @@ export class Hub {
     for (const w of this.turnWaiters.splice(0)) w();
   }
 
-  // ---------------- session idle / roll ----------------
+  // ---------------- session idle ----------------
 
   private scheduleIdle(): void {
     if (this.idleTimer) clearTimeout(this.idleTimer);
@@ -670,7 +665,7 @@ export class Hub {
     const msg = this.chat.add({
       role: "assistant",
       kind: "approval",
-      text: `这一步要你点头：${a.title}${a.irreversible ? "（做了撤不回）" : ""}`,
+      text: `这一步要你点头：${a.title}${a.careful ? "（请仔细看一下）" : ""}`,
       channel: "system",
       approvalId: a.id,
       taskId: a.taskId,
@@ -691,8 +686,7 @@ export class Hub {
   // a name clash) and drops the ones that only make sense in a terminal.
   commandList(): SlashCommandInfo[] {
     const own: SlashCommandInfo[] = [
-      { name: "kill", description: "全部停下（急停）" },
-      { name: "resume", description: "从急停恢复" },
+      { name: "stop", description: "停下手上的事" },
       { name: "status", description: "看看我在忙什么" },
     ];
     const ownNames = new Set(own.map((c) => c.name));
@@ -927,9 +921,6 @@ export class Hub {
   }
 }
 
-export function shortId(id: string): string {
-  return id.slice(-4);
-}
 
 function statusWord(s: string): string {
   return s === "done" ? "办完了" : s === "failed" ? "没办成" : s === "needs_input" ? "需要你" : "已停止";

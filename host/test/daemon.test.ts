@@ -92,14 +92,14 @@ describe("daemon over the local socket", () => {
     expect(r.out).toContain("user.md");
   }, 60_000);
 
-  test("CLI: approve a pending irreversible action by short id", async () => {
+  test("CLI: approve a pending careful action by short id", async () => {
     const c = await LocalClient.connect(paths.socket);
     await c.call("chat.send", { text: "risky" });
     await waitFor(() => d.hub.approvals.listPending().length === 1);
     const a = d.hub.approvals.listPending()[0]!;
     let r = await cli("approvals");
     expect(r.out).toContain(a.id.slice(-4));
-    expect(r.out).toContain("不可撤销");
+    expect(r.out).toContain("请仔细看");
     r = await cli("deny", a.id.slice(-4));
     expect(r.out.trim()).toBe("denied");
     c.close();

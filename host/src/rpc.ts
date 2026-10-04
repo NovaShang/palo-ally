@@ -15,6 +15,20 @@ export interface RpcRequest {
   params?: any;
 }
 
+// The app-facing protocol (docs/design.md §5.3). test/protocol.test.ts drives
+// every one of these and writes the samples the Swift client decodes strictly.
+export const RPC_METHODS = [
+  "hello", "sync", "chat.send", "chat.history", "commands.list", "model.get", "model.set",
+  "task.get", "task.stop", "approval.answer", "watch.add", "watch.update", "watch.remove",
+  "artifact.list", "artifact.read", "artifact.pin", "memory.list", "memory.read", "memory.write",
+  "settings.update", "stop", "push.register", "push.unregister", "device.unpair", "audit.tail",
+] as const;
+
+export const RPC_EVENTS = [
+  "chat.message", "chat.delta", "task.updated", "approval.updated", "watch.updated",
+  "artifact.updated", "settings.updated", "status", "commands.updated",
+] as const;
+
 // Admin methods are reachable only on the local unix socket (the owner's own
 // machine), never through the relay.
 export type AdminHandler = (method: string, params: any) => Promise<unknown> | unknown;
@@ -94,13 +108,11 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
         throw new Error("这个文件刚被助理改过，请重新打开再改");
       hub.memory.write(String(p.path), String(p.content ?? ""));
       hub.audit.log("memory.write", { path: p.path, by: ctx.channel });
-      return { ok: true };
+      return { ok: true, updatedAt: hub.memory.mtime(String(p.path)) };
     case "settings.update":
       return { settings: hub.updateSettings(p.patch ?? {}) };
-    case "kill": // the stop button
+    case "stop":
       hub.stopAll(ctx.channel);
-      return { status: hub.status() };
-    case "resume": // nothing stays blocked after a stop; kept for older clients
       return { status: hub.status() };
     case "push.register": {
       const tokens = readJson<{ token: string; env: string; at: number }[]>(hub.paths.pushTokens, []);

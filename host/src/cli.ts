@@ -179,7 +179,7 @@ function printApprovals(list: any[]): void {
   const pending = list.filter((a) => a.status === "pending");
   if (!pending.length) return console.log("没有待确认的操作。");
   for (const a of pending) {
-    console.log(`🔐 ${a.id.slice(-4)}  ${a.title}${a.irreversible ? "（不可撤销）" : ""}\n    ${a.detail}`);
+    console.log(`🔐 ${a.id.slice(-4)}  ${a.title}${a.careful ? "（请仔细看）" : ""}\n    ${a.detail}`);
   }
 }
 
@@ -335,8 +335,7 @@ async function main(): Promise<void> {
       return;
     }
     case "stop":
-    case "kill":
-      await call("kill");
+      await call("stop");
       console.log("已停下手上的事。");
       return;
     case "audit": {

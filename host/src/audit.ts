@@ -3,8 +3,9 @@ import { readdirSync } from "node:fs";
 import type { AuditEntry } from "./types.ts";
 import { appendJsonl, readJsonl, truncate } from "./util.ts";
 
-// Audit is the append-only action log (PRD §6.5.5): every tool call, approval
-// decision, outbound message, and kill/resume. One JSONL file per UTC day.
+// Audit is the shell's own event log: approval decisions, deliveries, restarts,
+// stops. Tool calls themselves are in the harness' session transcripts.
+// One JSONL file per UTC day.
 export class Audit {
   constructor(private dir: string) {}
 

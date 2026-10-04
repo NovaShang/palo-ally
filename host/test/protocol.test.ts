@@ -1,0 +1,95 @@
+// Contract between host and app: drive every RPC method and event through a
+// real Hub, check the method list matches the implementation, and write the
+// samples to the Swift test fixtures (decoded strictly on the client side).
+import { describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { RPC_EVENTS, RPC_METHODS, handleRpc } from "../src/rpc.ts";
+import type { FakeScript } from "../src/harness/fake.ts";
+import { cleanup, makeHub, tick } from "./helpers.ts";
+
+const script: FakeScript = async (t, ctx) => {
+  if (t === "派个任务") {
+    ctx.emit({ type: "tool_use", id: "ag1", name: "Agent", input: { description: "查资料" }, parentToolUseId: null });
+    await ctx.opts.tools.report_task({ id: "r1", summary: "在查", status: "running", title: "查资料" });
+    ctx.emit({ type: "tool_use", id: "s1", name: "WebSearch", input: { query: "q" }, parentToolUseId: "ag1" });
+    return;
+  }
+  if (t === "要确认") {
+    await ctx.useTool("Bash", { command: "npm test" }, {
+      ask: true,
+      suggestions: [{ type: "addRules", behavior: "allow", destination: "localSettings", rules: [{ toolName: "Bash", ruleContent: "npm test:*" }] }],
+    });
+    return;
+  }
+  ctx.emit({ type: "text_delta", text: "你好" });
+  ctx.emit({ type: "assistant_text", text: "你好，我在。", parentToolUseId: null });
+};
+
+describe("host ↔ app protocol", () => {
+  test("every method answers, every event fires; samples written for the Swift client", async () => {
+    const { hub, paths, events } = makeHub({ script });
+    hub.onUnpairDevice = () => {};
+    const ctx = { clientId: "app_1_dev-x", deviceId: "dev-x", channel: "app" as const, local: false };
+    const call = async (method: string, params: unknown = {}) => {
+      const r = await handleRpc(hub, { method, params }, ctx);
+      return JSON.parse(JSON.stringify(r ?? null));
+    };
+    const methods: Record<string, { params: unknown; result: unknown }> = {};
+    const run = async (method: string, params: unknown = {}) => (methods[method] = { params, result: await call(method, params) }).result as any;
+
+    await run("hello", { client: "ios", version: "test" });
+    await run("chat.send", { text: "你好", clientMsgId: "c-1" });
+    await hub.idle();
+    await run("sync", {});
+    await run("chat.history", { beforeSeq: 99, limit: 10 });
+    await run("commands.list");
+    const models = await run("model.get");
+    await run("model.set", { model: models.models[0].value, effort: "medium" });
+    hub.userMessage("派个任务", "app");
+    await hub.idle();
+    const task = hub.tasks.list()[0]!;
+    await run("task.get", { id: task.id });
+    await run("task.stop", { id: task.id });
+    hub.userMessage("要确认", "app");
+    await tick(10);
+    await run("approval.answer", { id: hub.approvals.listPending()[0]!.id, allow: true, remember: true });
+    await hub.idle();
+    const w = (await run("watch.add", { title: "晨报", instruction: "整理日程", at: ["08:30"] })).watch;
+    await run("watch.update", { id: w.id, patch: { enabled: false } });
+    await run("watch.remove", { id: w.id });
+    mkdirSync(join(paths.artifacts, "brief"), { recursive: true });
+    writeFileSync(join(paths.artifacts, "brief", "brief.md"), "# 晨报\n- 一件事");
+    hub.artifacts.publish("brief", "晨报", "brief.md", "markdown");
+    await run("artifact.list");
+    await run("artifact.read", { id: "brief" });
+    await run("artifact.pin", { id: "brief", pinned: true });
+    await run("memory.list");
+    const mem = await run("memory.read", { path: "user.md" });
+    await run("memory.write", { path: "user.md", content: "# 关于主人\n", baseUpdatedAt: mem.updatedAt });
+    await run("settings.update", { patch: { maxProactivePerDay: 5 } });
+    await run("push.register", { token: "a".repeat(64), env: "sandbox" });
+    await run("push.unregister", { token: "a".repeat(64) });
+    await run("audit.tail", { limit: 3 });
+    await run("stop");
+    await run("device.unpair");
+    await tick(150);
+
+    // the documented list is exactly what's implemented
+    expect(Object.keys(methods).sort()).toEqual([...RPC_METHODS].sort());
+    await expect(call("no.such.method")).rejects.toThrow("unknown method");
+
+    const sampleEvents: Record<string, unknown> = {};
+    for (const e of events) if (!(e.event in sampleEvents)) sampleEvents[e.event] = JSON.parse(JSON.stringify(e.data));
+    // commands.updated fires when the harness reports its list
+    expect(Object.keys(sampleEvents).sort()).toEqual([...RPC_EVENTS].sort());
+
+    const fixture = { methods, events: sampleEvents };
+    const out = resolve(import.meta.dir, "../../ios/PaloAllyKit/Tests/PaloAllyKitTests/Fixtures/protocol.json");
+    if (existsSync(resolve(import.meta.dir, "../../ios/PaloAllyKit"))) {
+      mkdirSync(dirname(out), { recursive: true });
+      writeFileSync(out, JSON.stringify(fixture, null, 2) + "\n");
+    }
+    cleanup(paths);
+  });
+});

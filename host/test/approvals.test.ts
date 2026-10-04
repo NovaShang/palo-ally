@@ -37,7 +37,7 @@ describe("ApprovalManager (relay only)", () => {
     expect(a.taskId).toBe("t_1");
     expect(a.title).toBe("在电脑上运行一条命令");
     expect(a.suggestedScope).toBe("cmd:git status");
-    expect(a.irreversible).toBe(false);
+    expect(a.careful).toBe(false);
     m.answer(a.id, true, "app", true);
     m.answer(a.id, false, "wechat"); // late answer ignored
     const d = await p;
@@ -56,11 +56,11 @@ describe("ApprovalManager (relay only)", () => {
     cleanup(paths);
   });
 
-  test("the harness' defaultToNo marks it irreversible and never offers remember", async () => {
+  test("the harness' defaultToNo marks it careful and never offers remember", async () => {
     const { m, paths } = mk();
     void m.request(req("Bash", { command: "git push" }, { defaultToNo: true, suggestions: bashRule }));
     const a = m.listPending()[0]!;
-    expect(a.irreversible).toBe(true);
+    expect(a.careful).toBe(true);
     expect(a.suggestedScope).toBeUndefined();
     void m.request(req("Bash", { command: "x" }, { suppressAlwaysAllowRule: true, suggestions: bashRule }));
     expect(m.listPending()[1]!.suggestedScope).toBeUndefined();

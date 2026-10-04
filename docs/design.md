@@ -13,8 +13,8 @@ host/        桌面 host = 一个 CLI 程序（Bun + TypeScript），daemon + on
     hub.ts              中枢：把各通道、harness、任务、审批、探针串起来
     harness/            驱动层（ACP 形状接口，V1 只有 Claude Code 实现 + 测试用 fake）
     tasks.ts            任务只读投影 + report_task
-    approvals.ts        审批、细粒度 auto 规则、不可逆闸
-    audit.ts            审计日志
+    approvals.ts        转达 harness 的确认请求（不自己做判断）
+    audit.ts            外壳自己的事件日志（确认决定、推送、重启、停下）
     probe.ts            探针调度 + watch 持久化 + 游标去重
     artifacts.ts        artifact 约定与资料库
     memory.ts           核心文件 + 原生 auto memory 的可见/可编辑投影
@@ -34,7 +34,7 @@ relay/       不新写：复用 ~/code/bento/relay（bento-relay-acp，relay.ben
 `paloally start` 前台跑 daemon（`paloally service install` 装成 launchd/systemd 常驻）。daemon 内：
 
 - **一个主会话**：Claude Agent SDK `query()`，streaming input（AsyncIterable），常驻；所有通道的用户消息排进同一个输入队列。session id 持久化，进程重启 `resume`。
-- **idle 处理**：空闲 `session.idleCloseMinutes` 后关掉 CLI 子进程（省资源），下条消息 `resume` 同一会话。`session.rollAfterTokens > 0` 时，空闲且上下文超阈值则先发一轮 flush（「把要紧的写进记忆」）再换新会话。Phase 0 默认不滚动，只记录压缩事件（`compact_boundary`）用于 §12.3 评估。
+- **idle 处理**：空闲 `session.idleCloseMinutes` 后关掉 CLI 子进程（省资源），下条消息 `resume` 同一会话。上下文与压缩交给 harness；外壳只记录压缩事件（`compact_boundary`）用于 §12.3 评估。
 - **探针**：独立短上下文 `query()`（便宜模型、`persistSession:false`、结构化输出），只在有 watch 到期时才跑；没到期的 tick 零调用。
 - **本地控制面**：`~/.paloally/run/host.sock`（unix socket，行分隔 JSON，同一套 RPC），CLI 子命令通过它和 daemon 说话。
 
@@ -87,7 +87,7 @@ relay/       不新写：复用 ~/code/bento/relay（bento-relay-acp，relay.ben
 
 请求 `{"id":<number>,"method":"…","params":{…}}` → 响应 `{"id":<number>,"result":…}` 或 `{"id":<number>,"error":{"message":"…"}}`；事件 `{"event":"…","data":…}`。
 
-**模型**
+**模型**（以 `host/src/types.ts` 为准；样例由 `host/test/protocol.test.ts` 生成到 `ios/PaloAllyKit/Tests/PaloAllyKitTests/Fixtures/protocol.json`，Swift 端严格解码）
 
 ```ts
 ChatMessage { seq:number; id:string; role:"user"|"assistant"|"system";
@@ -98,47 +98,56 @@ ChatMessage { seq:number; id:string; role:"user"|"assistant"|"system";
 Task { id; title; summary; status:"running"|"done"|"failed"|"needs_input"|"stopped";
   source:"auto"|"report"; createdAt; updatedAt; activityCount:number }
 TaskActivity { ts; kind:"tool_use"|"tool_result"|"text"; tool?:string; text:string }
-Approval { id; tool; title; detail; taskId?; irreversible:boolean;
+Approval { id; tool; title; detail; taskId?;
+  careful:boolean /* harness 标了 defaultToNo */;
   status:"pending"|"allowed"|"denied"|"expired"; createdAt; decidedAt?; decidedBy?;
-  suggestedScope?:string }
+  suggestedScope?:string /* "cmd:…" | "domain:…" | "path:…" | "tool:…"，来自 harness 的建议规则 */ }
 Watch { id; title; kind:"check"|"schedule"; instruction; intervalMinutes?:number;
   at?:string[] /*"HH:MM" 本地时区*/; enabled:boolean; createdBy:"agent"|"user";
   lastCheckedAt?; lastTriggeredAt?; skipIfActiveMinutes?:number }
 Artifact { id; title; type; mainFile; pinned:boolean; updatedAt;
   files:{path:string; size:number}[] }
 Settings { timezone; quietHours:{start:"HH:MM"; end:"HH:MM"}|null;
-  maxProactivePerDay:number; probeIntervalMinutes:number; approvalTimeoutMinutes:number }
-Status { online:boolean; killed:boolean; busy:boolean; model:string;
-  sessionId?:string; wechat:"off"|"connected"|"expired"; version:string }
+  maxProactivePerDay:number; probeIntervalMinutes:number; approvalTimeoutMinutes:number;
+  wechatProactive:"off"|"hint"|"full" }
+Status { online:boolean; busy:boolean; activity?:string /* 忙时在干嘛 */;
+  model:string; effort?:string; sessionId?:string;
+  wechat:"off"|"connected"|"expired"; version:string }
 MemoryFile { path; scope:"core"|"auto"; size; updatedAt }
+SlashCommand { name; description; argumentHint? }
+ModelOption { value; displayName; description; efforts:string[] }
 ```
 
-**方法**
+**方法**（`RPC_METHODS` in `host/src/rpc.ts`）
 
 | method | params | result |
 |---|---|---|
 | `hello` | `{client:"ios"\|"mac"\|"cli", version}` | `{hostName, version, status}` |
 | `sync` | `{sinceSeq?:number}` | `{seq, messages, tasks, approvals, watches, artifacts, settings, status}`（messages：sinceSeq 之后的，最多 500；无 sinceSeq 时最近 100） |
-| `chat.send` | `{text, clientMsgId?}` | `{id, seq}` |
+| `chat.send` | `{text, clientMsgId?}` | `{id, seq}`（同一 clientMsgId 重发只执行一次，返回原来的） |
 | `chat.history` | `{beforeSeq, limit}` | `{messages}` |
+| `commands.list` | `{}` | `{commands:SlashCommand[]}` |
+| `model.get` | `{}` | `{model, setting, effort, models:ModelOption[]}` |
+| `model.set` | `{model?:string\|null, effort?:string\|null}` | `{status}` |
 | `task.get` | `{id}` | `{task, activity:TaskActivity[]}` |
 | `task.stop` | `{id}` | `{ok}` |
-| `approval.answer` | `{id, allow, remember?}` | `{status}` |
+| `approval.answer` | `{id, allow, remember?}` | `{status}`（remember = 把 harness 的建议规则交回给它） |
 | `watch.add` | `Watch` 去掉 id/createdBy | `{watch}` |
 | `watch.update` | `{id, patch}` | `{watch}` |
 | `watch.remove` | `{id}` | `{ok}` |
 | `artifact.list` | `{}` | `{artifacts}` |
 | `artifact.read` | `{id, path?, offset?, length?}` | `{data /*b64*/, size, mime, eof}`（每块 ≤ 256 KiB） |
 | `artifact.pin` | `{id, pinned}` | `{artifact}` |
-| `memory.list` | `{}` | `{files}` |
-| `memory.read` | `{path}` | `{content}` |
-| `memory.write` | `{path, content}` | `{ok}` |
+| `memory.list` | `{}` | `{files, coreSize}` |
+| `memory.read` | `{path}` | `{content, updatedAt}` |
+| `memory.write` | `{path, content, baseUpdatedAt?}` | `{ok, updatedAt}`（文件在 baseUpdatedAt 之后被改过则报错「这个文件刚被助理改过，请重新打开再改」） |
 | `settings.update` | `{patch}` | `{settings}` |
-| `kill` / `resume` | `{}` | `{status}` |
-| `push.register` | `{token, env:"sandbox"\|"production"}` | `{ok}` |
+| `stop` | `{}` | `{status}`（harness 的 interrupt + stopTask；不留阻塞状态） |
+| `push.register` / `push.unregister` | `{token, env?}` / `{token}` | `{ok}` |
+| `device.unpair` | `{}` | `{ok}`（移除发起调用的这台设备） |
 | `audit.tail` | `{limit}` | `{entries}` |
 
-**事件**：`chat.message`（ChatMessage）、`chat.delta`（`{id, text}` 追加文本，最终以同 id 的 `chat.message` 收尾）、`task.updated`（Task）、`approval.updated`（Approval）、`watch.updated`（`{watch}` 或 `{removed:id}`）、`artifact.updated`（Artifact）、`settings.updated`、`status`（Status）。
+**事件**（`RPC_EVENTS`）：`chat.message`（ChatMessage）、`chat.delta`（`{id, text}` 追加文本，最终以同 id 的 `chat.message` 收尾；轮次中断时外壳也会补发收尾）、`task.updated`（Task）、`approval.updated`（Approval）、`watch.updated`（`{watch}` 或 `{removed:id}`）、`artifact.updated`（Artifact）、`settings.updated`（Settings）、`status`（Status）、`commands.updated`（`{commands}`）。
 
 ## 6. 路由规则
 

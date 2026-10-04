@@ -212,7 +212,7 @@ describe("Hub: tasks via report_task", () => {
     cleanup(paths);
   });
 
-  test("task.stop and kill stop running tasks", async () => {
+  test("task.stop stops a running task", async () => {
     const script: FakeScript = async (_t, ctx) => {
       ctx.emit({ type: "tool_use", id: "ag", name: "Agent", input: { description: "长任务", run_in_background: true }, parentToolUseId: null });
       ctx.emit({ type: "task_started", taskId: "sdk-9", toolUseId: "ag", description: "长任务", background: true });
@@ -242,7 +242,7 @@ describe("Hub: relaying the harness' approvals", () => {
     await tick(10);
     const pending = hub.approvals.listPending();
     expect(pending).toHaveLength(1);
-    expect(pending[0]!.irreversible).toBe(true); // the harness' defaultToNo
+    expect(pending[0]!.careful).toBe(true); // the harness' defaultToNo
     const card = hub.chat.recent(5).find((m) => m.kind === "approval")!;
     expect(card.approvalId).toBe(pending[0]!.id);
     expect(pusher.pushes.some((p) => p.title === "需要你确认")).toBe(true);
@@ -293,7 +293,7 @@ describe("Hub: relaying the harness' approvals", () => {
     await hub.idle();
     await tick(10);
     expect(result).toBe(false);
-    expect(hub.status().killed).toBe(false);
+    
     hub.userMessage("在吗", "app");
     await hub.idle();
     expect(hub.chat.recent(1)[0]!.text).toBe("ok");
@@ -481,7 +481,7 @@ describe("Hub: slash commands", () => {
     const list = await hub.loadCommands();
     expect(driver.sessions).toHaveLength(1); // started a session just to learn the list
     const names = list.map((c) => c.name);
-    expect(names.slice(0, 3)).toEqual(["kill", "resume", "status"]);
+    expect(names.slice(0, 2)).toEqual(["stop", "status"]);
     expect(names).toContain("compact");
     expect(names).toContain("pdf");
     expect(names).not.toContain("doctor");
