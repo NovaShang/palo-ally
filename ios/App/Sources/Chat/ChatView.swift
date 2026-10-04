@@ -6,6 +6,13 @@ struct ChatView: View {
     @Environment(AppStore.self) private var store
     @Environment(VoiceInputController.self) private var voice
     @State private var draft = ""
+    /// Following the live bottom (streaming keeps the newest text in view).
+    /// Detached as soon as the reader drags up even a little; re-attached
+    /// when they come back near the bottom or tap the jump button.
+    @State private var pinned = true
+    /// The finger (or its fling) is moving the list — only that can detach.
+    @State private var userScrolling = false
+    @State private var distanceFromBottom: CGFloat = 0
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -13,7 +20,13 @@ struct ChatView: View {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     if store.hasOlderMessages {
                         Button {
-                            Task { await store.loadOlder() }
+                            // Keep the first message where it was: prepending
+                            // above must not shove the reader's place down.
+                            let anchor = store.messages.first?.id
+                            Task {
+                                await store.loadOlder()
+                                if let anchor { proxy.scrollTo(anchor, anchor: .top) }
+                            }
                         } label: {
                             if store.isLoadingOlder { ProgressView() } else { Text("看看更早的") }
                         }
@@ -53,16 +66,60 @@ struct ChatView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             }
-            .defaultScrollAnchor(.bottom)
+            // Opens at the bottom; growth keeps the bottom in place only while
+            // pinned — detached, the offset from the top stays put so the
+            // text being read doesn't move under the reader.
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
+            .defaultScrollAnchor(.bottom, for: .alignment)
+            .defaultScrollAnchor(pinned ? .bottom : .top, for: .sizeChanges)
             .scrollDismissesKeyboard(.immediately)
+            .onScrollPhaseChange { _, phase in
+                userScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+            }
+            .onScrollGeometryChange(for: CGFloat.self) { g in
+                max(0, g.contentSize.height + g.contentInsets.bottom - g.containerSize.height - g.contentOffset.y)
+            } action: { old, new in
+                distanceFromBottom = new
+                if userScrolling {
+                    // Like the ChatGPT / Claude apps: the slightest drag up
+                    // stops following; drifting back down near the end resumes.
+                    if new > old + 0.5, new > ChatScroll.detachDistance {
+                        if pinned { pinned = false }
+                    } else if new < old, new <= ChatScroll.reattachDistance {
+                        if !pinned { pinned = true }
+                    }
+                } else if new <= 2, !pinned {
+                    pinned = true
+                }
+            }
             .onChange(of: store.messages.last?.id) {
+                // Sending always returns to the live bottom.
+                if store.messages.last?.role == .user { pinned = true }
+                guard pinned, !userScrolling else { return }
                 withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             .onChange(of: store.messages.last?.text) {
+                guard pinned, !userScrolling else { return }
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
             .onChange(of: showsBusyIndicator) {
+                guard pinned, !userScrolling else { return }
                 withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            .overlay(alignment: .bottom) {
+                let showJump = !pinned && distanceFromBottom > ChatScroll.reattachDistance
+                ZStack {
+                    if showJump {
+                        JumpToLatestButton(streaming: store.isBusy) {
+                            pinned = true
+                            withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
+                        }
+                        .padding(.bottom, 10)
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+                    }
+                }
+                // Scoped to the button: must not animate the list itself.
+                .animation(.snappy(duration: 0.2), value: showJump)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
