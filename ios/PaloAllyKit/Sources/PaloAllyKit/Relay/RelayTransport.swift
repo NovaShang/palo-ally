@@ -264,11 +264,13 @@ public actor RelayTransport: HostTransport {
             let welcome = try await withTimeout(handshakeTimeout, onTimeout: { l.close() }) { try await l.receive() }
             channel = try handshake.finish(welcomeUnit: welcome)
         } catch let e as E2EError {
+            debugLog("relay handshake failed: \(e)")
             switch e {
             case .rejected(let m): return .rejected(m)
             default: return .network(e.localizedDescription)
             }
         } catch {
+            debugLog("relay connect failed: \(error)")
             return .network(error.localizedDescription)
         }
         if stopped { return .closed }
@@ -287,6 +289,7 @@ public actor RelayTransport: HostTransport {
                     if Task.isCancelled { break }
                     // Dead link: close it so the pump's receive fails and the
                     // run loop reconnects immediately.
+                    debugLog("relay ping timed out; reconnecting")
                     l.close()
                     await self?.pingFailed(generation)
                     break

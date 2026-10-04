@@ -50,6 +50,9 @@ private struct UserBubble: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
                     .background(Color.accentColor.gradient, in: .rect(cornerRadius: 20, style: .continuous))
+                    .contextMenu {
+                        Button("复制", systemImage: "doc.on.doc") { Clipboard.copy(message.text) }
+                    }
                     .textSelection(.enabled)
                 if message.channel == .wechat || message.channel == .cli {
                     Label(message.channel == .wechat ? "来自微信" : "来自电脑", systemImage: message.channel == .wechat ? "message" : "laptopcomputer")
@@ -66,6 +69,8 @@ private struct AssistantMessage: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     let message: ChatMessage
+    /// Mac / pointer: a copy button shows under the answer on hover.
+    @State private var hovering = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -81,6 +86,15 @@ private struct AssistantMessage: View {
                         .foregroundStyle(.secondary)
                 }
                 MarkdownText(source: message.text, streaming: message.isStreaming)
+                    .contextMenu {
+                        Button("复制", systemImage: "doc.on.doc") { Clipboard.copy(message.text) }
+                    }
+                if Self.pointer, !message.isStreaming, !message.text.isEmpty {
+                    // Space is kept so the row doesn't jump when it appears.
+                    CopyButton(text: message.text)
+                        .opacity(hovering ? 1 : 0)
+                        .allowsHitTesting(hovering)
+                }
                 if message.kind == .task, let taskId = message.taskId {
                     TaskChip(taskId: taskId)
                 }
@@ -90,7 +104,10 @@ private struct AssistantMessage: View {
             }
             Spacer(minLength: 24)
         }
+        .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
     }
+
+    private static let pointer = ProcessInfo.processInfo.isMacCatalystApp
 
     private var proactiveLabel: String {
         switch message.channel {

@@ -11,7 +11,11 @@ struct ComposerView: View {
     @Environment(VoiceInputController.self) private var voice
     @Binding var draft: String
     let onSend: (String) -> Void
-    @FocusState private var focused: Bool
+    /// Editing (keyboard up). Reported by the text view.
+    @State private var focused = false
+    @State private var focusToken = 0
+    @State private var editorHeight: CGFloat = 0
+    @State private var composing = false
 
     // Press tracking for the idle capsule.
     @State private var pressTask: Task<Void, Never>?
@@ -23,6 +27,7 @@ struct ComposerView: View {
     /// Short: the capsule reacts on touch-down, so this only has to tell a
     /// tap (keyboard) from a hold (voice).
     private static let capsuleSpace = "composerCapsule"
+    private static let maxEditorHeight: CGFloat = 160
 
     private let holdDelay: Duration = .milliseconds(160)
 
@@ -42,7 +47,7 @@ struct ComposerView: View {
             if let typed = slashQuery {
                 SlashSuggestions(commands: SlashCommand.filter(store.commands, typed: typed)) { cmd in
                     draft = "/\(cmd.name) "
-                    focused = true
+                    focusToken += 1
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -54,18 +59,21 @@ struct ComposerView: View {
             }
             HStack(alignment: .bottom, spacing: 6) {
                 ZStack(alignment: .leading) {
-                    TextField("", text: $draft, prompt: Text(focused ? "想让我做点什么？" : ""), axis: .vertical)
-                        .lineLimit(1...6)
-                        .focused($focused)
-                        .padding(.vertical, 11)
+                    // bento's UITextView-backed editor: smooth with big pastes,
+                    // and Return never sends while picking a pinyin candidate.
+                    ComposerTextEditor(text: $draft, measuredHeight: $editorHeight, isComposing: $composing,
+                                       isFocused: $focused, maxHeight: Self.maxEditorHeight,
+                                       focusToken: focusToken, onReturn: send)
+                        .frame(height: min(max(editorHeight, 44), Self.maxEditorHeight))
                         .padding(.leading, 18)
-                        .onKeyPress(keys: [.return], phases: .down) { press in
-                            // Hardware keyboard / Mac: Return sends, Shift+Return
-                            // (or Option+Return) is a newline. The on-screen
-                            // keyboard doesn't come through here.
-                            if press.modifiers.contains(.shift) || press.modifiers.contains(.option) { return .ignored }
-                            send()
-                            return .handled
+                        .padding(.trailing, canSend ? 0 : 14)
+                        .overlay(alignment: .leading) {
+                            if focused && draft.isEmpty && !composing {
+                                Text("想让我做点什么？")
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.leading, 18)
+                                    .allowsHitTesting(false)
+                            }
                         }
                     if idle && draft.isEmpty {
                         Group {
@@ -100,7 +108,7 @@ struct ComposerView: View {
                             .accessibilityElement()
                             .accessibilityLabel("按住说话，轻点打字")
                             .accessibilityAddTraits(.isButton)
-                            .accessibilityAction { focused = true }
+                            .accessibilityAction { focusToken += 1 }
                     }
                 }
 
@@ -184,7 +192,7 @@ struct ComposerView: View {
                     voice.track(v.location)
                     Task { await finishVoice() }
                 } else if !wasMoved {
-                    focused = true
+                    focusToken += 1
                 }
             }
     }
@@ -195,9 +203,9 @@ struct ComposerView: View {
         case .cancel:
             break
         case .edit:
-            guard !text.isEmpty else { focused = true; return }
+            guard !text.isEmpty else { focusToken += 1; return }
             draft = draft.isEmpty ? text : draft + text
-            focused = true
+            focusToken += 1
         case .send:
             if !text.isEmpty { onSend(text) }
         }

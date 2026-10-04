@@ -198,6 +198,7 @@ final class AppModel {
     func handle(url: URL) {
         guard url.scheme?.lowercased() == "paloally" else { return }
         appLog.info("pairing link received (mode \(String(describing: self.mode), privacy: .public))")
+        debugLog("pairing link received (mode \(String(describing: self.mode)))")
         pendingPairingLink = url.absoluteString
         if mode != .unpaired { showPairingSheet = true }
     }

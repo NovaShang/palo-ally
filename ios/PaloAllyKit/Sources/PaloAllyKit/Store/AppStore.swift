@@ -21,7 +21,9 @@ public final class AppStore {
 
     // MARK: observable state
 
-    public private(set) var connection: Connection = .idle
+    public private(set) var connection: Connection = .idle {
+        didSet { if connection != oldValue { debugLog("connection: \(connection)") } }
+    }
     public private(set) var hostName: String = ""
     public private(set) var hostVersion: String = ""
     public private(set) var messages: [ChatMessage] = []
@@ -53,6 +55,11 @@ public final class AppStore {
     public let clientVersion: String
     public var initialHistoryLimit = 100
 
+    /// Streamed text not yet applied (from bento's MessageItem): appends are
+    /// coalesced (~30 ms) so markdown re-parsing, row diffing and autoscroll
+    /// don't run per token.
+    private var pendingDeltas: [String: String] = [:]
+    private var deltaFlushScheduled = false
     private var started = false
     private var syncing = false
     private var resyncRequested = false
@@ -169,6 +176,7 @@ public final class AppStore {
                 return
             } catch {
                 guard gen == connectGeneration else { return }
+                debugLog("sync failed: \(error)")
                 lastError = Friendly.message(error)
                 failures += 1
                 if failures >= syncRetryLimit {
@@ -257,6 +265,7 @@ public final class AppStore {
     private func applyStatus(_ s: HostStatus) {
         status = s
         guard !s.busy else { return }
+        flushDeltas()
         for i in messages.indices where messages[i].isStreaming { messages[i].isStreaming = false }
         awaitingReply = false
     }
@@ -316,9 +325,10 @@ public final class AppStore {
             // A late delta after the final message (or after the turn
             // ended) is ignored.
             guard messages[i].isStreaming else { return }
-            messages[i].text += d.text
-            messages[i].isStreaming = true
+            pendingDeltas[d.id, default: ""] += d.text
+            scheduleDeltaFlush()
         } else {
+            // The first words show up at once; the rest is batched.
             var m = ChatMessage(seq: 0, id: d.id, role: .assistant, kind: .text, text: d.text, channel: .app,
                                 ts: Date().epochMillis)
             m.isStreaming = true
@@ -327,7 +337,27 @@ public final class AppStore {
         }
     }
 
+    private func scheduleDeltaFlush() {
+        guard !deltaFlushScheduled else { return }
+        deltaFlushScheduled = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(30))
+            self?.flushDeltas()
+        }
+    }
+
+    func flushDeltas() {
+        deltaFlushScheduled = false
+        guard !pendingDeltas.isEmpty else { return }
+        for (id, text) in pendingDeltas {
+            if let i = messages.firstIndex(where: { $0.id == id }), messages[i].isStreaming { messages[i].text += text }
+        }
+        pendingDeltas.removeAll()
+    }
+
     func upsert(_ incoming: ChatMessage) {
+        // The final text supersedes anything still buffered for it.
+        pendingDeltas[incoming.id] = nil
         var m = incoming
         m.isStreaming = false
         m.delivery = .sent

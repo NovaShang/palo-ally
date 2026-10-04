@@ -39,8 +39,12 @@ extension Theme {
                     .relativeLineSpacing(.em(0.2))
                     .markdownTextStyle { FontFamilyVariant(.monospaced); FontSize(.em(0.85)) }
                     .padding(10)
+                    .padding(.trailing, 30) // room for the copy button
             }
             .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(alignment: .topTrailing) {
+                CopyButton(text: configuration.content, label: "复制代码").scaleEffect(0.85).padding(4)
+            }
             .markdownMargin(top: 0, bottom: 8)
         }
         .table { configuration in

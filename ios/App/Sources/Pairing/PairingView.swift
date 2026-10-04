@@ -188,12 +188,14 @@ struct PairingView: View {
                     if isSheet { dismiss() }
                 } catch {
                     appLog.error("pairing failed: \(String(describing: error), privacy: .public)")
+                    debugLog("pairing failed: \(String(describing: error))")
                     self.error = (error as? PairingError)?.errorDescription ?? Copy.error(error)
                 }
                 working = false
             }
         } catch {
             appLog.error("bad pairing link: \(String(describing: error), privacy: .public)")
+            debugLog("bad pairing link: \(String(describing: error))")
             self.error = (error as? LocalizedError)?.errorDescription ?? "这不是配对链接"
             showManual = true
         }

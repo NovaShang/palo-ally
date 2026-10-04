@@ -6,9 +6,14 @@ import os
 
 private let log = Logger(subsystem: "com.novashang.paloally", category: "voice")
 
+/// Mirrors voice logs into the app's exportable debug log (bento's
+/// `coreDlogFileSink`). Set once at launch.
+public nonisolated(unsafe) var voiceLogSink: (@Sendable (String) -> Void)?
+
 /// Debug log (bento's `dlog`).
 func dlog(_ s: String) {
     log.debug("\(s, privacy: .public)")
+    voiceLogSink?(s)
 }
 
 /// bento's relay — PaloAlly uses the same worker, which also proxies Qwen ASR

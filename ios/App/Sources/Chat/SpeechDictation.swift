@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import PaloAllyKit
 import PaloAllyVoice
 
 /// Hold-to-talk dictation, driven by bento's `VoiceSession` (ported in
@@ -28,7 +29,10 @@ final class SpeechDictation {
         session.onLevel = { [weak self] l in self?.level = l }
         session.start(
             onPartial: { [weak self] text in self?.transcript = text },
-            onError: { [weak self] message in self?.errorMessage = Self.friendly(message) }
+            onError: { [weak self] message in
+                debugLog("voice error: \(message)")
+                self?.errorMessage = Self.friendly(message)
+            }
         )
     }
 
