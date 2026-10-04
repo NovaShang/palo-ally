@@ -237,41 +237,6 @@ struct SandboxedHTMLView: UIViewRepresentable {
     }
 }
 
-// MARK: - QuickLook (everything else)
-
-struct QuickLookView: UIViewControllerRepresentable {
-    let url: URL
-    let revision: Int64
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeUIViewController(context: Context) -> QLPreviewController {
-        let c = QLPreviewController()
-        context.coordinator.url = url
-        c.dataSource = context.coordinator
-        return c
-    }
-
-    func updateUIViewController(_ controller: QLPreviewController, context: Context) {
-        if context.coordinator.url != url || context.coordinator.revision != revision {
-            context.coordinator.url = url
-            context.coordinator.revision = revision
-            controller.reloadData()
-        }
-    }
-
-    final class Coordinator: NSObject, QLPreviewControllerDataSource {
-        var url: URL?
-        var revision: Int64 = 0
-
-        func numberOfPreviewItems(in controller: QLPreviewController) -> Int { url == nil ? 0 : 1 }
-
-        func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
-            (url ?? URL(fileURLWithPath: "/dev/null")) as NSURL
-        }
-    }
-}
-
 #Preview {
     let model = AppModel.demo()
     NavigationStack { ArtifactDetailView(artifactID: "ar1") }

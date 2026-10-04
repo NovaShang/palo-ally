@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		08BF7949F94B89DDD05C3319 /* AssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056B108C0177A1156F312E84 /* AssistantView.swift */; };
+		11BECFB67315E8AFAF47D91A /* SelectableMarkdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07A26E3CEF36BC017C91F461 /* SelectableMarkdown.swift */; };
 		12AEBFDF8D57FB231AAEC5EA /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 15DEAD73806EBE1C701B9FCB /* MarkdownUI */; };
 		1F13B32F1A120C451958B347 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D85821DAF90FE3998B520913 /* LibraryView.swift */; };
 		31D752A67A0592C5BA7B46B1 /* PaloAllyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C0D86FFE5D13BEF644D76F /* PaloAllyApp.swift */; };
@@ -30,6 +31,7 @@
 		CCF61F9E84E355E2B02DCE4C /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C1205FC1B401AE4865CFE52 /* AppModel.swift */; };
 		D3720B2AD3344F09581611E1 /* TasksSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90E9946A58A404E7087D10BB /* TasksSection.swift */; };
 		D556694E027BD986AB400215 /* ApprovalsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3E3EFECDEF03091588F1AA /* ApprovalsSection.swift */; };
+		D844BFFB6A6F7E72355AF873 /* QuickLook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FFD6E49BA1DD7665E79691E /* QuickLook.swift */; };
 		DB5D7D92603C6BB878F3C047 /* ChatScroll.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FBD3843044FE94D50902206 /* ChatScroll.swift */; };
 		DCA8A63C55C45480F50AFD5A /* ImagePrep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36184756C7B818CDFB8CB839 /* ImagePrep.swift */; };
 		E0748A27FBA8E1FD9DDEA652 /* MemorySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A047E4D10313D33DC6FA1B11 /* MemorySection.swift */; };
@@ -44,9 +46,11 @@
 
 /* Begin PBXFileReference section */
 		056B108C0177A1156F312E84 /* AssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantView.swift; sourceTree = "<group>"; };
+		07A26E3CEF36BC017C91F461 /* SelectableMarkdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectableMarkdown.swift; sourceTree = "<group>"; };
 		0B2339DF9459035E591FCB19 /* PaloAlly.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PaloAlly.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0CC0C56E78F856900F1C91A8 /* ApprovalCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalCard.swift; sourceTree = "<group>"; };
 		1C8CC906F00EAFD38D91A3CD /* ComposerPressGesture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerPressGesture.swift; sourceTree = "<group>"; };
+		2FFD6E49BA1DD7665E79691E /* QuickLook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLook.swift; sourceTree = "<group>"; };
 		32922EB865184F7F70CAB365 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
 		36184756C7B818CDFB8CB839 /* ImagePrep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePrep.swift; sourceTree = "<group>"; };
 		362F66DA10216A79F79CBB11 /* Copy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Copy.swift; sourceTree = "<group>"; };
@@ -182,6 +186,8 @@
 				EF9B71414B8BB238CEE54BC1 /* DisplayCorners.swift */,
 				36184756C7B818CDFB8CB839 /* ImagePrep.swift */,
 				DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */,
+				2FFD6E49BA1DD7665E79691E /* QuickLook.swift */,
+				07A26E3CEF36BC017C91F461 /* SelectableMarkdown.swift */,
 			);
 			path = Support;
 			sourceTree = "<group>";
@@ -320,7 +326,9 @@
 				F10B59DC6D408555F64C2858 /* PairingView.swift in Sources */,
 				31D752A67A0592C5BA7B46B1 /* PaloAllyApp.swift in Sources */,
 				B7DF0900ABDDFACC50FFF6B2 /* QRScannerView.swift in Sources */,
+				D844BFFB6A6F7E72355AF873 /* QuickLook.swift in Sources */,
 				F7BB5BDB265CB2F858DDF473 /* RootView.swift in Sources */,
+				11BECFB67315E8AFAF47D91A /* SelectableMarkdown.swift in Sources */,
 				58FA01FB519DE507B656FDAE /* SettingsView.swift in Sources */,
 				7FA2E7E1309D4680A571ACCC /* SpeechDictation.swift in Sources */,
 				D3720B2AD3344F09581611E1 /* TasksSection.swift in Sources */,

@@ -78,8 +78,6 @@ private struct AssistantMessage: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     let message: ChatMessage
-    /// Mac / pointer: a copy button shows under the answer on hover.
-    @State private var hovering = false
 
     var body: some View {
         // No avatar: it cost width on every reply and said nothing new.
@@ -94,16 +92,14 @@ private struct AssistantMessage: View {
                     AttachmentStrip(attachments: atts)
                 }
                 if !message.text.isEmpty || message.isStreaming {
-                    MarkdownText(source: message.text, streaming: message.isStreaming)
-                        .contextMenu {
-                            Button("复制", systemImage: "doc.on.doc") { Clipboard.copy(message.text) }
-                        }
+                    // One system text view per answer: free selection across
+                    // paragraphs, like Notes / Safari.
+                    SelectableMarkdown(source: message.text, streaming: message.isStreaming)
                 }
-                if Self.pointer, !message.isStreaming, !message.text.isEmpty {
-                    // Space is kept so the row doesn't jump when it appears.
-                    CopyButton(text: message.text)
-                        .opacity(hovering ? 1 : 0)
-                        .allowsHitTesting(hovering)
+                if !message.isStreaming, !message.text.isEmpty, message.kind == .text {
+                    // The whole answer in one tap; small and quiet.
+                    CopyButton(text: message.text, label: "复制这条回答")
+                        .scaleEffect(0.85, anchor: .leading)
                 }
                 if message.kind == .task, let taskId = message.taskId {
                     TaskChip(taskId: taskId)
@@ -114,10 +110,7 @@ private struct AssistantMessage: View {
             }
             Spacer(minLength: 24)
         }
-        .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
     }
-
-    private static let pointer = ProcessInfo.processInfo.isMacCatalystApp
 
     private var proactiveLabel: String {
         switch message.channel {
@@ -169,16 +162,15 @@ private struct NoticeRow: View {
     }
 }
 
-/// What came with a message: pictures inline (tap for full size), other
-/// files and library items as cards. Library items open in the library — the
-/// place to find them again later; temporary files open in a preview.
+/// What came with a message: pictures inline, other files and library items
+/// as cards. Everything previews in the system's QuickLook (zoom, pan, share,
+/// several attachments page side by side); a library item's preview offers
+/// 「在产出物库中查看」. Web-page artifacts open in the library's web view.
 private struct AttachmentStrip: View {
     @Environment(AppStore.self) private var store
     @Environment(AppModel.self) private var model
     let attachments: [Attachment]
-    @State private var viewing: Data?
-    @State private var previewing: URL?
-    @State private var loadingFile: String?
+    @State private var loading: String?
 
     private var pictures: [Attachment] { attachments.filter(\.showsInline) }
     private var cards: [Attachment] { attachments.filter { !$0.showsInline } }
@@ -191,26 +183,8 @@ private struct AttachmentStrip: View {
                 }
             }
             ForEach(cards) { a in
-                Button { open(a) } label: { FileCard(attachment: a, loading: loadingFile == a.id) }
+                Button { open(a) } label: { FileCard(attachment: a, loading: loading == a.id) }
                     .buttonStyle(.plain)
-            }
-        }
-        .fullScreenCover(isPresented: Binding(get: { viewing != nil }, set: { if !$0 { viewing = nil } })) {
-            if let data = viewing, let ui = UIImage(data: data) {
-                ImageViewer(image: ui) { viewing = nil }
-            }
-        }
-        .sheet(isPresented: Binding(get: { previewing != nil }, set: { if !$0 { previewing = nil } })) {
-            if let url = previewing {
-                NavigationStack {
-                    QuickLookView(url: url, revision: 0)
-                        .ignoresSafeArea(edges: .bottom)
-                        .navigationTitle(url.lastPathComponent)
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .confirmationAction) { ShareLink(item: url) }
-                        }
-                }
             }
         }
     }
@@ -221,12 +195,17 @@ private struct AttachmentStrip: View {
         let side: CGFloat = pictures.count == 1 ? 180 : 96
         Group {
             if let data = store.images[key(a)], let ui = UIImage(data: data) {
-                Button {
-                    if a.kind == "artifact" { open(a) } else { viewing = data }
-                } label: {
+                Button { open(a) } label: {
                     Image(uiImage: ui).resizable().scaledToFill()
                 }
                 .buttonStyle(.plain)
+                .overlay {
+                    if loading == a.id {
+                        ProgressView().controlSize(.small)
+                            .padding(8)
+                            .glassEffect(.regular, in: .circle)
+                    }
+                }
             } else {
                 Rectangle().fill(.quaternary)
                     .overlay { ProgressView().controlSize(.small) }
@@ -238,25 +217,59 @@ private struct AttachmentStrip: View {
         .frame(width: side, height: side)
         .clipShape(.rect(cornerRadius: 16, style: .continuous))
         .accessibilityLabel(a.name ?? "图片")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private func isWebPage(_ a: Attachment) -> Bool { a.kind == "artifact" && a.mediaType.contains("html") }
+
+    private func openInLibrary(_ id: String) {
+        model.libraryPath = [id]
+        model.showLibrary = true
     }
 
     private func open(_ a: Attachment) {
-        if a.kind == "artifact" {
-            model.libraryPath = [a.id]
-            model.showLibrary = true
-            return
-        }
-        guard loadingFile == nil else { return }
-        loadingFile = a.id
+        if isWebPage(a) { return openInLibrary(a.id) }
+        guard loading == nil else { return }
+        loading = a.id
         Task {
-            defer { loadingFile = nil }
-            guard let data = try? await store.fileData(a.id) else { return }
-            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("sent", isDirectory: true)
-                .appendingPathComponent(a.id, isDirectory: true)
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            let url = dir.appendingPathComponent(a.name ?? "file")
-            guard (try? data.write(to: url, options: .atomic)) != nil else { return }
-            previewing = url
+            defer { loading = nil }
+            // Everything previewable in this message, so QuickLook can page.
+            let previewable = attachments.filter { !isWebPage($0) }
+            var items: [QuickLookPresenter.Item] = []
+            var start = 0
+            for item in previewable {
+                // The tapped one must load; the others are best effort.
+                guard let url = try? await localFile(for: item) else {
+                    if item.id == a.id { return }
+                    continue
+                }
+                if item.id == a.id { start = items.count }
+                items.append(.init(url: url, title: item.name, artifactID: item.kind == "artifact" ? item.id : nil))
+            }
+            QuickLookPresenter.present(items, startAt: start, openInLibrary: openInLibrary)
+        }
+    }
+
+    /// The attachment's bytes as a local file QuickLook can open.
+    private func localFile(for a: Attachment) async throws -> URL {
+        switch a.kind {
+        case "artifact":
+            let artifact = store.artifact(id: a.id)
+            let name = artifact.map { ($0.mainFile as NSString).lastPathComponent } ?? a.name ?? "file"
+            return try await QuickLookPresenter.file(key: "artifact-\(a.id)", revision: artifact?.updatedAt ?? 0, name: name) {
+                if a.isImage, let d = store.images[key(a)] { return d }
+                return try await store.readArtifact(id: a.id).data
+            }
+        case "file":
+            return try await QuickLookPresenter.file(key: a.id, name: a.name ?? "file") { try await store.fileData(a.id) }
+        default: // image
+            let ext = a.mediaType.split(separator: "/").last.map(String.init) ?? "jpg"
+            return try await QuickLookPresenter.file(key: a.id, name: a.name ?? "图片.\(ext == "jpeg" ? "jpg" : ext)") {
+                if let d = store.images[a.id] { return d }
+                await store.loadImage(a.id)
+                guard let d = store.images[a.id] else { throw CocoaError(.fileReadUnknown) }
+                return d
+            }
         }
     }
 }
@@ -302,42 +315,5 @@ private struct FileCard: View {
         if attachment.kind == "artifact" { parts.append("在产出物库") }
         if let s = attachment.size { parts.append(ByteCountFormatter.string(fromByteCount: s, countStyle: .file)) }
         return parts.isEmpty ? "点开查看" : parts.joined(separator: " · ")
-    }
-}
-
-/// Full-screen image: pinch to zoom, tap or swipe down to close.
-private struct ImageViewer: View {
-    let image: UIImage
-    let close: () -> Void
-    @State private var scale: CGFloat = 1
-    @State private var drag: CGSize = .zero
-
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea().opacity(1 - min(abs(drag.height) / 400, 0.6))
-            Image(uiImage: image).resizable().scaledToFit()
-                .scaleEffect(scale)
-                .offset(drag)
-                .gesture(MagnifyGesture().onChanged { scale = max(1, $0.magnification) }.onEnded { _ in
-                    withAnimation(.snappy) { if scale < 1.1 { scale = 1 } }
-                })
-                .simultaneousGesture(DragGesture().onChanged { if scale == 1 { drag = $0.translation } }.onEnded { v in
-                    if abs(v.translation.height) > 120 { close() } else { withAnimation(.snappy) { drag = .zero } }
-                })
-        }
-        .onTapGesture { if scale == 1 { close() } }
-        .overlay(alignment: .topTrailing) {
-            HStack(spacing: 10) {
-                ShareLink(item: Image(uiImage: image), preview: SharePreview("图片", image: Image(uiImage: image))) {
-                    Image(systemName: "square.and.arrow.up").frame(width: 40, height: 40).glassEffect(.regular.interactive(), in: .circle)
-                }
-                Button(action: close) {
-                    Image(systemName: "xmark").frame(width: 40, height: 40).glassEffect(.regular.interactive(), in: .circle)
-                }
-                .accessibilityLabel("关闭")
-            }
-            .foregroundStyle(.white)
-            .padding()
-        }
     }
 }
