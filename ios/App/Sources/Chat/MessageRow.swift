@@ -250,7 +250,7 @@ private struct AttachmentStrip: View {
         loadingFile = a.id
         Task {
             defer { loadingFile = nil }
-            guard let data = try? await store.readMedia(id: a.id) else { return }
+            guard let data = try? await store.fileData(a.id) else { return }
             let dir = FileManager.default.temporaryDirectory.appendingPathComponent("sent", isDirectory: true)
                 .appendingPathComponent(a.id, isDirectory: true)
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

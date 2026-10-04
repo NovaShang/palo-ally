@@ -213,10 +213,16 @@ export class Hub {
     // Slash commands must reach the harness verbatim, so they get no prefix.
     const prefix = channel === "wechat" && !t.startsWith("/") ? "[来自微信] " : "";
     const images = attachments.flatMap((a) => {
-      const m = this.media.read(a.id);
+      const m = a.kind === "image" ? this.media.read(a.id) : null;
       return m ? [{ mediaType: m.mediaType, data: m.data }] : [];
     });
-    this.conversation.sendOwner(prefix + t, channel, wechat, images);
+    // Files go in as paths the assistant can open, the way WeChat files do.
+    const files = attachments.flatMap((a) => {
+      const path = a.kind === "file" ? this.media.filePath(a.id) : null;
+      return path ? [`[文件] ${path}`] : [];
+    });
+    const body = [prefix + t, ...files].filter((x) => x.trim()).join("\n");
+    this.conversation.sendOwner(body, channel, wechat, images);
     return msg;
   }
 

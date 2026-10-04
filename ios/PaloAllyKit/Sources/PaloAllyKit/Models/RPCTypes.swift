@@ -34,6 +34,8 @@ public enum RPCMethod {
     /// references the returned ids.
     public static let mediaUpload = "media.upload"
     public static let mediaGet = "media.get"
+    /// A file from the app, in ≤256 KiB chunks (the relay caps a frame at 1 MiB).
+    public static let mediaUploadChunk = "media.uploadChunk"
     /// A file the assistant sent, in 256 KiB chunks (same shape as artifact.read).
     public static let mediaRead = "media.read"
 
@@ -43,7 +45,7 @@ public enum RPCMethod {
         hello, sync, chatSend, chatHistory, commandsList, modelGet, modelSet, taskGet, taskStop,
         approvalAnswer, watchAdd, watchUpdate, watchRemove, artifactList, artifactRead, artifactPin,
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
-        deviceUnpair, auditTail, mediaUpload, mediaGet, mediaRead,
+        deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
     ]
 }
 
@@ -143,6 +145,33 @@ public struct MediaUploadParams: Codable, Sendable {
     public var mediaType: String
     public var data: String // base64
     public init(mediaType: String, data: String) { self.mediaType = mediaType; self.data = data }
+}
+
+public struct MediaUploadChunkParams: Codable, Sendable {
+    public var uploadId: String?
+    public var name: String
+    public var mediaType: String
+    public var offset: Int64
+    public var data: String // base64
+    public var done: Bool
+    public init(uploadId: String?, name: String, mediaType: String, offset: Int64, data: String, done: Bool) {
+        self.uploadId = uploadId; self.name = name; self.mediaType = mediaType
+        self.offset = offset; self.data = data; self.done = done
+    }
+}
+
+/// `{uploadId}` while more chunks are expected; the file's Attachment after the last.
+public struct MediaUploadChunkResult: Decodable, Sendable {
+    public var uploadId: String?
+    public var attachment: Attachment?
+
+    enum CodingKeys: String, CodingKey { case uploadId, id, kind, mediaType, name, size }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        uploadId = l.string("uploadId")
+        attachment = l.string("id") == nil ? nil : try Attachment(from: decoder)
+    }
 }
 
 public struct MediaReadParams: Codable, Sendable {

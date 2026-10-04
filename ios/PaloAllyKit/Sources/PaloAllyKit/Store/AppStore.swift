@@ -464,19 +464,34 @@ public final class AppStore {
         public init(data: Data, mediaType: String) { self.data = data; self.mediaType = mediaType }
     }
 
-    public func send(_ rawText: String, images picked: [OutgoingImage] = []) {
+    /// Any other file picked in the composer; uploaded in chunks.
+    public struct OutgoingFile: Sendable {
+        public var data: Data
+        public var mediaType: String
+        public var name: String
+        public init(data: Data, mediaType: String, name: String) { self.data = data; self.mediaType = mediaType; self.name = name }
+    }
+
+    public func send(_ rawText: String, images picked: [OutgoingImage] = [], files pickedFiles: [OutgoingFile] = []) {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !picked.isEmpty else { return }
+        guard !text.isEmpty || !picked.isEmpty || !pickedFiles.isEmpty else { return }
         let cid = UUID().uuidString.lowercased()
         var echo = ChatMessage(seq: 0, id: "local-\(cid)", role: .user, kind: .text, text: text, channel: .app,
                                ts: Date().epochMillis, clientMsgId: cid)
-        if !picked.isEmpty {
-            // Shown right away from local bytes; uploaded (one per call) on delivery.
-            echo.attachments = picked.enumerated().map { i, img in
+        if !picked.isEmpty || !pickedFiles.isEmpty {
+            // Shown right away from local bytes; uploaded on delivery (an image
+            // per call, files in chunks).
+            let imgs = picked.enumerated().map { i, img in
                 let id = "\(Self.localImagePrefix)\(cid)-\(i)"
                 images[id] = img.data
                 return Attachment(id: id, mediaType: img.mediaType)
             }
+            let docs = pickedFiles.enumerated().map { i, f in
+                let id = "\(Self.localFilePrefix)\(cid)-\(i)"
+                localFiles[id] = f.data
+                return Attachment(id: id, kind: "file", mediaType: f.mediaType, name: f.name, size: Int64(f.data.count))
+            }
+            echo.attachments = imgs + docs
         }
         echo.delivery = .sending
         messages.append(echo)
@@ -523,6 +538,9 @@ public final class AppStore {
     }
 
     static let localImagePrefix = "local-img-"
+    static let localFilePrefix = "local-file-"
+    /// Bytes of files picked here, until (and after) they're uploaded.
+    private var localFiles: [String: Data] = [:]
 
     /// Image bytes by attachment id: sent from this device, or fetched on demand.
     public private(set) var images: [String: Data] = [:]
@@ -536,17 +554,53 @@ public final class AppStore {
               let atts = messages[i].attachments, !atts.isEmpty else { return nil }
         var done: [Attachment] = []
         for a in atts {
-            guard a.id.hasPrefix(Self.localImagePrefix) else { done.append(a); continue }
-            guard let data = images[a.id] else { continue }
-            let up: Attachment = try await rpc.call(RPCMethod.mediaUpload,
-                                                   params: MediaUploadParams(mediaType: a.mediaType, data: data.base64EncodedString()))
-            images[up.id] = data
+            let up: Attachment
+            if a.id.hasPrefix(Self.localImagePrefix) {
+                guard let data = images[a.id] else { continue }
+                up = try await rpc.call(RPCMethod.mediaUpload,
+                                        params: MediaUploadParams(mediaType: a.mediaType, data: data.base64EncodedString()))
+                images[up.id] = data
+            } else if a.id.hasPrefix(Self.localFilePrefix) {
+                guard let data = localFiles[a.id] else { continue }
+                up = try await uploadFile(data, name: a.name ?? "file", mediaType: a.mediaType)
+                localFiles[up.id] = data
+            } else {
+                done.append(a)
+                continue
+            }
             done.append(up)
             if let j = messages.firstIndex(where: { $0.clientMsgId == cid && $0.seq == 0 }) {
                 messages[j].attachments = done + atts.dropFirst(done.count)
             }
         }
         return done.map(\.id)
+    }
+
+    private func uploadFile(_ data: Data, name: String, mediaType: String) async throws -> Attachment {
+        let chunk = Int(ArtifactChunk.maxChunk)
+        var uploadId: String?
+        var offset = 0
+        repeat {
+            let end = min(offset + chunk, data.count)
+            let done = end >= data.count
+            let r: MediaUploadChunkResult = try await rpc.call(
+                RPCMethod.mediaUploadChunk,
+                params: MediaUploadChunkParams(uploadId: uploadId, name: name, mediaType: mediaType, offset: Int64(offset),
+                                               data: data.subdata(in: offset..<end).base64EncodedString(), done: done),
+                timeout: 60)
+            if done {
+                guard let a = r.attachment else { throw RPCError.badResponse }
+                return a
+            }
+            uploadId = r.uploadId
+            offset = end
+        } while true
+    }
+
+    /// A file sent in the conversation: local bytes if it was picked here, else from the host.
+    public func fileData(_ id: String) async throws -> Data {
+        if let d = localFiles[id] { return d }
+        return try await readMedia(id: id)
     }
 
     /// A file the assistant sent (media.read, chunked like artifacts).

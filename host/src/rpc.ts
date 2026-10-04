@@ -22,7 +22,7 @@ export const RPC_METHODS = [
   "task.get", "task.stop", "approval.answer", "watch.add", "watch.update", "watch.remove",
   "artifact.list", "artifact.read", "artifact.pin", "memory.list", "memory.read", "memory.write",
   "settings.update", "stop", "push.register", "push.unregister", "device.unpair", "audit.tail",
-  "media.upload", "media.get", "media.read",
+  "media.upload", "media.uploadChunk", "media.get", "media.read",
 ] as const;
 
 export const RPC_EVENTS = [
@@ -60,9 +60,9 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       const attachments = (Array.isArray(p.attachments) ? p.attachments : [])
         .slice(0, 10)
         .map((id: unknown) => {
-          const m = hub.media.read(String(id));
-          if (!m) throw new Error("图片没传上来，重发一次");
-          return { id: String(id), kind: "image" as const, mediaType: m.mediaType };
+          const a = hub.media.attachment(String(id));
+          if (!a) throw new Error("附件没传上来，重发一次");
+          return a;
         });
       const msg = hub.userMessage(String(p.text ?? ""), ctx.channel, undefined, cid, attachments);
       if (!msg) throw new Error("空消息");
@@ -70,6 +70,15 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     }
     case "media.upload":
       return hub.media.save(String(p.mediaType ?? ""), String(p.data ?? ""));
+    case "media.uploadChunk":
+      return hub.media.uploadChunk({
+        uploadId: typeof p.uploadId === "string" ? p.uploadId : undefined,
+        name: String(p.name ?? ""),
+        mediaType: typeof p.mediaType === "string" ? p.mediaType : undefined,
+        offset: Number(p.offset ?? 0),
+        data: String(p.data ?? ""),
+        done: !!p.done,
+      });
     case "media.read":
       return hub.media.readChunk(String(p.id ?? ""), Number(p.offset ?? 0), Number(p.length ?? 256 * 1024));
     case "media.get": {

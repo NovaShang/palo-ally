@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { CHUNK, mimeOf } from "./artifacts.ts";
@@ -30,8 +30,74 @@ function sniff(b: Buffer): string | null {
 
 const newId = (p: string) => `${p}_${Date.now().toString(36)}${randomBytes(4).toString("hex")}`;
 
+const UPLOAD_CHUNK_MAX = 256 * 1024;
+
+/** One chunk of a file the owner sends from the app (media.uploadChunk). */
+export interface UploadChunk {
+  uploadId?: string;
+  name: string;
+  mediaType?: string;
+  offset: number;
+  data: string; // base64, ≤ 256 KiB raw
+  done: boolean;
+}
+
 export class MediaStore {
+  /** In-flight uploads: id → bytes received so far. */
+  private uploads = new Map<string, { name: string; mediaType: string; received: number }>();
+
   constructor(private dir: string) {}
+
+  /**
+   * Files the owner sends from the app arrive in chunks (the relay caps a
+   * frame at 1 MiB). Chunks must come in order; the last one (done) turns the
+   * upload into a file attachment.
+   */
+  uploadChunk(c: UploadChunk): { uploadId: string } | Attachment {
+    const name = basename(String(c.name ?? "").replace(/\\/g, "/")).trim();
+    if (!name || name === "." || name === "..") throw new Error("文件名不对");
+    const data = Buffer.from(String(c.data ?? ""), "base64");
+    if (data.length > UPLOAD_CHUNK_MAX) throw new Error("一块最多 256KB");
+    let id = c.uploadId ? String(c.uploadId) : "";
+    let up = id ? this.uploads.get(id) : undefined;
+    if (id && (!up || !/^up_[a-z0-9]+$/.test(id))) throw new Error("上传已失效，重新发送");
+    if (!up) {
+      if (Number(c.offset ?? 0) !== 0) throw new Error("上传要从头开始");
+      id = newId("up");
+      up = { name, mediaType: String(c.mediaType || "") || mimeOf(name), received: 0 };
+      this.uploads.set(id, up);
+      mkdirSync(join(this.dir, "uploads"), { recursive: true });
+      writeFileSync(join(this.dir, "uploads", id), Buffer.alloc(0));
+    }
+    const part = join(this.dir, "uploads", id);
+    if (Number(c.offset) !== up.received) throw new Error("文件块顺序不对，重新发送");
+    if (up.received + data.length > MAX_FILE_BYTES) {
+      this.uploads.delete(id);
+      rmSync(part, { force: true });
+      throw new Error("文件太大（最多 100MB）");
+    }
+    appendFileSync(part, data);
+    up.received += data.length;
+    if (!c.done) return { uploadId: id };
+    this.uploads.delete(id);
+    if (!up.received) {
+      rmSync(part, { force: true });
+      throw new Error("文件是空的");
+    }
+    const fid = newId("file");
+    mkdirSync(join(this.dir, fid), { recursive: true });
+    renameSync(part, join(this.dir, fid, up.name));
+    return { id: fid, kind: "file", mediaType: up.mediaType, name: up.name, size: up.received };
+  }
+
+  /** The attachment record for a stored image or file id, or null. */
+  attachment(id: string): Attachment | null {
+    const img = this.read(id);
+    if (img) return { id, kind: "image", mediaType: img.mediaType };
+    const path = /^file_[a-z0-9]+$/.test(id) ? this.filePath(id) : null;
+    if (!path) return null;
+    return { id, kind: "file", mediaType: mimeOf(path), name: basename(path), size: statSync(path).size };
+  }
 
   save(mediaType: string, base64: string): Attachment {
     const ext = TYPES[mediaType];

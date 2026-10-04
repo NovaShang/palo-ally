@@ -767,3 +767,28 @@ describe("Hub: files to the owner (SendUserFile / Artifact)", () => {
     cleanup(paths);
   });
 });
+
+describe("Hub: files from the app", () => {
+  test("chunked upload: in order, basename only, size cap; a sent file reaches the harness as a path", async () => {
+    const { hub, driver, paths } = makeHub();
+    const b64 = (s: string) => Buffer.from(s).toString("base64");
+    const first = hub.media.uploadChunk({ name: "../../etc/报告.txt", offset: 0, data: b64("hello "), done: false }) as { uploadId: string };
+    expect(first.uploadId).toMatch(/^up_/);
+    // out of order is refused
+    expect(() => hub.media.uploadChunk({ uploadId: first.uploadId, name: "报告.txt", offset: 0, data: b64("x"), done: false })).toThrow();
+    const att = hub.media.uploadChunk({ uploadId: first.uploadId, name: "报告.txt", offset: 6, data: b64("world"), done: true }) as any;
+    expect(att).toMatchObject({ kind: "file", name: "报告.txt", size: 11, mediaType: "text/plain" });
+    expect(Buffer.from(hub.media.readChunk(att.id).data, "base64").toString()).toBe("hello world");
+    expect(hub.media.filePath(att.id)!.includes("..")).toBe(false);
+    // a stale / unknown upload id, a chunk that's too big, a non-zero first offset
+    expect(() => hub.media.uploadChunk({ uploadId: first.uploadId, name: "a", offset: 11, data: "", done: true })).toThrow();
+    expect(() => hub.media.uploadChunk({ name: "a", offset: 0, data: Buffer.alloc(300 * 1024).toString("base64"), done: true })).toThrow();
+    expect(() => hub.media.uploadChunk({ name: "a", offset: 5, data: b64("x"), done: true })).toThrow();
+
+    hub.userMessage("看看这个", "app", undefined, undefined, [hub.media.attachment(att.id)!]);
+    await hub.idle();
+    expect(driver.last!.sent.at(-1)).toBe(`看看这个\n[文件] ${hub.media.filePath(att.id)}`);
+    expect(driver.last!.sentImages).toEqual([]);
+    cleanup(paths);
+  });
+});

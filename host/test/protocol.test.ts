@@ -41,7 +41,8 @@ describe("host ↔ app protocol", () => {
 
     await run("hello", { client: "ios", version: "test" });
     const img = await run("media.upload", { mediaType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==" });
-    await run("chat.send", { text: "你好", clientMsgId: "c-1", attachments: [img.id] });
+    const doc = await run("media.uploadChunk", { name: "说明.txt", mediaType: "text/plain", offset: 0, data: Buffer.from("hi").toString("base64"), done: true });
+    await run("chat.send", { text: "你好", clientMsgId: "c-1", attachments: [img.id, doc.id] });
     await run("media.get", { id: img.id });
     writeFileSync(`${paths.home}/note.txt`, "hello");
     await hub.toolHandlers().SendUserFile({ files: ["note.txt"], status: "normal", temporary: true });

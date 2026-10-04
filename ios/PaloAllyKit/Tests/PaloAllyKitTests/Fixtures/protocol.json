@@ -23,9 +23,25 @@
         "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
       },
       "result": {
-        "id": "img_muudhvdn8b809cf7",
+        "id": "img_muudx5iz1fbd478c",
         "kind": "image",
         "mediaType": "image/png"
+      }
+    },
+    "media.uploadChunk": {
+      "params": {
+        "name": "说明.txt",
+        "mediaType": "text/plain",
+        "offset": 0,
+        "data": "aGk=",
+        "done": true
+      },
+      "result": {
+        "id": "file_muudx5j029479df6",
+        "kind": "file",
+        "mediaType": "text/plain",
+        "name": "说明.txt",
+        "size": 2
       }
     },
     "chat.send": {
@@ -33,17 +49,18 @@
         "text": "你好",
         "clientMsgId": "c-1",
         "attachments": [
-          "img_muudhvdn8b809cf7"
+          "img_muudx5iz1fbd478c",
+          "file_muudx5j029479df6"
         ]
       },
       "result": {
-        "id": "m_498663d7ead8",
+        "id": "m_ad53eafed69b",
         "seq": 1
       }
     },
     "media.get": {
       "params": {
-        "id": "img_muudhvdn8b809cf7"
+        "id": "img_muudx5iz1fbd478c"
       },
       "result": {
         "mediaType": "image/png",
@@ -52,7 +69,7 @@
     },
     "media.read": {
       "params": {
-        "id": "file_muudhvdrfb235231",
+        "id": "file_muudx5j878e58d47",
         "offset": 0
       },
       "result": {
@@ -75,22 +92,29 @@
             "clientMsgId": "c-1",
             "attachments": [
               {
-                "id": "img_muudhvdn8b809cf7",
+                "id": "img_muudx5iz1fbd478c",
                 "kind": "image",
                 "mediaType": "image/png"
+              },
+              {
+                "id": "file_muudx5j029479df6",
+                "kind": "file",
+                "mediaType": "text/plain",
+                "name": "说明.txt",
+                "size": 2
               }
             ],
-            "id": "m_498663d7ead8",
-            "ts": 1791151734299,
+            "id": "m_ad53eafed69b",
+            "ts": 1791152447292,
             "seq": 1
           },
           {
-            "id": "m_muudhvdosmie",
+            "id": "m_muudx5j27c6z",
             "role": "assistant",
             "kind": "text",
             "text": "你好，我在。",
             "channel": "app",
-            "ts": 1791151734300,
+            "ts": 1791152447294,
             "seq": 2
           },
           {
@@ -100,15 +124,15 @@
             "channel": "app",
             "attachments": [
               {
-                "id": "file_muudhvdrfb235231",
+                "id": "file_muudx5j878e58d47",
                 "kind": "file",
                 "mediaType": "text/plain",
                 "name": "note.txt",
                 "size": 5
               }
             ],
-            "id": "m_4a8096e1754d",
-            "ts": 1791151734303,
+            "id": "m_8b7f110720ce",
+            "ts": 1791152447300,
             "seq": 3
           }
         ],
@@ -148,22 +172,29 @@
             "clientMsgId": "c-1",
             "attachments": [
               {
-                "id": "img_muudhvdn8b809cf7",
+                "id": "img_muudx5iz1fbd478c",
                 "kind": "image",
                 "mediaType": "image/png"
+              },
+              {
+                "id": "file_muudx5j029479df6",
+                "kind": "file",
+                "mediaType": "text/plain",
+                "name": "说明.txt",
+                "size": 2
               }
             ],
-            "id": "m_498663d7ead8",
-            "ts": 1791151734299,
+            "id": "m_ad53eafed69b",
+            "ts": 1791152447292,
             "seq": 1
           },
           {
-            "id": "m_muudhvdosmie",
+            "id": "m_muudx5j27c6z",
             "role": "assistant",
             "kind": "text",
             "text": "你好，我在。",
             "channel": "app",
-            "ts": 1791151734300,
+            "ts": 1791152447294,
             "seq": 2
           },
           {
@@ -173,15 +204,15 @@
             "channel": "app",
             "attachments": [
               {
-                "id": "file_muudhvdrfb235231",
+                "id": "file_muudx5j878e58d47",
                 "kind": "file",
                 "mediaType": "text/plain",
                 "name": "note.txt",
                 "size": 5
               }
             ],
-            "id": "m_4a8096e1754d",
-            "ts": 1791151734303,
+            "id": "m_8b7f110720ce",
+            "ts": 1791152447300,
             "seq": 3
           }
         ]
@@ -258,23 +289,23 @@
     },
     "task.get": {
       "params": {
-        "id": "t_2fc60a1995a2"
+        "id": "t_11b16eb5425b"
       },
       "result": {
         "task": {
-          "id": "t_2fc60a1995a2",
+          "id": "t_11b16eb5425b",
           "title": "查资料",
           "summary": "在查",
           "status": "running",
           "source": "report",
-          "createdAt": 1791151734306,
-          "updatedAt": 1791151734306,
+          "createdAt": 1791152447303,
+          "updatedAt": 1791152447304,
           "activityCount": 1,
           "toolUseId": "ag1"
         },
         "activity": [
           {
-            "ts": 1791151734306,
+            "ts": 1791152447304,
             "kind": "tool_use",
             "tool": "WebSearch",
             "label": "搜索",
@@ -285,7 +316,7 @@
     },
     "task.stop": {
       "params": {
-        "id": "t_2fc60a1995a2"
+        "id": "t_11b16eb5425b"
       },
       "result": {
         "ok": true
@@ -293,7 +324,7 @@
     },
     "approval.answer": {
       "params": {
-        "id": "a_cfd352ee023a",
+        "id": "a_84ea81c5c472",
         "allow": true,
         "remember": true
       },
@@ -311,7 +342,7 @@
       },
       "result": {
         "watch": {
-          "id": "w_19963f5f3986",
+          "id": "w_f170cc3c4b0e",
           "title": "晨报",
           "instruction": "整理日程",
           "kind": "schedule",
@@ -320,20 +351,20 @@
           ],
           "enabled": true,
           "createdBy": "user",
-          "createdAt": 1791151734323
+          "createdAt": 1791152447322
         }
       }
     },
     "watch.update": {
       "params": {
-        "id": "w_19963f5f3986",
+        "id": "w_f170cc3c4b0e",
         "patch": {
           "enabled": false
         }
       },
       "result": {
         "watch": {
-          "id": "w_19963f5f3986",
+          "id": "w_f170cc3c4b0e",
           "title": "晨报",
           "instruction": "整理日程",
           "kind": "schedule",
@@ -342,13 +373,13 @@
           ],
           "enabled": false,
           "createdBy": "user",
-          "createdAt": 1791151734323
+          "createdAt": 1791152447322
         }
       }
     },
     "watch.remove": {
       "params": {
-        "id": "w_19963f5f3986"
+        "id": "w_f170cc3c4b0e"
       },
       "result": {
         "ok": true
@@ -364,7 +395,7 @@
             "type": "markdown",
             "mainFile": "brief.md",
             "pinned": false,
-            "updatedAt": 1791151734324,
+            "updatedAt": 1791152447323,
             "files": [
               {
                 "path": "brief.md",
@@ -398,7 +429,7 @@
           "type": "markdown",
           "mainFile": "brief.md",
           "pinned": true,
-          "updatedAt": 1791151734324,
+          "updatedAt": 1791152447323,
           "files": [
             {
               "path": "brief.md",
@@ -416,13 +447,13 @@
             "path": "user.md",
             "scope": "core",
             "size": 155,
-            "updatedAt": 1791151734289
+            "updatedAt": 1791152447278
           },
           {
             "path": "soul.md",
             "scope": "core",
             "size": 180,
-            "updatedAt": 1791151734289
+            "updatedAt": 1791152447278
           }
         ],
         "coreSize": 335
@@ -434,18 +465,18 @@
       },
       "result": {
         "content": "# 关于主人\n\n（在这里写主人的基本信息、偏好、常用账号、作息。保持精简——几百字以内。零碎的事交给记忆。）\n",
-        "updatedAt": 1791151734289
+        "updatedAt": 1791152447278
       }
     },
     "memory.write": {
       "params": {
         "path": "user.md",
         "content": "# 关于主人\n",
-        "baseUpdatedAt": 1791151734289
+        "baseUpdatedAt": 1791152447278
       },
       "result": {
         "ok": true,
-        "updatedAt": 1791151734325
+        "updatedAt": 1791152447324
       }
     },
     "settings.update": {
@@ -488,23 +519,23 @@
       "result": {
         "entries": [
           {
-            "ts": 1791151734309,
+            "ts": 1791152447307,
             "type": "deliver",
-            "msg": "m_1f6f4935a194",
+            "msg": "m_8e46dd9ad6ec",
             "pushed": true,
             "wechat": false
           },
           {
-            "ts": 1791151734322,
+            "ts": 1791152447321,
             "type": "approval.decided",
-            "id": "a_cfd352ee023a",
+            "id": "a_84ea81c5c472",
             "status": "allowed",
             "by": "app",
             "tool": "Bash",
             "remembered": true
           },
           {
-            "ts": 1791151734325,
+            "ts": 1791152447324,
             "type": "memory.write",
             "path": "user.md",
             "by": "app"
@@ -542,13 +573,20 @@
       "clientMsgId": "c-1",
       "attachments": [
         {
-          "id": "img_muudhvdn8b809cf7",
+          "id": "img_muudx5iz1fbd478c",
           "kind": "image",
           "mediaType": "image/png"
+        },
+        {
+          "id": "file_muudx5j029479df6",
+          "kind": "file",
+          "mediaType": "text/plain",
+          "name": "说明.txt",
+          "size": 2
         }
       ],
-      "id": "m_498663d7ead8",
-      "ts": 1791151734299,
+      "id": "m_ad53eafed69b",
+      "ts": 1791152447292,
       "seq": 1
     },
     "status": {
@@ -560,7 +598,7 @@
       "version": "0.1.0"
     },
     "chat.delta": {
-      "id": "m_muudhvdosmie",
+      "id": "m_muudx5j27c6z",
       "text": "你好"
     },
     "commands.updated": {
@@ -585,32 +623,32 @@
       ]
     },
     "task.updated": {
-      "id": "t_2fc60a1995a2",
+      "id": "t_11b16eb5425b",
       "title": "查资料",
       "summary": "在查",
       "status": "stopped",
       "source": "report",
-      "createdAt": 1791151734306,
-      "updatedAt": 1791151734308,
+      "createdAt": 1791152447303,
+      "updatedAt": 1791152447306,
       "activityCount": 1,
       "toolUseId": "ag1"
     },
     "approval.updated": {
-      "id": "a_cfd352ee023a",
+      "id": "a_84ea81c5c472",
       "tool": "Bash",
       "title": "在电脑上运行一条命令",
       "detail": "npm test",
       "careful": false,
       "status": "allowed",
-      "createdAt": 1791151734308,
+      "createdAt": 1791152447306,
       "suggestedScope": "cmd:npm test",
       "reason": "要运行命令",
-      "decidedAt": 1791151734322,
+      "decidedAt": 1791152447320,
       "decidedBy": "app"
     },
     "watch.updated": {
       "watch": {
-        "id": "w_19963f5f3986",
+        "id": "w_f170cc3c4b0e",
         "title": "晨报",
         "instruction": "整理日程",
         "kind": "schedule",
@@ -619,7 +657,7 @@
         ],
         "enabled": false,
         "createdBy": "user",
-        "createdAt": 1791151734323
+        "createdAt": 1791152447322
       }
     },
     "artifact.updated": {
@@ -628,7 +666,7 @@
       "type": "markdown",
       "mainFile": "brief.md",
       "pinned": false,
-      "updatedAt": 1791151734324,
+      "updatedAt": 1791152447323,
       "files": [
         {
           "path": "brief.md",
