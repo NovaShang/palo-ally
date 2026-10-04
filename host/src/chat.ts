@@ -51,16 +51,18 @@ export class ChatLog {
     return older.slice(-limit);
   }
 
+  findByClientMsgId(cid: string): ChatMessage | undefined {
+    for (let i = this.messages.length - 1, n = 0; i >= 0 && n < 1000; i--, n++) {
+      if (this.messages[i]!.clientMsgId === cid) return this.messages[i];
+    }
+    return undefined;
+  }
+
   lastUserActivity(): number {
     for (let i = this.messages.length - 1; i >= 0; i--) {
       const m = this.messages[i]!;
       if (m.role === "user" && (m.channel === "app" || m.channel === "cli" || m.channel === "wechat")) return m.ts;
     }
     return 0;
-  }
-
-  // Count proactive messages since a timestamp (for the daily push cap).
-  proactiveSince(ts: number): number {
-    return this.messages.filter((m) => m.proactive && m.ts >= ts).length;
   }
 }

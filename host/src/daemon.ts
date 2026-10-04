@@ -1,3 +1,4 @@
+import { chmodSync } from "node:fs";
 import { ApnsPusher } from "./channels/apns.ts";
 import { LocalServer } from "./channels/local.ts";
 import { RelayChannel, loadHostIdentity } from "./channels/relay.ts";
@@ -22,6 +23,19 @@ export async function startDaemon(
   opts: { driver?: HarnessDriver; config?: Config; relay?: boolean; probe?: boolean } = {},
 ): Promise<Daemon> {
   scaffoldHome(paths);
+  // Older installs wrote these world-readable; they hold tokens and the host key.
+  for (const f of [paths.config, paths.identity, paths.wechat, paths.devices, paths.pushTokens]) {
+    try {
+      chmodSync(f, 0o600);
+    } catch {
+      /* not there yet */
+    }
+  }
+  try {
+    chmodSync(paths.root, 0o700);
+  } catch {
+    /* ignore */
+  }
   const config = opts.config ?? loadConfig(paths);
   Object.assign(process.env, config.env ?? {});
   const driver = opts.driver ?? new ClaudeCodeDriver();
@@ -42,6 +56,8 @@ export async function startDaemon(
   if (opts.relay ?? config.relay.enabled) {
     const { id, daemonId } = loadHostIdentity(paths.identity);
     relay = new RelayChannel(hub, config.relay.url, id, daemonId, paths.devices);
+    const r = relay;
+    hub.onUnpairDevice = (deviceId) => r.removeDevice(deviceId);
     void relay.start();
   }
 

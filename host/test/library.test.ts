@@ -47,7 +47,7 @@ describe("ArtifactLibrary", () => {
     const b = lib.read("big", "blob.pdf", CHUNK);
     expect(b.eof).toBe(true);
     expect(Buffer.from(b.data, "base64").length).toBe(100);
-    expect(() => lib.read("big", "../../config.json")).toThrow("越界");
+    expect(() => lib.read("big", "../../config.json")).toThrow("不在产物文件夹里");
     expect(() => lib.read("../state", "x")).toThrow();
 
     lib.watch(60_000);
@@ -80,5 +80,21 @@ describe("MemoryView", () => {
   test("auto memory dir matches Claude Code's project encoding", () => {
     expect(autoMemoryDir("/Users/nova/.paloally/home", "/c")).toBe("/c/projects/-Users-nova--paloally-home/memory");
     expect(autoMemoryDir("/Users/nova/code/palo-ally", "/c")).toBe("/c/projects/-Users-nova-code-palo-ally/memory");
+  });
+});
+
+describe("ArtifactLibrary robustness", () => {
+  test("dangling and escaping symlinks don't break listing or reads", async () => {
+    const { symlinkSync } = await import("node:fs");
+    const paths = tmpPaths();
+    const lib = new ArtifactLibrary(paths.artifacts, new Bus());
+    mkdirSync(join(paths.artifacts, "a"));
+    writeFileSync(join(paths.artifacts, "a", "ok.md"), "# ok");
+    symlinkSync("/nonexistent/x", join(paths.artifacts, "a", "dangling"));
+    symlinkSync("/", join(paths.artifacts, "a", "root"));
+    symlinkSync(paths.config, join(paths.artifacts, "a", "secret.json"));
+    expect(lib.list()[0]!.files.map((f) => f.path)).toEqual(["ok.md"]);
+    expect(() => lib.read("a", "secret.json")).toThrow();
+    cleanup(paths);
   });
 });

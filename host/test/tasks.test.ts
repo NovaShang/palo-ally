@@ -129,3 +129,52 @@ describe("TaskTracker", () => {
     cleanup(paths);
   });
 });
+
+describe("TaskTracker review fixes", () => {
+  test("a reused report id after completion starts a new row", () => {
+    const { t, transitions, paths } = mk();
+    const first = t.report("research", "查 A", "running", "研究");
+    t.report("research", "A 查完", "done");
+    const second = t.report("research", "查 B", "running", "研究");
+    expect(second.id).not.toBe(first.id);
+    expect(t.get(first.id)!.status).toBe("done");
+    expect(transitions.filter(([, k]) => k === "accepted")).toHaveLength(2);
+    cleanup(paths);
+  });
+
+  test("finished placeholders are never claimed; one row per task", () => {
+    const { t, paths } = mk();
+    t.onToolUse("tu0", "Agent", { description: "quick lookup" }, null);
+    t.onToolResult("tu0", "done", false, null);
+    t.finalizePending();
+    const r = t.report("hotel", "订酒店", "running", "订酒店");
+    t.onToolUse("tu1", "Agent", { description: "订酒店" }, null);
+    expect(t.list().filter((x) => x.title === "订酒店")).toHaveLength(1);
+    expect(t.get(r.id)!.toolUseId).toBe("tu1");
+    cleanup(paths);
+  });
+
+  test("moved to background: the 'moved' tool_result doesn't finish it", () => {
+    const { t, paths } = mk();
+    t.onToolUse("tu1", "Agent", { description: "long" }, null);
+    t.onTaskStarted("sdk1", "tu1", false);
+    t.onTaskBackgrounded("sdk1");
+    t.onToolResult("tu1", "moved to background", false, null);
+    t.finalizePending();
+    expect(t.list()[0]!.status).toBe("running");
+    t.onTaskNotification("sdk1", "tu1", "completed", "done for real");
+    t.finalizePending();
+    expect(t.list()[0]!.status).toBe("done");
+    cleanup(paths);
+  });
+
+  test("live() ignores needs_input and report-only rows", () => {
+    const { t, paths } = mk();
+    t.report("q", "等你回答", "needs_input", "问你");
+    t.report("solo", "自己在做", "running", "自己");
+    expect(t.live()).toHaveLength(0);
+    t.onToolUse("tu9", "Agent", { description: "sub" }, null);
+    expect(t.live()).toHaveLength(1);
+    cleanup(paths);
+  });
+});

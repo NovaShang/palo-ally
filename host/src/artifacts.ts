@@ -1,4 +1,4 @@
-import { existsSync, openSync, readSync, closeSync, readdirSync, statSync } from "node:fs";
+import { existsSync, lstatSync, openSync, readSync, closeSync, readdirSync, statSync } from "node:fs";
 import { extname, join, relative, resolve, sep } from "node:path";
 import type { Bus } from "./bus.ts";
 import type { Artifact } from "./types.ts";
@@ -69,7 +69,7 @@ export class ArtifactLibrary {
 
   get(id: string): Artifact | undefined {
     const folder = this.folder(id);
-    if (!folder || !existsSync(folder) || !statSync(folder).isDirectory()) return undefined;
+    if (!folder || !existsSync(folder) || !lstatSync(folder).isDirectory()) return undefined;
     const meta = readJson<Meta>(join(folder, META), {});
     const files = walk(folder).filter((f) => f.path !== META);
     const newest = files.reduce((m, f) => Math.max(m, f.mtime), 0);
@@ -124,7 +124,8 @@ export class ArtifactLibrary {
     const rel = path ?? a.mainFile;
     const folder = this.folder(id)!;
     const full = resolve(folder, rel);
-    if (!full.startsWith(folder + sep)) throw new Error("路径越界");
+    if (!full.startsWith(folder + sep)) throw new Error("这个文件不在产物文件夹里");
+    if (lstatSync(full).isSymbolicLink()) throw new Error("这个文件不在产物文件夹里");
     const size = statSync(full).size;
     const len = Math.max(0, Math.min(length, CHUNK, size - offset));
     const buf = Buffer.alloc(len);
@@ -165,14 +166,29 @@ export class ArtifactLibrary {
   }
 }
 
-function walk(root: string, dir = root, depth = 0): { path: string; size: number; mtime: number }[] {
-  if (depth > 4) return [];
-  const out: { path: string; size: number; mtime: number }[] = [];
-  for (const name of readdirSync(dir)) {
-    if (name.startsWith(".")) continue;
+const MAX_FILES = 500;
+
+// walk lists an artifact folder. Symlinks are skipped (a link to / or a
+// dangling one must not break the library), and the listing is capped.
+function walk(root: string, dir = root, depth = 0, out: { path: string; size: number; mtime: number }[] = []) {
+  if (depth > 4 || out.length >= MAX_FILES) return out;
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return out;
+  }
+  for (const name of names) {
+    if (name.startsWith(".") || name === "node_modules" || out.length >= MAX_FILES) continue;
     const full = join(dir, name);
-    const st = statSync(full);
-    if (st.isDirectory()) out.push(...walk(root, full, depth + 1));
+    let st;
+    try {
+      st = lstatSync(full);
+    } catch {
+      continue;
+    }
+    if (st.isSymbolicLink()) continue;
+    if (st.isDirectory()) walk(root, full, depth + 1, out);
     else out.push({ path: relative(root, full), size: st.size, mtime: st.mtimeMs });
   }
   return out;

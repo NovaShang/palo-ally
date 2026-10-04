@@ -147,6 +147,8 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
         out.push({ type: "task_started", taskId: m.task_id, toolUseId: m.tool_use_id, description: m.description ?? "", background: m.is_backgrounded });
       else if (m.subtype === "task_progress")
         out.push({ type: "task_progress", taskId: m.task_id, toolUseId: m.tool_use_id, summary: m.summary });
+      else if (m.subtype === "task_updated" && m.patch?.is_backgrounded === true)
+        out.push({ type: "task_backgrounded", taskId: m.task_id });
       else if (m.subtype === "task_notification")
         out.push({ type: "task_notification", taskId: m.task_id, toolUseId: m.tool_use_id, status: m.status, summary: m.summary ?? "" });
       else if (m.subtype === "compact_boundary")

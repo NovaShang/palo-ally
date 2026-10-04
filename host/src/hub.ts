@@ -3,7 +3,7 @@ import { ArtifactLibrary } from "./artifacts.ts";
 import { Audit } from "./audit.ts";
 import { Bus } from "./bus.ts";
 import { ChatLog } from "./chat.ts";
-import { type Config, type Paths, type Settings, VERSION, saveConfig } from "./config.ts";
+import { type Config, type Paths, type Settings, VERSION, patchConfig, validateSettings } from "./config.ts";
 import { BEHAVIOR } from "./home.ts";
 import type { HarnessDriver, HarnessEvent, MainSession, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
 import { MemoryView, autoMemoryDir } from "./memory.ts";
@@ -63,6 +63,26 @@ export const timing = { implicitQuietMs: 90_000 };
 const REDELIVER_WINDOW_MS = 30 * 60_000;
 
 // Plain words for what the assistant is doing right now (shown while busy).
+// friendlyError turns harness/API errors into something the owner can act on.
+export function friendlyError(error: string): string {
+  const e = error.toLowerCase();
+  if (/rate.?limit|429|overloaded|529/.test(e)) return "模型那边太忙了，这一步没做完。稍后再跟我说一次就好。";
+  if (/not logged in|unauthorized|401|invalid api key|authentication/.test(e)) return "我连不上模型了（登录失效）。请在电脑上运行 claude 重新登录，或者检查 API 密钥。";
+  if (/credit|billing|quota|usage limit/.test(e)) return "模型额度用完了，等额度恢复或者换个模型再试。";
+  if (/network|econn|timed? ?out|socket|fetch failed/.test(e)) return "网络出了问题，这一步没做完。网络恢复后再跟我说一次。";
+  if (/exited with code|process/.test(e)) return "我这边刚才意外中断了，已经重新准备好。刚才那件事可以再说一次。";
+  return `出了点问题，这一步没做完。（${truncate(error, 120)}）`;
+}
+
+// stripSkip removes the "[skip]" marker a proactive turn uses to stay silent.
+export function stripSkip(text: string): string {
+  return text
+    .split(/\n{2,}/)
+    .filter((p) => !SKIP.test(p))
+    .join("\n\n")
+    .trim();
+}
+
 export function describeActivity(tool: string): string {
   if (tool === "Write" || tool === "Edit" || tool === "NotebookEdit") return "正在写文件";
   if (tool === "Bash") return "正在电脑上跑命令";
@@ -117,12 +137,18 @@ export class Hub {
   private rollPending = false;
   private clients = new Map<string, { conn: ClientConn; off: () => void }>();
   private turnWaiters: (() => void)[] = [];
-  // Owner messages sent to the harness while a turn was running, not yet answered.
-  private inflight = new Map<string, { origin: Channel; wechat?: WechatReplyTarget }>();
+  // Every owner message sent to the harness and not yet answered, by uuid.
+  // A turn counts as answering the owner only once its result lists the uuid.
+  private pending = new Map<string, { origin: Channel; wechat?: WechatReplyTarget; sentAt: number }>();
+  private openTools = new Set<string>(); // main-thread tool calls without a result yet
+  private deltaText = ""; // streamed text of the current delta id, to finalize if the turn dies
   private implicitTimer: ReturnType<typeof setTimeout> | null = null;
   private activity = "";
+  // set by the daemon: drops a paired device (its relay pairing)
+  onUnpairDevice?: (deviceId: string) => void;
   private terminalCommands = new Set(["doctor", "color", "focus", "reload-plugins", "exit", "quit", "statusline", "terminal-setup", "vim", "ide"]);
   private commandWaiters: (() => void)[] = [];
+  private budgetNoticeDay = "";
   private modelWaiters: (() => void)[] = [];
 
   constructor(deps: HubDeps) {
@@ -140,7 +166,15 @@ export class Hub {
     this.watches = new WatchStore(this.paths.watches, this.bus);
     this.artifacts = new ArtifactLibrary(this.paths.artifacts, this.bus);
     this.memory = new MemoryView(this.paths.home, autoMemoryDir(this.paths.home));
-    this.router = new Router(() => this.config.settings, this.pushers, this.wechat, this.audit, deps.now, () => this.chat.lastUserActivity());
+    this.router = new Router(
+      () => this.config.settings,
+      this.pushers,
+      this.wechat,
+      this.audit,
+      deps.now,
+      () => this.chat.lastUserActivity(),
+      `${this.paths.state}/push-count.json`,
+    );
     this.approvals = new ApprovalManager(this.paths.approvals, this.paths.rules, this.bus, this.audit, {
       isKilled: () => this.killed,
       taskForToolUse: (id) => (id ? this.tasks.taskIdForToolUse(id) : undefined),
@@ -157,6 +191,7 @@ export class Hub {
       cwd: () => this.paths.home,
       mcpServers: () => this.extraMcpServers(),
       inheritConnectors: () => this.config.probeInheritConnectors,
+      sensitiveDomains: () => this.config.browser.sensitiveDomains,
       lastUserActivity: () => this.chat.lastUserActivity(),
       budgetLeftUsd: () => this.config.budget.probeDailyUsd - this.usage().probeUsd,
       spend: (usd) => this.addUsage("probeUsd", usd),
@@ -170,8 +205,8 @@ export class Hub {
 
   start(opts: { probe?: boolean; watchArtifacts?: boolean } = {}): void {
     const orphaned = this.tasks.orphanRunning();
+    this.recoverAfterRestart(orphaned); // before the offline notice, which isn't an answer
     this.detectOffline();
-    this.recoverAfterRestart(orphaned);
     this.beat();
     this.heartbeat = setInterval(() => this.beat(), HEARTBEAT_MS);
     if (opts.probe !== false) {
@@ -216,7 +251,7 @@ export class Hub {
 
   // Resolves when the turn queue is drained (tests, CLI one-shots).
   idle(): Promise<void> {
-    if (!this.current && !this.queue.length && !this.inflight.size) return Promise.resolve();
+    if (!this.current && !this.queue.length && !this.pending.size) return Promise.resolve();
     return new Promise((r) => this.turnWaiters.push(r));
   }
 
@@ -247,33 +282,10 @@ export class Hub {
   // while work is in progress. Only proactive turns wait for idle.
   private sendUser(text: string, origin: Channel, wechat?: WechatReplyTarget): void {
     const uuid = randomUUID();
-    if (!this.current) {
-      this.beginTurn({ text, origin, proactive: false, wechat, uuids: [uuid] });
-    } else {
-      this.inflight.set(uuid, { origin, wechat });
-      this.absorbOwner(wechat);
-    }
+    this.pending.set(uuid, { origin, wechat, sentAt: Date.now() });
+    if (!this.current) this.beginTurn({ text, origin, proactive: false, wechat, uuids: [uuid] });
+    else if (this.current.hidden) this.rollPending = false; // the owner is back: don't roll now
     this.ensureSession().send(text, uuid);
-  }
-
-  // The owner spoke during a turn: from here on its output is for them.
-  private absorbOwner(wechat?: WechatReplyTarget): void {
-    const t = this.current!;
-    if (this.implicitTimer) clearTimeout(this.implicitTimer);
-    t.implicit = false;
-    if (t.hidden) {
-      t.hidden = false;
-      this.rollPending = false;
-    }
-    if (t.proactive) {
-      t.proactive = false;
-      const held = this.turnTexts.join("\n\n").trim();
-      if (held && !/^\[skip\]/i.test(held)) {
-        this.chat.add({ role: "assistant", kind: "text", text: held, channel: t.origin, proactive: true });
-      }
-      this.turnTexts = [];
-    }
-    if (wechat && !t.wechat) t.wechat = wechat;
   }
 
   private tryCommand(t: string, channel: Channel, wechat?: WechatReplyTarget): string | null {
@@ -292,14 +304,16 @@ export class Hub {
       const pending = this.approvals.listPending().length;
       return `${s.killed ? "急停中" : s.busy ? "忙着" : "空闲"}；进行中的任务 ${running} 个，待确认 ${pending} 个。`;
     }
-    const m = /^(同意|批准|允许|ok|yes|拒绝|不同意|不行|no)\s*([0-9a-z]{4,})?$/i.exec(t);
-    if (m && this.approvals.listPending().length) {
-      const allow = /^(同意|批准|允许|ok|yes)$/i.test(m[1]!);
-      const pending = this.approvals.listPending();
-      const target = m[2] ? pending.find((a) => a.id.endsWith(m[2]!.toLowerCase())) : pending.length === 1 ? pending[0] : undefined;
-      if (!target) return `有 ${pending.length} 个待确认，请带上编号，比如「同意 ${shortId(pending[0]!.id)}」。`;
-      this.approvals.answer(target.id, allow, `${channel}`);
-      return allow ? "好，已同意。" : "好，已拒绝。";
+    // Answering an approval in text needs its 4-character code ("同意 3f2a"), so
+    // an ordinary "ok"/"yes" in conversation can never approve anything.
+    const m = /^(同意|批准|允许|拒绝|不同意)\s*([0-9a-f]{4})$/i.exec(t);
+    if (m) {
+      const target = this.approvals.listPending().find((a) => a.id.endsWith(m[2]!.toLowerCase()));
+      if (target) {
+        const allow = /^(同意|批准|允许)$/.test(m[1]!);
+        this.approvals.answer(target.id, allow, `${channel}`);
+        return allow ? "好，已同意。" : "好，已拒绝。";
+      }
     }
     void by;
     void wechat;
@@ -319,7 +333,8 @@ export class Hub {
   }
 
   private pump(): void {
-    if (this.current || this.inflight.size || !this.queue.length) {
+    this.expirePending();
+    if (this.current || this.pending.size || !this.queue.length) {
       this.flushWaitersIfIdle();
       return;
     }
@@ -331,6 +346,10 @@ export class Hub {
     const turn = this.queue.shift()!;
     if (turn.proactive && !turn.hidden && this.overMainBudget()) {
       this.log(`proactive turn dropped: main budget used up (${turn.label ?? turn.origin})`);
+      if (this.budgetNoticeDay !== this.usage().day) {
+        this.budgetNoticeDay = this.usage().day;
+        this.chat.add({ role: "system", kind: "notice", text: `今天的花费到了你设的上限，定时和盯梢的事先停下了（比如「${turn.label ?? "定时任务"}」）。明天会恢复。`, channel: "system" });
+      }
       return this.pump();
     }
     const uuid = randomUUID();
@@ -338,11 +357,20 @@ export class Hub {
     this.ensureSession().send(turn.text, uuid);
   }
 
+  // Owner messages the harness never answered (e.g. lost in a crash) stop
+  // blocking proactive turns after a while.
+  private expirePending(): void {
+    const cutoff = Date.now() - 10 * 60_000;
+    for (const [u, p] of this.pending) if (p.sentAt < cutoff && !this.current?.uuids?.includes(u)) this.pending.delete(u);
+  }
+
   private beginTurn(turn: Turn): void {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.current = turn;
     this.turnTexts = [];
     this.deltaId = null;
+    this.deltaText = "";
+    this.openTools.clear();
     this.activity = "";
     if (turn.implicit) this.armImplicitTimer();
     this.emitStatus();
@@ -351,6 +379,8 @@ export class Hub {
   private armImplicitTimer(): void {
     if (this.implicitTimer) clearTimeout(this.implicitTimer);
     this.implicitTimer = setTimeout(() => {
+      // Waiting on the owner or on a running tool is not "quiet".
+      if (this.current?.implicit && (this.openTools.size || this.approvals.listPending().length)) return this.armImplicitTimer();
       if (this.current?.implicit) {
         this.log("implicit turn went quiet without a result; closing it");
         this.endTurn(0, this.lastContextTokens);
@@ -404,11 +434,11 @@ export class Hub {
 
   onHarnessEvent(e: HarnessEvent): void {
     if (!this.current && (e.type === "text_delta" || e.type === "assistant_text" || e.type === "tool_use" || e.type === "tool_start")) {
-      if (this.inflight.size) {
+      if (this.pending.size) {
         // The harness is now answering owner messages it had queued.
-        const [first] = this.inflight.values();
-        const wechat = [...this.inflight.values()].find((x) => x.wechat)?.wechat;
-        this.beginTurn({ text: "", origin: first!.origin, proactive: false, wechat, uuids: [...this.inflight.keys()] });
+        const [first] = this.pending.values();
+        const wechat = [...this.pending.values()].find((x) => x.wechat)?.wechat;
+        this.beginTurn({ text: "", origin: first!.origin, proactive: false, wechat, uuids: [...this.pending.keys()] });
       } else {
         // The harness started a turn on its own (e.g. a background task finished).
         this.beginTurn({ text: "", origin: "system", proactive: true, implicit: true });
@@ -437,6 +467,7 @@ export class Hub {
       case "text_delta":
         if (turn && !turn.proactive && !turn.hidden) {
           if (!this.deltaId) this.deltaId = `m_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+          this.deltaText += e.text;
           this.chat.delta(this.deltaId, e.text);
         }
         break;
@@ -450,19 +481,25 @@ export class Hub {
           this.chat.add({ id: this.deltaId ?? undefined, role: "assistant", kind: "text", text: e.text, channel: turn.origin });
         }
         this.deltaId = null;
+        this.deltaText = "";
         break;
       case "tool_start":
         if (!e.parentToolUseId) this.setActivity(describeActivity(e.name));
         break;
       case "tool_use":
+        if (!e.parentToolUseId) this.openTools.add(e.id);
         this.tasks.onToolUse(e.id, e.name, e.input, e.parentToolUseId);
         this.setActivity(e.parentToolUseId ? "后台在办事" : describeActivity(e.name));
         break;
       case "tool_result":
+        this.openTools.delete(e.toolUseId);
         this.tasks.onToolResult(e.toolUseId, e.content, e.isError, e.parentToolUseId);
         break;
       case "task_started":
         this.tasks.onTaskStarted(e.taskId, e.toolUseId, e.background);
+        break;
+      case "task_backgrounded":
+        this.tasks.onTaskBackgrounded(e.taskId);
         break;
       case "task_notification":
         this.tasks.onTaskNotification(e.taskId, e.toolUseId, e.status, e.summary);
@@ -473,15 +510,13 @@ export class Hub {
       case "result":
         this.runtime.sessionCostUsd = e.totalCostUsd;
         this.saveRuntime();
-        if (e.consumedUuids) for (const u of e.consumedUuids) this.inflight.delete(u);
-        else this.inflight.clear(); // older CLI: assume queued messages were folded in
-        this.endTurn(e.costUsd, e.contextTokens, e.isError ? e.text : undefined);
+        this.endTurn(e.costUsd, e.contextTokens, e.isError ? e.text : undefined, this.consume(e.consumedUuids));
         break;
       case "error":
         this.log(`harness error: ${e.message}`);
         this.session?.close();
         this.session = null;
-        this.inflight.clear();
+        this.pending.clear();
         if (this.current) this.endTurn(0, this.lastContextTokens, e.message);
         break;
     }
@@ -493,11 +528,38 @@ export class Hub {
     this.emitStatus();
   }
 
-  private endTurn(costUsd: number, contextTokens: number, error?: string): void {
+  // consume settles which owner messages a result answered. When the harness
+  // doesn't say (older CLIs), an owner turn is taken to have answered its own
+  // messages; a proactive/implicit turn answered none.
+  private consume(listed?: string[]): { origin: Channel; wechat?: WechatReplyTarget }[] {
+    const ids = listed ?? (this.current && !this.current.proactive ? this.current.uuids ?? [] : []);
+    const answered: { origin: Channel; wechat?: WechatReplyTarget }[] = [];
+    for (const u of ids) {
+      const p = this.pending.get(u);
+      if (p) answered.push(p);
+      this.pending.delete(u);
+    }
+    return answered;
+  }
+
+  private endTurn(
+    costUsd: number,
+    contextTokens: number,
+    error?: string,
+    answered: { origin: Channel; wechat?: WechatReplyTarget }[] = [],
+  ): void {
     const turn = this.current;
     this.current = null;
     this.activity = "";
     if (this.implicitTimer) clearTimeout(this.implicitTimer);
+    // A stream cut off by an error/kill still gets a final message, so clients
+    // don't keep a half-written bubble "typing" forever.
+    if (this.deltaId) {
+      if (this.deltaText.trim()) this.chat.add({ id: this.deltaId, role: "assistant", kind: "text", text: this.deltaText, channel: turn?.origin ?? "system" });
+      this.deltaId = null;
+      this.deltaText = "";
+    }
+    this.openTools.clear();
     this.addUsage("mainUsd", costUsd);
     this.lastContextTokens = contextTokens;
     this.tasks.finalizePending();
@@ -505,30 +567,38 @@ export class Hub {
       this.metric({ type: "turn", origin: turn.origin, proactive: turn.proactive, costUsd, contextTokens, error });
       const text = this.turnTexts.join("\n\n").trim();
       if (error && !turn.hidden) {
-        this.chat.add({ role: "system", kind: "notice", text: `出了点问题：${truncate(error, 300)}`, channel: "system" });
+        this.chat.add({ role: "system", kind: "notice", text: friendlyError(error), channel: "system" });
       }
-      if (turn.proactive && !turn.hidden) {
-        if (text && !SKIP.test(text) && !/^\[skip\]/i.test(text)) {
-          const msg = this.chat.add({ role: "assistant", kind: "text", text, channel: turn.origin, proactive: true });
+      const shown = stripSkip(text);
+      // The owner spoke while this proactive turn ran and it answered them too:
+      // show it as a normal reply (no push), not as something it brought up.
+      const ownerFolded = (turn.proactive || turn.hidden) && answered.length > 0;
+      if (ownerFolded) {
+        if (shown) this.chat.add({ role: "assistant", kind: "text", text: shown, channel: answered[0]!.origin });
+        if (turn.hidden) this.rollPending = false;
+      } else if (turn.proactive && !turn.hidden) {
+        if (shown) {
+          const msg = this.chat.add({ role: "assistant", kind: "text", text: shown, channel: turn.origin, proactive: true });
           void this.router.proactive(msg);
         } else {
           this.metric({ type: "skip", origin: turn.origin, label: turn.label });
         }
       }
-      if (turn.wechat && this.wechat && text) {
-        void this.wechat.reply(turn.wechat, text).catch((err) => this.log(`wechat reply failed: ${err}`));
-        this.audit.log("wechat.reply", { chars: text.length });
+      const wechatTarget = answered.find((a) => a.wechat)?.wechat ?? (turn.proactive ? undefined : turn.wechat);
+      if (wechatTarget && this.wechat && shown) {
+        void this.wechat.reply(wechatTarget, shown).catch((err) => this.log(`wechat reply failed: ${err}`));
+        this.audit.log("wechat.reply", { chars: shown.length });
       }
       if (turn.hidden && this.rollPending) this.finishRoll();
     }
     this.emitStatus();
     this.scheduleIdle();
-    if (this.inflight.size === 0) this.pump();
+    if (this.pending.size === 0) this.pump();
     else this.flushWaitersIfIdle();
   }
 
   private flushWaitersIfIdle(): void {
-    if (!this.current && !this.queue.length && !this.inflight.size) this.flushWaiters();
+    if (!this.current && !this.queue.length && !this.pending.size) this.flushWaiters();
   }
 
   private flushWaiters(): void {
@@ -547,7 +617,7 @@ export class Hub {
   onIdle(): void {
     if (this.current || this.queue.length || !this.session) return;
     const roll = this.config.session.rollAfterTokens;
-    if (roll > 0 && this.lastContextTokens > roll && !this.tasks.running().length) {
+    if (roll > 0 && this.lastContextTokens > roll && !this.tasks.live().length) {
       // Flush before rolling: let the model write what matters to native memory.
       this.rollPending = true;
       this.enqueue({
@@ -559,7 +629,7 @@ export class Hub {
       return;
     }
     // Close the CLI process; the next message resumes the same conversation.
-    if (!this.tasks.running().length) {
+    if (!this.tasks.live().length && !this.approvals.listPending().length) {
       this.session.close();
       this.session = null;
       this.metric({ type: "idle_close", contextTokens: this.lastContextTokens });
@@ -602,8 +672,11 @@ export class Hub {
       },
       notify_user: async ({ text, urgent }) => {
         const msg = this.chat.add({ role: "assistant", kind: "notice", text, channel: "system", proactive: true });
-        const r = await this.router.proactive(msg, { urgent });
-        return r.suppressed ? `已记入对话（${r.suppressed === "quiet" ? "免打扰时段" : "今日推送已达上限"}，未推送）` : "已推送";
+        // Decide synchronously, deliver in the background: a slow push must never block the turn.
+        const delivery = this.router.proactive(msg, { urgent });
+        const r = await Promise.race([delivery, new Promise<null>((res) => setTimeout(() => res(null), 1500))]);
+        if (r?.suppressed) return `已记入对话（${r.suppressed === "quiet" ? "免打扰时段" : "今日推送已达上限"}，未推送）`;
+        return "已推送";
       },
     };
   }
@@ -611,6 +684,8 @@ export class Hub {
   // ---------------- proactive sources ----------------
 
   private onSchedule(w: Watch): void {
+    // One run of the same schedule waiting is enough.
+    if (this.queue.some((t) => t.label === w.title && t.origin === "schedule")) return;
     this.audit.log("schedule.fire", { id: w.id, title: w.title });
     this.enqueue({ text: `[定时·${w.title}] ${w.instruction}`, origin: "schedule", proactive: true, label: w.title });
   }
@@ -674,7 +749,7 @@ export class Hub {
     ];
     const ownNames = new Set(own.map((c) => c.name));
     const harness = readJson<SlashCommandInfo[]>(`${this.paths.state}/commands.json`, []).filter(
-      (c) => !ownNames.has(c.name) && !this.terminalCommands.has(c.name) && c.name !== "help",
+      (c) => !ownNames.has(c.name) && !this.terminalCommands.has(c.name) && c.name !== "help" && !c.name.startsWith("_"),
     );
     return [...own, ...harness.sort((a, b) => a.name.localeCompare(b.name))];
   }
@@ -685,6 +760,7 @@ export class Hub {
       const ready = new Promise<void>((r) => this.commandWaiters.push(r));
       this.ensureSession();
       await Promise.race([ready, new Promise((r) => setTimeout(r, timeoutMs))]);
+      if (!this.current) this.scheduleIdle(); // don't leave a process up just for the list
     }
     return this.commandList();
   }
@@ -697,6 +773,7 @@ export class Hub {
       const ready = new Promise<void>((r) => this.modelWaiters.push(r));
       this.ensureSession();
       await Promise.race([ready, new Promise((r) => setTimeout(r, timeoutMs))]);
+      if (!this.current) this.scheduleIdle();
     }
     return { model: this.status().model, setting: this.config.model ?? null, effort: this.config.effort ?? null, models: readJson<ModelOption[]>(path, []) };
   }
@@ -706,6 +783,11 @@ export class Hub {
   async setModel(patch: { model?: string | null; effort?: string | null }): Promise<Status> {
     const efforts = ["low", "medium", "high", "xhigh", "max"];
     if (patch.effort != null && !efforts.includes(patch.effort)) throw new Error("思考深度不对");
+    if (patch.model != null) {
+      const known = readJson<ModelOption[]>(`${this.paths.state}/models.json`, []);
+      const ok = known.length ? known.some((m) => m.value === patch.model) : /^[\w.\-:[\]]{1,80}$/.test(patch.model);
+      if (!ok) throw new Error(`没有这个模型：${patch.model}`);
+    }
     if ("model" in patch) {
       this.config.model = patch.model || undefined;
       if (patch.model) this.model = "";
@@ -715,7 +797,10 @@ export class Hub {
       this.config.effort = (patch.effort || undefined) as Config["effort"];
       await this.session?.setEffort(this.config.effort).catch((e) => this.log(`setEffort failed: ${e}`));
     }
-    saveConfig(this.paths, this.config);
+    patchConfig(this.paths, (c) => {
+      c.model = this.config.model;
+      c.effort = this.config.effort;
+    });
     this.audit.log("model.set", { model: this.config.model ?? "default", effort: this.config.effort ?? "default" });
     this.emitStatus();
     return this.status();
@@ -728,13 +813,18 @@ export class Hub {
     this.saveRuntime();
     this.audit.log("kill", { by });
     this.queue = [];
-    this.inflight.clear();
+    this.pending.clear();
     this.approvals.denyAll(`kill:${by}`);
     for (const t of this.tasks.running()) {
       if (t.sdkTaskId) void this.session?.stopTask(t.sdkTaskId).catch(() => {});
       this.tasks.markStopped(t.id);
     }
     void this.session?.interrupt();
+    // interrupt() alone can't unstick a turn whose tool never returns: end it
+    // here and start a fresh process next time.
+    if (this.current) this.endTurn(0, this.lastContextTokens);
+    this.session?.close();
+    this.session = null;
     this.emitStatus();
   }
 
@@ -748,7 +838,13 @@ export class Hub {
   async stopTask(id: string): Promise<Task | undefined> {
     const t = this.tasks.get(id);
     if (!t) return undefined;
-    if (t.sdkTaskId) await this.session?.stopTask(t.sdkTaskId).catch(() => {});
+    if (t.sdkTaskId) {
+      await this.session?.stopTask(t.sdkTaskId).catch(() => {});
+    } else if (t.toolUseId && this.current) {
+      // A foreground subagent runs inside the current turn: stopping it means
+      // interrupting that turn.
+      await this.session?.interrupt();
+    }
     this.audit.log("task.stop", { id });
     return this.tasks.markStopped(t.id);
   }
@@ -756,12 +852,10 @@ export class Hub {
   // ---------------- settings ----------------
 
   updateSettings(patch: Partial<Settings>): Settings {
-    const next = { ...this.config.settings, ...patch };
-    if (typeof next.maxProactivePerDay !== "number" || next.maxProactivePerDay < 0) throw new Error("maxProactivePerDay 不合法");
-    if (typeof next.probeIntervalMinutes !== "number" || next.probeIntervalMinutes < 1) throw new Error("probeIntervalMinutes 不合法");
+    const next = validateSettings(this.config.settings, patch as Record<string, unknown>);
     const probeChanged = next.probeIntervalMinutes !== this.config.settings.probeIntervalMinutes;
     this.config.settings = next;
-    saveConfig(this.paths, this.config);
+    patchConfig(this.paths, (c) => (c.settings = next));
     if (probeChanged) this.probe.start(next.probeIntervalMinutes);
     this.bus.emit("settings.updated", next);
     return next;
@@ -816,7 +910,7 @@ export class Hub {
       }
     }
     const owner = lastOwner >= 0 ? msgs[lastOwner]! : undefined;
-    const answered = msgs.slice(lastOwner + 1).some((m) => m.role !== "user" && (m.kind === "text" || m.kind === "notice"));
+    const answered = msgs.slice(lastOwner + 1).some((m) => m.role === "assistant" && m.kind === "text" && !m.proactive);
     if (owner && !answered && Date.now() - owner.ts < REDELIVER_WINDOW_MS) {
       lines.push(`主人在重启前发的这条消息还没回：「${truncate(owner.text, 500)}」。`);
     }
@@ -835,7 +929,7 @@ export class Hub {
   async restartWhenIdle(maxWaitMs = 30 * 60_000, exit: () => void = () => process.exit(0)): Promise<"restarting" | "timeout"> {
     const deadline = Date.now() + maxWaitMs;
     while (Date.now() < deadline) {
-      if (!this.current && !this.queue.length && !this.inflight.size && !this.tasks.running().length && !this.approvals.listPending().length) {
+      if (!this.current && !this.queue.length && !this.pending.size && !this.tasks.live().length && !this.approvals.listPending().length) {
         this.audit.log("restart", {});
         setTimeout(exit, 200);
         return "restarting";
@@ -859,7 +953,7 @@ export class Hub {
     const msg = this.chat.add({
       role: "system",
       kind: "notice",
-      text: `我掉线了 ${formatDuration(gap)}（${f(last)} – ${f(Date.now())}），刚恢复。这段时间错过的定时任务我会补上，期间的消息可能没收到。`,
+      text: `我掉线了 ${formatDuration(gap)}（${f(last)} – ${f(Date.now())}），刚恢复。6 小时内错过的定时任务我会补上，更早的就跳过了；这段时间的微信消息可能没收到。`,
       channel: "system",
       proactive: true,
     });

@@ -4,6 +4,7 @@ import { readJson, writeJson } from "./util.ts";
 
 export interface RpcContext {
   clientId: string;
+  deviceId?: string; // paired device (relay clients)
   channel: Channel; // "app" for relay clients, "cli" for the local socket
   local: boolean; // local socket: may call admin methods
 }
@@ -37,7 +38,11 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       };
     }
     case "chat.send": {
-      const msg = hub.userMessage(String(p.text ?? ""), ctx.channel, undefined, typeof p.clientMsgId === "string" ? p.clientMsgId.slice(0, 100) : undefined);
+      const cid = typeof p.clientMsgId === "string" ? p.clientMsgId.slice(0, 100) : undefined;
+      // A retried send (the first one did arrive) must not run twice.
+      const dup = cid ? hub.chat.findByClientMsgId(cid) : undefined;
+      if (dup) return { id: dup.id, seq: dup.seq };
+      const msg = hub.userMessage(String(p.text ?? ""), ctx.channel, undefined, cid);
       if (!msg) throw new Error("空消息");
       return { id: msg.id, seq: msg.seq };
     }
@@ -86,8 +91,11 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     case "memory.list":
       return { files: hub.memory.list(), coreSize: hub.memory.coreSize() };
     case "memory.read":
-      return { content: hub.memory.read(String(p.path)) };
+      return { content: hub.memory.read(String(p.path)), updatedAt: hub.memory.mtime(String(p.path)) };
     case "memory.write":
+      // Refuse to overwrite what the assistant changed while the editor was open.
+      if (typeof p.baseUpdatedAt === "number" && hub.memory.mtime(String(p.path)) > p.baseUpdatedAt + 1)
+        throw new Error("这个文件刚被助理改过，请重新打开再改");
       hub.memory.write(String(p.path), String(p.content ?? ""));
       hub.audit.log("memory.write", { path: p.path, by: ctx.channel });
       return { ok: true };
@@ -108,6 +116,18 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       writeJson(hub.paths.pushTokens, next.slice(-10));
       return { ok: true };
     }
+    case "push.unregister": {
+      const token = String(p.token ?? "");
+      const tokens = readJson<{ token: string }[]>(hub.paths.pushTokens, []);
+      writeJson(hub.paths.pushTokens, tokens.filter((t) => t.token !== token));
+      return { ok: true };
+    }
+    case "device.unpair":
+      if (!ctx.deviceId) throw new Error("这个连接不是配对设备");
+      hub.audit.log("device.unpaired", { deviceId: ctx.deviceId });
+      // after replying: removing the device closes this very connection
+      setTimeout(() => hub.onUnpairDevice?.(ctx.deviceId!), 100);
+      return { ok: true };
     case "audit.tail":
       return { entries: hub.audit.tail(Math.min(Number(p.limit ?? 50), 500)) };
     default:

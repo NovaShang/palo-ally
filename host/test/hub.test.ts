@@ -113,7 +113,7 @@ describe("Hub: main conversation", () => {
     });
     hub.userMessage("a", "app");
     await hub.idle();
-    expect(texts(hub.chat.recent(5)).some((t) => t.includes("出了点问题"))).toBe(true);
+    expect(texts(hub.chat.recent(5)).some((t) => t.includes("太忙了"))).toBe(true); // "rate limited" → friendly text
     hub.userMessage("b", "app");
     await hub.idle();
     expect(driver.sessions.length).toBe(2);
@@ -275,7 +275,7 @@ describe("Hub: safety", () => {
     expect(wechat.proactive[0]).toContain("有个操作等你确认");
     expect(wechat.proactive[0]).not.toContain("git push");
 
-    hub.userMessage("同意", "wechat", { userId: "u", contextToken: "c" });
+    hub.userMessage(`同意 ${pending[0]!.id.slice(-4)}`, "wechat", { userId: "u", contextToken: "c" });
     await hub.idle();
     expect(ran).toBe(true);
     expect(hub.approvals.answer(pending[0]!.id, false, "app")!.status).toBe("allowed");
@@ -297,6 +297,7 @@ describe("Hub: safety", () => {
     expect(hub.approvals.listPending()).toHaveLength(1);
     hub.userMessage("/kill", "wechat", { userId: "u", contextToken: "c" });
     await hub.idle();
+    await tick(10);
     expect(result).toBe(false);
     expect(hub.status().killed).toBe(true);
     expect(hub.approvals.preGate("Read", {}).decision).toBe("deny");
@@ -314,15 +315,17 @@ describe("Hub: safety", () => {
     cleanup(paths);
   });
 
-  test("approval command needs an id when several are pending", async () => {
+  test("approvals answer only with their code; a bare 'ok'/'同意' is just conversation", async () => {
     const script: FakeScript = async (_t, ctx) => {
-      await Promise.all([ctx.useTool("Bash", { command: "rm a" }), ctx.useTool("Bash", { command: "rm b" })]);
+      if (_t === "x") await Promise.all([ctx.useTool("Bash", { command: "rm a" }), ctx.useTool("Bash", { command: "rm b" })]);
     };
-    const { hub, paths } = makeHub({ script });
+    const { hub, driver, paths } = makeHub({ script });
     hub.userMessage("x", "app");
     await tick(10);
+    hub.userMessage("ok", "app");
     hub.userMessage("同意", "app");
-    expect(hub.chat.recent(1)[0]!.text).toContain("请带上编号");
+    expect(hub.approvals.listPending()).toHaveLength(2); // nothing approved
+    expect(driver.last!.sent).toEqual(["x", "ok", "同意"]); // the assistant heard them
     const [a, b] = hub.approvals.listPending();
     hub.userMessage(`拒绝 ${a!.id.slice(-4)}`, "app");
     hub.userMessage(`同意 ${b!.id.slice(-4)}`, "app");
@@ -369,7 +372,7 @@ describe("Hub: talking while it works", () => {
     cleanup(paths);
   });
 
-  test("owner speaking during a proactive turn turns it visible", async () => {
+  test("owner speaking during a proactive turn: both get shown, [skip] never leaks", async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     const script: FakeScript = async (t, ctx) => {
@@ -387,8 +390,11 @@ describe("Hub: talking while it works", () => {
     hub.userMessage("在吗", "app");
     release();
     await hub.idle();
-    const texts = hub.chat.recent(10).filter((m) => m.role === "assistant").map((m) => m.text);
-    expect(texts).toEqual(["晨报第一段", "晨报第二段", "回：在吗"]);
+    const shown = hub.chat.recent(10).filter((m) => m.role === "assistant");
+    expect(shown.map((m) => m.text)).toEqual(["晨报第一段\n\n晨报第二段", "回：在吗"]);
+    expect(shown[0]!.proactive).toBe(true);
+    expect(shown[1]!.proactive).toBeFalsy();
+    expect(shown.some((m) => m.text.includes("[skip]"))).toBe(false);
     cleanup(paths);
   });
 
@@ -401,6 +407,9 @@ describe("Hub: talking while it works", () => {
     driver.last!.opts.onEvent({ type: "tool_use", id: "x", name: "Bash", input: {}, parentToolUseId: null });
     expect(hub.status().busy).toBe(true);
     expect(hub.status().activity).toBe("正在电脑上跑命令");
+    await tick(60);
+    expect(hub.status().busy).toBe(true); // a tool is still running: not "quiet"
+    driver.last!.opts.onEvent({ type: "tool_result", toolUseId: "x", content: "ok", isError: false, parentToolUseId: null });
     await tick(60);
     expect(hub.status().busy).toBe(false);
     hub.userMessage("还在吗", "app");
@@ -526,6 +535,108 @@ describe("Hub: model & effort", () => {
     await hub.idle();
     expect(driver.last!.opts.model).toBe("haiku");
     await expect(hub.setModel({ effort: "turbo" })).rejects.toThrow();
+    cleanup(paths);
+  });
+});
+
+describe("Hub: settings can't break it", () => {
+  test("bad timezone / quiet hours / timeouts are rejected; a bad file loads with defaults", async () => {
+    const { hub, paths } = makeHub();
+    expect(() => hub.updateSettings({ timezone: "Pacific Time" } as any)).toThrow("时区");
+    expect(() => hub.updateSettings({ quietHours: { start: "23:00" } } as any)).toThrow("免打扰");
+    expect(() => hub.updateSettings({ approvalTimeoutMinutes: 0 } as any)).toThrow();
+    expect(() => hub.updateSettings({ nope: 1 } as any)).toThrow("没有这个设置");
+    expect(hub.updateSettings({ timezone: "Asia/Shanghai" }).timezone).toBe("Asia/Shanghai");
+    const { loadConfig } = await import("../src/config.ts");
+    const raw = JSON.parse(await Bun.file(paths.config).text());
+    raw.settings.timezone = "Mars/Olympus";
+    raw.settings.quietHours = { start: "x" };
+    writeJson(paths.config, raw);
+    const cfg = loadConfig(paths);
+    expect(cfg.settings.timezone).not.toBe("Mars/Olympus");
+    expect(cfg.settings.quietHours).toEqual({ start: "23:00", end: "08:00" });
+    // and a bad zone in memory never throws in the hot path
+    hub.config.settings.timezone = "Bogus/Zone";
+    hub.userMessage("hi", "app");
+    await hub.idle();
+    expect(hub.chat.recent(1)[0]!.text).toBe("收到：hi");
+    cleanup(paths);
+  });
+
+  test("CLI-written config isn't clobbered by the daemon's stale copy", async () => {
+    const { hub, paths } = makeHub();
+    const raw = JSON.parse((await Bun.file(paths.config).exists()) ? await Bun.file(paths.config).text() : "{}");
+    writeJson(paths.config, { ...raw, wechat: { enabled: true, baseUrl: "https://x" } });
+    hub.updateSettings({ maxProactivePerDay: 3 });
+    const after = JSON.parse(await Bun.file(paths.config).text());
+    expect(after.wechat.enabled).toBe(true);
+    expect(after.settings.maxProactivePerDay).toBe(3);
+    cleanup(paths);
+  });
+});
+
+describe("Hub: review regressions", () => {
+  test("a hung pusher can't block notify_user or the turn", async () => {
+    const { hub, paths } = makeHub();
+    (hub as any).router.pushers = [{ name: "stuck", available: () => true, push: () => new Promise(() => {}) }];
+    const t0 = Date.now();
+    expect(await hub.toolHandlers().notify_user({ text: "有事" })).toBe("已推送");
+    expect(Date.now() - t0).toBeLessThan(3000);
+    cleanup(paths);
+  });
+
+  test("a stream cut off by an error is finalized; kill unsticks a hung tool", async () => {
+    const { hub, driver, paths, events } = makeHub({
+      script: async (t, ctx) => {
+        if (t === "hang") {
+          ctx.emit({ type: "tool_use", id: "h1", name: "Bash", input: { command: "sleep 9999" }, parentToolUseId: null });
+          await new Promise(() => {});
+        }
+        ctx.emit({ type: "text_delta", text: "写到一半" });
+        ctx.emit({ type: "error", message: "boom" });
+      },
+    });
+    hub.userMessage("go", "app");
+    await hub.idle();
+    const deltaId = events.find((e) => e.event === "chat.delta")!.data.id;
+    expect(hub.chat.recent(5).some((m) => m.id === deltaId && m.text === "写到一半")).toBe(true);
+    hub.userMessage("hang", "app");
+    await tick(10);
+    expect(hub.status().busy).toBe(true);
+    hub.kill("test");
+    expect(hub.status().busy).toBe(false);
+    hub.resume("test");
+    void driver;
+    cleanup(paths);
+  });
+
+  test("retried chat.send with the same clientMsgId runs once; memory writes refuse stale bases", async () => {
+    const { handleRpc } = await import("../src/rpc.ts");
+    const { hub, driver, paths } = makeHub();
+    const ctx = { clientId: "c", channel: "app" as const, local: false };
+    const a = (await handleRpc(hub, { method: "chat.send", params: { text: "发邮件", clientMsgId: "k1" } }, ctx)) as any;
+    const b = (await handleRpc(hub, { method: "chat.send", params: { text: "发邮件", clientMsgId: "k1" } }, ctx)) as any;
+    await hub.idle();
+    expect(b).toEqual(a);
+    expect(driver.last!.sent).toEqual(["发邮件"]);
+    const r = (await handleRpc(hub, { method: "memory.read", params: { path: "user.md" } }, ctx)) as any;
+    await handleRpc(hub, { method: "memory.write", params: { path: "user.md", content: "v1", baseUpdatedAt: r.updatedAt } }, ctx);
+    await expect(handleRpc(hub, { method: "memory.write", params: { path: "user.md", content: "v2", baseUpdatedAt: r.updatedAt - 10_000 } }, ctx)).rejects.toThrow("刚被助理改过");
+    cleanup(paths);
+  });
+
+  test("device.unpair drops the calling device; push.unregister drops its token", async () => {
+    const { handleRpc } = await import("../src/rpc.ts");
+    const { hub, paths } = makeHub();
+    let dropped = "";
+    hub.onUnpairDevice = (d) => (dropped = d);
+    const ctx = { clientId: "app_1_dev-x", deviceId: "dev-x", channel: "app" as const, local: false };
+    await handleRpc(hub, { method: "push.register", params: { token: "a".repeat(64) } }, ctx);
+    await handleRpc(hub, { method: "push.unregister", params: { token: "a".repeat(64) } }, ctx);
+    expect(JSON.parse(await Bun.file(paths.pushTokens).text())).toEqual([]);
+    await handleRpc(hub, { method: "device.unpair", params: {} }, ctx);
+    await tick(150);
+    expect(dropped).toBe("dev-x");
     cleanup(paths);
   });
 });

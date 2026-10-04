@@ -1,3 +1,4 @@
+import { dirname, resolve } from "node:path";
 import type { Audit } from "./audit.ts";
 import type { Bus } from "./bus.ts";
 import type { PermissionDecision, PermissionRequest } from "./harness/types.ts";
@@ -9,31 +10,152 @@ import { newId, readJson, truncate, writeJson } from "./util.ts";
 const OWN_SERVER = "mcp__paloally__";
 const SENSITIVE_MSG = "主人把这个网站放进了「不让助理碰」的名单，不能打开。请告诉主人需要的话自己去电脑上看。";
 
-const IRREVERSIBLE_BASH: RegExp[] = [
-  /(^|[\s;&|(])rm\s/,
-  /(^|[\s;&|(])rmdir\s/,
-  /(^|[\s;&|(])shred\s/,
-  /\bgit\s+push\b/,
-  /\bgit\s+reset\s+--hard\b/,
-  /\bgit\s+clean\s+-[a-z]*f/,
-  /\bgit\s+branch\s+-D\b/,
-  /\bcurl\b.*(\s-X\s*(POST|PUT|DELETE|PATCH)|\s(-d|--data|--data-raw|--data-binary|-F|--form)\b)/i,
-  /\b(wget)\b.*--post/i,
-  /\b(mail|sendmail|mutt)\b/,
-  /\bosascript\b.*\b(send|delete)\b/i,
-  /\bgh\s+(pr\s+(create|merge|close)|issue\s+(create|close|delete)|release\s+create|repo\s+delete)\b/,
-  /\b(npm|bun|pnpm|yarn)\s+publish\b/,
-  /\bkubectl\s+delete\b/,
-  /\bdocker\s+(rm|rmi|system\s+prune)\b/,
-  /\b(shutdown|reboot|halt)\b/,
-  /\bdd\s+if=/,
-  /\bmkfs\b/,
-  /\bdrop\s+(table|database)\b/i,
-  /\bdelete\s+from\b/i,
-];
+// ---- shell: classify each simple command by its program, not by substrings ----
 
-const IRREVERSIBLE_MCP = /(send|reply|forward|post|publish|delete|trash|remove|pay|purchase|order|checkout|transfer|share|submit|invite|cancel|archive|unsubscribe)/i;
-const IRREVERSIBLE_CLICK = /(pay|buy|purchase|checkout|place order|submit|send|delete|remove|confirm|transfer|支付|付款|购买|下单|提交|发送|删除|确认|转账)/i;
+// splitCommands breaks a shell line into simple commands (on ; && || | & newlines
+// and inside $(…) / backticks), keeping quoted strings as single words.
+export function splitCommands(line: string): string[][] {
+  const cmds: string[][] = [];
+  let words: string[] = [];
+  let cur = "";
+  let quote: string | null = null;
+  const endWord = () => {
+    if (cur) words.push(cur);
+    cur = "";
+  };
+  const endCmd = () => {
+    endWord();
+    if (words.length) cmds.push(words);
+    words = [];
+  };
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i]!;
+    if (quote) {
+      if (c === quote) quote = null;
+      else cur += c;
+      continue;
+    }
+    if (c === "'" || c === '"') {
+      quote = c;
+      continue;
+    }
+    if (c === "\\" && i + 1 < line.length) {
+      cur += line[++i];
+      continue;
+    }
+    if (c === "$" && line[i + 1] === "(") {
+      endCmd();
+      i++;
+      continue;
+    }
+    if (";|&\n`()".includes(c)) {
+      endCmd();
+      continue;
+    }
+    if (/\s/.test(c)) {
+      endWord();
+      continue;
+    }
+    cur += c;
+  }
+  endCmd();
+  return cmds;
+}
+
+const WRAPPERS = new Set(["sudo", "env", "nohup", "time", "command", "exec", "nice", "xargs", "caffeinate", "timeout"]);
+const DANGEROUS_CODE = /(rmtree|os\.remove|os\.unlink|\.unlink\(|os\.rmdir|rmSync|unlinkSync|fs\.rm\b|os\.system|subprocess|shutil\.move|requests\.(post|put|delete|patch)|httpx\.(post|put|delete)|smtplib|sendmail|urlopen\([^)]*data=)/;
+
+function isIrreversibleCommand(words: string[]): boolean {
+  let i = 0;
+  // skip env assignments and wrappers (and their flags)
+  while (i < words.length && (/^\w+=/.test(words[i]!) || WRAPPERS.has(words[i]!.split("/").pop()!) || (i > 0 && WRAPPERS.has(words[i - 1]!.split("/").pop()!) && words[i]!.startsWith("-")))) i++;
+  const prog = (words[i] ?? "").split("/").pop()!;
+  const args = words.slice(i + 1);
+  const has = (...xs: string[]) => args.some((a) => xs.includes(a));
+  const sub = args.find((a) => !a.startsWith("-")) ?? "";
+  switch (prog) {
+    case "rm": case "rmdir": case "shred": case "srm": case "unlink": case "trash": case "truncate":
+      return true;
+    case "sh": case "bash": case "zsh": case "dash": {
+      const c = args.indexOf("-c");
+      return c >= 0 && args[c + 1] !== undefined && isIrreversible("Bash", { command: args[c + 1] });
+    }
+    case "python": case "python3": case "node": case "ruby": case "perl": case "bun": case "deno": {
+      const flag = args.findIndex((a) => a === "-c" || a === "-e" || a === "--eval");
+      if (flag >= 0) return DANGEROUS_CODE.test(args[flag + 1] ?? "");
+      if (prog === "bun") return sub === "publish";
+      return false;
+    }
+    case "find":
+      return has("-delete") || args.some((a, k) => (a === "-exec" || a === "-execdir" || a === "-ok") && /(^|\/)rm$|shred|unlink/.test(args[k + 1] ?? ""));
+    case "git":
+      if (sub === "push" || sub === "filter-branch" || sub === "filter-repo") return true;
+      if (sub === "reset") return has("--hard");
+      if (sub === "clean") return args.some((a) => /^-[a-z]*f/.test(a));
+      if (sub === "branch") return has("-D", "--delete");
+      if (sub === "checkout" || sub === "restore") return has("--", ".") && has(".");
+      return false;
+    case "curl": {
+      const method = args.findIndex((a) => a === "-X" || a === "--request");
+      if (method >= 0 && /^(POST|PUT|DELETE|PATCH)$/i.test(args[method + 1] ?? "")) return true;
+      return args.some((a) => /^(-d|--data.*|-F|--form.*|--json|-T|--upload-file)$/.test(a) || /^-X(POST|PUT|DELETE|PATCH)$/i.test(a));
+    }
+    case "wget":
+      return args.some((a) => a.startsWith("--post") || a.startsWith("--method"));
+    case "mail": case "sendmail": case "mutt": case "msmtp": case "mailx":
+      return true;
+    case "scp": case "sftp":
+      return true;
+    case "rsync":
+      return has("--delete", "--delete-after", "--delete-before", "--remove-source-files") || args.some((a) => /^[^/\s]+:/.test(a));
+    case "osascript":
+      return args.some((a) => /\b(send|delete|empty trash)\b/i.test(a));
+    case "gh": {
+      const s2 = args.filter((a) => !a.startsWith("-"));
+      const verb = `${s2[0] ?? ""} ${s2[1] ?? ""}`;
+      return /^(pr (create|merge|close|comment|review)|issue (create|close|delete|comment)|release (create|delete)|repo (delete|create|archive)|gist create)$/.test(verb) || (s2[0] === "api" && args.some((a, k) => (a === "-X" || a === "--method") && /POST|PUT|DELETE|PATCH/i.test(args[k + 1] ?? "")));
+    }
+    case "npm": case "pnpm": case "yarn":
+      return sub === "publish" || sub === "unpublish";
+    case "kubectl":
+      return sub === "delete";
+    case "docker":
+      return sub === "rm" || sub === "rmi" || (sub === "system" && has("prune")) || (sub === "volume" && has("rm"));
+    case "shutdown": case "reboot": case "halt":
+      return true;
+    case "dd":
+      return args.some((a) => a.startsWith("of="));
+    case "diskutil":
+      return /erase|partition|unmount/i.test(sub);
+    case "psql": case "mysql": case "sqlite3":
+      return args.some((a) => /\b(drop|delete|truncate|update)\b/i.test(a));
+  }
+  return prog.startsWith("mkfs");
+}
+
+const INTERPRETERS = new Set(["python", "python3", "node", "bun", "deno", "ruby", "perl", "bash", "sh", "zsh", "dash", "npx", "bunx", "eval", "xargs", "env", "sudo", "osascript", "php", "lua"]);
+
+// ---- MCP / browser: match verbs on whole name tokens ("list_posts" ≠ "post") ----
+const IRREVERSIBLE_VERBS = new Set(["send", "reply", "forward", "post", "publish", "delete", "trash", "remove", "pay", "purchase", "checkout", "transfer", "share", "submit", "invite", "cancel", "archive", "unsubscribe", "merge", "push", "comment", "destroy", "drop", "wipe", "revoke", "rsvp", "respond"]);
+
+function nameTokens(name: string): string[] {
+  return name
+    .replace(/([a-z])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+function isIrreversibleMcpName(leaf: string): boolean {
+  const t = nameTokens(leaf);
+  if (t.some((x) => IRREVERSIBLE_VERBS.has(x))) return true;
+  const creates = t.includes("create") || t.includes("update") || t.includes("place") || t.includes("add");
+  // creating events sends invites; rules/filters can auto-forward mail; orders cost money
+  return creates && t.some((x) => ["event", "events", "rule", "filter", "order", "invitation", "forwarding"].includes(x));
+}
+
+const IRREVERSIBLE_CLICK = /(pay|buy|purchase|checkout|place order|submit|send|delete|remove|confirm|transfer|reply|post|publish|支付|付款|购买|下单|提交|发送|删除|确认|转账|回复|发布|发表)/i;
+const BROWSER_ALWAYS_ASK = /^browser_(evaluate|handle_dialog|file_upload)$/;
 // Reading and searching change nothing; never interrupt the owner for them.
 const READ_ONLY_TOOLS = new Set(["Read", "Glob", "Grep", "LS", "NotebookRead", "WebSearch", "ToolSearch", "TodoWrite", "TaskOutput", "ListMcpResourcesTool", "ReadMcpResourceTool"]);
 
@@ -52,16 +174,21 @@ export function isIrreversible(tool: string, input: Record<string, unknown>): bo
   if (tool.startsWith(OWN_SERVER)) return false;
   if (tool === "Bash") {
     const cmd = String(input.command ?? "");
-    return IRREVERSIBLE_BASH.some((r) => r.test(cmd));
+    return splitCommands(cmd).some(isIrreversibleCommand);
   }
   if (CHROME_ALWAYS_ASK.test(tool)) return true;
   if (tool.startsWith("mcp__")) {
     const leaf = tool.split("__").slice(2).join("__");
+    if (BROWSER_ALWAYS_ASK.test(leaf)) return true;
     if (BROWSER_INTERACT.test(leaf)) {
       const text = `${input.element ?? ""} ${input.text ?? ""} ${input.key ?? ""}`;
-      return IRREVERSIBLE_CLICK.test(text) || (leaf === "browser_press_key" && /enter/i.test(String(input.key)));
+      return (
+        IRREVERSIBLE_CLICK.test(text) ||
+        (leaf === "browser_press_key" && /enter/i.test(String(input.key))) ||
+        (leaf === "browser_type" && input.submit === true)
+      );
     }
-    return IRREVERSIBLE_MCP.test(leaf);
+    return isIrreversibleMcpName(leaf);
   }
   return false;
 }
@@ -81,6 +208,8 @@ export function scopeFor(tool: string, input: Record<string, unknown>, currentDo
   if (tool === "Bash") {
     const words = String(input.command ?? "").trim().split(/\s+/).filter(Boolean);
     if (!words.length || /[;&|`$<>]/.test(String(input.command))) return null; // compound commands never get a rule
+    // Interpreters run arbitrary code: "always allow python3 -c" would allow anything.
+    if (INTERPRETERS.has(words[0]!.split("/").pop()!)) return null;
     return `cmd:${words.slice(0, 2).join(" ")}`;
   }
   if (tool === "WebFetch") {
@@ -88,9 +217,10 @@ export function scopeFor(tool: string, input: Record<string, unknown>, currentDo
     return d ? `domain:${d}` : null;
   }
   if (tool === "Write" || tool === "Edit" || tool === "NotebookEdit") {
-    const p = String(input.file_path ?? input.notebook_path ?? "");
-    const dir = p.slice(0, p.lastIndexOf("/"));
-    return dir && dir !== "" ? `path:${dir}` : null;
+    const raw = String(input.file_path ?? input.notebook_path ?? "");
+    if (!raw.startsWith("/")) return null;
+    const dir = dirname(resolve(raw)); // normalizes ../ so a rule can't be escaped
+    return dir && dir !== "/" ? `path:${dir}` : null;
   }
   if (tool.startsWith("mcp__")) {
     const recipient = input.to ?? input.recipient ?? input.email ?? input.chat_id ?? input.channel;
@@ -126,8 +256,10 @@ export function ruleMatches(rule: AutoRule, tool: string, scope: string | null):
   switch (rk) {
     case "domain":
       return cv === rv || cv.endsWith("." + rv);
-    case "path":
-      return cv === rv || cv.startsWith(rv + "/");
+    case "path": {
+      const c = resolve(cv);
+      return c === rv || c.startsWith(rv + "/");
+    }
     default:
       return cv === rv;
   }
@@ -247,7 +379,7 @@ export class ApprovalManager {
     const approval: Approval = {
       id: newId("a_"),
       tool: req.toolName,
-      title: req.title || describeTool(req.toolName, req.input),
+      title: describeTool(req.toolName, req.input), // ours, in plain Chinese; the SDK's title is English
       detail: describeInput(req.toolName, req.input),
       taskId: this.hooks.taskForToolUse(req.toolUseId),
       irreversible,
@@ -320,19 +452,27 @@ function describeTool(tool: string, input: Record<string, unknown>): string {
   if (tool === "Bash") return "在电脑上运行一条命令";
   if (tool === "Write") return "写入文件";
   if (tool === "Edit") return "修改文件";
+  if (tool === "Read") return "看一个文件";
   if (tool === "WebFetch") return `打开网页 ${domainOf(input.url) ?? ""}`.trim();
   if (tool.startsWith("mcp__")) {
     const leaf = tool.split("__").slice(2).join(" ");
-    if (/browser_navigate/.test(tool)) return `浏览器打开 ${domainOf(input.url) ?? ""}`.trim();
+    if (/browser_navigate|claude-in-chrome__navigate/.test(tool)) return `浏览器打开 ${domainOf(input.url) ?? ""}`.trim();
     if (/browser_click/.test(tool)) return `在网页上点击「${truncate(String(input.element ?? ""), 30)}」`;
-    if (/browser_type|fill_form/.test(tool)) return "在网页上填写内容";
-    return `使用 ${leaf}`;
+    if (/browser_type|fill_form|form_input/.test(tool)) return "在网页上填写内容";
+    if (/claude-in-chrome__computer/.test(tool)) return "在你的浏览器里操作";
+    if (/javascript_tool|browser_evaluate/.test(tool)) return "在你的浏览器里运行一段脚本";
+    if (/file_upload|upload_image/.test(tool)) return "往网页上传文件";
+    const t = nameTokens(leaf);
+    if (t.includes("send") || t.includes("reply") || t.includes("forward")) return "替你发出一条消息";
+    if (t.includes("delete") || t.includes("trash") || t.includes("remove")) return "删除一些东西";
+    if (t.includes("create") || t.includes("add")) return "替你新建一项内容";
+    return "使用一个连接的服务";
   }
-  return `使用 ${tool}`;
+  return "做一步操作";
 }
 
 function describeInput(tool: string, input: Record<string, unknown>): string {
-  if (tool === "Bash") return truncate(String(input.command ?? ""), 500);
+  if (tool === "Bash") return truncate(String(input.command ?? ""), 4000); // show what will actually run
   if (tool === "Write" || tool === "Edit") return String(input.file_path ?? "");
   if (input.url) return String(input.url);
   return truncate(JSON.stringify(input), 500);

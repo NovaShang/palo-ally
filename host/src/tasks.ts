@@ -5,6 +5,7 @@ import { appendJsonl, newId, readJson, readJsonl, truncate, writeJson } from "./
 
 const SUBAGENT_TOOLS = new Set(["Agent", "Task"]); // Task was renamed Agent in CC v2.1.63; accept both
 const LINK_WINDOW_MS = 15 * 60_000;
+const GUESS_WINDOW_MS = 2 * 60_000;
 const TERMINAL: TaskStatus[] = ["done", "failed", "stopped"];
 
 export type TaskTransition = "accepted" | "finished";
@@ -113,6 +114,21 @@ export class TaskTracker {
     this.save(task);
   }
 
+  // A foreground subagent moved to the background: its tool_result was only a
+  // "moved to background" notice, so wait for the real completion.
+  onTaskBackgrounded(sdkTaskId: string): void {
+    const task = this.tasks.find((t) => t.sdkTaskId === sdkTaskId);
+    if (!task) return;
+    this.background.add(task.id);
+    this.pendingFinish.delete(task.id);
+  }
+
+  // live: subagents actually working right now (excludes "needs_input" and
+  // rows the model reported but never attached to a subagent).
+  live(): Task[] {
+    return this.tasks.filter((t) => t.status === "running" && !!t.toolUseId && Date.now() - t.updatedAt < 6 * 3600_000);
+  }
+
   onTaskNotification(sdkTaskId: string, toolUseId: string | undefined, status: string, summary: string): void {
     const task = this.tasks.find((t) => t.sdkTaskId === sdkTaskId || (toolUseId && t.toolUseId === toolUseId));
     if (!task || TERMINAL.includes(task.status)) return;
@@ -125,6 +141,11 @@ export class TaskTracker {
   report(reportId: string, summary: string, status: string, title?: string): Task {
     const st = normalizeStatus(status);
     let task = this.get(reportId);
+    // A finished row isn't reopened by a reused id ("research" next week is a new task).
+    if (task && TERMINAL.includes(task.status) && !TERMINAL.includes(st)) {
+      this.reportIds.delete(reportId);
+      task = undefined;
+    }
     if (!task) {
       task = this.claimPlaceholder(title);
       if (task) {
@@ -208,22 +229,23 @@ export class TaskTracker {
   // match, else the newest recent one.
   private claimPlaceholder(title?: string): Task | undefined {
     const claimed = new Set(this.reportIds.values());
+    // Only live, unclaimed placeholders; a guess (no title match) only for a very recent one.
     const cands = this.tasks.filter(
-      (t) => t.source === "auto" && !claimed.has(t.id) && Date.now() - t.createdAt < LINK_WINDOW_MS,
+      (t) => t.source === "auto" && !claimed.has(t.id) && !TERMINAL.includes(t.status) && Date.now() - t.createdAt < LINK_WINDOW_MS,
     );
     if (title) {
       const m = cands.find((t) => t.title === title);
       if (m) return m;
     }
-    return cands.sort((a, b) => b.createdAt - a.createdAt)[0];
+    return cands.filter((t) => Date.now() - t.createdAt < GUESS_WINDOW_MS).sort((a, b) => b.createdAt - a.createdAt)[0];
   }
 
   // A report_task row with no subagent attached yet, from the last few minutes.
   private unlinkedReport(title: string): Task | undefined {
     const cands = this.tasks.filter(
-      (t) => t.source === "report" && !t.toolUseId && !TERMINAL.includes(t.status) && Date.now() - t.createdAt < LINK_WINDOW_MS,
+      (t) => t.source === "report" && !t.toolUseId && t.status === "running" && Date.now() - t.createdAt < LINK_WINDOW_MS,
     );
-    return cands.find((t) => t.title === title) ?? cands.sort((a, b) => b.createdAt - a.createdAt)[0];
+    return cands.find((t) => t.title === title) ?? cands.filter((t) => Date.now() - t.createdAt < GUESS_WINDOW_MS).sort((a, b) => b.createdAt - a.createdAt)[0];
   }
 
   private finish(task: Task, status: TaskStatus, summary: string): void {
@@ -247,6 +269,8 @@ export class TaskTracker {
     // Keep the list bounded: finished tasks older than 30 days drop off.
     const cutoff = Date.now() - 30 * 86400_000;
     this.tasks = this.tasks.filter((t) => !TERMINAL.includes(t.status) || t.updatedAt > cutoff);
+    const ids = new Set(this.tasks.map((t) => t.id));
+    for (const [k, v] of this.reportIds) if (!ids.has(v)) this.reportIds.delete(k);
     writeJson(this.path, { tasks: this.tasks, reportIds: [...this.reportIds] });
     this.bus.emit("task.updated", changed);
   }

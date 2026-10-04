@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
-import { readJson, writeJson } from "./util.ts";
+import { isValidTimeZone, parseHHMM, readJson, writeJson } from "./util.ts";
 
 export const VERSION = "0.1.0";
 
@@ -126,11 +126,54 @@ export function defaultConfig(): Config {
   };
 }
 
+// validateSettings checks a settings patch merged over the current settings
+// and returns the result, or throws a message the owner can act on.
+export function validateSettings(current: Settings, patch: Record<string, unknown>): Settings {
+  const allowed = new Set(Object.keys(defaultConfig().settings));
+  for (const k of Object.keys(patch)) if (!allowed.has(k)) throw new Error(`没有这个设置：${k}`);
+  const next = { ...current, ...patch } as Settings;
+  if (!isValidTimeZone(next.timezone)) throw new Error(`时区不认识：${String(next.timezone)}（例如 Asia/Shanghai、America/Los_Angeles）`);
+  if (next.quietHours !== null) {
+    const q = next.quietHours as any;
+    if (!q || typeof q !== "object" || parseHHMM(String(q.start ?? "")) === null || parseHHMM(String(q.end ?? "")) === null)
+      throw new Error("免打扰时段要写成开始和结束两个时间，例如 23:00-08:00");
+    next.quietHours = { start: String(q.start), end: String(q.end) };
+  }
+  const int = (v: unknown, min: number, max: number, name: string) => {
+    if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max) throw new Error(`${name}要在 ${min} 到 ${max} 之间`);
+    return Math.round(v);
+  };
+  next.maxProactivePerDay = int(next.maxProactivePerDay, 0, 100, "每天主动找你的次数");
+  next.probeIntervalMinutes = int(next.probeIntervalMinutes, 1, 1440, "检查间隔（分钟）");
+  next.approvalTimeoutMinutes = int(next.approvalTimeoutMinutes, 1, 24 * 60, "确认等待时间（分钟）");
+  if (!["off", "hint", "full"].includes(next.wechatProactive)) throw new Error("微信主动消息只能是 off / hint / full");
+  return next;
+}
+
 // loadConfig deep-merges the saved file over defaults so new keys appear
 // without a migration step.
 export function loadConfig(paths: Paths): Config {
   const saved = readJson<Partial<Config>>(paths.config, {});
-  return deepMerge(defaultConfig(), saved) as Config;
+  const cfg = deepMerge(defaultConfig(), saved) as Config;
+  // A hand-edited bad value falls back to its default instead of crash-looping.
+  const defaults = defaultConfig().settings as any;
+  for (const k of Object.keys(defaults)) {
+    try {
+      validateSettings({ ...defaults, [k]: (cfg.settings as any)[k] }, {});
+    } catch {
+      (cfg.settings as any)[k] = defaults[k];
+    }
+  }
+  return cfg;
+}
+
+// patchConfig re-reads the file, applies `mutate`, and saves, so a daemon
+// holding an older copy never clobbers what the CLI wrote meanwhile.
+export function patchConfig(paths: Paths, mutate: (c: Config) => void): Config {
+  const disk = loadConfig(paths);
+  mutate(disk);
+  saveConfig(paths, disk);
+  return disk;
 }
 
 export function saveConfig(paths: Paths, cfg: Config): void {

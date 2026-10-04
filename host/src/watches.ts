@@ -52,8 +52,9 @@ export class WatchStore {
     const w = this.get(id);
     if (!w) throw new Error(`没有这条盯梢：${id}`);
     const { id: _i, createdBy: _c, ...rest } = patch;
-    Object.assign(w, rest);
-    validate(w);
+    // validate a copy first: a rejected patch must not half-apply
+    const next = validate({ ...w, ...rest } as Watch);
+    Object.assign(w, next);
     this.save();
     this.bus.emit("watch.updated", { watch: w });
     return w;
@@ -92,6 +93,8 @@ function validate(w: Watch): Watch {
     w.intervalMinutes = Math.max(5, Math.round(w.intervalMinutes ?? 60));
   } else if (!w.at && !w.intervalMinutes) {
     throw new Error("定时 watch 需要 at 或 intervalMinutes");
+  } else if (w.intervalMinutes !== undefined && w.intervalMinutes !== null) {
+    w.intervalMinutes = Math.max(5, Math.round(Number(w.intervalMinutes) || 5));
   }
   return w;
 }

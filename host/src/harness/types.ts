@@ -15,6 +15,7 @@ export type HarnessEvent =
   | { type: "tool_result"; toolUseId: string; content: string; isError: boolean; parentToolUseId: string | null }
   | { type: "task_started"; taskId: string; toolUseId?: string; description: string; background?: boolean }
   | { type: "task_progress"; taskId: string; toolUseId?: string; summary?: string }
+  | { type: "task_backgrounded"; taskId: string }
   | { type: "task_notification"; taskId: string; toolUseId?: string; status: "completed" | "failed" | "stopped"; summary: string }
   | { type: "compact"; trigger: string; preTokens: number; postTokens?: number }
   | {

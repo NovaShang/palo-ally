@@ -283,7 +283,7 @@ export class RelayChannel {
       this.closeStream(s.id);
       return;
     }
-    void serveRpc(this.hub, req, { clientId: s.clientId!, channel: "app", local: false }).then((res) => this.sendSealed(s, res));
+    void serveRpc(this.hub, req, { clientId: s.clientId!, deviceId: s.deviceId, channel: "app", local: false }).then((res) => this.sendSealed(s, res));
   }
 
   private sendSealed(s: Stream, msg: unknown): void {

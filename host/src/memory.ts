@@ -48,6 +48,14 @@ export class MemoryView {
     writeFileSync(full, content);
   }
 
+  mtime(path: string): number {
+    try {
+      return statSync(this.resolve(path)).mtimeMs;
+    } catch {
+      return 0;
+    }
+  }
+
   coreSize(): number {
     return CORE_FILES.reduce((n, f) => {
       const p = join(this.home, f);

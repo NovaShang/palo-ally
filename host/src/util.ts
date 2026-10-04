@@ -7,7 +7,7 @@ export function newId(prefix = ""): string {
 }
 
 export function ensureDir(path: string): void {
-  if (!existsSync(path)) mkdirSync(path, { recursive: true });
+  if (!existsSync(path)) mkdirSync(path, { recursive: true, mode: 0o700 });
 }
 
 export function readJson<T>(path: string, fallback: T): T {
@@ -22,13 +22,14 @@ export function readJson<T>(path: string, fallback: T): T {
 export function writeJson(path: string, value: unknown): void {
   ensureDir(dirname(path));
   const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n");
+  // owner-only: config holds API tokens, identity holds the host key
+  writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n", { mode: 0o600 });
   renameSync(tmp, path);
 }
 
 export function appendJsonl(path: string, value: unknown): void {
   ensureDir(dirname(path));
-  appendFileSync(path, JSON.stringify(value) + "\n");
+  appendFileSync(path, JSON.stringify(value) + "\n", { mode: 0o600 });
 }
 
 export function readJsonl<T>(path: string): T[] {
@@ -66,9 +67,20 @@ export interface ZonedParts {
   dateKey: string; // YYYY-MM-DD in the zone
 }
 
+export function isValidTimeZone(tz: unknown): tz is string {
+  if (typeof tz !== "string" || !tz) return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function zonedParts(ms: number, timeZone: string): ZonedParts {
+  // A bad zone must never take the assistant down: fall back to UTC.
   const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
+    timeZone: isValidTimeZone(timeZone) ? timeZone : "UTC",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

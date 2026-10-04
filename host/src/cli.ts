@@ -162,6 +162,7 @@ async function chat(): Promise<void> {
 }
 
 async function resolveApprovalId(c: LocalClient, short: string): Promise<string> {
+  if (!short.trim()) throw new Error("请带上编号：paloally approve <编号>（paloally approvals 可以看到编号）");
   const sync = await c.call("sync", {});
   const hit = sync.approvals.find((a: any) => a.id === short || a.id.endsWith(short));
   return hit?.id ?? short;
