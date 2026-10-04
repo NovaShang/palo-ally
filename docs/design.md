@@ -94,7 +94,8 @@ relay/       不新写：复用 ~/code/bento/relay（bento-relay-acp，relay.ben
 ChatMessage { seq:number; id:string; role:"user"|"assistant"|"system";
   kind:"text"|"task"|"approval"|"notice"; text:string;
   channel:"app"|"cli"|"wechat"|"probe"|"schedule"|"system"; ts:number /*ms*/;
-  proactive?:boolean; taskId?:string; approvalId?:string }
+  proactive?:boolean; taskId?:string; approvalId?:string;
+  clientMsgId?:string /* chat.send 带来的会原样回显 */ }
 Task { id; title; summary; status:"running"|"done"|"failed"|"needs_input"|"stopped";
   source:"auto"|"report"; createdAt; updatedAt; activityCount:number }
 TaskActivity { ts; kind:"tool_use"|"tool_result"|"text"; tool?:string; text:string }

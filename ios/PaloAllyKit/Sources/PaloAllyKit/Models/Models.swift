@@ -1,0 +1,470 @@
+import Foundation
+
+// Wire models — design.md §5.3. Every decoder is tolerant: unknown fields are
+// ignored, unknown enum strings map to `.unknown`, malformed optional fields
+// become nil, and missing required fields fall back to neutral defaults.
+
+// MARK: - Enums
+
+public enum ChatRole: String, TolerantStringEnum {
+    case user, assistant, system, unknown
+    public static let fallback = ChatRole.unknown
+}
+
+public enum ChatKind: String, TolerantStringEnum {
+    case text, task, approval, notice, unknown
+    public static let fallback = ChatKind.unknown
+}
+
+public enum ChatChannel: String, TolerantStringEnum {
+    case app, cli, wechat, probe, schedule, system, unknown
+    public static let fallback = ChatChannel.unknown
+}
+
+public enum TaskStatus: String, TolerantStringEnum {
+    case running, done, failed, stopped, unknown
+    case needsInput = "needs_input"
+    public static let fallback = TaskStatus.unknown
+}
+
+public enum TaskSource: String, TolerantStringEnum {
+    case auto, report, unknown
+    public static let fallback = TaskSource.unknown
+}
+
+public enum ActivityKind: String, TolerantStringEnum {
+    case text, unknown
+    case toolUse = "tool_use"
+    case toolResult = "tool_result"
+    public static let fallback = ActivityKind.unknown
+}
+
+public enum ApprovalStatus: String, TolerantStringEnum {
+    case pending, allowed, denied, expired, unknown
+    public static let fallback = ApprovalStatus.unknown
+}
+
+public enum WatchKind: String, TolerantStringEnum {
+    case check, schedule, unknown
+    public static let fallback = WatchKind.unknown
+}
+
+public enum WatchCreator: String, TolerantStringEnum {
+    case agent, user, unknown
+    public static let fallback = WatchCreator.unknown
+}
+
+public enum MemoryScope: String, TolerantStringEnum {
+    case core, auto, unknown
+    public static let fallback = MemoryScope.unknown
+}
+
+public enum WechatState: String, TolerantStringEnum {
+    case off, connected, expired, unknown
+    public static let fallback = WechatState.unknown
+}
+
+// MARK: - ChatMessage
+
+public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
+    /// Local delivery state for optimistic echoes. Not on the wire.
+    public enum Delivery: Sendable, Hashable { case sending, sent, failed }
+
+    /// 0 means "no seq yet" (optimistic echo or an in-flight stream).
+    public var seq: Int64
+    public var id: String
+    public var role: ChatRole
+    public var kind: ChatKind
+    public var text: String
+    public var channel: ChatChannel
+    public var ts: Int64
+    public var proactive: Bool?
+    public var taskId: String?
+    public var approvalId: String?
+    /// Not in §5.3 but accepted if the host echoes it on the broadcast
+    /// `chat.message` for a user turn (lets us merge the optimistic echo
+    /// before the `chat.send` response lands).
+    public var clientMsgId: String?
+
+    // Local-only state.
+    public var isStreaming: Bool = false
+    public var delivery: Delivery = .sent
+
+    enum CodingKeys: String, CodingKey {
+        case seq, id, role, kind, text, channel, ts, proactive, taskId, approvalId, clientMsgId
+    }
+
+    public init(
+        seq: Int64, id: String, role: ChatRole, kind: ChatKind = .text, text: String,
+        channel: ChatChannel = .app, ts: Int64, proactive: Bool? = nil, taskId: String? = nil,
+        approvalId: String? = nil, clientMsgId: String? = nil
+    ) {
+        self.seq = seq; self.id = id; self.role = role; self.kind = kind; self.text = text
+        self.channel = channel; self.ts = ts; self.proactive = proactive; self.taskId = taskId
+        self.approvalId = approvalId; self.clientMsgId = clientMsgId
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        seq = l.int64("seq") ?? 0
+        id = l.string("id") ?? UUID().uuidString
+        role = l.decode(ChatRole.self, "role") ?? .unknown
+        kind = l.decode(ChatKind.self, "kind") ?? .text
+        text = l.string("text") ?? ""
+        channel = l.decode(ChatChannel.self, "channel") ?? .unknown
+        ts = l.millis("ts") ?? 0
+        proactive = l.bool("proactive")
+        taskId = l.string("taskId")
+        approvalId = l.string("approvalId")
+        clientMsgId = l.string("clientMsgId")
+    }
+
+    public var date: Date { ts.msDate }
+}
+
+// MARK: - Task
+
+/// `Task` on the wire. Named `AllyTask` to avoid clashing with Swift's `Task`.
+public struct AllyTask: Codable, Sendable, Hashable, Identifiable {
+    public var id: String
+    public var title: String
+    public var summary: String
+    public var status: TaskStatus
+    public var source: TaskSource
+    public var createdAt: Int64
+    public var updatedAt: Int64
+    public var activityCount: Int
+
+    enum CodingKeys: String, CodingKey { case id, title, summary, status, source, createdAt, updatedAt, activityCount }
+
+    public init(id: String, title: String, summary: String, status: TaskStatus, source: TaskSource = .report,
+                createdAt: Int64, updatedAt: Int64, activityCount: Int = 0) {
+        self.id = id; self.title = title; self.summary = summary; self.status = status; self.source = source
+        self.createdAt = createdAt; self.updatedAt = updatedAt; self.activityCount = activityCount
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        id = l.string("id") ?? UUID().uuidString
+        title = l.string("title") ?? ""
+        summary = l.string("summary") ?? ""
+        status = l.decode(TaskStatus.self, "status") ?? .unknown
+        source = l.decode(TaskSource.self, "source") ?? .unknown
+        createdAt = l.millis("createdAt") ?? 0
+        updatedAt = l.millis("updatedAt") ?? createdAt
+        activityCount = l.int("activityCount") ?? 0
+    }
+
+    public var isActive: Bool { status == .running || status == .needsInput }
+}
+
+public struct TaskActivity: Codable, Sendable, Hashable {
+    public var ts: Int64
+    public var kind: ActivityKind
+    public var tool: String?
+    public var text: String
+
+    enum CodingKeys: String, CodingKey { case ts, kind, tool, text }
+
+    public init(ts: Int64, kind: ActivityKind, tool: String? = nil, text: String) {
+        self.ts = ts; self.kind = kind; self.tool = tool; self.text = text
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        ts = l.millis("ts") ?? 0
+        kind = l.decode(ActivityKind.self, "kind") ?? .unknown
+        tool = l.string("tool")
+        text = l.string("text") ?? ""
+    }
+}
+
+// MARK: - Approval
+
+public struct Approval: Codable, Sendable, Hashable, Identifiable {
+    public var id: String
+    public var tool: String
+    public var title: String
+    public var detail: String
+    public var taskId: String?
+    public var irreversible: Bool
+    public var status: ApprovalStatus
+    public var createdAt: Int64
+    public var decidedAt: Int64?
+    public var decidedBy: String?
+    public var suggestedScope: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, tool, title, detail, taskId, irreversible, status, createdAt, decidedAt, decidedBy, suggestedScope
+    }
+
+    public init(id: String, tool: String, title: String, detail: String, taskId: String? = nil,
+                irreversible: Bool, status: ApprovalStatus = .pending, createdAt: Int64,
+                decidedAt: Int64? = nil, decidedBy: String? = nil, suggestedScope: String? = nil) {
+        self.id = id; self.tool = tool; self.title = title; self.detail = detail; self.taskId = taskId
+        self.irreversible = irreversible; self.status = status; self.createdAt = createdAt
+        self.decidedAt = decidedAt; self.decidedBy = decidedBy; self.suggestedScope = suggestedScope
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        id = l.string("id") ?? UUID().uuidString
+        tool = l.string("tool") ?? ""
+        title = l.string("title") ?? ""
+        detail = l.string("detail") ?? ""
+        taskId = l.string("taskId")
+        // Fail safe: if the host omits the flag, treat it as irreversible so
+        // the "always allow" shortcut is never offered by mistake.
+        irreversible = l.bool("irreversible") ?? true
+        status = l.decode(ApprovalStatus.self, "status") ?? .unknown
+        createdAt = l.millis("createdAt") ?? 0
+        decidedAt = l.millis("decidedAt")
+        decidedBy = l.string("decidedBy")
+        suggestedScope = l.string("suggestedScope")
+    }
+
+    public var isPending: Bool { status == .pending }
+    /// "以后这类都允许" is only offered for reversible actions.
+    public var canRemember: Bool { !irreversible }
+}
+
+// MARK: - Watch
+
+public struct Watch: Codable, Sendable, Hashable, Identifiable {
+    public var id: String
+    public var title: String
+    public var kind: WatchKind
+    public var instruction: String
+    public var intervalMinutes: Int?
+    /// "HH:MM" in the host's local timezone.
+    public var at: [String]?
+    public var enabled: Bool
+    public var createdBy: WatchCreator
+    public var lastCheckedAt: Int64?
+    public var lastTriggeredAt: Int64?
+    public var skipIfActiveMinutes: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, kind, instruction, intervalMinutes, at, enabled, createdBy, lastCheckedAt,
+             lastTriggeredAt, skipIfActiveMinutes
+    }
+
+    public init(id: String, title: String, kind: WatchKind, instruction: String, intervalMinutes: Int? = nil,
+                at: [String]? = nil, enabled: Bool = true, createdBy: WatchCreator = .user,
+                lastCheckedAt: Int64? = nil, lastTriggeredAt: Int64? = nil, skipIfActiveMinutes: Int? = nil) {
+        self.id = id; self.title = title; self.kind = kind; self.instruction = instruction
+        self.intervalMinutes = intervalMinutes; self.at = at; self.enabled = enabled; self.createdBy = createdBy
+        self.lastCheckedAt = lastCheckedAt; self.lastTriggeredAt = lastTriggeredAt
+        self.skipIfActiveMinutes = skipIfActiveMinutes
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        id = l.string("id") ?? UUID().uuidString
+        title = l.string("title") ?? ""
+        kind = l.decode(WatchKind.self, "kind") ?? .unknown
+        instruction = l.string("instruction") ?? ""
+        intervalMinutes = l.int("intervalMinutes")
+        at = l.array(String.self, "at")
+        enabled = l.bool("enabled") ?? true
+        createdBy = l.decode(WatchCreator.self, "createdBy") ?? .unknown
+        lastCheckedAt = l.millis("lastCheckedAt")
+        lastTriggeredAt = l.millis("lastTriggeredAt")
+        skipIfActiveMinutes = l.int("skipIfActiveMinutes")
+    }
+}
+
+/// `watch.add` params: a Watch without id / createdBy.
+public struct WatchDraft: Codable, Sendable, Hashable {
+    public var title: String
+    public var kind: WatchKind
+    public var instruction: String
+    public var intervalMinutes: Int?
+    public var at: [String]?
+    public var enabled: Bool
+    public var skipIfActiveMinutes: Int?
+
+    public init(title: String, kind: WatchKind, instruction: String, intervalMinutes: Int? = nil,
+                at: [String]? = nil, enabled: Bool = true, skipIfActiveMinutes: Int? = nil) {
+        self.title = title; self.kind = kind; self.instruction = instruction
+        self.intervalMinutes = intervalMinutes; self.at = at; self.enabled = enabled
+        self.skipIfActiveMinutes = skipIfActiveMinutes
+    }
+
+    public init(_ w: Watch) {
+        self.init(title: w.title, kind: w.kind, instruction: w.instruction, intervalMinutes: w.intervalMinutes,
+                  at: w.at, enabled: w.enabled, skipIfActiveMinutes: w.skipIfActiveMinutes)
+    }
+}
+
+// MARK: - Artifact
+
+public struct ArtifactFile: Codable, Sendable, Hashable {
+    public var path: String
+    public var size: Int64
+
+    enum CodingKeys: String, CodingKey { case path, size }
+
+    public init(path: String, size: Int64) { self.path = path; self.size = size }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        path = l.string("path") ?? ""
+        size = l.int64("size") ?? 0
+    }
+}
+
+public struct Artifact: Codable, Sendable, Hashable, Identifiable {
+    public var id: String
+    public var title: String
+    /// Free-form ("markdown", "html", "pdf", "image", …). Not an enum on purpose.
+    public var type: String
+    public var mainFile: String
+    public var pinned: Bool
+    public var updatedAt: Int64
+    public var files: [ArtifactFile]
+
+    enum CodingKeys: String, CodingKey { case id, title, type, mainFile, pinned, updatedAt, files }
+
+    public init(id: String, title: String, type: String, mainFile: String, pinned: Bool = false,
+                updatedAt: Int64, files: [ArtifactFile] = []) {
+        self.id = id; self.title = title; self.type = type; self.mainFile = mainFile; self.pinned = pinned
+        self.updatedAt = updatedAt; self.files = files
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        id = l.string("id") ?? UUID().uuidString
+        title = l.string("title") ?? ""
+        type = l.string("type") ?? ""
+        mainFile = l.string("mainFile") ?? ""
+        pinned = l.bool("pinned") ?? false
+        updatedAt = l.millis("updatedAt") ?? 0
+        files = l.array(ArtifactFile.self, "files") ?? []
+    }
+
+    /// File extension of the main file, lowercased ("md", "html", "pdf", …).
+    public var mainExtension: String {
+        (mainFile as NSString).pathExtension.lowercased()
+    }
+
+    public enum PreviewStyle: Sendable { case markdown, html, quickLook }
+
+    public var previewStyle: PreviewStyle {
+        let t = type.lowercased()
+        let ext = mainExtension
+        if t == "markdown" || t == "md" || ext == "md" || ext == "markdown" { return .markdown }
+        if t == "html" || ext == "html" || ext == "htm" { return .html }
+        return .quickLook
+    }
+}
+
+// MARK: - Settings
+
+public struct QuietHours: Codable, Sendable, Hashable {
+    public var start: String
+    public var end: String
+
+    enum CodingKeys: String, CodingKey { case start, end }
+
+    public init(start: String, end: String) { self.start = start; self.end = end }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        start = l.string("start") ?? "22:00"
+        end = l.string("end") ?? "08:00"
+    }
+}
+
+public struct HostSettings: Codable, Sendable, Hashable {
+    public var timezone: String
+    public var quietHours: QuietHours?
+    public var maxProactivePerDay: Int
+    public var probeIntervalMinutes: Int
+    public var approvalTimeoutMinutes: Int
+
+    enum CodingKeys: String, CodingKey {
+        case timezone, quietHours, maxProactivePerDay, probeIntervalMinutes, approvalTimeoutMinutes
+    }
+
+    public init(timezone: String = TimeZone.current.identifier, quietHours: QuietHours? = nil,
+                maxProactivePerDay: Int = 8, probeIntervalMinutes: Int = 15, approvalTimeoutMinutes: Int = 30) {
+        self.timezone = timezone; self.quietHours = quietHours; self.maxProactivePerDay = maxProactivePerDay
+        self.probeIntervalMinutes = probeIntervalMinutes; self.approvalTimeoutMinutes = approvalTimeoutMinutes
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        let d = HostSettings()
+        timezone = l.string("timezone") ?? d.timezone
+        quietHours = l.decode(QuietHours.self, "quietHours")
+        maxProactivePerDay = l.int("maxProactivePerDay") ?? d.maxProactivePerDay
+        probeIntervalMinutes = l.int("probeIntervalMinutes") ?? d.probeIntervalMinutes
+        approvalTimeoutMinutes = l.int("approvalTimeoutMinutes") ?? d.approvalTimeoutMinutes
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(timezone, forKey: .timezone)
+        // quietHours: null means "off" — encode it explicitly.
+        if let q = quietHours { try c.encode(q, forKey: .quietHours) } else { try c.encodeNil(forKey: .quietHours) }
+        try c.encode(maxProactivePerDay, forKey: .maxProactivePerDay)
+        try c.encode(probeIntervalMinutes, forKey: .probeIntervalMinutes)
+        try c.encode(approvalTimeoutMinutes, forKey: .approvalTimeoutMinutes)
+    }
+}
+
+// MARK: - Status
+
+public struct HostStatus: Codable, Sendable, Hashable {
+    public var online: Bool
+    public var killed: Bool
+    public var busy: Bool
+    public var model: String
+    public var sessionId: String?
+    public var wechat: WechatState
+    public var version: String
+
+    enum CodingKeys: String, CodingKey { case online, killed, busy, model, sessionId, wechat, version }
+
+    public init(online: Bool = true, killed: Bool = false, busy: Bool = false, model: String = "",
+                sessionId: String? = nil, wechat: WechatState = .off, version: String = "") {
+        self.online = online; self.killed = killed; self.busy = busy; self.model = model
+        self.sessionId = sessionId; self.wechat = wechat; self.version = version
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        online = l.bool("online") ?? true
+        killed = l.bool("killed") ?? false
+        busy = l.bool("busy") ?? false
+        model = l.string("model") ?? ""
+        sessionId = l.string("sessionId")
+        wechat = l.decode(WechatState.self, "wechat") ?? .off
+        version = l.string("version") ?? ""
+    }
+}
+
+// MARK: - Memory
+
+public struct MemoryFile: Codable, Sendable, Hashable, Identifiable {
+    public var path: String
+    public var scope: MemoryScope
+    public var size: Int64
+    public var updatedAt: Int64
+    public var id: String { path }
+
+    enum CodingKeys: String, CodingKey { case path, scope, size, updatedAt }
+
+    public init(path: String, scope: MemoryScope, size: Int64, updatedAt: Int64) {
+        self.path = path; self.scope = scope; self.size = size; self.updatedAt = updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        path = l.string("path") ?? ""
+        scope = l.decode(MemoryScope.self, "scope") ?? .unknown
+        size = l.int64("size") ?? 0
+        updatedAt = l.millis("updatedAt") ?? 0
+    }
+}

@@ -1,0 +1,86 @@
+name: PaloAlly
+options:
+  bundleIdPrefix: com.novashang
+  developmentLanguage: zh-Hans
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+packages:
+  PaloAllyKit:
+    path: ../PaloAllyKit
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  PaloAlly:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Sources
+      - path: Resources
+    dependencies:
+      - package: PaloAllyKit
+    entitlements:
+      path: PaloAlly.entitlements
+      properties:
+        aps-environment: development
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.device.audio-input: true
+        com.apple.security.device.camera: true
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: PaloAlly
+        CFBundleDevelopmentRegion: zh-Hans
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.productivity
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen:
+          UIColorName: ""
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIBackgroundModes:
+          - remote-notification
+        NSMicrophoneUsageDescription: 按住说话时需要用到麦克风，把你说的话变成文字。
+        NSSpeechRecognitionUsageDescription: 用来把你说的话转成文字，发给助理。
+        NSCameraUsageDescription: 扫一扫电脑上的二维码，把手机和电脑连起来。
+        CFBundleURLTypes:
+          - CFBundleURLName: com.novashang.paloally.pair
+            CFBundleURLSchemes:
+              - paloally
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.novashang.paloally
+        PRODUCT_NAME: PaloAlly
+        SUPPORTS_MACCATALYST: YES
+        DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        TARGETED_DEVICE_FAMILY: "1,2,6"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SWIFT_EMIT_LOC_STRINGS: NO
+        ENABLE_PREVIEWS: YES
+        CODE_SIGN_STYLE: Automatic
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+schemes:
+  PaloAlly:
+    build:
+      targets:
+        PaloAlly: all
+    run:
+      config: Debug
+    archive:
+      config: Release

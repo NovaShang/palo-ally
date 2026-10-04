@@ -296,6 +296,7 @@ export class ClaudeCodeDriver implements HarnessDriver {
     let output: unknown = undefined;
     let cost = 0;
     let error: string | undefined;
+    let usage: Record<string, unknown> | undefined;
     try {
       const q = query({
         prompt: req.prompt,
@@ -305,7 +306,6 @@ export class ClaudeCodeDriver implements HarnessDriver {
           systemPrompt: req.systemPrompt, // short custom prompt, not the full Claude Code one
           settingSources: [], // no CLAUDE.md / user settings: keep the context short
           tools: req.allowedTools,
-          allowedTools: req.allowedTools,
           mcpServers: req.mcpServers as any,
           persistSession: false,
           maxTurns: req.maxTurns,
@@ -321,6 +321,7 @@ export class ClaudeCodeDriver implements HarnessDriver {
         const m = msg as any;
         if (m.type === "result") {
           cost = m.total_cost_usd ?? 0;
+          usage = m.modelUsage;
           if (m.subtype === "success") output = m.structured_output ?? m.result;
           else error = m.errors?.join("; ") || m.subtype;
         }
@@ -328,6 +329,6 @@ export class ClaudeCodeDriver implements HarnessDriver {
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }
-    return { output, costUsd: cost, error };
+    return { output, costUsd: cost, error, usage };
   }
 }

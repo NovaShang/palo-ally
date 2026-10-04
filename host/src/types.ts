@@ -13,6 +13,7 @@ export interface ChatMessage {
   proactive?: boolean;
   taskId?: string;
   approvalId?: string;
+  clientMsgId?: string; // echoed for app-sent messages so clients can merge their optimistic copy
 }
 
 export type TaskStatus = "running" | "done" | "failed" | "needs_input" | "stopped";

@@ -37,7 +37,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       };
     }
     case "chat.send": {
-      const msg = hub.userMessage(String(p.text ?? ""), ctx.channel);
+      const msg = hub.userMessage(String(p.text ?? ""), ctx.channel, undefined, typeof p.clientMsgId === "string" ? p.clientMsgId.slice(0, 100) : undefined);
       if (!msg) throw new Error("空消息");
       return { id: msg.id, seq: msg.seq };
     }

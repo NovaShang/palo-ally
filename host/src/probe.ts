@@ -3,6 +3,8 @@ import type { Watch } from "./types.ts";
 import type { WatchStore } from "./watches.ts";
 import { parseHHMM, truncate, zonedParts } from "./util.ts";
 
+const READ_ONLY = new Set(["Read", "Glob", "Grep", "WebFetch", "WebSearch"]);
+
 // How long after a missed schedule slot we still catch it up (host was asleep).
 const CATCHUP_MS = 6 * 3600_000;
 
@@ -152,12 +154,14 @@ export class ProbeScheduler {
       allowedTools: ["Read", "Glob", "Grep", "WebFetch", "WebSearch"],
       outputSchema: PROBE_SCHEMA as unknown as Record<string, unknown>,
       maxTurns: 12,
-      // Unattended: anything that would need a human is refused.
-      canUseTool: async () => ({ behavior: "deny", message: "探针只读，不能做需要确认的操作" }),
+      // Unattended: read-only tools run, anything else that would need a human is refused.
+      canUseTool: async ({ toolName, input }) =>
+        READ_ONLY.has(toolName) ? { behavior: "allow", updatedInput: input } : { behavior: "deny", message: "探针只读，不能做需要确认的操作" },
       preToolGate: ({ toolName }) =>
         toolName.startsWith("mcp__paloally__") ? { decision: "deny", reason: "探针不能改助理状态" } : { decision: "pass" },
     });
     this.host.spend(res.costUsd);
+    this.host.log(`probe run: ${due.length} watch(es), $${res.costUsd.toFixed(4)} ${res.usage ? JSON.stringify(res.usage) : ""}`);
     if (res.error) {
       this.host.log(`probe error: ${res.error}`);
       // Don't hammer a failing probe: mark checked so it waits a full interval.

@@ -134,6 +134,7 @@ describe("ProbeScheduler", () => {
     const req = driver.probes[0]!;
     expect(req.preToolGate({ toolName: "mcp__paloally__report_task", input: {}, toolUseId: "1" }).decision).toBe("deny");
     expect((await req.canUseTool({ toolName: "Bash", input: {}, signal: new AbortController().signal })).behavior).toBe("deny");
+    expect((await req.canUseTool({ toolName: "WebFetch", input: {}, signal: new AbortController().signal })).behavior).toBe("allow");
     cleanup(paths);
   });
 

@@ -1,0 +1,507 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		08BF7949F94B89DDD05C3319 /* AssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056B108C0177A1156F312E84 /* AssistantView.swift */; };
+		1F13B32F1A120C451958B347 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D85821DAF90FE3998B520913 /* LibraryView.swift */; };
+		31D752A67A0592C5BA7B46B1 /* PaloAllyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C0D86FFE5D13BEF644D76F /* PaloAllyApp.swift */; };
+		32876775778CD8C38491FBB0 /* ApprovalCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CC0C56E78F856900F1C91A8 /* ApprovalCard.swift */; };
+		3615E6CE5D1C09A3629F48B6 /* WatchesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9E4508DECE36B39CF27552D /* WatchesSection.swift */; };
+		42A52F693D0C3EF2BF03E594 /* PaloAllyKit in Frameworks */ = {isa = PBXBuildFile; productRef = C72366410B2F41DC5EBD75BE /* PaloAllyKit */; };
+		42F6ACB32AA6D01DA32DF8B1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FB010AC69CB9C0C890D26829 /* Assets.xcassets */; };
+		4FB859813BD2430EFFD25E56 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */; };
+		58FA01FB519DE507B656FDAE /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63DF4E96D0F73A16748CF819 /* SettingsView.swift */; };
+		6581CEDB42117DA61968E352 /* Copy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 362F66DA10216A79F79CBB11 /* Copy.swift */; };
+		771DA9C8AA0708C69B5C0D2B /* MessageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51926AB68F34CBF76C2C1507 /* MessageRow.swift */; };
+		7FA2E7E1309D4680A571ACCC /* SpeechDictation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F881AEFDC8F959F0506046DD /* SpeechDictation.swift */; };
+		81A11C9A7F625540126701DA /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5458CC8523AA61D0A0852ABA /* ChatView.swift */; };
+		9E8BAB6F1769D57EC0C617C0 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97B4D23870E594B624074F8D /* ComposerView.swift */; };
+		B7DF0900ABDDFACC50FFF6B2 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7769E0FBCB029211A3B7B532 /* QRScannerView.swift */; };
+		CCF61F9E84E355E2B02DCE4C /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C1205FC1B401AE4865CFE52 /* AppModel.swift */; };
+		D3720B2AD3344F09581611E1 /* TasksSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90E9946A58A404E7087D10BB /* TasksSection.swift */; };
+		D556694E027BD986AB400215 /* ApprovalsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3E3EFECDEF03091588F1AA /* ApprovalsSection.swift */; };
+		E0748A27FBA8E1FD9DDEA652 /* MemorySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A047E4D10313D33DC6FA1B11 /* MemorySection.swift */; };
+		E72CE394982E8B194DFF27E9 /* ArtifactDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFF3C59774AD6CD3FE7F5AAA /* ArtifactDetailView.swift */; };
+		F10B59DC6D408555F64C2858 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 711BC1712E3CB0B810C91022 /* PairingView.swift */; };
+		F7BB5BDB265CB2F858DDF473 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C8BBDD7B0248070C25E81AB /* RootView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		056B108C0177A1156F312E84 /* AssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantView.swift; sourceTree = "<group>"; };
+		0B2339DF9459035E591FCB19 /* PaloAlly.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PaloAlly.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0CC0C56E78F856900F1C91A8 /* ApprovalCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalCard.swift; sourceTree = "<group>"; };
+		362F66DA10216A79F79CBB11 /* Copy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Copy.swift; sourceTree = "<group>"; };
+		3C8BBDD7B0248070C25E81AB /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		4B87BB3BCA4EF713FD6F4888 /* PaloAllyKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PaloAllyKit; path = ../PaloAllyKit; sourceTree = SOURCE_ROOT; };
+		50C0D86FFE5D13BEF644D76F /* PaloAllyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaloAllyApp.swift; sourceTree = "<group>"; };
+		51926AB68F34CBF76C2C1507 /* MessageRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageRow.swift; sourceTree = "<group>"; };
+		5458CC8523AA61D0A0852ABA /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
+		63DF4E96D0F73A16748CF819 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		711BC1712E3CB0B810C91022 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
+		7769E0FBCB029211A3B7B532 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
+		90A1D0CBFE081417EB16EEB3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		90E9946A58A404E7087D10BB /* TasksSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksSection.swift; sourceTree = "<group>"; };
+		97B4D23870E594B624074F8D /* ComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerView.swift; sourceTree = "<group>"; };
+		9C1205FC1B401AE4865CFE52 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		A047E4D10313D33DC6FA1B11 /* MemorySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemorySection.swift; sourceTree = "<group>"; };
+		AD3E3EFECDEF03091588F1AA /* ApprovalsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalsSection.swift; sourceTree = "<group>"; };
+		D85821DAF90FE3998B520913 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
+		DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
+		E9E4508DECE36B39CF27552D /* WatchesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchesSection.swift; sourceTree = "<group>"; };
+		EFF3C59774AD6CD3FE7F5AAA /* ArtifactDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactDetailView.swift; sourceTree = "<group>"; };
+		F881AEFDC8F959F0506046DD /* SpeechDictation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechDictation.swift; sourceTree = "<group>"; };
+		FB010AC69CB9C0C890D26829 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		825B694BE74899AAD0A668D5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				42A52F693D0C3EF2BF03E594 /* PaloAllyKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0758BA1260A489462D7C1B68 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				63DF4E96D0F73A16748CF819 /* SettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		105F3C7BD76CBDFF94E0FD0A /* Library */ = {
+			isa = PBXGroup;
+			children = (
+				EFF3C59774AD6CD3FE7F5AAA /* ArtifactDetailView.swift */,
+				D85821DAF90FE3998B520913 /* LibraryView.swift */,
+			);
+			path = Library;
+			sourceTree = "<group>";
+		};
+		2321FF95600E6175CC6FD5E2 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				0B2339DF9459035E591FCB19 /* PaloAlly.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		3C5D6BE55182B5E92B38D957 /* Pairing */ = {
+			isa = PBXGroup;
+			children = (
+				711BC1712E3CB0B810C91022 /* PairingView.swift */,
+				7769E0FBCB029211A3B7B532 /* QRScannerView.swift */,
+			);
+			path = Pairing;
+			sourceTree = "<group>";
+		};
+		569ED7234C516663DC09B1D3 /* Assistant */ = {
+			isa = PBXGroup;
+			children = (
+				AD3E3EFECDEF03091588F1AA /* ApprovalsSection.swift */,
+				056B108C0177A1156F312E84 /* AssistantView.swift */,
+				A047E4D10313D33DC6FA1B11 /* MemorySection.swift */,
+				90E9946A58A404E7087D10BB /* TasksSection.swift */,
+				E9E4508DECE36B39CF27552D /* WatchesSection.swift */,
+			);
+			path = Assistant;
+			sourceTree = "<group>";
+		};
+		7C4BA90D6E84CD5A8A07C383 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				9C1205FC1B401AE4865CFE52 /* AppModel.swift */,
+				50C0D86FFE5D13BEF644D76F /* PaloAllyApp.swift */,
+				3C8BBDD7B0248070C25E81AB /* RootView.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		7CF82A7EB4082F9747052FD2 /* Chat */ = {
+			isa = PBXGroup;
+			children = (
+				0CC0C56E78F856900F1C91A8 /* ApprovalCard.swift */,
+				5458CC8523AA61D0A0852ABA /* ChatView.swift */,
+				97B4D23870E594B624074F8D /* ComposerView.swift */,
+				51926AB68F34CBF76C2C1507 /* MessageRow.swift */,
+				F881AEFDC8F959F0506046DD /* SpeechDictation.swift */,
+			);
+			path = Chat;
+			sourceTree = "<group>";
+		};
+		9BD016BFF046608279DFDDD7 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				4B87BB3BCA4EF713FD6F4888 /* PaloAllyKit */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		A5A39901D00EEDD568BA7FA7 /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				362F66DA10216A79F79CBB11 /* Copy.swift */,
+				DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
+		A8CFB74D95C7496EBA124D8B = {
+			isa = PBXGroup;
+			children = (
+				9BD016BFF046608279DFDDD7 /* Packages */,
+				F7E550407E24F7FF8D8C5656 /* Resources */,
+				F581AFA2F3A1B888E360DB69 /* Sources */,
+				2321FF95600E6175CC6FD5E2 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		F581AFA2F3A1B888E360DB69 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				90A1D0CBFE081417EB16EEB3 /* Info.plist */,
+				7C4BA90D6E84CD5A8A07C383 /* App */,
+				569ED7234C516663DC09B1D3 /* Assistant */,
+				7CF82A7EB4082F9747052FD2 /* Chat */,
+				105F3C7BD76CBDFF94E0FD0A /* Library */,
+				3C5D6BE55182B5E92B38D957 /* Pairing */,
+				0758BA1260A489462D7C1B68 /* Settings */,
+				A5A39901D00EEDD568BA7FA7 /* Support */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		F7E550407E24F7FF8D8C5656 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				FB010AC69CB9C0C890D26829 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		8A3A01C4674BF948CC526587 /* PaloAlly */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 934163F72DF4ED1CCD132F1B /* Build configuration list for PBXNativeTarget "PaloAlly" */;
+			buildPhases = (
+				93777E8F09BA1D6D0A1263C5 /* Sources */,
+				6A0FB17BF5FD37EB77F68998 /* Resources */,
+				825B694BE74899AAD0A668D5 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PaloAlly;
+			packageProductDependencies = (
+				C72366410B2F41DC5EBD75BE /* PaloAllyKit */,
+			);
+			productName = PaloAlly;
+			productReference = 0B2339DF9459035E591FCB19 /* PaloAlly.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D5B8AE0FC6277E598E5B66A6 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					8A3A01C4674BF948CC526587 = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 30DAEAB51E3BEDB5461702CA /* Build configuration list for PBXProject "PaloAlly" */;
+			developmentRegion = "zh-Hans";
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				"zh-Hans",
+			);
+			mainGroup = A8CFB74D95C7496EBA124D8B;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				3535BBA74E6F8E20A576426D /* XCLocalSwiftPackageReference "../PaloAllyKit" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 2321FF95600E6175CC6FD5E2 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				8A3A01C4674BF948CC526587 /* PaloAlly */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		6A0FB17BF5FD37EB77F68998 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				42F6ACB32AA6D01DA32DF8B1 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		93777E8F09BA1D6D0A1263C5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CCF61F9E84E355E2B02DCE4C /* AppModel.swift in Sources */,
+				32876775778CD8C38491FBB0 /* ApprovalCard.swift in Sources */,
+				D556694E027BD986AB400215 /* ApprovalsSection.swift in Sources */,
+				E72CE394982E8B194DFF27E9 /* ArtifactDetailView.swift in Sources */,
+				08BF7949F94B89DDD05C3319 /* AssistantView.swift in Sources */,
+				81A11C9A7F625540126701DA /* ChatView.swift in Sources */,
+				9E8BAB6F1769D57EC0C617C0 /* ComposerView.swift in Sources */,
+				6581CEDB42117DA61968E352 /* Copy.swift in Sources */,
+				1F13B32F1A120C451958B347 /* LibraryView.swift in Sources */,
+				4FB859813BD2430EFFD25E56 /* MarkdownText.swift in Sources */,
+				E0748A27FBA8E1FD9DDEA652 /* MemorySection.swift in Sources */,
+				771DA9C8AA0708C69B5C0D2B /* MessageRow.swift in Sources */,
+				F10B59DC6D408555F64C2858 /* PairingView.swift in Sources */,
+				31D752A67A0592C5BA7B46B1 /* PaloAllyApp.swift in Sources */,
+				B7DF0900ABDDFACC50FFF6B2 /* QRScannerView.swift in Sources */,
+				F7BB5BDB265CB2F858DDF473 /* RootView.swift in Sources */,
+				58FA01FB519DE507B656FDAE /* SettingsView.swift in Sources */,
+				7FA2E7E1309D4680A571ACCC /* SpeechDictation.swift in Sources */,
+				D3720B2AD3344F09581611E1 /* TasksSection.swift in Sources */,
+				3615E6CE5D1C09A3629F48B6 /* WatchesSection.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		259A35521F65461FDA23A41C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = PaloAlly.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = Sources/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.novashang.paloally;
+				PRODUCT_NAME = PaloAlly;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = "1,2,6";
+			};
+			name = Debug;
+		};
+		36C4B8AAA9B3621C283E46F4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		942310F74B264A347B19AE99 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		E0ECE91D4289E98B71A4725D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = PaloAlly.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = Sources/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.novashang.paloally;
+				PRODUCT_NAME = PaloAlly;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = "1,2,6";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		30DAEAB51E3BEDB5461702CA /* Build configuration list for PBXProject "PaloAlly" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				36C4B8AAA9B3621C283E46F4 /* Debug */,
+				942310F74B264A347B19AE99 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		934163F72DF4ED1CCD132F1B /* Build configuration list for PBXNativeTarget "PaloAlly" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				259A35521F65461FDA23A41C /* Debug */,
+				E0ECE91D4289E98B71A4725D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		3535BBA74E6F8E20A576426D /* XCLocalSwiftPackageReference "../PaloAllyKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../PaloAllyKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		C72366410B2F41DC5EBD75BE /* PaloAllyKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PaloAllyKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = D5B8AE0FC6277E598E5B66A6 /* Project object */;
+}

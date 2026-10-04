@@ -102,6 +102,7 @@ export interface ProbeResult {
   output: unknown; // structured output, parsed
   costUsd: number;
   error?: string;
+  usage?: Record<string, unknown>; // per-model token usage, for cost tuning
 }
 
 export interface HarnessDriver {

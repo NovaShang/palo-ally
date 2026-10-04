@@ -1,0 +1,122 @@
+import PaloAllyKit
+import SwiftUI
+
+/// "Needs your OK" card. Shown inline in the chat and in the 审批 tab.
+struct ApprovalCard: View {
+    @Environment(AppStore.self) private var store
+    let approval: Approval
+    @State private var working = false
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: approval.irreversible ? "exclamationmark.shield.fill" : "hand.raised.fill")
+                    .foregroundStyle(approval.irreversible ? .orange : Color.accentColor)
+                Text(approval.title.isEmpty ? "需要你点个头" : approval.title)
+                    .font(.headline)
+                Spacer(minLength: 0)
+                if !approval.isPending {
+                    Text(Copy.approvalStatus(approval.status))
+                        .font(.caption)
+                        .foregroundStyle(statusColor)
+                }
+            }
+
+            if !approval.detail.isEmpty {
+                Text(approval.detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .lineLimit(approval.isPending ? 8 : 3)
+            }
+
+            HStack(spacing: 6) {
+                let tool = Copy.tool(approval.tool)
+                if !tool.isEmpty { Text(tool) }
+                if let taskId = approval.taskId, let task = store.task(id: taskId) {
+                    Text("· 为了「\(task.title)」")
+                }
+                if approval.isPending { Text("· \(Copy.relative(approval.createdAt))") }
+            }
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+
+            if approval.isPending {
+                if approval.irreversible {
+                    Label("这一步做了就撤不回，所以每次都会问你。", systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                HStack(spacing: 10) {
+                    Button {
+                        answer(allow: false)
+                    } label: {
+                        Text("拒绝").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.glass)
+
+                    Button {
+                        answer(allow: true)
+                    } label: {
+                        Text("允许").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.glassProminent)
+                }
+                .controlSize(.large)
+                .disabled(working)
+
+                if approval.canRemember {
+                    Button {
+                        answer(allow: true, remember: true)
+                    } label: {
+                        Text(rememberTitle)
+                            .font(.footnote)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(working)
+                }
+                if let error {
+                    Text(error).font(.caption).foregroundStyle(.red)
+                }
+            }
+        }
+        .padding(16)
+        .background(.background.secondary, in: .rect(cornerRadius: 22, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(approval.isPending ? Color.accentColor.opacity(0.35) : Color.clear, lineWidth: 1)
+        }
+        .animation(.snappy, value: approval.status)
+    }
+
+    private var rememberTitle: String {
+        if let scope = approval.suggestedScope, !scope.isEmpty {
+            return "以后这类都允许（\(scope)）"
+        }
+        return "以后这类都允许"
+    }
+
+    private var statusColor: Color {
+        switch approval.status {
+        case .allowed: .green
+        case .denied, .expired: .secondary
+        default: .secondary
+        }
+    }
+
+    private func answer(allow: Bool, remember: Bool = false) {
+        working = true
+        error = nil
+        Task {
+            do {
+                try await store.answer(approval, allow: allow, remember: remember)
+            } catch {
+                self.error = "没发出去：\(error.localizedDescription)"
+            }
+            working = false
+        }
+    }
+}

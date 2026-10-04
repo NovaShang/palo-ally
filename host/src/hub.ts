@@ -193,11 +193,11 @@ export class Hub {
   // ---------------- inputs ----------------
 
   // A message from the owner on any channel.
-  userMessage(text: string, channel: Channel, wechat?: WechatReplyTarget): ChatMessage | null {
+  userMessage(text: string, channel: Channel, wechat?: WechatReplyTarget, clientMsgId?: string): ChatMessage | null {
     const t = text.trim();
     if (!t) return null;
     const cmd = this.tryCommand(t, channel, wechat);
-    const msg = this.chat.add({ role: "user", kind: "text", text: t, channel });
+    const msg = this.chat.add({ role: "user", kind: "text", text: t, channel, ...(clientMsgId ? { clientMsgId } : {}) });
     if (cmd !== null) {
       this.reply(cmd, channel, wechat);
       return msg;

@@ -62,13 +62,14 @@ d(`relay integration (${RELAY})`, () => {
 
     const hello = await app.call("hello", { client: "ios", version: "test" });
     expect(hello.hostName).toBe(ctx.hub.config.hostName);
-    const sent = await app.call("chat.send", { text: "从手机来的" });
+    const sent = await app.call("chat.send", { text: "从手机来的", clientMsgId: "local-1" });
     expect(sent.seq).toBeGreaterThan(0);
     await waitFor(() => app.events.some((e) => e.event === "chat.message" && e.data.role === "assistant"));
     expect(app.events.some((e) => e.event === "chat.delta")).toBe(true);
     const sync = await app.call("sync", { sinceSeq: 0 });
     expect(sync.messages.map((m: any) => m.text)).toContain("收到：从手机来的");
     expect(sync.messages.find((m: any) => m.role === "user").channel).toBe("app");
+    expect(app.events.find((e) => e.event === "chat.message" && e.data.role === "user")!.data.clientMsgId).toBe("local-1");
 
     // admin methods are not reachable from the relay
     await expect(app.call("pair.open")).rejects.toThrow("unknown method");
