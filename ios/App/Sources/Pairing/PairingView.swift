@@ -24,9 +24,9 @@ struct PairingView: View {
                     VStack(spacing: 14) {
                         Image(systemName: "sparkles")
                             .font(.system(size: 44, weight: .semibold))
-                            .foregroundStyle(.tint)
+                            .foregroundStyle(.primary)
                             .frame(width: 100, height: 100)
-                            .glassEffect(.regular.tint(.accentColor.opacity(0.18)), in: .circle)
+                            .glassEffect(.regular, in: .circle)
                         Text("你好，我是 PaloAlly")
                             .font(.title.bold())
                         Text("住在你电脑上的私人助理。把这台设备和电脑连起来，随时找我办事。")
@@ -163,9 +163,9 @@ struct PairingView: View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text("\(n)")
                 .font(.footnote.bold())
-                .foregroundStyle(.white)
+                .foregroundStyle(.secondary)
                 .frame(width: 22, height: 22)
-                .background(Color.accentColor, in: .circle)
+                .background(.fill.tertiary, in: .circle)
             Text(text).font(.callout)
         }
     }

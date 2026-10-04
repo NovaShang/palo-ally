@@ -58,9 +58,11 @@ struct SettingsView: View {
                 if model.mode == .demo {
                     LabeledContent("电脑", value: "演示")
                     Button("退出演示，去配对") { model.exitDemo() }
+                        .tint(.primary)
                 } else {
                     LabeledContent("电脑", value: store.hostName.isEmpty ? (model.pairedHost?.hostLabel ?? "—") : store.hostName)
                     Button("换一台电脑配对") { model.showPairingSheet = true }
+                        .tint(.primary)
                     Button(unpairing ? "正在解除…" : "解除配对", role: .destructive) { confirmUnpair = true }
                         .disabled(unpairing)
                         .confirmationDialog("解除和这台电脑的配对？", isPresented: $confirmUnpair, titleVisibility: .visible) {
@@ -80,6 +82,7 @@ struct SettingsView: View {
                 ShareLink(item: DebugLog.shared.fileURL) {
                     Label("导出调试日志", systemImage: "doc.text.magnifyingglass")
                 }
+                .tint(.primary)
                 if !store.hostVersion.isEmpty {
                     LabeledContent("电脑上的版本", value: store.hostVersion)
                 }

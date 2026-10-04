@@ -564,7 +564,7 @@ private struct StagedRow: View {
                             }
                         case .file(let f):
                             HStack(spacing: 8) {
-                                Image(systemName: "doc").foregroundStyle(.tint)
+                                Image(systemName: "doc").foregroundStyle(.secondary)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(f.name).font(.caption.weight(.medium)).lineLimit(1)
                                     Text(ByteCountFormatter.string(fromByteCount: Int64(f.data.count), countStyle: .file))

@@ -79,12 +79,8 @@ private struct AssistantMessage: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "sparkles")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.tint)
-                .frame(width: 26, height: 26)
-                .glassEffect(.regular.tint(.accentColor.opacity(0.15)), in: .circle)
+        // No avatar: it cost width on every reply and said nothing new.
+        HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
                 if message.proactive == true {
                     Label(proactiveLabel, systemImage: "bell.badge")
@@ -271,9 +267,9 @@ private struct FileCard: View {
         HStack(spacing: 12) {
             Image(systemName: symbol)
                 .font(.title3)
-                .foregroundStyle(.tint)
+                .foregroundStyle(.secondary)
                 .frame(width: 40, height: 40)
-                .glassEffect(.regular.tint(.accentColor.opacity(0.12)), in: .rect(cornerRadius: 10))
+                .glassEffect(.regular, in: .rect(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 2) {
                 Text(attachment.name ?? "文件").font(.callout.weight(.medium)).lineLimit(1)
                 Text(detail).font(.caption).foregroundStyle(.secondary)

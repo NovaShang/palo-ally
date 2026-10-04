@@ -43,6 +43,7 @@ struct AssistantView: View {
                 } label: {
                     Image(systemName: "gearshape")
                 }
+                .tint(.primary)
                 .accessibilityLabel("设置")
             }
         }
@@ -81,9 +82,9 @@ private struct AssistantHeader: View {
         VStack(spacing: 14) {
             Image(systemName: "sparkles")
                 .font(.system(size: 34, weight: .semibold))
-                .foregroundStyle(.tint)
+                .foregroundStyle(.primary)
                 .frame(width: 76, height: 76)
-                .glassEffect(.regular.tint(.accentColor.opacity(0.18)), in: .circle)
+                .glassEffect(.regular, in: .circle)
 
             VStack(spacing: 4) {
                 Text("PaloAlly").font(.title2.bold())
@@ -98,6 +99,7 @@ private struct AssistantHeader: View {
                 confirmStop = true
             } label: {
                 Label("停下", systemImage: "stop.fill")
+                    .foregroundStyle(.red) // the icon otherwise picks up the theme color
                     .frame(maxWidth: 240)
             }
             .buttonStyle(.glass)

@@ -52,7 +52,7 @@ private struct WatchRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: watch.kind == .schedule ? "alarm" : "eye")
-                .foregroundStyle(watch.enabled ? Color.accentColor : .secondary)
+                .foregroundStyle(watch.enabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
                 .frame(width: 26)
             Button(action: onEdit) {
                 VStack(alignment: .leading, spacing: 3) {

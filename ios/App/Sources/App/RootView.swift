@@ -45,6 +45,7 @@ struct MainScreen: View {
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("完成") { model.showLibrary = false }
+                                .tint(.primary) // just closes the sheet
                         }
                     }
             }

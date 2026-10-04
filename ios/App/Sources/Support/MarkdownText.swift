@@ -58,7 +58,7 @@ extension Theme {
         }
         .blockquote { configuration in
             HStack(spacing: 0) {
-                RoundedRectangle(cornerRadius: 2).fill(Color.accentColor.opacity(0.5)).frame(width: 3)
+                RoundedRectangle(cornerRadius: 2).fill(Color.secondary.opacity(0.4)).frame(width: 3)
                 configuration.label.markdownTextStyle { ForegroundColor(.secondary) }.padding(.leading, 10)
             }
             .fixedSize(horizontal: false, vertical: true)

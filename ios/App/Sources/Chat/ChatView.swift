@@ -18,6 +18,7 @@ struct ChatView: View {
                             if store.isLoadingOlder { ProgressView() } else { Text("看看更早的") }
                         }
                         .buttonStyle(.borderless)
+                        .tint(.secondary)
                         .font(.footnote)
                         .frame(maxWidth: .infinity)
                     }
@@ -111,6 +112,7 @@ struct ChatView: View {
                 } label: {
                     Image(systemName: "person.crop.circle")
                 }
+                .tint(.primary) // toolbar glyphs stay neutral; the theme color is for meaning
                 .badge(store.pendingApprovals.count)
                 .accessibilityLabel("助理详情")
             }
@@ -120,6 +122,7 @@ struct ChatView: View {
                 } label: {
                     Image(systemName: "books.vertical")
                 }
+                .tint(.primary)
                 .accessibilityLabel("资料库")
             }
         }
@@ -168,6 +171,7 @@ struct StatusBanner: View {
                 banner(icon: "wifi.exclamationmark", tint: .secondary, text: "连不上电脑，正在重试…") {
                     Button("重试") { store.reconnectNow() }
                         .buttonStyle(.glass)
+                        .tint(.primary)
                 }
             }
         }
@@ -225,7 +229,7 @@ struct EmptyChatHint: View {
         VStack(spacing: 10) {
             Image(systemName: "sparkles")
                 .font(.largeTitle)
-                .foregroundStyle(.tint)
+                .foregroundStyle(.secondary)
             Text("有什么想让我做的？")
                 .font(.headline)
             Text("随便说，比如「明早八点提醒我交报销单」，或者「帮我比较一下这两款耳机」。")

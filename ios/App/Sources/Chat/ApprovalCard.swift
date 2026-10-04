@@ -13,7 +13,7 @@ struct ApprovalCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: approval.careful ? "exclamationmark.shield.fill" : "hand.raised.fill")
-                    .foregroundStyle(approval.careful ? .orange : Color.accentColor)
+                    .foregroundStyle(approval.careful ? Color.orange : Color.secondary)
                 Text(approval.title.isEmpty ? "需要你点个头" : approval.title)
                     .font(.headline)
                 Spacer(minLength: 0)
@@ -37,6 +37,7 @@ struct ApprovalCard: View {
                     Button(expanded ? "收起" : "展开") { expanded.toggle() }
                         .font(.caption)
                         .buttonStyle(.borderless)
+                        .tint(.secondary)
                 }
             }
 
@@ -71,6 +72,7 @@ struct ApprovalCard: View {
                         Text("拒绝").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.glass)
+                    .tint(.primary) // only the primary action (允许) carries the theme color
 
                     Button {
                         answer(allow: true)
@@ -91,6 +93,7 @@ struct ApprovalCard: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderless)
+                    .tint(.secondary)
                     .disabled(working)
                 }
                 if let error {
@@ -102,7 +105,7 @@ struct ApprovalCard: View {
         .background(.background.secondary, in: .rect(cornerRadius: 22, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(approval.isPending ? Color.accentColor.opacity(0.35) : Color.clear, lineWidth: 1)
+                .strokeBorder(approval.isPending ? Color.primary.opacity(0.12) : Color.clear, lineWidth: 1)
         }
         .animation(.snappy, value: approval.status)
     }

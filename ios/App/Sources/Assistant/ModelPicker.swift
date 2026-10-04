@@ -96,7 +96,7 @@ struct ModelPickerSheet: View {
             .navigationTitle("模型与思考")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.tint(.primary) }
             }
             .task {
                 do { try await store.loadModels() } catch { self.error = "没取到可选模型：\(Copy.error(error))" }

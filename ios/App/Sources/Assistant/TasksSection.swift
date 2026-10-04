@@ -160,7 +160,7 @@ private struct ActivityRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: symbol)
-                .foregroundStyle(item.kind == .text ? Color.accentColor : .secondary)
+                .foregroundStyle(item.kind == .text ? Color.primary : .secondary)
                 .frame(width: 22)
             VStack(alignment: .leading, spacing: 2) {
                 if item.kind != .text, let tool = item.tool, !tool.isEmpty {

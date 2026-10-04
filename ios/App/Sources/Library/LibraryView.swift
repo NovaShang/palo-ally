@@ -36,9 +36,9 @@ struct LibraryView: View {
             HStack(spacing: 12) {
                 Image(systemName: a.symbol)
                     .font(.title3)
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(.secondary)
                     .frame(width: 40, height: 40)
-                    .background(.tint.opacity(0.12), in: .rect(cornerRadius: 10, style: .continuous))
+                    .background(.fill.tertiary, in: .rect(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(a.title.isEmpty ? a.mainFile : a.title)
                         .font(.body)

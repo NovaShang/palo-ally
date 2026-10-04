@@ -46,6 +46,7 @@ struct ArtifactDetailView: View {
                     } actions: {
                         Button("再试一次") { Task { await load() } }
                             .buttonStyle(.glass)
+                            .tint(.primary)
                     }
                 } else if let progress {
                     VStack(spacing: 10) {
@@ -78,6 +79,7 @@ struct ArtifactDetailView: View {
                         } label: {
                             Image(systemName: "doc.on.doc")
                         }
+                        .tint(.primary)
                         .accessibilityLabel("换一个文件看")
                     }
                 }
@@ -87,11 +89,13 @@ struct ArtifactDetailView: View {
                     } label: {
                         Image(systemName: artifact.pinned ? "pin.fill" : "pin")
                     }
+                    .tint(.primary)
                     .accessibilityLabel(artifact.pinned ? "取消置顶" : "置顶")
                 }
                 if let content {
                     ToolbarItem(placement: .topBarTrailing) {
                         ShareLink(item: content.fileURL)
+                            .tint(.primary)
                     }
                 }
             }

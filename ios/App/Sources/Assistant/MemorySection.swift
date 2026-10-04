@@ -65,7 +65,7 @@ private struct MemoryRow: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: file.scope == .core ? "heart.text.square" : "note.text")
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(.secondary)
                     .frame(width: 26)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(Self.displayName(file.path))
@@ -116,6 +116,7 @@ struct MemoryEditorView: View {
                 } actions: {
                     Button("再试一次") { Task { await load() } }
                         .buttonStyle(.glass)
+                        .tint(.primary)
                 }
             } else {
                 TextEditor(text: $text)
