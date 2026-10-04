@@ -664,3 +664,21 @@ describe("Hub: harness says which messages a turn answers", () => {
     cleanup(paths);
   });
 });
+
+describe("Hub: step-6 cleanups", () => {
+  test("errors are worded by the SDK's own kind first", async () => {
+    const { friendlyError } = await import("../src/copy.ts");
+    expect(friendlyError("whatever", "billing_error")).toContain("额度");
+    expect(friendlyError("whatever", "model_not_found")).toContain("换一个");
+    expect(friendlyError("HTTP 429 Too Many Requests")).toContain("太忙");
+  });
+
+  test("the harness' own timers are disabled in favor of durable watches; env goes only to the harness", async () => {
+    const { hub, driver, paths } = makeHub({ config: testConfig((c) => (c.env = { ANTHROPIC_BASE_URL: "https://example.invalid" })) });
+    hub.userMessage("hi", "app");
+    await hub.idle();
+    expect(driver.last!.opts.env).toEqual({ ANTHROPIC_BASE_URL: "https://example.invalid" });
+    expect(process.env.ANTHROPIC_BASE_URL).not.toBe("https://example.invalid");
+    cleanup(paths);
+  });
+});

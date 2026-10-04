@@ -20,7 +20,7 @@ export interface FakeCtx {
   useTool(
     name: string,
     input: Record<string, unknown>,
-    opts?: { id?: string; parent?: string | null; ask?: boolean; defaultToNo?: boolean; suggestions?: unknown[] },
+    opts?: { id?: string; parent?: string | null; ask?: boolean; defaultToNo?: boolean; suggestions?: unknown[]; reason?: string },
   ): Promise<boolean>;
 }
 
@@ -84,6 +84,7 @@ export class FakeMainSession implements MainSession {
               signal: new AbortController().signal,
               defaultToNo: o.defaultToNo,
               suggestions: o.suggestions,
+              reason: o.reason,
             });
             allowed = d.behavior === "allow";
             if (d.behavior === "allow" && d.updatedPermissions) this.driver.appliedPermissions.push(...d.updatedPermissions);

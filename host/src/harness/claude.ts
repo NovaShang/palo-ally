@@ -111,7 +111,7 @@ function toCommands(list: any[] | undefined) {
 }
 
 // mapMessage turns one SDK message into zero or more harness events.
-export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTokens: number }): HarnessEvent[] {
+export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTokens: number; lastError?: string }): HarnessEvent[] {
   // total_cost_usd is cumulative for the session (including what a resume replays)
   const out: HarnessEvent[] = [];
   const m = msg as any;
@@ -148,6 +148,7 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
     }
     case "assistant": {
       const parent = m.parent_tool_use_id ?? null;
+      if (!parent && m.error) state.lastError = String(m.error);
       if (!parent && Array.isArray(m.user_message_uuids) && m.user_message_uuids.length) out.push({ type: "answering", uuids: m.user_message_uuids });
       const usage = m.message?.usage;
       if (!parent && usage) {
@@ -179,6 +180,8 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
     }
     case "result": {
       const total = m.total_cost_usd ?? 0;
+      const errorCategory = m.is_error ? state.lastError : undefined;
+      state.lastError = undefined; // each turn reports its own
       const cost = Math.max(0, total - state.lastCost);
       state.lastCost = total;
       out.push({
@@ -189,6 +192,7 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
         totalCostUsd: total,
         contextTokens: state.contextTokens,
         sessionId: m.session_id,
+        errorCategory,
         consumedUuids: Array.isArray(m.user_message_uuids) ? m.user_message_uuids : undefined,
       });
       break;
@@ -231,7 +235,10 @@ class ClaudeMainSession implements MainSession {
             defaultToNo: o.defaultToNo,
             suppressAlwaysAllowRule: o.suppressAlwaysAllowRule,
           }) as any,
-        env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: `paloally/${VERSION}` },
+        env: { ...process.env, ...opts.env, CLAUDE_AGENT_SDK_CLIENT_APP: `paloally/${VERSION}` },
+        // Scheduling is ours (durable watches); the harness' own timers live only
+        // in one process and would silently die with it.
+        disallowedTools: ["CronCreate", "CronDelete", "CronList", "ScheduleWakeup"],
         extraArgs: opts.sharedChrome ? { chrome: null } : {},
         stderr: opts.stderr,
       },
@@ -327,7 +334,7 @@ export class ClaudeCodeDriver implements HarnessDriver {
           permissionMode: "auto",
           permissionPrompts: "none",
           outputFormat: { type: "json_schema", schema: req.outputSchema },
-          env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: `paloally-probe/${VERSION}` },
+          env: { ...process.env, ...req.env, CLAUDE_AGENT_SDK_CLIENT_APP: `paloally-probe/${VERSION}` },
         },
       });
       for await (const msg of q) {

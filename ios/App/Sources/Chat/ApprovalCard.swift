@@ -53,6 +53,12 @@ struct ApprovalCard: View {
             .lineLimit(1)
 
             if approval.isPending {
+                if let reason = approval.reason, !reason.isEmpty {
+                    Text(reason)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
                 if approval.careful {
                     Label("这一步需要你仔细看一下。", systemImage: "info.circle")
                         .font(.caption)

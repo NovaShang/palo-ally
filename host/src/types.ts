@@ -36,6 +36,7 @@ export interface TaskActivity {
   ts: number;
   kind: "tool_use" | "tool_result" | "text";
   tool?: string;
+  label?: string; // plain words for the step ("跑命令"), from copy.ts
   text: string;
 }
 
@@ -53,6 +54,7 @@ export interface Approval {
   decidedAt?: number;
   decidedBy?: string;
   suggestedScope?: string;
+  reason?: string; // the harness' own words for why it asked
 }
 
 export interface Watch {

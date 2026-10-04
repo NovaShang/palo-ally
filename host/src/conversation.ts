@@ -192,6 +192,7 @@ export class Conversation {
       canUseTool: (req) => this.d.approvals.request(req),
       mcpServers: this.d.mcpServers(),
       sharedChrome: cfg.browser.enabled && cfg.browser.mode === "shared",
+      env: cfg.env,
       onEvent: (e) => this.d.onEvent(e),
       stderr: (s) => appendJsonl(`${this.d.paths.logs}/harness-stderr.jsonl`, { ts: Date.now(), s: truncate(s, 2000) }),
     });
@@ -302,7 +303,7 @@ export class Conversation {
         break;
       case "result":
         this.d.runtime.update({ sessionCostUsd: e.totalCostUsd });
-        this.endTurn(e.costUsd, e.contextTokens, e.isError ? e.text : undefined, this.consume(e.consumedUuids));
+        this.endTurn(e.costUsd, e.contextTokens, e.isError ? e.text : undefined, this.consume(e.consumedUuids), e.errorCategory);
         break;
       case "error":
         this.d.log(`harness error: ${e.message}`);
@@ -334,7 +335,7 @@ export class Conversation {
     return answered;
   }
 
-  private endTurn(costUsd: number, contextTokens: number, error?: string, answered: OwnerMessage[] = []): void {
+  private endTurn(costUsd: number, contextTokens: number, error?: string, answered: OwnerMessage[] = [], errorCategory?: string): void {
     const { chat, router, wechat, audit } = this.d;
     const turn = this.current;
     this.current = null;
@@ -353,7 +354,7 @@ export class Conversation {
     this.d.tasks.finalizePending();
     if (turn) {
       this.d.metric({ type: "turn", origin: turn.origin, proactive: turn.proactive, costUsd, contextTokens, error });
-      if (error) chat.add({ role: "system", kind: "notice", text: friendlyError(error), channel: "system" });
+      if (error) chat.add({ role: "system", kind: "notice", text: friendlyError(error, errorCategory), channel: "system" });
       const shown = stripSkip(this.turnTexts.join("\n\n").trim());
       // The owner spoke while this proactive turn ran and it answered them too:
       // show it as a normal reply (no push), not as something it brought up.

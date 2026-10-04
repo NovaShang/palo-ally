@@ -67,6 +67,7 @@ export class ApprovalManager {
       status: "pending",
       createdAt: Date.now(),
       suggestedScope: remember ?? undefined,
+      reason: req.reason || undefined,
     };
     this.approvals.push(approval);
     this.persist();

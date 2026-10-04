@@ -19,6 +19,7 @@ export interface ProbeHost {
   cwd(): string;
   mcpServers(): Record<string, unknown>;
   inheritConnectors(): boolean;
+  env?(): Record<string, string> | undefined;
   lastUserActivity(): number;
   budgetLeftUsd(): number; // probe budget remaining today
   spend(usd: number): void;
@@ -153,6 +154,7 @@ export class ProbeScheduler {
       outputSchema: PROBE_SCHEMA as unknown as Record<string, unknown>,
       maxTurns: 12,
       strictMcp: !this.host.inheritConnectors(),
+      env: this.host.env?.(),
     });
     this.host.spend(res.costUsd);
     this.host.log(`probe run: ${due.length} watch(es), $${res.costUsd.toFixed(4)} ${res.usage ? JSON.stringify(res.usage) : ""}`);

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { Bus } from "./bus.ts";
+import { activityLabel } from "./copy.ts";
 import type { Task, TaskActivity, TaskStatus } from "./types.ts";
 import { appendJsonl, newId, readJson, readJsonl, truncate, writeJson } from "./util.ts";
 
@@ -68,7 +69,7 @@ export class TaskTracker {
         const report = Object.values(input).find((v) => typeof v === "string" && v.trim()) as string | undefined;
         if (report) this.lastWords.set(taskId, report.trim());
       }
-      this.addActivity(taskId, { ts: Date.now(), kind: "tool_use", tool: name, text: summarizeInput(name, input) });
+      this.addActivity(taskId, { ts: Date.now(), kind: "tool_use", tool: name, label: activityLabel(name), text: summarizeInput(name, input) });
       return;
     }
     if (!SUBAGENT_TOOLS.has(name)) return;

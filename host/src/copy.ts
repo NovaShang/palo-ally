@@ -6,7 +6,26 @@ import { formatDuration, truncate, zonedParts } from "./util.ts";
 // shell lives here, so the voice stays consistent and is easy to change.
 
 // friendlyError turns harness/API errors into something the owner can act on.
-export function friendlyError(error: string): string {
+// The SDK's own error kind decides; the text match is only a fallback.
+export function friendlyError(error: string, category?: string): string {
+  switch (category) {
+    case "rate_limit":
+    case "overloaded":
+    case "server_error":
+      return "模型那边太忙了，这一步没做完。稍后再跟我说一次就好。";
+    case "authentication_failed":
+    case "oauth_org_not_allowed":
+    case "verification_required":
+    case "cloud_credential_error":
+      return "我连不上模型了（登录失效）。请在电脑上运行 claude 重新登录，或者检查 API 密钥。";
+    case "billing_error":
+    case "account_on_hold":
+      return "模型额度用完了或账号受限，等额度恢复或者换个模型再试。";
+    case "model_not_found":
+      return "现在选的模型用不了，去「模型与思考」里换一个。";
+    case "max_output_tokens":
+      return "这次回答太长被截断了，可以让我分几次说。";
+  }
   const e = error.toLowerCase();
   if (/rate.?limit|429|overloaded|529/.test(e)) return "模型那边太忙了，这一步没做完。稍后再跟我说一次就好。";
   if (/not logged in|unauthorized|401|invalid api key|authentication/.test(e)) return "我连不上模型了（登录失效）。请在电脑上运行 claude 重新登录，或者检查 API 密钥。";
@@ -32,7 +51,7 @@ export const ACTIVITY_THINKING = "正在想";
 export const ACTIVITY_BACKGROUND = "后台在办事";
 
 export function statusWord(s: string): string {
-  return s === "done" ? "办完了" : s === "failed" ? "没办成" : s === "needs_input" ? "需要你" : "已停止";
+  return s === "done" ? "办好了" : s === "failed" ? "没办成" : s === "needs_input" ? "需要你" : "已停下";
 }
 
 // ---- chat lines ----
@@ -133,4 +152,19 @@ export function describeInput(tool: string, input: Record<string, unknown>): str
   if (tool === "Write" || tool === "Edit" || tool === "Read") return String(input.file_path ?? "");
   if (input.url) return String(input.url);
   return truncate(JSON.stringify(input), 1000);
+}
+
+// Short label for one step in a task's activity list (shown in the app).
+export function activityLabel(tool: string): string {
+  if (tool === "Write" || tool === "Edit" || tool === "NotebookEdit") return "写文件";
+  if (tool === "Read") return "看文件";
+  if (tool === "Grep" || tool === "Glob") return "找文件";
+  if (tool === "Bash") return "跑命令";
+  if (tool === "WebSearch") return "搜索";
+  if (tool === "WebFetch") return "看网页";
+  if (tool === "Agent" || tool === "Task") return "安排帮手";
+  if (/browser_|claude-in-chrome/.test(tool)) return "用浏览器";
+  if (tool.startsWith("mcp__paloally__")) return "整理";
+  if (tool.startsWith("mcp__")) return "用连接的服务";
+  return "处理";
 }

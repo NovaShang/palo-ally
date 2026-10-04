@@ -18,6 +18,7 @@ const script: FakeScript = async (t, ctx) => {
   if (t === "要确认") {
     await ctx.useTool("Bash", { command: "npm test" }, {
       ask: true,
+      reason: "要运行命令",
       suggestions: [{ type: "addRules", behavior: "allow", destination: "localSettings", rules: [{ toolName: "Bash", ruleContent: "npm test:*" }] }],
     });
     return;

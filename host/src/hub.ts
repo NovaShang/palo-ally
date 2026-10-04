@@ -135,6 +135,7 @@ export class Hub {
       cwd: () => this.paths.home,
       mcpServers: () => this.extraMcpServers(),
       inheritConnectors: () => this.config.probeInheritConnectors,
+      env: () => this.config.env,
       lastUserActivity: () => this.chat.lastUserActivity(),
       budgetLeftUsd: () => this.config.budget.probeDailyUsd - this.ledger.today().probeUsd,
       spend: (usd) => this.ledger.add("probeUsd", usd),

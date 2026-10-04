@@ -172,12 +172,14 @@ public struct TaskActivity: Codable, Sendable, Hashable {
     public var ts: Int64
     public var kind: ActivityKind
     public var tool: String?
+    /// Plain words for the step ("跑命令"), worded by the host.
+    public var label: String?
     public var text: String
 
-    enum CodingKeys: String, CodingKey { case ts, kind, tool, text }
+    enum CodingKeys: String, CodingKey { case ts, kind, tool, label, text }
 
-    public init(ts: Int64, kind: ActivityKind, tool: String? = nil, text: String) {
-        self.ts = ts; self.kind = kind; self.tool = tool; self.text = text
+    public init(ts: Int64, kind: ActivityKind, tool: String? = nil, label: String? = nil, text: String) {
+        self.ts = ts; self.kind = kind; self.tool = tool; self.label = label; self.text = text
     }
 
     public init(from decoder: Decoder) throws {
@@ -185,6 +187,7 @@ public struct TaskActivity: Codable, Sendable, Hashable {
         ts = l.millis("ts", or: 0)
         kind = l.decode(ActivityKind.self, "kind", or: .unknown)
         tool = l.string("tool")
+        label = l.string("label")
         text = l.string("text", or: "")
     }
 }
@@ -205,17 +208,20 @@ public struct Approval: Codable, Sendable, Hashable, Identifiable {
     public var decidedAt: Int64?
     public var decidedBy: String?
     public var suggestedScope: String?
+    /// Why the harness asked, in its own words, when it says.
+    public var reason: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, tool, title, detail, taskId, careful, status, createdAt, decidedAt, decidedBy, suggestedScope
+        case id, tool, title, detail, taskId, careful, status, createdAt, decidedAt, decidedBy, suggestedScope, reason
     }
 
     public init(id: String, tool: String, title: String, detail: String, taskId: String? = nil,
                 careful: Bool, status: ApprovalStatus = .pending, createdAt: Int64,
-                decidedAt: Int64? = nil, decidedBy: String? = nil, suggestedScope: String? = nil) {
+                decidedAt: Int64? = nil, decidedBy: String? = nil, suggestedScope: String? = nil, reason: String? = nil) {
         self.id = id; self.tool = tool; self.title = title; self.detail = detail; self.taskId = taskId
         self.careful = careful; self.status = status; self.createdAt = createdAt
         self.decidedAt = decidedAt; self.decidedBy = decidedBy; self.suggestedScope = suggestedScope
+        self.reason = reason
     }
 
     public init(from decoder: Decoder) throws {
@@ -233,6 +239,7 @@ public struct Approval: Codable, Sendable, Hashable, Identifiable {
         decidedAt = l.millis("decidedAt")
         decidedBy = l.string("decidedBy")
         suggestedScope = l.string("suggestedScope")
+        reason = l.string("reason")
     }
 
     public var isPending: Bool { status == .pending }

@@ -164,7 +164,8 @@ private struct ActivityRow: View {
                 .frame(width: 22)
             VStack(alignment: .leading, spacing: 2) {
                 if item.kind != .text, let tool = item.tool, !tool.isEmpty {
-                    Text(item.kind == .toolResult ? "\(Copy.tool(tool)) · 结果" : Copy.tool(tool))
+                    let name = item.label ?? Copy.tool(tool)
+                    Text(item.kind == .toolResult ? "\(name) · 结果" : name)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                 }

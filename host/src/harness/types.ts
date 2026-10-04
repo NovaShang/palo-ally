@@ -30,6 +30,7 @@ export type HarnessEvent =
       totalCostUsd: number; // running total for the session
       contextTokens: number;
       sessionId: string;
+      errorCategory?: string; // the SDK's own error kind (rate_limit, billing_error, …) when the turn failed
       consumedUuids?: string[]; // user messages this turn answered (absent on older CLIs)
     }
   | { type: "error"; message: string };
@@ -94,6 +95,7 @@ export interface MainSessionOptions {
   canUseTool: (req: PermissionRequest) => Promise<PermissionDecision>;
   mcpServers: Record<string, unknown>;
   sharedChrome?: boolean; // enable Claude in Chrome on the owner's own browser
+  env?: Record<string, string>; // extra environment for the harness only (e.g. third-party model endpoint)
   onEvent: (e: HarnessEvent) => void;
   stderr?: (s: string) => void;
 }
@@ -124,6 +126,7 @@ export interface ProbeRequest {
   maxTurns: number;
   // true: only mcpServers above (no claude.ai connectors / user config / skills) — keeps context ~2k tokens
   strictMcp: boolean;
+  env?: Record<string, string>;
 }
 
 export interface ProbeResult {

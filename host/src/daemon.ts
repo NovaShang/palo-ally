@@ -37,7 +37,6 @@ export async function startDaemon(
     /* ignore */
   }
   const config = opts.config ?? loadConfig(paths);
-  Object.assign(process.env, config.env ?? {});
   const driver = opts.driver ?? new ClaudeCodeDriver();
 
   const wechat = config.wechat.enabled ? new WechatILink(paths.wechat, config.wechat.baseUrl) : null;

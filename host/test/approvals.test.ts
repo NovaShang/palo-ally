@@ -58,9 +58,10 @@ describe("ApprovalManager (relay only)", () => {
 
   test("the harness' defaultToNo marks it careful and never offers remember", async () => {
     const { m, paths } = mk();
-    void m.request(req("Bash", { command: "git push" }, { defaultToNo: true, suggestions: bashRule }));
+    void m.request(req("Bash", { command: "git push" }, { defaultToNo: true, suggestions: bashRule, reason: "会推送到远端" }));
     const a = m.listPending()[0]!;
     expect(a.careful).toBe(true);
+    expect(a.reason).toBe("会推送到远端"); // the harness' own words, shown on the card
     expect(a.suggestedScope).toBeUndefined();
     void m.request(req("Bash", { command: "x" }, { suppressAlwaysAllowRule: true, suggestions: bashRule }));
     expect(m.listPending()[1]!.suggestedScope).toBeUndefined();

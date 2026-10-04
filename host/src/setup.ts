@@ -14,13 +14,12 @@ type Check = { name: string; ok: boolean; detail: string; fix?: string };
 // whichever way the user authenticates (claude.ai login, API key, or a
 // third-party Anthropic-compatible endpoint via ANTHROPIC_BASE_URL).
 export async function checkHarness(cfg: Config, cwd: string): Promise<Check> {
-  Object.assign(process.env, cfg.env ?? {});
   try {
     let text = "";
     let err = "";
     for await (const m of query({
       prompt: "只回复两个字母：ok",
-      options: { cwd, model: cfg.probeModel, maxTurns: 1, tools: [], settingSources: [], persistSession: false },
+      options: { cwd, model: cfg.probeModel, maxTurns: 1, tools: [], settingSources: [], persistSession: false, env: { ...process.env, ...cfg.env } },
     })) {
       const msg = m as any;
       if (msg.type === "result") {
