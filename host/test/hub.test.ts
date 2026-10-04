@@ -707,3 +707,20 @@ describe("Hub: step-6 cleanups", () => {
     cleanup(paths);
   });
 });
+
+describe("Hub: images from the app", () => {
+  test("uploaded images ride along with the message as image blocks", async () => {
+    const { hub, driver, paths } = makeHub();
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
+    const a = hub.media.save("image/png", png);
+    const msg = hub.userMessage("这是什么", "app", undefined, undefined, [a])!;
+    await hub.idle();
+    expect(msg.attachments).toEqual([{ id: a.id, kind: "image", mediaType: "image/png" }]);
+    expect(driver.last!.sentImages).toEqual([{ mediaType: "image/png", data: png }]);
+    // an image alone is a valid message
+    expect(hub.userMessage("", "app", undefined, undefined, [a])).not.toBeNull();
+    expect(() => hub.media.save("image/tiff", png)).toThrow();
+    expect(hub.media.read("../../etc/passwd")).toBeNull();
+    cleanup(paths);
+  });
+});

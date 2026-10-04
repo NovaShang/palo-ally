@@ -6,7 +6,7 @@ import type { ChatLog } from "./chat.ts";
 import type { Config, Paths } from "./config.ts";
 import { ACTIVITY_BACKGROUND, budgetNotice, describeActivity, friendlyError } from "./copy.ts";
 import { BEHAVIOR } from "./home.ts";
-import type { HarnessDriver, HarnessEvent, MainSession, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
+import type { HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
 import type { Router } from "./router.ts";
 import type { RuntimeState } from "./runtime.ts";
 import type { TaskTracker } from "./tasks.ts";
@@ -115,11 +115,11 @@ export class Conversation {
   // Owner messages go to the harness immediately, even mid-turn: Claude Code
   // queues them or folds them into the running turn, so "好了吗" gets heard
   // while work is in progress. Only proactive turns wait for idle.
-  sendOwner(text: string, origin: Channel, wechat?: WechatReplyTarget): void {
+  sendOwner(text: string, origin: Channel, wechat?: WechatReplyTarget, images?: ImageInput[]): void {
     const uuid = randomUUID();
     this.pending.set(uuid, { origin, wechat, sentAt: Date.now() });
     if (!this.current) this.beginTurn({ text, origin, proactive: false, wechat, uuids: [uuid] });
-    this.ensureSession().send(text, uuid);
+    this.ensureSession().send(text, uuid, images);
   }
 
   enqueue(turn: Turn): void {

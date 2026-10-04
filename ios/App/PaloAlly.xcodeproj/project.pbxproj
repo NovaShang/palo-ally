@@ -28,6 +28,7 @@
 		CCF61F9E84E355E2B02DCE4C /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C1205FC1B401AE4865CFE52 /* AppModel.swift */; };
 		D3720B2AD3344F09581611E1 /* TasksSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90E9946A58A404E7087D10BB /* TasksSection.swift */; };
 		D556694E027BD986AB400215 /* ApprovalsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3E3EFECDEF03091588F1AA /* ApprovalsSection.swift */; };
+		DCA8A63C55C45480F50AFD5A /* ImagePrep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36184756C7B818CDFB8CB839 /* ImagePrep.swift */; };
 		E0748A27FBA8E1FD9DDEA652 /* MemorySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A047E4D10313D33DC6FA1B11 /* MemorySection.swift */; };
 		E72CE394982E8B194DFF27E9 /* ArtifactDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFF3C59774AD6CD3FE7F5AAA /* ArtifactDetailView.swift */; };
 		E895FF8F3C53A7D71EC25855 /* PaloAllyVoice in Frameworks */ = {isa = PBXBuildFile; productRef = 78B5E75CCEFAF248ABE90838 /* PaloAllyVoice */; };
@@ -41,6 +42,7 @@
 		056B108C0177A1156F312E84 /* AssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantView.swift; sourceTree = "<group>"; };
 		0B2339DF9459035E591FCB19 /* PaloAlly.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PaloAlly.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0CC0C56E78F856900F1C91A8 /* ApprovalCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalCard.swift; sourceTree = "<group>"; };
+		36184756C7B818CDFB8CB839 /* ImagePrep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePrep.swift; sourceTree = "<group>"; };
 		362F66DA10216A79F79CBB11 /* Copy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Copy.swift; sourceTree = "<group>"; };
 		3C8BBDD7B0248070C25E81AB /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		4B87BB3BCA4EF713FD6F4888 /* PaloAllyKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PaloAllyKit; path = ../PaloAllyKit; sourceTree = SOURCE_ROOT; };
@@ -166,6 +168,7 @@
 			children = (
 				362F66DA10216A79F79CBB11 /* Copy.swift */,
 				EDCE2B703ACB5F034BAA47C0 /* CopyButton.swift */,
+				36184756C7B818CDFB8CB839 /* ImagePrep.swift */,
 				DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */,
 			);
 			path = Support;
@@ -292,6 +295,7 @@
 				9E8BAB6F1769D57EC0C617C0 /* ComposerView.swift in Sources */,
 				6581CEDB42117DA61968E352 /* Copy.swift in Sources */,
 				B8976F3E44EC1376603FA764 /* CopyButton.swift in Sources */,
+				DCA8A63C55C45480F50AFD5A /* ImagePrep.swift in Sources */,
 				1F13B32F1A120C451958B347 /* LibraryView.swift in Sources */,
 				4FB859813BD2430EFFD25E56 /* MarkdownText.swift in Sources */,
 				E0748A27FBA8E1FD9DDEA652 /* MemorySection.swift in Sources */,

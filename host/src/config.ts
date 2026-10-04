@@ -27,6 +27,7 @@ export class Paths {
   get devices() { return join(this.state, "devices.json"); }
   get pushTokens() { return join(this.state, "push-tokens.json"); }
   get wechat() { return join(this.state, "wechat.json"); }
+  get media() { return join(this.state, "media"); }
   get identity() { return join(this.root, "identity.json"); }
   get audit() { return join(this.root, "audit"); }
   get run() { return join(this.root, "run"); }

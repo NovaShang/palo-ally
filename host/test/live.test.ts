@@ -75,6 +75,32 @@ d(`live harness (${MODEL})`, () => {
   );
 
   test(
+    "image: an uploaded image reaches the model",
+    async () => {
+      // 64×64 solid red PNG, built by hand.
+      const { deflateSync, crc32 } = await import("node:zlib");
+      const chunk = (type: string, data: Buffer) => {
+        const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+        const td = Buffer.concat([Buffer.from(type), data]);
+        const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(td) >>> 0);
+        return Buffer.concat([len, td, crc]);
+      };
+      const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(64, 0); ihdr.writeUInt32BE(64, 4); ihdr[8] = 8; ihdr[9] = 2;
+      const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(64 * 3).fill(Buffer.from([220, 20, 20]))]);
+      const png = Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        chunk("IHDR", ihdr), chunk("IDAT", deflateSync(Buffer.concat(Array(64).fill(row)))), chunk("IEND", Buffer.alloc(0)),
+      ]);
+      const a = hub.media.save("image/png", png.toString("base64"));
+      const before = hub.chat.lastSeq;
+      hub.userMessage("这张图片主要是什么颜色？只回答颜色。", "app", undefined, undefined, [a]);
+      await hub.idle();
+      expect(assistantText(hub.chat.since(before))).toContain("红");
+    },
+    T,
+  );
+
+  test(
     "task: dispatches a subagent, report_task fills the row, detail captured",
     async () => {
       await ask("请派一个子 agent 在后台算一下 1 到 50 的整数和，算完告诉我结果。");

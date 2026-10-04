@@ -30,6 +30,10 @@ public enum RPCMethod {
     public static let commandsList = "commands.list"
     public static let modelGet = "model.get"
     public static let modelSet = "model.set"
+    /// One image per call (the relay caps a frame at 1 MiB); chat.send then
+    /// references the returned ids.
+    public static let mediaUpload = "media.upload"
+    public static let mediaGet = "media.get"
 
     /// Every method the client knows. The contract test checks this equals
     /// the host's method set exactly.
@@ -37,7 +41,7 @@ public enum RPCMethod {
         hello, sync, chatSend, chatHistory, commandsList, modelGet, modelSet, taskGet, taskStop,
         approvalAnswer, watchAdd, watchUpdate, watchRemove, artifactList, artifactRead, artifactPin,
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
-        deviceUnpair, auditTail,
+        deviceUnpair, auditTail, mediaUpload, mediaGet,
     ]
 }
 
@@ -127,7 +131,31 @@ public struct SyncResult: Codable, Sendable {
 public struct ChatSendParams: Codable, Sendable {
     public var text: String
     public var clientMsgId: String?
-    public init(text: String, clientMsgId: String?) { self.text = text; self.clientMsgId = clientMsgId }
+    public var attachments: [String]?
+    public init(text: String, clientMsgId: String?, attachments: [String]? = nil) {
+        self.text = text; self.clientMsgId = clientMsgId; self.attachments = attachments
+    }
+}
+
+public struct MediaUploadParams: Codable, Sendable {
+    public var mediaType: String
+    public var data: String // base64
+    public init(mediaType: String, data: String) { self.mediaType = mediaType; self.data = data }
+}
+
+public struct MediaGetParams: Codable, Sendable {
+    public var id: String
+    public init(id: String) { self.id = id }
+}
+
+public struct MediaData: Decodable, Sendable {
+    public var mediaType: String
+    public var data: String
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        mediaType = l.string("mediaType", or: "image/jpeg")
+        data = l.string("data", or: "")
+    }
 }
 
 public struct ChatSendResult: Decodable, Sendable {

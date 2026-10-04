@@ -90,6 +90,8 @@ private let resultTypes: [String: Check] = [
     RPCMethod.pushUnregister: strict(OKResult.self),
     RPCMethod.deviceUnpair: strict(OKResult.self),
     RPCMethod.auditTail: strict(AuditResult.self),
+    RPCMethod.mediaUpload: strict(Attachment.self),
+    RPCMethod.mediaGet: strict(MediaData.self),
 ]
 
 /// Event → how AppStore.apply(event:) reads the payload.

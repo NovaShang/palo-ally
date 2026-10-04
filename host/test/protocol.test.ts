@@ -40,7 +40,9 @@ describe("host ↔ app protocol", () => {
     const run = async (method: string, params: unknown = {}) => (methods[method] = { params, result: await call(method, params) }).result as any;
 
     await run("hello", { client: "ios", version: "test" });
-    await run("chat.send", { text: "你好", clientMsgId: "c-1" });
+    const img = await run("media.upload", { mediaType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==" });
+    await run("chat.send", { text: "你好", clientMsgId: "c-1", attachments: [img.id] });
+    await run("media.get", { id: img.id });
     await hub.idle();
     await run("sync", {});
     await run("chat.history", { beforeSeq: 99, limit: 10 });

@@ -14,6 +14,13 @@ export interface ChatMessage {
   taskId?: string;
   approvalId?: string;
   clientMsgId?: string; // echoed for app-sent messages so clients can merge their optimistic copy
+  attachments?: Attachment[]; // images the owner sent with the message
+}
+
+export interface Attachment {
+  id: string;
+  kind: "image";
+  mediaType: string;
 }
 
 export type TaskStatus = "running" | "done" | "failed" | "needs_input" | "stopped";

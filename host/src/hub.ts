@@ -16,7 +16,8 @@ import { Router, type Pusher } from "./router.ts";
 import { RuntimeState } from "./runtime.ts";
 import { makeShellTools } from "./shellTools.ts";
 import { TaskTracker } from "./tasks.ts";
-import type { Channel, ChatMessage, Status, Task, Watch } from "./types.ts";
+import type { Attachment, Channel, ChatMessage, Status, Task, Watch } from "./types.ts";
+import { MediaStore } from "./media.ts";
 import { type Usage, UsageLedger } from "./usage.ts";
 import { appendJsonl } from "./util.ts";
 import { WatchStore } from "./watches.ts";
@@ -47,6 +48,7 @@ export class Hub {
   readonly approvals: ApprovalManager;
   readonly watches: WatchStore;
   readonly artifacts: ArtifactLibrary;
+  readonly media: MediaStore;
   readonly memory: MemoryView;
   readonly router: Router;
   readonly probe: ProbeScheduler;
@@ -74,6 +76,7 @@ export class Hub {
     this.tasks = new TaskTracker(this.paths.tasks, this.paths.taskActivity, this.bus, (t, k) => this.proactive.onTaskTransition(t, k));
     this.watches = new WatchStore(this.paths.watches, this.bus);
     this.artifacts = new ArtifactLibrary(this.paths.artifacts, this.bus);
+    this.media = new MediaStore(this.paths.media);
     this.memory = new MemoryView(this.paths.home, autoMemoryDir(this.paths.home));
     this.router = new Router(
       () => this.config.settings,
@@ -190,11 +193,18 @@ export class Hub {
   // ---------------- owner input ----------------
 
   // A message from the owner on any channel.
-  userMessage(text: string, channel: Channel, wechat?: WechatReplyTarget, clientMsgId?: string): ChatMessage | null {
+  userMessage(text: string, channel: Channel, wechat?: WechatReplyTarget, clientMsgId?: string, attachments: Attachment[] = []): ChatMessage | null {
     const t = text.trim();
-    if (!t) return null;
-    const cmd = this.tryCommand(t, channel);
-    const msg = this.chat.add({ role: "user", kind: "text", text: t, channel, ...(clientMsgId ? { clientMsgId } : {}) });
+    if (!t && !attachments.length) return null;
+    const cmd = attachments.length ? null : this.tryCommand(t, channel);
+    const msg = this.chat.add({
+      role: "user",
+      kind: "text",
+      text: t,
+      channel,
+      ...(clientMsgId ? { clientMsgId } : {}),
+      ...(attachments.length ? { attachments } : {}),
+    });
     if (cmd !== null) {
       this.chat.add({ role: "system", kind: "notice", text: cmd, channel: "system" });
       if (channel === "wechat" && wechat && this.wechat) void this.wechat.reply(wechat, cmd).catch(() => {});
@@ -202,7 +212,11 @@ export class Hub {
     }
     // Slash commands must reach the harness verbatim, so they get no prefix.
     const prefix = channel === "wechat" && !t.startsWith("/") ? "[来自微信] " : "";
-    this.conversation.sendOwner(prefix + t, channel, wechat);
+    const images = attachments.flatMap((a) => {
+      const m = this.media.read(a.id);
+      return m ? [{ mediaType: m.mediaType, data: m.data }] : [];
+    });
+    this.conversation.sendOwner(prefix + t, channel, wechat, images);
     return msg;
   }
 

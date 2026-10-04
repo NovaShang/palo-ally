@@ -95,13 +95,15 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     /// `chat.message` for a user turn (lets us merge the optimistic echo
     /// before the `chat.send` response lands).
     public var clientMsgId: String?
+    /// Images the owner sent with the message.
+    public var attachments: [Attachment]?
 
     // Local-only state.
     public var isStreaming: Bool = false
     public var delivery: Delivery = .sent
 
     enum CodingKeys: String, CodingKey {
-        case seq, id, role, kind, text, channel, ts, proactive, taskId, approvalId, clientMsgId
+        case seq, id, role, kind, text, channel, ts, proactive, taskId, approvalId, clientMsgId, attachments
     }
 
     public init(
@@ -127,9 +129,28 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         taskId = l.string("taskId")
         approvalId = l.string("approvalId")
         clientMsgId = l.string("clientMsgId")
+        attachments = l.decode([Attachment].self, "attachments")
     }
 
     public var date: Date { ts.msDate }
+}
+
+/// An image sent with a message; its bytes are fetched by id (`media.get`).
+public struct Attachment: Codable, Sendable, Hashable, Identifiable {
+    public var id: String
+    public var kind: String
+    public var mediaType: String
+
+    public init(id: String, kind: String = "image", mediaType: String) {
+        self.id = id; self.kind = kind; self.mediaType = mediaType
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        id = l.string("id", or: "")
+        kind = l.string("kind", or: "image")
+        mediaType = l.string("mediaType", or: "image/jpeg")
+    }
 }
 
 // MARK: - Task

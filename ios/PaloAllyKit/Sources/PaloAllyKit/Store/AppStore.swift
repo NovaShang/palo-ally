@@ -457,12 +457,27 @@ public final class AppStore {
     // MARK: chat
 
     /// Sends a chat message with an optimistic local echo.
-    public func send(_ rawText: String) {
+    /// An image picked in the composer, already downsized (see ImagePrep).
+    public struct OutgoingImage: Sendable {
+        public var data: Data
+        public var mediaType: String
+        public init(data: Data, mediaType: String) { self.data = data; self.mediaType = mediaType }
+    }
+
+    public func send(_ rawText: String, images picked: [OutgoingImage] = []) {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty || !picked.isEmpty else { return }
         let cid = UUID().uuidString.lowercased()
         var echo = ChatMessage(seq: 0, id: "local-\(cid)", role: .user, kind: .text, text: text, channel: .app,
                                ts: Date().epochMillis, clientMsgId: cid)
+        if !picked.isEmpty {
+            // Shown right away from local bytes; uploaded (one per call) on delivery.
+            echo.attachments = picked.enumerated().map { i, img in
+                let id = "\(Self.localImagePrefix)\(cid)-\(i)"
+                images[id] = img.data
+                return Attachment(id: id, mediaType: img.mediaType)
+            }
+        }
         echo.delivery = .sending
         messages.append(echo)
         sortMessages()
@@ -481,7 +496,9 @@ public final class AppStore {
 
     private func deliver(clientMsgId cid: String, text: String) async {
         do {
-            let r: ChatSendResult = try await rpc.call(RPCMethod.chatSend, params: ChatSendParams(text: text, clientMsgId: cid))
+            let ids = try await uploadImages(clientMsgId: cid)
+            let r: ChatSendResult = try await rpc.call(RPCMethod.chatSend,
+                                                       params: ChatSendParams(text: text, clientMsgId: cid, attachments: ids))
             guard let i = messages.firstIndex(where: { $0.clientMsgId == cid && $0.seq == 0 }) else { return }
             if !r.id.isEmpty, let dup = messages.firstIndex(where: { $0.id == r.id }), dup != i {
                 // The broadcast already landed under the server id.
@@ -502,6 +519,44 @@ public final class AppStore {
             }
             awaitingReply = false
             lastError = Friendly.message(error)
+        }
+    }
+
+    static let localImagePrefix = "local-img-"
+
+    /// Image bytes by attachment id: sent from this device, or fetched on demand.
+    public private(set) var images: [String: Data] = [:]
+    private var imageLoads: Set<String> = []
+
+    /// Uploads the echo's not-yet-uploaded images, one per call, swapping in
+    /// the host's ids. Returns all ids (nil when there are none). A retry
+    /// resumes where it stopped.
+    private func uploadImages(clientMsgId cid: String) async throws -> [String]? {
+        guard let i = messages.firstIndex(where: { $0.clientMsgId == cid && $0.seq == 0 }),
+              let atts = messages[i].attachments, !atts.isEmpty else { return nil }
+        var done: [Attachment] = []
+        for a in atts {
+            guard a.id.hasPrefix(Self.localImagePrefix) else { done.append(a); continue }
+            guard let data = images[a.id] else { continue }
+            let up: Attachment = try await rpc.call(RPCMethod.mediaUpload,
+                                                   params: MediaUploadParams(mediaType: a.mediaType, data: data.base64EncodedString()))
+            images[up.id] = data
+            done.append(up)
+            if let j = messages.firstIndex(where: { $0.clientMsgId == cid && $0.seq == 0 }) {
+                messages[j].attachments = done + atts.dropFirst(done.count)
+            }
+        }
+        return done.map(\.id)
+    }
+
+    /// Fetches an attachment's bytes if they aren't here yet (history, other devices).
+    public func loadImage(_ id: String) async {
+        guard images[id] == nil, !imageLoads.contains(id), !id.hasPrefix(Self.localImagePrefix) else { return }
+        imageLoads.insert(id)
+        defer { imageLoads.remove(id) }
+        if let r: MediaData = try? await rpc.call(RPCMethod.mediaGet, params: MediaGetParams(id: id)),
+           let data = Data(base64Encoded: r.data) {
+            images[id] = data
         }
     }
 

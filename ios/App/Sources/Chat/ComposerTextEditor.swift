@@ -23,6 +23,8 @@ struct ComposerTextEditor: UIViewRepresentable {
     /// Bump to raise the keyboard.
     var focusToken: Int
     var onReturn: () -> Void
+    /// Images pasted into the field (bento: paste support).
+    var onPasteImages: ([Data]) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -39,6 +41,7 @@ struct ComposerTextEditor: UIViewRepresentable {
         textView.keyboardDismissMode = .interactive
         textView.text = text
         textView.onHardwareReturn = { [weak coordinator = context.coordinator] in coordinator?.parent.onReturn() }
+        textView.onPasteImages = { [weak coordinator = context.coordinator] in coordinator?.parent.onPasteImages($0) }
         context.coordinator.textView = textView
         DispatchQueue.main.async { context.coordinator.recomputeHeight() }
         return textView
@@ -104,6 +107,22 @@ struct ComposerTextEditor: UIViewRepresentable {
 /// come through `pressesBegan`).
 final class ComposerUITextView: UITextView {
     var onHardwareReturn: (() -> Void)?
+    var onPasteImages: (([Data]) -> Void)?
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(paste(_:)), UIPasteboard.general.hasImages { return true }
+        return super.canPerformAction(action, withSender: sender)
+    }
+
+    /// An image on the pasteboard (and no text) becomes an attachment.
+    override func paste(_ sender: Any?) {
+        let pb = UIPasteboard.general
+        if pb.hasImages, !pb.hasStrings, let images = pb.images {
+            onPasteImages?(images.compactMap { $0.pngData() })
+            return
+        }
+        super.paste(sender)
+    }
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         if let key = presses.first?.key,

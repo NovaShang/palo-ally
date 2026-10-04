@@ -4,6 +4,7 @@ import { VERSION } from "../config.ts";
 import type {
   HarnessDriver,
   HarnessEvent,
+  ImageInput,
   MainSession,
   MainSessionOptions,
   ProbeRequest,
@@ -283,8 +284,15 @@ class ClaudeMainSession implements MainSession {
     }
   }
 
-  send(t: string, uuid: string): void {
-    this.input.push({ type: "user", message: { role: "user", content: t }, parent_tool_use_id: null, uuid } as SDKUserMessage);
+  send(t: string, uuid: string, images: ImageInput[] = []): void {
+    // Images go in as content blocks ahead of the text, as the API expects.
+    const content = images.length
+      ? [
+          ...images.map((i) => ({ type: "image", source: { type: "base64", media_type: i.mediaType, data: i.data } })),
+          ...(t ? [{ type: "text", text: t }] : []),
+        ]
+      : t;
+    this.input.push({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, uuid } as SDKUserMessage);
   }
 
   async interrupt(): Promise<void> {

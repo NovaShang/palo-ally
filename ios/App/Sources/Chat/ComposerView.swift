@@ -1,4 +1,5 @@
 import PaloAllyKit
+import PhotosUI
 import SwiftUI
 
 /// One Liquid Glass capsule, WeChat-style:
@@ -10,7 +11,11 @@ struct ComposerView: View {
     @Environment(AppStore.self) private var store
     @Environment(VoiceInputController.self) private var voice
     @Binding var draft: String
-    let onSend: (String) -> Void
+    let onSend: (String, [AppStore.OutgoingImage]) -> Void
+    /// Images picked or pasted for the next message (bento's staged attachments).
+    @State private var staged: [AppStore.OutgoingImage] = []
+    @State private var pickerItems: [PhotosPickerItem] = []
+    private static let maxImages = 6
     /// Editing (keyboard up). Reported by the text view.
     @State private var focused = false
     @State private var focusToken = 0
@@ -38,7 +43,7 @@ struct ComposerView: View {
         return String(draft.dropFirst())
     }
 
-    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !staged.isEmpty }
     /// Idle: not editing — the capsule reads 「按住 说话」 and takes presses.
     private var idle: Bool { !focused }
 
@@ -51,19 +56,25 @@ struct ComposerView: View {
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            if !staged.isEmpty {
+                StagedImages(images: staged) { i in staged.remove(at: i) }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             if let msg = voice.dictation.errorMessage, !voice.isActive {
                 Text(msg)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .transition(.opacity)
             }
+            HStack(alignment: .bottom, spacing: 8) {
             HStack(alignment: .bottom, spacing: 6) {
                 ZStack(alignment: .leading) {
                     // bento's UITextView-backed editor: smooth with big pastes,
                     // and Return never sends while picking a pinyin candidate.
                     ComposerTextEditor(text: $draft, measuredHeight: $editorHeight, isComposing: $composing,
                                        isFocused: $focused, maxHeight: Self.maxEditorHeight,
-                                       focusToken: focusToken, onReturn: send)
+                                       focusToken: focusToken, onReturn: send,
+                                       onPasteImages: { add($0) })
                         .frame(height: min(max(editorHeight, 44), Self.maxEditorHeight))
                         .padding(.leading, 18)
                         .padding(.trailing, canSend ? 0 : 14)
@@ -148,6 +159,28 @@ struct ComposerView: View {
             }
             .animation(.snappy, value: canSend)
             .animation(.snappy, value: idle)
+
+                // Photos: a glass circle beside the capsule (WeChat's ⊕ spot).
+                PhotosPicker(selection: $pickerItems, maxSelectionCount: Self.maxImages - staged.count, matching: .images) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
+                        .glassEffect(.regular.interactive(), in: .circle)
+                }
+                .disabled(staged.count >= Self.maxImages)
+                .accessibilityLabel("发图片")
+            }
+            .animation(.snappy, value: staged.count)
+            .onChange(of: pickerItems) { _, items in
+                guard !items.isEmpty else { return }
+                pickerItems = []
+                Task {
+                    var picked: [Data] = []
+                    for item in items { if let d = try? await item.loadTransferable(type: Data.self) { picked.append(d) } }
+                    add(picked)
+                }
+            }
         }
         .padding(.horizontal, 12)
         .padding(.top, 6)
@@ -207,7 +240,10 @@ struct ComposerView: View {
             draft = draft.isEmpty ? text : draft + text
             focusToken += 1
         case .send:
-            if !text.isEmpty { onSend(text) }
+            if !text.isEmpty || !staged.isEmpty {
+                onSend(text, staged)
+                staged = []
+            }
         }
     }
 
@@ -215,7 +251,50 @@ struct ComposerView: View {
         guard canSend else { return }
         let text = draft
         draft = ""
-        onSend(text)
+        onSend(text, staged)
+        staged = []
+    }
+
+    private func add(_ raw: [Data]) {
+        let room = Self.maxImages - staged.count
+        let prepared = raw.prefix(room).compactMap(ImagePrep.process)
+        staged.append(contentsOf: prepared)
+        if prepared.count < min(raw.count, room) { voice.dictation.errorMessage = "有图片读不了，换一张试试" }
+    }
+}
+
+/// Thumbnails of images staged for the next message, each removable.
+private struct StagedImages: View {
+    let images: [AppStore.OutgoingImage]
+    let remove: (Int) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Array(images.enumerated()), id: \.offset) { i, img in
+                    ZStack(alignment: .topTrailing) {
+                        if let ui = UIImage(data: img.data) {
+                            Image(uiImage: ui).resizable().scaledToFill()
+                                .frame(width: 60, height: 60)
+                                .clipShape(.rect(cornerRadius: 12))
+                        }
+                        Button { remove(i) } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(.primary)
+                                .frame(width: 20, height: 20)
+                                .glassEffect(.regular.interactive(), in: .circle)
+                        }
+                        .buttonStyle(.plain)
+                        .offset(x: 6, y: -6)
+                        .accessibilityLabel("移除这张图片")
+                    }
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.top, 8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

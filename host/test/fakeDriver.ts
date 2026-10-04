@@ -1,6 +1,7 @@
 import type {
   HarnessDriver,
   HarnessEvent,
+  ImageInput,
   MainSession,
   MainSessionOptions,
   ProbeRequest,
@@ -32,6 +33,7 @@ export class FakeMainSession implements MainSession {
   private queue: { text: string; uuid: string }[] = [];
   private busy = false;
   sent: string[] = [];
+  sentImages: ImageInput[] = [];
   private total = 0;
   readonly sessionId: string;
 
@@ -58,8 +60,9 @@ export class FakeMainSession implements MainSession {
     });
   }
 
-  send(text: string, uuid: string): void {
+  send(text: string, uuid: string, images: ImageInput[] = []): void {
     this.sent.push(text);
+    this.sentImages.push(...images);
     this.queue.push({ text, uuid });
     void this.drain();
   }

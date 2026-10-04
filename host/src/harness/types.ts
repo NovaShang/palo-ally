@@ -83,6 +83,11 @@ export interface ToolHandlers {
   send_wechat_file(args: { path: string }): Promise<string>;
 }
 
+export interface ImageInput {
+  mediaType: string;
+  data: string; // base64
+}
+
 export interface MainSessionOptions {
   cwd: string;
   model?: string;
@@ -106,7 +111,7 @@ export interface MainSessionOptions {
 export interface MainSession {
   // Sends a user message now. While a turn is running the harness queues it
   // or folds it into that turn; `uuid` lets the result say which it answered.
-  send(text: string, uuid: string): void;
+  send(text: string, uuid: string, images?: ImageInput[]): void;
   interrupt(): Promise<void>;
   stopTask(taskId: string): Promise<void>;
   // live switches; take effect from the next model call

@@ -77,8 +77,8 @@ struct ChatView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            ComposerView(draft: $draft) { text in
-                store.send(text)
+            ComposerView(draft: $draft) { text, images in
+                store.send(text, images: images)
             }
         }
         .navigationTitle("PaloAlly")

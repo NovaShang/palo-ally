@@ -22,6 +22,7 @@ export const RPC_METHODS = [
   "task.get", "task.stop", "approval.answer", "watch.add", "watch.update", "watch.remove",
   "artifact.list", "artifact.read", "artifact.pin", "memory.list", "memory.read", "memory.write",
   "settings.update", "stop", "push.register", "push.unregister", "device.unpair", "audit.tail",
+  "media.upload", "media.get",
 ] as const;
 
 export const RPC_EVENTS = [
@@ -56,9 +57,23 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       // A retried send (the first one did arrive) must not run twice.
       const dup = cid ? hub.chat.findByClientMsgId(cid) : undefined;
       if (dup) return { id: dup.id, seq: dup.seq };
-      const msg = hub.userMessage(String(p.text ?? ""), ctx.channel, undefined, cid);
+      const attachments = (Array.isArray(p.attachments) ? p.attachments : [])
+        .slice(0, 10)
+        .map((id: unknown) => {
+          const m = hub.media.read(String(id));
+          if (!m) throw new Error("图片没传上来，重发一次");
+          return { id: String(id), kind: "image" as const, mediaType: m.mediaType };
+        });
+      const msg = hub.userMessage(String(p.text ?? ""), ctx.channel, undefined, cid, attachments);
       if (!msg) throw new Error("空消息");
       return { id: msg.id, seq: msg.seq };
+    }
+    case "media.upload":
+      return hub.media.save(String(p.mediaType ?? ""), String(p.data ?? ""));
+    case "media.get": {
+      const m = hub.media.read(String(p.id ?? ""));
+      if (!m) throw new Error("找不到这张图片");
+      return { mediaType: m.mediaType, data: m.data };
     }
     case "model.get":
       return await hub.modelInfo();
