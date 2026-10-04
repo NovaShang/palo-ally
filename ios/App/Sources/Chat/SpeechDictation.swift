@@ -18,9 +18,24 @@ final class SpeechDictation {
     private var task: SFSpeechRecognitionTask?
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN")) ?? SFSpeechRecognizer()
 
+    /// Finger just went down: pay the audio cold-start cost now, while the
+    /// hold threshold runs, so `start()` reaches the mic in a few ms. Never
+    /// turns the mic on (no indicator) — only `start()` does. Same as bento.
+    func prewarm() {
+        guard !isRecording, !engine.isRunning else { return }
+        #if !os(macOS)
+        try? AVAudioSession.sharedInstance().setCategory(.record, mode: .default)
+        #endif
+        _ = engine.inputNode.outputFormat(forBus: 0) // instantiates the HAL unit
+        engine.prepare()
+    }
+
     func start() async {
         errorMessage = nil
-        guard await Self.authorize() else {
+        // Already granted (the usual case): skip the permission round trip.
+        var allowed = Self.authorized
+        if !allowed { allowed = await Self.authorize() }
+        guard allowed else {
             errorMessage = "需要在「设置」里允许使用麦克风和语音识别"
             return
         }
@@ -31,7 +46,9 @@ final class SpeechDictation {
         do {
             #if !os(macOS)
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.record, mode: .measurement, options: .duckOthers)
+            // .default keeps the system's input processing (gain, noise);
+            // .measurement turned it off and made speech quieter.
+            try session.setCategory(.record, mode: .default)
             try session.setActive(true, options: .notifyOthersOnDeactivation)
             #endif
             let request = SFSpeechAudioBufferRecognitionRequest()
@@ -42,10 +59,13 @@ final class SpeechDictation {
 
             let input = engine.inputNode
             let format = input.outputFormat(forBus: 0)
+            guard format.sampleRate > 0, format.channelCount > 0 else { throw CancellationError() }
             input.removeTap(onBus: 0)
             // The tap runs on the audio thread: keep the closure nonisolated.
             nonisolated(unsafe) let sink = request
-            input.installTap(onBus: 0, bufferSize: 1024, format: format) { @Sendable [weak self] buffer, _ in
+            // nil format = the input's live format, which can never mismatch
+            // (an explicit stale one crashes after a mic switch).
+            input.installTap(onBus: 0, bufferSize: 1024, format: nil) { @Sendable [weak self] buffer, _ in
                 sink.append(buffer)
                 let rms = Self.rms(buffer)
                 Task { @MainActor in self?.level = rms }
@@ -123,6 +143,11 @@ final class SpeechDictation {
 
     // nonisolated + @Sendable: the system calls back on a background queue, and
     // a main-actor closure there traps at runtime (Swift 6 isolation check).
+    private static var authorized: Bool {
+        SFSpeechRecognizer.authorizationStatus() == .authorized
+            && AVAudioApplication.shared.recordPermission == .granted
+    }
+
     nonisolated private static func authorize() async -> Bool {
         let speech: Bool = await withCheckedContinuation { c in
             SFSpeechRecognizer.requestAuthorization { @Sendable status in c.resume(returning: status == .authorized) }

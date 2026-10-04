@@ -26,6 +26,9 @@ final class VoiceInputController {
     var containerSize: CGSize = .zero
     var bottomInset: CGFloat = 0
 
+    /// Finger down, before we know it's a hold: warm the audio path.
+    func prewarm() { dictation.prewarm() }
+
     func begin() {
         guard !isActive else { return }
         isActive = true

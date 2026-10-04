@@ -123,6 +123,7 @@ struct ComposerView: View {
                     pressing = true
                     moved = false
                     voiceStarted = false
+                    voice.prewarm()
                     pressTask = Task { @MainActor in
                         try? await Task.sleep(for: holdDelay)
                         guard !Task.isCancelled, pressing, !moved else { return }
