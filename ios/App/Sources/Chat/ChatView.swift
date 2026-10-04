@@ -90,7 +90,7 @@ struct ChatView: View {
                     .foregroundStyle(.secondary)
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarLeading) {
                 Button {
                     model.showAssistant = true
                 } label: {
@@ -98,6 +98,14 @@ struct ChatView: View {
                 }
                 .badge(store.pendingApprovals.count)
                 .accessibilityLabel("助理详情")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    model.showLibrary = true
+                } label: {
+                    Image(systemName: "books.vertical")
+                }
+                .accessibilityLabel("资料库")
             }
         }
     }

@@ -6,7 +6,7 @@ struct RootView: View {
 
     var body: some View {
         if let store = model.store {
-            MainTabs()
+            MainScreen()
                 .environment(store)
                 .id(ObjectIdentifier(store))
         } else {
@@ -15,30 +15,31 @@ struct RootView: View {
     }
 }
 
-struct MainTabs: View {
+/// The conversation is the one main screen. The assistant page is pushed from
+/// the top-left; the library opens from the top-right as a temporary sheet.
+struct MainScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
 
     var body: some View {
         @Bindable var model = model
-        TabView(selection: $model.tab) {
-            Tab("对话", systemImage: "bubble.left.and.text.bubble.right", value: AppTab.chat) {
-                NavigationStack {
-                    ChatView()
-                        .navigationDestination(isPresented: $model.showAssistant) {
-                            AssistantView()
-                        }
+        NavigationStack {
+            ChatView()
+                .navigationDestination(isPresented: $model.showAssistant) {
+                    AssistantView()
                 }
-            }
-            .badge(store.pendingApprovals.count)
-
-            Tab("资料库", systemImage: "books.vertical", value: AppTab.library) {
-                NavigationStack(path: $model.libraryPath) {
-                    LibraryView()
-                }
-            }
         }
-        .tabBarMinimizeBehavior(.onScrollDown)
+        .sheet(isPresented: $model.showLibrary) {
+            NavigationStack(path: $model.libraryPath) {
+                LibraryView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("完成") { model.showLibrary = false }
+                        }
+                    }
+            }
+            .environment(store)
+        }
         .sheet(isPresented: $model.showPairingSheet) {
             PairingView(isSheet: true)
         }

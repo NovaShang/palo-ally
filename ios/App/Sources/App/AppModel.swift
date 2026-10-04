@@ -30,8 +30,6 @@ struct LaunchOptions {
     }
 }
 
-enum AppTab: Hashable { case chat, library }
-
 enum AssistantTab: String, CaseIterable, Hashable {
     case tasks, approvals, watches, memory
 
@@ -58,7 +56,8 @@ final class AppModel {
     private(set) var demoHost: DemoHost?
 
     // Navigation state (also driven by launch options / notifications).
-    var tab: AppTab = .chat
+    /// The library is a temporary sheet over the conversation, not a peer screen.
+    var showLibrary = false
     var showAssistant = false
     var assistantTab: AssistantTab = .tasks
     var showSettings = false
@@ -91,8 +90,8 @@ final class AppModel {
 
     private func applyLaunchScreen() {
         switch launch.screen {
-        case "library": tab = .library
-        case "artifact": tab = .library; libraryPath = ["ar1"]
+        case "library": showLibrary = true
+        case "artifact": showLibrary = true; libraryPath = ["ar1"]
         case "assistant": showAssistant = true
         case "settings": showAssistant = true; showSettings = true
         case "pairing": if mode != .unpaired { showPairingSheet = true }
@@ -197,14 +196,14 @@ final class AppModel {
     func handleNotification(userInfo: [AnyHashable: Any]) {
         showSettings = false
         if userInfo["approvalId"] != nil, store?.pendingApprovals.isEmpty == false {
-            tab = .chat
+            showLibrary = false
             assistantTab = .approvals
             showAssistant = true
         } else if let taskId = userInfo["taskId"] as? String, !taskId.isEmpty {
             assistantTab = .tasks
             showAssistant = true
         } else {
-            tab = .chat
+            showLibrary = false
             showAssistant = false
         }
     }

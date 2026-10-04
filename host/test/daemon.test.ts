@@ -109,6 +109,27 @@ describe("daemon over the local socket", () => {
     c.close();
   }, 30_000);
 
+  test("large responses arrive intact (partial writes, multibyte text)", async () => {
+    const big = "长消息，带中文和 emoji 🎉。".repeat(200);
+    for (let i = 0; i < 120; i++) d.hub.chat.add({ role: "assistant", kind: "text", text: `${i}:${big}`, channel: "system" });
+    const c = await LocalClient.connect(paths.socket);
+    for (let round = 0; round < 3; round++) {
+      const sync = await c.call("sync", { sinceSeq: 0 });
+      const bigOnes = sync.messages.filter((m: any) => m.text.endsWith(big));
+      expect(bigOnes.length).toBe(120);
+    }
+    c.close();
+  }, 30_000);
+
+  test("LineReader decodes characters split across chunks", async () => {
+    const { LineReader } = await import("../src/channels/local.ts");
+    const bytes = new TextEncoder().encode(JSON.stringify({ t: "你好🎉" }) + "\n");
+    const r = new LineReader();
+    const out: string[] = [];
+    for (let i = 0; i < bytes.length; i++) out.push(...r.push(bytes.subarray(i, i + 1)));
+    expect(out.map((l) => JSON.parse(l).t)).toEqual(["你好🎉"]);
+  });
+
   test("CLI errors cleanly when the daemon is down", async () => {
     const other = tmpPaths();
     const p = Bun.spawn(["bun", CLI, "status"], { env: { ...process.env, PALOALLY_HOME: other.root }, stderr: "pipe" });
