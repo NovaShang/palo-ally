@@ -1,0 +1,8 @@
+node_modules/
+.DS_Store
+*.tmp
+ios/**/build/
+ios/**/DerivedData/
+ios/**/.build/
+ios/**/xcuserdata/
+ios/**/*.xcodeproj/project.xcworkspace/

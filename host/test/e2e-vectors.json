@@ -1,0 +1,18 @@
+{
+  "device_seed_hex": "0101010101010101010101010101010101010101010101010101010101010101",
+  "device_pub_b64": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w=",
+  "host_seed_hex": "0202020202020202020202020202020202020202020202020202020202020202",
+  "host_pub_b64": "gTl3Dqh9F19Wo1Rmw0x+zMuNipG07jeiXfYPW4/Js5Q=",
+  "eph_c_seed_hex": "0303030303030303030303030303030303030303030303030303030303030303",
+  "eph_h_seed_hex": "0404040404040404040404040404040404040404040404040404040404040404",
+  "eph_c_pub_b64": "Xf7dO2vUf2+ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI=",
+  "eph_h_pub_b64": "rAGyIJ6GNU+4UyN7XeD0+rE8f8v0M6YcAZNpYX/s8Qs=",
+  "client_sig_b64": "1Ttj8v/q0GaMU7sdCL0ZyUpildHc7mI0iJ+TvTScKTdp8Hi7a1bzjwlald5HArqm6MxaSmpVyk8Lz0WuqAaUCA==",
+  "host_sig_b64": "PsnzxjfLgeORNS9dOarObZQXYeIrOED+4T4f1VadauhD1yyZ1gEf4wON3i/4SsLNeReLoZi/b3ZGIXNny3/oBw==",
+  "device_ssh_wire_b64": "AAAAC3NzaC1lZDI1NTE5AAAAIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29c",
+  "k_c2h_hex": "f31909533708fee7bd2c2ab93c4ee919cfa8f1504e8daaad111f6cbd3ebe980a",
+  "k_h2c_hex": "5c6e52fae0ebdbeba054c1270d3b19e8838e0cd2c6103cc67ebdc4b7295795d8",
+  "plaintext": "{\"id\":1,\"method\":\"hello\",\"params\":{\"client\":\"ios\"}}",
+  "c2h_unit0_hex": "02684dab54ddf902f3ba93732305b7454764dc6ffef05df442bc50ba38d1d991176665c4721a1d401fc1a0dc9f4a34fe07e559199b1336af79884d4ac8ecf9bf0d335da1",
+  "h2c_unit0_hex": "025d8cc78faa6c6a49ca7d6a7717f3d5a56e2fbd0cc81c65b4b218c5107665c89e52fb8fea1e8bd12d48950ae0dc7add3d596e71eeca6a0cafa1b8186b5c81be627895ab"
+}

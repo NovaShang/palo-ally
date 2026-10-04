@@ -1,0 +1,27 @@
+{
+  "name": "paloally",
+  "version": "0.1.0",
+  "description": "PaloAlly host: turns Claude Code into an always-on personal assistant reachable from your phone and WeChat.",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "paloally": "./bin/paloally"
+  },
+  "scripts": {
+    "start": "bun src/cli.ts start",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.289",
+    "@noble/ciphers": "^2.4.0",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
+    "qrcode-terminal": "^0.12.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}
