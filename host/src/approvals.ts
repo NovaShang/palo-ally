@@ -7,6 +7,7 @@ import { newId, readJson, truncate, writeJson } from "./util.ts";
 // ---------------- classification ----------------
 
 const OWN_SERVER = "mcp__paloally__";
+const SENSITIVE_MSG = "主人把这个网站放进了「不让助理碰」的名单，不能打开。请告诉主人需要的话自己去电脑上看。";
 
 const IRREVERSIBLE_BASH: RegExp[] = [
   /(^|[\s;&|(])rm\s/,
@@ -33,6 +34,8 @@ const IRREVERSIBLE_BASH: RegExp[] = [
 
 const IRREVERSIBLE_MCP = /(send|reply|forward|post|publish|delete|trash|remove|pay|purchase|order|checkout|transfer|share|submit|invite|cancel|archive|unsubscribe)/i;
 const IRREVERSIBLE_CLICK = /(pay|buy|purchase|checkout|place order|submit|send|delete|remove|confirm|transfer|支付|付款|购买|下单|提交|发送|删除|确认|转账)/i;
+// Looking at the current page changes nothing.
+const BROWSER_READ_ONLY = /^mcp__[^_]+(?:_[^_]+)*__browser_(snapshot|take_screenshot|console_messages|network_requests|wait_for)$/;
 const BROWSER_INTERACT = /browser_(click|type|press_key|fill_form|select_option|file_upload|drag)/;
 
 // isIrreversible: sending, paying, deleting and other outward actions are
@@ -206,11 +209,12 @@ export class ApprovalManager {
 
   // preGate runs on every tool call before the harness decides.
   preGate(tool: string, input: Record<string, unknown>): { decision: "allow" | "deny" | "ask" | "pass"; reason?: string } {
-    if (this.hooks.isKilled()) return { decision: "deny", reason: "助理已被急停，所有操作暂停" };
+    if (this.hooks.isKilled()) return { decision: "deny", reason: "主人按了「全部停下」，现在什么都不能做。" };
     // The shell's own tools (report_task, register_watch…) only touch PaloAlly state.
     if (tool.startsWith(OWN_SERVER)) return { decision: "allow" };
-    if (this.isSensitiveNavigation(tool, input)) return { decision: "deny", reason: "该网站在敏感账号名单里，助理的浏览器不碰它" };
-    if (isIrreversible(tool, input)) return { decision: "ask", reason: "不可逆/对外动作，需要你单独确认" };
+    if (this.isSensitiveNavigation(tool, input)) return { decision: "deny", reason: SENSITIVE_MSG };
+    if (BROWSER_READ_ONLY.test(tool)) return { decision: "allow" };
+    if (isIrreversible(tool, input)) return { decision: "ask", reason: "这一步做了撤不回，要主人点头" };
     return { decision: "pass" };
   }
 
@@ -219,7 +223,7 @@ export class ApprovalManager {
     if (this.hooks.isKilled()) return Promise.resolve({ behavior: "deny", message: "助理已被急停" });
     if (req.toolName.startsWith(OWN_SERVER)) return Promise.resolve({ behavior: "allow", updatedInput: req.input });
     if (this.isSensitiveNavigation(req.toolName, req.input)) {
-      return Promise.resolve({ behavior: "deny", message: "该网站在敏感账号名单里" });
+      return Promise.resolve({ behavior: "deny", message: SENSITIVE_MSG });
     }
     const irreversible = isIrreversible(req.toolName, req.input);
     const scope = scopeFor(req.toolName, req.input, this.currentDomain);

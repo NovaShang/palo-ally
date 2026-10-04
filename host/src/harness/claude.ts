@@ -217,7 +217,6 @@ class ClaudeMainSession implements MainSession {
         includePartialMessages: true,
         forwardSubagentText: true,
         mcpServers: { ...extra, paloally: paloallyMcpServer(opts.tools) },
-        allowedTools: ["mcp__paloally"],
         canUseTool: async (toolName, input, o) =>
           opts.canUseTool({
             toolName,

@@ -82,7 +82,7 @@ export class Router {
 
 // hintFor names the kind of message without its content.
 function hintFor(msg: ChatMessage): string {
-  if (msg.kind === "approval") return "有个操作等你确认";
+  if (msg.kind === "approval") return `有个操作等你确认（回复「同意 ${msg.approvalId?.slice(-4)}」或「拒绝 ${msg.approvalId?.slice(-4)}」，或在 App 里看详情）`;
   if (msg.kind === "task") return "有个任务有结果了";
   return "我有事想跟你说";
 }

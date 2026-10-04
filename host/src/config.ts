@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 import { readJson, writeJson } from "./util.ts";
@@ -30,7 +31,12 @@ export class Paths {
   get identity() { return join(this.root, "identity.json"); }
   get audit() { return join(this.root, "audit"); }
   get run() { return join(this.root, "run"); }
-  get socket() { return join(this.run, "host.sock"); }
+  // Unix socket paths are capped (~104 bytes on macOS); deep roots fall back to /tmp.
+  get socket() {
+    const p = join(this.run, "host.sock");
+    if (Buffer.byteLength(p) <= 100) return p;
+    return join("/tmp", `paloally-${createHash("sha256").update(this.root).digest("hex").slice(0, 16)}.sock`);
+  }
   get logs() { return join(this.root, "logs"); }
   get browserProfile() { return join(this.root, "browser-profile"); }
 }

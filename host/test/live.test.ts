@@ -170,3 +170,45 @@ d(`live harness (${MODEL})`, () => {
 
 test.if(!LIVE)("live tests skipped (set PALOALLY_LIVE=1)", () => {});
 void cleanup;
+
+const dBrowser = LIVE && process.env.PALOALLY_LIVE_BROWSER === "1" ? describe : describe.skip;
+dBrowser("live browser MCP (headless Playwright, dedicated profile)", () => {
+  const paths = tmpPaths();
+  const config = testConfig((c) => {
+    c.model = MODEL;
+    c.browser.enabled = true;
+    c.browser.sensitiveDomains = ["example.org"];
+    c.browser.command = ["npx", "-y", "@playwright/mcp@latest", "--headless", "--browser", "chrome", "--user-data-dir", paths.browserProfile];
+  });
+  const hub = new Hub({ paths, config, driver: new ClaudeCodeDriver(), log: (s) => console.log(`[hub] ${s}`) });
+  const asked: string[] = [];
+  hub.bus.on((event, data: any) => {
+    if (event === "approval.updated" && data.status === "pending") {
+      asked.push(`${data.tool} ${data.detail}`);
+      setTimeout(() => hub.approvals.answer(data.id, true, "test"), 50);
+    }
+  });
+  afterAll(() => {
+    hub.stop();
+    const proj = join(homedir(), ".claude", "projects", resolve(paths.home).replace(/[^A-Za-z0-9]/g, "-"));
+    if (existsSync(proj)) rmSync(proj, { recursive: true, force: true });
+    cleanup(paths);
+  });
+
+  test(
+    "navigates with approval, refuses sensitive domains",
+    async () => {
+      hub.userMessage("用浏览器打开 https://example.com ，告诉我页面的大标题是什么。然后再打开 https://example.org 看看。", "app");
+      await hub.idle();
+      const text = hub.chat.recent(20).filter((m) => m.role === "assistant").map((m) => m.text).join("\n");
+      console.log(`[live] browser asked: ${JSON.stringify(asked)}\n[live] reply: ${text.slice(0, 400)}`);
+      expect(asked.some((a) => a.includes("browser_navigate") && a.includes("example.com"))).toBe(true);
+      expect(text).toContain("Example Domain");
+      expect(asked.some((a) => a.includes("example.org"))).toBe(false); // denied by the gate, never reaches a card
+      const audit = hub.audit.tail(100);
+      expect(audit.some((e) => e.type === "tool" && String(e.tool).includes("browser_navigate"))).toBe(true);
+      expect(existsSync(paths.browserProfile)).toBe(true);
+    },
+    T,
+  );
+});

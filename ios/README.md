@@ -58,6 +58,7 @@ Launch arguments (also read from UserDefaults):
 
 | arg | effect |
 |---|---|
+| `-pairLink <paloally://…>` | start pairing with this link (automation; skips the system open-URL prompt) |
 | `-demo YES` | use the in-memory `DemoHost` (seeded Chinese sample data, streamed replies) |
 | `-demoScreen chat\|library\|artifact\|assistant\|settings\|pairing` | open that screen |
 | `-demoTab tasks\|approvals\|watches\|memory` | open the assistant page on that tab |
@@ -88,3 +89,14 @@ SwiftUI previews use `AppModel.demo()`. On first launch an unpaired app also off
 - **Streaming.** A `chat.delta{id,text}` appends `text` to the message with that id, creating it if needed (seq 0, still streaming). The `chat.message` with the same id replaces the text and finishes the message. Deltas that arrive after that are ignored.
 - **Event payloads.** `settings.updated` and `status` are accepted either as the bare object or wrapped as `{settings}` / `{status}`. `artifact.updated` is accepted bare or wrapped as `{artifact}`. `watch.updated` is accepted as `{watch}`, `{removed}`, or a bare watch.
 - **Approvals.** The client sends `remember:true` only when the user allows the action and `irreversible == false`; otherwise the field is left out. If an approval arrives without `irreversible`, the client treats it as irreversible.
+
+## Running against a real host in the simulator
+
+Unsigned builds (`CODE_SIGNING_ALLOWED=NO`) can't reach the Keychain, so pairing fails with `-34018`. Use ad-hoc signing instead:
+
+```sh
+xcodebuild -project App/PaloAlly.xcodeproj -scheme PaloAlly -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -derivedDataPath build CODE_SIGN_IDENTITY="-" build
+xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/PaloAlly.app
+xcrun simctl launch booted com.novashang.paloally -pairLink "$(paloally pair | grep -o 'paloally://[^ ]*')"
+```

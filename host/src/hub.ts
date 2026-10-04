@@ -525,9 +525,9 @@ export class Hub {
 
   private onApprovalCreated(a: Approval): void {
     const msg = this.chat.add({
-      role: "system",
+      role: "assistant",
       kind: "approval",
-      text: `等你确认：${a.title}${a.irreversible ? "（不可撤销）" : ""}\n${truncate(a.detail, 300)}\n回复「同意 ${shortId(a.id)}」或「拒绝 ${shortId(a.id)}」`,
+      text: `这一步要你点头：${a.title}${a.irreversible ? "（做了撤不回）" : ""}`,
       channel: "system",
       approvalId: a.id,
       taskId: a.taskId,

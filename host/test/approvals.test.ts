@@ -101,6 +101,8 @@ describe("ApprovalManager", () => {
     expect(m.preGate("Bash", { command: "git push" }).decision).toBe("ask");
     // the shell's own tools never prompt
     expect(m.preGate("mcp__paloally__report_task", {}).decision).toBe("allow");
+    expect(m.preGate("mcp__browser__browser_snapshot", {}).decision).toBe("allow");
+    expect(m.preGate("mcp__browser__browser_click", { element: "next" }).decision).toBe("pass");
     expect((await m.request(req("mcp__paloally__register_watch", {}))).behavior).toBe("allow");
   });
 

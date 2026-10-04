@@ -119,6 +119,13 @@ describe("daemon over the local socket", () => {
     cleanup(other);
   });
 
+  test("socket path stays under the unix limit for deep roots", async () => {
+    const { Paths } = await import("../src/config.ts");
+    const deep = new Paths("/" + "x".repeat(120));
+    expect(deep.socket.startsWith("/tmp/paloally-")).toBe(true);
+    expect(new Paths("/a").socket).toBe("/a/run/host.sock");
+  });
+
   test("service files", () => {
     const plist = launchdPlist(paths, "/opt/bun");
     expect(plist).toContain("<string>/opt/bun</string>");

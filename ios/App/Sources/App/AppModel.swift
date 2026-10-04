@@ -8,10 +8,12 @@ import UIKit
 ///   -demo YES            run against the in-memory demo host
 ///   -demoScreen <name>   chat | library | assistant | settings | pairing | artifact
 ///   -demoTab <name>      tasks | approvals | watches | memory
+///   -pairLink <url>      start pairing with this paloally:// link (automation; skips the open-URL prompt)
 struct LaunchOptions {
     var demo: Bool
     var screen: String?
     var tab: String?
+    var pairLink: String? = nil
 
     static func current() -> LaunchOptions {
         let d = UserDefaults.standard
@@ -19,7 +21,8 @@ struct LaunchOptions {
         return LaunchOptions(
             demo: d.bool(forKey: "demo") || env["PALOALLY_DEMO"] == "1",
             screen: d.string(forKey: "demoScreen"),
-            tab: d.string(forKey: "demoTab")
+            tab: d.string(forKey: "demoTab"),
+            pairLink: d.string(forKey: "pairLink")
         )
     }
 }
@@ -72,6 +75,7 @@ final class AppModel {
             connect(to: host)
         }
         applyLaunchScreen()
+        if let link = launch.pairLink, let url = URL(string: link) { handle(url: url) }
     }
 
     /// Preview / demo constructor.
