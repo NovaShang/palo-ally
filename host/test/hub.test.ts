@@ -24,6 +24,9 @@ class FakeWechat implements WechatChannel {
     this.proactive.push(text);
     return true;
   }
+  ownerTarget() {
+    return { userId: "owner", contextToken: "ctx1" };
+  }
   typing: string[] = [];
   async startTyping() {
     this.typing.push("on");
@@ -789,6 +792,32 @@ describe("Hub: files from the app", () => {
     await hub.idle();
     expect(driver.last!.sent.at(-1)).toBe(`看看这个\n[文件] ${hub.media.filePath(att.id)}`);
     expect(driver.last!.sentImages).toEqual([]);
+    cleanup(paths);
+  });
+});
+
+describe("Hub: copy_to_clipboard", () => {
+  test("posts a clipboard card; on a WeChat turn the text also goes to WeChat", async () => {
+    const wechat = new FakeWechat();
+    const script: FakeScript = async (t, ctx) => {
+      if (t.includes("地址")) await ctx.opts.tools.copy_to_clipboard({ text: "上海市徐汇区漕溪北路 88 号", label: "收货地址" });
+      ctx.emit({ type: "assistant_text", text: "放到你剪贴板了。", parentToolUseId: null });
+    };
+    const { hub, paths } = makeHub({ script, wechat });
+
+    hub.userMessage("把地址给我", "app");
+    await hub.idle();
+    const card = hub.chat.since(0).find((m) => m.kind === "clipboard")!;
+    expect(card).toMatchObject({ role: "assistant", kind: "clipboard", text: "上海市徐汇区漕溪北路 88 号", label: "收货地址", channel: "app" });
+    expect(wechat.replies.some((r) => r.text.includes("漕溪北路"))).toBe(false); // app turn: not sent to WeChat
+
+    hub.userMessage("微信上把地址再发我", "wechat", { userId: "owner", contextToken: "ctx1" });
+    await hub.idle();
+    await tick(20);
+    const cards = hub.chat.since(0).filter((m) => m.kind === "clipboard");
+    expect(cards.at(-1)!.channel).toBe("wechat");
+    expect(wechat.replies.map((r) => r.text)).toContain("上海市徐汇区漕溪北路 88 号");
+    expect(await hub.toolHandlers().copy_to_clipboard({ text: "" })).toContain("没有");
     cleanup(paths);
   });
 });

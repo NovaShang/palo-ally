@@ -6,7 +6,7 @@ export interface ChatMessage {
   seq: number;
   id: string;
   role: "user" | "assistant" | "system";
-  kind: "text" | "task" | "approval" | "notice";
+  kind: "text" | "task" | "approval" | "notice" | "clipboard";
   text: string;
   channel: Channel;
   ts: number;
@@ -15,6 +15,7 @@ export interface ChatMessage {
   approvalId?: string;
   clientMsgId?: string; // echoed for app-sent messages so clients can merge their optimistic copy
   attachments?: Attachment[]; // images the owner sent with the message
+  label?: string; // kind "clipboard": what the copied text is ("地址", "验证码")
 }
 
 // Something sent along with a message. "image"/"file" live in the media

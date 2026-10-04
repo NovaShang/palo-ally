@@ -13,6 +13,8 @@ public enum ChatRole: String, TolerantStringEnum {
 
 public enum ChatKind: String, TolerantStringEnum {
     case text, task, approval, notice, unknown
+    /// Text the assistant put on the owner's clipboard (copy_to_clipboard).
+    case clipboard
     public static let fallback = ChatKind.unknown
 }
 
@@ -97,13 +99,15 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     public var clientMsgId: String?
     /// Images the owner sent with the message.
     public var attachments: [Attachment]?
+    /// kind == .clipboard: what the copied text is ("收货地址", "验证码").
+    public var label: String?
 
     // Local-only state.
     public var isStreaming: Bool = false
     public var delivery: Delivery = .sent
 
     enum CodingKeys: String, CodingKey {
-        case seq, id, role, kind, text, channel, ts, proactive, taskId, approvalId, clientMsgId, attachments
+        case seq, id, role, kind, text, channel, ts, proactive, taskId, approvalId, clientMsgId, attachments, label
     }
 
     public init(
@@ -130,6 +134,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         approvalId = l.string("approvalId")
         clientMsgId = l.string("clientMsgId")
         attachments = l.decode([Attachment].self, "attachments")
+        label = l.string("label")
     }
 
     public var date: Date { ts.msDate }

@@ -49,15 +49,6 @@ enum AppTheme: String, CaseIterable, Identifiable {
         return Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? dark : light })
     }
 
-    /// Fill behind white text (the owner's bubble): the brand color in both
-    /// modes, deepening toward the bottom so white text stays readable
-    /// (#D156A7 alone is ~3.7:1 against white; the lower stop ~5:1).
-    var fill: LinearGradient {
-        let base = UIColor(hex: hex.light)
-        return LinearGradient(colors: [Color(uiColor: base), Color(uiColor: base.darkened(0.14))],
-                              startPoint: .top, endPoint: .bottom)
-    }
-
     /// The alternate icon for this theme (nil = the primary AppIcon).
     var iconName: String? { self == .default ? nil : "AppIcon-\(rawValue)" }
 
@@ -100,11 +91,5 @@ private extension UIColor {
     convenience init(hex: UInt32) {
         self.init(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
                   blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
-    }
-
-    func darkened(_ amount: CGFloat) -> UIColor {
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        getRed(&r, green: &g, blue: &b, alpha: &a)
-        return UIColor(red: r * (1 - amount), green: g * (1 - amount), blue: b * (1 - amount), alpha: a)
     }
 }

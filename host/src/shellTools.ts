@@ -103,6 +103,19 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
         return `没发布成功：${e instanceof Error ? e.message : e}`;
       }
     },
+    // The app copies a live clipboard message to the phone's pasteboard as it
+    // arrives (and shows a card with a copy button either way). On WeChat the
+    // text goes out on its own so it can be long-pressed and copied.
+    copy_to_clipboard: async ({ text, label }) => {
+      if (!text) return "没有要复制的内容";
+      const channel = d.ownerChannel();
+      const l = label?.trim();
+      d.chat.add({ role: "assistant", kind: "clipboard", text, channel, ...(l ? { label: l } : {}) });
+      d.audit.log("clipboard", { chars: text.length, label: l });
+      const target = channel === "wechat" ? d.wechat?.ownerTarget?.() : null;
+      if (target && d.wechat) await d.wechat.reply(target, text).catch(() => {});
+      return "已放到主人的手机剪贴板（若主人当时不在 App 里，对话里有一键复制的卡片）";
+    },
     notify_user: async ({ text, urgent }) => {
       const msg = d.chat.add({ role: "assistant", kind: "notice", text, channel: "system", proactive: true });
       // Decide synchronously, deliver in the background: a slow push must never block the turn.

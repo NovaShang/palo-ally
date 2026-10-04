@@ -47,6 +47,7 @@ describe("host ↔ app protocol", () => {
     writeFileSync(`${paths.home}/note.txt`, "hello");
     await hub.toolHandlers().SendUserFile({ files: ["note.txt"], status: "normal", temporary: true });
     await run("media.read", { id: hub.chat.since(0).at(-1)!.attachments![0]!.id, offset: 0 });
+    await hub.toolHandlers().copy_to_clipboard({ text: "123456", label: "验证码" });
     await hub.idle();
     await run("sync", {});
     await run("chat.history", { beforeSeq: 99, limit: 10 });

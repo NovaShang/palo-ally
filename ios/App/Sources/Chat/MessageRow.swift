@@ -11,6 +11,8 @@ struct MessageRow: View {
             UserBubble(message: message)
         case .system:
             NoticeRow(text: message.text)
+        case .assistant where message.kind == .clipboard:
+            ClipboardCard(message: message)
         default:
             // Anything the assistant says (including pushes it sends) gets full markdown.
             AssistantMessage(message: message)
@@ -20,7 +22,6 @@ struct MessageRow: View {
 
 private struct UserBubble: View {
     @Environment(AppStore.self) private var store
-    @Environment(\.appTheme) private var theme
     let message: ChatMessage
 
     var body: some View {
@@ -50,11 +51,13 @@ private struct UserBubble: View {
                     AttachmentStrip(attachments: atts)
                 }
                 if !message.text.isEmpty {
+                // A quiet "this is mine" marker, not an accent: the owner's
+                // words matter no more than the assistant's.
                 Text(MarkdownBlock.attributed(message.text))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
-                    .background(theme.fill, in: .rect(cornerRadius: 20, style: .continuous))
+                    .background(Color(.secondarySystemFill), in: .rect(cornerRadius: 20, style: .continuous))
                     .contextMenu {
                         Button("复制", systemImage: "doc.on.doc") { Clipboard.copy(message.text) }
                     }

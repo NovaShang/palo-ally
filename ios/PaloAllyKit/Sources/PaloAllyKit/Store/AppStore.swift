@@ -47,6 +47,14 @@ public final class AppStore {
     public private(set) var syncRounds = 0
     public private(set) var hasSynced = false
     public var lastError: String?
+    /// Puts text on the system pasteboard when a clipboard message arrives
+    /// live; returns false when it can't right now (e.g. app not active).
+    /// Set by the app; tests inject their own.
+    @ObservationIgnored public var clipboardWriter: (@MainActor (String) -> Bool)?
+    /// Clipboard messages already copied on this device (local state).
+    public private(set) var copiedClipboardIDs: Set<String> = []
+
+    public func markCopied(_ id: String) { copiedClipboardIDs.insert(id) }
 
     // MARK: config
 
@@ -280,7 +288,14 @@ public final class AppStore {
     public func apply(event name: String, data: JSONValue) {
         switch name {
         case RPCEventName.chatMessage:
-            if let m = try? data.decode(ChatMessage.self) { receive(m) }
+            if let m = try? data.decode(ChatMessage.self) {
+                let isNew = !messages.contains { $0.id == m.id }
+                receive(m)
+                // Live only: history and sync never touch the clipboard.
+                if isNew, m.kind == .clipboard, m.role == .assistant, clipboardWriter?(m.text) == true {
+                    copiedClipboardIDs.insert(m.id)
+                }
+            }
         case RPCEventName.chatDelta:
             if let d = try? data.decode(ChatDelta.self), !d.id.isEmpty { applyDelta(d) }
         case RPCEventName.taskUpdated:

@@ -102,6 +102,15 @@ export function paloallyMcpServer(h: ToolHandlers) {
         async (a) => text(await h.Artifact(a)),
       ),
       tool(
+        "copy_to_clipboard",
+        "Put text on the user's phone clipboard so they can paste it elsewhere — an address, a code, a reply draft, a command. Use it when the user will clearly want to paste this; don't use it for ordinary answers. The conversation also shows a card with a copy button.",
+        {
+          text: z.string().describe("Exactly the text to copy, nothing around it."),
+          label: z.string().optional().describe("A few words saying what it is, e.g. 收货地址, 验证码."),
+        },
+        async (a) => text(await h.copy_to_clipboard(a)),
+      ),
+      tool(
         "notify_user",
         "主动推送一条消息给主人（手机通知）。只在真正要紧时用。",
         { text: z.string(), urgent: z.boolean().optional() },

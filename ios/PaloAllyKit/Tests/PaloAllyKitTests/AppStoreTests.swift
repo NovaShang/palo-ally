@@ -104,6 +104,30 @@ struct AppStoreTests {
         #expect(await host.lastParams["chat.send"]?["clientMsgId"] == .string(echo.clientMsgId!))
     }
 
+    @Test func liveClipboardMessageIsCopiedButSyncedOneIsNot() async throws {
+        let host = ManualHost()
+        host.syncResult = SyncResult(seq: 1, messages: [
+            ChatMessage(seq: 1, id: "c-old", role: .assistant, kind: .clipboard, text: "旧的验证码", ts: 1),
+        ])
+        let store = AppStore(transport: host.transport)
+        var copied: [String] = []
+        store.clipboardWriter = { copied.append($0); return true }
+        store.start()
+        #expect(await until { store.connection == .online && store.messages.count == 1 })
+        #expect(copied.isEmpty) // history never copies
+        host.event("chat.message", ["seq": 2, "id": "c-new", "role": "assistant", "kind": "clipboard",
+                                    "text": "123456", "label": "验证码", "channel": "app", "ts": 2])
+        #expect(await until { store.messages.count == 2 })
+        #expect(copied == ["123456"])
+        #expect(store.copiedClipboardIDs == ["c-new"])
+        #expect(store.messages.last?.label == "验证码")
+        // a re-delivered copy of the same message doesn't copy again
+        host.event("chat.message", ["seq": 2, "id": "c-new", "role": "assistant", "kind": "clipboard",
+                                    "text": "123456", "channel": "app", "ts": 2])
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(copied == ["123456"])
+    }
+
     @Test func emptySendIgnored() async {
         let (store, _) = await demoStore()
         store.send("   \n ")

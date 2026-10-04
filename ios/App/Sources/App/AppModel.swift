@@ -112,6 +112,7 @@ final class AppModel {
         let host = DemoHost(speed: 1)
         demoHost = host
         let s = AppStore(transport: host.transport, clientKind: clientKind, clientVersion: clientVersion)
+        s.clipboardWriter = AppStore.systemClipboardWriter
         store = s
         mode = .demo
         s.start()
@@ -123,6 +124,7 @@ final class AppModel {
             let identity = try DeviceIdentity.loadOrCreate(store: secrets)
             let transport = RelayTransport(host: host, identity: identity)
             let s = AppStore(transport: transport, clientKind: clientKind, clientVersion: clientVersion)
+            s.clipboardWriter = AppStore.systemClipboardWriter
             store = s
             pairedHost = host
             demoHost = nil
