@@ -31,6 +31,7 @@ const HELP = `PaloAlly ${VERSION} — 把 Claude Code 变成常驻、会主动�
   memory [路径]          记忆文件
   settings [key value]   打扰频率、免打扰时段等
   kill / resume          急停 / 恢复
+  restart [--now]        等手头的事办完再重启（--now 立刻重启，会打断正在办的事）
   audit [n]              审计日志
   metrics [天数]         Phase 0 验收数据（主动频率、任务、压缩、花费）
   pair                   配对手机 App
@@ -329,6 +330,15 @@ async function main(): Promise<void> {
         return console.log(JSON.stringify(r.settings, null, 2));
       }
       console.log(JSON.stringify((await call("sync", {})).settings, null, 2));
+      return;
+    }
+    case "restart": {
+      const now = flag("--now");
+      if (!now) console.log("等手头的事办完再重启（最多等 30 分钟）…");
+      const c = await client();
+      const r = await c.call("restart", { now }).catch(() => ({ status: "restarting" }));
+      c.close();
+      console.log(r.status === "timeout" ? "等了 30 分钟还在忙，没重启。要强制重启：paloally restart --now" : "重启中。");
       return;
     }
     case "kill":

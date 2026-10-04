@@ -5,6 +5,8 @@
 export type HarnessEvent =
   | { type: "init"; sessionId: string; model: string; tools: string[] }
   | { type: "text_delta"; text: string }
+  // the model began writing a tool call (its input may stream for minutes, e.g. a big Write)
+  | { type: "tool_start"; name: string; parentToolUseId: string | null }
   | { type: "assistant_text"; text: string; parentToolUseId: string | null }
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown>; parentToolUseId: string | null }
   | { type: "tool_result"; toolUseId: string; content: string; isError: boolean; parentToolUseId: string | null }
@@ -16,9 +18,11 @@ export type HarnessEvent =
       type: "result";
       isError: boolean;
       text: string;
-      costUsd: number;
+      costUsd: number; // this turn only
+      totalCostUsd: number; // running total for the session
       contextTokens: number;
       sessionId: string;
+      consumedUuids?: string[]; // user messages this turn answered (absent on older CLIs)
     }
   | { type: "error"; message: string };
 
@@ -64,6 +68,7 @@ export interface MainSessionOptions {
   cwd: string;
   model?: string;
   resumeSessionId?: string;
+  priorCostUsd?: number; // the resumed session's running total, so per-turn cost stays a delta
   permissionMode: string;
   appendSystemPrompt: string;
   tools: ToolHandlers;
@@ -78,7 +83,9 @@ export interface MainSessionOptions {
 // A long-lived main conversation. send() queues a user turn; turns run in
 // order. The session survives across turns until close().
 export interface MainSession {
-  send(text: string): void;
+  // Sends a user message now. While a turn is running the harness queues it
+  // or folds it into that turn; `uuid` lets the result say which it answered.
+  send(text: string, uuid: string): void;
   interrupt(): Promise<void>;
   stopTask(taskId: string): Promise<void>;
   close(): void;

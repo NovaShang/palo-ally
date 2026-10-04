@@ -61,7 +61,7 @@ export interface Config {
   // Let the probe see claude.ai connectors (Gmail, Calendar…) when logged in with a subscription.
   // Off by default: those connectors add ~100k tokens to every probe run.
   probeInheritConnectors: boolean;
-  permissionMode: "default" | "auto" | "acceptEdits";
+  permissionMode: "default" | "auto" | "acceptEdits" | "dontAsk";
   session: {
     idleCloseMinutes: number; // close the CLI process after idle; resume on next message
     rollAfterTokens: number; // 0 = never roll to a fresh session (Phase 0: observe only)
@@ -96,9 +96,9 @@ export function defaultConfig(): Config {
     hostName: hostname().replace(/\.local$/, ""),
     probeModel: "claude-haiku-4-5",
     probeInheritConnectors: false,
-    // File edits inside the assistant's own home pass; Bash, web and MCP actions
-    // still ask, and irreversible ones always ask (PreToolUse gate).
-    permissionMode: "acceptEdits",
+    // Claude Code's own classifier approves safe calls and asks only when it
+    // can't tell; irreversible/outward actions always ask (our PreToolUse gate).
+    permissionMode: "auto",
     session: { idleCloseMinutes: 30, rollAfterTokens: 0 },
     budget: { probeDailyUsd: 1, mainDailyUsd: 0 },
     relay: { enabled: true, url: "https://relay.bentoai.dev" },

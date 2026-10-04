@@ -34,6 +34,9 @@ const IRREVERSIBLE_BASH: RegExp[] = [
 
 const IRREVERSIBLE_MCP = /(send|reply|forward|post|publish|delete|trash|remove|pay|purchase|order|checkout|transfer|share|submit|invite|cancel|archive|unsubscribe)/i;
 const IRREVERSIBLE_CLICK = /(pay|buy|purchase|checkout|place order|submit|send|delete|remove|confirm|transfer|支付|付款|购买|下单|提交|发送|删除|确认|转账)/i;
+// Reading and searching change nothing; never interrupt the owner for them.
+const READ_ONLY_TOOLS = new Set(["Read", "Glob", "Grep", "LS", "NotebookRead", "WebSearch", "ToolSearch", "TodoWrite", "TaskOutput", "ListMcpResourcesTool", "ReadMcpResourceTool"]);
+
 // Looking at the current page changes nothing.
 const BROWSER_READ_ONLY = /^mcp__[^_]+(?:_[^_]+)*__browser_(snapshot|take_screenshot|console_messages|network_requests|wait_for)$/;
 const BROWSER_INTERACT = /browser_(click|type|press_key|fill_form|select_option|file_upload|drag)/;
@@ -213,7 +216,7 @@ export class ApprovalManager {
     // The shell's own tools (report_task, register_watch…) only touch PaloAlly state.
     if (tool.startsWith(OWN_SERVER)) return { decision: "allow" };
     if (this.isSensitiveNavigation(tool, input)) return { decision: "deny", reason: SENSITIVE_MSG };
-    if (BROWSER_READ_ONLY.test(tool)) return { decision: "allow" };
+    if (BROWSER_READ_ONLY.test(tool) || READ_ONLY_TOOLS.has(tool)) return { decision: "allow" };
     if (isIrreversible(tool, input)) return { decision: "ask", reason: "这一步做了撤不回，要主人点头" };
     return { decision: "pass" };
   }

@@ -113,7 +113,7 @@ struct ChatView: View {
     private var subtitle: String {
         if store.connection.isOnline {
             if store.isKilled { return "已暂停" }
-            if store.isBusy { return "正在忙…" }
+            if store.isBusy { return (store.status?.activity).map { "\($0)…" } ?? "正在忙…" }
             return model.mode == .demo ? "演示中" : "在线"
         }
         return Copy.connection(store.connection)

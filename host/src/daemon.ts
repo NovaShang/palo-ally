@@ -66,6 +66,12 @@ export async function startDaemon(
         return hub.usage();
       case "subscribe":
         return { ok: true };
+      case "restart":
+        if (p.now) {
+          setTimeout(() => process.exit(0), 200);
+          return { status: "restarting" };
+        }
+        return { status: await hub.restartWhenIdle(Number(p.maxWaitMs ?? 30 * 60_000)) };
       default:
         throw new Error(`unknown method: ${method}`);
     }

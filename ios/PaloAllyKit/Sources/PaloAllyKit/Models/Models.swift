@@ -420,12 +420,14 @@ public struct HostStatus: Codable, Sendable, Hashable {
     public var online: Bool
     public var killed: Bool
     public var busy: Bool
+    /// What it is doing right now in plain words ("正在写文件"), only while busy.
+    public var activity: String?
     public var model: String
     public var sessionId: String?
     public var wechat: WechatState
     public var version: String
 
-    enum CodingKeys: String, CodingKey { case online, killed, busy, model, sessionId, wechat, version }
+    enum CodingKeys: String, CodingKey { case online, killed, busy, activity, model, sessionId, wechat, version }
 
     public init(online: Bool = true, killed: Bool = false, busy: Bool = false, model: String = "",
                 sessionId: String? = nil, wechat: WechatState = .off, version: String = "") {
@@ -438,6 +440,7 @@ public struct HostStatus: Codable, Sendable, Hashable {
         online = l.bool("online") ?? true
         killed = l.bool("killed") ?? false
         busy = l.bool("busy") ?? false
+        activity = l.string("activity")
         model = l.string("model") ?? ""
         sessionId = l.string("sessionId")
         wechat = l.decode(WechatState.self, "wechat") ?? .off

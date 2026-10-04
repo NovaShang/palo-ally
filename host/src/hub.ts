@@ -11,6 +11,7 @@ import { ProbeScheduler, type ProbeTrigger } from "./probe.ts";
 import { Router, type Pusher, type WechatOut } from "./router.ts";
 import { TaskTracker } from "./tasks.ts";
 import type { Approval, Channel, ChatMessage, Status, Task, Watch } from "./types.ts";
+import { randomUUID } from "node:crypto";
 import { appendJsonl, formatDuration, readJson, truncate, writeJson, zonedParts } from "./util.ts";
 import { WatchStore } from "./watches.ts";
 
@@ -38,10 +39,12 @@ interface Turn {
   wechat?: WechatReplyTarget;
   implicit?: boolean; // harness started a turn on its own (e.g. a background task finished)
   label?: string;
+  uuids?: string[]; // user messages this turn answers
 }
 
 interface Runtime {
   sessionId?: string;
+  sessionCostUsd?: number; // running total the harness reports for this session
   killed?: boolean;
   lastHeartbeat?: number;
 }
@@ -54,6 +57,22 @@ interface Usage {
 
 const SKIP = /^\s*\[skip\]\s*$/i;
 const HEARTBEAT_MS = 60_000;
+// A turn the harness started by itself is closed if it goes quiet without a result.
+export const timing = { implicitQuietMs: 90_000 };
+// After a restart, an owner message this recent with no reply is sent again.
+const REDELIVER_WINDOW_MS = 30 * 60_000;
+
+// Plain words for what the assistant is doing right now (shown while busy).
+export function describeActivity(tool: string): string {
+  if (tool === "Write" || tool === "Edit" || tool === "NotebookEdit") return "正在写文件";
+  if (tool === "Bash") return "正在电脑上跑命令";
+  if (tool === "Read" || tool === "Grep" || tool === "Glob") return "正在翻资料";
+  if (tool === "WebSearch" || tool === "WebFetch") return "正在网上查";
+  if (tool === "Agent" || tool === "Task") return "正在安排后台的事";
+  if (/browser_/.test(tool)) return "正在用浏览器";
+  if (tool.startsWith("mcp__paloally__")) return "正在整理";
+  return "正在处理";
+}
 
 export interface HubDeps {
   paths: Paths;
@@ -98,6 +117,10 @@ export class Hub {
   private rollPending = false;
   private clients = new Map<string, { conn: ClientConn; off: () => void }>();
   private turnWaiters: (() => void)[] = [];
+  // Owner messages sent to the harness while a turn was running, not yet answered.
+  private inflight = new Map<string, { origin: Channel; wechat?: WechatReplyTarget }>();
+  private implicitTimer: ReturnType<typeof setTimeout> | null = null;
+  private activity = "";
 
   constructor(deps: HubDeps) {
     this.paths = deps.paths;
@@ -114,7 +137,7 @@ export class Hub {
     this.watches = new WatchStore(this.paths.watches, this.bus);
     this.artifacts = new ArtifactLibrary(this.paths.artifacts, this.bus);
     this.memory = new MemoryView(this.paths.home, autoMemoryDir(this.paths.home));
-    this.router = new Router(() => this.config.settings, this.pushers, this.wechat, this.audit, deps.now);
+    this.router = new Router(() => this.config.settings, this.pushers, this.wechat, this.audit, deps.now, () => this.chat.lastUserActivity());
     this.approvals = new ApprovalManager(this.paths.approvals, this.paths.rules, this.bus, this.audit, {
       isKilled: () => this.killed,
       taskForToolUse: (id) => (id ? this.tasks.taskIdForToolUse(id) : undefined),
@@ -143,8 +166,9 @@ export class Hub {
   // ---------------- lifecycle ----------------
 
   start(opts: { probe?: boolean; watchArtifacts?: boolean } = {}): void {
-    this.tasks.orphanRunning();
+    const orphaned = this.tasks.orphanRunning();
     this.detectOffline();
+    this.recoverAfterRestart(orphaned);
     this.beat();
     this.heartbeat = setInterval(() => this.beat(), HEARTBEAT_MS);
     if (opts.probe !== false) {
@@ -178,6 +202,7 @@ export class Hub {
       online: true,
       killed: this.killed,
       busy: this.busy,
+      activity: this.busy ? this.activity || "正在想" : undefined,
       model: this.model || this.config.model || "",
       sessionId: this.runtime.sessionId,
       wechat: this.wechat?.status() ?? "off",
@@ -187,7 +212,7 @@ export class Hub {
 
   // Resolves when the turn queue is drained (tests, CLI one-shots).
   idle(): Promise<void> {
-    if (!this.current && !this.queue.length) return Promise.resolve();
+    if (!this.current && !this.queue.length && !this.inflight.size) return Promise.resolve();
     return new Promise((r) => this.turnWaiters.push(r));
   }
 
@@ -208,8 +233,42 @@ export class Hub {
       return msg;
     }
     const prefix = channel === "wechat" ? "[来自微信] " : "";
-    this.enqueue({ text: prefix + t, origin: channel, proactive: false, wechat });
+    this.sendUser(prefix + t, channel, wechat);
     return msg;
+  }
+
+  // Owner messages go to the harness immediately, even mid-turn: Claude Code
+  // queues them or folds them into the running turn, so "好了吗" gets heard
+  // while work is in progress. Only proactive turns wait for idle.
+  private sendUser(text: string, origin: Channel, wechat?: WechatReplyTarget): void {
+    const uuid = randomUUID();
+    if (!this.current) {
+      this.beginTurn({ text, origin, proactive: false, wechat, uuids: [uuid] });
+    } else {
+      this.inflight.set(uuid, { origin, wechat });
+      this.absorbOwner(wechat);
+    }
+    this.ensureSession().send(text, uuid);
+  }
+
+  // The owner spoke during a turn: from here on its output is for them.
+  private absorbOwner(wechat?: WechatReplyTarget): void {
+    const t = this.current!;
+    if (this.implicitTimer) clearTimeout(this.implicitTimer);
+    t.implicit = false;
+    if (t.hidden) {
+      t.hidden = false;
+      this.rollPending = false;
+    }
+    if (t.proactive) {
+      t.proactive = false;
+      const held = this.turnTexts.join("\n\n").trim();
+      if (held && !/^\[skip\]/i.test(held)) {
+        this.chat.add({ role: "assistant", kind: "text", text: held, channel: t.origin, proactive: true });
+      }
+      this.turnTexts = [];
+    }
+    if (wechat && !t.wechat) t.wechat = wechat;
   }
 
   private tryCommand(t: string, channel: Channel, wechat?: WechatReplyTarget): string | null {
@@ -255,8 +314,8 @@ export class Hub {
   }
 
   private pump(): void {
-    if (this.current || !this.queue.length) {
-      if (!this.current && !this.queue.length) this.flushWaiters();
+    if (this.current || this.inflight.size || !this.queue.length) {
+      this.flushWaitersIfIdle();
       return;
     }
     if (this.killed) {
@@ -269,8 +328,9 @@ export class Hub {
       this.log(`proactive turn dropped: main budget used up (${turn.label ?? turn.origin})`);
       return this.pump();
     }
-    this.beginTurn(turn);
-    this.ensureSession().send(turn.text);
+    const uuid = randomUUID();
+    this.beginTurn({ ...turn, uuids: [uuid] });
+    this.ensureSession().send(turn.text, uuid);
   }
 
   private beginTurn(turn: Turn): void {
@@ -278,7 +338,19 @@ export class Hub {
     this.current = turn;
     this.turnTexts = [];
     this.deltaId = null;
+    this.activity = "";
+    if (turn.implicit) this.armImplicitTimer();
     this.emitStatus();
+  }
+
+  private armImplicitTimer(): void {
+    if (this.implicitTimer) clearTimeout(this.implicitTimer);
+    this.implicitTimer = setTimeout(() => {
+      if (this.current?.implicit) {
+        this.log("implicit turn went quiet without a result; closing it");
+        this.endTurn(0, this.lastContextTokens);
+      }
+    }, timing.implicitQuietMs);
   }
 
   private ensureSession(): MainSession {
@@ -287,6 +359,7 @@ export class Hub {
       cwd: this.paths.home,
       model: this.config.model,
       resumeSessionId: this.runtime.sessionId,
+      priorCostUsd: this.runtime.sessionId ? this.runtime.sessionCostUsd : undefined,
       permissionMode: this.config.permissionMode,
       appendSystemPrompt: BEHAVIOR + `\n\n主人所在时区：${this.config.settings.timezone}。`,
       tools: this.toolHandlers(),
@@ -323,9 +396,18 @@ export class Hub {
   // ---------------- harness events ----------------
 
   onHarnessEvent(e: HarnessEvent): void {
-    // The harness may start a turn on its own (a background task finished).
-    if (!this.current && (e.type === "text_delta" || e.type === "assistant_text" || e.type === "tool_use")) {
-      this.beginTurn({ text: "", origin: "system", proactive: true, implicit: true });
+    if (!this.current && (e.type === "text_delta" || e.type === "assistant_text" || e.type === "tool_use" || e.type === "tool_start")) {
+      if (this.inflight.size) {
+        // The harness is now answering owner messages it had queued.
+        const [first] = this.inflight.values();
+        const wechat = [...this.inflight.values()].find((x) => x.wechat)?.wechat;
+        this.beginTurn({ text: "", origin: first!.origin, proactive: false, wechat, uuids: [...this.inflight.keys()] });
+      } else {
+        // The harness started a turn on its own (e.g. a background task finished).
+        this.beginTurn({ text: "", origin: "system", proactive: true, implicit: true });
+      }
+    } else if (this.current?.implicit) {
+      this.armImplicitTimer();
     }
     const turn = this.current;
     switch (e.type) {
@@ -354,8 +436,12 @@ export class Hub {
         }
         this.deltaId = null;
         break;
+      case "tool_start":
+        if (!e.parentToolUseId) this.setActivity(describeActivity(e.name));
+        break;
       case "tool_use":
         this.tasks.onToolUse(e.id, e.name, e.input, e.parentToolUseId);
+        this.setActivity(e.parentToolUseId ? "后台在办事" : describeActivity(e.name));
         break;
       case "tool_result":
         this.tasks.onToolResult(e.toolUseId, e.content, e.isError, e.parentToolUseId);
@@ -370,20 +456,33 @@ export class Hub {
         this.metric({ type: "compact", trigger: e.trigger, preTokens: e.preTokens, postTokens: e.postTokens });
         break;
       case "result":
+        this.runtime.sessionCostUsd = e.totalCostUsd;
+        this.saveRuntime();
+        if (e.consumedUuids) for (const u of e.consumedUuids) this.inflight.delete(u);
+        else this.inflight.clear(); // older CLI: assume queued messages were folded in
         this.endTurn(e.costUsd, e.contextTokens, e.isError ? e.text : undefined);
         break;
       case "error":
         this.log(`harness error: ${e.message}`);
         this.session?.close();
         this.session = null;
+        this.inflight.clear();
         if (this.current) this.endTurn(0, this.lastContextTokens, e.message);
         break;
     }
   }
 
+  private setActivity(a: string): void {
+    if (a === this.activity) return;
+    this.activity = a;
+    this.emitStatus();
+  }
+
   private endTurn(costUsd: number, contextTokens: number, error?: string): void {
     const turn = this.current;
     this.current = null;
+    this.activity = "";
+    if (this.implicitTimer) clearTimeout(this.implicitTimer);
     this.addUsage("mainUsd", costUsd);
     this.lastContextTokens = contextTokens;
     this.tasks.finalizePending();
@@ -409,7 +508,12 @@ export class Hub {
     }
     this.emitStatus();
     this.scheduleIdle();
-    this.pump();
+    if (this.inflight.size === 0) this.pump();
+    else this.flushWaitersIfIdle();
+  }
+
+  private flushWaitersIfIdle(): void {
+    if (!this.current && !this.queue.length && !this.inflight.size) this.flushWaiters();
   }
 
   private flushWaiters(): void {
@@ -453,6 +557,7 @@ export class Hub {
     this.session = null;
     this.metric({ type: "roll", fromSession: this.runtime.sessionId, contextTokens: this.lastContextTokens });
     this.runtime.sessionId = undefined;
+    this.runtime.sessionCostUsd = undefined;
     this.lastContextTokens = 0;
     this.saveRuntime();
   }
@@ -543,6 +648,7 @@ export class Hub {
     this.saveRuntime();
     this.audit.log("kill", { by });
     this.queue = [];
+    this.inflight.clear();
     this.approvals.denyAll(`kill:${by}`);
     for (const t of this.tasks.running()) {
       if (t.sdkTaskId) void this.session?.stopTask(t.sdkTaskId).catch(() => {});
@@ -613,6 +719,50 @@ export class Hub {
   private beat(): void {
     this.runtime.lastHeartbeat = Date.now();
     this.saveRuntime();
+  }
+
+  // A restart cuts off work in flight. Tell the assistant what was lost and let
+  // it pick things back up, rather than leaving a silent "stopped".
+  private recoverAfterRestart(orphaned: Task[]): void {
+    const lines: string[] = [];
+    if (orphaned.length) lines.push(`这些后台任务被打断了：${orphaned.map((t) => `「${t.title}」`).join("、")}。`);
+    const msgs = this.chat.recent(50);
+    let lastOwner = -1;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i]!;
+      if (m.role === "user" && (m.channel === "app" || m.channel === "cli" || m.channel === "wechat")) {
+        lastOwner = i;
+        break;
+      }
+    }
+    const owner = lastOwner >= 0 ? msgs[lastOwner]! : undefined;
+    const answered = msgs.slice(lastOwner + 1).some((m) => m.role !== "user" && (m.kind === "text" || m.kind === "notice"));
+    if (owner && !answered && Date.now() - owner.ts < REDELIVER_WINDOW_MS) {
+      lines.push(`主人在重启前发的这条消息还没回：「${truncate(owner.text, 500)}」。`);
+    }
+    if (!lines.length) return;
+    this.audit.log("restart.recover", { orphaned: orphaned.length, redeliver: !!owner && !answered });
+    this.enqueue({
+      text: `[系统] 助理刚刚重启了。${lines.join("")}需要的话接着办或者回答主人；都不需要就只回复 [skip]。`,
+      origin: "system",
+      proactive: true,
+      label: "restart",
+    });
+  }
+
+  // restartWhenIdle exits once nothing is in flight; the service manager
+  // (launchd / systemd) starts a fresh process. Never cuts work off.
+  async restartWhenIdle(maxWaitMs = 30 * 60_000, exit: () => void = () => process.exit(0)): Promise<"restarting" | "timeout"> {
+    const deadline = Date.now() + maxWaitMs;
+    while (Date.now() < deadline) {
+      if (!this.current && !this.queue.length && !this.inflight.size && !this.tasks.running().length && !this.approvals.listPending().length) {
+        this.audit.log("restart", {});
+        setTimeout(exit, 200);
+        return "restarting";
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    return "timeout";
   }
 
   private detectOffline(): void {

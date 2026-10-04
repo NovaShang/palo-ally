@@ -90,6 +90,7 @@ export interface Status {
   online: boolean;
   killed: boolean;
   busy: boolean;
+  activity?: string; // what it is doing right now, in plain words (only while busy)
   model: string;
   sessionId?: string;
   wechat: "off" | "connected" | "expired";

@@ -129,6 +129,7 @@ function toolResultText(content: unknown): string {
 
 // mapMessage turns one SDK message into zero or more harness events.
 export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTokens: number }): HarnessEvent[] {
+  // total_cost_usd is cumulative for the session (including what a resume replays)
   const out: HarnessEvent[] = [];
   const m = msg as any;
   switch (m.type) {
@@ -147,6 +148,8 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
       const ev = m.event;
       if (m.parent_tool_use_id == null && ev?.type === "content_block_delta" && ev.delta?.type === "text_delta") {
         out.push({ type: "text_delta", text: ev.delta.text });
+      } else if (ev?.type === "content_block_start" && ev.content_block?.type === "tool_use") {
+        out.push({ type: "tool_start", name: ev.content_block.name, parentToolUseId: m.parent_tool_use_id ?? null });
       }
       break;
     }
@@ -189,8 +192,10 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
         isError: !!m.is_error,
         text: m.subtype === "success" ? (m.result ?? "") : (m.errors?.join("; ") ?? m.subtype),
         costUsd: cost,
+        totalCostUsd: total,
         contextTokens: state.contextTokens,
         sessionId: m.session_id,
+        consumedUuids: Array.isArray(m.user_message_uuids) ? m.user_message_uuids : undefined,
       });
       break;
     }
@@ -254,7 +259,7 @@ class ClaudeMainSession implements MainSession {
   }
 
   private async pump(opts: MainSessionOptions): Promise<void> {
-    const state = { lastCost: 0, contextTokens: 0 };
+    const state = { lastCost: opts.priorCostUsd ?? 0, contextTokens: 0 };
     try {
       for await (const msg of this.q) {
         for (const e of mapMessage(msg, state)) opts.onEvent(e);
@@ -266,8 +271,8 @@ class ClaudeMainSession implements MainSession {
     }
   }
 
-  send(t: string): void {
-    this.input.push({ type: "user", message: { role: "user", content: t }, parent_tool_use_id: null } as SDKUserMessage);
+  send(t: string, uuid: string): void {
+    this.input.push({ type: "user", message: { role: "user", content: t }, parent_tool_use_id: null, uuid } as SDKUserMessage);
   }
 
   async interrupt(): Promise<void> {

@@ -191,8 +191,10 @@ export class TaskTracker {
   }
 
   // On restart the harness process that ran these is gone.
-  orphanRunning(): void {
-    for (const t of this.running()) this.finish(t, "stopped", t.summary || "助理重启，任务中断");
+  orphanRunning(): Task[] {
+    const orphaned = this.running();
+    for (const t of orphaned) this.finish(t, "stopped", t.summary || "助理重启，任务中断");
+    return orphaned;
   }
 
   // ---- internals ----

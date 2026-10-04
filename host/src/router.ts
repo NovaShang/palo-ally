@@ -15,6 +15,8 @@ export interface WechatOut {
   sendProactive(text: string): Promise<boolean>;
 }
 
+const ACTIVE_MS = 10 * 60_000;
+
 export type DeliveryResult = { pushed: boolean; wechat: boolean; suppressed?: "quiet" | "cap" };
 
 // Router decides where an outbound proactive message goes (design §6). The
@@ -28,11 +30,14 @@ export class Router {
     private wechat: WechatOut | null,
     private audit: Audit,
     private now: () => number = Date.now,
+    private lastOwnerActivity: () => number = () => 0,
   ) {}
 
   isQuiet(): boolean {
     const s = this.settings();
     if (!s.quietHours) return false;
+    // Someone who was just chatting is clearly awake.
+    if (this.now() - this.lastOwnerActivity() < ACTIVE_MS) return false;
     const start = parseHHMM(s.quietHours.start);
     const end = parseHHMM(s.quietHours.end);
     if (start === null || end === null) return false;

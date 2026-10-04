@@ -24,9 +24,10 @@ export const fakeId = (p = "toolu_") => `${p}${++idCounter}`;
 
 export class FakeMainSession implements MainSession {
   closed = false;
-  private queue: string[] = [];
+  private queue: { text: string; uuid: string }[] = [];
   private busy = false;
   sent: string[] = [];
+  private total = 0;
   readonly sessionId: string;
 
   constructor(readonly opts: MainSessionOptions, private script: FakeScript, private driver: FakeDriver) {
@@ -34,9 +35,9 @@ export class FakeMainSession implements MainSession {
     queueMicrotask(() => opts.onEvent({ type: "init", sessionId: this.sessionId, model: opts.model ?? "fake-model", tools: [] }));
   }
 
-  send(text: string): void {
+  send(text: string, uuid: string): void {
     this.sent.push(text);
-    this.queue.push(text);
+    this.queue.push({ text, uuid });
     void this.drain();
   }
 
@@ -44,7 +45,7 @@ export class FakeMainSession implements MainSession {
     if (this.busy) return;
     this.busy = true;
     while (this.queue.length && !this.closed) {
-      const text = this.queue.shift()!;
+      const { text, uuid } = this.queue.shift()!;
       const ctx: FakeCtx = {
         opts: this.opts,
         emit: (e) => this.opts.onEvent(e),
@@ -74,7 +75,17 @@ export class FakeMainSession implements MainSession {
       } catch (e) {
         this.opts.onEvent({ type: "error", message: String(e) });
       }
-      this.opts.onEvent({ type: "result", isError: false, text: "", costUsd: this.driver.turnCost, contextTokens: 1000, sessionId: this.sessionId });
+      this.total += this.driver.turnCost;
+      this.opts.onEvent({
+        type: "result",
+        isError: false,
+        text: "",
+        costUsd: this.driver.turnCost,
+        totalCostUsd: this.total,
+        contextTokens: 1000,
+        sessionId: this.sessionId,
+        consumedUuids: [uuid],
+      });
     }
     this.busy = false;
   }
