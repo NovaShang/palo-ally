@@ -121,9 +121,11 @@ final class SpeechDictation {
         #endif
     }
 
-    private static func authorize() async -> Bool {
+    // nonisolated + @Sendable: the system calls back on a background queue, and
+    // a main-actor closure there traps at runtime (Swift 6 isolation check).
+    nonisolated private static func authorize() async -> Bool {
         let speech: Bool = await withCheckedContinuation { c in
-            SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0 == .authorized) }
+            SFSpeechRecognizer.requestAuthorization { @Sendable status in c.resume(returning: status == .authorized) }
         }
         guard speech else { return false }
         return await AVAudioApplication.requestRecordPermission()

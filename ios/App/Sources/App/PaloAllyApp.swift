@@ -40,7 +40,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
     /// Asked only once a computer is paired (not on first launch / in demo).
     @MainActor static func requestPushPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+        // @Sendable: called back on a background queue (a main-actor closure would trap).
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { @Sendable granted, _ in
             guard granted else { return }
             Task { @MainActor in UIApplication.shared.registerForRemoteNotifications() }
         }

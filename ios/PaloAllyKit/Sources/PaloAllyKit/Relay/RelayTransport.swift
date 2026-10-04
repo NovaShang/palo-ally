@@ -37,7 +37,11 @@ public final class WebSocketUnitLink: UnitLink, @unchecked Sendable {
 
     public func ping() async throws {
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+            // The pong handler can fire twice (pong, then again with an error when
+            // the socket closes); resuming a continuation twice traps, so only once.
+            let once = ResumeOnce()
             task.sendPing { error in
+                guard once.claim() else { return }
                 if let error { c.resume(throwing: error) } else { c.resume() }
             }
         }
@@ -310,5 +314,18 @@ public actor RelayTransport: HostTransport {
         } catch {
             return stopped ? .closed : .network(error.localizedDescription)
         }
+    }
+}
+
+/// A one-shot latch: `claim()` returns true exactly once, from any thread.
+final class ResumeOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+    func claim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if done { return false }
+        done = true
+        return true
     }
 }
