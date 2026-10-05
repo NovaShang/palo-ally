@@ -1,86 +1,241 @@
 import PaloAllyKit
 import SwiftUI
 
+/// 目标: what the assistant is helping with over time. Each one shows a short
+/// progress line and a state; underneath it's still a watch (a probe check or
+/// a schedule). New goals are asked for in plain words — the assistant sets
+/// them up — rather than through a form.
 struct WatchesSection: View {
     @Environment(AppStore.self) private var store
-    @State private var editing: Watch?
-    @State private var adding = false
-    @State private var error: String?
+
+    /// Needs-you first, then the ones moving, then paused, then done.
+    private var goals: [Watch] {
+        func rank(_ w: Watch) -> Int {
+            switch w.state {
+            case .waiting: 0
+            case .tracking, .unknown: 1
+            case .paused: 2
+            case .done: 3
+            }
+        }
+        return store.watches.sorted {
+            let (a, b) = (rank($0), rank($1))
+            if a != b { return a < b }
+            return ($0.progressAt ?? $0.lastCheckedAt ?? 0) > ($1.progressAt ?? $1.lastCheckedAt ?? 0)
+        }
+    }
 
     var body: some View {
         Section {
+            AskForGoal()
             if store.watches.isEmpty {
-                ContentUnavailableView("还没有定时的事", systemImage: "alarm",
-                                       description: Text("比如每天早上的晨报，或者帮你盯着某封邮件。"))
+                ContentUnavailableView("还没有目标", systemImage: "scope",
+                                       description: Text("告诉它你想长期盯住或推进的事，比如「回国机票降价了告诉我」「每天早上给我一份晨报」。"))
             }
-            ForEach(store.watches) { w in
-                WatchRow(watch: w) { editing = w }
-                    .swipeActions {
-                        Button(role: .destructive) {
-                            Task {
-                                do { try await store.removeWatch(id: w.id) } catch { self.error = Copy.error(error) }
-                            }
-                        } label: {
-                            Label("删除", systemImage: "trash")
-                        }
-                    }
-            }
-            Button {
-                adding = true
-            } label: {
-                Label("新加一个", systemImage: "plus.circle.fill")
+            ForEach(goals) { w in
+                NavigationLink {
+                    GoalDetail(id: w.id)
+                } label: {
+                    GoalRow(goal: w)
+                }
             }
         } footer: {
-            if let error { Text(error).foregroundStyle(.red) } else {
-                Text("「到点做」按时间表跑；「隔一阵看看」会定期帮你查一下，有新情况才找你。")
+            if !store.watches.isEmpty {
+                Text("它会定期替你查看或推进，有进展会更新在这里；需要你的时候会标出来。")
             }
-        }
-        .sheet(item: $editing) { w in
-            NavigationStack { WatchEditor(existing: w) }
-        }
-        .sheet(isPresented: $adding) {
-            NavigationStack { WatchEditor(existing: nil) }
         }
     }
 }
 
-private struct WatchRow: View {
+/// 「想让它帮你盯着什么？」 — sent to the assistant, which sets the goal up.
+private struct AskForGoal: View {
     @Environment(AppStore.self) private var store
-    let watch: Watch
-    let onEdit: () -> Void
+    @State private var text = ""
+    @State private var sent = false
+    @FocusState private var focused: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: watch.kind == .schedule ? "alarm" : "eye")
-                .foregroundStyle(watch.enabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
-                .frame(width: 26)
-            Button(action: onEdit) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(watch.title.isEmpty ? watch.instruction : watch.title)
-                        .foregroundStyle(watch.enabled ? .primary : .secondary)
-                        .lineLimit(2)
-                    HStack(spacing: 6) {
-                        Text(Copy.watchSchedule(watch))
-                        if watch.createdBy == .agent { Text("· 助理加的") }
-                        if let t = watch.lastTriggeredAt ?? watch.lastCheckedAt {
-                            Text("· 上次 \(Copy.relative(t))")
+        HStack(spacing: 8) {
+            TextField("想让它帮你盯着什么？", text: $text, axis: .vertical)
+                .lineLimit(1...4)
+                .focused($focused)
+                .submitLabel(.send)
+                .onSubmit(send)
+            if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button(action: send) {
+                    Image(systemName: "arrow.up.circle.fill").font(.title2)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tint)
+                .accessibilityLabel("交给助理")
+            } else if sent {
+                Text("已交给它").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .animation(.snappy, value: text.isEmpty)
+    }
+
+    private func send() {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        store.send("帮我把这件事设成一个目标，长期帮我盯着或推进：\(t)")
+        text = ""
+        focused = false
+        sent = true
+    }
+}
+
+private struct GoalRow: View {
+    let goal: Watch
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            GoalStateIcon(state: goal.state)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(goal.title.isEmpty ? goal.instruction : goal.title)
+                    .foregroundStyle(goal.state == .paused || goal.state == .done ? .secondary : .primary)
+                    .lineLimit(2)
+                Text(goalLine)
+                    .font(.subheadline)
+                    .foregroundStyle(goal.needsOwner ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                    .lineLimit(2)
+                if let r = goal.ratio, goal.state != .done {
+                    ProgressView(value: r)
+                        .tint(.secondary)
+                        .padding(.top, 2)
+                }
+                if let when {
+                    Text(when).font(.caption).foregroundStyle(.tertiary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 3)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var goalLine: String {
+        switch goal.state {
+        case .done: return goal.outcome ?? goal.progress ?? "办到了"
+        case .waiting: return "需要你 · " + (goal.progress ?? "看一下")
+        case .paused: return "已暂停" + (goal.progress.map { " · \($0)" } ?? "")
+        default: return goal.progress ?? "刚开始，还没有进展"
+        }
+    }
+
+    private var when: String? {
+        guard let t = goal.progressAt ?? goal.lastCheckedAt, t > 0 else { return nil }
+        return Copy.relative(t)
+    }
+}
+
+struct GoalStateIcon: View {
+    let state: GoalState
+
+    var body: some View {
+        switch state {
+        case .waiting:
+            Image(systemName: "hand.raised.fill").foregroundStyle(.orange)
+        case .done:
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+        case .paused:
+            Image(systemName: "pause.circle").foregroundStyle(.tertiary)
+        case .tracking, .unknown:
+            Image(systemName: "scope").foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// One goal: where it stands, how the assistant pursues it, recent progress.
+struct GoalDetail: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    let id: String
+    @State private var editing = false
+    @State private var confirmDelete = false
+    @State private var error: String?
+
+    private var goal: Watch? { store.watches.first { $0.id == id } }
+
+    var body: some View {
+        Group {
+            if let g = goal {
+                List {
+                    Section {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            GoalStateIcon(state: g.state)
+                            Text(Copy.goalState(g.state)).foregroundStyle(g.needsOwner ? .orange : .secondary)
+                        }
+                        .font(.subheadline)
+                        if let p = g.state == .done ? (g.outcome ?? g.progress) : g.progress {
+                            Text(p).font(.title3.weight(.medium))
+                        } else {
+                            Text("刚开始，还没有进展").foregroundStyle(.secondary)
+                        }
+                        if let r = g.ratio {
+                            ProgressView(value: r).tint(.secondary)
+                        }
+                        if let t = g.progressAt {
+                            Text("更新于\(Copy.relative(t))").font(.caption).foregroundStyle(.tertiary)
                         }
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+
+                    Section("它怎么做") {
+                        Text(g.instruction)
+                        LabeledContent(g.kind == .check ? "多久看一次" : "什么时候做", value: Copy.watchSchedule(g))
+                        if let t = g.lastCheckedAt {
+                            LabeledContent("上次", value: Copy.relative(t))
+                        }
+                        if g.createdBy == .agent {
+                            Text("是它替你设的").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if g.history.count > 1 {
+                        Section("最近的进展") {
+                            ForEach(Array(g.history.reversed().enumerated()), id: \.offset) { _, h in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(h.text)
+                                    Text(Copy.relative(h.at)).font(.caption).foregroundStyle(.tertiary)
+                                }
+                            }
+                        }
+                    }
+
+                    Section {
+                        Button(g.enabled ? "暂停" : (g.state == .done ? "重新开始" : "继续")) {
+                            Task {
+                                do { try await store.setWatch(g, enabled: !g.enabled) } catch { self.error = Copy.error(error) }
+                            }
+                        }
+                        Button("调整怎么做") { editing = true }
+                        Button("删掉这个目标", role: .destructive) { confirmDelete = true }
+                    } footer: {
+                        if let error { Text(error).foregroundStyle(.red) }
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                .navigationTitle(g.title.isEmpty ? "目标" : g.title)
+                .navigationBarTitleDisplayMode(.inline)
+                .sheet(isPresented: $editing) {
+                    NavigationStack { WatchEditor(existing: g) }
+                }
+                .confirmationDialog("删掉「\(g.title)」？", isPresented: $confirmDelete, titleVisibility: .visible) {
+                    Button("删掉", role: .destructive) {
+                        Task {
+                            do {
+                                try await store.removeWatch(id: g.id)
+                                dismiss()
+                            } catch { self.error = Copy.error(error) }
+                        }
+                    }
+                } message: {
+                    Text("它会停止替你盯着这件事。")
+                }
+            } else {
+                ContentUnavailableView("这个目标已经删掉了", systemImage: "scope")
             }
-            .buttonStyle(.plain)
-            Toggle("开启", isOn: Binding(
-                get: { watch.enabled },
-                set: { on in Task { try? await store.setWatch(watch, enabled: on) } }
-            ))
-            .labelsHidden()
         }
-        .padding(.vertical, 2)
     }
 }
 
@@ -157,7 +312,7 @@ struct WatchEditor: View {
                 Section { Text(error).foregroundStyle(.red) }
             }
         }
-        .navigationTitle(existing == nil ? "新的定时" : "改一改")
+        .navigationTitle(existing == nil ? "新的目标" : "调整怎么做")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {

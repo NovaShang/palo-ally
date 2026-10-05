@@ -1,8 +1,8 @@
 import PaloAllyKit
 import SwiftUI
 
-/// The "inner layer": what the assistant is doing, what it's waiting on,
-/// what it watches, and what it remembers.
+/// 「它」, the place left of the conversation: what the assistant is doing,
+/// what it's waiting on, what it watches, and what it remembers.
 struct AssistantView: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
@@ -37,7 +37,8 @@ struct AssistantView: View {
         .navigationTitle("助理")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            // The trailing side faces the conversation (「对话 ›」 lives there).
+            ToolbarItem(placement: .topBarLeading) {
                 Button {
                     model.showSettings = true
                 } label: {

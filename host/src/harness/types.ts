@@ -77,6 +77,7 @@ export interface ToolHandlers {
     kind?: "check" | "schedule";
   }): Promise<string>;
   list_watches(): Promise<string>;
+  update_goal(args: { id: string; progress: string; state?: "tracking" | "waiting" | "done" | "paused"; ratio?: number; outcome?: string }): Promise<string>;
   remove_watch(args: { id: string }): Promise<string>;
   notify_user(args: { text: string; urgent?: boolean }): Promise<string>;
   copy_to_clipboard(args: { text: string; label?: string }): Promise<string>;

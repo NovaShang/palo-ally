@@ -49,7 +49,7 @@ export class Proactive {
     // One run of the same schedule waiting is enough.
     if (this.d.hasQueued((t) => t.label === w.title && t.origin === "schedule")) return;
     this.d.audit.log("schedule.fire", { id: w.id, title: w.title });
-    this.d.enqueue({ text: scheduleTurnText(w), origin: "schedule", proactive: true, label: w.title });
+    this.d.enqueue({ text: scheduleTurnText(w), origin: "schedule", proactive: true, label: w.title, watchId: w.id });
   }
 
   onProbeTriggers(triggers: ProbeTrigger[]): void {

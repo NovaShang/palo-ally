@@ -29,7 +29,7 @@ const script: FakeScript = async (t, ctx) => {
 
 describe("host ↔ app protocol", () => {
   test("every method answers, every event fires; samples written for the Swift client", async () => {
-    const { hub, paths, events } = makeHub({ script });
+    const { hub, paths, events, driver } = makeHub({ script });
     hub.onUnpairDevice = () => {};
     const ctx = { clientId: "app_1_dev-x", deviceId: "dev-x", channel: "app" as const, local: false };
     const call = async (method: string, params: unknown = {}) => {
@@ -64,6 +64,7 @@ describe("host ↔ app protocol", () => {
     await run("approval.answer", { id: hub.approvals.listPending()[0]!.id, allow: true, remember: true });
     await hub.idle();
     const w = (await run("watch.add", { title: "晨报", instruction: "整理日程", at: ["08:30"] })).watch;
+    hub.watches.progress(w.id, "已整理 3 条日程", { ratio: 0.5, outcome: "示例" });
     await run("watch.update", { id: w.id, patch: { enabled: false } });
     await run("watch.remove", { id: w.id });
     mkdirSync(join(paths.artifacts, "brief"), { recursive: true });
@@ -78,6 +79,13 @@ describe("host ↔ app protocol", () => {
     await run("settings.update", { patch: { probeIntervalMinutes: 15 } });
     await run("push.register", { token: "a".repeat(64), env: "sandbox" });
     await run("push.unregister", { token: "a".repeat(64) });
+    driver.probeResponder = () => ({
+      output: { suggestions: [{ chip: "找出没在用的订阅", prompt: "帮我把信用卡账单里的订阅都找出来，标出最近三个月没用过的", category: "省钱" }, { chip: "每周日给我做周报", prompt: "以后每周日晚上把我这一周做的事整理成周报" }] },
+      costUsd: 0.0002,
+    });
+    await hub.suggestions.refresh("test");
+    await run("suggestions.list");
+    await run("suggestions.dismiss", { id: hub.suggestions.list()[0]!.id });
     await run("audit.tail", { limit: 3 });
     await run("stop");
     await run("device.unpair");

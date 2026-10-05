@@ -160,6 +160,13 @@ public actor DemoHost {
 
     struct DemoError: Error { let message: String }
     private var demoModel: String?
+    /// 「试试」 the demo assistant offers.
+    private var demoSuggestions: [Suggestion] = [
+        Suggestion(id: "sg_1", chip: "找出没在用的订阅", prompt: "帮我把信用卡账单和邮箱里的订阅都找出来，标出最近三个月没用过的", category: "省钱"),
+        Suggestion(id: "sg_2", chip: "每周日给我做周报", prompt: "以后每周日晚上把我这一周做的事整理成一份周报"),
+        Suggestion(id: "sg_3", chip: "盯着十一月回国机票", prompt: "帮我每天看一下十一月从旧金山回上海的机票，低于 5000 告诉我"),
+        Suggestion(id: "sg_4", chip: "整理下载文件夹", prompt: "把我电脑上的下载文件夹按类型整理一下，删掉重复的安装包前先问我"),
+    ]
 
     private func dispatch(_ method: String, _ p: JSONValue) async throws -> JSONValue {
         switch method {
@@ -183,6 +190,10 @@ public actor DemoHost {
                                 ts: Date().epochMillis, clientMsgId: cid)
             messages.append(m)
             emit(RPCEventName.chatMessage, m)
+            if let sid = p["suggestionId"]?.stringValue {
+                demoSuggestions.removeAll { $0.id == sid }
+                emit(RPCEventName.suggestionsUpdated, ["suggestions": demoSuggestions])
+            }
             Task { await self.respond(to: text) }
             return ["id": .string(m.id), "seq": .number(Double(m.seq))]
         case RPCMethod.chatHistory:
@@ -227,6 +238,10 @@ public actor DemoHost {
             var obj = try JSONValue.from(watches[i])
             if case .object(var o) = obj {
                 for (k, v) in patch { o[k] = v }
+                // Like the host: enabled and the goal state move together.
+                if case .bool(let on)? = patch["enabled"], patch["state"] == nil {
+                    o["state"] = .string(on ? (watches[i].state == .waiting ? "waiting" : "tracking") : "paused")
+                }
                 obj = .object(o)
             }
             watches[i] = try obj.decode(Watch.self)
@@ -331,6 +346,14 @@ public actor DemoHost {
             if let e = p["effort"] { status.effort = e.stringValue }
             emit(RPCEventName.status, status)
             return ["status": try .from(status)]
+        case RPCMethod.suggestionsList:
+            return ["suggestions": try .from(demoSuggestions)]
+        case RPCMethod.suggestionsDismiss:
+            let id = p["id"]?.stringValue ?? ""
+            let had = demoSuggestions.contains { $0.id == id }
+            demoSuggestions.removeAll { $0.id == id }
+            emit(RPCEventName.suggestionsUpdated, ["suggestions": demoSuggestions])
+            return ["ok": .bool(had)]
         default:
             throw DemoError(message: "unknown method \(method)")
         }
@@ -351,7 +374,7 @@ public actor DemoHost {
         var taskToRun: AllyTask?
         let reply: String
         if text.contains("提醒") {
-            reply = "好嘞，到点我叫你 ⏰\n\n已经加进 **定时** 里了，随时可以改。"
+            reply = "好嘞，到点我叫你 ⏰\n\n已经加进 **目标** 里了，随时可以改。"
             let w = Watch(id: nextID("w"), title: String(text.prefix(18)), kind: .schedule, instruction: text,
                           at: ["10:00"], enabled: true, createdBy: .agent)
             watches.append(w)
@@ -485,12 +508,29 @@ public actor DemoHost {
                      decidedAt: now - hour + min, decidedBy: "app"),
         ]
         let watches = [
+            Watch(id: "w5", title: "邮箱清零", kind: .check, instruction: "每天看收件箱，整理、起草回复，发之前给我看。",
+                  intervalMinutes: 60, enabled: true, createdBy: .agent, lastCheckedAt: now - 40 * min,
+                  state: .waiting, progress: "等你连上 Gmail", progressAt: now - 40 * min),
+            Watch(id: "w6", title: "十一月回国机票", kind: .check, instruction: "每天比价 SFO→PVG 11 月 20 日前后的直飞，低于 ¥4,500 就告诉我。",
+                  intervalMinutes: 360, enabled: true, createdBy: .agent, lastCheckedAt: now - 2 * hour,
+                  state: .tracking, progress: "每天比价，现在最低 ¥4,860", progressAt: now - 2 * hour,
+                  history: [GoalProgress(at: now - 50 * hour, text: "开始比价，最低 ¥5,380"),
+                            GoalProgress(at: now - 26 * hour, text: "降到 ¥5,180"),
+                            GoalProgress(at: now - 2 * hour, text: "每天比价，现在最低 ¥4,860")]),
+            Watch(id: "w7", title: "每天 11 点前睡", kind: .schedule, instruction: "每晚 22:30 提醒我准备睡觉，第二天记一下有没有做到。",
+                  at: ["22:30"], enabled: true, createdBy: .user, lastTriggeredAt: now - 12 * hour,
+                  state: .tracking, progress: "本周 4/6 天做到", progressAt: now - 12 * hour, ratio: 4.0 / 6.0),
             Watch(id: "w1", title: "每日晨报", kind: .schedule, instruction: "汇总今天的日程、待办和重要邮件，写进晨报。",
-                  at: ["08:30"], enabled: true, createdBy: .agent, lastTriggeredAt: now - 5 * hour),
+                  at: ["08:30"], enabled: true, createdBy: .agent, lastTriggeredAt: now - 5 * hour,
+                  progress: "今天 3 件事、2 封要回的邮件", progressAt: now - 5 * hour),
             Watch(id: "w2", title: "盯着王老师的邮件", kind: .check, instruction: "看看有没有王老师的新邮件，有就告诉我。",
-                  intervalMinutes: 30, enabled: true, createdBy: .agent, lastCheckedAt: now - 12 * min),
+                  intervalMinutes: 30, enabled: true, createdBy: .agent, lastCheckedAt: now - 12 * min,
+                  progress: "王老师确认了周四的会", progressAt: now - 3 * hour),
             Watch(id: "w3", title: "周六提醒给妈妈打电话", kind: .schedule, instruction: "提醒我给妈妈打电话。",
                   at: ["10:00"], enabled: true, createdBy: .user),
+            Watch(id: "w8", title: "退掉没在用的订阅", kind: .check, instruction: "从账单邮件里找订阅，列给我确认后逐个退订。",
+                  intervalMinutes: 1440, enabled: false, createdBy: .agent, lastCheckedAt: now - 30 * hour,
+                  state: .done, progress: "退了 3 个", progressAt: now - 30 * hour, outcome: "退掉 3 个订阅，每月省 ¥96"),
             Watch(id: "w4", title: "每周财务快照", kind: .schedule, instruction: "更新本周开销表。",
                   at: ["21:00"], enabled: false, createdBy: .user),
         ]

@@ -95,6 +95,13 @@ struct ComposerView: View {
     /// Idle: not editing — the field reads 「按住说话，轻点打字」 and takes presses.
     private var idle: Bool { !focused && !dictating }
 
+    /// 「试试」 chips: only while the chat is quiet — not typing, dictating,
+    /// holding to talk, staging attachments, or while the assistant works.
+    private var showSuggestions: Bool {
+        !store.suggestions.isEmpty && idle && draft.isEmpty && staged.isEmpty && slashQuery == nil
+            && !voice.isActive && !pressing && !store.isBusy
+    }
+
     var body: some View {
         VStack(spacing: 6) {
             if let typed = slashQuery {
@@ -114,6 +121,13 @@ struct ComposerView: View {
                     .foregroundStyle(.secondary)
                     .transition(.opacity)
             }
+            if showSuggestions {
+                SuggestionChips(suggestions: Array(store.suggestions.prefix(store.messages.isEmpty ? 4 : 3)),
+                                greeting: store.messages.isEmpty,
+                                use: { store.use($0) },
+                                dismiss: { s in withAnimation(.snappy) { store.dismiss(s) } })
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             capsule
         }
         .padding(.horizontal, sideInset)
@@ -122,6 +136,7 @@ struct ComposerView: View {
         .offset(y: bottomOffset)
         .animation(.snappy, value: slashQuery)
         .animation(.snappy, value: staged.count)
+        .animation(.snappy, value: showSuggestions)
         .onChange(of: focusToken) { focused = true }
         .onChange(of: slashQuery) { _, q in
             if q != nil { Task { await store.loadCommands() } }

@@ -22,6 +22,7 @@ export interface Turn {
   implicit?: boolean; // harness started a turn on its own (e.g. a background task finished)
   label?: string;
   uuids?: string[]; // user messages this turn answers
+  watchId?: string; // a schedule run: its reply becomes the goal's progress line
 }
 
 type OwnerMessage = { origin: Channel; wechat?: WechatReplyTarget };
@@ -60,6 +61,8 @@ export interface ConversationDeps {
   onModels: (models: ModelOption[]) => void;
   onTerminalCommands: (names: string[]) => void;
   statusChanged: () => void;
+  // a schedule run answered: record it as the goal's progress line
+  onGoalResult?: (watchId: string, text: string) => void;
   metric: (m: Record<string, unknown>) => void;
   log: (s: string) => void;
 }
@@ -385,6 +388,7 @@ export class Conversation {
       this.d.metric({ type: "turn", origin: turn.origin, proactive: turn.proactive, costUsd, contextTokens, error });
       if (error) chat.add({ role: "system", kind: "notice", text: friendlyError(error, errorCategory), channel: "system" });
       const shown = stripSkip(this.turnTexts.join("\n\n").trim());
+      if (turn.watchId && shown && !error) this.d.onGoalResult?.(turn.watchId, shown);
       // The owner spoke while this proactive turn ran and it answered them too:
       // show it as a normal reply (no push), not as something it brought up.
       const ownerFolded = turn.proactive && answered.length > 0;

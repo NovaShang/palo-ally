@@ -56,6 +56,26 @@ public enum WatchCreator: String, TolerantStringEnum {
     public static let fallback = WatchCreator.unknown
 }
 
+/// Where a 目标 stands, as the owner sees it. `waiting` = needs the owner.
+public enum GoalState: String, TolerantStringEnum {
+    case tracking, waiting, done, paused, unknown
+    public static let fallback = GoalState.unknown
+}
+
+/// One progress line on a goal, newest last.
+public struct GoalProgress: Codable, Sendable, Hashable {
+    public var at: Int64
+    public var text: String
+
+    public init(at: Int64, text: String) { self.at = at; self.text = text }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        at = l.millis("at", or: 0)
+        text = l.string("text", or: "")
+    }
+}
+
 public enum MemoryScope: String, TolerantStringEnum {
     case core, auto, unknown
     public static let fallback = MemoryScope.unknown
@@ -331,19 +351,32 @@ public struct Watch: Codable, Sendable, Hashable, Identifiable {
     public var lastCheckedAt: Int64?
     public var lastTriggeredAt: Int64?
     public var skipIfActiveMinutes: Int?
+    /// What the owner sees: the watch is shown as a 目标 with a progress line.
+    public var state: GoalState
+    public var progress: String?
+    public var progressAt: Int64?
+    /// 0…1, only when the assistant can actually measure it.
+    public var ratio: Double?
+    public var outcome: String?
+    public var history: [GoalProgress]
 
     enum CodingKeys: String, CodingKey {
         case id, title, kind, instruction, intervalMinutes, at, enabled, createdBy, lastCheckedAt,
-             lastTriggeredAt, skipIfActiveMinutes
+             lastTriggeredAt, skipIfActiveMinutes, state, progress, progressAt, ratio, outcome, history
     }
 
     public init(id: String, title: String, kind: WatchKind, instruction: String, intervalMinutes: Int? = nil,
                 at: [String]? = nil, enabled: Bool = true, createdBy: WatchCreator = .user,
-                lastCheckedAt: Int64? = nil, lastTriggeredAt: Int64? = nil, skipIfActiveMinutes: Int? = nil) {
+                lastCheckedAt: Int64? = nil, lastTriggeredAt: Int64? = nil, skipIfActiveMinutes: Int? = nil,
+                state: GoalState? = nil, progress: String? = nil, progressAt: Int64? = nil, ratio: Double? = nil,
+                outcome: String? = nil, history: [GoalProgress] = []) {
         self.id = id; self.title = title; self.kind = kind; self.instruction = instruction
         self.intervalMinutes = intervalMinutes; self.at = at; self.enabled = enabled; self.createdBy = createdBy
         self.lastCheckedAt = lastCheckedAt; self.lastTriggeredAt = lastTriggeredAt
         self.skipIfActiveMinutes = skipIfActiveMinutes
+        self.state = state ?? (enabled ? .tracking : .paused)
+        self.progress = progress; self.progressAt = progressAt; self.ratio = ratio
+        self.outcome = outcome; self.history = history
     }
 
     public init(from decoder: Decoder) throws {
@@ -359,7 +392,17 @@ public struct Watch: Codable, Sendable, Hashable, Identifiable {
         lastCheckedAt = l.millis("lastCheckedAt")
         lastTriggeredAt = l.millis("lastTriggeredAt")
         skipIfActiveMinutes = l.int("skipIfActiveMinutes")
+        // Older hosts don't send a state: derive it from `enabled`.
+        state = l.decode(GoalState.self, "state") ?? (enabled ? .tracking : .paused)
+        progress = l.string("progress")
+        progressAt = l.millis("progressAt")
+        ratio = l.double("ratio").map { min(1, max(0, $0)) }
+        outcome = l.string("outcome")
+        history = l.array(GoalProgress.self, "history") ?? []
     }
+
+    /// Needs the owner to do something.
+    public var needsOwner: Bool { state == .waiting }
 }
 
 /// `watch.add` params: a Watch without id / createdBy.

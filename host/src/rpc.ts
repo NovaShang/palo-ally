@@ -23,11 +23,13 @@ export const RPC_METHODS = [
   "artifact.list", "artifact.read", "artifact.pin", "memory.list", "memory.read", "memory.write",
   "settings.update", "stop", "push.register", "push.unregister", "device.unpair", "audit.tail",
   "media.upload", "media.uploadChunk", "media.get", "media.read",
+  "suggestions.list", "suggestions.dismiss",
 ] as const;
 
 export const RPC_EVENTS = [
   "chat.message", "chat.delta", "task.updated", "approval.updated", "watch.updated",
   "artifact.updated", "settings.updated", "status", "commands.updated",
+  "suggestions.updated",
 ] as const;
 
 // Admin methods are reachable only on the local unix socket (the owner's own
@@ -66,8 +68,14 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
         });
       const msg = hub.userMessage(String(p.text ?? ""), ctx.channel, undefined, cid, attachments);
       if (!msg) throw new Error("空消息");
+      // Sent by tapping a 「试试」 chip: it's used up.
+      if (typeof p.suggestionId === "string") hub.suggestions.use(p.suggestionId);
       return { id: msg.id, seq: msg.seq };
     }
+    case "suggestions.list":
+      return { suggestions: hub.suggestions.list() };
+    case "suggestions.dismiss":
+      return { ok: hub.suggestions.dismiss(String(p.id ?? "")) };
     case "media.upload":
       return hub.media.save(String(p.mediaType ?? ""), String(p.data ?? ""));
     case "media.uploadChunk":

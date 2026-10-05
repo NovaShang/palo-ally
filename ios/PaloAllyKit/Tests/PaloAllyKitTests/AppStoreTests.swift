@@ -70,12 +70,16 @@ struct AppStoreTests {
         #expect(store.tasks.count == 3)
         #expect(store.tasks.first?.isActive == true) // active tasks sort first
         #expect(store.pendingApprovals.map(\.id).sorted() == ["a1", "a2"])
-        #expect(store.watches.count == 4)
+        #expect(store.watches.count == 8)
+        // goals in each state, with progress lines
+        #expect(Set(store.watches.map(\.state)) == [.waiting, .tracking, .done, .paused])
+        #expect(store.watches.first { $0.id == "w6" }?.progress == "每天比价，现在最低 ¥4,860")
         #expect(store.pinnedArtifacts.map(\.id) == ["ar1"])
         #expect(store.recentArtifacts.map(\.id) == ["ar2", "ar3"])
         #expect(store.settings?.probeIntervalMinutes == 10)
         #expect(store.status?.model == "glm-4.6")
-        #expect(await host.requestLog == ["hello", "sync"])
+        // hello + sync first; 「试试」 suggestions load right after
+        #expect(await until { await host.requestLog == ["hello", "sync", "suggestions.list"] })
         #expect(await host.lastParams["sync"]?["sinceSeq"] == nil)
         #expect(await host.lastParams["hello"]?["client"] == "ios")
         // a1 is anchored by a chat message; a2 is not.

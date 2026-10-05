@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { writeFileSync } from "node:fs";
 import { Bus } from "../src/bus.ts";
 import { FakeDriver } from "./fakeDriver.ts";
 import { ProbeScheduler, dueSlot, type ProbeHost, type ProbeTrigger } from "../src/probe.ts";
@@ -181,6 +182,68 @@ describe("ProbeScheduler", () => {
     expect(() => watches.add({ title: "a", instruction: "x", at: ["9am"] }, "user")).toThrow();
     expect(watches.add({ title: "a", instruction: "x", intervalMinutes: 1 }, "user").intervalMinutes).toBe(5);
     expect(() => watches.add({ title: "a", instruction: "x", kind: "schedule" }, "user")).toThrow();
+    cleanup(paths);
+  });
+});
+
+describe("goals (what the owner sees on a watch)", () => {
+  test("old watch lists get a state; enabled and state stay in step", () => {
+    const paths = tmpPaths();
+    writeFileSync(
+      paths.watches,
+      JSON.stringify([
+        { id: "w_a", title: "老", kind: "check", instruction: "i", intervalMinutes: 60, enabled: true, createdBy: "agent" },
+        { id: "w_b", title: "停", kind: "check", instruction: "i", intervalMinutes: 60, enabled: false, createdBy: "agent" },
+      ]),
+    );
+    const watches = new WatchStore(paths.watches, new Bus());
+    expect(watches.get("w_a")!.state).toBe("tracking");
+    expect(watches.get("w_b")!.state).toBe("paused");
+    expect(watches.update("w_a", { enabled: false }).state).toBe("paused");
+    expect(watches.update("w_a", { enabled: true }).state).toBe("tracking");
+    expect(watches.update("w_a", { state: "done" }).enabled).toBe(false);
+    expect(() => watches.update("w_a", { state: "bogus" as any })).toThrow();
+    cleanup(paths);
+  });
+
+  test("progress keeps one short line, a small history, and state", () => {
+    const paths = tmpPaths();
+    const watches = new WatchStore(paths.watches, new Bus());
+    const w = watches.add({ title: "机票", instruction: "每天比价", intervalMinutes: 60 }, "agent");
+    watches.progress(w.id, "**现在最低 ¥4,860**。比昨天便宜 ¥320，还在看。");
+    expect(watches.get(w.id)!.progress).toBe("现在最低 ¥4,860。");
+    for (let i = 0; i < 12; i++) watches.progress(w.id, `第 ${i} 次`);
+    expect(watches.get(w.id)!.history).toHaveLength(8);
+    const done = watches.progress(w.id, "订好了", { state: "done", outcome: "东航 MU5100，¥4,620", ratio: 1 });
+    expect(done.enabled).toBe(false);
+    expect(done.outcome).toBe("东航 MU5100，¥4,620");
+    expect(done.ratio).toBe(1);
+    expect(watches.progress(w.id, "", { state: "tracking" }).enabled).toBe(true);
+    expect(watches.get(w.id)!.progress).toBe("订好了"); // an empty line doesn't erase the last one
+    cleanup(paths);
+  });
+
+  test("a probe check records the goal's progress line without an extra model call", async () => {
+    const { probe, driver, watches, paths } = mk();
+    const a = watches.add({ title: "机票", instruction: "比价", intervalMinutes: 30 }, "agent");
+    const b = watches.add({ title: "老板邮件", instruction: "查邮件", intervalMinutes: 30 }, "agent");
+    const c = watches.add({ title: "网页", instruction: "看更新", intervalMinutes: 30 }, "agent");
+    driver.probeResponder = () => ({
+      output: {
+        results: [
+          { watch_id: a.id, triggered: false, progress: "现在最低 ¥4,860" },
+          { watch_id: b.id, triggered: true, key: "m1", summary: "老板发来合同，要你周五前签" },
+          { watch_id: c.id, triggered: false },
+        ],
+      },
+      costUsd: 0.001,
+    });
+    await probe.tick(T0);
+    expect(driver.probes).toHaveLength(1);
+    expect(watches.get(a.id)!.progress).toBe("现在最低 ¥4,860");
+    expect(watches.get(b.id)!.progress).toBe("老板发来合同，要你周五前签");
+    expect(watches.get(c.id)!.progress).toBeUndefined();
+    expect(driver.probes[0]!.systemPrompt).toContain("progress");
     cleanup(paths);
   });
 });

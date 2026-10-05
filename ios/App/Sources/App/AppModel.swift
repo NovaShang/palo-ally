@@ -39,13 +39,14 @@ struct LaunchOptions {
 }
 
 enum AssistantTab: String, CaseIterable, Hashable {
-    case tasks, approvals, watches, memory
+    // 目标 first: what it's helping with over time (watches underneath).
+    case watches, tasks, approvals, memory
 
     var title: String {
         switch self {
         case .tasks: "任务"
         case .approvals: "审批"
-        case .watches: "定时"
+        case .watches: "目标"
         case .memory: "记忆"
         }
     }
@@ -78,45 +79,82 @@ final class AppModel {
     var pairedHost: PairedHost? { activeHostID.flatMap { hosts[$0] } }
 
     // Navigation state (also driven by launch options / notifications).
-    /// The conversation is the only main screen; everything else is one
-    /// temporary layer over it (a sheet). Closing the layer returns to the chat.
-    enum Layer: Equatable {
-        case assistant          // 助理: 任务 · 确认 · 盯梢 · 记忆, settings inside
-        case library            // 资料库 (drill-down via libraryPath)
-        case artifact(String)   // one artifact opened from the conversation
-        case task(String)       // one task opened from the conversation
-    }
-    /// At most one layer at a time; setting another replaces it in place.
-    var layer: Layer? {
+    /// The app is one horizontal space: 「它」 (the assistant) on the left, the
+    /// conversation in the middle, 「成果」 (the library) on the right. The top
+    /// buttons push the conversation aside; going back slides it home.
+    enum Place: Equatable { case assistant, chat, library }
+    var place: Place = .chat {
         didSet {
-            guard layer != oldValue else { return }
-            // Drill-down state belongs to its layer; don't resurrect it next time.
-            if layer != .assistant { showSettings = false; showHostList = false; openTaskID = nil }
-            if layer != .library { libraryPath = [] }
+            guard place != oldValue else { return }
+            // What was open in a place doesn't come back next time: an item
+            // opened from the chat reverts to the place's normal root. Reset
+            // after the slide so nothing changes while it's still on screen.
+            let left = oldValue
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(450))
+                guard let self, self.place != left else { return }
+                self.resetPlace(left)
+            }
         }
     }
+    /// What the assistant place shows at its root: the tabs, or one task
+    /// opened from the conversation (back from it returns to the chat).
+    enum AssistantRoot: Equatable { case tabs, task(String) }
+    var assistantRoot: AssistantRoot = .tabs
+    /// What the library place shows at its root: the list, or one artifact
+    /// opened from the conversation (back from it returns to the chat).
+    enum LibraryRoot: Equatable { case list, artifact(String) }
+    var libraryRoot: LibraryRoot = .list
+
+    private func resetPlace(_ p: Place) {
+        switch p {
+        case .assistant:
+            assistantRoot = .tabs
+            showSettings = false
+            showHostList = false
+            openTaskID = nil
+        case .library:
+            libraryRoot = .list
+            libraryPath = []
+        case .chat:
+            break
+        }
+    }
+
     var showLibrary: Bool {
-        get { layer == .library }
-        set { if newValue { layer = .library } else if layer == .library { layer = nil } }
+        get { place == .library }
+        set { if newValue { libraryRoot = .list; place = .library } else if place == .library { place = .chat } }
     }
     var showAssistant: Bool {
-        get { layer == .assistant }
-        set { if newValue { layer = .assistant } else if layer == .assistant { layer = nil } }
+        get { place == .assistant }
+        set { if newValue { assistantRoot = .tabs; place = .assistant } else if place == .assistant { place = .chat } }
     }
-    /// From the conversation: just this artifact / task, closing returns to the chat.
-    func openArtifact(_ id: String) { layer = .artifact(id) }
-    func openTask(_ id: String) { layer = .task(id) }
+    /// From the conversation: slide to the item's place with just that item
+    /// open; one step back returns to the chat.
+    func openArtifact(_ id: String) {
+        libraryPath = []
+        libraryRoot = .artifact(id)
+        place = .library
+    }
+    func openTask(_ id: String) {
+        showSettings = false
+        openTaskID = nil
+        assistantRoot = .task(id)
+        place = .assistant
+    }
     /// The way out of a single item to its whole collection.
     func showInLibrary(_ id: String? = nil) {
-        layer = .library
+        libraryRoot = .list
         libraryPath = id.map { [$0] } ?? []
+        place = .library
     }
     func showAllTasks() {
-        layer = .assistant
+        assistantRoot = .tabs
         assistantTab = .tasks
         openTaskID = nil
+        place = .assistant
     }
-    var assistantTab: AssistantTab = .tasks
+    var assistantTab: AssistantTab = .watches // 目标 opens first
     var showSettings = false
     var showHostList = false
     var showHostSwitcher = false
@@ -255,7 +293,7 @@ final class AppModel {
         guard hostIDs.contains(id), id != activeHostID else { return }
         markSeen()
         activate(id)
-        layer = nil
+        place = .chat
     }
 
     func moveHosts(from source: IndexSet, to destination: Int) {
@@ -402,7 +440,7 @@ final class AppModel {
             resetToUnpaired()
         } else if activeHostID == id {
             activate(hostIDs[0])
-            layer = nil
+            place = .chat
         }
     }
 
@@ -418,7 +456,7 @@ final class AppModel {
     private func resetToUnpaired() {
         tearDownStores()
         mode = .unpaired
-        layer = nil
+        place = .chat
         showHostSwitcher = false
         Self.clearTemporaryFiles()
     }
@@ -475,13 +513,14 @@ final class AppModel {
         if let hostId = userInfo["hostId"] as? String, hostIDs.contains(hostId) { switchTo(hostId) }
         showHostSwitcher = false
         if let approvalId = userInfo["approvalId"] as? String, !approvalId.isEmpty {
-            layer = .assistant
+            assistantRoot = .tabs
             assistantTab = .approvals
             openTaskID = nil
+            place = .assistant
         } else if let taskId = userInfo["taskId"] as? String, !taskId.isEmpty {
             openTask(taskId)
         } else {
-            layer = nil // a message: the conversation itself
+            place = .chat // a message: the conversation itself
         }
     }
 }

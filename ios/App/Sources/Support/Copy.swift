@@ -76,6 +76,15 @@ enum Copy {
         return "每 \(m) 分钟"
     }
 
+    static func goalState(_ s: GoalState) -> String {
+        switch s {
+        case .waiting: "需要你"
+        case .done: "办到了"
+        case .paused: "已暂停"
+        case .tracking, .unknown: "在帮你盯着"
+        }
+    }
+
     static func watchSchedule(_ w: Watch) -> String {
         switch w.kind {
         case .schedule:

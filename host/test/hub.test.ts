@@ -134,7 +134,22 @@ describe("Hub: proactive", () => {
     const w = hub.watches.add({ title: "晨报", instruction: "整理今天的日程", at: ["08:30"] }, "user");
     (hub as any).onSchedule(w);
     await hub.idle();
-    expect(driver.last!.sent[0]).toBe("[定时·晨报] 整理今天的日程");
+    expect(driver.last!.sent[0]).toStartWith("[定时·晨报] 整理今天的日程");
+    expect(driver.last!.sent[0]).toContain(w.id);
+    // the run's reply becomes the goal's progress line
+    expect(hub.watches.get(w.id)!.progress).toStartWith("收到：");
+    cleanup(paths);
+  });
+
+  test("update_goal sets the line the owner sees; unknown ids are refused", async () => {
+    const { hub, paths } = makeHub();
+    const w = hub.watches.add({ title: "邮箱清零", instruction: "每天看收件箱", intervalMinutes: 60 }, "agent");
+    const h = hub.toolHandlers();
+    expect(await h.update_goal({ id: w.id, progress: "等你连上 Gmail", state: "waiting" })).toContain("等主人");
+    expect(hub.watches.get(w.id)!.state).toBe("waiting");
+    expect(hub.watches.get(w.id)!.enabled).toBe(true); // waiting still checks
+    expect(JSON.parse(await h.list_watches())[0]).toMatchObject({ state: "waiting", progress: "等你连上 Gmail" });
+    expect(await h.update_goal({ id: "w_nope", progress: "x" })).toContain("没更新");
     cleanup(paths);
   });
 
@@ -819,5 +834,70 @@ describe("Hub: copy_to_clipboard", () => {
     expect(wechat.replies.map((r) => r.text)).toContain("上海市徐汇区漕溪北路 88 号");
     expect(await hub.toolHandlers().copy_to_clipboard({ text: "" })).toContain("没有");
     cleanup(paths);
+  });
+});
+
+describe("Hub: 「试试」 suggestions", () => {
+  test("generated from what it knows about the owner; used and dismissed ones never come back; refreshes when few are left", async () => {
+    let n = 0;
+    const { hub, driver, paths } = makeHub();
+    writeFileSync(`${paths.home}/user.md`, "# 关于主人\n有个一岁的宝宝，在湾区做产品。");
+    hub.onHarnessEvent({ type: "init", sessionId: "s", model: "m", tools: ["Read", "mcp__claude_ai_Gmail__search_threads", "mcp__paloally__report_task", "mcp__claude_ai_Google_Calendar__list_events"] });
+    driver.probeResponder = (req) => {
+      n++;
+      const base = n * 10;
+      return {
+        output: {
+          suggestions: [
+            { chip: "试试：找出没在用的订阅", prompt: "把我在用的订阅都找出来", category: "省钱" },
+            ...Array.from({ length: 4 }, (_, i) => ({ chip: `做件事 ${base + i}`, prompt: `具体的请求 ${base + i}` })),
+            { chip: "", prompt: "没有标签的会被丢掉" },
+          ],
+        },
+        costUsd: 0.0003,
+      };
+    };
+    expect(await hub.suggestions.refresh("test")).toBe(5);
+    const req = driver.probes.at(-1)!;
+    expect(req.tools).toEqual([]);
+    expect(req.strictMcp).toBe(true);
+    const sent = JSON.parse(req.prompt);
+    expect(sent.connected_services).toEqual(["claude_ai_Gmail", "claude_ai_Google_Calendar"]);
+    expect(sent.about_owner).toContain("一岁的宝宝");
+    const list = hub.suggestions.list();
+    expect(list[0]!.chip).toBe("找出没在用的订阅"); // the 「试试：」 prefix is the app's job
+    expect(hub.usage().probeUsd).toBeGreaterThan(0);
+
+    // tapping one sends its prompt and uses it up
+    const { handleRpc } = await import("../src/rpc.ts");
+    const ctx = { clientId: "app_1", deviceId: "d", channel: "app" as const, local: false };
+    await handleRpc(hub, { method: "chat.send", params: { text: list[0]!.prompt, suggestionId: list[0]!.id } }, ctx);
+    await hub.idle();
+    expect(hub.suggestions.list().some((s) => s.id === list[0]!.id)).toBe(false);
+    expect(hub.suggestions.dismiss(list[1]!.id)).toBe(true);
+    expect(hub.suggestions.dismiss(list[1]!.id)).toBe(false);
+
+    // down to 3 left: no refresh yet; one more → fewer than 3 → a new batch, avoiding the old chips
+    expect(hub.suggestions.list()).toHaveLength(3);
+    expect(hub.suggestions.needsRefresh()).toBe(false);
+    hub.suggestions.dismiss(hub.suggestions.list()[0]!.id);
+    await tick(10);
+    expect(n).toBe(2);
+    expect(JSON.parse(driver.probes.at(-1)!.prompt).avoid).toContain("找出没在用的订阅");
+    expect(hub.suggestions.list().some((s) => s.chip === "找出没在用的订阅")).toBe(false); // used before: filtered out
+    cleanup(paths);
+  });
+
+  test("no budget, no call; a failing generation leaves the list empty", async () => {
+    const { hub, driver, paths } = makeHub({ config: testConfig((c) => (c.budget.probeDailyUsd = 0)) });
+    expect(await hub.suggestions.refresh("test")).toBe(0);
+    expect(driver.probes).toHaveLength(0);
+    cleanup(paths);
+
+    const b = makeHub();
+    b.driver.probeResponder = () => ({ output: null, costUsd: 0, error: "boom" });
+    expect(await b.hub.suggestions.refresh("test")).toBe(0);
+    expect(b.hub.suggestions.list()).toHaveLength(0);
+    cleanup(b.paths);
   });
 });

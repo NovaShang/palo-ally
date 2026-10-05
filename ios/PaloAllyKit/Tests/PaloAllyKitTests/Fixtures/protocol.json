@@ -6,7 +6,7 @@
         "version": "test"
       },
       "result": {
-        "hostName": "Shangs-Air-2",
+        "hostName": "Mac",
         "version": "0.1.0",
         "status": {
           "online": true,
@@ -23,7 +23,7 @@
         "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
       },
       "result": {
-        "id": "img_muufws21007dc0f4",
+        "id": "img_muuqgi8p3f6e16fa",
         "kind": "image",
         "mediaType": "image/png"
       }
@@ -37,7 +37,7 @@
         "done": true
       },
       "result": {
-        "id": "file_muufws21537a6bef",
+        "id": "file_muuqgi8qaee7c2a8",
         "kind": "file",
         "mediaType": "text/plain",
         "name": "说明.txt",
@@ -49,18 +49,18 @@
         "text": "你好",
         "clientMsgId": "c-1",
         "attachments": [
-          "img_muufws21007dc0f4",
-          "file_muufws21537a6bef"
+          "img_muuqgi8p3f6e16fa",
+          "file_muuqgi8qaee7c2a8"
         ]
       },
       "result": {
-        "id": "m_c7c476437ccd",
+        "id": "m_432aaa8a0f9d",
         "seq": 1
       }
     },
     "media.get": {
       "params": {
-        "id": "img_muufws21007dc0f4"
+        "id": "img_muuqgi8p3f6e16fa"
       },
       "result": {
         "mediaType": "image/png",
@@ -69,7 +69,7 @@
     },
     "media.read": {
       "params": {
-        "id": "file_muufws2651681c61",
+        "id": "file_muuqgi8y83dbb220",
         "offset": 0
       },
       "result": {
@@ -92,29 +92,29 @@
             "clientMsgId": "c-1",
             "attachments": [
               {
-                "id": "img_muufws21007dc0f4",
+                "id": "img_muuqgi8p3f6e16fa",
                 "kind": "image",
                 "mediaType": "image/png"
               },
               {
-                "id": "file_muufws21537a6bef",
+                "id": "file_muuqgi8qaee7c2a8",
                 "kind": "file",
                 "mediaType": "text/plain",
                 "name": "说明.txt",
                 "size": 2
               }
             ],
-            "id": "m_c7c476437ccd",
-            "ts": 1791155789066,
+            "id": "m_432aaa8a0f9d",
+            "ts": 1791173505626,
             "seq": 1
           },
           {
-            "id": "m_muufws22fppa",
+            "id": "m_muuqgi8syk82",
             "role": "assistant",
             "kind": "text",
             "text": "你好，我在。",
             "channel": "app",
-            "ts": 1791155789066,
+            "ts": 1791173505628,
             "seq": 2
           },
           {
@@ -124,15 +124,15 @@
             "channel": "app",
             "attachments": [
               {
-                "id": "file_muufws2651681c61",
+                "id": "file_muuqgi8y83dbb220",
                 "kind": "file",
                 "mediaType": "text/plain",
                 "name": "note.txt",
                 "size": 5
               }
             ],
-            "id": "m_1c31f16a8dc5",
-            "ts": 1791155789070,
+            "id": "m_c6b2dffc0413",
+            "ts": 1791173505634,
             "seq": 3
           },
           {
@@ -141,8 +141,8 @@
             "text": "123456",
             "channel": "app",
             "label": "验证码",
-            "id": "m_548a4bd94fa2",
-            "ts": 1791155789070,
+            "id": "m_1fe6d7932fac",
+            "ts": 1791173505635,
             "seq": 4
           }
         ],
@@ -182,29 +182,29 @@
             "clientMsgId": "c-1",
             "attachments": [
               {
-                "id": "img_muufws21007dc0f4",
+                "id": "img_muuqgi8p3f6e16fa",
                 "kind": "image",
                 "mediaType": "image/png"
               },
               {
-                "id": "file_muufws21537a6bef",
+                "id": "file_muuqgi8qaee7c2a8",
                 "kind": "file",
                 "mediaType": "text/plain",
                 "name": "说明.txt",
                 "size": 2
               }
             ],
-            "id": "m_c7c476437ccd",
-            "ts": 1791155789066,
+            "id": "m_432aaa8a0f9d",
+            "ts": 1791173505626,
             "seq": 1
           },
           {
-            "id": "m_muufws22fppa",
+            "id": "m_muuqgi8syk82",
             "role": "assistant",
             "kind": "text",
             "text": "你好，我在。",
             "channel": "app",
-            "ts": 1791155789066,
+            "ts": 1791173505628,
             "seq": 2
           },
           {
@@ -214,15 +214,15 @@
             "channel": "app",
             "attachments": [
               {
-                "id": "file_muufws2651681c61",
+                "id": "file_muuqgi8y83dbb220",
                 "kind": "file",
                 "mediaType": "text/plain",
                 "name": "note.txt",
                 "size": 5
               }
             ],
-            "id": "m_1c31f16a8dc5",
-            "ts": 1791155789070,
+            "id": "m_c6b2dffc0413",
+            "ts": 1791173505634,
             "seq": 3
           },
           {
@@ -231,8 +231,8 @@
             "text": "123456",
             "channel": "app",
             "label": "验证码",
-            "id": "m_548a4bd94fa2",
-            "ts": 1791155789070,
+            "id": "m_1fe6d7932fac",
+            "ts": 1791173505635,
             "seq": 4
           }
         ]
@@ -309,23 +309,23 @@
     },
     "task.get": {
       "params": {
-        "id": "t_8a1051ccaa56"
+        "id": "t_9ef2b5e615c5"
       },
       "result": {
         "task": {
-          "id": "t_8a1051ccaa56",
+          "id": "t_9ef2b5e615c5",
           "title": "查资料",
           "summary": "在查",
           "status": "running",
           "source": "report",
-          "createdAt": 1791155789073,
-          "updatedAt": 1791155789074,
+          "createdAt": 1791173505638,
+          "updatedAt": 1791173505639,
           "activityCount": 1,
           "toolUseId": "ag1"
         },
         "activity": [
           {
-            "ts": 1791155789073,
+            "ts": 1791173505639,
             "kind": "tool_use",
             "tool": "WebSearch",
             "label": "搜索",
@@ -336,7 +336,7 @@
     },
     "task.stop": {
       "params": {
-        "id": "t_8a1051ccaa56"
+        "id": "t_9ef2b5e615c5"
       },
       "result": {
         "ok": true
@@ -344,7 +344,7 @@
     },
     "approval.answer": {
       "params": {
-        "id": "a_394684021bca",
+        "id": "a_4b4e526a76da",
         "allow": true,
         "remember": true
       },
@@ -362,7 +362,7 @@
       },
       "result": {
         "watch": {
-          "id": "w_456303daa22f",
+          "id": "w_79c38e4307b3",
           "title": "晨报",
           "instruction": "整理日程",
           "kind": "schedule",
@@ -371,20 +371,21 @@
           ],
           "enabled": true,
           "createdBy": "user",
-          "createdAt": 1791155789090
+          "createdAt": 1791173505656,
+          "state": "tracking"
         }
       }
     },
     "watch.update": {
       "params": {
-        "id": "w_456303daa22f",
+        "id": "w_79c38e4307b3",
         "patch": {
           "enabled": false
         }
       },
       "result": {
         "watch": {
-          "id": "w_456303daa22f",
+          "id": "w_79c38e4307b3",
           "title": "晨报",
           "instruction": "整理日程",
           "kind": "schedule",
@@ -393,13 +394,24 @@
           ],
           "enabled": false,
           "createdBy": "user",
-          "createdAt": 1791155789090
+          "createdAt": 1791173505656,
+          "state": "paused",
+          "progress": "已整理 3 条日程",
+          "progressAt": 1791173505656,
+          "history": [
+            {
+              "at": 1791173505656,
+              "text": "已整理 3 条日程"
+            }
+          ],
+          "ratio": 0.5,
+          "outcome": "示例"
         }
       }
     },
     "watch.remove": {
       "params": {
-        "id": "w_456303daa22f"
+        "id": "w_79c38e4307b3"
       },
       "result": {
         "ok": true
@@ -415,7 +427,7 @@
             "type": "markdown",
             "mainFile": "brief.md",
             "pinned": false,
-            "updatedAt": 1791155789091,
+            "updatedAt": 1791173505657,
             "files": [
               {
                 "path": "brief.md",
@@ -449,7 +461,7 @@
           "type": "markdown",
           "mainFile": "brief.md",
           "pinned": true,
-          "updatedAt": 1791155789091,
+          "updatedAt": 1791173505657,
           "files": [
             {
               "path": "brief.md",
@@ -467,13 +479,13 @@
             "path": "user.md",
             "scope": "core",
             "size": 155,
-            "updatedAt": 1791155789056
+            "updatedAt": 1791173505611
           },
           {
             "path": "soul.md",
             "scope": "core",
             "size": 180,
-            "updatedAt": 1791155789056
+            "updatedAt": 1791173505611
           }
         ],
         "coreSize": 335
@@ -485,18 +497,18 @@
       },
       "result": {
         "content": "# 关于主人\n\n（在这里写主人的基本信息、偏好、常用账号、作息。保持精简——几百字以内。零碎的事交给记忆。）\n",
-        "updatedAt": 1791155789056
+        "updatedAt": 1791173505611
       }
     },
     "memory.write": {
       "params": {
         "path": "user.md",
         "content": "# 关于主人\n",
-        "baseUpdatedAt": 1791155789056
+        "baseUpdatedAt": 1791173505611
       },
       "result": {
         "ok": true,
-        "updatedAt": 1791155789092
+        "updatedAt": 1791173505659
       }
     },
     "settings.update": {
@@ -532,6 +544,34 @@
         "ok": true
       }
     },
+    "suggestions.list": {
+      "params": {},
+      "result": {
+        "suggestions": [
+          {
+            "id": "sg_5a967d9406",
+            "chip": "找出没在用的订阅",
+            "prompt": "帮我把信用卡账单里的订阅都找出来，标出最近三个月没用过的",
+            "category": "省钱",
+            "createdAt": 1791173505663
+          },
+          {
+            "id": "sg_56f66e58b3",
+            "chip": "每周日给我做周报",
+            "prompt": "以后每周日晚上把我这一周做的事整理成周报",
+            "createdAt": 1791173505663
+          }
+        ]
+      }
+    },
+    "suggestions.dismiss": {
+      "params": {
+        "id": "sg_5a967d9406"
+      },
+      "result": {
+        "ok": true
+      }
+    },
     "audit.tail": {
       "params": {
         "limit": 3
@@ -539,23 +579,23 @@
       "result": {
         "entries": [
           {
-            "ts": 1791155789076,
+            "ts": 1791173505642,
             "type": "deliver",
-            "msg": "m_55996031ba96",
+            "msg": "m_6a4386e9952f",
             "pushed": true,
             "wechat": false
           },
           {
-            "ts": 1791155789089,
+            "ts": 1791173505654,
             "type": "approval.decided",
-            "id": "a_394684021bca",
+            "id": "a_4b4e526a76da",
             "status": "allowed",
             "by": "app",
             "tool": "Bash",
             "remembered": true
           },
           {
-            "ts": 1791155789092,
+            "ts": 1791173505659,
             "type": "memory.write",
             "path": "user.md",
             "by": "app"
@@ -593,20 +633,20 @@
       "clientMsgId": "c-1",
       "attachments": [
         {
-          "id": "img_muufws21007dc0f4",
+          "id": "img_muuqgi8p3f6e16fa",
           "kind": "image",
           "mediaType": "image/png"
         },
         {
-          "id": "file_muufws21537a6bef",
+          "id": "file_muuqgi8qaee7c2a8",
           "kind": "file",
           "mediaType": "text/plain",
           "name": "说明.txt",
           "size": 2
         }
       ],
-      "id": "m_c7c476437ccd",
-      "ts": 1791155789066,
+      "id": "m_432aaa8a0f9d",
+      "ts": 1791173505626,
       "seq": 1
     },
     "status": {
@@ -618,7 +658,7 @@
       "version": "0.1.0"
     },
     "chat.delta": {
-      "id": "m_muufws22fppa",
+      "id": "m_muuqgi8syk82",
       "text": "你好"
     },
     "commands.updated": {
@@ -643,32 +683,32 @@
       ]
     },
     "task.updated": {
-      "id": "t_8a1051ccaa56",
+      "id": "t_9ef2b5e615c5",
       "title": "查资料",
       "summary": "在查",
       "status": "stopped",
       "source": "report",
-      "createdAt": 1791155789073,
-      "updatedAt": 1791155789075,
+      "createdAt": 1791173505638,
+      "updatedAt": 1791173505641,
       "activityCount": 1,
       "toolUseId": "ag1"
     },
     "approval.updated": {
-      "id": "a_394684021bca",
+      "id": "a_4b4e526a76da",
       "tool": "Bash",
       "title": "在电脑上运行一条命令",
       "detail": "npm test",
       "careful": false,
       "status": "allowed",
-      "createdAt": 1791155789075,
+      "createdAt": 1791173505641,
       "suggestedScope": "cmd:npm test",
       "reason": "要运行命令",
-      "decidedAt": 1791155789089,
+      "decidedAt": 1791173505654,
       "decidedBy": "app"
     },
     "watch.updated": {
       "watch": {
-        "id": "w_456303daa22f",
+        "id": "w_79c38e4307b3",
         "title": "晨报",
         "instruction": "整理日程",
         "kind": "schedule",
@@ -677,7 +717,18 @@
         ],
         "enabled": false,
         "createdBy": "user",
-        "createdAt": 1791155789090
+        "createdAt": 1791173505656,
+        "state": "paused",
+        "progress": "已整理 3 条日程",
+        "progressAt": 1791173505656,
+        "history": [
+          {
+            "at": 1791173505656,
+            "text": "已整理 3 条日程"
+          }
+        ],
+        "ratio": 0.5,
+        "outcome": "示例"
       }
     },
     "artifact.updated": {
@@ -686,7 +737,7 @@
       "type": "markdown",
       "mainFile": "brief.md",
       "pinned": false,
-      "updatedAt": 1791155789091,
+      "updatedAt": 1791173505657,
       "files": [
         {
           "path": "brief.md",
@@ -700,6 +751,23 @@
       "probeIntervalMinutes": 15,
       "approvalTimeoutMinutes": 30,
       "wechatProactive": "hint"
+    },
+    "suggestions.updated": {
+      "suggestions": [
+        {
+          "id": "sg_5a967d9406",
+          "chip": "找出没在用的订阅",
+          "prompt": "帮我把信用卡账单里的订阅都找出来，标出最近三个月没用过的",
+          "category": "省钱",
+          "createdAt": 1791173505663
+        },
+        {
+          "id": "sg_56f66e58b3",
+          "chip": "每周日给我做周报",
+          "prompt": "以后每周日晚上把我这一周做的事整理成周报",
+          "createdAt": 1791173505663
+        }
+      ]
     }
   }
 }

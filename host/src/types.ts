@@ -90,6 +90,21 @@ export interface Watch {
   recentKeys?: string[];
   // schedule bookkeeping: "YYYY-MM-DD HH:MM" slots already fired
   firedSlots?: string[];
+  // What the owner sees: a watch is shown as a 「目标」 with a live progress
+  // line and a state. The mechanism above stays as it is.
+  state?: GoalState; // defaults: tracking (enabled) / paused (disabled)
+  progress?: string; // one short latest-status line, in Chinese
+  progressAt?: number;
+  ratio?: number; // 0…1, only when the assistant can actually measure it
+  outcome?: string; // a short line once done
+  history?: GoalProgress[]; // the last few progress lines, newest last
+}
+
+export type GoalState = "tracking" | "waiting" | "done" | "paused";
+
+export interface GoalProgress {
+  at: number;
+  text: string;
 }
 
 export interface Artifact {

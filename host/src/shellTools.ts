@@ -43,8 +43,26 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
     },
     list_watches: async () =>
       JSON.stringify(
-        d.watches.list().map((w) => ({ id: w.id, title: w.title, kind: w.kind, enabled: w.enabled, instruction: w.instruction, intervalMinutes: w.intervalMinutes, at: w.at })),
+        d.watches.list().map((w) => ({
+          id: w.id,
+          title: w.title,
+          kind: w.kind,
+          state: w.state,
+          progress: w.progress,
+          instruction: w.instruction,
+          intervalMinutes: w.intervalMinutes,
+          at: w.at,
+        })),
       ),
+    update_goal: async ({ id, progress, state, ratio, outcome }) => {
+      try {
+        const w = d.watches.progress(id, progress, { state, ratio, outcome });
+        d.audit.log("goal.progress", { id, state: w.state });
+        return `ok: 「${w.title}」${w.state === "done" ? "已完成" : w.state === "waiting" ? "等主人" : w.state === "paused" ? "已暂停" : "进行中"} · ${w.progress ?? ""}`;
+      } catch (e) {
+        return `没更新：${e instanceof Error ? e.message : e}`;
+      }
+    },
     remove_watch: async ({ id }) => (d.watches.remove(id) ? "ok" : "not found"),
     // Modelled on Claude Code's own SendUserFile (same parameters, plus
     // `temporary`): each file is kept in the library unless the assistant is

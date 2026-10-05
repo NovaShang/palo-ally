@@ -43,6 +43,10 @@ export const PROBE_SCHEMA = {
           key: { type: "string", description: "stable id of what triggered (e.g. message id), for dedupe" },
           summary: { type: "string", description: "one or two sentences for the assistant, only when triggered" },
           cursor: { type: "string", description: "state to hand to the next check, e.g. newest seen id/time" },
+          progress: {
+            type: "string",
+            description: "optional: one short line in Chinese for the owner on where this goal stands now (e.g. 「现在最低 ¥4,860」), only when you learned something concrete",
+          },
         },
         required: ["watch_id", "triggered"],
       },
@@ -58,6 +62,7 @@ const PROBE_SYSTEM = `你是一个轻量探针，替一位私人助理检查几�
 - 没有新情况就 triggered=false，别编造。
 - 有新情况：triggered=true，key 填能唯一标识这件事的东西（如邮件 id、时间戳），summary 用一两句话说清楚是什么。
 - cursor 填下次检查要用的游标（如最新看到的 id 或时间），没有就沿用旧的。
+- 这些 watch 在主人那里显示为「目标」。如果查到了这个目标现在的具体状况（不论有没有新情况），progress 用一句很短的中文写给主人看（如「现在最低 ¥4,860」「还有 3 封没回」）；查不出就不填。
 - 已经在 recent_keys 里的事不要再报。
 - 尽快结束，不要做多余的探索。`;
 
@@ -181,6 +186,11 @@ export class ProbeScheduler {
         }
       }
       this.host.watches.touch(w.id, patch);
+      // What the owner sees on the goal: the probe's own status line, or the
+      // news it found. No extra model call.
+      const own = typeof r?.progress === "string" ? r.progress.trim() : "";
+      const line = own || (patch.lastTriggeredAt === now && typeof r?.summary === "string" ? r.summary : undefined);
+      if (line) this.host.watches.progress(w.id, line);
     }
     if (triggers.length) this.host.onTriggers(triggers);
     return { checked: due.length, triggered: triggers.length };
@@ -193,6 +203,7 @@ interface ProbeRow {
   key?: string;
   summary?: string;
   cursor?: string;
+  progress?: string;
 }
 
 function parseResults(output: unknown): ProbeRow[] {

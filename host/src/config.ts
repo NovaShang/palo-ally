@@ -28,6 +28,7 @@ export class Paths {
   get pushTokens() { return join(this.state, "push-tokens.json"); }
   get wechat() { return join(this.state, "wechat.json"); }
   get media() { return join(this.state, "media"); }
+  get suggestions() { return join(this.state, "suggestions.json"); }
   get identity() { return join(this.root, "identity.json"); }
   get audit() { return join(this.root, "audit"); }
   get run() { return join(this.root, "run"); }

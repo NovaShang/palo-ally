@@ -94,6 +94,8 @@ private let resultTypes: [String: Check] = [
     RPCMethod.mediaGet: strict(MediaData.self),
     RPCMethod.mediaUploadChunk: strict(MediaUploadChunkResult.self),
     RPCMethod.mediaRead: strict(ArtifactChunk.self),
+    RPCMethod.suggestionsList: strict(SuggestionsResult.self),
+    RPCMethod.suggestionsDismiss: strict(OKResult.self),
 ]
 
 /// Event → how AppStore.apply(event:) reads the payload.
@@ -115,6 +117,7 @@ private let eventTypes: [String: Check] = [
     RPCEventName.settingsUpdated: { strictIssues(HostSettings.self, $0["settings"] ?? $0) },
     RPCEventName.status: { strictIssues(HostStatus.self, $0["status"] ?? $0) },
     RPCEventName.commandsUpdated: strict(CommandsResult.self),
+    RPCEventName.suggestionsUpdated: strict(SuggestionsResult.self),
 ]
 
 @Suite("Protocol contract")

@@ -63,9 +63,9 @@ export function paloallyMcpServer(h: ToolHandlers) {
       ),
       tool(
         "register_watch",
-        "登记一条长期盯梢。kind=check：外壳定期用轻量探针按 instruction 去查，有新情况再叫你；kind=schedule：到点（at 或每 interval_minutes）让你执行 instruction。",
+        "登记一个帮主人盯住或推进的「目标」（主人在 App 里看到的就是目标列表）。title 写成目标本身（如「邮箱清零」「十一月回国机票」）。kind=check：外壳定期用轻量探针按 instruction 去查，有新情况再叫你；kind=schedule：到点（at 或每 interval_minutes）让你执行 instruction。",
         {
-          title: z.string(),
+          title: z.string().describe("目标，几个字，主人一眼看懂"),
           instruction: z.string().describe("盯什么、用什么工具怎么查；或到点要做什么"),
           kind: z.enum(["check", "schedule"]).optional(),
           interval_minutes: z.number().optional(),
@@ -73,8 +73,20 @@ export function paloallyMcpServer(h: ToolHandlers) {
         },
         async (a) => text(await h.register_watch(a)),
       ),
-      tool("list_watches", "列出所有盯梢。", {}, async () => text(await h.list_watches())),
-      tool("remove_watch", "删除一条盯梢。", { id: z.string() }, async (a) => text(await h.remove_watch(a))),
+      tool("list_watches", "列出所有目标（含状态和最新进度）。", {}, async () => text(await h.list_watches())),
+      tool("remove_watch", "删除一个目标。", { id: z.string() }, async (a) => text(await h.remove_watch(a))),
+      tool(
+        "update_goal",
+        "Update the progress line the owner sees on one of their goals (registered with register_watch; ids from list_watches). Write `progress` as one short, concrete line in Chinese about where it stands now — e.g. 「每天比价，现在最低 ¥4,860」, 「本周 4/6 天做到」, 「等你连上 Gmail」. Set `state` when it changes: `waiting` when it needs the owner to do something, `done` when achieved (add a short `outcome`; checking stops), `paused` to stop checking, `tracking` to resume. Pass `ratio` (0–1) only when progress is genuinely measurable.",
+        {
+          id: z.string(),
+          progress: z.string().describe("one short line in Chinese"),
+          state: z.enum(["tracking", "waiting", "done", "paused"]).optional(),
+          ratio: z.number().min(0).max(1).optional(),
+          outcome: z.string().optional().describe("one short line when done"),
+        },
+        async (a) => text(await h.update_goal(a)),
+      ),
       // The next two mirror Claude Code's own SendUserFile and Artifact
       // tools (names, wording, parameters), so the model uses them the way
       // it already knows how.

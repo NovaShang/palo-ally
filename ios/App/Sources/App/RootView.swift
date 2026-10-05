@@ -20,24 +20,57 @@ struct RootView: View {
     }
 }
 
-/// The conversation is the one main screen. Everything else — the assistant
-/// (top-left), the library (top-right), a single artifact or task opened from
-/// the conversation — is one temporary layer over it, always a full-height
-/// sheet with its own navigation inside. Closing it returns to the chat.
+/// One horizontal space with three places: 「它」 (the assistant) on the left,
+/// the conversation in the middle, 「成果」 (the library) on the right. The top
+/// buttons push the conversation aside; the button facing the conversation,
+/// or a swipe from that edge, slides it back. Each place keeps its own
+/// navigation stack, and all three stay alive so scroll positions survive.
 struct MainScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
     @State private var voice = VoiceInputController()
+    /// Live edge-swipe translation toward the conversation (points).
+    @State private var drag: CGFloat = 0
 
     var body: some View {
-        NavigationStack {
-            ChatView()
+        GeometryReader { geo in
+            let w = geo.size.width
+            HStack(spacing: 0) {
+                pane(.assistant) { AssistantPlace() }
+                    .frame(width: w)
+                pane(.chat) { NavigationStack { ChatView() } }
+                    .frame(width: w)
+                pane(.library) { LibraryPlace() }
+                    .frame(width: w)
+            }
+            .offset(x: offset(for: model.place, width: w) + drag)
+            .animation(.spring(response: 0.38, dampingFraction: 0.9), value: model.place)
+            .overlay(alignment: .leading) {
+                // 成果: swipe right from the left edge to return — only at the
+                // stack's root, so the system's back swipe works deeper in.
+                if model.place == .library && model.libraryPath.isEmpty {
+                    edgeStrip(towardChat: +1, width: w)
+                }
+            }
+            .overlay(alignment: .trailing) {
+                // 它: swipe left from the right edge to return (the left edge
+                // stays the system's back swipe inside the place).
+                if model.place == .assistant { edgeStrip(towardChat: -1, width: w) }
+            }
         }
+        // No clipping: the window already hides the off-screen places, and
+        // clipping would cut each place's content off at the safe area.
         .environment(voice)
         .animation(.easeOut(duration: 0.15), value: voice.isActive)
         .onChange(of: scenePhase) { _, phase in
             if phase != .active && voice.previewText == nil { voice.abort() }
+        }
+        .onChange(of: model.place) { _, place in
+            guard place != .chat else { return }
+            // Leaving the conversation: put the keyboard and any recording away.
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            if voice.previewText == nil { voice.abort() }
         }
         .onAppear {
             if model.launch.screen == "voice" { voice.showPreview("你好，你好，你好，我正在说话") }
@@ -45,90 +78,122 @@ struct MainScreen: View {
         }
         // Everything on screen counts as seen (drives the other assistants' unread dots).
         .onChange(of: store.lastSeq) { model.markSeen() }
-        // One sheet for whichever layer is open; switching layers swaps its
-        // content in place instead of stacking sheets.
-        .sheet(isPresented: Binding(get: { model.layer != nil }, set: { if !$0 { model.layer = nil } })) {
-            LayerView()
-                .environment(store)
-                // On Mac (and iPad) a form-sized sheet is too cramped for documents.
-                .presentationSizing(.page)
-                #if targetEnvironment(macCatalyst)
-                .frame(minWidth: 720, idealWidth: 900, minHeight: 640, idealHeight: 800)
-                #endif
-        }
-        .sheet(isPresented: Binding(get: { model.showPairingSheet && model.layer == nil },
-                                    set: { if !$0 { model.showPairingSheet = false } })) {
+        .sheet(isPresented: Binding(get: { model.showPairingSheet }, set: { if !$0 { model.showPairingSheet = false } })) {
             PairingView(isSheet: true)
         }
     }
+
+    /// The x offset that puts `place` on screen.
+    private func offset(for place: AppModel.Place, width w: CGFloat) -> CGFloat {
+        switch place {
+        case .assistant: 0
+        case .chat: -w
+        case .library: -2 * w
+        }
+    }
+
+    /// Only the place on screen is interactive and visible to VoiceOver.
+    private func pane<Content: View>(_ place: AppModel.Place, @ViewBuilder content: () -> Content) -> some View {
+        let current = model.place == place
+        return content()
+            .allowsHitTesting(current && drag == 0)
+            .accessibilityHidden(!current)
+    }
+
+    /// A thin strip on one screen edge that drags the whole space back toward
+    /// the conversation with the finger, like the system back swipe.
+    /// `towardChat` is +1 when the conversation is to the right, -1 when left.
+    private func edgeStrip(towardChat sign: CGFloat, width w: CGFloat) -> some View {
+        Color.clear
+            .frame(width: 22)
+            .contentShape(.rect)
+            .padding(.top, 110) // keep clear of the top bar's buttons
+            .gesture(
+                DragGesture(minimumDistance: 8, coordinateSpace: .global)
+                    .onChanged { v in
+                        guard abs(v.translation.width) > abs(v.translation.height) || drag != 0 else { return }
+                        drag = min(max(v.translation.width * sign, 0), w) * sign
+                    }
+                    .onEnded { v in
+                        let moved = v.translation.width * sign
+                        let flung = v.predictedEndTranslation.width * sign
+                        let back = moved > w * 0.35 || flung > w * 0.6
+                        withAnimation(.spring(response: 0.38, dampingFraction: 0.9)) {
+                            if back { model.place = .chat }
+                            drag = 0
+                        }
+                    }
+            )
+            .accessibilityHidden(true)
+    }
 }
 
-/// The content of the one open layer. Each case gets a fresh NavigationStack,
-/// so an artifact opened from the chat closes straight back to the chat.
-private struct LayerView: View {
+/// 「它」: the assistant's tabs, or one task opened from the conversation.
+private struct AssistantPlace: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                switch model.assistantRoot {
+                case .tabs:
+                    AssistantView()
+                case .task(let id):
+                    TaskDetailView(taskID: id)
+                        .toolbar {
+                            ToolbarItem(placement: .bottomBar) {
+                                Button("全部任务") { model.showAllTasks() }.tint(.primary)
+                            }
+                        }
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { model.place = .chat } label: {
+                        HStack(spacing: 3) { Text("对话"); Image(systemName: "chevron.right") }
+                    }
+                    .tint(.primary)
+                    .accessibilityLabel("回到对话")
+                }
+            }
+        }
+        .id(model.assistantRoot == .tabs ? "tabs" : "item")
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+    }
+}
+
+/// 「成果」: the library, or one artifact opened from the conversation.
+private struct LibraryPlace: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
         @Bindable var model = model
-        Group {
-            switch model.layer {
-            case .assistant:
-                NavigationStack {
-                    AssistantView().toolbar { closeItem }
-                }
-            case .library:
-                NavigationStack(path: $model.libraryPath) {
-                    LibraryView().toolbar { closeItem }
-                }
-            case .artifact(let id):
-                NavigationStack {
+        NavigationStack(path: $model.libraryPath) {
+            Group {
+                switch model.libraryRoot {
+                case .list:
+                    LibraryView()
+                case .artifact(let id):
                     ArtifactDetailView(artifactID: id)
                         .toolbar {
-                            closeItem
                             ToolbarItem(placement: .bottomBar) {
-                                Button("在产出物库中查看") { model.showInLibrary(id) }
-                                    .tint(.primary)
+                                Button("在产出物库中查看") { model.showInLibrary(id) }.tint(.primary)
                             }
                         }
                 }
-            case .task(let id):
-                NavigationStack {
-                    TaskDetailView(taskID: id)
-                        .toolbar {
-                            closeItem
-                            ToolbarItem(placement: .bottomBar) {
-                                Button("全部任务") { model.showAllTasks() }
-                                    .tint(.primary)
-                            }
-                        }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { model.place = .chat } label: {
+                        HStack(spacing: 3) { Image(systemName: "chevron.left"); Text("对话") }
+                    }
+                    .tint(.primary)
+                    .accessibilityLabel("回到对话")
                 }
-            case nil:
-                EmptyView()
             }
         }
-        .id(layerKey)
-        // Pairing opened from inside a layer (settings → 添加另一台电脑) stacks on it.
-        .sheet(isPresented: Binding(get: { model.showPairingSheet && model.layer != nil },
-                                    set: { if !$0 { model.showPairingSheet = false } })) {
-            PairingView(isSheet: true)
-        }
-    }
-
-    private var closeItem: some ToolbarContent {
-        ToolbarItem(placement: .cancellationAction) {
-            Button("完成", role: .close) { model.layer = nil }
-                .tint(.primary)
-        }
-    }
-
-    private var layerKey: String {
-        switch model.layer {
-        case .assistant: "assistant"
-        case .library: "library"
-        case .artifact(let id): "artifact:\(id)"
-        case .task(let id): "task:\(id)"
-        case nil: "none"
-        }
+        .id(model.libraryRoot == .list ? "list" : "item")
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
     }
 }
 

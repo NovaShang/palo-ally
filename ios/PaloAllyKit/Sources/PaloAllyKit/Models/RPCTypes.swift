@@ -38,6 +38,9 @@ public enum RPCMethod {
     public static let mediaUploadChunk = "media.uploadChunk"
     /// A file the assistant sent, in 256 KiB chunks (same shape as artifact.read).
     public static let mediaRead = "media.read"
+    /// 「试试」 chips: the unused suggestions, and dismissing one for good.
+    public static let suggestionsList = "suggestions.list"
+    public static let suggestionsDismiss = "suggestions.dismiss"
 
     /// Every method the client knows. The contract test checks this equals
     /// the host's method set exactly.
@@ -46,6 +49,7 @@ public enum RPCMethod {
         approvalAnswer, watchAdd, watchUpdate, watchRemove, artifactList, artifactRead, artifactPin,
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
+        suggestionsList, suggestionsDismiss,
     ]
 }
 
@@ -59,10 +63,11 @@ public enum RPCEventName {
     public static let settingsUpdated = "settings.updated"
     public static let status = "status"
     public static let commandsUpdated = "commands.updated"
+    public static let suggestionsUpdated = "suggestions.updated"
 
     public static let all: [String] = [
         chatMessage, chatDelta, taskUpdated, approvalUpdated, watchUpdated, artifactUpdated, settingsUpdated,
-        status, commandsUpdated,
+        status, commandsUpdated, suggestionsUpdated,
     ]
 }
 
@@ -136,8 +141,10 @@ public struct ChatSendParams: Codable, Sendable {
     public var text: String
     public var clientMsgId: String?
     public var attachments: [String]?
-    public init(text: String, clientMsgId: String?, attachments: [String]? = nil) {
-        self.text = text; self.clientMsgId = clientMsgId; self.attachments = attachments
+    /// Set when the message came from tapping a 「试试」 chip (it's used up).
+    public var suggestionId: String?
+    public init(text: String, clientMsgId: String?, attachments: [String]? = nil, suggestionId: String? = nil) {
+        self.text = text; self.clientMsgId = clientMsgId; self.attachments = attachments; self.suggestionId = suggestionId
     }
 }
 

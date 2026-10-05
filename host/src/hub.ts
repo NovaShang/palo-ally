@@ -15,6 +15,7 @@ import { Proactive } from "./proactive.ts";
 import { Router, type Pusher } from "./router.ts";
 import { RuntimeState } from "./runtime.ts";
 import { makeShellTools } from "./shellTools.ts";
+import { SuggestionStore } from "./suggestions.ts";
 import { TaskTracker } from "./tasks.ts";
 import type { Attachment, Channel, ChatMessage, Status, Task, Watch } from "./types.ts";
 import { MediaStore } from "./media.ts";
@@ -52,6 +53,7 @@ export class Hub {
   readonly memory: MemoryView;
   readonly router: Router;
   readonly probe: ProbeScheduler;
+  readonly suggestions: SuggestionStore;
   readonly conversation: Conversation;
   private readonly info: HarnessInfo;
   private readonly proactive: Proactive;
@@ -60,6 +62,7 @@ export class Hub {
   private readonly wechat: WechatChannel | null;
   private readonly log: (s: string) => void;
   private clients = new Map<string, { conn: ClientConn; off: () => void }>();
+  private suggestionTimer: ReturnType<typeof setInterval> | null = null;
   // set by the daemon: drops a paired device (its relay pairing)
   onUnpairDevice?: (deviceId: string) => void;
 
@@ -117,6 +120,12 @@ export class Hub {
       onModels: (m) => this.info.saveModels(m),
       onTerminalCommands: (n) => this.info.setTerminalCommands(n),
       statusChanged: () => this.emitStatus(),
+      onGoalResult: (id, text) => {
+        const w = this.watches.get(id);
+        // The assistant may have set a better line itself during this run.
+        if (!w || (w.progressAt && Date.now() - w.progressAt < 10 * 60_000)) return;
+        this.watches.progress(id, text);
+      },
       metric: (m) => this.metric(m),
       log: this.log,
     });
@@ -146,6 +155,17 @@ export class Hub {
       onTriggers: (t) => this.onProbeTriggers(t),
       log: (s) => this.log(`probe: ${s}`),
     });
+    this.suggestions = new SuggestionStore(this.paths.suggestions, this.bus, {
+      driver: deps.driver,
+      probeModel: () => this.config.probeModel,
+      cwd: () => this.paths.home,
+      env: () => this.config.env,
+      context: () => this.ownerContext(),
+      budgetLeftUsd: () => this.config.budget.probeDailyUsd - this.ledger.today().probeUsd,
+      spend: (usd) => this.ledger.add("probeUsd", usd),
+      log: (s) => this.log(s),
+      now: deps.now,
+    });
   }
 
   // ---------------- lifecycle ----------------
@@ -158,6 +178,9 @@ export class Hub {
     if (opts.probe !== false) {
       this.probe.start(this.config.settings.probeIntervalMinutes);
       setTimeout(() => void this.probe.tick(), 5_000);
+      // 「试试」: first batch soon after start, then refreshed daily or when few are left.
+      setTimeout(() => this.suggestions.maybeRefresh("start"), 30_000);
+      this.suggestionTimer = setInterval(() => this.suggestions.maybeRefresh("daily"), 3600_000);
     }
     if (opts.watchArtifacts !== false) this.artifacts.watch();
     this.emitStatus();
@@ -166,6 +189,7 @@ export class Hub {
   stop(): void {
     this.proactive.stopHeartbeat();
     this.probe.stop();
+    if (this.suggestionTimer) clearInterval(this.suggestionTimer);
     this.artifacts.stop();
     this.conversation.close();
     for (const c of this.clients.values()) c.off();
@@ -251,6 +275,7 @@ export class Hub {
 
   // Exposed so it can be traced/wrapped; the conversation routes every harness event here.
   onHarnessEvent(e: HarnessEvent): void {
+    if (e.type === "init") this.suggestions.setConnectors(e.tools);
     this.conversation.onHarnessEvent(e);
   }
 
@@ -384,6 +409,21 @@ export class Hub {
 
   private onProbeTriggers(t: ProbeTrigger[]): void {
     this.proactive.onProbeTriggers(t);
+  }
+
+  // What the assistant knows about the owner, for writing 「试试」 suggestions:
+  // the core files and the auto-memory index (not the whole memory).
+  private ownerContext(): string {
+    const parts: string[] = [];
+    for (const path of ["user.md", "soul.md", "memory/MEMORY.md"]) {
+      try {
+        const text = this.memory.read(path).trim();
+        if (text) parts.push(`## ${path}\n${text}`);
+      } catch {
+        /* not there */
+      }
+    }
+    return parts.join("\n\n");
   }
 
   private emitStatus(): void {

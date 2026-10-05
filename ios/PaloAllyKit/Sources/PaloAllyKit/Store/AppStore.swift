@@ -185,6 +185,7 @@ public final class AppStore {
                     _ = try? await rpc.call(RPCMethod.pushRegister, params: push, as: OKResult.self)
                 }
                 resendQueued()
+                Task { await self.loadSuggestions() }
                 return
             } catch {
                 guard gen == connectGeneration else { return }
@@ -320,6 +321,8 @@ public final class AppStore {
             if let s = try? (data["settings"] ?? data).decode(HostSettings.self) { settings = s }
         case RPCEventName.commandsUpdated:
             if let r = try? data.decode(CommandsResult.self) { commands = r.commands }
+        case RPCEventName.suggestionsUpdated:
+            if let r = try? data.decode(SuggestionsResult.self) { suggestions = r.suggestions }
         case RPCEventName.status:
             if let s = try? (data["status"] ?? data).decode(HostStatus.self) { applyStatus(s) }
         default:
@@ -501,12 +504,39 @@ public final class AppStore {
         public init(data: Data, mediaType: String, name: String) { self.data = data; self.mediaType = mediaType; self.name = name }
     }
 
-    public func send(_ rawText: String, images picked: [OutgoingImage] = [], files pickedFiles: [OutgoingFile] = []) {
+    // MARK: 「试试」 suggestions
+
+    /// Unused suggestions from the host (chips above the composer; the full
+    /// list can also back a 「它能做什么」 page).
+    public private(set) var suggestions: [Suggestion] = []
+    /// clientMsgId → the suggestion that message came from.
+    private var suggestionForMessage: [String: String] = [:]
+
+    public func loadSuggestions() async {
+        if let r: SuggestionsResult = try? await rpc.call(RPCMethod.suggestionsList, params: EmptyParams()) {
+            suggestions = r.suggestions
+        }
+    }
+
+    /// Sends the suggestion's full request as the owner's message.
+    public func use(_ s: Suggestion) {
+        suggestions.removeAll { $0.id == s.id }
+        send(s.prompt, suggestionId: s.id)
+    }
+
+    /// Never show this one again.
+    public func dismiss(_ s: Suggestion) {
+        suggestions.removeAll { $0.id == s.id }
+        Task { _ = try? await rpc.call(RPCMethod.suggestionsDismiss, params: SuggestionIDParams(id: s.id), as: OKResult.self) }
+    }
+
+    public func send(_ rawText: String, images picked: [OutgoingImage] = [], files pickedFiles: [OutgoingFile] = [], suggestionId: String? = nil) {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !picked.isEmpty || !pickedFiles.isEmpty else { return }
         let cid = UUID().uuidString.lowercased()
         var echo = ChatMessage(seq: 0, id: "local-\(cid)", role: .user, kind: .text, text: text, channel: .app,
                                ts: Date().epochMillis, clientMsgId: cid)
+        if let suggestionId { suggestionForMessage[cid] = suggestionId }
         if !picked.isEmpty || !pickedFiles.isEmpty {
             // Shown right away from local bytes; uploaded on delivery (an image
             // per call, files in chunks).
@@ -542,7 +572,9 @@ public final class AppStore {
         do {
             let ids = try await uploadImages(clientMsgId: cid)
             let r: ChatSendResult = try await rpc.call(RPCMethod.chatSend,
-                                                       params: ChatSendParams(text: text, clientMsgId: cid, attachments: ids))
+                                                       params: ChatSendParams(text: text, clientMsgId: cid, attachments: ids,
+                                                                              suggestionId: suggestionForMessage[cid]))
+            suggestionForMessage[cid] = nil
             guard let i = messages.firstIndex(where: { $0.clientMsgId == cid && $0.seq == 0 }) else { return }
             if !r.id.isEmpty, let dup = messages.firstIndex(where: { $0.id == r.id }), dup != i {
                 // The broadcast already landed under the server id.
