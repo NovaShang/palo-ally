@@ -37,7 +37,7 @@ struct AssistantView: View {
         .navigationTitle(store.assistantName)
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $model.showIdentityEditor) {
-            IdentityEditor(purpose: .edit)
+            IdentityEditor(purpose: .edit).environment(model).environment(store)
         }
         .toolbar {
             // The trailing side faces the conversation (「对话 ›」 lives there).

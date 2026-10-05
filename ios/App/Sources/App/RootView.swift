@@ -79,11 +79,11 @@ struct MainScreen: View {
         // Everything on screen counts as seen (drives the other assistants' unread dots).
         .onChange(of: store.lastSeq) { model.markSeen() }
         .sheet(isPresented: Binding(get: { model.showPairingSheet }, set: { if !$0 { model.showPairingSheet = false } })) {
-            PairingView(isSheet: true)
+            PairingView(isSheet: true).environment(model).environment(store)
         }
         // Right after pairing, once: 「给它起个名字」.
         .sheet(isPresented: Binding(get: { needsNaming }, set: { if !$0 { model.namingDone = true } })) {
-            IdentityEditor(purpose: .firstTime)
+            IdentityEditor(purpose: .firstTime).environment(model).environment(store)
         }
     }
 

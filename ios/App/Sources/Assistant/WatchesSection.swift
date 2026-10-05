@@ -265,7 +265,7 @@ struct GoalDetail: View {
                 .navigationTitle(g.title.isEmpty ? "目标" : g.title)
                 .navigationBarTitleDisplayMode(.inline)
                 .sheet(isPresented: $editing) {
-                    NavigationStack { WatchEditor(existing: g) }
+                    NavigationStack { WatchEditor(existing: g) }.environment(store)
                 }
                 .confirmationDialog("删掉「\(g.title)」？", isPresented: $confirmDelete, titleVisibility: .visible) {
                     Button("删掉", role: .destructive) {

@@ -296,10 +296,12 @@ struct ChatView: View {
                         }
                     }
                 )
+                // Presented outside this view's hierarchy on Mac: pass what it reads.
+                .environment(model)
                 .environment(store)
                 .presentationCompactAdaptation(.popover)
             }
-            .sheet(isPresented: $showModelPicker) { ModelPickerSheet().environment(store) }
+            .sheet(isPresented: $showModelPicker) { ModelPickerSheet().environment(model).environment(store) }
     }
 
     private var statusLine: AgentStatusLine {
