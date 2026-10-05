@@ -227,7 +227,7 @@ struct TitleOrbDrop: View {
 
     var body: some View {
         let canvas = Self.canvas(for: size)
-        AssistantAvatar(theme: model.currentTheme, live: true, hostID: model.activeHostID)
+        AssistantAvatar(theme: model.currentTheme, live: true, hostID: model.activeHostID, interactive: true)
             .frame(width: canvas, height: canvas)
             .frame(width: size, height: size)
             .overlay(alignment: .topTrailing) {

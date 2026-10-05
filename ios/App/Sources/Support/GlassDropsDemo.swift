@@ -2,12 +2,11 @@
 import simd
 import SwiftUI
 
-/// A comparison sample, not shipped: the two drops drawn three ways over a
-/// busy conversation, all following the same TwoDropsState motion.
-///   A — our TwoDrops shader (colored glass, thickness-based see-through).
-///   B — system Liquid Glass: two tinted glass circles in a
-///       GlassEffectContainer, which bends what's behind and merges them.
-///   C — B with our shader laid lightly on top for depth and highlights.
+/// A comparison sample, not shipped: the two drops drawn two ways over a
+/// busy conversation, following the same TwoDropsState motion.
+///   A — our TwoDrops shader alone (colored glass, thickness-based see-through).
+///   C — what the app uses: system Liquid Glass (GlassDropsView) with the
+///       shader over it for depth and highlights.
 /// Open with `-demoScreen glassDrops`, or long-press the 「它」 header avatar.
 struct GlassDropsDemo: View {
     var theme: AppTheme
@@ -82,7 +81,7 @@ struct GlassDropsDemo: View {
     private func header(phase: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("两滴 · 三种做法").font(.title3.bold())
+                Text("两滴 · 两种做法").font(.title3.bold())
                 Spacer()
                 if let close {
                     Button("完成", action: close).buttonStyle(.glass)
@@ -125,11 +124,8 @@ struct GlassDropsDemo: View {
             switch v {
             case .shader:
                 shader(u, canvas: canvas)
-            case .system:
-                systemGlass(u, canvas: canvas)
-            case .systemPlus:
-                systemGlass(u, canvas: canvas)
-                shader(u, canvas: canvas).opacity(0.5)
+            case .glass:
+                GlassDropsView(uniforms: u, canvas: canvas)
             }
         }
         .frame(width: canvas, height: canvas)
@@ -143,62 +139,21 @@ struct GlassDropsDemo: View {
             .frame(width: canvas, height: canvas)
     }
 
-    private func systemGlass(_ u: [Float], canvas: CGFloat) -> some View {
-        let g = DropGeometry(u, canvas: canvas)
-        let colors = theme.glass
-        return GlassEffectContainer(spacing: canvas * 0.18) {
-            ZStack(alignment: .topLeading) {
-                drop(radius: g.radiusA, tint: Color(colors.primary))
-                    .offset(x: g.a.x - g.radiusA, y: g.a.y - g.radiusA)
-                drop(radius: g.radiusB, tint: Color(colors.partner))
-                    .offset(x: g.b.x - g.radiusB, y: g.b.y - g.radiusB)
-            }
-            .frame(width: canvas, height: canvas, alignment: .topLeading)
-        }
-    }
-
-    private func drop(radius: CGFloat, tint: Color) -> some View {
-        Color.clear
-            .frame(width: radius * 2, height: radius * 2)
-            .glassEffect(.regular.tint(tint.opacity(0.6)), in: .circle)
-    }
-
     enum Variant: Int, CaseIterable, Identifiable {
-        case shader, system, systemPlus
+        case shader, glass
         var id: Int { rawValue }
         var title: String {
             switch self {
-            case .shader: "A · 现在的 shader"
-            case .system: "B · 系统 Liquid Glass"
-            case .systemPlus: "C · 系统玻璃 + 我们的颜色和高光"
+            case .shader: "A · 只用 shader"
+            case .glass: "C · 现用"
             }
         }
         var note: String {
             switch self {
             case .shader: "立体、厚薄深浅、自己画的高光；背后只按透明度透一点，不折射。"
-            case .system: "真折射背后的文字，靠近会像液体一样融合；偏扁平，没有厚度和体积。"
-            case .systemPlus: "系统玻璃负责折射和融合，我们的 shader 半透明叠在上面补颜色深浅和高光。"
+            case .glass: "系统玻璃负责折射、边缘光和融合，shader 叠在上面补颜色深浅和高光。"
             }
         }
-    }
-}
-
-/// Where the shader puts the two drops, projected to the canvas (points):
-/// the same camera as TwoDrops.metal — eye at z 4.2, focal 3.05, `zoom`.
-private struct DropGeometry {
-    var a: CGPoint, radiusA: CGFloat, b: CGPoint, radiusB: CGFloat
-
-    init(_ u: [Float], canvas: CGFloat) {
-        let zoom = max(u[3], 0.05)
-        let half = canvas / 2
-        func project(_ i: Int, _ r: Float) -> (CGPoint, CGFloat) {
-            let c = SIMD3<Float>(u[i], u[i + 1], u[i + 2])
-            let k = 3.05 / (max(4.2 - c.z, 0.5) * zoom)
-            return (CGPoint(x: half + CGFloat(c.x * k) * half, y: half - CGFloat(c.y * k) * half),
-                    CGFloat(r * k) * half)
-        }
-        (a, radiusA) = project(12, u[15])
-        (b, radiusB) = project(16, u[19])
     }
 }
 
@@ -272,7 +227,4 @@ private struct ChatBackdrop: View {
     }
 }
 
-private extension Color {
-    init(_ c: SIMD3<Float>) { self.init(red: Double(c.x), green: Double(c.y), blue: Double(c.z)) }
-}
 #endif

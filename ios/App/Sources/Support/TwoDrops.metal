@@ -52,6 +52,7 @@ struct Params {
     float3 cC; float rC;        // a droplet A spits out (rC = 0: none)
     float3 fillC; float fillR;
     float clarity;              // 0 normal, 1 thin pale glass (quiet hours)
+    float overlay, overlayOpacity; // overlay: drawn over system Liquid Glass (see shade)
 };
 
 inline float3 saturate3(float3 c, float s) { return mix(float3(luma(c)), c, s); }
@@ -75,6 +76,7 @@ inline Params load(Ptr P) {
     s.colB2 = saturate3(toLinear(float3(P[48], P[49], P[50])), s.sat); s.shiverPhase = P[51];
     s.fillC = float3(P[52], P[53], P[54]); s.wobB = P[55];
     s.clarity = P[56];
+    s.overlay = P[57]; s.overlayOpacity = P[58];
     float al = length(s.axis);
     s.axis = al > 1e-4 ? s.axis / al : float3(1, 0, 0);
     return s;
@@ -253,6 +255,9 @@ inline float fresnelR(float cosi) {
 // estimated (the backdrop in the mirrored direction, dimmed by more glass)
 // rather than traced, so total internal reflection never draws a hard seam.
 inline float3 backdropSeen(float3 d, float3 rd, Params s) {
+    // Over system glass the real background shows through (the glass bends
+    // it); here an even light only lets the thickness color the drop.
+    if (s.overlay > 0.5) return mix(float3(0.96), float3(0.60), s.dark) * (1.0 - s.frost * 0.3);
     float3 bend = d - rd;
     float3 c = float3(backdrop(normalize(d + bend * 0.05), s.dark).r,
                       backdrop(d, s.dark).g,
@@ -432,7 +437,8 @@ inline float4 shade(float2 position, float2 size, Params s) {
         // thin rim: little glass to color it; a bright line right at the edge
         float3 rim = mix(tint, float3(1.0), 0.35) * pow(1.0 - ndv, 4.0) * mix(0.28, 0.42, s.dark);
         float edge = smoothstep(0.22, 0.04, ndv) * (0.55 + 0.45 * sat(n.y + 0.6));
-        rim += mix(tint, float3(1.0), 0.6) * edge * mix(0.30, 0.50, s.dark);
+        // over system glass its own edge light draws the outline
+        if (s.overlay < 0.5) rim += mix(tint, float3(1.0), 0.6) * edge * mix(0.30, 0.50, s.dark);
 
         // highlights: a sharp glint and a soft sheen from the softbox
         float3 H = normalize(Lk + V);
@@ -459,16 +465,27 @@ inline float4 shade(float2 position, float2 size, Params s) {
         // outshines the glass's opacity, the alpha rises to carry it.
         float big = smoothstep(80.0, 180.0, sz);
         float aThin = mix(0.80, 0.70, big), aThick = mix(0.92, 0.88, big);
+        if (s.overlay > 0.5) {
+            // Over system glass: only the color depth (thick = deep) and the
+            // light on it; the glass underneath does the bending, the edge
+            // and the merge, so the overlay fades out toward the silhouette
+            // instead of drawing an outline of its own.
+            aThin = 0.18; aThick = mix(0.80, 0.74, big);
+        }
         float aG = mix(aThin, aThick, smoothstep(0.08, 0.80, ndv));
-        aG = mix(aG, 0.97, s.frost);
+        aG = mix(aG, 0.97, s.frost * (1.0 - 0.4 * s.overlay));
         col = max(col - seen * (1.0 - aG), 0.0);
         glassA = min(coverage, max(coverage * aG, max(max(col.r, col.g), col.b)));
+        if (s.overlay > 0.5) {
+            float fade = smoothstep(0.0, 0.30, ndv);
+            col *= fade; glassA *= fade;
+        }
     }
 
     // soft shadows under each drop, with a little colored light in them
     float shadowA = 0.0, causticA = 0.0;
     float3 causticCol = float3(0);
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < (s.overlay > 0.5 ? 0 : 3); i++) {
         float3 c = i == 0 ? s.cA : (i == 1 ? s.cB : s.cC);
         float r = i == 0 ? s.rA : (i == 1 ? s.rB : s.rC);
         if (r < 0.002) continue;
@@ -491,6 +508,7 @@ inline float4 shade(float2 position, float2 size, Params s) {
     float alpha = glassA + under * (1.0 - coverage);
     float3 outCol = col + causticCol * (1.0 - shadowA) * (1.0 - coverage);
 
+    if (s.overlay > 0.5) { alpha *= s.overlayOpacity; outCol *= s.overlayOpacity; }
     if (alpha > 1e-4) outCol = toGamma(outCol / alpha) * alpha;
     float dither = fract(sin(dot(floor(position * s.scale), float2(12.9898, 78.233))) * 43758.5453) - 0.5;
     outCol += dither * (1.5 / 255.0) * alpha;

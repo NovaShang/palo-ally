@@ -6,8 +6,10 @@ import UIKit
 /// its theme color, and 「你」, small, in the theme's partner color. How they
 /// sit together is the expression: fused by a liquid bridge at rest,
 /// orbiting apart while it thinks, reaching out when something waits on the
-/// owner, splashing into one when a reply lands (TwoDropsState drives the
-/// motion, TwoDrops.metal draws it).
+/// owner, splashing into one when a reply lands. TwoDropsState drives the
+/// motion; GlassDropsView draws it — system Liquid Glass for the real
+/// refraction and the melting together, TwoDrops.metal over it for the
+/// color depth and the light.
 ///
 /// A `live` avatar follows the current assistant — its state and events
 /// (AvatarSignals) and the owner's typing and voice (OrbInput). Others (a
@@ -23,6 +25,8 @@ struct AssistantAvatar: View {
     /// each side): the pair, its shadow and its motion need more room than
     /// the spot it holds in a layout.
     var bleed: CGFloat = 1
+    /// Pressable (the title orb): the glass gives under the finger.
+    var interactive = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
@@ -33,11 +37,12 @@ struct AssistantAvatar: View {
     @State private var engine = AvatarEngine()
     @State private var calm = 0
 
-    init(theme: AppTheme, live: Bool = false, hostID: String? = nil, bleed: CGFloat = 1) {
+    init(theme: AppTheme, live: Bool = false, hostID: String? = nil, bleed: CGFloat = 1, interactive: Bool = false) {
         self.theme = theme
         self.live = live
         self.hostID = hostID
         self.bleed = bleed
+        self.interactive = interactive
     }
 
     var body: some View {
@@ -61,13 +66,8 @@ struct AssistantAvatar: View {
                 recording: input?.recording ?? false, level: input?.level ?? 0,
                 reduceMotion: reduceMotion, dark: scheme == .dark, scale: Float(displayScale))
             GeometryReader { geo in
-                let canvas = CGSize(width: geo.size.width * bleed, height: geo.size.height * bleed)
-                // The shader paints every pixel itself (transparent around the
-                // drops); the fill only gives it a layer to run on.
-                Rectangle()
-                    .fill(.black)
-                    .colorEffect(ShaderLibrary.twoDrops(.float2(canvas), .floatArray(u)))
-                    .frame(width: canvas.width, height: canvas.height)
+                let canvas = min(geo.size.width, geo.size.height) * bleed
+                GlassDropsView(uniforms: u, canvas: canvas, interactive: interactive)
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
             }
         }

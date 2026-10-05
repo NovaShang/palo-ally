@@ -25,6 +25,7 @@
 		4F5CB6A64C1B55C6CD52D725 /* SuggestionChips.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC058EC00155E4856AE7B909 /* SuggestionChips.swift */; };
 		4FB859813BD2430EFFD25E56 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */; };
 		58FA01FB519DE507B656FDAE /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63DF4E96D0F73A16748CF819 /* SettingsView.swift */; };
+		5A830F51813FA925FD0C8480 /* GlassDrops.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9DA59D1C706A7BFC0795353 /* GlassDrops.swift */; };
 		6581CEDB42117DA61968E352 /* Copy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 362F66DA10216A79F79CBB11 /* Copy.swift */; };
 		68C6CE08D07F5F2626210EE4 /* ComposerPressGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C8CC906F00EAFD38D91A3CD /* ComposerPressGesture.swift */; };
 		739588CADE3937D81BA4F6EA /* HostSwitcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4165C6D84EFA478FBE5F799D /* HostSwitcher.swift */; };
@@ -92,6 +93,7 @@
 		99F3499A2506B5792871441F /* IdentityEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityEditor.swift; sourceTree = "<group>"; };
 		9C1205FC1B401AE4865CFE52 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		A047E4D10313D33DC6FA1B11 /* MemorySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemorySection.swift; sourceTree = "<group>"; };
+		A9DA59D1C706A7BFC0795353 /* GlassDrops.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassDrops.swift; sourceTree = "<group>"; };
 		BC058EC00155E4856AE7B909 /* SuggestionChips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionChips.swift; sourceTree = "<group>"; };
 		C0309622DA447C8E1B5069A2 /* ClipboardCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardCard.swift; sourceTree = "<group>"; };
 		C54007F5ADFE246BFE4EBB60 /* TitleOrb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleOrb.swift; sourceTree = "<group>"; };
@@ -216,6 +218,7 @@
 				362F66DA10216A79F79CBB11 /* Copy.swift */,
 				EDCE2B703ACB5F034BAA47C0 /* CopyButton.swift */,
 				EF9B71414B8BB238CEE54BC1 /* DisplayCorners.swift */,
+				A9DA59D1C706A7BFC0795353 /* GlassDrops.swift */,
 				CBCDB8D7D89100A7DE024651 /* GlassDropsDemo.swift */,
 				36184756C7B818CDFB8CB839 /* ImagePrep.swift */,
 				DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */,
@@ -353,6 +356,7 @@
 				6581CEDB42117DA61968E352 /* Copy.swift in Sources */,
 				B8976F3E44EC1376603FA764 /* CopyButton.swift in Sources */,
 				90CE987F9EA4BB408FB5F7FE /* DisplayCorners.swift in Sources */,
+				5A830F51813FA925FD0C8480 /* GlassDrops.swift in Sources */,
 				F0C009AA4F0671A5AFEFBD11 /* GlassDropsDemo.swift in Sources */,
 				739588CADE3937D81BA4F6EA /* HostSwitcher.swift in Sources */,
 				AEBD8CD9FD2F1F20EA8FEDAD /* HostsView.swift in Sources */,
