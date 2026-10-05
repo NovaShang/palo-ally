@@ -95,7 +95,7 @@ export class Router {
       }
     }
 
-    const title = opts.title ?? "PaloAlly";
+    const title = opts.title ?? (this.settings().assistantName || "Palo");
     const body = truncate(msg.text.replace(/\s+/g, " "), 180);
     let pushed = false;
     for (const p of this.pushers) {

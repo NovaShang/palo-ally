@@ -11,11 +11,16 @@ import PaloAllyVoice
 @MainActor
 @Observable
 final class SpeechDictation {
-    private(set) var isRecording = false
+    private(set) var isRecording = false {
+        // The orb in the title bar listens along.
+        didSet { OrbInput.shared.voice(recording: isRecording, level: level) }
+    }
     private(set) var transcript = ""
     var errorMessage: String?
     /// Recent input loudness, 0…1 (drives the level meter).
-    private(set) var level: Float = 0
+    private(set) var level: Float = 0 {
+        didSet { OrbInput.shared.voice(recording: isRecording, level: level) }
+    }
 
     @ObservationIgnored private let session = VoiceSession()
     /// Which recording callbacks belong to: a quick tap arms and cancels a

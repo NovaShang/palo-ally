@@ -18,14 +18,14 @@ struct SettingsView: View {
         @Bindable var model = model
         Form {
             Section {
-                ThemePicker(selection: themeBinding)
+                ThemeSwatches(selection: themeBinding)
             } header: {
                 Text("主题色")
             } footer: {
                 if model.hasSeveralHosts {
-                    Text("这是「\(model.displayName(model.activeHostID ?? ""))」的颜色；每个助理一个颜色，切换时整个 App 跟着换。")
+                    Text("这是「\(store.assistantName)」的颜色；每个助理一个颜色，切换时整个 App 跟着换。")
                 } else {
-                    Text("App 的颜色和桌面图标都会换成这个颜色。")
+                    Text("也是\(store.assistantName)的颜色。App 和桌面图标都会换成这个颜色。")
                 }
             }
 
@@ -117,10 +117,15 @@ struct SettingsView: View {
         }
     }
 
-    /// The current assistant's color.
+    /// The current assistant's color (kept on its computer).
     private var themeBinding: Binding<AppTheme> {
-        Binding(get: { model.currentTheme },
-                set: { t in if let id = model.activeHostID { model.setTheme(t, for: id) } })
+        Binding(get: { model.currentTheme }, set: { t in
+            guard let id = model.activeHostID else { return }
+            error = nil
+            Task {
+                do { try await model.setTheme(t, for: id) } catch { self.error = "颜色没改成：\(Copy.error(error))" }
+            }
+        })
     }
 
     private var quietValue: JSONValue {
@@ -159,47 +164,5 @@ struct SettingsView: View {
                 prefill()
             }
         }
-    }
-}
-
-/// The theme swatches: glass circles in each color, a checkmark on the
-/// current one. Picking one recolors the app right away.
-private struct ThemePicker: View {
-    @Binding var selection: AppTheme
-
-    var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: 10)], spacing: 14) {
-            ForEach(AppTheme.allCases) { t in
-                Button {
-                    withAnimation(.snappy) { selection = t }
-                } label: {
-                    VStack(spacing: 6) {
-                        Circle()
-                            .fill(t.color.gradient)
-                            .frame(width: 40, height: 40)
-                            .overlay {
-                                if t == selection {
-                                    Image(systemName: "checkmark")
-                                        .font(.system(size: 15, weight: .bold))
-                                        .foregroundStyle(.white)
-                                        .transition(.scale.combined(with: .opacity))
-                                }
-                            }
-                            .padding(4)
-                            .glassEffect(t == selection ? .regular.tint(t.color.opacity(0.25)).interactive() : .regular.interactive(), in: .circle)
-                        Text(t.name)
-                            .font(.caption)
-                            .foregroundStyle(t == selection ? .primary : .secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(t.name)
-                .accessibilityAddTraits(t == selection ? .isSelected : [])
-            }
-        }
-        .padding(.vertical, 6)
-        .sensoryFeedback(.selection, trigger: selection)
     }
 }

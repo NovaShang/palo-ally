@@ -17,6 +17,8 @@
 		3615E6CE5D1C09A3629F48B6 /* WatchesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9E4508DECE36B39CF27552D /* WatchesSection.swift */; };
 		42A52F693D0C3EF2BF03E594 /* PaloAllyKit in Frameworks */ = {isa = PBXBuildFile; productRef = C72366410B2F41DC5EBD75BE /* PaloAllyKit */; };
 		42F6ACB32AA6D01DA32DF8B1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FB010AC69CB9C0C890D26829 /* Assets.xcassets */; };
+		44ECD2EA670526AE861F2D53 /* TitleOrb.swift in Sources */ = {isa = PBXBuildFile; fileRef = C54007F5ADFE246BFE4EBB60 /* TitleOrb.swift */; };
+		49FC3A9BC4977938A273A936 /* OrbInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 727BCDF8F4AA67625E0359C0 /* OrbInput.swift */; };
 		4F5CB6A64C1B55C6CD52D725 /* SuggestionChips.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC058EC00155E4856AE7B909 /* SuggestionChips.swift */; };
 		4FB859813BD2430EFFD25E56 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */; };
 		58FA01FB519DE507B656FDAE /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63DF4E96D0F73A16748CF819 /* SettingsView.swift */; };
@@ -32,6 +34,8 @@
 		AEBD8CD9FD2F1F20EA8FEDAD /* HostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53AE60C8605BA97074A29F1A /* HostsView.swift */; };
 		B7DF0900ABDDFACC50FFF6B2 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7769E0FBCB029211A3B7B532 /* QRScannerView.swift */; };
 		B8976F3E44EC1376603FA764 /* CopyButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDCE2B703ACB5F034BAA47C0 /* CopyButton.swift */; };
+		BDF3039826DF37370998D0F1 /* MacWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 592E66F4FD12F23D4F504072 /* MacWindow.swift */; };
+		C8ED787DFFAD55733893CB9A /* PaloGlass.metal in Sources */ = {isa = PBXBuildFile; fileRef = 2C0065488CF1250D99E04A44 /* PaloGlass.metal */; };
 		CCF61F9E84E355E2B02DCE4C /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C1205FC1B401AE4865CFE52 /* AppModel.swift */; };
 		D3720B2AD3344F09581611E1 /* TasksSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90E9946A58A404E7087D10BB /* TasksSection.swift */; };
 		D80A5BF2362E7F6BCC59FB6B /* IdentityEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F3499A2506B5792871441F /* IdentityEditor.swift */; };
@@ -54,6 +58,7 @@
 		0B2339DF9459035E591FCB19 /* PaloAlly.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PaloAlly.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0CC0C56E78F856900F1C91A8 /* ApprovalCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalCard.swift; sourceTree = "<group>"; };
 		1C8CC906F00EAFD38D91A3CD /* ComposerPressGesture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerPressGesture.swift; sourceTree = "<group>"; };
+		2C0065488CF1250D99E04A44 /* PaloGlass.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = PaloGlass.metal; sourceTree = "<group>"; };
 		2FFD6E49BA1DD7665E79691E /* QuickLook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLook.swift; sourceTree = "<group>"; };
 		32922EB865184F7F70CAB365 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
 		36184756C7B818CDFB8CB839 /* ImagePrep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePrep.swift; sourceTree = "<group>"; };
@@ -67,8 +72,10 @@
 		53AE60C8605BA97074A29F1A /* HostsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostsView.swift; sourceTree = "<group>"; };
 		5458CC8523AA61D0A0852ABA /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		57B6C3C8A61AE25FA5811B53 /* AssistantAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantAvatar.swift; sourceTree = "<group>"; };
+		592E66F4FD12F23D4F504072 /* MacWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacWindow.swift; sourceTree = "<group>"; };
 		63DF4E96D0F73A16748CF819 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		711BC1712E3CB0B810C91022 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
+		727BCDF8F4AA67625E0359C0 /* OrbInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbInput.swift; sourceTree = "<group>"; };
 		7769E0FBCB029211A3B7B532 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		8C624CE9D781D137068B2536 /* ModelPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPicker.swift; sourceTree = "<group>"; };
 		90A1D0CBFE081417EB16EEB3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -80,6 +87,7 @@
 		A047E4D10313D33DC6FA1B11 /* MemorySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemorySection.swift; sourceTree = "<group>"; };
 		BC058EC00155E4856AE7B909 /* SuggestionChips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionChips.swift; sourceTree = "<group>"; };
 		C0309622DA447C8E1B5069A2 /* ClipboardCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardCard.swift; sourceTree = "<group>"; };
+		C54007F5ADFE246BFE4EBB60 /* TitleOrb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleOrb.swift; sourceTree = "<group>"; };
 		D85821DAF90FE3998B520913 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		E9E4508DECE36B39CF27552D /* WatchesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchesSection.swift; sourceTree = "<group>"; };
@@ -156,6 +164,7 @@
 			isa = PBXGroup;
 			children = (
 				9C1205FC1B401AE4865CFE52 /* AppModel.swift */,
+				592E66F4FD12F23D4F504072 /* MacWindow.swift */,
 				50C0D86FFE5D13BEF644D76F /* PaloAllyApp.swift */,
 				3C8BBDD7B0248070C25E81AB /* RootView.swift */,
 			);
@@ -175,6 +184,7 @@
 				51926AB68F34CBF76C2C1507 /* MessageRow.swift */,
 				F881AEFDC8F959F0506046DD /* SpeechDictation.swift */,
 				BC058EC00155E4856AE7B909 /* SuggestionChips.swift */,
+				C54007F5ADFE246BFE4EBB60 /* TitleOrb.swift */,
 				98B9C22CB72F4B7250A63D55 /* VoiceInputOverlay.swift */,
 			);
 			path = Chat;
@@ -198,6 +208,8 @@
 				EF9B71414B8BB238CEE54BC1 /* DisplayCorners.swift */,
 				36184756C7B818CDFB8CB839 /* ImagePrep.swift */,
 				DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */,
+				727BCDF8F4AA67625E0359C0 /* OrbInput.swift */,
+				2C0065488CF1250D99E04A44 /* PaloGlass.metal */,
 				2FFD6E49BA1DD7665E79691E /* QuickLook.swift */,
 				07A26E3CEF36BC017C91F461 /* SelectableMarkdown.swift */,
 			);
@@ -334,12 +346,15 @@
 				D80A5BF2362E7F6BCC59FB6B /* IdentityEditor.swift in Sources */,
 				DCA8A63C55C45480F50AFD5A /* ImagePrep.swift in Sources */,
 				1F13B32F1A120C451958B347 /* LibraryView.swift in Sources */,
+				BDF3039826DF37370998D0F1 /* MacWindow.swift in Sources */,
 				4FB859813BD2430EFFD25E56 /* MarkdownText.swift in Sources */,
 				E0748A27FBA8E1FD9DDEA652 /* MemorySection.swift in Sources */,
 				771DA9C8AA0708C69B5C0D2B /* MessageRow.swift in Sources */,
 				F342DE1D9A6DFB66245308B9 /* ModelPicker.swift in Sources */,
+				49FC3A9BC4977938A273A936 /* OrbInput.swift in Sources */,
 				F10B59DC6D408555F64C2858 /* PairingView.swift in Sources */,
 				31D752A67A0592C5BA7B46B1 /* PaloAllyApp.swift in Sources */,
+				C8ED787DFFAD55733893CB9A /* PaloGlass.metal in Sources */,
 				B7DF0900ABDDFACC50FFF6B2 /* QRScannerView.swift in Sources */,
 				D844BFFB6A6F7E72355AF873 /* QuickLook.swift in Sources */,
 				F7BB5BDB265CB2F858DDF473 /* RootView.swift in Sources */,
@@ -348,6 +363,7 @@
 				7FA2E7E1309D4680A571ACCC /* SpeechDictation.swift in Sources */,
 				4F5CB6A64C1B55C6CD52D725 /* SuggestionChips.swift in Sources */,
 				D3720B2AD3344F09581611E1 /* TasksSection.swift in Sources */,
+				44ECD2EA670526AE861F2D53 /* TitleOrb.swift in Sources */,
 				FC44EDAAB240F3EB2DFA924B /* VoiceInputOverlay.swift in Sources */,
 				3615E6CE5D1C09A3629F48B6 /* WatchesSection.swift in Sources */,
 			);

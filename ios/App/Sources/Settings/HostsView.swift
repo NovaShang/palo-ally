@@ -101,7 +101,7 @@ struct HostsView: View {
                         newName = model.displayName(id)
                         renaming = id
                     }
-                    Picker(selection: Binding(get: { model.theme(for: id) }, set: { model.setTheme($0, for: id) })) {
+                    Picker(selection: Binding(get: { model.theme(for: id) }, set: { t in Task { try? await model.setTheme(t, for: id) } })) {
                         ForEach(AppTheme.allCases) { t in Text(t.name).tag(t) }
                     } label: {
                         Label("颜色", systemImage: "paintpalette")

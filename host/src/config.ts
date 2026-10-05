@@ -55,11 +55,12 @@ export interface Settings {
   // The assistant's identity, chosen by the owner after the first pairing.
   // "" = not chosen yet (the app asks once). The name also lives in soul.md.
   assistantName: string;
-  avatar: string; // one of AVATARS, "" = default
+  color: string; // the assistant's color = the app's theme color; one of COLORS, "" = not chosen yet
 }
 
-// Code-drawn liquid-glass forms; the app renders each id.
-export const AVATARS = ["drop", "orb", "petal", "wave", "pebble", "bloom", "comet", "twin"] as const;
+// The assistant's colors = the app's theme presets (AppTheme in the iOS app;
+// keep in sync). One avatar form; the color is what the owner picks.
+export const COLORS = ["magenta", "orchid", "rose", "berry", "blue", "violet", "teal", "orange", "graphite"] as const;
 
 export interface Config {
   hostName: string;
@@ -126,7 +127,7 @@ export function defaultConfig(): Config {
       approvalTimeoutMinutes: 30,
       wechatProactive: "hint",
       assistantName: "",
-      avatar: "",
+      color: "",
     },
   };
 }
@@ -135,8 +136,10 @@ export function defaultConfig(): Config {
 // and returns the result, or throws a message the owner can act on.
 export function validateSettings(current: Settings, patch: Record<string, unknown>): Settings {
   const allowed = new Set(Object.keys(defaultConfig().settings));
-  for (const k of Object.keys(patch)) if (!allowed.has(k)) throw new Error(`没有这个设置：${k}`);
-  const next = { ...current, ...patch } as Settings;
+  // Older apps still send the avatar form id they used to pick; there's one form now.
+  const { avatar: _legacyAvatar, ...rest } = patch;
+  for (const k of Object.keys(rest)) if (!allowed.has(k)) throw new Error(`没有这个设置：${k}`);
+  const next = { ...current, ...rest } as Settings;
   if (!isValidTimeZone(next.timezone)) throw new Error(`时区不认识：${String(next.timezone)}（例如 Asia/Shanghai、America/Los_Angeles）`);
   if (next.quietHours !== null) {
     const q = next.quietHours as any;
@@ -154,7 +157,8 @@ export function validateSettings(current: Settings, patch: Record<string, unknow
   if (typeof next.assistantName !== "string") throw new Error("名字要是一段文字");
   next.assistantName = next.assistantName.replace(/[\r\n]+/g, " ").trim();
   if ([...next.assistantName].length > 20) throw new Error("名字最多 20 个字");
-  if (next.avatar !== "" && !(AVATARS as readonly string[]).includes(next.avatar)) throw new Error(`没有这个形象：${String(next.avatar)}`);
+  if (typeof next.color !== "string") next.color = "";
+  if (next.color !== "" && !(COLORS as readonly string[]).includes(next.color)) throw new Error(`没有这个颜色：${String(next.color)}`);
   return next;
 }
 
@@ -164,6 +168,7 @@ export function loadConfig(paths: Paths): Config {
   const saved = readJson<Partial<Config>>(paths.config, {});
   const cfg = deepMerge(defaultConfig(), saved) as Config;
   delete (cfg.settings as any).maxProactivePerDay; // removed 2026-10-04 (runaway guard instead)
+  delete (cfg.settings as any).avatar; // removed 2026-10-05 (one avatar form; color is the choice)
   // A hand-edited bad value falls back to its default instead of crash-looping.
   const defaults = defaultConfig().settings as any;
   for (const k of Object.keys(defaults)) {

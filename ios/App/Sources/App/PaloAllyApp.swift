@@ -23,6 +23,32 @@ struct PaloAllyApp: App {
                     }
                 }
         }
+        .commands { PlaceCommands(model: appDelegate.model) }
+    }
+}
+
+/// Mac menu bar / iPad hardware keyboard: the two places beside the
+/// conversation (sidebar and inspector on large windows, slides on narrow ones).
+private struct PlaceCommands: Commands {
+    let model: AppModel
+
+    var body: some Commands {
+        CommandGroup(before: .sidebar) {
+            Button("「它」") { model.toggleAssistant() }
+                .keyboardShortcut("1", modifiers: .command)
+            Button("成果") { model.toggleLibrary() }
+                .keyboardShortcut("2", modifiers: .command)
+        }
+        // ⌘, : 「它」 with its settings page.
+        CommandGroup(replacing: .appSettings) {
+            Button("设置…") { model.openSettings() }
+                .keyboardShortcut(",", modifiers: .command)
+        }
+        // ⌘F searches 成果 and the conversation (nothing else here has Find).
+        CommandGroup(replacing: .textEditing) {
+            Button("搜索成果和对话") { model.focusLibrarySearch() }
+                .keyboardShortcut("f", modifiers: .command)
+        }
     }
 }
 

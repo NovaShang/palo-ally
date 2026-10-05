@@ -19,6 +19,7 @@ import UniformTypeIdentifiers
 /// - [+] → photos or files, staged above the capsule.
 struct ComposerView: View {
     @Environment(AppStore.self) private var store
+    @Environment(AppModel.self) private var model
     @Environment(VoiceInputController.self) private var voice
     @Environment(\.scenePhase) private var scenePhase
     @Binding var draft: String
@@ -67,8 +68,14 @@ struct ComposerView: View {
     private static let minInset: CGFloat = 12
 
     private var docked: Bool { !keyboardUp }
+    /// Concentric only when the composer actually spans the display's bottom
+    /// corners (the phone layout); beside a sidebar or inspector it's a
+    /// regular floating capsule with even margins.
+    private var spansDisplay: Bool { model.layout == .phone }
+    private var concentric: Bool { docked && spansDisplay && displayRadius > 0 }
     private var sideInset: CGFloat {
-        guard docked, displayRadius > 0 else { return Self.minInset }
+        // Beside a sidebar or inspector: the same even margins as the conversation.
+        guard concentric else { return spansDisplay ? Self.minInset : 20 }
         return max(Self.minInset, displayRadius - Self.dockedRadius)
     }
     private var capsuleRadius: CGFloat { docked ? Self.dockedRadius : Self.editingRadius }
@@ -76,8 +83,8 @@ struct ComposerView: View {
     /// The composer sits above the home-indicator inset; docked, the capsule
     /// goes `sideInset` from the screen's bottom edge — into that inset when
     /// the inset is the larger of the two.
-    private var bottomPadding: CGFloat { docked ? max(0, sideInset - homeInset) : 8 }
-    private var bottomOffset: CGFloat { docked ? max(0, homeInset - sideInset) : 0 }
+    private var bottomPadding: CGFloat { concentric || (docked && spansDisplay) ? max(0, sideInset - homeInset) : 8 }
+    private var bottomOffset: CGFloat { concentric || (docked && spansDisplay) ? max(0, homeInset - sideInset) : 0 }
 
     /// From touch-down to "listening". Recording runs the whole time; this
     /// only tells a tap (keyboard) from a hold (voice), and is long enough for
@@ -138,10 +145,15 @@ struct ComposerView: View {
         .padding(.top, 6)
         .padding(.bottom, bottomPadding)
         .offset(y: bottomOffset)
+        // Large screens: same line length as the conversation, centred.
+        .frame(maxWidth: spansDisplay ? .infinity : ChatView.readableWidth)
+        .frame(maxWidth: .infinity)
         .animation(.snappy, value: slashQuery)
         .animation(.snappy, value: staged.count)
         .animation(.snappy, value: showSuggestions)
         .onChange(of: focusToken) { focused = true }
+        // The orb in the title bar notices the owner typing.
+        .onChange(of: draft) { if focused { OrbInput.shared.typed() } }
         // 「回复」 / 「引用回复」 / 「聊聊」: open the keyboard to write the reply.
         .onChange(of: store.replyDraft) { _, reply in if reply != nil { focusToken += 1 } }
         .animation(.snappy, value: store.replyDraft)
@@ -264,6 +276,10 @@ struct ComposerView: View {
                 .contentShape(.rect)
         }
         .tint(.secondary) // Menu tints its label with the accent; match the mic
+        // The Mac draws a menu as a bordered pop-up with a chevron; keep the bare +.
+        .buttonStyle(.borderless)
+        .menuIndicator(.hidden)
+        .frame(width: 40, height: 44) // the Mac sizes a borderless menu to its glyph
         .padding(.leading, 4)
         .disabled(staged.count >= Self.maxStaged || dictating)
         .accessibilityLabel("添加照片或文件")

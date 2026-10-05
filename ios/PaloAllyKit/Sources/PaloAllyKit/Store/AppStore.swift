@@ -32,7 +32,9 @@ public final class AppStore {
     public private(set) var approvals: [Approval] = []
     public private(set) var watches: [Watch] = []
     public private(set) var artifacts: [Artifact] = []
-    public private(set) var settings: HostSettings?
+    public private(set) var settings: HostSettings? {
+        didSet { if let settings, settings != oldValue { onSettings?(settings) } }
+    }
     public private(set) var status: HostStatus?
     /// Slash commands, fetched the first time the user types "/".
     public private(set) var commands: [SlashCommand] = []
@@ -58,6 +60,9 @@ public final class AppStore {
     /// Called with `lastSeq` after every completed sync (the app uses it to
     /// baseline what the owner has seen on hosts they aren't looking at).
     @ObservationIgnored public var onSynced: (@MainActor (Int64) -> Void)?
+    /// Called whenever the host's settings arrive or change (the app takes
+    /// the assistant's color from them).
+    @ObservationIgnored public var onSettings: (@MainActor (HostSettings) -> Void)?
     /// Clipboard messages already copied on this device (local state).
     public private(set) var copiedClipboardIDs: Set<String> = []
 

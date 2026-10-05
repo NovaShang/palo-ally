@@ -576,20 +576,21 @@ public struct HostSettings: Codable, Sendable, Hashable {
     /// The assistant's name, chosen by the owner after the first pairing.
     /// Empty = not chosen yet (the app asks once).
     public var assistantName: String
-    /// Which code-drawn glass form is its face; empty = the default one.
-    public var avatar: String
+    /// The assistant's color, which is also the app's theme color (an
+    /// AppTheme preset key, e.g. "magenta"). Empty = not chosen yet.
+    public var color: String
 
     enum CodingKeys: String, CodingKey {
-        case timezone, quietHours, probeIntervalMinutes, approvalTimeoutMinutes, wechatProactive, assistantName, avatar
+        case timezone, quietHours, probeIntervalMinutes, approvalTimeoutMinutes, wechatProactive, assistantName, color
     }
 
     public init(timezone: String = TimeZone.current.identifier, quietHours: QuietHours? = nil,
                 probeIntervalMinutes: Int = 15, approvalTimeoutMinutes: Int = 30,
-                wechatProactive: WechatProactive = .hint, assistantName: String = "", avatar: String = "") {
+                wechatProactive: WechatProactive = .hint, assistantName: String = "", color: String = "") {
         self.timezone = timezone; self.quietHours = quietHours
         self.probeIntervalMinutes = probeIntervalMinutes; self.approvalTimeoutMinutes = approvalTimeoutMinutes
         self.wechatProactive = wechatProactive
-        self.assistantName = assistantName; self.avatar = avatar
+        self.assistantName = assistantName; self.color = color
     }
 
     public init(from decoder: Decoder) throws {
@@ -601,7 +602,7 @@ public struct HostSettings: Codable, Sendable, Hashable {
         approvalTimeoutMinutes = l.int("approvalTimeoutMinutes", or: d.approvalTimeoutMinutes)
         wechatProactive = l.decode(WechatProactive.self, "wechatProactive", or: d.wechatProactive)
         assistantName = l.string("assistantName", or: "")
-        avatar = l.string("avatar", or: "")
+        color = l.string("color", or: "")
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -614,7 +615,7 @@ public struct HostSettings: Codable, Sendable, Hashable {
         // Never send a value we didn't understand back to the host.
         if wechatProactive != .unknown { try c.encode(wechatProactive, forKey: .wechatProactive) }
         try c.encode(assistantName, forKey: .assistantName)
-        try c.encode(avatar, forKey: .avatar)
+        try c.encode(color, forKey: .color)
     }
 }
 

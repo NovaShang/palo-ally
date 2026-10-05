@@ -30,11 +30,11 @@ public actor DemoHost {
     public nonisolated let hostName: String
 
     public init(speed: Double = 1, seeded: Bool = true, autoConnect: Bool = true, hostName: String = "我的 MacBook",
-                assistantName: String = "帕帕", avatar: String = "drop") {
+                assistantName: String = "Palo", color: String = "magenta") {
         self.speed = speed
         self.hostName = hostName
         settings.assistantName = assistantName
-        settings.avatar = avatar
+        settings.color = color
         status.metAt = Date().epochMillis - 41 * 86_400_000
         let t = InMemoryTransport(autoConnect: autoConnect)
         self.transport = t

@@ -11,6 +11,7 @@ struct SuggestionChips: View {
     let greeting: Bool
     let use: (Suggestion) -> Void
     let dismiss: (Suggestion) -> Void
+    @Environment(\.placesAsColumns) private var asColumn
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -20,18 +21,36 @@ struct SuggestionChips: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(suggestions) { s in
-                        chip(s)
+            if asColumn {
+                // Beside a sidebar or inspector the row stays in its column
+                // and fades out at the end.
+                row.mask {
+                    HStack(spacing: 0) {
+                        Color.black
+                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: 28)
                     }
                 }
-                .padding(.horizontal, 2)
-                .padding(.vertical, 1)
+            } else {
+                // Phones: the row runs to the screen edges.
+                row.scrollClipDisabled()
             }
-            .scrollClipDisabled()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var row: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(suggestions) { s in
+                    chip(s)
+                }
+            }
+            .padding(.horizontal, 2)
+            .padding(.vertical, 1)
+            // Room for the fade to land past the last chip.
+            .padding(.trailing, asColumn ? 24 : 0)
+        }
     }
 
     private func chip(_ s: Suggestion) -> some View {

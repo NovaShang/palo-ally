@@ -9,7 +9,7 @@ let appLog = Logger(subsystem: "com.novashang.paloally", category: "app")
 
 /// Launch options parsed from arguments / UserDefaults:
 ///   -demo YES            run against the in-memory demo host
-///   -demoScreen <name>   chat | library | assistant | settings | pairing | artifact | voice
+///   -demoScreen <name>   chat | library | assistant | settings | pairing | artifact | voice | naming | identity | avatars
 ///   -demoTab <name>      watches (目标) | history (履历) | memory; old values tasks → history, approvals → watches
 ///   -pairLink <url>      start pairing with this paloally:// link (automation; skips the open-URL prompt)
 ///   -demoHosts <n>       demo with n assistants (2 shows the switcher)
@@ -23,6 +23,8 @@ struct LaunchOptions {
     var demoHosts: Int = 1
     /// -demoState idle | busy | tasks — title-capsule screenshot states.
     var demoState: String? = nil
+    /// -demoLayout wide — on large screens, open the sidebar and the inspector.
+    var demoLayout: String? = nil
 
     static func current() -> LaunchOptions {
         let d = UserDefaults.standard
@@ -33,7 +35,8 @@ struct LaunchOptions {
             tab: d.string(forKey: "demoTab"),
             pairLink: d.string(forKey: "pairLink"),
             demoHosts: max(1, d.integer(forKey: "demoHosts")),
-            demoState: d.string(forKey: "demoState")
+            demoState: d.string(forKey: "demoState"),
+            demoLayout: d.string(forKey: "demoLayout")
         )
     }
 }
@@ -95,6 +98,12 @@ final class AppModel {
     enum Place: Equatable { case assistant, chat, library }
     var place: Place = .chat {
         didSet {
+            // Large screens: 「它」 is a sidebar and 「成果」 an inspector beside
+            // the conversation, so going to a place means showing its column.
+            if layout != .phone {
+                if !quietPlaceChange { showColumns(for: place) }
+                return
+            }
             guard place != oldValue else { return }
             // What was open in a place doesn't come back next time: an item
             // opened from the chat reverts to the place's normal root. Reset
@@ -116,6 +125,135 @@ final class AppModel {
     enum LibraryRoot: Equatable { case list, artifact(String) }
     var libraryRoot: LibraryRoot = .list
 
+    // MARK: large-screen layout
+
+    /// How the three places are laid out, set by the root container from the
+    /// window's actual width (not the device): phone = one place at a time,
+    /// sliding; medium / wide = 「它」 as the system sidebar, the conversation
+    /// in the middle, 「成果」 as the system inspector. Both columns can be open.
+    enum Layout: String, Equatable { case phone, medium, wide }
+    private(set) var layout: Layout = .phone
+    var sidebarShown = false {
+        didSet {
+            if sidebarShown != oldValue { debugLog("[layout] sidebar \(sidebarShown) (\(layout.rawValue), place \(place))") }
+            columnChanged(.assistant, shown: sidebarShown, was: oldValue)
+        }
+    }
+    var inspectorShown = false {
+        didSet {
+            if inspectorShown != oldValue { debugLog("[layout] inspector \(inspectorShown) (\(layout.rawValue), place \(place))") }
+            columnChanged(.library, shown: inspectorShown, was: oldValue)
+        }
+    }
+    /// ⌘F: the 成果 search field should take focus (consumed by LibraryView,
+    /// which may only appear after the request).
+    var librarySearchRequested = false
+    private var quietPlaceChange = false
+
+    func setLayout(_ new: Layout) {
+        guard new != layout else { return }
+        let old = layout
+        if new == .phone {
+            // One place at a time: keep the conversation in front unless a
+            // narrower window should keep showing what was just opened.
+            let front: Place = inspectorShown && place == .library ? .library
+                : (old == .medium && sidebarShown && place == .assistant ? .assistant : .chat)
+            layout = new
+            sidebarShown = false
+            inspectorShown = false
+            quietly { place = front }
+            return
+        }
+        layout = new
+        let remembered = UserDefaults.standard.object(forKey: "sidebar.\(new.rawValue)") as? Bool ?? (new == .wide)
+        let demoWide = launch.demoLayout == "wide"
+        sidebarShown = remembered || place == .assistant || demoWide
+        inspectorShown = place == .library || (old != .phone && inspectorShown) || demoWide
+        if new == .medium, sidebarShown, inspectorShown {
+            if place == .library { sidebarShown = false } else { inspectorShown = false }
+        }
+    }
+
+    /// The conversation's top-left button: on phones slide to 「它」, on large
+    /// screens open or close the sidebar (and remember that choice per width).
+    func toggleAssistant() {
+        guard layout != .phone else { showAssistant = place != .assistant; return }
+        if sidebarShown {
+            sidebarShown = false
+        } else {
+            assistantRoot = .tabs
+            place = .assistant
+        }
+        rememberSidebar()
+    }
+
+    /// The conversation's top-right button: 「成果」 slides in, or the inspector toggles.
+    func toggleLibrary() {
+        guard layout != .phone else { showLibrary = place != .library; return }
+        if inspectorShown {
+            inspectorShown = false
+        } else {
+            libraryRoot = .list
+            place = .library
+        }
+    }
+
+    /// ⌘F: 成果 with its search field focused.
+    func focusLibrarySearch() {
+        debugLog("[layout] search 成果")
+        libraryRoot = .list
+        libraryPath = []
+        place = .library
+        librarySearchRequested = true
+    }
+
+    /// The user changed the sidebar themselves (toggle, drag, tap outside).
+    func rememberSidebar() {
+        guard layout != .phone else { return }
+        UserDefaults.standard.set(sidebarShown, forKey: "sidebar.\(layout.rawValue)")
+    }
+
+    private func showColumns(for p: Place) {
+        switch p {
+        // Medium width has room for one of them beside the conversation, not
+        // both: opening one puts the other away.
+        case .assistant:
+            if !sidebarShown { sidebarShown = true }
+            if layout == .medium, inspectorShown { inspectorShown = false }
+        case .library:
+            if !inspectorShown { inspectorShown = true }
+            if layout == .medium, sidebarShown { sidebarShown = false }
+        case .chat:
+            // Medium width: the columns cover the conversation, so going to
+            // the conversation puts them away. Wide: they sit beside it.
+            if layout == .medium {
+                if sidebarShown { sidebarShown = false }
+                if inspectorShown { inspectorShown = false }
+            }
+        }
+    }
+
+    private func columnChanged(_ p: Place, shown: Bool, was: Bool) {
+        guard layout != .phone, was, !shown else { return }
+        if place == p {
+            quietly { place = p == .assistant ? (inspectorShown ? .library : .chat) : (sidebarShown ? .assistant : .chat) }
+        }
+        // Like leaving a place on phones: an item opened from the chat goes
+        // back to the place's root, after the column has finished closing.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(450))
+            guard let self, self.layout != .phone else { return }
+            let stillClosed = p == .assistant ? !self.sidebarShown : !self.inspectorShown
+            if stillClosed { self.resetPlace(p) }
+        }
+    }
+
+    private func quietly(_ change: () -> Void) {
+        quietPlaceChange = true
+        change()
+        quietPlaceChange = false
+    }
+
     private func resetPlace(_ p: Place) {
         switch p {
         case .assistant:
@@ -131,13 +269,24 @@ final class AppModel {
         }
     }
 
+    /// Closing a place returns to the conversation. On large screens that
+    /// only puts the column away where it covers the conversation (medium);
+    /// wide, it stays beside it.
     var showLibrary: Bool {
-        get { place == .library }
-        set { if newValue { libraryRoot = .list; place = .library } else if place == .library { place = .chat } }
+        get { layout == .phone ? place == .library : inspectorShown }
+        set {
+            if newValue { libraryRoot = .list; place = .library }
+            else if layout == .medium { inspectorShown = false }
+            else if place == .library { place = .chat }
+        }
     }
     var showAssistant: Bool {
-        get { place == .assistant }
-        set { if newValue { assistantRoot = .tabs; place = .assistant } else if place == .assistant { place = .chat } }
+        get { layout == .phone ? place == .assistant : sidebarShown }
+        set {
+            if newValue { assistantRoot = .tabs; place = .assistant }
+            else if layout == .medium { sidebarShown = false }
+            else if place == .assistant { place = .chat }
+        }
     }
     /// From the conversation: slide to the item's place with just that item
     /// open; one step back returns to the chat.
@@ -167,7 +316,10 @@ final class AppModel {
     var assistantTab: AssistantTab = .watches // 目标 opens first
     var showSettings = false
     var showHostList = false
+    /// The status card behind the title bar's orb.
     var showHostSwitcher = false
+    /// The model / thinking-depth picker (opened from the status card).
+    var showModelPicker = false
     var showPairingSheet = false
     /// The 「它」 header's name-and-form editor.
     var showIdentityEditor = false
@@ -181,6 +333,14 @@ final class AppModel {
         case replace    // 「换一台电脑配对」: the current one is dropped once the new one is in
     }
     var pairingIntent: PairingIntent = .first
+
+    /// 设置 (⌘, on the Mac): 「它」 with its settings page open.
+    func openSettings() {
+        assistantRoot = .tabs
+        openTaskID = nil
+        showSettings = true
+        showAssistant = true
+    }
 
     /// Opens the pairing screen for a given purpose.
     func startPairing(_ intent: PairingIntent) {
@@ -216,6 +376,9 @@ final class AppModel {
             if !list.isEmpty { openPaired(list) }
         }
         applyLaunchScreen()
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "orbSine") { OrbInput.shared.startSyntheticVoice() }
+        #endif
         if let link = launch.pairLink, let url = URL(string: link) { handle(url: url) }
     }
 
@@ -263,6 +426,9 @@ final class AppModel {
         saveMeta()
     }
 
+    /// The assistant's color, which is also the app's theme while it's on
+    /// screen. It lives on its computer (settings.color), so every phone and
+    /// Mac shows the same; `meta.themes` caches it for the next launch.
     func theme(for id: String) -> AppTheme {
         meta.themes[id].flatMap(AppTheme.init(rawValue:)) ?? .default
     }
@@ -270,9 +436,32 @@ final class AppModel {
     /// The whole app takes the current assistant's color.
     var currentTheme: AppTheme { activeHostID.map(theme(for:)) ?? .default }
 
-    func setTheme(_ theme: AppTheme, for id: String) {
+    /// The owner picked a color: it shows right away and is saved on the
+    /// computer. If the computer can't take it, the color it has comes back.
+    func setTheme(_ theme: AppTheme, for id: String) async throws {
+        let before = meta.themes[id]
         meta.themes[id] = theme.rawValue
         saveMeta()
+        guard let store = stores[id], store.settings?.color != theme.rawValue else { return }
+        do {
+            try await store.updateSettings(patch: .object(["color": .string(theme.rawValue)]))
+        } catch {
+            meta.themes[id] = AppTheme(rawValue: store.settings?.color ?? "")?.rawValue ?? before
+            saveMeta()
+            throw error
+        }
+    }
+
+    /// The computer's color wins. A computer that has none yet gets the one
+    /// this device picked before colors were kept there (once).
+    private func syncTheme(_ id: String, _ settings: HostSettings) {
+        if let t = AppTheme(rawValue: settings.color) {
+            guard meta.themes[id] != t.rawValue else { return }
+            meta.themes[id] = t.rawValue
+            saveMeta()
+        } else if settings.color.isEmpty, let local = meta.themes[id], let store = stores[id] {
+            Task { try? await store.updateSettings(patch: .object(["color": .string(local)])) }
+        }
     }
 
     /// The home-screen icon follows the first assistant (switching icons
@@ -339,6 +528,7 @@ final class AppModel {
     private func makeStore(_ transport: any HostTransport, id: String) -> AppStore {
         let s = AppStore(transport: transport, clientKind: clientKind, clientVersion: clientVersion)
         s.onSynced = { [weak self] seq in self?.didSync(id, seq: seq) }
+        s.onSettings = { [weak self] settings in self?.syncTheme(id, settings) }
         return s
     }
 
@@ -360,11 +550,11 @@ final class AppModel {
         let names = ["我的 MacBook", "云端"]
         for i in 0..<max(1, launch.demoHosts) {
             let id = "demo-\(i + 1)"
-            let identities = [("帕帕", "drop"), ("小云", "orb")]
-            let who = i < identities.count ? identities[i] : ("PaloAlly", "")
+            let identities = [("Palo", "magenta"), ("小云", "blue")]
+            let who = i < identities.count ? identities[i] : ("Palo", "")
             let naming = launch.screen == "naming" && i == 0
             let host = DemoHost(speed: 1, hostName: i < names.count ? names[i] : "电脑 \(i + 1)",
-                                assistantName: naming ? "" : who.0, avatar: naming ? "" : who.1)
+                                assistantName: naming ? "" : who.0, color: naming ? "" : who.1)
             demoHosts[id] = host
             let s = makeStore(host.transport, id: id)
             stores[id] = s

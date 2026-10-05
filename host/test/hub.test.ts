@@ -903,19 +903,20 @@ describe("Hub: 「试试」 suggestions", () => {
 });
 
 describe("Hub: the assistant's identity", () => {
-  test("name and avatar live in settings; the name is written into soul.md", async () => {
+  test("name and color live in settings; the name is written into soul.md", async () => {
     const { hub, events, paths } = makeHub();
     const { readFileSync } = await import("node:fs");
     const { setSoulName } = await import("../src/home.ts");
     expect(hub.config.settings.assistantName).toBe("");
-    expect(hub.config.settings.avatar).toBe("");
+    expect(hub.config.settings.color).toBe("");
     writeFileSync(paths.soulMd, "# 助理的性格\n\n- 名字：PaloAlly（主人可以改）\n- 温暖、靠谱。\n");
-    const next = hub.updateSettings({ assistantName: "  帕帕\n", avatar: "petal" });
+    const next = hub.updateSettings({ assistantName: "  帕帕\n", color: "teal", avatar: "petal" } as any);
     expect(next.assistantName).toBe("帕帕");
-    expect(next.avatar).toBe("petal");
+    expect(next.color).toBe("teal");
+    expect((next as any).avatar).toBeUndefined(); // old apps' form id is dropped quietly
     expect(readFileSync(paths.soulMd, "utf8")).toBe("# 助理的性格\n\n- 名字：帕帕\n- 温暖、靠谱。\n");
     expect(events.some((e) => e.event === "settings.updated" && e.data.assistantName === "帕帕")).toBe(true);
-    expect(() => hub.updateSettings({ avatar: "dragon" })).toThrow();
+    expect(() => hub.updateSettings({ color: "chartreuse" })).toThrow();
     expect(() => hub.updateSettings({ assistantName: "很".repeat(21) })).toThrow();
     // a soul.md without a name line gets one under its heading; the rest stays
     writeFileSync(paths.soulMd, "# 性格\n\n说话简短。\n");

@@ -83,13 +83,13 @@ private struct AssistantHeader: View {
         VStack(spacing: 14) {
             Button { model.showIdentityEditor = true } label: {
                 VStack(spacing: 10) {
-                    AssistantAvatar(store.assistantAvatar, tint: model.currentTheme.color, active: store.assistantWorking)
-                        .frame(width: 84, height: 84)
+                    AssistantAvatar(tint: model.currentTheme.color, active: store.assistantWorking)
+                        .frame(width: 96, height: 96)
                     Text(store.assistantName).font(.title2.bold()).foregroundStyle(.primary)
                 }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(store.assistantName)，改名字和样子")
+            .accessibilityLabel("\(store.assistantName)，改名字和颜色")
 
             VStack(spacing: 4) {
                 Text(statusLine)

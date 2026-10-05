@@ -8,19 +8,32 @@ struct LibraryView: View {
     @State private var query = UserDefaults.standard.string(forKey: "libraryQuery") ?? ""
     @State private var hits: [ChatSearchHit] = []
     @State private var searching = false
+    @State private var searchActive = false
+    @FocusState private var fieldFocused: Bool
+    @Environment(\.placesAsColumns) private var asColumn
 
     private var trimmed: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
+    /// The Mac's window toolbar is shared by the conversation and the
+    /// inspector, and the system search drawer stretches across both — so in
+    /// the inspector there the field sits at the top of the column instead.
+    private var fieldInColumn: Bool { asColumn && UIDevice.current.userInterfaceIdiom == .mac }
+
     var body: some View {
-        List {
+        searchable(List {
             if trimmed.isEmpty {
                 artifactList
             } else {
                 searchResults
             }
-        }
+        })
         .navigationTitle("成果")
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索产出物和对话")
+        // ⌘F
+        .onChange(of: model.librarySearchRequested, initial: true) { _, requested in
+            guard requested else { return }
+            model.librarySearchRequested = false
+            if fieldInColumn { fieldFocused = true } else { searchActive = true }
+        }
         // Debounced: the conversation is searched on the computer.
         .task(id: trimmed) {
             guard !trimmed.isEmpty else { hits = []; return }
@@ -33,6 +46,34 @@ struct LibraryView: View {
         .refreshable { try? await store.refreshArtifacts() }
         .navigationDestination(for: String.self) { id in
             ArtifactDetailView(artifactID: id)
+        }
+    }
+
+    @ViewBuilder private func searchable(_ list: some View) -> some View {
+        if fieldInColumn {
+            list.safeAreaInset(edge: .top, spacing: 0) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("搜索产出物和对话", text: $query)
+                        .textFieldStyle(.plain)
+                        .focused($fieldFocused)
+                    if !query.isEmpty {
+                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.tertiary)
+                            .accessibilityLabel("清除")
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Color(.tertiarySystemFill), in: .capsule)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Color(.systemGroupedBackground))
+            }
+        } else {
+            list.searchable(text: $query, isPresented: $searchActive,
+                            placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索产出物和对话")
         }
     }
 

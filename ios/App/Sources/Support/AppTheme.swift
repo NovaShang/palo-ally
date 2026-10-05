@@ -2,8 +2,10 @@ import PaloAllyKit
 import SwiftUI
 import UIKit
 
-/// The theme color. Each assistant (paired computer) has its own, picked in
-/// 设置 → 主题色 or 我的助理; the app takes the current assistant's color.
+/// The theme color, which is also the assistant's color — the main thing
+/// the owner makes their own. Each assistant (paired computer) has one, kept
+/// on that computer (settings.color) and picked when naming it, in 设置 →
+/// 主题色 or in 我的助理; the app takes the current assistant's color.
 /// 洋红 is the default — the owner's color (#D156A7). The app icon follows
 /// the first assistant (alternate icons rendered by scripts/make_icons.py;
 /// keep the light colors there in sync).
@@ -65,6 +67,49 @@ enum AppTheme: String, CaseIterable, Identifiable {
         app.setAlternateIconName(theme.iconName) { error in
             if let error { debugLog("icon switch failed: \(error.localizedDescription)") }
         }
+    }
+}
+
+/// The color swatches (naming sheet, 设置 → 主题色): a plain circle per
+/// preset, ringed with a check on the current one.
+struct ThemeSwatches: View {
+    @Binding var selection: AppTheme
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 60), spacing: 8)], spacing: 14) {
+            ForEach(AppTheme.allCases) { t in
+                let selected = t == selection
+                Button {
+                    withAnimation(.snappy) { selection = t }
+                } label: {
+                    VStack(spacing: 6) {
+                        Circle()
+                            .fill(t.color.gradient)
+                            .frame(width: 36, height: 36)
+                            .overlay {
+                                if selected {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .transition(.scale.combined(with: .opacity))
+                                }
+                            }
+                            .padding(4)
+                            .overlay(Circle().strokeBorder(t.color, lineWidth: selected ? 2 : 0))
+                        Text(t.name)
+                            .font(.caption)
+                            .foregroundStyle(selected ? .primary : .secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(t.name)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(.vertical, 6)
+        .sensoryFeedback(.selection, trigger: selection)
     }
 }
 

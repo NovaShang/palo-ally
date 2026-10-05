@@ -2,11 +2,13 @@ import PaloAllyKit
 import SwiftUI
 
 struct ChatView: View {
+    /// The conversation never gets wider than this (large screens).
+    static let readableWidth: CGFloat = 760
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     @Environment(VoiceInputController.self) private var voice
-    @State private var draft = ""
-    @State private var showModelPicker = false
+    /// Kept by MainScreen so it survives the layout switching containers.
+    @Environment(\.chatDraft) private var draft
     /// Following the live bottom (streaming keeps the newest text in view).
     /// Detached as soon as the reader drags up even a little; re-attached
     /// when they come back near the bottom or tap the jump button.
@@ -16,6 +18,7 @@ struct ChatView: View {
     @State private var distanceFromBottom: CGFloat = 0
     /// A message just jumped to from search: briefly tinted so the eye lands on it.
     @State private var highlightedID: String?
+    @Environment(\.placesAsColumns) private var asColumn
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -79,8 +82,12 @@ struct ChatView: View {
 
                     Color.clear.frame(height: 1).id("bottom")
                 }
-                .padding(.horizontal, 16)
+                // Beside a sidebar or inspector the column gets roomier margins.
+                .padding(.horizontal, asColumn ? 28 : 16)
                 .padding(.vertical, 12)
+                // Wide windows: a comfortable line length, centred.
+                .frame(maxWidth: Self.readableWidth)
+                .frame(maxWidth: .infinity)
             }
             // Opens at the bottom; growth keeps the bottom in place only while
             // pinned — detached, the offset from the top stays put so the
@@ -144,6 +151,17 @@ struct ChatView: View {
                     withAnimation(.easeOut(duration: 0.6)) { if highlightedID == id { highlightedID = nil } }
                 }
             }
+            // The first page of history can land after the list appeared, and
+            // a layout switch rewraps every line: either way, while following
+            // the live end, settle on it again once the rows have their sizes.
+            .onChange(of: store.messages.isEmpty, initial: true) { _, empty in
+                guard !empty, pinned else { return }
+                settleAtBottom(proxy)
+            }
+            .onChange(of: model.layout) {
+                guard pinned else { return }
+                settleAtBottom(proxy)
+            }
             .onChange(of: store.messages.last?.id) {
                 // Sending always returns to the live bottom.
                 if store.messages.last?.role == .user { pinned = true }
@@ -183,144 +201,90 @@ struct ChatView: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            StatusBanner()
+            VStack(spacing: 0) { StatusBanner() }
+                .frame(maxWidth: .infinity)
+                // Mac: the window toolbar spans every column, and the sidebar
+                // and inspector beside keep their own color under it. The
+                // conversation does the same instead of a blurred band of text.
+                .background(Platform.barInWindowToolbar ? Color(.systemBackground) : .clear,
+                            ignoresSafeAreaEdges: .top)
         }
+        .scrollEdgeEffectHidden(Platform.barInWindowToolbar, for: .top)
         // While holding to talk, the screen's background rises from the
         // bottom so the live transcript reads cleanly (same hold-driven motion).
         .overlay {
             if voice.panelMounted { VoiceScrim(presence: voice.presence) }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            ComposerView(draft: $draft) { text, images, files in
+            ComposerView(draft: draft) { text, images, files in
                 store.send(text, images: images, files: files)
             }
         }
-        .navigationTitle("PaloAlly")
+        .navigationTitle(store.assistantName)
         .navigationBarTitleDisplayMode(.inline)
         // Immersive, the iOS 26 look: the system bar stays but without its
         // material backdrop (iOS 27 gives the bar one by default); the
-        // conversation runs under three floating glass pieces (two round
-        // buttons, the title capsule) with only the soft scroll-edge fade,
-        // which keeps text from colliding with the clock and the title.
+        // conversation runs under three floating pieces (two round buttons,
+        // the orb) with only the soft scroll-edge fade, which keeps text from
+        // colliding with the clock and the orb.
         .toolbarBackground(.hidden, for: .navigationBar)
         .scrollEdgeEffectStyle(.soft, for: .top)
+        // The Mac shows the same three in the window's own toolbar (MacToolbar).
+        .toolbar(Platform.barInWindowToolbar ? .hidden : .automatic, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                titleCapsule
-            }
-            .sharedBackgroundVisibility(.hidden)
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    model.showAssistant = true
-                } label: {
-                    // Its face: still when idle, breathing while it works.
-                    AssistantAvatar(store.assistantAvatar, tint: model.currentTheme.color, active: store.assistantWorking)
-                        .frame(width: 26, height: 26)
-                }
-                .tint(.primary) // toolbar glyphs stay neutral; the theme color is for meaning
-                .badge(store.pendingApprovals.count)
-                .accessibilityLabel("\(store.assistantName)的详情")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    model.showLibrary = true
-                } label: {
-                    Image(systemName: "books.vertical")
-                }
-                .tint(.primary)
-                .accessibilityLabel("资料库")
-            }
-        }
-    }
-
-    /// The agent's live status: line 1 is what it's doing (needs you >
-    /// working > background tasks > idle; connection trouble first), line 2
-    /// the model and thinking depth. Assistants are told apart by their color,
-    /// not a name. Tapping opens the popover: running tasks, assistants (2+),
-    /// model / thinking.
-    @ViewBuilder private var titleCapsule: some View {
-        @Bindable var model = model
-        let line = statusLine
-        let label = VStack(spacing: 1) {
-            HStack(spacing: 6) {
-                StatusDot(kind: line.kind, rejected: store.connection.isRejected)
-                Text(line.text)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(line.kind == .needsYou ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.primary))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .contentTransition(.opacity)
-                Image(systemName: "chevron.down")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            if !modelLine.isEmpty {
-                Text(modelLine)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .contentTransition(.opacity)
-            }
-        }
-        .frame(maxWidth: 230)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 5)
-        .frame(minHeight: 44)
-        .animation(.snappy, value: line)
-        .animation(.snappy, value: modelLine)
-        .overlay(alignment: .topTrailing) {
-            if model.hasSeveralHosts && model.othersNeedAttention {
-                Circle().fill(.red).frame(width: 8, height: 8).offset(x: -6, y: 4)
-                    .accessibilityLabel("别的助理有新消息")
-            }
-        }
-
-        Button { model.showHostSwitcher = true } label: { label }
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .accessibilityLabel("\(line.text)\(modelLine.isEmpty ? "" : "，\(modelLine)")")
-            .accessibilityHint(model.hasSeveralHosts ? "看在做的事、切换助理或换模型" : "看在做的事或换模型")
-            .popover(isPresented: $model.showHostSwitcher, arrowEdge: .top) {
-                HostSwitcher(
-                    openModelPicker: {
-                        // Let the popover finish closing before the sheet comes up.
-                        Task { @MainActor in
-                            try? await Task.sleep(for: .milliseconds(350))
-                            showModelPicker = true
-                        }
-                    },
-                    openTask: { id in
-                        Task { @MainActor in
-                            try? await Task.sleep(for: .milliseconds(350))
-                            model.openTask(id)
-                        }
+            if !Platform.barInWindowToolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        model.toggleAssistant() // phones: slide to 「它」; large screens: the sidebar
+                    } label: {
+                        Image(systemName: "sidebar.left")
                     }
-                )
-                // Presented outside this view's hierarchy on Mac: pass what it reads.
-                .environment(model)
-                .environment(store)
-                .presentationCompactAdaptation(.popover)
+                    .tint(.primary) // toolbar glyphs stay neutral; the theme color is for meaning
+                    .accessibilityLabel("「它」")
+                }
+                ToolbarItem(placement: .principal) {
+                    titleOrb
+                }
+                .sharedBackgroundVisibility(.hidden)
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        model.toggleLibrary() // phones: slide to 成果; large screens: the inspector
+                    } label: {
+                        Image(systemName: "books.vertical")
+                    }
+                    .tint(.primary)
+                    .accessibilityLabel("成果")
+                }
             }
-            .sheet(isPresented: $showModelPicker) { ModelPickerSheet().environment(model).environment(store) }
+        }
+        .sheet(isPresented: Binding(get: { model.showModelPicker }, set: { model.showModelPicker = $0 })) {
+            ModelPickerSheet().environment(model).environment(store)
+        }
     }
 
-    private var statusLine: AgentStatusLine {
-        let online = store.connection.isOnline
-        return AgentStatusLine.make(
-            offlineText: online ? nil : Copy.connectionShort(store.connection),
-            pendingApprovals: store.pendingApprovals.count,
-            busy: store.isBusy,
-            activity: store.status?.activity,
-            tasks: store.tasks
-        )
+    /// The orb in the middle of the bar; tapping it opens the status card.
+    @ViewBuilder private var titleOrb: some View {
+        @Bindable var model = model
+        TitleOrb { model.showHostSwitcher = true }
+            .popover(isPresented: $model.showHostSwitcher, arrowEdge: .top) {
+                StatusCard()
+                    // Presented outside this view's hierarchy on some platforms: pass what it reads.
+                    .environment(model)
+                    .environment(store)
+                    .presentationCompactAdaptation(.popover)
+            }
     }
 
-    /// 「Opus 5.5 · 思考：中」; the thinking part only when the model has one.
-    private var modelLine: String {
-        let name = ModelName.short(store.status?.model ?? store.modelInfo?.model ?? "")
-        guard !name.isEmpty else { return "" }
-        guard let effort = store.status?.effort, !effort.isEmpty else { return name }
-        return "\(name) · 思考：\(EffortName.label(effort))"
+    /// Back to the newest message now and once more after the lazy rows have
+    /// measured themselves (their estimated heights put "the end" too high).
+    private func settleAtBottom(_ proxy: ScrollViewProxy) {
+        Task { @MainActor in
+            for delay in [30, 250] {
+                try? await Task.sleep(for: .milliseconds(delay))
+                guard pinned, !userScrolling else { return }
+                proxy.scrollTo("bottom", anchor: .bottom)
+            }
+        }
     }
 
     /// Shown whenever the host is working (not just right after a send).
@@ -435,33 +399,4 @@ struct EmptyChatHint: View {
         .environment(model)
         .environment(model.store!)
         .environment(VoiceInputController())
-}
-
-/// The capsule's state dot: green idle, orange when the owner is needed, a
-/// softly pulsing theme dot while working, gray/red when not connected.
-private struct StatusDot: View {
-    let kind: AgentStatusLine.Kind
-    let rejected: Bool
-    @State private var pulse = false
-
-    var body: some View {
-        let live = kind == .working || kind == .tasks
-        Circle()
-            .fill(color)
-            .frame(width: 7, height: 7)
-            .opacity(live && pulse ? 0.35 : 1)
-            .animation(live ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true) : .default, value: pulse)
-            .onAppear { pulse = live }
-            .onChange(of: live) { _, now in pulse = now }
-            .accessibilityHidden(true)
-    }
-
-    private var color: Color {
-        switch kind {
-        case .offline: rejected ? .red : .secondary
-        case .needsYou: .orange
-        case .working, .tasks: .accentColor
-        case .idle: .green
-        }
-    }
 }

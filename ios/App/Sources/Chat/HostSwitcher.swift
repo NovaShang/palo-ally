@@ -1,19 +1,19 @@
 import PaloAllyKit
 import SwiftUI
 
-/// The popover behind the title capsule (the agent's status): what's being
-/// done right now (running tasks, those waiting on the owner first; tap one
-/// for its detail), then — with several paired computers — the assistants
-/// (color, name, state, unread, pending approvals), then the model and
-/// thinking depth (the one place to change them), and 添加 / 管理 for 2+.
-/// With one computer and nothing running it's only the model.
-struct HostSwitcher: View {
+/// The card behind the title bar's orb: what it's doing right now (and 停下
+/// while it works), the things running in the background (tap one for its
+/// detail), the model and thinking depth (the one place to change them),
+/// and — only with several paired computers — the assistants to switch
+/// between, with 添加 / 管理. With one computer and nothing running it's the
+/// status line and the model.
+struct StatusCard: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
-    /// Opens the model picker (presented by the chat screen, not the popover).
-    let openModelPicker: () -> Void
-    /// Opens a task's detail.
-    let openTask: (String) -> Void
+    /// 停下 asks once more in place (no dialog inside a popover).
+    @State private var confirmingStop = false
+    @State private var stopping = false
+    @State private var error: String?
 
     /// Waiting on the owner first, then the most recently updated.
     private var activeTasks: [AllyTask] {
@@ -25,15 +25,12 @@ struct HostSwitcher: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
+            header
             if !activeTasks.isEmpty {
+                Divider().padding(.vertical, 6)
                 ForEach(activeTasks.prefix(5)) { task in
-                    Button {
-                        model.showHostSwitcher = false
-                        openTask(task.id)
-                    } label: {
-                        RunningTaskRow(task: task)
-                    }
-                    .buttonStyle(.plain)
+                    Button { open { model.openTask(task.id) } } label: { RunningTaskRow(task: task) }
+                        .buttonStyle(.plain)
                 }
                 if activeTasks.count > 5 {
                     Text("还有 \(activeTasks.count - 5) 件")
@@ -42,9 +39,17 @@ struct HostSwitcher: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 4)
                 }
-                Divider().padding(.vertical, 6)
             }
+            Divider().padding(.vertical, 6)
+            ModelRow { open { model.showModelPicker = true } }
+            // Most people have one computer: then there's nothing to switch.
             if model.hasSeveralHosts {
+                Divider().padding(.vertical, 6)
+                Text("切换助理")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 2)
                 ForEach(model.switcherOrder, id: \.self) { id in
                     Button {
                         model.showHostSwitcher = false
@@ -54,20 +59,77 @@ struct HostSwitcher: View {
                     }
                     .buttonStyle(.plain)
                 }
-                Divider().padding(.vertical, 6)
-            }
-            ModelRows(open: {
-                model.showHostSwitcher = false
-                openModelPicker()
-            })
-            // Most people have one computer: then this is just the model.
-            if model.hasSeveralHosts {
-                Divider().padding(.vertical, 6)
-                manageRow
+                manageRow.padding(.top, 4)
             }
         }
         .padding(8)
-        .frame(width: 300)
+        .frame(width: 320)
+        .animation(.snappy, value: store.isBusy)
+    }
+
+    /// Closes the card, then does what was picked once it has gone (a sheet
+    /// or a slide shouldn't start under a closing popover).
+    private func open(_ then: @escaping @MainActor () -> Void) {
+        model.showHostSwitcher = false
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            then()
+        }
+    }
+
+    private var header: some View {
+        let line = store.agentStatusLine
+        return HStack(spacing: 12) {
+            AssistantAvatar(tint: model.currentTheme.color, active: store.assistantWorking)
+                .frame(width: 36, height: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(store.assistantName).font(.headline).lineLimit(1)
+                Text(line.text)
+                    .font(.subheadline)
+                    .foregroundStyle(line.kind == .needsYou ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+                    .lineLimit(2)
+                    .contentTransition(.opacity)
+                if let error {
+                    Text(error).font(.caption).foregroundStyle(.red).lineLimit(2)
+                }
+            }
+            Spacer(minLength: 8)
+            if store.isBusy { stopButton }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+    }
+
+    private var stopButton: some View {
+        Button {
+            guard confirmingStop else {
+                confirmingStop = true
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(3))
+                    confirmingStop = false
+                }
+                return
+            }
+            stopping = true
+            error = nil
+            Task { @MainActor in
+                do { try await store.stop() } catch { self.error = "没停下：\(Friendly.message(error))" }
+                stopping = false
+                confirmingStop = false
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "stop.fill").font(.caption2).foregroundStyle(.red)
+                Text(confirmingStop ? "确定停下？" : "停下").font(.footnote.weight(.medium))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.fill.tertiary, in: .capsule)
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .disabled(stopping || !store.connection.isOnline)
+        .accessibilityHint("正在办的事会中断")
     }
 
     private var manageRow: some View {
@@ -97,32 +159,16 @@ struct HostSwitcher: View {
     }
 }
 
-/// 「模型  Opus 5.5 ›」 and 「思考  中 ›」 for the current assistant; either
-/// opens the picker. The thinking row only shows when the model has levels.
-private struct ModelRows: View {
+/// 「模型  Opus 5.5 · 思考：中 ›」 for the current assistant; opens the picker.
+private struct ModelRow: View {
     @Environment(AppStore.self) private var store
     let open: () -> Void
 
-    private var efforts: [String] {
-        guard let info = store.modelInfo else { return [] }
-        let selected = info.setting ?? info.models.first?.value
-        return info.models.first(where: { $0.value == selected })?.efforts ?? []
-    }
-
     var body: some View {
-        VStack(spacing: 0) {
-            row("模型", ModelName.short(store.status?.model ?? store.modelInfo?.model ?? ""))
-            if !efforts.isEmpty || store.status?.effort != nil {
-                row("思考", EffortName.label(store.status?.effort))
-            }
-        }
-        .task { try? await store.loadModels() }
-    }
-
-    private func row(_ title: String, _ value: String) -> some View {
+        let value = store.modelLine
         Button(action: open) {
             HStack(spacing: 6) {
-                Text(title)
+                Text("模型")
                 Spacer(minLength: 12)
                 Text(value.isEmpty ? "默认" : value).foregroundStyle(.secondary).lineLimit(1)
                 Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
@@ -133,7 +179,8 @@ private struct ModelRows: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(title)：\(value.isEmpty ? "默认" : value)，点一下更换")
+        .task { try? await store.loadModels() }
+        .accessibilityLabel("模型：\(value.isEmpty ? "默认" : value)，点一下更换")
     }
 }
 
@@ -147,7 +194,7 @@ private struct HostSwitcherRow: View {
         let unread = model.unreadCount(id)
         let pending = model.pendingCount(id)
         HStack(spacing: 12) {
-            AssistantAvatar(store?.assistantAvatar ?? "", tint: model.theme(for: id).color)
+            AssistantAvatar(tint: model.theme(for: id).color)
                 .frame(width: 30, height: 30)
                 .overlay(alignment: .bottomTrailing) {
                     if current {
