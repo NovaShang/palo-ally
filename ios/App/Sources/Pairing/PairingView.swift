@@ -14,8 +14,11 @@ struct PairingView: View {
     @State private var working = false
     @State private var error: String?
     /// A link that arrived from outside (URL open / launch option) while this
-    /// device is already paired: ask before switching computers.
-    @State private var confirmSwitch = false
+    /// device is already paired: ask before adding another computer.
+    @State private var confirmAdd = false
+
+    /// Already paired: this screen adds another computer (another assistant).
+    private var adding: Bool { model.mode == .paired }
 
     var body: some View {
         NavigationStack {
@@ -27,9 +30,11 @@ struct PairingView: View {
                             .foregroundStyle(.primary)
                             .frame(width: 100, height: 100)
                             .glassEffect(.regular, in: .circle)
-                        Text("你好，我是 PaloAlly")
+                        Text(adding ? "添加一台电脑" : "你好，我是 PaloAlly")
                             .font(.title.bold())
-                        Text("住在你电脑上的私人助理。把这台设备和电脑连起来，随时找我办事。")
+                        Text(adding
+                             ? "每台电脑上是一个独立的助理。连上之后，点对话顶部的名字就能切换。"
+                             : "住在你电脑上的私人助理。把这台设备和电脑连起来，随时找我办事。")
                             .font(.body)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -127,33 +132,28 @@ struct PairingView: View {
             .onAppear(perform: takePendingLink)
             // A link can also arrive while this screen is already showing.
             .onChange(of: model.pendingPairingLink) { takePendingLink() }
-            .confirmationDialog(switchTitle, isPresented: $confirmSwitch, titleVisibility: .visible) {
-                Button("换过去") { submit() }
-                Button("不换", role: .cancel) {
+            .confirmationDialog("添加这台电脑？", isPresented: $confirmAdd, titleVisibility: .visible) {
+                Button("添加") { submit() }
+                Button("不用", role: .cancel) {
                     linkText = ""
                     if isSheet { dismiss() }
                 }
             } message: {
-                Text("收到了一个配对链接。换过去之后，这台设备就不再连「\(currentHostLabel)」了。")
+                Text("收到了一个配对链接。添加后它是一个新的助理，「\(currentHostLabel)」也照常保留；点对话顶部的名字切换。")
             }
         }
     }
 
     private var currentHostLabel: String {
-        let name = model.store?.hostName ?? ""
-        if !name.isEmpty { return name }
-        let label = model.pairedHost?.hostLabel ?? ""
-        return label.isEmpty ? "现在的电脑" : label
+        model.activeHostID.map(model.displayName) ?? "现在的电脑"
     }
-
-    private var switchTitle: String { "从「\(currentHostLabel)」换到另一台电脑？" }
 
     private func takePendingLink() {
         guard let pending = model.pendingPairingLink else { return }
         model.pendingPairingLink = nil
         linkText = pending
-        if model.mode == .paired {
-            confirmSwitch = true
+        if adding {
+            confirmAdd = true
         } else {
             submit()
         }

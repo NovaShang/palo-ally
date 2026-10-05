@@ -5,13 +5,18 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        if let store = model.store {
-            MainScreen()
-                .environment(store)
-                .id(ObjectIdentifier(store))
-        } else {
-            PairingView(isSheet: false)
+        Group {
+            if let store = model.store {
+                MainScreen()
+                    .environment(store)
+                    .id(ObjectIdentifier(store))
+            } else {
+                PairingView(isSheet: false)
+            }
         }
+        // Each assistant has its own color; switching re-tints the whole app.
+        .appTheme(model.currentTheme)
+        .animation(.snappy, value: model.activeHostID)
     }
 }
 
@@ -38,7 +43,10 @@ struct MainScreen: View {
         }
         .onAppear {
             if model.launch.screen == "voice" { voice.showPreview("你好，你好，你好，我正在说话") }
+            model.markSeen()
         }
+        // Everything on screen counts as seen (drives the other assistants' unread dots).
+        .onChange(of: store.lastSeq) { model.markSeen() }
         .sheet(isPresented: $model.showLibrary) {
             NavigationStack(path: $model.libraryPath) {
                 LibraryView()

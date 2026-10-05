@@ -8,12 +8,10 @@ import UserNotifications
 struct PaloAllyApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
-    @AppStorage(AppTheme.storageKey) private var theme = AppTheme.default
 
     var body: some Scene {
         WindowGroup {
             RootView()
-                .appTheme(theme)
                 .environment(appDelegate.model)
                 .environment(\.locale, Locale(identifier: "zh-Hans"))
                 .onOpenURL { appDelegate.model.handle(url: $0) }

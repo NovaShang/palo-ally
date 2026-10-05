@@ -51,6 +51,9 @@ public final class AppStore {
     /// live; returns false when it can't right now (e.g. app not active).
     /// Set by the app; tests inject their own.
     @ObservationIgnored public var clipboardWriter: (@MainActor (String) -> Bool)?
+    /// Called with `lastSeq` after every completed sync (the app uses it to
+    /// baseline what the owner has seen on hosts they aren't looking at).
+    @ObservationIgnored public var onSynced: (@MainActor (Int64) -> Void)?
     /// Clipboard messages already copied on this device (local state).
     public private(set) var copiedClipboardIDs: Set<String> = []
 
@@ -243,11 +246,13 @@ public final class AppStore {
             hasOlderMessages = (r.messages.map(\.seq).min() ?? 1) > 1
             hasSynced = true
             afterSync(r)
+            onSynced?(lastSeq)
             return false
         }
         for m in r.messages { upsert(m) }
         hasSynced = true
         afterSync(r)
+        defer { onSynced?(lastSeq) }
         if r.messages.count >= SyncResult.pageLimit && maxSeq > lastSeq {
             lastSeq = maxSeq
             return maxSeq < r.seq
@@ -448,6 +453,14 @@ public final class AppStore {
     // MARK: derived
 
     public var pendingApprovals: [Approval] { approvals.filter(\.isPending) }
+
+    /// What the owner hasn't seen: replies, notices and cards newer than `seq`
+    /// (their own messages don't count).
+    public nonisolated static func unreadCount(_ messages: [ChatMessage], after seq: Int64) -> Int {
+        messages.reduce(0) { $0 + ($1.seq > seq && $1.role != .user ? 1 : 0) }
+    }
+
+    public func unreadCount(after seq: Int64) -> Int { Self.unreadCount(messages, after: seq) }
 
     public func approval(id: String) -> Approval? { approvals.first { $0.id == id } }
     public func task(id: String) -> AllyTask? { tasks.first { $0.id == id } }

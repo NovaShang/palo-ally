@@ -68,6 +68,7 @@ relay/       不新写：复用 ~/code/bento/relay（bento-relay-acp，relay.ben
   - 配对码由 host 发 control `pair.open` 拿到；host 展示二维码 / 链接：
     `paloally://pair?relay=<url>&daemon=<daemon_id>&code=<6位>&hostkey=<host Ed25519 pub, base64url>`
 - **本地**：unix socket，每行一个 JSON（即下面 5.3 的明文消息），无加密。
+- **多台电脑（客户端侧）**：一个客户端可以配对多台 host（PRD §6.9）。Keychain 里存 `paired-hosts`（`PairedHost` 的 JSON 数组，按主人排序；旧版单个 `paired-host` 首次加载时迁移进去）。每台 host 一条独立的 relay tunnel + 一个 `AppStore`；前台时全部连接，当前那台渲染界面，其余的只用来算未读（本地记每台的 `lastSeenSeq`，首次同步时以当时的 seq 为基线）和待确认数。名字、颜色、已读位置、当前是哪台存在 UserDefaults（`hostMeta`，演示模式用 `hostMeta.demo`）。设备身份全局一把；每台 host 在配对时各自分配 `device_id`。推送 payload 带 `hostId`（= host 的 daemon id），客户端据此切换。
 
 ### 5.2 E2E（每条 relay stream）
 

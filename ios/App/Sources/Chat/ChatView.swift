@@ -156,21 +156,7 @@ struct ChatView: View {
         .scrollEdgeEffectStyle(.soft, for: .top)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                VStack(spacing: 0) {
-                    Text("PaloAlly").font(.headline)
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(store.connection.isOnline ? Color.green : Color.secondary)
-                            .frame(width: 6, height: 6)
-                        Text(subtitle)
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 5)
-                .frame(minHeight: 44)
-                .glassEffect(.regular, in: .capsule)
+                titleCapsule
             }
             .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .topBarLeading) {
@@ -192,6 +178,55 @@ struct ChatView: View {
                 .tint(.primary)
                 .accessibilityLabel("资料库")
             }
+        }
+    }
+
+    /// The current assistant's name and state. With several assistants it's
+    /// the switcher (a dot when another one has something new); with one it's
+    /// just the title, as before.
+    @ViewBuilder private var titleCapsule: some View {
+        @Bindable var model = model
+        let label = VStack(spacing: 0) {
+            HStack(spacing: 4) {
+                Text(model.hasSeveralHosts ? model.displayName(model.activeHostID ?? "") : "PaloAlly")
+                    .font(.headline)
+                    .lineLimit(1)
+                if model.hasSeveralHosts {
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(store.connection.isOnline ? Color.green : Color.secondary)
+                    .frame(width: 6, height: 6)
+                Text(subtitle)
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 5)
+        .frame(minHeight: 44)
+        .overlay(alignment: .topTrailing) {
+            if model.hasSeveralHosts && model.othersNeedAttention {
+                Circle().fill(.red).frame(width: 8, height: 8).offset(x: -6, y: 4)
+                    .accessibilityLabel("别的助理有新消息")
+            }
+        }
+
+        if model.hasSeveralHosts {
+            Button { model.showHostSwitcher = true } label: { label }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: .capsule)
+                .accessibilityLabel("当前助理：\(model.displayName(model.activeHostID ?? ""))，点一下切换")
+                .popover(isPresented: $model.showHostSwitcher, arrowEdge: .top) {
+                    HostSwitcher()
+                        .presentationCompactAdaptation(.popover)
+                }
+        } else {
+            label.glassEffect(.regular, in: .capsule)
         }
     }
 

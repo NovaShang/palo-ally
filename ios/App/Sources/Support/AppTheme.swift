@@ -2,10 +2,11 @@ import PaloAllyKit
 import SwiftUI
 import UIKit
 
-/// The app's theme color, picked in 设置 → 主题色 (stored per device).
+/// The theme color. Each assistant (paired computer) has its own, picked in
+/// 设置 → 主题色 or 我的助理; the app takes the current assistant's color.
 /// 洋红 is the default — the owner's color (#D156A7). The app icon follows
-/// the choice (alternate icons rendered by scripts/make_icons.py; keep the
-/// light colors there in sync).
+/// the first assistant (alternate icons rendered by scripts/make_icons.py;
+/// keep the light colors there in sync).
 enum AppTheme: String, CaseIterable, Identifiable {
     case magenta, orchid, rose, berry, blue, violet, teal, orange, graphite
 
@@ -52,6 +53,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
     /// The alternate icon for this theme (nil = the primary AppIcon).
     var iconName: String? { self == .default ? nil : "AppIcon-\(rawValue)" }
 
+    /// The single app-wide choice older builds stored; migrated to the first assistant.
     static var current: AppTheme {
         AppTheme(rawValue: UserDefaults.standard.string(forKey: storageKey) ?? "") ?? .default
     }

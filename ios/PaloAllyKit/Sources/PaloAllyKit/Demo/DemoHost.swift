@@ -25,8 +25,13 @@ public actor DemoHost {
     public private(set) var lastParams: [String: JSONValue] = [:]
     private var idCounter = 0
 
-    public init(speed: Double = 1, seeded: Bool = true, autoConnect: Bool = true) {
+    /// The computer name the demo host reports (a second demo host shows the
+    /// assistant switcher).
+    public nonisolated let hostName: String
+
+    public init(speed: Double = 1, seeded: Bool = true, autoConnect: Bool = true, hostName: String = "我的 MacBook") {
         self.speed = speed
+        self.hostName = hostName
         let t = InMemoryTransport(autoConnect: autoConnect)
         self.transport = t
         if seeded {
@@ -121,7 +126,7 @@ public actor DemoHost {
     private func dispatch(_ method: String, _ p: JSONValue) async throws -> JSONValue {
         switch method {
         case RPCMethod.hello:
-            return ["hostName": "我的 MacBook", "version": .string(status.version), "status": try .from(status)]
+            return ["hostName": .string(hostName), "version": .string(status.version), "status": try .from(status)]
         case RPCMethod.sync:
             let since = p["sinceSeq"]?.doubleValue.map { Int64($0) }
             let msgs: [ChatMessage]

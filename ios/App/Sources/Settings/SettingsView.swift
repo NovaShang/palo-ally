@@ -10,14 +10,11 @@ struct SettingsView: View {
     @State private var quietEnd = WatchEditor.date(hour: 8, minute: 0)
     @State private var loaded = false
     @State private var error: String?
-    @State private var confirmUnpair = false
     @State private var showModels = false
-    @State private var unpairing = false
     /// Pending quiet-hours save; DatePickers fire on every tick of the wheel.
     @State private var quietSave: Task<Void, Never>?
-    @AppStorage(AppTheme.storageKey) private var theme = AppTheme.default
-
     var body: some View {
+        @Bindable var model = model
         Form {
             Section {
                 Button {
@@ -30,11 +27,13 @@ struct SettingsView: View {
             .sheet(isPresented: $showModels) { ModelPickerSheet().environment(store) }
 
             Section {
-                ThemePicker(selection: $theme)
+                ThemePicker(selection: themeBinding)
             } header: {
                 Text("主题色")
             } footer: {
-                Text("App 的颜色和桌面图标都会换成这个颜色。")
+                Text(model.hasSeveralHosts
+                     ? "这是「\(model.displayName(model.activeHostID ?? ""))」的颜色；每个助理一个颜色，切换时整个 App 跟着换。"
+                     : "App 的颜色和桌面图标都会换成这个颜色。")
             }
 
             Section {
@@ -55,24 +54,15 @@ struct SettingsView: View {
 
             Section("连接") {
                 LabeledContent("状态", value: Copy.connection(store.connection))
+                LabeledContent("电脑", value: model.mode == .demo ? "演示" : model.displayName(model.activeHostID ?? ""))
+                NavigationLink {
+                    HostsView()
+                } label: {
+                    LabeledContent("我的助理", value: "\(model.hostIDs.count) 个")
+                }
                 if model.mode == .demo {
-                    LabeledContent("电脑", value: "演示")
                     Button("退出演示，去配对") { model.exitDemo() }
                         .tint(.primary)
-                } else {
-                    LabeledContent("电脑", value: store.hostName.isEmpty ? (model.pairedHost?.hostLabel ?? "—") : store.hostName)
-                    Button("换一台电脑配对") { model.showPairingSheet = true }
-                        .tint(.primary)
-                    Button(unpairing ? "正在解除…" : "解除配对", role: .destructive) { confirmUnpair = true }
-                        .disabled(unpairing)
-                        .confirmationDialog("解除和这台电脑的配对？", isPresented: $confirmUnpair, titleVisibility: .visible) {
-                            Button("解除配对", role: .destructive) {
-                                unpairing = true
-                                Task { await model.unpair() }
-                            }
-                        } message: {
-                            Text("之后要重新扫码才能连回来。")
-                        }
                 }
             }
 
@@ -90,6 +80,7 @@ struct SettingsView: View {
         }
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $model.showHostList) { HostsView() }
         .onAppear(perform: prefill)
         .onChange(of: store.settings) { prefill() }
         .onChange(of: quietOn) { if loaded { quietSave?.cancel(); push(["quietHours": quietValue]) } }
@@ -98,13 +89,19 @@ struct SettingsView: View {
         .onDisappear {
             // The icon switches once on the way out, not on every swatch tap
             // (iOS confirms each switch with its own alert).
-            AppTheme.applyIcon(theme)
+            AppTheme.applyIcon(model.iconTheme)
             // Leaving mid-debounce: save right away.
             if let pending = quietSave, !pending.isCancelled {
                 pending.cancel()
                 push(["quietHours": quietValue])
             }
         }
+    }
+
+    /// The current assistant's color.
+    private var themeBinding: Binding<AppTheme> {
+        Binding(get: { model.currentTheme },
+                set: { t in if let id = model.activeHostID { model.setTheme(t, for: id) } })
     }
 
     private var quietValue: JSONValue {

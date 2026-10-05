@@ -12,11 +12,14 @@ let appLog = Logger(subsystem: "com.novashang.paloally", category: "app")
 ///   -demoScreen <name>   chat | library | assistant | settings | pairing | artifact | voice
 ///   -demoTab <name>      tasks | approvals | watches | memory
 ///   -pairLink <url>      start pairing with this paloally:// link (automation; skips the open-URL prompt)
+///   -demoHosts <n>       demo with n assistants (2 shows the switcher)
+///   -demoScreen hosts | switcher   设置 → 我的助理 / the assistant switcher open
 struct LaunchOptions {
     var demo: Bool
     var screen: String?
     var tab: String?
     var pairLink: String? = nil
+    var demoHosts: Int = 1
 
     static func current() -> LaunchOptions {
         let d = UserDefaults.standard
@@ -25,7 +28,8 @@ struct LaunchOptions {
             demo: d.bool(forKey: "demo") || env["PALOALLY_DEMO"] == "1",
             screen: d.string(forKey: "demoScreen"),
             tab: d.string(forKey: "demoTab"),
-            pairLink: d.string(forKey: "pairLink")
+            pairLink: d.string(forKey: "pairLink"),
+            demoHosts: max(1, d.integer(forKey: "demoHosts"))
         )
     }
 }
@@ -43,17 +47,31 @@ enum AssistantTab: String, CaseIterable, Hashable {
     }
 }
 
-/// Root app state: which mode we're in (unpaired / paired / demo) and the
-/// live store.
+/// Root app state: which mode we're in (unpaired / paired / demo), the
+/// computers this device is paired with, and which one the owner is looking at.
+///
+/// Each paired computer is an independent assistant (its own conversation,
+/// memory, tasks). All of them stay connected while the app is in the
+/// foreground so the switcher can show unread replies and pending approvals;
+/// the screen shows the current one.
 @MainActor
 @Observable
 final class AppModel {
     enum Mode: Equatable { case unpaired, paired, demo }
 
     private(set) var mode: Mode = .unpaired
-    private(set) var store: AppStore?
-    private(set) var pairedHost: PairedHost?
-    private(set) var demoHost: DemoHost?
+    /// Assistants in the owner's order (paired: daemon ids; demo: "demo-N").
+    private(set) var hostIDs: [String] = []
+    private(set) var hosts: [String: PairedHost] = [:]
+    private(set) var stores: [String: AppStore] = [:]
+    private var demoHosts: [String: DemoHost] = [:]
+    private(set) var activeHostID: String?
+    /// Owner-chosen names / colors and what they've seen, per assistant.
+    private var meta = HostMeta()
+
+    /// The current assistant's store (nil when nothing is paired).
+    var store: AppStore? { activeHostID.flatMap { stores[$0] } }
+    var pairedHost: PairedHost? { activeHostID.flatMap { hosts[$0] } }
 
     // Navigation state (also driven by launch options / notifications).
     /// The library is a temporary sheet over the conversation, not a peer screen.
@@ -61,6 +79,8 @@ final class AppModel {
     var showAssistant = false
     var assistantTab: AssistantTab = .tasks
     var showSettings = false
+    var showHostList = false
+    var showHostSwitcher = false
     var showPairingSheet = false
     var pendingPairingLink: String?
     var libraryPath: [String] = []
@@ -75,8 +95,9 @@ final class AppModel {
         self.launch = launch
         if launch.demo {
             startDemo()
-        } else if let host = PairedHost.load(from: secrets) {
-            connect(to: host)
+        } else {
+            let list = PairedHostList.load(from: secrets)
+            if !list.isEmpty { openPaired(list) }
         }
         applyLaunchScreen()
         if let link = launch.pairLink, let url = URL(string: link) { handle(url: url) }
@@ -96,6 +117,8 @@ final class AppModel {
         case "artifact": showLibrary = true; libraryPath = ["ar1"]
         case "assistant": showAssistant = true
         case "settings": showAssistant = true; showSettings = true
+        case "hosts": showAssistant = true; showSettings = true; showHostList = true
+        case "switcher": showHostSwitcher = hostIDs.count > 1
         case "pairing": if mode != .unpaired { showPairingSheet = true }
         default: break
         }
@@ -105,48 +128,192 @@ final class AppModel {
         }
     }
 
-    // MARK: modes
+    // MARK: assistants
 
-    func startDemo() {
-        store?.shutdown()
-        let host = DemoHost(speed: 1)
-        demoHost = host
-        let s = AppStore(transport: host.transport, clientKind: clientKind, clientVersion: clientVersion)
-        s.clipboardWriter = AppStore.systemClipboardWriter
-        store = s
-        mode = .demo
-        s.start()
+    /// More than one assistant: the title becomes a switcher.
+    var hasSeveralHosts: Bool { hostIDs.count > 1 }
+
+    func displayName(_ id: String) -> String {
+        if let n = meta.names[id], !n.isEmpty { return n }
+        if let s = stores[id], !s.hostName.isEmpty { return s.hostName }
+        if let h = hosts[id], !h.hostLabel.isEmpty { return h.hostLabel }
+        return "电脑"
     }
 
-    func connect(to host: PairedHost) {
-        store?.shutdown()
-        do {
-            let identity = try DeviceIdentity.loadOrCreate(store: secrets)
-            let transport = RelayTransport(host: host, identity: identity)
-            let s = AppStore(transport: transport, clientKind: clientKind, clientVersion: clientVersion)
-            s.clipboardWriter = AppStore.systemClipboardWriter
-            store = s
-            pairedHost = host
-            demoHost = nil
-            mode = .paired
-            s.start()
-            AppDelegate.requestPushPermission()
-            if let token = pushToken { s.registerPush(token: token, environment: PushEnv.current) }
-        } catch {
-            mode = .unpaired
+    func rename(_ id: String, to name: String) {
+        let t = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        meta.names[id] = t.isEmpty ? nil : t
+        saveMeta()
+    }
+
+    func theme(for id: String) -> AppTheme {
+        meta.themes[id].flatMap(AppTheme.init(rawValue:)) ?? .default
+    }
+
+    /// The whole app takes the current assistant's color.
+    var currentTheme: AppTheme { activeHostID.map(theme(for:)) ?? .default }
+
+    func setTheme(_ theme: AppTheme, for id: String) {
+        meta.themes[id] = theme.rawValue
+        saveMeta()
+    }
+
+    /// The home-screen icon follows the first assistant (switching icons
+    /// shows a system alert, so it doesn't change with every switch).
+    var iconTheme: AppTheme { hostIDs.first.map(theme(for:)) ?? .default }
+
+    /// New assistants get a color nobody else uses yet, so they're told apart at a glance.
+    private func assignTheme(_ id: String) {
+        guard meta.themes[id] == nil else { return }
+        let used = Set(meta.themes.values)
+        let order: [AppTheme] = [.magenta, .blue, .teal, .violet, .orange, .graphite, .orchid, .rose, .berry]
+        meta.themes[id] = (order.first { !used.contains($0.rawValue) } ?? .magenta).rawValue
+    }
+
+    /// Replies and notices on an assistant the owner isn't looking at.
+    func unreadCount(_ id: String) -> Int {
+        guard id != activeHostID, let s = stores[id], let seen = meta.lastSeen[id] else { return 0 }
+        return s.unreadCount(after: seen)
+    }
+
+    func pendingCount(_ id: String) -> Int { stores[id]?.pendingApprovals.count ?? 0 }
+
+    /// Something is waiting on another assistant (the dot on the title).
+    var othersNeedAttention: Bool {
+        hostIDs.contains { $0 != activeHostID && (unreadCount($0) > 0 || pendingCount($0) > 0) }
+    }
+
+    /// Switcher order: assistants waiting on an approval first, then the owner's order.
+    var switcherOrder: [String] {
+        hostIDs.enumerated().sorted { a, b in
+            let (pa, pb) = (pendingCount(a.element) > 0, pendingCount(b.element) > 0)
+            return pa != pb ? pa : a.offset < b.offset
+        }.map(\.element)
+    }
+
+    /// The owner has seen everything on the current assistant up to now.
+    func markSeen() {
+        guard let id = activeHostID, let s = stores[id], s.hasSynced, meta.lastSeen[id] != s.lastSeq else { return }
+        meta.lastSeen[id] = s.lastSeq
+        saveMeta()
+    }
+
+    func switchTo(_ id: String) {
+        guard hostIDs.contains(id), id != activeHostID else { return }
+        markSeen()
+        activate(id)
+        showAssistant = false
+        showSettings = false
+        showHostList = false
+        showLibrary = false
+        libraryPath = []
+        openTaskID = nil
+    }
+
+    func moveHosts(from source: IndexSet, to destination: Int) {
+        hostIDs.move(fromOffsets: source, toOffset: destination)
+        if mode == .paired { try? PairedHostList.save(hostIDs.compactMap { hosts[$0] }, to: secrets) }
+    }
+
+    private func activate(_ id: String) {
+        activeHostID = id
+        meta.active = id
+        saveMeta()
+        // Only the assistant on screen may write the clipboard.
+        for (k, s) in stores { s.clipboardWriter = k == id ? AppStore.systemClipboardWriter : nil }
+        markSeen()
+    }
+
+    private func makeStore(_ transport: any HostTransport, id: String) -> AppStore {
+        let s = AppStore(transport: transport, clientKind: clientKind, clientVersion: clientVersion)
+        s.onSynced = { [weak self] seq in self?.didSync(id, seq: seq) }
+        return s
+    }
+
+    private func didSync(_ id: String, seq: Int64) {
+        if id == activeHostID {
+            markSeen()
+        } else if meta.lastSeen[id] == nil {
+            // First contact with an assistant in the background: what's there now isn't "new".
+            meta.lastSeen[id] = seq
+            saveMeta()
         }
     }
 
+    // MARK: modes
+
+    func startDemo() {
+        tearDownStores()
+        meta = HostMeta.load(demo: true)
+        let names = ["我的 MacBook", "云端"]
+        for i in 0..<max(1, launch.demoHosts) {
+            let id = "demo-\(i + 1)"
+            let host = DemoHost(speed: 1, hostName: i < names.count ? names[i] : "电脑 \(i + 1)")
+            demoHosts[id] = host
+            let s = makeStore(host.transport, id: id)
+            stores[id] = s
+            hostIDs.append(id)
+            assignTheme(id)
+            s.start()
+        }
+        mode = .demo
+        activate(meta.active.flatMap { hostIDs.contains($0) ? $0 : nil } ?? hostIDs[0])
+    }
+
+    private func openPaired(_ list: [PairedHost]) {
+        meta = HostMeta.load(demo: false)
+        // The theme picked before assistants had their own colors stays with the first one.
+        if meta.themes.isEmpty, let first = list.first { meta.themes[first.daemonID] = AppTheme.current.rawValue }
+        for host in list {
+            hostIDs.append(host.daemonID)
+            hosts[host.daemonID] = host
+            assignTheme(host.daemonID)
+            open(host)
+        }
+        mode = .paired
+        activate(meta.active.flatMap { hosts[$0] != nil ? $0 : nil } ?? hostIDs[0])
+        AppDelegate.requestPushPermission()
+    }
+
+    /// Connects to one computer (no-op if already connected).
+    private func open(_ host: PairedHost) {
+        guard stores[host.daemonID] == nil else { return }
+        do {
+            let identity = try DeviceIdentity.loadOrCreate(store: secrets)
+            let s = makeStore(RelayTransport(host: host, identity: identity), id: host.daemonID)
+            stores[host.daemonID] = s
+            s.start()
+            if let token = pushToken { s.registerPush(token: token, environment: PushEnv.current) }
+        } catch {
+            debugLog("can't open host \(host.daemonID): \(error)")
+        }
+    }
+
+    /// Pairs another computer (or re-pairs one), and switches to it.
     func pair(with link: PairingLink) async throws {
         let identity = try DeviceIdentity.loadOrCreate(store: secrets)
         let label = await Self.deviceLabel()
         let host = try await PairingClient().pair(link: link, identity: identity, deviceLabel: label)
-        try host.save(to: secrets)
-        // Switching to a different computer: say goodbye to the old one.
-        if mode == .paired, let old = pairedHost, old.daemonID != host.daemonID, let oldStore = store {
-            await oldStore.unregisterDevice(pushToken: pushToken)
+        if mode != .paired {
+            // From demo or nothing: start from the computers already saved.
+            tearDownStores()
+            let saved = PairedHostList.load(from: secrets)
+            let list = PairedHostList.upsert(host, into: saved)
+            try PairedHostList.save(list, to: secrets)
+            openPaired(list)
+        } else {
+            let list = PairedHostList.upsert(host, into: hostIDs.compactMap { hosts[$0] })
+            try PairedHostList.save(list, to: secrets)
+            if !hostIDs.contains(host.daemonID) { hostIDs.append(host.daemonID) }
+            hosts[host.daemonID] = host
+            // Re-pairing the same computer: start over with the new credentials.
+            stores.removeValue(forKey: host.daemonID)?.shutdown()
+            assignTheme(host.daemonID)
+            saveMeta()
+            open(host)
         }
-        connect(to: host)
+        markSeen()
+        activate(host.daemonID)
         showPairingSheet = false
     }
 
@@ -163,23 +330,47 @@ final class AppModel {
         #endif
     }
 
-    /// Tells the host to drop this device (best-effort), then forgets it.
+    /// Unpairs the current assistant.
     func unpair() async {
-        if mode == .paired, let store {
-            await store.unregisterDevice(pushToken: pushToken)
-        }
-        forgetHost()
+        if let id = activeHostID { await unpair(id) }
     }
 
-    private func forgetHost() {
-        store?.shutdown()
-        store = nil
-        PairedHost.forget(in: secrets)
-        pairedHost = nil
-        demoHost = nil
+    /// Tells that computer to drop this device (best-effort), then forgets it.
+    func unpair(_ id: String) async {
+        guard mode == .paired, hostIDs.contains(id) else { return }
+        if let s = stores[id] { await s.unregisterDevice(pushToken: pushToken) }
+        stores.removeValue(forKey: id)?.shutdown()
+        hosts[id] = nil
+        hostIDs.removeAll { $0 == id }
+        try? PairedHostList.save(hostIDs.compactMap { hosts[$0] }, to: secrets)
+        meta.forget(id)
+        saveMeta()
+        if hostIDs.isEmpty {
+            resetToUnpaired()
+        } else if activeHostID == id {
+            activate(hostIDs[0])
+            showAssistant = false
+            showSettings = false
+            showHostList = false
+        }
+    }
+
+    private func tearDownStores() {
+        for s in stores.values { s.shutdown() }
+        stores = [:]
+        demoHosts = [:]
+        hosts = [:]
+        hostIDs = []
+        activeHostID = nil
+    }
+
+    private func resetToUnpaired() {
+        tearDownStores()
         mode = .unpaired
         showAssistant = false
         showSettings = false
+        showHostList = false
+        showHostSwitcher = false
         showLibrary = false
         libraryPath = []
         Self.clearTemporaryFiles()
@@ -191,9 +382,14 @@ final class AppModel {
         try? FileManager.default.removeItem(at: dir)
     }
 
+    /// Leaves the demo for pairing; computers paired earlier come back.
     func exitDemo() {
-        forgetHost()
+        resetToUnpaired()
+        let list = PairedHostList.load(from: secrets)
+        if !list.isEmpty { openPaired(list) }
     }
+
+    private func saveMeta() { meta.save(demo: mode == .demo) }
 
     // MARK: system hooks
 
@@ -206,26 +402,29 @@ final class AppModel {
     }
 
     func didBecomeActive() {
-        // Long stays in the background leave a stale socket: the store forces
+        // Long stays in the background leave a stale socket: each store forces
         // a fresh connection after 30 s away.
-        store?.didBecomeActive()
+        for s in stores.values { s.didBecomeActive() }
     }
 
     func didEnterBackground() {
-        store?.didEnterBackground()
+        markSeen()
+        for s in stores.values { s.didEnterBackground() }
     }
 
     func didRegisterPush(token: Data) {
         pushToken = token
-        store?.registerPush(token: token, environment: PushEnv.current)
+        for s in stores.values { s.registerPush(token: token, environment: PushEnv.current) }
     }
 
-    /// Notification tap: payload carries seq / id / taskId / approvalId.
-    /// Works on cold launch too (the store may not have synced yet), so it
-    /// navigates by id without checking what's loaded.
+    /// Notification tap: payload carries hostId / seq / id / taskId / approvalId.
+    /// Switches to the assistant it came from first (falls back to the current
+    /// one), then navigates by id — on cold launch too, before anything synced.
     func handleNotification(userInfo: [AnyHashable: Any]) {
+        if let hostId = userInfo["hostId"] as? String, hostIDs.contains(hostId) { switchTo(hostId) }
         showSettings = false
         showLibrary = false
+        showHostSwitcher = false
         if let approvalId = userInfo["approvalId"] as? String, !approvalId.isEmpty {
             openTaskID = nil
             assistantTab = .approvals
@@ -238,6 +437,35 @@ final class AppModel {
             openTaskID = nil
             showAssistant = false
         }
+    }
+}
+
+/// Per-assistant settings that aren't secrets: the owner's name and color
+/// for each, what they've seen, and which one was open. Demo mode keeps its
+/// own copy so it never mixes with real computers.
+struct HostMeta: Codable {
+    var names: [String: String] = [:]
+    var themes: [String: String] = [:]
+    var lastSeen: [String: Int64] = [:]
+    var active: String?
+
+    mutating func forget(_ id: String) {
+        names[id] = nil
+        themes[id] = nil
+        lastSeen[id] = nil
+        if active == id { active = nil }
+    }
+
+    private static func key(demo: Bool) -> String { demo ? "hostMeta.demo" : "hostMeta" }
+
+    static func load(demo: Bool) -> HostMeta {
+        guard let data = UserDefaults.standard.data(forKey: key(demo: demo)),
+              let m = try? JSONDecoder().decode(HostMeta.self, from: data) else { return HostMeta() }
+        return m
+    }
+
+    func save(demo: Bool) {
+        if let data = try? JSONEncoder().encode(self) { UserDefaults.standard.set(data, forKey: Self.key(demo: demo)) }
     }
 }
 
