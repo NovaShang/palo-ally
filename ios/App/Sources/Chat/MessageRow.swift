@@ -103,8 +103,9 @@ private struct AssistantMessage: View {
                 if (!message.text.isEmpty || message.isStreaming) && !questionCardOnly {
                     // One system text view per answer: free selection across
                     // paragraphs, like Notes / Safari. 「引用回复」 quotes a selection.
-                    SelectableMarkdown(source: message.text, streaming: message.isStreaming,
-                                       onQuote: { store.quote(message, excerpt: $0) })
+                    ReplyMarkdown(source: message.text, streaming: message.isStreaming,
+                                  onQuote: { store.quote(message, excerpt: $0) },
+                                  trailingRoom: Self.trailingRoom)
                 }
                 if !message.isStreaming, !message.text.isEmpty, message.kind == .text {
                     // The whole answer in one tap; small and quiet.
@@ -124,9 +125,12 @@ private struct AssistantMessage: View {
                     QuestionCard(question: question)
                 }
             }
-            Spacer(minLength: 24)
+            Spacer(minLength: Self.trailingRoom)
         }
     }
+
+    /// Kept free beside replies; tables scroll through it.
+    static let trailingRoom: CGFloat = 24
 
     /// A question card says it all: no label, no repeated text above it.
     private var questionCardOnly: Bool {
@@ -447,4 +451,6 @@ private struct GoalCard: View {
 extension EnvironmentValues {
     /// Scrolls the conversation to a message id (set by ChatView).
     @Entry var chatScrollTo: ((String) -> Void)? = nil
+    /// The conversation's side margin, so tables can scroll edge to edge.
+    @Entry var messageGutter: CGFloat = 16
 }

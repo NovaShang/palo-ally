@@ -100,7 +100,7 @@ public actor DemoHost {
         emit(RPCEventName.approvalUpdated, a)
     }
 
-    /// Screenshot states for the title capsule (`-demoState idle | busy | tasks | fresh | answered`):
+    /// Screenshot states for the title capsule (`-demoState idle | busy | tasks | fresh | answered | tables`):
     /// nothing waiting on the owner, then the main turn working, or several
     /// background tasks running.
     public func applyScenario(_ name: String) {
@@ -152,6 +152,28 @@ public actor DemoHost {
         case "fresh":
             // A first-time owner: nothing said yet.
             messages.removeAll()
+        case "tables":
+            // Wide tables in a reply: they scroll sideways instead of squeezing.
+            post("MacBook Air 和 dev 哪台更适合常驻跑助理？", role: .user)
+            post("""
+            两台我都看了一下，差别主要在这几项：
+
+            | 项目 | MacBook Air | dev（云主机） |
+            |:---|:---|:---|
+            | 一直在线 | 合盖或断网就停，出门时最容易掉线 | 7×24 在线，不受你带不带电脑影响 |
+            | 能用的工具 | 本机的浏览器、日历、微信、文件都直接能用 | 只有命令行和网页接口，碰不到本机应用 |
+            | 速度和费用 | 不额外花钱，跑重活时风扇会响 | 每月约 ¥140，编译和批量任务快很多 |
+
+            按月算一下两边的开销：
+
+            | 月份 | 电费 | 云主机 | 模型用量 | 合计 |
+            |:---|---:|---:|---:|---:|
+            | 7 月 | ¥6 | ¥140 | ¥212 | ¥358 |
+            | 8 月 | ¥7 | ¥140 | ¥236 | ¥383 |
+            | 9 月 | ¥6 | ¥140 | ¥198 | **¥344** |
+
+            建议：日常放在 **dev** 上，需要碰本机应用的事再交给 Air。
+            """)
         default:
             break
         }

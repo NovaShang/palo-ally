@@ -103,6 +103,7 @@ struct ChatView: View {
                 }
                 // Beside a sidebar or inspector the column gets roomier margins.
                 .padding(.horizontal, asColumn ? 28 : 16)
+                .environment(\.messageGutter, asColumn ? 28 : 16)
                 .padding(.vertical, 12)
                 // Wide windows: a comfortable line length, centred.
                 .frame(maxWidth: Self.readableWidth)

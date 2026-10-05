@@ -9,9 +9,9 @@ import UIKit
 ///
 /// The look follows the `paloAlly` MarkdownUI theme (MarkdownText.swift):
 /// body text with 0.2em line spacing, modest headings, monospaced code blocks
-/// on a soft rounded background, a gray bar for quotes. Trade-off: code blocks
-/// and tables wrap instead of scrolling sideways (tables are laid out with tab
-/// stops, an approximation).
+/// on a soft rounded background, a gray bar for quotes. Code blocks wrap
+/// instead of scrolling sideways. Tables are split out before they get here
+/// (ReplyMarkdown → MarkdownTableView); the tab-stop table below is a fallback.
 struct SelectableMarkdown: UIViewRepresentable {
     let source: String
     var streaming: Bool = false
