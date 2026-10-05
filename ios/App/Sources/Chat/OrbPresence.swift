@@ -2,20 +2,31 @@ import PaloAllyKit
 import SwiftUI
 
 /// How much room the title bar's orb takes. While the owner reads it keeps
-/// inside the bar; at rest it's about the bar's height; when it needs
-/// presence (they're talking to it, it's thinking, something waits on them,
-/// something just happened) it grows past the bar. Always a spring between
-/// sizes, never a jump: the orb floats over the bar, so nothing reflows.
+/// (about) inside the bar; at rest it's already a little bigger than the bar;
+/// when it needs presence (it's thinking, something waits on the owner,
+/// something just happened) it grows well past the bar; and while the owner
+/// talks to it, it drops out of the bar, very large, listening. Always a
+/// spring between sizes, never a jump: the orb floats over the bar, so
+/// nothing reflows.
 enum OrbPresence: String, Equatable {
-    case compact, rest, present
+    case compact, rest, present, voice
 
-    /// The drop's visible diameter on phones and iPads.
+    /// The drop's visible diameter on phones and iPads. `.voice` is the
+    /// nominal size; the real one follows the column (`voiceDiameter`).
     var body: CGFloat {
         switch self {
-        case .compact: 32
-        case .rest: 44
-        case .present: 58
+        case .compact: 40
+        case .rest: 56
+        case .present: 72
+        case .voice: 150
         }
+    }
+
+    /// Listening: very large, but at most 40% of the column — 150 pt on a
+    /// phone, up to 200 pt in an iPad or Mac column.
+    static func voiceDiameter(width: CGFloat) -> CGFloat {
+        let cap: CGFloat = width < 500 ? 150 : 200
+        return max(Self.present.body, min(cap, width * 0.4))
     }
 
     /// The highest that applies, in priority order: speaking > waiting on
@@ -23,7 +34,8 @@ enum OrbPresence: String, Equatable {
     /// live end > rest. Reading only outranks thinking while scrolled up.
     static func resolve(speaking: Bool, needsOwner: Bool, event: Bool,
                         scrolledUp: Bool, thinking: Bool, reading: Bool) -> OrbPresence {
-        if speaking || needsOwner || event { return .present }
+        if speaking { return .voice }
+        if needsOwner || event { return .present }
         if scrolledUp { return .compact }
         if thinking { return .present }
         if reading { return .compact }
@@ -57,7 +69,7 @@ struct OrbPresenceTracking: ViewModifier {
 
     /// Ticks each minute, so quiet hours start and end on time.
     @State private var minute = 0
-    /// The connection was lost (not just still connecting at launch).
+    /// A drop was shown (not just the quick reconnect on returning to the app).
     @State private var wasOffline = false
     /// Right after switching assistants the new store's state arrives all at
     /// once — not events to act out.
@@ -99,10 +111,12 @@ struct OrbPresenceTracking: ViewModifier {
                 }
             }
             .onChange(of: deliverables) { old, new in if new > old { event += 1; act(.deliverable) } }
+            // Back after a drop the owner was shown — not the silent
+            // reconnect every return to the app starts with.
             .onChange(of: store.connection.isOnline) { was, now in
-                guard !was, now else { return }
+                guard !was, now, wasOffline else { return }
                 event += 1
-                if wasOffline { act(.reconnect) }
+                act(.reconnect)
                 wasOffline = false
             }
             .onChange(of: lost) { _, now in if now { wasOffline = true } }
@@ -153,13 +167,9 @@ struct OrbPresenceTracking: ViewModifier {
         return i
     }
 
-    /// Cut off from the computer — not merely still connecting.
-    private var lost: Bool {
-        switch store.connection {
-        case .offline, .rejected: true
-        default: false
-        }
-    }
+    /// Cut off from the computer, as the owner is shown it: a drop that has
+    /// lasted (see AppStore.displayedConnection), or a refusal.
+    private var lost: Bool { store.connectionTrouble }
 
     /// The streaming reply's length: grows with each chunk.
     private var streamedLength: Int { store.messages.last(where: \.isStreaming)?.text.count ?? 0 }
@@ -189,7 +199,7 @@ struct OrbPresenceTracking: ViewModifier {
 
     private var presence: OrbPresence {
         #if DEBUG
-        // `-orbPresence compact|rest|present` holds one size for screenshots.
+        // `-orbPresence compact|rest|present|voice` holds one size for screenshots.
         if let forced = UserDefaults.standard.string(forKey: "orbPresence").flatMap(OrbPresence.init(rawValue:)) {
             return forced
         }

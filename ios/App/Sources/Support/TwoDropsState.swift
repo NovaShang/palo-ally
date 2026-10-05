@@ -156,6 +156,9 @@ public final class TwoDropsState {
             set(.el, -0.15); set(.azVel, 0); set(.sep, 0.70 + 0.34 * L); set(.k, 0.24 + 0.18 * L)
             set(.swellB, 0.26 * L); set(.wobB, 0.4 + 1.2 * L); set(.wobSpeed, 0.9 + 1.4 * L)
             set(.glowB, 0.5 * L); set(.sqA, -0.05); set(.zoom, 0.92)
+            // The big one listens too: it trembles and breathes with the voice,
+            // so at the large listening size it visibly 「一抖一抖」.
+            set(.wobA, 0.3 + 0.7 * L); set(.swellA, 0.06 * L)
         case .approval:
             set(.anchor, 1); anchorAz = 0.45
             set(.el, -0.1); set(.azVel, 0); set(.sep, 1.02); set(.reach, 0.22); set(.glowB, 0.3)

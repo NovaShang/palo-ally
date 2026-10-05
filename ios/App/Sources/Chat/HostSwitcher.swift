@@ -238,11 +238,12 @@ private struct HostSwitcherRow: View {
 
     private func state(_ store: AppStore?) -> String {
         guard let store else { return "没连上" }
-        if store.connection.isOnline {
+        // As the owner is shown it: a short drop on returning to the app isn't news.
+        if store.displayedConnection.isOnline {
             if store.isBusy { return "正在忙…" }
             return model.mode == .demo ? "演示中" : "在线"
         }
-        return Copy.connection(store.connection)
+        return Copy.connection(store.displayedConnection)
     }
 }
 

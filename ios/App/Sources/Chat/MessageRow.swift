@@ -35,7 +35,9 @@ private struct UserBubble: View {
                         .foregroundStyle(.red)
                 }
                 .accessibilityLabel("没发出去，点一下重发")
-            } else if message.delivery == .sending {
+            } else if message.delivery == .sending || (message.delivery == .queued && !store.connectionTrouble) {
+                // Queued during a short drop looks like sending: the reconnect
+                // (usually a moment away) sends it.
                 Image(systemName: "clock")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)

@@ -148,8 +148,8 @@ private struct AssistantHeader: View {
         let place = store.hostName.isEmpty ? (model.pairedHost?.hostLabel ?? "") : store.hostName
         var parts: [String] = []
         if !place.isEmpty { parts.append("住在「\(place)」上") }
-        if !store.connection.isOnline {
-            parts.append(Copy.connection(store.connection))
+        if !store.displayedConnection.isOnline {
+            parts.append(Copy.connection(store.displayedConnection))
         } else if let met = store.status?.metAt, met > 0 {
             let days = max(1, Int(Date().timeIntervalSince(met.msDate) / 86_400) + 1)
             parts.append("认识你 \(days) 天")

@@ -66,35 +66,57 @@ struct TitleOrbSlot: View {
 /// The orb floating over the bar's middle (phones and iPads), centered on
 /// the bar's center line. Its size follows `AppModel.orbPresence` on a
 /// spring; past the bar it simply spills over the content and the status
-/// bar's margin. The caption is a small glass label across its lower part.
+/// bar's margin (a little lower rather than into the Dynamic Island). The
+/// caption is a small glass label across its lower part.
+///
+/// While the owner holds to talk it drops out of the bar into the upper
+/// conversation, very large, and listens — following the same hold-driven
+/// motion that grows the recording UI, so it starts the moment the finger
+/// lands and folds back when it lifts. Then it takes no touches.
 struct FloatingTitleOrb: View {
+    /// The bar's middle, in window coordinates.
+    let barCenterY: CGFloat
+    /// The conversation column's width: the listening size follows it.
+    let columnWidth: CGFloat
     let action: () -> Void
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
+    @Environment(VoiceInputController.self) private var voice
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The box it lives in, centered on the bar's center: room for the
-    /// largest orb's canvas and the widest caption.
-    static let box = CGSize(width: 220, height: 84)
+    /// largest in-bar orb's canvas and the widest caption.
+    static let box = CGSize(width: 220, height: 96)
     /// Half the bar's height: the label keeps inside the bar while the orb does.
     private static let halfBar: CGFloat = 22
+    /// Listening: the gap between the bar's bottom and the big orb.
+    private static let listenGap: CGFloat = 14
 
     var body: some View {
         @Bindable var model = model
         let presence = model.orbPresence
-        let d = presence.body
+        // In the bar, the size the state asks for; listening grows from the largest.
+        let barSize = (presence == .voice ? OrbPresence.present : presence).body
+        let listen = listening
+        let big = OrbPresence.voiceDiameter(width: columnWidth)
+        let d = barSize + (big - barSize) * listen
+        let inBar = Self.islandClearance(d: barSize, barCenterY: barCenterY)
+        let dropped = Self.halfBar + Self.listenGap + big / 2
         let line = store.agentStatusLine
-        let caption = line.kind == .idle ? nil : line.text
+        // While it listens the label steps aside: nothing else to say.
+        let caption = line.kind == .idle || voice.panelMounted ? nil : line.text
+        let canvas = TitleOrbDrop.canvas(for: d)
         Button(action: action) {
             ZStack {
                 Group {
                     if reduceMotion {
                         // No spring when motion is reduced: a short crossfade between sizes.
-                        TitleOrbDrop(size: d).id(presence).transition(.opacity)
+                        TitleOrbDrop(size: d).id("\(presence.rawValue)-\(listen)").transition(.opacity)
                     } else {
                         TitleOrbDrop(size: d)
                     }
                 }
+                .background { ListeningGlow(size: big).opacity(Double(listen)) }
                 if let caption {
                     TitleOrbCaption(text: caption, kind: line.kind, glass: true)
                         .frame(maxWidth: 200)
@@ -103,11 +125,16 @@ struct FloatingTitleOrb: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
             }
-            .frame(width: Self.box.width, height: Self.box.height)
+            .frame(width: max(Self.box.width, canvas), height: max(Self.box.height, canvas))
+            .offset(y: inBar + (dropped - inBar) * listen)
         }
         .buttonStyle(.plain)
+        .allowsHitTesting(!voice.panelMounted)
         .animation(reduceMotion ? .easeInOut(duration: 0.25) : .spring(response: 0.5, dampingFraction: 0.62),
                    value: presence)
+        // Lively, with a little overshoot, as it drops out to listen.
+        .animation(reduceMotion ? .easeInOut(duration: 0.25) : .spring(response: 0.42, dampingFraction: 0.58),
+                   value: listen)
         .animation(.snappy, value: caption)
         .popover(isPresented: $model.showHostSwitcher, arrowEdge: .top) {
             StatusCard()
@@ -120,11 +147,70 @@ struct FloatingTitleOrb: View {
         .accessibilityHidden(true)
     }
 
-    /// The label's center below the orb's: across its lower part, but never
-    /// lower than the bar (or the orb, when the orb spills further).
+    /// 0…1: how far it has dropped out of the bar to listen — the hold-to-talk
+    /// motion's own progress (with Reduce Motion: in or out, nothing between).
+    private var listening: CGFloat {
+        let p = voice.panelMounted ? min(max(voice.presence, 0), 1) : 0
+        return reduceMotion ? (p > 0 ? 1 : 0) : p
+    }
+
+    /// The label's center below the orb's: across its lower part — low
+    /// enough to leave most of the drops showing — but never much past the
+    /// bar (or the orb, when the orb spills further).
     static func captionOffset(_ d: CGFloat) -> CGFloat {
         let halfLabel: CGFloat = 10
-        return min(d * 0.28, max(halfBar, d / 2) - halfLabel - 1)
+        return min(max(14, d * 0.28), max(halfBar, d / 2) - halfLabel + 3)
+    }
+
+    /// How far below the bar's center line the orb sits so its top stays
+    /// clear of the Dynamic Island (or the status bar): rather than shrink,
+    /// a big orb moves down a little.
+    static func islandClearance(d: CGFloat, barCenterY: CGFloat) -> CGFloat {
+        let top = DisplayCorners.topInset
+        guard top > 0 else { return 0 }
+        return max(0, top - 6 + d / 2 - barCenterY)
+    }
+}
+
+/// The Mac: the toolbar's orb can't leave the toolbar, so while the owner
+/// holds to talk a big listening orb rises at the top of the conversation
+/// column instead (the phone's drops out of the bar).
+struct ListeningOrb: View {
+    let columnWidth: CGFloat
+    @Environment(VoiceInputController.self) private var voice
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let p = voice.panelMounted ? min(max(voice.presence, 0), 1) : 0
+        let listen = reduceMotion ? (p > 0 ? 1 : 0) : p
+        let big = OrbPresence.voiceDiameter(width: columnWidth)
+        TitleOrbDrop(size: big)
+            .background { ListeningGlow(size: big) }
+            .scaleEffect(0.35 + 0.65 * listen)
+            .opacity(Double(min(1, listen * 1.6)))
+            .animation(reduceMotion ? .easeInOut(duration: 0.25) : .spring(response: 0.42, dampingFraction: 0.58),
+                       value: listen)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+/// A soft wash of the background behind the listening orb, so it reads over
+/// the conversation (the voice scrim rises from the bottom; this is its top).
+private struct ListeningGlow: View {
+    let size: CGFloat
+
+    var body: some View {
+        RadialGradient(
+            stops: [
+                // Not opaque: the conversation still shows faintly through the glass.
+                .init(color: Color(.systemBackground).opacity(0.72), location: 0),
+                .init(color: Color(.systemBackground).opacity(0.6), location: 0.5),
+                .init(color: Color(.systemBackground).opacity(0), location: 1),
+            ],
+            center: .center, startRadius: 0, endRadius: size * 1.15)
+            .frame(width: size * 2.3, height: size * 2.3)
+            .allowsHitTesting(false)
     }
 }
 
@@ -195,7 +281,8 @@ extension AppStore {
     /// What the agent is doing, in priority order (see AgentStatusLine).
     var agentStatusLine: AgentStatusLine {
         AgentStatusLine.make(
-            offlineText: connection.isOnline ? nil : Copy.connectionShort(connection),
+            // Only a drop the owner is shown (see displayedConnection).
+            offlineText: connectionTrouble ? Copy.connectionShort(displayedConnection) : nil,
             pendingApprovals: pendingApprovals.count,
             busy: isBusy,
             activity: status?.activity,

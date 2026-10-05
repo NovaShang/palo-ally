@@ -397,6 +397,8 @@ inline float4 shade(float2 position, float2 size, Params s) {
     float coverage = tHit > 0.0 ? 1.0 : (minD < 1e8 ? 1.0 - smoothstep(0.0, aa, minD) : 0.0);
 
     float3 col = float3(0);
+    // The glass's own opacity: part of what's really behind shows through.
+    float glassA = coverage;
     if (coverage > 0.0) {
         float3 p = tHit > 0.0 ? ro + rd * tHit : closest;
         float dA, dB;
@@ -438,11 +440,29 @@ inline float4 shade(float2 position, float2 size, Params s) {
         float spec = (pow(nh, 900.0) * 2.6 + pow(nh, 70.0) * 0.06) * (1.0 - s.frost * 0.9);
 
         col = (trans + glow + body + rim) * (1.0 - fres) + refl * fres + spec;
+        // what of that is the (procedural) room seen through the glass
+        float3 seen = trans * (1.0 - fres);
         // frosted glass turns a little milky
         col = mix(col, mix(float3(0.80), float3(0.30), s.dark) * mix(float3(1.0), tint * 2.0 + 0.3, 0.15), s.frost * 0.35);
+        seen *= 1.0 - s.frost * 0.35;
         float m = max(max(col.r, col.g), col.b);
-        col *= (1.0 - exp(-m * 1.1)) / max(m, 1e-4);   // filmic shoulder: bright color stays colored
-        col *= s.bright * coverage;
+        float shoulder = (1.0 - exp(-m * 1.1)) / max(m, 1e-4);   // filmic shoulder: bright color stays colored
+        col *= shoulder * s.bright * coverage;
+        seen *= shoulder * s.bright * coverage;
+
+        // See-through: the real background shows through the glass — about
+        // 30% at the thin rims, 10% through the thick core (a little less at
+        // small sizes, where too much would wash the color out; frosted
+        // glass, offline, stays nearly opaque). That share of the room seen
+        // through is taken out, so the drop gets neither brighter nor muddier.
+        // Its own light — glints, rim lines, the glow — stays opaque: where it
+        // outshines the glass's opacity, the alpha rises to carry it.
+        float big = smoothstep(80.0, 180.0, sz);
+        float aThin = mix(0.80, 0.70, big), aThick = mix(0.92, 0.88, big);
+        float aG = mix(aThin, aThick, smoothstep(0.08, 0.80, ndv));
+        aG = mix(aG, 0.97, s.frost);
+        col = max(col - seen * (1.0 - aG), 0.0);
+        glassA = min(coverage, max(coverage * aG, max(max(col.r, col.g), col.b)));
     }
 
     // soft shadows under each drop, with a little colored light in them
@@ -468,7 +488,7 @@ inline float4 shade(float2 position, float2 size, Params s) {
         causticCol += (1.0 - exp(-tintC * 2.4)) * cs * s.bright;
     }
     float under = shadowA + causticA * (1.0 - shadowA);
-    float alpha = coverage + under * (1.0 - coverage);
+    float alpha = glassA + under * (1.0 - coverage);
     float3 outCol = col + causticCol * (1.0 - shadowA) * (1.0 - coverage);
 
     if (alpha > 1e-4) outCol = toGamma(outCol / alpha) * alpha;

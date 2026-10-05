@@ -46,7 +46,7 @@ struct SettingsView: View {
             }
 
             Section("连接") {
-                LabeledContent("状态", value: Copy.connection(store.connection))
+                LabeledContent("状态", value: Copy.connection(store.displayedConnection))
                 if model.mode == .demo {
                     LabeledContent("电脑", value: "演示")
                     if model.hasSeveralHosts {

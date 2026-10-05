@@ -229,8 +229,18 @@ struct ChatView: View {
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { ownFrame = $0 }
         .overlay(alignment: .topLeading) {
             if !Platform.barInWindowToolbar, orbSlot.width > 0 {
-                FloatingTitleOrb { model.showHostSwitcher = true }
-                    .position(x: orbSlot.midX - ownFrame.minX, y: orbSlot.midY - ownFrame.minY)
+                FloatingTitleOrb(barCenterY: orbSlot.midY, columnWidth: ownFrame.width) {
+                    model.showHostSwitcher = true
+                }
+                .position(x: orbSlot.midX - ownFrame.minX, y: orbSlot.midY - ownFrame.minY)
+            }
+        }
+        // The Mac's orb stays in the window toolbar; listening, a big one
+        // rises at the top of the conversation instead.
+        .overlay(alignment: .top) {
+            if Platform.barInWindowToolbar, voice.panelMounted {
+                ListeningOrb(columnWidth: ownFrame.width)
+                    .padding(.top, 16)
             }
         }
         .modifier(OrbPresenceTracking(scrolledUp: !pinned || store.viewingPast, scrolling: userScrolling))
@@ -314,12 +324,14 @@ struct StatusBanner: View {
 
     var body: some View {
         Group {
-            if case .rejected = store.connection {
+            // Only a drop that has lasted (or a refusal): returning to the app
+            // always starts with a quick reconnect, which isn't news.
+            if case .rejected = store.displayedConnection {
                 banner(icon: "link.badge.plus", tint: .red, text: "这台设备需要重新配对") {
                     Button("去配对") { model.startPairing(.replace) }
                         .buttonStyle(.glassProminent)
                 }
-            } else if case .offline = store.connection {
+            } else if store.connectionTrouble {
                 banner(icon: "wifi.exclamationmark", tint: .secondary, text: "连不上电脑，正在重试…") {
                     Button("重试") { store.reconnectNow() }
                         .buttonStyle(.glass)

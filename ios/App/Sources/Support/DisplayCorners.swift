@@ -28,6 +28,10 @@ enum DisplayCorners {
     /// The window's bottom safe-area inset (the home indicator), keyboard aside.
     static var bottomInset: CGFloat { keyWindow?.safeAreaInsets.bottom ?? 0 }
 
+    /// The window's top safe-area inset: the status bar, and the Dynamic
+    /// Island above whatever floats near the top.
+    static var topInset: CGFloat { keyWindow?.safeAreaInsets.top ?? 0 }
+
     private static var keyWindow: UIWindow? {
         UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
     }

@@ -128,7 +128,7 @@ struct HostsView: View {
     private func detail(_ store: AppStore?) -> String {
         var parts: [String] = []
         if let store {
-            parts.append(store.connection.isOnline ? (model.mode == .demo ? "演示中" : "在线") : Copy.connection(store.connection))
+            parts.append(store.displayedConnection.isOnline ? (model.mode == .demo ? "演示中" : "在线") : Copy.connection(store.displayedConnection))
             if store.status?.wechat == .connected { parts.append("微信已接入") }
             else if store.status?.wechat == .expired { parts.append("微信需要重新登录") }
         } else {

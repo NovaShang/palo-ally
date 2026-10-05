@@ -22,9 +22,32 @@ public final class AppStore {
 
     // MARK: observable state
 
+    /// The link as it really is — for logic (sending, sync, what's enabled).
+    /// What the owner is shown is `displayedConnection`.
     public private(set) var connection: Connection = .idle {
-        didSet { if connection != oldValue { debugLog("connection: \(connection)") } }
+        didSet {
+            guard connection != oldValue else { return }
+            debugLog("connection: \(connection)")
+            connectionChanged()
+        }
     }
+    /// The link as the owner sees it. iOS closes the socket whenever the app
+    /// is suspended, so every return to the app starts with a drop and a
+    /// quick reconnect — not news. A drop only shows once it has lasted
+    /// `troubleGrace` seconds, counted from the drop or from the app becoming
+    /// active, whichever is later; until then this stays calm (still online,
+    /// or connecting). Being refused (pair again) shows at once.
+    public private(set) var displayedConnection: Connection = .idle
+    /// A drop (or a refusal) the owner is being shown: it outlasted the grace
+    /// period. Banners, captions and the avatar's offline look follow this.
+    public private(set) var connectionTrouble = false
+    /// How long a drop stays silent.
+    public var troubleGrace: Double = 8
+    /// When the current stretch without a link began (or the app became active).
+    private var troubleSince: Date?
+    private var troubleTimer: Task<Void, Never>?
+    /// Between didEnterBackground and didBecomeActive.
+    private var inBackground = false
     public private(set) var hostName: String = ""
     public private(set) var hostVersion: String = ""
     public private(set) var messages: [ChatMessage] = []
@@ -141,6 +164,11 @@ public final class AppStore {
 
     public func didEnterBackground(at date: Date = Date()) {
         backgroundedAt = date
+        // Time away doesn't count toward showing a drop (iOS closes the
+        // socket while the app is suspended); the grace starts over on return.
+        inBackground = true
+        troubleTimer?.cancel()
+        troubleTimer = nil
     }
 
     /// Call when the app returns to the foreground. After a long stay in the
@@ -149,7 +177,69 @@ public final class AppStore {
     public func didBecomeActive(at date: Date = Date(), staleAfter: TimeInterval = 30) {
         let away = backgroundedAt.map { date.timeIntervalSince($0) } ?? 0
         backgroundedAt = nil
+        // Whatever dropped while it was away gets the full grace period from
+        // now: the reconnect below usually lands well within it.
+        inBackground = false
+        if !connection.isOnline, !connectionTrouble, connection != .idle { startGrace() }
         if away > staleAfter && started { forceReconnect() } else { reconnectNow() }
+    }
+
+    // MARK: displayed connection
+
+    private func connectionChanged() {
+        switch connection {
+        case .online, .idle:
+            endGrace()
+            connectionTrouble = false
+            displayedConnection = connection
+        case .rejected:
+            endGrace()
+            connectionTrouble = true
+            displayedConnection = connection
+        case .connecting, .syncing, .offline:
+            if connectionTrouble {
+                // Already showing the drop: follow along (offline → connecting → …).
+                displayedConnection = connection
+                return
+            }
+            // Within the grace period: nothing alarming. A link that was up
+            // still looks up; otherwise it's just connecting.
+            if displayedConnection != .online {
+                if case .offline = connection { displayedConnection = .connecting } else { displayedConnection = connection }
+            }
+            if troubleSince == nil {
+                if inBackground { troubleSince = Date() } else { startGrace() }
+            }
+        }
+    }
+
+    /// (Re)starts the grace period now.
+    private func startGrace() {
+        troubleSince = Date()
+        troubleTimer?.cancel()
+        let grace = troubleGrace
+        troubleTimer = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(grace))
+            guard !Task.isCancelled, let self else { return }
+            self.graceEnded()
+        }
+    }
+
+    private func endGrace() {
+        troubleTimer?.cancel()
+        troubleTimer = nil
+        troubleSince = nil
+    }
+
+    /// Still no link after the whole grace period: now it's worth showing.
+    private func graceEnded() {
+        troubleTimer = nil
+        switch connection {
+        case .online, .idle, .rejected: return
+        default:
+            connectionTrouble = true
+            displayedConnection = connection
+        }
     }
 
     private func handle(_ item: RPCInbound) {
@@ -629,7 +719,9 @@ public final class AppStore {
                 messages[i].delivery = offline ? .queued : .failed
             }
             awaitingReply = false
-            lastError = Friendly.message(error)
+            // A drop still within its grace period isn't an error yet: the
+            // message just waits for the reconnect, which resends it.
+            if !(offline && !connectionTrouble) { lastError = Friendly.message(error) }
         }
     }
 
