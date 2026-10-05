@@ -85,11 +85,17 @@ enum Copy {
         }
     }
 
+    /// 「每月 1 号」「每月最后一天」, or nil for every day.
+    static func monthDay(_ d: Int?) -> String? {
+        guard let d, d != 0 else { return nil }
+        return d == -1 ? "每月最后一天" : "每月 \(d) 号"
+    }
+
     static func watchSchedule(_ w: Watch) -> String {
         switch w.kind {
         case .schedule:
             let times = (w.at ?? []).joined(separator: "、")
-            if !times.isEmpty { return "每天 \(times)" }
+            if !times.isEmpty { return "\(monthDay(w.dayOfMonth) ?? "每天") \(times)" }
             if let m = w.intervalMinutes, m > 0 { return "\(every(m))做一次" }
             return "到点做"
         case .check:

@@ -250,7 +250,8 @@ public actor DemoHost {
         case RPCMethod.watchAdd:
             let draft = try p.decode(WatchDraft.self)
             let w = Watch(id: nextID("w"), title: draft.title, kind: draft.kind, instruction: draft.instruction,
-                          intervalMinutes: draft.intervalMinutes, at: draft.at, enabled: draft.enabled, createdBy: .user,
+                          intervalMinutes: draft.intervalMinutes, at: draft.at, dayOfMonth: draft.dayOfMonth,
+                          enabled: draft.enabled, createdBy: .user,
                           skipIfActiveMinutes: draft.skipIfActiveMinutes)
             watches.append(w)
             emit(RPCEventName.watchUpdated, ["watch": try JSONValue.from(w)] as JSONValue)

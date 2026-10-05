@@ -5,7 +5,7 @@ import { FakeDriver } from "./fakeDriver.ts";
 import { ProbeScheduler, dueSlot, type ProbeHost, type ProbeTrigger } from "../src/probe.ts";
 import type { Watch } from "../src/types.ts";
 import { inWindow, parseHHMM, zonedParts } from "../src/util.ts";
-import { WatchStore } from "../src/watches.ts";
+import { WatchStore, scheduleText } from "../src/watches.ts";
 import { cleanup, tmpPaths } from "./helpers.ts";
 
 const T0 = Date.UTC(2026, 9, 4, 9, 0); // 2026-10-04 09:00 UTC
@@ -83,9 +83,75 @@ describe("dueSlot", () => {
     expect(dueSlot(w({ at: ["08:30"] }), T0, "Asia/Shanghai")).toBeNull();
   });
 
+  test("monthly: only on the month's day, last day and short months included", () => {
+    const at = (y: number, m: number, d: number, hh = 9, mm = 5) => Date.UTC(y, m - 1, d, hh, mm);
+    const first = w({ at: ["09:00"], dayOfMonth: 1 });
+    expect(dueSlot(first, at(2026, 11, 1), "UTC")).toBe("2026-11-01 09:00");
+    expect(dueSlot(first, at(2026, 11, 2), "UTC")).toBeNull();
+    const mid = w({ at: ["09:00"], dayOfMonth: 15 });
+    expect(dueSlot(mid, at(2026, 10, 15), "UTC")).toBe("2026-10-15 09:00");
+    expect(dueSlot(mid, at(2026, 10, 14), "UTC")).toBeNull();
+
+    const last = w({ at: ["20:00"], dayOfMonth: -1 });
+    const eve = (y: number, m: number, d: number) => at(y, m, d, 20, 5);
+    expect(dueSlot(last, eve(2026, 10, 31), "UTC")).toBe("2026-10-31 20:00"); // 31-day month
+    expect(dueSlot(last, eve(2026, 10, 30), "UTC")).toBeNull();
+    expect(dueSlot(last, eve(2026, 11, 30), "UTC")).toBe("2026-11-30 20:00"); // 30-day month
+    expect(dueSlot(last, eve(2027, 2, 28), "UTC")).toBe("2027-02-28 20:00"); // February
+    expect(dueSlot(last, eve(2028, 2, 28), "UTC")).toBeNull(); // leap year: not yet
+    expect(dueSlot(last, eve(2028, 2, 29), "UTC")).toBe("2028-02-29 20:00");
+
+    // the 31st (or 29th) in a shorter month falls on its last day
+    const d31 = w({ at: ["09:00"], dayOfMonth: 31 });
+    expect(dueSlot(d31, at(2026, 11, 30), "UTC")).toBe("2026-11-30 09:00");
+    expect(dueSlot(d31, at(2026, 11, 29), "UTC")).toBeNull();
+    expect(dueSlot(d31, at(2026, 12, 30), "UTC")).toBeNull();
+    expect(dueSlot(d31, at(2026, 12, 31), "UTC")).toBe("2026-12-31 09:00");
+    expect(dueSlot(w({ at: ["09:00"], dayOfMonth: 29 }), at(2027, 2, 28), "UTC")).toBe("2027-02-28 09:00");
+  });
+
+  test("monthly: a month-end slot before midnight is caught up in the next month", () => {
+    expect(dueSlot(w({ at: ["23:30"], dayOfMonth: -1 }), Date.UTC(2026, 10, 1, 1, 0), "UTC")).toBe("2026-10-31 23:30");
+    expect(dueSlot(w({ at: ["23:30"], dayOfMonth: 1 }), Date.UTC(2026, 10, 1, 1, 0), "UTC")).toBeNull();
+  });
+
+  test("monthly: wall-clock time across DST changes", () => {
+    // 2026-11-01: US clocks fall back at 02:00; 09:05 PST is 17:05 UTC
+    expect(dueSlot(w({ at: ["09:00"], dayOfMonth: 1 }), Date.UTC(2026, 10, 1, 17, 5), "America/Los_Angeles")).toBe("2026-11-01 09:00");
+    // 2027-03-14: clocks spring forward; 09:05 PDT is 16:05 UTC
+    expect(dueSlot(w({ at: ["09:00"], dayOfMonth: 14 }), Date.UTC(2027, 2, 14, 16, 5), "America/Los_Angeles")).toBe("2027-03-14 09:00");
+    expect(dueSlot(w({ at: ["09:00"], dayOfMonth: 14 }), Date.UTC(2027, 2, 13, 17, 5), "America/Los_Angeles")).toBeNull();
+  });
+
   test("interval schedules", () => {
     expect(dueSlot(w({ intervalMinutes: 60, lastCheckedAt: T0 - 30 * 60_000 }), T0, "UTC")).toBeNull();
     expect(dueSlot(w({ intervalMinutes: 60, lastCheckedAt: T0 - 61 * 60_000 }), T0, "UTC")).not.toBeNull();
+  });
+});
+
+describe("monthly watches", () => {
+  test("validates the day and needs an at time", () => {
+    const paths = tmpPaths();
+    const store = new WatchStore(paths.watches, new Bus());
+    const base = { title: "月底对账", instruction: "整理 daycare 账单" };
+    expect(() => store.add({ ...base, at: ["20:00"], dayOfMonth: 32 }, "agent")).toThrow("day_of_month");
+    expect(() => store.add({ ...base, at: ["20:00"], dayOfMonth: -2 }, "agent")).toThrow("day_of_month");
+    expect(() => store.add({ ...base, kind: "schedule", intervalMinutes: 60, dayOfMonth: 1 }, "agent")).toThrow("at");
+    expect(() => store.add({ ...base, kind: "check", at: ["20:00"], dayOfMonth: 1 }, "agent")).toThrow();
+    const m = store.add({ ...base, at: ["20:00"], dayOfMonth: -1 }, "agent");
+    expect(m.kind).toBe("schedule");
+    expect(scheduleText(m)).toBe("每月最后一天 20:00");
+    // a daily goal moved to monthly in place keeps its progress
+    const d = store.add({ title: "财务复盘", instruction: "看上个月的支出", at: ["09:00"] }, "agent");
+    store.progress(d.id, "上个月花得不多");
+    const moved = store.update(d.id, { dayOfMonth: 1 });
+    expect(scheduleText(moved)).toBe("每月 1 号 09:00");
+    expect(moved.progress).toBe("上个月花得不多");
+    // null (from the app) or 0 (from the assistant) clears it
+    expect(store.update(d.id, { dayOfMonth: null as unknown as number }).dayOfMonth).toBeUndefined();
+    store.update(d.id, { dayOfMonth: 15 });
+    expect(scheduleText(store.update(d.id, { dayOfMonth: 0 }))).toBe("每天 09:00");
+    cleanup(paths);
   });
 });
 

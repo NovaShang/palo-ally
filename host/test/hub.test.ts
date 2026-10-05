@@ -153,6 +153,21 @@ describe("Hub: proactive", () => {
     cleanup(paths);
   });
 
+  test("register_watch: monthly day, and moving a daily goal to monthly in place", async () => {
+    const { hub, paths } = makeHub();
+    const h = hub.toolHandlers();
+    expect(await h.register_watch({ title: "月底对账", instruction: "整理 daycare 账单", at: ["20:00"], day_of_month: -1 })).toContain("每月最后一天 20:00");
+    const daily = hub.watches.add({ title: "财务复盘", instruction: "看上个月的支出", at: ["09:00"] }, "agent");
+    hub.watches.progress(daily.id, "上个月花得不多");
+    expect(await h.register_watch({ id: daily.id, day_of_month: 1 })).toContain("每月 1 号 09:00");
+    expect(hub.watches.get(daily.id)).toMatchObject({ title: "财务复盘", dayOfMonth: 1, progress: "上个月花得不多" });
+    expect(JSON.parse(await h.list_watches()).find((w: { id: string }) => w.id === daily.id).when).toBe("每月 1 号 09:00");
+    expect(await h.register_watch({ id: "w_nope", day_of_month: 1 })).toContain("没改");
+    expect(await h.register_watch({ id: daily.id, day_of_month: 40 })).toContain("day_of_month");
+    expect(hub.watches.get(daily.id)!.dayOfMonth).toBe(1); // a rejected change doesn't half-apply
+    cleanup(paths);
+  });
+
   test("quiet hours suppress pushes but keep the chat; no daily total", async () => {
     const { hub, pusher, paths } = makeHub({
       config: testConfig((c) => {

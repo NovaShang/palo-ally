@@ -90,6 +90,9 @@ export interface Watch {
   instruction: string;
   intervalMinutes?: number;
   at?: string[];
+  // schedule with `at`: only on this day of the month (1–31, -1 = the last
+  // day); 29–31 fall on a shorter month's last day
+  dayOfMonth?: number;
   enabled: boolean;
   createdBy: "agent" | "user";
   createdAt?: number;

@@ -383,6 +383,9 @@ public struct Watch: Codable, Sendable, Hashable, Identifiable {
     public var intervalMinutes: Int?
     /// "HH:MM" in the host's local timezone.
     public var at: [String]?
+    /// With `at`: only on this day of the month (1–31, -1 = the last day;
+    /// 29–31 fall on a shorter month's last day). Nil = every day.
+    public var dayOfMonth: Int?
     public var enabled: Bool
     public var createdBy: WatchCreator
     public var lastCheckedAt: Int64?
@@ -398,17 +401,18 @@ public struct Watch: Codable, Sendable, Hashable, Identifiable {
     public var history: [GoalProgress]
 
     enum CodingKeys: String, CodingKey {
-        case id, title, kind, instruction, intervalMinutes, at, enabled, createdBy, lastCheckedAt,
+        case id, title, kind, instruction, intervalMinutes, at, dayOfMonth, enabled, createdBy, lastCheckedAt,
              lastTriggeredAt, skipIfActiveMinutes, state, progress, progressAt, ratio, outcome, history
     }
 
     public init(id: String, title: String, kind: WatchKind, instruction: String, intervalMinutes: Int? = nil,
-                at: [String]? = nil, enabled: Bool = true, createdBy: WatchCreator = .user,
+                at: [String]? = nil, dayOfMonth: Int? = nil, enabled: Bool = true, createdBy: WatchCreator = .user,
                 lastCheckedAt: Int64? = nil, lastTriggeredAt: Int64? = nil, skipIfActiveMinutes: Int? = nil,
                 state: GoalState? = nil, progress: String? = nil, progressAt: Int64? = nil, ratio: Double? = nil,
                 outcome: String? = nil, history: [GoalProgress] = []) {
         self.id = id; self.title = title; self.kind = kind; self.instruction = instruction
-        self.intervalMinutes = intervalMinutes; self.at = at; self.enabled = enabled; self.createdBy = createdBy
+        self.intervalMinutes = intervalMinutes; self.at = at; self.dayOfMonth = dayOfMonth
+        self.enabled = enabled; self.createdBy = createdBy
         self.lastCheckedAt = lastCheckedAt; self.lastTriggeredAt = lastTriggeredAt
         self.skipIfActiveMinutes = skipIfActiveMinutes
         self.state = state ?? (enabled ? .tracking : .paused)
@@ -424,6 +428,7 @@ public struct Watch: Codable, Sendable, Hashable, Identifiable {
         instruction = l.string("instruction", or: "")
         intervalMinutes = l.int("intervalMinutes")
         at = l.array(String.self, "at")
+        dayOfMonth = l.int("dayOfMonth")
         enabled = l.bool("enabled", or: true)
         createdBy = l.decode(WatchCreator.self, "createdBy", or: .unknown)
         lastCheckedAt = l.millis("lastCheckedAt")
@@ -449,19 +454,20 @@ public struct WatchDraft: Codable, Sendable, Hashable {
     public var instruction: String
     public var intervalMinutes: Int?
     public var at: [String]?
+    public var dayOfMonth: Int?
     public var enabled: Bool
     public var skipIfActiveMinutes: Int?
 
     public init(title: String, kind: WatchKind, instruction: String, intervalMinutes: Int? = nil,
-                at: [String]? = nil, enabled: Bool = true, skipIfActiveMinutes: Int? = nil) {
+                at: [String]? = nil, dayOfMonth: Int? = nil, enabled: Bool = true, skipIfActiveMinutes: Int? = nil) {
         self.title = title; self.kind = kind; self.instruction = instruction
-        self.intervalMinutes = intervalMinutes; self.at = at; self.enabled = enabled
+        self.intervalMinutes = intervalMinutes; self.at = at; self.dayOfMonth = dayOfMonth; self.enabled = enabled
         self.skipIfActiveMinutes = skipIfActiveMinutes
     }
 
     public init(_ w: Watch) {
         self.init(title: w.title, kind: w.kind, instruction: w.instruction, intervalMinutes: w.intervalMinutes,
-                  at: w.at, enabled: w.enabled, skipIfActiveMinutes: w.skipIfActiveMinutes)
+                  at: w.at, dayOfMonth: w.dayOfMonth, enabled: w.enabled, skipIfActiveMinutes: w.skipIfActiveMinutes)
     }
 }
 

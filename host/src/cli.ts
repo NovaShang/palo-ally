@@ -5,6 +5,7 @@ import { WechatILink } from "./channels/wechat.ts";
 import { Paths, VERSION, defaultRoot, loadConfig, saveConfig } from "./config.ts";
 import { startDaemon } from "./daemon.ts";
 import { scaffoldHome } from "./home.ts";
+import { scheduleText } from "./watches.ts";
 import { CORE_SOFT_LIMIT } from "./memory.ts";
 import { installService, serviceStatus, uninstallService } from "./service.ts";
 import { runSetup } from "./setup.ts";
@@ -186,7 +187,7 @@ function printApprovals(list: any[]): void {
 function printWatches(list: Watch[]): void {
   if (!list.length) return console.log("还没有盯梢。");
   for (const w of list) {
-    const when = w.kind === "schedule" ? (w.at?.join(", ") ?? `每 ${w.intervalMinutes} 分钟`) : `每 ${w.intervalMinutes} 分钟检查`;
+    const when = scheduleText(w);
     console.log(`${w.enabled ? "●" : "○"} ${w.id}  ${w.title}  [${when}]  ${w.createdBy === "agent" ? "（助理登记）" : ""}\n    ${w.instruction}`);
   }
 }

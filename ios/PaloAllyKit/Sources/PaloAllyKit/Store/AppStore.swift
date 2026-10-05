@@ -890,6 +890,7 @@ public final class AppStore {
         ]
         o["intervalMinutes"] = draft.intervalMinutes.map { .number(Double($0)) } ?? .null
         o["at"] = draft.at.map { .array($0.map(JSONValue.string)) } ?? .null
+        o["dayOfMonth"] = draft.dayOfMonth.map { .number(Double($0)) } ?? .null
         if let s = draft.skipIfActiveMinutes { o["skipIfActiveMinutes"] = .number(Double(s)) }
         return .object(o)
     }

@@ -296,8 +296,10 @@ struct WatchEditor: View {
     @State private var kind: WatchKind = .schedule
     @State private var instruction = ""
     @State private var interval = 30
-    /// "到点做" can also run every N minutes instead of at fixed times.
-    @State private var scheduleByInterval = false
+    /// How "到点做" counts time: every day, one day a month, or every N minutes.
+    @State private var cadence: Cadence = .daily
+    /// The monthly day: 1…31, or -1 for the month's last day.
+    @State private var day = 1
     @State private var times: [Date] = []
     @State private var enabled = true
     @State private var saving = false
@@ -321,15 +323,23 @@ struct WatchEditor: View {
 
             if kind == .schedule {
                 Section {
-                    Picker("怎么算时间", selection: $scheduleByInterval) {
-                        Text("每天几点").tag(false)
-                        Text("每隔一段时间").tag(true)
+                    Picker("怎么算时间", selection: $cadence) {
+                        Text("每天").tag(Cadence.daily)
+                        Text("每月").tag(Cadence.monthly)
+                        Text("每隔").tag(Cadence.interval)
                     }
                     .pickerStyle(.segmented)
+                    if cadence == .monthly {
+                        Picker("哪天", selection: $day) {
+                            ForEach(dayChoices, id: \.self) { d in
+                                Text(d == -1 ? "最后一天" : "\(d) 号").tag(d)
+                            }
+                        }
+                    }
                 }
             }
 
-            if kind == .schedule && scheduleByInterval {
+            if kind == .schedule && cadence == .interval {
                 Section("多久做一次") { intervalStepper }
             } else if kind == .schedule {
                 Section {
@@ -343,9 +353,11 @@ struct WatchEditor: View {
                         Label("加一个时间", systemImage: "plus")
                     }
                 } header: {
-                    Text("每天几点")
+                    Text(cadence == .monthly ? "那天几点" : "每天几点")
                 } footer: {
-                    Text("按电脑那边的时区。")
+                    Text(cadence == .monthly && (day == -1 || day > 28)
+                         ? "按电脑那边的时区。小月没有这天时，就在月底那天做。"
+                         : "按电脑那边的时区。")
                 }
             } else {
                 Section("多久看一次") { intervalStepper }
@@ -385,7 +397,14 @@ struct WatchEditor: View {
         }
     }
 
-    private var usesInterval: Bool { kind == .check || scheduleByInterval }
+    private var usesInterval: Bool { kind == .check || cadence == .interval }
+
+    /// 1–28 and 最后一天; a 29–31 the assistant set stays selectable.
+    private var dayChoices: [Int] {
+        var days = Array(1...28)
+        if (29...31).contains(day) { days.append(day) }
+        return days + [-1]
+    }
 
     private var canSave: Bool {
         !instruction.trimmingCharacters(in: .whitespaces).isEmpty && (usesInterval || !times.isEmpty)
@@ -400,11 +419,14 @@ struct WatchEditor: View {
         kind = w.kind == .unknown ? .schedule : w.kind
         instruction = w.instruction
         interval = min(max(w.intervalMinutes ?? 30, IntervalStep.range.lowerBound), IntervalStep.range.upperBound)
-        scheduleByInterval = w.isIntervalSchedule
+        cadence = w.isIntervalSchedule ? .interval : (w.dayOfMonth.map { $0 != 0 } == true ? .monthly : .daily)
+        day = w.dayOfMonth.flatMap { $0 == 0 ? nil : $0 } ?? 1
         enabled = w.enabled
         times = (w.at ?? []).compactMap(Self.parse)
         if times.isEmpty { times = [Self.date(hour: 8, minute: 30)] }
     }
+
+    enum Cadence: Hashable { case daily, monthly, interval }
 
     private func save() {
         saving = true
@@ -415,6 +437,7 @@ struct WatchEditor: View {
             instruction: instruction,
             intervalMinutes: usesInterval ? interval : nil,
             at: usesInterval ? nil : times.map(Self.format).sorted(),
+            dayOfMonth: kind == .schedule && cadence == .monthly ? day : nil,
             enabled: enabled,
             skipIfActiveMinutes: existing?.skipIfActiveMinutes
         )

@@ -1,6 +1,6 @@
 import type { HarnessDriver } from "./harness/types.ts";
 import type { Watch } from "./types.ts";
-import type { WatchStore } from "./watches.ts";
+import { onScheduledDay, type WatchStore } from "./watches.ts";
 import { parseHHMM, truncate, zonedParts } from "./util.ts";
 
 // How long after a missed schedule slot we still catch it up (host was asleep).
@@ -221,14 +221,15 @@ function parseResults(output: unknown): ProbeRow[] {
 }
 
 // dueSlot returns the slot key to fire now, or null. `at` slots fire once per
-// day at/after their time (within the catch-up window); interval schedules
-// fire every intervalMinutes.
+// day at/after their time (within the catch-up window), or only on the
+// month's `dayOfMonth`; interval schedules fire every intervalMinutes.
 export function dueSlot(w: Watch, now: number, tz: string): string | null {
   const fired = new Set(w.firedSlots ?? []);
   if (w.at?.length) {
     // Check today's and yesterday's slots (a slot just before midnight may be caught up after it).
     for (const dayOffset of [0, -1]) {
       const p = zonedParts(now + dayOffset * 86400_000, tz);
+      if (!onScheduledDay(w, p)) continue;
       const nowP = zonedParts(now, tz);
       for (const t of w.at) {
         const m = parseHHMM(t);

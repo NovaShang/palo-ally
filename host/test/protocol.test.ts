@@ -76,7 +76,7 @@ describe("host ↔ app protocol", () => {
     await hub.idle();
     const w = (await run("watch.add", { title: "晨报", instruction: "整理日程", at: ["08:30"] })).watch;
     hub.watches.progress(w.id, "已整理 3 条日程", { ratio: 0.5, outcome: "示例" });
-    await run("watch.update", { id: w.id, patch: { enabled: false } });
+    await run("watch.update", { id: w.id, patch: { enabled: false, dayOfMonth: -1 } });
     await run("watch.remove", { id: w.id });
     mkdirSync(join(paths.artifacts, "brief"), { recursive: true });
     writeFileSync(join(paths.artifacts, "brief", "brief.md"), "# 晨报\n- 一件事");

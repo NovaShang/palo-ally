@@ -70,10 +70,12 @@ export type PermissionDecision =
 export interface ToolHandlers {
   report_task(args: { id: string; summary: string; status: string; title?: string }): Promise<string>;
   register_watch(args: {
-    title: string;
-    instruction: string;
+    id?: string;
+    title?: string;
+    instruction?: string;
     interval_minutes?: number;
     at?: string[];
+    day_of_month?: number;
     kind?: "check" | "schedule";
   }): Promise<string>;
   list_watches(): Promise<string>;

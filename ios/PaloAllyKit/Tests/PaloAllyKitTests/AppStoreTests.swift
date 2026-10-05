@@ -360,6 +360,15 @@ struct AppStoreTests {
         try await store.updateWatch(id: w.id, patch: AppStore.watchPatch(from: edited))
         let after = try #require(store.watches.first { $0.id == w.id })
         #expect(after.kind == .schedule && after.at == ["09:00"] && after.intervalMinutes == nil)
+        // monthly on the last day, then back to every day (an explicit null clears it)
+        edited.dayOfMonth = -1
+        try await store.updateWatch(id: w.id, patch: AppStore.watchPatch(from: edited))
+        #expect(await host.lastParams["watch.update"]?["patch"]?["dayOfMonth"] == .number(-1))
+        #expect(store.watches.first { $0.id == w.id }?.dayOfMonth == -1)
+        edited.dayOfMonth = nil
+        try await store.updateWatch(id: w.id, patch: AppStore.watchPatch(from: edited))
+        #expect(await host.lastParams["watch.update"]?["patch"]?["dayOfMonth"] == .null)
+        #expect(store.watches.first { $0.id == w.id }?.dayOfMonth == nil)
         try await store.removeWatch(id: w.id)
         #expect(!store.watches.contains { $0.id == w.id })
     }

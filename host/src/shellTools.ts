@@ -4,12 +4,12 @@ import type { ChatLog } from "./chat.ts";
 import type { ToolHandlers } from "./harness/types.ts";
 import type { Router } from "./router.ts";
 import type { TaskTracker } from "./tasks.ts";
-import type { WatchStore } from "./watches.ts";
+import { scheduleText, type WatchStore } from "./watches.ts";
 import type { WechatChannel } from "./channels/types.ts";
 import type { MediaStore } from "./media.ts";
 import { join, resolve } from "node:path";
 import { mimeOf } from "./artifacts.ts";
-import type { Attachment, Channel } from "./types.ts";
+import type { Attachment, Channel, Watch } from "./types.ts";
 
 export interface ShellToolDeps {
   tasks: TaskTracker;
@@ -36,10 +36,26 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
       d.audit.log("report_task", { id, status, summary });
       return `ok: ${t.id} ${t.status}`;
     },
-    register_watch: async ({ title, instruction, interval_minutes, at, kind }) => {
-      const w = d.watches.add({ title, instruction, intervalMinutes: interval_minutes, at, kind }, "agent");
+    register_watch: async ({ id, title, instruction, interval_minutes, at, day_of_month, kind }) => {
+      if (id) {
+        // Change an existing goal's timing or instruction in place: its
+        // progress and history stay. day_of_month 0 clears the monthly day.
+        const patch: Partial<Watch> = { title, instruction, kind };
+        if (interval_minutes !== undefined) patch.intervalMinutes = interval_minutes;
+        if (at !== undefined) patch.at = at;
+        if (day_of_month !== undefined) patch.dayOfMonth = day_of_month;
+        for (const k of Object.keys(patch) as (keyof Watch)[]) if (patch[k] === undefined) delete patch[k];
+        try {
+          const w = d.watches.update(id, patch);
+          d.audit.log("watch.updated", { id: w.id, title: w.title });
+          return `ok: ${w.id}（${scheduleText(w)}）`;
+        } catch (e) {
+          return `没改：${e instanceof Error ? e.message : e}`;
+        }
+      }
+      const w = d.watches.add({ title: title ?? "", instruction: instruction ?? "", intervalMinutes: interval_minutes, at, dayOfMonth: day_of_month, kind }, "agent");
       d.audit.log("watch.registered", { id: w.id, title });
-      return `ok: ${w.id}（${w.kind === "check" ? `每 ${w.intervalMinutes} 分钟检查` : `定时 ${w.at?.join(",") ?? `每 ${w.intervalMinutes} 分钟`}`}）`;
+      return `ok: ${w.id}（${scheduleText(w)}）`;
     },
     list_watches: async () =>
       JSON.stringify(
@@ -52,6 +68,8 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
           instruction: w.instruction,
           intervalMinutes: w.intervalMinutes,
           at: w.at,
+          dayOfMonth: w.dayOfMonth,
+          when: scheduleText(w),
         })),
       ),
     update_goal: async ({ id, progress, state, ratio, outcome }) => {

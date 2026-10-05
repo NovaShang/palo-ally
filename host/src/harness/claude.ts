@@ -63,13 +63,15 @@ export function paloallyMcpServer(h: ToolHandlers) {
       ),
       tool(
         "register_watch",
-        "登记一个帮主人盯住或推进的「目标」（主人在 App 里看到的就是目标列表）。title 写成目标本身（如「邮箱清零」「十一月回国机票」）。kind=check：外壳定期用轻量探针按 instruction 去查，有新情况再叫你；kind=schedule：到点（at 或每 interval_minutes）让你执行 instruction。",
+        "登记一个帮主人盯住或推进的「目标」（主人在 App 里看到的就是目标列表）。title 写成目标本身（如「邮箱清零」「十一月回国机票」）。kind=check：外壳定期用轻量探针按 instruction 去查，有新情况再叫你；kind=schedule：到点（at 或每 interval_minutes）让你执行 instruction，每月几号用 day_of_month（-1 是月底）。带 id 是改已有目标的时间或说明（进度保留）。",
         {
-          title: z.string().describe("目标，几个字，主人一眼看懂"),
-          instruction: z.string().describe("盯什么、用什么工具怎么查；或到点要做什么"),
+          id: z.string().optional().describe("改已有目标时给它的 id；新登记不填"),
+          title: z.string().optional().describe("目标，几个字，主人一眼看懂（新登记必填）"),
+          instruction: z.string().optional().describe("盯什么、用什么工具怎么查；或到点要做什么（新登记必填）"),
           kind: z.enum(["check", "schedule"]).optional(),
           interval_minutes: z.number().optional(),
           at: z.array(z.string()).optional().describe('本地时间 "HH:MM" 列表，如 ["08:30"]'),
+          day_of_month: z.number().int().optional().describe("配合 at：每月几号（1–31，-1 是月底；29–31 遇到小月就在月底）；改目标时 0 表示取消"),
         },
         async (a) => text(await h.register_watch(a)),
       ),
