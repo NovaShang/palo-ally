@@ -6,3 +6,15 @@ ios/**/DerivedData/
 ios/**/.build/
 ios/**/xcuserdata/
 ios/**/*.xcodeproj/project.xcworkspace/
+
+# secrets and signing material never belong in the repo
+.env*
+*.p8
+*.p12
+*.pem
+*.mobileprovision
+*.xcarchive
+*.ipa
+ios/**/Local.xcconfig
+.paloally/
+.claude/

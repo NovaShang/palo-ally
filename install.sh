@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # PaloAlly one-line installer:
-#   curl -fsSL https://raw.githubusercontent.com/<you>/palo-ally/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/NovaShang/palo-ally/main/install.sh | bash
 # or, from a checkout:  ./install.sh
 # Installs bun if missing, installs the host's dependencies, links `paloally`
 # into ~/.local/bin, then runs `paloally setup`.
 set -euo pipefail
 
-REPO_URL="${PALOALLY_REPO:-https://github.com/novashang/palo-ally.git}"
+REPO_URL="${PALOALLY_REPO:-https://github.com/NovaShang/palo-ally.git}"
 APP_DIR="${PALOALLY_APP_DIR:-$HOME/.paloally/app}"
 BIN_DIR="$HOME/.local/bin"
 

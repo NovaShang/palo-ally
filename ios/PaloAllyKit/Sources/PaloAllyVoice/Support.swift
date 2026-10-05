@@ -2,7 +2,7 @@ import Foundation
 import os
 
 // The pieces of bento's BentoFoundation that the voice files (ported from
-// ~/code/bento/modules/BentoVoiceKit, kept close to the original) rely on.
+// bento's modules/BentoVoiceKit at github.com/NovaShang/bento, kept close to the original) rely on.
 
 private let log = Logger(subsystem: "com.novashang.paloally", category: "voice")
 

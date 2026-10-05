@@ -78,8 +78,8 @@ describe("MemoryView", () => {
   });
 
   test("auto memory dir matches Claude Code's project encoding", () => {
-    expect(autoMemoryDir("/Users/nova/.paloally/home", "/c")).toBe("/c/projects/-Users-nova--paloally-home/memory");
-    expect(autoMemoryDir("/Users/nova/code/palo-ally", "/c")).toBe("/c/projects/-Users-nova-code-palo-ally/memory");
+    expect(autoMemoryDir("/Users/alice/.paloally/home", "/c")).toBe("/c/projects/-Users-alice--paloally-home/memory");
+    expect(autoMemoryDir("/Users/alice/code/palo-ally", "/c")).toBe("/c/projects/-Users-alice-code-palo-ally/memory");
   });
 });
 

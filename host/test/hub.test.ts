@@ -856,7 +856,7 @@ describe("Hub: 「试试」 suggestions", () => {
   test("generated from what it knows about the owner; used and dismissed ones never come back; refreshes when few are left", async () => {
     let n = 0;
     const { hub, driver, paths } = makeHub();
-    writeFileSync(`${paths.home}/user.md`, "# 关于主人\n有个一岁的宝宝，在湾区做产品。");
+    writeFileSync(`${paths.home}/user.md`, "# 关于主人\n养了一只猫，周末喜欢爬山。");
     hub.onHarnessEvent({ type: "init", sessionId: "s", model: "m", tools: ["Read", "mcp__claude_ai_Gmail__search_threads", "mcp__paloally__report_task", "mcp__claude_ai_Google_Calendar__list_events"] });
     driver.probeResponder = (req) => {
       n++;
@@ -878,7 +878,7 @@ describe("Hub: 「试试」 suggestions", () => {
     expect(req.strictMcp).toBe(true);
     const sent = JSON.parse(req.prompt);
     expect(sent.connected_services).toEqual(["claude_ai_Gmail", "claude_ai_Google_Calendar"]);
-    expect(sent.about_owner).toContain("一岁的宝宝");
+    expect(sent.about_owner).toContain("养了一只猫");
     const list = hub.suggestions.list();
     expect(list[0]!.chip).toBe("找出没在用的订阅"); // the 「试试：」 prefix is the app's job
     expect(hub.usage().probeUsd).toBeGreaterThan(0);

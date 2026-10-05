@@ -26,7 +26,7 @@ host/        桌面 host = 一个 CLI 程序（Bun + TypeScript），daemon + on
 ios/         Apple 原生客户端（SwiftUI，iOS + Mac Catalyst）
   PaloAllyKit/          Swift package：协议模型、加密、relay 传输、状态 store（swift test）
   App/                  SwiftUI app（xcodegen project.yml）
-relay/       不新写：复用 ~/code/bento/relay（bento-relay-acp，relay.bentoai.dev）
+relay/       不新写：复用 github.com/NovaShang/bento 的 relay/（bento-relay-acp，relay.bentoai.dev）
 ```
 
 ## 2. 进程模型

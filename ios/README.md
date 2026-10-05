@@ -45,7 +45,7 @@ xcodebuild -project ios/App/PaloAlly.xcodeproj -scheme PaloAlly \
 `LiveHostTests` is opt-in. It pairs, connects through the real relay, syncs, chats, and reconnects:
 
 ```sh
-# relay: cd ~/code/bento/relay && npx wrangler dev --port 8789
+# relay: cd bento/relay && npx wrangler dev --port 8789   (a checkout of github.com/NovaShang/bento)
 # host:  any host with relay.url = http://127.0.0.1:8789, then `paloally pair`
 PALOALLY_LIVE_LINK='paloally://pair?...'   swift test --filter LiveHost   # or a path to a file holding the link
 ```

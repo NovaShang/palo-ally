@@ -1,5 +1,5 @@
 // Integration against the real bento relay (Cloudflare Worker), run locally:
-//   cd ~/code/bento/relay && npx wrangler dev --port 8789
+//   cd bento/relay && npx wrangler dev --port 8789   (a checkout of github.com/NovaShang/bento)
 // Override with RELAY_URL. Skipped when no relay is reachable.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { RelayChannel, buildFrame, loadHostIdentity, parseFrame } from "../src/channels/relay.ts";

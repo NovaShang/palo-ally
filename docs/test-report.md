@@ -12,7 +12,7 @@
 | 浏览器 MCP | `PALOALLY_LIVE=1 PALOALLY_LIVE_BROWSER=1 …` | 1/1 通过（无头 Playwright + 专属 profile） |
 | iOS 包 | `cd ios/PaloAllyKit && swift test` | 71/71 通过，含与 host 的 E2E 互通向量 |
 | iOS / Mac Catalyst 构建 | `xcodebuild …` | 均通过 |
-| 全链路 | 模拟器 App ⇄ 本地 relay ⇄ `paloally start`（真实 Claude） | 通过（见 `ios/screenshots/10-*`、`11-*`） |
+| 全链路 | 模拟器 App ⇄ 本地 relay ⇄ `paloally start`（真实 Claude） | 通过（见 `ios/screenshots/10-*`） |
 | 安装脚本 | `HOME=<临时> ./install.sh` | 通过；未登录时给出三种认证方式的指引 |
 
 ## PRD 需求 → 实现 → 验证
@@ -50,4 +50,4 @@
 - **APNs 真推送**：要 Apple 开发者 .p8 密钥和真机。JWT 与 HTTP/2 发送已用本地 HTTP/2 服务器测过。
 - **App 真机 / 签名发布**：模拟器用 ad-hoc 签名跑通。真机要你的开发者证书。
 - **第三方模型（GLM / Kimi 等）**：支持经 `config.env` 配 `ANTHROPIC_BASE_URL`，但没有对应密钥，未实测。
-- **Phase 0 的两个核心问题**（任务会不会办偏、推送频率能不能忍）：要你连续用两周，用 `paloally metrics` 看数据。全链路测试里已经出现一次可能办偏的例子：「home 目录」被理解成了 `/Users/nova`。
+- **Phase 0 的两个核心问题**（任务会不会办偏、推送频率能不能忍）：要你连续用两周，用 `paloally metrics` 看数据。全链路测试里已经出现一次可能办偏的例子：「home 目录」被理解成了用户的主目录 `~`。
