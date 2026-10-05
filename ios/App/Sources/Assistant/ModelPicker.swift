@@ -1,31 +1,9 @@
 import PaloAllyKit
 import SwiftUI
 
-/// The quiet "Opus 5.5 · 思考：中" line. Shown only on the assistant page;
-/// tapping it opens the picker.
-struct ModelStatusButton: View {
-    @Environment(AppStore.self) private var store
-    @State private var showPicker = false
-
-    var body: some View {
-        Button {
-            showPicker = true
-        } label: {
-            HStack(spacing: 4) {
-                Text("\(ModelName.short(store.status?.model ?? "")) · 思考：\(EffortName.label(store.status?.effort))")
-                Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
-            }
-            .font(.caption)
-            .foregroundStyle(.tertiary)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("换模型或思考深度")
-        .sheet(isPresented: $showPicker) {
-            ModelPickerSheet().environment(store)
-        }
-    }
-}
-
+/// Model and thinking depth for the current assistant. Opened from the
+/// title-capsule popover (the one place to change them); /model in the
+/// composer still works too.
 struct ModelPickerSheet: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss

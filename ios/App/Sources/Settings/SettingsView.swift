@@ -10,30 +10,23 @@ struct SettingsView: View {
     @State private var quietEnd = WatchEditor.date(hour: 8, minute: 0)
     @State private var loaded = false
     @State private var error: String?
-    @State private var showModels = false
+    @State private var confirmUnpair = false
+    @State private var unpairing = false
     /// Pending quiet-hours save; DatePickers fire on every tick of the wheel.
     @State private var quietSave: Task<Void, Never>?
     var body: some View {
         @Bindable var model = model
         Form {
             Section {
-                Button {
-                    showModels = true
-                } label: {
-                    LabeledContent("模型与思考", value: "\(ModelName.short(store.status?.model ?? "")) · \(EffortName.label(store.status?.effort))")
-                }
-                .foregroundStyle(.primary)
-            }
-            .sheet(isPresented: $showModels) { ModelPickerSheet().environment(store) }
-
-            Section {
                 ThemePicker(selection: themeBinding)
             } header: {
                 Text("主题色")
             } footer: {
-                Text(model.hasSeveralHosts
-                     ? "这是「\(model.displayName(model.activeHostID ?? ""))」的颜色；每个助理一个颜色，切换时整个 App 跟着换。"
-                     : "App 的颜色和桌面图标都会换成这个颜色。")
+                if model.hasSeveralHosts {
+                    Text("这是「\(model.displayName(model.activeHostID ?? ""))」的颜色；每个助理一个颜色，切换时整个 App 跟着换。")
+                } else {
+                    Text("App 的颜色和桌面图标都会换成这个颜色。")
+                }
             }
 
             Section {
@@ -54,15 +47,41 @@ struct SettingsView: View {
 
             Section("连接") {
                 LabeledContent("状态", value: Copy.connection(store.connection))
-                LabeledContent("电脑", value: model.mode == .demo ? "演示" : model.displayName(model.activeHostID ?? ""))
-                NavigationLink {
-                    HostsView()
-                } label: {
-                    LabeledContent("我的助理", value: "\(model.hostIDs.count) 个")
-                }
                 if model.mode == .demo {
+                    LabeledContent("电脑", value: "演示")
+                    if model.hasSeveralHosts {
+                        NavigationLink { HostsView() } label: {
+                            LabeledContent("我的助理", value: "\(model.hostIDs.count) 个")
+                        }
+                    }
                     Button("退出演示，去配对") { model.exitDemo() }
                         .tint(.primary)
+                } else if model.hasSeveralHosts {
+                    LabeledContent("电脑", value: model.displayName(model.activeHostID ?? ""))
+                    NavigationLink { HostsView() } label: {
+                        LabeledContent("我的助理", value: "\(model.hostIDs.count) 个")
+                    }
+                } else {
+                    // One computer (most people): the plain section, as before.
+                    LabeledContent("电脑", value: store.hostName.isEmpty ? (model.pairedHost?.hostLabel ?? "—") : store.hostName)
+                    Button("换一台电脑配对") { model.startPairing(.replace) }
+                        .tint(.primary)
+                    Button(unpairing ? "正在解除…" : "解除配对", role: .destructive) { confirmUnpair = true }
+                        .disabled(unpairing)
+                        .confirmationDialog("解除和这台电脑的配对？", isPresented: $confirmUnpair, titleVisibility: .visible) {
+                            Button("解除配对", role: .destructive) {
+                                unpairing = true
+                                Task { await model.unpair() }
+                            }
+                        } message: {
+                            Text("之后要重新扫码才能连回来。")
+                        }
+                    Button {
+                        model.startPairing(.add)
+                    } label: {
+                        Text("添加另一台电脑").font(.footnote)
+                    }
+                    .tint(.secondary)
                 }
             }
 

@@ -1,29 +1,51 @@
 import PaloAllyKit
 import SwiftUI
 
-/// The assistant switcher, from the title capsule: one row per paired
-/// computer — its color, name, state, unread replies and pending approvals —
-/// then 添加一台电脑 / 管理. Assistants waiting on an approval come first.
+/// The popover behind the title capsule: the model and thinking depth (the
+/// one place to change them). With several paired computers it also lists
+/// the assistants first — color, name, state, unread replies, pending
+/// approvals; those waiting on an approval come first — and ends with
+/// 添加一台电脑 / 管理. With one computer it's only the model.
 struct HostSwitcher: View {
     @Environment(AppModel.self) private var model
+    @Environment(AppStore.self) private var store
+    /// Opens the model picker (presented by the chat screen, not the popover).
+    let openModelPicker: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            ForEach(model.switcherOrder, id: \.self) { id in
-                Button {
-                    model.showHostSwitcher = false
-                    withAnimation(.snappy) { model.switchTo(id) }
-                } label: {
-                    HostSwitcherRow(id: id)
+            if model.hasSeveralHosts {
+                ForEach(model.switcherOrder, id: \.self) { id in
+                    Button {
+                        model.showHostSwitcher = false
+                        withAnimation(.snappy) { model.switchTo(id) }
+                    } label: {
+                        HostSwitcherRow(id: id)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                Divider().padding(.vertical, 6)
             }
-            Divider().padding(.vertical, 6)
+            ModelRows(open: {
+                model.showHostSwitcher = false
+                openModelPicker()
+            })
+            // Most people have one computer: then this is just the model.
+            if model.hasSeveralHosts {
+                Divider().padding(.vertical, 6)
+                manageRow
+            }
+        }
+        .padding(8)
+        .frame(width: 300)
+    }
+
+    private var manageRow: some View {
             HStack(spacing: 18) {
                 if model.mode == .paired {
                     Button {
                         model.showHostSwitcher = false
-                        model.showPairingSheet = true
+                        model.startPairing(.add)
                     } label: {
                         Label("添加一台电脑", systemImage: "plus")
                     }
@@ -42,9 +64,46 @@ struct HostSwitcher: View {
             .tint(.primary)
             .padding(.horizontal, 12)
             .padding(.bottom, 6)
+    }
+}
+
+/// 「模型  Opus 5.5 ›」 and 「思考  中 ›」 for the current assistant; either
+/// opens the picker. The thinking row only shows when the model has levels.
+private struct ModelRows: View {
+    @Environment(AppStore.self) private var store
+    let open: () -> Void
+
+    private var efforts: [String] {
+        guard let info = store.modelInfo else { return [] }
+        let selected = info.setting ?? info.models.first?.value
+        return info.models.first(where: { $0.value == selected })?.efforts ?? []
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            row("模型", ModelName.short(store.status?.model ?? store.modelInfo?.model ?? ""))
+            if !efforts.isEmpty || store.status?.effort != nil {
+                row("思考", EffortName.label(store.status?.effort))
+            }
         }
-        .padding(8)
-        .frame(width: 300)
+        .task { try? await store.loadModels() }
+    }
+
+    private func row(_ title: String, _ value: String) -> some View {
+        Button(action: open) {
+            HStack(spacing: 6) {
+                Text(title)
+                Spacer(minLength: 12)
+                Text(value.isEmpty ? "默认" : value).foregroundStyle(.secondary).lineLimit(1)
+                Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+            .font(.callout)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(title)：\(value.isEmpty ? "默认" : value)，点一下更换")
     }
 }
 

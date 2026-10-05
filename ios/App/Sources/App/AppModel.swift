@@ -82,6 +82,20 @@ final class AppModel {
     var showHostList = false
     var showHostSwitcher = false
     var showPairingSheet = false
+    /// Why the pairing screen is open. Most people have one computer, so it
+    /// only talks about "adding" when they asked to add another one.
+    enum PairingIntent: Equatable {
+        case first      // nothing paired yet (or demo)
+        case add        // 「添加另一台电脑」
+        case replace    // 「换一台电脑配对」: the current one is dropped once the new one is in
+    }
+    var pairingIntent: PairingIntent = .first
+
+    /// Opens the pairing screen for a given purpose.
+    func startPairing(_ intent: PairingIntent) {
+        pairingIntent = mode == .paired ? intent : .first
+        showPairingSheet = true
+    }
     var pendingPairingLink: String?
     var libraryPath: [String] = []
     /// Task whose detail should open on the assistant page (notification tap).
@@ -118,8 +132,8 @@ final class AppModel {
         case "assistant": showAssistant = true
         case "settings": showAssistant = true; showSettings = true
         case "hosts": showAssistant = true; showSettings = true; showHostList = true
-        case "switcher": showHostSwitcher = hostIDs.count > 1
-        case "pairing": if mode != .unpaired { showPairingSheet = true }
+        case "switcher": showHostSwitcher = true
+        case "pairing": if mode != .unpaired { startPairing(.replace) }
         default: break
         }
         if let t = launch.tab, let tab = AssistantTab(rawValue: t) {
@@ -291,6 +305,7 @@ final class AppModel {
 
     /// Pairs another computer (or re-pairs one), and switches to it.
     func pair(with link: PairingLink) async throws {
+        let replacing = pairingIntent == .replace ? activeHostID : nil
         let identity = try DeviceIdentity.loadOrCreate(store: secrets)
         let label = await Self.deviceLabel()
         let host = try await PairingClient().pair(link: link, identity: identity, deviceLabel: label)
@@ -314,6 +329,9 @@ final class AppModel {
         }
         markSeen()
         activate(host.daemonID)
+        // 「换一台电脑配对」: the old computer goes once the new one is in.
+        if let old = replacing, old != host.daemonID { await unpair(old) }
+        pairingIntent = .first
         showPairingSheet = false
     }
 
@@ -398,7 +416,11 @@ final class AppModel {
         appLog.info("pairing link received (mode \(String(describing: self.mode), privacy: .public))")
         debugLog("pairing link received (mode \(String(describing: self.mode)))")
         pendingPairingLink = url.absoluteString
-        if mode != .unpaired { showPairingSheet = true }
+        if mode != .unpaired {
+            // A link from outside: the screen asks whether to switch or add.
+            pairingIntent = .first
+            showPairingSheet = true
+        }
     }
 
     func didBecomeActive() {

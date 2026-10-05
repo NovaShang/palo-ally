@@ -92,7 +92,6 @@ private struct AssistantHeader: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                ModelStatusButton()
             }
 
             Button(role: .destructive) {

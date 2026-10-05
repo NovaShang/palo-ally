@@ -29,7 +29,7 @@ struct HostsView: View {
             Section {
                 if model.mode == .paired {
                     Button {
-                        model.showPairingSheet = true
+                        model.startPairing(.add)
                     } label: {
                         Label("添加一台电脑", systemImage: "plus")
                     }

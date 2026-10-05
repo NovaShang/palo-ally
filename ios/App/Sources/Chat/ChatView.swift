@@ -6,6 +6,7 @@ struct ChatView: View {
     @Environment(AppStore.self) private var store
     @Environment(VoiceInputController.self) private var voice
     @State private var draft = ""
+    @State private var showModelPicker = false
     /// Following the live bottom (streaming keeps the newest text in view).
     /// Detached as soon as the reader drags up even a little; re-attached
     /// when they come back near the bottom or tap the jump button.
@@ -181,9 +182,9 @@ struct ChatView: View {
         }
     }
 
-    /// The current assistant's name and state. With several assistants it's
-    /// the switcher (a dot when another one has something new); with one it's
-    /// just the title, as before.
+    /// The current assistant's name and state; always tappable: it opens the
+    /// popover with the assistants (when there are several — a dot when
+    /// another one has something new) and the model / thinking depth.
     @ViewBuilder private var titleCapsule: some View {
         @Bindable var model = model
         let label = VStack(spacing: 0) {
@@ -191,11 +192,9 @@ struct ChatView: View {
                 Text(model.hasSeveralHosts ? model.displayName(model.activeHostID ?? "") : "PaloAlly")
                     .font(.headline)
                     .lineLimit(1)
-                if model.hasSeveralHosts {
-                    Image(systemName: "chevron.down")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
             }
             HStack(spacing: 4) {
                 Circle()
@@ -216,18 +215,24 @@ struct ChatView: View {
             }
         }
 
-        if model.hasSeveralHosts {
-            Button { model.showHostSwitcher = true } label: { label }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .capsule)
-                .accessibilityLabel("当前助理：\(model.displayName(model.activeHostID ?? ""))，点一下切换")
-                .popover(isPresented: $model.showHostSwitcher, arrowEdge: .top) {
-                    HostSwitcher()
-                        .presentationCompactAdaptation(.popover)
-                }
-        } else {
-            label.glassEffect(.regular, in: .capsule)
-        }
+        Button { model.showHostSwitcher = true } label: { label }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .accessibilityLabel(model.hasSeveralHosts
+                ? "当前助理：\(model.displayName(model.activeHostID ?? ""))，点一下切换助理或模型"
+                : "点一下换模型或思考深度")
+            .popover(isPresented: $model.showHostSwitcher, arrowEdge: .top) {
+                HostSwitcher(openModelPicker: {
+                    // Let the popover finish closing before the sheet comes up.
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(350))
+                        showModelPicker = true
+                    }
+                })
+                .environment(store)
+                .presentationCompactAdaptation(.popover)
+            }
+            .sheet(isPresented: $showModelPicker) { ModelPickerSheet().environment(store) }
     }
 
     /// Shown whenever the host is working (not just right after a send).
@@ -266,7 +271,7 @@ struct StatusBanner: View {
         Group {
             if case .rejected = store.connection {
                 banner(icon: "link.badge.plus", tint: .red, text: "这台设备需要重新配对") {
-                    Button("去配对") { model.showPairingSheet = true }
+                    Button("去配对") { model.startPairing(.replace) }
                         .buttonStyle(.glassProminent)
                 }
             } else if case .offline = store.connection {

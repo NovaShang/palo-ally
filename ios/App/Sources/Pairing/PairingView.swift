@@ -17,8 +17,9 @@ struct PairingView: View {
     /// device is already paired: ask before adding another computer.
     @State private var confirmAdd = false
 
-    /// Already paired: this screen adds another computer (another assistant).
-    private var adding: Bool { model.mode == .paired }
+    /// Only when the owner asked to add another computer does this screen
+    /// talk about adding; otherwise it's plain pairing.
+    private var adding: Bool { model.mode == .paired && model.pairingIntent == .add }
 
     var body: some View {
         NavigationStack {
@@ -30,11 +31,13 @@ struct PairingView: View {
                             .foregroundStyle(.primary)
                             .frame(width: 100, height: 100)
                             .glassEffect(.regular, in: .circle)
-                        Text(adding ? "添加一台电脑" : "你好，我是 PaloAlly")
+                        Text(adding ? "添加另一台电脑" : (model.mode == .paired ? "换一台电脑" : "你好，我是 PaloAlly"))
                             .font(.title.bold())
                         Text(adding
                              ? "每台电脑上是一个独立的助理。连上之后，点对话顶部的名字就能切换。"
-                             : "住在你电脑上的私人助理。把这台设备和电脑连起来，随时找我办事。")
+                             : (model.mode == .paired
+                                ? "连上新的电脑后，这台设备就和「\(currentHostLabel)」断开。"
+                                : "住在你电脑上的私人助理。把这台设备和电脑连起来，随时找我办事。"))
                             .font(.body)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -132,14 +135,15 @@ struct PairingView: View {
             .onAppear(perform: takePendingLink)
             // A link can also arrive while this screen is already showing.
             .onChange(of: model.pendingPairingLink) { takePendingLink() }
-            .confirmationDialog("添加这台电脑？", isPresented: $confirmAdd, titleVisibility: .visible) {
-                Button("添加") { submit() }
+            .confirmationDialog("连上这台电脑？", isPresented: $confirmAdd, titleVisibility: .visible) {
+                Button("换成这台") { model.pairingIntent = .replace; submit() }
+                Button("两台都留着") { model.pairingIntent = .add; submit() }
                 Button("不用", role: .cancel) {
                     linkText = ""
                     if isSheet { dismiss() }
                 }
             } message: {
-                Text("收到了一个配对链接。添加后它是一个新的助理，「\(currentHostLabel)」也照常保留；点对话顶部的名字切换。")
+                Text("收到了一个配对链接。现在连着「\(currentHostLabel)」。")
             }
         }
     }
@@ -152,7 +156,8 @@ struct PairingView: View {
         guard let pending = model.pendingPairingLink else { return }
         model.pendingPairingLink = nil
         linkText = pending
-        if adding {
+        // Already paired and the link came from outside: ask what to do.
+        if model.mode == .paired && model.pairingIntent == .first {
             confirmAdd = true
         } else {
             submit()
