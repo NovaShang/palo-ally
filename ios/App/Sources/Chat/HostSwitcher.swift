@@ -147,17 +147,24 @@ private struct HostSwitcherRow: View {
         let unread = model.unreadCount(id)
         let pending = model.pendingCount(id)
         HStack(spacing: 12) {
-            Circle()
-                .fill(model.theme(for: id).color.gradient)
-                .frame(width: 26, height: 26)
-                .overlay {
+            AssistantAvatar(store?.assistantAvatar ?? "", tint: model.theme(for: id).color)
+                .frame(width: 30, height: 30)
+                .overlay(alignment: .bottomTrailing) {
                     if current {
-                        Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(.white)
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.caption2)
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, .primary)
+                            .offset(x: 3, y: 3)
                     }
                 }
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.displayName(id)).font(.body.weight(current ? .semibold : .regular)).lineLimit(1)
-                Text(state(store)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                // Named assistants go by their name; the computer and its state below.
+                let named = !(store?.settings?.assistantName.isEmpty ?? true)
+                Text(named ? store!.assistantName : model.displayName(id))
+                    .font(.body.weight(current ? .semibold : .regular)).lineLimit(1)
+                Text(named ? "\(model.displayName(id)) · \(state(store))" : state(store))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 8)
             if pending > 0 {

@@ -396,7 +396,9 @@ export class Conversation {
         if (shown) chat.add({ role: "assistant", kind: "text", text: shown, channel: answered[0]!.origin });
       } else if (turn.proactive) {
         if (shown) {
-          const msg = chat.add({ role: "assistant", kind: "text", text: shown, channel: turn.origin, proactive: true });
+          // A schedule goal's output (晨报 and the like) shows as a card titled by the goal.
+          const card = turn.watchId && turn.origin === "schedule" ? { card: { title: turn.label ?? "", goalId: turn.watchId } } : {};
+          const msg = chat.add({ role: "assistant", kind: "text", text: shown, channel: turn.origin, proactive: true, ...card });
           void router.proactive(msg);
         } else {
           this.d.metric({ type: "skip", origin: turn.origin, label: turn.label });

@@ -18,7 +18,7 @@ export interface RpcRequest {
 // The app-facing protocol (docs/design.md §5.3). test/protocol.test.ts drives
 // every one of these and writes the samples the Swift client decodes strictly.
 export const RPC_METHODS = [
-  "hello", "sync", "chat.send", "chat.history", "commands.list", "model.get", "model.set",
+  "hello", "sync", "chat.send", "chat.history", "chat.search", "chat.around", "commands.list", "model.get", "model.set",
   "task.get", "task.stop", "approval.answer", "watch.add", "watch.update", "watch.remove",
   "artifact.list", "artifact.read", "artifact.pin", "memory.list", "memory.read", "memory.write",
   "settings.update", "stop", "push.register", "push.unregister", "device.unpair", "audit.tail",
@@ -66,7 +66,12 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
           if (!a) throw new Error("附件没传上来，重发一次");
           return a;
         });
-      const msg = hub.userMessage(String(p.text ?? ""), ctx.channel, undefined, cid, attachments);
+      const r = p.replyTo;
+      const replyTo =
+        r && typeof r.messageId === "string" && typeof r.excerpt === "string" && r.excerpt.trim()
+          ? { messageId: r.messageId.slice(0, 100), excerpt: r.excerpt.trim().slice(0, 300) }
+          : undefined;
+      const msg = hub.userMessage(String(p.text ?? ""), ctx.channel, undefined, cid, attachments, replyTo);
       if (!msg) throw new Error("空消息");
       // Sent by tapping a 「试试」 chip: it's used up.
       if (typeof p.suggestionId === "string") hub.suggestions.use(p.suggestionId);
@@ -106,6 +111,14 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return { commands: await hub.loadCommands() };
     case "chat.history":
       return { messages: hub.chat.before(Number(p.beforeSeq ?? Infinity), Math.min(Number(p.limit ?? 50), 200)) };
+    case "chat.search": {
+      const before = typeof p.beforeSeq === "number" ? p.beforeSeq : Infinity;
+      return { messages: hub.chat.search(String(p.query ?? ""), Math.max(1, Math.min(Number(p.limit ?? 50), 100)), before) };
+    }
+    case "chat.around": {
+      const clamp = (v: unknown, d: number) => Math.max(0, Math.min(Number(v ?? d), 100));
+      return { messages: hub.chat.around(Number(p.seq ?? 0), clamp(p.before, 25), clamp(p.after, 25)) };
+    }
     case "task.get": {
       const task = hub.tasks.get(String(p.id));
       if (!task) throw new Error("没有这个任务");

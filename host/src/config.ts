@@ -52,7 +52,14 @@ export interface Settings {
   probeIntervalMinutes: number;
   approvalTimeoutMinutes: number;
   wechatProactive: "off" | "hint" | "full";
+  // The assistant's identity, chosen by the owner after the first pairing.
+  // "" = not chosen yet (the app asks once). The name also lives in soul.md.
+  assistantName: string;
+  avatar: string; // one of AVATARS, "" = default
 }
+
+// Code-drawn liquid-glass forms; the app renders each id.
+export const AVATARS = ["drop", "orb", "petal", "wave", "pebble", "bloom", "comet", "twin"] as const;
 
 export interface Config {
   hostName: string;
@@ -118,6 +125,8 @@ export function defaultConfig(): Config {
       probeIntervalMinutes: 10,
       approvalTimeoutMinutes: 30,
       wechatProactive: "hint",
+      assistantName: "",
+      avatar: "",
     },
   };
 }
@@ -142,6 +151,10 @@ export function validateSettings(current: Settings, patch: Record<string, unknow
   next.probeIntervalMinutes = int(next.probeIntervalMinutes, 1, 1440, "检查间隔（分钟）");
   next.approvalTimeoutMinutes = int(next.approvalTimeoutMinutes, 1, 24 * 60, "确认等待时间（分钟）");
   if (!["off", "hint", "full"].includes(next.wechatProactive)) throw new Error("微信主动消息只能是 off / hint / full");
+  if (typeof next.assistantName !== "string") throw new Error("名字要是一段文字");
+  next.assistantName = next.assistantName.replace(/[\r\n]+/g, " ").trim();
+  if ([...next.assistantName].length > 20) throw new Error("名字最多 20 个字");
+  if (next.avatar !== "" && !(AVATARS as readonly string[]).includes(next.avatar)) throw new Error(`没有这个形象：${String(next.avatar)}`);
   return next;
 }
 

@@ -29,9 +29,13 @@ public actor DemoHost {
     /// assistant switcher).
     public nonisolated let hostName: String
 
-    public init(speed: Double = 1, seeded: Bool = true, autoConnect: Bool = true, hostName: String = "我的 MacBook") {
+    public init(speed: Double = 1, seeded: Bool = true, autoConnect: Bool = true, hostName: String = "我的 MacBook",
+                assistantName: String = "帕帕", avatar: String = "drop") {
         self.speed = speed
         self.hostName = hostName
+        settings.assistantName = assistantName
+        settings.avatar = avatar
+        status.metAt = Date().epochMillis - 41 * 86_400_000
         let t = InMemoryTransport(autoConnect: autoConnect)
         self.transport = t
         if seeded {
@@ -186,8 +190,9 @@ public actor DemoHost {
             let text = p["text"]?.stringValue ?? ""
             let cid = p["clientMsgId"]?.stringValue
             seq += 1
-            let m = ChatMessage(seq: seq, id: "m\(seq)", role: .user, kind: .text, text: text, channel: .app,
+            var m = ChatMessage(seq: seq, id: "m\(seq)", role: .user, kind: .text, text: text, channel: .app,
                                 ts: Date().epochMillis, clientMsgId: cid)
+            if let r = p["replyTo"], let reply = try? r.decode(ReplyTo.self) { m.replyTo = reply }
             messages.append(m)
             emit(RPCEventName.chatMessage, m)
             if let sid = p["suggestionId"]?.stringValue {
@@ -200,6 +205,26 @@ public actor DemoHost {
             let before = Int64(p["beforeSeq"]?.doubleValue ?? Double(Int64.max))
             let limit = Int(p["limit"]?.doubleValue ?? 50)
             return ["messages": try .from(Array(messages.filter { $0.seq < before }.suffix(limit)))]
+        case RPCMethod.chatSearch:
+            let q = (p["query"]?.stringValue ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+            guard !q.isEmpty else { return ["messages": .array([])] }
+            let hits: [JSONValue] = messages.reversed().compactMap { m in
+                let text = m.label.map { "\($0) \(m.text)" } ?? m.text
+                guard let r = text.lowercased().range(of: q) else { return nil }
+                let at = text.distance(from: text.startIndex, to: r.lowerBound)
+                let chars = Array(text)
+                let start = max(0, at - 40), end = min(chars.count, at + q.count + 40)
+                let body = String(chars[start..<end]).replacingOccurrences(of: "\n", with: " ")
+                let snippet = (start > 0 ? "…" : "") + body + (end < chars.count ? "…" : "")
+                return .object(["seq": .number(Double(m.seq)), "id": .string(m.id), "role": .string(m.role.rawValue),
+                                "ts": .number(Double(m.ts)), "channel": .string(m.channel.rawValue), "snippet": .string(snippet)])
+            }
+            return ["messages": .array(Array(hits.prefix(50)))]
+        case RPCMethod.chatAround:
+            let seq = Int64(p["seq"]?.doubleValue ?? 0)
+            let before = Int(p["before"]?.doubleValue ?? 25), after = Int(p["after"]?.doubleValue ?? 25)
+            let i = messages.firstIndex { $0.seq >= seq } ?? messages.count
+            return ["messages": try .from(Array(messages[max(0, i - before)..<min(messages.count, i + after + 1)]))]
         case RPCMethod.taskGet:
             let tid = p["id"]?.stringValue ?? ""
             guard let t = tasks.first(where: { $0.id == tid }) else { throw DemoError(message: "没有这个任务") }
@@ -477,9 +502,14 @@ public actor DemoHost {
             return ChatMessage(seq: seq, id: "m\(seq)", role: role, kind: kind, text: text, channel: channel,
                                ts: now - ago, proactive: proactive, taskId: taskId, approvalId: approvalId)
         }
+        var brief = msg(.assistant, "- 王老师的邮件等你回，问周四的会能不能参加\n- 十一月回国机票降到 ¥4,860，比昨天低 ¥320\n- 报销单找到 5 张发票，还差核对金额\n- 周五晚上的餐厅等你定几个人、什么口味\n- 本周睡眠 4/6 天做到",
+                        channel: .schedule, ago: 5 * hour, proactive: true)
+        brief.card = MessageCard(title: "晨报", goalId: "w1")
+        var quoted = msg(.user, "帮我回王老师，说周四可以", ago: 4 * hour + 30 * min)
+        quoted.replyTo = ReplyTo(messageId: brief.id, excerpt: "王老师的邮件等你回，问周四的会能不能参加")
         let messages = [
-            msg(.assistant, "早上好 ☀️ 今天的晨报整理好了，放在资料库里置顶着：**3 件待办**，还有 1 封邮件等你回。",
-                channel: .probe, ago: 5 * hour, proactive: true),
+            brief,
+            quoted,
             msg(.user, "帮我把下周去上海的机票和酒店比较一下", ago: 4 * hour),
             msg(.assistant, "收到，我在后台比价，好了告诉你。", kind: .task, ago: 4 * hour - min, taskId: "t1"),
             msg(.assistant, "比好了 ✈️\n\n- 最划算：周二早上 **东航 MU5100**，¥1,280\n- 酒店推荐静安的全季，两晚 ¥960\n\n详细对比放在《上海出行比价》里。",
@@ -520,8 +550,8 @@ public actor DemoHost {
             Watch(id: "w7", title: "每天 11 点前睡", kind: .schedule, instruction: "每晚 22:30 提醒我准备睡觉，第二天记一下有没有做到。",
                   at: ["22:30"], enabled: true, createdBy: .user, lastTriggeredAt: now - 12 * hour,
                   state: .tracking, progress: "本周 4/6 天做到", progressAt: now - 12 * hour, ratio: 4.0 / 6.0),
-            Watch(id: "w1", title: "每日晨报", kind: .schedule, instruction: "汇总今天的日程、待办和重要邮件，写进晨报。",
-                  at: ["08:30"], enabled: true, createdBy: .agent, lastTriggeredAt: now - 5 * hour,
+            Watch(id: "w1", title: "晨报", kind: .schedule, instruction: "给主人写今天的晨报：需要主人处理的、目标进展、值得一提的变化。",
+                  at: ["07:30"], enabled: true, createdBy: .agent, lastTriggeredAt: now - 5 * hour,
                   progress: "今天 3 件事、2 封要回的邮件", progressAt: now - 5 * hour),
             Watch(id: "w2", title: "盯着王老师的邮件", kind: .check, instruction: "看看有没有王老师的新邮件，有就告诉我。",
                   intervalMinutes: 30, enabled: true, createdBy: .agent, lastCheckedAt: now - 12 * min,

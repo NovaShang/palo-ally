@@ -69,6 +69,8 @@ private let resultTypes: [String: Check] = [
     RPCMethod.sync: strict(SyncResult.self),
     RPCMethod.chatSend: strict(ChatSendResult.self),
     RPCMethod.chatHistory: strict(MessagesResult.self),
+    RPCMethod.chatSearch: strict(ChatSearchResult.self),
+    RPCMethod.chatAround: strict(MessagesResult.self),
     RPCMethod.commandsList: strict(CommandsResult.self),
     RPCMethod.modelGet: strict(ModelInfo.self),
     RPCMethod.modelSet: strict(StatusResult.self),

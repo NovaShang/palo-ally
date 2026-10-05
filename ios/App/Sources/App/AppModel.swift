@@ -10,10 +10,10 @@ let appLog = Logger(subsystem: "com.novashang.paloally", category: "app")
 /// Launch options parsed from arguments / UserDefaults:
 ///   -demo YES            run against the in-memory demo host
 ///   -demoScreen <name>   chat | library | assistant | settings | pairing | artifact | voice
-///   -demoTab <name>      tasks | approvals | watches | memory
+///   -demoTab <name>      watches (目标) | history (履历) | memory; old values tasks → history, approvals → watches
 ///   -pairLink <url>      start pairing with this paloally:// link (automation; skips the open-URL prompt)
 ///   -demoHosts <n>       demo with n assistants (2 shows the switcher)
-///   -demoState <name>    idle | busy | tasks — what the title capsule shows
+///   -demoState <name>    idle | busy | tasks — what the title capsule shows; quote — a reply quote in the composer
 ///   -demoScreen hosts | switcher   设置 → 我的助理 / the assistant switcher open
 struct LaunchOptions {
     var demo: Bool
@@ -40,14 +40,24 @@ struct LaunchOptions {
 
 enum AssistantTab: String, CaseIterable, Hashable {
     // 目标 first: what it's helping with over time (watches underneath).
-    case watches, tasks, approvals, memory
+    // 履历: what it's doing now and what it got done. Approvals have no tab —
+    // they live in the conversation and the status capsule.
+    case watches, history, memory
 
     var title: String {
         switch self {
-        case .tasks: "任务"
-        case .approvals: "审批"
         case .watches: "目标"
+        case .history: "履历"
         case .memory: "记忆"
+        }
+    }
+
+    /// Launch-arg / old names map to the nearest current tab.
+    init?(launchName: String) {
+        switch launchName {
+        case "tasks": self = .history
+        case "approvals": self = .watches
+        default: self.init(rawValue: launchName)
         }
     }
 }
@@ -150,7 +160,7 @@ final class AppModel {
     }
     func showAllTasks() {
         assistantRoot = .tabs
-        assistantTab = .tasks
+        assistantTab = .history
         openTaskID = nil
         place = .assistant
     }
@@ -159,6 +169,10 @@ final class AppModel {
     var showHostList = false
     var showHostSwitcher = false
     var showPairingSheet = false
+    /// The 「它」 header's name-and-form editor.
+    var showIdentityEditor = false
+    /// Naming was answered (or skipped) this run; the host remembers it too.
+    var namingDone = false
     /// Why the pairing screen is open. Most people have one computer, so it
     /// only talks about "adding" when they asked to add another one.
     enum PairingIntent: Equatable {
@@ -177,6 +191,17 @@ final class AppModel {
     var libraryPath: [String] = []
     /// Task whose detail should open on the assistant page (notification tap).
     var openTaskID: String?
+    /// An approval the conversation should scroll to (notification tap).
+    var focusApprovalID: String?
+    /// A message the conversation should scroll to and briefly highlight
+    /// (a search hit in 成果).
+    var focusMessageSeq: Int64?
+
+    /// Slides back to the conversation and brings message `seq` into view.
+    func jumpToMessage(seq: Int64) {
+        focusMessageSeq = seq
+        place = .chat
+    }
 
     let secrets: SecretStore = KeychainSecretStore()
     let launch: LaunchOptions
@@ -211,9 +236,10 @@ final class AppModel {
         case "hosts": showAssistant = true; showSettings = true; showHostList = true
         case "switcher": showHostSwitcher = true
         case "pairing": if mode != .unpaired { startPairing(.replace) }
+        case "identity": showAssistant = true; showIdentityEditor = true
         default: break
         }
-        if let t = launch.tab, let tab = AssistantTab(rawValue: t) {
+        if let t = launch.tab, let tab = AssistantTab(launchName: t) {
             assistantTab = tab
             showAssistant = true
         }
@@ -334,14 +360,22 @@ final class AppModel {
         let names = ["我的 MacBook", "云端"]
         for i in 0..<max(1, launch.demoHosts) {
             let id = "demo-\(i + 1)"
-            let host = DemoHost(speed: 1, hostName: i < names.count ? names[i] : "电脑 \(i + 1)")
+            let identities = [("帕帕", "drop"), ("小云", "orb")]
+            let who = i < identities.count ? identities[i] : ("PaloAlly", "")
+            let naming = launch.screen == "naming" && i == 0
+            let host = DemoHost(speed: 1, hostName: i < names.count ? names[i] : "电脑 \(i + 1)",
+                                assistantName: naming ? "" : who.0, avatar: naming ? "" : who.1)
             demoHosts[id] = host
             let s = makeStore(host.transport, id: id)
             stores[id] = s
             hostIDs.append(id)
             assignTheme(id)
-            if let state = launch.demoState { Task { await host.applyScenario(state) } }
+            if let state = launch.demoState, state != "quote" { Task { await host.applyScenario(state) } }
             s.start()
+            // -demoState quote: the composer with a reply quote open (screenshots).
+            if launch.demoState == "quote" {
+                s.replyDraft = ReplyTo(messageId: "m1", excerpt: "十一月回国机票降到 ¥4,860，比昨天低 ¥320")
+            }
         }
         mode = .demo
         activate(meta.active.flatMap { hostIDs.contains($0) ? $0 : nil } ?? hostIDs[0])
@@ -513,10 +547,9 @@ final class AppModel {
         if let hostId = userInfo["hostId"] as? String, hostIDs.contains(hostId) { switchTo(hostId) }
         showHostSwitcher = false
         if let approvalId = userInfo["approvalId"] as? String, !approvalId.isEmpty {
-            assistantRoot = .tabs
-            assistantTab = .approvals
-            openTaskID = nil
-            place = .assistant
+            // Approvals live in the conversation: go there and bring the card into view.
+            place = .chat
+            focusApprovalID = approvalId
         } else if let taskId = userInfo["taskId"] as? String, !taskId.isEmpty {
             openTask(taskId)
         } else {

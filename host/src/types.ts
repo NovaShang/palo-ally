@@ -16,6 +16,18 @@ export interface ChatMessage {
   clientMsgId?: string; // echoed for app-sent messages so clients can merge their optimistic copy
   attachments?: Attachment[]; // images the owner sent with the message
   label?: string; // kind "clipboard": what the copied text is ("地址", "验证码")
+  replyTo?: ReplyTo; // the owner quoted part of an earlier message
+  card?: MessageCard; // a schedule goal's output (e.g. 晨报): shown as a card titled by the goal
+}
+
+export interface ReplyTo {
+  messageId: string;
+  excerpt: string; // ≤ 300 chars of the quoted text
+}
+
+export interface MessageCard {
+  title: string;
+  goalId?: string;
 }
 
 // Something sent along with a message. "image"/"file" live in the media
@@ -126,6 +138,7 @@ export interface Status {
   sessionId?: string;
   wechat: "off" | "connected" | "expired";
   version: string;
+  metAt?: number; // when the owner first talked to it (first chat message), for 「认识你 N 天」
 }
 
 export interface MemoryFile {

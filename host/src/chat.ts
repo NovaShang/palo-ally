@@ -19,6 +19,11 @@ export class ChatLog {
     return this.seq;
   }
 
+  /** When the conversation started (the first message), if it has. */
+  get startedAt(): number | undefined {
+    return this.messages[0]?.ts;
+  }
+
   add(msg: Omit<ChatMessage, "seq" | "id" | "ts"> & { id?: string; ts?: number }): ChatMessage {
     const full: ChatMessage = {
       ...msg,
@@ -51,6 +56,32 @@ export class ChatLog {
     return older.slice(-limit);
   }
 
+  /**
+   * Case-insensitive substring search, newest first (the 成果 search box).
+   * Each hit carries a snippet of about ±40 characters around the first match.
+   */
+  search(query: string, limit = 50, beforeSeq = Infinity): ChatSearchHit[] {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const hits: ChatSearchHit[] = [];
+    for (let i = this.messages.length - 1; i >= 0 && hits.length < limit; i--) {
+      const m = this.messages[i]!;
+      if (m.seq >= beforeSeq) continue;
+      const text = m.label ? `${m.label} ${m.text}` : m.text;
+      const at = text.toLowerCase().indexOf(q);
+      if (at < 0) continue;
+      hits.push({ seq: m.seq, id: m.id, role: m.role, ts: m.ts, channel: m.channel, snippet: snippetAround(text, at, q.length) });
+    }
+    return hits;
+  }
+
+  /** A window of messages around `seq` (for jumping to a search hit). */
+  around(seq: number, before = 25, after = 25): ChatMessage[] {
+    let i = this.messages.findIndex((m) => m.seq >= seq);
+    if (i < 0) i = this.messages.length;
+    return this.messages.slice(Math.max(0, i - before), i + after + 1);
+  }
+
   findByClientMsgId(cid: string): ChatMessage | undefined {
     for (let i = this.messages.length - 1, n = 0; i >= 0 && n < 1000; i--, n++) {
       if (this.messages[i]!.clientMsgId === cid) return this.messages[i];
@@ -65,4 +96,21 @@ export class ChatLog {
     }
     return 0;
   }
+}
+
+export interface ChatSearchHit {
+  seq: number;
+  id: string;
+  role: ChatMessage["role"];
+  ts: number;
+  channel: ChatMessage["channel"];
+  snippet: string;
+}
+
+// ±40 characters around the match, on one line, with … where it was cut.
+function snippetAround(text: string, at: number, len: number): string {
+  const start = Math.max(0, at - 40);
+  const end = Math.min(text.length, at + len + 40);
+  const body = text.slice(start, end).replace(/\s+/g, " ").trim();
+  return `${start > 0 ? "…" : ""}${body}${end < text.length ? "…" : ""}`;
 }

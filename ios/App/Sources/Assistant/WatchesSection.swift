@@ -44,6 +44,53 @@ struct WatchesSection: View {
                 Text("它会定期替你查看或推进，有进展会更新在这里；需要你的时候会标出来。")
             }
         }
+
+        MoreIdeasSection()
+    }
+}
+
+/// 「还可以让它…」: the full list of 「试试」 ideas the assistant drafted for
+/// the owner. Tap sends the request and slides back to the conversation.
+private struct MoreIdeasSection: View {
+    @Environment(AppStore.self) private var store
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if !store.suggestions.isEmpty {
+            Section("还可以让它…") {
+                ForEach(store.suggestions) { s in
+                    Button {
+                        store.use(s)
+                        model.showAssistant = false
+                    } label: {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(s.chip).font(.body).foregroundStyle(.primary)
+                            if !s.prompt.isEmpty, s.prompt != s.chip {
+                                Text(s.prompt)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .swipeActions {
+                        Button("不再显示") { withAnimation(.snappy) { store.dismiss(s) } }.tint(.gray)
+                    }
+                    .contextMenu {
+                        Button("发给它", systemImage: "paperplane") {
+                            store.use(s)
+                            model.showAssistant = false
+                        }
+                        Button("不再显示", systemImage: "eye.slash") { withAnimation(.snappy) { store.dismiss(s) } }
+                    }
+                    .accessibilityHint("发给它")
+                }
+            }
+        }
     }
 }
 

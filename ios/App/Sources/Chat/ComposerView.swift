@@ -99,7 +99,7 @@ struct ComposerView: View {
     /// holding to talk, staging attachments, or while the assistant works.
     private var showSuggestions: Bool {
         !store.suggestions.isEmpty && idle && draft.isEmpty && staged.isEmpty && slashQuery == nil
-            && !voice.isActive && !pressing && !store.isBusy
+            && !voice.isActive && !pressing && !store.isBusy && store.replyDraft == nil
     }
 
     var body: some View {
@@ -113,6 +113,10 @@ struct ComposerView: View {
             }
             if !staged.isEmpty {
                 StagedRow(items: staged) { i in staged.remove(at: i) }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            if let reply = store.replyDraft {
+                QuoteBanner(reply: reply) { withAnimation(.snappy) { store.replyDraft = nil } }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             if let msg = voice.dictation.errorMessage, !voice.isActive, !dictating {
@@ -138,6 +142,9 @@ struct ComposerView: View {
         .animation(.snappy, value: staged.count)
         .animation(.snappy, value: showSuggestions)
         .onChange(of: focusToken) { focused = true }
+        // 「回复」 / 「引用回复」 / 「聊聊」: open the keyboard to write the reply.
+        .onChange(of: store.replyDraft) { _, reply in if reply != nil { focusToken += 1 } }
+        .animation(.snappy, value: store.replyDraft)
         .onChange(of: slashQuery) { _, q in
             if q != nil { Task { await store.loadCommands() } }
         }
@@ -689,5 +696,39 @@ private struct SlashSuggestions: View {
             .padding(.vertical, 4)
             .glassEffect(.regular, in: .rect(cornerRadius: 18))
         }
+    }
+}
+
+/// What the next message replies to, above the capsule; ✕ drops it. Quiet,
+/// like the staged-attachments row.
+private struct QuoteBanner: View {
+    let reply: ReplyTo
+    let cancel: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Capsule().fill(.tertiary).frame(width: 2.5, height: 30)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("回复").font(.caption).foregroundStyle(.secondary)
+                Text(reply.excerpt.replacingOccurrences(of: "\n", with: " "))
+                    .font(.footnote)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: 0)
+            Button(action: cancel) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 30, height: 30)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("不回复了")
+        }
+        .padding(.leading, 12)
+        .padding(.vertical, 6)
+        .background(Color(.secondarySystemFill), in: .rect(cornerRadius: 14, style: .continuous))
+        .accessibilityElement(children: .contain)
     }
 }

@@ -47,6 +47,9 @@ private struct UserBubble: View {
                     .help("连上后会自动发")
             }
             VStack(alignment: .trailing, spacing: 4) {
+                if let reply = message.replyTo {
+                    QuoteLine(reply: reply)
+                }
                 if let atts = message.attachments, !atts.isEmpty {
                     AttachmentStrip(attachments: atts)
                 }
@@ -83,6 +86,10 @@ private struct AssistantMessage: View {
         // No avatar: it cost width on every reply and said nothing new.
         HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
+                if let card = message.card {
+                    // A schedule goal's output (晨报 and the like).
+                    GoalCard(message: message, card: card)
+                } else {
                 if message.proactive == true {
                     Label(proactiveLabel, systemImage: "bell.badge")
                         .font(.caption)
@@ -93,12 +100,17 @@ private struct AssistantMessage: View {
                 }
                 if !message.text.isEmpty || message.isStreaming {
                     // One system text view per answer: free selection across
-                    // paragraphs, like Notes / Safari.
-                    SelectableMarkdown(source: message.text, streaming: message.isStreaming)
+                    // paragraphs, like Notes / Safari. 「引用回复」 quotes a selection.
+                    SelectableMarkdown(source: message.text, streaming: message.isStreaming,
+                                       onQuote: { store.quote(message, excerpt: $0) })
                 }
                 if !message.isStreaming, !message.text.isEmpty, message.kind == .text {
                     // The whole answer in one tap; small and quiet.
-                    CopyButton(text: message.text, label: "复制这条回答", glyphAlignment: .leading)
+                    HStack(spacing: 0) {
+                        CopyButton(text: message.text, label: "复制这条回答", glyphAlignment: .leading)
+                        ReplyButton { store.quote(message) }
+                    }
+                }
                 }
                 if message.kind == .task, let taskId = message.taskId {
                     TaskChip(taskId: taskId)
@@ -324,4 +336,105 @@ private struct FileCard: View {
         if let s = attachment.size { parts.append(ByteCountFormatter.string(fromByteCount: s, countStyle: .file)) }
         return parts.isEmpty ? "点开查看" : parts.joined(separator: " · ")
     }
+}
+
+/// 「回复」 under an answer: quotes the whole answer. Same quiet style as the copy glyph.
+struct ReplyButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "arrowshape.turn.up.left")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(.secondary)
+                .frame(width: 32, height: 32)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("回复这条")
+    }
+}
+
+/// What the owner quoted, above their bubble: one or two quiet lines. Tap →
+/// scroll to the quoted message if it's loaded.
+private struct QuoteLine: View {
+    @Environment(\.chatScrollTo) private var scrollTo
+    let reply: ReplyTo
+
+    var body: some View {
+        Button {
+            scrollTo?(reply.messageId)
+        } label: {
+            HStack(alignment: .top, spacing: 6) {
+                Capsule().fill(.tertiary).frame(width: 2.5)
+                Text(reply.excerpt)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("回复：\(reply.excerpt)")
+    }
+}
+
+/// A schedule goal's output as a card (晨报 and the like): the goal's title and
+/// time, then every item expanded, each with 「聊聊」 to start a reply about it.
+/// Content, not chrome: a quiet fill and hairline, no glass.
+private struct GoalCard: View {
+    @Environment(AppStore.self) private var store
+    let message: ChatMessage
+    let card: MessageCard
+
+    private enum Line: Hashable { case item(String), text(String) }
+
+    private var lines: [Line] {
+        message.text.split(separator: "\n", omittingEmptySubsequences: true).map { raw in
+            let s = raw.trimmingCharacters(in: .whitespaces)
+            for marker in ["- ", "* ", "• ", "· "] where s.hasPrefix(marker) {
+                return .item(String(s.dropFirst(marker.count)))
+            }
+            return .text(s)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(card.title.isEmpty ? "到点提醒" : card.title).font(.headline)
+                Spacer()
+                Text(Copy.clock(message.ts)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            }
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                switch line {
+                case .item(let text):
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("·").foregroundStyle(.secondary)
+                        Text(MarkdownBlock.attributed(text))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                        Button("聊聊") { store.quote(message, excerpt: text) }
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("聊聊：\(text)")
+                    }
+                case .text(let text):
+                    Text(MarkdownBlock.attributed(text))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+        .padding(14)
+        .background(.background.secondary, in: .rect(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.quaternary, lineWidth: 0.5))
+    }
+}
+
+extension EnvironmentValues {
+    /// Scrolls the conversation to a message id (set by ChatView).
+    @Entry var chatScrollTo: ((String) -> Void)? = nil
 }

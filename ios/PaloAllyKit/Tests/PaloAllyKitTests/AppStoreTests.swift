@@ -64,9 +64,9 @@ struct AppStoreTests {
         let (store, host) = await demoStore()
         #expect(store.connection == .online)
         #expect(store.hostName == "我的 MacBook")
-        #expect(store.messages.count == 7)
-        #expect(store.messages.map(\.seq) == Array(1...7))
-        #expect(store.lastSeq == 7)
+        #expect(store.messages.count == 8)
+        #expect(store.messages.map(\.seq) == Array(1...8))
+        #expect(store.lastSeq == 8)
         #expect(store.tasks.count == 3)
         #expect(store.tasks.first?.isActive == true) // active tasks sort first
         #expect(store.pendingApprovals.map(\.id).sorted() == ["a1", "a2"])
@@ -96,13 +96,13 @@ struct AppStoreTests {
         #expect(echo.delivery == .sending)
         #expect(store.awaitingReply)
 
-        #expect(await until { store.messages.count == 9 && !store.isBusy })
-        let user = store.messages[7]
-        let reply = store.messages[8]
-        #expect(user.role == .user && user.seq == 8 && user.id == "m8" && user.delivery == .sent)
-        #expect(reply.role == .assistant && reply.seq == 9 && !reply.isStreaming)
+        #expect(await until { store.messages.count == 10 && !store.isBusy })
+        let user = store.messages[8]
+        let reply = store.messages[9]
+        #expect(user.role == .user && user.seq == 9 && user.id == "m9" && user.delivery == .sent)
+        #expect(reply.role == .assistant && reply.seq == 10 && !reply.isStreaming)
         #expect(reply.text.contains("我记下了"))
-        #expect(store.lastSeq == 9)
+        #expect(store.lastSeq == 10)
         #expect(!store.awaitingReply)
         #expect(store.messages.filter { $0.text == "你好呀" }.count == 1)
         #expect(await host.lastParams["chat.send"]?["clientMsgId"] == .string(echo.clientMsgId!))
@@ -135,7 +135,7 @@ struct AppStoreTests {
     @Test func emptySendIgnored() async {
         let (store, _) = await demoStore()
         store.send("   \n ")
-        #expect(store.messages.count == 7)
+        #expect(store.messages.count == 8)
     }
 
     @Test func deltasMergeIntoStreamingMessageAndFinalize() async throws {
@@ -179,6 +179,27 @@ struct AppStoreTests {
         #expect(store.messages.count == 1)
         #expect(store.messages[0].delivery == .sent)
         #expect(store.lastSeq == 1)
+    }
+
+    @Test func quotedReplyGoesWithTheNextMessageOnly() async throws {
+        let host = ManualHost()
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { store.connection == .online })
+        let earlier = ChatMessage(seq: 1, id: "srv-a", role: .assistant, text: "周四下午 3 点开会", ts: 1)
+        store.quote(earlier, excerpt: "3 点开会")
+        #expect(store.replyDraft == ReplyTo(messageId: "srv-a", excerpt: "3 点开会"))
+        store.send("改到周五")
+        #expect(store.replyDraft == nil)
+        #expect(store.messages.last?.replyTo?.excerpt == "3 点开会")
+        #expect(await until { host.request("chat.send") != nil })
+        let req = try #require(host.request("chat.send"))
+        #expect(req.params["replyTo"]?["messageId"]?.stringValue == "srv-a")
+        #expect(req.params["replyTo"]?["excerpt"]?.stringValue == "3 点开会")
+        // A 「试试」 chip doesn't take the open quote with it.
+        store.quote(earlier)
+        store.send("找出没在用的订阅", suggestionId: "sg_1")
+        #expect(store.replyDraft != nil)
     }
 
     @Test func broadcastWithoutClientMsgIdMergesByText() async throws {
@@ -234,13 +255,13 @@ struct AppStoreTests {
 
     @Test func gapTriggersResyncFromLastSeq() async throws {
         let (store, host) = await demoStore()
-        #expect(store.lastSeq == 7)
+        #expect(store.lastSeq == 8)
         await host.post("漏掉的 1", broadcast: false)
         await host.post("漏掉的 2", broadcast: false)
-        await host.post("看到的 3") // seq 10 broadcast → gap (expected 8)
-        #expect(await until { store.lastSeq == 10 })
-        #expect(store.messages.map(\.seq) == Array(1...10))
-        #expect(await host.lastParams["sync"]?["sinceSeq"] == .number(7))
+        await host.post("看到的 3") // seq 11 broadcast → gap (expected 9)
+        #expect(await until { store.lastSeq == 11 })
+        #expect(store.messages.map(\.seq) == Array(1...11))
+        #expect(await host.lastParams["sync"]?["sinceSeq"] == .number(8))
         #expect(await host.requestLog.filter { $0 == "sync" }.count == 2)
     }
 

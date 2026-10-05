@@ -15,15 +15,19 @@ import UIKit
 struct SelectableMarkdown: UIViewRepresentable {
     let source: String
     var streaming: Bool = false
+    /// 「引用回复」 in the selection menu: called with the selected text.
+    var onQuote: ((String) -> Void)? = nil
     @Environment(\.appTheme) private var theme
 
     func makeUIView(context: Context) -> MarkdownTextView {
         let view = MarkdownTextView.make()
+        view.onQuote = onQuote
         view.render(source: source, streaming: streaming, linkColor: UIColor(theme.color))
         return view
     }
 
     func updateUIView(_ view: MarkdownTextView, context: Context) {
+        view.onQuote = onQuote
         view.render(source: source, streaming: streaming, linkColor: UIColor(theme.color))
     }
 
@@ -35,7 +39,8 @@ struct SelectableMarkdown: UIViewRepresentable {
     }
 }
 
-final class MarkdownTextView: UITextView {
+final class MarkdownTextView: UITextView, UITextViewDelegate {
+    var onQuote: ((String) -> Void)?
     private var lastSource: String?
     private var lastStreaming = false
     private var lastLinkColor: UIColor?
@@ -50,6 +55,7 @@ final class MarkdownTextView: UITextView {
         container.lineFragmentPadding = 0
         layout.addTextContainer(container)
         let view = MarkdownTextView(frame: .zero, textContainer: container)
+        view.delegate = view
         view.isEditable = false
         view.isScrollEnabled = false
         view.backgroundColor = .clear
@@ -91,6 +97,19 @@ final class MarkdownTextView: UITextView {
     override func copy(_ sender: Any?) {
         guard let range = selectedTextRange, let text = text(in: range) else { return super.copy(sender) }
         UIPasteboard.general.string = text.replacingOccurrences(of: "\u{2028}", with: "\n")
+    }
+
+    /// Adds 「引用回复」 to the system selection menu: quotes just the selection.
+    func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
+        guard onQuote != nil, range.length > 0 else { return nil }
+        let selected = (textView.text as NSString).substring(with: range)
+            .replacingOccurrences(of: "\u{2028}", with: "\n")
+            .replacingOccurrences(of: " ▍", with: "")
+        let quote = UIAction(title: "引用回复", image: UIImage(systemName: "arrowshape.turn.up.left")) { [weak self] _ in
+            self?.onQuote?(selected)
+            textView.selectedTextRange = nil
+        }
+        return UIMenu(children: [quote] + suggestedActions)
     }
 }
 

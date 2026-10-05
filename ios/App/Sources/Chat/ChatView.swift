@@ -14,6 +14,8 @@ struct ChatView: View {
     /// The finger (or its fling) is moving the list — only that can detach.
     @State private var userScrolling = false
     @State private var distanceFromBottom: CGFloat = 0
+    /// A message just jumped to from search: briefly tinted so the eye lands on it.
+    @State private var highlightedID: String?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -50,11 +52,24 @@ struct ChatView: View {
                                 .padding(.top, 6)
                         }
                         MessageRow(message: message)
+                            .background {
+                                if highlightedID == message.id {
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(Color.accentColor.opacity(0.12))
+                                        .padding(-6)
+                                        .transition(.opacity)
+                                }
+                            }
                             .id(message.id)
+                            // A quote above a bubble jumps to what it quotes.
+                            .environment(\.chatScrollTo) { id in
+                                withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
+                            }
                     }
 
                     ForEach(store.unanchoredPendingApprovals) { approval in
                         ApprovalCard(approval: approval)
+                            .id("approval-\(approval.id)")
                     }
 
                     if showsBusyIndicator {
@@ -103,6 +118,32 @@ struct ChatView: View {
                     withAnimation(.smooth(duration: 0.3)) { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
             }
+            // A notification tap on an approval brings its card into view.
+            .onChange(of: model.focusApprovalID, initial: true) { _, id in
+                guard let id else { return }
+                model.focusApprovalID = nil
+                let target = store.messages.first { $0.approvalId == id }?.id ?? "approval-\(id)"
+                pinned = false
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(350)) // let the slide back to the chat land
+                    withAnimation(.snappy) { proxy.scrollTo(target, anchor: .center) }
+                }
+            }
+            // A search hit in 成果: make sure it's loaded, then bring it into
+            // view and tint it for a moment.
+            .onChange(of: model.focusMessageSeq, initial: true) { _, seq in
+                guard let seq else { return }
+                model.focusMessageSeq = nil
+                pinned = false
+                Task { @MainActor in
+                    guard let id = await store.revealMessage(seq: seq) else { return }
+                    try? await Task.sleep(for: .milliseconds(350)) // let the slide back to the chat land
+                    withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
+                    withAnimation(.easeOut(duration: 0.2)) { highlightedID = id }
+                    try? await Task.sleep(for: .seconds(1.6))
+                    withAnimation(.easeOut(duration: 0.6)) { if highlightedID == id { highlightedID = nil } }
+                }
+            }
             .onChange(of: store.messages.last?.id) {
                 // Sending always returns to the live bottom.
                 if store.messages.last?.role == .user { pinned = true }
@@ -118,12 +159,20 @@ struct ChatView: View {
                 withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             .overlay(alignment: .bottom) {
-                let showJump = !pinned && distanceFromBottom > ChatScroll.reattachDistance
+                let showJump = store.viewingPast || (!pinned && distanceFromBottom > ChatScroll.reattachDistance)
                 ZStack {
                     if showJump {
                         JumpToLatestButton(streaming: store.isBusy) {
                             pinned = true
-                            withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
+                            if store.viewingPast {
+                                // An older stretch is showing: load the live end first.
+                                Task { @MainActor in
+                                    await store.returnToLatest()
+                                    withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
+                                }
+                            } else {
+                                withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
+                            }
                         }
                         .padding(.bottom, 10)
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
@@ -164,11 +213,13 @@ struct ChatView: View {
                 Button {
                     model.showAssistant = true
                 } label: {
-                    Image(systemName: "person.crop.circle")
+                    // Its face: still when idle, breathing while it works.
+                    AssistantAvatar(store.assistantAvatar, tint: model.currentTheme.color, active: store.assistantWorking)
+                        .frame(width: 26, height: 26)
                 }
                 .tint(.primary) // toolbar glyphs stay neutral; the theme color is for meaning
                 .badge(store.pendingApprovals.count)
-                .accessibilityLabel("助理详情")
+                .accessibilityLabel("\(store.assistantName)的详情")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {

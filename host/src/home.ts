@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { Paths } from "./config.ts";
 import { ensureDir } from "./util.ts";
 
@@ -65,6 +65,27 @@ const SOUL_MD = `# 助理的性格
 - 温暖、靠谱、不啰嗦；有主见但尊重主人的决定。
 - 不确定就问，别瞎猜；坏消息直说。
 `;
+
+// The assistant's name lives in soul.md (so it knows what it's called) as one
+// line, "- 名字：X"; everything else the owner wrote there stays untouched.
+export function setSoulName(paths: Paths, name: string): void {
+  const line = `- 名字：${name}`;
+  if (!existsSync(paths.soulMd)) {
+    writeFileSync(paths.soulMd, SOUL_MD.replace(/^- 名字[:：].*$/m, line));
+    return;
+  }
+  const text = readFileSync(paths.soulMd, "utf8");
+  const re = /^[-*]\s*名字\s*[:：].*$/m;
+  let next: string;
+  if (re.test(text)) next = text.replace(re, line);
+  else {
+    const lines = text.split("\n");
+    const at = lines.findIndex((l) => l.startsWith("#"));
+    lines.splice(at >= 0 ? at + 1 : 0, 0, ...(at >= 0 ? ["", line] : [line, ""]));
+    next = lines.join("\n").replace(/\n{3,}/g, "\n\n");
+  }
+  if (next !== text) writeFileSync(paths.soulMd, next);
+}
 
 export function scaffoldHome(paths: Paths): string[] {
   const created: string[] = [];

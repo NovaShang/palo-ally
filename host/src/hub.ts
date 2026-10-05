@@ -14,11 +14,13 @@ import { ProbeScheduler, type ProbeTrigger } from "./probe.ts";
 import { Proactive } from "./proactive.ts";
 import { Router, type Pusher } from "./router.ts";
 import { RuntimeState } from "./runtime.ts";
+import { setSoulName } from "./home.ts";
 import { makeShellTools } from "./shellTools.ts";
 import { SuggestionStore } from "./suggestions.ts";
 import { TaskTracker } from "./tasks.ts";
-import type { Attachment, Channel, ChatMessage, Status, Task, Watch } from "./types.ts";
+import type { Attachment, Channel, ChatMessage, Status, Task, Watch, ReplyTo } from "./types.ts";
 import { MediaStore } from "./media.ts";
+import { ensureMorningBrief } from "./brief.ts";
 import { type Usage, UsageLedger } from "./usage.ts";
 import { appendJsonl } from "./util.ts";
 import { WatchStore } from "./watches.ts";
@@ -171,6 +173,8 @@ export class Hub {
   // ---------------- lifecycle ----------------
 
   start(opts: { probe?: boolean; watchArtifacts?: boolean } = {}): void {
+    // The default 晨报 goal, once per install (deleting it keeps it gone).
+    if (ensureMorningBrief(this.watches, this.runtime)) this.log("added the default 晨报 goal");
     const orphaned = this.tasks.orphanRunning();
     this.proactive.recoverAfterRestart(orphaned); // before the offline notice, which isn't an answer
     this.proactive.detectOffline();
@@ -206,6 +210,7 @@ export class Hub {
       sessionId: this.runtime.data.sessionId,
       wechat: this.wechat?.status() ?? "off",
       version: VERSION,
+      metAt: this.chat.startedAt,
     };
   }
 
@@ -217,7 +222,14 @@ export class Hub {
   // ---------------- owner input ----------------
 
   // A message from the owner on any channel.
-  userMessage(text: string, channel: Channel, wechat?: WechatReplyTarget, clientMsgId?: string, attachments: Attachment[] = []): ChatMessage | null {
+  userMessage(
+    text: string,
+    channel: Channel,
+    wechat?: WechatReplyTarget,
+    clientMsgId?: string,
+    attachments: Attachment[] = [],
+    replyTo?: ReplyTo,
+  ): ChatMessage | null {
     const t = text.trim();
     if (!t && !attachments.length) return null;
     const cmd = attachments.length ? null : this.tryCommand(t, channel);
@@ -228,6 +240,7 @@ export class Hub {
       channel,
       ...(clientMsgId ? { clientMsgId } : {}),
       ...(attachments.length ? { attachments } : {}),
+      ...(replyTo ? { replyTo } : {}),
     });
     if (cmd !== null) {
       this.chat.add({ role: "system", kind: "notice", text: cmd, channel: "system" });
@@ -245,7 +258,10 @@ export class Hub {
       const path = a.kind === "file" ? this.media.filePath(a.id) : null;
       return path ? [`[文件] ${path}`] : [];
     });
-    const body = [prefix + t, ...files].filter((x) => x.trim()).join("\n");
+    // A quoted part of an earlier message goes first, as a quote block, so the
+    // assistant knows what 「这个」 refers to.
+    const quote = replyTo && !t.startsWith("/") ? replyTo.excerpt.split("\n").map((l) => `> ${l}`).join("\n") + "\n\n" : "";
+    const body = [prefix + quote + t, ...files].filter((x) => x.trim()).join("\n");
     this.conversation.sendOwner(body, channel, wechat, images);
     return msg;
   }
@@ -371,6 +387,7 @@ export class Hub {
   updateSettings(patch: Partial<Settings>): Settings {
     const next = validateSettings(this.config.settings, patch as Record<string, unknown>);
     const probeChanged = next.probeIntervalMinutes !== this.config.settings.probeIntervalMinutes;
+    if (next.assistantName && next.assistantName !== this.config.settings.assistantName) setSoulName(this.paths, next.assistantName);
     this.config.settings = next;
     patchConfig(this.paths, (c) => (c.settings = next));
     if (probeChanged) this.probe.start(next.probeIntervalMinutes);

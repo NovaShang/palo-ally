@@ -901,3 +901,88 @@ describe("Hub: 「试试」 suggestions", () => {
     cleanup(b.paths);
   });
 });
+
+describe("Hub: the assistant's identity", () => {
+  test("name and avatar live in settings; the name is written into soul.md", async () => {
+    const { hub, events, paths } = makeHub();
+    const { readFileSync } = await import("node:fs");
+    const { setSoulName } = await import("../src/home.ts");
+    expect(hub.config.settings.assistantName).toBe("");
+    expect(hub.config.settings.avatar).toBe("");
+    writeFileSync(paths.soulMd, "# 助理的性格\n\n- 名字：PaloAlly（主人可以改）\n- 温暖、靠谱。\n");
+    const next = hub.updateSettings({ assistantName: "  帕帕\n", avatar: "petal" });
+    expect(next.assistantName).toBe("帕帕");
+    expect(next.avatar).toBe("petal");
+    expect(readFileSync(paths.soulMd, "utf8")).toBe("# 助理的性格\n\n- 名字：帕帕\n- 温暖、靠谱。\n");
+    expect(events.some((e) => e.event === "settings.updated" && e.data.assistantName === "帕帕")).toBe(true);
+    expect(() => hub.updateSettings({ avatar: "dragon" })).toThrow();
+    expect(() => hub.updateSettings({ assistantName: "很".repeat(21) })).toThrow();
+    // a soul.md without a name line gets one under its heading; the rest stays
+    writeFileSync(paths.soulMd, "# 性格\n\n说话简短。\n");
+    setSoulName(paths, "小帕");
+    expect(readFileSync(paths.soulMd, "utf8")).toBe("# 性格\n\n- 名字：小帕\n\n说话简短。\n");
+    cleanup(paths);
+  });
+
+  test("status says when the conversation started", async () => {
+    const { hub, paths } = makeHub();
+    expect(hub.status().metAt).toBeUndefined();
+    hub.userMessage("你好", "app");
+    await hub.idle();
+    expect(typeof hub.status().metAt).toBe("number");
+    cleanup(paths);
+  });
+});
+
+describe("Hub: reply-quote and the morning brief", () => {
+  test("a quoted reply is stored on the message and reaches the harness as a quote block", async () => {
+    const { hub, driver, paths } = makeHub();
+    const msg = hub.userMessage("这个改到周五", "app", undefined, undefined, [], { messageId: "m_1", excerpt: "周四下午 3 点开会\n地点：二楼" })!;
+    await hub.idle();
+    expect(msg.replyTo).toEqual({ messageId: "m_1", excerpt: "周四下午 3 点开会\n地点：二楼" });
+    expect(driver.last!.sent[0]).toBe("> 周四下午 3 点开会\n> 地点：二楼\n\n这个改到周五");
+    cleanup(paths);
+  });
+
+  test("晨报 is a default schedule goal, created once; deleting it keeps it gone", async () => {
+    const { ensureMorningBrief, BRIEF_TITLE, BRIEF_AT } = await import("../src/brief.ts");
+    const { hub, paths } = makeHub();
+    expect(ensureMorningBrief(hub.watches, (hub as any).runtime)).toBe(true);
+    const brief = hub.watches.list().find((w) => w.title === BRIEF_TITLE)!;
+    expect(brief).toMatchObject({ kind: "schedule", at: [BRIEF_AT], enabled: true });
+    expect(ensureMorningBrief(hub.watches, (hub as any).runtime)).toBe(false);
+    hub.watches.remove(brief.id);
+    expect(ensureMorningBrief(hub.watches, (hub as any).runtime)).toBe(false);
+    expect(hub.watches.list().some((w) => w.title === BRIEF_TITLE)).toBe(false);
+    cleanup(paths);
+  });
+
+  test("a schedule goal's output shows as a card titled by the goal", async () => {
+    const { hub, paths } = makeHub();
+    const w = hub.watches.add({ title: "晨报", instruction: "写晨报", at: ["07:30"] }, "user");
+    (hub as any).onSchedule(w);
+    await hub.idle();
+    const card = hub.chat.since(0).find((m) => m.card)!;
+    expect(card).toMatchObject({ role: "assistant", proactive: true, card: { title: "晨报", goalId: w.id } });
+    cleanup(paths);
+  });
+});
+
+describe("ChatLog: search and around", () => {
+  test("finds messages newest first with a snippet, and loads a window around a hit", async () => {
+    const { hub, paths } = makeHub();
+    hub.chat.add({ role: "user", kind: "text", text: "帮我订周五晚上的餐厅", channel: "app" });
+    hub.chat.add({ role: "assistant", kind: "text", text: "好的。" + "很".repeat(60) + "订到了周五晚上 7 点的位置", channel: "app" });
+    for (let i = 0; i < 10; i++) hub.chat.add({ role: "user", kind: "text", text: `别的 ${i}`, channel: "app" });
+    const hits = hub.chat.search("周五晚上");
+    expect(hits.map((h) => h.role)).toEqual(["assistant", "user"]);
+    expect(hits[0]!.snippet.startsWith("…")).toBe(true);
+    expect(hits[0]!.snippet).toContain("周五晚上");
+    expect(hub.chat.search("周五", 50, hits[0]!.seq).map((h) => h.seq)).toEqual([hits[1]!.seq]);
+    expect(hub.chat.search("  ")).toEqual([]);
+    expect(hub.chat.search("ABC")).toEqual([]);
+    const win = hub.chat.around(hits[1]!.seq, 0, 1);
+    expect(win.map((m) => m.seq)).toEqual([hits[1]!.seq, hits[1]!.seq + 1]);
+    cleanup(paths);
+  });
+});

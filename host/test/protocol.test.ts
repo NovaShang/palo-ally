@@ -42,15 +42,26 @@ describe("host ↔ app protocol", () => {
     await run("hello", { client: "ios", version: "test" });
     const img = await run("media.upload", { mediaType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==" });
     const doc = await run("media.uploadChunk", { name: "说明.txt", mediaType: "text/plain", offset: 0, data: Buffer.from("hi").toString("base64"), done: true });
-    await run("chat.send", { text: "你好", clientMsgId: "c-1", attachments: [img.id, doc.id] });
+    await run("chat.send", {
+      text: "你好",
+      clientMsgId: "c-1",
+      attachments: [img.id, doc.id],
+      replyTo: { messageId: "m_earlier", excerpt: "两封邮件需要你回" },
+    });
     await run("media.get", { id: img.id });
     writeFileSync(`${paths.home}/note.txt`, "hello");
     await hub.toolHandlers().SendUserFile({ files: ["note.txt"], status: "normal", temporary: true });
     await run("media.read", { id: hub.chat.since(0).at(-1)!.attachments![0]!.id, offset: 0 });
     await hub.toolHandlers().copy_to_clipboard({ text: "123456", label: "验证码" });
     await hub.idle();
+    // a schedule goal's output arrives as a card (晨报)
+    (hub as any).onSchedule(hub.watches.add({ title: "晨报", instruction: "写晨报", at: ["07:30"] }, "user"));
+    await hub.idle();
     await run("sync", {});
     await run("chat.history", { beforeSeq: 99, limit: 10 });
+    const found = await run("chat.search", { query: "你好", limit: 5 });
+    expect(found.messages.length).toBeGreaterThan(0);
+    await run("chat.around", { seq: found.messages[0].seq, before: 2, after: 2 });
     await run("commands.list");
     const models = await run("model.get");
     await run("model.set", { model: models.models[0].value, effort: "medium" });
@@ -76,7 +87,7 @@ describe("host ↔ app protocol", () => {
     await run("memory.list");
     const mem = await run("memory.read", { path: "user.md" });
     await run("memory.write", { path: "user.md", content: "# 关于主人\n", baseUpdatedAt: mem.updatedAt });
-    await run("settings.update", { patch: { probeIntervalMinutes: 15 } });
+    await run("settings.update", { patch: { probeIntervalMinutes: 15, assistantName: "帕帕", avatar: "petal" } });
     await run("push.register", { token: "a".repeat(64), env: "sandbox" });
     await run("push.unregister", { token: "a".repeat(64) });
     driver.probeResponder = () => ({

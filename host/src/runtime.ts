@@ -6,6 +6,7 @@ export interface Runtime {
   sessionId?: string;
   sessionCostUsd?: number; // running total the harness reports for this session
   lastHeartbeat?: number;
+  briefCreated?: boolean; // the default 晨报 goal was set up once (deleting it keeps it gone)
 }
 
 export class RuntimeState {

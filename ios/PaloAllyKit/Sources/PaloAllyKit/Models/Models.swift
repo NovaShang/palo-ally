@@ -121,13 +121,17 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     public var attachments: [Attachment]?
     /// kind == .clipboard: what the copied text is ("收货地址", "验证码").
     public var label: String?
+    /// The owner quoted part of an earlier message.
+    public var replyTo: ReplyTo?
+    /// A schedule goal's output (晨报 and the like): shown as a card titled by the goal.
+    public var card: MessageCard?
 
     // Local-only state.
     public var isStreaming: Bool = false
     public var delivery: Delivery = .sent
 
     enum CodingKeys: String, CodingKey {
-        case seq, id, role, kind, text, channel, ts, proactive, taskId, approvalId, clientMsgId, attachments, label
+        case seq, id, role, kind, text, channel, ts, proactive, taskId, approvalId, clientMsgId, attachments, label, replyTo, card
     }
 
     public init(
@@ -155,9 +159,42 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         clientMsgId = l.string("clientMsgId")
         attachments = l.decode([Attachment].self, "attachments")
         label = l.string("label")
+        replyTo = l.decode(ReplyTo.self, "replyTo")
+        card = l.decode(MessageCard.self, "card")
     }
 
     public var date: Date { ts.msDate }
+}
+
+/// A quoted part of an earlier message (≤ 300 characters).
+public struct ReplyTo: Codable, Sendable, Hashable {
+    public var messageId: String
+    public var excerpt: String
+
+    public init(messageId: String, excerpt: String) {
+        self.messageId = messageId
+        self.excerpt = String(excerpt.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        messageId = l.string("messageId", or: "")
+        excerpt = l.string("excerpt", or: "")
+    }
+}
+
+/// How a schedule goal's output is shown: a card with the goal's title.
+public struct MessageCard: Codable, Sendable, Hashable {
+    public var title: String
+    public var goalId: String?
+
+    public init(title: String, goalId: String? = nil) { self.title = title; self.goalId = goalId }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        title = l.string("title", or: "")
+        goalId = l.string("goalId")
+    }
 }
 
 /// Something sent with a message. `image` / `file`: bytes by id
@@ -536,17 +573,23 @@ public struct HostSettings: Codable, Sendable, Hashable {
     public var probeIntervalMinutes: Int
     public var approvalTimeoutMinutes: Int
     public var wechatProactive: WechatProactive
+    /// The assistant's name, chosen by the owner after the first pairing.
+    /// Empty = not chosen yet (the app asks once).
+    public var assistantName: String
+    /// Which code-drawn glass form is its face; empty = the default one.
+    public var avatar: String
 
     enum CodingKeys: String, CodingKey {
-        case timezone, quietHours, probeIntervalMinutes, approvalTimeoutMinutes, wechatProactive
+        case timezone, quietHours, probeIntervalMinutes, approvalTimeoutMinutes, wechatProactive, assistantName, avatar
     }
 
     public init(timezone: String = TimeZone.current.identifier, quietHours: QuietHours? = nil,
                 probeIntervalMinutes: Int = 15, approvalTimeoutMinutes: Int = 30,
-                wechatProactive: WechatProactive = .hint) {
+                wechatProactive: WechatProactive = .hint, assistantName: String = "", avatar: String = "") {
         self.timezone = timezone; self.quietHours = quietHours
         self.probeIntervalMinutes = probeIntervalMinutes; self.approvalTimeoutMinutes = approvalTimeoutMinutes
         self.wechatProactive = wechatProactive
+        self.assistantName = assistantName; self.avatar = avatar
     }
 
     public init(from decoder: Decoder) throws {
@@ -557,6 +600,8 @@ public struct HostSettings: Codable, Sendable, Hashable {
         probeIntervalMinutes = l.int("probeIntervalMinutes", or: d.probeIntervalMinutes)
         approvalTimeoutMinutes = l.int("approvalTimeoutMinutes", or: d.approvalTimeoutMinutes)
         wechatProactive = l.decode(WechatProactive.self, "wechatProactive", or: d.wechatProactive)
+        assistantName = l.string("assistantName", or: "")
+        avatar = l.string("avatar", or: "")
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -568,6 +613,8 @@ public struct HostSettings: Codable, Sendable, Hashable {
         try c.encode(approvalTimeoutMinutes, forKey: .approvalTimeoutMinutes)
         // Never send a value we didn't understand back to the host.
         if wechatProactive != .unknown { try c.encode(wechatProactive, forKey: .wechatProactive) }
+        try c.encode(assistantName, forKey: .assistantName)
+        try c.encode(avatar, forKey: .avatar)
     }
 }
 
@@ -583,9 +630,11 @@ public struct HostStatus: Codable, Sendable, Hashable {
     public var wechat: WechatState
     public var version: String
 
-    enum CodingKeys: String, CodingKey { case online, busy, activity, model, effort, sessionId, wechat, version }
+    enum CodingKeys: String, CodingKey { case online, busy, activity, model, effort, sessionId, wechat, version, metAt }
 
     public var effort: String?
+    /// When the owner first talked to it (ms), for 「认识你 N 天」.
+    public var metAt: Int64?
 
     public init(online: Bool = true, busy: Bool = false, model: String = "",
                 sessionId: String? = nil, wechat: WechatState = .off, version: String = "") {
@@ -603,6 +652,7 @@ public struct HostStatus: Codable, Sendable, Hashable {
         sessionId = l.string("sessionId")
         wechat = l.decode(WechatState.self, "wechat", or: .off)
         version = l.string("version", or: "")
+        metAt = l.millis("metAt")
     }
 }
 

@@ -1,8 +1,9 @@
 import PaloAllyKit
 import SwiftUI
 
-/// 「它」, the place left of the conversation: what the assistant is doing,
-/// what it's waiting on, what it watches, and what it remembers.
+/// 「它」, the place left of the conversation: who it is, what it's helping
+/// with over time (目标), what it's doing and got done (履历), and what it
+/// remembers. Approvals have no tab: they're in the conversation.
 struct AssistantView: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
@@ -28,14 +29,16 @@ struct AssistantView: View {
             }
 
             switch model.assistantTab {
-            case .tasks: TasksSection()
-            case .approvals: ApprovalsSection()
             case .watches: WatchesSection()
+            case .history: HistorySection()
             case .memory: MemorySection()
             }
         }
-        .navigationTitle("助理")
+        .navigationTitle(store.assistantName)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $model.showIdentityEditor) {
+            IdentityEditor(purpose: .edit)
+        }
         .toolbar {
             // The trailing side faces the conversation (「对话 ›」 lives there).
             ToolbarItem(placement: .topBarLeading) {
@@ -60,10 +63,7 @@ struct AssistantView: View {
 
     private func label(for tab: AssistantTab) -> String {
         switch tab {
-        case .approvals:
-            let n = store.pendingApprovals.count
-            return n > 0 ? "\(tab.title) \(n)" : tab.title
-        case .tasks:
+        case .history:
             let n = store.tasks.filter(\.isActive).count
             return n > 0 ? "\(tab.title) \(n)" : tab.title
         default:
@@ -81,39 +81,39 @@ private struct AssistantHeader: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 34, weight: .semibold))
-                .foregroundStyle(.primary)
-                .frame(width: 76, height: 76)
-                .glassEffect(.regular, in: .circle)
+            Button { model.showIdentityEditor = true } label: {
+                VStack(spacing: 10) {
+                    AssistantAvatar(store.assistantAvatar, tint: model.currentTheme.color, active: store.assistantWorking)
+                        .frame(width: 84, height: 84)
+                    Text(store.assistantName).font(.title2.bold()).foregroundStyle(.primary)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(store.assistantName)，改名字和样子")
 
             VStack(spacing: 4) {
-                Text("PaloAlly").font(.title2.bold())
                 Text(statusLine)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
 
-            Button(role: .destructive) {
-                confirmStop = true
-            } label: {
-                Label("停下", systemImage: "stop.fill")
-                    .foregroundStyle(.red) // the icon otherwise picks up the theme color
-                    .frame(maxWidth: 240)
-            }
-            .buttonStyle(.glass)
-            .tint(.red)
-            .controlSize(.large)
-            .disabled(working || !store.connection.isOnline)
-            .confirmationDialog("让助理停下手上的事？", isPresented: $confirmStop, titleVisibility: .visible) {
-                Button("停下", role: .destructive) {
-                    working = true
-                    Task { await run { try await store.stop() } }
+            // Small, and only while there's something to stop.
+            if store.assistantWorking {
+                Button {
+                    confirmStop = true
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "stop.fill").font(.caption2).foregroundStyle(.red)
+                        Text("停下").font(.footnote.weight(.medium)).foregroundStyle(.primary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(.fill.tertiary, in: .capsule)
                 }
-                Button("再想想", role: .cancel) {}
-            } message: {
-                Text("正在办的事会中断。之后你再说话，它照常工作。")
+                .buttonStyle(.plain)
+                .disabled(working || !store.connection.isOnline)
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
             }
 
             if let error {
@@ -125,6 +125,16 @@ private struct AssistantHeader: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
+        .animation(.snappy, value: store.assistantWorking)
+        .confirmationDialog("让助理停下手上的事？", isPresented: $confirmStop, titleVisibility: .visible) {
+            Button("停下", role: .destructive) {
+                working = true
+                Task { await run { try await store.stop() } }
+            }
+            Button("再想想", role: .cancel) {}
+        } message: {
+            Text("正在办的事会中断。之后你再说话，它照常工作。")
+        }
     }
 
     private func run(_ op: () async throws -> Void) async {
@@ -133,12 +143,18 @@ private struct AssistantHeader: View {
         working = false
     }
 
+    /// 「住在 X 上 · 认识你 N 天」 — where it lives and how long you've known each other.
     private var statusLine: String {
         let place = store.hostName.isEmpty ? (model.pairedHost?.hostLabel ?? "") : store.hostName
-        let base = place.isEmpty ? "" : "住在「\(place)」上 · "
-        if !store.connection.isOnline { return base + Copy.connection(store.connection) }
-        let active = store.tasks.filter(\.isActive).count
-        return base + (active > 0 ? "正在办 \(active) 件事" : "空闲中")
+        var parts: [String] = []
+        if !place.isEmpty { parts.append("住在「\(place)」上") }
+        if !store.connection.isOnline {
+            parts.append(Copy.connection(store.connection))
+        } else if let met = store.status?.metAt, met > 0 {
+            let days = max(1, Int(Date().timeIntervalSince(met.msDate) / 86_400) + 1)
+            parts.append("认识你 \(days) 天")
+        }
+        return parts.joined(separator: " · ")
     }
 }
 

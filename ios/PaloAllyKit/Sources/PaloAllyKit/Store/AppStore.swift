@@ -43,6 +43,9 @@ public final class AppStore {
     /// "收到了" feedback indicator).
     public private(set) var awaitingReply = false
     public private(set) var hasOlderMessages = false
+    /// The list shows an older stretch of the conversation (a search jump far
+    /// back), not the live end. Live messages wait until `returnToLatest()`.
+    public private(set) var viewingPast = false
     public private(set) var isLoadingOlder = false
     /// Number of completed sync rounds (each page counts). Mostly for tests.
     public private(set) var syncRounds = 0
@@ -333,6 +336,12 @@ public final class AppStore {
     /// A finished `chat.message`.
     func receive(_ m: ChatMessage) {
         if m.role != .user { awaitingReply = false }
+        // Looking at an older stretch: don't splice the live end onto it (it
+        // would hide the gap in between); it's loaded on the way back.
+        if viewingPast, m.seq > 0, !messages.contains(where: { $0.id == m.id || ($0.seq == 0 && $0.clientMsgId != nil && $0.clientMsgId == m.clientMsgId) }) {
+            if m.seq > lastSeq { lastSeq = m.seq }
+            return
+        }
         upsert(m)
         guard m.seq > 0 else { return }
         if m.seq == lastSeq + 1 {
@@ -352,6 +361,8 @@ public final class AppStore {
             pendingDeltas[d.id, default: ""] += d.text
             scheduleDeltaFlush()
         } else {
+            // Live text waits while an older stretch is on screen.
+            guard !viewingPast else { return }
             // The first words show up at once; the rest is batched.
             var m = ChatMessage(seq: 0, id: d.id, role: .assistant, kind: .text, text: d.text, channel: .app,
                                 ts: Date().epochMillis)
@@ -530,12 +541,30 @@ public final class AppStore {
         Task { _ = try? await rpc.call(RPCMethod.suggestionsDismiss, params: SuggestionIDParams(id: s.id), as: OKResult.self) }
     }
 
+    /// What the composer is replying to (set by 「回复」 / 「引用回复」 / 「聊聊」);
+    /// sent with the next message, then cleared.
+    public var replyDraft: ReplyTo?
+
+    /// Starts a reply to (part of) a message: the composer shows the quote.
+    public func quote(_ message: ChatMessage, excerpt: String? = nil) {
+        let text = (excerpt ?? message.text).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        replyDraft = ReplyTo(messageId: message.id, excerpt: text)
+    }
+
     public func send(_ rawText: String, images picked: [OutgoingImage] = [], files pickedFiles: [OutgoingFile] = [], suggestionId: String? = nil) {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !picked.isEmpty || !pickedFiles.isEmpty else { return }
+        // Sending always happens at the live end of the conversation.
+        if viewingPast { Task { await self.returnToLatest() } }
         let cid = UUID().uuidString.lowercased()
         var echo = ChatMessage(seq: 0, id: "local-\(cid)", role: .user, kind: .text, text: text, channel: .app,
                                ts: Date().epochMillis, clientMsgId: cid)
+        // A 「试试」 chip starts fresh; anything typed goes with the open quote.
+        if suggestionId == nil, let reply = replyDraft {
+            echo.replyTo = reply
+            replyDraft = nil
+        }
         if let suggestionId { suggestionForMessage[cid] = suggestionId }
         if !picked.isEmpty || !pickedFiles.isEmpty {
             // Shown right away from local bytes; uploaded on delivery (an image
@@ -571,9 +600,10 @@ public final class AppStore {
     private func deliver(clientMsgId cid: String, text: String) async {
         do {
             let ids = try await uploadImages(clientMsgId: cid)
+            let replyTo = messages.first(where: { $0.clientMsgId == cid && $0.seq == 0 })?.replyTo
             let r: ChatSendResult = try await rpc.call(RPCMethod.chatSend,
                                                        params: ChatSendParams(text: text, clientMsgId: cid, attachments: ids,
-                                                                              suggestionId: suggestionForMessage[cid]))
+                                                                              suggestionId: suggestionForMessage[cid], replyTo: replyTo))
             suggestionForMessage[cid] = nil
             guard let i = messages.firstIndex(where: { $0.clientMsgId == cid && $0.seq == 0 }) else { return }
             if !r.id.isEmpty, let dup = messages.firstIndex(where: { $0.id == r.id }), dup != i {
@@ -719,6 +749,62 @@ public final class AppStore {
             hasOlderMessages = r.messages.count >= limit && (r.messages.map(\.seq).min() ?? 1) > 1
         } catch {
             lastError = error.localizedDescription
+        }
+    }
+
+    // MARK: search (成果)
+
+    /// Conversation hits for `query`, newest first.
+    public func searchConversation(_ query: String, limit: Int = 50) async throws -> [ChatSearchHit] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        let r: ChatSearchResult = try await rpc.call(RPCMethod.chatSearch, params: ChatSearchParams(query: q, limit: limit))
+        return r.messages
+    }
+
+    /// Makes sure the message `seq` is in the list and returns its id. Close
+    /// by, older pages are loaded so the list stays continuous; far back, the
+    /// list switches to a window around it (`viewingPast`) until
+    /// `returnToLatest()`.
+    public func revealMessage(seq: Int64, maxGap: Int64 = 1000) async -> String? {
+        if let m = messages.first(where: { $0.seq == seq }) { return m.id }
+        let earliest = messages.first(where: { $0.seq > 0 })?.seq
+        if let earliest, earliest > seq, earliest - seq <= maxGap {
+            while hasOlderMessages, !(messages.contains { $0.seq == seq }) {
+                let before = messages.first(where: { $0.seq > 0 })?.seq
+                await loadOlder(limit: 200)
+                if messages.first(where: { $0.seq > 0 })?.seq == before { break } // nothing more came
+            }
+            if let m = messages.first(where: { $0.seq == seq }) { return m.id }
+        }
+        do {
+            let r: MessagesResult = try await rpc.call(RPCMethod.chatAround, params: ChatAroundParams(seq: seq))
+            guard !r.messages.isEmpty else { return nil }
+            let local = messages.filter { $0.seq == 0 }
+            messages = r.messages + local
+            sortMessages()
+            viewingPast = (r.messages.map(\.seq).max() ?? 0) < lastSeq
+            hasOlderMessages = (r.messages.map(\.seq).min() ?? 1) > 1
+            return messages.first(where: { $0.seq == seq })?.id
+        } catch {
+            lastError = Friendly.message(error)
+            return nil
+        }
+    }
+
+    /// Back from an older stretch to the live end of the conversation.
+    public func returnToLatest(limit: Int = 100) async {
+        guard viewingPast else { return }
+        do {
+            let r: MessagesResult = try await rpc.call(RPCMethod.chatHistory,
+                                                       params: ChatHistoryParams(beforeSeq: lastSeq + 1, limit: limit))
+            let local = messages.filter { $0.seq == 0 }
+            messages = r.messages + local
+            sortMessages()
+            viewingPast = false
+            hasOlderMessages = (r.messages.map(\.seq).min() ?? 1) > 1
+        } catch {
+            lastError = Friendly.message(error)
         }
     }
 

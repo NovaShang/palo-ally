@@ -81,6 +81,18 @@ struct MainScreen: View {
         .sheet(isPresented: Binding(get: { model.showPairingSheet }, set: { if !$0 { model.showPairingSheet = false } })) {
             PairingView(isSheet: true)
         }
+        // Right after pairing, once: 「给它起个名字」.
+        .sheet(isPresented: Binding(get: { needsNaming }, set: { if !$0 { model.namingDone = true } })) {
+            IdentityEditor(purpose: .firstTime)
+        }
+    }
+
+    /// Asked once per computer: it's paired, its settings arrived and it has no name yet.
+    private var needsNaming: Bool {
+        guard !model.namingDone, !model.showPairingSheet else { return false }
+        if model.launch.screen == "naming" { return store.settings != nil }
+        guard model.mode == .paired, let s = store.settings else { return false }
+        return s.assistantName.isEmpty
     }
 
     /// The x offset that puts `place` on screen.

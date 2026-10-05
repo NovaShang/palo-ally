@@ -7,6 +7,10 @@ public enum RPCMethod {
     public static let sync = "sync"
     public static let chatSend = "chat.send"
     public static let chatHistory = "chat.history"
+    /// Substring search over the whole conversation, newest first (成果's search).
+    public static let chatSearch = "chat.search"
+    /// A window of messages around a seq, for jumping to a search hit.
+    public static let chatAround = "chat.around"
     public static let taskGet = "task.get"
     public static let taskStop = "task.stop"
     public static let approvalAnswer = "approval.answer"
@@ -45,7 +49,7 @@ public enum RPCMethod {
     /// Every method the client knows. The contract test checks this equals
     /// the host's method set exactly.
     public static let all: [String] = [
-        hello, sync, chatSend, chatHistory, commandsList, modelGet, modelSet, taskGet, taskStop,
+        hello, sync, chatSend, chatHistory, chatSearch, chatAround, commandsList, modelGet, modelSet, taskGet, taskStop,
         approvalAnswer, watchAdd, watchUpdate, watchRemove, artifactList, artifactRead, artifactPin,
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
@@ -143,8 +147,11 @@ public struct ChatSendParams: Codable, Sendable {
     public var attachments: [String]?
     /// Set when the message came from tapping a 「试试」 chip (it's used up).
     public var suggestionId: String?
-    public init(text: String, clientMsgId: String?, attachments: [String]? = nil, suggestionId: String? = nil) {
+    /// The quoted part of an earlier message.
+    public var replyTo: ReplyTo?
+    public init(text: String, clientMsgId: String?, attachments: [String]? = nil, suggestionId: String? = nil, replyTo: ReplyTo? = nil) {
         self.text = text; self.clientMsgId = clientMsgId; self.attachments = attachments; self.suggestionId = suggestionId
+        self.replyTo = replyTo
     }
 }
 
@@ -217,6 +224,54 @@ public struct ChatHistoryParams: Codable, Sendable {
     public var beforeSeq: Int64
     public var limit: Int
     public init(beforeSeq: Int64, limit: Int) { self.beforeSeq = beforeSeq; self.limit = limit }
+}
+
+public struct ChatSearchParams: Codable, Sendable {
+    public var query: String
+    public var limit: Int?
+    public var beforeSeq: Int64?
+    public init(query: String, limit: Int? = nil, beforeSeq: Int64? = nil) {
+        self.query = query; self.limit = limit; self.beforeSeq = beforeSeq
+    }
+}
+
+public struct ChatAroundParams: Codable, Sendable {
+    public var seq: Int64
+    public var before: Int
+    public var after: Int
+    public init(seq: Int64, before: Int = 25, after: Int = 25) { self.seq = seq; self.before = before; self.after = after }
+}
+
+/// One conversation hit: who said it, when, and a snippet around the match.
+public struct ChatSearchHit: Decodable, Sendable, Hashable, Identifiable {
+    public var seq: Int64
+    public var id: String
+    public var role: ChatRole
+    public var ts: Int64
+    public var channel: ChatChannel
+    public var snippet: String
+
+    public init(seq: Int64, id: String, role: ChatRole, ts: Int64, channel: ChatChannel = .app, snippet: String) {
+        self.seq = seq; self.id = id; self.role = role; self.ts = ts; self.channel = channel; self.snippet = snippet
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        seq = l.int64("seq", or: 0)
+        id = l.string("id", or: "")
+        role = l.decode(ChatRole.self, "role", or: .unknown)
+        ts = l.millis("ts", or: 0)
+        channel = l.decode(ChatChannel.self, "channel", or: .unknown)
+        snippet = l.string("snippet", or: "")
+    }
+}
+
+public struct ChatSearchResult: Decodable, Sendable {
+    public var messages: [ChatSearchHit]
+    public init(messages: [ChatSearchHit]) { self.messages = messages }
+    public init(from decoder: Decoder) throws {
+        messages = try Lenient(decoder).array(ChatSearchHit.self, "messages", or: [])
+    }
 }
 
 public struct MessagesResult: Decodable, Sendable {
