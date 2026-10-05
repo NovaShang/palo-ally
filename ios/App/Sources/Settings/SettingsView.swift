@@ -14,6 +14,9 @@ struct SettingsView: View {
     @State private var unpairing = false
     /// Pending quiet-hours save; DatePickers fire on every tick of the wheel.
     @State private var quietSave: Task<Void, Never>?
+    /// Voice input: bias recognition toward the conversation and the owner's own words.
+    @AppStorage("asr_auto_context") private var voiceUsesContext = true
+    @AppStorage("asr_vocab") private var voiceVocab = ""
     var body: some View {
         @Bindable var model = model
         Form {
@@ -39,6 +42,16 @@ struct SettingsView: View {
                 Text("什么时候别打扰我")
             } footer: {
                 Text("这段时间里，不急的事只放进对话，不推送。")
+            }
+
+            Section {
+                Toggle("参考对话内容", isOn: $voiceUsesContext)
+                TextField("常用词", text: $voiceVocab, prompt: Text("常用词，用逗号隔开"), axis: .vertical)
+                    .lineLimit(1...4)
+            } header: {
+                Text("语音输入")
+            } footer: {
+                Text("说话时参考最近的对话和这些词，名字、术语认得更准。")
             }
 
             if let error {

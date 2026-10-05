@@ -117,6 +117,17 @@ struct MainScreen: View {
         }
         .environment(voice)
         .environment(\.chatDraft, $draft)
+        // Voice input hears better with the conversation's names and terms.
+        .task(id: ObjectIdentifier(store)) {
+            voice.dictation.contextProvider = { [store] in
+                VoiceContext.build(
+                    messages: store.messages,
+                    assistantName: store.assistantName,
+                    goalTitles: store.watches.map(\.title),
+                    artifactTitles: store.artifacts.sorted { $0.updatedAt > $1.updatedAt }.map(\.title),
+                    quote: store.replyDraft?.excerpt)
+            }
+        }
         .modifier(MacWindowChrome(model: model))
         .animation(.easeOut(duration: 0.15), value: voice.isActive)
         .onChange(of: scenePhase) { _, phase in

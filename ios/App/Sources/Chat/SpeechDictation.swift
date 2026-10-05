@@ -23,6 +23,21 @@ final class SpeechDictation {
     }
 
     @ObservationIgnored private let session = VoiceSession()
+
+    /// Background text for the recognizer (names and terms from the
+    /// conversation), read when a recording starts. See `VoiceContext`.
+    @ObservationIgnored var contextProvider: (() -> String?)? {
+        didSet {
+            guard let provide = contextProvider else { session.contextProvider = nil; return }
+            session.contextProvider = {
+                let text = provide()
+                #if DEBUG
+                debugLog("voice context (\(text?.count ?? 0)c): \(text ?? "")")
+                #endif
+                return text
+            }
+        }
+    }
     /// Which recording callbacks belong to: a quick tap arms and cancels a
     /// recording, and its teardown must never show up as an error.
     @ObservationIgnored private var generation = VoiceGeneration()
