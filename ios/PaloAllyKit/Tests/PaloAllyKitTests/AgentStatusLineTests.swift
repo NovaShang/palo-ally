@@ -18,6 +18,11 @@ struct AgentStatusLineTests {
         let mixed = AgentStatusLine.make(offlineText: nil, pendingApprovals: 1, busy: false, activity: nil,
                                          tasks: [task("a", .needsInput)])
         #expect(mixed == AgentStatusLine(kind: .needsYou, text: "2 件事等你"))
+        // a question the assistant asked (AskUserQuestion)
+        #expect(AgentStatusLine.make(offlineText: nil, pendingApprovals: 0, pendingQuestions: 1, busy: true, activity: nil, tasks: [])
+            == AgentStatusLine(kind: .needsYou, text: "等你回答"))
+        #expect(AgentStatusLine.make(offlineText: nil, pendingApprovals: 1, pendingQuestions: 1, busy: false, activity: nil, tasks: []).text
+            == "2 件事等你")
     }
 
     @Test func mainActivityThenOtherTasks() {

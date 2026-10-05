@@ -355,6 +355,8 @@ final class AppModel {
     var openTaskID: String?
     /// An approval the conversation should scroll to (notification tap).
     var focusApprovalID: String?
+    /// A notification tap on a question card: the chat brings it into view.
+    var focusQuestionID: String?
     /// A message the conversation should scroll to and briefly highlight
     /// (a search hit in 成果).
     var focusMessageSeq: Int64?
@@ -484,7 +486,10 @@ final class AppModel {
         return s.unreadCount(after: seen)
     }
 
-    func pendingCount(_ id: String) -> Int { stores[id]?.pendingApprovals.count ?? 0 }
+    func pendingCount(_ id: String) -> Int {
+        guard let s = stores[id] else { return 0 }
+        return s.pendingApprovals.count + s.pendingQuestions.count
+    }
 
     /// Something is waiting on another assistant (the dot on the title).
     var othersNeedAttention: Bool {
@@ -742,6 +747,9 @@ final class AppModel {
             // Approvals live in the conversation: go there and bring the card into view.
             place = .chat
             focusApprovalID = approvalId
+        } else if let questionId = userInfo["questionId"] as? String, !questionId.isEmpty {
+            place = .chat
+            focusQuestionID = questionId
         } else if let taskId = userInfo["taskId"] as? String, !taskId.isEmpty {
             openTask(taskId)
         } else {

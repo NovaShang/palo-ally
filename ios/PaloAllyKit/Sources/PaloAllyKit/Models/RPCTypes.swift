@@ -14,6 +14,8 @@ public enum RPCMethod {
     public static let taskGet = "task.get"
     public static let taskStop = "task.stop"
     public static let approvalAnswer = "approval.answer"
+    /// The owner's choices for a question card (AskUserQuestion).
+    public static let questionAnswer = "question.answer"
     public static let watchAdd = "watch.add"
     public static let watchUpdate = "watch.update"
     public static let watchRemove = "watch.remove"
@@ -50,7 +52,7 @@ public enum RPCMethod {
     /// the host's method set exactly.
     public static let all: [String] = [
         hello, sync, chatSend, chatHistory, chatSearch, chatAround, commandsList, modelGet, modelSet, taskGet, taskStop,
-        approvalAnswer, watchAdd, watchUpdate, watchRemove, artifactList, artifactRead, artifactPin,
+        approvalAnswer, questionAnswer, watchAdd, watchUpdate, watchRemove, artifactList, artifactRead, artifactPin,
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
         suggestionsList, suggestionsDismiss,
@@ -62,6 +64,7 @@ public enum RPCEventName {
     public static let chatDelta = "chat.delta"
     public static let taskUpdated = "task.updated"
     public static let approvalUpdated = "approval.updated"
+    public static let questionUpdated = "question.updated"
     public static let watchUpdated = "watch.updated"
     public static let artifactUpdated = "artifact.updated"
     public static let settingsUpdated = "settings.updated"
@@ -70,7 +73,7 @@ public enum RPCEventName {
     public static let suggestionsUpdated = "suggestions.updated"
 
     public static let all: [String] = [
-        chatMessage, chatDelta, taskUpdated, approvalUpdated, watchUpdated, artifactUpdated, settingsUpdated,
+        chatMessage, chatDelta, taskUpdated, approvalUpdated, questionUpdated, watchUpdated, artifactUpdated, settingsUpdated,
         status, commandsUpdated, suggestionsUpdated,
     ]
 }
@@ -113,15 +116,19 @@ public struct SyncResult: Codable, Sendable {
     public var messages: [ChatMessage]
     public var tasks: [AllyTask]?
     public var approvals: [Approval]?
+    /// Absent on hosts that predate question cards.
+    public var questions: [Question]?
     public var watches: [Watch]?
     public var artifacts: [Artifact]?
     public var settings: HostSettings?
     public var status: HostStatus?
 
     public init(seq: Int64, messages: [ChatMessage], tasks: [AllyTask]? = nil, approvals: [Approval]? = nil,
+                questions: [Question]? = nil,
                 watches: [Watch]? = nil, artifacts: [Artifact]? = nil, settings: HostSettings? = nil,
                 status: HostStatus? = nil) {
         self.seq = seq; self.messages = messages; self.tasks = tasks; self.approvals = approvals
+        self.questions = questions
         self.watches = watches; self.artifacts = artifacts; self.settings = settings; self.status = status
     }
 
@@ -131,6 +138,7 @@ public struct SyncResult: Codable, Sendable {
         messages = l.array(ChatMessage.self, "messages", or: [])
         tasks = l.expect("tasks", l.array(AllyTask.self, "tasks"))
         approvals = l.expect("approvals", l.array(Approval.self, "approvals"))
+        questions = l.array(Question.self, "questions")
         watches = l.expect("watches", l.array(Watch.self, "watches"))
         artifacts = l.expect("artifacts", l.array(Artifact.self, "artifacts"))
         settings = l.expect("settings", l.decode(HostSettings.self, "settings"))
@@ -302,6 +310,21 @@ public struct ApprovalAnswerParams: Codable, Sendable {
     public var allow: Bool
     public var remember: Bool?
     public init(id: String, allow: Bool, remember: Bool?) { self.id = id; self.allow = allow; self.remember = remember }
+}
+
+public struct QuestionAnswerParams: Codable, Sendable {
+    public var id: String
+    /// question text → chosen label(s) joined by ", ", or the owner's own words
+    public var answers: [String: String]
+    public init(id: String, answers: [String: String]) { self.id = id; self.answers = answers }
+}
+
+public struct QuestionResult: Decodable, Sendable {
+    public var question: Question?
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        question = l.expect("question", l.decode(Question.self, "question"))
+    }
 }
 
 public struct StatusStringResult: Decodable, Sendable {

@@ -1002,3 +1002,69 @@ describe("ChatLog: search and around", () => {
     cleanup(paths);
   });
 });
+
+describe("Hub: AskUserQuestion", () => {
+  const input = {
+    questions: [
+      { question: "约哪天？", header: "日期", options: [{ label: "周六", description: "上午" }, { label: "周日" }], multiSelect: false },
+    ],
+  };
+
+  test("asked from the app: a choice card + push, never a permission prompt; the answer reaches the tool", async () => {
+    const script: FakeScript = async (_t, ctx) => {
+      await ctx.useTool("AskUserQuestion", input, { ask: true });
+    };
+    const wechat = new FakeWechat();
+    const { hub, driver, pusher, paths } = makeHub({ script, wechat });
+    hub.userMessage("帮我约个时间", "app");
+    await tick(10);
+    expect(hub.approvals.listPending()).toHaveLength(0);
+    const q = hub.questions.listPending()[0]!;
+    const card = hub.chat.recent(5).find((m) => m.kind === "question")!;
+    expect(card.questionId).toBe(q.id);
+    expect(card.text).toContain("约哪天？");
+    expect(pusher.pushes.some((p) => p.title === "等你回答")).toBe(true);
+    expect(wechat.proactive[0]).toContain("有个问题等你回答"); // hint only: options stay off WeChat
+    expect(wechat.replies).toHaveLength(0);
+    hub.questions.answer(q.id, { "约哪天？": "周日" }, "app");
+    await hub.idle();
+    const d = driver.decisions.find((x) => x.tool === "AskUserQuestion")!.decision;
+    expect(d.behavior === "allow" && d.updatedInput).toEqual({ ...input, answers: { "约哪天？": "周日" } });
+    cleanup(paths);
+  });
+
+  test("asked in a WeChat turn: numbered options on WeChat; the next WeChat message answers", async () => {
+    const script: FakeScript = async (t, ctx) => {
+      if (t.includes("约个时间")) await ctx.useTool("AskUserQuestion", input, { ask: true });
+      else ctx.emit({ type: "assistant_text", text: "好", parentToolUseId: null });
+    };
+    const wechat = new FakeWechat();
+    const { hub, driver, paths } = makeHub({ script, wechat });
+    const target = { userId: "owner", contextToken: "ctx1" };
+    hub.userMessage("帮我约个时间", "wechat", target);
+    await tick(10);
+    expect(wechat.replies[0]!.text).toContain("1) 周六：上午");
+    expect(wechat.proactive).toHaveLength(0); // no extra hint: they already have it
+    hub.userMessage("2", "wechat", target);
+    await hub.idle();
+    const d = driver.decisions.find((x) => x.tool === "AskUserQuestion")!.decision;
+    expect(d.behavior === "allow" && d.updatedInput!.answers).toEqual({ "约哪天？": "周日" });
+    expect(driver.last!.sent).toEqual(["[来自微信] 帮我约个时间"]); // the answer is not a new message
+    expect(hub.chat.since(0).some((m) => m.role === "user" && m.text === "2")).toBe(true); // but it's in the log
+    expect(hub.questions.list()[0]!.answeredBy).toBe("wechat");
+    cleanup(paths);
+  });
+
+  test("stop closes an open question", async () => {
+    let allowed = null as boolean | null;
+    const { hub, paths } = makeHub({ script: async (_t, ctx) => void (allowed = await ctx.useTool("AskUserQuestion", input, { ask: true })) });
+    hub.userMessage("问我", "app");
+    await tick(10);
+    hub.userMessage("/stop", "app");
+    await hub.idle();
+    await tick(10);
+    expect(allowed).toBe(false);
+    expect(hub.questions.listPending()).toHaveLength(0);
+    cleanup(paths);
+  });
+});

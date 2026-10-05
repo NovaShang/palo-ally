@@ -155,6 +155,16 @@ struct ChatView: View {
                     withAnimation(.snappy) { proxy.scrollTo(target, anchor: .center) }
                 }
             }
+            // …and on a question card.
+            .onChange(of: model.focusQuestionID, initial: true) { _, id in
+                guard let id, let target = store.messages.first(where: { $0.questionId == id })?.id else { return }
+                model.focusQuestionID = nil
+                pinned = false
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(350))
+                    withAnimation(.snappy) { proxy.scrollTo(target, anchor: .center) }
+                }
+            }
             // A search hit in 成果: make sure it's loaded, then bring it into
             // view and tint it for a moment.
             .onChange(of: model.focusMessageSeq, initial: true) { _, seq in

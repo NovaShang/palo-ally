@@ -19,7 +19,7 @@ export interface RpcRequest {
 // every one of these and writes the samples the Swift client decodes strictly.
 export const RPC_METHODS = [
   "hello", "sync", "chat.send", "chat.history", "chat.search", "chat.around", "commands.list", "model.get", "model.set",
-  "task.get", "task.stop", "approval.answer", "watch.add", "watch.update", "watch.remove",
+  "task.get", "task.stop", "approval.answer", "question.answer", "watch.add", "watch.update", "watch.remove",
   "artifact.list", "artifact.read", "artifact.pin", "memory.list", "memory.read", "memory.write",
   "settings.update", "stop", "push.register", "push.unregister", "device.unpair", "audit.tail",
   "media.upload", "media.uploadChunk", "media.get", "media.read",
@@ -27,7 +27,7 @@ export const RPC_METHODS = [
 ] as const;
 
 export const RPC_EVENTS = [
-  "chat.message", "chat.delta", "task.updated", "approval.updated", "watch.updated",
+  "chat.message", "chat.delta", "task.updated", "approval.updated", "question.updated", "watch.updated",
   "artifact.updated", "settings.updated", "status", "commands.updated",
   "suggestions.updated",
 ] as const;
@@ -48,6 +48,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
         messages: since === undefined ? hub.chat.recent(100) : hub.chat.since(since, 500),
         tasks: hub.tasks.list(),
         approvals: hub.approvals.list(),
+        questions: hub.questions.list(),
         watches: hub.watches.list(),
         artifacts: hub.artifacts.list(),
         settings: hub.config.settings,
@@ -132,6 +133,11 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       const a = hub.approvals.answer(String(p.id), !!p.allow, ctx.channel, !!p.remember);
       if (!a) throw new Error("没有这个确认请求");
       return { status: a.status };
+    }
+    case "question.answer": {
+      const raw = p.answers && typeof p.answers === "object" ? (p.answers as Record<string, unknown>) : {};
+      const answers = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, String(v ?? "")]));
+      return { question: hub.questions.answer(String(p.id ?? ""), answers, ctx.channel) };
     }
     case "watch.add":
       return { watch: hub.watches.add(p, "user") };

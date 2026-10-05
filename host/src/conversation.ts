@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ApprovalManager } from "./approvals.ts";
+import { ASK_TOOL, type QuestionManager } from "./questions.ts";
 import type { Audit } from "./audit.ts";
 import type { WechatChannel, WechatReplyTarget } from "./channels/types.ts";
 import type { ChatLog } from "./chat.ts";
@@ -49,6 +50,7 @@ export interface ConversationDeps {
   chat: ChatLog;
   tasks: TaskTracker;
   approvals: ApprovalManager;
+  questions: QuestionManager;
   router: Router;
   wechat: WechatChannel | null;
   audit: Audit;
@@ -176,7 +178,7 @@ export class Conversation {
     if (this.implicitTimer) clearTimeout(this.implicitTimer);
     this.implicitTimer = setTimeout(() => {
       // Waiting on the owner or on a running tool is not "quiet".
-      if (this.current?.implicit && (this.openTools.size || this.d.approvals.listPending().length)) return this.armImplicitTimer();
+      if (this.current?.implicit && (this.openTools.size || this.waitingOnOwner())) return this.armImplicitTimer();
       if (this.current?.implicit) {
         this.d.log("implicit turn went quiet without a result; closing it");
         this.endTurn(0, this.lastContextTokens);
@@ -197,7 +199,8 @@ export class Conversation {
       permissionMode: cfg.permissionMode,
       appendSystemPrompt: BEHAVIOR + `\n\n主人所在时区：${cfg.settings.timezone}。`,
       tools: this.d.tools(),
-      canUseTool: (req) => this.d.approvals.request(req),
+      // AskUserQuestion is a question for the owner, not a permission prompt.
+      canUseTool: (req) => (req.toolName === ASK_TOOL ? this.d.questions.request(req) : this.d.approvals.request(req)),
       mcpServers: this.d.mcpServers(),
       sharedChrome: cfg.browser.enabled && cfg.browser.mode === "shared",
       env: cfg.env,
@@ -341,6 +344,16 @@ export class Conversation {
     });
   }
 
+  /** A permission prompt or a question is waiting for the owner. */
+  waitingOnOwner(): boolean {
+    return this.d.approvals.listPending().length > 0 || this.d.questions.listPending().length > 0;
+  }
+
+  /** Where to reply on WeChat when the current turn came from there. */
+  wechatTarget(): WechatReplyTarget | undefined {
+    return this.current?.origin === "wechat" ? this.current.wechat : undefined;
+  }
+
   /** The channel the owner is on in the current turn (proactive turns: the app). */
   ownerChannel(): Channel {
     const o = this.current?.origin;
@@ -442,7 +455,7 @@ export class Conversation {
     if (this.current || this.queue.length || !this.session) return;
     // Close the CLI process; the next message resumes the same conversation.
     // (Keeping the context in shape is the harness' job: it compacts on its own.)
-    if (!this.d.tasks.live().length && !this.d.approvals.listPending().length) {
+    if (!this.d.tasks.live().length && !this.waitingOnOwner()) {
       this.session.close();
       this.session = null;
       this.d.metric({ type: "idle_close", contextTokens: this.lastContextTokens });
@@ -457,6 +470,7 @@ export class Conversation {
     this.d.audit.log("stop", { by });
     this.queue = [];
     this.d.approvals.denyAll(`stop:${by}`);
+    this.d.questions.cancelAll(`stop:${by}`);
     for (const t of this.d.tasks.running()) {
       if (t.sdkTaskId) void this.session?.stopTask(t.sdkTaskId).catch(() => {});
       this.d.tasks.markStopped(t.id);

@@ -6,13 +6,14 @@ export interface ChatMessage {
   seq: number;
   id: string;
   role: "user" | "assistant" | "system";
-  kind: "text" | "task" | "approval" | "notice" | "clipboard";
+  kind: "text" | "task" | "approval" | "question" | "notice" | "clipboard";
   text: string;
   channel: Channel;
   ts: number;
   proactive?: boolean;
   taskId?: string;
   approvalId?: string;
+  questionId?: string; // kind "question": the choice card it shows
   clientMsgId?: string; // echoed for app-sent messages so clients can merge their optimistic copy
   attachments?: Attachment[]; // images the owner sent with the message
   label?: string; // kind "clipboard": what the copied text is ("地址", "验证码")
@@ -81,6 +82,34 @@ export interface Approval {
   decidedBy?: string;
   suggestedScope?: string;
   reason?: string; // the harness' own words for why it asked
+}
+
+// The harness asking the owner to choose (Claude Code's AskUserQuestion).
+// Not a permission: the answers go back to the model as the tool's input.
+export interface QuestionOption {
+  label: string;
+  description?: string;
+}
+
+export interface QuestionItem {
+  question: string;
+  header?: string;
+  options: QuestionOption[];
+  multiSelect: boolean;
+}
+
+export type QuestionStatus = "pending" | "answered" | "expired";
+
+export interface Question {
+  id: string;
+  items: QuestionItem[];
+  taskId?: string;
+  status: QuestionStatus;
+  createdAt: number;
+  // question text → the chosen label(s) (multi-select: "A, B") or the owner's own words
+  answers?: Record<string, string>;
+  answeredAt?: number;
+  answeredBy?: string;
 }
 
 export interface Watch {

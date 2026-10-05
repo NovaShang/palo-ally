@@ -11,6 +11,7 @@ public actor DemoHost {
     public private(set) var messages: [ChatMessage] = []
     public private(set) var tasks: [AllyTask] = []
     public private(set) var approvals: [Approval] = []
+    public private(set) var questions: [Question] = []
     public private(set) var watches: [Watch] = []
     public private(set) var artifacts: [Artifact] = []
     public private(set) var files: [String: Data] = [:] // "<artifactId>/<path>"
@@ -44,6 +45,7 @@ public actor DemoHost {
             self.seq = s.messages.map(\.seq).max() ?? 0
             self.tasks = s.tasks
             self.approvals = s.approvals
+            self.questions = s.questions
             self.watches = s.watches
             self.artifacts = s.artifacts
             self.files = s.files
@@ -98,7 +100,7 @@ public actor DemoHost {
         emit(RPCEventName.approvalUpdated, a)
     }
 
-    /// Screenshot states for the title capsule (`-demoState idle | busy | tasks | fresh`):
+    /// Screenshot states for the title capsule (`-demoState idle | busy | tasks | fresh | answered`):
     /// nothing waiting on the owner, then the main turn working, or several
     /// background tasks running.
     public func applyScenario(_ name: String) {
@@ -106,6 +108,23 @@ public actor DemoHost {
         for i in approvals.indices where approvals[i].isPending {
             approvals[i].status = .allowed
             emit(RPCEventName.approvalUpdated, approvals[i])
+        }
+        for i in questions.indices where questions[i].isPending {
+            if name == "answered" {
+                // `-demoState answered`: the question card after the owner chose.
+                var answers: [String: String] = [:]
+                for item in questions[i].items {
+                    answers[item.question] = item.multiSelect
+                        ? item.options.prefix(2).map(\.label).joined(separator: ", ") : item.options.first?.label ?? ""
+                }
+                questions[i].status = .answered
+                questions[i].answers = answers
+                questions[i].answeredAt = now
+                questions[i].answeredBy = "app"
+            } else {
+                questions[i].status = .expired
+            }
+            emit(RPCEventName.questionUpdated, questions[i])
         }
         for t in tasks where t.isActive {
             var done = t
@@ -187,7 +206,8 @@ public actor DemoHost {
             } else {
                 msgs = Array(messages.suffix(100))
             }
-            return try .from(SyncResult(seq: seq, messages: msgs, tasks: tasks, approvals: approvals, watches: watches,
+            return try .from(SyncResult(seq: seq, messages: msgs, tasks: tasks, approvals: approvals, questions: questions,
+                                        watches: watches,
                                         artifacts: artifacts, settings: settings, status: status))
         case RPCMethod.chatSend:
             let text = p["text"]?.stringValue ?? ""
@@ -240,6 +260,21 @@ public actor DemoHost {
                 upsertTask(t)
             }
             return ["ok": true]
+        case RPCMethod.questionAnswer:
+            let qid = p["id"]?.stringValue ?? ""
+            guard let i = questions.firstIndex(where: { $0.id == qid }) else { throw DemoError(message: "没有这个问题") }
+            guard questions[i].isPending else { return ["question": try .from(questions[i])] }
+            var answers: [String: String] = [:]
+            if case .object(let o)? = p["answers"] { for (k, v) in o { answers[k] = v.stringValue ?? "" } }
+            guard questions[i].items.allSatisfy({ !(answers[$0.question] ?? "").isEmpty }) else {
+                throw DemoError(message: "每个问题都要选一下")
+            }
+            questions[i].status = .answered
+            questions[i].answers = answers
+            questions[i].answeredAt = Date().epochMillis
+            questions[i].answeredBy = "app"
+            emit(RPCEventName.questionUpdated, questions[i])
+            return ["question": try .from(questions[i])]
         case RPCMethod.approvalAnswer:
             let aid = p["id"]?.stringValue ?? ""
             let allow = p["allow"]?.boolValue ?? false
@@ -490,6 +525,7 @@ public actor DemoHost {
         var messages: [ChatMessage]
         var tasks: [AllyTask]
         var approvals: [Approval]
+        var questions: [Question]
         var watches: [Watch]
         var artifacts: [Artifact]
         var files: [String: Data]
@@ -521,6 +557,23 @@ public actor DemoHost {
             msg(.user, "周末提醒我给妈妈打电话", channel: .wechat, ago: 2 * hour),
             msg(.assistant, "好嘞，周六上午 10 点提醒你 ☎️", channel: .wechat, ago: 2 * hour - min),
             msg(.assistant, "要给王老师回邮件确认周四的会，需要你点个头。", kind: .approval, ago: 20 * min, approvalId: "a1"),
+            { var m = msg(.assistant, "想问你：周五晚上几个人？（共 2 个问题）", kind: .question, ago: 15 * min, taskId: "t3")
+              m.questionId = "q1"
+              return m }(),
+        ]
+        let questions = [
+            Question(id: "q1", items: [
+                QuestionItem(question: "周五晚上几个人？", header: "人数", options: [
+                    QuestionOption(label: "两个人", description: "就我们俩"),
+                    QuestionOption(label: "四个人", description: "带上爸妈"),
+                    QuestionOption(label: "六个人以上", description: "叫上朋友"),
+                ]),
+                QuestionItem(question: "想吃什么？", header: "口味", options: [
+                    QuestionOption(label: "日料"),
+                    QuestionOption(label: "粤菜"),
+                    QuestionOption(label: "西餐", description: "安静一点的"),
+                ], multiSelect: true),
+            ], taskId: "t3", status: .pending, createdAt: now - 15 * min),
         ]
         let tasks = [
             AllyTask(id: "t2", title: "整理本周报销单", summary: "已经找到 5 张发票，正在核对金额", status: .running,
@@ -615,7 +668,8 @@ public actor DemoHost {
             "travel.md": (.auto, "# 出行偏好\n\n- 航班优先早班\n- 酒店预算一晚 500 以内\n", now - 3 * hour),
             "family.md": (.auto, "# 家人\n\n- 妈妈：每周六上午通电话\n", now - 2 * hour),
         ]
-        return Seed(messages: messages, tasks: tasks, approvals: approvals, watches: watches, artifacts: artifacts,
+        return Seed(messages: messages, tasks: tasks, approvals: approvals, questions: questions, watches: watches,
+                    artifacts: artifacts,
                     files: files, memory: memory)
     }
 }

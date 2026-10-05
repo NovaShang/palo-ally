@@ -5,8 +5,10 @@ import type { Turn } from "./conversation.ts";
 import {
   PUSH_TITLE_APPROVAL,
   PUSH_TITLE_BACK,
+  PUSH_TITLE_QUESTION,
   runawayNotice,
   approvalCardText,
+  questionCardText,
   offlineNotice,
   probeTurnText,
   restartTurnText,
@@ -17,7 +19,7 @@ import {
 import type { ProbeTrigger } from "./probe.ts";
 import type { Router } from "./router.ts";
 import type { RuntimeState } from "./runtime.ts";
-import type { Approval, Task, Watch } from "./types.ts";
+import type { Approval, Question, Task, Watch } from "./types.ts";
 
 const HEARTBEAT_MS = 60_000;
 // After a restart, an owner message this recent with no reply is sent again.
@@ -79,6 +81,21 @@ export class Proactive {
       proactive: true,
     });
     void this.d.router.proactive(msg, { title: PUSH_TITLE_APPROVAL });
+  }
+
+  // A question (AskUserQuestion) becomes a choice card + push. When the owner
+  // is on WeChat in this turn, the hub already sent it there as text.
+  onQuestionCreated(q: Question, opts: { sentToWechat?: boolean } = {}): void {
+    const msg = this.d.chat.add({
+      role: "assistant",
+      kind: "question",
+      text: questionCardText(q),
+      channel: "system",
+      questionId: q.id,
+      taskId: q.taskId,
+      proactive: true,
+    });
+    void this.d.router.proactive(msg, { title: PUSH_TITLE_QUESTION, skipWechat: opts.sentToWechat });
   }
 
   // The runaway guard held a push back: say so once per window, in the chat only.

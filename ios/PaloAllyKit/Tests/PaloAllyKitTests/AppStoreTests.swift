@@ -64,10 +64,11 @@ struct AppStoreTests {
         let (store, host) = await demoStore()
         #expect(store.connection == .online)
         #expect(store.hostName == "我的 MacBook")
-        #expect(store.messages.count == 8)
-        #expect(store.messages.map(\.seq) == Array(1...8))
-        #expect(store.lastSeq == 8)
+        #expect(store.messages.count == 9)
+        #expect(store.messages.map(\.seq) == Array(1...9))
+        #expect(store.lastSeq == 9)
         #expect(store.tasks.count == 3)
+        #expect(store.pendingQuestions.map(\.id) == ["q1"])
         #expect(store.tasks.first?.isActive == true) // active tasks sort first
         #expect(store.pendingApprovals.map(\.id).sorted() == ["a1", "a2"])
         #expect(store.watches.count == 8)
@@ -96,13 +97,13 @@ struct AppStoreTests {
         #expect(echo.delivery == .sending)
         #expect(store.awaitingReply)
 
-        #expect(await until { store.messages.count == 10 && !store.isBusy })
-        let user = store.messages[8]
-        let reply = store.messages[9]
-        #expect(user.role == .user && user.seq == 9 && user.id == "m9" && user.delivery == .sent)
-        #expect(reply.role == .assistant && reply.seq == 10 && !reply.isStreaming)
+        #expect(await until { store.messages.count == 11 && !store.isBusy })
+        let user = store.messages[9]
+        let reply = store.messages[10]
+        #expect(user.role == .user && user.seq == 10 && user.id == "m10" && user.delivery == .sent)
+        #expect(reply.role == .assistant && reply.seq == 11 && !reply.isStreaming)
         #expect(reply.text.contains("我记下了"))
-        #expect(store.lastSeq == 10)
+        #expect(store.lastSeq == 11)
         #expect(!store.awaitingReply)
         #expect(store.messages.filter { $0.text == "你好呀" }.count == 1)
         #expect(await host.lastParams["chat.send"]?["clientMsgId"] == .string(echo.clientMsgId!))
@@ -132,10 +133,26 @@ struct AppStoreTests {
         #expect(copied == ["123456"])
     }
 
+    @Test func answeringAQuestionSendsTheChoicesAndResolvesTheCard() async throws {
+        let (store, host) = await demoStore()
+        let q = try #require(store.question(id: "q1"))
+        #expect(store.messages.contains { $0.kind == .question && $0.questionId == "q1" })
+        try await store.answer(q, answers: ["周五晚上几个人？": "两个人", "想吃什么？": "日料, 西餐"])
+        #expect(store.question(id: "q1")?.status == .answered)
+        #expect(store.pendingQuestions.isEmpty)
+        let sent = await host.lastParams["question.answer"]
+        #expect(sent?["answers"]?["想吃什么？"]?.stringValue == "日料, 西餐")
+        // every question needs an answer: the host refuses and the card rolls back
+        let (store2, _) = await demoStore()
+        let q2 = try #require(store2.question(id: "q1"))
+        await #expect(throws: (any Error).self) { try await store2.answer(q2, answers: ["周五晚上几个人？": "两个人"]) }
+        #expect(store2.question(id: "q1")?.status == .pending)
+    }
+
     @Test func emptySendIgnored() async {
         let (store, _) = await demoStore()
         store.send("   \n ")
-        #expect(store.messages.count == 8)
+        #expect(store.messages.count == 9)
     }
 
     @Test func deltasMergeIntoStreamingMessageAndFinalize() async throws {
@@ -255,13 +272,13 @@ struct AppStoreTests {
 
     @Test func gapTriggersResyncFromLastSeq() async throws {
         let (store, host) = await demoStore()
-        #expect(store.lastSeq == 8)
+        #expect(store.lastSeq == 9)
         await host.post("漏掉的 1", broadcast: false)
         await host.post("漏掉的 2", broadcast: false)
-        await host.post("看到的 3") // seq 11 broadcast → gap (expected 9)
-        #expect(await until { store.lastSeq == 11 })
-        #expect(store.messages.map(\.seq) == Array(1...11))
-        #expect(await host.lastParams["sync"]?["sinceSeq"] == .number(8))
+        await host.post("看到的 3") // seq 12 broadcast → gap (expected 10)
+        #expect(await until { store.lastSeq == 12 })
+        #expect(store.messages.map(\.seq) == Array(1...12))
+        #expect(await host.lastParams["sync"]?["sinceSeq"] == .number(9))
         #expect(await host.requestLog.filter { $0 == "sync" }.count == 2)
     }
 

@@ -23,17 +23,22 @@ public struct AgentStatusLine: Equatable, Sendable {
     /// - Parameters:
     ///   - offlineText: a short connection state when not online (nil = online).
     ///   - pendingApprovals: approvals waiting on the owner.
+    ///   - pendingQuestions: choice cards waiting on the owner's answer.
     ///   - busy: the main turn is running.
     ///   - activity: what the main turn is doing (host Status.activity).
     ///   - tasks: all tasks; running ones and ones waiting on the owner count.
-    public static func make(offlineText: String?, pendingApprovals: Int, busy: Bool, activity: String?,
-                            tasks: [AllyTask]) -> AgentStatusLine {
+    public static func make(offlineText: String?, pendingApprovals: Int, pendingQuestions: Int = 0, busy: Bool,
+                            activity: String?, tasks: [AllyTask]) -> AgentStatusLine {
         if let offlineText { return AgentStatusLine(kind: .offline, text: offlineText) }
 
         let waiting = tasks.filter { $0.status == .needsInput }.count
-        let needs = pendingApprovals + waiting
+        let needs = pendingApprovals + waiting + pendingQuestions
         if needs > 0 {
-            return AgentStatusLine(kind: .needsYou, text: waiting == 0 ? "\(needs) 件等你确认" : "\(needs) 件事等你")
+            let text: String
+            if pendingQuestions == needs { text = needs == 1 ? "等你回答" : "\(needs) 个问题等你回答" }
+            else if waiting == 0 && pendingQuestions == 0 { text = "\(needs) 件等你确认" }
+            else { text = "\(needs) 件事等你" }
+            return AgentStatusLine(kind: .needsYou, text: text)
         }
 
         let running = tasks.filter { $0.status == .running }.sorted { $0.updatedAt > $1.updatedAt }

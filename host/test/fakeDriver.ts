@@ -4,6 +4,7 @@ import type {
   ImageInput,
   MainSession,
   MainSessionOptions,
+  PermissionDecision,
   ProbeRequest,
   ProbeResult,
 } from "../src/harness/types.ts";
@@ -90,6 +91,7 @@ export class FakeMainSession implements MainSession {
               reason: o.reason,
             });
             allowed = d.behavior === "allow";
+            this.driver.decisions.push({ tool: name, decision: d });
             if (d.behavior === "allow" && d.updatedPermissions) this.driver.appliedPermissions.push(...d.updatedPermissions);
           }
           this.opts.onEvent({
@@ -150,6 +152,7 @@ export class FakeDriver implements HarnessDriver {
   stoppedTasks: string[] = [];
   liveSwitches: string[] = [];
   appliedPermissions: unknown[] = []; // rules the owner chose to remember (harness-side)
+  decisions: { tool: string; decision: PermissionDecision }[] = []; // every canUseTool answer, in order
   turnCost = 0.001;
   probeResponder: (req: ProbeRequest) => ProbeResult = () => ({ output: { results: [] }, costUsd: 0.0001 });
 

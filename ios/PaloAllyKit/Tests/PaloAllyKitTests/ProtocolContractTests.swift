@@ -77,6 +77,7 @@ private let resultTypes: [String: Check] = [
     RPCMethod.taskGet: strict(TaskDetail.self),
     RPCMethod.taskStop: strict(OKResult.self),
     RPCMethod.approvalAnswer: strict(StatusStringResult.self),
+    RPCMethod.questionAnswer: strict(QuestionResult.self),
     RPCMethod.watchAdd: strict(WatchResult.self),
     RPCMethod.watchUpdate: strict(WatchResult.self),
     RPCMethod.watchRemove: strict(OKResult.self),
@@ -106,6 +107,7 @@ private let eventTypes: [String: Check] = [
     RPCEventName.chatDelta: strict(ChatDelta.self),
     RPCEventName.taskUpdated: strict(AllyTask.self),
     RPCEventName.approvalUpdated: strict(Approval.self),
+    RPCEventName.questionUpdated: strict(Question.self),
     RPCEventName.watchUpdated: { json in
         if json["removed"] != nil {
             return json["removed"]?.stringValue == nil ? ["\"removed\" is not a string"] : []

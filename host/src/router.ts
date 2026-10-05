@@ -80,7 +80,7 @@ export class Router {
     return inWindow(minuteOfDay(this.now(), s.timezone), start, end);
   }
 
-  async proactive(msg: ChatMessage, opts: { urgent?: boolean; title?: string } = {}): Promise<DeliveryResult> {
+  async proactive(msg: ChatMessage, opts: { urgent?: boolean; title?: string; skipWechat?: boolean } = {}): Promise<DeliveryResult> {
     const s = this.settings();
     if (!opts.urgent) {
       if (this.isQuiet()) {
@@ -102,7 +102,7 @@ export class Router {
       if (!p.available()) continue;
       try {
         // A half-open connection (laptop slept) must not hang the caller.
-        await withTimeout(p.push(title, body, { seq: msg.seq, id: msg.id, taskId: msg.taskId, approvalId: msg.approvalId }), PUSH_TIMEOUT_MS);
+        await withTimeout(p.push(title, body, { seq: msg.seq, id: msg.id, taskId: msg.taskId, approvalId: msg.approvalId, questionId: msg.questionId }), PUSH_TIMEOUT_MS);
         pushed = true;
       } catch (e) {
         this.audit.log("deliver.error", { via: p.name, error: String(e) });
@@ -110,7 +110,7 @@ export class Router {
     }
 
     let wechat = false;
-    if (this.wechat?.available() && s.wechatProactive !== "off") {
+    if (!opts.skipWechat && this.wechat?.available() && s.wechatProactive !== "off") {
       // WeChat goes through Tencent's servers (not E2E): by default only a hint.
       const text = s.wechatProactive === "full" ? msg.text : `PaloAlly 有一条新消息：${hintFor(msg)}。打开 App 查看。`;
       wechat = await withTimeout(this.wechat.sendProactive(text), PUSH_TIMEOUT_MS).catch(() => false);
@@ -123,6 +123,7 @@ export class Router {
 // hintFor names the kind of message without its content.
 function hintFor(msg: ChatMessage): string {
   if (msg.kind === "approval") return `有个操作等你确认（回复「同意 ${msg.approvalId?.slice(-4)}」或「拒绝 ${msg.approvalId?.slice(-4)}」，或在 App 里看详情）`;
+  if (msg.kind === "question") return "有个问题等你回答（在 App 里选一下就行）";
   if (msg.kind === "task") return "有个任务有结果了";
   return "我有事想跟你说";
 }

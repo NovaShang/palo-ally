@@ -53,6 +53,8 @@ public final class AppStore {
     public private(set) var messages: [ChatMessage] = []
     public private(set) var tasks: [AllyTask] = []
     public private(set) var approvals: [Approval] = []
+    /// Choice cards (AskUserQuestion), newest first.
+    public private(set) var questions: [Question] = []
     public private(set) var watches: [Watch] = []
     public private(set) var artifacts: [Artifact] = []
     public private(set) var settings: HostSettings? {
@@ -324,6 +326,7 @@ public final class AppStore {
     public func applySync(_ r: SyncResult, since: Int64?) -> Bool {
         if let t = r.tasks { tasks = t; sortTasks() }
         if let a = r.approvals { approvals = a; sortApprovals() }
+        if let q = r.questions { questions = q.sorted { $0.createdAt > $1.createdAt } }
         if let w = r.watches { watches = w }
         if let a = r.artifacts { artifacts = a }
         if let s = r.settings { settings = s }
@@ -407,6 +410,8 @@ public final class AppStore {
             if let t = try? data.decode(AllyTask.self) { upsert(task: t) }
         case RPCEventName.approvalUpdated:
             if let a = try? data.decode(Approval.self) { upsert(approval: a) }
+        case RPCEventName.questionUpdated:
+            if let q = try? data.decode(Question.self) { upsert(question: q) }
         case RPCEventName.watchUpdated:
             switch WatchUpdate(json: data) {
             case .upsert(let w): upsert(watch: w)
@@ -552,6 +557,11 @@ public final class AppStore {
         approvals.sort { ($0.isPending ? 1 : 0, $0.createdAt) > ($1.isPending ? 1 : 0, $1.createdAt) }
     }
 
+    func upsert(question q: Question) {
+        if let i = questions.firstIndex(where: { $0.id == q.id }) { questions[i] = q } else { questions.append(q) }
+        questions.sort { $0.createdAt > $1.createdAt }
+    }
+
     func upsert(watch w: Watch) {
         if let i = watches.firstIndex(where: { $0.id == w.id }) { watches[i] = w } else { watches.append(w) }
     }
@@ -563,6 +573,8 @@ public final class AppStore {
     // MARK: derived
 
     public var pendingApprovals: [Approval] { approvals.filter(\.isPending) }
+    public var pendingQuestions: [Question] { questions.filter(\.isPending) }
+    public func question(id: String) -> Question? { questions.first { $0.id == id } }
 
     /// What the owner hasn't seen: replies, notices and cards newer than `seq`
     /// (their own messages don't count).
@@ -937,6 +949,28 @@ public final class AppStore {
             }
         } catch {
             if let before { upsert(approval: before) }
+            throw error
+        }
+    }
+
+    // MARK: questions
+
+    /// Sends the owner's choices for a question card. `answers`: question
+    /// text → chosen label(s) joined by ", ", or the owner's own words.
+    public func answer(_ question: Question, answers: [String: String]) async throws {
+        let before = questions.first { $0.id == question.id }
+        if var q = before {
+            q.status = .answered
+            q.answers = answers
+            q.answeredAt = Date().epochMillis
+            upsert(question: q)
+        }
+        do {
+            let r: QuestionResult = try await rpc.call(RPCMethod.questionAnswer,
+                                                       params: QuestionAnswerParams(id: question.id, answers: answers))
+            if let q = r.question { upsert(question: q) }
+        } catch {
+            if let before { upsert(question: before) }
             throw error
         }
     }

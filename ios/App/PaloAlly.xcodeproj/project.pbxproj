@@ -36,6 +36,7 @@
 		90CE987F9EA4BB408FB5F7FE /* DisplayCorners.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF9B71414B8BB238CEE54BC1 /* DisplayCorners.swift */; };
 		9B34F0015CBA0682AF1B48BC /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32922EB865184F7F70CAB365 /* AppTheme.swift */; };
 		9E8BAB6F1769D57EC0C617C0 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97B4D23870E594B624074F8D /* ComposerView.swift */; };
+		9EFDA851328EB4700879F945 /* QuestionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEB06BF1C700F1FEE8FBA962 /* QuestionCard.swift */; };
 		AEBD8CD9FD2F1F20EA8FEDAD /* HostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53AE60C8605BA97074A29F1A /* HostsView.swift */; };
 		B7DF0900ABDDFACC50FFF6B2 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7769E0FBCB029211A3B7B532 /* QRScannerView.swift */; };
 		B8976F3E44EC1376603FA764 /* CopyButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDCE2B703ACB5F034BAA47C0 /* CopyButton.swift */; };
@@ -102,6 +103,7 @@
 		DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		E9E4508DECE36B39CF27552D /* WatchesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchesSection.swift; sourceTree = "<group>"; };
 		EDCE2B703ACB5F034BAA47C0 /* CopyButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopyButton.swift; sourceTree = "<group>"; };
+		EEB06BF1C700F1FEE8FBA962 /* QuestionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuestionCard.swift; sourceTree = "<group>"; };
 		EF9B71414B8BB238CEE54BC1 /* DisplayCorners.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayCorners.swift; sourceTree = "<group>"; };
 		EFF3C59774AD6CD3FE7F5AAA /* ArtifactDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactDetailView.swift; sourceTree = "<group>"; };
 		F881AEFDC8F959F0506046DD /* SpeechDictation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechDictation.swift; sourceTree = "<group>"; };
@@ -193,6 +195,7 @@
 				4165C6D84EFA478FBE5F799D /* HostSwitcher.swift */,
 				51926AB68F34CBF76C2C1507 /* MessageRow.swift */,
 				89680F4F2AB77C09AE302E26 /* OrbPresence.swift */,
+				EEB06BF1C700F1FEE8FBA962 /* QuestionCard.swift */,
 				F881AEFDC8F959F0506046DD /* SpeechDictation.swift */,
 				BC058EC00155E4856AE7B909 /* SuggestionChips.swift */,
 				76CCDDF52E61A55777BF897F /* SuggestionsGate.swift */,
@@ -373,6 +376,7 @@
 				F10B59DC6D408555F64C2858 /* PairingView.swift in Sources */,
 				31D752A67A0592C5BA7B46B1 /* PaloAllyApp.swift in Sources */,
 				B7DF0900ABDDFACC50FFF6B2 /* QRScannerView.swift in Sources */,
+				9EFDA851328EB4700879F945 /* QuestionCard.swift in Sources */,
 				D844BFFB6A6F7E72355AF873 /* QuickLook.swift in Sources */,
 				F7BB5BDB265CB2F858DDF473 /* RootView.swift in Sources */,
 				11BECFB67315E8AFAF47D91A /* SelectableMarkdown.swift in Sources */,

@@ -6,11 +6,12 @@ import type { ClientConn, WechatChannel, WechatReplyTarget } from "./channels/ty
 import { ChatLog } from "./chat.ts";
 import { type Config, type Paths, type Settings, VERSION, patchConfig, validateSettings } from "./config.ts";
 import { Conversation } from "./conversation.ts";
-import { ACTIVITY_THINKING, approvalAnswerReply, statusReply, stopReply } from "./copy.ts";
+import { ACTIVITY_THINKING, approvalAnswerReply, questionLineHelp, statusReply, stopReply } from "./copy.ts";
 import type { HarnessDriver, HarnessEvent, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
 import { HarnessInfo } from "./harnessInfo.ts";
 import { MemoryView, autoMemoryDir } from "./memory.ts";
 import { ProbeScheduler, type ProbeTrigger } from "./probe.ts";
+import { QuestionManager, parseTextAnswer, questionText } from "./questions.ts";
 import { Proactive } from "./proactive.ts";
 import { Router, type Pusher } from "./router.ts";
 import { RuntimeState } from "./runtime.ts";
@@ -49,6 +50,7 @@ export class Hub {
   readonly chat: ChatLog;
   readonly tasks: TaskTracker;
   readonly approvals: ApprovalManager;
+  readonly questions: QuestionManager;
   readonly watches: WatchStore;
   readonly artifacts: ArtifactLibrary;
   readonly media: MediaStore;
@@ -65,6 +67,8 @@ export class Hub {
   private readonly log: (s: string) => void;
   private clients = new Map<string, { conn: ClientConn; off: () => void }>();
   private suggestionTimer: ReturnType<typeof setInterval> | null = null;
+  // questions sent to WeChat as text: the owner's next WeChat message answers them
+  private wechatQuestions = new Set<string>();
   // set by the daemon: drops a paired device (its relay pairing)
   onUnpairDevice?: (deviceId: string) => void;
 
@@ -97,6 +101,19 @@ export class Hub {
       onCreated: (a) => this.proactive.onApprovalCreated(a),
       timeoutMinutes: () => this.config.settings.approvalTimeoutMinutes,
     });
+    this.questions = new QuestionManager(this.paths.questions, this.bus, this.audit, {
+      taskForToolUse: (id) => (id ? this.tasks.taskIdForToolUse(id) : undefined),
+      onCreated: (q) => {
+        // Asked during a WeChat turn: the owner gets it there as numbered options.
+        const target = this.conversation.wechatTarget();
+        if (target && this.wechat) {
+          this.wechatQuestions.add(q.id);
+          void this.wechat.reply(target, questionText(q)).catch((e) => this.log(`wechat question failed: ${e}`));
+        }
+        this.proactive.onQuestionCreated(q, { sentToWechat: !!(target && this.wechat) });
+      },
+      timeoutMinutes: () => this.config.settings.approvalTimeoutMinutes,
+    });
     this.info = new HarnessInfo(
       this.paths.state,
       this.bus,
@@ -111,6 +128,7 @@ export class Hub {
       chat: this.chat,
       tasks: this.tasks,
       approvals: this.approvals,
+      questions: this.questions,
       router: this.router,
       wechat: this.wechat,
       audit: this.audit,
@@ -242,9 +260,12 @@ export class Hub {
       ...(attachments.length ? { attachments } : {}),
       ...(replyTo ? { replyTo } : {}),
     });
-    if (cmd !== null) {
-      this.chat.add({ role: "system", kind: "notice", text: cmd, channel: "system" });
-      if (channel === "wechat" && wechat && this.wechat) void this.wechat.reply(wechat, cmd).catch(() => {});
+    const answered = cmd === null && channel === "wechat" && !attachments.length ? this.answerOnWechat(t) : null;
+    if (answered === "") return msg; // it answered an open question; the harness carries on
+    if (answered !== null || cmd !== null) {
+      const reply = (answered ?? cmd)!;
+      this.chat.add({ role: "system", kind: "notice", text: reply, channel: "system" });
+      if (channel === "wechat" && wechat && this.wechat) void this.wechat.reply(wechat, reply).catch(() => {});
       return msg;
     }
     // Slash commands must reach the harness verbatim, so they get no prefix.
@@ -264,6 +285,20 @@ export class Hub {
     const body = [prefix + quote + t, ...files].filter((x) => x.trim()).join("\n");
     this.conversation.sendOwner(body, channel, wechat, images);
     return msg;
+  }
+
+  // A question sent to WeChat is answered by the owner's next WeChat message:
+  // "" when it answered, a help line when it couldn't be matched, null when
+  // no question is waiting there.
+  private answerOnWechat(t: string): string | null {
+    if (t.startsWith("/")) return null;
+    const q = this.questions.listPending().find((x) => this.wechatQuestions.has(x.id));
+    if (!q) return null;
+    const answers = parseTextAnswer(q, t);
+    if (!answers) return questionLineHelp;
+    this.wechatQuestions.delete(q.id);
+    this.questions.answer(q.id, answers, "wechat");
+    return "";
   }
 
   // The few things the shell answers itself (everything else goes to the harness).
@@ -316,7 +351,7 @@ export class Hub {
   async restartWhenIdle(maxWaitMs = 30 * 60_000, exit: () => void = () => process.exit(0)): Promise<"restarting" | "timeout"> {
     const deadline = Date.now() + maxWaitMs;
     while (Date.now() < deadline) {
-      if (this.conversation.quiet && !this.tasks.live().length && !this.approvals.listPending().length) {
+      if (this.conversation.quiet && !this.tasks.live().length && !this.conversation.waitingOnOwner()) {
         this.audit.log("restart", {});
         setTimeout(exit, 200);
         return "restarting";

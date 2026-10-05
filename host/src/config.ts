@@ -20,6 +20,7 @@ export class Paths {
   get tasks() { return join(this.state, "tasks.json"); }
   get taskActivity() { return join(this.state, "task-activity"); }
   get approvals() { return join(this.state, "approvals.json"); }
+  get questions() { return join(this.state, "questions.json"); }
   get watches() { return join(this.state, "watches.json"); }
   get runtime() { return join(this.state, "runtime.json"); }
   get usage() { return join(this.state, "usage.json"); }

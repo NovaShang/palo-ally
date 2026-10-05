@@ -284,6 +284,7 @@ extension AppStore {
             // Only a drop the owner is shown (see displayedConnection).
             offlineText: connectionTrouble ? Copy.connectionShort(displayedConnection) : nil,
             pendingApprovals: pendingApprovals.count,
+            pendingQuestions: pendingQuestions.count,
             busy: isBusy,
             activity: status?.activity,
             tasks: tasks

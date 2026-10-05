@@ -92,7 +92,7 @@ private struct AssistantMessage: View {
                     // A schedule goal's output (晨报 and the like).
                     GoalCard(message: message, card: card)
                 } else {
-                if message.proactive == true {
+                if message.proactive == true && !questionCardOnly {
                     Label(proactiveLabel, systemImage: "bell.badge")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -100,7 +100,7 @@ private struct AssistantMessage: View {
                 if let atts = message.attachments, !atts.isEmpty {
                     AttachmentStrip(attachments: atts)
                 }
-                if !message.text.isEmpty || message.isStreaming {
+                if (!message.text.isEmpty || message.isStreaming) && !questionCardOnly {
                     // One system text view per answer: free selection across
                     // paragraphs, like Notes / Safari. 「引用回复」 quotes a selection.
                     SelectableMarkdown(source: message.text, streaming: message.isStreaming,
@@ -120,9 +120,17 @@ private struct AssistantMessage: View {
                 if message.kind == .approval, let id = message.approvalId, let approval = store.approval(id: id) {
                     ApprovalCard(approval: approval)
                 }
+                if message.kind == .question, let id = message.questionId, let question = store.question(id: id) {
+                    QuestionCard(question: question)
+                }
             }
             Spacer(minLength: 24)
         }
+    }
+
+    /// A question card says it all: no label, no repeated text above it.
+    private var questionCardOnly: Bool {
+        message.kind == .question && message.questionId.flatMap { store.question(id: $0) } != nil
     }
 
     private var proactiveLabel: String {

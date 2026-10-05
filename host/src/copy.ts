@@ -1,5 +1,5 @@
 import type { ProbeTrigger } from "./probe.ts";
-import type { Approval, Task, Watch } from "./types.ts";
+import type { Approval, Question, Task, Watch } from "./types.ts";
 import { formatDuration, truncate, zonedParts } from "./util.ts";
 
 // Every sentence the owner (or the model, for synthetic turns) reads from the
@@ -64,6 +64,9 @@ export function taskResultText(t: Task): string {
 }
 
 export const approvalCardText = (a: Approval) => `这一步要你点头：${a.title}${a.careful ? "（请仔细看一下）" : ""}`;
+// The chat text of a question card (the card itself shows the options).
+export const questionCardText = (q: Question) => `想问你：${q.items[0]!.question}${q.items.length > 1 ? `（共 ${q.items.length} 个问题）` : ""}`;
+export const questionLineHelp = "有几个问题就回几行，按顺序，每行一个数字或你的想法。";
 
 export const stopReply = "好，手上的事都停下了。";
 export const approvalAnswerReply = (allow: boolean) => (allow ? "好，已同意。" : "好，已拒绝。");
@@ -86,6 +89,7 @@ export function offlineNotice(gapMs: number, last: number, now: number, tz: stri
 // ---- push titles ----
 
 export const PUSH_TITLE_APPROVAL = "需要你确认";
+export const PUSH_TITLE_QUESTION = "等你回答";
 export const PUSH_TITLE_BACK = "我回来了";
 
 // ---- synthetic turns the shell sends the model ----

@@ -15,6 +15,8 @@ public enum ChatKind: String, TolerantStringEnum {
     case text, task, approval, notice, unknown
     /// Text the assistant put on the owner's clipboard (copy_to_clipboard).
     case clipboard
+    /// The assistant asks the owner to choose (AskUserQuestion): a choice card.
+    case question
     public static let fallback = ChatKind.unknown
 }
 
@@ -44,6 +46,11 @@ public enum ActivityKind: String, TolerantStringEnum {
 public enum ApprovalStatus: String, TolerantStringEnum {
     case pending, allowed, denied, expired, unknown
     public static let fallback = ApprovalStatus.unknown
+}
+
+public enum QuestionStatus: String, TolerantStringEnum {
+    case pending, answered, expired, unknown
+    public static let fallback = QuestionStatus.unknown
 }
 
 public enum WatchKind: String, TolerantStringEnum {
@@ -113,6 +120,8 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     public var proactive: Bool?
     public var taskId: String?
     public var approvalId: String?
+    /// kind == .question: the question the card shows.
+    public var questionId: String?
     /// Not in §5.3 but accepted if the host echoes it on the broadcast
     /// `chat.message` for a user turn (lets us merge the optimistic echo
     /// before the `chat.send` response lands).
@@ -131,7 +140,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     public var delivery: Delivery = .sent
 
     enum CodingKeys: String, CodingKey {
-        case seq, id, role, kind, text, channel, ts, proactive, taskId, approvalId, clientMsgId, attachments, label, replyTo, card
+        case seq, id, role, kind, text, channel, ts, proactive, taskId, approvalId, questionId, clientMsgId, attachments, label, replyTo, card
     }
 
     public init(
@@ -156,6 +165,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         proactive = l.bool("proactive")
         taskId = l.string("taskId")
         approvalId = l.string("approvalId")
+        questionId = l.string("questionId")
         clientMsgId = l.string("clientMsgId")
         attachments = l.decode([Attachment].self, "attachments")
         label = l.string("label")
@@ -286,6 +296,76 @@ public struct TaskActivity: Codable, Sendable, Hashable {
         label = l.string("label")
         text = l.string("text", or: "")
     }
+}
+
+// MARK: - Question
+
+/// One choice in a question.
+public struct QuestionOption: Codable, Sendable, Hashable {
+    public var label: String
+    public var description: String?
+
+    public init(label: String, description: String? = nil) { self.label = label; self.description = description }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        label = l.string("label", or: "")
+        description = l.string("description")
+    }
+}
+
+/// One question: its text, a short header, the options, single or multi select.
+public struct QuestionItem: Codable, Sendable, Hashable {
+    public var question: String
+    public var header: String?
+    public var options: [QuestionOption]
+    public var multiSelect: Bool
+
+    public init(question: String, header: String? = nil, options: [QuestionOption], multiSelect: Bool = false) {
+        self.question = question; self.header = header; self.options = options; self.multiSelect = multiSelect
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        question = l.string("question", or: "")
+        header = l.string("header")
+        options = l.array(QuestionOption.self, "options", or: [])
+        multiSelect = l.bool("multiSelect", or: false)
+    }
+}
+
+/// The assistant asking the owner to choose (Claude Code's AskUserQuestion).
+/// Answers map each question's text to the chosen label(s) — several joined
+/// by ", " — or to the owner's own words.
+public struct Question: Codable, Sendable, Hashable, Identifiable {
+    public var id: String
+    public var items: [QuestionItem]
+    public var taskId: String?
+    public var status: QuestionStatus
+    public var createdAt: Int64
+    public var answers: [String: String]?
+    public var answeredAt: Int64?
+    public var answeredBy: String?
+
+    public init(id: String, items: [QuestionItem], taskId: String? = nil, status: QuestionStatus = .pending,
+                createdAt: Int64, answers: [String: String]? = nil, answeredAt: Int64? = nil, answeredBy: String? = nil) {
+        self.id = id; self.items = items; self.taskId = taskId; self.status = status; self.createdAt = createdAt
+        self.answers = answers; self.answeredAt = answeredAt; self.answeredBy = answeredBy
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        id = l.string("id", or: UUID().uuidString)
+        items = l.array(QuestionItem.self, "items", or: [])
+        taskId = l.string("taskId")
+        status = l.decode(QuestionStatus.self, "status", or: .unknown)
+        createdAt = l.millis("createdAt", or: 0)
+        answers = l.decode([String: String].self, "answers")
+        answeredAt = l.millis("answeredAt")
+        answeredBy = l.string("answeredBy")
+    }
+
+    public var isPending: Bool { status == .pending }
 }
 
 // MARK: - Approval

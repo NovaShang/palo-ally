@@ -23,6 +23,15 @@ const script: FakeScript = async (t, ctx) => {
     });
     return;
   }
+  if (t === "要问我") {
+    await ctx.useTool("AskUserQuestion", {
+      questions: [
+        { question: "约哪天？", header: "日期", options: [{ label: "周六", description: "上午" }, { label: "周日", description: "下午" }], multiSelect: false },
+        { question: "谁一起去？", header: "同行", options: [{ label: "太太", description: "" }, { label: "孩子", description: "" }], multiSelect: true },
+      ],
+    }, { ask: true });
+    return;
+  }
   ctx.emit({ type: "text_delta", text: "你好" });
   ctx.emit({ type: "assistant_text", text: "你好，我在。", parentToolUseId: null });
 };
@@ -73,6 +82,10 @@ describe("host ↔ app protocol", () => {
     hub.userMessage("要确认", "app");
     await tick(10);
     await run("approval.answer", { id: hub.approvals.listPending()[0]!.id, allow: true, remember: true });
+    await hub.idle();
+    hub.userMessage("要问我", "app");
+    await tick(10);
+    await run("question.answer", { id: hub.questions.listPending()[0]!.id, answers: { "约哪天？": "周日", "谁一起去？": "太太, 孩子" } });
     await hub.idle();
     const w = (await run("watch.add", { title: "晨报", instruction: "整理日程", at: ["08:30"] })).watch;
     hub.watches.progress(w.id, "已整理 3 条日程", { ratio: 0.5, outcome: "示例" });
