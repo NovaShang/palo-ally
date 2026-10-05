@@ -122,12 +122,14 @@ private struct AssistantMessage: View {
 
 private struct TaskChip: View {
     @Environment(AppStore.self) private var store
+    @Environment(AppModel.self) private var model
     let taskId: String
 
     var body: some View {
         if let task = store.task(id: taskId) {
-            NavigationLink {
-                TaskDetailView(taskID: taskId)
+            // Opens just this task over the conversation; closing returns here.
+            Button {
+                model.openTask(taskId)
             } label: {
                 let (symbol, color) = Copy.taskSymbol(task.status)
                 HStack(spacing: 6) {
@@ -222,13 +224,14 @@ private struct AttachmentStrip: View {
 
     private func isWebPage(_ a: Attachment) -> Bool { a.kind == "artifact" && a.mediaType.contains("html") }
 
+    /// QuickLook's 「在产出物库中查看」: the library, scrolled into that item.
     private func openInLibrary(_ id: String) {
-        model.libraryPath = [id]
-        model.showLibrary = true
+        model.showInLibrary(id)
     }
 
     private func open(_ a: Attachment) {
-        if isWebPage(a) { return openInLibrary(a.id) }
+        // Web pages render in the artifact view, opened on their own over the chat.
+        if isWebPage(a) { return model.openArtifact(a.id) }
         guard loading == nil else { return }
         loading = a.id
         Task {

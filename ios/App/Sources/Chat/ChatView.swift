@@ -241,8 +241,7 @@ struct ChatView: View {
                     openTask: { id in
                         Task { @MainActor in
                             try? await Task.sleep(for: .milliseconds(350))
-                            model.openTaskID = id
-                            model.showAssistant = true
+                            model.openTask(id)
                         }
                     }
                 )

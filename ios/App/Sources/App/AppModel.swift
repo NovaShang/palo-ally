@@ -78,9 +78,44 @@ final class AppModel {
     var pairedHost: PairedHost? { activeHostID.flatMap { hosts[$0] } }
 
     // Navigation state (also driven by launch options / notifications).
-    /// The library is a temporary sheet over the conversation, not a peer screen.
-    var showLibrary = false
-    var showAssistant = false
+    /// The conversation is the only main screen; everything else is one
+    /// temporary layer over it (a sheet). Closing the layer returns to the chat.
+    enum Layer: Equatable {
+        case assistant          // 助理: 任务 · 确认 · 盯梢 · 记忆, settings inside
+        case library            // 资料库 (drill-down via libraryPath)
+        case artifact(String)   // one artifact opened from the conversation
+        case task(String)       // one task opened from the conversation
+    }
+    /// At most one layer at a time; setting another replaces it in place.
+    var layer: Layer? {
+        didSet {
+            guard layer != oldValue else { return }
+            // Drill-down state belongs to its layer; don't resurrect it next time.
+            if layer != .assistant { showSettings = false; showHostList = false; openTaskID = nil }
+            if layer != .library { libraryPath = [] }
+        }
+    }
+    var showLibrary: Bool {
+        get { layer == .library }
+        set { if newValue { layer = .library } else if layer == .library { layer = nil } }
+    }
+    var showAssistant: Bool {
+        get { layer == .assistant }
+        set { if newValue { layer = .assistant } else if layer == .assistant { layer = nil } }
+    }
+    /// From the conversation: just this artifact / task, closing returns to the chat.
+    func openArtifact(_ id: String) { layer = .artifact(id) }
+    func openTask(_ id: String) { layer = .task(id) }
+    /// The way out of a single item to its whole collection.
+    func showInLibrary(_ id: String? = nil) {
+        layer = .library
+        libraryPath = id.map { [$0] } ?? []
+    }
+    func showAllTasks() {
+        layer = .assistant
+        assistantTab = .tasks
+        openTaskID = nil
+    }
     var assistantTab: AssistantTab = .tasks
     var showSettings = false
     var showHostList = false
@@ -132,7 +167,7 @@ final class AppModel {
     private func applyLaunchScreen() {
         switch launch.screen {
         case "library": showLibrary = true
-        case "artifact": showLibrary = true; libraryPath = ["ar1"]
+        case "artifact": openArtifact("ar1") // as if tapped in the conversation
         case "assistant": showAssistant = true
         case "settings": showAssistant = true; showSettings = true
         case "hosts": showAssistant = true; showSettings = true; showHostList = true
@@ -220,12 +255,7 @@ final class AppModel {
         guard hostIDs.contains(id), id != activeHostID else { return }
         markSeen()
         activate(id)
-        showAssistant = false
-        showSettings = false
-        showHostList = false
-        showLibrary = false
-        libraryPath = []
-        openTaskID = nil
+        layer = nil
     }
 
     func moveHosts(from source: IndexSet, to destination: Int) {
@@ -372,9 +402,7 @@ final class AppModel {
             resetToUnpaired()
         } else if activeHostID == id {
             activate(hostIDs[0])
-            showAssistant = false
-            showSettings = false
-            showHostList = false
+            layer = nil
         }
     }
 
@@ -390,12 +418,8 @@ final class AppModel {
     private func resetToUnpaired() {
         tearDownStores()
         mode = .unpaired
-        showAssistant = false
-        showSettings = false
-        showHostList = false
+        layer = nil
         showHostSwitcher = false
-        showLibrary = false
-        libraryPath = []
         Self.clearTemporaryFiles()
     }
 
@@ -449,20 +473,15 @@ final class AppModel {
     /// one), then navigates by id — on cold launch too, before anything synced.
     func handleNotification(userInfo: [AnyHashable: Any]) {
         if let hostId = userInfo["hostId"] as? String, hostIDs.contains(hostId) { switchTo(hostId) }
-        showSettings = false
-        showLibrary = false
         showHostSwitcher = false
         if let approvalId = userInfo["approvalId"] as? String, !approvalId.isEmpty {
-            openTaskID = nil
+            layer = .assistant
             assistantTab = .approvals
-            showAssistant = true
-        } else if let taskId = userInfo["taskId"] as? String, !taskId.isEmpty {
-            assistantTab = .tasks
-            showAssistant = true
-            openTaskID = taskId
-        } else {
             openTaskID = nil
-            showAssistant = false
+        } else if let taskId = userInfo["taskId"] as? String, !taskId.isEmpty {
+            openTask(taskId)
+        } else {
+            layer = nil // a message: the conversation itself
         }
     }
 }
