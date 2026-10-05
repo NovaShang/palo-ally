@@ -201,17 +201,86 @@ describe("APNs", () => {
       { token: "a".repeat(64), env: "sandbox" },
       { token: "dead" + "b".repeat(60), env: "sandbox" },
     ]);
-    const p = new ApnsPusher({ keyPath, keyId: "K", teamId: "T", bundleId: "com.novashang.paloally", host: `http://127.0.0.1:${port}` }, paths.pushTokens, true);
+    const p = new ApnsPusher({ keyPath, keyId: "K", teamId: "T", bundleId: "com.novashang.paloally", host: `http://127.0.0.1:${port}` }, paths.pushTokens, true, "pa-host1");
     expect(p.available()).toBe(true);
     await p.push("标题", "正文", { seq: 3 });
     expect(seen).toHaveLength(2);
     expect(seen[0]!.headers["apns-topic"]).toBe("com.novashang.paloally");
     expect(seen[0]!.headers.authorization).toStartWith("bearer ");
     expect(seen[0]!.body).toMatchObject({ aps: { alert: { title: "标题", body: "正文" } }, seq: 3 });
+    expect(seen[0]!.body.hostId).toBe("pa-host1"); // top level, next to aps
     const left = JSON.parse(await Bun.file(paths.pushTokens).text());
     expect(left).toHaveLength(1);
     p.close();
     server.close();
     cleanup(paths);
+  });
+});
+
+describe("Relay push", () => {
+  const { RelayPusher } = require("../src/channels/relayPush.ts") as typeof import("../src/channels/relayPush.ts");
+  const tok = (c: string) => c.repeat(64);
+
+  function setup(results: Record<string, { ok: boolean; status: number; reason?: string } | "timeout">, state: "connected" | "disconnected" = "connected") {
+    const paths = tmpPaths();
+    writeJson(paths.pushTokens, [{ token: tok("a"), env: "sandbox" }, { token: tok("b"), env: "production" }]);
+    const sent: any[] = [];
+    const relay = {
+      state,
+      async pushViaRelay(req: any) {
+        sent.push(req);
+        const r = results[req.token[0]];
+        if (r === "timeout" || !r) throw new Error("relay push timed out");
+        return r;
+      },
+    };
+    const fallbackCalls: string[] = [];
+    const fallback = { name: "apns", available: () => true, push: async (t: string) => void fallbackCalls.push(t) };
+    return { paths, sent, relay, fallback, fallbackCalls };
+  }
+
+  test("pushes each token through the relay; drops dead tokens", async () => {
+    const s = setup({ a: { ok: true, status: 200 }, b: { ok: false, status: 410, reason: "Unregistered" } });
+    const p = new RelayPusher(s.relay, s.paths.pushTokens, s.fallback, "pa-host1");
+    expect(p.available()).toBe(true);
+    await p.push("PaloAlly", "有一条新消息", { seq: 1, taskId: undefined });
+    // the relay spreads `data` next to `aps`, so hostId lands top-level in the APNs payload
+    expect(s.sent.map((x) => [x.env, x.title, x.data])).toEqual([
+      ["sandbox", "PaloAlly", { seq: 1, hostId: "pa-host1" }],
+      ["production", "PaloAlly", { seq: 1, hostId: "pa-host1" }],
+    ]);
+    expect((await import("../src/util.ts")).readJson<any[]>(s.paths.pushTokens, []).map((t) => t.token)).toEqual([tok("a")]);
+    expect(s.fallbackCalls).toEqual([]);
+    cleanup(s.paths);
+  });
+
+  test("falls back to host-direct when the relay can't push (old relay, not configured, offline)", async () => {
+    const old = setup({ a: "timeout", b: "timeout" });
+    await new RelayPusher(old.relay, old.paths.pushTokens, old.fallback).push("t", "b", {});
+    expect(old.fallbackCalls).toEqual(["t"]);
+    cleanup(old.paths);
+
+    const nc = setup({ a: { ok: false, status: 0, reason: "NotConfigured" }, b: { ok: false, status: 0, reason: "NotConfigured" } });
+    await new RelayPusher(nc.relay, nc.paths.pushTokens, nc.fallback).push("t", "b", {});
+    expect(nc.fallbackCalls).toEqual(["t"]);
+    cleanup(nc.paths);
+
+    const off = setup({}, "disconnected");
+    const p = new RelayPusher(off.relay, off.paths.pushTokens, off.fallback);
+    expect(p.available()).toBe(true); // via the fallback
+    await p.push("t", "b", {});
+    expect(off.sent).toEqual([]);
+    expect(off.fallbackCalls).toEqual(["t"]);
+    cleanup(off.paths);
+  });
+
+  test("without a fallback, a failed push is an error the router logs", async () => {
+    const s = setup({ a: { ok: false, status: 0, reason: "NotConfigured" }, b: "timeout" });
+    const p = new RelayPusher(s.relay, s.paths.pushTokens);
+    await expect(p.push("t", "b", {})).rejects.toThrow("relay push failed");
+    const off = setup({}, "disconnected");
+    expect(new RelayPusher(off.relay, off.paths.pushTokens).available()).toBe(false);
+    cleanup(s.paths);
+    cleanup(off.paths);
   });
 });

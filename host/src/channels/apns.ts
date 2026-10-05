@@ -4,8 +4,9 @@ import { readFileSync } from "node:fs";
 import type { Pusher } from "../router.ts";
 import { readJson, writeJson } from "../util.ts";
 
-// APNs pusher (token auth, .p8 key). The host pushes directly to Apple — the
-// relay stays dumb. Configure with apns.keyPath/keyId/teamId in config.json.
+// Host-direct APNs pusher (token auth, .p8 key). Normally pushes go through
+// the relay (relayPush.ts), which holds the app key; this is the fallback for
+// developer setups with apns.keyPath/keyId/teamId in config.json.
 
 export interface ApnsConfig {
   keyPath?: string;
@@ -36,7 +37,13 @@ export class ApnsPusher implements Pusher {
   private jwt: { value: string; at: number } | null = null;
   private sessions = new Map<string, ClientHttp2Session>();
 
-  constructor(private cfg: ApnsConfig, private tokensPath: string, private enabled: boolean) {}
+  constructor(
+    private cfg: ApnsConfig,
+    private tokensPath: string,
+    private enabled: boolean,
+    /** This host's daemon id; sent as top-level `hostId` (next to `aps`). */
+    private hostId?: string,
+  ) {}
 
   available(): boolean {
     return this.enabled && !!this.cfg.keyPath && !!this.cfg.keyId && !!this.cfg.teamId && this.tokens().length > 0;
@@ -67,7 +74,11 @@ export class ApnsPusher implements Pusher {
   }
 
   async push(title: string, body: string, data: Record<string, unknown>): Promise<void> {
-    const payload = JSON.stringify({ aps: { alert: { title, body }, sound: "default", "thread-id": "paloally" }, ...data });
+    const payload = JSON.stringify({
+      aps: { alert: { title, body }, sound: "default", "thread-id": "paloally" },
+      ...data,
+      ...(this.hostId ? { hostId: this.hostId } : {}),
+    });
     const dead: string[] = [];
     await Promise.all(
       this.tokens().map(

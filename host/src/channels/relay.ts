@@ -61,6 +61,23 @@ interface Stream {
 
 export type RelayState = "disconnected" | "connecting" | "connected";
 
+/** One APNs push the relay sends on our behalf (bento relay `push` control). */
+export interface RelayPushRequest {
+  token: string;
+  env: string; // "sandbox" | "production"
+  title: string;
+  body: string;
+  data?: Record<string, unknown>;
+}
+
+export interface RelayPushResult {
+  ok: boolean;
+  status: number; // APNs HTTP status; 0 when APNs wasn't reached
+  reason?: string;
+}
+
+const PUSH_TIMEOUT_MS = 8_000;
+
 // RelayChannel keeps the daemon socket to the relay alive, handles pairing,
 // and terminates E2E per stream. Each stream becomes one app client of the hub.
 export class RelayChannel {
@@ -71,6 +88,7 @@ export class RelayChannel {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private lastPong = 0;
   private pairWaiter: ((code: { code: string; ttl: number }) => void) | null = null;
+  private pushWaiters = new Map<string, (r: RelayPushResult) => void>();
   private pairOpenUntil = 0;
   state: RelayState = "disconnected";
   lastError = "";
@@ -241,9 +259,35 @@ export class RelayChannel {
     });
   }
 
+  // ---- push ----
+
+  // The relay holds the app's APNs key (it belongs to the developer, not to
+  // any one user's host) and pushes for us. A relay without the feature
+  // ignores the message, so the wait times out and the caller falls back.
+  pushViaRelay(req: RelayPushRequest): Promise<RelayPushResult> {
+    if (this.state !== "connected") return Promise.reject(new Error("relay not connected"));
+    const nonce = newId();
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => {
+        this.pushWaiters.delete(nonce);
+        reject(new Error("relay push timed out"));
+      }, PUSH_TIMEOUT_MS);
+      this.pushWaiters.set(nonce, (r) => {
+        clearTimeout(t);
+        resolve(r);
+      });
+      this.sendControl({ type: "push", nonce, ...req });
+    });
+  }
+
   private onControl(msg: any): void {
     if (msg.type === "pong") {
       this.lastPong = Date.now();
+    } else if (msg.type === "push_result") {
+      const done = this.pushWaiters.get(String(msg.nonce ?? ""));
+      if (!done) return;
+      this.pushWaiters.delete(String(msg.nonce));
+      done({ ok: !!msg.ok, status: Number(msg.status ?? 0), ...(msg.reason ? { reason: String(msg.reason) } : {}) });
     } else if (msg.type === "pair.opened") {
       this.pairWaiter?.({ code: String(msg.code), ttl: Number(msg.ttl_sec ?? 60) });
       this.pairWaiter = null;

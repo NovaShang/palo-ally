@@ -2,6 +2,8 @@ import { chmodSync } from "node:fs";
 import { ApnsPusher } from "./channels/apns.ts";
 import { LocalServer } from "./channels/local.ts";
 import { RelayChannel, loadHostIdentity } from "./channels/relay.ts";
+import { RelayPusher } from "./channels/relayPush.ts";
+import type { Pusher } from "./router.ts";
 import { WechatILink } from "./channels/wechat.ts";
 import { type Config, Paths, loadConfig } from "./config.ts";
 import { ClaudeCodeDriver } from "./harness/claude.ts";
@@ -40,8 +42,33 @@ export async function startDaemon(
   const driver = opts.driver ?? new ClaudeCodeDriver();
 
   const wechat = config.wechat.enabled ? new WechatILink(paths.wechat, config.wechat.baseUrl) : null;
-  const apns = new ApnsPusher(config.apns, paths.pushTokens, config.apns.enabled);
-  const hub = new Hub({ paths, config, driver, pushers: [apns], wechat });
+  // Pushes go through the relay, which holds the app's APNs key. A host-direct
+  // key (config.apns, developer setups) is only a fallback for when the relay
+  // can't push.
+  const useRelay = opts.relay ?? config.relay.enabled;
+  // Every push carries `hostId` (the daemon id the app knows this host by from
+  // the pairing link) so a multi-host app opens the right assistant on tap.
+  const { daemonId: hostId } = loadHostIdentity(paths.identity);
+  const direct = config.apns.enabled && config.apns.keyPath ? new ApnsPusher(config.apns, paths.pushTokens, true, hostId) : null;
+  let relayRef: RelayChannel | null = null;
+  const pushers: Pusher[] = useRelay
+    ? [
+        new RelayPusher(
+          {
+            get state() {
+              return relayRef?.state ?? "disconnected";
+            },
+            pushViaRelay: (req) => (relayRef ? relayRef.pushViaRelay(req) : Promise.reject(new Error("relay not started"))),
+          },
+          paths.pushTokens,
+          direct,
+          hostId,
+        ),
+      ]
+    : direct
+      ? [direct]
+      : [];
+  const hub = new Hub({ paths, config, driver, pushers, wechat });
 
   if (wechat) {
     wechat.onMessage = (text, target) => {
@@ -52,9 +79,10 @@ export async function startDaemon(
   }
 
   let relay: RelayChannel | null = null;
-  if (opts.relay ?? config.relay.enabled) {
+  if (useRelay) {
     const { id, daemonId } = loadHostIdentity(paths.identity);
     relay = new RelayChannel(hub, config.relay.url, id, daemonId, paths.devices);
+    relayRef = relay;
     const r = relay;
     hub.onUnpairDevice = (deviceId) => r.removeDevice(deviceId);
     void relay.start();
@@ -104,7 +132,7 @@ export async function startDaemon(
     stop() {
       wechat?.stop();
       relay?.stop();
-      apns.close();
+      direct?.close();
       local.stop();
       hub.stop();
     },

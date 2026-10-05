@@ -20,7 +20,7 @@ host/        桌面 host = 一个 CLI 程序（Bun + TypeScript），daemon + on
     memory.ts           核心文件 + 原生 auto memory 的可见/可编辑投影
     chat.ts             主对话存档（History）+ seq + 补发
     router.ts           输出路由（App / CLI / 微信 / 推送）
-    channels/           local（unix socket）、relay（E2E）、wechat（iLink）、apns
+    channels/           local（unix socket）、relay（E2E + 经 relay 推送）、wechat（iLink）、apns（直推回退）
     proto/              线协议：帧、E2E 握手与封装、RPC 类型
   test/                 bun test
 ios/         Apple 原生客户端（SwiftUI，iOS + Mac Catalyst）
@@ -154,6 +154,7 @@ ModelOption { value; displayName; description; efforts:string[] }
 
 - 所有主对话消息进 History（`state/chat.jsonl`，带 seq），广播给所有已连接的 App/CLI 客户端；客户端断线重连用 `sync{sinceSeq}` 补齐。
 - 来自微信的一轮，回复也回微信（受 iLink 限制：每轮主动 ≤10 条，≤5 条/秒，context_token 24h 失效）。
-- 主动消息（探针 / 定时 / notify_user / 任务完成 / 待审批）：推 APNs（若配置）；微信只发不含正文的提示（`settings.wechatProactive = "hint"`，可改 `"full"`/`"off"`）。
+- 主动消息（探针 / 定时 / notify_user / 任务完成 / 待审批）：手机推送；微信只发不含正文的提示（`settings.wechatProactive = "hint"`，可改 `"full"`/`"off"`）。
+- 手机推送走 relay：APNs 密钥属于 App 开发者，只放在 relay 的 Worker secrets 里（别人的主机不可能有它）。主机把 App 注册的推送 token 连同提示文字，经已认证的 daemon socket 发 `push` 控制消息，relay 校验「这台主机在此配对过设备」、按主机限频（10/分钟、60/小时）后代发 APNs，回 `push_result`（见 bento `docs/relay-protocol.md`）。推送内容只放提示，正文进 App 后再经 E2E 取；以后可加 Notification Service Extension 做端到端加密的推送正文。`config.apns` 配了密钥的主机（开发者自用）在 relay 推不了时（掉线、relay 版本旧、未配置）回退为主机直推。
 - 免打扰时段内的非 urgent 主动消息不推送，只进主对话；超过 `maxProactivePerDay` 同理。
 - host 掉线：启动时若距上次心跳 > 2×tick，主对话发「我掉线过」通知，并对错过的定时 watch 补跑一次。

@@ -98,4 +98,22 @@ d(`relay integration (${RELAY})`, () => {
     // a forged host key on the client side fails the handshake
     await expect(AppClient.connect(RELAY, daemonId, paired.body.device_id, paired.device, newIdentity().pub)).rejects.toThrow("bad host signature");
   });
+
+  // Needs a relay with the `push` control (bento relay-push). A local relay has
+  // no APNs secrets, so a paired daemon gets NotConfigured; one without paired
+  // devices is refused before APNs is ever involved.
+  test("push via the relay: refused without a paired device, NotConfigured without secrets", async () => {
+    const lone = makeHub();
+    const { id, daemonId: loneId } = loadHostIdentity(lone.paths.identity);
+    const other = new RelayChannel(lone.hub, RELAY, id, loneId, lone.paths.devices, () => {});
+    await other.start();
+    await waitFor(() => other.state === "connected");
+    const req = { token: "ab".repeat(32), env: "sandbox", title: "PaloAlly", body: "test" };
+    expect(await other.pushViaRelay(req)).toEqual({ ok: false, status: 0, reason: "NoPairedDevice" });
+    other.stop();
+    cleanup(lone.paths);
+    // `relay` paired devices in the tests above
+    expect(await relay.pushViaRelay(req)).toEqual({ ok: false, status: 0, reason: "NotConfigured" });
+    expect(await relay.pushViaRelay({ ...req, token: "nothex" })).toMatchObject({ ok: false, status: 400 });
+  });
 });
