@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		04349A876C131982F60AE09F /* OrbPresence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89680F4F2AB77C09AE302E26 /* OrbPresence.swift */; };
 		08BF7949F94B89DDD05C3319 /* AssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056B108C0177A1156F312E84 /* AssistantView.swift */; };
 		11BECFB67315E8AFAF47D91A /* SelectableMarkdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07A26E3CEF36BC017C91F461 /* SelectableMarkdown.swift */; };
 		12AEBFDF8D57FB231AAEC5EA /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 15DEAD73806EBE1C701B9FCB /* MarkdownUI */; };
@@ -77,6 +78,7 @@
 		711BC1712E3CB0B810C91022 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
 		727BCDF8F4AA67625E0359C0 /* OrbInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbInput.swift; sourceTree = "<group>"; };
 		7769E0FBCB029211A3B7B532 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
+		89680F4F2AB77C09AE302E26 /* OrbPresence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbPresence.swift; sourceTree = "<group>"; };
 		8C624CE9D781D137068B2536 /* ModelPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPicker.swift; sourceTree = "<group>"; };
 		90A1D0CBFE081417EB16EEB3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		90E9946A58A404E7087D10BB /* TasksSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksSection.swift; sourceTree = "<group>"; };
@@ -182,6 +184,7 @@
 				97B4D23870E594B624074F8D /* ComposerView.swift */,
 				4165C6D84EFA478FBE5F799D /* HostSwitcher.swift */,
 				51926AB68F34CBF76C2C1507 /* MessageRow.swift */,
+				89680F4F2AB77C09AE302E26 /* OrbPresence.swift */,
 				F881AEFDC8F959F0506046DD /* SpeechDictation.swift */,
 				BC058EC00155E4856AE7B909 /* SuggestionChips.swift */,
 				C54007F5ADFE246BFE4EBB60 /* TitleOrb.swift */,
@@ -352,6 +355,7 @@
 				771DA9C8AA0708C69B5C0D2B /* MessageRow.swift in Sources */,
 				F342DE1D9A6DFB66245308B9 /* ModelPicker.swift in Sources */,
 				49FC3A9BC4977938A273A936 /* OrbInput.swift in Sources */,
+				04349A876C131982F60AE09F /* OrbPresence.swift in Sources */,
 				F10B59DC6D408555F64C2858 /* PairingView.swift in Sources */,
 				31D752A67A0592C5BA7B46B1 /* PaloAllyApp.swift in Sources */,
 				C8ED787DFFAD55733893CB9A /* PaloGlass.metal in Sources */,

@@ -243,7 +243,7 @@ private struct ToolbarOrb: View {
 
     var body: some View {
         if let store = model.store {
-            TitleOrb(arrangement: .inline, action: action)
+            TitleOrb(action: action)
                 .environment(model)
                 .environment(store)
                 .appTheme(model.currentTheme)

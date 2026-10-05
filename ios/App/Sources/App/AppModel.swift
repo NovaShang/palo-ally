@@ -318,6 +318,8 @@ final class AppModel {
     var showHostList = false
     /// The status card behind the title bar's orb.
     var showHostSwitcher = false
+    /// How much room the title bar's orb takes (kept by OrbPresenceTracking).
+    var orbPresence: OrbPresence = .rest
     /// The model / thinking-depth picker (opened from the status card).
     var showModelPicker = false
     var showPairingSheet = false

@@ -19,6 +19,10 @@ struct ChatView: View {
     /// A message just jumped to from search: briefly tinted so the eye lands on it.
     @State private var highlightedID: String?
     @Environment(\.placesAsColumns) private var asColumn
+    /// Where the bar's middle is, and where this view is (both in window
+    /// coordinates): the orb floats over the bar, centered on its middle.
+    @State private var orbSlot: CGRect = .zero
+    @State private var ownFrame: CGRect = .zero
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -220,6 +224,16 @@ struct ChatView: View {
                 store.send(text, images: images, files: files)
             }
         }
+        // The orb over the bar's middle: above the conversation, its edge
+        // fade and the voice scrim, and free to be bigger than the bar.
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { ownFrame = $0 }
+        .overlay(alignment: .topLeading) {
+            if !Platform.barInWindowToolbar, orbSlot.width > 0 {
+                FloatingTitleOrb { model.showHostSwitcher = true }
+                    .position(x: orbSlot.midX - ownFrame.minX, y: orbSlot.midY - ownFrame.minY)
+            }
+        }
+        .modifier(OrbPresenceTracking(scrolledUp: !pinned || store.viewingPast, scrolling: userScrolling))
         .navigationTitle(store.assistantName)
         .navigationBarTitleDisplayMode(.inline)
         // Immersive, the iOS 26 look: the system bar stays but without its
@@ -243,7 +257,7 @@ struct ChatView: View {
                     .accessibilityLabel("「它」")
                 }
                 ToolbarItem(placement: .principal) {
-                    titleOrb
+                    TitleOrbSlot { orbSlot = $0 } action: { model.showHostSwitcher = true }
                 }
                 .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .topBarTrailing) {
@@ -260,19 +274,6 @@ struct ChatView: View {
         .sheet(isPresented: Binding(get: { model.showModelPicker }, set: { model.showModelPicker = $0 })) {
             ModelPickerSheet().environment(model).environment(store)
         }
-    }
-
-    /// The orb in the middle of the bar; tapping it opens the status card.
-    @ViewBuilder private var titleOrb: some View {
-        @Bindable var model = model
-        TitleOrb { model.showHostSwitcher = true }
-            .popover(isPresented: $model.showHostSwitcher, arrowEdge: .top) {
-                StatusCard()
-                    // Presented outside this view's hierarchy on some platforms: pass what it reads.
-                    .environment(model)
-                    .environment(store)
-                    .presentationCompactAdaptation(.popover)
-            }
     }
 
     /// Back to the newest message now and once more after the lazy rows have
