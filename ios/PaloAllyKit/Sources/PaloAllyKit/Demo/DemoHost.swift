@@ -98,7 +98,7 @@ public actor DemoHost {
         emit(RPCEventName.approvalUpdated, a)
     }
 
-    /// Screenshot states for the title capsule (`-demoState idle | busy | tasks`):
+    /// Screenshot states for the title capsule (`-demoState idle | busy | tasks | fresh`):
     /// nothing waiting on the owner, then the main turn working, or several
     /// background tasks running.
     public func applyScenario(_ name: String) {
@@ -130,6 +130,9 @@ public actor DemoHost {
                                 status: .running, source: .auto, createdAt: now - 400_000, updatedAt: now - 5_000))
             upsertTask(AllyTask(id: "t-c", title: "汇总这周的会议纪要", summary: "",
                                 status: .running, source: .auto, createdAt: now - 60_000, updatedAt: now - 50_000))
+        case "fresh":
+            // A first-time owner: nothing said yet.
+            messages.removeAll()
         default:
             break
         }

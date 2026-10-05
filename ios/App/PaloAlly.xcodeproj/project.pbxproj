@@ -30,6 +30,7 @@
 		739588CADE3937D81BA4F6EA /* HostSwitcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4165C6D84EFA478FBE5F799D /* HostSwitcher.swift */; };
 		771DA9C8AA0708C69B5C0D2B /* MessageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51926AB68F34CBF76C2C1507 /* MessageRow.swift */; };
 		7FA2E7E1309D4680A571ACCC /* SpeechDictation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F881AEFDC8F959F0506046DD /* SpeechDictation.swift */; };
+		8086BAF205FD7F48D481A5F4 /* SuggestionsGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76CCDDF52E61A55777BF897F /* SuggestionsGate.swift */; };
 		81A11C9A7F625540126701DA /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5458CC8523AA61D0A0852ABA /* ChatView.swift */; };
 		90CE987F9EA4BB408FB5F7FE /* DisplayCorners.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF9B71414B8BB238CEE54BC1 /* DisplayCorners.swift */; };
 		9B34F0015CBA0682AF1B48BC /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32922EB865184F7F70CAB365 /* AppTheme.swift */; };
@@ -48,6 +49,7 @@
 		E72CE394982E8B194DFF27E9 /* ArtifactDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFF3C59774AD6CD3FE7F5AAA /* ArtifactDetailView.swift */; };
 		E895FF8F3C53A7D71EC25855 /* PaloAllyVoice in Frameworks */ = {isa = PBXBuildFile; productRef = 78B5E75CCEFAF248ABE90838 /* PaloAllyVoice */; };
 		EF4C57CF1068151AD36D302D /* ClipboardCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0309622DA447C8E1B5069A2 /* ClipboardCard.swift */; };
+		F0C009AA4F0671A5AFEFBD11 /* GlassDropsDemo.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBCDB8D7D89100A7DE024651 /* GlassDropsDemo.swift */; };
 		F10B59DC6D408555F64C2858 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 711BC1712E3CB0B810C91022 /* PairingView.swift */; };
 		F342DE1D9A6DFB66245308B9 /* ModelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C624CE9D781D137068B2536 /* ModelPicker.swift */; };
 		F7BB5BDB265CB2F858DDF473 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C8BBDD7B0248070C25E81AB /* RootView.swift */; };
@@ -79,6 +81,7 @@
 		711BC1712E3CB0B810C91022 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
 		727BCDF8F4AA67625E0359C0 /* OrbInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbInput.swift; sourceTree = "<group>"; };
 		74530C1E36CA8A834978230F /* TwoDrops.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = TwoDrops.metal; sourceTree = "<group>"; };
+		76CCDDF52E61A55777BF897F /* SuggestionsGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionsGate.swift; sourceTree = "<group>"; };
 		7769E0FBCB029211A3B7B532 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		89680F4F2AB77C09AE302E26 /* OrbPresence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbPresence.swift; sourceTree = "<group>"; };
 		8C624CE9D781D137068B2536 /* ModelPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPicker.swift; sourceTree = "<group>"; };
@@ -92,6 +95,7 @@
 		BC058EC00155E4856AE7B909 /* SuggestionChips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionChips.swift; sourceTree = "<group>"; };
 		C0309622DA447C8E1B5069A2 /* ClipboardCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardCard.swift; sourceTree = "<group>"; };
 		C54007F5ADFE246BFE4EBB60 /* TitleOrb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleOrb.swift; sourceTree = "<group>"; };
+		CBCDB8D7D89100A7DE024651 /* GlassDropsDemo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassDropsDemo.swift; sourceTree = "<group>"; };
 		D85821DAF90FE3998B520913 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		E9E4508DECE36B39CF27552D /* WatchesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchesSection.swift; sourceTree = "<group>"; };
@@ -189,6 +193,7 @@
 				89680F4F2AB77C09AE302E26 /* OrbPresence.swift */,
 				F881AEFDC8F959F0506046DD /* SpeechDictation.swift */,
 				BC058EC00155E4856AE7B909 /* SuggestionChips.swift */,
+				76CCDDF52E61A55777BF897F /* SuggestionsGate.swift */,
 				C54007F5ADFE246BFE4EBB60 /* TitleOrb.swift */,
 				98B9C22CB72F4B7250A63D55 /* VoiceInputOverlay.swift */,
 			);
@@ -211,6 +216,7 @@
 				362F66DA10216A79F79CBB11 /* Copy.swift */,
 				EDCE2B703ACB5F034BAA47C0 /* CopyButton.swift */,
 				EF9B71414B8BB238CEE54BC1 /* DisplayCorners.swift */,
+				CBCDB8D7D89100A7DE024651 /* GlassDropsDemo.swift */,
 				36184756C7B818CDFB8CB839 /* ImagePrep.swift */,
 				DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */,
 				727BCDF8F4AA67625E0359C0 /* OrbInput.swift */,
@@ -347,6 +353,7 @@
 				6581CEDB42117DA61968E352 /* Copy.swift in Sources */,
 				B8976F3E44EC1376603FA764 /* CopyButton.swift in Sources */,
 				90CE987F9EA4BB408FB5F7FE /* DisplayCorners.swift in Sources */,
+				F0C009AA4F0671A5AFEFBD11 /* GlassDropsDemo.swift in Sources */,
 				739588CADE3937D81BA4F6EA /* HostSwitcher.swift in Sources */,
 				AEBD8CD9FD2F1F20EA8FEDAD /* HostsView.swift in Sources */,
 				D80A5BF2362E7F6BCC59FB6B /* IdentityEditor.swift in Sources */,
@@ -368,6 +375,7 @@
 				58FA01FB519DE507B656FDAE /* SettingsView.swift in Sources */,
 				7FA2E7E1309D4680A571ACCC /* SpeechDictation.swift in Sources */,
 				4F5CB6A64C1B55C6CD52D725 /* SuggestionChips.swift in Sources */,
+				8086BAF205FD7F48D481A5F4 /* SuggestionsGate.swift in Sources */,
 				D3720B2AD3344F09581611E1 /* TasksSection.swift in Sources */,
 				44ECD2EA670526AE861F2D53 /* TitleOrb.swift in Sources */,
 				46E97A6512E66B0B08BA9EBE /* TwoDrops.metal in Sources */,

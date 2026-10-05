@@ -78,6 +78,9 @@ private struct AssistantHeader: View {
     @State private var confirmStop = false
     @State private var working = false
     @State private var error: String?
+    #if DEBUG
+    @State private var showGlassDemo = false
+    #endif
 
     var body: some View {
         VStack(spacing: 14) {
@@ -90,6 +93,16 @@ private struct AssistantHeader: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("\(store.assistantName)，改名字和颜色")
+            #if DEBUG
+            // Hidden: long-press opens the system-glass comparison sample.
+            .contextMenu {
+                Button("玻璃两滴样片", systemImage: "drop.halffull") { showGlassDemo = true }
+            }
+            .fullScreenCover(isPresented: $showGlassDemo) {
+                GlassDropsDemo(theme: model.currentTheme) { showGlassDemo = false }
+                    .environment(model)
+            }
+            #endif
 
             VStack(spacing: 4) {
                 Text(statusLine)

@@ -6,6 +6,26 @@ struct RootView: View {
 
     var body: some View {
         Group {
+            #if DEBUG
+            if model.launch.screen == "glassDrops" {
+                GlassDropsDemo(theme: model.currentTheme)
+            } else {
+                screens
+            }
+            #else
+            screens
+            #endif
+        }
+        // Each assistant has its own color; switching re-tints the whole app.
+        .appTheme(model.currentTheme)
+        .animation(.snappy, value: model.activeHostID)
+        #if DEBUG
+        .modifier(DemoCapture(demo: model.mode == .demo))
+        #endif
+    }
+
+    @ViewBuilder private var screens: some View {
+        Group {
             if model.launch.screen == "avatars" {
                 AvatarGallery()
             } else if let store = model.store {
@@ -16,12 +36,6 @@ struct RootView: View {
                 PairingView(isSheet: false)
             }
         }
-        // Each assistant has its own color; switching re-tints the whole app.
-        .appTheme(model.currentTheme)
-        .animation(.snappy, value: model.activeHostID)
-        #if DEBUG
-        .modifier(DemoCapture(demo: model.mode == .demo))
-        #endif
     }
 }
 

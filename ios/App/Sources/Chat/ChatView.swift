@@ -23,6 +23,9 @@ struct ChatView: View {
     /// coordinates): the orb floats over the bar, centered on its middle.
     @State private var orbSlot: CGRect = .zero
     @State private var ownFrame: CGRect = .zero
+    /// Re-read when a quiet spell may have become long enough for 「试试」.
+    @State private var quietClock = Date()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -82,6 +85,18 @@ struct ChatView: View {
                     if showsBusyIndicator {
                         ThinkingIndicator(activity: busyActivity, justSent: store.awaitingReply && store.status?.busy != true)
                             .id("thinking")
+                    }
+
+                    // 「试试」: part of the conversation's end, so scrolling up
+                    // leaves them behind; only on first use or after a quiet spell.
+                    if showsSuggestions {
+                        SuggestionChips(suggestions: Array(store.suggestions.prefix(store.messages.isEmpty ? 4 : 3)),
+                                        greeting: store.messages.isEmpty,
+                                        use: { store.use($0) },
+                                        dismiss: { s in withAnimation(.snappy) { store.dismiss(s) } })
+                            .padding(.top, 2)
+                            .transition(.opacity)
+                            .id("suggestions")
                     }
 
                     Color.clear.frame(height: 1).id("bottom")
@@ -180,6 +195,13 @@ struct ChatView: View {
                 guard pinned, !userScrolling else { return }
                 withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
+            // Suggestions arriving at the end come into view only for a
+            // reader already at the end; scrolled up, nothing moves.
+            .onChange(of: showsSuggestions) { _, shown in
+                guard shown, pinned, !userScrolling else { return }
+                withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            .animation(.easeInOut(duration: 0.35), value: showsSuggestions)
             .overlay(alignment: .bottom) {
                 let showJump = store.viewingPast || (!pinned && distanceFromBottom > ChatScroll.reattachDistance)
                 ZStack {
@@ -244,6 +266,17 @@ struct ChatView: View {
             }
         }
         .modifier(OrbPresenceTracking(scrolledUp: !pinned || store.viewingPast, scrolling: userScrolling))
+        // 「试试」 timing: a reply finishing counts as activity; wake up once
+        // the quiet spell is long enough, and on returning to the app.
+        .onChange(of: store.isBusy) { _, busy in if !busy { SuggestionsGate.shared.touch() } }
+        .task(id: SuggestionsGate.shared.quietSince(store)) {
+            let due = SuggestionsGate.shared.quietSince(store).addingTimeInterval(SuggestionsGate.quietInterval)
+            let wait = due.timeIntervalSinceNow
+            if wait > 0 { try? await Task.sleep(for: .seconds(wait + 0.5)) }
+            guard !Task.isCancelled else { return }
+            quietClock = .now
+        }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { quietClock = .now } }
         .navigationTitle(store.assistantName)
         .navigationBarTitleDisplayMode(.inline)
         // Immersive, the iOS 26 look: the system bar stays but without its
@@ -296,6 +329,10 @@ struct ChatView: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
+    }
+
+    private var showsSuggestions: Bool {
+        SuggestionsGate.shared.shows(store, now: quietClock)
     }
 
     /// Shown whenever the host is working (not just right after a send).

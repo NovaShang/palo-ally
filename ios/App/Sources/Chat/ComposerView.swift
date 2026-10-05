@@ -102,11 +102,12 @@ struct ComposerView: View {
     /// Idle: not editing — the field reads 「按住说话，轻点打字」 and takes presses.
     private var idle: Bool { !focused && !dictating }
 
-    /// 「试试」 chips: only while the chat is quiet — not typing, dictating,
-    /// holding to talk, staging attachments, or while the assistant works.
-    private var showSuggestions: Bool {
-        !store.suggestions.isEmpty && idle && draft.isEmpty && staged.isEmpty && slashQuery == nil
-            && !voice.isActive && !pressing && !store.isBusy && store.replyDraft == nil
+    /// The owner is doing something here — typing, dictating, holding to
+    /// talk, staging attachments, quoting. The 「试试」 suggestions at the end
+    /// of the conversation stay away meanwhile (SuggestionsGate).
+    private var engaged: Bool {
+        !idle || !draft.isEmpty || !staged.isEmpty || slashQuery != nil
+            || voice.isActive || pressing || store.replyDraft != nil
     }
 
     var body: some View {
@@ -132,13 +133,6 @@ struct ComposerView: View {
                     .foregroundStyle(.secondary)
                     .transition(.opacity)
             }
-            if showSuggestions {
-                SuggestionChips(suggestions: Array(store.suggestions.prefix(store.messages.isEmpty ? 4 : 3)),
-                                greeting: store.messages.isEmpty,
-                                use: { store.use($0) },
-                                dismiss: { s in withAnimation(.snappy) { store.dismiss(s) } })
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
             capsule
         }
         .padding(.horizontal, sideInset)
@@ -150,10 +144,13 @@ struct ComposerView: View {
         .frame(maxWidth: .infinity)
         .animation(.snappy, value: slashQuery)
         .animation(.snappy, value: staged.count)
-        .animation(.snappy, value: showSuggestions)
         .onChange(of: focusToken) { focused = true }
         // The orb in the title bar notices the owner typing.
-        .onChange(of: draft) { if focused { OrbInput.shared.typed() } }
+        .onChange(of: draft) {
+            if focused { OrbInput.shared.typed() }
+            SuggestionsGate.shared.touch()
+        }
+        .onChange(of: engaged, initial: true) { _, on in SuggestionsGate.shared.composer(engaged: on) }
         // 「回复」 / 「引用回复」 / 「聊聊」: open the keyboard to write the reply.
         .onChange(of: store.replyDraft) { _, reply in if reply != nil { focusToken += 1 } }
         .animation(.snappy, value: store.replyDraft)
