@@ -182,32 +182,41 @@ struct ChatView: View {
         }
     }
 
-    /// The current assistant's name and state; always tappable: it opens the
-    /// popover with the assistants (when there are several — a dot when
-    /// another one has something new) and the model / thinking depth.
+    /// The agent's live status: line 1 is what it's doing (needs you >
+    /// working > background tasks > idle; connection trouble first), line 2
+    /// the model and thinking depth. Assistants are told apart by their color,
+    /// not a name. Tapping opens the popover: running tasks, assistants (2+),
+    /// model / thinking.
     @ViewBuilder private var titleCapsule: some View {
         @Bindable var model = model
-        let label = VStack(spacing: 0) {
-            HStack(spacing: 4) {
-                Text(model.hasSeveralHosts ? model.displayName(model.activeHostID ?? "") : "PaloAlly")
-                    .font(.headline)
+        let line = statusLine
+        let label = VStack(spacing: 1) {
+            HStack(spacing: 6) {
+                StatusDot(kind: line.kind, rejected: store.connection.isRejected)
+                Text(line.text)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(line.kind == .needsYou ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.primary))
                     .lineLimit(1)
+                    .truncationMode(.tail)
+                    .contentTransition(.opacity)
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            if !modelLine.isEmpty {
+                Text(modelLine)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .contentTransition(.opacity)
             }
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(store.connection.isOnline ? Color.green : Color.secondary)
-                    .frame(width: 6, height: 6)
-                Text(subtitle)
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 18)
+        .frame(maxWidth: 230)
+        .padding(.horizontal, 16)
         .padding(.vertical, 5)
         .frame(minHeight: 44)
+        .animation(.snappy, value: line)
+        .animation(.snappy, value: modelLine)
         .overlay(alignment: .topTrailing) {
             if model.hasSeveralHosts && model.othersNeedAttention {
                 Circle().fill(.red).frame(width: 8, height: 8).offset(x: -6, y: 4)
@@ -218,21 +227,48 @@ struct ChatView: View {
         Button { model.showHostSwitcher = true } label: { label }
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: .capsule)
-            .accessibilityLabel(model.hasSeveralHosts
-                ? "当前助理：\(model.displayName(model.activeHostID ?? ""))，点一下切换助理或模型"
-                : "点一下换模型或思考深度")
+            .accessibilityLabel("\(line.text)\(modelLine.isEmpty ? "" : "，\(modelLine)")")
+            .accessibilityHint(model.hasSeveralHosts ? "看在做的事、切换助理或换模型" : "看在做的事或换模型")
             .popover(isPresented: $model.showHostSwitcher, arrowEdge: .top) {
-                HostSwitcher(openModelPicker: {
-                    // Let the popover finish closing before the sheet comes up.
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(350))
-                        showModelPicker = true
+                HostSwitcher(
+                    openModelPicker: {
+                        // Let the popover finish closing before the sheet comes up.
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(350))
+                            showModelPicker = true
+                        }
+                    },
+                    openTask: { id in
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(350))
+                            model.openTaskID = id
+                            model.showAssistant = true
+                        }
                     }
-                })
+                )
                 .environment(store)
                 .presentationCompactAdaptation(.popover)
             }
             .sheet(isPresented: $showModelPicker) { ModelPickerSheet().environment(store) }
+    }
+
+    private var statusLine: AgentStatusLine {
+        let online = store.connection.isOnline
+        return AgentStatusLine.make(
+            offlineText: online ? nil : Copy.connectionShort(store.connection),
+            pendingApprovals: store.pendingApprovals.count,
+            busy: store.isBusy,
+            activity: store.status?.activity,
+            tasks: store.tasks
+        )
+    }
+
+    /// 「Opus 5.5 · 思考：中」; the thinking part only when the model has one.
+    private var modelLine: String {
+        let name = ModelName.short(store.status?.model ?? store.modelInfo?.model ?? "")
+        guard !name.isEmpty else { return "" }
+        guard let effort = store.status?.effort, !effort.isEmpty else { return name }
+        return "\(name) · 思考：\(EffortName.label(effort))"
     }
 
     /// Shown whenever the host is working (not just right after a send).
@@ -244,14 +280,6 @@ struct ChatView: View {
         guard store.status?.busy == true, let a = store.status?.activity?.trimmingCharacters(in: .whitespaces), !a.isEmpty
         else { return nil }
         return a.hasSuffix("…") || a.hasSuffix("...") ? a : a + "…"
-    }
-
-    private var subtitle: String {
-        if store.connection.isOnline {
-            if store.isBusy { return (store.status?.activity).map { "\($0)…" } ?? "正在忙…" }
-            return model.mode == .demo ? "演示中" : "在线"
-        }
-        return Copy.connection(store.connection)
     }
 
     private func showsTimestamp(at index: Int) -> Bool {
@@ -355,4 +383,33 @@ struct EmptyChatHint: View {
         .environment(model)
         .environment(model.store!)
         .environment(VoiceInputController())
+}
+
+/// The capsule's state dot: green idle, orange when the owner is needed, a
+/// softly pulsing theme dot while working, gray/red when not connected.
+private struct StatusDot: View {
+    let kind: AgentStatusLine.Kind
+    let rejected: Bool
+    @State private var pulse = false
+
+    var body: some View {
+        let live = kind == .working || kind == .tasks
+        Circle()
+            .fill(color)
+            .frame(width: 7, height: 7)
+            .opacity(live && pulse ? 0.35 : 1)
+            .animation(live ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true) : .default, value: pulse)
+            .onAppear { pulse = live }
+            .onChange(of: live) { _, now in pulse = now }
+            .accessibilityHidden(true)
+    }
+
+    private var color: Color {
+        switch kind {
+        case .offline: rejected ? .red : .secondary
+        case .needsYou: .orange
+        case .working, .tasks: .accentColor
+        case .idle: .green
+        }
+    }
 }

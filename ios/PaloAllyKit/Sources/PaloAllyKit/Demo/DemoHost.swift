@@ -94,6 +94,44 @@ public actor DemoHost {
         emit(RPCEventName.approvalUpdated, a)
     }
 
+    /// Screenshot states for the title capsule (`-demoState idle | busy | tasks`):
+    /// nothing waiting on the owner, then the main turn working, or several
+    /// background tasks running.
+    public func applyScenario(_ name: String) {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        for i in approvals.indices where approvals[i].isPending {
+            approvals[i].status = .allowed
+            emit(RPCEventName.approvalUpdated, approvals[i])
+        }
+        for t in tasks where t.isActive {
+            var done = t
+            done.status = .done
+            upsertTask(done)
+        }
+        var s = status
+        s.model = "claude-opus-5-5"
+        s.effort = "medium"
+        s.busy = false
+        s.activity = nil
+        switch name {
+        case "busy":
+            s.busy = true
+            s.activity = "在看网页"
+            upsertTask(AllyTask(id: "t-busy", title: "整理本周报销单", summary: "已经找到 5 张发票，正在核对金额",
+                                status: .running, source: .auto, createdAt: now - 300_000, updatedAt: now - 20_000))
+        case "tasks":
+            upsertTask(AllyTask(id: "t-a", title: "整理本周报销单", summary: "已经找到 5 张发票，正在核对金额",
+                                status: .running, source: .auto, createdAt: now - 600_000, updatedAt: now - 90_000))
+            upsertTask(AllyTask(id: "t-b", title: "上海出行比价", summary: "在比较东航和春秋的退改规则",
+                                status: .running, source: .auto, createdAt: now - 400_000, updatedAt: now - 5_000))
+            upsertTask(AllyTask(id: "t-c", title: "汇总这周的会议纪要", summary: "",
+                                status: .running, source: .auto, createdAt: now - 60_000, updatedAt: now - 50_000))
+        default:
+            break
+        }
+        setStatus(s)
+    }
+
     // MARK: request handling
 
     private func nextID(_ prefix: String) -> String {

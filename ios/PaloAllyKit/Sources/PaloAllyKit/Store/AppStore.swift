@@ -17,6 +17,7 @@ public final class AppStore {
         case rejected(String)
 
         public var isOnline: Bool { self == .online }
+        public var isRejected: Bool { if case .rejected = self { return true } else { return false } }
     }
 
     // MARK: observable state

@@ -13,6 +13,7 @@ let appLog = Logger(subsystem: "com.novashang.paloally", category: "app")
 ///   -demoTab <name>      tasks | approvals | watches | memory
 ///   -pairLink <url>      start pairing with this paloally:// link (automation; skips the open-URL prompt)
 ///   -demoHosts <n>       demo with n assistants (2 shows the switcher)
+///   -demoState <name>    idle | busy | tasks — what the title capsule shows
 ///   -demoScreen hosts | switcher   设置 → 我的助理 / the assistant switcher open
 struct LaunchOptions {
     var demo: Bool
@@ -20,6 +21,8 @@ struct LaunchOptions {
     var tab: String?
     var pairLink: String? = nil
     var demoHosts: Int = 1
+    /// -demoState idle | busy | tasks — title-capsule screenshot states.
+    var demoState: String? = nil
 
     static func current() -> LaunchOptions {
         let d = UserDefaults.standard
@@ -29,7 +32,8 @@ struct LaunchOptions {
             screen: d.string(forKey: "demoScreen"),
             tab: d.string(forKey: "demoTab"),
             pairLink: d.string(forKey: "pairLink"),
-            demoHosts: max(1, d.integer(forKey: "demoHosts"))
+            demoHosts: max(1, d.integer(forKey: "demoHosts")),
+            demoState: d.string(forKey: "demoState")
         )
     }
 }
@@ -268,6 +272,7 @@ final class AppModel {
             stores[id] = s
             hostIDs.append(id)
             assignTheme(id)
+            if let state = launch.demoState { Task { await host.applyScenario(state) } }
             s.start()
         }
         mode = .demo

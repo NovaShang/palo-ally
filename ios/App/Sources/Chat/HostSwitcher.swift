@@ -1,19 +1,49 @@
 import PaloAllyKit
 import SwiftUI
 
-/// The popover behind the title capsule: the model and thinking depth (the
-/// one place to change them). With several paired computers it also lists
-/// the assistants first — color, name, state, unread replies, pending
-/// approvals; those waiting on an approval come first — and ends with
-/// 添加一台电脑 / 管理. With one computer it's only the model.
+/// The popover behind the title capsule (the agent's status): what's being
+/// done right now (running tasks, those waiting on the owner first; tap one
+/// for its detail), then — with several paired computers — the assistants
+/// (color, name, state, unread, pending approvals), then the model and
+/// thinking depth (the one place to change them), and 添加 / 管理 for 2+.
+/// With one computer and nothing running it's only the model.
 struct HostSwitcher: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     /// Opens the model picker (presented by the chat screen, not the popover).
     let openModelPicker: () -> Void
+    /// Opens a task's detail.
+    let openTask: (String) -> Void
+
+    /// Waiting on the owner first, then the most recently updated.
+    private var activeTasks: [AllyTask] {
+        store.tasks.filter(\.isActive).sorted {
+            if ($0.status == .needsInput) != ($1.status == .needsInput) { return $0.status == .needsInput }
+            return $0.updatedAt > $1.updatedAt
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
+            if !activeTasks.isEmpty {
+                ForEach(activeTasks.prefix(5)) { task in
+                    Button {
+                        model.showHostSwitcher = false
+                        openTask(task.id)
+                    } label: {
+                        RunningTaskRow(task: task)
+                    }
+                    .buttonStyle(.plain)
+                }
+                if activeTasks.count > 5 {
+                    Text("还有 \(activeTasks.count - 5) 件")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                }
+                Divider().padding(.vertical, 6)
+            }
             if model.hasSeveralHosts {
                 ForEach(model.switcherOrder, id: \.self) { id in
                     Button {
@@ -159,5 +189,35 @@ private struct HostSwitcherRow: View {
             return model.mode == .demo ? "演示中" : "在线"
         }
         return Copy.connection(store.connection)
+    }
+}
+
+/// One thing the agent is doing: status icon, title, the latest progress line.
+private struct RunningTaskRow: View {
+    let task: AllyTask
+
+    var body: some View {
+        let (symbol, color) = Copy.taskSymbol(task.status)
+        let line = task.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: symbol)
+                .foregroundStyle(color)
+                .frame(width: 20)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.title).font(.callout.weight(.medium)).lineLimit(1)
+                Text(task.status == .needsInput && line.isEmpty ? "需要你" : (line.isEmpty ? "刚开始" : line))
+                    .font(.caption)
+                    .foregroundStyle(task.status == .needsInput ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary).padding(.top, 4)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .contentShape(.rect)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("看详情")
     }
 }

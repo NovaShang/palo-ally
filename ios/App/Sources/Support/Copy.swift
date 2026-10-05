@@ -102,6 +102,18 @@ enum Copy {
         }
     }
 
+    /// The same states, short enough for the title capsule.
+    static func connectionShort(_ c: AppStore.Connection) -> String {
+        switch c {
+        case .idle: "未连接"
+        case .connecting: "连接中…"
+        case .syncing: "同步中…"
+        case .online: "在线"
+        case .offline: "连不上电脑"
+        case .rejected: "需要重新配对"
+        }
+    }
+
     static func byteSize(_ n: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: n, countStyle: .file)
     }
