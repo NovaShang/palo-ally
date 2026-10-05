@@ -80,7 +80,7 @@ struct StatusCard: View {
     private var header: some View {
         let line = store.agentStatusLine
         return HStack(spacing: 12) {
-            AssistantAvatar(tint: model.currentTheme.color, active: store.assistantWorking)
+            AssistantAvatar(theme: model.currentTheme, live: true, hostID: model.activeHostID, bleed: 1.3)
                 .frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 2) {
                 Text(store.assistantName).font(.headline).lineLimit(1)
@@ -194,7 +194,7 @@ private struct HostSwitcherRow: View {
         let unread = model.unreadCount(id)
         let pending = model.pendingCount(id)
         HStack(spacing: 12) {
-            AssistantAvatar(tint: model.theme(for: id).color)
+            AssistantAvatar(theme: model.theme(for: id), bleed: 1.3)
                 .frame(width: 30, height: 30)
                 .overlay(alignment: .bottomTrailing) {
                     if current {

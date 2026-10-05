@@ -24,8 +24,8 @@ struct IdentityEditor: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
-                    // Live preview: the drop takes the color as it's picked.
-                    AssistantAvatar(tint: color.color)
+                    // Live preview: the pair takes the color as it's picked.
+                    AssistantAvatar(theme: color, bleed: 1.3)
                         .frame(width: 120, height: 120)
                         .padding(.top, 4)
 

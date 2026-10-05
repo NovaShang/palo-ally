@@ -28,7 +28,8 @@ struct RootView: View {
 #if DEBUG
 /// Screenshot automation for the demo, where tools may not capture or resize
 /// windows: `-demoWindow 1440x900` sizes the Mac window, `-demoOrientation
-/// landscape` turns an iPad, and `-demoSnapshot <name>` writes the window to
+/// landscape` turns an iPad, `-demoAppearance dark` forces an appearance, and
+/// `-demoSnapshot <name>` writes the window to
 /// <app tmp>/<name>.png a few seconds after launch (the app is sandboxed).
 private struct DemoCapture: ViewModifier {
     let demo: Bool
@@ -38,6 +39,10 @@ private struct DemoCapture: ViewModifier {
             guard demo else { return }
             let d = UserDefaults.standard
             let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+            // `-demoAppearance dark|light`: the system setting isn't reachable from a launch argument.
+            if let look = d.string(forKey: "demoAppearance") {
+                for w in scene?.windows ?? [] { w.overrideUserInterfaceStyle = look == "dark" ? .dark : .light }
+            }
             if let size = d.string(forKey: "demoWindow")?.split(separator: "x").compactMap({ Double($0) }), size.count == 2 {
                 scene?.sizeRestrictions?.minimumSize = CGSize(width: min(size[0], 400), height: min(size[1], 400))
                 // The window must be up first, and an early request is sometimes dropped.
@@ -53,7 +58,8 @@ private struct DemoCapture: ViewModifier {
                 scene?.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
             }
             guard let name = d.string(forKey: "demoSnapshot") else { return }
-            try? await Task.sleep(for: .seconds(3))
+            let delay = d.double(forKey: "demoSnapshotDelay")
+            try? await Task.sleep(for: .seconds(delay > 0 ? delay : 3))
             guard let window = scene?.keyWindow ?? scene?.windows.first else { return }
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                 _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)

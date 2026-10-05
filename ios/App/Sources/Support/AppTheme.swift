@@ -7,8 +7,8 @@ import UIKit
 /// on that computer (settings.color) and picked when naming it, in 设置 →
 /// 主题色 or in 我的助理; the app takes the current assistant's color.
 /// 洋红 is the default — the owner's color (#D156A7). The app icon follows
-/// the first assistant (alternate icons rendered by scripts/make_icons.py;
-/// keep the light colors there in sync).
+/// the first assistant (alternate icons rendered by scripts/make_icons.sh
+/// from these colors).
 enum AppTheme: String, CaseIterable, Identifiable {
     case magenta, orchid, rose, berry, blue, violet, teal, orange, graphite
 
@@ -44,6 +44,34 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .orange: (0xEC7355, 0xF99073)
         case .graphite: (0x4A5260, 0x7C8697)
         }
+    }
+
+    /// The avatar's second drop — 「你」, beside the assistant's own color —
+    /// picked per preset to stay vivid where the two liquids meet (no muddy
+    /// mixes). The app icons use the same pairs (scripts/make_icons.sh).
+    private var partnerHex: UInt32 {
+        switch self {
+        case .magenta: 0x8B6BFF   // violet
+        case .orchid: 0xF0609E    // pink
+        case .rose: 0xFFB547      // amber
+        case .berry: 0xFF7A5C     // coral
+        case .blue: 0x2FD3C6      // aqua
+        case .violet: 0xFF6FB5    // pink
+        case .teal: 0xC6E04A      // lime
+        case .orange: 0xFFC93D    // sunflower
+        case .graphite: 0x8EC5FF  // ice blue
+        }
+    }
+
+    /// The two glass colors for the avatar shader (sRGB 0…1): the assistant's
+    /// (the light theme color — the glass is the same in both appearances)
+    /// and the owner's partner color.
+    var glass: (primary: SIMD3<Float>, partner: SIMD3<Float>) {
+        (Self.rgb(hex.light), Self.rgb(partnerHex))
+    }
+
+    private static func rgb(_ h: UInt32) -> SIMD3<Float> {
+        SIMD3(Float((h >> 16) & 0xFF) / 255, Float((h >> 8) & 0xFF) / 255, Float(h & 0xFF) / 255)
     }
 
     /// The accent: tints, icons, outlines. Adapts to light / dark.

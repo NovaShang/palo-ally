@@ -128,22 +128,21 @@ struct FloatingTitleOrb: View {
     }
 }
 
-/// The drop itself, `size` = its visible diameter. The shader's canvas is
-/// larger (highlights, the contact shadow, motion) and lifts the drop a
-/// little inside it; this centers the drop's body instead.
+/// The avatar itself, `size` = the pair's visible size. The shader's canvas
+/// is larger (highlights, the contact shadow, the drops orbiting apart), so
+/// it spills past `size` on every side.
 struct TitleOrbDrop: View {
     let size: CGFloat
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
 
-    /// The drop fills about three quarters of the shader's canvas.
+    /// The pair fills about three quarters of the shader's canvas.
     static func canvas(for size: CGFloat) -> CGFloat { size / 0.75 }
 
     var body: some View {
         let canvas = Self.canvas(for: size)
-        AssistantAvatar(tint: model.currentTheme.color, active: store.assistantWorking, listens: true)
+        AssistantAvatar(theme: model.currentTheme, live: true, hostID: model.activeHostID)
             .frame(width: canvas, height: canvas)
-            .offset(y: canvas * 0.035)
             .frame(width: size, height: size)
             .overlay(alignment: .topTrailing) {
                 // Another assistant has something new.

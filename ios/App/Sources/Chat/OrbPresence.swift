@@ -33,8 +33,10 @@ enum OrbPresence: String, Equatable {
 
 /// Works out the orb's presence from the conversation's scroll state, the
 /// assistant's status and the owner's voice, and keeps `AppModel.orbPresence`
-/// up to date — one place, so every orb (and the coming two-drop avatar)
-/// reads the same thing.
+/// up to date — one place, so every orb reads the same thing. It also feeds
+/// the two-drop avatar (AvatarSignals): the assistant's state, and the
+/// events it acts out (the owner sends, a reply lands, something's handed
+/// over, an approval is answered, an error, reconnecting, the app opening).
 struct OrbPresenceTracking: ViewModifier {
     /// Detached from the live bottom, or looking at an older stretch.
     let scrolledUp: Bool
@@ -52,6 +54,14 @@ struct OrbPresenceTracking: ViewModifier {
     /// A long reply that just finished: give it a few quiet seconds.
     @State private var longReplyID: String?
     @State private var freshLongReply = false
+
+    /// Ticks each minute, so quiet hours start and end on time.
+    @State private var minute = 0
+    /// The connection was lost (not just still connecting at launch).
+    @State private var wasOffline = false
+    /// Right after switching assistants the new store's state arrives all at
+    /// once — not events to act out.
+    @State private var settledAt = Date.distantPast
 
     /// Replies longer than this get read before the orb grows back.
     private static let longReply = 280
@@ -83,15 +93,98 @@ struct OrbPresenceTracking: ViewModifier {
             .onChange(of: store.isBusy) { was, now in
                 guard was, !now else { return }
                 event += 1 // reply done
+                act(.done)
                 if let last = store.messages.last, last.role == .assistant, last.text.count > Self.longReply {
                     longReplyID = last.id
                 }
             }
-            .onChange(of: deliverables) { old, new in if new > old { event += 1 } }
-            .onChange(of: store.connection.isOnline) { was, now in if !was && now { event += 1 } }
-            .onChange(of: store.lastError) { _, error in if error != nil { event += 1 } }
-            .onChange(of: scenePhase) { _, phase in if phase == .active { event += 1 } }
-            .onAppear { event += 1 } // the app opens on the conversation
+            .onChange(of: deliverables) { old, new in if new > old { event += 1; act(.deliverable) } }
+            .onChange(of: store.connection.isOnline) { was, now in
+                guard !was, now else { return }
+                event += 1
+                if wasOffline { act(.reconnect) }
+                wasOffline = false
+            }
+            .onChange(of: lost) { _, now in if now { wasOffline = true } }
+            .onChange(of: store.lastError) { _, error in if error != nil { event += 1; act(.error) } }
+            .onChange(of: scenePhase) { old, phase in
+                guard phase == .active else { return }
+                event += 1
+                if old == .background { act(.appOpen) }
+            }
+            .onAppear { event += 1; act(.appOpen) } // the app opens on the conversation
+            // The avatar's own: the owner sends, a reply streams in, an approval is answered.
+            .onChange(of: store.awaitingReply) { was, now in if !was && now { act(.send) } }
+            .onChange(of: streamedLength) { old, new in if new > old { act(.chunk) } }
+            .onChange(of: lastAllowedAt) { _, at in if Self.justNow(at) { act(.approve) } }
+            .onChange(of: lastDeniedAt) { _, at in if Self.justNow(at) { act(.reject) } }
+            .onChange(of: model.activeHostID) { settledAt = Date() }
+            .onChange(of: avatarInputs, initial: true) { _, inputs in AvatarSignals.shared.inputs = inputs }
+            .task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(60))
+                    minute &+= 1
+                }
+            }
+    }
+
+    /// Hands an event to the avatar — unless the assistant was only just
+    /// switched (the new one's state arriving isn't news).
+    private func act(_ e: TwoDropsState.Event) {
+        guard Date().timeIntervalSince(settledAt) > 1.5 else { return }
+        AvatarSignals.shared.emit(e)
+    }
+
+    /// The assistant's state, as the avatar's inputs (typing and speaking
+    /// are added per frame from OrbInput).
+    private var avatarInputs: TwoDropsState.Inputs {
+        _ = minute
+        var i = TwoDropsState.Inputs()
+        let streaming = store.messages.contains(where: \.isStreaming)
+        let working = store.connection.isOnline && (store.awaitingReply || store.status?.busy == true)
+        let running = store.tasks.filter { $0.status == .running }.count
+        i.offline = lost
+        i.approval = !store.pendingApprovals.isEmpty
+        i.streaming = streaming
+        i.thinking = working && !streaming
+        i.background = running > 0 && !store.isBusy
+        i.busyness = min(1, 0.4 + 0.15 * Float(running))
+        i.quiet = store.settings?.quietHours.map { Self.within($0, timezone: store.settings?.timezone) } ?? false
+        return i
+    }
+
+    /// Cut off from the computer — not merely still connecting.
+    private var lost: Bool {
+        switch store.connection {
+        case .offline, .rejected: true
+        default: false
+        }
+    }
+
+    /// The streaming reply's length: grows with each chunk.
+    private var streamedLength: Int { store.messages.last(where: \.isStreaming)?.text.count ?? 0 }
+
+    private var lastAllowedAt: Int64 { store.approvals.filter { $0.status == .allowed }.compactMap(\.decidedAt).max() ?? 0 }
+    private var lastDeniedAt: Int64 { store.approvals.filter { $0.status == .denied }.compactMap(\.decidedAt).max() ?? 0 }
+
+    /// Decided in the last few seconds (not an old decision arriving with a sync).
+    private static func justNow(_ millis: Int64) -> Bool {
+        millis > 0 && abs(Date().timeIntervalSince1970 - Double(millis) / 1000) < 10
+    }
+
+    /// Now falls in the quiet window ("23:00"–"08:00" may wrap midnight),
+    /// read in the host's time zone.
+    static func within(_ q: QuietHours, timezone: String?, now: Date = Date()) -> Bool {
+        func minutes(_ s: String) -> Int? {
+            let p = s.split(separator: ":").compactMap { Int($0) }
+            return p.count == 2 ? p[0] * 60 + p[1] : nil
+        }
+        guard let a = minutes(q.start), let b = minutes(q.end), a != b else { return false }
+        var cal = Calendar(identifier: .gregorian)
+        if let tz = timezone.flatMap(TimeZone.init(identifier:)) { cal.timeZone = tz }
+        let c = cal.dateComponents([.hour, .minute], from: now)
+        let m = (c.hour ?? 0) * 60 + (c.minute ?? 0)
+        return a < b ? (m >= a && m < b) : (m >= a || m < b)
     }
 
     private var presence: OrbPresence {

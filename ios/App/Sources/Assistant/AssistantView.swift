@@ -83,7 +83,7 @@ private struct AssistantHeader: View {
         VStack(spacing: 14) {
             Button { model.showIdentityEditor = true } label: {
                 VStack(spacing: 10) {
-                    AssistantAvatar(tint: model.currentTheme.color, active: store.assistantWorking)
+                    AssistantAvatar(theme: model.currentTheme, live: true, hostID: model.activeHostID, bleed: 1.3)
                         .frame(width: 96, height: 96)
                     Text(store.assistantName).font(.title2.bold()).foregroundStyle(.primary)
                 }
