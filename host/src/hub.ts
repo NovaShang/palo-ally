@@ -23,6 +23,7 @@ import type { Attachment, Channel, ChatMessage, Status, Task, Watch, ReplyTo } f
 import { MediaStore } from "./media.ts";
 import { BRIEF_TITLE, ensureMorningBrief } from "./brief.ts";
 import { HandoffTracker, claudeConfigDir } from "./handoffs.ts";
+import { PowerWatcher, type PowerReading, readPower } from "./power.ts";
 import { type Usage, UsageLedger } from "./usage.ts";
 import { appendJsonl } from "./util.ts";
 import { WatchStore } from "./watches.ts";
@@ -39,6 +40,7 @@ export interface HubDeps {
   now?: () => number;
   log?: (s: string) => void;
   claudeDir?: string; // Claude Code's config dir (session registry, transcripts); tests point it elsewhere
+  readPower?: () => PowerReading | null; // tests feed readings; default reads the OS
 }
 
 // Hub assembles the assistant: the main conversation with the harness, the
@@ -62,6 +64,7 @@ export class Hub {
   readonly suggestions: SuggestionStore;
   readonly conversation: Conversation;
   readonly handoffs: HandoffTracker;
+  readonly power: PowerWatcher;
   private compactTimer: ReturnType<typeof setInterval> | null = null;
   private readonly info: HarnessInfo;
   private readonly proactive: Proactive;
@@ -167,6 +170,18 @@ export class Hub {
       audit: this.audit,
       log: (s) => this.log(s),
     });
+    this.power = new PowerWatcher({
+      path: this.paths.power,
+      read: deps.readPower ?? readPower,
+      enabled: () => this.config.power.alerts,
+      alert: (text, urgent) => {
+        const msg = this.chat.add({ role: "assistant", kind: "text", text, channel: "system", proactive: true });
+        void this.router.proactive(msg, { urgent });
+      },
+      note: (text) => this.chat.add({ role: "system", kind: "notice", text, channel: "system" }),
+      audit: (type, data) => this.audit.log(type, data),
+      log: (s) => this.log(s),
+    });
     this.proactive = new Proactive({
       chat: this.chat,
       router: this.router,
@@ -238,6 +253,8 @@ export class Hub {
       // Compact earlier than the harness' default, at clean breaks only.
       this.compactTimer = setInterval(() => this.conversation.maybeCompact(), 60_000);
       (this.compactTimer as any).unref?.();
+      // The host laptop on battery: a heads-up before it dies and takes the assistant offline.
+      this.power.start();
     }
     this.emitStatus();
   }
@@ -246,6 +263,7 @@ export class Hub {
     this.proactive.stopHeartbeat();
     this.probe.stop();
     this.handoffs.stop();
+    this.power.stop();
     if (this.compactTimer) clearInterval(this.compactTimer);
     if (this.suggestionTimer) clearInterval(this.suggestionTimer);
     this.artifacts.stop();

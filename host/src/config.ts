@@ -22,6 +22,7 @@ export class Paths {
   get approvals() { return join(this.state, "approvals.json"); }
   get questions() { return join(this.state, "questions.json"); }
   get handoffs() { return join(this.state, "handoffs.json"); }
+  get power() { return join(this.state, "power.json"); }
   get watches() { return join(this.state, "watches.json"); }
   get runtime() { return join(this.state, "runtime.json"); }
   get usage() { return join(this.state, "usage.json"); }
@@ -85,6 +86,9 @@ export interface Config {
     probeDailyUsd: number; // probe stops for the day after this
     mainDailyUsd: number; // 0 = unlimited
   };
+  // A heads-up when the host laptop runs on battery (it goes offline when it dies).
+  // No effect on machines without a battery.
+  power: { alerts: boolean };
   relay: { enabled: boolean; url: string };
   wechat: { enabled: boolean; baseUrl: string };
   apns: {
@@ -121,6 +125,7 @@ export function defaultConfig(): Config {
     // About 300 probe runs a day at ~$0.01 each: a few goals checked every
     // 5–15 minutes. ($1 ran out by early morning and the goals went quiet.)
     budget: { probeDailyUsd: 5, mainDailyUsd: 0 },
+    power: { alerts: true },
     relay: { enabled: true, url: "https://relay.bentoai.dev" },
     wechat: { enabled: false, baseUrl: "https://ilinkai.weixin.qq.com" },
     apns: { enabled: false, bundleId: "com.novashang.paloally" },

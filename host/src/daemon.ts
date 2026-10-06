@@ -115,6 +115,8 @@ export async function startDaemon(
           budgetUsd: hub.config.budget.probeDailyUsd,
           spentUsd: hub.usage().probeUsd,
         };
+      case "power.status":
+        return hub.power.status();
       case "usage":
         return hub.usage();
       case "subscribe":

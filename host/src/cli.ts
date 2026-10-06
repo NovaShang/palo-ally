@@ -6,6 +6,7 @@ import { Paths, VERSION, defaultRoot, loadConfig, saveConfig } from "./config.ts
 import { startDaemon } from "./daemon.ts";
 import { scaffoldHome } from "./home.ts";
 import { scheduleText } from "./watches.ts";
+import { powerLine } from "./power.ts";
 import { CORE_SOFT_LIMIT } from "./memory.ts";
 import { installService, serviceStatus, uninstallService } from "./service.ts";
 import { runSetup } from "./setup.ts";
@@ -246,6 +247,7 @@ async function main(): Promise<void> {
       const sync = await c.call("sync", {});
       const push = await c.call("push.status").catch(() => null);
       const probe = await c.call("probe.status").catch(() => null);
+      const power = await c.call("power.status").catch(() => null);
       c.close();
       const s = hello.status;
       console.log(`${hello.hostName} · ${s.busy ? "忙" : "空闲"} · 模型 ${s.model || "默认"}`);
@@ -253,6 +255,8 @@ async function main(): Promise<void> {
       console.log(`远程：${relay.enabled ? `${relay.state}（${relay.streams} 个设备在线）${relay.lastError ? " " + relay.lastError : ""}` : "关闭"} · 微信：${wechat.status}`);
       if (push) console.log(`推送：${pushLine(push)}`);
       if (probe) console.log(`探针：${probeLine(probe)}`);
+      const pl = power ? powerLine(power) : null;
+      if (pl) console.log(`电源：${pl}`);
       console.log(`今日花费：主对话 $${usage.mainUsd.toFixed(3)} · 探针 $${usage.probeUsd.toFixed(4)}`);
       return;
     }
