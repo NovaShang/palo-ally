@@ -2,7 +2,7 @@
 # Upload the Mac release signing secrets to GitHub (run it yourself, on the Mac
 # that holds the Developer ID certificate).
 #
-#   scripts/setup-release-secrets.sh <notary-key.p8> <notary-key-id> <notary-issuer-id> [profile] [--repo owner/name]
+#   scripts/setup-release-secrets.sh <notary-key.p8> <notary-key-id> <notary-issuer-id> [profile] [--repo owner/name] [--yes]
 #
 #   notary-key.p8     an App Store Connect API key used ONLY for notarization
 #                     (App Store Connect → Users and Access → Integrations →
@@ -23,10 +23,12 @@ set -euo pipefail
 
 usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 REPO=""
+YES=""
 ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) REPO="$2"; shift 2 ;;
+    --yes) YES=1; shift ;;
     -h|--help) usage ;;
     *) ARGS+=("$1"); shift ;;
   esac
@@ -94,9 +96,11 @@ P12_PASS="$P12_PASS" xcrun swift "$TMP/export.swift" "$TMP/devid.p12"
 echo "▸ 即将在 $REPO 上设置 6 个 secret："
 echo "  MAC_DEVID_P12_BASE64, MAC_DEVID_P12_PASSWORD, MAC_DEVID_PROFILE_BASE64,"
 echo "  ASC_NOTARY_KEY_ID, ASC_NOTARY_ISSUER_ID, ASC_NOTARY_KEY_P8_BASE64"
-printf "继续？[y/N] "
-read -r yes
-[ "$yes" = "y" ] || [ "$yes" = "Y" ] || { echo "已取消，什么都没上传。"; exit 1; }
+if [ -z "$YES" ]; then
+  printf "继续？[y/N] "
+  read -r yes || yes=""
+  [ "$yes" = "y" ] || [ "$yes" = "Y" ] || { echo "已取消，什么都没上传（不能交互时加 --yes）。"; exit 1; }
+fi
 
 base64 -i "$TMP/devid.p12" | gh secret set MAC_DEVID_P12_BASE64 --repo "$REPO"
 printf '%s' "$P12_PASS" | gh secret set MAC_DEVID_P12_PASSWORD --repo "$REPO"
