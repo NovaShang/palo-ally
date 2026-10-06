@@ -7,6 +7,9 @@ export interface Runtime {
   sessionCostUsd?: number; // running total the harness reports for this session
   lastHeartbeat?: number;
   briefCreated?: boolean; // the default 晨报 goal was set up once (deleting it keeps it gone)
+  contextTokens?: number; // the main session's context size after its last turn
+  lastTurnAt?: number; // when the main session last finished a turn
+  lastCompactAt?: number;
 }
 
 export class RuntimeState {

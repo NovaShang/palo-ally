@@ -21,6 +21,7 @@ export class Paths {
   get taskActivity() { return join(this.state, "task-activity"); }
   get approvals() { return join(this.state, "approvals.json"); }
   get questions() { return join(this.state, "questions.json"); }
+  get handoffs() { return join(this.state, "handoffs.json"); }
   get watches() { return join(this.state, "watches.json"); }
   get runtime() { return join(this.state, "runtime.json"); }
   get usage() { return join(this.state, "usage.json"); }
@@ -74,6 +75,11 @@ export interface Config {
   permissionMode: "default" | "auto" | "acceptEdits" | "dontAsk";
   session: {
     idleCloseMinutes: number; // close the CLI process after idle; resume on next message
+    // When to compact earlier than the harness' own (~1M-token) default. All
+    // soft: they fire only at a clean break, through the harness' native /compact.
+    compactAfterTokens: number; // context past this; 0 = off
+    idleCompactHours: number; // quiet this long (with some context built up); 0 = off
+    compactBeforeBrief: boolean; // right before the daily 晨报
   };
   budget: {
     probeDailyUsd: number; // probe stops for the day after this
@@ -111,7 +117,7 @@ export function defaultConfig(): Config {
     // Claude Code's own classifier approves safe calls and asks the owner only
     // when it can't tell. Safety is the harness' job (PRD §6.5).
     permissionMode: "auto",
-    session: { idleCloseMinutes: 30 },
+    session: { idleCloseMinutes: 30, compactAfterTokens: 200_000, idleCompactHours: 3, compactBeforeBrief: true },
     // About 300 probe runs a day at ~$0.01 each: a few goals checked every
     // 5–15 minutes. ($1 ran out by early morning and the goals went quiet.)
     budget: { probeDailyUsd: 5, mainDailyUsd: 0 },
@@ -172,6 +178,7 @@ export function loadConfig(paths: Paths): Config {
   const cfg = deepMerge(defaultConfig(), saved) as Config;
   delete (cfg.settings as any).maxProactivePerDay; // removed 2026-10-04 (runaway guard instead)
   delete (cfg.settings as any).avatar; // removed 2026-10-05 (one avatar form; color is the choice)
+  delete (cfg.session as any).rollAfterTokens; // 2026-10-06: native compaction instead of rolling sessions
   // $1 was the default until 2026-10-06 and stopped every probe by morning;
   // a config still carrying exactly that old default gets the new one.
   if (cfg.budget.probeDailyUsd === 1) cfg.budget.probeDailyUsd = defaultConfig().budget.probeDailyUsd;

@@ -234,6 +234,11 @@ export class TaskTracker {
     this.pendingFinish.clear();
   }
 
+  // report_task(id, peer=…) on a row the host opened for a handoff: that id now names it.
+  adoptReportId(reportId: string, taskId: string): void {
+    if (!this.reportIds.has(reportId) && this.tasks.some((t) => t.id === taskId)) this.reportIds.set(reportId, taskId);
+  }
+
   taskIdForToolUse(toolUseId: string): string | undefined {
     return this.toolUseToTask.get(toolUseId);
   }
@@ -248,9 +253,42 @@ export class TaskTracker {
     return this.tasks.filter((t) => !TERMINAL.includes(t.status));
   }
 
-  // On restart the harness process that ran these is gone.
+  // ---- work handed to another session (HandoffTracker drives these) ----
+
+  openPeer(title: string, summary: string, peer: string): Task {
+    const now = Date.now();
+    const task: Task = { id: newId("t_"), title, summary, status: "running", source: "report", createdAt: now, updatedAt: now, activityCount: 0, peer };
+    this.tasks.push(task);
+    this.save(task);
+    return task;
+  }
+
+  setPeer(id: string, peer: string): void {
+    const task = this.get(id);
+    if (!task || task.peer === peer) return;
+    task.peer = peer;
+    this.save(task);
+  }
+
+  updatePeer(id: string, status: "running" | "needs_input", summary: string): void {
+    const task = this.get(id);
+    if (!task || TERMINAL.includes(task.status)) return;
+    if (task.status === status && task.summary === summary) return;
+    task.status = status;
+    task.summary = truncate(summary, 120);
+    task.updatedAt = Date.now();
+    this.save(task);
+  }
+
+  settlePeer(id: string, status: "done" | "failed" | "stopped", summary: string): void {
+    const task = this.get(id);
+    if (task && !TERMINAL.includes(task.status)) this.finish(task, status, truncate(summary, 120));
+  }
+
+  // On restart the harness process that ran these is gone. Work handed to
+  // another session isn't: that session keeps going and the host keeps following it.
   orphanRunning(): Task[] {
-    const orphaned = this.running();
+    const orphaned = this.running().filter((t) => !t.peer);
     for (const t of orphaned) this.finish(t, "stopped", t.summary || "助理重启，任务中断");
     return orphaned;
   }

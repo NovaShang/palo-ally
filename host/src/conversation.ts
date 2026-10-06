@@ -24,6 +24,7 @@ export interface Turn {
   label?: string;
   uuids?: string[]; // user messages this turn answers
   watchId?: string; // a schedule run: its reply becomes the goal's progress line
+  maintenance?: boolean; // housekeeping for the harness (native /compact): nothing shown, nothing pushed
 }
 
 type OwnerMessage = { origin: Channel; wechat?: WechatReplyTarget };
@@ -32,6 +33,13 @@ const SKIP = /^\s*\[skip\]\s*$/i;
 
 // A turn the harness started by itself is closed if it goes quiet without a result.
 export const timing = { implicitQuietMs: 90_000 };
+
+// Compaction (PRD §6.1): the harness compacts natively; the host only picks an
+// earlier moment than its ~1M default. A clean break means nothing is running
+// or waiting and the owner has been quiet this long.
+export const COMPACT_QUIET_MS = 5 * 60_000;
+// The idle and 晨报 triggers skip a session this small: nothing worth compacting.
+export const COMPACT_MIN_TOKENS = 40_000;
 
 // stripSkip removes the "[skip]" marker a proactive turn uses to stay silent.
 export function stripSkip(text: string): string {
@@ -65,6 +73,8 @@ export interface ConversationDeps {
   statusChanged: () => void;
   // a schedule run answered: record it as the goal's progress line
   onGoalResult?: (watchId: string, text: string) => void;
+  // work handed to another session the assistant is waiting on
+  handoffsInFlight?: () => boolean;
   metric: (m: Record<string, unknown>) => void;
   log: (s: string) => void;
 }
@@ -93,8 +103,16 @@ export class Conversation {
   private pending = new Map<string, OwnerMessage & { sentAt: number }>();
   private openTools = new Set<string>(); // main-thread tool calls without a result yet
   private budgetNoticeDay = "";
+  private compactReason: string | null = null; // our /compact turn is queued or running
 
-  constructor(private d: ConversationDeps) {}
+  constructor(private d: ConversationDeps) {
+    this.lastContextTokens = d.runtime.data.contextTokens ?? 0;
+  }
+
+  /** The main session's context size after its last turn (or compaction). */
+  get contextTokens(): number {
+    return this.lastContextTokens;
+  }
 
   get busy(): boolean {
     return this.current !== null;
@@ -139,7 +157,7 @@ export class Conversation {
       return;
     }
     const turn = this.queue.shift()!;
-    if (turn.proactive && this.d.usage.over("mainUsd", this.d.config().budget.mainDailyUsd)) {
+    if (turn.proactive && !turn.maintenance && this.d.usage.over("mainUsd", this.d.config().budget.mainDailyUsd)) {
       this.d.log(`proactive turn dropped: main budget used up (${turn.label ?? turn.origin})`);
       const day = this.d.usage.today().day;
       if (this.budgetNoticeDay !== day) {
@@ -310,9 +328,16 @@ export class Conversation {
       case "task_notification":
         tasks.onTaskNotification(e.taskId, e.toolUseId, e.status, e.summary);
         break;
-      case "compact":
-        this.d.metric({ type: "compact", trigger: e.trigger, preTokens: e.preTokens, postTokens: e.postTokens });
+      case "compact": {
+        // Ours (a soft trigger at a clean break) or the harness' own backstop.
+        const reason = this.current?.maintenance && this.compactReason ? this.compactReason : `harness:${e.trigger ?? "auto"}`;
+        this.d.metric({ type: "compact", trigger: e.trigger, reason, preTokens: e.preTokens, postTokens: e.postTokens });
+        this.d.audit.log("session.compact", { reason, trigger: e.trigger, preTokens: e.preTokens, postTokens: e.postTokens });
+        if (typeof e.postTokens === "number") this.lastContextTokens = e.postTokens;
+        this.d.runtime.update({ contextTokens: this.lastContextTokens, lastCompactAt: Date.now() });
+        if (this.current?.maintenance) this.compactReason = null;
         break;
+      }
       case "result":
         this.d.runtime.update({ sessionCostUsd: e.totalCostUsd });
         this.endTurn(e.costUsd, e.contextTokens, e.isError ? e.text : undefined, this.consume(e.consumedUuids), e.errorCategory);
@@ -395,7 +420,21 @@ export class Conversation {
     }
     this.openTools.clear();
     this.d.usage.add("mainUsd", costUsd);
+    if (turn?.maintenance) {
+      // A /compact turn: its own result says nothing about the context (the
+      // compact boundary did). If no boundary came, say so in the audit.
+      if (this.compactReason) {
+        this.d.audit.log("session.compact.failed", { reason: this.compactReason, error: error ?? "no compact boundary" });
+        this.compactReason = null;
+      }
+      this.d.statusChanged();
+      this.scheduleIdle();
+      if (this.pending.size === 0) this.pump();
+      else this.flushWaitersIfIdle();
+      return;
+    }
     this.lastContextTokens = contextTokens;
+    this.d.runtime.update({ contextTokens, lastTurnAt: Date.now() });
     this.d.tasks.finalizePending();
     if (turn) {
       this.d.metric({ type: "turn", origin: turn.origin, proactive: turn.proactive, costUsd, contextTokens, error });
@@ -435,6 +474,40 @@ export class Conversation {
 
   private flushWaitersIfIdle(): void {
     if (this.quiet) for (const w of this.turnWaiters.splice(0)) w();
+  }
+
+  // ---------------- compaction ----------------
+
+  // A clean break: no turn running or queued, no owner message unanswered, no
+  // background agent or handoff in flight, nobody waiting on the owner, and the
+  // owner quiet for a few minutes. Compaction never cuts into work.
+  cleanBreak(now = Date.now()): boolean {
+    if (!this.quiet || this.compactReason) return false;
+    if (this.d.tasks.live().length || this.waitingOnOwner() || this.d.handoffsInFlight?.()) return false;
+    return now - this.d.chat.lastUserActivity() >= COMPACT_QUIET_MS;
+  }
+
+  // maybeCompact asks the harness to compact (its native /compact, no
+  // instructions) when a soft trigger holds at a clean break. Returns the
+  // trigger it acted on, or null. The harness' own auto-compact stays the backstop.
+  maybeCompact(opts: { beforeBrief?: boolean } = {}, now = Date.now()): string | null {
+    const s = this.d.config().session;
+    const tokens = this.lastContextTokens;
+    const rt = this.d.runtime.data;
+    let reason: string | null = null;
+    if (s.compactAfterTokens > 0 && tokens >= s.compactAfterTokens) {
+      reason = "tokens";
+    } else if (opts.beforeBrief && s.compactBeforeBrief && tokens >= COMPACT_MIN_TOKENS && (rt.lastCompactAt ?? 0) < (rt.lastTurnAt ?? 0)) {
+      reason = "brief";
+    } else if (s.idleCompactHours > 0 && tokens >= COMPACT_MIN_TOKENS) {
+      const lastActive = Math.max(rt.lastTurnAt ?? 0, this.d.chat.lastUserActivity());
+      if (lastActive && now - lastActive >= s.idleCompactHours * 3600_000 && (rt.lastCompactAt ?? 0) < lastActive) reason = "idle";
+    }
+    if (!reason || !this.cleanBreak(now)) return null;
+    this.compactReason = reason;
+    this.d.audit.log("session.compact.start", { reason, tokens });
+    this.enqueue({ text: "/compact", origin: "system", proactive: true, maintenance: true, label: "compact" });
+    return reason;
   }
 
   // ---------------- idle close ----------------

@@ -21,7 +21,8 @@ import { SuggestionStore } from "./suggestions.ts";
 import { TaskTracker } from "./tasks.ts";
 import type { Attachment, Channel, ChatMessage, Status, Task, Watch, ReplyTo } from "./types.ts";
 import { MediaStore } from "./media.ts";
-import { ensureMorningBrief } from "./brief.ts";
+import { BRIEF_TITLE, ensureMorningBrief } from "./brief.ts";
+import { HandoffTracker, claudeConfigDir } from "./handoffs.ts";
 import { type Usage, UsageLedger } from "./usage.ts";
 import { appendJsonl } from "./util.ts";
 import { WatchStore } from "./watches.ts";
@@ -37,6 +38,7 @@ export interface HubDeps {
   wechat?: WechatChannel | null;
   now?: () => number;
   log?: (s: string) => void;
+  claudeDir?: string; // Claude Code's config dir (session registry, transcripts); tests point it elsewhere
 }
 
 // Hub assembles the assistant: the main conversation with the harness, the
@@ -59,6 +61,8 @@ export class Hub {
   readonly probe: ProbeScheduler;
   readonly suggestions: SuggestionStore;
   readonly conversation: Conversation;
+  readonly handoffs: HandoffTracker;
+  private compactTimer: ReturnType<typeof setInterval> | null = null;
   private readonly info: HarnessInfo;
   private readonly proactive: Proactive;
   private readonly ledger: UsageLedger;
@@ -140,6 +144,7 @@ export class Hub {
       onModels: (m) => this.info.saveModels(m),
       onTerminalCommands: (n) => this.info.setTerminalCommands(n),
       statusChanged: () => this.emitStatus(),
+      handoffsInFlight: () => this.handoffs.inFlight(),
       onGoalResult: (id, text) => {
         const w = this.watches.get(id);
         // The assistant may have set a better line itself during this run.
@@ -148,6 +153,19 @@ export class Hub {
       },
       metric: (m) => this.metric(m),
       log: this.log,
+    });
+    this.handoffs = new HandoffTracker({
+      path: this.paths.handoffs,
+      claudeDir: deps.claudeDir ?? claudeConfigDir(),
+      homeCwd: () => this.paths.home,
+      selfSessionId: () => this.runtime.data.sessionId,
+      tasks: this.tasks,
+      notify: (taskId, title, body) => {
+        const msg = this.chat.add({ role: "assistant", kind: "task", text: body, channel: "system", taskId, proactive: true });
+        void this.router.proactive(msg, { title });
+      },
+      audit: this.audit,
+      log: (s) => this.log(s),
     });
     this.proactive = new Proactive({
       chat: this.chat,
@@ -214,12 +232,21 @@ export class Hub {
       this.suggestionTimer = setInterval(() => this.suggestions.maybeRefresh("daily"), 3600_000);
     }
     if (opts.watchArtifacts !== false) this.artifacts.watch();
+    if (opts.probe !== false) {
+      // Work handed to other sessions: the host follows it itself.
+      this.handoffs.startTimer();
+      // Compact earlier than the harness' default, at clean breaks only.
+      this.compactTimer = setInterval(() => this.conversation.maybeCompact(), 60_000);
+      (this.compactTimer as any).unref?.();
+    }
     this.emitStatus();
   }
 
   stop(): void {
     this.proactive.stopHeartbeat();
     this.probe.stop();
+    this.handoffs.stop();
+    if (this.compactTimer) clearInterval(this.compactTimer);
     if (this.suggestionTimer) clearInterval(this.suggestionTimer);
     this.artifacts.stop();
     this.conversation.close();
@@ -336,6 +363,9 @@ export class Hub {
   // Exposed so it can be traced/wrapped; the conversation routes every harness event here.
   onHarnessEvent(e: HarnessEvent): void {
     if (e.type === "init") this.suggestions.setConnectors(e.tools);
+    // The assistant handing work to another session (main thread only).
+    if (e.type === "tool_use" && !e.parentToolUseId && e.name === "SendMessage") this.handoffs.onSend(e.id, e.input);
+    if (e.type === "tool_result" && !e.parentToolUseId) this.handoffs.onSendResult(e.toolUseId, e.content, e.isError);
     this.conversation.onHarnessEvent(e);
   }
 
@@ -373,7 +403,7 @@ export class Hub {
   // ---------------- what the harness offers ----------------
 
   toolHandlers(): ToolHandlers {
-    return makeShellTools({ tasks: this.tasks, watches: this.watches, artifacts: this.artifacts, chat: this.chat, router: this.router, audit: this.audit, wechat: this.wechat, media: this.media,
+    return makeShellTools({ tasks: this.tasks, handoffs: this.handoffs, watches: this.watches, artifacts: this.artifacts, chat: this.chat, router: this.router, audit: this.audit, wechat: this.wechat, media: this.media,
       ownerChannel: () => this.conversation.ownerChannel(), cwd: this.paths.home, timezone: () => this.config.settings.timezone });
   }
 
@@ -465,6 +495,8 @@ export class Hub {
   // ---------------- internals ----------------
 
   private onSchedule(w: Watch): void {
+    // Right before the 晨报: compact first (clean break only), so the brief opens a lighter context.
+    if (w.title === BRIEF_TITLE) this.conversation.maybeCompact({ beforeBrief: true });
     this.proactive.onSchedule(w);
   }
 

@@ -116,7 +116,7 @@ export class FakeMainSession implements MainSession {
         text: "",
         costUsd: this.driver.turnCost,
         totalCostUsd: this.total,
-        contextTokens: 1000,
+        contextTokens: this.driver.contextTokens,
         sessionId: this.sessionId,
         consumedUuids: [uuid],
       });
@@ -154,6 +154,7 @@ export class FakeDriver implements HarnessDriver {
   appliedPermissions: unknown[] = []; // rules the owner chose to remember (harness-side)
   decisions: { tool: string; decision: PermissionDecision }[] = []; // every canUseTool answer, in order
   turnCost = 0.001;
+  contextTokens = 1000; // what each turn's result reports
   probeResponder: (req: ProbeRequest) => ProbeResult = () => ({ output: { results: [] }, costUsd: 0.0001 });
 
   constructor(public script: FakeScript = defaultScript) {}

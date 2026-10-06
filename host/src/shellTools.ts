@@ -5,6 +5,7 @@ import type { ToolHandlers } from "./harness/types.ts";
 import type { Router } from "./router.ts";
 import { notifyResultText } from "./copy.ts";
 import type { TaskTracker } from "./tasks.ts";
+import type { HandoffTracker } from "./handoffs.ts";
 import { scheduleText, type WatchStore } from "./watches.ts";
 import { nextRunAt } from "./probe.ts";
 import { zonedParts } from "./util.ts";
@@ -19,6 +20,7 @@ export const notifyWait = { ms: 7_000 };
 
 export interface ShellToolDeps {
   tasks: TaskTracker;
+  handoffs?: HandoffTracker;
   watches: WatchStore;
   artifacts: ArtifactLibrary;
   chat: ChatLog;
@@ -39,10 +41,14 @@ export interface ShellToolDeps {
 // artifacts, reach the owner.
 export function makeShellTools(d: ShellToolDeps): ToolHandlers {
   return {
-    report_task: async ({ id, summary, status, title }) => {
+    report_task: async ({ id, summary, status, title, peer }) => {
+      // The host may already follow this peer (it saw the SendMessage): name that row.
+      const followed = peer ? d.handoffs?.forPeer(peer) : undefined;
+      if (followed) d.tasks.adoptReportId(id, followed.taskId);
       const t = d.tasks.report(id, summary, status, title);
-      d.audit.log("report_task", { id, status, summary });
-      return `ok: ${t.id} ${t.status}`;
+      d.audit.log("report_task", { id, status, summary, ...(peer ? { peer } : {}) });
+      const linked = peer && d.handoffs && !followed ? `；${d.handoffs.link(t.id, peer, summary)}` : "";
+      return `ok: ${t.id} ${t.status}${linked}`;
     },
     register_watch: async ({ id, title, instruction, interval_minutes, at, day_of_month, kind }) => {
       if (id) {

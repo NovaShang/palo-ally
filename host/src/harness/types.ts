@@ -68,7 +68,7 @@ export type PermissionDecision =
   | { behavior: "deny"; message: string };
 
 export interface ToolHandlers {
-  report_task(args: { id: string; summary: string; status: string; title?: string }): Promise<string>;
+  report_task(args: { id: string; summary: string; status: string; title?: string; peer?: string }): Promise<string>;
   register_watch(args: {
     id?: string;
     title?: string;

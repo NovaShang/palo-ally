@@ -57,6 +57,7 @@ export interface Task {
   // internal linkage (not needed by clients but harmless)
   toolUseId?: string;
   sdkTaskId?: string;
+  peer?: string; // handed to another Claude Code session (its name); the host follows it
 }
 
 export interface TaskActivity {

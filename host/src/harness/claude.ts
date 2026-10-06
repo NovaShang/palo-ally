@@ -58,6 +58,10 @@ export function paloallyMcpServer(h: ToolHandlers) {
           summary: z.string().describe("一句话：在做什么 / 结果是什么"),
           status: z.enum(["running", "done", "failed", "needs_input", "stopped"]),
           title: z.string().optional().describe("任务标题（几个字），首次登记时给"),
+          peer: z
+            .string()
+            .optional()
+            .describe("这件事交给了本机另一个 Claude Code 会话时，填它的名字（SendMessage 的 to）：外壳会自己定期去看它的进展、它在等主人时推送提醒。用 SendMessage 交代任务时外壳通常会自动跟进，这里只在要改标题或手动关联时用"),
         },
         async (a) => text(await h.report_task(a)),
       ),
