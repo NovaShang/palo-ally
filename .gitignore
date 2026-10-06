@@ -5,7 +5,7 @@ ios/**/build/
 ios/**/DerivedData/
 ios/**/.build/
 ios/**/xcuserdata/
-ios/**/*.xcodeproj/project.xcworkspace/
+ios/**/*.xcodeproj/project.xcworkspace/xcuserdata/
 
 # secrets and signing material never belong in the repo
 .env*
