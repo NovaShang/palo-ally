@@ -102,18 +102,23 @@ struct MainScreen: View {
     /// conversation) doesn't lose it.
     @State private var draft = ""
 
+    /// The container in use; it can trail the width for a moment (below).
+    @State private var container: AppModel.Layout?
+    /// What the width asks for right now.
+    @State private var wanted: AppModel.Layout?
+
     var body: some View {
         GeometryReader { geo in
             let layout = Self.layout(width: geo.size.width, sizeClass: sizeClass)
             Group {
-                if layout == .phone {
+                if (container ?? layout) == .phone {
                     SpatialPlaces()
                 } else {
                     SplitPlaces()
                 }
             }
-            .onAppear { model.setLayout(layout) }
-            .onChange(of: layout) { _, l in model.setLayout(l) }
+            .onAppear { wanted = layout; container = layout; model.setLayout(layout) }
+            .onChange(of: layout) { _, l in wanted = l; switchContainer(to: l) }
         }
         .environment(voice)
         .environment(\.chatDraft, $draft)
@@ -153,6 +158,24 @@ struct MainScreen: View {
         .sheet(isPresented: Binding(get: { needsNaming }, set: { if !$0 { model.namingDone = true } })) {
             IdentityEditor(purpose: .firstTime).environment(model).environment(store)
         }
+    }
+
+    /// The Mac's title bar keeps the split view's sidebar width if the split
+    /// goes away with its sidebar open (the toolbar's 「它」 would then start
+    /// there): put the sidebar away first, then slide into the narrow layout.
+    private func switchContainer(to l: AppModel.Layout) {
+        if Platform.barInWindowToolbar, l == .phone, container != .phone, model.sidebarShown {
+            model.sidebarShown = false
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(350))
+                guard wanted == .phone else { return } // widened again meanwhile
+                container = .phone
+                model.setLayout(.phone)
+            }
+            return
+        }
+        container = l
+        model.setLayout(l)
     }
 
     /// Asked once per computer: it's paired, its settings arrived and it has no name yet.
@@ -279,7 +302,7 @@ private struct SplitPlaces: View {
             AssistantPlace()
                 .navigationSplitViewColumnWidth(min: 300, ideal: 340, max: 420)
                 // The conversation's own 「它」 button is the toggle (on the
-                // Mac, the window toolbar's), always in the same place.
+                // Mac, the window toolbar's system toggle), always in one place.
                 .toolbar(removing: .sidebarToggle)
         } detail: {
             NavigationStack { ChatView().modifier(InContentNavigationBar()) }
@@ -353,7 +376,8 @@ private struct AssistantPlace: View {
             }
             .modifier(InContentNavigationBar())
             .toolbar {
-                if !asColumn {
+                // The Mac's toolbar toggle takes it back (no second way).
+                if !asColumn && !Platform.barInWindowToolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button { model.place = .chat } label: {
                             HStack(spacing: 3) { Text("对话"); Image(systemName: "chevron.right") }
@@ -398,7 +422,7 @@ private struct LibraryPlace: View {
                 }
             }
             .toolbar {
-                if !asColumn {
+                if !asColumn && !Platform.barInWindowToolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button { model.place = .chat } label: {
                             HStack(spacing: 3) { Image(systemName: "chevron.left"); Text("对话") }

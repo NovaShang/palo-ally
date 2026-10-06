@@ -4,6 +4,8 @@ import SwiftUI
 struct ChatView: View {
     /// The conversation never gets wider than this (large screens).
     static let readableWidth: CGFloat = 760
+    /// Mac: the strip at the top of the column the resting orb sits in.
+    static let macOrbStrip: CGFloat = 64
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     @Environment(VoiceInputController.self) private var voice
@@ -237,16 +239,24 @@ struct ChatView: View {
                 .animation(.snappy(duration: 0.2), value: showJump)
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            VStack(spacing: 0) { StatusBanner() }
-                .frame(maxWidth: .infinity)
-                // Mac: the window toolbar spans every column, and the sidebar
-                // and inspector beside keep their own color under it. The
-                // conversation does the same instead of a blurred band of text.
-                .background(Platform.barInWindowToolbar ? Color(.systemBackground) : .clear,
-                            ignoresSafeAreaEdges: .top)
-        }
-        .scrollEdgeEffectHidden(Platform.barInWindowToolbar, for: .top)
+        .modifier(TopStrip {
+            VStack(spacing: 0) {
+                StatusBanner()
+                // Mac: the orb's home, the top of the conversation column (the
+                // window toolbar only holds the toggles). The messages start
+                // below it; scrolled, they pass under it, fading like on the phone.
+                if Platform.barInWindowToolbar {
+                    Color.clear
+                        .frame(height: Self.macOrbStrip)
+                        .overlay {
+                            FloatingTitleOrb(barCenterY: nil, columnWidth: ownFrame.width) {
+                                model.showHostSwitcher = true
+                            }
+                        }
+                }
+            }
+            .frame(maxWidth: .infinity)
+        })
         // While holding to talk, the screen's background rises from the
         // bottom so the live transcript reads cleanly (same hold-driven motion).
         .overlay {
@@ -266,14 +276,6 @@ struct ChatView: View {
                     model.showHostSwitcher = true
                 }
                 .position(x: orbSlot.midX - ownFrame.minX, y: orbSlot.midY - ownFrame.minY)
-            }
-        }
-        // The Mac's orb stays in the window toolbar; listening, a big one
-        // rises at the top of the conversation instead.
-        .overlay(alignment: .top) {
-            if Platform.barInWindowToolbar, voice.panelMounted {
-                ListeningOrb(columnWidth: ownFrame.width)
-                    .padding(.top, 16)
             }
         }
         .modifier(OrbPresenceTracking(scrolledUp: !pinned || store.viewingPast, scrolling: userScrolling))
@@ -297,7 +299,8 @@ struct ChatView: View {
         // colliding with the clock and the orb.
         .toolbarBackground(.hidden, for: .navigationBar)
         .scrollEdgeEffectStyle(.soft, for: .top)
-        // The Mac shows the same three in the window's own toolbar (MacToolbar).
+        // The Mac: the two toggles are the window toolbar's (MacToolbar), the
+        // orb floats in the strip above the messages.
         .toolbar(Platform.barInWindowToolbar ? .hidden : .automatic, for: .navigationBar)
         .toolbar {
             if !Platform.barInWindowToolbar {
@@ -362,6 +365,40 @@ struct ChatView: View {
         guard msgs[index].ts > 0 else { return false }
         if index == 0 { return true }
         return msgs[index].ts - msgs[index - 1].ts > 10 * 60 * 1000
+    }
+}
+
+/// What sits above the messages: the connection banner, and on the Mac the
+/// orb's strip. The Mac's scroll edge is a hard rule line, so there the strip
+/// draws its own fade instead: solid behind the toolbar and the orb, then
+/// dissolving into the messages scrolling under it. Phones keep a plain inset
+/// (their orb floats over the navigation bar, which already has the fade).
+private struct TopStrip<Strip: View>: ViewModifier {
+    @ViewBuilder let strip: () -> Strip
+    private static var fade: CGFloat { 28 }
+
+    func body(content: Content) -> some View {
+        if Platform.barInWindowToolbar {
+            content
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    strip().background {
+                        // Solid behind the toolbar and the orb; the messages
+                        // fade in just below the strip.
+                        VStack(spacing: 0) {
+                            Color(.systemBackground)
+                            LinearGradient(colors: [Color(.systemBackground), Color(.systemBackground).opacity(0)],
+                                           startPoint: .top, endPoint: .bottom)
+                                .frame(height: Self.fade)
+                        }
+                        .padding(.bottom, -Self.fade)
+                        .ignoresSafeArea(edges: .top)
+                        .allowsHitTesting(false)
+                    }
+                }
+                .scrollEdgeEffectHidden(true, for: .top)
+        } else {
+            content.safeAreaInset(edge: .top, spacing: 0, content: strip)
+        }
     }
 }
 

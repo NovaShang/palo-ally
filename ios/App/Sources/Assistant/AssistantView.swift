@@ -34,7 +34,8 @@ struct AssistantView: View {
             case .memory: MemorySection()
             }
         }
-        .navigationTitle(store.assistantName)
+        // The Mac's column shows the header's name only, not the same name above it.
+        .navigationTitle(Platform.barInWindowToolbar ? "" : store.assistantName)
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $model.showIdentityEditor) {
             IdentityEditor(purpose: .edit).environment(model).environment(store)
@@ -52,11 +53,11 @@ struct AssistantView: View {
             }
         }
         .navigationDestination(isPresented: $model.showSettings) {
-            SettingsView()
+            SettingsView().modifier(InSidebarColumn())
         }
         // Notification tap on a task opens its detail.
         .navigationDestination(item: $model.openTaskID) { id in
-            TaskDetailView(taskID: id)
+            TaskDetailView(taskID: id).modifier(InSidebarColumn())
         }
         .animation(.snappy, value: model.assistantTab)
     }
@@ -176,4 +177,20 @@ private struct AssistantHeader: View {
     NavigationStack { AssistantView() }
         .environment(model)
         .environment(model.store!)
+}
+
+/// A page pushed inside the 「它」 column. On the Mac: no second sidebar
+/// toggle (the window toolbar has the one), and the column's own dark
+/// grouped background rather than the Mac form's lighter gray.
+struct InSidebarColumn: ViewModifier {
+    func body(content: Content) -> some View {
+        if Platform.barInWindowToolbar {
+            content
+                .toolbar(removing: .sidebarToggle)
+                .scrollContentBackground(.hidden)
+                .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        } else {
+            content
+        }
+    }
 }

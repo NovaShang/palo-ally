@@ -1,50 +1,17 @@
 import PaloAllyKit
 import SwiftUI
 
-/// The middle of the title bar: the assistant's orb. Its motion is the
+/// The assistant's orb at the top of the conversation. Its motion is the
 /// status — calm when idle, livelier while it works, and it listens as the
 /// owner types or speaks. Only when it isn't idle does a short caption say
-/// what it's doing (or that something waits on the owner). Tapping opens the
-/// status card.
+/// what it's doing (or that something waits on the owner), as a small glass
+/// label across its lower part. Tapping opens the status card.
 ///
 /// Phones and iPads: the orb may be bigger than the bar (see OrbPresence), so
 /// the bar only holds an invisible target (TitleOrbSlot) and the orb itself
-/// floats over the bar from the conversation (FloatingTitleOrb), with the
-/// caption as a small glass label across its lower part. The Mac's window
-/// toolbar can't be overdrawn: there the orb (TitleOrb) stays inside it, as
-/// big as it allows, with the caption to its right.
-struct TitleOrb: View {
-    let action: () -> Void
-    @Environment(AppModel.self) private var model
-    @Environment(AppStore.self) private var store
-
-    /// Mac toolbar: room for the caption on each side, so the orb stays centered.
-    static let inlineCaptionWidth: CGFloat = 140
-    static let inlineOrbSize: CGFloat = 38
-
-    var body: some View {
-        let line = store.agentStatusLine
-        let caption = line.kind == .idle ? nil : line.text
-        let s = Self.inlineOrbSize
-        let side = Self.inlineCaptionWidth + 8
-        Button(action: action) {
-            TitleOrbDrop(size: s)
-                .frame(width: s + 2 * side, height: s + 2)
-                .overlay(alignment: .leading) {
-                    if let caption {
-                        TitleOrbCaption(text: caption, kind: line.kind, glass: false)
-                            .frame(maxWidth: Self.inlineCaptionWidth, alignment: .leading)
-                            .padding(.leading, side + s + 6)
-                            .transition(.opacity)
-                    }
-                }
-                .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .animation(.snappy, value: caption)
-        .modifier(TitleOrbAccessibility())
-    }
-}
+/// floats over the bar from the conversation (FloatingTitleOrb). The Mac's
+/// window toolbar holds only the system toggles: there the orb floats in the
+/// conversation's own top strip, centered in its column (ChatView).
 
 /// The bar's middle on phones and iPads: an invisible target where the
 /// floating orb sits (the bar takes touches over its own height). Reports
@@ -74,8 +41,9 @@ struct TitleOrbSlot: View {
 /// motion that grows the recording UI, so it starts the moment the finger
 /// lands and folds back when it lifts. Then it takes no touches.
 struct FloatingTitleOrb: View {
-    /// The bar's middle, in window coordinates.
-    let barCenterY: CGFloat
+    /// The bar's middle, in window coordinates; nil where nothing overlaps
+    /// the top (the Mac: below the window toolbar).
+    let barCenterY: CGFloat?
     /// The conversation column's width: the listening size follows it.
     let columnWidth: CGFloat
     let action: () -> Void
@@ -100,7 +68,7 @@ struct FloatingTitleOrb: View {
         let listen = listening
         let big = OrbPresence.voiceDiameter(width: columnWidth)
         let d = barSize + (big - barSize) * listen
-        let inBar = Self.islandClearance(d: barSize, barCenterY: barCenterY)
+        let inBar = barCenterY.map { Self.islandClearance(d: barSize, barCenterY: $0) } ?? 0
         let dropped = Self.halfBar + Self.listenGap + big / 2
         let line = store.agentStatusLine
         // While it listens the label steps aside: nothing else to say.
@@ -118,7 +86,7 @@ struct FloatingTitleOrb: View {
                 }
                 .background { ListeningGlow(size: big).opacity(Double(listen)) }
                 if let caption {
-                    TitleOrbCaption(text: caption, kind: line.kind, glass: true)
+                    TitleOrbCaption(text: caption, kind: line.kind)
                         .frame(maxWidth: 200)
                         .fixedSize(horizontal: false, vertical: true)
                         .offset(y: Self.captionOffset(d))
@@ -143,8 +111,8 @@ struct FloatingTitleOrb: View {
                 .environment(store)
                 .presentationCompactAdaptation(.popover)
         }
-        // The slot in the bar speaks for it.
-        .accessibilityHidden(true)
+        // Phones: the slot in the bar speaks for it. The Mac has no slot.
+        .modifier(FloatingOrbAccessibility(speaks: barCenterY == nil))
     }
 
     /// 0…1: how far it has dropped out of the bar to listen — the hold-to-talk
@@ -169,29 +137,6 @@ struct FloatingTitleOrb: View {
         let top = DisplayCorners.topInset
         guard top > 0 else { return 0 }
         return max(0, top - 6 + d / 2 - barCenterY)
-    }
-}
-
-/// The Mac: the toolbar's orb can't leave the toolbar, so while the owner
-/// holds to talk a big listening orb rises at the top of the conversation
-/// column instead (the phone's drops out of the bar).
-struct ListeningOrb: View {
-    let columnWidth: CGFloat
-    @Environment(VoiceInputController.self) private var voice
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        let p = voice.panelMounted ? min(max(voice.presence, 0), 1) : 0
-        let listen = reduceMotion ? (p > 0 ? 1 : 0) : p
-        let big = OrbPresence.voiceDiameter(width: columnWidth)
-        TitleOrbDrop(size: big)
-            .background { ListeningGlow(size: big) }
-            .scaleEffect(0.35 + 0.65 * listen)
-            .opacity(Double(min(1, listen * 1.6)))
-            .animation(reduceMotion ? .easeInOut(duration: 0.25) : .spring(response: 0.42, dampingFraction: 0.58),
-                       value: listen)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
     }
 }
 
@@ -241,28 +186,29 @@ struct TitleOrbDrop: View {
     }
 }
 
-/// What it's doing, one line. On phones a small glass label laid over the
-/// orb; on the Mac plain text beside it.
+/// What it's doing, one line: a small glass label laid over the orb.
 struct TitleOrbCaption: View {
     let text: String
     let kind: AgentStatusLine.Kind
-    let glass: Bool
 
     var body: some View {
-        let label = Text(text)
+        Text(text)
             .font(.caption2.weight(.medium))
-            .foregroundStyle(kind == .needsYou ? AnyShapeStyle(Color.orange) : AnyShapeStyle(glass ? .primary : .secondary))
+            .foregroundStyle(kind == .needsYou ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.primary))
             .lineLimit(1)
             .truncationMode(.tail)
             .contentTransition(.opacity)
-        if glass {
-            label
-                .padding(.horizontal, 9)
-                .padding(.vertical, 3)
-                .glassEffect(.regular, in: .capsule)
-        } else {
-            label
-        }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 3)
+            .glassEffect(.regular, in: .capsule)
+    }
+}
+
+private struct FloatingOrbAccessibility: ViewModifier {
+    let speaks: Bool
+
+    func body(content: Content) -> some View {
+        if speaks { content.modifier(TitleOrbAccessibility()) } else { content.accessibilityHidden(true) }
     }
 }
 
