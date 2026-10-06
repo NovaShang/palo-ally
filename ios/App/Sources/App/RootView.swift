@@ -21,6 +21,7 @@ struct RootView: View {
         .animation(.snappy, value: model.activeHostID)
         #if DEBUG
         .modifier(DemoCapture(demo: model.mode == .demo))
+        .modifier(LayoutStressTest(model: model))
         #endif
     }
 
@@ -81,6 +82,72 @@ private struct DemoCapture: ViewModifier {
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(name).png")
             try? image.pngData()?.write(to: url)
             print("[demo] snapshot \(url.path)")
+        }
+    }
+}
+#endif
+
+#if DEBUG
+/// DEBUG automation for checks without a usable screen:
+/// `-resizeTest YES` walks the Mac window through a series of widths and
+/// toggles the sidebar and inspector, logging each step (the stall watchdog
+/// logs any hang in between); `-demoActions "goal,back,..."` performs
+/// navigation steps two seconds apart (goal / task / memory: open the first
+/// one in the middle column; chat; back = ⌘[; assistant / library: the narrow
+/// places), logging what's on screen after each.
+private struct LayoutStressTest: ViewModifier {
+    let model: AppModel
+
+    func body(content: Content) -> some View {
+        content.task {
+            let d = UserDefaults.standard
+            if let actions = d.string(forKey: "demoActions") {
+                try? await Task.sleep(for: .seconds(d.double(forKey: "demoActionsDelay") > 0 ? d.double(forKey: "demoActionsDelay") : 4))
+                for a in actions.split(separator: ",").map(String.init) {
+                    guard let store = model.store else { break }
+                    switch a {
+                    case "goal": if let w = store.watches.first { model.splitDetail = .goal(w.id) }
+                    case "task": if let t = store.tasks.first { model.splitDetail = .task(t.id) }
+                    case "memory": if let f = try? await store.memoryFiles().first { model.splitDetail = .memory(f) }
+                    case "chat": model.splitDetail = .chat
+                    case "back": model.goBack()
+                    case "assistant": model.place = .assistant
+                    case "library": model.place = .library
+                    case "settings": model.openSettings()
+                    case "sidebar": model.sidebarShown.toggle()
+                    default: break
+                    }
+                    try? await Task.sleep(for: .seconds(1.5))
+                    debugLog("[nav] after \(a): layout \(model.layout.rawValue) place \(model.place) detail \(model.splitDetail) sidebar \(model.sidebarShown) inspector \(model.inspectorShown) settings \(model.showSettings)")
+                    try? await Task.sleep(for: .seconds(0.5))
+                }
+            }
+            guard d.bool(forKey: "resizeTest") else { return }
+            try? await Task.sleep(for: .seconds(6))
+            guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else { return }
+            scene.sizeRestrictions?.minimumSize = CGSize(width: 500, height: 500)
+            @MainActor func size(_ w: CGFloat) async {
+                debugLog("[resize] → \(Int(w))")
+                scene.requestGeometryUpdate(.Mac(systemFrame: CGRect(x: 60, y: 40, width: w, height: 860)))
+                try? await Task.sleep(for: .milliseconds(120))
+            }
+            // A live drag: many small steps, both ways, around the widths that matter.
+            for w in stride(from: 1450.0, through: 640.0, by: -18.0) { await size(w) }
+            for w in stride(from: 640.0, through: 1450.0, by: 18.0) { await size(w) }
+            try? await Task.sleep(for: .seconds(1))
+            for w: CGFloat in [1450, 1000, 820] {
+                await size(w)
+                try? await Task.sleep(for: .seconds(1))
+                for _ in 0..<2 {
+                    debugLog("[resize] sidebar toggle at \(Int(w))")
+                    model.sidebarShown.toggle()
+                    try? await Task.sleep(for: .seconds(1.2))
+                    debugLog("[resize] inspector toggle at \(Int(w))")
+                    model.inspectorShown.toggle()
+                    try? await Task.sleep(for: .seconds(1.2))
+                }
+            }
+            debugLog("[resize] done")
         }
     }
 }
@@ -305,8 +372,21 @@ private struct SplitPlaces: View {
                 // Mac, the window toolbar's system toggle), always in one place.
                 .toolbar(removing: .sidebarToggle)
         } detail: {
-            NavigationStack { ChatView().modifier(InContentNavigationBar()) }
-                .inspector(isPresented: $model.inspectorShown) {
+            ZStack {
+                // The conversation stays alive (its scroll position, the
+                // draft) while a sidebar item is open over it.
+                NavigationStack { ChatView().modifier(InContentNavigationBar()) }
+                    .opacity(model.splitDetail == .chat ? 1 : 0)
+                    .allowsHitTesting(model.splitDetail == .chat)
+                    .accessibilityHidden(model.splitDetail != .chat)
+                if model.splitDetail != .chat {
+                    SplitDetailPage(detail: model.splitDetail)
+                        .id(model.splitDetail)
+                }
+            }
+            // The hidden composer mustn't keep the keyboard.
+            .onChange(of: model.splitDetail) { _, d in if d != .chat { model.composerUnfocusRequests += 1 } }
+            .inspector(isPresented: $model.inspectorShown) {
                     // Presented outside this hierarchy on some platforms: pass what it reads.
                     LibraryPlace()
                         .environment(model)
@@ -320,6 +400,56 @@ private struct SplitPlaces: View {
         // conversation's identity when the window crosses a width.
         .navigationSplitViewStyle(.automatic)
         .environment(\.placesAsColumns, true)
+    }
+}
+
+/// Large screens: a goal, task or memory picked in the 「它」 sidebar, shown in
+/// the middle column. 「‹ 对话」 (or 「对话」 in the sidebar, or ⌘[) brings
+/// the conversation back.
+private struct SplitDetailPage: View {
+    let detail: AppModel.SplitDetail
+    @Environment(AppModel.self) private var model
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                switch detail {
+                case .chat:
+                    EmptyView()
+                case .goal(let id):
+                    GoalDetail(id: id)
+                        // Deleted from its own page: nothing left to show.
+                        .onChange(of: store.watches.contains { $0.id == id }) { _, exists in
+                            if !exists { model.splitDetail = .chat }
+                        }
+                case .task(let id):
+                    TaskDetailView(taskID: id)
+                case .memory(let file):
+                    MemoryEditorView(file: file) { model.memoryRevision += 1 }
+                }
+            }
+            .modifier(InContentNavigationBar())
+            // In the page itself, not the navigation bar: the column's bar
+            // isn't reliably shown here on the Mac.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                HStack {
+                    Button { model.splitDetail = .chat } label: {
+                        HStack(spacing: 4) { Image(systemName: "chevron.left"); Text("对话") }
+                            .padding(.vertical, 6)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.borderless)
+                    .tint(.primary)
+                    .accessibilityLabel("回到对话")
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 4)
+                .background(.bar)
+            }
+        }
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
     }
 }
 
@@ -376,14 +506,24 @@ private struct AssistantPlace: View {
             }
             .modifier(InContentNavigationBar())
             .toolbar {
-                // The Mac's toolbar toggle takes it back (no second way).
-                if !asColumn && !Platform.barInWindowToolbar {
+                // Narrow: back to the conversation (on the Mac too — the
+                // toolbar toggle alone isn't an obvious way out).
+                if !asColumn {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button { model.place = .chat } label: {
                             HStack(spacing: 3) { Text("对话"); Image(systemName: "chevron.right") }
                         }
                         .tint(.primary)
                         .accessibilityLabel("回到对话")
+                    }
+                } else if case .task = model.assistantRoot {
+                    // The sidebar showing one task opened from the conversation: back to the tabs.
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { model.showAllTasks() } label: {
+                            HStack(spacing: 3) { Image(systemName: "chevron.left"); Text("履历") }
+                        }
+                        .tint(.primary)
+                        .accessibilityLabel("回到履历")
                     }
                 }
             }
@@ -422,13 +562,22 @@ private struct LibraryPlace: View {
                 }
             }
             .toolbar {
-                if !asColumn && !Platform.barInWindowToolbar {
+                if !asColumn {
                     ToolbarItem(placement: .topBarLeading) {
                         Button { model.place = .chat } label: {
                             HStack(spacing: 3) { Image(systemName: "chevron.left"); Text("对话") }
                         }
                         .tint(.primary)
                         .accessibilityLabel("回到对话")
+                    }
+                } else if case .artifact = model.libraryRoot {
+                    // The inspector showing one item opened from the conversation: back to the list.
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { model.showInLibrary() } label: {
+                            HStack(spacing: 3) { Image(systemName: "chevron.left"); Text("成果") }
+                        }
+                        .tint(.primary)
+                        .accessibilityLabel("回到成果")
                     }
                 }
             }

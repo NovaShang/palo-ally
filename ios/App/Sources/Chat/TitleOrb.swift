@@ -46,6 +46,9 @@ struct FloatingTitleOrb: View {
     let barCenterY: CGFloat?
     /// The conversation column's width: the listening size follows it.
     let columnWidth: CGFloat
+    /// The Mac: hangs from the top of the column, smaller (no bar to fill,
+    /// and it shouldn't crowd the messages it floats over).
+    var topAligned = false
     let action: () -> Void
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
@@ -59,21 +62,31 @@ struct FloatingTitleOrb: View {
     private static let halfBar: CGFloat = 22
     /// Listening: the gap between the bar's bottom and the big orb.
     private static let listenGap: CGFloat = 14
+    /// The Mac's resting sizes relative to the phone's.
+    static let macScale: CGFloat = 0.62
+    /// The Mac: the orb's top below the column's top edge.
+    private static let macTopPad: CGFloat = 4
 
     var body: some View {
         @Bindable var model = model
         let presence = model.orbPresence
         // In the bar, the size the state asks for; listening grows from the largest.
-        let barSize = (presence == .voice ? OrbPresence.present : presence).body
+        let barSize = (presence == .voice ? OrbPresence.present : presence).body * (topAligned ? Self.macScale : 1)
         let listen = listening
         let big = OrbPresence.voiceDiameter(width: columnWidth)
         let d = barSize + (big - barSize) * listen
-        let inBar = barCenterY.map { Self.islandClearance(d: barSize, barCenterY: $0) } ?? 0
-        let dropped = Self.halfBar + Self.listenGap + big / 2
+        let canvas = TitleOrbDrop.canvas(for: d)
+        let boxHeight = max(Self.box.height, canvas)
+        // Where it rests and where it drops to listen, from the box's center.
+        let rest = topAligned
+            ? Self.macTopPad + barSize / 2 - boxHeight / 2
+            : barCenterY.map { Self.islandClearance(d: barSize, barCenterY: $0) } ?? 0
+        let dropped = topAligned
+            ? Self.macTopPad + Self.listenGap + big / 2 - boxHeight / 2
+            : Self.halfBar + Self.listenGap + big / 2
         let line = store.agentStatusLine
         // While it listens the label steps aside: nothing else to say.
         let caption = line.kind == .idle || voice.panelMounted ? nil : line.text
-        let canvas = TitleOrbDrop.canvas(for: d)
         Button(action: action) {
             ZStack {
                 Group {
@@ -93,8 +106,8 @@ struct FloatingTitleOrb: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
             }
-            .frame(width: max(Self.box.width, canvas), height: max(Self.box.height, canvas))
-            .offset(y: inBar + (dropped - inBar) * listen)
+            .frame(width: max(Self.box.width, canvas), height: boxHeight)
+            .offset(y: rest + (dropped - rest) * listen)
         }
         .buttonStyle(.plain)
         .allowsHitTesting(!voice.panelMounted)

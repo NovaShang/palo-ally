@@ -33,7 +33,7 @@ struct WatchesSection: View {
                                        description: Text("告诉它你想长期盯住或推进的事，比如「回国机票降价了告诉我」「每天早上给我一份晨报」。"))
             }
             ForEach(goals) { w in
-                NavigationLink {
+                SidebarItemLink(detail: .goal(w.id)) {
                     GoalDetail(id: w.id)
                 } label: {
                     GoalRow(goal: w)

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MemorySection: View {
     @Environment(AppStore.self) private var store
+    @Environment(AppModel.self) private var model
     @State private var files: [MemoryFile] = []
     @State private var loading = true
     @State private var error: String?
@@ -36,7 +37,7 @@ struct MemorySection: View {
                 }
             }
         }
-        .task { await load() }
+        .task(id: model.memoryRevision) { await load() }
     }
 
     private func reload() {
@@ -60,7 +61,7 @@ private struct MemoryRow: View {
     let onSaved: () -> Void
 
     var body: some View {
-        NavigationLink {
+        SidebarItemLink(detail: .memory(file)) {
             MemoryEditorView(file: file, onSaved: onSaved)
         } label: {
             HStack(spacing: 12) {

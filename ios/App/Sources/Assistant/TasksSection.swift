@@ -87,7 +87,7 @@ private struct RunningHistoryRow: View {
     let task: AllyTask
 
     var body: some View {
-        NavigationLink {
+        SidebarItemLink(detail: .task(task.id)) {
             TaskDetailView(taskID: task.id)
         } label: {
             HStack(alignment: .top, spacing: 12) {
@@ -127,7 +127,7 @@ private struct DoneHistoryRow: View {
     }
 
     var body: some View {
-        NavigationLink {
+        SidebarItemLink(detail: .task(task.id)) {
             TaskDetailView(taskID: task.id)
         } label: {
             HStack(alignment: .top, spacing: 12) {

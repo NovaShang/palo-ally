@@ -156,6 +156,8 @@ struct ComposerView: View {
         .animation(.snappy, value: slashQuery)
         .animation(.snappy, value: staged.count)
         .onChange(of: focusToken) { focused = true }
+        // A click elsewhere in the conversation (the Mac) leaves the field.
+        .onChange(of: model.composerUnfocusRequests) { if focused { focused = false } }
         // The orb in the title bar notices the owner typing.
         .onChange(of: draft) { old, new in
             if hardwareReturn(old: old, new: new) {
@@ -307,6 +309,13 @@ struct ComposerView: View {
             TextField("", text: $draft, prompt: Text(focused ? "想让我做点什么？" : ""), axis: .vertical)
                 .lineLimit(1...6)
                 .focused($focused)
+                // The Mac: Esc leaves the field (the text stays); with an
+                // input method composing, Esc is the input method's.
+                .onKeyPress(.escape) {
+                    guard Platform.isMac, focused, !HardwareKeyboard.isComposing else { return .ignored }
+                    focused = false
+                    return .handled
+                }
                 // While idle the press layer owns every touch: the text
                 // field's own long-press / selection recognizers must not see it.
                 .allowsHitTesting(!idle)

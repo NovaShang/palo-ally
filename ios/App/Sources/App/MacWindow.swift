@@ -174,7 +174,7 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
             return toggle(id, symbol: "sidebar.left", label: "它", tip: "显示或隐藏「它」 ⌘1",
                           action: #selector(toggleAssistant))
         case .library:
-            return toggle(id, symbol: "sidebar.right", label: "成果", tip: "显示或隐藏成果 ⌘2",
+            return toggle(id, symbol: "books.vertical", label: "成果", tip: "显示或隐藏成果 ⌘2",
                           action: #selector(toggleLibrary))
         default:
             return nil

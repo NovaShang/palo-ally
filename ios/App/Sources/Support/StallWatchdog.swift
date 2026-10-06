@@ -6,8 +6,12 @@ import PaloAllyKit
 /// it was stuck, so a hang shows up in the debug log with a timestamp instead
 /// of only as a frozen window.
 enum StallWatchdog {
-    /// Stalls at least this long are logged.
-    static let threshold: TimeInterval = 0.25
+    /// Stalls at least this long are logged (`-stallThresholdMs 50` for a
+    /// finer look, e.g. during the resize test).
+    static let threshold: TimeInterval = {
+        let ms = UserDefaults.standard.double(forKey: "stallThresholdMs")
+        return ms > 0 ? ms / 1000 : 0.25
+    }()
     private static let queue = DispatchQueue(label: "stall-watchdog", qos: .userInitiated)
     /// Called once, from app launch.
     static func start() {

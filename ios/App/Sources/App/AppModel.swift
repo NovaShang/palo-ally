@@ -125,6 +125,36 @@ final class AppModel {
     enum LibraryRoot: Equatable { case list, artifact(String) }
     var libraryRoot: LibraryRoot = .list
 
+    /// Large screens: what the middle column shows. The 「它」 sidebar works
+    /// like any Mac sidebar: 「对话」 on top (the default), and a goal, task or
+    /// memory picked there opens in the middle column with its row selected;
+    /// 「对话」 brings the conversation back. Phones push these instead.
+    enum SplitDetail: Hashable { case chat, goal(String), task(String), memory(MemoryFile) }
+    var splitDetail: SplitDetail = .chat
+    /// Bumped when a memory file is saved from the middle column, so the
+    /// sidebar's list reloads its sizes and times.
+    var memoryRevision = 0
+    /// The Mac: a click outside the composer asks it to give up focus, so an
+    /// empty field turns back into the press-to-talk button.
+    var composerUnfocusRequests = 0
+
+    /// ⌘[ (and the in-page back buttons): one level back. An item in the
+    /// middle column returns to the conversation; then a pushed page in a
+    /// visible column pops; then, narrow, the place slides back to the chat.
+    func goBack() {
+        if NavigationBack.dismissPresented() { return }
+        if layout != .phone, splitDetail != .chat {
+            splitDetail = .chat
+            return
+        }
+        if NavigationBack.popVisible() { return }
+        if layout == .phone {
+            if place != .chat { place = .chat }
+        } else if inspectorShown {
+            inspectorShown = false
+        }
+    }
+
     // MARK: large-screen layout
 
     /// How the three places are laid out, set by the root container from the
@@ -161,6 +191,8 @@ final class AppModel {
             layout = new
             sidebarShown = false
             inspectorShown = false
+            // The middle column's item has no home in the sliding layout.
+            splitDetail = .chat
             quietly { place = front }
             return
         }

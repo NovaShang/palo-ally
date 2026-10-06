@@ -52,7 +52,18 @@ enum QuickLookPresenter {
     static func present(_ items: [Item], startAt start: Int, openInLibrary: @escaping (String) -> Void) {
         guard !items.isEmpty, let top = topController() else { return }
         let preview = AttachmentPreviewController(items: items, start: min(max(start, 0), items.count - 1), openInLibrary: openInLibrary)
+        #if targetEnvironment(macCatalyst)
+        // The Mac: full screen would put the preview's own bar (and its Done)
+        // under the window toolbar, leaving no way out. A large sheet with its
+        // bar inside it, a visible 关闭, and Esc / ⌘W / ⌘[ to close.
+        let nav = MacPreviewNavigationController(rootViewController: preview)
+        nav.navigationBar.preferredBehavioralStyle = .pad
+        nav.modalPresentationStyle = .formSheet
+        nav.preferredContentSize = CGSize(width: 960, height: 720)
+        top.present(nav, animated: true)
+        #else
         top.present(preview, animated: true)
+        #endif
     }
 
     private static func topController() -> UIViewController? {
@@ -138,3 +149,28 @@ private final class AttachmentPreviewController: QLPreviewController, QLPreviewC
 private extension Array {
     subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }
+
+#if targetEnvironment(macCatalyst)
+/// The Mac's preview sheet: a 关闭 button in its own bar, and the keys a Mac
+/// owner reaches for to close it.
+private final class MacPreviewNavigationController: UINavigationController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        let close = UIBarButtonItem(title: "关闭", primaryAction: UIAction { [weak self] _ in self?.close() })
+        topViewController?.navigationItem.rightBarButtonItems = [close] + (topViewController?.navigationItem.rightBarButtonItems ?? [])
+    }
+
+    override var keyCommands: [UIKeyCommand]? {
+        [UIKeyCommand.inputEscape, "w", "["].map { input in
+            let k = UIKeyCommand(input: input, modifierFlags: input == UIKeyCommand.inputEscape ? [] : .command,
+                                 action: #selector(closeCommand))
+            k.wantsPriorityOverSystemBehavior = true
+            return k
+        }
+    }
+
+    @objc private func closeCommand() { close() }
+
+    private func close() { dismiss(animated: true) }
+}
+#endif

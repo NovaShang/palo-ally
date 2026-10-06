@@ -43,6 +43,10 @@ private struct PlaceCommands: Commands {
             // group, and the system Find items are taken out below.
             Button("搜索成果和对话") { model.focusLibrarySearch() }
                 .keyboardShortcut("f", modifiers: .command)
+            // One level back: an item in the middle column → the
+            // conversation, a pushed page → its list, a narrow place → the chat.
+            Button("返回") { model.goBack() }
+                .keyboardShortcut("[", modifiers: .command)
         }
         // ⌘, : 「它」 with its settings page.
         CommandGroup(replacing: .appSettings) {

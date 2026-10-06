@@ -4,8 +4,8 @@ import SwiftUI
 struct ChatView: View {
     /// The conversation never gets wider than this (large screens).
     static let readableWidth: CGFloat = 760
-    /// Mac: the strip at the top of the column the resting orb sits in.
-    static let macOrbStrip: CGFloat = 64
+    /// Mac: room above the first message for the small floating orb.
+    static let macTopMargin: CGFloat = 22
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     /// Kept by MainScreen so it survives the layout switching containers.
@@ -23,10 +23,14 @@ struct ChatView: View {
     /// A message just jumped to from search: briefly tinted so the eye lands on it.
     @State private var highlightedID: String?
     @Environment(\.placesAsColumns) private var asColumn
-    /// Where the bar's middle is, and where this view is (both in window
-    /// coordinates): the orb floats over the bar, centered on its middle.
-    @State private var orbSlot: CGRect = .zero
-    @State private var ownFrame: CGRect = .zero
+    /// Where the bar's middle is (phones): read only by the orb's own overlay,
+    /// so the bar moving (a resize) doesn't re-render the conversation.
+    @State private var orbPlacement = OrbPlacement()
+    /// Detached from the live end: the message at the top of the view. The
+    /// scroll view keeps it where it is when the rows above rewrap (a resize,
+    /// a sidebar opening), instead of keeping the raw offset and letting the
+    /// text slide. Nil while following the bottom.
+    @State private var readingAnchor: String?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -79,10 +83,9 @@ struct ChatView: View {
                                 }
                         }
                         .id(message.id)
-                        // A quote above a bubble jumps to what it quotes.
-                        .environment(\.chatScrollTo) { id in
-                            withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
-                        }
+                        #if DEBUG
+                        .modifier(AnchorProbe(id: message.id, anchor: readingAnchor))
+                        #endif
                     }
 
                     ForEach(store.unanchoredPendingApprovals) { approval in
@@ -106,6 +109,11 @@ struct ChatView: View {
 
                     Color.clear.frame(height: 1).id("bottom")
                 }
+                .scrollTargetLayout()
+                // A quote above a bubble jumps to what it quotes.
+                .environment(\.chatScrollTo) { id in
+                    withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
+                }
                 // Beside a sidebar or inspector the column gets roomier margins.
                 .padding(.horizontal, asColumn ? 28 : 16)
                 .environment(\.messageGutter, asColumn ? 28 : 16)
@@ -120,7 +128,30 @@ struct ChatView: View {
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(.bottom, for: .alignment)
             .defaultScrollAnchor(pinned ? .bottom : .top, for: .sizeChanges)
+            .scrollPosition(id: pinned ? .constant(nil) : $readingAnchor, anchor: .top)
+            // The Mac: the orb floats over the top of the column, so the
+            // first message starts a little below it.
+            .contentMargins(.top, Platform.barInWindowToolbar ? Self.macTopMargin : 0, for: .scrollContent)
+            .onChange(of: pinned) { _, now in if now { readingAnchor = nil } }
+            #if DEBUG
+            // `-demoDetach YES`: read from the middle of the history (for the resize test).
+            .task {
+                guard AnchorProbe.enabled else { return }
+                try? await Task.sleep(for: .seconds(3.5))
+                guard store.messages.count > 4 else { return }
+                let mid = store.messages[store.messages.count / 2].id
+                pinned = false
+                readingAnchor = mid
+                debugLog("[anchor] reading from \(mid)")
+            }
+            .onChange(of: readingAnchor) { _, id in
+                if AnchorProbe.enabled { debugLog("[anchor] top row now \(id ?? "nil")") }
+            }
+            #endif
             .scrollDismissesKeyboard(.immediately)
+            // The Mac: a click in the conversation takes focus off the
+            // composer (links, buttons and selection still get their click).
+            .modifier(ClickToUnfocusComposer())
             .onScrollPhaseChange { old, phase in
                 let moving = phase == .tracking || phase == .interacting || phase == .decelerating
                 userScrolling = moving
@@ -195,8 +226,10 @@ struct ChatView: View {
                 settleAtBottom(proxy)
             }
             .onChange(of: model.layout) {
+                // A layout switch rebuilds the column; the bottom anchor keeps
+                // the end in place, and a late correction only if it drifted.
                 guard pinned else { return }
-                settleAtBottom(proxy)
+                settleAtBottom(proxy, onlyIfAway: true)
             }
             .onChange(of: store.messages.last?.id) {
                 // Sending always returns to the live bottom.
@@ -239,18 +272,10 @@ struct ChatView: View {
         .modifier(TopStrip {
             VStack(spacing: 0) {
                 StatusBanner()
-                // Mac: the orb's home, the top of the conversation column (the
-                // window toolbar only holds the toggles). The messages start
-                // below it; scrolled, they pass under it, fading like on the phone.
-                if Platform.barInWindowToolbar {
-                    Color.clear
-                        .frame(height: Self.macOrbStrip)
-                        .overlay {
-                            FloatingTitleOrb(barCenterY: nil, columnWidth: ownFrame.width) {
-                                model.showHostSwitcher = true
-                            }
-                        }
-                }
+                // The Mac: the orb hangs small from the top middle of the
+                // column, over the messages (they start just below it and
+                // pass under it, fading) — no strip of its own.
+                if Platform.barInWindowToolbar { MacTopOrb() }
             }
             .frame(maxWidth: .infinity)
         })
@@ -264,14 +289,8 @@ struct ChatView: View {
         }
         // The orb over the bar's middle: above the conversation, its edge
         // fade and the voice scrim, and free to be bigger than the bar.
-        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { ownFrame = $0 }
         .overlay(alignment: .topLeading) {
-            if !Platform.barInWindowToolbar, orbSlot.width > 0 {
-                FloatingTitleOrb(barCenterY: orbSlot.midY, columnWidth: ownFrame.width) {
-                    model.showHostSwitcher = true
-                }
-                .position(x: orbSlot.midX - ownFrame.minX, y: orbSlot.midY - ownFrame.minY)
-            }
+            if !Platform.barInWindowToolbar { PhoneTitleOrb(placement: orbPlacement) }
         }
         .modifier(OrbPresenceTracking(scrolledUp: !pinned || store.viewingPast, scrolling: userScrolling))
         // 「试试」 timing: a reply finishing counts as activity.
@@ -300,7 +319,9 @@ struct ChatView: View {
                     .accessibilityLabel("「它」")
                 }
                 ToolbarItem(placement: .principal) {
-                    TitleOrbSlot { orbSlot = $0 } action: { model.showHostSwitcher = true }
+                    TitleOrbSlot { frame in
+                        if orbPlacement.slot != frame { orbPlacement.slot = frame }
+                    } action: { model.showHostSwitcher = true }
                 }
                 .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .topBarTrailing) {
@@ -321,11 +342,14 @@ struct ChatView: View {
 
     /// Back to the newest message now and once more after the lazy rows have
     /// measured themselves (their estimated heights put "the end" too high).
-    private func settleAtBottom(_ proxy: ScrollViewProxy) {
+    /// `onlyIfAway`: skip the moves when the view is already at the end, so
+    /// a resize doesn't make the text twitch for nothing.
+    private func settleAtBottom(_ proxy: ScrollViewProxy, onlyIfAway: Bool = false) {
         Task { @MainActor in
             for delay in [30, 250] {
                 try? await Task.sleep(for: .milliseconds(delay))
                 guard pinned, !userScrolling else { return }
+                if onlyIfAway && !awayFromBottom { continue }
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
@@ -357,7 +381,8 @@ struct ChatView: View {
 /// (their orb floats over the navigation bar, which already has the fade).
 private struct TopStrip<Strip: View>: ViewModifier {
     @ViewBuilder let strip: () -> Strip
-    private static var fade: CGFloat { 28 }
+    /// The Mac: a short fade under the toolbar, not a band.
+    private static var fade: CGFloat { 14 }
 
     func body(content: Content) -> some View {
         if Platform.barInWindowToolbar {
@@ -381,6 +406,91 @@ private struct TopStrip<Strip: View>: ViewModifier {
         } else {
             content.safeAreaInset(edge: .top, spacing: 0, content: strip)
         }
+    }
+}
+
+#if DEBUG
+/// `-demoDetach YES`: logs where the row being read sits in the scroll view
+/// as layout changes, so a resize that shifts it shows up in the debug log.
+private struct AnchorProbe: ViewModifier {
+    static let enabled = UserDefaults.standard.bool(forKey: "demoDetach")
+    let id: String
+    let anchor: String?
+
+    func body(content: Content) -> some View {
+        if Self.enabled && id == anchor {
+            content.onGeometryChange(for: Int.self) { Int($0.frame(in: .scrollView).minY.rounded()) } action: { y in
+                debugLog("[anchor] \(id) at y \(y)")
+            }
+        } else {
+            content
+        }
+    }
+}
+#endif
+
+/// The Mac only (phones keep their own keyboard handling): a click anywhere
+/// in the conversation leaves the composer, so an empty one turns back into
+/// the press-to-talk button. Simultaneous: the click still reaches links,
+/// buttons and text selection.
+private struct ClickToUnfocusComposer: ViewModifier {
+    @Environment(AppModel.self) private var model
+
+    func body(content: Content) -> some View {
+        if Platform.isMac {
+            content.simultaneousGesture(TapGesture().onEnded { model.composerUnfocusRequests += 1 })
+        } else {
+            content
+        }
+    }
+}
+
+/// Where the phone bar's middle is, in window coordinates. A reference type
+/// on purpose: the bar reports it, only the orb's overlay reads it, so a
+/// resize moving the bar doesn't re-render the conversation.
+@Observable final class OrbPlacement {
+    var slot: CGRect = .zero
+}
+
+/// Phones and iPads: the orb over the bar's middle, positioned from the bar's
+/// slot. Keeps its own idea of where the column is, for the same reason.
+private struct PhoneTitleOrb: View {
+    let placement: OrbPlacement
+    @Environment(AppModel.self) private var model
+    @State private var column: CGRect = .zero
+
+    var body: some View {
+        Color.clear
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { column = $0 }
+            .overlay(alignment: .topLeading) {
+                let slot = placement.slot
+                if slot.width > 0 {
+                    FloatingTitleOrb(barCenterY: slot.midY, columnWidth: column.width) {
+                        model.showHostSwitcher = true
+                    }
+                    .position(x: slot.midX - column.minX, y: slot.midY - column.minY)
+                }
+            }
+    }
+}
+
+/// The Mac: the orb hanging from the top middle of the conversation column.
+/// Zero height itself, so it takes no room; the orb overflows below it.
+private struct MacTopOrb: View {
+    @Environment(AppModel.self) private var model
+    @State private var width: CGFloat = 0
+
+    var body: some View {
+        Color.clear
+            .frame(height: 0)
+            .frame(maxWidth: .infinity)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            .overlay(alignment: .top) {
+                FloatingTitleOrb(barCenterY: nil, columnWidth: width, topAligned: true) {
+                    model.showHostSwitcher = true
+                }
+                .frame(height: 0, alignment: .top)
+            }
     }
 }
 
