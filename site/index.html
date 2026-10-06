@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en" data-lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PaloAlly</title>
+<meta name="description" content="PaloAlly keeps the Claude Code you already use running on your own machine. Step away and it keeps working; when something needs you, it finds you on your phone or in WeChat. Open source, MIT.">
+<meta name="theme-color" content="#F7F6F3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0B0B0D" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="PaloAlly — your Claude Code, always on">
+<meta property="og:description" content="Keep the Claude Code you already use running on your own machine. It finds you on your phone or in WeChat when something needs you. Open source, MIT.">
+<meta property="og:image" content="https://novashang.github.io/palo-ally/assets/og.png">
+<meta property="og:url" content="https://novashang.github.io/palo-ally/">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<script>
+  // Language before first paint: a saved choice, else the browser's.
+  (function () {
+    var lang = null;
+    try { lang = localStorage.getItem("paloally-lang"); } catch (e) {}
+    if (lang !== "zh" && lang !== "en") {
+      var nav = (navigator.languages && navigator.languages[0]) || navigator.language || "en";
+      lang = /^zh/i.test(nav) ? "zh" : "en";
+    }
+    document.documentElement.setAttribute("data-lang", lang);
+    document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<header class="nav" aria-label="PaloAlly">
+  <a class="brand" href="#top" aria-label="PaloAlly">
+    <img src="assets/favicon.svg" alt="" width="20" height="20">
+    <span>PaloAlly</span>
+  </a>
+  <nav class="nav-links">
+    <a href="#start"><span class="zh">开始</span><span class="en">Get started</span></a>
+    <a href="https://github.com/NovaShang/palo-ally">GitHub</a>
+    <button class="lang" type="button" data-lang-toggle aria-label="Switch language">
+      <span class="zh">EN</span><span class="en">中文</span>
+    </button>
+  </nav>
+</header>
+
+<main id="top">
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="zh">开源 · MIT</span><span class="en">Open source · MIT</span></p>
+        <h1 class="display">
+          <span class="zh"><span class="nb">你的 Claude Code，</span><br>一直在。</span>
+          <span class="en"><span class="nb">Your Claude Code,</span><br><em>always on.</em></span>
+        </h1>
+        <p class="lede">
+          <span class="zh">PaloAlly 让你已经在用的 Claude Code 常驻在自己的电脑上。你离开电脑，它接着办；需要你的时候，它在手机或微信上找你；它也记得你。</span>
+          <span class="en">PaloAlly keeps the Claude Code you already use running on your own machine. Step away and it keeps working. When something needs you, it finds you on your phone or in WeChat. And it remembers you.</span>
+        </p>
+        <div class="hero-actions">
+          <div class="cmd cmd-hero" data-cmd>
+            <span class="cmd-prompt" aria-hidden="true">$</span>
+            <code>bash -c "$(curl -fsSL https://raw.githubusercontent.com/NovaShang/palo-ally/main/install.sh)"</code>
+            <button class="copy" type="button" data-copy><span class="zh">复制</span><span class="en">Copy</span></button>
+          </div>
+          <a class="dl" href="https://github.com/NovaShang/palo-ally/releases/latest/download/PaloAlly.dmg"><svg class="dl-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5v10.5M7.5 10.5 12 15l4.5-4.5M5.5 19.5h13"/></svg><span class="zh">下载 Mac 版</span><span class="en">Download for Mac</span></a>
+        </div>
+        <p class="hero-meta">
+          <span class="zh">macOS 或 Linux · 需要 Claude Code</span><span class="en">macOS or Linux · Requires Claude Code</span>
+          <span class="sep" aria-hidden="true"></span>
+          <span class="zh">Mac 版 App 需 macOS 26 或更高</span><span class="en">Mac app: macOS 26 or later</span>
+          <span class="sep" aria-hidden="true"></span>
+          <a href="https://github.com/NovaShang/palo-ally"><span class="zh">在 GitHub 上看源码</span><span class="en">Read the source on GitHub</span></a>
+        </p>
+      </div>
+      <figure class="hero-mark">
+        <canvas id="hero-drops" role="img" aria-label="PaloAlly"></canvas>
+        <figcaption>
+          <span class="zh">大的一滴是它，小的一滴是你。</span>
+          <span class="en">The large drop is the assistant. The small one is you.</span>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- A day -->
+  <section class="story" id="day">
+    <div class="wrap">
+      <header class="section-head">
+        <p class="kicker"><span class="zh">一天</span><span class="en">A day</span></p>
+        <h2 class="display-2">
+          <span class="zh">你不在电脑前，它也在。</span>
+          <span class="en">It keeps going when you step away.</span>
+        </h2>
+      </header>
+
+      <div class="story-grid">
+        <ol class="steps">
+          <li class="step" data-scene="brief">
+            <p class="step-time">07:30</p>
+            <h3><span class="zh">晨报</span><span class="en">The morning brief</span></h3>
+            <p>
+              <span class="zh">每天早上一张短卡片：今天的日程、昨晚到的要紧邮件、它替你盯着的事。没什么事的日子，卡片就很短。</span>
+              <span class="en">A short card every morning: today’s calendar, the mail that matters, the things it’s watching for you. On quiet days, the card is short.</span>
+            </p>
+            <div class="inline-scene" aria-hidden="true"></div>
+          </li>
+          <li class="step" data-scene="ask">
+            <p class="step-time">08:40</p>
+            <h3><span class="zh">路上说一句</span><span class="en">One sentence on the way out</span></h3>
+            <p>
+              <span class="zh">按住说话，交代一件事。它说「收到」，然后在你的电脑上去办。对话里只留下结果，不留过程。</span>
+              <span class="en">Hold to talk and hand it something. It says it’s on it and does the work on your machine. What comes back to the conversation is the result, not the transcript.</span>
+            </p>
+            <div class="inline-scene" aria-hidden="true"></div>
+          </li>
+          <li class="step" data-scene="approve">
+            <p class="step-time">11:15</p>
+            <h3><span class="zh">要你拍板的时候</span><span class="en">When it needs a yes</span></h3>
+            <p>
+              <span class="zh">Claude Code 要你确认的事，会直接送到你手机上。点一下就答复；不想让它继续，一下就停。</span>
+              <span class="en">Anything Claude Code would ask you to confirm reaches your phone. One tap answers it. One tap stops it.</span>
+            </p>
+            <div class="inline-scene" aria-hidden="true"></div>
+          </li>
+          <li class="step" data-scene="done">
+            <p class="step-time">14:02</p>
+            <h3><span class="zh">办好了</span><span class="en">Done</span></h3>
+            <p>
+              <span class="zh">结果交成文件、页面或文档，收在「成果」里，随时翻得到。它替你盯着的目标，进度也一直是新的。</span>
+              <span class="en">Results arrive as files, pages and documents, kept in one place you can come back to. The goals it watches stay current.</span>
+            </p>
+            <div class="inline-scene" aria-hidden="true"></div>
+          </li>
+          <li class="step" data-scene="wechat">
+            <p class="step-time">21:30</p>
+            <h3><span class="zh">也在微信里</span><span class="en">In WeChat, too</span></h3>
+            <p>
+              <span class="zh">不想开 App 的时候，在微信里跟它说也一样。还是同一个它，接着同一段对话。</span>
+              <span class="en">When you’d rather not open the app, message it in WeChat. Same assistant, same conversation.</span>
+            </p>
+            <div class="inline-scene" aria-hidden="true"></div>
+          </li>
+        </ol>
+
+        <div class="phone-col" aria-hidden="true">
+          <div class="phone">
+            <div class="screen">
+              <div class="island"></div>
+              <div class="app-bar">
+                <span class="app-btn"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="3.2"/><path d="M9.5 5v14M6 8.5h1.4M6 11h1.4M6 13.5h1.4"/></svg></span>
+                <span class="app-orb"><canvas id="phone-drops"></canvas></span>
+                <span class="app-btn"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="3.6" height="14" rx=".8"/><rect x="9.2" y="5" width="3.6" height="14" rx=".8"/><path d="M15 6.2l3.3-.9 3.1 12.6-3.3.9z"/></svg></span>
+              </div>
+
+              <div class="scenes"><div class="thread">
+                <!-- brief -->
+                <div class="scene" data-scene="brief">
+                  <p class="day-mark"><span class="zh">周一 07:30</span><span class="en">Mon 7:30 AM</span></p>
+                  <p class="a-text"><span class="zh">早。今天不多：</span><span class="en">Morning. A light day:</span></p>
+                  <div class="card brief">
+                    <p class="card-title"><span class="zh">晨报</span><span class="en">Morning brief</span><span class="card-time">07:30</span></p>
+                    <ul>
+                      <li><span class="zh">10:00 和王老师的会，已确认</span><span class="en">10:00 · Call with Prof. Wang, confirmed</span></li>
+                      <li><span class="zh">两封要紧邮件：签证材料、房租续约</span><span class="en">Two emails worth reading: visa papers, lease renewal</span></li>
+                    </ul>
+                  </div>
+                  <div class="goal">
+                    <p class="goal-name"><span class="zh">十一月回国机票</span><span class="en">Flights home in November</span></p>
+                    <p class="goal-line"><span class="zh">每天比价，现在最低 ¥4,860</span><span class="en">Checking daily · lowest now $668</span></p>
+                    <span class="goal-bar"><i style="width:62%"></i></span>
+                  </div>
+                </div>
+                <!-- ask -->
+                <div class="scene" data-scene="ask">
+                  <p class="day-mark">08:40</p>
+                  <div class="u-row"><p class="u-bubble"><span class="zh">帮我把下周去上海的机票和酒店比较一下</span><span class="en">Compare flights and hotels for Shanghai next week</span></p></div>
+                  <p class="u-meta"><svg viewBox="0 0 24 24"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M6 11.5a6 6 0 0 0 12 0M12 17.5V20"/></svg><span class="zh">语音</span><span class="en">Voice</span></p>
+                  <p class="a-text"><span class="zh">收到，我在后台比价，好了告诉你。</span><span class="en">On it. I’ll compare them in the background and tell you when it’s done.</span></p>
+                  <p class="task-chip working"><i></i><span class="zh">上海出行比价</span><span class="en">Shanghai trip options</span><b><span class="zh">· 进行中</span><span class="en">· working</span></b></p>
+                </div>
+                <!-- approve -->
+                <div class="scene" data-scene="approve">
+                  <p class="day-mark">11:15</p>
+                  <p class="a-text"><span class="zh">要给王老师回邮件确认周四的会，需要你点个头。</span><span class="en">I’d like to reply to Prof. Wang about Thursday. Okay?</span></p>
+                  <div class="card approval">
+                    <p class="card-title"><svg class="shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5.5c0 4.4-3 8-7 9.5-4-1.5-7-5.1-7-9.5V6z"/><path d="M12 8v4.5M12 15.6v.1"/></svg><span class="zh">给王老师回邮件</span><span class="en">Reply to Prof. Wang</span></p>
+                    <p class="card-body"><span class="zh">收件人：王老师 &lt;wang@example.com&gt;<br>内容：王老师好，周四下午 3 点的会我可以参加，谢谢！</span><span class="en">To: Prof. Wang &lt;wang@example.com&gt;<br>“Thursday at 3 pm works for me. Thanks!”</span></p>
+                    <p class="card-meta"><span class="zh">发邮件 · 刚刚</span><span class="en">Send email · just now</span></p>
+                    <p class="card-actions"><span class="btn"><span class="zh">拒绝</span><span class="en">Deny</span></span><span class="btn"><span class="zh">允许</span><span class="en">Allow</span></span></p>
+                  </div>
+                </div>
+                <!-- done -->
+                <div class="scene" data-scene="done">
+                  <p class="day-mark">14:02</p>
+                  <p class="task-chip ok"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.3l2.7 2.7L16.2 9.5"/></svg><span class="zh">上海出行比价</span><span class="en">Shanghai trip options</span><b><span class="zh">· 办好了</span><span class="en">· done</span></b><svg class="chev" viewBox="0 0 24 24"><path d="M10 7l5 5-5 5"/></svg></p>
+                  <p class="a-text"><span class="zh">比好了：</span><span class="en">Here’s how they compare:</span></p>
+                  <ul class="a-list">
+                    <li><span class="zh">最划算：周二早上 7:05 直飞，¥1,280</span><span class="en">Best value: Tue 7:05 AM nonstop, ¥1,280</span></li>
+                    <li><span class="zh">酒店：静安两晚，¥960</span><span class="en">Hotel: two nights in Jing’an, ¥960</span></li>
+                  </ul>
+                  <div class="artifact">
+                    <span class="doc"><svg viewBox="0 0 24 24"><path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10A.5.5 0 0 1 7 20z"/><path d="M14 3.5V8h4M9.5 12h5M9.5 15h5"/></svg></span>
+                    <span class="artifact-text"><b><span class="zh">上海出行比价</span><span class="en">Shanghai trip options</span></b><small><span class="zh">表格 · 2 页</span><span class="en">Table · 2 pages</span></small></span>
+                  </div>
+                </div>
+                <!-- wechat -->
+                <div class="scene" data-scene="wechat">
+                  <p class="day-mark">21:30</p>
+                  <div class="u-row"><p class="u-bubble"><span class="zh">周末提醒我给妈妈打电话</span><span class="en">Remind me to call Mom this weekend</span></p></div>
+                  <p class="u-meta"><svg viewBox="0 0 24 24"><path d="M5 6.5h14v9H11l-4 3v-3H5z"/></svg><span class="zh">来自微信</span><span class="en">From WeChat</span></p>
+                  <p class="a-text"><span class="zh">好嘞，周六上午 10 点提醒你。</span><span class="en">Will do. Saturday, 10 AM.</span></p>
+                </div>
+              </div></div>
+
+              <div class="composer">
+                <span class="plus">+</span>
+                <span class="hint"><span class="zh">按住说话，轻点打字</span><span class="en">Hold to talk, tap to type</span></span>
+                <svg viewBox="0 0 24 24"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M6 11.5a6 6 0 0 0 12 0M12 17.5V20"/></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- It and you -->
+  <section class="drops-sec" id="drops">
+    <div class="wrap drops-grid">
+      <div class="drops-copy">
+        <p class="kicker"><span class="zh">它和你</span><span class="en">It and you</span></p>
+        <h2 class="display-2">
+          <span class="zh">两滴玻璃，<br>一滴是它，一滴是你。</span>
+          <span class="en">Two drops of glass.<br>One is it. One is you.</span>
+        </h2>
+        <p class="body">
+          <span class="zh">PaloAlly 没有脸。它用两滴彩色玻璃告诉你它在做什么：你说话时，你的那滴跟着声音起伏；它在想事，两滴分开绕转；办完了，它们撞在一起，再分开。</span>
+          <span class="en">PaloAlly has no face. Two drops of colored glass show you what it’s doing: when you talk, yours moves with your voice; while it thinks, they part and circle; when it’s done, they meet, and part again.</span>
+        </p>
+        <ul class="states" role="list">
+          <li><button type="button" data-state="idle"><b><span class="zh">空闲</span><span class="en">Idle</span></b><span><span class="zh">贴在一起，慢慢呼吸。</span><span class="en">Together, breathing slowly.</span></span></button></li>
+          <li><button type="button" data-state="speaking"><b><span class="zh">听你说话</span><span class="en">Listening</span></b><span><span class="zh">你的那滴跟着声音起伏。</span><span class="en">Yours moves with your voice.</span></span></button></li>
+          <li><button type="button" data-state="thinking"><b><span class="zh">在想</span><span class="en">Thinking</span></b><span><span class="zh">分开，绕着彼此转。</span><span class="en">They part and circle each other.</span></span></button></li>
+          <li><button type="button" data-state="done"><b><span class="zh">办好了</span><span class="en">Done</span></b><span><span class="zh">撞在一起，再分开。</span><span class="en">They meet, then part again.</span></span></button></li>
+          <li><button type="button" data-state="approval"><b><span class="zh">等你点头</span><span class="en">Needs you</span></b><span><span class="zh">它伸过来，轻轻敲两下。</span><span class="en">It reaches over and knocks twice.</span></span></button></li>
+          <li><button type="button" data-state="deliverable"><b><span class="zh">交给你</span><span class="en">Handing over</span></b><span><span class="zh">放出一颗小水珠。</span><span class="en">It lets go of a small drop.</span></span></button></li>
+          <li><button type="button" data-state="quiet"><b><span class="zh">夜里</span><span class="en">Night</span></b><span><span class="zh">融成一滴，又薄又轻。</span><span class="en">One pale drop, barely moving.</span></span></button></li>
+          <li><button type="button" data-state="offline"><b><span class="zh">断线</span><span class="en">Offline</span></b><span><span class="zh">分开，结霜，不动。</span><span class="en">Apart, frosted, still.</span></span></button></li>
+        </ul>
+      </div>
+      <div class="drops-stage">
+        <canvas id="states-drops" role="img" aria-label="PaloAlly"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- Yours -->
+  <section class="yours" id="yours">
+    <div class="wrap">
+      <header class="section-head">
+        <p class="kicker"><span class="zh">你的</span><span class="en">Yours</span></p>
+        <h2 class="display-2">
+          <span class="zh">在你自己的电脑上。</span>
+          <span class="en">On your machine, on your terms.</span>
+        </h2>
+      </header>
+
+      <div class="route" aria-hidden="true">
+        <div class="node">
+          <b><span class="zh">你的电脑</span><span class="en">Your computer</span></b>
+          <small class="mono">Claude Code · PaloAlly · ~/.paloally</small>
+        </div>
+        <div class="wire"><span><span class="zh">端到端加密</span><span class="en">End-to-end encrypted</span></span></div>
+        <div class="node">
+          <b><span class="zh">中继</span><span class="en">Relay</span></b>
+          <small><span class="zh">只转发，读不到内容</span><span class="en">Passes it on, can’t read it</span></small>
+        </div>
+        <div class="wire"><span><span class="zh">端到端加密</span><span class="en">End-to-end encrypted</span></span></div>
+        <div class="node">
+          <b>iPhone · Mac</b>
+          <small>PaloAlly App</small>
+        </div>
+      </div>
+
+      <dl class="facts">
+        <div>
+          <dt><span class="zh">用你自己的 Claude Code</span><span class="en">Your own Claude Code</span></dt>
+          <dd><span class="zh">你的登录、你的模型、你的配置。兼容 Anthropic 接口的第三方模型也能用。</span><span class="en">Your login, your models, your settings. Anthropic-compatible third-party models work too.</span></dd>
+        </div>
+        <div>
+          <dt><span class="zh">数据留在本机</span><span class="en">Your data stays put</span></dt>
+          <dd><span class="zh">对话、记忆和成果都在 <code>~/.paloally</code> 里，是你能直接打开的普通文件。</span><span class="en">Conversations, memory and results live in <code>~/.paloally</code>, as plain files you can open.</span></dd>
+        </div>
+        <div>
+          <dt><span class="zh">记忆和权限，交给 Claude Code</span><span class="en">Memory and permissions stay with Claude Code</span></dt>
+          <dd><span class="zh">PaloAlly 不另造一套。它只补上 Claude Code 自己做不到的：一直在、能找到你、把确认请求送到你手上。</span><span class="en">PaloAlly doesn’t build its own. It adds what the harness can’t do alone: staying on, reaching you, and putting its questions in your hand.</span></dd>
+        </div>
+        <div>
+          <dt><span class="zh">微信，如实说</span><span class="en">About WeChat</span></dt>
+          <dd><span class="zh">微信入口可选。走的是微信自己的通道，不经过上面的加密中继。</span><span class="en">The WeChat channel is optional. It runs over WeChat itself, not through the encrypted relay above.</span></dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- Get started -->
+  <section class="start" id="start">
+    <div class="wrap">
+      <header class="section-head">
+        <p class="kicker"><span class="zh">开始</span><span class="en">Get started</span></p>
+        <h2 class="display-2"><span class="zh">三步装好。</span><span class="en">Three steps.</span></h2>
+        <p class="body narrow">
+          <span class="zh">需要 macOS 或 Linux，以及 Claude Code（claude.ai 登录或 API key 都行）。运行时 Bun 由安装脚本自动装好。</span>
+          <span class="en">You’ll need macOS or Linux and Claude Code, signed in with claude.ai or an API key. The installer sets up Bun for you.</span>
+        </p>
+      </header>
+
+      <ol class="install-steps">
+        <li>
+          <span class="n">1</span>
+          <div class="install-text">
+            <h3><span class="zh">安装</span><span class="en">Install</span></h3>
+            <p><span class="zh">会问你几个问题，最后发一条很短的消息，确认模型能用。</span><span class="en">It asks a few questions, then sends one short message to check the model works.</span></p>
+          </div>
+          <div class="cmd" data-cmd>
+            <code>bash -c "$(curl -fsSL https://raw.githubusercontent.com/NovaShang/palo-ally/main/install.sh)"</code>
+            <button class="copy" type="button" data-copy><span class="zh">复制</span><span class="en">Copy</span></button>
+          </div>
+        </li>
+        <li>
+          <span class="n">2</span>
+          <div class="install-text">
+            <h3><span class="zh">让它常驻</span><span class="en">Keep it running</span></h3>
+            <p><span class="zh">装成开机自启的后台服务。</span><span class="en">Installs a background service that starts when you log in.</span></p>
+          </div>
+          <div class="cmd" data-cmd>
+            <code>paloally service install</code>
+            <button class="copy" type="button" data-copy><span class="zh">复制</span><span class="en">Copy</span></button>
+          </div>
+        </li>
+        <li>
+          <span class="n">3</span>
+          <div class="install-text">
+            <h3><span class="zh">配对 App</span><span class="en">Pair the app</span></h3>
+            <p><span class="zh">在 PaloAlly App 里扫屏幕上的二维码，或者粘贴配对链接、输入 6 位配对码。想用微信，再运行 <code>paloally wechat login</code>。</span><span class="en">In the PaloAlly app, scan the code on screen, or paste the pairing link and enter the 6-digit code. For WeChat, also run <code>paloally wechat login</code>.</span></p>
+          </div>
+          <div class="cmd" data-cmd>
+            <code>paloally pair</code>
+            <button class="copy" type="button" data-copy><span class="zh">复制</span><span class="en">Copy</span></button>
+          </div>
+        </li>
+      </ol>
+
+      <aside class="note note-app">
+        <p>
+          <b><span class="zh">关于 App</span><span class="en">About the app</span></b>
+          <span class="zh">Mac 版可以直接下载，用 Developer ID 签名并经过 Apple 公证，需要 macOS 26 或更高。iPhone 版还没有上架 App Store，现在需要用你自己的 Apple 开发者账号，从仓库的 <code>ios/</code> 目录编译安装。微信入口不需要 App。</span>
+          <span class="en">The Mac app is a direct download, signed with Developer ID and notarized by Apple; it needs macOS 26 or later. The iPhone app isn’t on the App Store yet: for now, build it from <code>ios/</code> with your own Apple developer account. The WeChat channel works without either.</span>
+        </p>
+        <a class="dl dl-quiet" href="https://github.com/NovaShang/palo-ally/releases/latest/download/PaloAlly.dmg"><svg class="dl-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5v10.5M7.5 10.5 12 15l4.5-4.5M5.5 19.5h13"/></svg><span class="zh">下载 Mac 版</span><span class="en">Download for Mac</span></a>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-grid">
+    <p class="foot-brand"><img src="assets/favicon.svg" alt="" width="18" height="18"> PaloAlly</p>
+    <p class="foot-links">
+      <a href="https://github.com/NovaShang/palo-ally">GitHub</a>
+      <a href="https://github.com/NovaShang/palo-ally/blob/main/LICENSE"><span class="zh">MIT 许可</span><span class="en">MIT License</span></a>
+      <a href="https://github.com/NovaShang/palo-ally/issues"><span class="zh">反馈</span><span class="en">Issues</span></a>
+    </p>
+  </div>
+</footer>
+
+<script src="assets/drops.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>
