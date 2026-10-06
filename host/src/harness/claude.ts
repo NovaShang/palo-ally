@@ -126,7 +126,7 @@ export function paloallyMcpServer(h: ToolHandlers) {
       ),
       tool(
         "notify_user",
-        "主动推送一条消息给主人（手机通知）。只在真正要紧时用。",
+        "主动推送一条消息给主人（手机通知；推不出去会改发微信）。只在真正要紧时用。返回的是实际送达情况：没送到就别对主人说已推送。",
         { text: z.string(), urgent: z.boolean().optional() },
         async (a) => text(await h.notify_user(a)),
       ),

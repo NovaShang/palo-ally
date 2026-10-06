@@ -1,4 +1,5 @@
 import type { ProbeTrigger } from "./probe.ts";
+import type { DeliveryResult } from "./router.ts";
 import type { Approval, Question, Task, Watch } from "./types.ts";
 import { formatDuration, truncate, zonedParts } from "./util.ts";
 
@@ -87,6 +88,20 @@ export function offlineNotice(gapMs: number, last: number, now: number, tz: stri
 }
 
 // ---- push titles ----
+
+// What notify_user tells the assistant actually happened. Never 「已推送」
+// unless a push or a WeChat message really went out.
+export function notifyResultText(r: DeliveryResult | null): string {
+  if (!r) return "消息已放进 App 对话；推送还没确认送达（推送服务回得慢）。别当作主人已经看到。";
+  if (r.suppressed === "quiet")
+    return `已记入 App 对话。现在是免打扰时段，没推送，之后也不会补推${r.quietEnds ? `（免打扰到 ${r.quietEnds}）` : ""}。真要紧就带 urgent=true 再发一次。`;
+  if (r.suppressed) return "已记入 App 对话。短时间内推送太多（或刚推过同样的内容），这条没推送。";
+  const pushed = r.devices ? `已推送到 ${r.devices} 台设备` : "已推送";
+  if (r.pushed && r.wechat) return `${pushed}，也发了微信提醒。`;
+  if (r.pushed) return `${pushed}。`;
+  if (r.wechat) return `推送没发出去：${r.pushError ?? "原因不明"}。已改发微信提醒；消息也在 App 对话里。`;
+  return `没能通知到主人：推送没发出去（${r.pushError ?? "原因不明"}），微信也发不了（${r.wechatNote ?? "微信没用上"}）。消息只在 App 对话里，主人打开 App 才看得到。别对主人说推过去了；要紧的话，等主人下次来消息时当面提。`;
+}
 
 export const PUSH_TITLE_APPROVAL = "需要你确认";
 export const PUSH_TITLE_QUESTION = "等你回答";

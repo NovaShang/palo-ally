@@ -795,7 +795,8 @@
             "type": "deliver",
             "msg": "m_f1a6eee94926",
             "pushed": true,
-            "wechat": false
+            "wechat": false,
+            "wechatNote": "没开微信入口"
           },
           {
             "ts": 1791216926632,

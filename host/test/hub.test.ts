@@ -177,10 +177,10 @@ describe("Hub: proactive", () => {
     const h = hub.toolHandlers();
     expect(await h.notify_user({ text: "普通提醒" })).toContain("免打扰");
     expect(pusher.pushes).toHaveLength(0);
-    expect(await h.notify_user({ text: "紧急！", urgent: true })).toBe("已推送");
+    expect(await h.notify_user({ text: "紧急！", urgent: true })).toContain("已推送");
     expect(pusher.pushes).toHaveLength(1);
     hub.updateSettings({ quietHours: null });
-    for (let i = 0; i < 12; i++) expect(await h.notify_user({ text: `提醒 ${i}` })).toBe("已推送"); // heavy use is fine
+    for (let i = 0; i < 12; i++) expect(await h.notify_user({ text: `提醒 ${i}` })).toContain("已推送"); // heavy use is fine
     expect(pusher.pushes).toHaveLength(13);
     cleanup(paths);
   });
@@ -526,7 +526,7 @@ describe("Hub: interruptions", () => {
   test("quiet hours don't apply while the owner is active", async () => {
     const { hub, pusher, paths } = makeHub({ config: testConfig((c) => (c.settings.quietHours = { start: "00:00", end: "23:59" })) });
     hub.chat.add({ role: "user", kind: "text", text: "在", channel: "app" });
-    expect(await hub.toolHandlers().notify_user({ text: "有事" })).toBe("已推送");
+    expect(await hub.toolHandlers().notify_user({ text: "有事" })).toContain("已推送");
     expect(pusher.pushes).toHaveLength(1);
     cleanup(paths);
   });
@@ -616,12 +616,18 @@ describe("Hub: settings can't break it", () => {
 });
 
 describe("Hub: review regressions", () => {
-  test("a hung pusher can't block notify_user or the turn", async () => {
+  test("a hung pusher can't block notify_user or the turn, and isn't reported as pushed", async () => {
+    const { notifyWait } = await import("../src/shellTools.ts");
+    const saved = notifyWait.ms;
+    notifyWait.ms = 300;
     const { hub, paths } = makeHub();
     (hub as any).router.pushers = [{ name: "stuck", available: () => true, push: () => new Promise(() => {}) }];
     const t0 = Date.now();
-    expect(await hub.toolHandlers().notify_user({ text: "有事" })).toBe("已推送");
+    const r = await hub.toolHandlers().notify_user({ text: "有事" });
+    expect(r).toContain("没确认");
+    expect(r).not.toContain("已推送");
     expect(Date.now() - t0).toBeLessThan(3000);
+    notifyWait.ms = saved;
     cleanup(paths);
   });
 
@@ -692,7 +698,7 @@ describe("Hub: runaway guard (no daily cap)", () => {
     expect(hub.chat.recent(30).filter((m) => m.proactive && m.channel === "schedule")).toHaveLength(7); // all still in the chat
     expect(hub.chat.recent(30).filter((m) => m.text.includes("异常频繁"))).toHaveLength(1); // told once
     // task results and notify_user are never held back by the guard
-    expect(await hub.toolHandlers().notify_user({ text: "要紧事" })).toBe("已推送");
+    expect(await hub.toolHandlers().notify_user({ text: "要紧事" })).toContain("已推送");
     cleanup(paths);
   });
 
@@ -1066,5 +1072,106 @@ describe("Hub: AskUserQuestion", () => {
     expect(allowed).toBe(false);
     expect(hub.questions.listPending()).toHaveLength(0);
     cleanup(paths);
+  });
+});
+
+describe("Hub: notify_user reports what really happened", () => {
+  const failing = (error: string) => ({
+    name: "relay-apns",
+    available: () => true,
+    push: async () => {
+      throw new Error(error);
+    },
+  });
+
+  test("a push that reached devices says how many", async () => {
+    const { hub, paths } = makeHub();
+    (hub as any).router.pushers = [{ name: "relay-apns", available: () => true, push: async () => 2 }];
+    expect(await hub.toolHandlers().notify_user({ text: "有事" })).toBe("已推送到 2 台设备。");
+    expect(hub.router.pushHealth()).toMatchObject({ ok: true, detail: "推到了 2 台设备" });
+    cleanup(paths);
+  });
+
+  test("a failed push falls back to WeChat and says so", async () => {
+    const wechat = new FakeWechat();
+    const { hub, paths } = makeHub({ wechat });
+    (hub as any).router.pushers = [failing("Error: relay push failed: 0 Network: Error: relay push unsupported")];
+    const r = await hub.toolHandlers().notify_user({ text: "有事" });
+    expect(r).toContain("推送没发出去：中转服务器暂不支持推送");
+    expect(r).toContain("已改发微信");
+    expect(r).not.toContain("已推送");
+    expect(wechat.proactive).toHaveLength(1);
+    expect(hub.chat.recent(1)[0]!.text).toBe("有事"); // still in the app conversation
+    expect(hub.router.pushHealth()).toMatchObject({ ok: false, detail: "中转服务器暂不支持推送" });
+    cleanup(paths);
+  });
+
+  test("with no push and no WeChat it's only in the app, and says why", async () => {
+    const { hub, paths } = makeHub();
+    (hub as any).router.pushers = [failing("Error: relay push failed: 0 Network: Error: relay push timed out")];
+    const r = await hub.toolHandlers().notify_user({ text: "有事" });
+    expect(r).toContain("没能通知到主人");
+    expect(r).toContain("推送服务没及时回应");
+    expect(r).toContain("没开微信入口");
+    expect(r).toContain("只在 App 对话里");
+    expect(r).not.toContain("已推送");
+    cleanup(paths);
+  });
+
+  test("WeChat outside its 24-hour window is named as the reason", async () => {
+    const wechat = new FakeWechat();
+    wechat.available = () => false;
+    (wechat as any).unavailableReason = () => "主人超过 24 小时没在微信上发消息，微信这边暂时发不过去";
+    const { hub, paths } = makeHub({ wechat });
+    (hub as any).router.pushers = [failing("Error: relay push failed: 503 NotConfigured")];
+    const r = await hub.toolHandlers().notify_user({ text: "有事" });
+    expect(r).toContain("中转服务器还没配好推送密钥");
+    expect(r).toContain("超过 24 小时");
+    expect(wechat.proactive).toHaveLength(0);
+    cleanup(paths);
+  });
+
+  test("no registered device is not reported as pushed", async () => {
+    const { hub, paths } = makeHub();
+    (hub as any).router.pushers = [{ name: "relay-apns", available: () => true, push: async () => 0 }];
+    const r = await hub.toolHandlers().notify_user({ text: "有事" });
+    expect(r).toContain("还没有设备开启推送");
+    expect(r).not.toContain("已推送");
+    cleanup(paths);
+  });
+
+  test("quiet hours: in the chat, not pushed, and when quiet hours end", async () => {
+    const { hub, pusher, paths } = makeHub({ config: testConfig((c) => (c.settings.quietHours = { start: "00:00", end: "23:59" })) });
+    const r = await hub.toolHandlers().notify_user({ text: "普通提醒" });
+    expect(r).toContain("免打扰");
+    expect(r).toContain("免打扰到 23:59");
+    expect(r).not.toContain("已推送");
+    expect(pusher.pushes).toHaveLength(0);
+    cleanup(paths);
+  });
+});
+
+describe("Relay push: an old relay that ignores `push`", () => {
+  test("times out fast, is remembered as unsupported, and is forgotten once the relay answers", async () => {
+    const { RelayChannel, relayPushTiming } = await import("../src/channels/relay.ts");
+    const saved = { ...relayPushTiming };
+    relayPushTiming.timeoutMs = 40;
+    const relay = new RelayChannel({} as any, "http://relay.invalid", {} as any, "pa-test", "/dev/null");
+    relay.state = "connected";
+    const sent: any[] = [];
+    (relay as any).sendControl = (m: unknown) => sent.push(m);
+    const req = { token: "ab", env: "sandbox" as const, title: "t", body: "b" };
+
+    await expect(relay.pushViaRelay(req)).rejects.toThrow("relay push unsupported");
+    const t0 = Date.now();
+    await expect(relay.pushViaRelay(req)).rejects.toThrow("relay push unsupported");
+    expect(Date.now() - t0).toBeLessThan(20); // cached: no second wait
+    expect(sent).toHaveLength(1);
+
+    // A relay that answers push clears the cache; later timeouts are transient.
+    (relay as any).onControl({ type: "push_result", nonce: "stray", ok: false, status: 0 });
+    await expect(relay.pushViaRelay(req)).rejects.toThrow("relay push timed out");
+    expect(sent).toHaveLength(2);
+    Object.assign(relayPushTiming, saved);
   });
 });

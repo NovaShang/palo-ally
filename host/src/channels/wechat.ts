@@ -94,6 +94,16 @@ export class WechatILink implements WechatChannelIface {
     return this.status() === "connected" && this.contextUsable();
   }
 
+  unavailableReason(): string | null {
+    if (!this.state.botToken) return "微信没登录";
+    if (this.expired) return "微信登录过期了，要重新扫码";
+    const c = this.state.context;
+    if (!this.state.ownerUserId || !c) return "主人还没在微信上发过消息";
+    if (this.now() - c.at >= CONTEXT_TTL_MS) return "主人超过 24 小时没在微信上发消息，微信这边暂时发不过去";
+    if (c.sentSinceUser >= MAX_PER_TURN) return "这一轮微信消息到上限了，要等主人再发一条";
+    return null;
+  }
+
   private base(): string {
     return (this.state.baseUrl || this.defaultBase).replace(/\/$/, "");
   }

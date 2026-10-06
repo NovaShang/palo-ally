@@ -3,6 +3,7 @@ import type { Audit } from "./audit.ts";
 import type { ChatLog } from "./chat.ts";
 import type { ToolHandlers } from "./harness/types.ts";
 import type { Router } from "./router.ts";
+import { notifyResultText } from "./copy.ts";
 import type { TaskTracker } from "./tasks.ts";
 import { scheduleText, type WatchStore } from "./watches.ts";
 import type { WechatChannel } from "./channels/types.ts";
@@ -10,6 +11,9 @@ import type { MediaStore } from "./media.ts";
 import { join, resolve } from "node:path";
 import { mimeOf } from "./artifacts.ts";
 import type { Attachment, Channel, Watch } from "./types.ts";
+
+/** How long notify_user waits for the delivery outcome (tests shorten it). */
+export const notifyWait = { ms: 7_000 };
 
 export interface ShellToolDeps {
   tasks: TaskTracker;
@@ -154,11 +158,11 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
     },
     notify_user: async ({ text, urgent }) => {
       const msg = d.chat.add({ role: "assistant", kind: "notice", text, channel: "system", proactive: true });
-      // Decide synchronously, deliver in the background: a slow push must never block the turn.
+      // Wait for the real outcome (pushes give up after ~5 s), but never longer
+      // than notifyWait: a hung pusher must not stall the turn.
       const delivery = d.router.proactive(msg, { urgent });
-      const r = await Promise.race([delivery, new Promise<null>((res) => setTimeout(() => res(null), 1500))]);
-      if (r?.suppressed) return `已记入对话（${r.suppressed === "quiet" ? "免打扰时段" : "短时间内推送太多"}，未推送）`;
-      return "已推送";
+      const r = await Promise.race([delivery, new Promise<null>((res) => setTimeout(() => res(null), notifyWait.ms))]);
+      return notifyResultText(r);
     },
   };
 }

@@ -244,11 +244,13 @@ async function main(): Promise<void> {
       const wechat = await c.call("wechat.status");
       const usage = await c.call("usage");
       const sync = await c.call("sync", {});
+      const push = await c.call("push.status").catch(() => null);
       c.close();
       const s = hello.status;
       console.log(`${hello.hostName} · ${s.busy ? "忙" : "空闲"} · 模型 ${s.model || "默认"}`);
       console.log(`进行中任务 ${sync.tasks.filter((t: Task) => t.status === "running").length} · 待确认 ${sync.approvals.filter((a: any) => a.status === "pending").length} · 盯梢 ${sync.watches.length}`);
       console.log(`远程：${relay.enabled ? `${relay.state}（${relay.streams} 个设备在线）${relay.lastError ? " " + relay.lastError : ""}` : "关闭"} · 微信：${wechat.status}`);
+      if (push) console.log(`推送：${pushLine(push)}`);
       console.log(`今日花费：主对话 $${usage.mainUsd.toFixed(3)} · 探针 $${usage.probeUsd.toFixed(4)}`);
       return;
     }
@@ -407,6 +409,13 @@ async function wechatCmd(): Promise<void> {
     return console.log("已断开微信。");
   }
   console.log(cfg.wechat.enabled ? (w.loggedIn ? "已登录" : "已启用但未登录（paloally wechat login）") : "未启用");
+}
+
+function pushLine(p: { health: { at: number; ok: boolean; detail: string } | null; devices: number }): string {
+  const devices = p.devices ? `${p.devices} 台设备已登记` : "还没有设备登记推送";
+  if (!p.health) return `${devices} · 还没推送过`;
+  const when = new Date(p.health.at).toLocaleString("zh-CN", { hour12: false });
+  return `${devices} · 上次${p.health.ok ? "成功" : "失败"}（${when}）：${p.health.detail}`;
 }
 
 async function doctor(): Promise<void> {

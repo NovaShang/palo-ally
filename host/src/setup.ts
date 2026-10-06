@@ -55,10 +55,18 @@ export async function runDoctor(paths: Paths, opts: { live?: boolean } = { live:
     try {
       const c = await LocalClient.connect(paths.socket);
       const relay = await c.call("relay.status");
+      const push = await c.call("push.status").catch(() => null);
       c.close();
       running = true;
       if (relay.enabled)
         checks.push({ name: "远程连接", ok: relay.state === "connected", detail: `${relay.state} ${relay.lastError ?? ""}`.trim(), fix: "检查网络；或在 config.json 关闭 relay" });
+      if (push?.health)
+        checks.push({
+          name: "推送",
+          ok: push.health.ok,
+          detail: `${push.health.ok ? "上次成功" : "上次失败"}：${push.health.detail}`,
+          fix: "推送不通时提醒会改走微信，或只留在 App 对话里",
+        });
     } catch {
       /* not running */
     }

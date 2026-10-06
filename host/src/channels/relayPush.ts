@@ -42,9 +42,10 @@ export class RelayPusher implements Pusher {
     return this.tokens().length > 0 && (this.relay.state === "connected" || !!this.fallback?.available());
   }
 
-  async push(title: string, body: string, data: Record<string, unknown>): Promise<void> {
+  /** Resolves with how many devices the push reached; throws when none did. */
+  async push(title: string, body: string, data: Record<string, unknown>): Promise<number | void> {
     const tokens = this.tokens();
-    if (!tokens.length) return;
+    if (!tokens.length) return 0;
     const dead: string[] = [];
     const failures: string[] = [];
     let delivered = 0;
@@ -69,6 +70,7 @@ export class RelayPusher implements Pusher {
     if (dead.length) writeJson(this.tokensPath, this.tokens().filter((t) => !dead.includes(t.token)));
     if (relayUnavailable && this.fallback?.available()) return this.fallback.push(title, body, data);
     if (delivered === 0 && failures.length) throw new Error(`relay push failed: ${failures.join("; ")}`);
+    return delivered;
   }
 }
 

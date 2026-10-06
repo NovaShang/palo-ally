@@ -76,7 +76,9 @@ export interface RelayPushResult {
   reason?: string;
 }
 
-const PUSH_TIMEOUT_MS = 8_000;
+// A relay that never answers `push` predates the feature. Remember that for a
+// while (unsupportedMs), so each delivery doesn't sit through the timeout again.
+export const relayPushTiming = { timeoutMs: 5_000, unsupportedMs: 10 * 60_000 };
 
 // RelayChannel keeps the daemon socket to the relay alive, handles pairing,
 // and terminates E2E per stream. Each stream becomes one app client of the hub.
@@ -89,6 +91,9 @@ export class RelayChannel {
   private lastPong = 0;
   private pairWaiter: ((code: { code: string; ttl: number }) => void) | null = null;
   private pushWaiters = new Map<string, (r: RelayPushResult) => void>();
+  /** The relay has answered a push at least once (so a timeout is transient). */
+  private pushAnswered = false;
+  private pushUnsupportedUntil = 0;
   private pairOpenUntil = 0;
   state: RelayState = "disconnected";
   lastError = "";
@@ -263,15 +268,19 @@ export class RelayChannel {
 
   // The relay holds the app's APNs key (it belongs to the developer, not to
   // any one user's host) and pushes for us. A relay without the feature
-  // ignores the message, so the wait times out and the caller falls back.
+  // ignores the message: until it has ever answered, a timeout is read as
+  // "unsupported" (remembered for a while) rather than a transient failure.
   pushViaRelay(req: RelayPushRequest): Promise<RelayPushResult> {
     if (this.state !== "connected") return Promise.reject(new Error("relay not connected"));
+    if (Date.now() < this.pushUnsupportedUntil) return Promise.reject(new Error("relay push unsupported"));
     const nonce = newId();
     return new Promise((resolve, reject) => {
       const t = setTimeout(() => {
         this.pushWaiters.delete(nonce);
-        reject(new Error("relay push timed out"));
-      }, PUSH_TIMEOUT_MS);
+        if (this.pushAnswered) return reject(new Error("relay push timed out"));
+        this.pushUnsupportedUntil = Date.now() + relayPushTiming.unsupportedMs;
+        reject(new Error("relay push unsupported"));
+      }, relayPushTiming.timeoutMs);
       this.pushWaiters.set(nonce, (r) => {
         clearTimeout(t);
         resolve(r);
@@ -284,6 +293,8 @@ export class RelayChannel {
     if (msg.type === "pong") {
       this.lastPong = Date.now();
     } else if (msg.type === "push_result") {
+      this.pushAnswered = true;
+      this.pushUnsupportedUntil = 0;
       const done = this.pushWaiters.get(String(msg.nonce ?? ""));
       if (!done) return;
       this.pushWaiters.delete(String(msg.nonce));

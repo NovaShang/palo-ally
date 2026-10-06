@@ -11,6 +11,7 @@ import type { HarnessDriver } from "./harness/types.ts";
 import { scaffoldHome } from "./home.ts";
 import { Hub } from "./hub.ts";
 import type { AdminHandler } from "./rpc.ts";
+import { readJson } from "./util.ts";
 
 export interface Daemon {
   hub: Hub;
@@ -101,6 +102,8 @@ export async function startDaemon(
         return relay
           ? { enabled: true, state: relay.state, daemonId: relay.daemonId, lastError: relay.lastError, streams: relay.connectedStreams() }
           : { enabled: false };
+      case "push.status":
+        return { health: hub.router.pushHealth(), devices: readJson<unknown[]>(paths.pushTokens, []).length };
       case "wechat.status":
         return { status: wechat?.status() ?? "off", enabled: !!wechat };
       case "probe.tick":
