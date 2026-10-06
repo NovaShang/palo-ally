@@ -5,8 +5,8 @@ import UniformTypeIdentifiers
 
 /// One Liquid Glass capsule: [+] [message field] [mic / send].
 /// - tap the field → keyboard (the system TextField; the on-screen Return is a
-///   newline, on a hardware keyboard / Mac Return sends, Shift+Return is a
-///   newline);
+///   newline; on a hardware keyboard / Mac Return sends and Shift/Option/⌘+Return
+///   is a newline, while an input method composing keeps Return for itself);
 /// - press and hold the field → hold-to-talk: recording starts the instant
 ///   the finger lands (so the first words are never lost) while an arming
 ///   animation runs; release before it completes = a tap (audio discarded,
@@ -27,6 +27,8 @@ struct ComposerView: View {
     /// Images and files picked or pasted for the next message (bento's staged attachments).
     @State private var staged: [Staged] = []
     @State private var pickerItems: [PhotosPickerItem] = []
+    /// A newline typed by ⌘↩ just now: not a Return to send.
+    @State private var keepNewlineUntil = Date.distantPast
     @State private var showPhotos = false
     @State private var showFiles = false
     @State private var showCamera = false
@@ -135,6 +137,15 @@ struct ComposerView: View {
             }
             capsule
         }
+        .background {
+            // ⌘↩ types a newline; Return alone sends on a hardware keyboard.
+            Button("", action: typeNewline)
+                .keyboardShortcut(.return, modifiers: .command)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
+        .onAppear { HardwareKeyboard.startWatching() }
         .padding(.horizontal, sideInset)
         .padding(.top, 6)
         .padding(.bottom, bottomPadding)
@@ -146,7 +157,11 @@ struct ComposerView: View {
         .animation(.snappy, value: staged.count)
         .onChange(of: focusToken) { focused = true }
         // The orb in the title bar notices the owner typing.
-        .onChange(of: draft) {
+        .onChange(of: draft) { old, new in
+            if hardwareReturn(old: old, new: new) {
+                sendFromReturn(text: old)
+                return
+            }
             if focused { OrbInput.shared.typed() }
             SuggestionsGate.shared.touch()
         }
@@ -287,7 +302,8 @@ struct ComposerView: View {
             // The system text field: the input method (pinyin and friends)
             // works exactly as everywhere else. The on-screen keyboard's
             // Return is a newline; sending is the send button. On a hardware
-            // keyboard / Mac, Return sends and Shift/Option+Return is a newline.
+            // keyboard / Mac, Return sends (see hardwareReturn) and
+            // Shift/Option/⌘+Return is a newline.
             TextField("", text: $draft, prompt: Text(focused ? "想让我做点什么？" : ""), axis: .vertical)
                 .lineLimit(1...6)
                 .focused($focused)
@@ -295,12 +311,6 @@ struct ComposerView: View {
                 // field's own long-press / selection recognizers must not see it.
                 .allowsHitTesting(!idle)
                 .padding(.vertical, 11)
-                .onKeyPress(keys: [.return], phases: .down) { press in
-                    if press.modifiers.contains(.shift) || press.modifiers.contains(.option) { return .ignored }
-                    guard canSend else { return .ignored }
-                    send()
-                    return .handled
-                }
                 .opacity(dictating ? 0 : 1)
             if dictating {
                 // Mic dictation: the live words, in the field where they'll land.
@@ -386,7 +396,6 @@ struct ComposerView: View {
                         .frame(width: 40, height: 44)
                 }
                 .buttonStyle(.plain)
-                .keyboardShortcut(.return, modifiers: .command)
                 .accessibilityLabel("发送")
                 .transition(.scale.combined(with: .opacity))
             }
@@ -556,6 +565,46 @@ struct ComposerView: View {
         let text = draft
         draft = ""
         deliver(text)
+    }
+
+    /// Return on a hardware keyboard sends. The text view has already typed
+    /// the newline when the draft changes, so a newline that just appeared on
+    /// its own means Return. It stays a newline when Shift / Option / ⌘ is
+    /// held, on the on-screen keyboard, during dictation, or while an input
+    /// method composes (pinyin's Return commits the candidate, no newline).
+    private func hardwareReturn(old: String, new: String) -> Bool {
+        guard focused, !dictating, HardwareKeyboard.isAttached,
+              Self.isNewlineTyped(into: old, giving: new) else { return false }
+        if Date() < keepNewlineUntil || HardwareKeyboard.newlineModifierDown || HardwareKeyboard.isComposing {
+            debugLog("[keys] Return kept as a newline")
+            return false
+        }
+        return true
+    }
+
+    /// `new` is `old` with exactly one newline typed into it.
+    static func isNewlineTyped(into old: String, giving new: String) -> Bool {
+        guard new.count == old.count + 1 else { return false }
+        let a = Array(old), b = Array(new)
+        var i = 0
+        while i < a.count, a[i] == b[i] { i += 1 }
+        return b[i] == "\n" && b[(i + 1)...].elementsEqual(a[i...])
+    }
+
+    /// Takes the typed newline back out and sends; with nothing to send,
+    /// Return just does nothing.
+    private func sendFromReturn(text: String) {
+        draft = text
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !staged.isEmpty else { return }
+        debugLog("[keys] Return sends")
+        draft = ""
+        deliver(text)
+    }
+
+    /// ⌘↩ (and the other modifiers) type a newline at the cursor.
+    private func typeNewline() {
+        keepNewlineUntil = Date().addingTimeInterval(0.5)
+        HardwareKeyboard.insertNewline()
     }
 
     private func deliver(_ text: String) {

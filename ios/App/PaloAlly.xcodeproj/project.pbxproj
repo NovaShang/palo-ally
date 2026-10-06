@@ -56,6 +56,7 @@
 		F10B59DC6D408555F64C2858 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 711BC1712E3CB0B810C91022 /* PairingView.swift */; };
 		F342DE1D9A6DFB66245308B9 /* ModelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C624CE9D781D137068B2536 /* ModelPicker.swift */; };
 		F7BB5BDB265CB2F858DDF473 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C8BBDD7B0248070C25E81AB /* RootView.swift */; };
+		F85644E5A6D8E5CB46FECFA1 /* HardwareKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED44385988595B39B2E86EEC /* HardwareKeyboard.swift */; };
 		FC44EDAAB240F3EB2DFA924B /* VoiceInputOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98B9C22CB72F4B7250A63D55 /* VoiceInputOverlay.swift */; };
 /* End PBXBuildFile section */
 
@@ -103,6 +104,7 @@
 		D85821DAF90FE3998B520913 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		E9E4508DECE36B39CF27552D /* WatchesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchesSection.swift; sourceTree = "<group>"; };
+		ED44385988595B39B2E86EEC /* HardwareKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HardwareKeyboard.swift; sourceTree = "<group>"; };
 		EDCE2B703ACB5F034BAA47C0 /* CopyButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopyButton.swift; sourceTree = "<group>"; };
 		EEB06BF1C700F1FEE8FBA962 /* QuestionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuestionCard.swift; sourceTree = "<group>"; };
 		EF9B71414B8BB238CEE54BC1 /* DisplayCorners.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayCorners.swift; sourceTree = "<group>"; };
@@ -225,6 +227,7 @@
 				EF9B71414B8BB238CEE54BC1 /* DisplayCorners.swift */,
 				A9DA59D1C706A7BFC0795353 /* GlassDrops.swift */,
 				CBCDB8D7D89100A7DE024651 /* GlassDropsDemo.swift */,
+				ED44385988595B39B2E86EEC /* HardwareKeyboard.swift */,
 				36184756C7B818CDFB8CB839 /* ImagePrep.swift */,
 				F9AE7E7579FE5764F145260C /* MarkdownTableView.swift */,
 				DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */,
@@ -364,6 +367,7 @@
 				90CE987F9EA4BB408FB5F7FE /* DisplayCorners.swift in Sources */,
 				5A830F51813FA925FD0C8480 /* GlassDrops.swift in Sources */,
 				F0C009AA4F0671A5AFEFBD11 /* GlassDropsDemo.swift in Sources */,
+				F85644E5A6D8E5CB46FECFA1 /* HardwareKeyboard.swift in Sources */,
 				739588CADE3937D81BA4F6EA /* HostSwitcher.swift in Sources */,
 				AEBD8CD9FD2F1F20EA8FEDAD /* HostsView.swift in Sources */,
 				D80A5BF2362E7F6BCC59FB6B /* IdentityEditor.swift in Sources */,
