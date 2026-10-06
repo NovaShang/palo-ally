@@ -18,7 +18,10 @@ final class OrbInput {
     /// Input loudness while recording, 0…1.
     private(set) var level: Float = 0
 
-    func typed() { typingPulse &+= 1 }
+    func typed() {
+        typingPulse &+= 1
+        AvatarSignals.shared.typed()
+    }
 
     func voice(recording: Bool, level: Float) {
         if self.recording != recording { self.recording = recording }

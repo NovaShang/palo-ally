@@ -47,17 +47,18 @@ struct AssistantAvatar: View {
 
     var body: some View {
         let input = live ? OrbInput.shared : nil
-        // Calm poses need no more than 30 fps; an event, a recolor or the
-        // owner's voice get 60. Reduce Motion: still poses, a slow tick so a
-        // change of state still shows. (Reading `beat` re-renders on events;
-        // `calm` brings the rate back down once they've played.)
+        // The frame rate follows how much is moving (AvatarTempo): the calm
+        // drift at rest reads the same at 10 fps, an orbit or a knock needs
+        // 30, an event, a recolor or the owner's voice 60. Reduce Motion:
+        // still poses, a slow tick so a change of state still shows.
+        // (Reading `beat`, `tempo` and `typingPulse` re-renders when the rate
+        // should change; `calm` brings it back down once an event has played.)
         let beat = live ? AvatarSignals.shared.beat : 0
-        let now = Date.timeIntervalSinceReferenceDate
-        let recentEvent = live && now - AvatarSignals.shared.lastEventAt < AvatarEngine.eventTime
-        let fast = (input?.recording ?? false) || recentEvent || engine.recoloring(theme, at: now)
-        let interval: Double = reduceMotion ? 0.5 : (fast ? 1.0 / 60 : 1.0 / 30)
+        let typing = input?.typingPulse ?? 0
+        let tempo = currentTempo(input)
         let _ = calm
-        let paused = !onScreen || scenePhase == .background
+        let paused = !onScreen || scenePhase == .background || tempo == .still || Self.held
+        let interval: Double = reduceMotion ? 0.5 : tempo.interval
         TimelineView(.animation(minimumInterval: interval, paused: paused)) { ctx in
             let u = engine.frame(
                 now: ctx.date.timeIntervalSinceReferenceDate,
@@ -74,6 +75,7 @@ struct AssistantAvatar: View {
         .aspectRatio(1, contentMode: .fit)
         .task(id: beat) { await settle() }
         .task(id: theme) { await settle() }
+        .task(id: typing) { await settle(after: AvatarEngine.typingTime) }
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
             let visible = Self.windowBounds.map { $0.intersects(frame) } ?? true
             if visible != onScreen { onScreen = visible }
@@ -81,9 +83,37 @@ struct AssistantAvatar: View {
         .accessibilityHidden(true)
     }
 
-    /// After an event has played, re-render once so the frame rate drops back.
-    private func settle() async {
-        try? await Task.sleep(for: .seconds(AvatarEngine.eventTime + 0.1))
+    /// `-avatarStill YES` (DEBUG): never animate, to measure what the motion costs.
+    #if DEBUG
+    private static let held = UserDefaults.standard.bool(forKey: "avatarStill")
+    #else
+    private static let held = false
+    #endif
+
+    /// How lively the drawing has to be right now.
+    private func currentTempo(_ input: OrbInput?) -> AvatarTempo {
+        let now = Date.timeIntervalSinceReferenceDate
+        var tempo: AvatarTempo = live ? AvatarSignals.shared.tempo : .calm
+        if live, now - AvatarSignals.shared.lastTypedAt < AvatarEngine.typingTime { tempo = max(tempo, .lively) }
+        let recentEvent = live && now - AvatarSignals.shared.lastEventAt < AvatarEngine.eventTime
+        if (input?.recording ?? false) || recentEvent || engine.recoloring(theme, at: now) { tempo = .fast }
+        // A window in the background (another app in front on the Mac, a
+        // control-center pull on iPhone) still shows the pair, one step
+        // calmer; at rest it holds still. A Mac window nobody can see
+        // (covered, minimized, on another Space) doesn't draw at all.
+        if scenePhase == .inactive { tempo = tempo.calmer }
+        #if targetEnvironment(macCatalyst)
+        let mac = MacAppActivity.shared
+        if !mac.visible { return .still }
+        if !mac.frontmost { tempo = tempo.calmer }
+        #endif
+        return tempo
+    }
+
+    /// After an event (or a burst of typing) has played, re-render once so
+    /// the frame rate drops back.
+    private func settle(after seconds: Double = AvatarEngine.eventTime) async {
+        try? await Task.sleep(for: .seconds(seconds + 0.1))
         if !Task.isCancelled { calm &+= 1 }
     }
 
@@ -101,6 +131,8 @@ struct AssistantAvatar: View {
 final class AvatarEngine {
     /// How long an event (or a recolor) plays at the full frame rate.
     static let eventTime = 2.4
+    /// How long the pair stays lively after a keystroke.
+    static let typingTime = 1.8
 
     private var state: TwoDropsState?
     private var lastTime: Double?
@@ -154,7 +186,7 @@ final class AvatarEngine {
                 lastKeystrokeAt = now
                 st.send(.keystroke)
             }
-            inputs.typing = now - lastKeystrokeAt < 1.8
+            inputs.typing = now - lastKeystrokeAt < Self.typingTime
             inputs.speaking = recording
             inputs.voiceLevel = level
             #if DEBUG
@@ -183,7 +215,29 @@ final class AvatarSignals {
 
     /// Offline / approval / thinking / streaming / background / quiet;
     /// typing and speaking come from OrbInput.
-    @ObservationIgnored var inputs = TwoDropsState.Inputs()
+    @ObservationIgnored var inputs = TwoDropsState.Inputs() {
+        didSet { updateTempo() }
+    }
+    /// The frame rate the current state needs; observed, so avatars only
+    /// re-render when it changes class, not on every input.
+    private(set) var tempo: AvatarTempo = .calm
+    /// When the owner last typed (avatars stay lively for a moment after).
+    @ObservationIgnored private(set) var lastTypedAt = -Double.infinity
+
+    init() { updateTempo() }
+
+    func typed() { lastTypedAt = Date.timeIntervalSinceReferenceDate }
+
+    private func updateTempo() {
+        var i = inputs
+        #if DEBUG
+        if let forced = Self.forcedMode { i = forced }
+        #endif
+        let t: AvatarTempo = i.speaking ? .fast
+            : (i.thinking || i.streaming || i.approval || i.typing) ? .lively
+            : .calm   // idle, background, quiet, offline: slow drift or still
+        if t != tempo { tempo = t }
+    }
     @ObservationIgnored private(set) var seq = 0
     /// The last few events, oldest first.
     @ObservationIgnored private(set) var events: [(seq: Int, event: TwoDropsState.Event)] = []
@@ -221,6 +275,75 @@ final class AvatarSignals {
         return i
     }()
     #endif
+}
+
+#if targetEnvironment(macCatalyst)
+/// Whether the Mac app is in front and whether any of its windows can be
+/// seen. Catalyst keeps the scene `.active` while another app is in front,
+/// so this listens to AppKit's own notifications instead.
+@MainActor
+@Observable
+final class MacAppActivity {
+    static let shared = MacAppActivity()
+
+    private(set) var frontmost = true
+    private(set) var visible = true
+    @ObservationIgnored private var windowVisible: [ObjectIdentifier: Bool] = [:]
+
+    private init() {
+        // NSApplication.shared.isActive, read through the runtime (no AppKit import on Catalyst).
+        if let app = (NSClassFromString("NSApplication") as? NSObject.Type)?.value(forKey: "sharedApplication") as? NSObject,
+           let active = app.value(forKey: "active") as? Bool {
+            frontmost = active
+        }
+        let nc = NotificationCenter.default
+        nc.addObserver(forName: .init("NSApplicationDidBecomeActiveNotification"), object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { MacAppActivity.shared.frontmost = true }
+        }
+        nc.addObserver(forName: .init("NSApplicationDidResignActiveNotification"), object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { MacAppActivity.shared.frontmost = false }
+        }
+        nc.addObserver(forName: .init("NSWindowDidChangeOcclusionStateNotification"), object: nil, queue: .main) { note in
+            // NSWindowOcclusionStateVisible = 1 << 1
+            guard let window = note.object as? NSObject,
+                  let state = window.value(forKey: "occlusionState") as? UInt else { return }
+            let id = ObjectIdentifier(window)
+            MainActor.assumeIsolated { MacAppActivity.shared.window(id, visible: state & 2 != 0) }
+        }
+        nc.addObserver(forName: .init("NSWindowWillCloseNotification"), object: nil, queue: .main) { note in
+            guard let window = note.object as? NSObject else { return }
+            let id = ObjectIdentifier(window)
+            MainActor.assumeIsolated { MacAppActivity.shared.window(id, visible: nil) }
+        }
+    }
+
+    private func window(_ id: ObjectIdentifier, visible: Bool?) {
+        windowVisible[id] = visible
+        let any = windowVisible.isEmpty || windowVisible.values.contains(true)
+        if any != self.visible { self.visible = any }
+    }
+}
+#endif
+
+/// How much is moving, which sets the frame rate. The slow drift at rest
+/// (wobble periods of several seconds, noise well under a hertz) looks the
+/// same at 10 fps as at 30; an orbit or a knock needs 30; voice, events and
+/// recolors 60.
+enum AvatarTempo: Int, Comparable {
+    case still, calm, lively, fast
+
+    var interval: Double {
+        switch self {
+        case .still, .calm: 1.0 / 10
+        case .lively: 1.0 / 30
+        case .fast: 1.0 / 60
+        }
+    }
+
+    /// One step down, for a window that isn't in front.
+    var calmer: AvatarTempo { AvatarTempo(rawValue: rawValue - 1) ?? .still }
+
+    static func < (a: AvatarTempo, b: AvatarTempo) -> Bool { a.rawValue < b.rawValue }
 }
 
 /// `-demoScreen avatars`: the pair in several colors at the 「它」 header size
