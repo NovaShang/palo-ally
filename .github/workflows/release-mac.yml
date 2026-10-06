@@ -71,6 +71,10 @@ jobs:
             2[6-9]*|[3-9][0-9]*) echo "macOS SDK $SDK" ;;
             *) echo "::error::macOS SDK $SDK is too old: the app needs the 26 SDK or newer (Liquid Glass APIs)"; exit 1 ;;
           esac
+          # The avatar's .metal shaders need the Metal toolchain, a separate
+          # download since Xcode 26 that runner images don't preinstall.
+          xcrun -f metal >/dev/null 2>&1 && xcrun metal -v >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
+          xcrun metal -v
 
       - name: Check secrets
         env:
