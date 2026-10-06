@@ -245,12 +245,14 @@ async function main(): Promise<void> {
       const usage = await c.call("usage");
       const sync = await c.call("sync", {});
       const push = await c.call("push.status").catch(() => null);
+      const probe = await c.call("probe.status").catch(() => null);
       c.close();
       const s = hello.status;
       console.log(`${hello.hostName} · ${s.busy ? "忙" : "空闲"} · 模型 ${s.model || "默认"}`);
       console.log(`进行中任务 ${sync.tasks.filter((t: Task) => t.status === "running").length} · 待确认 ${sync.approvals.filter((a: any) => a.status === "pending").length} · 盯梢 ${sync.watches.length}`);
       console.log(`远程：${relay.enabled ? `${relay.state}（${relay.streams} 个设备在线）${relay.lastError ? " " + relay.lastError : ""}` : "关闭"} · 微信：${wechat.status}`);
       if (push) console.log(`推送：${pushLine(push)}`);
+      if (probe) console.log(`探针：${probeLine(probe)}`);
       console.log(`今日花费：主对话 $${usage.mainUsd.toFixed(3)} · 探针 $${usage.probeUsd.toFixed(4)}`);
       return;
     }
@@ -416,6 +418,13 @@ function pushLine(p: { health: { at: number; ok: boolean; detail: string } | nul
   if (!p.health) return `${devices} · 还没推送过`;
   const when = new Date(p.health.at).toLocaleString("zh-CN", { hour12: false });
   return `${devices} · 上次${p.health.ok ? "成功" : "失败"}（${when}）：${p.health.detail}`;
+}
+
+function probeLine(p: { checks: number; lastRunAt?: number; failing: number; stale: number; reasons: string[]; budgetUsd: number; spentUsd: number }): string {
+  if (!p.checks) return "没有要定期检查的目标";
+  const ago = p.lastRunAt ? `最近一次 ${Math.max(0, Math.round((Date.now() - p.lastRunAt) / 60_000))} 分钟前` : "还没查过";
+  const trouble = p.failing ? ` · ${p.failing} 个没查成（${p.reasons.join("；")}）` : " · 0 个出错";
+  return `${p.checks} 个盯梢 · ${ago}${trouble} · 今日预算 $${p.spentUsd.toFixed(2)}/$${p.budgetUsd}`;
 }
 
 async function doctor(): Promise<void> {

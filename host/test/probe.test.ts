@@ -2,13 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { Bus } from "../src/bus.ts";
 import { FakeDriver } from "./fakeDriver.ts";
-import { ProbeScheduler, dueSlot, type ProbeHost, type ProbeTrigger } from "../src/probe.ts";
+import { ProbeScheduler, dueSlot, nextRunAt, probeHealth, type ProbeHost, type ProbeTrigger } from "../src/probe.ts";
 import type { Watch } from "../src/types.ts";
 import { inWindow, parseHHMM, zonedParts } from "../src/util.ts";
 import { WatchStore, scheduleText } from "../src/watches.ts";
 import { cleanup, tmpPaths } from "./helpers.ts";
 
 const T0 = Date.UTC(2026, 9, 4, 9, 0); // 2026-10-04 09:00 UTC
+
+const hosts = new Map<FakeDriver, ProbeHost>();
+const hostOf = (m: { driver: FakeDriver }) => hosts.get(m.driver)!;
 
 function mk(over: Partial<ProbeHost> = {}) {
   const paths = tmpPaths();
@@ -34,6 +37,7 @@ function mk(over: Partial<ProbeHost> = {}) {
     log: () => {},
     ...over,
   };
+  hosts.set(driver, host);
   return {
     probe: new ProbeScheduler(host),
     driver,
@@ -219,6 +223,68 @@ describe("ProbeScheduler", () => {
     expect(m2.watches.get(w.id)!.lastCheckedAt).toBe(T0);
     expect(m2.spent()).toBeCloseTo(0.002);
     cleanup(m2.paths);
+  });
+
+  test("check watches already overdue run on the first tick after a restart", async () => {
+    const first = mk();
+    const a = first.watches.add({ title: "a", instruction: "x", intervalMinutes: 5 }, "agent");
+    const b = first.watches.add({ title: "b", instruction: "y", intervalMinutes: 15 }, "agent");
+    first.watches.touch(a.id, { lastCheckedAt: T0 - 60 * 60_000 });
+    first.watches.touch(b.id, { lastCheckedAt: T0 - 5 * 60_000 }); // not due yet
+    // a restart: new store over the same file, new scheduler
+    const again = mk();
+    const watches = new WatchStore(first.paths.watches, new Bus());
+    const probe = new ProbeScheduler({ ...hostOf(again), watches });
+    const r = await probe.tick(T0);
+    expect(r.checked).toBe(1);
+    expect(again.driver.probes[0]!.prompt).toContain(a.id);
+    expect(again.driver.probes[0]!.prompt).not.toContain(b.id);
+    expect(watches.get(a.id)!.lastResult).toEqual({ at: T0, ok: true });
+    expect(nextRunAt(watches.get(a.id)!, T0)).toBe(T0 + 5 * 60_000);
+    cleanup(first.paths);
+    cleanup(again.paths);
+  });
+
+  test("a used-up budget is recorded on each goal, audited, and announced once a day", async () => {
+    const audits: [string, Record<string, unknown>][] = [];
+    const paused: string[] = [];
+    const m = mk({
+      budgetLeftUsd: () => 0,
+      budgetUsd: () => 5,
+      audit: (t, d) => audits.push([t, d]),
+      onPaused: (reason, due) => paused.push(`${reason}|${due.length}`),
+    });
+    const w = m.watches.add({ title: "x", instruction: "y", intervalMinutes: 5 }, "agent");
+    await m.probe.tick(T0);
+    await m.probe.tick(T0 + 60_000);
+    await m.probe.tick(T0 + 2 * 60_000);
+    expect(m.driver.probes).toHaveLength(0);
+    expect(paused).toEqual(["今天的探针预算（$5）用完了，明天再查|1"]);
+    expect(audits.filter(([t]) => t === "probe.skipped")).toHaveLength(1);
+    expect(m.watches.get(w.id)!.lastResult).toMatchObject({ ok: false, reason: "今天的探针预算（$5）用完了，明天再查" });
+    await m.probe.tick(T0 + 24 * 3600_000); // the next day: said again
+    expect(paused).toHaveLength(2);
+    cleanup(m.paths);
+  });
+
+  test("probe errors are recorded on the goal and audited; runs are audited too", async () => {
+    const audits: [string, Record<string, unknown>][] = [];
+    const m = mk({ audit: (t, d) => audits.push([t, d]) });
+    const w = m.watches.add({ title: "x", instruction: "y", intervalMinutes: 5 }, "agent");
+    m.driver.probeResponder = () => ({ output: undefined, costUsd: 0, error: "You've hit your weekly limit" });
+    await m.probe.tick(T0);
+    expect(m.watches.get(w.id)!.lastResult).toEqual({ at: T0, ok: false, reason: "You've hit your weekly limit" });
+    expect(audits.map(([t]) => t)).toEqual(["probe.error"]);
+    expect(probeHealth(m.watches.list(), T0)).toMatchObject({ checks: 1, failing: 1, stale: 0, reasons: ["You've hit your weekly limit"] });
+
+    m.driver.probeResponder = () => ({ output: { results: [{ watch_id: w.id, triggered: false }] }, costUsd: 0.01 });
+    await m.probe.tick(T0 + 6 * 60_000);
+    expect(m.watches.get(w.id)!.lastResult).toEqual({ at: T0 + 6 * 60_000, ok: true });
+    expect(audits.at(-1)![0]).toBe("probe.run");
+    expect(probeHealth(m.watches.list(), T0 + 6 * 60_000)).toMatchObject({ failing: 0, lastRunAt: T0 + 6 * 60_000 });
+    // gone quiet for more than two intervals: stale
+    expect(probeHealth(m.watches.list(), T0 + 30 * 60_000).stale).toBe(1);
+    cleanup(m.paths);
   });
 
   test("schedule watches fire without a probe; skipIfActive suppresses", async () => {

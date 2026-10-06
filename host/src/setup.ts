@@ -56,6 +56,7 @@ export async function runDoctor(paths: Paths, opts: { live?: boolean } = { live:
       const c = await LocalClient.connect(paths.socket);
       const relay = await c.call("relay.status");
       const push = await c.call("push.status").catch(() => null);
+      const probe = await c.call("probe.status").catch(() => null);
       c.close();
       running = true;
       if (relay.enabled)
@@ -66,6 +67,17 @@ export async function runDoctor(paths: Paths, opts: { live?: boolean } = { live:
           ok: push.health.ok,
           detail: `${push.health.ok ? "上次成功" : "上次失败"}：${push.health.detail}`,
           fix: "推送不通时提醒会改走微信，或只留在 App 对话里",
+        });
+      // Check watches exist but none ran within twice its interval: the goals
+      // have gone quiet (budget used up, the probe failing, the timer stuck).
+      if (probe?.checks)
+        checks.push({
+          name: "探针",
+          ok: probe.stale === 0,
+          detail: probe.stale
+            ? `${probe.stale}/${probe.checks} 个盯梢超过两个周期没查了${probe.reasons.length ? `：${probe.reasons.join("；")}` : ""}`
+            : `${probe.checks} 个盯梢按时在查${probe.failing ? `（${probe.failing} 个上次没查成：${probe.reasons.join("；")}）` : ""}`,
+          fix: `今日探针花费 $${probe.spentUsd.toFixed(2)} / 预算 $${probe.budgetUsd}：预算用完就调高 config.json 的 budget.probeDailyUsd；其他原因看 ~/.paloally/logs/daemon.log 里的 probe 行`,
         });
     } catch {
       /* not running */

@@ -63,7 +63,7 @@ export function paloallyMcpServer(h: ToolHandlers) {
       ),
       tool(
         "register_watch",
-        "登记一个帮主人盯住或推进的「目标」（主人在 App 里看到的就是目标列表）。title 写成目标本身（如「邮箱清零」「十一月回国机票」）。kind=check：外壳定期用轻量探针按 instruction 去查，有新情况再叫你；kind=schedule：到点（at 或每 interval_minutes）让你执行 instruction，每月几号用 day_of_month（-1 是月底）。带 id 是改已有目标的时间或说明（进度保留）。",
+        "登记一个帮主人盯住或推进的「目标」（主人在 App 里看到的就是目标列表）。title 写成目标本身（如「邮箱清零」「十一月回国机票」）。kind=check：外壳定期用轻量探针按 instruction 去查，有新情况再叫你（探针只读：只能读文件、搜网页、用连接器，不能跑命令、不能写文件；要记的状态它自己存在 cursor 里）；kind=schedule：到点（at 或每 interval_minutes）让你执行 instruction，每月几号用 day_of_month（-1 是月底）。带 id 是改已有目标的时间或说明（进度保留）。",
         {
           id: z.string().optional().describe("改已有目标时给它的 id；新登记不填"),
           title: z.string().optional().describe("目标，几个字，主人一眼看懂（新登记必填）"),
@@ -374,6 +374,9 @@ export class ClaudeCodeDriver implements HarnessDriver {
           ...(req.strictMcp ? { strictMcpConfig: true, skills: [] } : {}),
           persistSession: false,
           maxTurns: req.maxTurns,
+          // A probe looks things up and answers in a fixed schema; extended
+          // thinking was most of its output tokens (and of its cost).
+          thinking: { type: "disabled" },
           // Unattended: the harness' classifier decides each call, and anything it
           // would ask a human about is denied at once (nobody is there to answer).
           permissionMode: "auto",

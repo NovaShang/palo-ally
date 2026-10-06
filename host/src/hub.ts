@@ -174,6 +174,15 @@ export class Hub {
       onSchedule: (w) => this.onSchedule(w),
       onTriggers: (t) => this.onProbeTriggers(t),
       log: (s) => this.log(`probe: ${s}`),
+      audit: (type, data) => this.audit.log(type, data),
+      budgetUsd: () => this.config.budget.probeDailyUsd,
+      onPaused: (reason, due) =>
+        this.chat.add({
+          role: "system",
+          kind: "notice",
+          text: `${reason}：${due.map((w) => `「${w.title}」`).join("、")}今天先不查了。要多查一些，把 config.json 里的 budget.probeDailyUsd 调高。`,
+          channel: "system",
+        }),
     });
     this.suggestions = new SuggestionStore(this.paths.suggestions, this.bus, {
       driver: deps.driver,
@@ -198,7 +207,7 @@ export class Hub {
     this.proactive.detectOffline();
     this.proactive.startHeartbeat();
     if (opts.probe !== false) {
-      this.probe.start(this.config.settings.probeIntervalMinutes);
+      this.probe.start();
       setTimeout(() => void this.probe.tick(), 5_000);
       // 「试试」: first batch soon after start, then refreshed daily or when few are left.
       setTimeout(() => this.suggestions.maybeRefresh("start"), 30_000);
@@ -365,7 +374,7 @@ export class Hub {
 
   toolHandlers(): ToolHandlers {
     return makeShellTools({ tasks: this.tasks, watches: this.watches, artifacts: this.artifacts, chat: this.chat, router: this.router, audit: this.audit, wechat: this.wechat, media: this.media,
-      ownerChannel: () => this.conversation.ownerChannel(), cwd: this.paths.home });
+      ownerChannel: () => this.conversation.ownerChannel(), cwd: this.paths.home, timezone: () => this.config.settings.timezone });
   }
 
   extraMcpServers(): Record<string, unknown> {
@@ -425,7 +434,7 @@ export class Hub {
     if (next.assistantName && next.assistantName !== this.config.settings.assistantName) setSoulName(this.paths, next.assistantName);
     this.config.settings = next;
     patchConfig(this.paths, (c) => (c.settings = next));
-    if (probeChanged) this.probe.start(next.probeIntervalMinutes);
+    if (probeChanged) this.probe.start();
     this.bus.emit("settings.updated", next);
     return next;
   }

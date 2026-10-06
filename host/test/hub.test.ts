@@ -153,6 +153,18 @@ describe("Hub: proactive", () => {
     cleanup(paths);
   });
 
+  test("check goals: register says when the first check runs; list_watches shows health", async () => {
+    const { hub, paths } = makeHub();
+    const h = hub.toolHandlers();
+    const reply = await h.register_watch({ title: "Air 电量", instruction: "看电量", interval_minutes: 15, kind: "check" });
+    expect(reply).toContain("一分钟内先查第一次");
+    const id = reply.match(/w_[a-z0-9]+/)![0];
+    expect(JSON.parse(await h.list_watches())[0].health).toContain("还没查过");
+    hub.watches.touch(id, { lastCheckedAt: Date.now(), lastResult: { at: Date.now(), ok: false, reason: "今天的探针预算（$5）用完了，明天再查" } });
+    expect(JSON.parse(await h.list_watches())[0].health).toContain("没查成：今天的探针预算（$5）用完了");
+    cleanup(paths);
+  });
+
   test("register_watch: monthly day, and moving a daily goal to monthly in place", async () => {
     const { hub, paths } = makeHub();
     const h = hub.toolHandlers();

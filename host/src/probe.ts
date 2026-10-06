@@ -5,6 +5,10 @@ import { parseHHMM, truncate, zonedParts } from "./util.ts";
 
 // How long after a missed schedule slot we still catch it up (host was asleep).
 const CATCHUP_MS = 6 * 3600_000;
+// The scheduler looks every minute. A tick with nothing due makes no model
+// call, so this only decides how close to its interval a watch runs (a 5-minute
+// check used to wait for the 10-minute tick).
+const TICK_MS = 60_000;
 
 export interface ProbeTrigger {
   watch: Watch;
@@ -28,6 +32,12 @@ export interface ProbeHost {
   // a check watch found something: feed the main agent
   onTriggers(triggers: ProbeTrigger[]): void;
   log(msg: string): void;
+  // the audit trail (probe.run / probe.error / probe.skipped)
+  audit?(type: string, data: Record<string, unknown>): void;
+  budgetUsd?(): number; // the day's probe budget, for the skip reason
+  // Check watches are due but won't run today (the budget is used up). Called
+  // once per day, so the owner hears about it instead of the goals going quiet.
+  onPaused?(reason: string, watches: Watch[]): void;
 }
 
 export const PROBE_SCHEMA = {
@@ -72,12 +82,13 @@ const PROBE_SYSTEM = `你是一个轻量探针，替一位私人助理检查几�
 export class ProbeScheduler {
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
+  private pausedDay = ""; // the day the budget-used-up notice went out
 
   constructor(private host: ProbeHost) {}
 
-  start(intervalMinutes: number): void {
+  start(): void {
     this.stop();
-    this.timer = setInterval(() => void this.tick(), intervalMinutes * 60_000);
+    this.timer = setInterval(() => void this.tick(), TICK_MS);
   }
 
   stop(): void {
@@ -130,7 +141,17 @@ export class ProbeScheduler {
       .filter((w) => w.enabled && w.kind === "check" && now - (w.lastCheckedAt ?? 0) >= (w.intervalMinutes ?? 60) * 60_000);
     if (!due.length) return { checked: 0, triggered: 0 };
     if (this.host.budgetLeftUsd() <= 0) {
-      this.host.log("probe skipped: daily probe budget used up");
+      const budget = this.host.budgetUsd?.();
+      const reason = `今天的探针预算${budget !== undefined ? `（$${budget}）` : ""}用完了，明天再查`;
+      for (const w of due)
+        if (w.lastResult?.reason !== reason) this.host.watches.touch(w.id, { lastResult: { at: now, ok: false, reason } });
+      const day = zonedParts(now, this.host.timezone()).dateKey;
+      if (this.pausedDay !== day) {
+        this.pausedDay = day;
+        this.host.log(`probe skipped: daily probe budget used up (${due.length} due)`);
+        this.host.audit?.("probe.skipped", { reason: "budget", budgetUsd: budget, watches: due.map((w) => w.id) });
+        this.host.onPaused?.(reason, due);
+      }
       return { checked: 0, triggered: 0 };
     }
 
@@ -164,9 +185,11 @@ export class ProbeScheduler {
     this.host.spend(res.costUsd);
     this.host.log(`probe run: ${due.length} watch(es), $${res.costUsd.toFixed(4)} ${res.usage ? JSON.stringify(res.usage) : ""}`);
     if (res.error) {
-      this.host.log(`probe error: ${res.error}`);
+      const reason = truncate(res.error, 300);
+      this.host.log(`probe error: ${reason}`);
+      this.host.audit?.("probe.error", { reason, watches: due.map((w) => w.id), costUsd: res.costUsd });
       // Don't hammer a failing probe: mark checked so it waits a full interval.
-      for (const w of due) this.host.watches.touch(w.id, { lastCheckedAt: now });
+      for (const w of due) this.host.watches.touch(w.id, { lastCheckedAt: now, lastResult: { at: now, ok: false, reason } });
       return { checked: due.length, triggered: 0 };
     }
 
@@ -174,7 +197,7 @@ export class ProbeScheduler {
     const triggers: ProbeTrigger[] = [];
     for (const w of due) {
       const r = results.find((x) => x.watch_id === w.id);
-      const patch: Partial<Watch> = { lastCheckedAt: now };
+      const patch: Partial<Watch> = { lastCheckedAt: now, lastResult: { at: now, ok: true } };
       if (r?.cursor) patch.cursor = r.cursor;
       if (r?.triggered) {
         const key = r.key || r.summary || String(now);
@@ -192,9 +215,40 @@ export class ProbeScheduler {
       const line = own || (patch.lastTriggeredAt === now && typeof r?.summary === "string" ? r.summary : undefined);
       if (line) this.host.watches.progress(w.id, line);
     }
+    this.host.audit?.("probe.run", { watches: due.map((w) => w.id), triggered: triggers.length, costUsd: res.costUsd });
     if (triggers.length) this.host.onTriggers(triggers);
     return { checked: due.length, triggered: triggers.length };
   }
+}
+
+/** When a check watch is next due (it runs on the first minute tick after). */
+export function nextRunAt(w: Watch, now = Date.now()): number | undefined {
+  if (!w.enabled || w.kind !== "check") return undefined;
+  const due = (w.lastCheckedAt ?? 0) + (w.intervalMinutes ?? 60) * 60_000;
+  return Math.max(due, now);
+}
+
+export interface ProbeHealth {
+  checks: number; // enabled check watches
+  lastRunAt?: number; // the latest probe attempt that ran
+  failing: number; // check watches whose last attempt failed or was skipped
+  stale: number; // check watches not run within twice their interval
+  reasons: string[]; // distinct failure reasons
+}
+
+/** What `paloally status` / doctor show about the probes. */
+export function probeHealth(watches: Watch[], now = Date.now()): ProbeHealth {
+  const checks = watches.filter((w) => w.enabled && w.kind === "check");
+  const ran = checks.map((w) => w.lastCheckedAt ?? 0).filter((t) => t > 0);
+  const failing = checks.filter((w) => w.lastResult && !w.lastResult.ok);
+  const stale = checks.filter((w) => now - (w.lastCheckedAt ?? w.createdAt ?? now) > 2 * (w.intervalMinutes ?? 60) * 60_000);
+  return {
+    checks: checks.length,
+    lastRunAt: ran.length ? Math.max(...ran) : undefined,
+    failing: failing.length,
+    stale: stale.length,
+    reasons: [...new Set(failing.map((w) => w.lastResult!.reason ?? "出错"))],
+  };
 }
 
 interface ProbeRow {

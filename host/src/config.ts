@@ -112,7 +112,9 @@ export function defaultConfig(): Config {
     // when it can't tell. Safety is the harness' job (PRD §6.5).
     permissionMode: "auto",
     session: { idleCloseMinutes: 30 },
-    budget: { probeDailyUsd: 1, mainDailyUsd: 0 },
+    // About 300 probe runs a day at ~$0.01 each: a few goals checked every
+    // 5–15 minutes. ($1 ran out by early morning and the goals went quiet.)
+    budget: { probeDailyUsd: 5, mainDailyUsd: 0 },
     relay: { enabled: true, url: "https://relay.bentoai.dev" },
     wechat: { enabled: false, baseUrl: "https://ilinkai.weixin.qq.com" },
     apns: { enabled: false, bundleId: "com.novashang.paloally" },
@@ -170,6 +172,9 @@ export function loadConfig(paths: Paths): Config {
   const cfg = deepMerge(defaultConfig(), saved) as Config;
   delete (cfg.settings as any).maxProactivePerDay; // removed 2026-10-04 (runaway guard instead)
   delete (cfg.settings as any).avatar; // removed 2026-10-05 (one avatar form; color is the choice)
+  // $1 was the default until 2026-10-06 and stopped every probe by morning;
+  // a config still carrying exactly that old default gets the new one.
+  if (cfg.budget.probeDailyUsd === 1) cfg.budget.probeDailyUsd = defaultConfig().budget.probeDailyUsd;
   // A hand-edited bad value falls back to its default instead of crash-looping.
   const defaults = defaultConfig().settings as any;
   for (const k of Object.keys(defaults)) {

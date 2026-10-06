@@ -6,6 +6,8 @@ import type { Router } from "./router.ts";
 import { notifyResultText } from "./copy.ts";
 import type { TaskTracker } from "./tasks.ts";
 import { scheduleText, type WatchStore } from "./watches.ts";
+import { nextRunAt } from "./probe.ts";
+import { zonedParts } from "./util.ts";
 import type { WechatChannel } from "./channels/types.ts";
 import type { MediaStore } from "./media.ts";
 import { join, resolve } from "node:path";
@@ -28,6 +30,8 @@ export interface ShellToolDeps {
   ownerChannel: () => Channel;
   /** The assistant's working directory: relative paths resolve against it. */
   cwd: string;
+  /** The owner's time zone, for times in tool replies. */
+  timezone?: () => string;
 }
 
 // The tools the shell gives the main agent (the in-process `paloally` MCP
@@ -59,7 +63,8 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
       }
       const w = d.watches.add({ title: title ?? "", instruction: instruction ?? "", intervalMinutes: interval_minutes, at, dayOfMonth: day_of_month, kind }, "agent");
       d.audit.log("watch.registered", { id: w.id, title });
-      return `ok: ${w.id}（${scheduleText(w)}）`;
+      // A new check runs on the scheduler's next minute tick.
+      return `ok: ${w.id}（${scheduleText(w)}${w.kind === "check" ? " · 一分钟内先查第一次" : ""}）`;
     },
     list_watches: async () =>
       JSON.stringify(
@@ -74,6 +79,7 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
           at: w.at,
           dayOfMonth: w.dayOfMonth,
           when: scheduleText(w),
+          ...(w.kind === "check" ? { health: checkHealth(w, d.timezone?.() ?? "UTC") } : {}),
         })),
       ),
     update_goal: async ({ id, progress, state, ratio, outcome }) => {
@@ -165,4 +171,18 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
       return notifyResultText(r);
     },
   };
+}
+
+// One line on how a check watch is doing: when it last ran, how that went,
+// and when it runs next. Skips and errors show here instead of going quiet.
+function checkHealth(w: Watch, tz: string, now = Date.now()): string {
+  const at = (ms: number) => {
+    const p = zonedParts(ms, tz);
+    return `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
+  };
+  if (!w.enabled) return "已暂停";
+  const last = w.lastCheckedAt ? `上次 ${at(w.lastCheckedAt)}` : "还没查过";
+  const result = w.lastResult ? (w.lastResult.ok ? "正常" : `没查成：${w.lastResult.reason ?? "出错"}`) : "";
+  const next = nextRunAt(w, now);
+  return [last, result, next ? `下次约 ${at(next)}` : ""].filter(Boolean).join(" · ");
 }

@@ -9,6 +9,7 @@ import { type Config, Paths, loadConfig } from "./config.ts";
 import { ClaudeCodeDriver } from "./harness/claude.ts";
 import type { HarnessDriver } from "./harness/types.ts";
 import { scaffoldHome } from "./home.ts";
+import { probeHealth } from "./probe.ts";
 import { Hub } from "./hub.ts";
 import type { AdminHandler } from "./rpc.ts";
 import { readJson } from "./util.ts";
@@ -108,6 +109,12 @@ export async function startDaemon(
         return { status: wechat?.status() ?? "off", enabled: !!wechat };
       case "probe.tick":
         return hub.probe.tick();
+      case "probe.status":
+        return {
+          ...probeHealth(hub.watches.list()),
+          budgetUsd: hub.config.budget.probeDailyUsd,
+          spentUsd: hub.usage().probeUsd,
+        };
       case "usage":
         return hub.usage();
       case "subscribe":

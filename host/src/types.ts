@@ -134,6 +134,9 @@ export interface Watch {
   recentKeys?: string[];
   // schedule bookkeeping: "YYYY-MM-DD HH:MM" slots already fired
   firedSlots?: string[];
+  // check watches: how the last probe attempt went (also set when the probe
+  // was skipped, e.g. the day's budget is used up), so nothing fails silently
+  lastResult?: { at: number; ok: boolean; reason?: string };
   // What the owner sees: a watch is shown as a 「目标」 with a live progress
   // line and a state. The mechanism above stays as it is.
   state?: GoalState; // defaults: tracking (enabled) / paused (disabled)
