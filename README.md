@@ -28,7 +28,7 @@ The installer installs Bun if it's missing, puts the code in `~/.paloally/app`, 
 
 ### The app and the relay
 
-The iPhone / Mac app isn't on the App Store yet. Build it from `ios/` with your own Apple developer team (set `DEVELOPMENT_TEAM` and a bundle ID you own); see [`ios/README.md`](ios/README.md).
+**Mac app:** download [PaloAlly.dmg](https://github.com/NovaShang/palo-ally/releases/latest/download/PaloAlly.dmg) from the latest release (macOS 26 or later; signed with Developer ID and notarized). The iPhone app isn't on the App Store yet. Build it from `ios/` with your own Apple developer team (set `DEVELOPMENT_TEAM` and a bundle ID you own); see [`ios/README.md`](ios/README.md).
 
 Host and app talk through a relay, end-to-end encrypted. By default that is the shared public bento relay at `relay.bentoai.dev`; it needs no account. Voice input in the app is transcribed through the same relay, with per-install and global limits; heavy use may be throttled. You can run your own relay from [bento](https://github.com/NovaShang/bento)'s `relay/`.
 
@@ -61,6 +61,22 @@ cd host && bun run fixtures              # regenerate the protocol/crypto fixtur
 PALOALLY_LIVE=1 bun test test/live.test.ts               # against the real Claude Code harness (uses tokens)
 cd ios/PaloAllyKit && swift test
 ```
+
+## Releasing
+
+Pushing a tag `vX.Y.Z` runs [`.github/workflows/release-mac.yml`](.github/workflows/release-mac.yml). It archives the Mac app, signs it with Developer ID, notarizes and staples it, wraps it in a DMG, and attaches `PaloAlly.dmg`, `PaloAlly-X.Y.Z.dmg` and `SHA256SUMS` to the GitHub Release. You can also start it by hand (Actions → Release Mac app → Run workflow).
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+The steps live in [`scripts/release-mac.sh`](scripts/release-mac.sh); `scripts/release-mac-local.sh` runs the same thing on your Mac as a dry run. The workflow needs these repo secrets, which `scripts/setup-release-secrets.sh` sets for you:
+
+| Secret | What |
+|---|---|
+| `MAC_DEVID_P12_BASE64`, `MAC_DEVID_P12_PASSWORD` | the Developer ID Application certificate and key |
+| `MAC_DEVID_PROFILE_BASE64` | the Mac Catalyst Developer ID provisioning profile |
+| `ASC_NOTARY_KEY_ID`, `ASC_NOTARY_ISSUER_ID`, `ASC_NOTARY_KEY_P8_BASE64` | an App Store Connect API key used only for notarization |
 
 ## License
 
