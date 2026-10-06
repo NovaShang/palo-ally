@@ -65,6 +65,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().delegate = self
         // Voice logs already carry "[voice]"; append the time since the press.
         voiceLogSink = { debugLog("\($0)\(VoiceTiming.suffix)") }
+        #if DEBUG
+        StallWatchdog.start()
+        #endif
         return true
     }
 

@@ -34,7 +34,7 @@ struct SelectableMarkdown: UIViewRepresentable {
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: MarkdownTextView, context: Context) -> CGSize? {
         let width = proposal.width ?? 10_000
         guard width > 0, width.isFinite else { return nil }
-        let fit = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        let fit = uiView.fittingSize(width: width)
         return CGSize(width: proposal.width ?? ceil(fit.width), height: ceil(fit.height))
     }
 }
@@ -44,6 +44,20 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
     private var lastSource: String?
     private var lastStreaming = false
     private var lastLinkColor: UIColor?
+    /// Measured sizes for the current text, by proposed width. SwiftUI asks
+    /// again on every layout pass, and each ask re-ran TextKit layout over the
+    /// whole answer; a long chat full of long answers then pinned the main
+    /// thread. Cleared whenever the text changes.
+    private var measured: [CGFloat: CGSize] = [:]
+
+    func fittingSize(width: CGFloat) -> CGSize {
+        let key = (width * 2).rounded() / 2
+        if let hit = measured[key] { return hit }
+        let fit = sizeThatFits(CGSize(width: key, height: .greatestFiniteMagnitude))
+        if measured.count > 8 { measured.removeAll() }
+        measured[key] = fit
+        return fit
+    }
 
     /// TextKit 1, so the layout manager can draw block backgrounds.
     static func make() -> MarkdownTextView {
@@ -64,6 +78,7 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         view.registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (v: MarkdownTextView, _) in
             v.lastSource = nil
+            v.measured.removeAll()
             v.render(source: v.pendingSource, streaming: v.lastStreaming, linkColor: v.lastLinkColor ?? .link)
             v.invalidateIntrinsicContentSize()
         }
@@ -78,6 +93,7 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         lastSource = source
         lastStreaming = streaming
         lastLinkColor = linkColor
+        measured.removeAll()
         let rendered = MarkdownRenderer.render(streaming ? source + " ▍" : source)
         // A code block / table background reaches 6 pt past its text; make
         // room when one is first or last so it isn't clipped.

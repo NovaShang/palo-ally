@@ -34,6 +34,7 @@
 		7FA2E7E1309D4680A571ACCC /* SpeechDictation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F881AEFDC8F959F0506046DD /* SpeechDictation.swift */; };
 		8086BAF205FD7F48D481A5F4 /* SuggestionsGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76CCDDF52E61A55777BF897F /* SuggestionsGate.swift */; };
 		81A11C9A7F625540126701DA /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5458CC8523AA61D0A0852ABA /* ChatView.swift */; };
+		8781C04CFC02A3A8620CA135 /* StallWatchdog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C7EC5D880932CD6C79433E3 /* StallWatchdog.swift */; };
 		90CE987F9EA4BB408FB5F7FE /* DisplayCorners.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF9B71414B8BB238CEE54BC1 /* DisplayCorners.swift */; };
 		9B34F0015CBA0682AF1B48BC /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32922EB865184F7F70CAB365 /* AppTheme.swift */; };
 		9E8BAB6F1769D57EC0C617C0 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97B4D23870E594B624074F8D /* ComposerView.swift */; };
@@ -87,6 +88,7 @@
 		74530C1E36CA8A834978230F /* TwoDrops.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = TwoDrops.metal; sourceTree = "<group>"; };
 		76CCDDF52E61A55777BF897F /* SuggestionsGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionsGate.swift; sourceTree = "<group>"; };
 		7769E0FBCB029211A3B7B532 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
+		7C7EC5D880932CD6C79433E3 /* StallWatchdog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StallWatchdog.swift; sourceTree = "<group>"; };
 		89680F4F2AB77C09AE302E26 /* OrbPresence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbPresence.swift; sourceTree = "<group>"; };
 		8C624CE9D781D137068B2536 /* ModelPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPicker.swift; sourceTree = "<group>"; };
 		90A1D0CBFE081417EB16EEB3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -234,6 +236,7 @@
 				727BCDF8F4AA67625E0359C0 /* OrbInput.swift */,
 				2FFD6E49BA1DD7665E79691E /* QuickLook.swift */,
 				07A26E3CEF36BC017C91F461 /* SelectableMarkdown.swift */,
+				7C7EC5D880932CD6C79433E3 /* StallWatchdog.swift */,
 				74530C1E36CA8A834978230F /* TwoDrops.metal */,
 				521F61236554CDC6D42C5C48 /* TwoDropsState.swift */,
 			);
@@ -390,6 +393,7 @@
 				11BECFB67315E8AFAF47D91A /* SelectableMarkdown.swift in Sources */,
 				58FA01FB519DE507B656FDAE /* SettingsView.swift in Sources */,
 				7FA2E7E1309D4680A571ACCC /* SpeechDictation.swift in Sources */,
+				8781C04CFC02A3A8620CA135 /* StallWatchdog.swift in Sources */,
 				4F5CB6A64C1B55C6CD52D725 /* SuggestionChips.swift in Sources */,
 				8086BAF205FD7F48D481A5F4 /* SuggestionsGate.swift in Sources */,
 				D3720B2AD3344F09581611E1 /* TasksSection.swift in Sources */,

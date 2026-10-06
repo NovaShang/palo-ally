@@ -14,7 +14,14 @@ final class SuggestionsGate {
     static let shared = SuggestionsGate()
 
     /// How long the chat stays quiet before suggestions come back.
-    static let quietInterval: TimeInterval = 3 * 60
+    static let quietInterval: TimeInterval = {
+        #if DEBUG
+        // `-suggestionsQuiet 20`: a short quiet spell, to reproduce timing bugs.
+        let s = UserDefaults.standard.double(forKey: "suggestionsQuiet")
+        if s > 0 { return s }
+        #endif
+        return 3 * 60
+    }()
 
     /// Focused, typing, holding to talk, staging attachments, quoting…
     private(set) var composerEngaged = false

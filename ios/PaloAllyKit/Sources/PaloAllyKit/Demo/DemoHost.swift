@@ -174,10 +174,67 @@ public actor DemoHost {
 
             建议：日常放在 **dev** 上，需要碰本机应用的事再交给 Air。
             """)
+        case "long":
+            // A long conversation full of tables and long answers (like a real
+            // owner's after a few weeks), then a long table answer streaming in:
+            // the shape that once froze the Mac for 34 s.
+            for i in 0..<90 {
+                post("第 \(i + 1) 个问题：帮我比较一下这几个方案，顺便把要点列成表。", role: .user)
+                post(i % 3 == 0 ? DemoHost.longTableAnswer(i) : DemoHost.longProseAnswer(i))
+            }
+            Task {
+                await pause(4)
+                await streamLongReply()
+            }
         default:
             break
         }
         setStatus(s)
+    }
+
+    /// Streams a long answer with two tables in small pieces, like a real
+    /// turn, then finalizes it (DEBUG stress scenario `-demoState long`).
+    public func streamLongReply() async {
+        var s = status
+        s.busy = true
+        s.activity = "在写回复"
+        setStatus(s)
+        let rid = nextID("r")
+        let reply = DemoHost.longTableAnswer(999) + "\n\n" + DemoHost.longProseAnswer(999)
+        var acc = ""
+        for piece in DemoHost.chunks(reply) {
+            acc += piece
+            emit(RPCEventName.chatDelta, ChatDelta(id: rid, text: piece))
+            await pause(0.02)
+        }
+        seq += 1
+        let final = ChatMessage(seq: seq, id: rid, role: .assistant, kind: .text, text: acc,
+                                channel: .app, ts: Date().epochMillis)
+        messages.append(final)
+        emit(RPCEventName.chatMessage, final)
+        s.busy = false
+        s.activity = nil
+        setStatus(s)
+    }
+
+    static func longTableAnswer(_ i: Int) -> String {
+        var rows = ""
+        for r in 0..<8 {
+            rows += "| 方案 \(r + 1) | 适合长期常驻、需要一直在线的场景，出门时也不会掉线 | 每月约 ¥\(100 + r * 17) | 速度快，但碰不到本机应用和文件 |\n"
+        }
+        return """
+        第 \(i) 次对比，结论先说：日常放在 **dev** 上，需要碰本机应用的事再交给 Air。
+
+        | 方案 | 适用场景 | 费用 | 备注 |
+        |:---|:---|---:|:---|
+        \(rows)
+        细节如下：每一项我都按你平时的用法估了一下，数字是过去三个月的平均值，仅供参考。
+        """
+    }
+
+    static func longProseAnswer(_ i: Int) -> String {
+        let para = "这一段是比较长的说明文字，用来模拟真实对话里那种一大段一大段的回复：先讲背景，再讲为什么这么建议，最后列出下一步要做的事情和需要你确认的地方。"
+        return "第 \(i) 条回复。\n\n" + (0..<6).map { "- \(para)（\($0 + 1)）" }.joined(separator: "\n") + "\n\n" + para + para
     }
 
     // MARK: request handling

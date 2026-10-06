@@ -8,7 +8,6 @@ struct ChatView: View {
     static let macOrbStrip: CGFloat = 64
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
-    @Environment(VoiceInputController.self) private var voice
     /// Kept by MainScreen so it survives the layout switching containers.
     @Environment(\.chatDraft) private var draft
     /// Following the live bottom (streaming keeps the newest text in view).
@@ -17,7 +16,10 @@ struct ChatView: View {
     @State private var pinned = true
     /// The finger (or its fling) is moving the list — only that can detach.
     @State private var userScrolling = false
-    @State private var distanceFromBottom: CGFloat = 0
+    /// Further from the bottom than the re-attach distance. A flag, not the
+    /// raw distance: it changes only when crossing the line, so scrolling and
+    /// streaming don't re-render the whole list every frame.
+    @State private var awayFromBottom = false
     /// A message just jumped to from search: briefly tinted so the eye lands on it.
     @State private var highlightedID: String?
     @Environment(\.placesAsColumns) private var asColumn
@@ -25,9 +27,6 @@ struct ChatView: View {
     /// coordinates): the orb floats over the bar, centered on its middle.
     @State private var orbSlot: CGRect = .zero
     @State private var ownFrame: CGRect = .zero
-    /// Re-read when a quiet spell may have become long enough for 「试试」.
-    @State private var quietClock = Date()
-    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -55,28 +54,35 @@ struct ChatView: View {
                         EmptyChatHint()
                     }
 
+                    // Exactly one view per message (the time stamp lives inside
+                    // it): a lazy stack whose ForEach yields a varying number of
+                    // views per element has to run every element to count them,
+                    // on every layout pass, which froze the Mac for 34 s on a
+                    // long conversation.
                     ForEach(Array(store.messages.enumerated()), id: \.element.id) { index, message in
-                        if showsTimestamp(at: index) {
-                            Text(Copy.clock(message.ts))
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.top, 6)
-                        }
-                        MessageRow(message: message)
-                            .background {
-                                if highlightedID == message.id {
-                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                        .fill(Color.accentColor.opacity(0.12))
-                                        .padding(-6)
-                                        .transition(.opacity)
+                        VStack(alignment: .leading, spacing: 14) {
+                            if showsTimestamp(at: index) {
+                                Text(Copy.clock(message.ts))
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.top, 6)
+                            }
+                            MessageRow(message: message)
+                                .background {
+                                    if highlightedID == message.id {
+                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                            .fill(Color.accentColor.opacity(0.12))
+                                            .padding(-6)
+                                            .transition(.opacity)
+                                    }
                                 }
-                            }
-                            .id(message.id)
-                            // A quote above a bubble jumps to what it quotes.
-                            .environment(\.chatScrollTo) { id in
-                                withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
-                            }
+                        }
+                        .id(message.id)
+                        // A quote above a bubble jumps to what it quotes.
+                        .environment(\.chatScrollTo) { id in
+                            withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
+                        }
                     }
 
                     ForEach(store.unanchoredPendingApprovals) { approval in
@@ -91,15 +97,12 @@ struct ChatView: View {
 
                     // 「试试」: part of the conversation's end, so scrolling up
                     // leaves them behind; only on first use or after a quiet spell.
-                    if showsSuggestions {
-                        SuggestionChips(suggestions: Array(store.suggestions.prefix(store.messages.isEmpty ? 4 : 3)),
-                                        greeting: store.messages.isEmpty,
-                                        use: { store.use($0) },
-                                        dismiss: { s in withAnimation(.snappy) { store.dismiss(s) } })
-                            .padding(.top, 2)
-                            .transition(.opacity)
-                            .id("suggestions")
+                    // Its own view: the gate changes on every keystroke, and
+                    // that must not re-render the conversation.
+                    SuggestionsSlot(followingEnd: pinned && !userScrolling) {
+                        withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
                     }
+                    .id("suggestions")
 
                     Color.clear.frame(height: 1).id("bottom")
                 }
@@ -124,14 +127,15 @@ struct ChatView: View {
                 // A scroll of the reader's that comes to rest near the end
                 // (after any fling) follows the live bottom again.
                 if !moving, old == .tracking || old == .interacting || old == .decelerating,
-                   distanceFromBottom <= ChatScroll.reattachDistance, !pinned {
+                   !awayFromBottom, !pinned {
                     pinned = true
                 }
             }
             .onScrollGeometryChange(for: ChatScroll.Metrics.self) { g in
                 ChatScroll.Metrics(g)
             } action: { old, new in
-                distanceFromBottom = new.distanceFromBottom
+                let away = new.distanceFromBottom > ChatScroll.reattachDistance
+                if away != awayFromBottom { awayFromBottom = away }
                 if userScrolling {
                     // Like the ChatGPT / Claude apps: the slightest drag up
                     // stops following; drifting back down near the end resumes.
@@ -208,15 +212,8 @@ struct ChatView: View {
                 guard pinned, !userScrolling else { return }
                 withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
-            // Suggestions arriving at the end come into view only for a
-            // reader already at the end; scrolled up, nothing moves.
-            .onChange(of: showsSuggestions) { _, shown in
-                guard shown, pinned, !userScrolling else { return }
-                withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
-            .animation(.easeInOut(duration: 0.35), value: showsSuggestions)
             .overlay(alignment: .bottom) {
-                let showJump = store.viewingPast || (!pinned && distanceFromBottom > ChatScroll.reattachDistance)
+                let showJump = store.viewingPast || (!pinned && awayFromBottom)
                 ZStack {
                     if showJump {
                         JumpToLatestButton(streaming: store.isBusy) {
@@ -259,9 +256,7 @@ struct ChatView: View {
         })
         // While holding to talk, the screen's background rises from the
         // bottom so the live transcript reads cleanly (same hold-driven motion).
-        .overlay {
-            if voice.panelMounted { VoiceScrim(presence: voice.presence) }
-        }
+        .overlay { VoiceScrimLayer() }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ComposerView(draft: draft) { text, images, files in
                 store.send(text, images: images, files: files)
@@ -279,17 +274,8 @@ struct ChatView: View {
             }
         }
         .modifier(OrbPresenceTracking(scrolledUp: !pinned || store.viewingPast, scrolling: userScrolling))
-        // 「试试」 timing: a reply finishing counts as activity; wake up once
-        // the quiet spell is long enough, and on returning to the app.
+        // 「试试」 timing: a reply finishing counts as activity.
         .onChange(of: store.isBusy) { _, busy in if !busy { SuggestionsGate.shared.touch() } }
-        .task(id: SuggestionsGate.shared.quietSince(store)) {
-            let due = SuggestionsGate.shared.quietSince(store).addingTimeInterval(SuggestionsGate.quietInterval)
-            let wait = due.timeIntervalSinceNow
-            if wait > 0 { try? await Task.sleep(for: .seconds(wait + 0.5)) }
-            guard !Task.isCancelled else { return }
-            quietClock = .now
-        }
-        .onChange(of: scenePhase) { _, phase in if phase == .active { quietClock = .now } }
         .navigationTitle(store.assistantName)
         .navigationBarTitleDisplayMode(.inline)
         // Immersive, the iOS 26 look: the system bar stays but without its
@@ -343,10 +329,6 @@ struct ChatView: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
-    }
-
-    private var showsSuggestions: Bool {
-        SuggestionsGate.shared.shows(store, now: quietClock)
     }
 
     /// Shown whenever the host is working (not just right after a send).
@@ -497,4 +479,61 @@ struct EmptyChatHint: View {
         .environment(model)
         .environment(model.store!)
         .environment(VoiceInputController())
+}
+
+/// 「试试」 at the end of the conversation. Reads the gate (which changes on
+/// every keystroke) and keeps the quiet-spell clock itself, so none of that
+/// re-renders the message list around it.
+private struct SuggestionsSlot: View {
+    /// The reader is following the live end: a newly shown row scrolls into view.
+    let followingEnd: Bool
+    let scrollToBottom: () -> Void
+    @Environment(AppStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
+    /// Re-read when a quiet spell may have become long enough.
+    @State private var quietClock = Date()
+
+    var body: some View {
+        let gate = SuggestionsGate.shared
+        let shows = gate.shows(store, now: quietClock)
+        VStack(alignment: .leading, spacing: 0) {
+            if shows {
+                SuggestionChips(suggestions: Array(store.suggestions.prefix(store.messages.isEmpty ? 4 : 3)),
+                                greeting: store.messages.isEmpty,
+                                use: { store.use($0) },
+                                dismiss: { s in withAnimation(.snappy) { store.dismiss(s) } })
+                    .padding(.top, 2)
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.easeInOut(duration: 0.35), value: shows)
+        // Arriving at the end, they come into view only for a reader already
+        // there; scrolled up, nothing moves.
+        .onChange(of: shows) { _, shown in
+            #if DEBUG
+            debugLog("[suggestions] \(shown ? "shown" : "hidden")")
+            #endif
+            guard shown, followingEnd else { return }
+            scrollToBottom()
+        }
+        .task(id: gate.quietSince(store)) {
+            let due = gate.quietSince(store).addingTimeInterval(SuggestionsGate.quietInterval)
+            let wait = due.timeIntervalSinceNow
+            if wait > 0 { try? await Task.sleep(for: .seconds(wait + 0.5)) }
+            guard !Task.isCancelled else { return }
+            quietClock = .now
+        }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { quietClock = .now } }
+    }
+}
+
+/// The hold-to-talk scrim, reading the voice controller itself: its presence
+/// changes every frame while talking, and that must not re-render the list.
+private struct VoiceScrimLayer: View {
+    @Environment(VoiceInputController.self) private var voice
+
+    var body: some View {
+        if voice.panelMounted { VoiceScrim(presence: voice.presence) }
+    }
 }
