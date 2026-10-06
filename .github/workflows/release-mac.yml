@@ -37,7 +37,7 @@ jobs:
     # Xcode 27 is on the xcode-27 image (public preview as of 2026-10). If it is
     # unavailable, macos-26 with /Applications/Xcode_26.6.app also builds the app.
     runs-on: xcode-27
-    timeout-minutes: 90
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
         with:

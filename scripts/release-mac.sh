@@ -36,20 +36,32 @@ notarize() { # file to submit
     say "no notary key: skipping notarization of $(basename "$1")"
     return 1
   fi
-  say "notarizing $(basename "$1") (this waits for Apple)…"
+  local auth=(--key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER")
   local log="$OUT/notary-$(basename "$1").json"
-  if ! xcrun notarytool submit "$1" --key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" \
-      --issuer "$NOTARY_ISSUER" --wait --timeout 45m --output-format json >"$log"; then
+  # Submit without --wait and poll: Apple's queue sometimes takes hours, and
+  # a fixed --wait timeout threw away an otherwise good build.
+  if ! xcrun notarytool submit "$1" "${auth[@]}" --output-format json >"$log"; then
     cat "$log" >&2
     die "notarytool submit failed"
   fi
-  local status id
-  status=$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status",""))' "$log")
+  local id status
   id=$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id",""))' "$log")
-  if [ "$status" != "Accepted" ]; then
-    xcrun notarytool log "$id" --key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" >&2 || true
-    die "notarization $status ($id)"
-  fi
+  [ -n "$id" ] || { cat "$log" >&2; die "notarytool gave no submission id"; }
+  say "notarizing $(basename "$1"): submission $id (polling up to ${NOTARY_MAX_MINUTES:-240} min)"
+  [ -n "${GITHUB_STEP_SUMMARY:-}" ] && echo "Notarization submission: \`$id\`" >>"$GITHUB_STEP_SUMMARY"
+  local deadline=$(( $(date +%s) + ${NOTARY_MAX_MINUTES:-240} * 60 ))
+  while :; do
+    status=$(xcrun notarytool info "$id" "${auth[@]}" --output-format json 2>/dev/null |
+      /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' 2>/dev/null || true)
+    case "$status" in
+      Accepted) break ;;
+      Invalid|Rejected)
+        xcrun notarytool log "$id" "${auth[@]}" >&2 || true
+        die "notarization $status ($id)" ;;
+    esac
+    [ "$(date +%s)" -lt "$deadline" ] || die "notarization still ${status:-pending} after ${NOTARY_MAX_MINUTES:-240} min ($id)"
+    sleep 60
+  done
   say "notarized: $id"
 }
 
@@ -100,16 +112,9 @@ say "verifying the signature"
 codesign --verify --deep --strict --verbose=2 "$APP"
 codesign -dvv "$APP" 2>&1 | grep -E "^(Authority|TeamIdentifier)=" | head -2
 
-ditto -c -k --keepParent "$APP" "$OUT/PaloAlly-app.zip"
-if notarize "$OUT/PaloAlly-app.zip"; then
-  xcrun stapler staple "$APP"
-  spctl --assess --type execute --verbose=2 "$APP"
-  NOTARIZED=1
-else
-  NOTARIZED=0
-fi
-rm -f "$OUT/PaloAlly-app.zip"
-
+# One notarization per release: the signed DMG with the signed app inside.
+# Apple's ticket covers the app too (Gatekeeper finds it online on first
+# launch), and a single submission halves the time spent in Apple's queue.
 say "building the DMG"
 STAGE="$OUT/dmg"
 mkdir -p "$STAGE"
@@ -119,9 +124,11 @@ hdiutil create -volname "PaloAlly" -srcfolder "$STAGE" -fs HFS+ -format UDZO -im
   -ov "$OUT/PaloAlly.dmg" -quiet
 rm -rf "$STAGE"
 codesign --force --timestamp --sign "$SIGN_IDENTITY" ${KC_ARGS[@]+"${KC_ARGS[@]}"} "$OUT/PaloAlly.dmg"
-if [ "$NOTARIZED" = 1 ] && notarize "$OUT/PaloAlly.dmg"; then
+NOTARIZED=0
+if notarize "$OUT/PaloAlly.dmg"; then
   xcrun stapler staple "$OUT/PaloAlly.dmg"
   spctl --assess --type open --context context:primary-signature --verbose=2 "$OUT/PaloAlly.dmg"
+  NOTARIZED=1
 fi
 
 cp "$OUT/PaloAlly.dmg" "$OUT/PaloAlly-$VERSION.dmg"
