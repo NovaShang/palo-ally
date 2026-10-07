@@ -75,10 +75,18 @@ enum AppTheme: String, CaseIterable, Identifiable {
     }
 
     /// The accent: tints, icons, outlines. Adapts to light / dark.
-    var color: Color {
-        let (light, dark) = (UIColor(hex: hex.light), UIColor(hex: hex.dark))
-        return Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? dark : light })
-    }
+    var color: Color { Color(uiColor: uiColor) }
+
+    /// The same, for UIKit. One instance per preset, made once: a dynamic
+    /// UIColor never equals another made the same way, so a fresh one per
+    /// call read as "the color changed" on every update — and each chat text
+    /// view re-rendered its whole reply on every streamed chunk or scroll.
+    var uiColor: UIColor { Self.uiColors[self] ?? .tintColor }
+
+    private static let uiColors: [AppTheme: UIColor] = Dictionary(uniqueKeysWithValues: allCases.map { t in
+        let (light, dark) = (UIColor(hex: t.hex.light), UIColor(hex: t.hex.dark))
+        return (t, UIColor { $0.userInterfaceStyle == .dark ? dark : light })
+    })
 
     /// The alternate icon for this theme (nil = the primary AppIcon).
     var iconName: String? { self == .default ? nil : "AppIcon-\(rawValue)" }

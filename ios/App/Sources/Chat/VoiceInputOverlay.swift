@@ -48,7 +48,7 @@ final class VoiceInputController {
     @discardableResult
     func arm() -> Bool {
         guard !isActive, !isArmed else { return isArmed }
-        guard MicPermission.micAuthorizedSync() else {
+        guard MicPermission.micAuthorizedSync() || Self.drillAudio else {
             Task { _ = await MicPermission.ensureMic() }
             return false
         }
@@ -56,6 +56,15 @@ final class VoiceInputController {
         target = .send
         dictation.start()
         return true
+    }
+
+    /// The voice drill feeds its own audio (no mic needed).
+    private static var drillAudio: Bool {
+        #if DEBUG
+        VoiceDrill.syntheticAudio
+        #else
+        false
+        #endif
     }
 
     /// Held past the threshold: the same recording becomes the hold-to-talk session.

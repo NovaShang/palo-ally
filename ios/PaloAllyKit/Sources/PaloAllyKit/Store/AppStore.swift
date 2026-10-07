@@ -105,6 +105,8 @@ public final class AppStore {
     /// don't run per token.
     private var pendingDeltas: [String: String] = [:]
     private var deltaFlushScheduled = false
+    /// Deltas received (breadcrumbs note every 20th).
+    @ObservationIgnored private var deltaCount = 0
     private var started = false
     private var syncing = false
     private var resyncRequested = false
@@ -247,11 +249,13 @@ public final class AppStore {
     private func handle(_ item: RPCInbound) {
         switch item {
         case .connected:
+            breadcrumb("link connected → syncing (\(messages.count) msgs)")
             connectGeneration += 1
             connection = .syncing
             let gen = connectGeneration
             Task { await self.onConnected(generation: gen) }
         case .disconnected(let reason):
+            breadcrumb("link disconnected")
             connectGeneration += 1
             switch reason {
             case .closed: connection = .offline(nil)
@@ -308,7 +312,11 @@ public final class AppStore {
     public func performSync() async throws {
         if syncing { resyncRequested = true; return }
         syncing = true
-        defer { syncing = false }
+        breadcrumb("sync start (since \(hasSynced ? lastSeq : 0))")
+        defer {
+            syncing = false
+            breadcrumb("sync end (\(messages.count) msgs)")
+        }
         repeat {
             resyncRequested = false
             var more = true
@@ -332,6 +340,7 @@ public final class AppStore {
         if let s = r.settings { settings = s }
 
         let maxSeq = r.messages.map(\.seq).max() ?? 0
+        breadcrumb("sync page: \(r.messages.count) msgs, \(r.messages.reduce(0) { $0 + $1.text.utf8.count }) bytes, \(since == nil ? "snapshot" : "since")")
         if since == nil {
             // Fresh snapshot: server messages replace ours; keep unsent echoes.
             let serverIDs = Set(r.messages.map(\.id))
@@ -379,6 +388,7 @@ public final class AppStore {
     /// anything still streaming is finished (a turn can end without a final
     /// `chat.message`, e.g. after an error or a stop) and the wait ends.
     private func applyStatus(_ s: HostStatus) {
+        if s.busy != status?.busy { breadcrumb("host \(s.busy ? "busy" : "idle")") }
         status = s
         guard !s.busy else { return }
         flushDeltas()
@@ -454,6 +464,8 @@ public final class AppStore {
 
     func applyDelta(_ d: ChatDelta) {
         awaitingReply = false
+        deltaCount += 1
+        if deltaCount % 20 == 1 { breadcrumb("delta #\(deltaCount) (+\(d.text.utf8.count) bytes)") }
         if let i = messages.firstIndex(where: { $0.id == d.id }) {
             // A late delta after the final message (or after the turn
             // ended) is ignored.
@@ -491,6 +503,7 @@ public final class AppStore {
     }
 
     func upsert(_ incoming: ChatMessage) {
+        breadcrumb("message \(incoming.role.rawValue) \(incoming.text.utf8.count) bytes (\(messages.count) msgs)")
         // The final text supersedes anything still buffered for it.
         pendingDeltas[incoming.id] = nil
         var m = incoming

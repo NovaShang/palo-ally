@@ -214,14 +214,48 @@ public actor DemoHost {
                 post("第 \(i + 1) 个问题：帮我比较一下这几个方案，顺便把要点列成表。", role: .user)
                 post(i % 3 == 0 ? DemoHost.longTableAnswer(i) : DemoHost.longProseAnswer(i))
             }
+            // `-demoStreamDelay <s>`: start streaming later (after a scroll tour).
+            let delay = UserDefaults.standard.double(forKey: "demoStreamDelay")
             Task {
-                await pause(4)
+                await pause(delay > 0 ? delay : 4)
+                await streamLongReply()
+            }
+        case "bigtable":
+            // The long conversation, plus an answer with a 500-row table;
+            // then the link drops and comes back (sync, full reload) while
+            // another long answer streams in.
+            for i in 0..<60 {
+                post("第 \(i + 1) 个问题：帮我比较一下这几个方案，顺便把要点列成表。", role: .user)
+                post(i % 3 == 0 ? DemoHost.longTableAnswer(i) : DemoHost.longProseAnswer(i))
+            }
+            post("把这半年的每一笔开销都列出来", role: .user)
+            post(DemoHost.hugeTableAnswer(rows: 500))
+            Task {
+                await pause(5)
+                await transport.forceReconnect()
+                await pause(2)
                 await streamLongReply()
             }
         default:
             break
         }
         setStatus(s)
+    }
+
+    /// An answer with one very long table (`-demoState bigtable`).
+    static func hugeTableAnswer(rows: Int) -> String {
+        let body = (0..<rows).map { r in
+            "| \(r + 1) | 2026-\(String(format: "%02d", r % 12 + 1))-\(String(format: "%02d", r % 28 + 1)) | 第 \(r + 1) 笔：超市、外卖或者交通 | ¥\(10 + (r * 37) % 900) | \(r % 4 == 0 ? "报销" : "自付") |"
+        }.joined(separator: "\n")
+        return """
+        一共 \(rows) 笔，按时间排好了：
+
+        | # | 日期 | 内容 | 金额 | 备注 |
+        |---:|:---|:---|---:|:---|
+        \(body)
+
+        合计和分类我放在下面。
+        """
     }
 
     /// Streams a long answer with two tables in small pieces, like a real

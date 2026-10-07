@@ -31,9 +31,8 @@ final class SpeechDictation {
             guard let provide = contextProvider else { session.contextProvider = nil; return }
             session.contextProvider = {
                 let text = provide()
-                #if DEBUG
-                debugLog("voice context (\(text?.count ?? 0)c): \(text ?? "")")
-                #endif
+                // The size only: the context is conversation text.
+                debugLog("voice context: \(text?.count ?? 0) chars")
                 return text
             }
         }
@@ -48,7 +47,12 @@ final class SpeechDictation {
     /// App left the foreground: let the audio session go (others get it back).
     func coolDown() { AudioCaptureService.setSessionWarm(false) }
 
+    /// When this recording started (for the breadcrumbs).
+    @ObservationIgnored private var startedAt = Date()
+
     func start() {
+        breadcrumb("voice start")
+        startedAt = Date()
         errorMessage = nil
         transcript = ""
         isRecording = true
@@ -65,6 +69,7 @@ final class SpeechDictation {
                     return
                 }
                 debugLog("voice error: \(message)")
+                breadcrumb("voice error \(Int(Date().timeIntervalSince(self.startedAt))) s in")
                 self.errorMessage = Self.friendly(message)
             }
         )
@@ -74,15 +79,22 @@ final class SpeechDictation {
     func finish() async -> String {
         guard isRecording else { return transcript.trimmingCharacters(in: .whitespacesAndNewlines) }
         let lang = openAILanguageHint(for: UserDefaults.standard.string(forKey: "speech_locale") ?? "auto")
+        breadcrumb("voice finish after \(Int(Date().timeIntervalSince(startedAt))) s")
         let text = await session.finish(language: lang)
+        breadcrumb("voice final: \(text.count) chars")
         isRecording = false
         level = 0
-        if !text.isEmpty { transcript = text }
+        if !text.isEmpty {
+            transcript = text
+            // A connection lost mid-recording was recovered from the clip.
+            errorMessage = nil
+        }
         return transcript.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Stops and throws the text away.
     func cancel() {
+        if isRecording { breadcrumb("voice cancel") }
         generation.invalidate()
         session.cancel()
         isRecording = false

@@ -31,6 +31,9 @@ struct ChatView: View {
     /// a sidebar opening), instead of keeping the raw offset and letting the
     /// text slide. Nil while following the bottom.
     @State private var readingAnchor: String?
+    /// Something arrived below (a message, or more of one) since the reader
+    /// scrolled up: the jump button's dot.
+    @State private var unseenBelow = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -84,7 +87,7 @@ struct ChatView: View {
                         }
                         .id(message.id)
                         #if DEBUG
-                        .modifier(AnchorProbe(id: message.id, anchor: readingAnchor))
+                        .modifier(AnchorProbe(id: message.id, anchor: AnchorProbe.enabled ? readingAnchor : nil))
                         #endif
                     }
 
@@ -132,7 +135,12 @@ struct ChatView: View {
             // The Mac: the orb floats over the top of the column, so the
             // first message starts a little below it.
             .contentMargins(.top, Platform.barInWindowToolbar ? Self.macTopMargin : 0, for: .scrollContent)
-            .onChange(of: pinned) { _, now in if now { readingAnchor = nil } }
+            .onChange(of: pinned) { _, now in
+                if now {
+                    readingAnchor = nil
+                    unseenBelow = false
+                }
+            }
             #if DEBUG
             // `-demoDetach YES`: read from the middle of the history (for the resize test).
             .task {
@@ -144,8 +152,40 @@ struct ChatView: View {
                 readingAnchor = mid
                 debugLog("[anchor] reading from \(mid)")
             }
-            .onChange(of: readingAnchor) { _, id in
+            // Only under -demoDetach: reading `readingAnchor` here would make
+            // the whole conversation re-render at every row scrolled past.
+            .onChange(of: AnchorProbe.enabled ? readingAnchor : nil) { _, id in
                 if AnchorProbe.enabled { debugLog("[anchor] top row now \(id ?? "nil")") }
+            }
+            // `-demoJump <s>`: tap 「回到最新」 that many seconds in, then log
+            // how far from the end the view is.
+            .task {
+                let at = UserDefaults.standard.double(forKey: "demoJump")
+                guard at > 0 else { return }
+                try? await Task.sleep(for: .seconds(at))
+                debugLog("[jump] tap: \(Int(ChatScroll.debugDistance)) pt from the end, pinned \(pinned), button \(store.viewingPast || (!pinned && awayFromBottom))")
+                jumpToLatest(proxy)
+                var waited = 0.0
+                for t in [0.5, 1.5, 3, 6] {
+                    try? await Task.sleep(for: .seconds(t - waited))
+                    waited = t
+                    debugLog("[jump] +\(t) s: \(Int(ChatScroll.debugDistance)) pt from the end, pinned \(pinned)")
+                }
+            }
+            // `-demoScrollTour YES`: scroll up through the whole conversation
+            // and back, as a reader would, so every row has been on screen.
+            .task {
+                guard UserDefaults.standard.bool(forKey: "demoScrollTour") else { return }
+                try? await Task.sleep(for: .seconds(2))
+                let ids = store.messages.map(\.id)
+                debugLog("[tour] up through \(ids.count) messages")
+                for id in ids.reversed() {
+                    proxy.scrollTo(id, anchor: .top)
+                    try? await Task.sleep(for: .milliseconds(40))
+                }
+                proxy.scrollTo("bottom", anchor: .bottom)
+                pinned = true
+                debugLog("[tour] back at the end")
             }
             #endif
             .scrollDismissesKeyboard(.immediately)
@@ -153,6 +193,7 @@ struct ChatView: View {
             // composer (links, buttons and selection still get their click).
             .modifier(ClickToUnfocusComposer())
             .onScrollPhaseChange { old, phase in
+                breadcrumb("scroll \(phase)")
                 let moving = phase == .tracking || phase == .interacting || phase == .decelerating
                 userScrolling = moving
                 // A scroll of the reader's that comes to rest near the end
@@ -165,6 +206,9 @@ struct ChatView: View {
             .onScrollGeometryChange(for: ChatScroll.Metrics.self) { g in
                 ChatScroll.Metrics(g)
             } action: { old, new in
+                #if DEBUG
+                ChatScroll.debugDistance = new.distanceFromBottom
+                #endif
                 let away = new.distanceFromBottom > ChatScroll.reattachDistance
                 if away != awayFromBottom { awayFromBottom = away }
                 if userScrolling {
@@ -234,10 +278,12 @@ struct ChatView: View {
             .onChange(of: store.messages.last?.id) {
                 // Sending always returns to the live bottom.
                 if store.messages.last?.role == .user { pinned = true }
+                if !pinned, !unseenBelow { unseenBelow = true }
                 guard pinned, !userScrolling else { return }
                 withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             .onChange(of: store.messages.last?.text) {
+                if !pinned, !unseenBelow { unseenBelow = true }
                 guard pinned, !userScrolling else { return }
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
@@ -249,18 +295,7 @@ struct ChatView: View {
                 let showJump = store.viewingPast || (!pinned && awayFromBottom)
                 ZStack {
                     if showJump {
-                        JumpToLatestButton(streaming: store.isBusy) {
-                            pinned = true
-                            if store.viewingPast {
-                                // An older stretch is showing: load the live end first.
-                                Task { @MainActor in
-                                    await store.returnToLatest()
-                                    withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
-                                }
-                            } else {
-                                withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
-                            }
-                        }
+                        JumpToLatestButton(hasNew: unseenBelow) { jumpToLatest(proxy) }
                         .padding(.bottom, 10)
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                     }
@@ -337,6 +372,30 @@ struct ChatView: View {
         }
         .sheet(isPresented: Binding(get: { model.showModelPicker }, set: { model.showModelPicker = $0 })) {
             ModelPickerSheet().environment(model).environment(store)
+        }
+    }
+
+    /// 「回到最新」: to the very end (the last message and anything under it)
+    /// and following it again. The reader's place is held by the
+    /// scroll-position binding, which in the same update would put the view
+    /// back where it was; so the anchor is let go first and the jump runs a
+    /// frame later. The rows below were only estimated until they come into
+    /// view, so it settles on the end once more after they have their sizes.
+    private func jumpToLatest(_ proxy: ScrollViewProxy) {
+        breadcrumb("jump to latest")
+        readingAnchor = nil
+        pinned = true
+        unseenBelow = false
+        Task { @MainActor in
+            // An older stretch is showing: load the live end first.
+            if store.viewingPast { await store.returnToLatest() }
+            try? await Task.sleep(for: .milliseconds(20))
+            withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
+            for delay in [400, 300] {
+                try? await Task.sleep(for: .milliseconds(delay))
+                guard pinned, !userScrolling else { return }
+                proxy.scrollTo("bottom", anchor: .bottom)
+            }
         }
     }
 

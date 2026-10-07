@@ -41,6 +41,9 @@ struct MarkdownTableView: View {
     @Environment(\.messageGutter) private var gutter
     @Environment(\.displayScale) private var displayScale
     @State private var hidden = HiddenEdges()
+    /// Long tables show their first rows until 「展开全部」.
+    @State private var showAll = false
+    private static let rowLimit = 40
 
     private struct HiddenEdges: Equatable {
         var leading = false
@@ -48,6 +51,20 @@ struct MarkdownTableView: View {
     }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            scroller
+            if table.rows.count > Self.rowLimit {
+                Button(showAll ? "收起" : "展开全部 \(table.rows.count) 行") {
+                    withAnimation(.snappy) { showAll.toggle() }
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .buttonStyle(.borderless)
+            }
+        }
+    }
+
+    private var scroller: some View {
         ScrollView(.horizontal) {
             grid.padding(.vertical, 2)
         }
@@ -77,9 +94,10 @@ struct MarkdownTableView: View {
                 ForEach(0..<n, id: \.self) { c in cell(header[c], column: c, header: true) }
                 rule(strong: true)
             }
-            ForEach(Array(table.rows.enumerated()), id: \.offset) { r, row in
+            let rows = showAll ? table.rows : Array(table.rows.prefix(Self.rowLimit))
+            ForEach(Array(rows.enumerated()), id: \.offset) { r, row in
                 ForEach(0..<n, id: \.self) { c in cell(row[c], column: c, header: false) }
-                if r < table.rows.count - 1 { rule(strong: false) }
+                if r < rows.count - 1 { rule(strong: false) }
             }
         }
     }
@@ -128,29 +146,36 @@ private struct TableRule: LayoutValueKey {
 
 /// Cells in row-major order, `columns` per row, with optional full-width rules
 /// between rows. Each column is as wide as its widest cell's single line,
-/// clamped to `minWidth…maxWidth`; cells wider than that wrap.
+/// clamped to `minWidth…maxWidth`; cells wider than that wrap. The grid
+/// doesn't depend on the proposed size, so it is measured once and cached
+/// until the cells change (each layout pass used to measure every cell
+/// twice over, for sizing and again for placing).
 private struct TableGrid: Layout {
     var columns: Int
     var minWidth: CGFloat = 72
     var maxWidth: CGFloat = 240
 
-    private enum Line {
+    enum Line {
         case cells([Int], height: CGFloat)
         case rule(Int, height: CGFloat)
     }
 
-    private struct Measured {
+    struct Measured {
         var widths: [CGFloat]
         var lines: [Line]
         var size: CGSize
     }
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        measure(subviews).size
+    func makeCache(subviews: Subviews) -> Measured? { nil }
+
+    func updateCache(_ cache: inout Measured?, subviews: Subviews) { cache = nil }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Measured?) -> CGSize {
+        measured(subviews, &cache).size
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let m = measure(subviews)
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Measured?) {
+        let m = measured(subviews, &cache)
         var y = bounds.minY
         for line in m.lines {
             switch line {
@@ -168,6 +193,13 @@ private struct TableGrid: Layout {
                 y += height
             }
         }
+    }
+
+    private func measured(_ subviews: Subviews, _ cache: inout Measured?) -> Measured {
+        if let m = cache { return m }
+        let m = measure(subviews)
+        cache = m
+        return m
     }
 
     private func measure(_ subviews: Subviews) -> Measured {

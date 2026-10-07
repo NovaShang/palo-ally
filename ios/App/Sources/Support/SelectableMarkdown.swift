@@ -23,13 +23,13 @@ struct SelectableMarkdown: UIViewRepresentable {
     func makeUIView(context: Context) -> MarkdownTextView {
         let view = MarkdownTextView.make()
         view.onQuote = onQuote
-        view.render(source: source, streaming: streaming, linkColor: UIColor(theme.color))
+        view.render(source: source, streaming: streaming, linkColor: theme.uiColor)
         return view
     }
 
     func updateUIView(_ view: MarkdownTextView, context: Context) {
         view.onQuote = onQuote
-        view.render(source: source, streaming: streaming, linkColor: UIColor(theme.color))
+        view.render(source: source, streaming: streaming, linkColor: theme.uiColor)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: MarkdownTextView, context: Context) -> CGSize? {
@@ -38,7 +38,7 @@ struct SelectableMarkdown: UIViewRepresentable {
         // SwiftUI may size the view before updateUIView hands it the new text
         // (a streamed reply turning final): measure what it is about to show,
         // or the row keeps the shorter height and the end is cut off.
-        uiView.render(source: source, streaming: streaming, linkColor: uiView.currentLinkColor ?? UIColor(theme.color))
+        uiView.render(source: source, streaming: streaming, linkColor: uiView.currentLinkColor ?? theme.uiColor)
         let fit = uiView.fittingSize(width: width)
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "textTrace") { debugLog("[text] size \(source.count)ch w=\(width) → h=\(fit.height)") }
@@ -175,11 +175,16 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
 
     func render(source: String, streaming: Bool, linkColor: UIColor) {
         pendingSource = source
-        guard source != lastSource || streaming != lastStreaming || linkColor != lastLinkColor else { return }
+        // Called on every update of the conversation: anything but a real
+        // change must return here, or the whole reply is parsed and laid out
+        // again (many times a second while a reply streams in).
+        guard source != lastSource || streaming != lastStreaming || !Self.sameColor(linkColor, lastLinkColor) else { return }
         lastSource = source
         lastStreaming = streaming
         lastLinkColor = linkColor
         measured.removeAll()
+        let began = CACurrentMediaTime()
+        defer { Self.noteRender(chars: source.count, since: began) }
         let rendered = MarkdownRenderer.render(streaming ? source + " ▍" : source)
         // A code block / table background reaches 6 pt past its text; make
         // room when one is first or last so it isn't clipped.
@@ -198,6 +203,46 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         invalidateIntrinsicContentSize()
         setNeedsLayout()
     }
+
+    /// Dynamic colors compare by identity; compare what they look like.
+    private static func sameColor(_ a: UIColor, _ b: UIColor?) -> Bool {
+        guard let b else { return false }
+        if a === b || a == b { return true }
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            let t = UITraitCollection(userInterfaceStyle: style)
+            if a.resolvedColor(with: t) != b.resolvedColor(with: t) { return false }
+        }
+        return true
+    }
+
+    /// A long answer or a slow render leaves a breadcrumb (size and time,
+    /// never text) for the stall watchdog. `-renderTrace YES` (DEBUG) logs a
+    /// count of renders each second, so a re-render storm shows in the log.
+    private static func noteRender(chars: Int, since began: CFTimeInterval) {
+        let ms = (CACurrentMediaTime() - began) * 1000
+        if chars > 2000 || ms > 30 { breadcrumb("text render \(chars)ch \(Int(ms)) ms") }
+        #if DEBUG
+        guard UserDefaults.standard.bool(forKey: "renderTrace") else { return }
+        traceCount += 1
+        traceChars += chars
+        traceMs += ms
+        guard !traceFlushing else { return }
+        traceFlushing = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            MainActor.assumeIsolated {
+                debugLog("[render] \(traceCount) renders, \(traceChars) chars, \(Int(traceMs)) ms in the last second")
+                (traceCount, traceChars, traceMs, traceFlushing) = (0, 0, 0, false)
+            }
+        }
+        #endif
+    }
+
+    #if DEBUG
+    private static var traceCount = 0
+    private static var traceChars = 0
+    private static var traceMs = 0.0
+    private static var traceFlushing = false
+    #endif
 
     /// Code blocks and quotes use line separators (U+2028) to stay one
     /// paragraph; copied text gets ordinary newlines back.

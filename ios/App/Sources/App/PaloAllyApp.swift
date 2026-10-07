@@ -16,6 +16,7 @@ struct PaloAllyApp: App {
                 .environment(\.locale, Locale(identifier: "zh-Hans"))
                 .onOpenURL { appDelegate.model.handle(url: $0) }
                 .onChange(of: scenePhase) { _, phase in
+                    breadcrumb("scene \(phase)")
                     switch phase {
                     case .active: appDelegate.model.didBecomeActive()
                     case .background: appDelegate.model.didEnterBackground()
@@ -69,9 +70,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().delegate = self
         // Voice logs already carry "[voice]"; append the time since the press.
         voiceLogSink = { debugLog("\($0)\(VoiceTiming.suffix)") }
-        #if DEBUG
+        // Every build: a hang leaves a timestamp and breadcrumbs in the log,
+        // and the system's own hang / crash reports (with stacks) land in
+        // Documents/diagnostics on a later launch.
         StallWatchdog.start()
-        #endif
+        DiagnosticsCollector.shared.start()
         return true
     }
 

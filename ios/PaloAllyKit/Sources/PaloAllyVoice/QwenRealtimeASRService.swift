@@ -195,6 +195,14 @@ public final class QwenRealtimeASRService: NSObject, @unchecked Sendable, Realti
         ], on: task)
     }
 
+    #if DEBUG
+    /// Voice drill (`-voiceDrillFailAfter`): drop the socket the way a network
+    /// failure does, leaving everything else to the real error path.
+    public func debugDropSocket() {
+        task?.cancel(with: .abnormalClosure, reason: nil)
+    }
+    #endif
+
     public func cancel() async {
         isOpen = false
         // Best-effort graceful finish so DashScope closes the session cleanly.
@@ -257,13 +265,19 @@ public final class QwenRealtimeASRService: NSObject, @unchecked Sendable, Realti
                 case "error":
                     let info = (json["error"] as? [String: Any])?["message"] as? String
                         ?? "Qwen Realtime error"
+                    isOpen = false
                     onError?(ASRError.server(info))
                     return
                 default:
                     break
                 }
             } catch {
-                if isOpen { onError?(error) }
+                // PaloAlly: the socket is gone; stop sending audio into it
+                // (each chunk would otherwise fail again until release).
+                if isOpen {
+                    isOpen = false
+                    onError?(error)
+                }
                 return
             }
         }

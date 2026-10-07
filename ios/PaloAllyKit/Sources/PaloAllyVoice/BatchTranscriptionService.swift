@@ -17,6 +17,9 @@ public final class BatchTranscriptionService: @unchecked Sendable {
     private static let qwenRelayURL = URL(string: BentoEndpoints.relayBaseURL + "/v1/asr/qwen/transcribe")!
     private static let qwenDirectURL = URL(string: "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation")!
 
+    /// Longest clip sent (the relay's limit is 120 s).
+    static let maxSeconds: Double = 110
+
     public init() {}
 
     /// Transcribe 16-bit mono PCM at `sampleRate` via Qwen. `language` is an
@@ -24,6 +27,14 @@ public final class BatchTranscriptionService: @unchecked Sendable {
     /// text. Returns the text, or nil on empty/failure.
     public func transcribe(pcm: Data, sampleRate: Double, language: String = "", corpus: String = "") async -> String? {
         guard !pcm.isEmpty else { return nil }
+        // PaloAlly: the relay refuses clips over 120 s, which would lose the
+        // whole utterance; send the first `maxSeconds` instead.
+        let cap = Int(sampleRate * Self.maxSeconds) * 2
+        var pcm = pcm
+        if pcm.count > cap {
+            dlog("[batch-asr] clip \(pcm.count / 2 / Int(sampleRate)) s, sending the first \(Int(Self.maxSeconds)) s")
+            pcm = pcm.prefix(cap)
+        }
         let wav = Self.wav(pcm: pcm, sampleRate: sampleRate)
         return await transcribeQwen(wav: wav, language: language, corpus: corpus)
     }

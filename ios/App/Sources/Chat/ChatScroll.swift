@@ -23,12 +23,20 @@ enum ChatScroll {
             bottomInset = g.contentInsets.bottom
         }
     }
+
+    #if DEBUG
+    /// The latest distance from the end, for the jump drill's log.
+    @MainActor static var debugDistance: CGFloat = 0
+    #endif
 }
 
 /// Small glass circle above the composer while the reader is up in history:
-/// tap to jump to the newest text and follow it again. Neutral, not themed.
+/// tap to jump to the newest text and follow it again. Neutral, not themed;
+/// only its dot, for something new below that the reader hasn't seen, takes
+/// the theme color.
 struct JumpToLatestButton: View {
-    var streaming: Bool
+    /// A message (or more of one) arrived below since the reader scrolled up.
+    var hasNew: Bool
     let action: () -> Void
 
     var body: some View {
@@ -39,13 +47,14 @@ struct JumpToLatestButton: View {
                 .frame(width: 40, height: 40)
                 .glassEffect(.regular.interactive(), in: .circle)
                 .overlay(alignment: .topTrailing) {
-                    // A quiet dot while new text is still arriving below.
-                    if streaming {
-                        Circle().fill(.secondary).frame(width: 7, height: 7).offset(x: -2, y: 2)
+                    if hasNew {
+                        Circle().fill(.tint).frame(width: 8, height: 8).offset(x: -1, y: 1)
+                            .transition(.scale.combined(with: .opacity))
                     }
                 }
+                .animation(.snappy(duration: 0.2), value: hasNew)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("回到最新")
+        .accessibilityLabel(hasNew ? "回到最新，下面有新消息" : "回到最新")
     }
 }

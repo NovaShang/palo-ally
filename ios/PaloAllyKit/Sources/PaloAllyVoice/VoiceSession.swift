@@ -57,6 +57,13 @@ public final class VoiceSession {
     /// `completed` event after a commit — so `finish()` stops waiting promptly.
     private var realtimeFinalArrived = false
     private var realtimeCompleted = false
+    /// PaloAlly: the realtime socket failed mid-recording. Nothing said after
+    /// that was transcribed, so `finish()` re-transcribes the whole clip.
+    private var realtimeFailed = false
+    #if DEBUG
+    /// Voice drill: the synthetic audio feeder standing in for the mic.
+    private var drillFeeder: Task<Void, Never>?
+    #endif
 
     /// PCM captured before the realtime socket is open, flushed once it connects
     /// so the opening words aren't lost to the (cold) WSS handshake latency.
@@ -116,6 +123,7 @@ public final class VoiceSession {
         recordedPCM = Data()
         realtimeFinalArrived = false
         realtimeCompleted = false
+        realtimeFailed = false
         dlog("[voice] start engine=\(engine)")
 
         // Fast path: when permission is already granted (the common case after the
@@ -123,7 +131,11 @@ public final class VoiceSession {
         // hop, no async permission round-trip — so the mic goes live immediately
         // instead of a few hundred ms after the compass appears.
         let needsSpeech = (engine == .apple)
-        if MicPermission.micAuthorizedSync(), !needsSpeech || MicPermission.speechAuthorizedSync() {
+        var granted = MicPermission.micAuthorizedSync()
+        #if DEBUG
+        if VoiceDrill.syntheticAudio { granted = true }
+        #endif
+        if granted, !needsSpeech || MicPermission.speechAuthorizedSync() {
             dlog("[voice] permission pre-granted → begin \(engine) inline")
             switch engine {
             case .apple:         beginApple(onPartial: onPartial, onError: onError)
@@ -201,7 +213,7 @@ public final class VoiceSession {
             return final.isEmpty ? lastTranscript : final
 
         case .qwen:
-            audioCapture.stop()
+            stopCapture()
             let asr = realtime
             // Silent hold: the gate never opened, so the model received no
             // audio. Don't commit (forcing a model to transcribe nothing is
@@ -224,6 +236,22 @@ public final class VoiceSession {
                 pendingPCM = []
                 Task { await asr?.cancel() }
                 return streamed
+            }
+            // PaloAlly: the socket died mid-recording, so no final is coming
+            // and the words after the failure were never heard. Transcribe
+            // the whole clip in one request instead (bounded: one try, the
+            // service's timeout, at most `maxSeconds` of audio).
+            if realtimeFailed {
+                realtime = nil
+                realtimeReady = false
+                pendingPCM = []
+                Task { await asr?.cancel() }
+                let streamed = lastTranscript
+                guard !recordedPCM.isEmpty else { return streamed }
+                dlog("[voice] realtime failed mid-recording → batch the clip (\(recordedPCM.count) bytes)")
+                let better = await BatchTranscriptionService.shared.transcribe(
+                    pcm: recordedPCM, sampleRate: activeSampleRate, language: language, corpus: activeCorpus)
+                return better ?? streamed
             }
             // Released mid-speech (or Qwen, always): commit the buffer and wait
             // (bounded) for the realtime final. The socket stays open during this
@@ -258,7 +286,7 @@ public final class VoiceSession {
             _ = apple?.stopRecording()
             apple = nil
         case .qwen:
-            audioCapture.stop()
+            stopCapture()
             let asr = realtime
             realtime = nil
             realtimeReady = false
@@ -267,6 +295,15 @@ public final class VoiceSession {
         }
         isActive = false
         if Self.activeRecording === self { Self.activeRecording = nil }
+    }
+
+    /// Stops the mic (or the drill's stand-in for it).
+    private func stopCapture() {
+        audioCapture.stop()
+        #if DEBUG
+        drillFeeder?.cancel()
+        drillFeeder = nil
+        #endif
     }
 
     /// Poll for the realtime final after a commit, up to `graceMs`. Returns as
@@ -368,7 +405,10 @@ public final class VoiceSession {
                 return
             }
             dlog("[voice] realtime asr error: \(err.localizedDescription)")
-            Task { @MainActor in onError(err.localizedDescription) }
+            Task { @MainActor in
+                self.realtimeFailed = true
+                onError(err.localizedDescription)
+            }
         }
         // Buffer audio captured before the socket is open; flush on connect.
         // Everything is recorded locally, but only chunks the speech gate
@@ -398,15 +438,16 @@ public final class VoiceSession {
         // audio session + engine start can take hundreds of ms on a device and
         // must not hold up the press animation.
         let rate = asr.sampleRate
-        audioCapture.startAsync(targetSampleRate: rate) { error in
-            if let error {
-                if VoiceErrors.isCancellation(error) { return }
-                dlog("[voice] mic capture FAILED: \(error.localizedDescription)")
-                Task { @MainActor in onError(error.localizedDescription) }
-            } else {
-                dlog("[voice] mic capture started @\(Int(rate))Hz")
-            }
+        #if DEBUG
+        if VoiceDrill.syntheticAudio {
+            drillFeeder = VoiceDrill.feed(sampleRate: rate, into: audioCapture.onPCM)
+            dlog("[voice] drill: synthetic audio @\(Int(rate))Hz instead of the mic")
+        } else {
+            startMic(rate: rate, onError: onError)
         }
+        #else
+        startMic(rate: rate, onError: onError)
+        #endif
         Task {
             do {
                 try await asr.start()
@@ -415,6 +456,13 @@ public final class VoiceSession {
                 pendingPCM = []
                 dlog("[voice] realtime WSS connected; flushing \(buffered.count) buffered chunks")
                 for pcm in buffered { await asr.sendAudio(pcm) }
+                #if DEBUG
+                if VoiceDrill.failAfter > 0, let qwen = asr as? QwenRealtimeASRService {
+                    try? await Task.sleep(for: .seconds(VoiceDrill.failAfter))
+                    dlog("[voice] drill: dropping the realtime socket")
+                    qwen.debugDropSocket()
+                }
+                #endif
             } catch {
                 if VoiceErrors.isCancellation(error) {
                     dlog("[voice] realtime WSS start cancelled (not an error)")
@@ -422,6 +470,18 @@ public final class VoiceSession {
                 }
                 dlog("[voice] realtime WSS start FAILED: \(error.localizedDescription)")
                 await MainActor.run { onError(error.localizedDescription) }
+            }
+        }
+    }
+
+    private func startMic(rate: Double, onError: @escaping @MainActor (String) -> Void) {
+        audioCapture.startAsync(targetSampleRate: rate) { error in
+            if let error {
+                if VoiceErrors.isCancellation(error) { return }
+                dlog("[voice] mic capture FAILED: \(error.localizedDescription)")
+                Task { @MainActor in onError(error.localizedDescription) }
+            } else {
+                dlog("[voice] mic capture started @\(Int(rate))Hz")
             }
         }
     }

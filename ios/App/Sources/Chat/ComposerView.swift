@@ -180,6 +180,9 @@ struct ComposerView: View {
             displayRadius = DisplayCorners.radius
             homeInset = DisplayCorners.bottomInset
         }
+        #if DEBUG
+        .task { await runVoiceDrill() }
+        #endif
         // Rotation changes the home-indicator inset.
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _ in homeInset = DisplayCorners.bottomInset }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { keyboardMoved($0) }
@@ -463,6 +466,29 @@ struct ComposerView: View {
         VoiceTiming.mark("recording requested (arm returned)")
         return true
     }
+
+    #if DEBUG
+    /// `-voiceDrill <seconds>` (with `-voiceDrillAudio YES`, see VoiceDrill):
+    /// holds to talk that long on its own, then releases to send, through
+    /// the same calls the press gesture makes — reproduces a long hold (and,
+    /// with `-voiceDrillFailAfter`, a socket failure in it) unattended.
+    private func runVoiceDrill() async {
+        let seconds = UserDefaults.standard.double(forKey: "voiceDrill")
+        guard seconds > 0 else { return }
+        let delay = UserDefaults.standard.double(forKey: "voiceDrillDelay")
+        try? await Task.sleep(for: .seconds(delay > 0 ? delay : 6))
+        debugLog("[drill] hold to talk for \(Int(seconds)) s")
+        guard pressBegan(touchTime: ProcessInfo.processInfo.systemUptime) else {
+            debugLog("[drill] press refused")
+            return
+        }
+        try? await Task.sleep(for: .seconds(Self.holdSeconds))
+        pressHeld(.began, at: .zero)
+        try? await Task.sleep(for: .seconds(seconds))
+        debugLog("[drill] release")
+        pressHeld(.ended, at: CGPoint(x: voice.capsuleSize.width / 2, y: 10))
+    }
+    #endif
 
     /// Lifted (tap) or moved away (scroll) before the hold committed.
     private func pressLifted(tap: Bool) {

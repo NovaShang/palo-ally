@@ -102,8 +102,10 @@ struct SettingsView: View {
 
             Section {
                 LabeledContent("版本", value: model.buildStamp)
-                // From bento: one file to send when something goes wrong.
-                ShareLink(item: DebugLog.shared.fileURL) {
+                // From bento: what to send when something goes wrong — the
+                // logs of the last few launches and the system's hang and
+                // crash reports.
+                ShareLink(items: DebugLog.shared.allFileURLs + DiagnosticsCollector.files) {
                     Label("导出调试日志", systemImage: "doc.text.magnifyingglass")
                 }
                 .tint(.primary)
