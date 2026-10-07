@@ -92,9 +92,8 @@ private struct DemoCapture: ViewModifier {
 /// `-resizeTest YES` walks the Mac window through a series of widths and
 /// toggles the sidebar and inspector, logging each step (the stall watchdog
 /// logs any hang in between); `-demoActions "goal,back,..."` performs
-/// navigation steps two seconds apart (goal / task / memory: open the first
-/// one in the middle column; chat; back = ⌘[; assistant / library: the narrow
-/// places), logging what's on screen after each.
+/// navigation steps two seconds apart (back = ⌘[; assistant / library: the
+/// places; settings; sidebar: toggle 「它」), logging what's on screen after each.
 private struct LayoutStressTest: ViewModifier {
     let model: AppModel
 
@@ -104,12 +103,8 @@ private struct LayoutStressTest: ViewModifier {
             if let actions = d.string(forKey: "demoActions") {
                 try? await Task.sleep(for: .seconds(d.double(forKey: "demoActionsDelay") > 0 ? d.double(forKey: "demoActionsDelay") : 4))
                 for a in actions.split(separator: ",").map(String.init) {
-                    guard let store = model.store else { break }
+                    guard model.store != nil else { break }
                     switch a {
-                    case "goal": if let w = store.watches.first { model.splitDetail = .goal(w.id) }
-                    case "task": if let t = store.tasks.first { model.splitDetail = .task(t.id) }
-                    case "memory": if let f = try? await store.memoryFiles().first { model.splitDetail = .memory(f) }
-                    case "chat": model.splitDetail = .chat
                     case "back": model.goBack()
                     case "assistant": model.place = .assistant
                     case "library": model.place = .library
@@ -118,7 +113,7 @@ private struct LayoutStressTest: ViewModifier {
                     default: break
                     }
                     try? await Task.sleep(for: .seconds(1.5))
-                    debugLog("[nav] after \(a): layout \(model.layout.rawValue) place \(model.place) detail \(model.splitDetail) sidebar \(model.sidebarShown) inspector \(model.inspectorShown) settings \(model.showSettings)")
+                    debugLog("[nav] after \(a): layout \(model.layout.rawValue) place \(model.place) sidebar \(model.sidebarShown) inspector \(model.inspectorShown) settings \(model.showSettings)")
                     try? await Task.sleep(for: .seconds(0.5))
                 }
             }
@@ -157,8 +152,8 @@ private struct LayoutStressTest: ViewModifier {
 /// library) — with one set of content views and one navigation state. Only
 /// the container changes with the window's actual width: narrow windows
 /// (phones, iPad slide-over, a narrow Mac window) slide between the places;
-/// wider ones show 「它」 as the system sidebar and 「成果」 as the system
-/// inspector beside the conversation.
+/// wider ones keep the conversation on screen and open 「它」 and 「成果」 as
+/// panels on either side.
 struct MainScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
@@ -181,7 +176,7 @@ struct MainScreen: View {
                 if (container ?? layout) == .phone {
                     SpatialPlaces()
                 } else {
-                    SplitPlaces()
+                    PanelPlaces()
                 }
             }
             .onAppear { wanted = layout; container = layout; model.setLayout(layout) }
@@ -227,20 +222,7 @@ struct MainScreen: View {
         }
     }
 
-    /// The Mac's title bar keeps the split view's sidebar width if the split
-    /// goes away with its sidebar open (the toolbar's 「它」 would then start
-    /// there): put the sidebar away first, then slide into the narrow layout.
     private func switchContainer(to l: AppModel.Layout) {
-        if Platform.barInWindowToolbar, l == .phone, container != .phone, model.sidebarShown {
-            model.sidebarShown = false
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(350))
-                guard wanted == .phone else { return } // widened again meanwhile
-                container = .phone
-                model.setLayout(.phone)
-            }
-            return
-        }
         container = l
         model.setLayout(l)
     }
@@ -254,8 +236,8 @@ struct MainScreen: View {
     }
 
     /// Narrow (< 700 pt, or a compact size class): the phone layout.
-    /// Medium: sidebar and inspector float over the conversation. Wide
-    /// (≥ 1100 pt): they sit beside it.
+    /// Medium: 「它」 lays over the conversation and one panel is open at a
+    /// time. Wide (≥ 1100 pt): the panels sit beside it.
     static func layout(width: CGFloat, sizeClass: UserInterfaceSizeClass?) -> AppModel.Layout {
         guard sizeClass == .regular, width >= 700 else { return .phone }
         return width >= 1100 ? .wide : .medium
@@ -346,47 +328,36 @@ private struct SpatialPlaces: View {
     }
 }
 
-/// Wider windows: 「它」 is the system sidebar (collapsible; open by default
-/// when wide, closed when medium, then as the user leaves it), the
-/// conversation is the detail column, and 「成果」 is the system inspector —
-/// a trailing column when there's room, floating when there isn't. Same
-/// content views as the phone layout; only their back buttons are hidden.
-private struct SplitPlaces: View {
+/// Wider windows: the conversation always owns the window — nothing replaces
+/// it. 「它」 and 「成果」 are panels on either side, closed by default and
+/// opened from the toolbar (the bar's buttons on iPad, ⌘1 / ⌘2): glanced at,
+/// then put away, like the phone's places. Details open inside the panel
+/// with their own back; the panel's ✕, its toolbar button again, Esc or ⌘[
+/// closes it. Wide windows make room for a panel beside the conversation;
+/// medium ones lay 「它」 over it, and only one panel is open at a time.
+private struct PanelPlaces: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
 
+    private static let assistantWidth: CGFloat = 340
+
     var body: some View {
         @Bindable var model = model
-        NavigationSplitView(columnVisibility: Binding(
-            get: { model.sidebarShown ? .all : .detailOnly },
-            set: { visibility in
-                let shown = visibility != .detailOnly
-                guard shown != model.sidebarShown else { return }
-                model.sidebarShown = shown
-                model.rememberSidebar()
+        let beside = model.layout == .wide
+        HStack(spacing: 0) {
+            if beside && model.sidebarShown {
+                AssistantPlace()
+                    .frame(width: Self.assistantWidth)
+                    .transition(.move(edge: .leading))
+                Divider().ignoresSafeArea()
             }
-        )) {
-            AssistantPlace()
-                .navigationSplitViewColumnWidth(min: 300, ideal: 340, max: 420)
-                // The conversation's own 「它」 button is the toggle (on the
-                // Mac, the window toolbar's system toggle), always in one place.
-                .toolbar(removing: .sidebarToggle)
-        } detail: {
-            ZStack {
-                // The conversation stays alive (its scroll position, the
-                // draft) while a sidebar item is open over it.
-                NavigationStack { ChatView().modifier(InContentNavigationBar()) }
-                    .opacity(model.splitDetail == .chat ? 1 : 0)
-                    .allowsHitTesting(model.splitDetail == .chat)
-                    .accessibilityHidden(model.splitDetail != .chat)
-                if model.splitDetail != .chat {
-                    SplitDetailPage(detail: model.splitDetail)
-                        .id(model.splitDetail)
-                }
-            }
-            // The hidden composer mustn't keep the keyboard.
-            .onChange(of: model.splitDetail) { _, d in if d != .chat { model.composerUnfocusRequests += 1 } }
-            .inspector(isPresented: $model.inspectorShown) {
+            NavigationStack { ChatView().modifier(InContentNavigationBar()) }
+                // Opened only on demand: the system may close it (too narrow)
+                // but its restored state from the last run doesn't reopen it.
+                .inspector(isPresented: Binding(
+                    get: { model.inspectorShown },
+                    set: { if !$0 { model.inspectorShown = false } }
+                )) {
                     // Presented outside this hierarchy on some platforms: pass what it reads.
                     LibraryPlace()
                         .environment(model)
@@ -395,61 +366,39 @@ private struct SplitPlaces: View {
                         .inspectorColumnWidth(min: 320, ideal: 380, max: 520)
                 }
         }
-        // The system decides whether the sidebar sits beside the
-        // conversation or floats over it (iPad portrait); one style keeps the
-        // conversation's identity when the window crosses a width.
-        .navigationSplitViewStyle(.automatic)
-        .environment(\.placesAsColumns, true)
-    }
-}
-
-/// Large screens: a goal, task or memory picked in the 「它」 sidebar, shown in
-/// the middle column. 「‹ 对话」 (or 「对话」 in the sidebar, or ⌘[) brings
-/// the conversation back.
-private struct SplitDetailPage: View {
-    let detail: AppModel.SplitDetail
-    @Environment(AppModel.self) private var model
-    @Environment(AppStore.self) private var store
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                switch detail {
-                case .chat:
-                    EmptyView()
-                case .goal(let id):
-                    GoalDetail(id: id)
-                        // Deleted from its own page: nothing left to show.
-                        .onChange(of: store.watches.contains { $0.id == id }) { _, exists in
-                            if !exists { model.splitDetail = .chat }
-                        }
-                case .task(let id):
-                    TaskDetailView(taskID: id)
-                case .memory(let file):
-                    MemoryEditorView(file: file) { model.memoryRevision += 1 }
+        .overlay(alignment: .leading) {
+            if !beside && model.sidebarShown {
+                ZStack(alignment: .leading) {
+                    // A click beside the panel puts it away.
+                    Color.black.opacity(0.08)
+                        .ignoresSafeArea()
+                        .contentShape(.rect)
+                        .onTapGesture { model.sidebarShown = false }
+                        .accessibilityHidden(true)
+                        .transition(.opacity)
+                    AssistantPlace()
+                        .frame(width: Self.assistantWidth)
+                        .clipShape(.rect)
+                        .shadow(color: .black.opacity(0.18), radius: 18, x: 4)
+                        .transition(.move(edge: .leading))
                 }
-            }
-            .modifier(InContentNavigationBar())
-            // In the page itself, not the navigation bar: the column's bar
-            // isn't reliably shown here on the Mac.
-            .safeAreaInset(edge: .top, spacing: 0) {
-                HStack {
-                    Button { model.splitDetail = .chat } label: {
-                        HStack(spacing: 4) { Image(systemName: "chevron.left"); Text("对话") }
-                            .padding(.vertical, 6)
-                            .contentShape(.rect)
-                    }
-                    .buttonStyle(.borderless)
-                    .tint(.primary)
-                    .accessibilityLabel("回到对话")
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 4)
-                .background(.bar)
             }
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .background {
+            // Esc puts the open panel away: 成果 first, like ⌘[.
+            if model.sidebarShown || model.inspectorShown {
+                Button("关闭面板") { model.closeTopPanel() }
+                    .keyboardShortcut(.cancelAction)
+                    .opacity(0)
+                    .accessibilityHidden(true)
+            }
+        }
+        .animation(.spring(response: 0.32, dampingFraction: 0.92), value: model.sidebarShown)
+        .onChange(of: model.sidebarShown) { _, shown in
+            // The panel lays over the composer on medium windows: let go of it.
+            if shown && !beside { model.composerUnfocusRequests += 1 }
+        }
+        .environment(\.placesAsColumns, true)
     }
 }
 
@@ -506,6 +455,13 @@ private struct AssistantPlace: View {
             }
             .modifier(InContentNavigationBar())
             .toolbar {
+                if asColumn {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { model.sidebarShown = false } label: { Image(systemName: "xmark") }
+                            .tint(.primary)
+                            .accessibilityLabel("关闭「它」")
+                    }
+                }
                 // Narrow: back to the conversation (on the Mac too — the
                 // toolbar toggle alone isn't an obvious way out).
                 if !asColumn {
@@ -551,17 +507,14 @@ private struct LibraryPlace: View {
                 }
             }
             .modifier(InContentNavigationBar())
-            .background {
-                // Beside the conversation, the 成果 button closes it again;
-                // Esc does too.
-                if asColumn {
-                    Button("关闭成果") { model.inspectorShown = false }
-                        .keyboardShortcut(.cancelAction)
-                        .opacity(0)
-                        .accessibilityHidden(true)
-                }
-            }
             .toolbar {
+                if asColumn {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { model.inspectorShown = false } label: { Image(systemName: "xmark") }
+                            .tint(.primary)
+                            .accessibilityLabel("关闭成果")
+                    }
+                }
                 if !asColumn {
                     ToolbarItem(placement: .topBarLeading) {
                         Button { model.place = .chat } label: {

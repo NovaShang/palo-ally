@@ -61,7 +61,7 @@ private struct MemoryRow: View {
     let onSaved: () -> Void
 
     var body: some View {
-        SidebarItemLink(detail: .memory(file)) {
+        NavigationLink {
             MemoryEditorView(file: file, onSaved: onSaved)
         } label: {
             HStack(spacing: 12) {

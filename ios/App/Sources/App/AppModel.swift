@@ -98,8 +98,8 @@ final class AppModel {
     enum Place: Equatable { case assistant, chat, library }
     var place: Place = .chat {
         didSet {
-            // Large screens: 「它」 is a sidebar and 「成果」 an inspector beside
-            // the conversation, so going to a place means showing its column.
+            // Large screens: 「它」 and 「成果」 are panels beside the
+            // conversation, so going to a place means opening its panel.
             if layout != .phone {
                 if !quietPlaceChange { showColumns(for: place) }
                 return
@@ -125,33 +125,33 @@ final class AppModel {
     enum LibraryRoot: Equatable { case list, artifact(String) }
     var libraryRoot: LibraryRoot = .list
 
-    /// Large screens: what the middle column shows. The 「它」 sidebar works
-    /// like any Mac sidebar: 「对话」 on top (the default), and a goal, task or
-    /// memory picked there opens in the middle column with its row selected;
-    /// 「对话」 brings the conversation back. Phones push these instead.
-    enum SplitDetail: Hashable { case chat, goal(String), task(String), memory(MemoryFile) }
-    var splitDetail: SplitDetail = .chat
-    /// Bumped when a memory file is saved from the middle column, so the
-    /// sidebar's list reloads its sizes and times.
+    /// Bumped when a memory file is saved, so the memory list reloads its
+    /// sizes and times.
     var memoryRevision = 0
     /// The Mac: a click outside the composer asks it to give up focus, so an
     /// empty field turns back into the press-to-talk button.
     var composerUnfocusRequests = 0
 
-    /// ⌘[ (and the in-page back buttons): one level back. An item in the
-    /// middle column returns to the conversation; then a pushed page in a
-    /// visible column pops; then, narrow, the place slides back to the chat.
+    /// ⌘[ (and the in-page back buttons): one level back. A sheet or
+    /// preview closes; then a pushed page in a visible place or panel pops;
+    /// then, narrow, the place slides back to the chat, and on large screens
+    /// the open panel closes (成果 first).
     func goBack() {
         if NavigationBack.dismissPresented() { return }
-        if layout != .phone, splitDetail != .chat {
-            splitDetail = .chat
-            return
-        }
         if NavigationBack.popVisible() { return }
         if layout == .phone {
             if place != .chat { place = .chat }
-        } else if inspectorShown {
+        } else {
+            closeTopPanel()
+        }
+    }
+
+    /// Large screens: put the open panel away (成果 first). Esc and ⌘[.
+    func closeTopPanel() {
+        if inspectorShown {
             inspectorShown = false
+        } else if sidebarShown {
+            sidebarShown = false
         }
     }
 
@@ -159,8 +159,9 @@ final class AppModel {
 
     /// How the three places are laid out, set by the root container from the
     /// window's actual width (not the device): phone = one place at a time,
-    /// sliding; medium / wide = 「它」 as the system sidebar, the conversation
-    /// in the middle, 「成果」 as the system inspector. Both columns can be open.
+    /// sliding; medium / wide = the conversation always on screen, 「它」
+    /// (`sidebarShown`) and 「成果」 (`inspectorShown`) as panels on either
+    /// side, closed by default. Wide windows can have both open.
     enum Layout: String, Equatable { case phone, medium, wide }
     private(set) var layout: Layout = .phone
     var sidebarShown = false {
@@ -191,15 +192,13 @@ final class AppModel {
             layout = new
             sidebarShown = false
             inspectorShown = false
-            // The middle column's item has no home in the sliding layout.
-            splitDetail = .chat
             quietly { place = front }
             return
         }
         layout = new
-        let remembered = UserDefaults.standard.object(forKey: "sidebar.\(new.rawValue)") as? Bool ?? (new == .wide)
+        // Panels are opened on demand, never by default.
         let demoWide = launch.demoLayout == "wide"
-        sidebarShown = remembered || place == .assistant || demoWide
+        sidebarShown = place == .assistant || demoWide
         inspectorShown = place == .library || (old != .phone && inspectorShown) || demoWide
         if new == .medium, sidebarShown, inspectorShown {
             if place == .library { sidebarShown = false } else { inspectorShown = false }
@@ -207,7 +206,7 @@ final class AppModel {
     }
 
     /// The conversation's top-left button: on phones slide to 「它」, on large
-    /// screens open or close the sidebar (and remember that choice per width).
+    /// screens open or close its panel.
     func toggleAssistant() {
         guard layout != .phone else { showAssistant = place != .assistant; return }
         if sidebarShown {
@@ -216,10 +215,9 @@ final class AppModel {
             assistantRoot = .tabs
             place = .assistant
         }
-        rememberSidebar()
     }
 
-    /// The conversation's top-right button: 「成果」 slides in, or the inspector toggles.
+    /// The conversation's top-right button: 「成果」 slides in, or its panel toggles.
     func toggleLibrary() {
         guard layout != .phone else { showLibrary = place != .library; return }
         if inspectorShown {
@@ -239,16 +237,10 @@ final class AppModel {
         librarySearchRequested = true
     }
 
-    /// The user changed the sidebar themselves (toggle, drag, tap outside).
-    func rememberSidebar() {
-        guard layout != .phone else { return }
-        UserDefaults.standard.set(sidebarShown, forKey: "sidebar.\(layout.rawValue)")
-    }
-
     private func showColumns(for p: Place) {
         switch p {
-        // Medium width has room for one of them beside the conversation, not
-        // both: opening one puts the other away.
+        // Medium width has room for one panel, not both: opening one puts
+        // the other away.
         case .assistant:
             if !sidebarShown { sidebarShown = true }
             if layout == .medium, inspectorShown { inspectorShown = false }
@@ -256,7 +248,7 @@ final class AppModel {
             if !inspectorShown { inspectorShown = true }
             if layout == .medium, sidebarShown { sidebarShown = false }
         case .chat:
-            // Medium width: the columns cover the conversation, so going to
+            // Medium width: the panels cover the conversation, so going to
             // the conversation puts them away. Wide: they sit beside it.
             if layout == .medium {
                 if sidebarShown { sidebarShown = false }
@@ -270,8 +262,8 @@ final class AppModel {
         if place == p {
             quietly { place = p == .assistant ? (inspectorShown ? .library : .chat) : (sidebarShown ? .assistant : .chat) }
         }
-        // Like leaving a place on phones: an item opened from the chat goes
-        // back to the place's root, after the column has finished closing.
+        // Like leaving a place on phones: what was open in the panel goes
+        // back to its root, after the panel has finished closing.
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(450))
             guard let self, self.layout != .phone else { return }
@@ -302,7 +294,7 @@ final class AppModel {
     }
 
     /// Closing a place returns to the conversation. On large screens that
-    /// only puts the column away where it covers the conversation (medium);
+    /// only puts the panel away where it covers the conversation (medium);
     /// wide, it stays beside it.
     var showLibrary: Bool {
         get { layout == .phone ? place == .library : inspectorShown }

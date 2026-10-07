@@ -28,7 +28,7 @@ struct PaloAllyApp: App {
 }
 
 /// Mac menu bar / iPad hardware keyboard: the two places beside the
-/// conversation (sidebar and inspector on large windows, slides on narrow ones).
+/// conversation (panels on large windows, slides on narrow ones).
 private struct PlaceCommands: Commands {
     let model: AppModel
 
@@ -43,8 +43,8 @@ private struct PlaceCommands: Commands {
             // group, and the system Find items are taken out below.
             Button("搜索成果和对话") { model.focusLibrarySearch() }
                 .keyboardShortcut("f", modifiers: .command)
-            // One level back: an item in the middle column → the
-            // conversation, a pushed page → its list, a narrow place → the chat.
+            // One level back: a sheet closes, a pushed page → its list, then
+            // the open panel closes (narrow: the place slides back to the chat).
             Button("返回") { model.goBack() }
                 .keyboardShortcut("[", modifiers: .command)
         }

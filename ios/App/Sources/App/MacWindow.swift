@@ -24,11 +24,10 @@ enum Platform {
     }()
 }
 
-/// Mac: a standard window toolbar with only the system toggles, which the
-/// system places — the sidebar toggle by the traffic lights (「它」), the
-/// inspector toggle at the trailing edge (成果) — and no window title. They
-/// drive the same places as the phone's buttons, so they work in the narrow
-/// sliding layout too. The orb isn't in the toolbar: it floats at the top of
+/// Mac: a standard window toolbar with only two toggles — 「它」 by the
+/// traffic lights, 成果 at the trailing edge — and no window title. They open
+/// the same panels as the phone's buttons, and slide the places in the
+/// narrow layout. The orb isn't in the toolbar: it floats at the top of
 /// the conversation (ChatView). Each place keeps its own navigation bar inside
 /// its column. Installed once per window; elsewhere it does nothing.
 struct MacWindowChrome: ViewModifier {
@@ -105,11 +104,7 @@ private extension NSToolbarItem.Identifier {
 }
 
 /// The window toolbar: just the two toggles, nothing that can overflow at any
-/// width. They look like the system's sidebar and inspector toggles and sit
-/// where those do — 「它」 by the traffic lights, 成果 at the trailing edge —
-/// but act on our places, so they work the same in the sliding layout, which
-/// has no system sidebar to toggle. (The system items themselves ignore a
-/// custom action and only reach a split view's own toggle.)
+/// width, with the same symbols as the phone's top bar.
 @MainActor
 final class MacToolbar: NSObject, NSToolbarDelegate {
     private static var installed: [ObjectIdentifier: MacToolbar] = [:]
@@ -125,7 +120,6 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
         titlebar.titleVisibility = .hidden
         titlebar.toolbarStyle = .unified
         titlebar.toolbar = bar.toolbar
-        bar.followLayout()
     }
 
     private init(model: AppModel) {
@@ -136,36 +130,16 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
         toolbar.allowsUserCustomization = false
     }
 
-    /// Split layouts: 「它」 sits in the sidebar's section of the title bar
-    /// (before the tracking separator), which keeps it by the traffic lights
-    /// whether the sidebar is open or not. The sliding layout has no sidebar,
-    /// so no separator (the section would be empty and push 「它」 into 「»」);
-    /// the split view puts its sidebar away before it goes (MainScreen), or
-    /// the title bar would keep the sidebar's width in front of 「它」.
-    private static func items(for layout: AppModel.Layout) -> [NSToolbarItem.Identifier] {
-        layout == .phone
-            ? [.assistant, .flexibleSpace, .library]
-            : [.assistant, .primarySidebarTrackingSeparatorItemIdentifier, .flexibleSpace, .library]
-    }
-
-    private func followLayout() {
-        let wanted = withObservationTracking {
-            Self.items(for: model.layout)
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.followLayout() }
-        }
-        if toolbar.itemIdentifiers != wanted { toolbar.itemIdentifiers = wanted }
-    }
+    /// 「它」 by the traffic lights, 成果 at the trailing edge, at every width:
+    /// they open and close panels (or, narrow, slide the places), never a
+    /// split view's sidebar, so there's no tracking separator.
+    private static let items: [NSToolbarItem.Identifier] = [.assistant, .flexibleSpace, .library]
 
     // MARK: NSToolbarDelegate
 
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        Self.items(for: model.layout)
-    }
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { Self.items }
 
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        Self.items(for: .wide)
-    }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { Self.items }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {

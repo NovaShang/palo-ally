@@ -7,22 +7,10 @@ import SwiftUI
 struct AssistantView: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
-    /// Large screens: this is the sidebar, and its rows choose what the middle column shows.
-    @Environment(\.placesAsColumns) private var asColumn
 
     var body: some View {
         @Bindable var model = model
         List {
-            if asColumn {
-                // Like any Mac sidebar: the conversation is a destination too,
-                // the default one, and always the way back to it.
-                SidebarItemLink(detail: .chat) {
-                    EmptyView()
-                } label: {
-                    Label("对话", systemImage: "bubble.left.and.bubble.right")
-                }
-            }
-
             Section {
                 AssistantHeader()
                     .listRowInsets(EdgeInsets())
@@ -191,9 +179,8 @@ private struct AssistantHeader: View {
         .environment(model.store!)
 }
 
-/// A page pushed inside the 「它」 column. On the Mac: no second sidebar
-/// toggle (the window toolbar has the one), and the column's own dark
-/// grouped background rather than the Mac form's lighter gray.
+/// A page pushed inside the 「它」 panel. On the Mac: no sidebar toggle, and
+/// the panel's own grouped background rather than the Mac form's lighter gray.
 struct InSidebarColumn: ViewModifier {
     func body(content: Content) -> some View {
         if Platform.barInWindowToolbar {
@@ -203,35 +190,6 @@ struct InSidebarColumn: ViewModifier {
                 .background(Color(.systemGroupedBackground).ignoresSafeArea())
         } else {
             content
-        }
-    }
-}
-
-/// A row in 「它」 that opens an item. Phones push it. On large screens 「它」
-/// is the sidebar: the row is selectable (the system's sidebar highlight),
-/// and the item opens in the middle column, where the conversation was —
-/// 「对话」 at the top of the sidebar brings it back.
-struct SidebarItemLink<Label: View, Destination: View>: View {
-    let detail: AppModel.SplitDetail
-    @ViewBuilder let destination: () -> Destination
-    @ViewBuilder let label: () -> Label
-    @Environment(AppModel.self) private var model
-    @Environment(\.placesAsColumns) private var asColumn
-
-    var body: some View {
-        if asColumn {
-            let selected = model.splitDetail == detail
-            Button { model.splitDetail = detail } label: {
-                label()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            // The sidebar's selection: the row whose page the middle column shows.
-            .listRowBackground(selected ? Color.accentColor.opacity(0.16) : nil)
-            .accessibilityAddTraits(selected ? .isSelected : [])
-        } else {
-            NavigationLink(destination: destination, label: label)
         }
     }
 }
