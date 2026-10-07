@@ -41,12 +41,15 @@ else
       git -C "$APP_DIR" fetch --depth 1 origin "refs/tags/$REF:refs/tags/$REF"
       git -C "$APP_DIR" checkout --detach "$REF"
     else
-      git -C "$APP_DIR" fetch --depth 1 origin "${REF:-main}"
+      # keep the release tags: the updater reads its version from them
+      git -C "$APP_DIR" fetch --tags --depth 50 origin "${REF:-main}"
       git -C "$APP_DIR" checkout --detach FETCH_HEAD
     fi
   else
     say "下载到 $APP_DIR${REF:+（$REF）}"
     git clone --depth 1 ${REF:+--branch "$REF"} "$REPO_URL" "$APP_DIR"
+    # a branch clone carries no tags; fetch them so the version is known
+    git -C "$APP_DIR" describe --tags --match 'v*' >/dev/null 2>&1 || git -C "$APP_DIR" fetch -q --tags --depth 50 origin || true
   fi
 fi
 

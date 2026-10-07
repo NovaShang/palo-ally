@@ -204,6 +204,84 @@ describe("Updater", () => {
   });
 });
 
+// Clones that don't know their release must never be "updated" backwards.
+describe("never downgrade", () => {
+  function commit(dir: string, name: string): void {
+    writeFileSync(join(dir, `${name}.txt`), name);
+    git(dir, "add", "-A");
+    git(dir, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", name);
+  }
+  function updaterFor(app: string, root: string) {
+    let exits = 0;
+    const u = new Updater({
+      statePath: join(root, "update.json"),
+      stagingRoot: join(root, "staging"),
+      dir: app,
+      config: () => ({ auto: true, channel: "release" }),
+      cleanBreak: () => true,
+      quiet: () => true,
+      underService: () => true,
+      installDeps: async () => undefined,
+      audit: () => undefined,
+      exit: () => void exits++,
+    });
+    return { u, exits: () => exits, state: (): UpdateState => JSON.parse(readFileSync(join(root, "update.json"), "utf8")) };
+  }
+
+  test("a shallow clone of main with no tags learns its version instead of taking an older release", async () => {
+    const s = setup();
+    commit(s.origin, "after-0.1.1"); // main moves past the newest release
+    const app = join(s.root, "shallow");
+    execFileSync("git", ["clone", "-q", "--depth", "1", "--no-tags", `file://${s.origin}`, app]);
+    expect(readHostVersion(app).tag).toBeNull();
+    const t = updaterFor(app, s.root);
+    await t.u.tick();
+    expect(readHostVersion(app).version).toBe("0.1.1+1"); // tags fetched, HEAD untouched
+    expect(t.state().staged ?? null).toBeNull();
+    expect(t.state().versionUnknown).toBe(false);
+    expect(t.exits()).toBe(0);
+  });
+
+  test("a checkout ahead of the newest release is up to date", async () => {
+    const s = setup();
+    commit(s.origin, "after-0.1.1");
+    git(s.app, "fetch", "-q", "--tags", "origin");
+    git(s.app, "checkout", "-q", "--detach", "origin/main");
+    expect(readHostVersion(s.app).version).toBe("0.1.1+1");
+    expect(await s.u.check()).toBeNull();
+  });
+
+  test("a release whose commit is already behind HEAD is not taken", async () => {
+    const s = setup();
+    // v0.1.2 was tagged on an older commit than v0.1.1's (odd, but possible)
+    git(s.origin, "tag", "v0.1.2", "v0.1.0");
+    git(s.app, "fetch", "-q", "--tags", "origin");
+    git(s.app, "checkout", "-q", "--detach", "v0.1.1");
+    expect(readHostVersion(s.app).version).toBe("0.1.1");
+    expect(await s.u.check()).toBeNull();
+  });
+
+  test("when the version can't be known, nothing updates and status says so", async () => {
+    const root = mkdtempSync(join(tmpdir(), "upd-"));
+    const origin = join(root, "origin");
+    mkdirSync(origin);
+    git(origin, "init", "-q", "-b", "main");
+    commit(origin, "untagged");
+    const app = join(root, "app");
+    execFileSync("git", ["clone", "-q", "--depth", "1", `file://${origin}`, app]);
+    git(origin, "tag", "v0.1.0"); // a release appears, but nothing in this history says which one we are
+    commit(origin, "later");
+    git(origin, "tag", "-f", "v0.1.0", "HEAD");
+    const t = updaterFor(app, root);
+    await t.u.tick();
+    expect(t.exits()).toBe(0);
+    const st = await t.u.status();
+    expect(st.versionUnknown).toBe(true);
+    expect(updateLine(st)).toContain("版本未知，未自动更新");
+    expect((await t.u.updateNow()).status).toBe("unknown");
+  });
+});
+
 describe("status line", () => {
   const base = { commit: "abc1234", latest: null, staged: null, last: null, lastError: null };
   test("manual and automatic", () => {

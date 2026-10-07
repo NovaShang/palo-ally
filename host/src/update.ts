@@ -47,6 +47,7 @@ export interface UpdateState {
   last?: { from: string; to: string; ok: boolean; at: number; reason?: string; durationMs?: number } | null;
   skip?: string[]; // releases that failed to start here; not retried
   lastError?: { at: number; detail: string } | null;
+  versionUnknown?: boolean; // couldn't tell which release this is: no auto-update
 }
 
 export interface InstallInfo {
@@ -128,6 +129,7 @@ export interface UpdateStatus {
   staged: { tag: string; version: string } | null;
   last: UpdateState["last"] | null;
   lastError: UpdateState["lastError"] | null;
+  versionUnknown?: boolean;
 }
 
 /** The `paloally status` line: 「0.1.2（自动更新开 · 上次检查 3 小时前）」. */
@@ -135,6 +137,7 @@ export function updateLine(s: UpdateStatus, now = Date.now()): string {
   if (s.install.kind === "manual" && !s.auto) {
     return `${s.version}${s.commit ? ` · ${s.commit}` : ""}（手动管理：${s.install.reason}）`;
   }
+  if (s.versionUnknown) return `${s.version}${s.commit ? ` · ${s.commit}` : ""}（版本未知，未自动更新）`;
   const bits = [s.auto ? "自动更新开" : "自动更新关"];
   bits.push(s.lastCheckAt ? `上次检查 ${ago(s.lastCheckAt, now)}` : "还没检查过");
   if (s.staged) bits.push(`${s.staged.version} 已下好，空闲时换上`);
@@ -238,7 +241,7 @@ export interface UpdaterDeps {
 }
 
 export type UpdateResult = {
-  status: "manual" | "latest" | "available" | "staged" | "updating" | "dirty" | "failed" | "waiting";
+  status: "manual" | "unknown" | "latest" | "available" | "staged" | "updating" | "dirty" | "failed" | "waiting";
   current: string;
   latest?: string;
   detail?: string;
@@ -307,6 +310,7 @@ export class Updater {
       staged: this.staged(),
       last: st.last ?? null,
       lastError: st.lastError ?? null,
+      versionUnknown: !!st.versionUnknown,
     };
   }
 
@@ -324,14 +328,57 @@ export class Updater {
     this.first = this.timer = null;
   }
 
-  /** Looks for a newer release (network). */
+  /**
+   * Which release this checkout is, fetching tags (and, if need be, the full
+   * history) when a shallow clone doesn't know. A copy of main with no tags
+   * must never look "older than every release" and get downgraded.
+   */
+  private async knownVersion(): Promise<HostVersion> {
+    let cur = this.current();
+    if (cur.tag || !cur.commit) return cur;
+    const shallow = await this.shallow();
+    await this.git(["fetch", "--tags", ...(shallow ? ["--depth", "200"] : []), "origin"], 120_000).catch(() => undefined);
+    cur = this.current();
+    if (cur.tag || !(await this.shallow())) return cur;
+    await this.git(["fetch", "--unshallow", "--tags", "origin"], 300_000).catch(() => undefined);
+    return this.current();
+  }
+
+  /** Shallow clones (install.sh's) fetch shallow; a full clone stays full. */
+  private async shallow(): Promise<boolean> {
+    return (await this.git(["rev-parse", "--is-shallow-repository"]).catch(() => "")) === "true";
+  }
+
+  private async fetchTag(tag: string): Promise<void> {
+    const depth = (await this.shallow()) ? ["--depth", "1"] : [];
+    await this.git(["fetch", ...depth, "origin", `refs/tags/${tag}:refs/tags/${tag}`], 120_000);
+  }
+
+  /** The release's commit is HEAD or behind it: this code already has it. */
+  private async alreadyHas(tag: string): Promise<boolean> {
+    try {
+      await this.fetchTag(tag);
+      await this.git(["merge-base", "--is-ancestor", tag, "HEAD"]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Looks for a newer release (network). Null when there's none, or when unsure. */
   async check(): Promise<string | null> {
     const out = await this.git(["ls-remote", "--tags", "--refs", "origin", "v*"], 30_000);
     const tags = parseLsRemote(out);
-    const st = this.state();
-    const next = pickUpdate(this.current(), tags, st.skip ?? []);
     const newest = pickUpdate({ tag: null }, tags);
-    this.save({ lastCheckAt: this.now(), latest: newest ? { tag: newest, version: newest.slice(1) } : null, lastError: null });
+    const latest = newest ? { tag: newest, version: newest.slice(1) } : null;
+    const cur = await this.knownVersion();
+    if (!cur.tag) {
+      this.save({ lastCheckAt: this.now(), latest, versionUnknown: true, lastError: null });
+      return null;
+    }
+    let next = pickUpdate(cur, tags, this.state().skip ?? []);
+    if (next && (await this.alreadyHas(next))) next = null; // ahead of it already (a dev or main checkout)
+    this.save({ lastCheckAt: this.now(), latest, versionUnknown: false, lastError: null });
     return next;
   }
 
@@ -344,7 +391,7 @@ export class Updater {
   async stage(tag: string): Promise<void> {
     const version = tag.slice(1);
     const dir = join(this.d.stagingRoot, `staging-${tag}`);
-    await this.git(["fetch", "--depth", "1", "origin", `refs/tags/${tag}:refs/tags/${tag}`], 120_000);
+    await this.fetchTag(tag);
     await this.git(["worktree", "remove", "--force", dir]).catch(() => undefined);
     rmSync(dir, { recursive: true, force: true });
     await this.git(["worktree", "prune"]).catch(() => undefined);
@@ -440,7 +487,8 @@ export class Updater {
       return { status: "failed", current: cur.version, detail: `查不到新版本：${e instanceof Error ? e.message.split("\n")[0] : String(e)}` };
     }
     const latest = this.state().latest?.version;
-    if (!next && !this.staged()) return { status: "latest", current: cur.version, latest, detail: "已经是最新版" };
+    if (this.state().versionUnknown) return { status: "unknown", current: this.current().version, latest, detail: "看不出这台电脑上是哪个版本，没有自动更新" };
+    if (!next && !this.staged()) return { status: "latest", current: this.current().version, latest, detail: "已经是最新版" };
     if (opts.check) return { status: "available", current: cur.version, latest: (next ?? this.staged()?.tag)?.slice(1), detail: "有新版本" };
     try {
       if (next && this.staged()?.tag !== next) await this.stage(next);
