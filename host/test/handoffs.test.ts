@@ -55,6 +55,7 @@ function setup() {
   const audit = new Audit(join(state, "audit"));
   const notes: { title: string; body: string }[] = [];
   let now = Date.now();
+  let spokeAt = 0;
   const make = () =>
     new HandoffTracker({
       path: join(state, "handoffs.json"),
@@ -63,6 +64,7 @@ function setup() {
       selfSessionId: () => "home-sess",
       tasks,
       notify: (_id, title, body) => notes.push({ title, body }),
+      assistantSpokeAt: () => spokeAt,
       audit,
       log: () => {},
       now: () => now,
@@ -80,6 +82,7 @@ function setup() {
     notes,
     transitions,
     advance: (ms: number) => (now += ms),
+    assistantSpeaks: () => (spokeAt = now),
     now: () => now,
     // run a full check right now, whatever the schedule says
     check: (t = tracker) => {
@@ -146,7 +149,8 @@ describe("following a handoff", () => {
     expect(s.tasks.list()).toHaveLength(0);
     handOff(s);
     const [task] = s.tasks.list();
-    expect(task).toMatchObject({ status: "running", peer: "builder", title: "请帮我修一下发布流程，好了告诉我" });
+    // a neutral title until the assistant names it (never the raw message)
+    expect(task).toMatchObject({ status: "running", peer: "builder", title: "转交给 builder 的事" });
     expect(s.tracker.open()).toHaveLength(1);
     // a failed send opens nothing
     s.tracker.onSend("tu_c", { to: "builder", message: "请再帮我看一下" });
@@ -167,7 +171,8 @@ describe("following a handoff", () => {
     s.check();
     expect(s.tasks.list()[0]).toMatchObject({ status: "needs_input", summary: "在电脑上等你：发 v0.1.2 吗？" });
     expect(s.notes).toHaveLength(1);
-    expect(s.notes[0]!.title).toBe("builder 在等你");
+    expect(s.notes[0]!.title).toBe("转交的事在等你回答");
+    expect(s.notes[0]!.body).toBe("「转交给 builder 的事」在 builder 那边等你回答，去那台电脑上看一下。");
     s.check(); // same question: no second push
     expect(s.notes).toHaveLength(1);
   });
@@ -178,7 +183,7 @@ describe("following a handoff", () => {
     s.claude.session(200, "peer-sess", "builder", "/work/app", "idle");
     s.claude.write("/work/app", "peer-sess", [assistantTool("SendMessage", "m1", { to: "home-ab", message: "要不要把 dev 数据库一起迁移？" }, s.now() + 1000)]);
     s.check();
-    expect(s.tasks.list()[0]).toMatchObject({ status: "needs_input", summary: "在问你：要不要把 dev 数据库一起迁移？" });
+    expect(s.tasks.list()[0]).toMatchObject({ status: "needs_input", summary: "在问你，助理会转告" });
     expect(s.notes).toHaveLength(0);
     // the assistant relays the owner's answer: it's working again
     s.tracker.onSend("tu_2", { to: "builder", message: "迁移，谢谢" });
@@ -186,15 +191,39 @@ describe("following a handoff", () => {
     expect(s.tasks.list()[0]!.status).toBe("running");
   });
 
-  test("it reports back and goes idle: done, with its words as the result", () => {
+  test("it reports back and goes idle: done, without the peer's raw words; the assistant relays it", () => {
     const s = setup();
     handOff(s);
     s.claude.session(200, "peer-sess", "builder", "/work/app", "idle");
-    s.claude.write("/work/app", "peer-sess", [assistantTool("SendMessage", "m1", { to: "uds:/tmp/cc-socks/100.sock", message: "发布流程修好了，v0.1.1 已上线。" }, s.now() + 1000)]);
+    s.claude.write("/work/app", "peer-sess", [assistantTool("SendMessage", "m1", { to: "uds:/tmp/cc-socks/100.sock", message: "Installed: the latest build is on his iPhone." }, s.now() + 1000)]);
     s.check();
-    expect(s.tasks.list()[0]).toMatchObject({ status: "done", summary: "发布流程修好了，v0.1.1 已上线。" });
+    expect(s.tasks.list()[0]).toMatchObject({ status: "done", summary: "办好了" });
     expect(s.transitions).toContain("finished:done");
     expect(s.tracker.open()).toHaveLength(0);
+    expect(s.notes).toHaveLength(0);
+    // the assistant tells the owner itself: no fallback line
+    s.advance(60_000);
+    s.assistantSpeaks();
+    s.advance(10 * 60_000);
+    s.tracker.tick();
+    expect(s.notes).toHaveLength(0);
+  });
+
+  test("a finished handoff nobody relayed: one short Chinese line after 5 minutes", () => {
+    const s = setup();
+    handOff(s);
+    s.claude.session(200, "peer-sess", "builder", "/work/app", "idle");
+    s.claude.write("/work/app", "peer-sess", [assistantTool("SendMessage", "m1", { to: "home-ab", message: "Done: shipped v0.1.2." }, s.now() + 1000)]);
+    s.check();
+    s.advance(4 * 60_000);
+    s.tracker.tick();
+    expect(s.notes).toHaveLength(0);
+    s.advance(2 * 60_000);
+    s.tracker.tick();
+    expect(s.notes).toEqual([{ title: "转交的事办完了", body: "转交的事办完了：转交给 builder 的事" }]);
+    s.advance(10 * 60_000);
+    s.tracker.tick();
+    expect(s.notes).toHaveLength(1);
   });
 
   test("the session ends without a word: stopped, quietly", () => {

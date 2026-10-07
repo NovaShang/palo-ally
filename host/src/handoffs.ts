@@ -196,6 +196,8 @@ export interface Handoff {
   idleSince?: number;
   lastReplyAt?: number;
   notifiedKey?: string; // the waiting episode the owner was already told about
+  doneAt?: number; // when the peer reported back; the assistant should relay it
+  relayDueAt?: number; // no relay from the assistant by then: tell the owner briefly
   seen?: { size?: number; mtime?: number; statusUpdatedAt?: number; status?: string };
 }
 
@@ -205,8 +207,11 @@ export interface HandoffDeps {
   homeCwd: () => string;
   selfSessionId: () => string | undefined;
   tasks: TaskTracker;
-  // tell the owner (chat card + push): a peer is blocked on them
+  // tell the owner (chat card + push): a peer is blocked on them, or its
+  // finished work went unrelayed. Short Chinese only, never raw peer text.
   notify: (taskId: string, title: string, body: string) => void;
+  // when the assistant last said something to the owner (0 if never)
+  assistantSpokeAt?: () => number;
   audit: Audit;
   log: (s: string) => void;
   now?: () => number;
@@ -218,6 +223,7 @@ const CHECK_WORKING_MS = 2 * MIN;
 const CHECK_WAITING_MS = 5 * MIN;
 const IDLE_NOTE_MS = 2 * 3600_000; // idle this long with no reply: say so, check rarely
 const IDLE_GIVE_UP_MS = 24 * 3600_000; // then stop following it
+const RELAY_GRACE_MS = 5 * MIN; // the assistant relays a peer's result itself; fall back after this
 
 export class HandoffTracker {
   private handoffs: Handoff[];
@@ -304,7 +310,9 @@ export class HandoffTracker {
   }
 
   private start(peer: PeerSession, message: string): void {
-    const title = truncate(firstLine(message) || `交给 ${peer.name}`, 40);
+    // The assistant names the row with report_task(peer, title); until then a
+    // neutral title, never the first line of an (often English) peer message.
+    const title = `转交给 ${peer.name} 的事`;
     const task = this.d.tasks.openPeer(title, "交出去了，等对方开工", peer.name);
     const h = this.newHandoff(task.id, peer, firstLine(message));
     this.handoffs.push(h);
@@ -342,9 +350,10 @@ export class HandoffTracker {
   }
 
   tick(): void {
+    const now = this.now();
+    if (this.relayFallbacks(now)) this.save();
     const open = this.open();
     if (!open.length) return;
-    const now = this.now();
     let sessions: PeerSession[];
     try {
       sessions = this.registry.list();
@@ -420,23 +429,25 @@ export class HandoffTracker {
       if (h.notifiedKey !== key) {
         h.notifiedKey = key;
         this.d.audit.log("handoff.waiting", { taskId: h.taskId, peer: peer.name });
-        this.d.notify(h.taskId, `${peer.name} 在等你`, `「${task.title}」${h.lastLine}。去那台电脑上回答一下。`);
+        this.d.notify(h.taskId, "转交的事在等你回答", `「${task.title}」在 ${peer.name} 那边等你回答，去那台电脑上看一下。`);
       }
     } else if (reply && isQuestion(reply.text)) {
       // It asked the owner through the assistant; the assistant relays the choice.
       h.state = "asking";
-      h.lastLine = `在问你：${firstLine(reply.text)}`;
+      h.lastLine = "在问你，助理会转告";
       this.d.tasks.updatePeer(h.taskId, "needs_input", h.lastLine);
     } else if (reply && (peer.status === "idle" || peer.status === "shell")) {
       // It reported back and stopped: done.
-      h.lastLine = firstLine(reply.text) || "办好了";
+      h.lastLine = tail.apiError ? "没办成" : "办好了";
       this.d.tasks.settlePeer(h.taskId, tail.apiError ? "failed" : "done", h.lastLine);
       this.d.audit.log("handoff.done", { taskId: h.taskId, peer: peer.name });
+      h.doneAt = now;
+      h.relayDueAt = now + RELAY_GRACE_MS;
       return this.close(h, "replied");
     } else if (peer.status === "busy") {
       h.state = "working";
       h.idleSince = undefined;
-      h.lastLine = (reply ? `回话：${firstLine(reply.text)}` : tail.lastText) || h.lastLine || "在办";
+      h.lastLine = (reply ? "回话了，还在办" : tail.lastText) || h.lastLine || "在办";
       this.d.tasks.updatePeer(h.taskId, "running", h.lastLine);
     } else {
       // idle / shell with no reply yet
@@ -454,6 +465,27 @@ export class HandoffTracker {
     h.nextCheckAt = now + this.interval(h, now);
     if (before.state !== h.state || before.line !== h.lastLine) this.d.audit.log("handoff.checked", { taskId: h.taskId, peer: peer.name, state: h.state });
     return true;
+  }
+
+  // A peer finished: the assistant normally tells the owner in its own words.
+  // If it hasn't said anything to the owner a few minutes later, a short line.
+  private relayFallbacks(now: number): boolean {
+    let changed = false;
+    for (const h of this.handoffs) {
+      if (!h.relayDueAt || !h.doneAt) continue;
+      const spoke = this.d.assistantSpokeAt?.() ?? 0;
+      if (spoke > h.doneAt) {
+        h.relayDueAt = undefined;
+        changed = true;
+      } else if (now >= h.relayDueAt) {
+        h.relayDueAt = undefined;
+        changed = true;
+        const title = this.d.tasks.get(h.taskId)?.title ?? `转交给 ${h.peer.name} 的事`;
+        this.d.audit.log("handoff.relay_fallback", { taskId: h.taskId, peer: h.peer.name });
+        this.d.notify(h.taskId, "转交的事办完了", `转交的事办完了：${title}`);
+      }
+    }
+    return changed;
   }
 
   private interval(h: Handoff, now: number): number {

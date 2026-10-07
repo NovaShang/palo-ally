@@ -167,6 +167,12 @@ export class Hub {
         const msg = this.chat.add({ role: "assistant", kind: "task", text: body, channel: "system", taskId, proactive: true });
         void this.router.proactive(msg, { title });
       },
+      assistantSpokeAt: () => {
+        for (const m of this.chat.recent(50).reverse()) {
+          if (m.role === "assistant" && m.kind === "text" && m.channel !== "system") return m.ts;
+        }
+        return 0;
+      },
       audit: this.audit,
       log: (s) => this.log(s),
     });
