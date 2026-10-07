@@ -642,6 +642,12 @@ public final class AppStore {
         send(s.prompt, suggestionId: s.id)
     }
 
+    /// Settings → 立即更新 (or just look, with `check`): the host updates itself
+    /// to the newest release once nothing is in flight.
+    public func updateHost(check: Bool) async throws -> HostUpdateResult {
+        try await rpc.call(RPCMethod.hostUpdate, params: HostUpdateParams(check: check), as: HostUpdateResult.self)
+    }
+
     /// Never show this one again.
     public func dismiss(_ s: Suggestion) {
         suggestions.removeAll { $0.id == s.id }

@@ -39,8 +39,15 @@ paloally chat                 # talk in the terminal (/tasks /approvals /y id /n
 paloally status | tasks | approvals | watch | artifacts | memory | audit
 paloally stop                 # stop what it's doing (the harness' interrupt)
 paloally restart              # restart once it's idle (--now to force)
+paloally update               # update to the latest release now (--check to just look)
 paloally doctor               # health check
 ```
+
+### Updates
+
+The host follows official releases (`v*` tags) by itself. Every few hours it looks for a newer one, downloads it next to the running code, installs its dependencies and smoke-runs it. It switches over only at a clean break: no turn running, nothing handed off or waiting on you, and you quiet for a few minutes. Then the service restarts it. If the new version can't start, the next start rolls back to the previous one and says why in the conversation. A line in the conversation says when it has updated. `paloally status` shows the version and when it last checked.
+
+This applies to installs made by the installer (`~/.paloally/app`). A dev checkout or a copy is managed by hand; set `"update": { "auto": true }` in `~/.paloally/config.json` to opt in, or `false` to turn it off. Installs from before this feature need one manual update first: `git -C ~/.paloally/app pull && paloally restart`, or run the installer again.
 
 ## Where things live (`~/.paloally`)
 

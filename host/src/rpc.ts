@@ -23,7 +23,7 @@ export const RPC_METHODS = [
   "artifact.list", "artifact.read", "artifact.pin", "memory.list", "memory.read", "memory.write",
   "settings.update", "stop", "push.register", "push.unregister", "device.unpair", "audit.tail",
   "media.upload", "media.uploadChunk", "media.get", "media.read",
-  "suggestions.list", "suggestions.dismiss",
+  "suggestions.list", "suggestions.dismiss", "host.update",
 ] as const;
 
 export const RPC_EVENTS = [
@@ -190,6 +190,10 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return { ok: true };
     case "audit.tail":
       return { entries: hub.audit.tail(Math.min(Number(p.limit ?? 50), 500)) };
+    case "host.update":
+      // check: only look. Otherwise stage the newest release and switch to it as
+      // soon as nothing is in flight (the app's 立即更新); `wait` is for the CLI.
+      return hub.updater.updateNow({ check: !!p.check, now: ctx.local && !!p.now, wait: ctx.local && !!p.wait });
     default:
       if (ctx.local && admin && req.method) return await admin(req.method, p);
       throw new Error(`unknown method: ${req.method}`);

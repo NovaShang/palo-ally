@@ -47,6 +47,9 @@ public enum RPCMethod {
     /// 「试试」 chips: the unused suggestions, and dismissing one for good.
     public static let suggestionsList = "suggestions.list"
     public static let suggestionsDismiss = "suggestions.dismiss"
+    /// The host's own update: `check` only looks; otherwise it stages the newest
+    /// release and switches as soon as nothing is in flight (Settings → 立即更新).
+    public static let hostUpdate = "host.update"
 
     /// Every method the client knows. The contract test checks this equals
     /// the host's method set exactly.
@@ -55,7 +58,7 @@ public enum RPCMethod {
         approvalAnswer, questionAnswer, watchAdd, watchUpdate, watchRemove, artifactList, artifactRead, artifactPin,
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
-        suggestionsList, suggestionsDismiss,
+        suggestionsList, suggestionsDismiss, hostUpdate,
     ]
 }
 
@@ -325,6 +328,26 @@ public struct QuestionResult: Decodable, Sendable {
         let l = try Lenient(decoder)
         question = l.expect("question", l.decode(Question.self, "question"))
     }
+}
+
+/// host.update: "manual" | "latest" | "available" | "staged" | "updating" | "dirty" | "failed" | "waiting".
+public struct HostUpdateResult: Decodable, Sendable {
+    public var status: String
+    public var current: String
+    public var latest: String?
+    public var detail: String?
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        status = l.string("status", or: "")
+        current = l.string("current", or: "")
+        latest = l.string("latest")
+        detail = l.string("detail")
+    }
+}
+
+public struct HostUpdateParams: Encodable, Sendable {
+    public var check: Bool
+    public init(check: Bool) { self.check = check }
 }
 
 public struct StatusStringResult: Decodable, Sendable {

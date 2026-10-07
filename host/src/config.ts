@@ -2,8 +2,10 @@ import { createHash } from "node:crypto";
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 import { isValidTimeZone, parseHHMM, readJson, writeJson } from "./util.ts";
+import { hostVersion } from "./version.ts";
 
-export const VERSION = "0.1.0";
+// The running code's version: its release tag, or tag+N on a dev checkout (version.ts).
+export const VERSION = hostVersion().version;
 
 // Paths is the on-disk layout under the PaloAlly root (default ~/.paloally).
 // `home` is the agent's working directory: CLAUDE.md, core files, artifacts.
@@ -23,6 +25,8 @@ export class Paths {
   get questions() { return join(this.state, "questions.json"); }
   get handoffs() { return join(this.state, "handoffs.json"); }
   get power() { return join(this.state, "power.json"); }
+  get update() { return join(this.state, "update.json"); }
+  get updateStaging() { return join(this.root, "update"); }
   get watches() { return join(this.state, "watches.json"); }
   get runtime() { return join(this.state, "runtime.json"); }
   get usage() { return join(this.state, "usage.json"); }
@@ -89,6 +93,9 @@ export interface Config {
   // A heads-up when the host laptop runs on battery (it goes offline when it dies).
   // No effect on machines without a battery.
   power: { alerts: boolean };
+  // Follow official releases (v* tags). auto unset: on for install.sh installs
+  // (~/.paloally/app), off for dev checkouts and copies (update.ts).
+  update: { auto?: boolean; channel: "release" };
   relay: { enabled: boolean; url: string };
   wechat: { enabled: boolean; baseUrl: string };
   apns: {
@@ -126,6 +133,7 @@ export function defaultConfig(): Config {
     // 5–15 minutes. ($1 ran out by early morning and the goals went quiet.)
     budget: { probeDailyUsd: 5, mainDailyUsd: 0 },
     power: { alerts: true },
+    update: { channel: "release" },
     relay: { enabled: true, url: "https://relay.bentoai.dev" },
     wechat: { enabled: false, baseUrl: "https://ilinkai.weixin.qq.com" },
     apns: { enabled: false, bundleId: "com.novashang.paloally" },

@@ -24,6 +24,7 @@ import { MediaStore } from "./media.ts";
 import { BRIEF_TITLE, ensureMorningBrief } from "./brief.ts";
 import { HandoffTracker, claudeConfigDir } from "./handoffs.ts";
 import { PowerWatcher, type PowerReading, readPower } from "./power.ts";
+import { Updater, type UpdaterDeps } from "./update.ts";
 import { type Usage, UsageLedger } from "./usage.ts";
 import { appendJsonl } from "./util.ts";
 import { WatchStore } from "./watches.ts";
@@ -41,6 +42,7 @@ export interface HubDeps {
   log?: (s: string) => void;
   claudeDir?: string; // Claude Code's config dir (session registry, transcripts); tests point it elsewhere
   readPower?: () => PowerReading | null; // tests feed readings; default reads the OS
+  updater?: Partial<UpdaterDeps>; // tests point the updater at a temp checkout
 }
 
 // Hub assembles the assistant: the main conversation with the harness, the
@@ -65,6 +67,7 @@ export class Hub {
   readonly conversation: Conversation;
   readonly handoffs: HandoffTracker;
   readonly power: PowerWatcher;
+  readonly updater: Updater;
   private compactTimer: ReturnType<typeof setInterval> | null = null;
   private readonly info: HarnessInfo;
   private readonly proactive: Proactive;
@@ -188,6 +191,18 @@ export class Hub {
       audit: (type, data) => this.audit.log(type, data),
       log: (s) => this.log(s),
     });
+    // Following official releases: switch at a clean break, never mid-work.
+    this.updater = new Updater({
+      statePath: this.paths.update,
+      stagingRoot: this.paths.updateStaging,
+      config: () => this.config.update,
+      cleanBreak: () => this.conversation.cleanBreak(),
+      quiet: () => this.quietForRestart(),
+      audit: (type, data) => this.audit.log(type, data),
+      exit: () => setTimeout(() => process.exit(0), 300),
+      log: (s) => this.log(s),
+      ...deps.updater,
+    });
     this.proactive = new Proactive({
       chat: this.chat,
       router: this.router,
@@ -261,6 +276,8 @@ export class Hub {
       (this.compactTimer as any).unref?.();
       // The host laptop on battery: a heads-up before it dies and takes the assistant offline.
       this.power.start();
+      // New official release: staged in the background, switched to at a clean break.
+      this.updater.start();
     }
     this.emitStatus();
   }
@@ -270,6 +287,7 @@ export class Hub {
     this.probe.stop();
     this.handoffs.stop();
     this.power.stop();
+    this.updater.stop();
     if (this.compactTimer) clearInterval(this.compactTimer);
     if (this.suggestionTimer) clearInterval(this.suggestionTimer);
     this.artifacts.stop();
@@ -409,12 +427,17 @@ export class Hub {
     return this.tasks.markStopped(t.id);
   }
 
+  /** Nothing in flight at all: safe to restart the process. */
+  quietForRestart(): boolean {
+    return this.conversation.quiet && !this.tasks.live().length && !this.conversation.waitingOnOwner();
+  }
+
   // restartWhenIdle exits once nothing is in flight; the service manager
   // (launchd / systemd) starts a fresh process. Never cuts work off.
   async restartWhenIdle(maxWaitMs = 30 * 60_000, exit: () => void = () => process.exit(0)): Promise<"restarting" | "timeout"> {
     const deadline = Date.now() + maxWaitMs;
     while (Date.now() < deadline) {
-      if (this.conversation.quiet && !this.tasks.live().length && !this.conversation.waitingOnOwner()) {
+      if (this.quietForRestart()) {
         this.audit.log("restart", {});
         setTimeout(exit, 200);
         return "restarting";

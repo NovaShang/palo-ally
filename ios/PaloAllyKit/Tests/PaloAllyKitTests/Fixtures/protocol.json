@@ -813,6 +813,16 @@
         ]
       }
     },
+    "host.update": {
+      "params": {
+        "check": true
+      },
+      "result": {
+        "status": "manual",
+        "current": "0.1.0",
+        "detail": "这台电脑上的 PaloAlly 是手动管理的（开发目录），用 git 自己更新"
+      }
+    },
     "stop": {
       "params": {},
       "result": {

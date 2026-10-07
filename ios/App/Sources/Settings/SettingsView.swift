@@ -12,6 +12,8 @@ struct SettingsView: View {
     @State private var error: String?
     @State private var confirmUnpair = false
     @State private var unpairing = false
+    @State private var hostUpdate: String? // the last 检查更新 answer, shown under the host version
+    @State private var checkingUpdate = false
     /// Pending quiet-hours save; DatePickers fire on every tick of the wheel.
     @State private var quietSave: Task<Void, Never>?
     /// Voice input: bias recognition toward the conversation and the owner's own words.
@@ -107,6 +109,20 @@ struct SettingsView: View {
                 .tint(.primary)
                 if !store.hostVersion.isEmpty {
                     LabeledContent("电脑上的版本", value: store.hostVersion)
+                    // The host follows releases by itself; this asks it now.
+                    Button {
+                        Task { await checkHostUpdate() }
+                    } label: {
+                        HStack {
+                            Text(checkingUpdate ? "正在检查…" : "立即更新电脑上的 PaloAlly")
+                            Spacer()
+                            if checkingUpdate { ProgressView() }
+                        }
+                    }
+                    .disabled(checkingUpdate)
+                    if let hostUpdate {
+                        Text(hostUpdate).font(.footnote).foregroundStyle(.secondary)
+                    }
                 }
             }
         }
@@ -143,6 +159,21 @@ struct SettingsView: View {
 
     private var quietValue: JSONValue {
         quietOn ? ["start": .string(WatchEditor.format(quietStart)), "end": .string(WatchEditor.format(quietEnd))] : .null
+    }
+
+    private func checkHostUpdate() async {
+        checkingUpdate = true
+        defer { checkingUpdate = false }
+        do {
+            let r = try await store.updateHost(check: false)
+            switch r.status {
+            case "latest": hostUpdate = "已经是最新版（\(r.current)）"
+            case "staged", "updating": hostUpdate = "新版本 \(r.latest ?? "") 已下好，电脑手头的事一完就换上，会自动重启"
+            default: hostUpdate = r.detail ?? r.status
+            }
+        } catch {
+            hostUpdate = "没检查成功：\(error.localizedDescription)"
+        }
     }
 
     private func prefill() {

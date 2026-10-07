@@ -99,6 +99,7 @@ private let resultTypes: [String: Check] = [
     RPCMethod.mediaRead: strict(ArtifactChunk.self),
     RPCMethod.suggestionsList: strict(SuggestionsResult.self),
     RPCMethod.suggestionsDismiss: strict(OKResult.self),
+    RPCMethod.hostUpdate: strict(HostUpdateResult.self),
 ]
 
 /// Event → how AppStore.apply(event:) reads the payload.

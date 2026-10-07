@@ -21,17 +21,33 @@ if ! command -v bun >/dev/null 2>&1; then
 fi
 say "bun $(bun --version)"
 
-# 2. source: use this checkout if we're inside one, else clone/update
+# 2. source: use this checkout if we're inside one, else clone/update.
+# Installs follow official releases: the newest v* tag (PALOALLY_REF picks
+# another tag or a branch). After that the assistant updates itself to new
+# releases (`paloally update` does it by hand).
+latest_release() {
+  git ls-remote --tags --refs "$REPO_URL" 'v*' 2>/dev/null | sed 's#.*refs/tags/##' \
+    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1.2,1n -k2,2n -k3,3n | tail -1
+}
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
 if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/host/package.json" ]; then
   APP_DIR="$SCRIPT_DIR"
-elif [ -d "$APP_DIR/.git" ]; then
-  say "更新 $APP_DIR"
-  git -C "$APP_DIR" pull --ff-only
 else
   command -v git >/dev/null 2>&1 || { echo "需要 git"; exit 1; }
-  say "下载到 $APP_DIR"
-  git clone --depth 1 "$REPO_URL" "$APP_DIR"
+  REF="${PALOALLY_REF:-$(latest_release)}"
+  if [ -d "$APP_DIR/.git" ]; then
+    say "更新 $APP_DIR${REF:+ 到 $REF}"
+    if [ -n "$REF" ] && git ls-remote --exit-code --tags "$REPO_URL" "refs/tags/$REF" >/dev/null 2>&1; then
+      git -C "$APP_DIR" fetch --depth 1 origin "refs/tags/$REF:refs/tags/$REF"
+      git -C "$APP_DIR" checkout --detach "$REF"
+    else
+      git -C "$APP_DIR" fetch --depth 1 origin "${REF:-main}"
+      git -C "$APP_DIR" checkout --detach FETCH_HEAD
+    fi
+  else
+    say "下载到 $APP_DIR${REF:+（$REF）}"
+    git clone --depth 1 ${REF:+--branch "$REF"} "$REPO_URL" "$APP_DIR"
+  fi
 fi
 
 # 3. dependencies (the Agent SDK bundles Claude Code itself — no separate install needed)

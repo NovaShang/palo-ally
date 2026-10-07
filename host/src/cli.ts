@@ -9,6 +9,7 @@ import { scheduleText } from "./watches.ts";
 import { powerLine } from "./power.ts";
 import { CORE_SOFT_LIMIT } from "./memory.ts";
 import { installService, serviceStatus, uninstallService } from "./service.ts";
+import { HEALTHY_AFTER_MS, Updater, bootCheck, cleanStaging, confirmUpdate, rollbackSync, updateLine } from "./update.ts";
 import { runSetup } from "./setup.ts";
 import type { ChatMessage, Task, Watch } from "./types.ts";
 
@@ -33,6 +34,7 @@ const HELP = `PaloAlly ${VERSION} — 把 Claude Code 变成常驻、会主动�
   settings [key value]   打扰频率、免打扰时段等
   stop                   手上的事全部停下
   restart [--now]        等手头的事办完再重启（--now 立刻重启，会打断正在办的事）
+  update [--check|--now] 更新到最新正式版（默认等手头的事办完；--check 只看看有没有新版本）
   audit [n]              审计日志
   metrics [天数]         Phase 0 验收数据（主动频率、任务、压缩、花费）
   pair                   配对手机 App
@@ -208,6 +210,16 @@ async function main(): Promise<void> {
     case "version":
       console.log(VERSION);
       return;
+    case "selftest": {
+      // The updater smoke-runs a staged release with this: every module loads.
+      await import("./daemon.ts");
+      await import("./hub.ts");
+      await import("./setup.ts");
+      console.log("ok");
+      return;
+    }
+    case "update":
+      return updateCmd();
     case "setup":
       await runSetup(paths, args);
       return;
@@ -225,7 +237,34 @@ async function main(): Promise<void> {
       // One bad promise must never take the assistant down.
       process.on("unhandledRejection", (e) => console.error("[daemon] unhandled rejection:", e));
       process.on("uncaughtException", (e) => console.error("[daemon] uncaught exception:", e));
-      const d = await startDaemon(paths);
+      // A just-applied update: count the attempt, roll back if it keeps dying.
+      const bootPaths = { update: paths.update, chat: paths.chat, audit: paths.audit };
+      const boot = bootCheck(bootPaths);
+      if (boot.rolledBack) {
+        console.error("新版本起不来，已退回上一版；重启中。");
+        process.exit(1);
+      }
+      cleanStaging(paths.updateStaging);
+      let d: Awaited<ReturnType<typeof startDaemon>>;
+      try {
+        d = await startDaemon(paths);
+      } catch (e) {
+        if (boot.pending) {
+          rollbackSync(bootPaths, `新版本启动出错：${e instanceof Error ? e.message.split("\n")[0] : String(e)}`);
+          console.error("新版本启动出错，已退回上一版；重启中。");
+          process.exit(1);
+        }
+        throw e;
+      }
+      if (boot.pending) {
+        const t = setTimeout(() => {
+          confirmUpdate(bootPaths, {
+            note: (text) => d.hub.chat.add({ role: "system", kind: "notice", text, channel: "system" }),
+            audit: (type, data) => d.hub.audit.log(type, data),
+          });
+        }, HEALTHY_AFTER_MS);
+        (t as any).unref?.();
+      }
       console.log(`PaloAlly ${VERSION} 在运行。home: ${paths.home}`);
       if (d.relay) console.log(`远程 ID: ${d.relay.daemonId}（配对手机：paloally pair）`);
       const shutdown = () => {
@@ -248,9 +287,11 @@ async function main(): Promise<void> {
       const push = await c.call("push.status").catch(() => null);
       const probe = await c.call("probe.status").catch(() => null);
       const power = await c.call("power.status").catch(() => null);
+      const update = await c.call("update.status").catch(() => null);
       c.close();
       const s = hello.status;
       console.log(`${hello.hostName} · ${s.busy ? "忙" : "空闲"} · 模型 ${s.model || "默认"}`);
+      if (update) console.log(`版本：${updateLine(update)}`);
       console.log(`进行中任务 ${sync.tasks.filter((t: Task) => t.status === "running").length} · 待确认 ${sync.approvals.filter((a: any) => a.status === "pending").length} · 盯梢 ${sync.watches.length}`);
       console.log(`远程：${relay.enabled ? `${relay.state}（${relay.streams} 个设备在线）${relay.lastError ? " " + relay.lastError : ""}` : "关闭"} · 微信：${wechat.status}`);
       if (push) console.log(`推送：${pushLine(push)}`);
@@ -390,6 +431,48 @@ async function main(): Promise<void> {
       console.log(HELP);
       process.exit(1);
   }
+}
+
+// paloally update [--check] [--now]: through the running assistant when there is
+// one (it switches once idle), else directly on the checkout.
+async function updateCmd(): Promise<void> {
+  const check = flag("--check");
+  const now = flag("--now");
+  if (existsSync(paths.socket)) {
+    try {
+      const c = await LocalClient.connect(paths.socket);
+      if (!check) console.log(now ? "更新中…" : "查新版本；有的话等手头的事办完就换上（最多等 30 分钟）…");
+      const r = await c.call<any>("host.update", { check, now, wait: !now });
+      c.close();
+      return printUpdate(r);
+    } catch {
+      /* not running: update the files directly */
+    }
+  }
+  const cfg = loadConfig(paths);
+  const u = new Updater({
+    statePath: paths.update,
+    stagingRoot: paths.updateStaging,
+    config: () => cfg.update,
+    cleanBreak: () => true,
+    quiet: () => true,
+    underService: () => false,
+    audit: () => undefined,
+    exit: () => undefined,
+  });
+  const r = await u.updateNow({ check, now: true });
+  printUpdate(r.status === "updating" ? { ...r, detail: "文件已换成新版本。启动助理：paloally start（或 paloally service install）" } : r);
+}
+
+function printUpdate(r: { status: string; current: string; latest?: string; detail?: string }): void {
+  const head =
+    r.status === "updating" ? `正在换成 ${r.latest ?? "新版本"}，助理会自动重启。`
+    : r.status === "latest" ? `已经是最新版（${r.current}）。`
+    : r.status === "available" ? `有新版本 ${r.latest}（现在 ${r.current}）。运行 paloally update 更新。`
+    : r.status === "dirty" ? "本地改过代码，没更新。"
+    : `${r.detail ?? r.status}`;
+  console.log(head);
+  if (r.detail && !head.includes(r.detail) && r.status !== "available" && r.status !== "latest") console.log(r.detail);
 }
 
 async function wechatCmd(): Promise<void> {

@@ -111,6 +111,7 @@ describe("host ↔ app protocol", () => {
     await run("suggestions.list");
     await run("suggestions.dismiss", { id: hub.suggestions.list()[0]!.id });
     await run("audit.tail", { limit: 3 });
+    await run("host.update", { check: true }); // a dev checkout: managed by hand
     await run("stop");
     await run("device.unpair");
     await tick(150);

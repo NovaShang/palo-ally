@@ -117,6 +117,8 @@ export async function startDaemon(
         };
       case "power.status":
         return hub.power.status();
+      case "update.status":
+        return hub.updater.status();
       case "usage":
         return hub.usage();
       case "subscribe":

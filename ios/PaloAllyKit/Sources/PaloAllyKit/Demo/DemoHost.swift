@@ -577,6 +577,8 @@ public actor DemoHost {
             demoSuggestions.removeAll { $0.id == id }
             emit(RPCEventName.suggestionsUpdated, ["suggestions": demoSuggestions])
             return ["ok": .bool(had)]
+        case RPCMethod.hostUpdate:
+            return ["status": .string("latest"), "current": .string("0.1.3"), "detail": .string("已经是最新版")]
         default:
             throw DemoError(message: "unknown method \(method)")
         }
