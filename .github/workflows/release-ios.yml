@@ -152,7 +152,8 @@ jobs:
             -project PaloAlly.xcodeproj -scheme PaloAlly -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/PaloAlly.xcarchive" \
-            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            PALOALLY_COMMIT="$(git rev-parse --short HEAD)"
           test -d "$RUNNER_TEMP/PaloAlly.xcarchive"
 
       - name: Export IPA

@@ -41,6 +41,8 @@
 	<string>语音输入时需要用到麦克风，把你说的话变成文字。</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>用来把你说的话转成文字，发给助理。</string>
+	<key>PaloAllyCommit</key>
+	<string>$(PALOALLY_COMMIT)</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>

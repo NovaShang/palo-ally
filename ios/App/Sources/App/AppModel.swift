@@ -425,6 +425,13 @@ final class AppModel {
 
     var clientKind: String { ProcessInfo.processInfo.isMacCatalystApp ? "mac" : "ios" }
     var clientVersion: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0" }
+    /// 「0.1.2 (261006.2015 · 94d328a)」: which build is running, for bug reports.
+    var buildStamp: String {
+        let info = Bundle.main.infoDictionary
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        let commit = info?["PaloAllyCommit"] as? String ?? "dev"
+        return "\(clientVersion) (\(build) · \(commit))"
+    }
 
     private func applyLaunchScreen() {
         switch launch.screen {

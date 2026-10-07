@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import PaloAllyKit
 
 /// An assistant answer rendered as ONE attributed string in a non-editable
 /// UITextView, so selection is the system's own: long-press a word, drag the
@@ -34,7 +35,14 @@ struct SelectableMarkdown: UIViewRepresentable {
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: MarkdownTextView, context: Context) -> CGSize? {
         let width = proposal.width ?? 10_000
         guard width > 0, width.isFinite else { return nil }
+        // SwiftUI may size the view before updateUIView hands it the new text
+        // (a streamed reply turning final): measure what it is about to show,
+        // or the row keeps the shorter height and the end is cut off.
+        uiView.render(source: source, streaming: streaming, linkColor: uiView.currentLinkColor ?? UIColor(theme.color))
         let fit = uiView.fittingSize(width: width)
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "textTrace") { debugLog("[text] size \(source.count)ch w=\(width) → h=\(fit.height)") }
+        #endif
         return CGSize(width: proposal.width ?? ceil(fit.width), height: ceil(fit.height))
     }
 }
@@ -44,6 +52,11 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
     private var lastSource: String?
     private var lastStreaming = false
     private var lastLinkColor: UIColor?
+    var currentLinkColor: UIColor? { lastLinkColor }
+    /// The text version a too-short frame was already reported for (see
+    /// layoutSubviews), so one change asks SwiftUI to re-measure only once.
+    private var renderVersion = 0
+    private var reportedShortVersion = -1
     /// Measured sizes for the current text, by the width the text is laid
     /// out at. SwiftUI asks again on every layout pass, and each ask re-ran
     /// TextKit layout over the whole answer; a long chat full of long answers
@@ -76,7 +89,10 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
     /// doesn't lay the whole answer out again, and measuring doesn't run a
     /// second throwaway layout the way UITextView.sizeThatFits does.
     private func layOut(width: CGFloat) -> CGSize {
-        if textContainer.size.width != width {
+        // UITextView shrinks the container's height to its frame on layout.
+        // Measuring must lift that again, or a reply measured while it was
+        // one streamed line stays one line tall after the rest arrives.
+        if textContainer.size.width != width || textContainer.size.height < Self.unbounded {
             textContainer.size = CGSize(width: width, height: .greatestFiniteMagnitude)
         }
         layoutManager.ensureLayout(for: textContainer)
@@ -90,19 +106,41 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         let exact = (bounds.width * 2).rounded(.down) / 2
         if exact > 0 {
             let key = layoutWidthFor[exact] ?? exact
-            if textContainer.size.width != key {
+            if textContainer.size.width != key || textContainer.size.height < Self.unbounded {
                 textContainer.size = CGSize(width: key, height: .greatestFiniteMagnitude)
             }
         }
         super.layoutSubviews()
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "textTrace") {
+            layoutManager.ensureLayout(for: textContainer)
+            debugLog("[text] layout \(attributedText.length)ch frame=\(bounds.size) used=\(layoutManager.usedRect(for: textContainer).size)")
+        }
+        #endif
+        // Safety net: if the laid-out text is taller than the frame SwiftUI
+        // gave us, the measurement was stale. Drop it and ask again.
+        if exact > 0, bounds.height > 0, reportedShortVersion != renderVersion {
+            let needed = layOut(width: textContainer.size.width).height
+            if needed > bounds.height + 1 {
+                #if DEBUG
+                debugLog("[text] stale height: needs \(needed) > frame \(bounds.height); re-measuring")
+                #endif
+                reportedShortVersion = renderVersion
+                measured.removeAll()
+                invalidateIntrinsicContentSize()
+            }
+        }
     }
 
     /// A resize has settled: measure again at the exact width.
     func widthSettled() {
         layoutWidthFor.removeAll()
+        measured.removeAll()
         invalidateIntrinsicContentSize()
         setNeedsLayout()
     }
+
+    private static let unbounded: CGFloat = 1e7
 
     /// TextKit 1, so the layout manager can draw block backgrounds.
     static func make() -> MarkdownTextView {
@@ -112,6 +150,7 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         let container = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
         // Set by measuring (fittingSize), not by the frame: see layOut(width:).
         container.widthTracksTextView = false
+        container.heightTracksTextView = false
         container.lineFragmentPadding = 0
         layout.addTextContainer(container)
         let view = MarkdownTextView(frame: .zero, textContainer: container)
@@ -153,6 +192,11 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         linkTextAttributes = [.foregroundColor: linkColor]
         // Nothing to select mid-stream; links work once it's finished.
         isSelectable = !streaming
+        renderVersion += 1
+        layoutWidthFor.removeAll()
+        // New text, new height: have SwiftUI ask sizeThatFits again.
+        invalidateIntrinsicContentSize()
+        setNeedsLayout()
     }
 
     /// Code blocks and quotes use line separators (U+2028) to stay one
@@ -454,6 +498,8 @@ enum TextWidthSettling {
     private static var settle: Timer?
 
     static func layoutWidth(for exact: CGFloat, previous: CGFloat?, view: MarkdownTextView) -> CGFloat {
+        // Phones don't live-resize: always lay out at the exact width there.
+        if UIDevice.current.userInterfaceIdiom == .phone { return exact }
         if let previous, previous != exact {
             let now = CACurrentMediaTime()
             if now - lastChange < quiet { resizing = true }

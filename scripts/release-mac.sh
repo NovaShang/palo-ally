@@ -76,6 +76,7 @@ xcodebuild archive \
   -destination 'generic/platform=macOS,variant=Mac Catalyst' \
   -archivePath "$ARCHIVE" -derivedDataPath "$OUT/DerivedData" \
   MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+  PALOALLY_COMMIT="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)" \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
   -quiet
 APP="$OUT/PaloAlly.app"

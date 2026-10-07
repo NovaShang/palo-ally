@@ -25,7 +25,7 @@ public final class DebugLog: @unchecked Sendable {
         FileManager.default.createFile(atPath: fileURL.path, contents: nil) // truncate on launch
         handle = try? FileHandle(forWritingTo: fileURL)
         let info = Bundle.main.infoDictionary
-        log("=== PaloAlly \(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?")) ===")
+        log("=== PaloAlly \(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?") · \(info?["PaloAllyCommit"] as? String ?? "dev")) ===")
     }
 
     public func log(_ message: String, file: String = #fileID, line: Int = #line) {

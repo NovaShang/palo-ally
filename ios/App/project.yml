@@ -16,6 +16,8 @@ settings:
     SWIFT_VERSION: "6.0"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
+    # Device and release builds pass the short git hash; local builds say "dev".
+    PALOALLY_COMMIT: dev
 targets:
   PaloAlly:
     type: application
@@ -44,6 +46,7 @@ targets:
         CFBundleDevelopmentRegion: zh-Hans
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        PaloAllyCommit: $(PALOALLY_COMMIT)
         LSApplicationCategoryType: public.app-category.productivity
         ITSAppUsesNonExemptEncryption: false
         UILaunchScreen:

@@ -174,6 +174,38 @@ public actor DemoHost {
 
             建议：日常放在 **dev** 上，需要碰本机应用的事再交给 Air。
             """)
+        case "streamfinal":
+            // Two real replies streamed in small pieces and then finalized, one
+            // after the other: the rows must end up as tall as the final text
+            // (they once kept the streaming height and cut the end off).
+            Task {
+                await pause(2)
+                post("他 13 个月就会自己拿遥控器找 Ms Rachel 了", role: .user)
+                await streamReply(DemoHost.truncationSampleA)
+                await pause(0.5)
+                post("他还会玩马里奥赛车", role: .user)
+                await streamReply(DemoHost.truncationSampleB)
+            }
+        case "streamshapes":
+            // The three shapes that once kept a stale height until reopening:
+            // a tool call first and then a short reply with an emoji and a
+            // paragraph break; a plain short streamed reply; a long one.
+            Task {
+                await pause(2)
+                post("这一条也验一下", role: .user)
+                var s = status
+                s.busy = true
+                s.activity = "在给维护那边发消息"
+                setStatus(s)
+                await pause(1.2)
+                await streamReply("哈哈，那这一条也算验收过了 👍\n\nTestFlight 那三件事不急，你有空再弄。")
+                await pause(0.5)
+                post("再来一条普通的", role: .user)
+                await streamReply("好的。这条没有调用任何工具，只是一段普通的流式回复，中间有一个空行。\n\n第二段在这里，结尾也有个表情 🙂")
+                await pause(0.5)
+                post("长一点的呢", role: .user)
+                await streamReply(DemoHost.truncationSampleA)
+            }
         case "long":
             // A long conversation full of tables and long answers (like a real
             // owner's after a few weeks), then a long table answer streaming in:
@@ -216,6 +248,54 @@ public actor DemoHost {
         s.activity = nil
         setStatus(s)
     }
+
+    /// Streams `reply` in small pieces, then finalizes it.
+    public func streamReply(_ reply: String) async {
+        var s = status
+        s.busy = true
+        s.activity = "在写回复"
+        setStatus(s)
+        let rid = nextID("r")
+        var acc = ""
+        for piece in DemoHost.chunks(reply) {
+            acc += piece
+            emit(RPCEventName.chatDelta, ChatDelta(id: rid, text: piece))
+            await pause(0.02)
+        }
+        seq += 1
+        let final = ChatMessage(seq: seq, id: rid, role: .assistant, kind: .text, text: acc,
+                                channel: .app, ts: Date().epochMillis)
+        messages.append(final)
+        emit(RPCEventName.chatMessage, final)
+        s.busy = false
+        s.activity = nil
+        setStatus(s)
+    }
+
+    static let truncationSampleA = """
+    哈哈，13 个月就会自己拿遥控器找节目，挺厉害的。他能找到也不奇怪：Ms Rachel 是 YouTube 上最火的幼儿频道之一，推荐里很容易刷到，而且整个节目就是按照能抓住这么大宝宝的注意力来设计的。
+
+    **她是谁**
+    - 本名 Rachel Griffin Accurso，美国人，以前在纽约当幼儿园音乐老师，有 NYU 音乐教育硕士学位，后来又读了幼儿教育。
+    - 2019 年开始做 YouTube 频道 Songs for Littles，起因是她儿子有语言发育迟缓，她找不到能帮孩子学说话的好视频，就自己做。
+    - 她丈夫 Aron Accurso 是百老汇的作曲和音乐总监，节目里的歌大多是他写的，他也会出镜，就是 Mr. Aron。
+    - 内容会请语言治疗师参与设计。频道订阅过千万，后来 Netflix 也上了她的节目。
+
+    **为什么宝宝一眼就会被吸引**
+    - 永远穿亮粉色上衣、背带裤，戴发带，在一堆画面里特别显眼。
+    - 脸离镜头很近，直视镜头说话，宝宝会觉得「她在跟我说话」。
+    - 说得慢、重复多，还会停下来等孩子回应。
+
+    他既然会自己找了，可以顺手把电视上的自动播放关掉。不然看完一集会一直接着放下去。
+    """
+
+    static let truncationSampleB = """
+    哈哈，有智能转向和自动加速，他拿着手柄随便按，车也不会掉下赛道，看起来就像真在开。对他来说最好玩的大概是「我一动，屏幕里就有反应」。这么大的孩子正是对因果关系最着迷的时候，跟扔东西、按开关是一个乐趣。
+
+    马里奥赛车画面快、刺激强，跟 Ms Rachel 那种慢节奏是两回事。当成和爸爸一起玩的小游戏挺好，时间短一点就行。
+
+    将来他发现关掉辅助会撞墙，估计就要哭着来找你了 😄
+    """
 
     static func longTableAnswer(_ i: Int) -> String {
         var rows = ""

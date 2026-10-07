@@ -99,7 +99,7 @@ struct SettingsView: View {
             }
 
             Section {
-                LabeledContent("版本", value: model.clientVersion)
+                LabeledContent("版本", value: model.buildStamp)
                 // From bento: one file to send when something goes wrong.
                 ShareLink(item: DebugLog.shared.fileURL) {
                     Label("导出调试日志", systemImage: "doc.text.magnifyingglass")

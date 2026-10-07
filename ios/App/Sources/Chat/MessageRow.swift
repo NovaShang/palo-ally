@@ -106,6 +106,9 @@ private struct AssistantMessage: View {
                     ReplyMarkdown(source: message.text, streaming: message.isStreaming,
                                   onQuote: { store.quote(message, excerpt: $0) },
                                   trailingRoom: Self.trailingRoom)
+                        // A finished reply gets a fresh text view, measured
+                        // from scratch with its complete text.
+                        .id(message.isStreaming ? "streaming" : "final")
                 }
                 if !message.isStreaming, !message.text.isEmpty, message.kind == .text {
                     // The whole answer in one tap; small and quiet.
