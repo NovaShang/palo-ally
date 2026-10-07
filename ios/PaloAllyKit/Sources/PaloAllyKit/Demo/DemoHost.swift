@@ -220,6 +220,31 @@ public actor DemoHost {
                 await pause(delay > 0 ? delay : 4)
                 await streamLongReply()
             }
+        case "stress":
+            // The iPhone freeze (2026-10-07): a long conversation; replies
+            // streaming for half a minute; and every few seconds the link
+            // drops and the catch-up inserts what came in meanwhile (WeChat
+            // messages), above the reply still streaming. For a minute; the
+            // UI test ScrollStressUITests flings the list all through it.
+            for i in 0..<90 {
+                post("第 \(i + 1) 个问题：帮我比较一下这几个方案，顺便把要点列成表。", role: .user)
+                post(i % 3 == 0 ? DemoHost.longTableAnswer(i) : DemoHost.longProseAnswer(i))
+            }
+            Task {
+                await pause(3)
+                for _ in 0..<6 {
+                    await streamLongReply()
+                    await pause(0.3)
+                }
+            }
+            Task {
+                await pause(5)
+                for round in 0..<11 {
+                    missWhileAway(round)
+                    await transport.forceReconnect()
+                    await pause(5)
+                }
+            }
         case "bigtable":
             // The long conversation, plus an answer with a 500-row table;
             // then the link drops and comes back (sync, full reload) while
@@ -240,6 +265,16 @@ public actor DemoHost {
             break
         }
         setStatus(s)
+    }
+
+    /// Four WeChat messages the app didn't hear (the link was down), shaped
+    /// like the ones in the freeze: the next catch-up inserts them.
+    private func missWhileAway(_ round: Int) {
+        let line = "第 \(round + 1) 轮：断线时从微信进来的消息，重连后补上。"
+        post(String(repeating: line, count: 6), role: .user, channel: .wechat, broadcast: false)
+        post("好的，收到。", channel: .wechat, broadcast: false)
+        post(String(repeating: line, count: 3), role: .user, channel: .wechat, broadcast: false)
+        post(DemoHost.longProseAnswer(500 + round), channel: .wechat, broadcast: false)
     }
 
     /// An answer with one very long table (`-demoState bigtable`).

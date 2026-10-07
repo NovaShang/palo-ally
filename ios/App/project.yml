@@ -87,6 +87,21 @@ targets:
         ENABLE_PREVIEWS: YES
         CODE_SIGN_STYLE: Automatic
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+  # DEBUG drills that need real touches (flings), on an iPhone simulator.
+  PaloAllyUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: UITests
+    dependencies:
+      - target: PaloAlly
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.novashang.paloally.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
 schemes:
   PaloAlly:
     build:
@@ -94,5 +109,9 @@ schemes:
         PaloAlly: all
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - PaloAllyUITests
     archive:
       config: Release

@@ -6,6 +6,10 @@ struct ChatView: View {
     static let readableWidth: CGFloat = 760
     /// Mac: room above the first message for the small floating orb.
     static let macTopMargin: CGFloat = 22
+    /// The latest messages laid out in full, not lazily: more than a tall
+    /// window's worth even when they are all short, so following the end,
+    /// streaming and catch-ups only ever touch exact heights.
+    static let liveTail = 30
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     /// Kept by MainScreen so it survives the layout switching containers.
@@ -26,10 +30,10 @@ struct ChatView: View {
     /// Where the bar's middle is (phones): read only by the orb's own overlay,
     /// so the bar moving (a resize) doesn't re-render the conversation.
     @State private var orbPlacement = OrbPlacement()
-    /// Detached from the live end: the message at the top of the view. The
-    /// scroll view keeps it where it is when the rows above rewrap (a resize,
-    /// a sidebar opening), instead of keeping the raw offset and letting the
-    /// text slide. Nil while following the bottom.
+    /// The Mac only (`ReadingAnchor`): detached from the live end, the message
+    /// at the top of the view. The scroll view keeps it where it is when the
+    /// rows above rewrap (a resize, a sidebar opening), instead of keeping the
+    /// raw offset and letting the text slide. Nil while following the bottom.
     @State private var readingAnchor: String?
     /// Something arrived below (a message, or more of one) since the reader
     /// scrolled up: the jump button's dot.
@@ -38,7 +42,10 @@ struct ChatView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                let messages = store.messages
+                // Where the fully laid-out live end begins (see `liveTail`).
+                let split = max(0, messages.count - Self.liveTail)
+                VStack(alignment: .leading, spacing: 14) {
                     if store.hasOlderMessages {
                         Button {
                             // Keep the first message where it was: prepending
@@ -57,62 +64,62 @@ struct ChatView: View {
                         .frame(maxWidth: .infinity)
                     }
 
-                    if store.messages.isEmpty && store.connection == .online {
+                    if messages.isEmpty && store.connection == .online {
                         EmptyChatHint()
                     }
 
+                    // The history: laid out lazily, only what's on screen.
                     // Exactly one view per message (the time stamp lives inside
                     // it): a lazy stack whose ForEach yields a varying number of
                     // views per element has to run every element to count them,
                     // on every layout pass, which froze the Mac for 34 s on a
                     // long conversation.
-                    ForEach(Array(store.messages.enumerated()), id: \.element.id) { index, message in
-                        VStack(alignment: .leading, spacing: 14) {
-                            if showsTimestamp(at: index) {
-                                Text(Copy.clock(message.ts))
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.top, 6)
+                    if split > 0 {
+                        LazyVStack(alignment: .leading, spacing: 14) {
+                            ForEach(Array(messages[..<split].enumerated()), id: \.element.id) { index, message in
+                                messageRow(message, at: index)
                             }
-                            MessageRow(message: message)
-                                .background {
-                                    if highlightedID == message.id {
-                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                            .fill(Color.accentColor.opacity(0.12))
-                                            .padding(-6)
-                                            .transition(.opacity)
-                                    }
-                                }
                         }
-                        .id(message.id)
-                        #if DEBUG
-                        .modifier(AnchorProbe(id: message.id, anchor: AnchorProbe.enabled ? readingAnchor : nil))
-                        #endif
+                        .scrollTargetLayout(isEnabled: ReadingAnchor.enabled)
                     }
 
-                    ForEach(store.unanchoredPendingApprovals) { approval in
-                        ApprovalCard(approval: approval)
-                            .id("approval-\(approval.id)")
-                    }
+                    // The live end: the latest messages, the working line and
+                    // 「试试」, always fully laid out, so every height here is
+                    // exact. A lazy stack only estimates the rows it isn't
+                    // showing, from the ones it has measured; with replies of
+                    // very different lengths, a catch-up inserting messages
+                    // next to a streaming reply made each layout pass realize a
+                    // different row, which changed the estimates, which moved
+                    // the rows back: the content height flipped between two
+                    // values forever and the watchdog killed the app.
+                    VStack(alignment: .leading, spacing: 14) {
+                        ForEach(Array(messages[split...].enumerated()), id: \.element.id) { offset, message in
+                            messageRow(message, at: split + offset)
+                        }
 
-                    if showsBusyIndicator {
-                        ThinkingIndicator(activity: busyActivity, justSent: store.awaitingReply && store.status?.busy != true)
-                            .id("thinking")
-                    }
+                        ForEach(store.unanchoredPendingApprovals) { approval in
+                            ApprovalCard(approval: approval)
+                                .id("approval-\(approval.id)")
+                        }
 
-                    // 「试试」: part of the conversation's end, so scrolling up
-                    // leaves them behind; only on first use or after a quiet spell.
-                    // Its own view: the gate changes on every keystroke, and
-                    // that must not re-render the conversation.
-                    SuggestionsSlot(followingEnd: pinned && !userScrolling) {
-                        withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
-                    }
-                    .id("suggestions")
+                        if showsBusyIndicator {
+                            ThinkingIndicator(activity: busyActivity, justSent: store.awaitingReply && store.status?.busy != true)
+                                .id("thinking")
+                        }
 
-                    Color.clear.frame(height: 1).id("bottom")
+                        // 「试试」: part of the conversation's end, so scrolling up
+                        // leaves them behind; only on first use or after a quiet spell.
+                        // Its own view: the gate changes on every keystroke, and
+                        // that must not re-render the conversation.
+                        SuggestionsSlot(followingEnd: pinned && !userScrolling) {
+                            withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
+                        }
+                        .id("suggestions")
+
+                        Color.clear.frame(height: 1).id("bottom")
+                    }
+                    .scrollTargetLayout(isEnabled: ReadingAnchor.enabled)
                 }
-                .scrollTargetLayout()
                 // A quote above a bubble jumps to what it quotes.
                 .environment(\.chatScrollTo) { id in
                     withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
@@ -131,15 +138,14 @@ struct ChatView: View {
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(.bottom, for: .alignment)
             .defaultScrollAnchor(pinned ? .bottom : .top, for: .sizeChanges)
-            .scrollPosition(id: pinned ? .constant(nil) : $readingAnchor, anchor: .top)
+            .modifier(ReadingAnchor(id: $readingAnchor, holding: !pinned))
             // The Mac: the orb floats over the top of the column, so the
             // first message starts a little below it.
             .contentMargins(.top, Platform.barInWindowToolbar ? Self.macTopMargin : 0, for: .scrollContent)
             .onChange(of: pinned) { _, now in
-                if now {
-                    readingAnchor = nil
-                    unseenBelow = false
-                }
+                guard now else { return }
+                if readingAnchor != nil { readingAnchor = nil }
+                if unseenBelow { unseenBelow = false }
             }
             #if DEBUG
             // `-demoDetach YES`: read from the middle of the history (for the resize test).
@@ -195,7 +201,7 @@ struct ChatView: View {
             .onScrollPhaseChange { old, phase in
                 breadcrumb("scroll \(phase)")
                 let moving = phase == .tracking || phase == .interacting || phase == .decelerating
-                userScrolling = moving
+                if userScrolling != moving { userScrolling = moving }
                 // A scroll of the reader's that comes to rest near the end
                 // (after any fling) follows the live bottom again.
                 if !moving, old == .tracking || old == .interacting || old == .decelerating,
@@ -204,7 +210,10 @@ struct ChatView: View {
                 }
             }
             .onScrollGeometryChange(for: ChatScroll.Metrics.self) { g in
-                ChatScroll.Metrics(g)
+                #if DEBUG
+                ChatScroll.trace(g)
+                #endif
+                return ChatScroll.Metrics(g)
             } action: { old, new in
                 #if DEBUG
                 ChatScroll.debugDistance = new.distanceFromBottom
@@ -376,27 +385,40 @@ struct ChatView: View {
     }
 
     /// 「回到最新」: to the very end (the last message and anything under it)
-    /// and following it again. The reader's place is held by the
-    /// scroll-position binding, which in the same update would put the view
-    /// back where it was; so the anchor is let go first and the jump runs a
-    /// frame later. The rows below were only estimated until they come into
-    /// view, so it settles on the end once more after they have their sizes.
+    /// and following it again, by one scroll to the end marker. The rows
+    /// below were only estimated until they come into view, so once they have
+    /// their sizes the same scroll runs again to land exactly on the end,
+    /// unless the reader has taken over. A tap while the list still coasts
+    /// from a fling ends the reader's scroll: otherwise the coasting frames
+    /// would count as dragging away and detach again at once. The Mac first
+    /// lets go of its reading anchor, a frame earlier: in the same update
+    /// that binding would hold the view where it was.
     private func jumpToLatest(_ proxy: ScrollViewProxy) {
         breadcrumb("jump to latest")
+        let anchored = readingAnchor != nil
         readingAnchor = nil
+        userScrolling = false
         pinned = true
         unseenBelow = false
         Task { @MainActor in
             // An older stretch is showing: load the live end first.
-            if store.viewingPast { await store.returnToLatest() }
-            try? await Task.sleep(for: .milliseconds(20))
-            withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
-            for delay in [400, 300] {
-                try? await Task.sleep(for: .milliseconds(delay))
-                guard pinned, !userScrolling else { return }
-                proxy.scrollTo("bottom", anchor: .bottom)
+            if store.viewingPast {
+                await store.returnToLatest()
+            } else if anchored {
+                try? await Task.sleep(for: .milliseconds(20))
             }
+            withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
+            try? await Task.sleep(for: .milliseconds(450))
+            guard pinned, !userScrolling else { return }
+            proxy.scrollTo("bottom", anchor: .bottom)
         }
+        #if DEBUG
+        // Where it landed (ScrollStressUITests reads this).
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.2))
+            debugLog("[jump] +1.2 s: \(Int(ChatScroll.debugDistance)) pt from the end, pinned \(pinned)")
+        }
+        #endif
     }
 
     /// Back to the newest message now and once more after the lazy rows have
@@ -412,6 +434,33 @@ struct ChatView: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
+    }
+
+    /// One message, with its time stamp when it starts a new stretch.
+    @ViewBuilder
+    private func messageRow(_ message: ChatMessage, at index: Int) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if showsTimestamp(at: index) {
+                Text(Copy.clock(message.ts))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 6)
+            }
+            MessageRow(message: message)
+                .background {
+                    if highlightedID == message.id {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.12))
+                            .padding(-6)
+                            .transition(.opacity)
+                    }
+                }
+        }
+        .id(message.id)
+        #if DEBUG
+        .modifier(AnchorProbe(id: message.id, anchor: AnchorProbe.enabled ? readingAnchor : nil))
+        #endif
     }
 
     /// Shown whenever the host is working (not just right after a send).
@@ -464,6 +513,32 @@ private struct TopStrip<Strip: View>: ViewModifier {
                 .scrollEdgeEffectHidden(true, for: .top)
         } else {
             content.safeAreaInset(edge: .top, spacing: 0, content: strip)
+        }
+    }
+}
+
+/// The Mac only, where windows get resized all the time: reading back in
+/// history, the top message stays put while the rows above rewrap (scroll
+/// position by id). Phones and iPads go without it: no extra lookup on every
+/// layout pass, and no binding that 「回到最新」 has to let go of first.
+private struct ReadingAnchor: ViewModifier {
+    /// Decided once at launch, so the list never switches structure.
+    /// DEBUG `-readingAnchor YES` turns it on anywhere (the stress test on a phone).
+    static let enabled: Bool = {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "readingAnchor") { return true }
+        #endif
+        return Platform.isMac
+    }()
+    @Binding var id: String?
+    /// Detached from the live end.
+    let holding: Bool
+
+    func body(content: Content) -> some View {
+        if Self.enabled {
+            content.scrollPosition(id: holding ? $id : .constant(nil), anchor: .top)
+        } else {
+            content
         }
     }
 }
