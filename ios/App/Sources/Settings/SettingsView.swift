@@ -1,4 +1,5 @@
 import PaloAllyKit
+import PaloAllyVoice
 import SwiftUI
 
 struct SettingsView: View {
@@ -102,6 +103,7 @@ struct SettingsView: View {
 
             Section {
                 LabeledContent("版本", value: model.buildStamp)
+                LabeledContent("设备编号", value: "\(VoiceInstallID.short)…")
                 // From bento: what to send when something goes wrong — the
                 // logs of the last few launches and the system's hang and
                 // crash reports.

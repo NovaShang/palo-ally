@@ -69,6 +69,7 @@ public final class BatchTranscriptionService: @unchecked Sendable {
             request = URLRequest(url: Self.qwenRelayURL)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(VoiceInstallID.current, forHTTPHeaderField: VoiceInstallID.header)
             var payload: [String: Any] = ["audio": b64]
             if !language.isEmpty { payload["language"] = language }
             if !corpus.isEmpty { payload["corpus"] = corpus }

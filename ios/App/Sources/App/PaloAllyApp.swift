@@ -70,6 +70,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().delegate = self
         // Voice logs already carry "[voice]"; append the time since the press.
         voiceLogSink = { debugLog("\($0)\(VoiceTiming.suffix)") }
+        // Random per-device id the relay meters voice by; logged so a device
+        // can be matched to its quota.
+        debugLog("[voice] install id \(VoiceInstallID.current)")
         // Every build: a hang leaves a timestamp and breadcrumbs in the log,
         // and the system's own hang / crash reports (with stacks) land in
         // Documents/diagnostics on a later launch.

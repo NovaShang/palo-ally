@@ -113,6 +113,8 @@ public final class QwenRealtimeASRService: NSObject, @unchecked Sendable, Realti
             // Zero-config: the relay adds the key + upstream headers.
             endpoint = proxyURL
             request = URLRequest(url: endpoint)
+            // Per-device quota on the relay (not sent to DashScope directly).
+            request.setValue(VoiceInstallID.current, forHTTPHeaderField: VoiceInstallID.header)
         } else {
             throw ASRError.missingCredentials
         }
