@@ -37,19 +37,65 @@ export function friendlyError(error: string, category?: string): string {
 }
 
 // Plain words for what the assistant is doing right now (shown while busy).
-export function describeActivity(tool: string): string {
-  if (tool === "Write" || tool === "Edit" || tool === "NotebookEdit") return "正在写文件";
-  if (tool === "Bash") return "正在电脑上跑命令";
-  if (tool === "Read" || tool === "Grep" || tool === "Glob") return "正在翻资料";
-  if (tool === "WebSearch" || tool === "WebFetch") return "正在网上查";
-  if (tool === "Agent" || tool === "Task") return "正在安排后台的事";
-  if (/browser_/.test(tool)) return "正在用浏览器";
-  if (tool.startsWith("mcp__paloally__")) return "正在整理";
-  return "正在处理";
+// The owner-facing status line while a tool runs: plain Chinese, never the
+// tool's name, its input (paths, commands, URLs, queries) or our internal
+// terms. The app appends the "…". null = keep the current line (the tool
+// shows itself, like a question card, or is housekeeping).
+export const ACTIVITY = {
+  mail: "在查邮件",
+  calendar: "在看日历",
+  files: "在翻文件",
+  writing: "在整理文件",
+  web: "在网上查",
+  computer: "在电脑上操作",
+  background: "在后台办",
+  handOff: "在交给后台办",
+  docs: "在看文档",
+  forYou: "在准备给你的东西",
+  noting: "在记下来",
+  generic: "在处理",
+  reply: "在写回复",
+  thinking: "在想",
+} as const;
+
+const KEEP_LINE = new Set(["AskUserQuestion", "ToolSearch", "TodoWrite", "ListAgents", "ExitPlanMode", "EnterPlanMode"]);
+
+export function describeActivity(tool: string): string | null {
+  if (KEEP_LINE.has(tool)) return null;
+  switch (tool) {
+    case "Read": case "Grep": case "Glob": case "LS": case "NotebookRead":
+      return ACTIVITY.files;
+    case "Write": case "Edit": case "MultiEdit": case "NotebookEdit":
+      return ACTIVITY.writing;
+    case "Bash": case "BashOutput": case "KillShell": case "KillBash": case "Monitor":
+      return ACTIVITY.computer;
+    case "WebSearch": case "WebFetch":
+      return ACTIVITY.web;
+    case "Agent": case "Task": case "TaskOutput": case "TaskStop": case "TaskCreate": case "TaskUpdate":
+      return ACTIVITY.background;
+    case "SendMessage":
+      return ACTIVITY.handOff;
+    case "SendUserFile": case "Artifact":
+      return ACTIVITY.forYou;
+  }
+  const m = /^mcp__(.+?)__(.+)$/.exec(tool);
+  if (!m) return ACTIVITY.generic;
+  const server = m[1]!.toLowerCase();
+  const name = m[2]!.toLowerCase();
+  if (server === "paloally") {
+    if (/sendus|artifact|clipboard|notify/.test(name)) return ACTIVITY.forYou;
+    if (/watch|goal|report_task/.test(name)) return ACTIVITY.noting;
+    return ACTIVITY.generic;
+  }
+  if (/gmail|outlook/.test(server) || /mail|inbox|draft|thread/.test(name)) return ACTIVITY.mail;
+  if (/calendar/.test(server) || /calendar|event|meeting|schedule/.test(name)) return ACTIVITY.calendar;
+  if (/chrome|browser|playwright|fetch|search|web/.test(server)) return ACTIVITY.web;
+  if (/notion|drive|docs|confluence|sharepoint|onedrive|dropbox|box/.test(server)) return ACTIVITY.docs;
+  return ACTIVITY.generic;
 }
 
-export const ACTIVITY_THINKING = "正在想";
-export const ACTIVITY_BACKGROUND = "后台在办事";
+export const ACTIVITY_THINKING = ACTIVITY.thinking;
+export const ACTIVITY_BACKGROUND = ACTIVITY.background;
 
 export function statusWord(s: string): string {
   return s === "done" ? "办好了" : s === "failed" ? "没办成" : s === "needs_input" ? "需要你" : "已停下";

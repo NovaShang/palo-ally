@@ -5,7 +5,7 @@ import type { Audit } from "./audit.ts";
 import type { WechatChannel, WechatReplyTarget } from "./channels/types.ts";
 import type { ChatLog } from "./chat.ts";
 import type { Config, Paths } from "./config.ts";
-import { ACTIVITY_BACKGROUND, budgetNotice, describeActivity, friendlyError } from "./copy.ts";
+import { ACTIVITY, ACTIVITY_BACKGROUND, budgetNotice, describeActivity, friendlyError } from "./copy.ts";
 import { BEHAVIOR } from "./home.ts";
 import type { HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
 import type { Router } from "./router.ts";
@@ -286,6 +286,8 @@ export class Conversation {
           if (!this.deltaId) this.deltaId = `m_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
           this.deltaText += e.text;
           chat.delta(this.deltaId, e.text);
+          // The words themselves now show the progress.
+          this.setActivity(ACTIVITY.reply);
         }
         break;
       case "assistant_text":
@@ -302,12 +304,13 @@ export class Conversation {
         this.deltaText = "";
         break;
       case "tool_start":
-        if (!e.parentToolUseId) this.setActivity(describeActivity(e.name));
+        if (!e.parentToolUseId) this.setActivityFor(e.name);
         break;
       case "tool_use":
         if (!e.parentToolUseId) this.openTools.add(e.id);
         tasks.onToolUse(e.id, e.name, e.input, e.parentToolUseId);
-        this.setActivity(e.parentToolUseId ? ACTIVITY_BACKGROUND : describeActivity(e.name));
+        if (e.parentToolUseId) this.setActivity(ACTIVITY_BACKGROUND);
+        else this.setActivityFor(e.name);
         break;
       case "tool_result":
         this.openTools.delete(e.toolUseId);
@@ -383,6 +386,12 @@ export class Conversation {
   ownerChannel(): Channel {
     const o = this.current?.origin;
     return o === "wechat" || o === "cli" ? o : "app";
+  }
+
+  /** The status line for a main-thread tool; some tools keep the current one. */
+  private setActivityFor(tool: string): void {
+    const a = describeActivity(tool);
+    if (a !== null) this.setActivity(a);
   }
 
   private setActivity(a: string): void {

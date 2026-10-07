@@ -460,7 +460,7 @@ describe("Hub: talking while it works", () => {
     await hub.idle();
     driver.last!.opts.onEvent({ type: "tool_use", id: "x", name: "Bash", input: {}, parentToolUseId: null });
     expect(hub.status().busy).toBe(true);
-    expect(hub.status().activity).toBe("正在电脑上跑命令");
+    expect(hub.status().activity).toBe("在电脑上操作");
     await tick(60);
     expect(hub.status().busy).toBe(true); // a tool is still running: not "quiet"
     driver.last!.opts.onEvent({ type: "tool_result", toolUseId: "x", content: "ok", isError: false, parentToolUseId: null });
@@ -484,7 +484,7 @@ describe("Hub: talking while it works", () => {
     hub.bus.on((e, d: any) => e === "status" && d.activity && seen.push(d.activity));
     hub.userMessage("写个大文件", "app");
     await hub.idle();
-    expect(seen).toContain("正在写文件");
+    expect(seen).toContain("在整理文件");
     expect(hub.status().activity).toBeUndefined();
     void driver;
     cleanup(paths);
