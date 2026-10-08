@@ -8,8 +8,9 @@ import XCTest
 /// simulator's app container afterwards (scripts/scroll-stress.sh).
 ///
 /// Extra launch arguments come from the `STRESS_ARGS` environment variable
-/// (`TEST_RUNNER_STRESS_ARGS` for xcodebuild), e.g. `-readingAnchor YES` to
-/// put back the anchoring that froze the phone.
+/// (`TEST_RUNNER_STRESS_ARGS` for xcodebuild), e.g. `-readingAnchor NO` to
+/// run without the reading anchor (scroll position by id while detached),
+/// which is on everywhere by default.
 final class ScrollStressUITests: XCTestCase {
     @MainActor
     func testFlingWhileStreamingAndSyncing() throws {

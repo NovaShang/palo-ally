@@ -4,7 +4,7 @@
 # then prints the app's stall and jump lines from its debug.log.
 #
 #   ios/App/scripts/scroll-stress.sh [simulator name] [extra app arguments]
-#   ios/App/scripts/scroll-stress.sh "iPhone 17" "-readingAnchor YES"   # the old anchoring
+#   ios/App/scripts/scroll-stress.sh "iPhone 17" "-readingAnchor NO"   # without the reading anchor
 #
 # One simulator and one build at a time; the simulator is shut down after.
 set -u

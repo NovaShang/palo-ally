@@ -16,11 +16,30 @@ enum ChatScroll {
         var distanceFromBottom: CGFloat
         /// Composer + keyboard + home indicator: grows when the keyboard rises.
         var bottomInset: CGFloat
+        /// Where the list is scrolled to, and how tall it is. The reader moved
+        /// the list only when the offset changed and the height did not: the
+        /// distance from the end also grows when a reply streams in or the
+        /// lazy history re-estimates its rows, under a finger that is just
+        /// resting on the screen.
+        var offsetY: CGFloat
+        var contentHeight: CGFloat
 
         init(_ g: ScrollGeometry) {
             distanceFromBottom = ChatScrollMath.distanceFromBottom(
                 contentHeight: g.contentSize.height, visibleMaxY: g.visibleRect.maxY, bottomInset: g.contentInsets.bottom)
             bottomInset = g.contentInsets.bottom
+            offsetY = g.contentOffset.y
+            contentHeight = g.contentSize.height
+        }
+
+        /// The reader dragged (or flung) toward older messages.
+        func movedUp(from old: Metrics) -> Bool {
+            abs(contentHeight - old.contentHeight) < 0.5 && offsetY < old.offsetY - 0.5
+        }
+
+        /// The reader dragged (or flung) toward the end.
+        func movedDown(from old: Metrics) -> Bool {
+            abs(contentHeight - old.contentHeight) < 0.5 && offsetY > old.offsetY + 0.5
         }
     }
 

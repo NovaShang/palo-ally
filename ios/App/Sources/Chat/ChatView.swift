@@ -30,10 +30,11 @@ struct ChatView: View {
     /// Where the bar's middle is (phones): read only by the orb's own overlay,
     /// so the bar moving (a resize) doesn't re-render the conversation.
     @State private var orbPlacement = OrbPlacement()
-    /// The Mac only (`ReadingAnchor`): detached from the live end, the message
-    /// at the top of the view. The scroll view keeps it where it is when the
-    /// rows above rewrap (a resize, a sidebar opening), instead of keeping the
-    /// raw offset and letting the text slide. Nil while following the bottom.
+    /// `ReadingAnchor`: detached from the live end, the message at the top of
+    /// the view. The scroll view keeps it where it is when the rows above
+    /// change size (lazy estimates, a resize, a sidebar opening), instead of
+    /// keeping the raw offset and letting the text slide. Nil while following
+    /// the bottom.
     @State private var readingAnchor: String?
     /// Something arrived below (a message, or more of one) since the reader
     /// scrolled up: the jump button's dot.
@@ -223,9 +224,12 @@ struct ChatView: View {
                 if userScrolling {
                     // Like the ChatGPT / Claude apps: the slightest drag up
                     // stops following; drifting back down near the end resumes.
-                    if new.distanceFromBottom > old.distanceFromBottom + 0.5, new.distanceFromBottom > ChatScroll.detachDistance {
+                    // Only the list moving counts, not the end moving away: a
+                    // touch right after 「回到最新」 (rows still re-measuring)
+                    // or during a reply must not let go of the end.
+                    if new.movedUp(from: old), new.distanceFromBottom > ChatScroll.detachDistance {
                         if pinned { pinned = false }
-                    } else if new.distanceFromBottom < old.distanceFromBottom, new.distanceFromBottom <= ChatScroll.reattachDistance {
+                    } else if new.movedDown(from: old), new.distanceFromBottom <= ChatScroll.reattachDistance {
                         if !pinned { pinned = true }
                     }
                 } else if new.bottomInset > old.bottomInset + 1, pinned {
@@ -390,9 +394,9 @@ struct ChatView: View {
     /// their sizes the same scroll runs again to land exactly on the end,
     /// unless the reader has taken over. A tap while the list still coasts
     /// from a fling ends the reader's scroll: otherwise the coasting frames
-    /// would count as dragging away and detach again at once. The Mac first
-    /// lets go of its reading anchor, a frame earlier: in the same update
-    /// that binding would hold the view where it was.
+    /// would count as dragging away and detach again at once. It first lets
+    /// go of the reading anchor, a frame earlier: in the same update that
+    /// binding would hold the view where it was.
     private func jumpToLatest(_ proxy: ScrollViewProxy) {
         breadcrumb("jump to latest")
         let anchored = readingAnchor != nil
@@ -408,9 +412,17 @@ struct ChatView: View {
                 try? await Task.sleep(for: .milliseconds(20))
             }
             withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
-            try? await Task.sleep(for: .milliseconds(450))
-            guard pinned, !userScrolling else { return }
-            proxy.scrollTo("bottom", anchor: .bottom)
+            // Once more after the rows below have measured, and again (a few
+            // times at most) while the view is still away from the end: after
+            // a long jump the animation's own end can win over the first
+            // correction, and the history's estimated heights can keep moving
+            // the end for a second or two (it stopped up to 12 000 pt short).
+            for delay in [450, 650, 700, 800] {
+                try? await Task.sleep(for: .milliseconds(delay))
+                guard pinned, !userScrolling else { return }
+                if delay > 450 && !awayFromBottom { return }
+                proxy.scrollTo("bottom", anchor: .bottom)
+            }
         }
         #if DEBUG
         // Where it landed (ScrollStressUITests reads this).
@@ -517,18 +529,21 @@ private struct TopStrip<Strip: View>: ViewModifier {
     }
 }
 
-/// The Mac only, where windows get resized all the time: reading back in
-/// history, the top message stays put while the rows above rewrap (scroll
-/// position by id). Phones and iPads go without it: no extra lookup on every
-/// layout pass, and no binding that 「回到最新」 has to let go of first.
+/// Reading back in history (detached), the top message stays put while the
+/// rows around it change size (scroll position by id): the lazy history only
+/// estimates the rows it isn't showing, and those estimates change as rows
+/// come and go, which without this slid the text under the reader (a slow
+/// scroll down kept snapping back up). The Mac also needs it for resizing.
 private struct ReadingAnchor: ViewModifier {
     /// Decided once at launch, so the list never switches structure.
-    /// DEBUG `-readingAnchor YES` turns it on anywhere (the stress test on a phone).
+    /// DEBUG `-readingAnchor NO` turns it off (to compare in the stress test).
     static let enabled: Bool = {
         #if DEBUG
-        if UserDefaults.standard.bool(forKey: "readingAnchor") { return true }
+        if UserDefaults.standard.object(forKey: "readingAnchor") != nil {
+            return UserDefaults.standard.bool(forKey: "readingAnchor")
+        }
         #endif
-        return Platform.isMac
+        return true
     }()
     @Binding var id: String?
     /// Detached from the live end.
