@@ -12,6 +12,14 @@ func until(_ timeout: Double = 3, _ condition: @MainActor () async -> Bool) asyn
     return await condition()
 }
 
+/// Which observation callbacks fired (they may run on any thread).
+final class Flags: @unchecked Sendable {
+    private let lock = NSLock()
+    private var names: Set<String> = []
+    func set(_ n: String) { lock.withLock { _ = names.insert(n) } }
+    func has(_ n: String) -> Bool { lock.withLock { names.contains(n) } }
+}
+
 /// A host that only auto-answers hello/sync; everything else waits for the
 /// test to answer. Lets tests control ordering precisely.
 final class ManualHost: @unchecked Sendable {
@@ -162,7 +170,9 @@ struct AppStoreTests {
         #expect(await until { store.connection == .online })
         host.event("chat.delta", ["id": "r1", "text": "今天"])
         host.event("chat.delta", ["id": "r1", "text": "天气"])
-        #expect(await until { store.messages.first?.text == "今天天气" })
+        #expect(await until { store.messages.first.map(store.liveText) == "今天天气" })
+        // While it's written, the text lives in the reply's own object, not in `messages`.
+        #expect(store.stream(for: "r1")?.text == "今天天气")
         #expect(store.messages.count == 1)
         #expect(store.messages[0].isStreaming)
         #expect(store.messages[0].seq == 0)
@@ -189,10 +199,10 @@ struct AppStoreTests {
         store.start()
         #expect(await until { store.connection == .online })
         #expect(store.messages.map(\.id) == ["r1"])
-        #expect(store.messages[0].text == "写到一半")
+        #expect(store.liveText(store.messages[0]) == "写到一半")
         #expect(store.messages[0].isStreaming)
         host.event("chat.delta", ["id": "r1", "text": "，接着写"])
-        #expect(await until { store.messages.first?.text == "写到一半，接着写" })
+        #expect(await until { store.messages.first.map(store.liveText) == "写到一半，接着写" })
         host.event("chat.message", ["seq": 1, "id": "r1", "role": "assistant", "kind": "text", "text": "写到一半，接着写完了", "channel": "app", "ts": 1])
         #expect(await until { store.messages.first?.isStreaming == false })
         #expect(store.messages.map(\.text) == ["写到一半，接着写完了"])
@@ -206,7 +216,7 @@ struct AppStoreTests {
         store.start()
         #expect(await until { store.connection == .online })
         host.event("chat.delta", ["id": "r1", "text": "写到"])
-        #expect(await until { store.messages.last?.text == "写到" })
+        #expect(await until { store.messages.last.map(store.liveText) == "写到" })
         // The link drops; the deltas sent meanwhile never arrive.
         host.transport.simulateDisconnect()
         #expect(await until { store.connection != .online })
@@ -215,10 +225,10 @@ struct AppStoreTests {
         await host.transport.simulateConnect()
         #expect(await until { store.connection == .online })
         #expect(store.messages.map(\.id) == ["u1", "r1"])
-        #expect(store.messages[1].text == "写到一半了")
+        #expect(store.liveText(store.messages[1]) == "写到一半了")
         #expect(store.messages[1].isStreaming)
         host.event("chat.delta", ["id": "r1", "text": "，快写完了"])
-        #expect(await until { store.messages.last?.text == "写到一半了，快写完了" })
+        #expect(await until { store.messages.last.map(store.liveText) == "写到一半了，快写完了" })
     }
 
     @Test func syncStreamingForAFinishedReplyIsIgnored() async throws {
@@ -247,7 +257,7 @@ struct AppStoreTests {
         store.syncing = false
         delta("再写", 4)
         store.flushDeltas()
-        #expect(store.messages.map(\.text) == ["写到一半，然后再写"])
+        #expect(store.messages.map(store.liveText) == ["写到一半，然后再写"])
 
         // The other way round: the answer first, then a delta it already holds.
         let other = AppStore(transport: InMemoryTransport(autoConnect: false))
@@ -259,7 +269,7 @@ struct AppStoreTests {
         other.apply(event: "chat.delta", data: ["id": "r2", "text": "一半"], index: 2)
         other.apply(event: "chat.delta", data: ["id": "r2", "text": "，然后"], index: 3)
         other.flushDeltas()
-        #expect(other.messages.map(\.text) == ["写到一半，然后"])
+        #expect(other.messages.map(other.liveText) == ["写到一半，然后"])
     }
 
     @Test func syncResultDecodesStreaming() throws {
@@ -270,6 +280,31 @@ struct AppStoreTests {
         #expect(none.streaming == nil)
     }
 
+    /// Deltas change only the reply's own object: views that read
+    /// `messages` (the list, every other row) don't update with each one.
+    @Test func streamingDoesNotChangeMessages() async throws {
+        let store = AppStore(transport: InMemoryTransport(autoConnect: false))
+        store.apply(event: "chat.delta", data: ["id": "r1", "text": "今天"])
+        let changes = Flags()
+        withObservationTracking { _ = store.messages } onChange: { changes.set("messages") }
+        withObservationTracking { _ = store.stream(for: "r1")?.text } onChange: { changes.set("text") }
+        for piece in ["天气", "不错，", "适合出门"] {
+            store.apply(event: "chat.delta", data: ["id": "r1", "text": .string(piece)])
+        }
+        store.flushDeltas()
+        #expect(!changes.has("messages"))
+        #expect(changes.has("text"))
+        #expect(store.liveText(store.messages[0]) == "今天天气不错，适合出门")
+        // Finished: the text moves into the message, the reply object goes.
+        store.receive(ChatMessage(seq: 1, id: "r1", role: .assistant, text: "今天天气不错，适合出门。", ts: 1))
+        #expect(changes.has("messages"))
+        #expect(store.messages[0].text == "今天天气不错，适合出门。")
+        #expect(store.stream(for: "r1") == nil)
+        #expect(store.latestStream == nil)
+    }
+
+    /// The host numbers a reply when it ends, after whatever arrived while it
+    /// was written; shown last while written, it doesn't jump when finished.
     @Test func broadcastBeforeSendResponseMergesByClientMsgId() async throws {
         let host = ManualHost()
         let store = AppStore(transport: host.transport)
@@ -409,6 +444,20 @@ struct AppStoreTests {
         // A fresh snapshot (as after re-pair) must not drop the failed echo.
         store.applySync(host.syncResult, since: nil)
         #expect(store.messages.map(\.text) == ["1", "2", "离线时说的"])
+    }
+
+    @Test func aFreshSnapshotEndsTheReplyItFinished() async throws {
+        let store = AppStore(transport: InMemoryTransport(autoConnect: false))
+        store.receive(ChatMessage(seq: 1, id: "u1", role: .user, text: "写点东西", ts: 1))
+        store.apply(event: "chat.delta", data: ["id": "r1", "text": "写到"])
+        #expect(store.stream(for: "r1") != nil)
+        _ = store.applySync(SyncResult(seq: 2, messages: [
+            ChatMessage(seq: 1, id: "u1", role: .user, text: "写点东西", ts: 1),
+            ChatMessage(seq: 2, id: "r1", role: .assistant, text: "写完了", ts: 2),
+        ]), since: nil)
+        #expect(store.stream(for: "r1") == nil)
+        #expect(store.latestStream == nil)
+        #expect(store.messages.map(\.text) == ["写点东西", "写完了"])
     }
 
     @Test func entityEventsApply() async throws {

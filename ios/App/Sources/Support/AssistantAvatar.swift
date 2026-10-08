@@ -247,6 +247,10 @@ final class AvatarSignals {
     private(set) var beat = 0
 
     func emit(_ event: TwoDropsState.Event) {
+        #if DEBUG
+        // `-avatarStill YES`: no events either (measuring the chat without the avatar).
+        if UserDefaults.standard.bool(forKey: "avatarStill") { return }
+        #endif
         seq += 1
         events.append((seq, event))
         if events.count > 16 { events.removeFirst(events.count - 16) }

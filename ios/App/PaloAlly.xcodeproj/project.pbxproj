@@ -71,6 +71,9 @@
 		F9EB80178FD0B490980AA37A /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E40E5B05B34DB68B0FC2EFB /* AppLog.swift */; };
 		D427E4799F84B3E8A7AFBBC7 /* ChatScrollCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4C7937CFE1E8403F22616D0 /* ChatScrollCoordinator.swift */; };
 		4FA285EE1AAC48286A60A15A /* LaunchMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7910248D4510881F52C8B792 /* LaunchMetrics.swift */; };
+		9AABDBD902457A9FA2B78C2D /* RenderTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 158B9FF05B59391588A731FC /* RenderTrace.swift */; };
+		EA496210FBC660BE5DC8F2E6 /* ReplyText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 528A168B7DB530554B4279A9 /* ReplyText.swift */; };
+		B828D21CCBDF6DD7F6E1BBB2 /* CommitWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81B58C3AF5CBB8A23900250 /* CommitWatch.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -148,6 +151,9 @@
 		1E40E5B05B34DB68B0FC2EFB /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
 		F4C7937CFE1E8403F22616D0 /* ChatScrollCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollCoordinator.swift; sourceTree = "<group>"; };
 		7910248D4510881F52C8B792 /* LaunchMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchMetrics.swift; sourceTree = "<group>"; };
+		158B9FF05B59391588A731FC /* RenderTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenderTrace.swift; sourceTree = "<group>"; };
+		528A168B7DB530554B4279A9 /* ReplyText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplyText.swift; sourceTree = "<group>"; };
+		D81B58C3AF5CBB8A23900250 /* CommitWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitWatch.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -228,6 +234,7 @@
 		7CF82A7EB4082F9747052FD2 /* Chat */ = {
 			isa = PBXGroup;
 			children = (
+				528A168B7DB530554B4279A9 /* ReplyText.swift */,
 				F4C7937CFE1E8403F22616D0 /* ChatScrollCoordinator.swift */,
 				0CC0C56E78F856900F1C91A8 /* ApprovalCard.swift */,
 				4FBD3843044FE94D50902206 /* ChatScroll.swift */,
@@ -271,6 +278,8 @@
 		A5A39901D00EEDD568BA7FA7 /* Support */ = {
 			isa = PBXGroup;
 			children = (
+				D81B58C3AF5CBB8A23900250 /* CommitWatch.swift */,
+				158B9FF05B59391588A731FC /* RenderTrace.swift */,
 				7910248D4510881F52C8B792 /* LaunchMetrics.swift */,
 				BC683780205CAAF21C706B40 /* ScrollLab.swift */,
 				32922EB865184F7F70CAB365 /* AppTheme.swift */,
@@ -445,6 +454,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B828D21CCBDF6DD7F6E1BBB2 /* CommitWatch.swift in Sources */,
+				EA496210FBC660BE5DC8F2E6 /* ReplyText.swift in Sources */,
+				9AABDBD902457A9FA2B78C2D /* RenderTrace.swift in Sources */,
 				4FA285EE1AAC48286A60A15A /* LaunchMetrics.swift in Sources */,
 				D427E4799F84B3E8A7AFBBC7 /* ChatScrollCoordinator.swift in Sources */,
 				57A1524E01D493D7D3D22D9E /* ScrollLab.swift in Sources */,

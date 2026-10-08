@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import QuartzCore
 import os
 
 /// The app's single source of truth: mirrors host state, applies events,
@@ -52,6 +53,11 @@ public final class AppStore {
     public private(set) var hostName: String = ""
     public private(set) var hostVersion: String = ""
     public private(set) var messages: [ChatMessage] = []
+    /// Replies being written, by message id: their text lives here while it
+    /// grows (the message's own `text` is filled in when the reply ends).
+    public private(set) var streams: [String: StreamingReply] = [:]
+    /// The reply being written now, if any.
+    public private(set) var latestStream: StreamingReply?
     public private(set) var tasks: [AllyTask] = []
     public private(set) var approvals: [Approval] = []
     /// Choice cards (AskUserQuestion), newest first.
@@ -370,6 +376,8 @@ public final class AppStore {
                 $0.seq == 0 && $0.delivery != .sent && !($0.clientMsgId.map(serverCIDs.contains) ?? false)
             }
             let streaming = messages.filter { $0.isStreaming && !serverIDs.contains($0.id) }
+            // Replies that finished while we were away: the host's copy wins.
+            for id in Array(streams.keys) where serverIDs.contains(id) { endStream(id) }
             messages = r.messages
             for m in streaming + local { messages.append(m) }
             sortMessages()
@@ -408,16 +416,21 @@ public final class AppStore {
             guard messages[i].isStreaming else { return }
             pendingDeltas[s.id] = nil
             if let mark { streamMarks[s.id] = mark }
-            if messages[i].text != text { messages[i].text = text }
+            if let r = streams[s.id] {
+                r.replace(with: text)
+            } else {
+                startStream(id: s.id, text: text)
+            }
             breadcrumb("sync: reply so far \(text.utf8.count) bytes (replaced)")
         } else {
             // Live text waits while an older stretch is on screen.
             guard !viewingPast else { return }
             pendingDeltas[s.id] = nil
             if let mark { streamMarks[s.id] = mark }
-            var m = ChatMessage(seq: 0, id: s.id, role: .assistant, kind: .text, text: text, channel: .app,
+            var m = ChatMessage(seq: 0, id: s.id, role: .assistant, kind: .text, text: "", channel: .app,
                                 ts: Date().epochMillis)
             m.isStreaming = true
+            startStream(id: s.id, text: text)
             messages.append(m)
             sortMessages()
             breadcrumb("sync: reply so far \(text.utf8.count) bytes (new)")
@@ -444,7 +457,12 @@ public final class AppStore {
         status = s
         guard !s.busy else { return }
         flushDeltas()
-        for i in messages.indices where messages[i].isStreaming { messages[i].isStreaming = false }
+        for i in messages.indices where messages[i].isStreaming {
+            // The turn ended without a final message: what was written stays.
+            if let r = streams[messages[i].id] { messages[i].text = r.text }
+            messages[i].isStreaming = false
+        }
+        endStreams()
         streamMarks.removeAll()
         replyStats.finished(id: nil)
         awaitingReply = false
@@ -537,9 +555,10 @@ public final class AppStore {
             guard !viewingPast else { return }
             if syncing, let index { syncJournal.append((index, d.id, d.text)) }
             // The first words show up at once; the rest is batched.
-            var m = ChatMessage(seq: 0, id: d.id, role: .assistant, kind: .text, text: d.text, channel: .app,
+            var m = ChatMessage(seq: 0, id: d.id, role: .assistant, kind: .text, text: "", channel: .app,
                                 ts: Date().epochMillis)
             m.isStreaming = true
+            startStream(id: d.id, text: d.text)
             messages.append(m)
             sortMessages()
             replyStats.shown()
@@ -558,13 +577,55 @@ public final class AppStore {
     func flushDeltas() {
         deltaFlushScheduled = false
         guard !pendingDeltas.isEmpty else { return }
+        // What showing this tick costs the main thread: from here until the
+        // Core Animation transaction carrying it is committed (the store, the
+        // reply's text, layout and drawing). CPU time, so waiting between
+        // doesn't count; nor do animations' display-link callbacks that run
+        // meanwhile (they'd run without the tick: the glass, the orb).
+        let cpu = ReplyStats.threadCPU()
+        let tick = ChatSignposts.chat.beginInterval("tick")
         let signpost = ChatSignposts.chat.beginInterval("flush")
+        // Into each reply's own text: `messages` doesn't change, so nothing
+        // but the row showing the reply updates.
         for (id, text) in pendingDeltas {
-            if let i = messages.firstIndex(where: { $0.id == id }), messages[i].isStreaming { messages[i].text += text }
+            streams[id]?.append(text)
         }
         pendingDeltas.removeAll()
         replyStats.shown()
         ChatSignposts.chat.endInterval("flush", signpost)
+        let done: @MainActor (Double) -> Void = { [weak self] animations in
+            ChatSignposts.chat.endInterval("tick", tick)
+            self?.replyStats.tick(ms: (ReplyStats.threadCPU() - cpu - animations) * 1000, animationsMs: animations * 1000)
+        }
+        if let whenCommitted {
+            whenCommitted(done)
+        } else {
+            // Without the app's watch: Core Animation's completion, which
+            // also waits for animations in the transaction (an upper bound).
+            CATransaction.setCompletionBlock { MainActor.assumeIsolated { done(0) } }
+        }
+    }
+
+    /// Set by the app: calls back once the Core Animation transaction
+    /// carrying the views' latest changes is committed, with the main-thread
+    /// CPU seconds spent meanwhile in display-link callbacks (animations).
+    @ObservationIgnored public var whenCommitted: (@MainActor (_ done: @escaping @MainActor (_ animationsCPU: Double) -> Void) -> Void)?
+
+    private func startStream(id: String, text: String) {
+        let r = StreamingReply(id: id, text: text)
+        streams[id] = r
+        latestStream = r
+    }
+
+    private func endStream(_ id: String) {
+        guard streams[id] != nil else { return }
+        streams[id] = nil
+        if latestStream?.id == id { latestStream = nil }
+    }
+
+    private func endStreams() {
+        if !streams.isEmpty { streams.removeAll() }
+        if latestStream != nil { latestStream = nil }
     }
 
     func upsert(_ incoming: ChatMessage) {
@@ -573,6 +634,7 @@ public final class AppStore {
         // The final text supersedes anything still buffered for it.
         pendingDeltas[incoming.id] = nil
         streamMarks[incoming.id] = nil
+        endStream(incoming.id)
         var m = incoming
         m.isStreaming = false
         m.delivery = .sent
@@ -681,6 +743,12 @@ public final class AppStore {
         let anchored = Set(messages.compactMap(\.approvalId))
         return pendingApprovals.filter { !anchored.contains($0.id) }
     }
+
+    /// The reply being written for `id`, if it still is.
+    public func stream(for id: String) -> StreamingReply? { streams[id] }
+
+    /// A message's text as shown: while a reply is being written, its text so far.
+    public func liveText(_ m: ChatMessage) -> String { streams[m.id]?.text ?? m.text }
 
     public var isBusy: Bool { awaitingReply || (status?.busy ?? false) || messages.contains(where: \.isStreaming) }
 
@@ -1244,6 +1312,12 @@ struct ReplyStats {
     private var longest: TimeInterval = 0
     private var slow = 0
     private var signpost: OSSignpostIntervalState?
+    /// Main-thread CPU time of each tick: from the flush until its Core
+    /// Animation transaction is committed (the store, the row, layout,
+    /// drawing), without animations' display-link callbacks meanwhile.
+    private var tickMs: [Double] = []
+    /// Those callbacks, for the record.
+    private var animationMs: [Double] = []
 
     static let slowWait: TimeInterval = 0.25
 
@@ -1257,6 +1331,20 @@ struct ReplyStats {
         deltas += 1
         self.bytes += bytes
         if waitingSince == nil { waitingSince = received }
+    }
+
+    /// One tick's cost, measured by the store (see `flushDeltas`).
+    mutating func tick(ms: Double, animationsMs: Double) {
+        guard id != nil else { return }
+        tickMs.append(ms)
+        animationMs.append(animationsMs)
+    }
+
+    /// CPU time of the calling thread (the main thread, where flushes run).
+    static func threadCPU() -> Double {
+        var t = timespec()
+        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t)
+        return Double(t.tv_sec) + Double(t.tv_nsec) / 1_000_000_000
     }
 
     /// Everything received so far is on screen now.
@@ -1273,8 +1361,17 @@ struct ReplyStats {
         guard let current = self.id, id == nil || id == current else { return }
         shown()
         let took = ProcessInfo.processInfo.systemUptime - start
+        var ticks = ""
+        if tickMs.count >= 5 {
+            let sorted = tickMs.sorted()
+            func at(_ q: Double) -> Double { sorted[min(sorted.count - 1, Int(Double(sorted.count - 1) * q))] }
+            let other = animationMs.sorted()
+            ticks = String(format: "; main thread per tick p50 %.2f ms, p95 %.2f ms, max %.1f ms over %d ticks (animations meanwhile, not counted: p95 %.2f ms)",
+                           at(0.5), at(0.95), sorted.last ?? 0, sorted.count,
+                           other[min(other.count - 1, Int(Double(other.count - 1) * 0.95))])
+        }
         debugLog(String(format: "[reveal] reply done: %d deltas, %.1f KB in %.1f s, longest wait to show %d ms (%d waits ≥ %d ms)",
-                        deltas, Double(bytes) / 1024, took, Int(longest * 1000), slow, Int(Self.slowWait * 1000)))
+                        deltas, Double(bytes) / 1024, took, Int(longest * 1000), slow, Int(Self.slowWait * 1000)) + ticks)
         let (n, ms) = (deltas, Int(longest * 1000))
         if let signpost { ChatSignposts.chat.endInterval("reply", signpost, "\(n) deltas, longest wait \(ms) ms") }
         self = ReplyStats()

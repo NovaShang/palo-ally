@@ -588,6 +588,7 @@ final class AppModel {
         let s = AppStore(transport: transport, clientKind: clientKind, clientVersion: clientVersion)
         s.onSynced = { [weak self] seq in self?.didSync(id, seq: seq) }
         s.onSettings = { [weak self] settings in self?.syncTheme(id, settings) }
+        s.whenCommitted = { CommitWatch.shared.after($0) }
         return s
     }
 

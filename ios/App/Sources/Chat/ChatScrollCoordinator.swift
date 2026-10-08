@@ -191,6 +191,13 @@ final class ChatScrollCoordinator {
 
     func sent() { send(.sent) }
     func grewBelow() { send(.grewBelow) }
+
+    @ObservationIgnored private var followed: (reply: StreamingReply, token: Int)?
+    /// The reply being written: each piece of it counts as growth below.
+    func follow(_ reply: StreamingReply?) {
+        if let f = followed { f.reply.stopListening(f.token) }
+        followed = reply.map { r in (r, r.listen { [weak self] _ in self?.grewBelow() }) }
+    }
     func layoutChanged() { send(.layoutChanged) }
     func background() {
         send(.background)

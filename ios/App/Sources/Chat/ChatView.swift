@@ -24,6 +24,9 @@ struct ChatView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
+        #if DEBUG
+        let _ = RenderTrace.note("ChatView")
+        #endif
         ScrollView {
             ConversationRows(scroll: scroll, highlightedID: highlightedID)
         }
@@ -225,6 +228,9 @@ private struct ConversationRows: View {
     @Environment(\.placesAsColumns) private var asColumn
 
     var body: some View {
+        #if DEBUG
+        let _ = RenderTrace.note("list")
+        #endif
         let messages = store.messages
         // What's laid out: a window of messages, every one measured exactly
         // (no lazy estimates), chosen by the scroll coordinator (design §3.4).
@@ -362,10 +368,18 @@ private struct ConversationChanges: ViewModifier {
                     scroll.grewBelow()
                 }
             }
-            // A reply growing (the one streaming may not be the last message:
-            // a catch-up can land after it).
-            .onChange(of: store.messages.last(where: \.isStreaming)?.text.utf8.count) { scroll.grewBelow() }
+            // A reply growing: the coordinator listens to the reply itself
+            // (`messages` doesn't change while it's written, and nothing here
+            // re-evaluates per piece).
+            .onChange(of: store.latestStream?.id, initial: true) { scroll.follow(store.latestStream) }
             .onChange(of: store.messages.last?.text.utf8.count) { scroll.grewBelow() }
+            #if DEBUG
+            // `-renderTrace YES`: what re-rendered while each reply was written.
+            .onChange(of: store.latestStream?.id) { old, new in
+                if let old { RenderTrace.report(while: old) }
+                if new != nil { RenderTrace.reset() }
+            }
+            #endif
             // What's laid out follows the messages (the window, design §3.4).
             .onChange(of: store.messages.count) { scroll.messagesChanged() }
     }

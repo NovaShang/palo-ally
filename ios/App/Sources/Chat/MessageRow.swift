@@ -7,6 +7,9 @@ struct MessageRow: View {
     let message: ChatMessage
 
     var body: some View {
+        #if DEBUG
+        let _ = RenderTrace.note("row \(message.id)")
+        #endif
         switch message.role {
         case .user:
             UserBubble(message: message)
@@ -104,12 +107,9 @@ private struct AssistantMessage: View {
                 if (!message.text.isEmpty || message.isStreaming) && !questionCardOnly {
                     // One system text view per answer: free selection across
                     // paragraphs, like Notes / Safari. 「引用回复」 quotes a selection.
-                    ReplyMarkdown(source: message.text, streaming: message.isStreaming,
-                                  onQuote: { store.quote(message, excerpt: $0) },
-                                  trailingRoom: Self.trailingRoom)
-                        // A finished reply gets a fresh text view, measured
-                        // from scratch with its complete text.
-                        .id(message.isStreaming ? "streaming" : "final")
+                    // The same view while it's written and once it's finished
+                    // (the text view finishes it in place).
+                    ReplyText(message: message)
                 }
                 if !message.isStreaming, !message.text.isEmpty, message.kind == .text {
                     // The whole answer in one tap; small and quiet.
@@ -133,8 +133,7 @@ private struct AssistantMessage: View {
         }
     }
 
-    /// Kept free beside replies; tables scroll through it.
-    static let trailingRoom: CGFloat = 24
+    static let trailingRoom = AssistantMessageLayout.trailingRoom
 
     /// A question card says it all: no label, no repeated text above it.
     private var questionCardOnly: Bool {

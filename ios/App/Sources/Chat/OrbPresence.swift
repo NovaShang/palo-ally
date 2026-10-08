@@ -129,7 +129,9 @@ struct OrbPresenceTracking: ViewModifier {
             .onAppear { event += 1; act(.appOpen) } // the app opens on the conversation
             // The avatar's own: the owner sends, a reply streams in, an approval is answered.
             .onChange(of: store.awaitingReply) { was, now in if !was && now { act(.send) } }
-            .onChange(of: streamedLength) { old, new in if new > old { act(.chunk) } }
+            // Each piece of a reply: in its own modifier, so the pieces don't
+            // re-evaluate all of this.
+            .modifier(StreamChunks { act(.chunk) })
             .onChange(of: lastAllowedAt) { _, at in if Self.justNow(at) { act(.approve) } }
             .onChange(of: lastDeniedAt) { _, at in if Self.justNow(at) { act(.reject) } }
             .onChange(of: model.activeHostID) { settledAt = Date() }
@@ -171,8 +173,6 @@ struct OrbPresenceTracking: ViewModifier {
     /// lasted (see AppStore.displayedConnection), or a refusal.
     private var lost: Bool { store.connectionTrouble }
 
-    /// The streaming reply's length: grows with each chunk.
-    private var streamedLength: Int { store.messages.last(where: \.isStreaming)?.text.count ?? 0 }
 
     private var lastAllowedAt: Int64 { store.approvals.filter { $0.status == .allowed }.compactMap(\.decidedAt).max() ?? 0 }
     private var lastDeniedAt: Int64 { store.approvals.filter { $0.status == .denied }.compactMap(\.decidedAt).max() ?? 0 }
@@ -220,6 +220,27 @@ struct OrbPresenceTracking: ViewModifier {
     private var deliverables: Int {
         store.messages.reduce(0) { n, m in
             n + (m.role == .assistant && (!(m.attachments ?? []).isEmpty || m.card != nil) ? 1 : 0)
+        }
+    }
+}
+
+/// Tells the avatar each time the reply being written grows: listens to the
+/// reply itself, so its pieces re-evaluate no view.
+private struct StreamChunks: ViewModifier {
+    let chunk: () -> Void
+    @Environment(AppStore.self) private var store
+    @State private var listening: Listening?
+
+    final class Listening {
+        let reply: StreamingReply
+        let token: Int
+        init(_ reply: StreamingReply, _ token: Int) { self.reply = reply; self.token = token }
+    }
+
+    func body(content: Content) -> some View {
+        content.onChange(of: store.latestStream?.id, initial: true) {
+            if let l = listening { l.reply.stopListening(l.token) }
+            listening = store.latestStream.map { r in Listening(r, r.listen { _ in chunk() }) }
         }
     }
 }
