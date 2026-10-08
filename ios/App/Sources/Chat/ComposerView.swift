@@ -340,14 +340,11 @@ struct ComposerView: View {
             } else if idle && draft.isEmpty {
                 Group {
                     if voiceStarted {
-                        HStack(spacing: 10) {
-                            LevelBars(level: voice.dictation.level, bars: 4).frame(height: 18)
-                            Text(voice.target == .send ? "松开 发送" : "松开 \(voice.target == .cancel ? "取消" : "编辑")")
-                                .contentTransition(.opacity)
-                            LevelBars(level: voice.dictation.level, bars: 4).frame(height: 18)
-                        }
-                        .foregroundStyle(voice.target == .send ? Color.primary : .secondary)
-                        .transition(.scale(scale: 0.85).combined(with: .opacity))
+                        // Just where release lands; the orb is the level meter.
+                        Text(voice.target == .send ? "松开 发送" : "松开 \(voice.target == .cancel ? "取消" : "编辑")")
+                            .contentTransition(.opacity)
+                            .foregroundStyle(voice.target == .send ? Color.primary : .secondary)
+                            .transition(.scale(scale: 0.85).combined(with: .opacity))
                     } else {
                         // Morphs toward 「松开 发送」 as the hold arms.
                         ZStack {

@@ -135,7 +135,6 @@ struct VoiceInputPanel: View {
         VStack(spacing: 18) {
             VoiceTranscript(text: voice.transcript,
                             error: voice.dictation.errorMessage,
-                            level: voice.dictation.level,
                             cancelling: voice.target == .cancel)
                 .frame(maxWidth: 520)
                 .opacity(Double(max(0, p * 1.4 - 0.4)))
@@ -167,26 +166,15 @@ struct VoiceInputPanel: View {
 }
 
 /// The live transcript, straight on the screen (the scrim behind keeps it
-/// readable): a small 「在听」 line with the level, then the words, large,
-/// newest lines pinned at the bottom.
+/// readable): the words, large, newest lines pinned at the bottom. No level
+/// meter here: the orb above already moves with the voice.
 private struct VoiceTranscript: View {
     let text: String
     let error: String?
-    let level: Float
     let cancelling: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Circle().fill(cancelling ? Color.secondary : .red).frame(width: 7, height: 7)
-                    .opacity(cancelling ? 1 : 0.6 + 0.4 * Double(level))
-                Text(cancelling ? "松开 取消" : "在听")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(cancelling ? Color.red : .secondary)
-                    .contentTransition(.opacity)
-                LevelBars(level: level, bars: 5).frame(height: 14)
-                Spacer(minLength: 0)
-            }
             Group {
                 if let error, text.isEmpty {
                     Text(error).foregroundStyle(.secondary)
