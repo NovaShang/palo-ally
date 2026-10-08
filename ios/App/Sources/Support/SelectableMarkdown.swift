@@ -98,6 +98,7 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
             textContainer.size = CGSize(width: width, height: .greatestFiniteMagnitude)
         }
         layoutManager.ensureLayout(for: textContainer)
+        noteOpenBlockTop()
         let used = layoutManager.usedRect(for: textContainer)
         return CGSize(width: ceil(used.width),
                       height: ceil(used.height + textContainerInset.top + textContainerInset.bottom))
@@ -162,6 +163,7 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         container.lineFragmentPadding = 0
         layout.addTextContainer(container)
         let view = MarkdownTextView(frame: .zero, textContainer: container)
+        layout.owner = view
         view.delegate = view
         view.isEditable = false
         view.isScrollEnabled = false
@@ -343,6 +345,28 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         redraw(NSIntersectionRange(union, NSRange(location: 0, length: textStorage.length)))
     }
 
+    /// Where the open block (the one a reply being written still changes)
+    /// began at the last layout: its first character and its top.
+    private var openBlockTop: (char: Int, y: CGFloat)?
+
+    private func noteOpenBlockTop() {
+        guard !isSelectable, frozenLength < textStorage.length else { openBlockTop = nil; return }
+        let glyph = layoutManager.glyphIndexForCharacter(at: frozenLength)
+        openBlockTop = (frozenLength, layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil).minY)
+    }
+
+    /// The text changed from `chars` on: if that's within the open block of
+    /// a reply being written, only the tiles from that block down are drawn
+    /// again (UIKit's own invalidation redraws every tile: the whole reply
+    /// on every tick). False to leave it to UIKit.
+    func redrawChanged(from chars: Int) -> Bool {
+        guard !isSelectable, let top = openBlockTop, chars >= top.char, let canvas = textCanvas,
+              let tiles = canvas.layer.sublayers, !tiles.isEmpty else { return false }
+        let y = canvas.convert(CGPoint(x: 0, y: top.y + textContainerInset.top - 4), from: self).y
+        for t in tiles where t.frame.maxY > y { t.setNeedsDisplay() }
+        return true
+    }
+
     /// This text's own layout invalidations so far (see `TextFadeClock`).
     var layoutInvalidations: Int { markdownLayout?.invalidations ?? 0 }
 
@@ -507,10 +531,23 @@ final class MarkdownLayoutManager: NSLayoutManager {
         super.textContainerChangedGeometry(container)
     }
 
+    /// The text view this lays out.
+    weak var owner: MarkdownTextView?
     #if DEBUG
     /// `-fadeTrace YES`: what each frame redraws.
     private static let trace = UserDefaults.standard.bool(forKey: "fadeTrace")
     #endif
+
+    /// New text at the end of a reply being written: only the tiles that
+    /// show it are drawn again (see `MarkdownTextView.redrawChanged`).
+    override func invalidateDisplay(forGlyphRange glyphRange: NSRange) {
+        let chars = characterRange(forGlyphRange: NSRange(location: glyphRange.location, length: 0), actualGlyphRange: nil).location
+        #if DEBUG
+        if Self.trace { debugLog("[fadetrace] invalidateDisplay glyphs \(glyphRange.location)+\(glyphRange.length) of \(numberOfGlyphs)") }
+        #endif
+        if let owner, MainActor.assumeIsolated({ owner.redrawChanged(from: chars) }) { return }
+        super.invalidateDisplay(forGlyphRange: glyphRange)
+    }
 
     /// The alpha a character is drawn with now.
     func fadeAlpha(at char: Int) -> CGFloat {
