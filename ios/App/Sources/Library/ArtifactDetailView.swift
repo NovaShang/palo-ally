@@ -1,3 +1,4 @@
+import PaloAllyFilePreview
 import PaloAllyKit
 import QuickLook
 import SwiftUI
@@ -13,6 +14,8 @@ struct ArtifactDetailView: View {
     @State private var refreshError: String?
     /// Download progress (0…1) for files bigger than one chunk.
     @State private var progress: Double?
+    /// Markdown shown as its source text instead of rendered.
+    @State private var showSource = false
 
     struct Loaded: Equatable {
         let path: String
@@ -92,6 +95,11 @@ struct ArtifactDetailView: View {
                     .tint(.primary)
                     .accessibilityLabel(artifact.pinned ? "取消置顶" : "置顶")
                 }
+                if let content, isMarkdown(artifact, content.path) {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        MarkdownSourceToggle(raw: $showSource)
+                    }
+                }
                 if let content {
                     ToolbarItem(placement: .topBarTrailing) {
                         ShareLink(item: content.fileURL)
@@ -110,10 +118,19 @@ struct ArtifactDetailView: View {
         selectedPath ?? (a.mainFile.isEmpty ? (a.files.first?.path ?? "") : a.mainFile)
     }
 
+    /// Markdown renders in the web view ported from Bento Term.
+    private func isMarkdown(_ a: Artifact, _ path: String) -> Bool {
+        FilePreviewRoute.forFile(name: path) == .markdown || (path == a.mainFile && a.previewStyle == .markdown)
+    }
+
     @ViewBuilder
     private func preview(_ a: Artifact, _ c: Loaded) -> some View {
         let ext = (c.path as NSString).pathExtension.lowercased()
-        if ["md", "markdown", "txt"].contains(ext) || (c.path == a.mainFile && a.previewStyle == .markdown) {
+        if isMarkdown(a, c.path) {
+            MarkdownPreview(fileName: c.path, text: String(decoding: c.data, as: UTF8.self), raw: showSource,
+                            imageSource: store.markdownImages(artifactID: a.id, documentPath: c.path))
+                .ignoresSafeArea(edges: .bottom)
+        } else if ext == "txt" {
             ScrollView {
                 MarkdownText(source: String(decoding: c.data, as: UTF8.self), compact: false)
                     .padding(20)

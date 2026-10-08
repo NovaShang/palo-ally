@@ -1,3 +1,4 @@
+import PaloAllyFilePreview
 import PaloAllyKit
 import SwiftUI
 
@@ -194,9 +195,10 @@ private struct NoticeRow: View {
 }
 
 /// What came with a message: pictures inline, other files and library items
-/// as cards. Everything previews in the system's QuickLook (zoom, pan, share,
-/// several attachments page side by side); a library item's preview offers
-/// 「在产出物库中查看」. Web-page artifacts open in the library's web view.
+/// as cards. Markdown renders in its own sheet (Bento Term's renderer, with
+/// the source a tap away); everything else previews in the system's QuickLook
+/// (zoom, pan, share, several attachments page side by side). A library item
+/// offers 「在产出物库中查看」. Web-page artifacts open in the library's web view.
 private struct AttachmentStrip: View {
     @Environment(AppStore.self) private var store
     @Environment(AppModel.self) private var model
@@ -253,6 +255,20 @@ private struct AttachmentStrip: View {
 
     private func isWebPage(_ a: Attachment) -> Bool { a.kind == "artifact" && a.mediaType.contains("html") }
 
+    /// The file name a library item opens under: its main file's.
+    private func fileName(_ a: Attachment) -> String {
+        if a.kind == "artifact", let main = store.artifact(id: a.id)?.mainFile, !main.isEmpty {
+            return (main as NSString).lastPathComponent
+        }
+        return a.name ?? "file"
+    }
+
+    private func isMarkdown(_ a: Attachment) -> Bool {
+        guard !a.isImage else { return false }
+        if a.kind == "artifact", store.artifact(id: a.id)?.previewStyle == .markdown { return true }
+        return FilePreviewRoute.forFile(name: fileName(a), mediaType: a.mediaType) == .markdown
+    }
+
     /// QuickLook's 「在产出物库中查看」: the library, scrolled into that item.
     private func openInLibrary(_ id: String) {
         model.showInLibrary(id)
@@ -265,8 +281,18 @@ private struct AttachmentStrip: View {
         loading = a.id
         Task {
             defer { loading = nil }
-            // Everything previewable in this message, so QuickLook can page.
-            let previewable = attachments.filter { !isWebPage($0) }
+            if isMarkdown(a) {
+                guard let url = try? await localFile(for: a) else { return }
+                let artifact = a.kind == "artifact" ? store.artifact(id: a.id) : nil
+                MarkdownFilePresenter.present(
+                    url: url, title: a.name ?? url.lastPathComponent, artifactID: artifact == nil ? nil : a.id,
+                    imageSource: artifact.map { store.markdownImages(artifactID: $0.id, documentPath: $0.mainFile) },
+                    openInLibrary: openInLibrary)
+                return
+            }
+            // Everything else previewable in this message, so QuickLook can
+            // page. Markdown stays out: QuickLook would show it as raw text.
+            let previewable = attachments.filter { !isWebPage($0) && !isMarkdown($0) }
             var items: [QuickLookPresenter.Item] = []
             var start = 0
             for item in previewable {
@@ -287,8 +313,7 @@ private struct AttachmentStrip: View {
         switch a.kind {
         case "artifact":
             let artifact = store.artifact(id: a.id)
-            let name = artifact.map { ($0.mainFile as NSString).lastPathComponent } ?? a.name ?? "file"
-            return try await QuickLookPresenter.file(key: "artifact-\(a.id)", revision: artifact?.updatedAt ?? 0, name: name) {
+            return try await QuickLookPresenter.file(key: "artifact-\(a.id)", revision: artifact?.updatedAt ?? 0, name: fileName(a)) {
                 if a.isImage, let d = store.images[key(a)] { return d }
                 return try await store.readArtifact(id: a.id).data
             }

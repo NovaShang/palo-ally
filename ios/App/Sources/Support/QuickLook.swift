@@ -66,7 +66,7 @@ enum QuickLookPresenter {
         #endif
     }
 
-    private static func topController() -> UIViewController? {
+    static func topController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         let window = scenes.flatMap(\.windows).first { $0.isKeyWindow } ?? scenes.first?.windows.first
         var top = window?.rootViewController

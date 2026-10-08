@@ -30,6 +30,8 @@ targets:
       - package: PaloAllyKit
       - package: PaloAllyKit
         product: PaloAllyVoice
+      - package: PaloAllyKit
+        product: PaloAllyFilePreview
       - package: MarkdownUI
     entitlements:
       path: PaloAlly.entitlements
