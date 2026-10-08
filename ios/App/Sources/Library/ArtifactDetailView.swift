@@ -148,7 +148,7 @@ struct ArtifactDetailView: View {
                     .frame(maxWidth: .infinity)
             }
         } else if ["html", "htm"].contains(ext) || (c.path == a.mainFile && a.previewStyle == .html) {
-            SandboxedHTMLView(html: String(decoding: c.data, as: UTF8.self))
+            SandboxedHTMLView(html: String(decoding: c.data, as: UTF8.self), artifactID: a.id)
                 .ignoresSafeArea(edges: .bottom)
         } else {
             QuickLookView(url: c.fileURL, revision: c.revision)
@@ -204,21 +204,39 @@ struct ArtifactDetailView: View {
 
 // MARK: - HTML (sandboxed, offline)
 
-/// WKWebView with all network loads blocked by a content rule list and a
-/// non-persistent data store. Links don't navigate.
+/// WKWebView with all network loads blocked by a content rule list. Links
+/// don't navigate. Each library item is its own origin (a host under the
+/// reserved .invalid domain, so nothing could ever be fetched from it) in a
+/// persistent store of its own, so a page's localStorage (a checklist's
+/// ticks) survives closing it, and pages can't read each other's.
 struct SandboxedHTMLView: UIViewRepresentable {
     let html: String
+    let artifactID: String
 
+    /// Content rule lists don't support regex disjunctions: one rule per
+    /// scheme, or the whole list fails to compile (and the page never loads).
     static let rules = """
     [{"trigger":{"url-filter":".*"},"action":{"type":"block"}},
-     {"trigger":{"url-filter":"^(about|data|blob):"},"action":{"type":"ignore-previous-rules"}}]
+     {"trigger":{"url-filter":"^about:"},"action":{"type":"ignore-previous-rules"}},
+     {"trigger":{"url-filter":"^data:"},"action":{"type":"ignore-previous-rules"}},
+     {"trigger":{"url-filter":"^blob:"},"action":{"type":"ignore-previous-rules"}},
+     {"trigger":{"url-filter":"^https://[^/]*\\\\.artifact\\\\.paloally\\\\.invalid/"},"action":{"type":"ignore-previous-rules"}}]
     """
+
+    /// Library pages only; never shared with anything else that browses.
+    @MainActor static let dataStore = WKWebsiteDataStore(forIdentifier: UUID(uuidString: "6F1C2E1A-6A3B-4C55-9C7E-2D0B5B0A7A11")!)
+
+    /// https://<id>.artifact.paloally.invalid/: the item's own origin.
+    static func origin(for artifactID: String) -> URL? {
+        let host = String(artifactID.lowercased().map { $0.isLetter || $0.isNumber ? $0 : "-" })
+        return URL(string: "https://\(host.isEmpty ? "page" : host).artifact.paloally.invalid/")
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
-        config.websiteDataStore = .nonPersistent()
+        config.websiteDataStore = Self.dataStore
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
         let view = WKWebView(frame: .zero, configuration: config)
@@ -226,12 +244,12 @@ struct SandboxedHTMLView: UIViewRepresentable {
         view.isOpaque = false
         view.backgroundColor = .clear
         context.coordinator.webView = view
-        context.coordinator.load(html)
+        context.coordinator.load(html, baseURL: Self.origin(for: artifactID))
         return view
     }
 
     func updateUIView(_ view: WKWebView, context: Context) {
-        context.coordinator.load(html)
+        context.coordinator.load(html, baseURL: Self.origin(for: artifactID))
     }
 
     @MainActor
@@ -240,7 +258,7 @@ struct SandboxedHTMLView: UIViewRepresentable {
         private var loaded: String?
         private var ruleList: WKContentRuleList?
 
-        func load(_ html: String) {
+        func load(_ html: String, baseURL: URL?) {
             guard html != loaded, let webView else { return }
             loaded = html
             Task {
@@ -252,12 +270,12 @@ struct SandboxedHTMLView: UIViewRepresentable {
                 guard let ruleList else { return }
                 webView.configuration.userContentController.removeAllContentRuleLists()
                 webView.configuration.userContentController.add(ruleList)
-                webView.loadHTMLString(html, baseURL: nil)
+                webView.loadHTMLString(html, baseURL: baseURL)
             }
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
-            // Only the initial document load (about:blank) and in-page anchors.
+            // Only the initial document load and in-page anchors.
             if action.navigationType == .other || action.request.url?.scheme == "about" { return .allow }
             return .cancel
         }
