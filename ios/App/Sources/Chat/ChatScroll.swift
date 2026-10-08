@@ -1,45 +1,32 @@
 import PaloAllyKit
 import SwiftUI
 
-/// Thresholds for following the live bottom while a reply streams.
+/// What the chat's scroll code reads from the scroll view, and its logs.
 enum ChatScroll {
-    /// A user drag that takes the view more than this far from the end stops
-    /// auto-follow (a few points: any deliberate drag up counts).
-    static let detachDistance: CGFloat = 8
-    /// A user scroll that ends (or drifts back down to) within this of the end
-    /// resumes it, and the jump button only shows beyond it. Resting at the
-    /// true end reads ~13 pt (the list's own bottom padding).
-    static let reattachDistance: CGFloat = 56
-
-    /// What the scroll logic reads from ScrollGeometry.
+    /// What the coordinator reads from ScrollGeometry.
     struct Metrics: Equatable {
+        /// From the end of the content to the bottom of what the reader can
+        /// see (above the composer and keyboard); 0 on the end.
         var distanceFromBottom: CGFloat
         /// Composer + keyboard + home indicator: grows when the keyboard rises.
         var bottomInset: CGFloat
-        /// Where the list is scrolled to, and how tall it is. The reader moved
-        /// the list only when the offset changed and the height did not: the
-        /// distance from the end also grows when a reply streams in or the
-        /// lazy history re-estimates its rows, under a finger that is just
-        /// resting on the screen.
+        var insetTop: CGFloat
+        /// Where the list is scrolled to, and how tall it is.
         var offsetY: CGFloat
         var contentHeight: CGFloat
+        /// The whole visible height (the insets included) and width.
+        var viewport: CGFloat
+        var width: CGFloat
 
         init(_ g: ScrollGeometry) {
             distanceFromBottom = ChatScrollMath.distanceFromBottom(
                 contentHeight: g.contentSize.height, visibleMaxY: g.visibleRect.maxY, bottomInset: g.contentInsets.bottom)
             bottomInset = g.contentInsets.bottom
+            insetTop = g.contentInsets.top
             offsetY = g.contentOffset.y
             contentHeight = g.contentSize.height
-        }
-
-        /// The reader dragged (or flung) toward older messages.
-        func movedUp(from old: Metrics) -> Bool {
-            abs(contentHeight - old.contentHeight) < 0.5 && offsetY < old.offsetY - 0.5
-        }
-
-        /// The reader dragged (or flung) toward the end.
-        func movedDown(from old: Metrics) -> Bool {
-            abs(contentHeight - old.contentHeight) < 0.5 && offsetY > old.offsetY + 0.5
+            viewport = g.visibleRect.height
+            width = g.visibleRect.width
         }
     }
 
@@ -59,8 +46,8 @@ enum ChatScroll {
     @MainActor static var debugDistance: CGFloat { lastDistance }
     @MainActor static var traced = 0
     @MainActor static var lastTrace = ""
-    /// `-pinTrace YES`: why the view followed the end or let go of it
-    /// (scroll phases, pinned changes, distance growth not counted as a drag).
+    /// `-pinTrace YES`: the scroll coordinator's phases and decisions (and,
+    /// with `-pinTraceFrames YES`, every frame of the reader's scroll).
     @MainActor static let pinTraceOn = UserDefaults.standard.bool(forKey: "pinTrace")
     @MainActor static var pinTraced = 0
     @MainActor static func pinTrace(_ what: String) {

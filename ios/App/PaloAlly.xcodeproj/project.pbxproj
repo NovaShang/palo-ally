@@ -69,6 +69,7 @@
 		C6ED1A5C9FE5D5A7E56DA9D9 /* TouchScript.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14B78AC4A07BF2DDD009687B /* TouchScript.swift */; };
 		C03225BB852317A0B1EF87E6 /* ChatScrollUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9D7103684A0000430DC2F82 /* ChatScrollUITests.swift */; };
 		F9EB80178FD0B490980AA37A /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E40E5B05B34DB68B0FC2EFB /* AppLog.swift */; };
+		D427E4799F84B3E8A7AFBBC7 /* ChatScrollCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4C7937CFE1E8403F22616D0 /* ChatScrollCoordinator.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -144,6 +145,7 @@
 		14B78AC4A07BF2DDD009687B /* TouchScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchScript.swift; sourceTree = "<group>"; };
 		D9D7103684A0000430DC2F82 /* ChatScrollUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollUITests.swift; sourceTree = "<group>"; };
 		1E40E5B05B34DB68B0FC2EFB /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
+		F4C7937CFE1E8403F22616D0 /* ChatScrollCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollCoordinator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -224,6 +226,7 @@
 		7CF82A7EB4082F9747052FD2 /* Chat */ = {
 			isa = PBXGroup;
 			children = (
+				F4C7937CFE1E8403F22616D0 /* ChatScrollCoordinator.swift */,
 				0CC0C56E78F856900F1C91A8 /* ApprovalCard.swift */,
 				4FBD3843044FE94D50902206 /* ChatScroll.swift */,
 				5458CC8523AA61D0A0852ABA /* ChatView.swift */,
@@ -439,6 +442,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D427E4799F84B3E8A7AFBBC7 /* ChatScrollCoordinator.swift in Sources */,
 				57A1524E01D493D7D3D22D9E /* ScrollLab.swift in Sources */,
 				CCF61F9E84E355E2B02DCE4C /* AppModel.swift in Sources */,
 				9B34F0015CBA0682AF1B48BC /* AppTheme.swift in Sources */,

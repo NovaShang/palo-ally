@@ -132,7 +132,9 @@ final class ChatScrollUITests: XCTestCase {
         // answers); the catch-ups and replies come after it.
         let target = 180 - 40
         var swipes = 0
-        while (log.topRow() ?? Int.max) > target + 12, swipes < 14 {
+        // (At least a few swipes: the message logged at the top while the
+        // list first lays out can be anything.)
+        while swipes < 4 || (log.topRow() ?? Int.max) > target + 12, swipes < 14 {
             list.swipeDown(velocity: .fast)
             sleep(1)
             swipes += 1
@@ -270,35 +272,32 @@ final class ChatScrollUITests: XCTestCase {
     }
 
     /// From ~40 000 pt up 「回到最新」 used to stop where the fully laid-out
-    /// end begins, ~12 900 pt short.
+    /// end begins, ~12 900 pt short. Far up by `-demoDetach` (reading from the
+    /// middle of the conversation): flinging there takes XCUI a minute when
+    /// the lazy history keeps measuring rows and the app never looks idle.
     @MainActor
     private func farJump(_ args: [String]) throws {
-        let app = launch(args)
+        let app = launch(args + ["-demoDetach", "YES"])
         let list = app.scrollViews.firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 20), "the conversation never appeared")
-        sleep(4)
         let log = AppLog()
-        var swipes = 0
-        while (log.distance() ?? 0) < 40_000, swipes < 20 {
-            list.swipeDown(velocity: .fast)
-            sleep(1)
-            swipes += 1
-        }
-        let from = log.distance() ?? -1
+        XCTAssertTrue(log.wait(timeout: 20) { $0.count("[anchor] reading from") > 0 }, "never went up to read")
+        sleep(3)
         let jump = app.buttons["jumpToLatest"]
         guard jump.waitForExistence(timeout: 5) else {
-            XCTFail("no 回到最新 after scrolling up")
+            XCTFail("no 回到最新 up in the history")
             return
         }
         let f = jump.frame
         try TouchScript.play([.tap(at: CGPoint(x: f.midX, y: f.midY), time: 0)])
-        sleep(5)
+        sleep(6)
+        let from = log.lines(containing: ["[jump] tap:"]).last.flatMap { AppLog.number(before: "pt from the end", in: $0) } ?? -1
         let lines = log.lines(containing: ["[jump]", "[scroll]"])
-        let report = (["from \(from) pt up after \(swipes) swipes"] + lines.suffix(20)).joined(separator: "\n")
+        let report = (["from \(from) pt up"] + lines.suffix(20)).joined(separator: "\n")
         add(XCTAttachment(string: report))
         print("---- app log\n\(report)")
         XCTAssertGreaterThanOrEqual(from, 30_000, "didn't get far enough up")
-        for when in ["+1.2 s", "+3 s"] {
+        for when in ["+1.2 s", "+3 s", "+5 s"] {
             guard let j = log.lastJump(when) else {
                 XCTFail("no [jump] \(when) line")
                 continue
