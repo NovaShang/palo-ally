@@ -43,9 +43,20 @@ enum ChatScroll {
         }
     }
 
+    /// The latest distance from the end (for the logs).
+    @MainActor static var lastDistance: CGFloat = 0
+
+    /// A change between following the end and reading back in history,
+    /// persisted (all builds): `[scroll] following → detached (drag), 412 pt
+    /// from the end`. States and numbers only.
+    @MainActor static func log(_ what: String) {
+        debugLog("[scroll] \(what), \(Int(lastDistance)) pt from the end")
+        ChatSignposts.chat.emitEvent("scroll", "\(what)")
+    }
+
     #if DEBUG
     /// The latest distance from the end, for the jump drill's log.
-    @MainActor static var debugDistance: CGFloat = 0
+    @MainActor static var debugDistance: CGFloat { lastDistance }
     @MainActor static var traced = 0
     @MainActor static var lastTrace = ""
     /// `-pinTrace YES`: why the view followed the end or let go of it
@@ -57,9 +68,10 @@ enum ChatScroll {
         pinTraced += 1
         debugLog("[pin] \(what), \(Int(debugDistance)) pt from the end")
     }
-    /// `-scrollTrace YES`: content height / offset as layout sees them (first 3000 changes).
+    /// `-scrollTrace YES`: content height / offset as layout sees them (first 20 000 changes).
+    @MainActor static let traceOn = UserDefaults.standard.bool(forKey: "scrollTrace")
     @MainActor static func trace(_ g: ScrollGeometry) {
-        guard UserDefaults.standard.bool(forKey: "scrollTrace"), traced < 3000 else { return }
+        guard traceOn, traced < 20_000 else { return }
         let line = "h=\(Int(g.contentSize.height)) y=\(Int(g.contentOffset.y)) vis=\(Int(g.visibleRect.minY))-\(Int(g.visibleRect.maxY)) inset=\(Int(g.contentInsets.top)),\(Int(g.contentInsets.bottom))"
         guard line != lastTrace else { return }
         lastTrace = line

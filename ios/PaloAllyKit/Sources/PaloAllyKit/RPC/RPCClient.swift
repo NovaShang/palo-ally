@@ -23,7 +23,9 @@ public enum RPCInbound: Sendable {
     /// `index`: this event's place among all events received (from 1). A
     /// response says how many events came before it (`callMarked`), which
     /// tells which events the host sent before and after it answered.
-    case event(name: String, data: JSONValue, index: Int)
+    /// `received`: when it came off the wire (system uptime, seconds), before
+    /// waiting for the main thread.
+    case event(name: String, data: JSONValue, index: Int, received: TimeInterval)
 }
 
 /// Parsed application message (design.md §5.3).
@@ -128,7 +130,8 @@ public actor RPCClient {
                 pending.removeValue(forKey: id)?.resume(throwing: RPCError.remote(message))
             case .event(let name, let data):
                 eventCount += 1
-                inboundContinuation.yield(.event(name: name, data: data, index: eventCount))
+                inboundContinuation.yield(.event(name: name, data: data, index: eventCount,
+                                                 received: ProcessInfo.processInfo.systemUptime))
             case .request:
                 break // host → client requests are not part of the protocol yet
             }

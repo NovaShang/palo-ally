@@ -247,6 +247,20 @@ public actor DemoHost {
                     await pause(5)
                 }
             }
+        case "burst":
+            // 何子安's 3.2 s freeze (17:49): while she held to talk, a reply's
+            // 110 deltas, its final message (~1 KB) and the host going idle
+            // all arrived at once. The long conversation, then that burst at
+            // `-demoBurstAt <s>` (default 9; pair with `-voiceDrill`).
+            for i in 0..<90 {
+                post("第 \(i + 1) 个问题：帮我比较一下这几个方案，顺便把要点列成表。", role: .user)
+                post(i % 3 == 0 ? DemoHost.longTableAnswer(i) : DemoHost.longProseAnswer(i))
+            }
+            let at = UserDefaults.standard.double(forKey: "demoBurstAt")
+            Task {
+                await pause(at > 0 ? at : 9)
+                await burstReply()
+            }
         case "bigtable":
             // The long conversation, plus an answer with a 500-row table;
             // then the link drops and comes back (sync, full reload) while
@@ -320,6 +334,30 @@ public actor DemoHost {
         s.busy = false
         s.activity = nil
         setStatus(s)
+    }
+
+    /// A whole reply at once: busy, 110 deltas back to back, the final
+    /// message and idle, with no pause anywhere (`-demoState burst`).
+    public func burstReply() async {
+        var s = status
+        s.busy = true
+        s.activity = "在写回复"
+        setStatus(s)
+        let rid = nextID("r")
+        let line = "好的，这件事我已经办好了，结果和下一步都写在下面，你看一下有没有要改的地方。"
+        let reply = String(repeating: line, count: 9)
+        var pieces = DemoHost.chunks(reply)
+        while pieces.count > 110 { pieces[pieces.count - 2] += pieces.removeLast() }
+        for piece in pieces { emit(RPCEventName.chatDelta, ChatDelta(id: rid, text: piece)) }
+        seq += 1
+        let final = ChatMessage(seq: seq, id: rid, role: .assistant, kind: .text, text: reply,
+                                channel: .app, ts: Date().epochMillis)
+        messages.append(final)
+        emit(RPCEventName.chatMessage, final)
+        s.busy = false
+        s.activity = nil
+        setStatus(s)
+        debugLog("[demo] burst: \(pieces.count) deltas, \(reply.utf8.count) bytes, final and idle")
     }
 
     /// Streams `reply` in small pieces, then finalizes it.

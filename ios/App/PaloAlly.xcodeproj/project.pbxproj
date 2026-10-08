@@ -40,7 +40,6 @@
 		8781C04CFC02A3A8620CA135 /* StallWatchdog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C7EC5D880932CD6C79433E3 /* StallWatchdog.swift */; };
 		8850FBC4AA7695D4260E332B /* DiagnosticsCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3C390EEBB6E830AE2684F1C /* DiagnosticsCollector.swift */; };
 		90CE987F9EA4BB408FB5F7FE /* DisplayCorners.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF9B71414B8BB238CEE54BC1 /* DisplayCorners.swift */; };
-		92517ECF2D5EC6973D873B27 /* ScrollSnapBackUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3D4ABE39C3E8243653D3E7 /* ScrollSnapBackUITests.swift */; };
 		9B34F0015CBA0682AF1B48BC /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32922EB865184F7F70CAB365 /* AppTheme.swift */; };
 		9E8BAB6F1769D57EC0C617C0 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97B4D23870E594B624074F8D /* ComposerView.swift */; };
 		9EFDA851328EB4700879F945 /* QuestionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEB06BF1C700F1FEE8FBA962 /* QuestionCard.swift */; };
@@ -68,6 +67,8 @@
 		57A1524E01D493D7D3D22D9E /* ScrollLab.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC683780205CAAF21C706B40 /* ScrollLab.swift */; };
 		B00447331753D1FAD93EA7DD /* ScrollLabUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 855B13DD01233DCE835BC1D4 /* ScrollLabUITests.swift */; };
 		C6ED1A5C9FE5D5A7E56DA9D9 /* TouchScript.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14B78AC4A07BF2DDD009687B /* TouchScript.swift */; };
+		C03225BB852317A0B1EF87E6 /* ChatScrollUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9D7103684A0000430DC2F82 /* ChatScrollUITests.swift */; };
+		F9EB80178FD0B490980AA37A /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E40E5B05B34DB68B0FC2EFB /* AppLog.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -137,11 +138,12 @@
 		EFF3C59774AD6CD3FE7F5AAA /* ArtifactDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactDetailView.swift; sourceTree = "<group>"; };
 		F881AEFDC8F959F0506046DD /* SpeechDictation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechDictation.swift; sourceTree = "<group>"; };
 		F9AE7E7579FE5764F145260C /* MarkdownTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTableView.swift; sourceTree = "<group>"; };
-		FA3D4ABE39C3E8243653D3E7 /* ScrollSnapBackUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollSnapBackUITests.swift; sourceTree = "<group>"; };
 		FB010AC69CB9C0C890D26829 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BC683780205CAAF21C706B40 /* ScrollLab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollLab.swift; sourceTree = "<group>"; };
 		855B13DD01233DCE835BC1D4 /* ScrollLabUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollLabUITests.swift; sourceTree = "<group>"; };
 		14B78AC4A07BF2DDD009687B /* TouchScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchScript.swift; sourceTree = "<group>"; };
+		D9D7103684A0000430DC2F82 /* ChatScrollUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollUITests.swift; sourceTree = "<group>"; };
+		1E40E5B05B34DB68B0FC2EFB /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -252,9 +254,10 @@
 		A1BDE3EB13E5736E34C5AA67 /* UITests */ = {
 			isa = PBXGroup;
 			children = (
+				1E40E5B05B34DB68B0FC2EFB /* AppLog.swift */,
+				D9D7103684A0000430DC2F82 /* ChatScrollUITests.swift */,
 				14B78AC4A07BF2DDD009687B /* TouchScript.swift */,
 				855B13DD01233DCE835BC1D4 /* ScrollLabUITests.swift */,
-				FA3D4ABE39C3E8243653D3E7 /* ScrollSnapBackUITests.swift */,
 				B7EADFA6C31C6254DED78C80 /* ScrollStressUITests.swift */,
 			);
 			path = UITests;
@@ -424,9 +427,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F9EB80178FD0B490980AA37A /* AppLog.swift in Sources */,
+				C03225BB852317A0B1EF87E6 /* ChatScrollUITests.swift in Sources */,
 				C6ED1A5C9FE5D5A7E56DA9D9 /* TouchScript.swift in Sources */,
 				B00447331753D1FAD93EA7DD /* ScrollLabUITests.swift in Sources */,
-				92517ECF2D5EC6973D873B27 /* ScrollSnapBackUITests.swift in Sources */,
 				44A392DEF7BF333CB2960BE4 /* ScrollStressUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

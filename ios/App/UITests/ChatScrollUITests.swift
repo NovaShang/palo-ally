@@ -1,0 +1,350 @@
+import XCTest
+
+/// The chat scroll redesign's tests (design §6), against the demo host on an
+/// iPhone simulator, with real touches. Each reads the app's debug.log:
+/// `[scroll]` transitions, `[jump]` landings, `[stall]` lines, and under
+/// `-pinTrace` / `-topRowTrace` / `-scrollTrace` the phases, the message at
+/// the top and the raw geometry. Extra launch arguments come from
+/// `STRESS_ARGS` (`TEST_RUNNER_STRESS_ARGS` for xcodebuild).
+///
+/// - T2: 「回到最新」, then a finger resting at +0.3 s and +1.0 s, then a
+///   20 pt drag each way: the view stays on the end. Idle, right after a
+///   reconnect, and with a reply streaming.
+/// - T3: reading back ~40 messages, 15 slow swipes down: never back to an
+///   earlier message. Idle and streaming.
+/// - T4: holding to talk while a whole reply lands at once: no stall.
+/// - T5: leaving the app mid-reply and coming back: no long stall, the view
+///   where it was.
+/// - Far jump: from ~40 000 pt up, 「回到最新」 lands on the end.
+/// - A fling up while a reply streams lets go of the end.
+final class ChatScrollUITests: XCTestCase {
+    override func setUp() {
+        continueAfterFailure = true
+    }
+
+    // MARK: T2
+
+    @MainActor
+    func testT2JumpThenRestingFingerIdle() throws {
+        try jumpThenRestingFinger(["-demoState", "long", "-demoStreamDelay", "600"], afterReconnect: false)
+    }
+
+    @MainActor
+    func testT2JumpThenRestingFingerRightAfterReconnect() throws {
+        try jumpThenRestingFinger(["-demoState", "stress"], afterReconnect: true)
+    }
+
+    @MainActor
+    func testT2JumpThenRestingFingerWhileStreaming() throws {
+        try jumpThenRestingFinger(["-demoState", "stress"], afterReconnect: false)
+    }
+
+    @MainActor
+    private func jumpThenRestingFinger(_ args: [String], afterReconnect: Bool) throws {
+        let app = launch(args)
+        let list = app.scrollViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 20), "the conversation never appeared")
+        sleep(4) // under -demoState stress a reply streams from 3 s in
+
+        // About 20 screens up into the history.
+        for _ in 0..<3 { list.swipeDown(velocity: .fast) }
+        let jump = app.buttons["jumpToLatest"]
+        guard jump.waitForExistence(timeout: 5) else {
+            XCTFail("no 回到最新 after scrolling up")
+            return
+        }
+        let log = AppLog()
+        if afterReconnect {
+            // `-demoState stress` drops the link every 5 s; the catch-up then
+            // inserts messages next to the streaming reply. Tap right after one.
+            let before = log.count("connection: online")
+            XCTAssertTrue(log.wait(timeout: 8) { $0.count("connection: online") > before }, "no reconnect seen")
+        }
+        // One script, so the times hold while the app is busy: the tap; a
+        // finger resting 0.5 s from +0.3 s and from +1.0 s; a 20 pt drag up,
+        // then down. In the list's left margin: held on a reply, a finger
+        // would select text instead.
+        let f = jump.frame
+        let lf = list.frame
+        let margin = CGPoint(x: lf.minX + 8, y: lf.midY)
+        let started = Date()
+        try TouchScript.play([
+            .tap(at: CGPoint(x: f.midX, y: f.midY), time: 0),
+            .hold(at: margin, from: 0.3, for: 0.5),
+            .hold(at: margin, from: 1.0, for: 0.5),
+            .drag(at: margin, from: 1.8, dy: -20),
+            .drag(at: margin, from: 2.6, dy: 20),
+        ])
+        let took = Date().timeIntervalSince(started)
+        sleep(4)
+
+        let lines = log.lines(containing: ["[jump]", "[pin]", "[scroll]", "connection: online"])
+        let report = (["touch script took \(String(format: "%.2f", took)) s"] + lines.suffix(80)).joined(separator: "\n")
+        add(XCTAttachment(string: report))
+        print("---- app log\n\(report)")
+
+        XCTAssertFalse(jump.exists, "回到最新 came back: the view let go of the end")
+        guard let tap = log.entries(containing: ["[jump] tap"]).last?.time else {
+            XCTFail("the jump never ran")
+            return
+        }
+        // While the finger rests (tap … +1.5 s), nothing lets go of the end.
+        let letGo = log.entries(containing: ["[scroll] following → detached"])
+            .filter { $0.time >= tap && $0.time <= tap.addingTimeInterval(1.6) }
+        XCTAssertTrue(letGo.isEmpty, "let go of the end under a resting finger: \(letGo.map(\.line))")
+        if let landing = log.lastJump("+1.2 s") {
+            XCTAssertLessThanOrEqual(landing.distance, 13, "1.2 s after the tap the view was \(landing.distance) pt from the end")
+            XCTAssertTrue(landing.pinned, "1.2 s after the tap the view no longer followed the end")
+        } else {
+            XCTFail("no [jump] +1.2 s line")
+        }
+        // After the drags: back on the end, following it.
+        if let settled = log.lastJump("+5 s") {
+            XCTAssertLessThanOrEqual(settled.distance, 13, "5 s after the tap the view was \(settled.distance) pt from the end")
+            XCTAssertTrue(settled.pinned, "5 s after the tap the view no longer followed the end")
+        } else {
+            XCTFail("no [jump] +5 s line")
+        }
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    // MARK: T3
+
+    @MainActor
+    func testT3SlowScrollDownIdle() throws {
+        try slowScrollDown(["-demoState", "long", "-demoStreamDelay", "600"])
+    }
+
+    @MainActor
+    func testT3SlowScrollDownWhileStreaming() throws {
+        try slowScrollDown(["-demoState", "stress"])
+    }
+
+    @MainActor
+    private func slowScrollDown(_ args: [String]) throws {
+        let app = launch(args + ["-topRowTrace", "YES", "-scrollTrace", "YES"])
+        let list = app.scrollViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 20), "the conversation never appeared")
+        sleep(4)
+        let log = AppLog()
+
+        // About 40 messages up: the history is m1…m180 (90 questions and
+        // answers); the catch-ups and replies come after it.
+        let target = 180 - 40
+        var swipes = 0
+        while (log.topRow() ?? Int.max) > target + 12, swipes < 14 {
+            list.swipeDown(velocity: .fast)
+            sleep(1)
+            swipes += 1
+        }
+        while (log.topRow() ?? Int.max) > target, swipes < 40 {
+            list.swipeDown(velocity: .slow)
+            usleep(500_000)
+            swipes += 1
+        }
+        sleep(1)
+        XCTAssertTrue(app.buttons["jumpToLatest"].exists, "not detached from the end")
+        let start = log.topRow() ?? Int.max
+        XCTAssertLessThanOrEqual(start, target + 6, "couldn't get ~40 messages up: the top is m\(start) after \(swipes) swipes")
+
+        // 15 slow steps down: the message at the top only ever moves on to
+        // later ones; the offset never goes back by more than 2 pt while the
+        // content height holds.
+        let first = log.topRows().count
+        let firstGeo = log.geometry().count
+        var steps: [String] = ["start: top m\(log.topRow() ?? -1) after \(swipes) swipes, \(log.distance() ?? -1) pt from the end"]
+        for step in 1...15 {
+            let seen = log.topRows().count
+            list.swipeUp(velocity: .slow)
+            usleep(700_000)
+            let rows = Array(log.topRows()[seen...])
+            steps.append("step \(step): " + (rows.isEmpty ? "no change" : rows.map { "m\($0)" }.joined(separator: " ")))
+        }
+        let walked = Array(log.topRows()[first...])
+        let back = zip(walked, walked.dropFirst()).filter { $1 < $0 }
+        let geo = Array(log.geometry()[firstGeo...])
+        // (Not at the end, where a stretch past it springs back.)
+        let jumps = zip(geo, geo.dropFirst()).filter { $0.h == $1.h && $1.y < $0.y - 2 && $0.distance > 1 && $1.distance > 1 }
+        steps.append("went back \(back.count) times" + (back.isEmpty ? "" : ": " + back.map { "m\($0) → m\($1)" }.joined(separator: ", ")))
+        steps.append("offset went back > 2 pt (same height) \(jumps.count) times" +
+                     (jumps.isEmpty ? "" : ": " + jumps.prefix(8).map { "\($0.y) → \($1.y)" }.joined(separator: ", ")))
+        let report = steps.joined(separator: "\n")
+        add(XCTAttachment(string: report))
+        print("---- steps\n\(report)")
+        XCTAssertFalse(walked.isEmpty, "the top message never changed")
+        XCTAssertTrue(back.isEmpty, "scrolling down went back to an earlier message: \(back)")
+        XCTAssertTrue(jumps.isEmpty, "the offset jumped back while scrolling down: \(jumps.prefix(8))")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    // MARK: T4
+
+    /// 何子安's 17:49 freeze: holding to talk while 110 deltas, the final
+    /// message and the host going idle all land at once.
+    @MainActor
+    func testT4HoldToTalkThroughABurst() throws {
+        let app = launch(["-demoState", "burst", "-demoBurstAt", "9",
+                          "-voiceDrill", "6", "-voiceDrillDelay", "6", "-voiceDrillAudio", "YES",
+                          "-speech_engine", "apple", "-stallThresholdMs", "100"])
+        let log = AppLog()
+        XCTAssertTrue(log.wait(timeout: 30) { $0.count("[demo] burst") > 0 }, "the burst never came")
+        sleep(5)
+        let lines = log.lines(containing: ["[stall]", "[drill]", "[demo]", "[reveal]", "[voice]"])
+        add(XCTAttachment(string: lines.joined(separator: "\n")))
+        print("---- app log\n\(lines.joined(separator: "\n"))")
+        guard let held = log.entries(containing: ["[drill] hold to talk"]).last?.time else {
+            XCTFail("the drill never held")
+            return
+        }
+        XCTAssertTrue(log.count("[drill] press refused") == 0, "the drill's press was refused")
+        let stalls = log.stalls().filter { $0.time >= held }
+        let worst = stalls.map(\.ms).max() ?? 0
+        print("---- stalls after the hold began: \(stalls.map(\.ms))")
+        XCTAssertLessThan(worst, 250, "the main thread stalled \(worst) ms while holding to talk through the burst")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    // MARK: T5
+
+    @MainActor
+    func testT5BackgroundMidReplyFollowing() throws {
+        try backgroundMidReply(detached: false)
+    }
+
+    @MainActor
+    func testT5BackgroundMidReplyDetached() throws {
+        try backgroundMidReply(detached: true)
+    }
+
+    @MainActor
+    private func backgroundMidReply(detached: Bool) throws {
+        let app = launch(["-demoState", "stress", "-stallThresholdMs", "100", "-topRowTrace", "YES"])
+        let list = app.scrollViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 20), "the conversation never appeared")
+        sleep(6) // a reply streams from 3 s in
+        let log = AppLog()
+        if detached {
+            list.swipeDown(velocity: .slow)
+            sleep(2)
+        }
+        let topBefore = log.topRow()
+        XCUIDevice.shared.press(.home)
+        sleep(5)
+        app.activate()
+        sleep(4)
+
+        let lines = log.lines(containing: ["[scroll]", "[stall]", "[reveal]", "connection:"])
+        add(XCTAttachment(string: lines.suffix(60).joined(separator: "\n")))
+        print("---- app log\n\(lines.suffix(60).joined(separator: "\n"))")
+        guard let away = log.entries(containing: ["[scroll] background"]).last,
+              let back = log.entries(containing: ["[scroll] foreground"]).last
+        else {
+            XCTFail("no [scroll] background / foreground lines")
+            return
+        }
+        // Leaving: the stalls around going to the background.
+        let leaving = log.stalls().filter { $0.time >= away.time.addingTimeInterval(-1) && $0.time <= away.time.addingTimeInterval(3) }
+        let worst = leaving.map(\.ms).max() ?? 0
+        XCTAssertLessThan(worst, 300, "going to the background stalled \(worst) ms")
+        if detached {
+            XCTAssertTrue(back.line.contains("detached"), "came back following the end: \(back.line)")
+            XCTAssertEqual(log.topRow(), topBefore, "came back to a different message at the top")
+        } else {
+            XCTAssertTrue(back.line.contains("following"), "came back no longer following: \(back.line)")
+            let d = AppLog.number(before: "pt from the end", in: back.line) ?? -1
+            XCTAssertLessThanOrEqual(d, 13, "came back \(d) pt from the end")
+        }
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
+    }
+
+    // MARK: far jump
+
+    @MainActor
+    func testFarJumpLandsOnTheEndIdle() throws {
+        try farJump(["-demoState", "long", "-demoStreamDelay", "600"])
+    }
+
+    @MainActor
+    func testFarJumpLandsOnTheEndWhileStreaming() throws {
+        try farJump(["-demoState", "stress"])
+    }
+
+    /// From ~40 000 pt up 「回到最新」 used to stop where the fully laid-out
+    /// end begins, ~12 900 pt short.
+    @MainActor
+    private func farJump(_ args: [String]) throws {
+        let app = launch(args)
+        let list = app.scrollViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 20), "the conversation never appeared")
+        sleep(4)
+        let log = AppLog()
+        var swipes = 0
+        while (log.distance() ?? 0) < 40_000, swipes < 20 {
+            list.swipeDown(velocity: .fast)
+            sleep(1)
+            swipes += 1
+        }
+        let from = log.distance() ?? -1
+        let jump = app.buttons["jumpToLatest"]
+        guard jump.waitForExistence(timeout: 5) else {
+            XCTFail("no 回到最新 after scrolling up")
+            return
+        }
+        let f = jump.frame
+        try TouchScript.play([.tap(at: CGPoint(x: f.midX, y: f.midY), time: 0)])
+        sleep(5)
+        let lines = log.lines(containing: ["[jump]", "[scroll]"])
+        let report = (["from \(from) pt up after \(swipes) swipes"] + lines.suffix(20)).joined(separator: "\n")
+        add(XCTAttachment(string: report))
+        print("---- app log\n\(report)")
+        XCTAssertGreaterThanOrEqual(from, 30_000, "didn't get far enough up")
+        for when in ["+1.2 s", "+3 s"] {
+            guard let j = log.lastJump(when) else {
+                XCTFail("no [jump] \(when) line")
+                continue
+            }
+            XCTAssertLessThanOrEqual(j.distance, 13, "\(when) after the tap the view was \(j.distance) pt from the end")
+            XCTAssertTrue(j.pinned, "\(when) after the tap the view didn't follow the end")
+        }
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    // MARK: following while a reply streams
+
+    /// The other side of not letting go on a resting finger: a real fling up
+    /// from the end while a reply streams must still let go of the end, and
+    /// stay up in the history.
+    @MainActor
+    func testFlingUpWhileStreamingLetsGo() throws {
+        let app = launch(["-demoState", "stress"])
+        let list = app.scrollViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 20), "the conversation never appeared")
+        sleep(4)
+        let jump = app.buttons["jumpToLatest"]
+        let log = AppLog()
+        for round in 1...3 {
+            list.swipeDown(velocity: .fast)
+            sleep(3)
+            let away = log.distance() ?? -1
+            print("---- round \(round): \(away) pt from the end, button \(jump.exists)")
+            XCTAssertTrue(jump.exists, "round \(round): still following the end after a fling up (\(away) pt from it)")
+            XCTAssertGreaterThan(away, 1000, "round \(round): the fling up didn't stay up")
+            if jump.exists { jump.tap() }
+            sleep(2)
+        }
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    // MARK: helpers
+
+    @MainActor
+    private func launch(_ args: [String]) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += ["-demo", "YES", "-pinTrace", "YES"] + args
+        if let extra = ProcessInfo.processInfo.environment["STRESS_ARGS"] {
+            app.launchArguments += extra.split(separator: " ").map(String.init)
+        }
+        app.launch()
+        return app
+    }
+}

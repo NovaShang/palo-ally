@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import os
 
 /// The app's single source of truth: mirrors host state, applies events,
 /// re-syncs on (re)connect, and does optimistic chat sends.
@@ -116,6 +117,8 @@ public final class AppStore {
     @ObservationIgnored private var streamMarks: [String: Int] = [:]
     /// Deltas received (breadcrumbs note every 20th).
     @ObservationIgnored private var deltaCount = 0
+    /// How long streamed text waited to be shown, per reply (`[reveal]`).
+    @ObservationIgnored private var replyStats = ReplyStats()
     private var started = false
     /// A `sync` is out (internal for tests: see `syncJournal`).
     var syncing = false
@@ -272,8 +275,8 @@ public final class AppStore {
             case .network(let m): connection = .offline(m)
             case .rejected(let m): connection = .rejected(m)
             }
-        case .event(let name, let data, let index):
-            apply(event: name, data: data, index: index)
+        case .event(let name, let data, let index, let received):
+            apply(event: name, data: data, index: index, received: received)
         }
     }
 
@@ -323,7 +326,9 @@ public final class AppStore {
         if syncing { resyncRequested = true; return }
         syncing = true
         breadcrumb("sync start (since \(hasSynced ? lastSeq : 0))")
+        let signpost = ChatSignposts.chat.beginInterval("sync")
         defer {
+            ChatSignposts.chat.endInterval("sync", signpost)
             syncing = false
             syncJournal.removeAll()
             breadcrumb("sync end (\(messages.count) msgs)")
@@ -441,6 +446,7 @@ public final class AppStore {
         flushDeltas()
         for i in messages.indices where messages[i].isStreaming { messages[i].isStreaming = false }
         streamMarks.removeAll()
+        replyStats.finished(id: nil)
         awaitingReply = false
     }
 
@@ -451,8 +457,9 @@ public final class AppStore {
 
     // MARK: events
 
-    /// `index`: the event's place in the stream (`RPCInbound.event`), when known.
-    public func apply(event name: String, data: JSONValue, index: Int? = nil) {
+    /// `index`: the event's place in the stream (`RPCInbound.event`), when
+    /// known; `received`: when it came off the wire (system uptime).
+    public func apply(event name: String, data: JSONValue, index: Int? = nil, received: TimeInterval? = nil) {
         switch name {
         case RPCEventName.chatMessage:
             if let m = try? data.decode(ChatMessage.self) {
@@ -464,7 +471,7 @@ public final class AppStore {
                 }
             }
         case RPCEventName.chatDelta:
-            if let d = try? data.decode(ChatDelta.self), !d.id.isEmpty { applyDelta(d, index: index) }
+            if let d = try? data.decode(ChatDelta.self), !d.id.isEmpty { applyDelta(d, index: index, received: received) }
         case RPCEventName.taskUpdated:
             if let t = try? data.decode(AllyTask.self) { upsert(task: t) }
         case RPCEventName.approvalUpdated:
@@ -511,9 +518,10 @@ public final class AppStore {
         }
     }
 
-    func applyDelta(_ d: ChatDelta, index: Int? = nil) {
+    func applyDelta(_ d: ChatDelta, index: Int? = nil, received: TimeInterval? = nil) {
         awaitingReply = false
         deltaCount += 1
+        replyStats.delta(id: d.id, bytes: d.text.utf8.count, received: received ?? ProcessInfo.processInfo.systemUptime)
         if deltaCount % 20 == 1 { breadcrumb("delta #\(deltaCount) (+\(d.text.utf8.count) bytes)") }
         // Already in the text a sync gave us (it overtook nothing, it was late).
         if let index, let mark = streamMarks[d.id], index <= mark { return }
@@ -534,6 +542,7 @@ public final class AppStore {
             m.isStreaming = true
             messages.append(m)
             sortMessages()
+            replyStats.shown()
         }
     }
 
@@ -549,14 +558,18 @@ public final class AppStore {
     func flushDeltas() {
         deltaFlushScheduled = false
         guard !pendingDeltas.isEmpty else { return }
+        let signpost = ChatSignposts.chat.beginInterval("flush")
         for (id, text) in pendingDeltas {
             if let i = messages.firstIndex(where: { $0.id == id }), messages[i].isStreaming { messages[i].text += text }
         }
         pendingDeltas.removeAll()
+        replyStats.shown()
+        ChatSignposts.chat.endInterval("flush", signpost)
     }
 
     func upsert(_ incoming: ChatMessage) {
         breadcrumb("message \(incoming.role.rawValue) \(incoming.text.utf8.count) bytes (\(messages.count) msgs)")
+        replyStats.finished(id: incoming.id)
         // The final text supersedes anything still buffered for it.
         pendingDeltas[incoming.id] = nil
         streamMarks[incoming.id] = nil
@@ -1213,5 +1226,57 @@ public final class AppStore {
         guard connection == .online else { return }
         let rpc = rpc
         Task { _ = try? await rpc.call(RPCMethod.pushRegister, params: params, as: OKResult.self) }
+    }
+}
+
+/// One reply's streaming, measured: how long each piece of text waited
+/// between coming off the wire and being put on screen (applied to
+/// `messages`), the longest per reply. A stall on the main thread shows up
+/// here as a long wait. Logged once per reply, as `[reveal]`: counts and
+/// times only, never text.
+struct ReplyStats {
+    private var id: String?
+    private var start: TimeInterval = 0
+    private var deltas = 0
+    private var bytes = 0
+    /// The oldest piece not yet on screen.
+    private var waitingSince: TimeInterval?
+    private var longest: TimeInterval = 0
+    private var slow = 0
+    private var signpost: OSSignpostIntervalState?
+
+    static let slowWait: TimeInterval = 0.25
+
+    mutating func delta(id: String, bytes: Int, received: TimeInterval) {
+        if self.id != id {
+            if self.id != nil { finished(id: nil) }
+            self.id = id
+            start = received
+            signpost = ChatSignposts.chat.beginInterval("reply")
+        }
+        deltas += 1
+        self.bytes += bytes
+        if waitingSince == nil { waitingSince = received }
+    }
+
+    /// Everything received so far is on screen now.
+    mutating func shown() {
+        guard let since = waitingSince else { return }
+        let wait = ProcessInfo.processInfo.systemUptime - since
+        longest = max(longest, wait)
+        if wait >= Self.slowWait { slow += 1 }
+        waitingSince = nil
+    }
+
+    /// The reply ended (its final message, or the turn ended): `id` nil for any.
+    mutating func finished(id: String?) {
+        guard let current = self.id, id == nil || id == current else { return }
+        shown()
+        let took = ProcessInfo.processInfo.systemUptime - start
+        debugLog(String(format: "[reveal] reply done: %d deltas, %.1f KB in %.1f s, longest wait to show %d ms (%d waits ≥ %d ms)",
+                        deltas, Double(bytes) / 1024, took, Int(longest * 1000), slow, Int(Self.slowWait * 1000)))
+        let (n, ms) = (deltas, Int(longest * 1000))
+        if let signpost { ChatSignposts.chat.endInterval("reply", signpost, "\(n) deltas, longest wait \(ms) ms") }
+        self = ReplyStats()
     }
 }

@@ -39,6 +39,7 @@ struct ChatView: View {
     /// Something arrived below (a message, or more of one) since the reader
     /// scrolled up: the jump button's dot.
     @State private var unseenBelow = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -158,7 +159,7 @@ struct ChatView: View {
                 try? await Task.sleep(for: .seconds(3.5))
                 guard store.messages.count > 4 else { return }
                 let mid = store.messages[store.messages.count / 2].id
-                pinned = false
+                follow(false, "demo")
                 readingAnchor = mid
                 if !ReadingAnchor.enabled { proxy.scrollTo(mid, anchor: .top) }
                 debugLog("[anchor] reading from \(mid)")
@@ -194,7 +195,7 @@ struct ChatView: View {
                     try? await Task.sleep(for: .milliseconds(40))
                 }
                 proxy.scrollTo("bottom", anchor: .bottom)
-                pinned = true
+                follow(true, "tour")
                 debugLog("[tour] back at the end")
             }
             #endif
@@ -213,7 +214,7 @@ struct ChatView: View {
                 // (after any fling) follows the live bottom again.
                 if !moving, old == .tracking || old == .interacting || old == .decelerating,
                    !awayFromBottom, !pinned {
-                    pinned = true
+                    follow(true, "scroll ended near the end")
                 }
             }
             .onScrollGeometryChange(for: ChatScroll.Metrics.self) { g in
@@ -222,9 +223,7 @@ struct ChatView: View {
                 #endif
                 return ChatScroll.Metrics(g)
             } action: { old, new in
-                #if DEBUG
-                ChatScroll.debugDistance = new.distanceFromBottom
-                #endif
+                ChatScroll.lastDistance = new.distanceFromBottom
                 let away = new.distanceFromBottom > ChatScroll.reattachDistance
                 if away != awayFromBottom { awayFromBottom = away }
                 if userScrolling {
@@ -240,9 +239,9 @@ struct ChatView: View {
                     }
                     #endif
                     if new.movedUp(from: old), new.distanceFromBottom > ChatScroll.detachDistance {
-                        if pinned { pinned = false }
+                        if pinned { follow(false, "drag") }
                     } else if new.movedDown(from: old), new.distanceFromBottom <= ChatScroll.reattachDistance {
-                        if !pinned { pinned = true }
+                        if !pinned { follow(true, "dragged back to the end") }
                     }
                 } else if new.bottomInset > old.bottomInset + 1, pinned {
                     // The keyboard (or a taller composer) took space at the
@@ -256,7 +255,7 @@ struct ChatView: View {
                 guard let id else { return }
                 model.focusApprovalID = nil
                 let target = store.messages.first { $0.approvalId == id }?.id ?? "approval-\(id)"
-                pinned = false
+                follow(false, "approval")
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(350)) // let the slide back to the chat land
                     withAnimation(.snappy) { proxy.scrollTo(target, anchor: .center) }
@@ -266,7 +265,7 @@ struct ChatView: View {
             .onChange(of: model.focusQuestionID, initial: true) { _, id in
                 guard let id, let target = store.messages.first(where: { $0.questionId == id })?.id else { return }
                 model.focusQuestionID = nil
-                pinned = false
+                follow(false, "question")
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(350))
                     withAnimation(.snappy) { proxy.scrollTo(target, anchor: .center) }
@@ -277,7 +276,7 @@ struct ChatView: View {
             .onChange(of: model.focusMessageSeq, initial: true) { _, seq in
                 guard let seq else { return }
                 model.focusMessageSeq = nil
-                pinned = false
+                follow(false, "search")
                 Task { @MainActor in
                     guard let id = await store.revealMessage(seq: seq) else { return }
                     try? await Task.sleep(for: .milliseconds(350)) // let the slide back to the chat land
@@ -302,7 +301,7 @@ struct ChatView: View {
             }
             .onChange(of: store.messages.last?.id) {
                 // Sending always returns to the live bottom.
-                if store.messages.last?.role == .user { pinned = true }
+                if store.messages.last?.role == .user { follow(true, "sent") }
                 if !pinned, !unseenBelow { unseenBelow = true }
                 guard pinned, !userScrolling else { return }
                 withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) }
@@ -355,6 +354,18 @@ struct ChatView: View {
         .modifier(OrbPresenceTracking(scrolledUp: !pinned || store.viewingPast, scrolling: userScrolling))
         // 「试试」 timing: a reply finishing counts as activity.
         .onChange(of: store.isBusy) { _, busy in if !busy { SuggestionsGate.shared.touch() } }
+        // Where the view was when the app left and came back (after the catch-up).
+        .onChange(of: scenePhase) { _, phase in
+            let state = pinned ? "following" : "detached"
+            if phase == .background {
+                ChatScroll.log("background: \(state)")
+            } else if phase == .active {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(1.5))
+                    ChatScroll.log("foreground: \(pinned ? "following" : "detached")")
+                }
+            }
+        }
         .navigationTitle(store.assistantName)
         .navigationBarTitleDisplayMode(.inline)
         // Immersive, the iOS 26 look: the system bar stays but without its
@@ -411,14 +422,13 @@ struct ChatView: View {
     /// binding would hold the view where it was.
     private func jumpToLatest(_ proxy: ScrollViewProxy) {
         breadcrumb("jump to latest")
-        #if DEBUG
-        debugLog("[jump] tap: \(Int(ChatScroll.debugDistance)) pt from the end, pinned \(pinned), button \(store.viewingPast || (!pinned && awayFromBottom))")
-        #endif
+        debugLog("[jump] tap: \(Int(ChatScroll.lastDistance)) pt from the end, pinned \(pinned), button \(store.viewingPast || (!pinned && awayFromBottom))")
         let anchored = readingAnchor != nil
         readingAnchor = nil
         userScrolling = false
-        pinned = true
+        follow(true, "jump")
         unseenBelow = false
+        let signpost = ChatSignposts.chat.beginInterval("jump")
         Task { @MainActor in
             // An older stretch is showing: load the live end first.
             if store.viewingPast {
@@ -439,15 +449,24 @@ struct ChatView: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
-        #if DEBUG
-        // Where it landed, and whether it stayed (the scroll UI tests read these).
+        // Where it landed, and whether it stayed (persisted; the scroll UI
+        // tests read these too).
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.2))
-            debugLog("[jump] +1.2 s: \(Int(ChatScroll.debugDistance)) pt from the end, pinned \(pinned)")
+            debugLog("[jump] +1.2 s: \(Int(ChatScroll.lastDistance)) pt from the end, pinned \(pinned)")
+            ChatSignposts.chat.endInterval("jump", signpost)
             try? await Task.sleep(for: .seconds(1.8))
-            debugLog("[jump] +3 s: \(Int(ChatScroll.debugDistance)) pt from the end, pinned \(pinned)")
+            debugLog("[jump] +3 s: \(Int(ChatScroll.lastDistance)) pt from the end, pinned \(pinned)")
+            try? await Task.sleep(for: .seconds(2))
+            debugLog("[jump] +5 s: \(Int(ChatScroll.lastDistance)) pt from the end, pinned \(pinned)")
         }
-        #endif
+    }
+
+    /// Starts or stops following the live end, and says why in the log.
+    private func follow(_ on: Bool, _ why: String) {
+        guard pinned != on else { return }
+        pinned = on
+        ChatScroll.log(on ? "detached → following (\(why))" : "following → detached (\(why))")
     }
 
     /// Back to the newest message now and once more after the lazy rows have
@@ -597,7 +616,7 @@ private struct AnchorProbe: ViewModifier {
 
 /// `-topRowTrace YES`: logs the message under the top of the view each time
 /// it changes, so a scroll that jumps back to an earlier message shows up in
-/// the debug log (ScrollSnapBackUITests).
+/// the debug log (ChatScrollUITests).
 private struct TopRowProbe: ViewModifier {
     static let enabled = UserDefaults.standard.bool(forKey: "topRowTrace")
     /// Just under the navigation bar, where reading starts.
