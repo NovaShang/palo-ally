@@ -205,6 +205,12 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         // just that again. Anything else: all of it.
         let grew = lastSource.map { source.hasBytePrefix($0) } == true && Self.sameColor(linkColor, lastLinkColor)
             && frozenLength <= textStorage.length && frozenSource <= (source as NSString).length
+        // What a tail render replaces, to tell the newly revealed text apart.
+        let fresh = lastSource == nil
+        let wasStreaming = lastStreaming
+        let oldFrozen = frozenLength
+        let oldTail = grew ? (textStorage.string as NSString).substring(from: oldFrozen) as NSString : nil
+        Self.renders &+= 1
         lastSource = source
         lastStreaming = streaming
         lastLinkColor = linkColor
@@ -217,6 +223,7 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
             renderAll(source, streaming: streaming)
             linkTextAttributes = [.foregroundColor: linkColor]
         }
+        noteRevealed(fresh: fresh, oldFrozen: oldFrozen, oldTail: oldTail, wasStreaming: wasStreaming, streaming: streaming)
         // A code block / table background reaches 6 pt past its text; make
         // room when one is first or last so it isn't clipped.
         let storage = textStorage
@@ -237,6 +244,107 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         if !reportsHeightItself { invalidateIntrinsicContentSize() }
         setNeedsLayout()
     }
+
+    // MARK: fading in
+
+    /// Text changes so far (any view), to tell frames that only fade.
+    static var renders = 0
+    /// After the text of a reply being written.
+    private static let cursorLength = (" ▍" as NSString).length
+    private var markdownLayout: MarkdownLayoutManager? { layoutManager as? MarkdownLayoutManager }
+
+    /// The text just revealed fades in (design §3.2): what a tail render
+    /// added past what was there before (the cursor aside), or all of a
+    /// reply's first words. The text storage isn't touched for it.
+    private func noteRevealed(fresh: Bool, oldFrozen: Int, oldTail: NSString?, wasStreaming: Bool, streaming: Bool) {
+        guard let layout = markdownLayout else { return }
+        let storage = textStorage.string as NSString
+        let end = storage.length - (streaming ? Self.cursorLength : 0)
+        var from: Int?
+        if let oldTail, wasStreaming || streaming {
+            let newTail = storage.substring(from: oldFrozen) as NSString
+            var same = 0
+            let n = min(oldTail.length, newTail.length)
+            while same < n, oldTail.character(at: same) == newTail.character(at: same) { same += 1 }
+            from = oldFrozen + min(same, oldTail.length - (wasStreaming ? Self.cursorLength : 0))
+        } else if fresh, streaming {
+            from = 0
+        } else if oldTail == nil, !layout.fades.isEmpty {
+            // Laid out anew: the old places mean nothing.
+            layout.fades.removeAll()
+        }
+        guard let from else { return }
+        // Text that changed under a fade starts over; past the end there's nothing.
+        layout.fades = layout.fades.compactMap { f in
+            let cut = min(NSMaxRange(f.range), from)
+            return cut > f.range.location ? TextFade(range: NSRange(location: f.range.location, length: cut - f.range.location), start: f.start) : nil
+        }
+        guard end > from, TextFade.allowed(in: self) else { return }
+        layout.fades.append(TextFade(range: NSRange(location: from, length: end - from), start: CACurrentMediaTime()))
+        TextFadeClock.shared.add(self)
+    }
+
+    /// One frame of the fade: the fading text is drawn again (with the
+    /// alpha for now). False once nothing fades.
+    func advanceFades(at now: CFTimeInterval) -> Bool {
+        guard let layout = markdownLayout, !layout.fades.isEmpty else { return false }
+        var union = layout.fades[0].range
+        for f in layout.fades.dropFirst() { union = NSUnionRange(union, f.range) }
+        union = NSIntersectionRange(union, NSRange(location: 0, length: textStorage.length))
+        if union.length > 0 { redraw(union) }
+        layout.fades.removeAll { $0.done(at: now) }
+        return !layout.fades.isEmpty
+    }
+
+    /// Has the lines showing `chars` drawn again, and only those: the text
+    /// is drawn in tiles, and the layout manager's own invalidation redraws
+    /// every tile of the view (the whole reply, each frame).
+    private func redraw(_ chars: NSRange) {
+        guard let canvas = textCanvas else {
+            layoutManager.invalidateDisplay(forCharacterRange: chars)
+            return
+        }
+        let glyphs = layoutManager.glyphRange(forCharacterRange: chars, actualCharacterRange: nil)
+        var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+        // Whole lines, and a little room for glyphs that reach past theirs.
+        rect = CGRect(x: 0, y: rect.minY + textContainerInset.top - 4, width: bounds.width, height: rect.height + 8)
+        let local = canvas.convert(rect, from: self)
+        // The tiles that show those lines (UIKit's tiled layer would redraw
+        // all of them for any rect).
+        let tiles = (canvas.layer.sublayers ?? []).filter { $0.frame.intersects(local) }
+        if tiles.isEmpty {
+            canvas.setNeedsDisplay(local)
+        } else {
+            for t in tiles { t.setNeedsDisplay() }
+        }
+    }
+
+    /// The view the text view draws its text in, tile by tile (UIKit's
+    /// canvas, inside its container view).
+    private var textCanvas: UIView? {
+        if let canvas = cachedCanvas, canvas.isDescendant(of: self) { return canvas }
+        func find(_ v: UIView, _ depth: Int) -> UIView? {
+            if NSStringFromClass(type(of: v)).contains("CanvasView") { return v }
+            guard depth < 3 else { return nil }
+            for s in v.subviews { if let hit = find(s, depth + 1) { return hit } }
+            return nil
+        }
+        cachedCanvas = subviews.lazy.compactMap { find($0, 0) }.first
+        return cachedCanvas
+    }
+    private weak var cachedCanvas: UIView?
+
+    /// Fully drawn at once (the app is leaving the screen).
+    func finishFades() {
+        guard let layout = markdownLayout, !layout.fades.isEmpty else { return }
+        var union = layout.fades[0].range
+        for f in layout.fades.dropFirst() { union = NSUnionRange(union, f.range) }
+        layout.fades.removeAll()
+        redraw(NSIntersectionRange(union, NSRange(location: 0, length: textStorage.length)))
+    }
+
+    /// This text's own layout invalidations so far (see `TextFadeClock`).
+    var layoutInvalidations: Int { markdownLayout?.invalidations ?? 0 }
 
     /// Everything, from scratch; the blocks before the last are frozen.
     private func renderAll(_ source: String, streaming: Bool) {
@@ -377,6 +485,89 @@ extension NSAttributedString.Key {
 }
 
 final class MarkdownLayoutManager: NSLayoutManager {
+    /// Text fading in, in order, not overlapping: drawn with less alpha.
+    var fades: [TextFade] = []
+    /// Times the layout was invalidated (a text change, a new width): a
+    /// frame that only fades must leave this alone.
+    private(set) var invalidations = 0
+
+    override func processEditing(for textStorage: NSTextStorage, edited editMask: NSTextStorage.EditActions, range newCharRange: NSRange,
+                                 changeInLength delta: Int, invalidatedRange invalidatedCharRange: NSRange) {
+        invalidations &+= 1
+        super.processEditing(for: textStorage, edited: editMask, range: newCharRange, changeInLength: delta, invalidatedRange: invalidatedCharRange)
+    }
+
+    override func invalidateLayout(forCharacterRange charRange: NSRange, actualCharacterRange actualCharRange: NSRangePointer?) {
+        invalidations &+= 1
+        super.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: actualCharRange)
+    }
+
+    override func textContainerChangedGeometry(_ container: NSTextContainer) {
+        invalidations &+= 1
+        super.textContainerChangedGeometry(container)
+    }
+
+    #if DEBUG
+    /// `-fadeTrace YES`: what each frame redraws.
+    private static let trace = UserDefaults.standard.bool(forKey: "fadeTrace")
+    #endif
+
+    /// The alpha a character is drawn with now.
+    func fadeAlpha(at char: Int) -> CGFloat {
+        guard !fades.isEmpty else { return 1 }
+        let now = CACurrentMediaTime()
+        for f in fades where NSLocationInRange(char, f.range) { return f.alpha(at: now) }
+        return 1
+    }
+
+    /// Glyphs drawn so far, all views (how much a fade frame redraws).
+    nonisolated(unsafe) static var glyphsDrawn = 0
+
+    /// The glyphs, the fading ones with their alpha for now.
+    override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
+        Self.glyphsDrawn &+= glyphsToShow.length
+        #if DEBUG
+        if Self.trace {
+            let ctx = UIGraphicsGetCurrentContext()
+            debugLog("[fadetrace] draw glyphs \(glyphsToShow.location)+\(glyphsToShow.length) of \(numberOfGlyphs), clip \(ctx.map { $0.boundingBoxOfClipPath } ?? .zero), fades \(fades.map { "\($0.range.location)+\($0.range.length)" })")
+        }
+        #endif
+        guard !fades.isEmpty, let ctx = UIGraphicsGetCurrentContext(), let length = textStorage?.length else {
+            return super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+        }
+        let now = CACurrentMediaTime()
+        var from = glyphsToShow.location
+        let end = NSMaxRange(glyphsToShow)
+        for f in fades {
+            let alpha = f.alpha(at: now)
+            let chars = NSIntersectionRange(f.range, NSRange(location: 0, length: length))
+            guard alpha < 1, chars.length > 0 else { continue }
+            let g = glyphRange(forCharacterRange: chars, actualCharacterRange: nil)
+            let lo = max(g.location, from)
+            let hi = min(NSMaxRange(g), end)
+            guard hi > lo else { continue }
+            if lo > from { super.drawGlyphs(forGlyphRange: NSRange(location: from, length: lo - from), at: origin) }
+            ctx.saveGState()
+            ctx.setAlpha(alpha)
+            super.drawGlyphs(forGlyphRange: NSRange(location: lo, length: hi - lo), at: origin)
+            ctx.restoreGState()
+            from = hi
+        }
+        if end > from { super.drawGlyphs(forGlyphRange: NSRange(location: from, length: end - from), at: origin) }
+    }
+
+    /// Backgrounds behind fading text (inline code) fade with it.
+    override func fillBackgroundRectArray(_ rectArray: UnsafePointer<CGRect>, count rectCount: Int, forCharacterRange charRange: NSRange, color: UIColor) {
+        let alpha = fadeAlpha(at: charRange.location)
+        guard alpha < 1, let ctx = UIGraphicsGetCurrentContext() else {
+            return super.fillBackgroundRectArray(rectArray, count: rectCount, forCharacterRange: charRange, color: color)
+        }
+        ctx.saveGState()
+        ctx.setAlpha(alpha)
+        super.fillBackgroundRectArray(rectArray, count: rectCount, forCharacterRange: charRange, color: color)
+        ctx.restoreGState()
+    }
+
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
         guard let storage = textStorage, let container = textContainers.first,
@@ -398,6 +589,8 @@ final class MarkdownLayoutManager: NSLayoutManager {
             rect = rect.offsetBy(dx: origin.x, dy: origin.y)
             ctx.saveGState()
             defer { ctx.restoreGState() }
+            // A block that's just appearing fades in with its first line.
+            ctx.setAlpha(fadeAlpha(at: full.location))
             switch kind {
             case "code", "table":
                 let box = CGRect(x: origin.x, y: rect.minY - 6, width: container.size.width, height: rect.height + 12)
@@ -686,4 +879,126 @@ enum TextWidthSettling {
         coarse.removeAllObjects()
         for v in views { v.widthSettled() }
     }
+}
+
+// MARK: - Fading in
+
+/// Text just revealed fades in: drawn with an alpha rising from 0 to 1 over
+/// 0.3 s (ease-out), redrawn each frame. Only drawing is redone; the text
+/// storage and its layout stay as they are (a color change in the storage
+/// would lay the paragraph out again on every frame). No fade with Reduce
+/// Motion, off screen, or in the background.
+struct TextFade {
+    var range: NSRange
+    var start: CFTimeInterval
+    static let duration: CFTimeInterval = 0.3
+
+    func alpha(at now: CFTimeInterval) -> CGFloat {
+        let t = min(max((now - start) / Self.duration, 0), 1)
+        return CGFloat(1 - pow(1 - t, 3))
+    }
+
+    func done(at now: CFTimeInterval) -> Bool { now - start >= Self.duration }
+
+    @MainActor
+    static func allowed(in view: UIView) -> Bool {
+        guard !UIAccessibility.isReduceMotionEnabled, let window = view.window,
+              window.windowScene?.activationState == .foregroundActive else { return false }
+        return window.bounds.intersects(view.convert(view.bounds, to: window))
+    }
+}
+
+/// Runs the fades: one display link (60 Hz) while any text fades. Logs what
+/// the fades cost once a reply's are over (`[reveal] fade:`): per frame,
+/// the callback plus the commit that redraws, and whether the fading text's
+/// layout was touched in a frame that changed no text (it must not be).
+@MainActor
+final class TextFadeClock {
+    static let shared = TextFadeClock()
+    private let views = NSHashTable<MarkdownTextView>.weakObjects()
+    private var link: CADisplayLink?
+    private var stats = Stats()
+    private var generation = 0
+
+    private struct Stats {
+        var frames = 0
+        var fadeOnly: [Double] = []
+        var relaidOut = 0
+        var glyphs: [Double] = []
+    }
+    /// Text changes as of the last frame's commit.
+    private var rendersAtCommit = 0
+
+    private init() {
+        NotificationCenter.default.addObserver(forName: UIScene.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { TextFadeClock.shared.finishAll() }
+        }
+    }
+
+    func add(_ view: MarkdownTextView) {
+        views.add(view)
+        if link == nil {
+            let link = CADisplayLink(target: LinkTarget { [weak self] in self?.frame() }, selector: #selector(LinkTarget.fire))
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+            link.add(to: .main, forMode: .common)
+            self.link = link
+        }
+        link?.isPaused = false
+        generation += 1
+    }
+
+    private func frame() {
+        let began = CommitWatch.threadCPU()
+        let signpost = ChatSignposts.chat.beginInterval("fade")
+        let now = CACurrentMediaTime()
+        let fading = views.allObjects
+        let invalidations = fading.map(\.layoutInvalidations)
+        var active = false
+        for v in fading {
+            if v.advanceFades(at: now) { active = true } else { views.remove(v) }
+        }
+        let callback = CommitWatch.threadCPU() - began
+        stats.frames += 1
+        let glyphs = MarkdownLayoutManager.glyphsDrawn
+        CommitWatch.shared.afterCommit { [weak self] commit in
+            ChatSignposts.chat.endInterval("fade", signpost)
+            guard let self else { return }
+            defer { rendersAtCommit = MarkdownTextView.renders }
+            // No text changed since the last frame: all this one did was fade.
+            guard MarkdownTextView.renders == rendersAtCommit else { return }
+            stats.fadeOnly.append((callback + commit) * 1000)
+            stats.glyphs.append(Double(MarkdownLayoutManager.glyphsDrawn - glyphs))
+            if zip(fading, invalidations).contains(where: { $0.layoutInvalidations != $1 }) { stats.relaidOut += 1 }
+        }
+        if !active {
+            link?.isPaused = true
+            report(after: generation)
+        }
+    }
+
+    private func finishAll() {
+        for v in views.allObjects { v.finishFades() }
+        views.removeAllObjects()
+        link?.isPaused = true
+    }
+
+    /// Once fading has stopped for a while (the reply is done).
+    private func report(after mark: Int) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, generation == mark, stats.frames > 0 else { return }
+            let s = stats
+            stats = Stats()
+            let glyphs = s.glyphs.sorted()
+            debugLog("[reveal] fade: \(s.frames) frames, \(s.fadeOnly.count) that only faded: per frame (callback + redraw) \(Self.spread(s.fadeOnly)), glyphs redrawn p50 \(Int(glyphs.isEmpty ? 0 : glyphs[glyphs.count / 2])); layout touched in \(s.relaidOut) of them")
+        }
+    }
+
+    private static func spread(_ values: [Double]) -> String {
+        let sorted = values.sorted()
+        guard !sorted.isEmpty else { return "n/a" }
+        func at(_ q: Double) -> Double { sorted[min(sorted.count - 1, Int(Double(sorted.count - 1) * q))] }
+        return String(format: "p50 %.2f, p95 %.2f, max %.1f ms", at(0.5), at(0.95), sorted.last ?? 0)
+    }
+
 }
