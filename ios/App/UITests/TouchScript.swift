@@ -19,6 +19,17 @@ enum TouchScript {
 
         static func tap(at p: CGPoint, time: Double) -> Touch { Touch(down: time, at: p, up: time + 0.05) }
         static func hold(at p: CGPoint, from: Double, for seconds: Double) -> Touch { Touch(down: from, at: p, up: from + seconds) }
+        /// A flick: down, `dy` in a tenth of a second, up while still moving
+        /// (the list keeps going). Positive `dy` moves the finger down the
+        /// screen, which pulls older messages into view.
+        static func fling(at p: CGPoint, dy: CGFloat, from: Double) -> Touch {
+            let start = CGPoint(x: p.x, y: p.y - dy / 2)
+            let moves = (1...5).map { i in
+                (time: from + 0.02 * Double(i), to: CGPoint(x: start.x, y: start.y + dy * CGFloat(i) / 5))
+            }
+            return Touch(down: from, at: start, moves: moves, up: from + 0.1)
+        }
+
         /// Down, a slow drag by `dy` over `over` seconds, a hold, then up.
         static func drag(at p: CGPoint, from: Double, dy: CGFloat, over: Double = 0.3, hold: Double = 0.2) -> Touch {
             let steps = 6
@@ -29,8 +40,23 @@ enum TouchScript {
         }
     }
 
-    /// Plays the touches and returns once they are done.
+    /// Plays the touches at their times (from now) and returns once they are
+    /// done. Each touch is its own event record, started on the host clock:
+    /// one record with gaps between its touches plays them back to back.
     static func play(_ touches: [Touch], name: String = "touch script") throws {
+        let start = Date()
+        for t in touches.sorted(by: { $0.down < $1.down }) {
+            let wait = t.down - Date().timeIntervalSince(start)
+            if wait > 0 { Thread.sleep(forTimeInterval: wait) }
+            var shifted = t
+            shifted.moves = t.moves.map { (time: $0.time - t.down, to: $0.to) }
+            shifted.up = t.up - t.down
+            shifted.down = 0
+            try synthesize([shifted], name: name)
+        }
+    }
+
+    private static func synthesize(_ touches: [Touch], name: String) throws {
         guard let pathClass = NSClassFromString("XCPointerEventPath") as? NSObject.Type,
               let recordClass = NSClassFromString("XCSynthesizedEventRecord") as? NSObject.Type
         else { throw XCTSkip("XCTest's event synthesis classes are not available") }

@@ -4,13 +4,14 @@
 # launch, how long after the process started the conversation was laid out
 # and the memory footprint 5 s later, then the medians.
 #
-#   ios/App/scripts/launch-budget.sh [simulator name] [launches]
+#   ios/App/scripts/launch-budget.sh [simulator name] [launches] [extra app arguments]
 #
 # One simulator and one build at a time; the simulator is shut down after.
 set -u
 here=${0:A:h}
 sim=${1:-iPhone 17}
 runs=${2:-5}
+extra=(${=3:-})
 dd=${DERIVED_DATA:-${TMPDIR:-/tmp}/paloally-stress-dd}
 udid=$(xcrun simctl list devices available | grep -F "    $sim (" | head -1 | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
 [ -n "$udid" ] || { echo "no simulator named $sim"; exit 1; }
@@ -27,7 +28,7 @@ launches=() mems=()
 for i in $(seq 1 $runs); do
   xcrun simctl terminate "$udid" com.novashang.paloally 2>/dev/null
   sleep 2
-  xcrun simctl launch "$udid" com.novashang.paloally -demo YES -demoState long -demoStreamDelay 600 >/dev/null
+  xcrun simctl launch "$udid" com.novashang.paloally -demo YES -demoState long -demoStreamDelay 600 $extra >/dev/null
   sleep 9
   log="$(xcrun simctl get_app_container "$udid" com.novashang.paloally data)/Documents/debug.log"
   l=$(grep -F '[launch]' "$log" | tail -1)

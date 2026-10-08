@@ -105,6 +105,12 @@ struct ChatScrollMachineTests {
         #expect(m.reduce(.grewBelow) == [])
         #expect(m.mode == .following)
         #expect(!m.unseenBelow)
+        // A little off the end, the anchor doesn't hold: back onto it.
+        _ = m.reduce(.scrolled(distance: 3))
+        #expect(m.reduce(.grewBelow) == [.toEnd(animated: false)])
+        // Not under the reader's finger.
+        _ = m.reduce(.phase(.tracking))
+        #expect(m.reduce(.grewBelow) == [])
     }
 
     @Test func followingKeyboardKeepsTheEndAboveIt() {
@@ -194,6 +200,25 @@ struct ChatScrollMachineTests {
         #expect(!m.unseenBelow)
     }
 
+    @Test func aShortDragThatLetGoFollowsAgainThoughAReplyGrewMeanwhile() {
+        var m = machine(.following)
+        _ = drag(&m, by: 20)
+        #expect(m.mode == .detached)
+        // The reply grew while the finger was down: 90 pt from the end now.
+        _ = m.reduce(.scrolled(distance: 90))
+        _ = m.reduce(.lifted(velocity: 30))
+        let fx = m.reduce(.phase(.idle))
+        #expect(m.mode == .following)
+        #expect(fx.first == .log("detached → following (scroll ended near the end)"))
+        // A flick of the same length is a wish to go up: it stays.
+        var n = machine(.following)
+        _ = drag(&n, by: 20)
+        _ = n.reduce(.scrolled(distance: 400))
+        _ = n.reduce(.lifted(velocity: 2400))
+        #expect(n.reduce(.phase(.idle)) == [])
+        #expect(n.mode == .detached)
+    }
+
     @Test func detachedScrollEndingFarAwayStaysDetached() {
         var m = machine(.detached, distance: 3000)
         _ = drag(&m, by: -200)
@@ -209,11 +234,11 @@ struct ChatScrollMachineTests {
         #expect(fx == [.log("detached → returning (jump)"), .holdTopRow(false), .loadLatestThenEnd, .checkLanding])
     }
 
-    @Test func detachedJumpFromFarAwayGoesStraightThere() {
+    @Test func detachedJumpFromFarAwayJumpsCloseThenAnimates() {
         var m = machine(.detached, distance: 40_000)
         let fx = m.reduce(.jump(viewingPast: false, screens: 46))
         #expect(m.mode == .returning)
-        #expect(fx.contains(.toEnd(animated: false)))
+        #expect(fx.contains(.nearEndThenAnimate))
     }
 
     @Test func detachedJumpFromCloseAnimates() {
@@ -228,10 +253,21 @@ struct ChatScrollMachineTests {
     @Test func returningLandsAndFollows() {
         var m = machine(.returning, distance: 2000)
         _ = m.reduce(.phase(.animating))
-        #expect(m.reduce(.phase(.idle)) == [.checkLanding])
-        let fx = m.reduce(.landed(distance: 0))
+        _ = m.reduce(.scrolled(distance: 0))
+        #expect(m.reduce(.phase(.idle)) == [.log("returning → following (landed)")])
         #expect(m.mode == .following)
-        #expect(fx == [.log("returning → following (landed)")])
+        // Without an animation phase (an instant jump), the landing check does it.
+        var n = machine(.returning, distance: 2000)
+        #expect(n.reduce(.landed(distance: 0)) == [.log("returning → following (landed)")])
+        #expect(n.mode == .following)
+    }
+
+    @Test func returningLandingAFewPointsShortGoesTheRest() {
+        // A reply grew during the animation.
+        var m = machine(.returning, distance: 2000)
+        _ = m.reduce(.phase(.animating))
+        _ = m.reduce(.scrolled(distance: 3))
+        #expect(m.reduce(.phase(.idle)) == [.log("returning → following (landed)"), .toEnd(animated: false)])
     }
 
     @Test func returningLandedShortGoesTheRestAtOnce() {
@@ -250,7 +286,7 @@ struct ChatScrollMachineTests {
         #expect(m.mode == .returning)
         fx += m.reduce(.phase(.idle))
         #expect(m.mode == .following)
-        #expect(fx == [.log("returning → following (touched on the way)"), .toEnd(animated: true)])
+        #expect(fx == [.log("returning → following (touched on the way)"), .toEnd(animated: false)])
     }
 
     @Test func returningDragTowardOlderLetsGo() {

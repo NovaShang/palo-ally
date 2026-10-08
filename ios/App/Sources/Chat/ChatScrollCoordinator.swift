@@ -11,16 +11,21 @@ import UIKit
 /// bottom anchor, which holds only while the view sits exactly on the end;
 /// this puts it back there whenever following starts again.
 ///
-/// Reading back in history, it can also keep the message at the top where it
-/// is when rows above it change size or arrive (a resize, older history
-/// loading): SwiftUI's scroll position by id doesn't (the scroll lab, design
-/// §8). It watches where that row sits in the content, which changes only
-/// when the layout does, and scrolls by its move. Next to the lazy history a
-/// correction can make the history re-estimate the rows near the view, which
-/// moves the row again (in the stress demo that loop held the main thread for
-/// 12 s): more than `correctionsPerSecond` and it stops until the reader
-/// scrolls again. The exactly laid-out window (design step 3) removes the
-/// cause.
+/// It also owns what is laid out (design §3.4): a window of messages, every
+/// one measured exactly, no lazy estimates. The newest `windowSize` while
+/// following; reading up toward its top, it grows a few rows at a time,
+/// older pages loading as needed; a search hit far back gets a window of its
+/// own. The views lay out what `window(in:)` says.
+///
+/// Reading back in history, it keeps the message at the top where it is when
+/// rows above it change size or arrive (a resize, the window growing above):
+/// SwiftUI's scroll position by id doesn't (the scroll lab, design §8). It
+/// watches where that row sits in the content, which changes only when the
+/// layout does, and scrolls by its move. With every row laid out exactly, a
+/// correction changes no row's place, so it can't feed itself (next to the
+/// old lazy history it did, and held the main thread 12 s);
+/// `correctionsPerSecond` stays as a backstop, and the scroll UI tests fail
+/// if it ever trips.
 @MainActor
 @Observable
 final class ChatScrollCoordinator {
@@ -35,8 +40,36 @@ final class ChatScrollCoordinator {
         return true
     }()
     /// More corrections than this in a second is a loop, not a reader's place
-    /// being kept: stop until the reader scrolls again.
-    static let correctionsPerSecond = 8
+    /// being kept: stop until the reader scrolls again. (The window growing
+    /// above corrects once per step, at most ~20 a second.)
+    static let correctionsPerSecond = 40
+
+    /// Messages laid out while following the end (DEBUG `-windowSize`).
+    /// Each costs memory while laid out (the long demo's answers about 3 MB
+    /// each: 30 → 136 MB, 40 → 172, 60 → 228); 40 keeps the footprint where
+    /// the lazy history had it (168 MB) and is still many screens.
+    static let windowSize = debugInt("windowSize") ?? 40
+    /// Laid out at first, so the conversation appears quickly; the rest of
+    /// `windowSize` follows a few rows at a time (DEBUG `-windowInitial`).
+    static let windowInitial = debugInt("windowInitial") ?? 20
+    /// Rows added per step while the window grows (DEBUG `-windowBatch`).
+    static let windowBatch = debugInt("windowBatch") ?? 6
+    /// Between steps, so each is its own short main-thread turn.
+    static let windowStep: Duration = .milliseconds(50)
+    /// More rows each time 「看看更早的」 is tapped.
+    static let windowChunk = 40
+    /// Reading up, at most this many laid out; beyond, the far (newest) end
+    /// is let go of while it's well off screen.
+    static let windowMax = 100
+
+    private static func debugInt(_ key: String) -> Int? {
+        #if DEBUG
+        let v = UserDefaults.standard.integer(forKey: key)
+        return v > 0 ? v : nil
+        #else
+        return nil
+        #endif
+    }
 
     // What the views read; each changes only when it really changes.
     /// Following the live end (or on the way back to it).
@@ -48,12 +81,14 @@ final class ChatScrollCoordinator {
     /// The reader's finger, or its fling, is moving the list.
     private(set) var userScrolling = false
     /// Growth keeps the end in view (the system's bottom anchor, which holds
-    /// only while the view is on the end). Not while the reader's finger or
-    /// fling moves the list: the lazy history re-estimating its rows as they
-    /// come near changes the content height every other frame, and the
-    /// anchor would turn each change into a move back to the end, eating the
-    /// fling (the reported height shrank as fast as the offset).
+    /// only while the view is on the end, and not under a dragging finger).
+    /// Off while reading back.
     private(set) var sticksToEnd = true
+    /// The oldest message laid out; nil: the newest `windowInitial`.
+    private(set) var windowLo: String?
+    /// The newest one, when the window stops short of the live end (a search
+    /// hit far back); nil: everything to the end.
+    private(set) var windowHi: String?
 
     @ObservationIgnored private var machine = ChatScrollMachine()
     @ObservationIgnored private var position: Binding<ScrollPosition>?
@@ -70,10 +105,16 @@ final class ChatScrollCoordinator {
     // The row being read (while detached).
     @ObservationIgnored private var holding = false
     @ObservationIgnored private var topID: String?
+    /// Where the held row sat below the top of the view when it was taken.
+    @ObservationIgnored private var heldAt: CGFloat?
     /// Where the content's rows begin, below the list's own top padding.
     @ObservationIgnored private var contentTop: CGFloat = 0
     @ObservationIgnored private var rowY: [String: CGFloat] = [:]
     @ObservationIgnored private var landing: Task<Void, Never>?
+    @ObservationIgnored private var windowTask: Task<Void, Never>?
+    @ObservationIgnored private var toEndPending = false
+    /// Rows wanted above the window beyond `windowSize` (「看看更早的」).
+    @ObservationIgnored private var extraAbove = 0
     /// The list's own move during a touch, if the finger can't be read.
     @ObservationIgnored private var fallbackDrag: CGFloat = 0
     /// Where the finger was when the list started following it (window points).
@@ -85,12 +126,18 @@ final class ChatScrollCoordinator {
     @ObservationIgnored private var insetSettle: Task<Void, Never>?
 
     /// The UIKit scroll view, found from inside the content (`ScrollViewHook`).
-    func attach(scrollView: UIScrollView) { self.scrollView = scrollView }
+    func attach(scrollView: UIScrollView) {
+        self.scrollView = scrollView
+        #if DEBUG
+        ChatScroll.uiScrollView = scrollView
+        #endif
+    }
 
     func attach(position: Binding<ScrollPosition>, store: AppStore, contentTop: CGFloat) {
         self.position = position
         self.store = store
         self.contentTop = contentTop
+        pumpWindow()
     }
 
     // MARK: what the views want
@@ -102,7 +149,16 @@ final class ChatScrollCoordinator {
         let screens = d / max(1, metrics?.viewport ?? 1)
         debugLog("[jump] tap: \(Int(d)) pt from the end, \(machine.mode.rawValue), button \(showsJump)")
         let signpost = ChatSignposts.chat.beginInterval("jump")
-        send(.jump(viewingPast: store?.viewingPast ?? false, screens: screens))
+        if layOutTheEnd() {
+            // A far stretch was laid out: the end first, then the jump.
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(50))
+                let d = metrics?.distanceFromBottom ?? 0
+                send(.jump(viewingPast: store?.viewingPast ?? false, screens: d / max(1, metrics?.viewport ?? 1)))
+            }
+        } else {
+            send(.jump(viewingPast: store?.viewingPast ?? false, screens: screens))
+        }
         // Where it landed, and whether it stayed (persisted; the scroll UI tests read these).
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.2))
@@ -118,9 +174,17 @@ final class ChatScrollCoordinator {
     /// Bring a message into view (search hit, notification, quote). `after`:
     /// let a slide back to the conversation land first.
     func reveal(_ id: String, after delay: Double = 0) {
-        guard delay > 0 else { return send(.reveal(id: id)) }
         Task { @MainActor in
-            try? await Task.sleep(for: .seconds(delay))
+            if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+            // Not laid out yet: lay it out, and go there once it has its place.
+            #if DEBUG
+            if ChatScroll.pinTraceOn, let store {
+                let w = window(in: store.messages)
+                let i = store.messages.firstIndex { $0.id == id } ?? -1
+                ChatScroll.pinTrace("reveal \(id) at \(i), window \(w.lowerBound)..<\(w.upperBound) of \(store.messages.count)")
+            }
+            #endif
+            if layOut(id) { await awaitRow(id) }
             send(.reveal(id: id))
         }
     }
@@ -145,17 +209,172 @@ final class ChatScrollCoordinator {
 
     #if DEBUG
     /// `-demoDetach YES`: read from this message.
-    func detach(at id: String) { send(.reveal(id: id)) }
+    func detach(at id: String) { reveal(id) }
 
     /// `-demoScrollTour YES`: every message at the top in turn, then the end.
     func tour(_ ids: [String]) async {
-        for id in ids.reversed() {
+        let laidOut = store.map { s in Set(s.messages[window(in: s.messages)].map(\.id)) } ?? []
+        for id in ids.reversed() where laidOut.contains(id) {
             position?.wrappedValue.scrollTo(id: id, anchor: .top)
             try? await Task.sleep(for: .milliseconds(40))
         }
         send(.sent)
     }
     #endif
+
+    // MARK: the laid-out window
+
+    /// The messages to lay out, as indices into `messages`.
+    func window(in messages: [ChatMessage]) -> Range<Int> {
+        let n = messages.count
+        var hi = n
+        if let id = windowHi, let i = messages.firstIndex(where: { $0.id == id }) { hi = i + 1 }
+        var lo = max(0, hi - Self.windowInitial)
+        if let id = windowLo, let i = messages.firstIndex(where: { $0.id == id }) { lo = i }
+        return min(lo, hi)..<hi
+    }
+
+    /// 「看看更早的」: a chunk more above (older pages load as needed).
+    func revealOlder() {
+        extraAbove += Self.windowChunk
+        if let store, window(in: store.messages).lowerBound == 0 { Task { await loadOlder() } }
+        pumpWindow()
+    }
+
+    /// Messages arrived, went, or were replaced.
+    func messagesChanged() { pumpWindow() }
+
+    /// Rows that left the window: their places are stale.
+    func forget(_ id: String) {
+        rowY[id] = nil
+        if id == topID { topID = nil }
+    }
+
+    private func loadOlder() async {
+        guard let store, store.hasOlderMessages, !store.isLoadingOlder else { return }
+        await store.loadOlder()
+        pumpWindow()
+    }
+
+    /// Steps the window toward what the moment wants, one short step per
+    /// turn, until there is nothing left to do.
+    private func pumpWindow() {
+        guard windowTask == nil else { return }
+        windowTask = Task { @MainActor in
+            defer { windowTask = nil }
+            while !Task.isCancelled, stepWindow() {
+                if let store {
+                    let w = window(in: store.messages)
+                    breadcrumb("window \(w.lowerBound)..<\(w.upperBound) of \(store.messages.count)")
+                }
+                #if DEBUG
+                if ChatScroll.pinTraceOn, let store {
+                    let w = window(in: store.messages)
+                    ChatScroll.pinTrace("window \(w.lowerBound)..<\(w.upperBound) of \(store.messages.count), \(machine.mode.rawValue)")
+                }
+                #endif
+                try? await Task.sleep(for: Self.windowStep)
+            }
+        }
+    }
+
+    /// One step; false when there is nothing to do now (a later event pumps again).
+    private func stepWindow() -> Bool {
+        guard let store, !machine.phase.isUser else { return false }
+        let messages = store.messages
+        let n = messages.count
+        let w = window(in: messages)
+        guard n > 0 else { return false }
+        func setLo(_ i: Int) { windowLo = messages[max(0, min(i, n - 1))].id }
+        func setHi(_ i: Int) { windowHi = i >= n ? nil : messages[max(0, i - 1)].id }
+        if machine.mode != .detached {
+            extraAbove = 0
+            if windowHi != nil {
+                // Back to the live end (a jump or a send from a far stretch).
+                windowHi = nil
+                setLo(n - Self.windowSize)
+                return true
+            }
+            // Fill up to the window above the end (invisible: the bottom
+            // anchor keeps the end in place), or let go of what's beyond it.
+            if w.count < Self.windowSize, w.lowerBound > 0 {
+                setLo(max(n - Self.windowSize, w.lowerBound - Self.windowBatch))
+                return true
+            }
+            if w.count > Self.windowSize + 10 {
+                setLo(n - Self.windowSize)
+                return true
+            }
+            return false
+        }
+        // Reading back: only with the row at the top held (else rows added
+        // above would push the text being read down).
+        guard holding, topID != nil, let m = metrics else { return false }
+        let visibleTop = m.offsetY + m.insetTop
+        let nearTop = visibleTop < 1.5 * m.viewport
+        let nearBottom = m.distanceFromBottom < 1.5 * m.viewport
+        if nearTop || w.count < Self.windowSize + extraAbove {
+            if w.lowerBound > 0 {
+                setLo(w.lowerBound - Self.windowBatch)
+                return true
+            }
+            if nearTop, store.hasOlderMessages, !store.isLoadingOlder { Task { await loadOlder() } }
+        }
+        if nearBottom, w.upperBound < n {
+            setHi(w.upperBound + Self.windowBatch)
+            return true
+        }
+        // Very long: let go of the far end while it's well off screen.
+        if w.count > Self.windowMax, m.distanceFromBottom > 3 * m.viewport {
+            setHi(w.lowerBound + Self.windowMax)
+            return true
+        }
+        return false
+    }
+
+    /// Makes sure `id` is laid out; true if the window had to change (then
+    /// scroll to it once it has its place: `awaitRow`).
+    private func layOut(_ id: String) -> Bool {
+        guard let store, let i = store.messages.firstIndex(where: { $0.id == id }) else { return false }
+        let messages = store.messages
+        let n = messages.count
+        let w = window(in: messages)
+        guard !w.contains(i) else { return false }
+        if i < w.lowerBound, w.lowerBound - i <= Self.windowBatch * 2 {
+            windowLo = messages[max(0, i - 3)].id
+        } else if i >= w.upperBound, i - w.upperBound < Self.windowBatch * 2 {
+            let hi = min(n, i + 4)
+            windowHi = hi >= n ? nil : messages[hi - 1].id
+        } else {
+            // Farther: a small window of its own around it (it grows as the
+            // reader moves; 回到最新 lays the end out again).
+            windowLo = messages[max(0, i - 3)].id
+            let hi = min(n, max(0, i - 3) + Self.windowInitial)
+            windowHi = hi >= n ? nil : messages[hi - 1].id
+        }
+        return true
+    }
+
+    /// Waits (up to a second) until `id` has reported its place after a
+    /// window change, so a scroll to it lands.
+    private func awaitRow(_ id: String) async {
+        rowY[id] = nil
+        for _ in 0..<60 {
+            if rowY[id] != nil { break }
+            try? await Task.sleep(for: .milliseconds(16))
+        }
+        try? await Task.sleep(for: .milliseconds(16))
+    }
+
+    /// The window back at the live end, if it isn't; true if it changed.
+    private func layOutTheEnd() -> Bool {
+        guard windowHi != nil, let store else { return false }
+        let n = store.messages.count
+        windowHi = nil
+        // A few screens' worth; the rest fills in above, out of sight.
+        if n > 0 { windowLo = store.messages[max(0, n - Self.windowInitial)].id }
+        return true
+    }
 
     // MARK: what the scroll view reports
 
@@ -190,21 +409,37 @@ final class ChatScrollCoordinator {
         // now. Reading back again after holding was stopped: hold again.
         if was != .idle && mapped == .idle {
             if was.isUser, machine.mode == .detached, Self.holdsTopRow { holding = true }
-            if holding { topID = topRowNow()?.id }
+            if holding { takeHeldRow() }
+            pumpWindow()
         }
     }
 
     func geometry(_ old: ChatScroll.Metrics, _ new: ChatScroll.Metrics) {
         metrics = new
         ChatScroll.lastDistance = new.distanceFromBottom
-        if new.contentHeight > new.viewport, let store {
-            let n = store.messages.count
-            LaunchMetrics.conversationLaidOut(messages: n, laidOut: n - ChatView.split(n))
+        if !LaunchMetrics.conversationLogged, new.contentHeight > new.viewport, let store {
+            LaunchMetrics.conversationLaidOut(messages: store.messages.count, laidOut: window(in: store.messages).count)
         }
+        #if DEBUG
+        defer { probeHeldRow() }
+        #endif
         if let want = pendingY, abs(new.offsetY - old.offsetY) > 0.5 {
             // Learn how `scrollTo(y:)` maps to the offset (a sane answer only).
             if abs(want - new.offsetY - new.insetTop) < 200 { yBias = want - new.offsetY }
             pendingY = nil
+        }
+        // Following, SwiftUI's bottom anchor moves its offset to keep the end
+        // in view, but while a finger rests on the list (UIKit tracking) the
+        // move never reaches the UIScrollView: the two drift apart, the end
+        // slides down under the finger, and the next touch makes SwiftUI
+        // take UIKit's offset back (the view seemed thrown). Hand UIKit the
+        // anchor's offset; never while the finger drags or a fling coasts.
+        if machine.mode == .following, let sv = scrollView, !sv.isDragging, !sv.isDecelerating,
+           new.offsetY > sv.contentOffset.y + 0.5 {
+            #if DEBUG
+            ChatScroll.pinTrace("UIKit at \(Int(sv.contentOffset.y)), the anchor at \(Int(new.offsetY)): handed over")
+            #endif
+            sv.contentOffset.y = new.offsetY
         }
         send(.scrolled(distance: new.distanceFromBottom))
         // The reader's finger: how far it has moved on the screen. Without
@@ -233,6 +468,9 @@ final class ChatScrollCoordinator {
             ChatScroll.pinTrace("frame dy \(String(format: "%.1f", new.offsetY - old.offsetY)) dh \(String(format: "%.1f", new.contentHeight - old.contentHeight)) finger \(Int(machine.dragged))")
         }
         #endif
+        // Anything moving the list while it rests (a rotation, insets
+        // changing): the held row back where it belongs.
+        if holding, !machine.phase.isUser { holdRow() }
         // The keyboard rising (not the composer's first layout): once it has
         // risen. Its animation, or the hold-to-talk capsule, change the inset
         // every frame, and a scroll to the end per frame piled up animations
@@ -261,54 +499,90 @@ final class ChatScrollCoordinator {
     private func topRowNow() -> (id: String, index: Int)? {
         guard let m = metrics, let store else { return nil }
         let line = m.offsetY + m.insetTop - contentTop + 1
-        var best: (id: String, y: CGFloat)?
-        for (id, y) in rowY where y <= line && y > (best?.y ?? -.infinity) { best = (id, y) }
-        guard let best, let index = store.messages.firstIndex(where: { $0.id == best.id }) else { return nil }
-        return (best.id, index)
+        // Only rows laid out now (`rowY` remembers rows that have left).
+        let messages = store.messages
+        let w = window(in: messages)
+        var best: (index: Int, y: CGFloat)?
+        for i in w {
+            guard let y = rowY[messages[i].id], y <= line else { continue }
+            if y > (best?.y ?? -.infinity) { best = (i, y) }
+        }
+        return best.map { (messages[$0.index].id, $0.index) }
     }
 
     /// A row's place in the content changed (only layout does that, not scrolling).
     func rowMoved(_ id: String, to y: CGFloat) {
-        let old = rowY.updateValue(y, forKey: id)
-        guard holding, id == topID, machine.phase == .idle, let old, let m = metrics, let position else { return }
-        // One correction at a time. One that never moves the list means the
-        // row moves with it (nothing to hold): stop rather than chase it.
-        if pendingY != nil {
-            if ProcessInfo.processInfo.systemUptime - pendingSince > 0.2 {
-                pendingY = nil
-                holding = false
-                ChatScroll.log("stopped holding the top row: scrolling didn't move it back")
-            }
-            return
-        }
-        let d = y - old
-        // Content shorter than the view has nowhere to scroll (and its top
-        // inset holds the alignment's padding, not the bars).
-        guard abs(d) > 0.5, m.contentHeight > m.viewport else { return }
-        let now = ProcessInfo.processInfo.systemUptime
-        corrections = corrections.filter { now - $0 < 1 } + [now]
+        rowY[id] = y
+        #if DEBUG
+        defer { probeHeldRow() }
+        #endif
+        if id == topID { holdRow() }
+    }
+
+    /// Where `id` sits below the top of the view.
+    private func onScreen(_ id: String, _ m: ChatScroll.Metrics) -> CGFloat? {
+        rowY[id].map { $0 + contentTop - (m.offsetY + m.insetTop) }
+    }
+
+    /// Takes the row under the top of the view, and where it is, as the one
+    /// to hold.
+    private func takeHeldRow() {
+        topID = topRowNow()?.id
+        heldAt = topID.flatMap { id in metrics.flatMap { onScreen(id, $0) } }
+        #if DEBUG
+        probeHeldRow()
+        #endif
+    }
+
+    /// Puts the held row back where it was taken, if anything moved it: rows
+    /// above it changing size or arriving, a rotation, the system adjusting
+    /// the offset. The target is absolute (where the row is now, minus where
+    /// it belongs), so corrections can't add up on top of other changes.
+    private func holdRow() {
+        guard holding, !machine.phase.isUser, let id = topID, let held = heldAt, let m = metrics,
+              let position, let now = onScreen(id, m), m.contentHeight > m.viewport else { return }
+        guard abs(now - held) > 0.5 else { return }
+        let t = ProcessInfo.processInfo.systemUptime
+        corrections = corrections.filter { t - $0 < 1 } + [t]
         if corrections.count > Self.correctionsPerSecond {
             holding = false
             corrections = []
-            ChatScroll.log("stopped holding the top row: corrections kept coming")
+            ChatScroll.log("stopped holding the top row: corrections kept coming (a loop)")
             return
         }
-        let target = m.offsetY + (yBias ?? m.insetTop) + d
+        let offset = m.offsetY + (now - held)
+        let target = offset + (yBias ?? m.insetTop)
         pendingY = target
-        pendingSince = now
+        pendingSince = t
         position.wrappedValue.scrollTo(y: target)
         #if DEBUG
         if ChatScroll.pinTraceOn {
-            ChatScroll.pinTrace("holding \(id): moved \(String(format: "%.1f", d)) pt (y \(Int(y)), offset \(Int(m.offsetY)), height \(Int(m.contentHeight)), bias \(Int(yBias ?? -1))), scrolled with it")
+            ChatScroll.pinTrace("holding \(id): \(Int(now)) pt below the top, belongs at \(Int(held)), scrolled by \(Int(now - held))")
         }
         #endif
     }
 
+    #if DEBUG
+    @ObservationIgnored private var heldProbe: (id: String, y: Int)?
+    /// `-pinTrace YES`: where the held row sits below the top of the view,
+    /// each time that changes by more than a point while the list rests
+    /// (ChatScrollUITests checks it stays put through rotations).
+    private func probeHeldRow() {
+        guard ChatScroll.pinTraceOn, holding, machine.phase == .idle, let id = topID, let y = rowY[id], let m = metrics else { return }
+        let onScreen = Int((y + contentTop - (m.offsetY + m.insetTop)).rounded())
+        if let p = heldProbe, p.id == id, abs(p.y - onScreen) <= 1 { return }
+        heldProbe = (id, onScreen)
+        debugLog("[hold] \(id) at \(onScreen) pt below the top")
+    }
+    #endif
+
     // MARK: running the machine
 
     private func send(_ event: ChatScrollMachine.Event) {
+        let was = machine.mode
         for effect in machine.reduce(event) { run(effect) }
         mirror()
+        if machine.mode != was { pumpWindow() }
     }
 
     private func run(_ effect: ChatScrollMachine.Effect) {
@@ -317,13 +591,31 @@ final class ChatScrollCoordinator {
             ChatScroll.log(what)
         case .toEnd(let animated):
             toEnd(animated: animated)
+        case .nearEndThenAnimate:
+            // Every row is laid out exactly, so a screen above the end is
+            // exactly there; then the rest of the way animated.
+            guard let m = metrics, let position, windowHi == nil else { return toEnd(animated: false) }
+            let end = m.contentHeight + m.bottomInset - m.viewport
+            release()
+            position.wrappedValue.scrollTo(y: max(0, end - m.viewport) + (yBias ?? m.insetTop))
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(32))
+                guard machine.mode == .returning, !machine.phase.isUser else { return }
+                withAnimation(.snappy(duration: 0.3)) { position.wrappedValue.scrollTo(edge: .bottom) }
+            }
         case .loadLatestThenEnd:
             Task { @MainActor in
                 await store?.returnToLatest()
                 position?.wrappedValue.scrollTo(edge: .bottom)
             }
         case .center(let id):
-            withAnimation(.snappy) { position?.wrappedValue.scrollTo(id: id, anchor: .center) }
+            Task { @MainActor in
+                // Not laid out: lay it out first (a scroll to a row that
+                // isn't there goes nowhere).
+                if layOut(id) { await awaitRow(id) }
+                release()
+                withAnimation(.snappy) { position?.wrappedValue.scrollTo(id: id, anchor: .center) }
+            }
         case .holdTopRow(let on):
             holding = on && Self.holdsTopRow
             // The row is taken once the list rests (the reader's scroll, or
@@ -339,10 +631,11 @@ final class ChatScrollCoordinator {
                     try? await Task.sleep(for: .milliseconds(100))
                     guard holding, topID == nil else { return }
                     let now = metrics?.offsetY
-                    still = now == last && machine.phase == .idle ? still + 1 : 0
+                    still = now == last && !machine.phase.isUser ? still + 1 : 0
                     last = now
                     if still >= 2 {
-                        topID = topRowNow()?.id
+                        takeHeldRow()
+                        pumpWindow()
                         return
                     }
                 }
@@ -350,11 +643,15 @@ final class ChatScrollCoordinator {
         case .checkLanding:
             landing?.cancel()
             landing = Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(250))
-                for _ in 0..<20 {
+                // The animation takes 0.3 s; with a reply growing, SwiftUI
+                // keeps retargeting it to the moving end and may never say
+                // it ended: once it's near the end (or the time is up), land.
+                try? await Task.sleep(for: .milliseconds(350))
+                for i in 0..<20 {
                     guard !Task.isCancelled, machine.mode == .returning else { return }
-                    if machine.phase == .idle {
-                        send(.landed(distance: metrics?.distanceFromBottom ?? 0))
+                    let d = metrics?.distanceFromBottom ?? 0
+                    if !machine.phase.isUser, machine.phase == .idle || d <= ChatScrollMachine.reattachDistance || i >= 5 {
+                        send(.landed(distance: d))
                         return
                     }
                     try? await Task.sleep(for: .milliseconds(100))
@@ -369,6 +666,13 @@ final class ChatScrollCoordinator {
     /// lets go of the old one and asks for the end a frame later.
     private func toEnd(animated: Bool) {
         guard let position else { return }
+        if layOutTheEnd() {
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(50))
+                toEnd(animated: false)
+            }
+            return
+        }
         let go = {
             if animated {
                 withAnimation(.snappy) { position.wrappedValue.scrollTo(edge: .bottom) }
@@ -377,9 +681,13 @@ final class ChatScrollCoordinator {
             }
         }
         guard position.wrappedValue.edge == .bottom else { return go() }
+        // One at a time (a reply growing sends many).
+        guard !toEndPending else { return }
+        toEndPending = true
         release()
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(17))
+            toEndPending = false
             go()
         }
     }
@@ -399,7 +707,7 @@ final class ChatScrollCoordinator {
         if showsJump != machine.showsJump { showsJump = machine.showsJump }
         if unseenBelow != machine.unseenBelow { unseenBelow = machine.unseenBelow }
         if userScrolling != machine.phase.isUser { userScrolling = machine.phase.isUser }
-        let sticks = machine.mode != .detached && !machine.phase.isUser
+        let sticks = machine.mode != .detached
         if sticksToEnd != sticks { sticksToEnd = sticks }
     }
 }

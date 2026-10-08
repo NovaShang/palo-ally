@@ -55,11 +55,17 @@ enum ChatScroll {
         pinTraced += 1
         debugLog("[pin] \(what), \(Int(debugDistance)) pt from the end")
     }
+    @MainActor static weak var uiScrollView: UIScrollView?
     /// `-scrollTrace YES`: content height / offset as layout sees them (first 20 000 changes).
     @MainActor static let traceOn = UserDefaults.standard.bool(forKey: "scrollTrace")
     @MainActor static func trace(_ g: ScrollGeometry) {
         guard traceOn, traced < 20_000 else { return }
-        let line = "h=\(Int(g.contentSize.height)) y=\(Int(g.contentOffset.y)) vis=\(Int(g.visibleRect.minY))-\(Int(g.visibleRect.maxY)) inset=\(Int(g.contentInsets.top)),\(Int(g.contentInsets.bottom))"
+        var line = "h=\(Int(g.contentSize.height)) y=\(Int(g.contentOffset.y)) vis=\(Int(g.visibleRect.minY))-\(Int(g.visibleRect.maxY)) inset=\(Int(g.contentInsets.top)),\(Int(g.contentInsets.bottom))"
+        if let sv = uiScrollView {
+            // What UIKit holds and shows, beside what SwiftUI reports.
+            let anims = sv.layer.animationKeys()?.joined(separator: ",") ?? ""
+            line += " | ui y=\(Int(sv.contentOffset.y)) h=\(Int(sv.contentSize.height)) shown=\(Int(sv.layer.presentation()?.bounds.origin.y ?? -1))\(anims.isEmpty ? "" : " anim=\(anims)")"
+        }
         guard line != lastTrace else { return }
         lastTrace = line
         traced += 1

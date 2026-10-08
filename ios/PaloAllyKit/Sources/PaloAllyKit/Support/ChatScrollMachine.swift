@@ -67,6 +67,8 @@ public struct ChatScrollMachine: Equatable, Sendable {
     public enum Effect: Equatable, Sendable {
         /// `ScrollPosition.scrollTo(edge: .bottom)`.
         case toEnd(animated: Bool)
+        /// Far away: straight to a screen above the end, then animate the rest.
+        case nearEndThenAnimate
         /// An older stretch is showing: load the live end, then go there.
         case loadLatestThenEnd
         /// Scroll the message to the middle of the view.
@@ -97,6 +99,11 @@ public struct ChatScrollMachine: Equatable, Sendable {
     public private(set) var distance: CGFloat = 0
     /// How far the reader's finger has moved toward older messages.
     public private(set) var dragged: CGFloat = 0
+    /// This touch let go of the end, whether it flung, and how far from the
+    /// end it began.
+    private var detachedThisTouch = false
+    private var flung = false
+    private var distanceAtTouch: CGFloat = 0
     /// Something arrived below since the reader scrolled up: the button's dot.
     public private(set) var unseenBelow = false
 
@@ -111,9 +118,22 @@ public struct ChatScrollMachine: Equatable, Sendable {
         case .phase(let p):
             let was = phase
             phase = p
-            if p.isUser && !was.isUser { dragged = 0 }
+            if p.isUser && !was.isUser {
+                dragged = 0
+                detachedThisTouch = false
+                flung = false
+                distanceAtTouch = distance
+            }
             if was.isUser && !p.isUser { return scrollEnded() }
-            if was == .animating && p == .idle && mode == .returning { return [.checkLanding] }
+            // The way down ended: following from here, exactly on the end
+            // (a reply growing during the animation leaves it a little short,
+            // and the bottom anchor only holds on the very end).
+            if was == .animating && p == .idle && mode == .returning {
+                mode = .following
+                var fx: [Effect] = [.log("returning → following (landed)")]
+                if distance > Self.atEnd { fx.append(.toEnd(animated: false)) }
+                return fx
+            }
             // A scroll of ours to the end that came to rest somewhere else
             // (the lazy history can throw it to where the laid-out end
             // begins, 13 000 pt short): straight there.
@@ -136,14 +156,21 @@ public struct ChatScrollMachine: Equatable, Sendable {
         case .finger(let t):
             dragged = t
             guard phase.isUser, mode != .detached, t >= Self.detachDrag else { return [] }
+            detachedThisTouch = true
             return detach("drag")
 
         case .lifted(let v):
+            if v >= Self.flingSpeed { flung = true }
             guard mode != .detached, v >= Self.flingSpeed else { return [] }
+            detachedThisTouch = true
             return detach("fling")
 
         case .grewBelow:
             if mode == .detached, !nearEnd, !unseenBelow { unseenBelow = true }
+            // Following but a little off the end (a landing that fell short):
+            // the bottom anchor won't hold there, so each growth would push
+            // the end further down. Back onto it.
+            if mode == .following, phase == .idle, distance > Self.atEnd { return [.toEnd(animated: false)] }
             return []
 
         case .bottomInsetGrew:
@@ -164,10 +191,10 @@ public struct ChatScrollMachine: Equatable, Sendable {
             let was = mode
             mode = .returning
             unseenBelow = false
-            // Far away, straight there: an animated trip through the lazy
-            // history crosses estimated rows, and a touch on the way can
-            // stop it where the laid-out end begins (13 000 pt short).
-            let how: Effect = viewingPast ? .loadLatestThenEnd : .toEnd(animated: screens <= 2)
+            // Far away: straight to a screen above the end (every row there
+            // is laid out exactly, so that lands where it says), then the
+            // rest animated.
+            let how: Effect = viewingPast ? .loadLatestThenEnd : screens > 2 ? .nearEndThenAnimate : .toEnd(animated: true)
             return [.log("\(was.rawValue) → returning (jump)"), .holdTopRow(false), how, .checkLanding]
 
         case .reveal(let id):
@@ -207,14 +234,21 @@ public struct ChatScrollMachine: Equatable, Sendable {
             guard distance > Self.atEnd else { return [] }
             return [.toEnd(animated: distance <= Self.animatedReturn)]
         case .detached:
-            guard nearEnd else { return [] }
+            // Near the end, or this touch let go with a short drag (not a
+            // fling): the end may have moved further away while the finger
+            // was down (a reply growing), but what the reader did is what
+            // counts.
+            let shortDrag = detachedThisTouch && !flung && distanceAtTouch <= Self.reattachDistance
+                && dragged < Self.reattachDistance
+            guard nearEnd || shortDrag else { return [] }
             mode = .following
             unseenBelow = false
             return [.log("detached → following (scroll ended near the end)"), .holdTopRow(false), .toEnd(animated: true)]
         case .returning:
-            // A touch stopped the way down without dragging up: finish it.
+            // A touch stopped the way down without dragging up: finish it,
+            // at once (another touch could stop an animation again).
             mode = .following
-            return [.log("returning → following (touched on the way)"), .toEnd(animated: true)]
+            return [.log("returning → following (touched on the way)"), .toEnd(animated: false)]
         }
     }
 }

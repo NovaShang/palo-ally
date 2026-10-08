@@ -22,6 +22,13 @@ final class ChatScrollUITests: XCTestCase {
         continueAfterFailure = true
     }
 
+    override func tearDown() async throws {
+        // A failed rotation test must not leave the next one in landscape.
+        await MainActor.run {
+            if XCUIDevice.shared.orientation != .portrait { XCUIDevice.shared.orientation = .portrait }
+        }
+    }
+
     // MARK: T2
 
     @MainActor
@@ -273,8 +280,7 @@ final class ChatScrollUITests: XCTestCase {
 
     /// From ~40 000 pt up 「回到最新」 used to stop where the fully laid-out
     /// end begins, ~12 900 pt short. Far up by `-demoDetach` (reading from the
-    /// middle of the conversation): flinging there takes XCUI a minute when
-    /// the lazy history keeps measuring rows and the app never looks idle.
+    /// middle of the conversation, ~90 messages back).
     @MainActor
     private func farJump(_ args: [String]) throws {
         let app = launch(args + ["-demoDetach", "YES"])
@@ -296,7 +302,10 @@ final class ChatScrollUITests: XCTestCase {
         let report = (["from \(from) pt up"] + lines.suffix(20)).joined(separator: "\n")
         add(XCTAttachment(string: report))
         print("---- app log\n\(report)")
-        XCTAssertGreaterThanOrEqual(from, 30_000, "didn't get far enough up")
+        // Reading from the middle lays a window of its own out around it
+        // (design §3.4), so how far up that is in points depends on what is
+        // laid out; the jump has to lay the end out again and land on it.
+        XCTAssertGreaterThanOrEqual(from, 2_000, "didn't get far enough up")
         for when in ["+1.2 s", "+3 s", "+5 s"] {
             guard let j = log.lastJump(when) else {
                 XCTFail("no [jump] \(when) line")
@@ -305,6 +314,74 @@ final class ChatScrollUITests: XCTestCase {
             XCTAssertLessThanOrEqual(j.distance, 13, "\(when) after the tap the view was \(j.distance) pt from the end")
             XCTAssertTrue(j.pinned, "\(when) after the tap the view didn't follow the end")
         }
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    // MARK: the row being read stays put
+
+    @MainActor
+    func testHeldRowStaysThroughRotationIdle() throws {
+        try heldRowThroughRotation(["-demoState", "long", "-demoStreamDelay", "600"])
+    }
+
+    @MainActor
+    func testHeldRowStaysThroughRotationWhileStreaming() throws {
+        try heldRowThroughRotation(["-demoState", "stress"])
+    }
+
+    /// Reading from the middle (`-demoDetach`): the window grows above the
+    /// row being read a few rows at a time, then the phone turns to
+    /// landscape and back (every row rewraps). The row stays where it was
+    /// on screen, and once the layout stops changing the corrections stop:
+    /// holding the row doesn't feed itself (next to the old lazy history it
+    /// did, 12 s of main thread), and its breaker never trips.
+    @MainActor
+    private func heldRowThroughRotation(_ args: [String]) throws {
+        let app = launch(args + ["-demoDetach", "YES", "-topRowTrace", "YES"])
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20), "the conversation never appeared")
+        let log = AppLog()
+        XCTAssertTrue(log.wait(timeout: 20) { $0.count("[anchor] reading from") > 0 }, "never went up to read")
+        sleep(5) // the window grows above the row, a step at a time
+        let target = log.lines(containing: ["[anchor] reading from m"]).last
+            .flatMap { l in l.range(of: #"m\d+$"#, options: .regularExpression).map { Int(l[$0].dropFirst()) } } ?? nil
+        let topBefore = log.topRow()
+        func held() -> (id: String, y: Int)? {
+            guard let l = log.lines(containing: ["[hold] "]).last,
+                  let r = l.range(of: #"\[hold\] \S+ at -?\d+ pt"#, options: .regularExpression) else { return nil }
+            let parts = l[r].split(separator: " ")
+            return (String(parts[1]), Int(parts[3]) ?? .min)
+        }
+        guard let before = held() else {
+            XCTFail("no row was held")
+            return
+        }
+        XCUIDevice.shared.orientation = .landscapeLeft
+        sleep(3)
+        let landscape = held()
+        XCUIDevice.shared.orientation = .portrait
+        sleep(4)
+        let after = held()
+        let topAfter = log.topRow()
+        let corrections = log.entries(containing: ["[pin] holding "])
+        let settledSince = Date().addingTimeInterval(-2)
+        let late = corrections.filter { $0.time > settledSince }
+        let report = ["held before: \(before)", "in landscape: \(String(describing: landscape))", "after: \(String(describing: after))",
+                      "\(corrections.count) corrections, \(late.count) in the last 2 s"]
+            + log.lines(containing: ["[hold]", "[scroll]", "stopped holding"]).suffix(30)
+        add(XCTAttachment(string: report.joined(separator: "\n")))
+        print("---- held row\n\(report.joined(separator: "\n"))")
+        XCTAssertEqual(after?.id, before.id, "a different row is held after turning the phone")
+        // The row held is one near the message read (not a row long gone),
+        // and the message at the top of the view is the same as before.
+        if let target, let n = Int(before.id.dropFirst()) {
+            XCTAssertLessThanOrEqual(abs(n - target), 4, "held \(before.id), reading from m\(target)")
+        }
+        XCTAssertEqual(topAfter, topBefore, "a different message is at the top after turning the phone")
+        if let after {
+            XCTAssertLessThanOrEqual(abs(after.y - before.y), 2, "the row being read moved \(after.y - before.y) pt")
+        }
+        XCTAssertEqual(log.count("stopped holding the top row"), 0, "holding the row tripped its breaker")
+        XCTAssertTrue(late.isEmpty, "still correcting with nothing changing: \(late.count) in the last 2 s")
         XCTAssertEqual(app.state, .runningForeground)
     }
 

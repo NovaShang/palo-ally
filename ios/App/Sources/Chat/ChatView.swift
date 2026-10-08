@@ -6,21 +6,6 @@ struct ChatView: View {
     static let readableWidth: CGFloat = 760
     /// Mac: room above the first message for the small floating orb.
     static let macTopMargin: CGFloat = 22
-    /// The latest messages laid out in full, not lazily: more than a tall
-    /// window's worth even when they are all short, so following the end,
-    /// streaming and catch-ups only ever touch exact heights.
-    static let liveTail = 30
-    /// Where the laid-out end begins moves in steps of this many messages,
-    /// not with every message: a row moving from the laid-out end into the
-    /// lazy history loses its exact height, and the scroll view can lurch
-    /// to where the end used to begin (~13 000 pt up in the stress demo).
-    /// The step-3 window replaces this split.
-    static let tailStep = 10
-
-    /// Where the laid-out end begins: 30 to 39 messages from the end.
-    static func split(_ count: Int) -> Int {
-        max(0, (count - liveTail) / tailStep * tailStep)
-    }
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     /// Kept by MainScreen so it survives the layout switching containers.
@@ -131,18 +116,7 @@ struct ChatView: View {
                 withAnimation(.easeOut(duration: 0.6)) { if highlightedID == id { highlightedID = nil } }
             }
         }
-        // A layout switch rebuilds the column: back onto the end if it was there.
-        .onChange(of: model.layout) { scroll.layoutChanged() }
-        .onChange(of: store.messages.last?.id) {
-            // What this device just sent (its echo) always returns to the
-            // live end; anything else arriving marks the jump button.
-            if let last = store.messages.last, last.role == .user, last.seq == 0 {
-                scroll.sent()
-            } else {
-                scroll.grewBelow()
-            }
-        }
-        .onChange(of: store.messages.last?.text.utf8.count) { scroll.grewBelow() }
+        .modifier(ConversationChanges(scroll: scroll))
         .overlay(alignment: .bottom) {
             let showJump = store.viewingPast || scroll.showsJump
             ZStack {
@@ -252,15 +226,17 @@ private struct ConversationRows: View {
 
     var body: some View {
         let messages = store.messages
-        // Where the fully laid-out live end begins (see `liveTail`).
-        let split = ChatView.split(messages.count)
+        // What's laid out: a window of messages, every one measured exactly
+        // (no lazy estimates), chosen by the scroll coordinator (design §3.4).
+        let window = scroll.window(in: messages)
+        let atTheEnd = window.upperBound == messages.count
         VStack(alignment: .leading, spacing: 14) {
-            if store.hasOlderMessages {
+            if window.lowerBound > 0 || store.hasOlderMessages {
+                // Reading up toward the top lays more out on its own; this
+                // is for doing it at once (and for VoiceOver). The message
+                // being read stays where it is.
                 Button {
-                    // The message being read stays where it is as the
-                    // older ones arrive above it (the coordinator holds
-                    // the row at the top).
-                    Task { await store.loadOlder() }
+                    scroll.revealOlder()
                 } label: {
                     if store.isLoadingOlder { ProgressView() } else { Text("看看更早的") }
                 }
@@ -274,34 +250,13 @@ private struct ConversationRows: View {
                 EmptyChatHint()
             }
 
-            // The history: laid out lazily, only what's on screen.
-            // Exactly one view per message (the time stamp lives inside
-            // it): a lazy stack whose ForEach yields a varying number of
-            // views per element has to run every element to count them,
-            // on every layout pass, which froze the Mac for 34 s on a
-            // long conversation.
-            if split > 0 {
-                LazyVStack(alignment: .leading, spacing: 14) {
-                    ForEach(Array(messages[..<split].enumerated()), id: \.element.id) { index, message in
-                        messageRow(message, at: index, exact: false)
-                    }
-                }
+            ForEach(Array(messages[window].enumerated()), id: \.element.id) { offset, message in
+                messageRow(message, at: window.lowerBound + offset)
             }
 
-            // The live end: the latest messages, the working line and
-            // 「试试」, always fully laid out, so every height here is
-            // exact. A lazy stack only estimates the rows it isn't
-            // showing, from the ones it has measured; with replies of
-            // very different lengths, a catch-up inserting messages
-            // next to a streaming reply made each layout pass realize a
-            // different row, which changed the estimates, which moved
-            // the rows back: the content height flipped between two
-            // values forever and the watchdog killed the app.
-            VStack(alignment: .leading, spacing: 14) {
-                ForEach(Array(messages[split...].enumerated()), id: \.element.id) { offset, message in
-                    messageRow(message, at: split + offset, exact: true)
-                }
-
+            // The live end: approvals, the working line and 「试试」 (not
+            // while a stretch far back is laid out on its own).
+            if atTheEnd {
                 ForEach(store.unanchoredPendingApprovals) { approval in
                     ApprovalCard(approval: approval)
                         .id("approval-\(approval.id)")
@@ -336,12 +291,11 @@ private struct ConversationRows: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// One message, with its time stamp when it starts a new stretch.
-    /// `exact`: in the fully laid-out live end. Only those rows report their
-    /// place for holding the row being read: a lazy row's place moves with
-    /// the stack's own estimates, and scrolling to undo that feeds them.
+    /// One message, with its time stamp when it starts a new stretch. It
+    /// reports its place in the content (that changes only when the layout
+    /// does, not when scrolling), for holding the row being read.
     @ViewBuilder
-    private func messageRow(_ message: ChatMessage, at index: Int, exact: Bool) -> some View {
+    private func messageRow(_ message: ChatMessage, at index: Int) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             if showsTimestamp(at: index) {
                 Text(Copy.clock(message.ts))
@@ -361,7 +315,10 @@ private struct ConversationRows: View {
                 }
         }
         .id(message.id)
-        .modifier(ReportsPlace(on: exact) { scroll.rowMoved(message.id, to: $0) })
+        .onGeometryChange(for: CGFloat.self) {
+            $0.frame(in: .named(ChatScrollCoordinator.contentSpace)).minY
+        } action: { scroll.rowMoved(message.id, to: $0) }
+        .onDisappear { scroll.forget(message.id) }
         #if DEBUG
         .modifier(TopRowProbe(id: message.id))
         #endif
@@ -386,20 +343,31 @@ private struct ConversationRows: View {
     }
 }
 
-/// A row's place in the conversation's content (it changes only when the
-/// layout does, not when scrolling), for the coordinator's held row.
-private struct ReportsPlace: ViewModifier {
-    let on: Bool
-    let moved: (CGFloat) -> Void
+/// What the scroll coordinator hears about the conversation changing.
+private struct ConversationChanges: ViewModifier {
+    let scroll: ChatScrollCoordinator
+    @Environment(AppModel.self) private var model
+    @Environment(AppStore.self) private var store
 
     func body(content: Content) -> some View {
-        if on {
-            content.onGeometryChange(for: CGFloat.self) {
-                $0.frame(in: .named(ChatScrollCoordinator.contentSpace)).minY
-            } action: { moved($0) }
-        } else {
-            content
-        }
+        content
+            // A layout switch rebuilds the column: back onto the end if it was there.
+            .onChange(of: model.layout) { scroll.layoutChanged() }
+            .onChange(of: store.messages.last?.id) {
+                // What this device just sent (its echo) always returns to the
+                // live end; anything else arriving marks the jump button.
+                if let last = store.messages.last, last.role == .user, last.seq == 0 {
+                    scroll.sent()
+                } else {
+                    scroll.grewBelow()
+                }
+            }
+            // A reply growing (the one streaming may not be the last message:
+            // a catch-up can land after it).
+            .onChange(of: store.messages.last(where: \.isStreaming)?.text.utf8.count) { scroll.grewBelow() }
+            .onChange(of: store.messages.last?.text.utf8.count) { scroll.grewBelow() }
+            // What's laid out follows the messages (the window, design §3.4).
+            .onChange(of: store.messages.count) { scroll.messagesChanged() }
     }
 }
 

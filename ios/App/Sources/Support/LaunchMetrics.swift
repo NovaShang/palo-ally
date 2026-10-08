@@ -7,7 +7,7 @@ import PaloAllyKit
 /// first laid out with messages in it (`[launch]`), and the app's memory
 /// footprint, the number iOS judges memory by (`[mem]`).
 enum LaunchMetrics {
-    @MainActor private static var conversationLogged = false
+    @MainActor private(set) static var conversationLogged = false
 
     /// The conversation was laid out with `messages` in it, `laidOut` of
     /// them in full: the first time, log how long that took from launch.

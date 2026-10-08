@@ -20,7 +20,15 @@ enum StallWatchdog {
         return 1
         #endif
     }()
-    private static let dumpAfter: TimeInterval = 2
+    /// Past this the breadcrumbs are written too (DEBUG `-stallDumpMs 250`
+    /// for every stall the threshold reports).
+    private static let dumpAfter: TimeInterval = {
+        #if DEBUG
+        let ms = UserDefaults.standard.double(forKey: "stallDumpMs")
+        if ms > 0 { return ms / 1000 }
+        #endif
+        return 2
+    }()
     private static let queue = DispatchQueue(label: "stall-watchdog", qos: .userInitiated)
     /// Called once, from app launch.
     static func start() {
@@ -44,7 +52,7 @@ enum StallWatchdog {
             if !dumped, waited >= dumpAfter {
                 dumped = true
                 let crumbs = Breadcrumbs.shared.snapshot().suffix(20)
-                debugLog("[stall] still stuck after \(Int(dumpAfter)) s; last breadcrumbs:\n  " + crumbs.joined(separator: "\n  "))
+                debugLog("[stall] still stuck after \(Int(dumpAfter * 1000)) ms; last breadcrumbs:\n  " + crumbs.joined(separator: "\n  "))
             }
             if waited >= nextNote {
                 debugLog("[stall] still stuck: \(Int(waited)) s")
