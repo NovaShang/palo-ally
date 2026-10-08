@@ -65,6 +65,9 @@
 		F7BB5BDB265CB2F858DDF473 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C8BBDD7B0248070C25E81AB /* RootView.swift */; };
 		F85644E5A6D8E5CB46FECFA1 /* HardwareKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED44385988595B39B2E86EEC /* HardwareKeyboard.swift */; };
 		FC44EDAAB240F3EB2DFA924B /* VoiceInputOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98B9C22CB72F4B7250A63D55 /* VoiceInputOverlay.swift */; };
+		57A1524E01D493D7D3D22D9E /* ScrollLab.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC683780205CAAF21C706B40 /* ScrollLab.swift */; };
+		B00447331753D1FAD93EA7DD /* ScrollLabUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 855B13DD01233DCE835BC1D4 /* ScrollLabUITests.swift */; };
+		C6ED1A5C9FE5D5A7E56DA9D9 /* TouchScript.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14B78AC4A07BF2DDD009687B /* TouchScript.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -136,6 +139,9 @@
 		F9AE7E7579FE5764F145260C /* MarkdownTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTableView.swift; sourceTree = "<group>"; };
 		FA3D4ABE39C3E8243653D3E7 /* ScrollSnapBackUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollSnapBackUITests.swift; sourceTree = "<group>"; };
 		FB010AC69CB9C0C890D26829 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		BC683780205CAAF21C706B40 /* ScrollLab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollLab.swift; sourceTree = "<group>"; };
+		855B13DD01233DCE835BC1D4 /* ScrollLabUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollLabUITests.swift; sourceTree = "<group>"; };
+		14B78AC4A07BF2DDD009687B /* TouchScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchScript.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -246,6 +252,8 @@
 		A1BDE3EB13E5736E34C5AA67 /* UITests */ = {
 			isa = PBXGroup;
 			children = (
+				14B78AC4A07BF2DDD009687B /* TouchScript.swift */,
+				855B13DD01233DCE835BC1D4 /* ScrollLabUITests.swift */,
 				FA3D4ABE39C3E8243653D3E7 /* ScrollSnapBackUITests.swift */,
 				B7EADFA6C31C6254DED78C80 /* ScrollStressUITests.swift */,
 			);
@@ -255,6 +263,7 @@
 		A5A39901D00EEDD568BA7FA7 /* Support */ = {
 			isa = PBXGroup;
 			children = (
+				BC683780205CAAF21C706B40 /* ScrollLab.swift */,
 				32922EB865184F7F70CAB365 /* AppTheme.swift */,
 				57B6C3C8A61AE25FA5811B53 /* AssistantAvatar.swift */,
 				362F66DA10216A79F79CBB11 /* Copy.swift */,
@@ -415,6 +424,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C6ED1A5C9FE5D5A7E56DA9D9 /* TouchScript.swift in Sources */,
+				B00447331753D1FAD93EA7DD /* ScrollLabUITests.swift in Sources */,
 				92517ECF2D5EC6973D873B27 /* ScrollSnapBackUITests.swift in Sources */,
 				44A392DEF7BF333CB2960BE4 /* ScrollStressUITests.swift in Sources */,
 			);
@@ -424,6 +435,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				57A1524E01D493D7D3D22D9E /* ScrollLab.swift in Sources */,
 				CCF61F9E84E355E2B02DCE4C /* AppModel.swift in Sources */,
 				9B34F0015CBA0682AF1B48BC /* AppTheme.swift in Sources */,
 				32876775778CD8C38491FBB0 /* ApprovalCard.swift in Sources */,

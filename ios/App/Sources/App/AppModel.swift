@@ -11,6 +11,7 @@ let appLog = Logger(subsystem: "com.novashang.paloally", category: "app")
 ///   -demo YES            run against the in-memory demo host
 ///   -demoScreen <name>   chat | library | assistant | settings | pairing | artifact | voice | naming | identity | avatars
 ///                        | file (DEBUG: the Markdown sheet a file card opens)
+///                        | scrollLab (DEBUG: scroll experiments, `-labRun anchor|width|fling|sentinel`)
 ///   -demoTab <name>      watches (目标) | history (履历) | memory; old values tasks → history, approvals → watches
 ///   -pairLink <url>      start pairing with this paloally:// link (automation; skips the open-URL prompt)
 ///   -demoHosts <n>       demo with n assistants (2 shows the switcher)

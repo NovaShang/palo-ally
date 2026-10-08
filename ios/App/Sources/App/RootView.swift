@@ -9,6 +9,8 @@ struct RootView: View {
             #if DEBUG
             if model.launch.screen == "glassDrops" {
                 GlassDropsDemo(theme: model.currentTheme)
+            } else if model.launch.screen == "scrollLab" {
+                ScrollLab()
             } else {
                 screens
             }
