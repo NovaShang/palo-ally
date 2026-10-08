@@ -84,15 +84,18 @@ struct AppLog {
 
     /// The last `[jump] <when>: N pt from the end[ (gliding, closest M in
     /// 0.5 s)], pinned B` line. On the end: within 13 pt, or, while a reply
-    /// streaming in has the view gliding onto the end (a line or a message
-    /// at a time), within 13 pt at some point in the last half second.
+    /// streaming in has the view gliding onto the end, within two lines (60
+    /// pt) at some point in the last half second: at the stress demo's pace
+    /// (150 characters a second) new lines come faster than a glide ends,
+    /// and following trails the end by a line or two all along.
     func lastJump(_ when: String) -> (distance: Int, pinned: Bool, onTheEnd: Bool)? {
         guard let l = lines(containing: ["[jump] \(when):"]).last,
               let d = Self.number(before: "pt from the end", in: l)
         else { return nil }
-        var closest = d
-        if let r = l.range(of: #"closest \d+"#, options: .regularExpression), let c = Int(l[r].dropFirst(8)) { closest = c }
-        return (d, l.hasSuffix("pinned true"), min(d, closest) <= 13)
+        guard let r = l.range(of: #"closest \d+"#, options: .regularExpression), let closest = Int(l[r].dropFirst(8)) else {
+            return (d, l.hasSuffix("pinned true"), d <= 13)
+        }
+        return (d, l.hasSuffix("pinned true"), min(d, closest) <= 60)
     }
 
     /// `[stall] main thread was stuck N ms` entries.
