@@ -108,3 +108,25 @@ struct JumpToLatestButton: View {
         .accessibilityIdentifier("jumpToLatest")
     }
 }
+
+/// The chat's motion: following a reply as it's written, and a sent
+/// message rising to the top (design §3.5). One short ease each, given to
+/// the changes themselves (a reveal tick, a send) so the scroll view's own
+/// bottom anchor carries the list along with them; nothing animates under
+/// Reduce Motion.
+@MainActor
+enum ChatMotion {
+    /// A reveal tick's growth: about three tick-to-tick gaps, so
+    /// consecutive ones blend into one glide.
+    static var follow: Animation? { UIAccessibility.isReduceMotionEnabled ? nil : .easeOut(duration: 0.2) }
+    /// A sent message rising to the top of the view.
+    static var send: Animation? { UIAccessibility.isReduceMotionEnabled ? nil : .smooth(duration: 0.45) }
+
+    /// Runs `body` in a transaction carrying `animation` (none: no animation).
+    static func with<T>(_ animation: Animation?, _ body: () throws -> T) rethrows -> T {
+        var t = Transaction(animation: animation)
+        t.disablesAnimations = animation == nil
+        return try withTransaction(t, body)
+    }
+}
+

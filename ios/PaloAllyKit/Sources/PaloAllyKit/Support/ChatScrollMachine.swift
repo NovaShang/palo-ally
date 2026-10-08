@@ -62,6 +62,10 @@ public struct ChatScrollMachine: Equatable, Sendable {
         case background
         /// Back in the foreground, caught up.
         case foreground
+        /// Growth on the end is being animated (a reveal tick, a send): the
+        /// bottom anchor glides the view along, and on the way the view is
+        /// a little off the end. Off: the glide is over.
+        case gliding(Bool)
     }
 
     public enum Effect: Equatable, Sendable {
@@ -78,6 +82,9 @@ public struct ChatScrollMachine: Equatable, Sendable {
         case holdTopRow(Bool)
         /// Report where the view is once it has stopped (sends `.landed`).
         case checkLanding
+        /// After a send: once its message has risen, onto the end if the view
+        /// stopped short of it.
+        case settleSend
         /// A `[scroll]` line: a change of state, and why.
         case log(String)
     }
@@ -93,6 +100,9 @@ public struct ChatScrollMachine: Equatable, Sendable {
     public static let flingSpeed: CGFloat = 300
     /// Back to the end animated only from this close; farther, at once.
     public static let animatedReturn: CGFloat = 1000
+    /// As far off the end as a glide can leave the view (a burst revealing a
+    /// few paragraphs in one tick); beyond, something else threw it off.
+    public static let glideReach: CGFloat = 1000
 
     public private(set) var mode: Mode = .following
     public private(set) var phase: Phase = .idle
@@ -106,6 +116,11 @@ public struct ChatScrollMachine: Equatable, Sendable {
     private var distanceAtTouch: CGFloat = 0
     /// Something arrived below since the reader scrolled up: the button's dot.
     public private(set) var unseenBelow = false
+    /// The bottom anchor is gliding the view onto the end (see `.gliding`).
+    public private(set) var gliding = false
+    /// Off the end because a glide is on its way, not because something
+    /// threw the view off it.
+    private var midGlide: Bool { gliding && distance <= Self.glideReach }
 
     public init() {}
 
@@ -122,7 +137,9 @@ public struct ChatScrollMachine: Equatable, Sendable {
                 dragged = 0
                 detachedThisTouch = false
                 flung = false
-                distanceAtTouch = distance
+                // Mid-glide the view is a line or two short of the end on its
+                // way there: a touch then starts from the end.
+                distanceAtTouch = midGlide && mode == .following ? 0 : distance
             }
             if was.isUser && !p.isUser { return scrollEnded() }
             // The way down ended: following from here, exactly on the end
@@ -137,7 +154,7 @@ public struct ChatScrollMachine: Equatable, Sendable {
             // A scroll of ours to the end that came to rest somewhere else
             // (the lazy history can throw it to where the laid-out end
             // begins, 13 000 pt short): straight there.
-            if was == .animating && p == .idle && mode == .following && distance > Self.reattachDistance {
+            if was == .animating && p == .idle && mode == .following && !midGlide && distance > Self.reattachDistance {
                 return [.log("following: a scroll to the end stopped short"), .toEnd(animated: false)]
             }
             return []
@@ -148,7 +165,8 @@ public struct ChatScrollMachine: Equatable, Sendable {
             // Following, nobody scrolling, and the view is thrown off the end
             // in one step (rows moving between the lazy history and the laid
             // out end, a load landing): following means on the end, so back.
-            if mode == .following, phase == .idle, before <= Self.reattachDistance, d > Self.reattachDistance {
+            // Not while growth glides in: that's the anchor on its way.
+            if mode == .following, phase == .idle, !midGlide, before <= Self.reattachDistance, d > Self.reattachDistance {
                 return [.log("following: thrown off the end by layout"), .toEnd(animated: false)]
             }
             return []
@@ -169,8 +187,17 @@ public struct ChatScrollMachine: Equatable, Sendable {
             if mode == .detached, !nearEnd, !unseenBelow { unseenBelow = true }
             // Following but a little off the end (a landing that fell short):
             // the bottom anchor won't hold there, so each growth would push
-            // the end further down. Back onto it.
-            if mode == .following, phase == .idle, distance > Self.atEnd { return [.toEnd(animated: false)] }
+            // the end further down. Back onto it. (Not mid-glide: off the
+            // end is where a glide is on its way.)
+            if mode == .following, phase == .idle, !midGlide, distance > Self.atEnd { return [.toEnd(animated: false)] }
+            return []
+
+        case .gliding(let on):
+            gliding = on
+            // Over, and it didn't end on the end: onto it.
+            if !on, mode == .following, !phase.isUser, distance > Self.atEnd {
+                return [.toEnd(animated: true)]
+            }
             return []
 
         case .bottomInsetGrew:
@@ -180,11 +207,15 @@ public struct ChatScrollMachine: Equatable, Sendable {
             return mode == .following && distance > Self.atEnd && !phase.isUser ? [.toEnd(animated: false)] : []
 
         case .sent:
+            // On the end, the bottom anchor carries the sent message up to
+            // the top (its turn's room arrives with it, in the same
+            // animation): nothing to scroll. Anywhere else, to the end.
             let was = mode
             mode = .following
             unseenBelow = false
             var fx: [Effect] = was == .following ? [] : [.log("\(was.rawValue) → following (sent)"), .holdTopRow(false)]
-            fx.append(.toEnd(animated: true))
+            if was != .following || distance > Self.atEnd || phase.isUser { fx.append(.toEnd(animated: true)) }
+            fx.append(.settleSend)
             return fx
 
         case .jump(let viewingPast, let screens):

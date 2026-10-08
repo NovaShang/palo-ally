@@ -147,7 +147,9 @@ struct ChatView: View {
         .overlay { VoiceScrimLayer() }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ComposerView(draft: draft) { text, images, files in
-                store.send(text, images: images, files: files)
+                // The message rises to the top as it appears (design §3.5).
+                scroll.willSend()
+                ChatMotion.with(ChatMotion.send) { store.send(text, images: images, files: files) }
             }
         }
         // The orb over the bar's middle: above the conversation, its edge
@@ -236,7 +238,12 @@ private struct ConversationRows: View {
         // (no lazy estimates), chosen by the scroll coordinator (design §3.4).
         let window = scroll.window(in: messages)
         let atTheEnd = window.upperBound == messages.count
-        VStack(alignment: .leading, spacing: 14) {
+        // The turn a send began gets the room below it (design §3.5): an
+        // echo just sent (so the room comes in the same update as the
+        // message, not the next), else the one the coordinator remembers.
+        let sending = messages.last { $0.role == .user && $0.seq == 0 && $0.delivery == .sending }?.clientMsgId
+        let turn = sending ?? scroll.turnStart
+        ConversationStack(spacing: 14, turnMinHeight: atTheEnd ? scroll.turnRoom : 0) {
             if window.lowerBound > 0 || store.hasOlderMessages {
                 // Reading up toward the top lays more out on its own; this
                 // is for doing it at once (and for VoiceOver). The message
@@ -258,6 +265,7 @@ private struct ConversationRows: View {
 
             ForEach(Array(messages[window].enumerated()), id: \.element.id) { offset, message in
                 messageRow(message, at: window.lowerBound + offset)
+                    .layoutValue(key: TurnStart.self, value: turn != nil && message.clientMsgId == turn)
             }
 
             // The live end: approvals, the working line and 「试试」 (not
@@ -277,7 +285,7 @@ private struct ConversationRows: View {
                 // leaves them behind; only on first use or after a quiet spell.
                 // Its own view: the gate changes on every keystroke, and
                 // that must not re-render the conversation.
-                SuggestionsSlot()
+                SuggestionsSlot(willSend: { scroll.willSend() })
                     .id("suggestions")
             }
         }
@@ -363,7 +371,7 @@ private struct ConversationChanges: ViewModifier {
                 // What this device just sent (its echo) always returns to the
                 // live end; anything else arriving marks the jump button.
                 if let last = store.messages.last, last.role == .user, last.seq == 0 {
-                    scroll.sent()
+                    scroll.sent(turnStart: last.clientMsgId)
                 } else {
                     scroll.grewBelow()
                 }
@@ -611,6 +619,8 @@ struct EmptyChatHint: View {
 /// every keystroke) and keeps the quiet-spell clock itself, so none of that
 /// re-renders the message list around it.
 private struct SuggestionsSlot: View {
+    /// A chip is about to be sent (its message rises like a typed one).
+    let willSend: () -> Void
     @Environment(AppStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
     /// Re-read when a quiet spell may have become long enough.
@@ -623,7 +633,10 @@ private struct SuggestionsSlot: View {
             if shows {
                 SuggestionChips(suggestions: Array(store.suggestions.prefix(store.messages.isEmpty ? 4 : 3)),
                                 greeting: store.messages.isEmpty,
-                                use: { store.use($0) },
+                                use: { s in
+                                    willSend()
+                                    ChatMotion.with(ChatMotion.send) { store.use(s) }
+                                },
                                 dismiss: { s in withAnimation(.snappy) { store.dismiss(s) } })
                     .padding(.top, 2)
                     .transition(.opacity)
@@ -656,3 +669,68 @@ private struct VoiceScrimLayer: View {
         if voice.panelMounted { VoiceScrim(presence: voice.presence) }
     }
 }
+
+/// The conversation's rows, top to bottom, like a leading-aligned VStack,
+/// with one difference: after a send, the turn it began (the sent message
+/// and everything below it) is at least `turnMinHeight` tall, what the
+/// reader could see when sending: the room left empty below until the reply
+/// fills it (design §3.5, the ChatGPT way). On the end, that puts the sent
+/// message at the top of the view, and a reply growing into the room changes
+/// nothing else: the content's height stays put, so the list doesn't move
+/// until the reply outgrows the screen. Worked out in the same layout pass
+/// as the rows, so the room can't lag a frame behind the text that takes it.
+/// (Fixed at the send: the keyboard rising or falling afterwards carries the
+/// content along on its own curve, as anywhere else; a room that followed it
+/// changed the content's height in the keyboard's own animation, and the
+/// list leapt a keyboard's height and slid back.)
+struct ConversationStack: Layout {
+    var spacing: CGFloat
+    /// The turn's least height; 0 for none.
+    var turnMinHeight: CGFloat
+
+    struct Cache {
+        var width: CGFloat?
+        var heights: [CGFloat] = []
+    }
+
+    func makeCache(subviews: Subviews) -> Cache { Cache() }
+    func updateCache(_ cache: inout Cache, subviews: Subviews) { cache = Cache() }
+
+    private func heights(_ subviews: Subviews, width: CGFloat?, _ cache: inout Cache) -> [CGFloat] {
+        if cache.width == width, cache.heights.count == subviews.count { return cache.heights }
+        let proposal = ProposedViewSize(width: width, height: nil)
+        cache.heights = subviews.map { $0.sizeThatFits(proposal).height }
+        cache.width = width
+        return cache.heights
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
+        let width = proposal.width ?? subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
+        let hs = heights(subviews, width: proposal.width, &cache)
+        var y: CGFloat = 0
+        var turnTop: CGFloat?
+        for (i, h) in hs.enumerated() {
+            if i > 0 { y += spacing }
+            if turnTop == nil, subviews[i][TurnStart.self] { turnTop = y }
+            y += h
+        }
+        if let turnTop, turnMinHeight > 0 { y = max(y, turnTop + turnMinHeight) }
+        return CGSize(width: width, height: y)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
+        let hs = heights(subviews, width: proposal.width, &cache)
+        var y = bounds.minY
+        for (i, s) in subviews.enumerated() {
+            s.place(at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading,
+                    proposal: ProposedViewSize(width: bounds.width, height: hs[i]))
+            y += hs[i] + spacing
+        }
+    }
+}
+
+/// The row a send began: the turn below it gets its room (`ConversationStack`).
+struct TurnStart: LayoutValueKey {
+    static let defaultValue = false
+}
+

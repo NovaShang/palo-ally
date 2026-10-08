@@ -165,10 +165,19 @@ struct ChatScrollMachineTests {
         var m = machine(mode, distance: 3000)
         let fx = m.reduce(.sent)
         #expect(m.mode == .following)
-        #expect(fx.last == .toEnd(animated: true))
+        #expect(fx.contains(.toEnd(animated: true)))
+        #expect(fx.last == .settleSend)
         if mode != .following {
             #expect(fx.contains(.holdTopRow(false)))
         }
+    }
+
+    /// On the end, the bottom anchor carries the sent message up (its room
+    /// arrives with it): a scroll of our own would fight that rise.
+    @Test func sendingOnTheEndLeavesTheRiseToTheAnchor() {
+        var m = machine(.following)
+        #expect(m.reduce(.sent) == [.settleSend])
+        #expect(m.mode == .following)
     }
 
     // MARK: detached
@@ -338,5 +347,55 @@ struct ChatScrollMachineTests {
         _ = m.reduce(.scrolled(distance: 140))
         #expect(m.showsJump)
         #expect(!machine(.following, distance: 4000).showsJump)
+    }
+
+    // MARK: gliding
+
+    /// Growth glides in (a reveal tick, a send): on the way the view is off
+    /// the end, and that's not "thrown off", nor a reason to jump onto it.
+    @Test func midGlideOffTheEndIsLeftToTheAnchor() {
+        var m = machine(.following)
+        _ = m.reduce(.gliding(true))
+        #expect(m.reduce(.scrolled(distance: 638)) == [])
+        #expect(m.reduce(.grewBelow) == [])
+        _ = m.reduce(.phase(.animating))
+        #expect(m.reduce(.phase(.idle)) == [])
+        // Over on the end: nothing; over short of it: onto it.
+        _ = m.reduce(.scrolled(distance: 0))
+        #expect(m.reduce(.gliding(false)) == [])
+        _ = m.reduce(.gliding(true))
+        _ = m.reduce(.scrolled(distance: 30))
+        #expect(m.reduce(.gliding(false)) == [.toEnd(animated: true)])
+    }
+
+    /// A touch landing while the anchor glides onto the end (a reply
+    /// streaming fast keeps it a line or two short) starts from the end: a
+    /// short drag up from there still goes back to following.
+    @Test func aShortDragMidGlideGoesBackToTheEnd() {
+        var m = machine(.following)
+        _ = m.reduce(.gliding(true))
+        _ = m.reduce(.scrolled(distance: 60))
+        _ = m.reduce(.phase(.interacting))
+        _ = m.reduce(.finger(20))
+        #expect(m.mode == .detached)
+        _ = m.reduce(.scrolled(distance: 80))
+        let fx = m.reduce(.phase(.idle))
+        #expect(m.mode == .following)
+        #expect(fx.contains(.toEnd(animated: true)))
+    }
+
+    /// A glide leaves the view a few lines short; a screen or more off the
+    /// end is something else throwing it off: back at once, glide or not.
+    @Test func thrownFarOffMidGlideStillGoesBack() {
+        var m = machine(.following)
+        _ = m.reduce(.gliding(true))
+        _ = m.reduce(.scrolled(distance: 20))
+        #expect(m.reduce(.scrolled(distance: 1425)) == [.log("following: thrown off the end by layout"), .toEnd(animated: false)])
+    }
+
+    @Test func aGlideEndingWhileReadingBackMovesNothing() {
+        var m = machine(.detached, distance: 900)
+        _ = m.reduce(.gliding(true))
+        #expect(m.reduce(.gliding(false)) == [])
     }
 }

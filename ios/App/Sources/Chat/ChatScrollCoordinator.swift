@@ -89,6 +89,13 @@ final class ChatScrollCoordinator {
     /// The newest one, when the window stops short of the live end (a search
     /// hit far back); nil: everything to the end.
     private(set) var windowHi: String?
+    /// The message (its client id) the latest send from here began with:
+    /// its turn gets the room below it, so it sits at the top of the view
+    /// with the reply growing underneath (design §3.5). Kept until the next.
+    private(set) var turnStart: String?
+    /// Its room: what the reader could see when it was sent, between the
+    /// bars and the composer (less the list's own padding).
+    private(set) var turnRoom: CGFloat = 0
 
     @ObservationIgnored private var machine = ChatScrollMachine()
     @ObservationIgnored private var position: Binding<ScrollPosition>?
@@ -208,7 +215,26 @@ final class ChatScrollCoordinator {
         }
     }
 
-    func sent() { send(.sent) }
+    /// About to send: the message and its room arrive in an animation (see
+    /// `ChatMotion.send`), and the view glides up with them.
+    func willSend() {
+        measureRoom()
+        glide(for: 0.8)
+    }
+
+    /// The room a turn gets: the height the reader can see now.
+    private func measureRoom() {
+        guard let m = metrics else { return }
+        let room = max(0, m.viewport - m.insetTop - m.bottomInset - 24)
+        if abs(room - turnRoom) > 0.5 { turnRoom = room }
+    }
+
+    /// Something was sent from here (its echo is the last message).
+    func sent(turnStart cid: String?) {
+        if let cid, cid != turnStart { turnStart = cid }
+        if turnRoom == 0 { measureRoom() }
+        send(.sent)
+    }
     func grewBelow() { send(.grewBelow) }
 
     @ObservationIgnored private var followed: (reply: StreamingReply, token: Int)?
@@ -216,6 +242,20 @@ final class ChatScrollCoordinator {
     func follow(_ reply: StreamingReply?) {
         if let f = followed { f.reply.stopListening(f.token) }
         followed = reply.map { r in (r, r.listen { [weak self] _ in self?.grewBelow() }) }
+    }
+
+    @ObservationIgnored private var glideEnd: Task<Void, Never>?
+    /// Growth on the end is gliding in for about `seconds`: on the way, the
+    /// view being off the end is the anchor's doing (`.gliding`).
+    private func glide(for seconds: Double) {
+        if !machine.gliding { send(.gliding(true)) }
+        glideEnd?.cancel()
+        glideEnd = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled else { return }
+            send(.gliding(false))
+            pumpWindow()
+        }
     }
     func layoutChanged() { send(.layoutChanged) }
     func background() {
@@ -323,6 +363,11 @@ final class ChatScrollCoordinator {
             }
             // Fill up to the window above the end (invisible: the bottom
             // anchor keeps the end in place), or let go of what's beyond it.
+            // Not while growth glides in or a scroll of ours runs: rows
+            // arriving above then threw the view a screen or more off the
+            // end (the anchor mid-animation doesn't make up for them). The
+            // glide's end pumps again.
+            if machine.gliding || machine.phase == .animating { return false }
             if w.count < Self.windowSize, w.lowerBound > 0 {
                 setLo(max(n - Self.windowSize, w.lowerBound - Self.windowBatch))
                 return true
@@ -525,6 +570,8 @@ final class ChatScrollCoordinator {
             widthSettle = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(150))
                 guard !Task.isCancelled else { return }
+                // A rotation or a resize: the room fits what's seen now.
+                if turnStart != nil { measureRoom() }
                 send(.layoutChanged)
             }
         }
@@ -675,6 +722,17 @@ final class ChatScrollCoordinator {
                         return
                     }
                 }
+            }
+        case .settleSend:
+            // The sent message rises with the bottom anchor; if the view
+            // wasn't quite on the end, or a touch got in the way, it may
+            // stop short: once the rise is over, onto the end.
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(1000))
+                guard machine.mode == .following, !machine.phase.isUser, !machine.gliding,
+                      let d = metrics?.distanceFromBottom, d > ChatScrollMachine.atEnd else { return }
+                ChatScroll.log("following: a send's rise stopped short")
+                toEnd(animated: true)
             }
         case .checkLanding:
             landing?.cancel()
