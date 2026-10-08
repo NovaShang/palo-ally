@@ -63,4 +63,57 @@ struct MarkdownTableTests {
         #expect(t.header == ["项目", "价格"])
         #expect(t.rows.isEmpty)
     }
+
+    /// Fed a reply piece by piece, the cache gives exactly what splitting
+    /// the whole text gives, at every step (tables, prose, fences with pipes
+    /// inside, blank lines, a table cut mid-row).
+    @Test func segmentCacheMatchesAFullSplitAtEveryStep() {
+        let reply = """
+        先说结论：
+
+        | 方案 | 费用 |
+        |:---|---:|
+        | dev | ¥140 |
+        | Air | ¥0 |
+
+        细节如下，代码里的竖线不是表格：
+
+        ```
+        | 这一行在代码里 |
+        echo a | b
+        ```
+
+        | 月份 | 合计 |
+        |---|---|
+        | 7 月 | ¥358 |
+        最后一段，紧跟在表格后面。
+
+
+        - 一条
+        - 两条
+        """
+        let cache = MarkdownSegmentCache()
+        var text = ""
+        var i = 0
+        var step = 1
+        let chars = Array(reply)
+        while i < chars.count {
+            let n = min(chars.count - i, step)
+            text += String(chars[i..<i + n])
+            i += n
+            step = step % 7 + 1
+            #expect(cache.split(text) == MarkdownSegments.split(text), "differs after \(text.count) characters")
+        }
+        // Not a continuation (a final text that differs): starts over, still right.
+        let other = "完全不同的一段\n\n| a | b |\n|---|---|\n| 1 | 2 |"
+        #expect(cache.split(other) == MarkdownSegments.split(other))
+    }
+
+    @Test func bytePrefix() {
+        #expect("你好，世界".hasBytePrefix("你好"))
+        #expect("你好".hasBytePrefix(""))
+        #expect("".hasBytePrefix(""))
+        #expect(!"你".hasBytePrefix("你好"))
+        #expect(!"abc".hasBytePrefix("abd"))
+    }
 }

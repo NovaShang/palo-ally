@@ -11,9 +11,11 @@ struct ReplyMarkdown: View {
     var onQuote: ((String) -> Void)? = nil
     /// Room the reply leaves on its trailing side; tables may use it.
     var trailingRoom: CGFloat = 0
+    /// A reply being written splits again only from its last segment.
+    @State private var segmentCache = MarkdownSegmentCache()
 
     var body: some View {
-        let segments = MarkdownSegments.split(source)
+        let segments = segmentCache.split(source)
         if !segments.contains(where: { if case .table = $0 { true } else { false } }) {
             SelectableMarkdown(source: source, streaming: streaming, onQuote: onQuote)
         } else {
@@ -91,26 +93,15 @@ struct MarkdownTableView: View {
         let n = table.columnCount
         return TableGrid(columns: n) {
             if let header = table.header {
-                ForEach(0..<n, id: \.self) { c in cell(header[c], column: c, header: true) }
+                TableRowCells(cells: header, alignments: table.alignments, header: true)
                 rule(strong: true)
             }
             let rows = showAll ? table.rows : Array(table.rows.prefix(Self.rowLimit))
             ForEach(Array(rows.enumerated()), id: \.offset) { r, row in
-                ForEach(0..<n, id: \.self) { c in cell(row[c], column: c, header: false) }
+                TableRowCells(cells: row, alignments: table.alignments, header: false)
                 if r < rows.count - 1 { rule(strong: false) }
             }
         }
-    }
-
-    private func cell(_ text: String, column c: Int, header: Bool) -> some View {
-        let align = table.alignments[c]
-        return Text(Self.inline(text))
-            .font(header ? .subheadline.weight(.semibold) : .subheadline)
-            .multilineTextAlignment(align == .center ? .center : align == .trailing ? .trailing : .leading)
-            .padding(.vertical, 7)
-            .padding(.leading, c == 0 ? 0 : 10)
-            .padding(.trailing, c == table.columnCount - 1 ? 0 : 10)
-            .frame(maxWidth: .infinity, alignment: align == .center ? .center : align == .trailing ? .trailing : .leading)
     }
 
     private func rule(strong: Bool) -> some View {
@@ -133,10 +124,37 @@ struct MarkdownTableView: View {
         .animation(.easeOut(duration: 0.2), value: hidden)
     }
 
-    /// Bold, italic, `code` and links inside a cell.
+    /// Bold, italic, `code` and links inside a cell; each cell's text parsed
+    /// once (a table being written gets a row at a time, the rest unchanged).
     static func inline(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+        if let parsed = inlineCache[text] { return parsed }
+        let parsed = (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(text)
+        if inlineCache.count >= 2000 { inlineCache.removeAll(keepingCapacity: true) }
+        inlineCache[text] = parsed
+        return parsed
+    }
+    private static var inlineCache: [String: AttributedString] = [:]
+}
+
+/// One row's cells, laid out by the grid. Its own view, so a row that
+/// hasn't changed isn't built again when one is added below it.
+private struct TableRowCells: View {
+    let cells: [String]
+    let alignments: [MarkdownTable.Alignment]
+    let header: Bool
+
+    var body: some View {
+        ForEach(cells.indices, id: \.self) { c in
+            let align = alignments[c]
+            Text(MarkdownTableView.inline(cells[c]))
+                .font(header ? .subheadline.weight(.semibold) : .subheadline)
+                .multilineTextAlignment(align == .center ? .center : align == .trailing ? .trailing : .leading)
+                .padding(.vertical, 7)
+                .padding(.leading, c == 0 ? 0 : 10)
+                .padding(.trailing, c == cells.count - 1 ? 0 : 10)
+                .frame(maxWidth: .infinity, alignment: align == .center ? .center : align == .trailing ? .trailing : .leading)
+        }
     }
 }
 

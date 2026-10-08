@@ -67,6 +67,8 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
     /// so drawing uses exactly the layout that was measured.
     private var layoutWidthFor: [CGFloat: CGFloat] = [:]
     private var lastExactWidth: CGFloat?
+    /// The width SwiftUI last measured the view at (nil until it has).
+    var measuredWidth: CGFloat? { lastExactWidth }
 
     func fittingSize(width: CGFloat) -> CGSize {
         let exact = (width * 2).rounded(.down) / 2
@@ -127,7 +129,7 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
                 #endif
                 reportedShortVersion = renderVersion
                 measured.removeAll()
-                invalidateIntrinsicContentSize()
+                askForHeight()
             }
         }
     }
@@ -136,8 +138,14 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
     func widthSettled() {
         layoutWidthFor.removeAll()
         measured.removeAll()
-        invalidateIntrinsicContentSize()
+        askForHeight()
         setNeedsLayout()
+    }
+
+    /// Has SwiftUI measure the view again: through its intrinsic size, or
+    /// for the live end of a reply being written, through its model.
+    private func askForHeight() {
+        if reportsHeightItself { heightMayHaveChanged?() } else { invalidateIntrinsicContentSize() }
     }
 
     private static let unbounded: CGFloat = 1e7
@@ -147,7 +155,7 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         let storage = NSTextStorage()
         let layout = MarkdownLayoutManager()
         storage.addLayoutManager(layout)
-        let container = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+        let container = UnboundedHeightContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
         // Set by measuring (fittingSize), not by the frame: see layOut(width:).
         container.widthTracksTextView = false
         container.heightTracksTextView = false
@@ -166,12 +174,25 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
             v.measured.removeAll()
             v.layoutWidthFor.removeAll()
             v.render(source: v.pendingSource, streaming: v.lastStreaming, linkColor: v.lastLinkColor ?? .link)
-            v.invalidateIntrinsicContentSize()
+            v.askForHeight()
         }
         return view
     }
 
     private var pendingSource = ""
+    /// Set for the live end of a reply being written (ReplyTextModel): its
+    /// height goes to SwiftUI through the model, which is told here when it
+    /// may have changed for another reason than new text (Dynamic Type, a
+    /// settled window width, a stale measurement).
+    var reportsHeightItself = false
+    var heightMayHaveChanged: (() -> Void)?
+
+    /// The finished blocks at the start of a reply being written: rendered
+    /// once and never touched again while it grows (design §3.3). Where the
+    /// source's unfinished part begins (UTF-16), and how long the frozen part
+    /// is in the text storage (with the separator after each block).
+    private var frozenSource = 0
+    private var frozenLength = 0
 
     func render(source: String, streaming: Bool, linkColor: UIColor) {
         pendingSource = source
@@ -179,29 +200,98 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         // change must return here, or the whole reply is parsed and laid out
         // again (many times a second while a reply streams in).
         guard source != lastSource || streaming != lastStreaming || !Self.sameColor(linkColor, lastLinkColor) else { return }
+        // The text only grew (a reply being written, or finished as written):
+        // only the unfinished end is parsed and replaced, so TextKit lays out
+        // just that again. Anything else: all of it.
+        let grew = lastSource.map { source.hasBytePrefix($0) } == true && Self.sameColor(linkColor, lastLinkColor)
+            && frozenLength <= textStorage.length && frozenSource <= (source as NSString).length
         lastSource = source
         lastStreaming = streaming
         lastLinkColor = linkColor
         measured.removeAll()
         let began = CACurrentMediaTime()
         defer { Self.noteRender(chars: source.count, since: began) }
-        let rendered = MarkdownRenderer.render(streaming ? source + " ▍" : source)
+        if grew {
+            renderTail(source, streaming: streaming)
+        } else {
+            renderAll(source, streaming: streaming)
+            linkTextAttributes = [.foregroundColor: linkColor]
+        }
         // A code block / table background reaches 6 pt past its text; make
         // room when one is first or last so it isn't clipped.
+        let storage = textStorage
         let pad = { (i: Int) -> CGFloat in
-            guard rendered.length > 0, let kind = rendered.attribute(.paloBlock, at: i, effectiveRange: nil) as? String else { return 0 }
+            guard storage.length > 0, let kind = storage.attribute(.paloBlock, at: i, effectiveRange: nil) as? String else { return 0 }
             return kind == "code" || kind == "table" ? 6 : 0
         }
-        textContainerInset = UIEdgeInsets(top: pad(0), left: 0, bottom: rendered.length > 0 ? pad(rendered.length - 1) : 0, right: 0)
-        attributedText = rendered
-        linkTextAttributes = [.foregroundColor: linkColor]
+        let inset = UIEdgeInsets(top: pad(0), left: 0, bottom: storage.length > 0 ? pad(storage.length - 1) : 0, right: 0)
+        if inset != textContainerInset { textContainerInset = inset }
         // Nothing to select mid-stream; links work once it's finished.
-        isSelectable = !streaming
+        if isSelectable == streaming { isSelectable = !streaming }
         renderVersion += 1
         layoutWidthFor.removeAll()
-        // New text, new height: have SwiftUI ask sizeThatFits again.
-        invalidateIntrinsicContentSize()
+        // New text, new height: have SwiftUI ask sizeThatFits again. Not for
+        // the end of a reply being written: its model reports a new height
+        // only when there is one, since SwiftUI's host turns this into a
+        // layout pass of the whole conversation.
+        if !reportsHeightItself { invalidateIntrinsicContentSize() }
         setNeedsLayout()
+    }
+
+    /// Everything, from scratch; the blocks before the last are frozen.
+    private func renderAll(_ source: String, streaming: Bool) {
+        let body = UIFont.preferredFont(forTextStyle: .body)
+        let blocks = MarkdownRenderer.parse(streaming ? source + " ▍" : source)
+        let out = NSMutableAttributedString()
+        frozenLength = 0
+        for (i, b) in blocks.enumerated() {
+            out.append(MarkdownRenderer.piece(b.block, body: body))
+            if i < blocks.count - 1 {
+                out.append(MarkdownRenderer.separator(body))
+                frozenLength = out.length
+            }
+        }
+        frozenSource = blocks.last.map { Self.utf16Offset(ofLine: $0.line, in: source) } ?? 0
+        attributedText = out
+    }
+
+    /// Only what follows the frozen blocks: parsed again, the blocks that
+    /// have finished meanwhile frozen too, the last (still open) one replaced
+    /// in the text storage.
+    private func renderTail(_ source: String, streaming: Bool) {
+        let body = UIFont.preferredFont(forTextStyle: .body)
+        let tail = (source as NSString).substring(from: frozenSource)
+        let blocks = MarkdownRenderer.parse(streaming ? tail + " ▍" : tail)
+        let replacement = NSMutableAttributedString()
+        var newlyFrozen = 0
+        for (i, b) in blocks.enumerated() {
+            replacement.append(MarkdownRenderer.piece(b.block, body: body))
+            if i < blocks.count - 1 {
+                replacement.append(MarkdownRenderer.separator(body))
+                newlyFrozen = replacement.length
+            }
+        }
+        let storage = textStorage
+        storage.beginEditing()
+        storage.replaceCharacters(in: NSRange(location: frozenLength, length: storage.length - frozenLength), with: replacement)
+        storage.endEditing()
+        frozenLength += newlyFrozen
+        if let last = blocks.last { frozenSource += Self.utf16Offset(ofLine: last.line, in: tail) }
+    }
+
+    /// Where line `n` of `text` begins, in UTF-16 units.
+    private static func utf16Offset(ofLine n: Int, in text: String) -> Int {
+        guard n > 0 else { return 0 }
+        var offset = 0
+        var line = 0
+        for unit in text.utf16 {
+            offset += 1
+            if unit == 10 {
+                line += 1
+                if line == n { return offset }
+            }
+        }
+        return offset
     }
 
     /// Dynamic colors compare by identity; compare what they look like.
@@ -265,6 +355,20 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
     }
 }
 
+/// A text container that stays unbounded in height. A non-scrolling
+/// UITextView sets its container's height to its frame each time the frame
+/// changes (every new line of a reply being written), and measuring set it
+/// back: each change made TextKit invalidate the whole text's layout.
+final class UnboundedHeightContainer: NSTextContainer {
+    override var size: CGSize {
+        get { super.size }
+        set {
+            let s = CGSize(width: newValue.width, height: .greatestFiniteMagnitude)
+            if s != super.size { super.size = s }
+        }
+    }
+}
+
 // MARK: - Block backgrounds
 
 extension NSAttributedString.Key {
@@ -315,7 +419,7 @@ final class MarkdownLayoutManager: NSLayoutManager {
 // MARK: - Markdown → NSAttributedString
 
 enum MarkdownRenderer {
-    private enum Block {
+    fileprivate enum Block {
         case heading(Int, String)
         case paragraph(String)
         case item(level: Int, marker: String, String)
@@ -327,12 +431,24 @@ enum MarkdownRenderer {
 
     static func render(_ source: String) -> NSAttributedString {
         let body = UIFont.preferredFont(forTextStyle: .body)
-        let size = body.pointSize
         let out = NSMutableAttributedString()
         let blocks = parse(source)
-        for (i, block) in blocks.enumerated() {
-            let last = i == blocks.count - 1
-            let piece: NSAttributedString
+        for (i, b) in blocks.enumerated() {
+            out.append(piece(b.block, body: body))
+            if i < blocks.count - 1 { out.append(separator(body)) }
+        }
+        return out
+    }
+
+    /// Between two blocks.
+    fileprivate static func separator(_ body: UIFont) -> NSAttributedString {
+        NSAttributedString(string: "\n", attributes: [.font: body])
+    }
+
+    /// One block, styled.
+    fileprivate static func piece(_ block: Block, body: UIFont) -> NSAttributedString {
+        let size = body.pointSize
+        let piece: NSAttributedString
             switch block {
             case let .heading(level, text):
                 let scale: CGFloat = [1.3, 1.15, 1.05][min(level, 3) - 1]
@@ -373,10 +489,7 @@ enum MarkdownRenderer {
                 let style = paragraph(size: size, before: 4, after: 8)
                 piece = NSAttributedString(string: "\u{00A0}", attributes: [.font: body, .paragraphStyle: style, .paloBlock: "rule"])
             }
-            out.append(piece)
-            if !last { out.append(NSAttributedString(string: "\n", attributes: [.font: body])) }
-        }
-        return out
+        return piece
     }
 
     private static func paragraph(size: CGFloat, before: CGFloat = 0, after: CGFloat = 0) -> NSMutableParagraphStyle {
@@ -451,29 +564,36 @@ enum MarkdownRenderer {
 
     // MARK: parsing (line-based, GitHub-flavored enough for chat)
 
-    private static func parse(_ source: String) -> [Block] {
-        var blocks: [Block] = []
+    /// The blocks, each with the line it starts on. Line by line, forward
+    /// only: once the next block has begun, a block never changes, which is
+    /// what lets a reply being written freeze its finished blocks.
+    fileprivate static func parse(_ source: String) -> [(block: Block, line: Int)] {
+        var blocks: [(block: Block, line: Int)] = []
         var para: [String] = []
+        var paraStart = 0
         var quote: [String] = []
+        var quoteStart = 0
         var table: [[String]] = []
+        var tableStart = 0
         var code: [String]? = nil
+        var codeStart = 0
 
         func flush() {
-            if !para.isEmpty { blocks.append(.paragraph(para.joined(separator: "\u{2028}"))); para = [] }
-            if !quote.isEmpty { blocks.append(.quote(quote)); quote = [] }
-            if !table.isEmpty { blocks.append(.table(table)); table = [] }
+            if !para.isEmpty { blocks.append((.paragraph(para.joined(separator: "\u{2028}")), paraStart)); para = [] }
+            if !quote.isEmpty { blocks.append((.quote(quote), quoteStart)); quote = [] }
+            if !table.isEmpty { blocks.append((.table(table), tableStart)); table = [] }
         }
 
-        for raw in source.components(separatedBy: "\n") {
+        for (ln, raw) in source.components(separatedBy: "\n").enumerated() {
             let line = raw.trimmingCharacters(in: .whitespaces)
             if var c = code {
-                if line.hasPrefix("```") { blocks.append(.code(c)); code = nil } else { c.append(raw); code = c }
+                if line.hasPrefix("```") { blocks.append((.code(c), codeStart)); code = nil } else { c.append(raw); code = c }
                 continue
             }
-            if line.hasPrefix("```") { flush(); code = []; continue }
+            if line.hasPrefix("```") { flush(); code = []; codeStart = ln; continue }
             if line.isEmpty { flush(); continue }
             if line.hasPrefix("|") {
-                if table.isEmpty { flush() }
+                if table.isEmpty { flush(); tableStart = ln }
                 let cells = line.trimmingCharacters(in: CharacterSet(charactersIn: "|"))
                     .components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
                 // The |---|:--:| separator row carries no text.
@@ -481,19 +601,20 @@ enum MarkdownRenderer {
                 continue
             }
             if !table.isEmpty { flush() }
-            if line == "---" || line == "***" || line == "___" { flush(); blocks.append(.rule); continue }
-            if let h = heading(line) { flush(); blocks.append(.heading(h.0, h.1)); continue }
+            if line == "---" || line == "***" || line == "___" { flush(); blocks.append((.rule, ln)); continue }
+            if let h = heading(line) { flush(); blocks.append((.heading(h.0, h.1), ln)); continue }
             let level = min(leadingSpaces(raw) / 2, 4)
-            if let b = bullet(line) { flush(); blocks.append(.item(level: level, marker: b.0, b.1)); continue }
-            if let n = numbered(line) { flush(); blocks.append(.item(level: level, marker: "\(n.0).", n.1)); continue }
+            if let b = bullet(line) { flush(); blocks.append((.item(level: level, marker: b.0, b.1), ln)); continue }
+            if let n = numbered(line) { flush(); blocks.append((.item(level: level, marker: "\(n.0).", n.1), ln)); continue }
             if line.hasPrefix(">") {
-                if quote.isEmpty { flush() }
+                if quote.isEmpty { flush(); quoteStart = ln }
                 quote.append(String(line.dropFirst()).trimmingCharacters(in: .whitespaces)); continue
             }
             if !quote.isEmpty { flush() }
+            if para.isEmpty { paraStart = ln }
             para.append(line)
         }
-        if let c = code { blocks.append(.code(c)) } // still streaming a code block
+        if let c = code { blocks.append((.code(c), codeStart)) } // still streaming a code block
         flush()
         return blocks
     }
