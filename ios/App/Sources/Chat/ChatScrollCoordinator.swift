@@ -43,6 +43,14 @@ final class ChatScrollCoordinator {
     /// being kept: stop until the reader scrolls again. (The window growing
     /// above corrects once per step, at most ~20 a second.)
     static let correctionsPerSecond = 40
+    /// A correction already on its way isn't asked for again (DEBUG
+    /// `-holdDedupe NO` to compare).
+    static let dedupesCorrections: Bool = {
+        #if DEBUG
+        if UserDefaults.standard.object(forKey: "holdDedupe") != nil { return UserDefaults.standard.bool(forKey: "holdDedupe") }
+        #endif
+        return true
+    }()
 
     /// Messages laid out while following the end (DEBUG `-windowSize`).
     /// Each costs memory while laid out (the long demo's answers about 3 MB
@@ -104,8 +112,10 @@ final class ChatScrollCoordinator {
     /// `scrollTo(y:)` counts from below the top inset; learned from where a
     /// correction actually lands.
     @ObservationIgnored private var yBias: CGFloat?
-    /// When the last corrections were made (for `correctionsPerSecond`).
-    @ObservationIgnored private var corrections: [TimeInterval] = []
+    /// The corrections of the last second (for `correctionsPerSecond`):
+    /// when, by how much, and what asked (the held row's place changing, or
+    /// the scroll geometry).
+    @ObservationIgnored private var corrections: [(at: TimeInterval, by: CGFloat, fromRow: Bool)] = []
     /// A correction asked for and not yet seen in the geometry, and when.
     @ObservationIgnored private var pendingY: CGFloat?
     @ObservationIgnored private var pendingSince: TimeInterval = 0
@@ -609,7 +619,7 @@ final class ChatScrollCoordinator {
         #endif
         // Anything moving the list while it rests (a rotation, insets
         // changing): the held row back where it belongs.
-        if holding, !machine.phase.isUser { holdRow() }
+        if holding, !machine.phase.isUser { holdRow(fromRow: false) }
         // The keyboard rising (not the composer's first layout): once it has
         // risen. Its animation, or the hold-to-talk capsule, change the inset
         // every frame, and a scroll to the end per frame piled up animations
@@ -657,7 +667,7 @@ final class ChatScrollCoordinator {
         #if DEBUG
         defer { probeHeldRow() }
         #endif
-        if id == topID { holdRow() }
+        if id == topID { holdRow(fromRow: true) }
     }
 
     /// Where `id` sits below the top of the view.
@@ -679,20 +689,28 @@ final class ChatScrollCoordinator {
     /// above it changing size or arriving, a rotation, the system adjusting
     /// the offset. The target is absolute (where the row is now, minus where
     /// it belongs), so corrections can't add up on top of other changes.
-    private func holdRow() {
+    private func holdRow(fromRow: Bool) {
         guard holding, !machine.phase.isUser, let id = topID, let held = heldAt, let m = metrics,
               let position, let now = onScreen(id, m), m.contentHeight > m.viewport else { return }
         guard abs(now - held) > 0.5 else { return }
-        let t = ProcessInfo.processInfo.systemUptime
-        corrections = corrections.filter { t - $0 < 1 } + [t]
-        if corrections.count > Self.correctionsPerSecond {
-            holding = false
-            corrections = []
-            ChatScroll.log("stopped holding the top row: corrections kept coming (a loop)")
-            return
-        }
         let offset = m.offsetY + (now - held)
         let target = offset + (yBias ?? m.insetTop)
+        let t = ProcessInfo.processInfo.systemUptime
+        // The same correction is already on its way (a row moving reports
+        // both its new place and the new geometry in one frame, before the
+        // first scroll lands): once is enough. Twice per change had window
+        // growth above the reader alone reach the breaker's rate.
+        if Self.dedupesCorrections, let p = pendingY, abs(p - target) < 0.5, t - pendingSince < 0.1 { return }
+        corrections = corrections.filter { t - $0.at < 1 } + [(t, now - held, fromRow)]
+        if corrections.count > Self.correctionsPerSecond {
+            // What it saw, for the next time it happens (numbers only).
+            let sizes = corrections.map { abs($0.by) }.sorted()
+            let rows = corrections.filter(\.fromRow).count
+            holding = false
+            corrections = []
+            ChatScroll.log("stopped holding the top row: corrections kept coming (a loop): \(sizes.count) in a second, \(rows) as its row moved, \(sizes.count - rows) as the geometry changed, by \(Int(sizes[sizes.count / 2])) pt typically, \(Int(sizes.last ?? 0)) at most, scroll \(machine.phase.rawValue), window growing \(windowTask != nil)")
+            return
+        }
         pendingY = target
         pendingSince = t
         position.wrappedValue.scrollTo(y: target)
