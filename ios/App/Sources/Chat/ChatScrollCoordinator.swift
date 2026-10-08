@@ -172,7 +172,13 @@ final class ChatScrollCoordinator {
     func attach(position: Binding<ScrollPosition>, store: AppStore, contentTop: CGFloat) {
         self.position = position
         self.store = store
-        store.willChangeTheEnd = { [weak self] in self?.settleOnTheEnd() }
+        // While the list glides along the end, other changes there glide
+        // with it (see `AppStore.changingTheEnd`).
+        store.changingTheEnd = { [weak self] apply in
+            guard let self, machine.gliding, machine.mode == .following, !machine.phase.isUser else { return apply() }
+            glide(for: 0.3)
+            ChatMotion.with(ChatMotion.follow, apply)
+        }
         self.contentTop = contentTop
         pumpWindow()
     }
@@ -318,16 +324,6 @@ final class ChatScrollCoordinator {
         glideTrail = []
         ChatScroll.log("following: left behind mid-glide")
         toEnd(animated: true)
-    }
-
-    /// Something is about to change near the end mid-reply (a catch-up's
-    /// messages): mid-glide, onto the end at once first, so the bottom
-    /// anchor holds through it (see `AppStore.willChangeTheEnd`).
-    func settleOnTheEnd() {
-        guard machine.gliding, machine.mode == .following, !machine.phase.isUser, let position else { return }
-        guard (metrics?.distanceFromBottom ?? 0) > ChatScrollMachine.atEnd else { return }
-        release()
-        position.wrappedValue.scrollTo(edge: .bottom)
     }
 
     @ObservationIgnored private var glideEnd: Task<Void, Never>?
