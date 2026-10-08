@@ -25,6 +25,8 @@ public actor DemoHost {
     /// Params of the most recent request per method.
     public private(set) var lastParams: [String: JSONValue] = [:]
     private var idCounter = 0
+    /// The reply being streamed right now (sync's `streaming`).
+    private var writing: SyncResult.Streaming?
 
     /// The computer name the demo host reports (a second demo host shows the
     /// assistant switcher).
@@ -305,9 +307,11 @@ public actor DemoHost {
         var acc = ""
         for piece in DemoHost.chunks(reply) {
             acc += piece
+            writing = SyncResult.Streaming(id: rid, text: acc)
             emit(RPCEventName.chatDelta, ChatDelta(id: rid, text: piece))
             await pause(0.02)
         }
+        writing = nil
         seq += 1
         let final = ChatMessage(seq: seq, id: rid, role: .assistant, kind: .text, text: acc,
                                 channel: .app, ts: Date().epochMillis)
@@ -328,9 +332,11 @@ public actor DemoHost {
         var acc = ""
         for piece in DemoHost.chunks(reply) {
             acc += piece
+            writing = SyncResult.Streaming(id: rid, text: acc)
             emit(RPCEventName.chatDelta, ChatDelta(id: rid, text: piece))
             await pause(0.02)
         }
+        writing = nil
         seq += 1
         let final = ChatMessage(seq: seq, id: rid, role: .assistant, kind: .text, text: acc,
                                 channel: .app, ts: Date().epochMillis)
@@ -436,7 +442,8 @@ public actor DemoHost {
             }
             return try .from(SyncResult(seq: seq, messages: msgs, tasks: tasks, approvals: approvals, questions: questions,
                                         watches: watches,
-                                        artifacts: artifacts, settings: settings, status: status))
+                                        artifacts: artifacts, settings: settings, status: status,
+                                        streaming: writing))
         case RPCMethod.chatSend:
             let text = p["text"]?.stringValue ?? ""
             let cid = p["clientMsgId"]?.stringValue
@@ -691,9 +698,11 @@ public actor DemoHost {
         var acc = ""
         for piece in DemoHost.chunks(reply) {
             acc += piece
+            writing = SyncResult.Streaming(id: rid, text: acc)
             emit(RPCEventName.chatDelta, ChatDelta(id: rid, text: piece))
             await pause(0.05)
         }
+        writing = nil
         seq += 1
         let final = ChatMessage(seq: seq, id: rid, role: .assistant, kind: taskToRun == nil ? .text : .task, text: acc,
                                 channel: .app, ts: Date().epochMillis, taskId: taskToRun?.id)

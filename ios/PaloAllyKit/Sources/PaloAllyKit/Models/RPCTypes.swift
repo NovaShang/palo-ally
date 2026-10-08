@@ -125,14 +125,31 @@ public struct SyncResult: Codable, Sendable {
     public var artifacts: [Artifact]?
     public var settings: HostSettings?
     public var status: HostStatus?
+    /// The reply the host is writing right now, if any (hosts since
+    /// 7d64847): its whole text so far. It replaces what the client holds
+    /// for that id; the `chat.delta` events after it append to it.
+    public var streaming: Streaming?
+
+    /// `{id, text}` of a reply still being written.
+    public struct Streaming: Codable, Sendable, Equatable {
+        public var id: String
+        public var text: String
+        public init(id: String, text: String) { self.id = id; self.text = text }
+        public init(from decoder: Decoder) throws {
+            let l = try Lenient(decoder)
+            id = l.string("id", or: "")
+            text = l.string("text", or: "")
+        }
+    }
 
     public init(seq: Int64, messages: [ChatMessage], tasks: [AllyTask]? = nil, approvals: [Approval]? = nil,
                 questions: [Question]? = nil,
                 watches: [Watch]? = nil, artifacts: [Artifact]? = nil, settings: HostSettings? = nil,
-                status: HostStatus? = nil) {
+                status: HostStatus? = nil, streaming: Streaming? = nil) {
         self.seq = seq; self.messages = messages; self.tasks = tasks; self.approvals = approvals
         self.questions = questions
         self.watches = watches; self.artifacts = artifacts; self.settings = settings; self.status = status
+        self.streaming = streaming
     }
 
     public init(from decoder: Decoder) throws {
@@ -146,6 +163,8 @@ public struct SyncResult: Codable, Sendable {
         artifacts = l.expect("artifacts", l.array(Artifact.self, "artifacts"))
         settings = l.expect("settings", l.decode(HostSettings.self, "settings"))
         status = l.expect("status", l.decode(HostStatus.self, "status"))
+        // Absent on older hosts and whenever nothing is being written.
+        streaming = l.decode(Streaming.self, "streaming").flatMap { $0.id.isEmpty ? nil : $0 }
     }
 
     /// Max messages a `sync{sinceSeq}` returns per call (design.md §5.3).

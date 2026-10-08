@@ -20,7 +20,10 @@ public enum RPCError: Error, LocalizedError, Equatable {
 public enum RPCInbound: Sendable {
     case connected
     case disconnected(DisconnectReason)
-    case event(name: String, data: JSONValue)
+    /// `index`: this event's place among all events received (from 1). A
+    /// response says how many events came before it (`callMarked`), which
+    /// tells which events the host sent before and after it answered.
+    case event(name: String, data: JSONValue, index: Int)
 }
 
 /// Parsed application message (design.md §5.3).
@@ -62,7 +65,9 @@ public actor RPCClient {
     public nonisolated let transport: any HostTransport
 
     private var nextID = 1
-    private var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
+    private var pending: [Int: CheckedContinuation<(JSONValue, Int), Error>] = [:]
+    /// Events received so far (each response is stamped with it).
+    private var eventCount = 0
     private var pumpTask: Task<Void, Never>?
     private var senderTask: Task<Void, Never>?
     private let outbox: AsyncStream<(Int, Data)>.Continuation
@@ -118,11 +123,12 @@ public actor RPCClient {
             guard let msg = WireMessage.parse(data) else { return }
             switch msg {
             case .response(let id, let result):
-                pending.removeValue(forKey: id)?.resume(returning: result)
+                pending.removeValue(forKey: id)?.resume(returning: (result, eventCount))
             case .errorResponse(let id, let message):
                 pending.removeValue(forKey: id)?.resume(throwing: RPCError.remote(message))
             case .event(let name, let data):
-                inboundContinuation.yield(.event(name: name, data: data))
+                eventCount += 1
+                inboundContinuation.yield(.event(name: name, data: data, index: eventCount))
             case .request:
                 break // host → client requests are not part of the protocol yet
             }
@@ -156,12 +162,20 @@ public actor RPCClient {
 
     /// Sends a request and waits for its result.
     public func callRaw<P: Encodable & Sendable>(_ method: String, params: P, timeout: Double? = nil) async throws -> JSONValue {
+        try await callRawMarked(method, params: params, timeout: timeout).result
+    }
+
+    /// The result, and how many events arrived before it: the events and the
+    /// result reach the main actor by different paths, so one the host sent
+    /// after answering can be applied before the result is.
+    public func callRawMarked<P: Encodable & Sendable>(_ method: String, params: P,
+                                                       timeout: Double? = nil) async throws -> (result: JSONValue, eventsBefore: Int) {
         guard isConnected else { throw RPCError.notConnected }
         let id = nextID
         nextID += 1
         let data = try JSONEncoder().encode(RequestEnvelope(id: id, method: method, params: params))
         let limit = timeout ?? defaultTimeout
-        return try await withCheckedThrowingContinuation { (c: CheckedContinuation<JSONValue, Error>) in
+        return try await withCheckedThrowingContinuation { (c: CheckedContinuation<(JSONValue, Int), Error>) in
             pending[id] = c
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(limit))
@@ -180,6 +194,13 @@ public actor RPCClient {
                                                             timeout: Double? = nil) async throws -> R {
         let raw = try await callRaw(method, params: params, timeout: timeout)
         do { return try raw.decode(R.self) } catch { throw RPCError.badResponse }
+    }
+
+    /// `call`, plus how many events arrived before the result (`callRawMarked`).
+    public func callMarked<P: Encodable & Sendable, R: Decodable>(_ method: String, params: P, as: R.Type = R.self,
+                                                                  timeout: Double? = nil) async throws -> (result: R, eventsBefore: Int) {
+        let (raw, mark) = try await callRawMarked(method, params: params, timeout: timeout)
+        do { return (try raw.decode(R.self), mark) } catch { throw RPCError.badResponse }
     }
 
     public var pendingCount: Int { pending.count }

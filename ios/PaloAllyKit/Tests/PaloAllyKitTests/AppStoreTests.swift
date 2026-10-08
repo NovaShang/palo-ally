@@ -179,6 +179,97 @@ struct AppStoreTests {
         #expect(store.messages[0].text == "今天天气不错")
     }
 
+    // MARK: reconnecting mid-reply (sync's `streaming`)
+
+    @Test func syncMidReplyStartsTheReplyAndLaterDeltasAppend() async throws {
+        let host = ManualHost()
+        host.syncResult = SyncResult(seq: 0, messages: [], status: HostStatus(online: true, busy: true),
+                                     streaming: .init(id: "r1", text: "写到一半"))
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { store.connection == .online })
+        #expect(store.messages.map(\.id) == ["r1"])
+        #expect(store.messages[0].text == "写到一半")
+        #expect(store.messages[0].isStreaming)
+        host.event("chat.delta", ["id": "r1", "text": "，接着写"])
+        #expect(await until { store.messages.first?.text == "写到一半，接着写" })
+        host.event("chat.message", ["seq": 1, "id": "r1", "role": "assistant", "kind": "text", "text": "写到一半，接着写完了", "channel": "app", "ts": 1])
+        #expect(await until { store.messages.first?.isStreaming == false })
+        #expect(store.messages.map(\.text) == ["写到一半，接着写完了"])
+    }
+
+    @Test func syncMidReplyReplacesTheTextWeHad() async throws {
+        let host = ManualHost()
+        host.syncResult = SyncResult(seq: 1, messages: [ChatMessage(seq: 1, id: "u1", role: .user, text: "写点东西", ts: 1)],
+                                     status: HostStatus(online: true, busy: true))
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { store.connection == .online })
+        host.event("chat.delta", ["id": "r1", "text": "写到"])
+        #expect(await until { store.messages.last?.text == "写到" })
+        // The link drops; the deltas sent meanwhile never arrive.
+        host.transport.simulateDisconnect()
+        #expect(await until { store.connection != .online })
+        host.syncResult = SyncResult(seq: 1, messages: [], status: HostStatus(online: true, busy: true),
+                                     streaming: .init(id: "r1", text: "写到一半了"))
+        await host.transport.simulateConnect()
+        #expect(await until { store.connection == .online })
+        #expect(store.messages.map(\.id) == ["u1", "r1"])
+        #expect(store.messages[1].text == "写到一半了")
+        #expect(store.messages[1].isStreaming)
+        host.event("chat.delta", ["id": "r1", "text": "，快写完了"])
+        #expect(await until { store.messages.last?.text == "写到一半了，快写完了" })
+    }
+
+    @Test func syncStreamingForAFinishedReplyIsIgnored() async throws {
+        let store = AppStore(transport: InMemoryTransport(autoConnect: false))
+        store.receive(ChatMessage(seq: 1, id: "r1", role: .assistant, text: "写完了", ts: 1))
+        store.applySync(SyncResult(seq: 1, messages: [], streaming: .init(id: "r1", text: "写到")), since: 1, eventsBefore: 0)
+        #expect(store.messages.map(\.text) == ["写完了"])
+        #expect(store.messages[0].isStreaming == false)
+    }
+
+    /// The sync answer and the deltas reach the main actor by different
+    /// paths: a delta the host sent after answering can be applied first,
+    /// and one it sent before can come after. Either way each piece of text
+    /// shows exactly once, in order.
+    @Test func syncTextAndDeltasThatOvertookItMergeInOrder() async throws {
+        let store = AppStore(transport: InMemoryTransport(autoConnect: false))
+        func delta(_ text: String, _ index: Int) {
+            store.apply(event: "chat.delta", data: ["id": "r1", "text": .string(text)], index: index)
+        }
+        delta("写到", 1)
+        store.syncing = true
+        delta("一半", 2)     // sent before the host answered: in its text
+        delta("，然后", 3)   // sent after it answered, but here first
+        store.applySync(SyncResult(seq: 0, messages: [], streaming: .init(id: "r1", text: "写到一半")),
+                        since: 0, eventsBefore: 2)
+        store.syncing = false
+        delta("再写", 4)
+        store.flushDeltas()
+        #expect(store.messages.map(\.text) == ["写到一半，然后再写"])
+
+        // The other way round: the answer first, then a delta it already holds.
+        let other = AppStore(transport: InMemoryTransport(autoConnect: false))
+        other.apply(event: "chat.delta", data: ["id": "r2", "text": "写到"], index: 1)
+        other.syncing = true
+        other.applySync(SyncResult(seq: 0, messages: [], streaming: .init(id: "r2", text: "写到一半")),
+                        since: 0, eventsBefore: 2)
+        other.syncing = false
+        other.apply(event: "chat.delta", data: ["id": "r2", "text": "一半"], index: 2)
+        other.apply(event: "chat.delta", data: ["id": "r2", "text": "，然后"], index: 3)
+        other.flushDeltas()
+        #expect(other.messages.map(\.text) == ["写到一半，然后"])
+    }
+
+    @Test func syncResultDecodesStreaming() throws {
+        let json: JSONValue = ["seq": 3, "messages": [], "streaming": ["id": "r9", "text": "写到一半"]]
+        let r = try json.decode(SyncResult.self)
+        #expect(r.streaming == SyncResult.Streaming(id: "r9", text: "写到一半"))
+        let none = try (["seq": 3, "messages": []] as JSONValue).decode(SyncResult.self)
+        #expect(none.streaming == nil)
+    }
+
     @Test func broadcastBeforeSendResponseMergesByClientMsgId() async throws {
         let host = ManualHost()
         let store = AppStore(transport: host.transport)

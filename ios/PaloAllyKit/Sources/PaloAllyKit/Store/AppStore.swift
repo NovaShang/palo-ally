@@ -105,10 +105,20 @@ public final class AppStore {
     /// don't run per token.
     private var pendingDeltas: [String: String] = [:]
     private var deltaFlushScheduled = false
+    /// Deltas applied while a sync is out, with their event index. A sync's
+    /// `streaming` text holds every delta the host sent before answering and
+    /// none after; one sent after can still reach us before the answer does
+    /// (the two travel by different paths), and goes back on after the text
+    /// is replaced.
+    @ObservationIgnored private var syncJournal: [(index: Int, id: String, text: String)] = []
+    /// Replies whose text a sync replaced: the last event index the host had
+    /// sent by then. Deltas up to it are already in that text.
+    @ObservationIgnored private var streamMarks: [String: Int] = [:]
     /// Deltas received (breadcrumbs note every 20th).
     @ObservationIgnored private var deltaCount = 0
     private var started = false
-    private var syncing = false
+    /// A `sync` is out (internal for tests: see `syncJournal`).
+    var syncing = false
     private var resyncRequested = false
     private var pushRegistration: PushRegisterParams?
     private var inboundTask: Task<Void, Never>?
@@ -262,8 +272,8 @@ public final class AppStore {
             case .network(let m): connection = .offline(m)
             case .rejected(let m): connection = .rejected(m)
             }
-        case .event(let name, let data):
-            apply(event: name, data: data)
+        case .event(let name, let data, let index):
+            apply(event: name, data: data, index: index)
         }
     }
 
@@ -315,6 +325,7 @@ public final class AppStore {
         breadcrumb("sync start (since \(hasSynced ? lastSeq : 0))")
         defer {
             syncing = false
+            syncJournal.removeAll()
             breadcrumb("sync end (\(messages.count) msgs)")
         }
         repeat {
@@ -322,16 +333,19 @@ public final class AppStore {
             var more = true
             while more {
                 let since: Int64? = hasSynced ? lastSeq : nil
-                let result: SyncResult = try await rpc.call(RPCMethod.sync, params: SyncParams(sinceSeq: since))
-                more = applySync(result, since: since)
+                let (result, mark) = try await rpc.callMarked(RPCMethod.sync, params: SyncParams(sinceSeq: since),
+                                                              as: SyncResult.self)
+                more = applySync(result, since: since, eventsBefore: mark)
                 syncRounds += 1
             }
         } while resyncRequested
     }
 
     /// Applies one sync page. Returns true if another page is needed.
+    /// `eventsBefore`: how many events had arrived when the answer did (see
+    /// `syncJournal`); nil takes the reply text as it is.
     @discardableResult
-    public func applySync(_ r: SyncResult, since: Int64?) -> Bool {
+    public func applySync(_ r: SyncResult, since: Int64?, eventsBefore: Int? = nil) -> Bool {
         if let t = r.tasks { tasks = t; sortTasks() }
         if let a = r.approvals { approvals = a; sortApprovals() }
         if let q = r.questions { questions = q.sorted { $0.createdAt > $1.createdAt } }
@@ -354,6 +368,7 @@ public final class AppStore {
             messages = r.messages
             for m in streaming + local { messages.append(m) }
             sortMessages()
+            if let s = r.streaming { applyStreaming(s, eventsBefore: eventsBefore) }
             lastSeq = max(r.seq, maxSeq)
             hasOlderMessages = (r.messages.map(\.seq).min() ?? 1) > 1
             hasSynced = true
@@ -362,6 +377,7 @@ public final class AppStore {
             return false
         }
         for m in r.messages { upsert(m) }
+        if let s = r.streaming { applyStreaming(s, eventsBefore: eventsBefore) }
         hasSynced = true
         afterSync(r)
         defer { onSynced?(lastSeq) }
@@ -371,6 +387,37 @@ public final class AppStore {
         }
         lastSeq = max(lastSeq, r.seq, maxSeq)
         return false
+    }
+
+    /// The reply the host is still writing (sync's `streaming`; the deltas
+    /// sent while we were offline are not replayed): its whole text so far
+    /// replaces ours, or starts the message if we don't have it. Deltas we
+    /// already applied that the host sent after reading that text go back
+    /// on; the ones after this keep appending.
+    private func applyStreaming(_ s: SyncResult.Streaming, eventsBefore mark: Int?) {
+        guard !s.id.isEmpty else { return }
+        let later = mark.map { m in syncJournal.filter { $0.id == s.id && $0.index > m }.map(\.text).joined() } ?? ""
+        let text = s.text + later
+        if let i = messages.firstIndex(where: { $0.id == s.id }) {
+            // Finished meanwhile: the final text wins.
+            guard messages[i].isStreaming else { return }
+            pendingDeltas[s.id] = nil
+            if let mark { streamMarks[s.id] = mark }
+            if messages[i].text != text { messages[i].text = text }
+            breadcrumb("sync: reply so far \(text.utf8.count) bytes (replaced)")
+        } else {
+            // Live text waits while an older stretch is on screen.
+            guard !viewingPast else { return }
+            pendingDeltas[s.id] = nil
+            if let mark { streamMarks[s.id] = mark }
+            var m = ChatMessage(seq: 0, id: s.id, role: .assistant, kind: .text, text: text, channel: .app,
+                                ts: Date().epochMillis)
+            m.isStreaming = true
+            messages.append(m)
+            sortMessages()
+            breadcrumb("sync: reply so far \(text.utf8.count) bytes (new)")
+        }
+        awaitingReply = false
     }
 
     /// A reply that landed while we weren't listening still ends the wait.
@@ -393,6 +440,7 @@ public final class AppStore {
         guard !s.busy else { return }
         flushDeltas()
         for i in messages.indices where messages[i].isStreaming { messages[i].isStreaming = false }
+        streamMarks.removeAll()
         awaitingReply = false
     }
 
@@ -403,7 +451,8 @@ public final class AppStore {
 
     // MARK: events
 
-    public func apply(event name: String, data: JSONValue) {
+    /// `index`: the event's place in the stream (`RPCInbound.event`), when known.
+    public func apply(event name: String, data: JSONValue, index: Int? = nil) {
         switch name {
         case RPCEventName.chatMessage:
             if let m = try? data.decode(ChatMessage.self) {
@@ -415,7 +464,7 @@ public final class AppStore {
                 }
             }
         case RPCEventName.chatDelta:
-            if let d = try? data.decode(ChatDelta.self), !d.id.isEmpty { applyDelta(d) }
+            if let d = try? data.decode(ChatDelta.self), !d.id.isEmpty { applyDelta(d, index: index) }
         case RPCEventName.taskUpdated:
             if let t = try? data.decode(AllyTask.self) { upsert(task: t) }
         case RPCEventName.approvalUpdated:
@@ -462,19 +511,23 @@ public final class AppStore {
         }
     }
 
-    func applyDelta(_ d: ChatDelta) {
+    func applyDelta(_ d: ChatDelta, index: Int? = nil) {
         awaitingReply = false
         deltaCount += 1
         if deltaCount % 20 == 1 { breadcrumb("delta #\(deltaCount) (+\(d.text.utf8.count) bytes)") }
+        // Already in the text a sync gave us (it overtook nothing, it was late).
+        if let index, let mark = streamMarks[d.id], index <= mark { return }
         if let i = messages.firstIndex(where: { $0.id == d.id }) {
             // A late delta after the final message (or after the turn
             // ended) is ignored.
             guard messages[i].isStreaming else { return }
             pendingDeltas[d.id, default: ""] += d.text
+            if syncing, let index { syncJournal.append((index, d.id, d.text)) }
             scheduleDeltaFlush()
         } else {
             // Live text waits while an older stretch is on screen.
             guard !viewingPast else { return }
+            if syncing, let index { syncJournal.append((index, d.id, d.text)) }
             // The first words show up at once; the rest is batched.
             var m = ChatMessage(seq: 0, id: d.id, role: .assistant, kind: .text, text: d.text, channel: .app,
                                 ts: Date().epochMillis)
@@ -506,6 +559,7 @@ public final class AppStore {
         breadcrumb("message \(incoming.role.rawValue) \(incoming.text.utf8.count) bytes (\(messages.count) msgs)")
         // The final text supersedes anything still buffered for it.
         pendingDeltas[incoming.id] = nil
+        streamMarks[incoming.id] = nil
         var m = incoming
         m.isStreaming = false
         m.delivery = .sent
