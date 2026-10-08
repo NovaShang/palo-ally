@@ -86,19 +86,29 @@ struct ArtifactDetailView: View {
                         .accessibilityLabel("换一个文件看")
                     }
                 }
+                // The less frequent actions share one menu, so the title keeps
+                // its room (an iPad panel was down to 「每日…」); share and close
+                // stay on the bar.
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task { try? await store.setPinned(artifact, !artifact.pinned) }
+                    Menu {
+                        Button {
+                            Task { try? await store.setPinned(artifact, !artifact.pinned) }
+                        } label: {
+                            Label(artifact.pinned ? "取消置顶" : "置顶", systemImage: artifact.pinned ? "pin.slash" : "pin")
+                        }
+                        if let content, isMarkdown(artifact, content.path) {
+                            Button {
+                                showSource.toggle()
+                            } label: {
+                                Label(showSource ? "查看排版" : "查看源码",
+                                      systemImage: showSource ? "doc.richtext" : "chevron.left.forwardslash.chevron.right")
+                            }
+                        }
                     } label: {
-                        Image(systemName: artifact.pinned ? "pin.fill" : "pin")
+                        Image(systemName: "ellipsis.circle")
                     }
                     .tint(.primary)
-                    .accessibilityLabel(artifact.pinned ? "取消置顶" : "置顶")
-                }
-                if let content, isMarkdown(artifact, content.path) {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        MarkdownSourceToggle(raw: $showSource)
-                    }
+                    .accessibilityLabel("更多")
                 }
                 if let content {
                     ToolbarItem(placement: .topBarTrailing) {
