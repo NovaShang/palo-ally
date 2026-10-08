@@ -53,6 +53,9 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
         artifacts: hub.artifacts.list(),
         settings: hub.config.settings,
         status: hub.status(),
+        // Mid-reply: the whole text so far, which replaces what the client
+        // has for that id; later chat.delta events append to it.
+        streaming: hub.conversation.streamingReply() ?? undefined,
       };
     }
     case "chat.send": {

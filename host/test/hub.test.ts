@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import type { WechatChannel, WechatReplyTarget } from "../src/hub.ts";
+import { handleRpc } from "../src/rpc.ts";
 import type { FakeScript } from "./fakeDriver.ts";
 import type { ChatMessage } from "../src/types.ts";
 import { readJson, readJsonl, writeJson } from "../src/util.ts";
@@ -53,6 +54,29 @@ describe("Hub: main conversation", () => {
     // history persisted with increasing seq
     const log = readJsonl<ChatMessage>(paths.chat);
     expect(log.map((m) => m.seq)).toEqual([1, 2]);
+    cleanup(paths);
+  });
+
+  test("a client syncing mid-reply gets the reply's text so far", async () => {
+    let finish!: () => void;
+    const { hub, events, paths } = makeHub({
+      script: async (_text, ctx) => {
+        ctx.emit({ type: "text_delta", text: "写到" });
+        ctx.emit({ type: "text_delta", text: "一半" });
+        await new Promise<void>((r) => (finish = r));
+        ctx.emit({ type: "assistant_text", text: "写到一半，写完了", parentToolUseId: null });
+      },
+    });
+    const ctx = { clientId: "app_1_dev-x", deviceId: "dev-x", channel: "app" as const, local: false };
+    const sync = async () => JSON.parse(JSON.stringify(await handleRpc(hub, { method: "sync", params: { sinceSeq: 0 } }, ctx)));
+    expect((await sync()).streaming).toBeUndefined();
+    hub.userMessage("写点东西", "app");
+    await tick(20);
+    const id = events.find((e) => e.event === "chat.delta")!.data.id;
+    expect((await sync()).streaming).toEqual({ id, text: "写到一半" });
+    finish();
+    await hub.idle();
+    expect((await sync()).streaming).toBeUndefined();
     cleanup(paths);
   });
 

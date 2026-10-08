@@ -204,6 +204,15 @@ export class Conversation {
     }, timing.implicitQuietMs);
   }
 
+  /**
+   * The reply being streamed right now (its message id and all its text so
+   * far), for a client that reconnects mid-reply: the deltas it missed while
+   * offline are not replayed, so it takes this, then keeps appending deltas.
+   */
+  streamingReply(): { id: string; text: string } | null {
+    return this.deltaId && this.deltaText ? { id: this.deltaId, text: this.deltaText } : null;
+  }
+
   ensureSession(): MainSession {
     if (this.session && !this.session.closed) return this.session;
     const cfg = this.d.config();

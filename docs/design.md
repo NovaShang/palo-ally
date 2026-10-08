@@ -125,7 +125,7 @@ ModelOption { value; displayName; description; efforts:string[] }
 | method | params | result |
 |---|---|---|
 | `hello` | `{client:"ios"\|"mac"\|"cli", version}` | `{hostName, version, status}` |
-| `sync` | `{sinceSeq?:number}` | `{seq, messages, tasks, approvals, watches, artifacts, settings, status}`（messages：sinceSeq 之后的，最多 500；无 sinceSeq 时最近 100） |
+| `sync` | `{sinceSeq?:number}` | `{seq, messages, tasks, approvals, watches, artifacts, settings, status, streaming?}`（messages：sinceSeq 之后的，最多 500；无 sinceSeq 时最近 100。streaming：正在写的回复 `{id, text}`，text 是到目前为止的全文，替换客户端手里同 id 的内容，之后的 chat.delta 接着追加） |
 | `chat.send` | `{text, clientMsgId?}` | `{id, seq}`（同一 clientMsgId 重发只执行一次，返回原来的） |
 | `chat.history` | `{beforeSeq, limit}` | `{messages}` |
 | `commands.list` | `{}` | `{commands:SlashCommand[]}` |
