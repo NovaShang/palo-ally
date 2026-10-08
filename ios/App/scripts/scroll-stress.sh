@@ -25,6 +25,6 @@ result=${pipestatus[1]}
 
 data=$(xcrun simctl get_app_container "$udid" com.novashang.paloally data 2>/dev/null)
 echo "--- debug.log: stalls and jumps"
-grep -E '\[stall\]|\[jump\]' "$data/Documents/debug.log" | tail -60
+grep -E '\[stall\]|\[jump\]|\[launch\]|\[mem\]' "$data/Documents/debug.log" | tail -60
 xcrun simctl shutdown "$udid"
 exit $result

@@ -128,7 +128,10 @@ final class ChatScrollCoordinator {
     func sent() { send(.sent) }
     func grewBelow() { send(.grewBelow) }
     func layoutChanged() { send(.layoutChanged) }
-    func background() { send(.background) }
+    func background() {
+        send(.background)
+        LaunchMetrics.logFootprint("going to the background, \(rowY.count) rows laid out so far")
+    }
 
     /// Back in the foreground, caught up: says where the view is once any
     /// move back onto the end has landed.
@@ -194,6 +197,10 @@ final class ChatScrollCoordinator {
     func geometry(_ old: ChatScroll.Metrics, _ new: ChatScroll.Metrics) {
         metrics = new
         ChatScroll.lastDistance = new.distanceFromBottom
+        if new.contentHeight > new.viewport, let store {
+            let n = store.messages.count
+            LaunchMetrics.conversationLaidOut(messages: n, laidOut: n - ChatView.split(n))
+        }
         if let want = pendingY, abs(new.offsetY - old.offsetY) > 0.5 {
             // Learn how `scrollTo(y:)` maps to the offset (a sane answer only).
             if abs(want - new.offsetY - new.insetTop) < 200 { yBias = want - new.offsetY }

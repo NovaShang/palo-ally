@@ -70,6 +70,7 @@
 		C03225BB852317A0B1EF87E6 /* ChatScrollUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9D7103684A0000430DC2F82 /* ChatScrollUITests.swift */; };
 		F9EB80178FD0B490980AA37A /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E40E5B05B34DB68B0FC2EFB /* AppLog.swift */; };
 		D427E4799F84B3E8A7AFBBC7 /* ChatScrollCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4C7937CFE1E8403F22616D0 /* ChatScrollCoordinator.swift */; };
+		4FA285EE1AAC48286A60A15A /* LaunchMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7910248D4510881F52C8B792 /* LaunchMetrics.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -146,6 +147,7 @@
 		D9D7103684A0000430DC2F82 /* ChatScrollUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollUITests.swift; sourceTree = "<group>"; };
 		1E40E5B05B34DB68B0FC2EFB /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
 		F4C7937CFE1E8403F22616D0 /* ChatScrollCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollCoordinator.swift; sourceTree = "<group>"; };
+		7910248D4510881F52C8B792 /* LaunchMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchMetrics.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -269,6 +271,7 @@
 		A5A39901D00EEDD568BA7FA7 /* Support */ = {
 			isa = PBXGroup;
 			children = (
+				7910248D4510881F52C8B792 /* LaunchMetrics.swift */,
 				BC683780205CAAF21C706B40 /* ScrollLab.swift */,
 				32922EB865184F7F70CAB365 /* AppTheme.swift */,
 				57B6C3C8A61AE25FA5811B53 /* AssistantAvatar.swift */,
@@ -442,6 +445,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4FA285EE1AAC48286A60A15A /* LaunchMetrics.swift in Sources */,
 				D427E4799F84B3E8A7AFBBC7 /* ChatScrollCoordinator.swift in Sources */,
 				57A1524E01D493D7D3D22D9E /* ScrollLab.swift in Sources */,
 				CCF61F9E84E355E2B02DCE4C /* AppModel.swift in Sources */,
