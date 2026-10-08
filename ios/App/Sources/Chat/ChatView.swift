@@ -144,6 +144,9 @@ struct ChatView: View {
             // first message starts a little below it.
             .contentMargins(.top, Platform.barInWindowToolbar ? Self.macTopMargin : 0, for: .scrollContent)
             .onChange(of: pinned) { _, now in
+                #if DEBUG
+                ChatScroll.pinTrace("pinned \(now)")
+                #endif
                 guard now else { return }
                 if readingAnchor != nil { readingAnchor = nil }
                 if unseenBelow { unseenBelow = false }
@@ -157,6 +160,7 @@ struct ChatView: View {
                 let mid = store.messages[store.messages.count / 2].id
                 pinned = false
                 readingAnchor = mid
+                if !ReadingAnchor.enabled { proxy.scrollTo(mid, anchor: .top) }
                 debugLog("[anchor] reading from \(mid)")
             }
             // Only under -demoDetach: reading `readingAnchor` here would make
@@ -170,7 +174,6 @@ struct ChatView: View {
                 let at = UserDefaults.standard.double(forKey: "demoJump")
                 guard at > 0 else { return }
                 try? await Task.sleep(for: .seconds(at))
-                debugLog("[jump] tap: \(Int(ChatScroll.debugDistance)) pt from the end, pinned \(pinned), button \(store.viewingPast || (!pinned && awayFromBottom))")
                 jumpToLatest(proxy)
                 var waited = 0.0
                 for t in [0.5, 1.5, 3, 6] {
@@ -201,6 +204,9 @@ struct ChatView: View {
             .modifier(ClickToUnfocusComposer())
             .onScrollPhaseChange { old, phase in
                 breadcrumb("scroll \(phase)")
+                #if DEBUG
+                ChatScroll.pinTrace("phase \(phase)")
+                #endif
                 let moving = phase == .tracking || phase == .interacting || phase == .decelerating
                 if userScrolling != moving { userScrolling = moving }
                 // A scroll of the reader's that comes to rest near the end
@@ -227,6 +233,12 @@ struct ChatView: View {
                     // Only the list moving counts, not the end moving away: a
                     // touch right after 「回到最新」 (rows still re-measuring)
                     // or during a reply must not let go of the end.
+                    #if DEBUG
+                    if pinned, !new.movedUp(from: old), new.distanceFromBottom > old.distanceFromBottom + 0.5,
+                       new.distanceFromBottom > ChatScroll.detachDistance {
+                        ChatScroll.pinTrace("not a drag: dy \(Int(new.offsetY - old.offsetY)) dh \(Int(new.contentHeight - old.contentHeight))")
+                    }
+                    #endif
                     if new.movedUp(from: old), new.distanceFromBottom > ChatScroll.detachDistance {
                         if pinned { pinned = false }
                     } else if new.movedDown(from: old), new.distanceFromBottom <= ChatScroll.reattachDistance {
@@ -399,6 +411,9 @@ struct ChatView: View {
     /// binding would hold the view where it was.
     private func jumpToLatest(_ proxy: ScrollViewProxy) {
         breadcrumb("jump to latest")
+        #if DEBUG
+        debugLog("[jump] tap: \(Int(ChatScroll.debugDistance)) pt from the end, pinned \(pinned), button \(store.viewingPast || (!pinned && awayFromBottom))")
+        #endif
         let anchored = readingAnchor != nil
         readingAnchor = nil
         userScrolling = false
@@ -425,10 +440,12 @@ struct ChatView: View {
             }
         }
         #if DEBUG
-        // Where it landed (ScrollStressUITests reads this).
+        // Where it landed, and whether it stayed (the scroll UI tests read these).
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.2))
             debugLog("[jump] +1.2 s: \(Int(ChatScroll.debugDistance)) pt from the end, pinned \(pinned)")
+            try? await Task.sleep(for: .seconds(1.8))
+            debugLog("[jump] +3 s: \(Int(ChatScroll.debugDistance)) pt from the end, pinned \(pinned)")
         }
         #endif
     }
@@ -472,6 +489,7 @@ struct ChatView: View {
         .id(message.id)
         #if DEBUG
         .modifier(AnchorProbe(id: message.id, anchor: AnchorProbe.enabled ? readingAnchor : nil))
+        .modifier(TopRowProbe(id: message.id))
         #endif
     }
 
@@ -570,6 +588,29 @@ private struct AnchorProbe: ViewModifier {
         if Self.enabled && id == anchor {
             content.onGeometryChange(for: Int.self) { Int($0.frame(in: .scrollView).minY.rounded()) } action: { y in
                 debugLog("[anchor] \(id) at y \(y)")
+            }
+        } else {
+            content
+        }
+    }
+}
+
+/// `-topRowTrace YES`: logs the message under the top of the view each time
+/// it changes, so a scroll that jumps back to an earlier message shows up in
+/// the debug log (ScrollSnapBackUITests).
+private struct TopRowProbe: ViewModifier {
+    static let enabled = UserDefaults.standard.bool(forKey: "topRowTrace")
+    /// Just under the navigation bar, where reading starts.
+    static let line: CGFloat = 120
+    let id: String
+
+    func body(content: Content) -> some View {
+        if Self.enabled {
+            content.onGeometryChange(for: Bool.self) { g in
+                let f = g.frame(in: .scrollView)
+                return f.minY <= Self.line && f.maxY > Self.line
+            } action: { atTop in
+                if atTop { debugLog("[top] \(id)") }
             }
         } else {
             content

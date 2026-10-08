@@ -48,6 +48,15 @@ enum ChatScroll {
     @MainActor static var debugDistance: CGFloat = 0
     @MainActor static var traced = 0
     @MainActor static var lastTrace = ""
+    /// `-pinTrace YES`: why the view followed the end or let go of it
+    /// (scroll phases, pinned changes, distance growth not counted as a drag).
+    @MainActor static let pinTraceOn = UserDefaults.standard.bool(forKey: "pinTrace")
+    @MainActor static var pinTraced = 0
+    @MainActor static func pinTrace(_ what: String) {
+        guard pinTraceOn, pinTraced < 2000 else { return }
+        pinTraced += 1
+        debugLog("[pin] \(what), \(Int(debugDistance)) pt from the end")
+    }
     /// `-scrollTrace YES`: content height / offset as layout sees them (first 3000 changes).
     @MainActor static func trace(_ g: ScrollGeometry) {
         guard UserDefaults.standard.bool(forKey: "scrollTrace"), traced < 3000 else { return }
