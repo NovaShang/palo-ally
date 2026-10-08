@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .library(name: "PaloAllyKit", targets: ["PaloAllyKit"]),
         .library(name: "PaloAllyVoice", targets: ["PaloAllyVoice"]),
+        .library(name: "PaloAllyFilePreview", targets: ["PaloAllyFilePreview"]),
     ],
     targets: [
         .target(name: "PaloAllyKit"),
@@ -14,6 +15,14 @@ let package = Package(
         // language mode it was written for.
         .target(name: "PaloAllyVoice", swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "PaloAllyVoiceTests", dependencies: ["PaloAllyVoice"]),
+        // Markdown preview ported from bento's BentoFilePreviewKit (markdown-it
+        // + highlight.js in a WKWebView, all bundled), same language mode.
+        .target(
+            name: "PaloAllyFilePreview",
+            resources: [.copy("Resources/FilePreview")],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .testTarget(name: "PaloAllyFilePreviewTests", dependencies: ["PaloAllyFilePreview"]),
         .testTarget(
             name: "PaloAllyKitTests",
             dependencies: ["PaloAllyKit"],
