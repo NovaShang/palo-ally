@@ -72,7 +72,8 @@ final class ReplyTextModel {
     }
 
     private func apply(_ text: String, streaming: Bool) {
-        let split = segments.split(text)
+        // A table being written grows by whole rows, not by the cell.
+        let split = segments.split(streaming ? String(MarkdownSegments.completeTableRows(text)) : text)
         var next: [Piece] = split.map {
             switch $0 {
             case .text(let t): .text(t)

@@ -31,6 +31,34 @@ public enum MarkdownSegments {
         splitWithLines(source).map(\.segment)
     }
 
+    /// A reply being written, as far as a table can show it: whole rows only
+    /// (the row being written waits for its newline), and nothing of a table
+    /// until its header's separator line is in (design §3.3).
+    public static func completeTableRows(_ text: String) -> Substring {
+        let start = text.startIndex
+        func lineStart(_ i: String.Index) -> String.Index {
+            text[..<i].lastIndex(of: "\n").map { text.index(after: $0) } ?? start
+        }
+        func isRow(_ from: String.Index, _ to: String.Index) -> Bool {
+            text[from..<to].drop(while: { $0 == " " || $0 == "\t" }).hasPrefix("|")
+        }
+        var end = text.endIndex
+        // The line being written: prose shows as it comes, a row waits.
+        let open = lineStart(end)
+        if open < end {
+            guard isRow(open, end) else { return text[...] }
+            end = open
+        }
+        guard end > start else { return text[..<end] }
+        // The last whole line: a table's first line alone is its header,
+        // and waits for the separator under it.
+        let lineEnd = text.index(before: end)
+        let last = lineStart(lineEnd)
+        guard isRow(last, lineEnd) else { return text[..<end] }
+        let previousIsRow = last > start && isRow(lineStart(text.index(before: last)), text.index(before: last))
+        return previousIsRow ? text[..<end] : text[..<last]
+    }
+
     /// The segments, each with the line it starts on. Line by line, forward
     /// only, and every segment starts outside a fence: once the next segment
     /// has begun, a segment never changes (what `MarkdownSegmentCache` uses).

@@ -109,6 +109,20 @@ struct MarkdownTableTests {
         #expect(cache.split(other) == MarkdownSegments.split(other))
     }
 
+    @Test func aTableBeingWrittenShowsWholeRowsOnly() {
+        let rows = MarkdownSegments.completeTableRows
+        #expect(rows("Intro\n\n| a | b |\n|---|---|\n| 1 | 2 |\n| 3 |") == "Intro\n\n| a | b |\n|---|---|\n| 1 | 2 |\n")
+        #expect(rows("Intro\n\n| a | b |\n|---|---|\n| 1 | 2 |\n") == "Intro\n\n| a | b |\n|---|---|\n| 1 | 2 |\n")
+        // The header waits for its separator.
+        #expect(rows("Intro\n\n| a | b |\n|--") == "Intro\n\n")
+        #expect(rows("Intro\n\n| a | b |\n") == "Intro\n\n")
+        #expect(rows("| a |") == "")
+        #expect(rows("| a | b |\n|---|---|\n") == "| a | b |\n|---|---|\n")
+        // Prose is untouched, mid-line too.
+        #expect(rows("Some text\nmore te") == "Some text\nmore te")
+        #expect(rows("") == "")
+    }
+
     @Test func bytePrefix() {
         #expect("你好，世界".hasBytePrefix("你好"))
         #expect("你好".hasBytePrefix(""))
