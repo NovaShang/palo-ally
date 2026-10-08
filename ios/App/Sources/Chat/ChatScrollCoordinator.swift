@@ -122,11 +122,30 @@ final class ChatScrollCoordinator {
     /// The UIKit scroll view under the SwiftUI one: only to read its pan
     /// gesture, the reader's finger (see `ChatScrollMachine.Event.finger`).
     @ObservationIgnored private weak var scrollView: UIScrollView?
+    /// How fast the finger left the screen, from the pan gesture as it
+    /// ended, and when. Read at SwiftUI's phase change instead, the gesture
+    /// has often been reset already: a flick read as no speed at all, and a
+    /// short one was taken for a short drag and pulled back to the end (her
+    /// phone, step 3 build: "scroll ended near the end" 200–750 pt from it).
+    @ObservationIgnored private var lift: (velocity: CGFloat, at: CFTimeInterval)?
+    @ObservationIgnored private var panWatcher: PanWatcher?
     @ObservationIgnored private var widthSettle: Task<Void, Never>?
     @ObservationIgnored private var insetSettle: Task<Void, Never>?
 
     /// The UIKit scroll view, found from inside the content (`ScrollViewHook`).
     func attach(scrollView: UIScrollView) {
+        if scrollView !== self.scrollView {
+            if let old = self.scrollView, let w = panWatcher { old.panGestureRecognizer.removeTarget(w, action: nil) }
+            let watcher = PanWatcher { [weak self] pan in
+                switch pan.state {
+                case .began: self?.lift = nil
+                case .ended, .cancelled: self?.lift = (pan.velocity(in: pan.view).y, CACurrentMediaTime())
+                default: break
+                }
+            }
+            scrollView.panGestureRecognizer.addTarget(watcher, action: #selector(PanWatcher.panned(_:)))
+            panWatcher = watcher
+        }
         self.scrollView = scrollView
         #if DEBUG
         ChatScroll.uiScrollView = scrollView
@@ -406,7 +425,14 @@ final class ChatScrollCoordinator {
         }
         // The finger left the screen: how fast it was moving.
         if was == .interacting || was == .tracking, mapped != .interacting, mapped != .tracking, let sv = scrollView {
-            send(.lifted(velocity: sv.panGestureRecognizer.velocity(in: sv).y))
+            // (This touch's: a new pan clears it, and SwiftUI reports the
+            // change well within a second even when the app is busy.)
+            let ended = lift.flatMap { CACurrentMediaTime() - $0.at < 1 ? $0.velocity : nil }
+            #if DEBUG
+            ChatScroll.pinTrace("lifted: \(ended.map { "\(Int($0)) pt/s at the gesture's end" } ?? "\(Int(sv.panGestureRecognizer.velocity(in: sv).y)) pt/s now (\(lift.map { "ended \(Int((CACurrentMediaTime() - $0.at) * 1000)) ms ago" } ?? "no end seen"))")")
+            #endif
+            lift = nil
+            send(.lifted(velocity: ended ?? sv.panGestureRecognizer.velocity(in: sv).y))
         }
         send(.phase(mapped))
         #if DEBUG
@@ -720,6 +746,14 @@ final class ChatScrollCoordinator {
         let sticks = machine.mode != .detached
         if sticksToEnd != sticks { sticksToEnd = sticks }
     }
+}
+
+/// The target of the scroll view's pan gesture (UIKit keeps targets weakly).
+@MainActor
+private final class PanWatcher: NSObject {
+    let changed: (UIPanGestureRecognizer) -> Void
+    init(_ changed: @escaping (UIPanGestureRecognizer) -> Void) { self.changed = changed }
+    @objc func panned(_ pan: UIPanGestureRecognizer) { changed(pan) }
 }
 
 /// Finds the UIKit scroll view a SwiftUI ScrollView is backed by, from a view

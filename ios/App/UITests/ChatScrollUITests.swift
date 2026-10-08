@@ -411,6 +411,56 @@ final class ChatScrollUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+    // MARK: short flick
+
+    /// Her phone (the step 3 build): a quick flick up from the end let go of
+    /// it ("drag"), coasted 200–750 pt, and was then taken back to the end as
+    /// a short drag ("scroll ended near the end"). A flick moves the finger
+    /// less than the 56 pt a short drag allows; only its speed tells them apart.
+    @MainActor
+    func testShortFlickFromTheEndStaysUpIdle() throws {
+        try shortFlick(["-demoState", "long", "-demoStreamDelay", "600"])
+    }
+
+    @MainActor
+    func testShortFlickFromTheEndStaysUpWhileStreaming() throws {
+        try shortFlick(["-demoState", "stress"])
+    }
+
+    @MainActor
+    private func shortFlick(_ args: [String]) throws {
+        let app = launch(args)
+        let list = app.scrollViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 20), "the conversation never appeared")
+        sleep(5)
+        let log = AppLog()
+        let lf = list.frame
+        // In the list's left margin: held on a reply, a finger selects text.
+        let margin = CGPoint(x: lf.minX + 8, y: lf.midY)
+        let jump = app.buttons["jumpToLatest"]
+        for round in 1...3 {
+            let returnsBefore = log.count("(scroll ended near the end)")
+            // 50 pt in a tenth of a second, up while still moving. The list
+            // follows the finger only past the pan's slop, so it counts less
+            // than the 56 pt a short drag may be.
+            try TouchScript.play([.fling(at: margin, dy: 50, from: 0)])
+            sleep(3)
+            let away = log.distance() ?? -1
+            let returned = log.count("(scroll ended near the end)") - returnsBefore
+            print("---- round \(round): \(away) pt from the end, taken back \(returned) times")
+            XCTAssertEqual(returned, 0, "round \(round): a short flick up was taken back to the end (\(away) pt from it)")
+            // (Past the 56 pt within which the end is still "near".)
+            XCTAssertGreaterThan(away, 60, "round \(round): a short flick up didn't stay up")
+            if jump.exists {
+                let f = jump.frame
+                try TouchScript.play([.tap(at: CGPoint(x: f.midX, y: f.midY), time: 0)])
+            }
+            sleep(3)
+        }
+        let lines = log.lines(containing: ["[scroll]", "[pin]"])
+        add(XCTAttachment(string: lines.suffix(80).joined(separator: "\n")))
+    }
+
     // MARK: helpers
 
     @MainActor
