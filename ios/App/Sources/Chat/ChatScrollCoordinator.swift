@@ -440,8 +440,11 @@ final class ChatScrollCoordinator {
         // move never reaches the UIScrollView: the two drift apart, the end
         // slides down under the finger, and the next touch makes SwiftUI
         // take UIKit's offset back (the view seemed thrown). Hand UIKit the
-        // anchor's offset; never while the finger drags or a fling coasts.
-        if machine.mode == .following, let sv = scrollView, !sv.isDragging, !sv.isDecelerating,
+        // anchor's offset; only under a resting finger, never while it drags
+        // or a fling coasts. (Without a finger SwiftUI moves UIKit itself,
+        // just after this callback: setting it here too had every new line
+        // of a reply scroll the list twice.)
+        if machine.mode == .following, let sv = scrollView, sv.isTracking, !sv.isDragging, !sv.isDecelerating,
            new.offsetY > sv.contentOffset.y + 0.5 {
             #if DEBUG
             ChatScroll.pinTrace("UIKit at \(Int(sv.contentOffset.y)), the anchor at \(Int(new.offsetY)): handed over")
