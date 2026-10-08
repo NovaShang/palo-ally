@@ -430,7 +430,8 @@ final class AppModel {
     private func applyLaunchScreen() {
         switch launch.screen {
         case "library": showLibrary = true
-        case "artifact": openArtifact("ar1") // as if tapped in the conversation
+        // As if tapped in the conversation; `-demoArtifact <id>` picks which.
+        case "artifact": openArtifact(UserDefaults.standard.string(forKey: "demoArtifact") ?? "ar1")
         case "assistant": showAssistant = true
         case "settings": showAssistant = true; showSettings = true
         case "hosts": showAssistant = true; showSettings = true; showHostList = true
