@@ -98,17 +98,26 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         // Simulator / unsigned builds land here; the app works without push.
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async
-        -> UNNotificationPresentationOptions
-    {
-        [.banner, .sound, .list]
+    // The completion-handler variants, not the async ones: an async delegate
+    // method resumes off the main thread, and the system's completion then
+    // runs there and trips UIKit's main-thread assertion (SIGABRT on tapping
+    // a notification, iPhone 16, 2026-10-07 17:18).
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                            withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound, .list])
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                            withCompletionHandler completionHandler: @escaping () -> Void) {
         let info = response.notification.request.content.userInfo
         let sendable = info.reduce(into: [String: String]()) { acc, kv in
             if let k = kv.key as? String { acc[k] = "\(kv.value)" }
         }
-        await MainActor.run { self.model.handleNotification(userInfo: sendable) }
+        // Handled, and the system told it's done, on the main thread.
+        nonisolated(unsafe) let done = completionHandler
+        Task { @MainActor in
+            self.model.handleNotification(userInfo: sendable)
+            done()
+        }
     }
 }
