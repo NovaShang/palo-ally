@@ -305,6 +305,19 @@ struct AppStoreTests {
 
     /// The host numbers a reply when it ends, after whatever arrived while it
     /// was written; shown last while written, it doesn't jump when finished.
+    @Test func aReplyBeingWrittenStaysLastAndDoesntJumpWhenFinished() async throws {
+        let store = AppStore(transport: InMemoryTransport(autoConnect: false))
+        store.receive(ChatMessage(seq: 1, id: "u1", role: .user, text: "写点东西", ts: 1000))
+        store.apply(event: "chat.delta", data: ["id": "r1", "text": "写到"])
+        // A WeChat message comes in (via a catch-up) while it's written.
+        store.applySync(SyncResult(seq: 2, messages: [
+            ChatMessage(seq: 2, id: "w1", role: .user, text: "微信上的消息", channel: .wechat, ts: Date().epochMillis + 5000),
+        ]), since: 1)
+        #expect(store.messages.map(\.id) == ["u1", "w1", "r1"])
+        store.receive(ChatMessage(seq: 3, id: "r1", role: .assistant, text: "写完了", ts: Date().epochMillis))
+        #expect(store.messages.map(\.id) == ["u1", "w1", "r1"])
+    }
+
     @Test func broadcastBeforeSendResponseMergesByClientMsgId() async throws {
         let host = ManualHost()
         let store = AppStore(transport: host.transport)

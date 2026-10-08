@@ -661,15 +661,21 @@ public final class AppStore {
     }
 
     /// Server messages in seq order; local ones (seq 0: echoes, failed or
-    /// queued sends, in-flight streams) slotted in by timestamp, so an unsent
-    /// message doesn't stay pinned below newer replies.
+    /// queued sends) slotted in by timestamp, so an unsent message doesn't
+    /// stay pinned below newer replies. A reply being written goes last: the
+    /// host gives it its seq when it ends, after anything that arrived
+    /// meanwhile (a WeChat message, the owner's next message), so that's
+    /// where it will be; slotted by when it began, it jumped below them the
+    /// moment it was finished.
     private func sortMessages() {
         let indexed = messages.enumerated()
         let real = indexed.filter { $0.element.seq > 0 }
             .sorted { ($0.element.seq, $0.offset) < ($1.element.seq, $1.offset) }.map(\.element)
-        let local = indexed.filter { $0.element.seq == 0 }
+        let local = indexed.filter { $0.element.seq == 0 && !$0.element.isStreaming }
             .sorted { ($0.element.ts, $0.offset) < ($1.element.ts, $1.offset) }.map(\.element)
-        guard !local.isEmpty else { messages = real; return }
+        let writing = indexed.filter { $0.element.seq == 0 && $0.element.isStreaming }
+            .sorted { ($0.element.ts, $0.offset) < ($1.element.ts, $1.offset) }.map(\.element)
+        guard !local.isEmpty || !writing.isEmpty else { messages = real; return }
         var out: [ChatMessage] = []
         out.reserveCapacity(messages.count)
         var li = 0
@@ -678,6 +684,7 @@ public final class AppStore {
             out.append(m)
         }
         out.append(contentsOf: local[li...])
+        out.append(contentsOf: writing)
         messages = out
     }
 
