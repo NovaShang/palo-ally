@@ -10,6 +10,7 @@ let appLog = Logger(subsystem: "com.novashang.paloally", category: "app")
 /// Launch options parsed from arguments / UserDefaults:
 ///   -demo YES            run against the in-memory demo host
 ///   -demoScreen <name>   chat | library | assistant | settings | pairing | artifact | voice | naming | identity | avatars
+///                        | file (DEBUG: the Markdown sheet a file card opens)
 ///   -demoTab <name>      watches (目标) | history (履历) | memory; old values tasks → history, approvals → watches
 ///   -pairLink <url>      start pairing with this paloally:// link (automation; skips the open-URL prompt)
 ///   -demoHosts <n>       demo with n assistants (2 shows the switcher)
@@ -435,6 +436,9 @@ final class AppModel {
         case "switcher": showHostSwitcher = true
         case "pairing": if mode != .unpaired { startPairing(.replace) }
         case "identity": showAssistant = true; showIdentityEditor = true
+        #if DEBUG
+        case "file": Task { await openDemoFile() }
+        #endif
         default: break
         }
         if let t = launch.tab, let tab = AssistantTab(launchName: t) {
@@ -442,6 +446,22 @@ final class AppModel {
             showAssistant = true
         }
     }
+
+    #if DEBUG
+    /// `-demoScreen file`: the morning brief as if its card in the chat was
+    /// tapped — the Markdown sheet, for snapshots.
+    private func openDemoFile() async {
+        try? await Task.sleep(for: .seconds(1.5))
+        guard let store, let a = store.artifact(id: "ar1"),
+              let data = try? await store.readArtifact(id: a.id).data,
+              let url = try? await QuickLookPresenter.file(key: "artifact-\(a.id)", revision: a.updatedAt,
+                                                           name: (a.mainFile as NSString).lastPathComponent, data: { data })
+        else { return }
+        MarkdownFilePresenter.present(url: url, title: a.title, artifactID: a.id,
+                                      imageSource: store.markdownImages(artifactID: a.id, documentPath: a.mainFile),
+                                      openInLibrary: { [weak self] in self?.showInLibrary($0) })
+    }
+    #endif
 
     // MARK: assistants
 
