@@ -171,8 +171,10 @@ struct AppStoreTests {
         host.event("chat.delta", ["id": "r1", "text": "今天"])
         host.event("chat.delta", ["id": "r1", "text": "天气"])
         #expect(await until { store.messages.first.map(store.liveText) == "今天天气" })
-        // While it's written, the text lives in the reply's own object, not in `messages`.
-        #expect(store.stream(for: "r1")?.text == "今天天气")
+        // While it's written, the text lives in the reply's own object, not
+        // in `messages`; the ticks reveal it.
+        #expect(store.stream(for: "r1")?.received == "今天天气")
+        #expect(await until { store.stream(for: "r1")?.text == "今天天气" })
         #expect(store.messages.count == 1)
         #expect(store.messages[0].isStreaming)
         #expect(store.messages[0].seq == 0)
@@ -256,7 +258,7 @@ struct AppStoreTests {
                         since: 0, eventsBefore: 2)
         store.syncing = false
         delta("再写", 4)
-        store.flushDeltas()
+        store.revealEverything()
         #expect(store.messages.map(store.liveText) == ["写到一半，然后再写"])
 
         // The other way round: the answer first, then a delta it already holds.
@@ -268,7 +270,7 @@ struct AppStoreTests {
         other.syncing = false
         other.apply(event: "chat.delta", data: ["id": "r2", "text": "一半"], index: 2)
         other.apply(event: "chat.delta", data: ["id": "r2", "text": "，然后"], index: 3)
-        other.flushDeltas()
+        other.revealEverything()
         #expect(other.messages.map(other.liveText) == ["写到一半，然后"])
     }
 
@@ -291,7 +293,7 @@ struct AppStoreTests {
         for piece in ["天气", "不错，", "适合出门"] {
             store.apply(event: "chat.delta", data: ["id": "r1", "text": .string(piece)])
         }
-        store.flushDeltas()
+        store.revealEverything()
         #expect(!changes.has("messages"))
         #expect(changes.has("text"))
         #expect(store.liveText(store.messages[0]) == "今天天气不错，适合出门")
@@ -301,6 +303,62 @@ struct AppStoreTests {
         #expect(store.messages[0].text == "今天天气不错，适合出门。")
         #expect(store.stream(for: "r1") == nil)
         #expect(store.latestStream == nil)
+    }
+
+    /// Text that comes in a burst is revealed over a few ticks, not at once;
+    /// the final message, the end of the turn and leaving the screen show
+    /// the rest at once.
+    @Test func aBurstIsRevealedOverTicksAndTheEndShowsTheRest() async throws {
+        let clock = ManualRevealClock()
+        let store = AppStore(transport: InMemoryTransport(autoConnect: false))
+        store.revealClock = clock
+        let burst = String(repeating: "好的，这件事我已经办好了，结果写在下面。\n", count: 20)
+        store.apply(event: "chat.delta", data: ["id": "r1", "text": "我看看。"], received: 100)
+        store.apply(event: "chat.delta", data: ["id": "r1", "text": .string(burst)], received: 100)
+        let reply = try #require(store.stream(for: "r1"))
+        // The first words at once, the burst not yet.
+        #expect(!reply.text.isEmpty)
+        #expect(reply.text.count < 10)
+        #expect(clock.running)
+        var shown: [Int] = []
+        var t = 100.0
+        while clock.running, t < 102 {
+            t += 1.0 / 15
+            clock.fire(t)
+            shown.append(reply.text.count)
+        }
+        // Within half a second, in several steps.
+        #expect(reply.text == "我看看。" + burst)
+        #expect(t - 100 <= 0.5)
+        #expect(Set(shown).count >= 4)
+        #expect(reply.longestWait <= 0.5)
+
+        // More arrives; the final message shows it before any tick does.
+        store.apply(event: "chat.delta", data: ["id": "r1", "text": "最后一句话。"], received: t)
+        #expect(reply.text == "我看看。" + burst)
+        store.receive(ChatMessage(seq: 1, id: "r1", role: .assistant, text: "我看看。" + burst + "最后一句话。", ts: 1))
+        #expect(store.messages[0].text.hasSuffix("最后一句话。"))
+
+        // The turn ending without a final message keeps everything received.
+        store.apply(event: "chat.delta", data: ["id": "r2", "text": "第二条回复写到一半，"], received: t)
+        store.apply(event: "chat.delta", data: ["id": "r2", "text": "后面还有很多很多字没有显示出来"], received: t)
+        #expect(store.stream(for: "r2")?.isCaughtUp == false)
+        store.apply(event: "status", data: ["busy": false])
+        #expect(store.messages.last?.text == "第二条回复写到一半，后面还有很多很多字没有显示出来")
+        #expect(store.messages.last?.isStreaming == false)
+    }
+
+    @Test func goingToTheBackgroundRevealsEverything() async throws {
+        let clock = ManualRevealClock()
+        let store = AppStore(transport: InMemoryTransport(autoConnect: false))
+        store.revealClock = clock
+        store.apply(event: "chat.delta", data: ["id": "r1", "text": "写到一半，"], received: 10)
+        store.apply(event: "chat.delta", data: ["id": "r1", "text": .string(String(repeating: "还有很多字。", count: 40))], received: 10)
+        let reply = try #require(store.stream(for: "r1"))
+        #expect(!reply.isCaughtUp)
+        store.didEnterBackground()
+        #expect(reply.isCaughtUp)
+        #expect(reply.text == reply.received)
     }
 
     /// The host numbers a reply when it ends, after whatever arrived while it
@@ -671,5 +729,19 @@ struct AppStoreTests {
         #expect(texts == (0..<20).map { "消息 \($0)" })
         let ids = host.requests.map(\.id)
         #expect(ids == ids.sorted())
+    }
+}
+
+/// Ticks when told to.
+@MainActor
+final class ManualRevealClock: RevealClock {
+    private var tick: (@MainActor (TimeInterval) -> Bool)?
+    var running: Bool { tick != nil }
+
+    func start(_ tick: @escaping @MainActor (TimeInterval) -> Bool) { self.tick = tick }
+
+    func fire(_ now: TimeInterval) {
+        guard let t = tick else { return }
+        if !t(now) { tick = nil }
     }
 }

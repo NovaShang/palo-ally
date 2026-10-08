@@ -107,11 +107,11 @@ public final class AppStore {
     public let clientVersion: String
     public var initialHistoryLimit = 100
 
-    /// Streamed text not yet applied (from bento's MessageItem): appends are
-    /// coalesced (~30 ms) so markdown re-parsing, row diffing and autoscroll
-    /// don't run per token.
-    private var pendingDeltas: [String: String] = [:]
-    private var deltaFlushScheduled = false
+    /// Ticks the replies being written (`RevealPacer`, ~70 ms) while text
+    /// waits to be revealed. The app sets a display link; without one, a
+    /// timer.
+    @ObservationIgnored public var revealClock: any RevealClock = TimerRevealClock()
+    @ObservationIgnored private var revealing = false
     /// Deltas applied while a sync is out, with their event index. A sync's
     /// `streaming` text holds every delta the host sent before answering and
     /// none after; one sent after can still reach us before the answer does
@@ -186,6 +186,9 @@ public final class AppStore {
     }
 
     public func didEnterBackground(at date: Date = Date()) {
+        // What's waiting to be revealed lands now, unanimated: the screen's
+        // snapshot shows it, and nothing ticks while we're away.
+        revealEverything()
         backgroundedAt = date
         // Time away doesn't count toward showing a drop (iOS closes the
         // socket while the app is suspended); the grace starts over on return.
@@ -414,10 +417,10 @@ public final class AppStore {
         if let i = messages.firstIndex(where: { $0.id == s.id }) {
             // Finished meanwhile: the final text wins.
             guard messages[i].isStreaming else { return }
-            pendingDeltas[s.id] = nil
             if let mark { streamMarks[s.id] = mark }
             if let r = streams[s.id] {
-                r.replace(with: text)
+                r.replace(with: text, at: ProcessInfo.processInfo.systemUptime)
+                startRevealing()
             } else {
                 startStream(id: s.id, text: text)
             }
@@ -425,7 +428,6 @@ public final class AppStore {
         } else {
             // Live text waits while an older stretch is on screen.
             guard !viewingPast else { return }
-            pendingDeltas[s.id] = nil
             if let mark { streamMarks[s.id] = mark }
             var m = ChatMessage(seq: 0, id: s.id, role: .assistant, kind: .text, text: "", channel: .app,
                                 ts: Date().epochMillis)
@@ -456,15 +458,20 @@ public final class AppStore {
         if s.busy != status?.busy { breadcrumb("host \(s.busy ? "busy" : "idle")") }
         status = s
         guard !s.busy else { return }
-        flushDeltas()
+        let now = ProcessInfo.processInfo.systemUptime
+        var waited: TimeInterval?
         for i in messages.indices where messages[i].isStreaming {
-            // The turn ended without a final message: what was written stays.
-            if let r = streams[messages[i].id] { messages[i].text = r.text }
+            // The turn ended without a final message: what was written
+            // stays, all of it (what was still waiting shows now).
+            if let r = streams[messages[i].id] {
+                waited = max(waited ?? 0, r.finish(at: now))
+                messages[i].text = r.received
+            }
             messages[i].isStreaming = false
         }
         endStreams()
         streamMarks.removeAll()
-        replyStats.finished(id: nil)
+        replyStats.finished(id: nil, longestWait: waited)
         awaitingReply = false
     }
 
@@ -539,7 +546,8 @@ public final class AppStore {
     func applyDelta(_ d: ChatDelta, index: Int? = nil, received: TimeInterval? = nil) {
         awaitingReply = false
         deltaCount += 1
-        replyStats.delta(id: d.id, bytes: d.text.utf8.count, received: received ?? ProcessInfo.processInfo.systemUptime)
+        let arrived = received ?? ProcessInfo.processInfo.systemUptime
+        replyStats.delta(id: d.id, bytes: d.text.utf8.count, received: arrived)
         if deltaCount % 20 == 1 { breadcrumb("delta #\(deltaCount) (+\(d.text.utf8.count) bytes)") }
         // Already in the text a sync gave us (it overtook nothing, it was late).
         if let index, let mark = streamMarks[d.id], index <= mark { return }
@@ -547,74 +555,98 @@ public final class AppStore {
             // A late delta after the final message (or after the turn
             // ended) is ignored.
             guard messages[i].isStreaming else { return }
-            pendingDeltas[d.id, default: ""] += d.text
             if syncing, let index { syncJournal.append((index, d.id, d.text)) }
-            scheduleDeltaFlush()
+            // Into the reply's buffer; the next tick reveals it.
+            streams[d.id]?.receive(d.text, at: arrived)
+            startRevealing()
         } else {
             // Live text waits while an older stretch is on screen.
             guard !viewingPast else { return }
             if syncing, let index { syncJournal.append((index, d.id, d.text)) }
-            // The first words show up at once; the rest is batched.
             var m = ChatMessage(seq: 0, id: d.id, role: .assistant, kind: .text, text: "", channel: .app,
                                 ts: Date().epochMillis)
             m.isStreaming = true
-            startStream(id: d.id, text: d.text)
+            startStream(id: d.id, text: d.text, at: arrived)
             messages.append(m)
             sortMessages()
-            replyStats.shown()
         }
     }
 
-    private func scheduleDeltaFlush() {
-        guard !deltaFlushScheduled else { return }
-        deltaFlushScheduled = true
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(30))
-            self?.flushDeltas()
+    // MARK: revealing
+
+    /// Ticks until every reply being written has revealed what it has.
+    private func startRevealing() {
+        guard !revealing, streams.values.contains(where: { !$0.isCaughtUp }) else { return }
+        revealing = true
+        revealClock.start { [weak self] now in
+            guard let self else { return false }
+            revealTick(at: now)
+            let more = streams.values.contains { !$0.isCaughtUp }
+            if !more { revealing = false }
+            return more
         }
     }
 
-    func flushDeltas() {
-        deltaFlushScheduled = false
-        guard !pendingDeltas.isEmpty else { return }
-        // What showing this tick costs the main thread: from here until the
-        // Core Animation transaction carrying it is committed (the store, the
-        // reply's text, layout and drawing). CPU time, so waiting between
-        // doesn't count; nor do animations' display-link callbacks that run
-        // meanwhile (they'd run without the tick: the glass, the orb).
+    /// One tick: each reply being written reveals what's due (only the row
+    /// showing it updates: `messages` doesn't change).
+    func revealTick(at now: TimeInterval) {
+        guard !streams.isEmpty else { return }
+        // What the tick costs the main thread: the tick itself (the reply's
+        // text into its view, measured), then the commit of the frame
+        // carrying it (SwiftUI's update, layout, drawing). CPU time; other
+        // display-link callbacks in that frame (the glass, the orb, the
+        // fade's own) aren't counted: they'd run without the tick.
         let cpu = ReplyStats.threadCPU()
+        let pacing = StreamingReply.pacingCPU
         let tick = ChatSignposts.chat.beginInterval("tick")
-        let signpost = ChatSignposts.chat.beginInterval("flush")
-        // Into each reply's own text: `messages` doesn't change, so nothing
-        // but the row showing the reply updates.
-        for (id, text) in pendingDeltas {
-            streams[id]?.append(text)
-        }
-        pendingDeltas.removeAll()
-        replyStats.shown()
-        ChatSignposts.chat.endInterval("flush", signpost)
-        let done: @MainActor (Double) -> Void = { [weak self] animations in
+        RevealTickNote.kind = .ordinary
+        var changed = false
+        for r in streams.values where r.tick(at: now) { changed = true }
+        guard changed else {
+            // Nothing could be revealed yet (a word still coming).
+            ChatSignposts.chat.emitEvent("idle")
             ChatSignposts.chat.endInterval("tick", tick)
-            self?.replyStats.tick(ms: (ReplyStats.threadCPU() - cpu - animations) * 1000, animationsMs: animations * 1000)
+            return
+        }
+        // Set by the view while it took the new text in.
+        let kind = RevealTickNote.kind
+        let own = ReplyStats.threadCPU() - cpu
+        let paced = StreamingReply.pacingCPU - pacing
+        let done: @MainActor (Double) -> Void = { [weak self] commit in
+            ChatSignposts.chat.endInterval("tick", tick)
+            self?.replyStats.tick(ms: (own + commit) * 1000, commitMs: commit * 1000, pacingMs: paced * 1000, kind: kind)
         }
         if let whenCommitted {
             whenCommitted(done)
         } else {
-            // Without the app's watch: Core Animation's completion, which
-            // also waits for animations in the transaction (an upper bound).
-            CATransaction.setCompletionBlock { MainActor.assumeIsolated { done(0) } }
+            // Without the app's watch: up to Core Animation's completion,
+            // which also waits for animations in the transaction (an upper
+            // bound).
+            let began = ReplyStats.threadCPU()
+            CATransaction.setCompletionBlock { MainActor.assumeIsolated { done(ReplyStats.threadCPU() - began) } }
         }
+    }
+
+    /// Everything received shows at once, without pacing (the app is
+    /// leaving the screen).
+    func revealEverything() {
+        let now = ProcessInfo.processInfo.systemUptime
+        for r in streams.values { r.flush(at: now) }
     }
 
     /// Set by the app: calls back once the Core Animation transaction
     /// carrying the views' latest changes is committed, with the main-thread
-    /// CPU seconds spent meanwhile in display-link callbacks (animations).
-    @ObservationIgnored public var whenCommitted: (@MainActor (_ done: @escaping @MainActor (_ animationsCPU: Double) -> Void) -> Void)?
+    /// CPU seconds the commit took (after the frame's display-link callbacks:
+    /// SwiftUI's update, layout, drawing).
+    @ObservationIgnored public var whenCommitted: (@MainActor (_ done: @escaping @MainActor (_ commitCPU: Double) -> Void) -> Void)?
 
-    private func startStream(id: String, text: String) {
-        let r = StreamingReply(id: id, text: text)
+    private func startStream(id: String, text: String, at time: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        let r = StreamingReply(id: id, text: text, at: time)
         streams[id] = r
         latestStream = r
+        // The first words show at once (as of their arrival).
+        r.tick(at: time)
+        startRevealing()
     }
 
     private func endStream(_ id: String) {
@@ -630,9 +662,9 @@ public final class AppStore {
 
     func upsert(_ incoming: ChatMessage) {
         breadcrumb("message \(incoming.role.rawValue) \(incoming.text.utf8.count) bytes (\(messages.count) msgs)")
-        replyStats.finished(id: incoming.id)
-        // The final text supersedes anything still buffered for it.
-        pendingDeltas[incoming.id] = nil
+        // The final text shows whatever was still waiting to be revealed.
+        let waited = streams[incoming.id]?.finish(at: ProcessInfo.processInfo.systemUptime)
+        replyStats.finished(id: incoming.id, longestWait: waited)
         streamMarks[incoming.id] = nil
         endStream(incoming.id)
         var m = incoming
@@ -755,7 +787,7 @@ public final class AppStore {
     public func stream(for id: String) -> StreamingReply? { streams[id] }
 
     /// A message's text as shown: while a reply is being written, its text so far.
-    public func liveText(_ m: ChatMessage) -> String { streams[m.id]?.text ?? m.text }
+    public func liveText(_ m: ChatMessage) -> String { streams[m.id]?.received ?? m.text }
 
     public var isBusy: Bool { awaitingReply || (status?.busy ?? false) || messages.contains(where: \.isStreaming) }
 
@@ -1304,83 +1336,99 @@ public final class AppStore {
     }
 }
 
-/// One reply's streaming, measured: how long each piece of text waited
-/// between coming off the wire and being put on screen (applied to
-/// `messages`), the longest per reply. A stall on the main thread shows up
-/// here as a long wait. Logged once per reply, as `[reveal]`: counts and
-/// times only, never text.
+/// One reply's streaming, measured: how long the pieces of text waited
+/// between coming off the wire and being revealed (the pacer holds them up to
+/// ~0.4 s on purpose; a stall on the main thread shows up as a longer wait),
+/// and what each tick cost the main thread, by what it changed on screen.
+/// Logged once per reply, as `[reveal]`: counts and times only, never text.
 struct ReplyStats {
     private var id: String?
     private var start: TimeInterval = 0
     private var deltas = 0
     private var bytes = 0
-    /// The oldest piece not yet on screen.
-    private var waitingSince: TimeInterval?
-    private var longest: TimeInterval = 0
-    private var slow = 0
     private var signpost: OSSignpostIntervalState?
-    /// Main-thread CPU time of each tick: from the flush until its Core
-    /// Animation transaction is committed (the store, the row, layout,
-    /// drawing), without animations' display-link callbacks meanwhile.
-    private var tickMs: [Double] = []
-    /// Those callbacks, for the record.
-    private var animationMs: [Double] = []
-
-    static let slowWait: TimeInterval = 0.25
+    /// Main-thread CPU time of each tick: the tick itself plus the commit
+    /// of its frame (the row, layout, drawing); by kind.
+    private var tickMs: [RevealTickKind: [Double]] = [:]
+    /// The commits alone, and the pacer's part, for the record.
+    private var commitMs: [Double] = []
+    private var pacingMs: [Double] = []
 
     mutating func delta(id: String, bytes: Int, received: TimeInterval) {
         if self.id != id {
-            if self.id != nil { finished(id: nil) }
+            if self.id != nil { finished(id: nil, longestWait: nil) }
             self.id = id
             start = received
             signpost = ChatSignposts.chat.beginInterval("reply")
         }
         deltas += 1
         self.bytes += bytes
-        if waitingSince == nil { waitingSince = received }
     }
 
-    /// One tick's cost, measured by the store (see `flushDeltas`).
-    mutating func tick(ms: Double, animationsMs: Double) {
+    /// One tick's cost, measured by the store (see `revealTick`).
+    mutating func tick(ms: Double, commitMs: Double, pacingMs: Double, kind: RevealTickKind) {
         guard id != nil else { return }
-        tickMs.append(ms)
-        animationMs.append(animationsMs)
+        tickMs[kind, default: []].append(ms)
+        self.commitMs.append(commitMs)
+        self.pacingMs.append(pacingMs)
     }
 
-    /// CPU time of the calling thread (the main thread, where flushes run).
+    /// CPU time of the calling thread (the main thread, where ticks run).
     static func threadCPU() -> Double {
         var t = timespec()
         clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t)
         return Double(t.tv_sec) + Double(t.tv_nsec) / 1_000_000_000
     }
 
-    /// Everything received so far is on screen now.
-    mutating func shown() {
-        guard let since = waitingSince else { return }
-        let wait = ProcessInfo.processInfo.systemUptime - since
-        longest = max(longest, wait)
-        if wait >= Self.slowWait { slow += 1 }
-        waitingSince = nil
+    /// p50 / p95 / max of `values`, as text.
+    static func spread(_ values: [Double]) -> String {
+        let sorted = values.sorted()
+        guard !sorted.isEmpty else { return "none" }
+        func at(_ q: Double) -> Double { sorted[min(sorted.count - 1, Int(Double(sorted.count - 1) * q))] }
+        return String(format: "p50 %.2f, p95 %.2f, max %.1f ms", at(0.5), at(0.95), sorted.last ?? 0)
     }
 
-    /// The reply ended (its final message, or the turn ended): `id` nil for any.
-    mutating func finished(id: String?) {
+    /// The reply ended (its final message, or the turn ended): `id` nil for
+    /// any. `longestWait`: the pacer's, everything still waiting counted as
+    /// shown now.
+    mutating func finished(id: String?, longestWait: TimeInterval?) {
         guard let current = self.id, id == nil || id == current else { return }
-        shown()
         let took = ProcessInfo.processInfo.systemUptime - start
+        let all = tickMs.values.flatMap { $0 }
         var ticks = ""
-        if tickMs.count >= 5 {
-            let sorted = tickMs.sorted()
-            func at(_ q: Double) -> Double { sorted[min(sorted.count - 1, Int(Double(sorted.count - 1) * q))] }
-            let other = animationMs.sorted()
-            ticks = String(format: "; main thread per tick p50 %.2f ms, p95 %.2f ms, max %.1f ms over %d ticks (animations meanwhile, not counted: p95 %.2f ms)",
-                           at(0.5), at(0.95), sorted.last ?? 0, sorted.count,
-                           other[min(other.count - 1, Int(Double(other.count - 1) * 0.95))])
+        if all.count >= 5 {
+            let kinds: [(RevealTickKind, String)] = [(.ordinary, "ordinary"), (.newLine, "new line"), (.tableRow, "table row")]
+            let split = kinds.compactMap { k, name in
+                tickMs[k].map { "\(name) ×\($0.count) \(Self.spread($0))" }
+            }.joined(separator: "; ")
+            ticks = "; main thread per tick \(Self.spread(all)) over \(all.count) ticks (\(split)); of which the commit \(Self.spread(commitMs)), the pacer \(Self.spread(pacingMs))"
         }
-        debugLog(String(format: "[reveal] reply done: %d deltas, %.1f KB in %.1f s, longest wait to show %d ms (%d waits ≥ %d ms)",
-                        deltas, Double(bytes) / 1024, took, Int(longest * 1000), slow, Int(Self.slowWait * 1000)) + ticks)
-        let (n, ms) = (deltas, Int(longest * 1000))
-        if let signpost { ChatSignposts.chat.endInterval("reply", signpost, "\(n) deltas, longest wait \(ms) ms") }
+        let wait = longestWait.map { "\(Int($0 * 1000)) ms" } ?? "n/a"
+        debugLog(String(format: "[reveal] reply done: %d deltas, %.1f KB in %.1f s, longest wait to show ", deltas, Double(bytes) / 1024, took)
+                 + wait + ticks)
+        let n = deltas
+        if let signpost { ChatSignposts.chat.endInterval("reply", signpost, "\(n) deltas, longest wait \(wait)") }
         self = ReplyStats()
     }
+}
+
+/// What a reveal tick changed on screen, as told by the view showing the
+/// reply while it takes the new text in (for `[reveal]`'s split).
+public enum RevealTickKind: Int, Sendable, Comparable {
+    /// More text on lines already there.
+    case ordinary
+    /// The text got taller: SwiftUI lays the conversation out again.
+    case newLine
+    /// The reply's shape changed (a table row, a table starting).
+    case tableRow
+
+    public static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
+}
+
+@MainActor
+public enum RevealTickNote {
+    /// The current tick's kind; the store resets it at the start of each.
+    public static var kind = RevealTickKind.ordinary
+
+    public static func note(_ k: RevealTickKind) { kind = max(kind, k) }
 }

@@ -2,10 +2,12 @@ import PaloAllyKit
 import UIKit
 
 /// When the views' latest changes have reached the screen: the end of the
-/// next UI update's Core Animation commit (UIKit's update link, iOS 18).
-/// The store measures what a reply's tick costs with it (`[reveal]`).
-/// Display-link callbacks in between (the glass's springs, the orb) are
-/// counted apart: they run whether or not a reply is being written.
+/// next UI update's Core Animation commit (UIKit's update link, iOS 18),
+/// with what the commit cost the main thread. The store measures what a
+/// reply's tick costs with it (`[reveal]`), and the fade its frames. The
+/// frame's display-link callbacks (the glass's springs, the orb) come
+/// before the commit and aren't counted: they run whether or not a reply is
+/// being written.
 @MainActor
 final class CommitWatch {
     static let shared = CommitWatch()
@@ -14,21 +16,23 @@ final class CommitWatch {
     private var link: UIUpdateLink?
     #endif
     private var waiting: [@MainActor (Double) -> Void] = []
-    private var animationsCPU = 0.0
-    private var displayLinksBegan = 0.0
+    /// CPU time at the end of the frame's display-link callbacks.
+    private var commitBegan = 0.0
 
-    /// For `AppStore.whenCommitted`. Without an update link (Mac), after the
-    /// current transaction's completion instead.
-    func after(_ done: @escaping @MainActor (Double) -> Void) {
+    /// Calls back at the end of the next commit with the main-thread CPU
+    /// seconds it took (SwiftUI's update, layout and drawing, after the
+    /// frame's display-link callbacks). Without an update link (Mac), up to
+    /// the current transaction's completion instead (an upper bound).
+    func afterCommit(_ done: @escaping @MainActor (Double) -> Void) {
         #if !targetEnvironment(macCatalyst)
         if let link = link ?? makeLink() {
-            if waiting.isEmpty { animationsCPU = 0 }
             waiting.append(done)
             link.isEnabled = true
             return
         }
         #endif
-        CATransaction.setCompletionBlock { MainActor.assumeIsolated { done(0) } }
+        let began = Self.threadCPU()
+        CATransaction.setCompletionBlock { MainActor.assumeIsolated { done(Self.threadCPU() - began) } }
     }
 
     #if !targetEnvironment(macCatalyst)
@@ -38,31 +42,66 @@ final class CommitWatch {
         // Not continuous (the default): it only rides along updates that
         // happen anyway, never asks for frames of its own.
         let link = UIUpdateLink(windowScene: scene)
-        link.addAction(to: .beforeCADisplayLinkDispatch) { [weak self] _, _ in
-            self?.displayLinksBegan = Self.threadCPU()
-        }
         link.addAction(to: .afterCADisplayLinkDispatch) { [weak self] _, _ in
-            guard let self, displayLinksBegan > 0 else { return }
-            animationsCPU += Self.threadCPU() - displayLinksBegan
-            displayLinksBegan = 0
+            self?.commitBegan = Self.threadCPU()
         }
         link.addAction(to: .afterCATransactionCommit) { [weak self] link, _ in
             guard let self else { return }
             link.isEnabled = false
             let done = waiting
-            let animations = animationsCPU
             waiting = []
-            animationsCPU = 0
-            for d in done { d(animations) }
+            let commit = commitBegan > 0 ? Self.threadCPU() - commitBegan : 0
+            commitBegan = 0
+            for d in done { d(commit) }
         }
         self.link = link
         return link
     }
     #endif
 
-    private static func threadCPU() -> Double {
+    static func threadCPU() -> Double {
         var t = timespec()
         clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t)
         return Double(t.tv_sec) + Double(t.tv_nsec) / 1_000_000_000
     }
+}
+
+/// Drives a store's reveal ticks (`RevealPacer`) from a display link at
+/// 15 Hz, so each tick (~67 ms) lands at the start of a frame. It runs in
+/// every run-loop mode: the text keeps coming while the list is dragged.
+@MainActor
+final class DisplayLinkRevealClock: RevealClock {
+    private var link: CADisplayLink?
+    private var tick: (@MainActor (TimeInterval) -> Bool)?
+    private var last = 0.0
+
+    func start(_ tick: @escaping @MainActor (TimeInterval) -> Bool) {
+        self.tick = tick
+        if link == nil {
+            let link = CADisplayLink(target: LinkTarget { [weak self] in self?.fire() }, selector: #selector(LinkTarget.fire))
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 10, maximum: 15, preferred: 15)
+            link.add(to: .main, forMode: .common)
+            self.link = link
+        }
+        link?.isPaused = false
+    }
+
+    private func fire() {
+        let now = ProcessInfo.processInfo.systemUptime
+        // The link may come faster than asked (other content on screen).
+        guard now - last >= 0.055 else { return }
+        last = now
+        if tick?(now) != true {
+            tick = nil
+            link?.isPaused = true
+        }
+    }
+}
+
+/// A display link's target that doesn't keep its owner alive.
+@MainActor
+final class LinkTarget: NSObject {
+    private let action: @MainActor () -> Void
+    init(_ action: @escaping @MainActor () -> Void) { self.action = action }
+    @objc func fire() { action() }
 }

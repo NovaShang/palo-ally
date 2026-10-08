@@ -85,7 +85,11 @@ final class ReplyTextModel {
             next[next.count - 1] = .live
             live = t
         }
-        if next != pieces { pieces = next }
+        if next != pieces {
+            pieces = next
+            // A table row (or a table starting): the reply changes shape.
+            if streaming { RevealTickNote.note(.tableRow) }
+        }
         guard live != liveText || streaming != self.streaming else { return }
         liveText = live
         self.streaming = streaming
@@ -113,6 +117,7 @@ final class ReplyTextModel {
         let height = view.fittingSize(width: width).height
         if height != liveHeight {
             ChatSignposts.chat.emitEvent("grew")
+            RevealTickNote.note(.newLine)
             liveHeight = height
         }
     }
