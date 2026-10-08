@@ -6,7 +6,7 @@ import type { WechatChannel, WechatReplyTarget } from "./channels/types.ts";
 import type { ChatLog } from "./chat.ts";
 import type { Config, Paths } from "./config.ts";
 import { ACTIVITY, ACTIVITY_BACKGROUND, budgetNotice, describeActivity, friendlyError } from "./copy.ts";
-import { BEHAVIOR } from "./home.ts";
+import { behaviorPrompt } from "./home.ts";
 import type { HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
 import type { Router } from "./router.ts";
 import type { RuntimeState } from "./runtime.ts";
@@ -215,7 +215,7 @@ export class Conversation {
       resumeSessionId: rt.sessionId,
       priorCostUsd: rt.sessionId ? rt.sessionCostUsd : undefined,
       permissionMode: cfg.permissionMode,
-      appendSystemPrompt: BEHAVIOR + `\n\n主人所在时区：${cfg.settings.timezone}。`,
+      appendSystemPrompt: behaviorPrompt(this.d.paths) + `\n\n主人所在时区：${cfg.settings.timezone}。`,
       tools: this.d.tools(),
       // AskUserQuestion is a question for the owner, not a permission prompt.
       canUseTool: (req) => (req.toolName === ASK_TOOL ? this.d.questions.request(req) : this.d.approvals.request(req)),

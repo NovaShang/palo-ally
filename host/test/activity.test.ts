@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { ACTIVITY, describeActivity } from "../src/copy.ts";
-import { BEHAVIOR } from "../src/home.ts";
+import { Paths } from "../src/config.ts";
+import { BEHAVIOR, behaviorPrompt } from "../src/home.ts";
 import { cleanup, makeHub, tick } from "./helpers.ts";
 
 describe("activity line: tool → plain Chinese", () => {
@@ -107,5 +108,15 @@ describe("behavior: respond first, then act", () => {
     // the WeChat section no longer carries its own copy of the rule
     const wechat = BEHAVIOR.slice(BEHAVIOR.indexOf("## 微信"), BEHAVIOR.indexOf("## 干活方式"));
     expect(wechat).not.toContain("先回一句");
+  });
+});
+
+describe("behavior: where past conversation lives", () => {
+  test("points at this install's chat log, read-only, search before answering", () => {
+    const prompt = behaviorPrompt(new Paths("/Users/someone/.paloally"));
+    expect(prompt).toContain("/Users/someone/.paloally/state/chat.jsonl");
+    expect(prompt).not.toContain("{{chatLog}}");
+    expect(prompt).toContain("只读，绝不修改");
+    expect(prompt).toContain("先搜原文再回答");
   });
 });
