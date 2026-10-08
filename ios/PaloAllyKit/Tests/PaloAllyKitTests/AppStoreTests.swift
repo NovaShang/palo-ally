@@ -348,6 +348,23 @@ struct AppStoreTests {
         #expect(store.messages.last?.isStreaming == false)
     }
 
+    /// The final message and the host's next status are separate events: in
+    /// between, the status still says the reply is being written.
+    @Test func aFinishedReplyIsNotStillBeingWritten() async throws {
+        let store = AppStore(transport: InMemoryTransport(autoConnect: false))
+        store.apply(event: "status", data: ["busy": true, "activity": "在写回复"])
+        store.apply(event: "chat.delta", data: ["id": "r1", "text": "写好了。"])
+        #expect(!store.replyEndedSinceStatus)
+        store.receive(ChatMessage(seq: 1, id: "r1", role: .assistant, text: "写好了。", ts: 1))
+        #expect(store.replyEndedSinceStatus)
+        // A tool next: a new status, shown again.
+        store.apply(event: "status", data: ["busy": true, "activity": "在查日历"])
+        #expect(!store.replyEndedSinceStatus)
+        // A message that wasn't being written changes nothing.
+        store.receive(ChatMessage(seq: 2, id: "n1", role: .assistant, text: "提醒", ts: 2))
+        #expect(!store.replyEndedSinceStatus)
+    }
+
     @Test func goingToTheBackgroundRevealsEverything() async throws {
         let clock = ManualRevealClock()
         let store = AppStore(transport: InMemoryTransport(autoConnect: false))

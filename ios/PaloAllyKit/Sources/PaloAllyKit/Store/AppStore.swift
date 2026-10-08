@@ -58,6 +58,11 @@ public final class AppStore {
     public private(set) var streams: [String: StreamingReply] = [:]
     /// The reply being written now, if any.
     public private(set) var latestStream: StreamingReply?
+    /// A reply was just finished (its final message came) and the host's
+    /// status hasn't changed since: the status still says it's writing, but
+    /// the words are all there. (The idle status comes as its own event,
+    /// a moment after; a tool starting next brings a new status.)
+    public private(set) var replyEndedSinceStatus = false
     public private(set) var tasks: [AllyTask] = []
     public private(set) var approvals: [Approval] = []
     /// Choice cards (AskUserQuestion), newest first.
@@ -458,6 +463,7 @@ public final class AppStore {
     private func applyStatus(_ s: HostStatus) {
         if s.busy != status?.busy { breadcrumb("host \(s.busy ? "busy" : "idle")") }
         status = s
+        if replyEndedSinceStatus { replyEndedSinceStatus = false }
         guard !s.busy else { return }
         let now = ProcessInfo.processInfo.systemUptime
         var waited: TimeInterval?
@@ -685,6 +691,7 @@ public final class AppStore {
         breadcrumb("message \(incoming.role.rawValue) \(incoming.text.utf8.count) bytes (\(messages.count) msgs)")
         // The final text shows whatever was still waiting to be revealed.
         let waited = streams[incoming.id]?.finish(at: ProcessInfo.processInfo.systemUptime)
+        if waited != nil { replyEndedSinceStatus = true }
         replyStats.finished(id: incoming.id, longestWait: waited)
         streamMarks[incoming.id] = nil
         endStream(incoming.id)

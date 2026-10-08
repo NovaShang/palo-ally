@@ -338,9 +338,11 @@ private struct ConversationRows: View {
         #endif
     }
 
-    /// Shown whenever the host is working (not just right after a send).
+    /// Shown whenever the host is working (not just right after a send);
+    /// not under a reply that has just been finished while the status
+    /// still says it's being written (it lingered there a few frames).
     private var showsBusyIndicator: Bool {
-        store.connection.isOnline && (store.awaitingReply || store.status?.busy == true)
+        store.connection.isOnline && (store.awaitingReply || (store.status?.busy == true && !store.replyEndedSinceStatus))
     }
 
     private var busyActivity: String? {
