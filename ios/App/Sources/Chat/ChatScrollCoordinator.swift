@@ -251,6 +251,11 @@ final class ChatScrollCoordinator {
     func sent(turnStart cid: String?) {
         if let cid, cid != turnStart { turnStart = cid }
         if turnRoom == 0 { measureRoom() }
+        #if DEBUG
+        turnProbe = nil
+        FrameWatch.shared.following = { [weak self] in self?.machine.mode == .following }
+        FrameWatch.shared.start("a send and its reply", rising: true)
+        #endif
         send(.sent)
     }
     func grewBelow() { send(.grewBelow) }
@@ -258,6 +263,20 @@ final class ChatScrollCoordinator {
     @ObservationIgnored private var followed: (reply: StreamingReply, token: Int)?
     /// The reply being written: each piece of it counts as growth below.
     func follow(_ reply: StreamingReply?) {
+        #if DEBUG
+        if reply == nil, followed != nil {
+            FrameWatch.shared.replyEnded()
+            // Written: the last of it settles, then the line.
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(500))
+                if self.followed == nil { FrameWatch.shared.stop() }
+            }
+        }
+        if reply != nil, followed == nil, !FrameWatch.shared.running {
+            FrameWatch.shared.following = { [weak self] in self?.machine.mode == .following }
+            FrameWatch.shared.start("a reply", rising: false)
+        }
+        #endif
         if let f = followed { f.reply.stopListening(f.token) }
         followed = reply.map { r in
             (r, r.listen { [weak self] _ in
@@ -566,7 +585,7 @@ final class ChatScrollCoordinator {
             LaunchMetrics.conversationLaidOut(messages: store.messages.count, laidOut: window(in: store.messages).count)
         }
         #if DEBUG
-        defer { probeHeldRow() }
+        defer { probeHeldRow(); probeTurn() }
         #endif
         if let want = pendingY, abs(new.offsetY - old.offsetY) > 0.5 {
             // Learn how `scrollTo(y:)` maps to the offset (a sane answer only).
@@ -722,6 +741,20 @@ final class ChatScrollCoordinator {
     }
 
     #if DEBUG
+    /// `-turnTrace YES`: where the latest sent message sits below the top of
+    /// the view, each time that changes by a point or more (the push-to-top
+    /// UI tests: it rises to the top, then stays while a short reply grows).
+    @ObservationIgnored private var turnProbe: Int?
+    private static let turnTraceOn = UserDefaults.standard.bool(forKey: "turnTrace")
+    private func probeTurn() {
+        guard Self.turnTraceOn, let cid = turnStart, let m = metrics,
+              let id = store?.messages.last(where: { $0.clientMsgId == cid })?.id, let y = rowY[id] else { return }
+        let onScreen = Int((y + contentTop - (m.offsetY + m.insetTop)).rounded())
+        if let p = turnProbe, abs(p - onScreen) < 1 { return }
+        turnProbe = onScreen
+        debugLog("[turn] \(onScreen) pt below the top, \(Int(m.distanceFromBottom)) pt from the end, \(machine.mode.rawValue)")
+    }
+
     @ObservationIgnored private var heldProbe: (id: String, y: Int)?
     /// `-pinTrace YES`: where the held row sits below the top of the view,
     /// each time that changes by more than a point while the list rests

@@ -130,3 +130,121 @@ enum ChatMotion {
     }
 }
 
+#if DEBUG
+/// `-frameTrace YES`: from a send (or a reply starting) until the reply is
+/// written, every frame's scroll position as shown on screen (the UIKit
+/// scroll view's presentation layer) and how late the frame came. Logs one
+/// `[frames]` line per reply, in two parts: the send (its message rising,
+/// the first 0.8 s) and the rest, the reply being written and followed. For
+/// each: frames the main thread delivered late, as hitch time in ms per
+/// second (Apple's hitch ratio; budget < 5 ms/s), and, while following, the
+/// largest step between two frames (a line jumped shows as a step the height
+/// of a line; a glide as several small ones).
+@MainActor
+final class FrameWatch {
+    static let shared = FrameWatch()
+    static let on = UserDefaults.standard.bool(forKey: "frameTrace")
+    private struct Part {
+        var frames = 0, late = 0
+        var hitch = 0.0, seconds = 0.0
+        var steps: [CGFloat] = []
+        func line(_ name: String) -> String {
+            let sorted = steps.sorted()
+            let p95 = sorted.isEmpty ? 0 : sorted[Int(Double(sorted.count - 1) * 0.95)]
+            return String(format: "%@ %d frames over %.1f s, %d late, hitches %.0f ms (%.1f ms/s), largest step %.1f pt, p95 %.1f pt, %d over 15 pt",
+                          name, frames, seconds, late, hitch, hitch / max(seconds, 0.001), sorted.last ?? 0, p95, sorted.filter { $0 > 15 }.count)
+        }
+    }
+    private var link: CADisplayLink?
+    /// Measuring a segment (the link runs all along: a link made at a
+    /// send came late itself for its first frames).
+    private var measuring = false
+    private var label = ""
+    private var began: CFTimeInterval = 0
+    private var riseUntil: CFTimeInterval = 0
+    private var last: CFTimeInterval?
+    private var lastY: CGFloat?
+    private var rise = Part()
+    private var rest = Part()
+    private var end = Part()
+    /// When the reply was finished (its final message): the frames after
+    /// count apart.
+    private var endedAt: CFTimeInterval?
+    var running: Bool { measuring }
+    /// Following the end (only those frames' steps count).
+    var following: () -> Bool = { true }
+
+    /// `rising`: a send, whose first 0.8 s are counted apart.
+    func start(_ label: String, rising: Bool) {
+        guard Self.on else { return }
+        if measuring { stop() }
+        self.label = label
+        began = CACurrentMediaTime()
+        riseUntil = rising ? began + 0.8 : began
+        (rise, rest, end, endedAt) = (Part(), Part(), Part(), nil)
+        measuring = true
+        if link == nil {
+            let link = CADisplayLink(target: LinkTarget { [weak self] in self?.frame() }, selector: #selector(LinkTarget.fire))
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+            link.add(to: .main, forMode: .common)
+            self.link = link
+        }
+    }
+
+    /// The reply is finished: what follows is its end, counted apart.
+    func replyEnded() {
+        guard measuring, endedAt == nil else { return }
+        endedAt = CACurrentMediaTime()
+    }
+
+    func stop() {
+        guard measuring else { return }
+        measuring = false
+        let now = CACurrentMediaTime()
+        let ended = endedAt ?? now
+        rise.seconds = max(0, min(ended, riseUntil) - began)
+        rest.seconds = max(0, ended - max(began, riseUntil))
+        end.seconds = max(0, now - ended)
+        debugLog("[frames] \(label): " + (rise.frames > 0 ? rise.line("rising") + "; " : "") + rest.line("then") + "; " + end.line("ending"))
+    }
+
+    private func frame() {
+        guard let link else { return }
+        guard measuring else {
+            last = link.timestamp
+            lastY = ChatScroll.uiScrollView.map { $0.layer.presentation()?.bounds.origin.y ?? $0.contentOffset.y }
+            return
+        }
+        let rising = link.timestamp < riseUntil
+        let ending = endedAt.map { link.timestamp >= $0 } ?? false
+        var part = ending ? end : rising ? rise : rest
+        part.frames += 1
+        if let last {
+            let gap = link.timestamp - last
+            if gap > link.duration * 1.5 {
+                part.late += 1
+                part.hitch += (gap - link.duration) * 1000
+                if part.late <= 8 {
+                    debugLog(String(format: "[frames] late: %.0f ms after the last, %.2f s in", gap * 1000, link.timestamp - began))
+                }
+            }
+        }
+        // Frames since the last callback (more than one when it came late:
+        // an animation goes on meanwhile, so its move counts per frame).
+        let frames = last.map { max(1, ((link.timestamp - $0) / link.duration).rounded()) } ?? 1
+        last = link.timestamp
+        if let sv = ChatScroll.uiScrollView {
+            let y = sv.layer.presentation()?.bounds.origin.y ?? sv.contentOffset.y
+            if let lastY, following(), !sv.isTracking, !sv.isDecelerating {
+                let step = abs(y - lastY) / frames
+                part.steps.append(step)
+                if step > 15, !rising, !ending {
+                    debugLog(String(format: "[frames] a step of %.0f pt, %.2f s in", step, link.timestamp - began))
+                }
+            }
+            lastY = y
+        }
+        if ending { end = part } else if rising { rise = part } else { rest = part }
+    }
+}
+#endif

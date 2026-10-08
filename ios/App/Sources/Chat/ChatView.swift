@@ -68,6 +68,21 @@ struct ChatView: View {
             try? await Task.sleep(for: .seconds(at))
             scroll.jumpToLatest()
         }
+        // `-demoSends "5:好的|20:写详细一点"`: send each text that many seconds
+        // in, the way the composer does (the push-to-top UI tests).
+        .task {
+            guard let plan = UserDefaults.standard.string(forKey: "demoSends") else { return }
+            var elapsed = 0.0
+            for item in plan.split(separator: "|") {
+                let parts = item.split(separator: ":", maxSplits: 1)
+                guard parts.count == 2, let at = Double(parts[0]) else { continue }
+                try? await Task.sleep(for: .seconds(max(0, at - elapsed)))
+                elapsed = at
+                debugLog("[demo] sending \(parts[1].count) characters")
+                scroll.willSend()
+                ChatMotion.with(ChatMotion.send) { store.send(String(parts[1])) }
+            }
+        }
         // `-demoScrollTour YES`: scroll up through the whole conversation
         // and back, as a reader would, so every row has been on screen.
         .task {

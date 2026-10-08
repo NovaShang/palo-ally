@@ -71,7 +71,7 @@ final class ScrollStressUITests: XCTestCase {
                 XCTFail("no [jump] \(when) line")
                 continue
             }
-            XCTAssertLessThanOrEqual(j.distance, 13, "\(when) after the last 回到最新 the view was \(j.distance) pt from the end")
+            XCTAssertTrue(j.onTheEnd, "\(when) after the last 回到最新 the view was \(j.distance) pt from the end")
             XCTAssertTrue(j.pinned, "\(when) after the last 回到最新 the view didn't follow the end")
         }
         XCTAssertEqual(app.state, .runningForeground)

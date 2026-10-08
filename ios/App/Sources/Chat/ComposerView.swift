@@ -156,6 +156,19 @@ struct ComposerView: View {
         .animation(.snappy, value: slashQuery)
         .animation(.snappy, value: staged.count)
         .onChange(of: focusToken) { focused = true }
+        #if DEBUG
+        // `-demoKeyboard "4:3"`: type 4 s in (the keyboard rises), stop 3 s later.
+        .task {
+            guard let plan = UserDefaults.standard.string(forKey: "demoKeyboard"),
+                  case let parts = plan.split(separator: ":").compactMap({ Double($0) }), parts.count == 2 else { return }
+            try? await Task.sleep(for: .seconds(parts[0]))
+            debugLog("[demo] keyboard up")
+            focusToken += 1
+            try? await Task.sleep(for: .seconds(parts[1]))
+            debugLog("[demo] keyboard down")
+            model.composerUnfocusRequests += 1
+        }
+        #endif
         // A click elsewhere in the conversation (the Mac) leaves the field.
         .onChange(of: model.composerUnfocusRequests) { if focused { focused = false } }
         // The orb in the title bar notices the owner typing.

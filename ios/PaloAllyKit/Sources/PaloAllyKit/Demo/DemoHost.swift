@@ -725,20 +725,24 @@ public actor DemoHost {
             upsertTask(t)
             taskToRun = t
             reply = "收到，我在后台办，好了告诉你。"
+        } else if text.contains("详细") {
+            // A reply longer than the screen (the push-to-top UI tests).
+            reply = DemoHost.longProseAnswer(1) + "\n\n" + DemoHost.longProseAnswer(2)
         } else if text.contains("晨报") {
             reply = "今天的晨报在资料库里置顶着：\n\n- **3 件待办**，最急的是周四的会\n- 1 封邮件等你回\n- 下午有雨，记得带伞 ☔️"
         } else {
             reply = "好的，我记下了 🙂\n\n还有什么想让我做的，随时说。"
         }
 
-        // Stream the reply in small pieces, then finalize with chat.message.
+        // Stream the reply in small pieces, then finalize with chat.message
+        // (a long one faster, about as fast as a real one comes).
         let rid = nextID("r")
         var acc = ""
         for piece in DemoHost.chunks(reply) {
             acc += piece
             writing = SyncResult.Streaming(id: rid, text: acc)
             emit(RPCEventName.chatDelta, ChatDelta(id: rid, text: piece))
-            await pause(0.05)
+            await pause(reply.count > 400 ? 0.02 : 0.05)
         }
         writing = nil
         seq += 1

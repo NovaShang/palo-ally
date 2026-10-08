@@ -100,14 +100,14 @@ final class ChatScrollUITests: XCTestCase {
             .filter { $0.time >= tap && $0.time <= tap.addingTimeInterval(1.6) }
         XCTAssertTrue(letGo.isEmpty, "let go of the end under a resting finger: \(letGo.map(\.line))")
         if let landing = log.lastJump("+1.2 s") {
-            XCTAssertLessThanOrEqual(landing.distance, 13, "1.2 s after the tap the view was \(landing.distance) pt from the end")
+            XCTAssertTrue(landing.onTheEnd, "1.2 s after the tap the view was \(landing.distance) pt from the end")
             XCTAssertTrue(landing.pinned, "1.2 s after the tap the view no longer followed the end")
         } else {
             XCTFail("no [jump] +1.2 s line")
         }
         // After the drags: back on the end, following it.
         if let settled = log.lastJump("+5 s") {
-            XCTAssertLessThanOrEqual(settled.distance, 13, "5 s after the tap the view was \(settled.distance) pt from the end")
+            XCTAssertTrue(settled.onTheEnd, "5 s after the tap the view was \(settled.distance) pt from the end")
             XCTAssertTrue(settled.pinned, "5 s after the tap the view no longer followed the end")
         } else {
             XCTFail("no [jump] +5 s line")
@@ -311,7 +311,7 @@ final class ChatScrollUITests: XCTestCase {
                 XCTFail("no [jump] \(when) line")
                 continue
             }
-            XCTAssertLessThanOrEqual(j.distance, 13, "\(when) after the tap the view was \(j.distance) pt from the end")
+            XCTAssertTrue(j.onTheEnd, "\(when) after the tap the view was \(j.distance) pt from the end")
             XCTAssertTrue(j.pinned, "\(when) after the tap the view didn't follow the end")
         }
         XCTAssertEqual(app.state, .runningForeground)
@@ -459,6 +459,142 @@ final class ChatScrollUITests: XCTestCase {
         }
         let lines = log.lines(containing: ["[scroll]", "[pin]"])
         add(XCTAttachment(string: lines.suffix(80).joined(separator: "\n")))
+    }
+
+    // MARK: her phone: the breaker after a reconnect, a far jump and reading back
+
+    /// Her phone (step 4 build): a reconnect, 「回到最新」 from 12 000 pt, a
+    /// drag up to about 1000 pt from the end, and some 13 s later the row
+    /// being read was let go of: "corrections kept coming (a loop)". The same
+    /// moves under the stress demo (reconnects every 5 s, replies streaming),
+    /// then 15 s of reading: the row stays held, the breaker never trips.
+    @MainActor
+    func testReadingBackAfterReconnectAndJumpKeepsItsRow() throws {
+        let app = launch(["-demoState", "stress"])
+        let list = app.scrollViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 20), "the conversation never appeared")
+        sleep(4)
+        for _ in 0..<3 { list.swipeDown(velocity: .fast) }
+        let jump = app.buttons["jumpToLatest"]
+        guard jump.waitForExistence(timeout: 5) else { return XCTFail("no 回到最新 after scrolling up") }
+        let log = AppLog()
+        let before = log.count("connection: online")
+        XCTAssertTrue(log.wait(timeout: 8) { $0.count("connection: online") > before }, "no reconnect seen")
+        let f = jump.frame
+        let lf = list.frame
+        let margin = CGPoint(x: lf.minX + 8, y: lf.minY + lf.height * 0.3)
+        // The tap; 1.8 s on, a drag up into the history, and another: about
+        // 1000 pt from the end. Then nothing: reading.
+        try TouchScript.play([
+            .tap(at: CGPoint(x: f.midX, y: f.midY), time: 0),
+            .drag(at: margin, from: 1.8, dy: 300, over: 0.6, hold: 0.2),
+            .drag(at: margin, from: 3.2, dy: 400, over: 0.8, hold: 0.2),
+        ])
+        let readFrom = Date()
+        sleep(15)
+        let report = log.lines(containing: ["[jump]", "[scroll]", "[hold]", "connection: online"]).suffix(60).joined(separator: "\n")
+        add(XCTAttachment(string: report))
+        print("---- app log\n\(report)")
+        XCTAssertEqual(log.count("stopped holding the top row"), 0, "the breaker tripped: \(log.lines(containing: ["stopped holding"]))")
+        // While reading (from a second after the last drag), the held row stays put.
+        let holds = log.entries(containing: ["[hold]"]).filter { $0.time > readFrom.addingTimeInterval(1) }
+        let ys = holds.compactMap { AppLog.number(before: "pt below the top", in: $0.line) }
+        if let first = ys.first {
+            XCTAssertLessThanOrEqual(ys.map { abs($0 - first) }.max() ?? 0, 2, "the row being read moved: \(ys)")
+        }
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    // MARK: sending: the message to the top (design §3.5, Q1)
+
+    /// A short reply: the sent message rises to the top of the view, and then
+    /// nothing scrolls at all while the reply is written below it.
+    @MainActor
+    func testSendShortReplyDoesNotScroll() throws {
+        let app = launch(["-demoState", "long", "-demoStreamDelay", "600", "-demoSends", "5:好的谢谢",
+                          "-turnTrace", "YES", "-frameTrace", "YES"])
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20), "the conversation never appeared")
+        let log = AppLog()
+        XCTAssertTrue(log.wait(timeout: 25) { $0.count("[frames] a send") > 0 }, "the reply never finished")
+        let turns = log.entries(containing: ["[turn]"])
+        let ys = turns.compactMap { AppLog.number(before: "pt below the top", in: $0.line) }
+        let report = log.lines(containing: ["[turn]", "[frames]", "[scroll]", "[reveal] reply"]).suffix(60).joined(separator: "\n")
+        add(XCTAttachment(string: report))
+        print("---- app log\n\(report)")
+        guard let risen = ys.firstIndex(where: { $0 <= 14 }) else { return XCTFail("the sent message never reached the top: \(ys)") }
+        XCTAssertGreaterThan(ys.first ?? 0, 100, "the sent message didn't rise from below: \(ys)")
+        // From the top on, it stays there through the whole reply.
+        let after = ys[risen...]
+        XCTAssertLessThanOrEqual(after.map { abs($0 - 12) }.max() ?? 0, 2, "the view moved while a short reply was written: \(Array(after))")
+        XCTAssertEqual(log.count("stopped short"), 0, "the send's scroll didn't land: \(log.lines(containing: ["stopped short"]))")
+        XCTAssertEqual(log.count("thrown off the end"), 0)
+    }
+
+    /// A reply longer than the screen: the sent message rises to the top; once
+    /// the reply fills the room below it, the view follows the end, gliding
+    /// (no step of a whole line from one frame to the next), with the end in
+    /// view, and frames on time.
+    @MainActor
+    func testSendLongReplyFollowsSmoothlyAfterItOverflows() throws {
+        let app = launch(["-demoState", "long", "-demoStreamDelay", "600", "-demoSends", "5:写详细一点",
+                          "-turnTrace", "YES", "-frameTrace", "YES"])
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20), "the conversation never appeared")
+        let log = AppLog()
+        XCTAssertTrue(log.wait(timeout: 40) { $0.count("[frames] a send") > 0 }, "the reply never finished")
+        let report = log.lines(containing: ["[turn]", "[frames]", "[scroll]", "[reveal] reply"]).suffix(80).joined(separator: "\n")
+        add(XCTAttachment(string: report))
+        print("---- app log\n\(report)")
+        let turns = log.lines(containing: ["[turn]"])
+        let ys = turns.compactMap { AppLog.number(before: "pt below the top", in: $0) }
+        let ends = turns.compactMap { AppLog.number(before: "pt from the end", in: $0) }
+        XCTAssertNotNil(ys.firstIndex(where: { $0 <= 14 }), "the sent message never reached the top: \(ys.prefix(40))")
+        XCTAssertLessThan(ys.last ?? 0, -200, "the reply didn't push the sent message up and away: \(ys.suffix(10))")
+        // Following: the end never more than about two lines out of view
+        // (a glide's lag at the demo's pace, 150 characters a second).
+        if let risen = ys.firstIndex(where: { $0 <= 14 }) {
+            XCTAssertLessThanOrEqual(ends[risen...].max() ?? 0, 75, "the end fell out of view while following")
+        }
+        XCTAssertEqual(ends.last, 0, "it didn't end on the end")
+        // The frames while the reply was written and followed.
+        guard let line = log.lines(containing: ["[frames] a send"]).last, let then = line.range(of: "then "),
+              let ending = line.range(of: "; ending") else {
+            return XCTFail("no [frames] line")
+        }
+        // While following (the reply's final message, its end, is counted apart).
+        let part = String(line[then.upperBound..<ending.lowerBound])
+        let step = Double(part.range(of: #"largest step [\d.]+"#, options: .regularExpression).map { part[$0].split(separator: " ").last! } ?? "99") ?? 99
+        let ratio = Double(part.range(of: #"\(([\d.]+) ms/s\)"#, options: .regularExpression).map { part[$0].dropFirst().split(separator: " ").first! } ?? "99") ?? 99
+        XCTAssertLessThanOrEqual(step, 15, "a step of \(step) pt between two frames: a jump, not a glide")
+        XCTAssertLessThan(ratio, 5, "hitches \(ratio) ms/s while following")
+    }
+
+    /// Reading back while a long reply is written: a drag up lets go, and
+    /// from then on the text being read stays where it is.
+    @MainActor
+    func testDetachingMidReplyHolds() throws {
+        let app = launch(["-demoState", "long", "-demoStreamDelay", "600", "-demoSends", "5:写详细一点", "-turnTrace", "YES"])
+        let list = app.scrollViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 20), "the conversation never appeared")
+        let log = AppLog()
+        XCTAssertTrue(log.wait(timeout: 20) { $0.count("[demo] sending") > 0 }, "nothing was sent")
+        sleep(5) // the reply has outgrown the room and is followed
+        let lf = list.frame
+        let margin = CGPoint(x: lf.minX + 8, y: lf.minY + lf.height * 0.35)
+        try TouchScript.play([.drag(at: margin, from: 0, dy: 160, over: 0.5, hold: 0.2)])
+        let readFrom = Date()
+        XCTAssertTrue(log.wait(timeout: 30) { $0.count("[reveal] reply done") > 0 }, "the reply never finished")
+        sleep(1)
+        let report = log.lines(containing: ["[scroll]", "[hold]", "[turn]"]).suffix(60).joined(separator: "\n")
+        add(XCTAttachment(string: report))
+        print("---- app log\n\(report)")
+        XCTAssertEqual(log.count("following → detached (drag)"), 1, "the drag didn't let go of the end (or did twice)")
+        XCTAssertEqual(log.count("detached → following"), 0, "taken back to the end while reading")
+        let holds = log.entries(containing: ["[hold]"]).filter { $0.time > readFrom.addingTimeInterval(1) }
+        let ys = holds.compactMap { AppLog.number(before: "pt below the top", in: $0.line) }
+        if let first = ys.first {
+            XCTAssertLessThanOrEqual(ys.map { abs($0 - first) }.max() ?? 0, 2, "the text being read moved as the reply grew: \(ys)")
+        }
+        XCTAssertEqual(log.count("stopped holding the top row"), 0)
     }
 
     // MARK: helpers
