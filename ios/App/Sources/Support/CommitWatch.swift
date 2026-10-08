@@ -91,7 +91,10 @@ final class DisplayLinkRevealClock: RevealClock {
         // The link may come faster than asked (other content on screen).
         guard now - last >= 0.055 else { return }
         last = now
-        if tick?(now) != true {
+        // Each tick's growth is one short animation: the scroll view's bottom
+        // anchor glides the list along instead of jumping a line at a time
+        // (design §3.6; the scroll lab showed the anchor animates with it).
+        if ChatMotion.with(ChatMotion.follow, { tick?(now) }) != true {
             tick = nil
             link?.isPaused = true
         }

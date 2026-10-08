@@ -591,6 +591,7 @@ final class AppModel {
         s.onSettings = { [weak self] settings in self?.syncTheme(id, settings) }
         s.whenCommitted = { CommitWatch.shared.afterCommit($0) }
         s.revealClock = DisplayLinkRevealClock()
+        s.finishingReply = { apply in ChatMotion.with(ChatMotion.follow, apply) }
         return s
     }
 

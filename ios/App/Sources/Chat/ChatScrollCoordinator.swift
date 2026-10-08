@@ -162,6 +162,7 @@ final class ChatScrollCoordinator {
     func attach(position: Binding<ScrollPosition>, store: AppStore, contentTop: CGFloat) {
         self.position = position
         self.store = store
+        store.willChangeTheEnd = { [weak self] in self?.settleOnTheEnd() }
         self.contentTop = contentTop
         pumpWindow()
     }
@@ -185,15 +186,22 @@ final class ChatScrollCoordinator {
         } else {
             send(.jump(viewingPast: store?.viewingPast ?? false, screens: screens))
         }
-        // Where it landed, and whether it stayed (persisted; the scroll UI tests read these).
+        // Where it landed, and whether it stayed (persisted; the scroll UI
+        // tests read these). Mid-glide (a reply streaming in) the view is a
+        // line or two (or a message gliding in) short of the end, on its way
+        // there: then also the closest it came in the last half second.
+        func where_() -> String {
+            let glide = machine.gliding ? " (gliding, closest \(Int(closestRecently())) in 0.5 s)" : ""
+            return "\(Int(ChatScroll.lastDistance)) pt from the end\(glide), pinned \(machine.mode == .following)"
+        }
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.2))
-            debugLog("[jump] +1.2 s: \(Int(ChatScroll.lastDistance)) pt from the end, pinned \(machine.mode == .following)")
+            debugLog("[jump] +1.2 s: \(where_())")
             ChatSignposts.chat.endInterval("jump", signpost)
             try? await Task.sleep(for: .seconds(1.8))
-            debugLog("[jump] +3 s: \(Int(ChatScroll.lastDistance)) pt from the end, pinned \(machine.mode == .following)")
+            debugLog("[jump] +3 s: \(where_())")
             try? await Task.sleep(for: .seconds(2))
-            debugLog("[jump] +5 s: \(Int(ChatScroll.lastDistance)) pt from the end, pinned \(machine.mode == .following)")
+            debugLog("[jump] +5 s: \(where_())")
         }
     }
 
@@ -241,7 +249,56 @@ final class ChatScrollCoordinator {
     /// The reply being written: each piece of it counts as growth below.
     func follow(_ reply: StreamingReply?) {
         if let f = followed { f.reply.stopListening(f.token) }
-        followed = reply.map { r in (r, r.listen { [weak self] _ in self?.grewBelow() }) }
+        followed = reply.map { r in
+            (r, r.listen { [weak self] _ in
+                // Each tick's growth glides in (`ChatMotion.follow`).
+                self?.glide(for: 0.3)
+                self?.grewBelow()
+            })
+        }
+    }
+
+    /// Where the view was while gliding, the last half second or so.
+    @ObservationIgnored private var glideTrail: [(at: TimeInterval, distance: CGFloat)] = []
+    /// Where it was at all, the same span (for `[jump]`).
+    @ObservationIgnored private var recentDistances: [(at: TimeInterval, distance: CGFloat)] = []
+
+    /// The closest the view came to the end in the last half second.
+    private func closestRecently() -> CGFloat {
+        let t = ProcessInfo.processInfo.systemUptime
+        return recentDistances.filter { t - $0.at <= 0.5 }.map(\.distance).min() ?? ChatScroll.lastDistance
+    }
+
+    /// Following a reply as it's written, the view glides onto the end and,
+    /// between ticks, gets there or close. If for half a second it never
+    /// came within 100 pt, something else moved it (a catch-up's message
+    /// landing above the reply mid-glide: the anchor doesn't make up for
+    /// that): back onto the end. (A glide never ending while the reply goes
+    /// on, the check at its end would come only with the reply's end.)
+    private func checkGlideKeepsUp(_ distance: CGFloat) {
+        let now = ProcessInfo.processInfo.systemUptime
+        recentDistances = recentDistances.filter { now - $0.at < 0.6 } + [(now, distance)]
+        guard machine.gliding, machine.mode == .following, !machine.phase.isUser else {
+            if !glideTrail.isEmpty { glideTrail = [] }
+            return
+        }
+        let t = ProcessInfo.processInfo.systemUptime
+        glideTrail = glideTrail.filter { t - $0.at < 0.6 } + [(t, distance)]
+        guard let first = glideTrail.first, t - first.at >= 0.5,
+              glideTrail.allSatisfy({ $0.distance > 100 }) else { return }
+        glideTrail = []
+        ChatScroll.log("following: left behind mid-glide")
+        toEnd(animated: true)
+    }
+
+    /// Something is about to change near the end mid-reply (a catch-up's
+    /// messages): mid-glide, onto the end at once first, so the bottom
+    /// anchor holds through it (see `AppStore.willChangeTheEnd`).
+    func settleOnTheEnd() {
+        guard machine.gliding, machine.mode == .following, !machine.phase.isUser, let position else { return }
+        guard (metrics?.distanceFromBottom ?? 0) > ChatScrollMachine.atEnd else { return }
+        release()
+        position.wrappedValue.scrollTo(edge: .bottom)
     }
 
     @ObservationIgnored private var glideEnd: Task<Void, Never>?
@@ -523,6 +580,7 @@ final class ChatScrollCoordinator {
             sv.contentOffset.y = new.offsetY
         }
         send(.scrolled(distance: new.distanceFromBottom))
+        checkGlideKeepsUp(new.distanceFromBottom)
         // The reader's finger: how far it has moved on the screen. Without
         // the UIKit view (it should always be there), the list's own move.
         if machine.phase == .tracking || machine.phase == .interacting {

@@ -118,7 +118,9 @@ final class ReplyTextModel {
         if height != liveHeight {
             ChatSignposts.chat.emitEvent("grew")
             RevealTickNote.note(.newLine)
-            liveHeight = height
+            // Animated, like a tick's growth (this one may come from the
+            // final message, or a re-measure): the list glides, never jumps.
+            ChatMotion.with(ChatMotion.follow) { liveHeight = height }
         }
     }
 }

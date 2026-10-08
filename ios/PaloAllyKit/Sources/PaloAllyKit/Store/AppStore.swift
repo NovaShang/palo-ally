@@ -349,6 +349,7 @@ public final class AppStore {
                 let since: Int64? = hasSynced ? lastSeq : nil
                 let (result, mark) = try await rpc.callMarked(RPCMethod.sync, params: SyncParams(sinceSeq: since),
                                                               as: SyncResult.self)
+                if !streams.isEmpty { willChangeTheEnd?() }
                 more = applySync(result, since: since, eventsBefore: mark)
                 syncRounds += 1
             }
@@ -489,7 +490,12 @@ public final class AppStore {
         case RPCEventName.chatMessage:
             if let m = try? data.decode(ChatMessage.self) {
                 let isNew = !messages.contains { $0.id == m.id }
-                receive(m)
+                if streams[m.id] != nil, let finishingReply {
+                    finishingReply { receive(m) }
+                } else {
+                    if !streams.isEmpty { willChangeTheEnd?() }
+                    receive(m)
+                }
                 // Live only: history and sync never touch the clipboard.
                 if isNew, m.kind == .clipboard, m.role == .assistant, clipboardWriter?(m.text) == true {
                     copiedClipboardIDs.insert(m.id)
@@ -518,7 +524,9 @@ public final class AppStore {
         case RPCEventName.suggestionsUpdated:
             if let r = try? data.decode(SuggestionsResult.self) { suggestions = r.suggestions }
         case RPCEventName.status:
-            if let s = try? (data["status"] ?? data).decode(HostStatus.self) { applyStatus(s) }
+            if let s = try? (data["status"] ?? data).decode(HostStatus.self) {
+                if !s.busy, !streams.isEmpty, let finishingReply { finishingReply { applyStatus(s) } } else { applyStatus(s) }
+            }
         default:
             break // unknown events are ignored
         }
@@ -633,6 +641,19 @@ public final class AppStore {
         let now = ProcessInfo.processInfo.systemUptime
         for r in streams.values { r.flush(at: now) }
     }
+
+    /// Set by the app: runs an event that finishes a reply being written
+    /// (its final message, the turn ending) inside the same short animation
+    /// as a reveal tick's, so the reply's last lines, its buttons and the
+    /// working line going all glide in instead of jumping.
+    @ObservationIgnored public var finishingReply: (@MainActor (_ apply: () -> Void) -> Void)?
+    /// Set by the app: called just before any other change near the live end
+    /// while a reply is being written (a catch-up's messages, a message from
+    /// elsewhere). A change like that landing while a tick's glide is under
+    /// way isn't made up for by the scroll view's bottom anchor (it threw the
+    /// view a message's height off the end); the app puts the view on the
+    /// end first, where the anchor holds.
+    @ObservationIgnored public var willChangeTheEnd: (@MainActor () -> Void)?
 
     /// Set by the app: calls back once the Core Animation transaction
     /// carrying the views' latest changes is committed, with the main-thread
