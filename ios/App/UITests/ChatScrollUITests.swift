@@ -459,6 +459,7 @@ final class ChatScrollUITests: XCTestCase {
         }
         let lines = log.lines(containing: ["[scroll]", "[pin]"])
         add(XCTAttachment(string: lines.suffix(80).joined(separator: "\n")))
+        print("---- app log\n" + lines.suffix(60).joined(separator: "\n"))
     }
 
     // MARK: her phone: the breaker after a reconnect, a far jump and reading back
