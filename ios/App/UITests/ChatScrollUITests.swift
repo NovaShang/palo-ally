@@ -260,8 +260,11 @@ final class ChatScrollUITests: XCTestCase {
             XCTAssertEqual(log.topRow(), topBefore, "came back to a different message at the top")
         } else {
             XCTAssertTrue(back.line.contains("following"), "came back no longer following: \(back.line)")
+            // The stress demo's next reply is streaming by then, and the view
+            // glides onto the end a line at a time: within two lines, as the
+            // jump checks (`AppLog.lastJump`).
             let d = AppLog.number(before: "pt from the end", in: back.line) ?? -1
-            XCTAssertLessThanOrEqual(d, 13, "came back \(d) pt from the end")
+            XCTAssertLessThanOrEqual(d, 60, "came back \(d) pt from the end")
         }
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
     }
