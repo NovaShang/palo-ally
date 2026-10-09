@@ -392,13 +392,16 @@ private struct ConversationChanges: ViewModifier {
             // A layout switch rebuilds the column: back onto the end if it was there.
             .onChange(of: model.layout) { scroll.layoutChanged() }
             .onChange(of: store.messages.last?.id) {
-                // What this device just sent (its echo) always returns to the
-                // live end; anything else arriving marks the jump button.
-                if let last = store.messages.last, last.role == .user, last.seq == 0 {
-                    scroll.sent(turnStart: last.clientMsgId)
-                } else {
-                    scroll.grewBelow()
-                }
+                // Anything arriving marks the jump button (what this device
+                // sends is below).
+                if let last = store.messages.last, last.role == .user, last.seq == 0 { return }
+                scroll.grewBelow()
+            }
+            // What this device just sent (its echo) always returns to the
+            // live end and starts a turn: also while a reply is still being
+            // written (which stays below it, so it isn't the last message).
+            .onChange(of: store.messages.last(where: { $0.role == .user && $0.seq == 0 })?.clientMsgId) { _, cid in
+                if let cid { scroll.sent(turnStart: cid) }
             }
             // A reply growing: the coordinator listens to the reply itself
             // (`messages` doesn't change while it's written, and nothing here
