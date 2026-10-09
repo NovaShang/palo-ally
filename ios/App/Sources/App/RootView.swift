@@ -248,12 +248,17 @@ struct MainScreen: View {
 
 /// Narrow windows: one horizontal space, one place on screen at a time. The
 /// top buttons push the conversation aside; the button facing the
-/// conversation, or a swipe from that edge, slides it back. All three stay
-/// alive so scroll positions survive.
+/// conversation, or a swipe from that edge, slides it back. The
+/// conversation is always there; 「它」 and 成果 are made when first slid to,
+/// and stay while the app is open, so their scroll positions survive a trip
+/// to the conversation.
 private struct SpatialPlaces: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
     /// Live edge-swipe translation toward the conversation (points).
     @State private var drag: CGFloat = 0
+    /// The places beside the conversation that are made (see `pane`).
+    @State private var kept: Set<AppModel.Place> = []
 
     var body: some View {
         GeometryReader { geo in
@@ -281,6 +286,14 @@ private struct SpatialPlaces: View {
                 if model.place == .assistant { edgeStrip(towardChat: -1, width: w) }
             }
         }
+        .onChange(of: model.place, initial: true) { _, place in kept.insert(place) }
+        // Leaving the app lets go of the places off screen. The system lays
+        // the whole window out again for each of its app-switcher snapshots
+        // (in the dark appearance and the light), and the places' lists
+        // cost about as much as the conversation itself.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { kept = [model.place] }
+        }
         // No clipping: the window already hides the off-screen places, and
         // clipping would cut each place's content off at the safe area.
     }
@@ -295,9 +308,14 @@ private struct SpatialPlaces: View {
     }
 
     /// Only the place on screen is interactive and visible to VoiceOver.
+    /// A place beside the conversation is made when it's slid to (it's on
+    /// screen from the first frame of the slide) and kept until the app
+    /// leaves the screen; until then its slot is empty.
     private func pane<Content: View>(_ place: AppModel.Place, @ViewBuilder content: () -> Content) -> some View {
         let current = model.place == place
-        return content()
+        return Group {
+            if place == .chat || current || kept.contains(place) { content() } else { Color.clear }
+        }
             .allowsHitTesting(current && drag == 0)
             .accessibilityHidden(!current)
     }
