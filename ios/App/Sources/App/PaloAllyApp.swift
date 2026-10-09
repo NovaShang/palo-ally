@@ -78,6 +78,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         // Documents/diagnostics on a later launch.
         StallWatchdog.start()
         TraitLog.start()
+        AwayAppearance.start()
         DiagnosticsCollector.shared.start()
         return true
     }
@@ -119,6 +120,43 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         Task { @MainActor in
             self.model.handleNotification(userInfo: sendable)
             done()
+        }
+    }
+}
+
+/// While the app is in the background its windows keep the active
+/// appearance. Leaving, the system makes the scene inactive and then lays
+/// the windows out again for each of its app-switcher snapshots, switching
+/// between inactive and active as well as dark and light; each switch makes
+/// every view resolve its colors and text again. Nothing of the app is on
+/// screen meanwhile, and the snapshot in the current appearance is taken
+/// active anyway. The windows follow the scene again once it's active.
+@MainActor
+enum AwayAppearance {
+    static func start() {
+        // Phones only: an iPad or Mac window in the background may still
+        // be seen, and the inactive look is part of how it says so.
+        guard UIDevice.current.userInterfaceIdiom == .phone else { return }
+        #if DEBUG
+        // `-awayAppearance NO`: windows follow the scene in the background too (to compare).
+        if UserDefaults.standard.object(forKey: "awayAppearance") != nil, !UserDefaults.standard.bool(forKey: "awayAppearance") { return }
+        #endif
+        let center = NotificationCenter.default
+        center.addObserver(forName: UIScene.didEnterBackgroundNotification, object: nil, queue: .main) { note in
+            nonisolated(unsafe) let scene = note.object as? UIWindowScene
+            MainActor.assumeIsolated {
+                for window in scene?.windows ?? [] where window.traitCollection.activeAppearance == .active {
+                    window.traitOverrides.activeAppearance = .active
+                }
+            }
+        }
+        center.addObserver(forName: UIScene.didActivateNotification, object: nil, queue: .main) { note in
+            nonisolated(unsafe) let scene = note.object as? UIWindowScene
+            MainActor.assumeIsolated {
+                for window in scene?.windows ?? [] where window.traitOverrides.contains(UITraitActiveAppearance.self) {
+                    window.traitOverrides.remove(UITraitActiveAppearance.self)
+                }
+            }
         }
     }
 }
