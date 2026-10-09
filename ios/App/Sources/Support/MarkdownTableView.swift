@@ -42,6 +42,8 @@ struct MarkdownTableView: View {
     var trailingRoom: CGFloat = 0
     @Environment(\.messageGutter) private var gutter
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.legibilityWeight) private var legibility
     @State private var hidden = HiddenEdges()
     /// Long tables show their first rows until 「展开全部」.
     @State private var showAll = false
@@ -91,7 +93,15 @@ struct MarkdownTableView: View {
 
     private var grid: some View {
         let n = table.columnCount
-        return TableGrid(columns: n) {
+        // What the cells' sizes depend on: their text and its size. Not
+        // their color, so a change of appearance keeps the measurement.
+        var sizes = Hasher()
+        sizes.combine(table.source)
+        sizes.combine(showAll)
+        sizes.combine(typeSize)
+        sizes.combine(legibility)
+        sizes.combine(displayScale)
+        return TableGrid(columns: n, sizes: sizes.finalize()) {
             if let header = table.header {
                 TableRowCells(cells: header, alignments: table.alignments, header: true)
                 rule(strong: true)
@@ -170,6 +180,8 @@ private struct TableRule: LayoutValueKey {
 /// twice over, for sizing and again for placing).
 private struct TableGrid: Layout {
     var columns: Int
+    /// Changes whenever the cells' sizes may have (see `grid`).
+    var sizes: Int
     var minWidth: CGFloat = 72
     var maxWidth: CGFloat = 240
 
@@ -182,11 +194,18 @@ private struct TableGrid: Layout {
         var widths: [CGFloat]
         var lines: [Line]
         var size: CGSize
+        var sizes: Int
+        var count: Int
     }
 
     func makeCache(subviews: Subviews) -> Measured? { nil }
 
-    func updateCache(_ cache: inout Measured?, subviews: Subviews) { cache = nil }
+    /// Measured again only when the cells' sizes may have changed: not for
+    /// a change of appearance (dark mode, the system's app-switcher
+    /// snapshots, which switch it twice each time the app leaves).
+    func updateCache(_ cache: inout Measured?, subviews: Subviews) {
+        if cache?.sizes != sizes || cache?.count != subviews.count { cache = nil }
+    }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Measured?) -> CGSize {
         measured(subviews, &cache).size
@@ -263,6 +282,6 @@ private struct TableGrid: Layout {
                 height += ceil(h)
             }
         }
-        return Measured(widths: widths, lines: lines, size: CGSize(width: total, height: height))
+        return Measured(widths: widths, lines: lines, size: CGSize(width: total, height: height), sizes: sizes, count: subviews.count)
     }
 }
