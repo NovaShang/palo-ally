@@ -26,6 +26,9 @@ struct MessageRow: View {
 
 private struct UserBubble: View {
     @Environment(AppStore.self) private var store
+    /// Drawn as the flying copy of itself (hold-to-talk): looks the same,
+    /// takes no touches, so it skips the menu and selection.
+    @Environment(\.isVoiceCopy) private var isCopy
     let message: ChatMessage
 
     var body: some View {
@@ -67,10 +70,9 @@ private struct UserBubble: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
                     .background(Color(.secondarySystemFill), in: .rect(cornerRadius: 20, style: .continuous))
-                    .contextMenu {
-                        Button("复制", systemImage: "doc.on.doc") { Clipboard.copy(message.text) }
-                    }
-                    .textSelection(.enabled)
+                    .modifier(BubbleInteractions(text: message.text, enabled: !isCopy))
+                    // Spoken: where its words land.
+                    .modifier(VoiceEchoSlot(cid: message.clientMsgId, bubble: true))
                 }
                 if message.channel == .wechat || message.channel == .cli {
                     Label(message.channel == .wechat ? "来自微信" : "来自电脑", systemImage: message.channel == .wechat ? "message" : "laptopcomputer")
@@ -80,6 +82,26 @@ private struct UserBubble: View {
             }
         }
         .opacity(message.delivery == .sending || message.delivery == .queued ? 0.75 : 1)
+        // Spoken: unseen while its words fly into it.
+        .modifier(VoiceEchoSlot(cid: message.clientMsgId))
+    }
+}
+
+/// The bubble's copy menu and text selection (not on the flying copy).
+private struct BubbleInteractions: ViewModifier {
+    let text: String
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .contextMenu {
+                    Button("复制", systemImage: "doc.on.doc") { Clipboard.copy(text) }
+                }
+                .textSelection(.enabled)
+        } else {
+            content
+        }
     }
 }
 

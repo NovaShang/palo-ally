@@ -57,6 +57,12 @@ final class SpeechDictation {
         transcript = ""
         isRecording = true
         let token = generation.next()
+        #if DEBUG
+        if let script = Self.drillScript {
+            playDrill(script, token: token)
+            return
+        }
+        #endif
         session.onLevel = { [weak self] l in self?.level = l }
         session.start(
             onPartial: { [weak self] text in
@@ -78,6 +84,9 @@ final class SpeechDictation {
     /// Stops listening and returns the final text.
     func finish() async -> String {
         guard isRecording else { return transcript.trimmingCharacters(in: .whitespacesAndNewlines) }
+        #if DEBUG
+        if let script = Self.drillScript { return await finishDrill(script) }
+        #endif
         let lang = openAILanguageHint(for: UserDefaults.standard.string(forKey: "speech_locale") ?? "auto")
         breadcrumb("voice finish after \(Int(Date().timeIntervalSince(startedAt))) s")
         let text = await session.finish(language: lang)
@@ -95,12 +104,63 @@ final class SpeechDictation {
     /// Stops and throws the text away.
     func cancel() {
         if isRecording { breadcrumb("voice cancel") }
+        #if DEBUG
+        drill?.cancel()
+        #endif
         generation.invalidate()
         session.cancel()
         isRecording = false
         level = 0
         transcript = ""
     }
+
+    #if DEBUG
+    /// `-voiceDrillText "今天|今天天气|今天天气怎么样=>今天天气怎么样？"`: a
+    /// scripted recognition instead of the real one, for the voice UI tests
+    /// and recordings: each partial `-voiceDrillStep` seconds apart (0.5),
+    /// and after release the final words, `-voiceDrillFinalMs` later (450).
+    /// "=>" alone: nothing heard. The level keeps a syllable rhythm, so the
+    /// orb listens as it would to a voice.
+    static let drillScript: (partials: [String], final: String)? = {
+        guard let raw = UserDefaults.standard.string(forKey: "voiceDrillText") else { return nil }
+        let parts = raw.components(separatedBy: "=>")
+        let partials = parts[0].split(separator: "|").map(String.init)
+        return (partials, parts.count > 1 ? parts[1] : partials.last ?? "")
+    }()
+    @ObservationIgnored private var drill: Task<Void, Never>?
+
+    private func playDrill(_ script: (partials: [String], final: String), token: Int) {
+        let step = UserDefaults.standard.double(forKey: "voiceDrillStep")
+        drill?.cancel()
+        drill = Task { @MainActor [weak self] in
+            let start = Date()
+            var next = 0
+            while !Task.isCancelled {
+                guard let self, self.generation.isCurrent(token) else { return }
+                let t = Date().timeIntervalSince(start)
+                // Syllable-like bursts over a slower phrase envelope.
+                let phrase = 0.5 + 0.5 * sin(t * 1.3)
+                self.level = Float(phrase * max(0, sin(t * 11.0)) * (0.6 + 0.4 * sin(t * 3.7)))
+                if next < script.partials.count, t >= Double(next + 1) * (step > 0 ? step : 0.5) {
+                    self.transcript = script.partials[next]
+                    next += 1
+                }
+                try? await Task.sleep(for: .milliseconds(33))
+            }
+        }
+    }
+
+    private func finishDrill(_ script: (partials: [String], final: String)) async -> String {
+        drill?.cancel()
+        level = 0
+        let ms = UserDefaults.standard.integer(forKey: "voiceDrillFinalMs")
+        try? await Task.sleep(for: .milliseconds(ms > 0 ? ms : 450))
+        isRecording = false
+        if !script.final.isEmpty { transcript = script.final }
+        breadcrumb("voice final: \(transcript.count) chars (drill)")
+        return transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    #endif
 
     private static func friendly(_ message: String) -> String {
         let m = message.lowercased()

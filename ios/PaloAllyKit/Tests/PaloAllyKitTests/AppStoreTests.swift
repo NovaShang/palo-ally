@@ -117,6 +117,39 @@ struct AppStoreTests {
         #expect(await host.lastParams["chat.send"]?["clientMsgId"] == .string(echo.clientMsgId!))
     }
 
+    /// Hold-to-talk: the words heard so far show at once; nothing is sent
+    /// until the final words come, which replace them.
+    @Test func stagedMessageShowsAtOnceAndSendsItsFinalWords() async throws {
+        let (store, host) = await demoStore()
+        let cid = try #require(store.stage("今天天气", cid: "voice-1"))
+        #expect(cid == "voice-1")
+        let echo = try #require(store.messages.last)
+        #expect(echo.clientMsgId == "voice-1" && echo.text == "今天天气" && echo.seq == 0 && echo.delivery == .sending)
+        #expect(store.awaitingReply)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(await host.lastParams["chat.send"] == nil) // not sent yet
+        store.sendStaged(cid, text: " 今天天气怎么样？ ")
+        #expect(store.messages.last { $0.clientMsgId == cid }?.text == "今天天气怎么样？")
+        #expect(await until { store.messages.contains { $0.clientMsgId == cid && $0.seq > 0 && $0.delivery == .sent } })
+        #expect(await host.lastParams["chat.send"]?["text"] == .string("今天天气怎么样？"))
+        #expect(await host.lastParams["chat.send"]?["clientMsgId"] == .string("voice-1"))
+        #expect(store.messages.filter { $0.text == "今天天气怎么样？" }.count == 1)
+    }
+
+    /// Final words empty: the staged message is taken back, and the wait with it.
+    @Test func stagedMessageWithNoFinalWordsIsTakenBack() async throws {
+        let (store, host) = await demoStore()
+        let count = store.messages.count
+        let cid = try #require(store.stage("嗯"))
+        #expect(store.messages.count == count + 1)
+        store.sendStaged(cid, text: "  ")
+        #expect(store.messages.count == count)
+        #expect(!store.awaitingReply)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(await host.lastParams["chat.send"] == nil)
+        #expect(store.stage("   ") == nil) // nothing to show
+    }
+
     @Test func liveClipboardMessageIsCopiedButSyncedOneIsNot() async throws {
         let host = ManualHost()
         host.syncResult = SyncResult(seq: 1, messages: [

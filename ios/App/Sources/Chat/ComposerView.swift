@@ -23,7 +23,11 @@ struct ComposerView: View {
     @Environment(VoiceInputController.self) private var voice
     @Environment(\.scenePhase) private var scenePhase
     @Binding var draft: String
-    let onSend: (String, [AppStore.OutgoingImage], [AppStore.OutgoingFile]) -> Void
+    /// How a message goes out: typed (it rises to the top in an animation),
+    /// or spoken (placed at once under the voice scrim, its words then fly
+    /// into it; sent once the final words come, `AppStore.sendStaged`).
+    enum Outgoing { case typed, spoken(cid: String) }
+    let onSend: (String, [AppStore.OutgoingImage], [AppStore.OutgoingFile], Outgoing) -> Void
     /// Images and files picked or pasted for the next message (bento's staged attachments).
     @State private var staged: [Staged] = []
     @State private var pickerItems: [PhotosPickerItem] = []
@@ -51,6 +55,10 @@ struct ComposerView: View {
     @State private var voiceStarted = false
     /// A finished hold is still resolving its final text: ignore new presses.
     @State private var finishingHold = false
+    /// Words that flew into the field (`.edit`) before the final ones came:
+    /// the draft as it was, and what was added. The final words replace
+    /// them if the draft is still just that.
+    @State private var editedIn: (before: String, words: String)?
 
     private static let capsuleSpace = "composerCapsule"
 
@@ -129,7 +137,7 @@ struct ComposerView: View {
                 QuoteBanner(reply: reply) { withAnimation(.snappy) { store.replyDraft = nil } }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            if let msg = voice.dictation.errorMessage, !voice.isActive, !dictating {
+            if let msg = voice.dictation.errorMessage, !voice.isActive, !voice.mounted, !dictating {
                 Text(msg)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -192,6 +200,11 @@ struct ComposerView: View {
             voice.prewarm()
             displayRadius = DisplayCorners.radius
             homeInset = DisplayCorners.bottomInset
+            // Words that went into the field: then the keyboard, to edit them.
+            voice.onExitDone = { exit in
+                if exit == .edit || exit == .unheard(edit: true) { focusToken += 1 }
+                debugLog("[voice] down after \(VoiceInputController.name(exit)): the composer has \(draft.count) characters, the list is \(Int(ChatScroll.lastDistance)) pt from the end")
+            }
         }
         #if DEBUG
         .task { await runVoiceDrill() }
@@ -248,6 +261,8 @@ struct ComposerView: View {
         }
         .coordinateSpace(.named(Self.capsuleSpace))
         .onGeometryChange(for: CGSize.self) { $0.size } action: { voice.capsuleSize = $0 }
+        // Where the voice words go and land (it changes only when the composer moves).
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { voice.placeCapsule($0) }
         // Swells with the same hold-driven motion as everything else.
         .scaleEffect(1 + 0.035 * voice.presence)
         .glassEffect(capsuleGlass, in: .rect(cornerRadius: capsuleRadius, style: .continuous))
@@ -325,6 +340,7 @@ struct ComposerView: View {
             TextField("", text: $draft, prompt: Text(focused ? "想让我做点什么？" : ""), axis: .vertical)
                 .lineLimit(1...6)
                 .focused($focused)
+                .accessibilityIdentifier("composerField")
                 // The Mac: Esc leaves the field (the text stays); with an
                 // input method composing, Esc is the input method's.
                 .onKeyPress(.escape) {
@@ -335,8 +351,11 @@ struct ComposerView: View {
                 // While idle the press layer owns every touch: the text
                 // field's own long-press / selection recognizers must not see it.
                 .allowsHitTesting(!idle)
+                // Where words spoken into 编辑 land.
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { voice.placeField($0) }
                 .padding(.vertical, 11)
-                .opacity(dictating ? 0 : 1)
+                // Blank while those words fly in; it fades in as they land.
+                .opacity(dictating || voice.veilsField ? 0 : 1)
             if dictating {
                 // Mic dictation: the live words, in the field where they'll land.
                 HStack(spacing: 8) {
@@ -359,13 +378,14 @@ struct ComposerView: View {
                             .foregroundStyle(voice.target == .send ? Color.primary : .secondary)
                             .transition(.scale(scale: 0.85).combined(with: .opacity))
                     } else {
-                        // Morphs toward 「松开 发送」 as the hold arms.
+                        // Morphs toward 「松开 发送」 as the hold arms (and
+                        // back from where it was released, as the words go).
                         ZStack {
                             Text("按住说话，轻点打字")
                                 .foregroundStyle(pressing ? .secondary : .tertiary)
                                 .opacity(1 - Double(voice.presence))
-                            Text("松开 发送")
-                                .foregroundStyle(.primary)
+                            Text(voice.target == .send ? "松开 发送" : "松开 \(voice.target == .cancel ? "取消" : "编辑")")
+                                .foregroundStyle(voice.target == .send ? Color.primary : .secondary)
                                 .opacity(Double(voice.presence))
                         }
                         .transition(.opacity)
@@ -478,25 +498,44 @@ struct ComposerView: View {
     }
 
     #if DEBUG
-    /// `-voiceDrill <seconds>` (with `-voiceDrillAudio YES`, see VoiceDrill):
-    /// holds to talk that long on its own, then releases to send, through
-    /// the same calls the press gesture makes — reproduces a long hold (and,
-    /// with `-voiceDrillFailAfter`, a socket failure in it) unattended.
+    /// `-voiceDrill <seconds>` (with `-voiceDrillAudio YES`, see VoiceDrill,
+    /// or scripted words, `-voiceDrillText`, see SpeechDictation): holds to
+    /// talk that long on its own, then releases, through the same calls the
+    /// press gesture makes — reproduces a long hold (and, with
+    /// `-voiceDrillFailAfter`, a socket failure in it) unattended.
+    /// `-voiceDrillTarget cancel|edit`: slides onto that zone first.
+    /// `-voiceDrillRepeat <n>`: that many holds, `-voiceDrillGap` s apart (4).
     private func runVoiceDrill() async {
         let seconds = UserDefaults.standard.double(forKey: "voiceDrill")
         guard seconds > 0 else { return }
         let delay = UserDefaults.standard.double(forKey: "voiceDrillDelay")
         try? await Task.sleep(for: .seconds(delay > 0 ? delay : 6))
-        debugLog("[drill] hold to talk for \(Int(seconds)) s")
-        guard pressBegan(touchTime: ProcessInfo.processInfo.systemUptime) else {
-            debugLog("[drill] press refused")
-            return
+        let repeats = max(1, UserDefaults.standard.integer(forKey: "voiceDrillRepeat"))
+        let gap = UserDefaults.standard.double(forKey: "voiceDrillGap")
+        for round in 0..<repeats {
+            if round > 0 { try? await Task.sleep(for: .seconds(gap > 0 ? gap : 4)) }
+            debugLog("[drill] hold to talk for \(seconds) s")
+            guard pressBegan(touchTime: ProcessInfo.processInfo.systemUptime) else {
+                debugLog("[drill] press refused")
+                return
+            }
+            try? await Task.sleep(for: .seconds(Self.holdSeconds))
+            pressHeld(.began, at: .zero)
+            var at = CGPoint(x: voice.capsuleSize.width / 2, y: 10)
+            switch UserDefaults.standard.string(forKey: "voiceDrillTarget") {
+            case "cancel": at = CGPoint(x: voice.capsuleSize.width * 0.25, y: -40)
+            case "edit": at = CGPoint(x: voice.capsuleSize.width * 0.75, y: -40)
+            default: break
+            }
+            let slide = at.y < 0 ? min(0.6, seconds / 2) : 0
+            try? await Task.sleep(for: .seconds(seconds - slide))
+            if slide > 0 {
+                pressHeld(.changed, at: at)
+                try? await Task.sleep(for: .seconds(slide))
+            }
+            debugLog("[drill] release")
+            pressHeld(.ended, at: at)
         }
-        try? await Task.sleep(for: .seconds(Self.holdSeconds))
-        pressHeld(.began, at: .zero)
-        try? await Task.sleep(for: .seconds(seconds))
-        debugLog("[drill] release")
-        pressHeld(.ended, at: CGPoint(x: voice.capsuleSize.width / 2, y: 10))
     }
     #endif
 
@@ -528,11 +567,8 @@ struct ComposerView: View {
             pressing = false
             voiceStarted = false
             finishingHold = true
-            // Released: the recording UI folds back into the capsule (send,
-            // cancel, edit alike) while the final text resolves.
-            collapse(.spring(response: 0.36, dampingFraction: 0.86))
             Task {
-                await finishVoice()
+                await release()
                 finishingHold = false
             }
         default: // .cancelled — the system took the touch away
@@ -566,18 +602,69 @@ struct ComposerView: View {
         voice.panelMounted = false
     }
 
-    private func finishVoice() async {
-        let (target, text) = await voice.end()
-        switch target {
-        case .cancel:
-            break
-        case .edit:
-            guard !text.isEmpty else { focusToken += 1; return }
-            draft = draft.isEmpty ? text : draft + text
-            focusToken += 1
-        case .send:
-            if !text.isEmpty || !staged.isEmpty { deliver(text) }
+    /// Released: the words go where the finger let them go, in one motion
+    /// with the scrim, the zones and the orb (design §3.7). Sending, they
+    /// fly into the message right away, with what was heard so far; once
+    /// they've landed, the final words replace them in place and the
+    /// message goes out. Editing, the final words replace them in the field
+    /// unless it was changed meanwhile. Nothing heard yet: 识别中… until the
+    /// final words come; none: 没听清 (staged pictures stay for the next).
+    private func release() async {
+        let target = voice.target
+        let heard = voice.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        debugLog("[voice] released on \(target), \(heard.count) characters heard")
+        if target == .cancel {
+            voice.leave(.cancel, words: heard)
+            _ = await voice.end()
+            return
         }
+        guard !heard.isEmpty else {
+            voice.resolve()
+            let (_, final) = await voice.end()
+            debugLog("[voice] final: \(final.count) characters")
+            guard !final.isEmpty else {
+                voice.leave(.unheard(edit: target == .edit), words: voice.dictation.errorMessage ?? "没听清")
+                return
+            }
+            land(target, final)
+            return
+        }
+        let cid = land(target, heard)
+        let (_, final) = await voice.end()
+        debugLog("[voice] final: \(final.count) characters, \(final == heard || final.isEmpty ? "as heard" : "changed")")
+        let words = final.isEmpty ? heard : final
+        if let cid {
+            // Once the words have landed and the voice UI is down: changing
+            // the message under its flying copy (different final words, or
+            // the host's answer to sending it, which lays the message out
+            // again) cost a frame of 45–60 ms. At most a few tenths of a
+            // second later than the final words.
+            await voice.whenGone()
+            try? await Task.sleep(for: .milliseconds(34))
+            withAnimation(.smooth(duration: 0.3)) { store.sendStaged(cid, text: words) }
+        } else if let e = editedIn, words != e.words, draft == e.before + e.words {
+            draft = e.before + words
+        }
+        editedIn = nil
+    }
+
+    /// The words start on their way: into a message placed where it stays
+    /// (returns its client id), or into the field.
+    @discardableResult
+    private func land(_ target: VoiceInputController.Target, _ words: String) -> String? {
+        if target == .edit {
+            let before = draft
+            editedIn = (before, words)
+            // The field takes them in the same motion (it may grow).
+            withAnimation(VoiceInputController.exitMotion) { draft = before + words }
+            voice.leave(.edit, words: words)
+            return nil
+        }
+        let cid = UUID().uuidString.lowercased()
+        // Hidden before it exists: its first frame is already unseen.
+        voice.leave(.send(cid: cid), words: words)
+        deliver(words, .spoken(cid: cid))
+        return cid
     }
 
     /// Mic button: first tap listens, second tap stops and leaves the words in
@@ -652,7 +739,7 @@ struct ComposerView: View {
         HardwareKeyboard.insertNewline()
     }
 
-    private func deliver(_ text: String) {
+    private func deliver(_ text: String, _ how: Outgoing = .typed) {
         var images: [AppStore.OutgoingImage] = []
         var files: [AppStore.OutgoingFile] = []
         for item in staged {
@@ -661,7 +748,7 @@ struct ComposerView: View {
             case .file(let f): files.append(f)
             }
         }
-        onSend(text, images, files)
+        onSend(text, images, files, how)
         staged = []
     }
 

@@ -882,11 +882,26 @@ public final class AppStore {
     }
 
     public func send(_ rawText: String, images picked: [OutgoingImage] = [], files pickedFiles: [OutgoingFile] = [], suggestionId: String? = nil) {
+        guard let cid = stage(rawText, images: picked, files: pickedFiles, suggestionId: suggestionId) else { return }
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !picked.isEmpty || !pickedFiles.isEmpty else { return }
+        Task { await self.deliver(clientMsgId: cid, text: text) }
+    }
+
+    /// Shows the owner's message now and sends it later, with `sendStaged`
+    /// (hold-to-talk: the words heard so far land in the conversation the
+    /// moment the finger lifts, while the final transcript is still being
+    /// worked out). Looks like any message being sent; nothing goes to the
+    /// host yet. Returns its client id; nil when there's nothing to show.
+    /// `cid`: the client id to use (the caller hides the message until its
+    /// words have flown into it).
+    @discardableResult
+    public func stage(_ rawText: String, images picked: [OutgoingImage] = [], files pickedFiles: [OutgoingFile] = [],
+                      suggestionId: String? = nil, cid given: String? = nil) -> String? {
+        let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty || !picked.isEmpty || !pickedFiles.isEmpty else { return nil }
         // Sending always happens at the live end of the conversation.
         if viewingPast { Task { await self.returnToLatest() } }
-        let cid = UUID().uuidString.lowercased()
+        let cid = given ?? UUID().uuidString.lowercased()
         var echo = ChatMessage(seq: 0, id: "local-\(cid)", role: .user, kind: .text, text: text, channel: .app,
                                ts: Date().epochMillis, clientMsgId: cid)
         // A 「试试」 chip starts fresh; anything typed goes with the open quote.
@@ -914,7 +929,26 @@ public final class AppStore {
         messages.append(echo)
         sortMessages()
         awaitingReply = true
+        return cid
+    }
+
+    /// Sends a message `stage` showed, with its final words (the message's
+    /// text changes in place when they differ). Empty words and nothing
+    /// attached: it's taken back instead.
+    public func sendStaged(_ cid: String, text rawText: String) {
+        guard let i = messages.firstIndex(where: { $0.clientMsgId == cid && $0.seq == 0 }) else { return }
+        let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty || !(messages[i].attachments ?? []).isEmpty else { return unstage(cid) }
+        if messages[i].text != text { messages[i].text = text }
         Task { await self.deliver(clientMsgId: cid, text: text) }
+    }
+
+    /// Takes back a message `stage` showed and that was never sent.
+    public func unstage(_ cid: String) {
+        guard let i = messages.firstIndex(where: { $0.clientMsgId == cid && $0.seq == 0 && $0.delivery == .sending }) else { return }
+        messages.remove(at: i)
+        suggestionForMessage[cid] = nil
+        if !messages.contains(where: { $0.role == .user && $0.seq == 0 && $0.delivery == .sending }) { awaitingReply = false }
     }
 
     /// Re-sends a failed or queued echo (same clientMsgId: the host de-dupes).

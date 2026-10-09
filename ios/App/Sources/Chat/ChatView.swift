@@ -157,16 +157,28 @@ struct ChatView: View {
             }
             .frame(maxWidth: .infinity)
         })
-        // While holding to talk, the screen's background rises from the
-        // bottom so the live transcript reads cleanly (same hold-driven motion).
+        // While holding to talk, the screen's background covers the
+        // conversation (same hold-driven motion as the orb and the zones).
         .overlay { VoiceScrimLayer() }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            ComposerView(draft: draft) { text, images, files in
-                // The message rises to the top as it appears (design §3.5).
-                scroll.willSend()
-                ChatMotion.with(ChatMotion.send) { store.send(text, images: images, files: files) }
+            ComposerView(draft: draft) { text, images, files, how in
+                switch how {
+                case .typed:
+                    // The message rises to the top as it appears (design §3.5).
+                    scroll.willSend()
+                    ChatMotion.with(ChatMotion.send) { store.send(text, images: images, files: files) }
+                case .spoken(let cid):
+                    // Placed where it stays at once, under the voice scrim;
+                    // the words then fly into it (design §3.7). Sent once
+                    // the final words come (the composer).
+                    scroll.willSend(instant: true)
+                    _ = ChatMotion.with(nil) { store.stage(text, images: images, files: files, cid: cid) }
+                }
             }
         }
+        // The live words, in the middle while holding to talk, and on their
+        // way out after release: over the composer, under the orb.
+        .overlay { VoiceWordsLayer(orbPlacement: orbPlacement) }
         // The orb over the bar's middle: above the conversation, its edge
         // fade and the voice scrim, and free to be bigger than the bar.
         .overlay(alignment: .topLeading) {
@@ -693,7 +705,7 @@ private struct VoiceScrimLayer: View {
     @Environment(VoiceInputController.self) private var voice
 
     var body: some View {
-        if voice.panelMounted { VoiceScrim(presence: voice.presence) }
+        if voice.mounted { VoiceScrim(opacity: voice.scrimOpacity) }
     }
 }
 

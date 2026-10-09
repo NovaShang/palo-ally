@@ -135,6 +135,15 @@ struct FloatingTitleOrb: View {
         return reduceMotion ? (p > 0 ? 1 : 0) : p
     }
 
+    /// Where the listening orb's bottom is, in global coordinates: below the
+    /// bar's middle on phones and iPads, below the column's top on the Mac
+    /// (`columnTop`). The words sit below it (`VoiceWordsLayer`).
+    static func listeningBottom(barCenterY: CGFloat?, columnTop: CGFloat, columnWidth: CGFloat) -> CGFloat {
+        let big = OrbPresence.voiceDiameter(width: columnWidth)
+        if let barCenterY { return barCenterY + halfBar + listenGap + big }
+        return columnTop + macTopPad + listenGap + big
+    }
+
     /// The label's center below the orb's: across its lower part — low
     /// enough to leave most of the drops showing — but never much past the
     /// bar (or the orb, when the orb spills further).

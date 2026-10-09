@@ -198,7 +198,6 @@ struct MainScreen: View {
             }
         }
         .modifier(MacWindowChrome(model: model))
-        .animation(.easeOut(duration: 0.15), value: voice.isActive)
         .onChange(of: scenePhase) { _, phase in
             if phase != .active && voice.previewText == nil { voice.abort() }
         }

@@ -254,12 +254,23 @@ final class ChatScrollCoordinator {
     }
 
     /// About to send: the message and its room arrive in an animation (see
-    /// `ChatMotion.send`), and the view glides up with them.
-    func willSend() {
+    /// `ChatMotion.send`), and the view glides up with them. `instant`: a
+    /// spoken message, placed under the voice scrim where it stays, nothing
+    /// animated (its words then fly into it, design §3.7); from reading back,
+    /// the way to the end is a jump too.
+    func willSend(instant: Bool = false) {
         measureRoom()
-        risingUntil = ProcessInfo.processInfo.systemUptime + 0.8
+        let now = ProcessInfo.processInfo.systemUptime
+        if instant {
+            instantUntil = now + 0.6
+            return
+        }
+        risingUntil = now + 0.8
         glide(for: 0.8)
     }
+
+    /// Until when going to the end is a jump (a spoken send, `willSend`).
+    @ObservationIgnored private var instantUntil: TimeInterval = 0
 
     /// The room a turn gets: the height the reader can see now.
     private func measureRoom() {
@@ -278,6 +289,9 @@ final class ChatScrollCoordinator {
         FrameWatch.shared.start("a send and its reply", rising: true)
         #endif
         send(.sent)
+        #if DEBUG
+        probeTurn()
+        #endif
     }
     func grewBelow() { send(.grewBelow) }
 
@@ -756,7 +770,7 @@ final class ChatScrollCoordinator {
     func rowMoved(_ id: String, to y: CGFloat) {
         rowY[id] = y
         #if DEBUG
-        defer { probeHeldRow() }
+        defer { probeHeldRow(); probeTurn() }
         #endif
         if id == topID { holdRow(fromRow: true) }
     }
@@ -948,6 +962,7 @@ final class ChatScrollCoordinator {
             }
             return
         }
+        let animated = animated && ProcessInfo.processInfo.systemUptime >= instantUntil
         let go = {
             if animated {
                 withAnimation(.snappy) { position.wrappedValue.scrollTo(edge: .bottom) }
