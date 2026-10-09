@@ -77,6 +77,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         // and the system's own hang / crash reports (with stacks) land in
         // Documents/diagnostics on a later launch.
         StallWatchdog.start()
+        TraitLog.start()
         DiagnosticsCollector.shared.start()
         return true
     }
