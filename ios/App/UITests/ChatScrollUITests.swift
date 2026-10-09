@@ -188,7 +188,7 @@ final class ChatScrollUITests: XCTestCase {
 
     // MARK: T4
 
-    /// 何子安's 17:49 freeze: holding to talk while 110 deltas, the final
+    /// a tester's 17:49 freeze: holding to talk while 110 deltas, the final
     /// message and the host going idle all land at once.
     @MainActor
     func testT4HoldToTalkThroughABurst() throws {

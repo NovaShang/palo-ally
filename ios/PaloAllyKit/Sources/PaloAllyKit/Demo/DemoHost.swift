@@ -248,7 +248,7 @@ public actor DemoHost {
                 }
             }
         case "burst":
-            // 何子安's 3.2 s freeze (17:49): while she held to talk, a reply's
+            // a tester's 3.2 s freeze (17:49): while she held to talk, a reply's
             // 110 deltas, its final message (~1 KB) and the host going idle
             // all arrived at once. The long conversation, then that burst at
             // `-demoBurstAt <s>` (default 9; pair with `-voiceDrill`).
