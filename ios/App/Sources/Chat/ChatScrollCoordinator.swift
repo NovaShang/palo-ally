@@ -172,13 +172,7 @@ final class ChatScrollCoordinator {
     func attach(position: Binding<ScrollPosition>, store: AppStore, contentTop: CGFloat) {
         self.position = position
         self.store = store
-        // While the list glides along the end, other changes there glide
-        // with it (see `AppStore.changingTheEnd`).
-        store.changingTheEnd = { [weak self] apply in
-            guard let self, machine.gliding, machine.mode == .following, !machine.phase.isUser else { return apply() }
-            glide(for: 0.3)
-            ChatMotion.with(ChatMotion.follow, apply)
-        }
+        store.willChangeTheEnd = { [weak self] in self?.settleOnTheEnd() }
         self.contentTop = contentTop
         pumpWindow()
     }
@@ -305,11 +299,13 @@ final class ChatScrollCoordinator {
     }
 
     /// Following a reply as it's written, the view glides onto the end and,
-    /// between ticks, gets there or close. If for half a second it never
-    /// came within 100 pt, something else moved it (a catch-up's message
-    /// landing above the reply mid-glide: the anchor doesn't make up for
-    /// that): back onto the end. (A glide never ending while the reply goes
-    /// on, the check at its end would come only with the reply's end.)
+    /// between ticks, comes within a line of it. If in 0.4 s it never came
+    /// within 30 pt, it isn't gliding but stranded: off the end (a
+    /// scroll of ours that landed a little short while the reply grew), where
+    /// the bottom anchor doesn't hold, so each tick left it further behind
+    /// (24 pt, then 194 within a second). Onto the end, at once: from there
+    /// the anchor carries it again. (A glide never ending while the reply
+    /// goes on, the check at its end would come only with the reply's end.)
     private func checkGlideKeepsUp(_ distance: CGFloat) {
         let now = ProcessInfo.processInfo.systemUptime
         recentDistances = recentDistances.filter { now - $0.at < 0.6 } + [(now, distance)]
@@ -318,12 +314,23 @@ final class ChatScrollCoordinator {
             return
         }
         let t = ProcessInfo.processInfo.systemUptime
-        glideTrail = glideTrail.filter { t - $0.at < 0.6 } + [(t, distance)]
-        guard let first = glideTrail.first, t - first.at >= 0.5,
-              glideTrail.allSatisfy({ $0.distance > 100 }) else { return }
+        glideTrail = glideTrail.filter { t - $0.at < 0.45 } + [(t, distance)]
+        guard let first = glideTrail.first, t - first.at >= 0.4,
+              glideTrail.allSatisfy({ $0.distance > 30 }) else { return }
         glideTrail = []
-        ChatScroll.log("following: left behind mid-glide")
-        toEnd(animated: true)
+        ChatScroll.log("following: fell behind the end")
+        toEnd(animated: false)
+    }
+
+    /// A change is about to land at the end (see `AppStore.willChangeTheEnd`):
+    /// mid-glide, onto the end at once, through UIKit so it's there before
+    /// the change is laid out (the rest of the glide, a line or two, is cut
+    /// short). Then the bottom anchor holds the view through the change.
+    func settleOnTheEnd() {
+        guard machine.gliding, machine.mode == .following, !machine.phase.isUser, let sv = scrollView else { return }
+        let end = sv.contentSize.height + sv.adjustedContentInset.bottom - sv.bounds.height
+        guard end > sv.contentOffset.y + 0.5 else { return }
+        sv.setContentOffset(CGPoint(x: sv.contentOffset.x, y: end), animated: false)
     }
 
     @ObservationIgnored private var glideEnd: Task<Void, Never>?

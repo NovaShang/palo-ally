@@ -649,15 +649,17 @@ public final class AppStore {
     /// as a reveal tick's, so the reply's last lines, its buttons and the
     /// working line going all glide in instead of jumping.
     @ObservationIgnored public var finishingReply: (@MainActor (_ apply: () -> Void) -> Void)?
-    /// Set by the app: runs any other change at the live end (a message, a
-    /// catch-up's messages, the host's status, a reply's first words). While
-    /// the list glides along the end, the app runs it in the same animation:
-    /// a change landing outside it mid-glide isn't made up for by the scroll
-    /// view's bottom anchor, and threw the view a message's height off the end.
-    @ObservationIgnored public var changingTheEnd: (@MainActor (_ apply: () -> Void) -> Void)?
+    /// Set by the app: called just before any other change at the live end
+    /// (a message, a catch-up's messages, the host's status, a reply's first
+    /// words). A change like that landing while the list glides along the
+    /// end isn't made up for by the scroll view's bottom anchor (a catch-up
+    /// threw the view 1400 pt off the end); the app first puts the view
+    /// exactly on the end, where the anchor holds it through the change.
+    @ObservationIgnored public var willChangeTheEnd: (@MainActor () -> Void)?
 
     private func atTheEnd(_ apply: () -> Void) {
-        if let changingTheEnd { changingTheEnd(apply) } else { apply() }
+        willChangeTheEnd?()
+        apply()
     }
 
     /// Set by the app: calls back once the Core Animation transaction
