@@ -257,6 +257,7 @@ final class ChatScrollCoordinator {
     /// `ChatMotion.send`), and the view glides up with them.
     func willSend() {
         measureRoom()
+        risingUntil = ProcessInfo.processInfo.systemUptime + 0.8
         glide(for: 0.8)
     }
 
@@ -307,8 +308,9 @@ final class ChatScrollCoordinator {
         }
     }
 
-    /// Where the view was while gliding, the last half second or so.
-    @ObservationIgnored private var glideTrail: [(at: TimeInterval, distance: CGFloat)] = []
+    /// Since when the view, following a glide, has been more than 30 pt off
+    /// the end (nil: it isn't).
+    @ObservationIgnored private var farSince: TimeInterval?
     /// Where it was at all, the same span (for `[jump]`).
     @ObservationIgnored private var recentDistances: [(at: TimeInterval, distance: CGFloat)] = []
 
@@ -318,6 +320,9 @@ final class ChatScrollCoordinator {
         return recentDistances.filter { t - $0.at <= 0.5 }.map(\.distance).min() ?? ChatScroll.lastDistance
     }
 
+    /// Until when the view is on a send's rise (`willSend`).
+    @ObservationIgnored private var risingUntil: TimeInterval = 0
+
     /// Following a reply as it's written, the view glides onto the end and,
     /// between ticks, comes within a line of it. If in 0.4 s it never came
     /// within 30 pt, it isn't gliding but stranded: off the end (a
@@ -326,18 +331,22 @@ final class ChatScrollCoordinator {
     /// (24 pt, then 194 within a second). Onto the end, at once: from there
     /// the anchor carries it again. (A glide never ending while the reply
     /// goes on, the check at its end would come only with the reply's end.)
+    /// Stranded, the view only moves when a tick lands, so it hears of it
+    /// every 130–200 ms, not every frame: it counts from the first time it
+    /// was that far off, not over a window a sample may not fall in.
+    /// Not during a send's rise: from a screen away it takes longer than
+    /// that to come within 30 pt, and its landing is checked by `.settleSend`.
     private func checkGlideKeepsUp(_ distance: CGFloat) {
         let now = ProcessInfo.processInfo.systemUptime
         recentDistances = recentDistances.filter { now - $0.at < 0.6 } + [(now, distance)]
-        guard machine.gliding, machine.mode == .following, !machine.phase.isUser else {
-            if !glideTrail.isEmpty { glideTrail = [] }
+        guard machine.gliding, machine.mode == .following, !machine.phase.isUser, now >= risingUntil,
+              distance > 30 else {
+            farSince = nil
             return
         }
-        let t = ProcessInfo.processInfo.systemUptime
-        glideTrail = glideTrail.filter { t - $0.at < 0.45 } + [(t, distance)]
-        guard let first = glideTrail.first, t - first.at >= 0.4,
-              glideTrail.allSatisfy({ $0.distance > 30 }) else { return }
-        glideTrail = []
+        guard let since = farSince else { farSince = now; return }
+        guard now - since >= 0.4 else { return }
+        farSince = nil
         ChatScroll.log("following: fell behind the end")
         toEnd(animated: false)
     }

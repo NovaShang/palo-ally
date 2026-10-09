@@ -529,6 +529,7 @@ final class ChatScrollUITests: XCTestCase {
         XCTAssertLessThanOrEqual(after.map { abs($0 - 12) }.max() ?? 0, 2, "the view moved while a short reply was written: \(Array(after))")
         XCTAssertEqual(log.count("stopped short"), 0, "the send's scroll didn't land: \(log.lines(containing: ["stopped short"]))")
         XCTAssertEqual(log.count("thrown off the end"), 0)
+        XCTAssertEqual(log.count("fell behind the end"), 0, "the rise was taken for a stranded view")
     }
 
     /// A reply longer than the screen: the sent message rises to the top; once
