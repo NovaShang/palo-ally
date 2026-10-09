@@ -179,7 +179,10 @@ struct ChatView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
                 scroll.background()
-            } else if phase == .active {
+                return
+            }
+            scroll.leftBackground()
+            if phase == .active {
                 Task { @MainActor in
                     try? await Task.sleep(for: .seconds(1.5))
                     scroll.foreground()
@@ -278,8 +281,12 @@ private struct ConversationRows: View {
                 EmptyChatHint()
             }
 
+            let held = scroll.heldAppearance
             ForEach(Array(messages[window].enumerated()), id: \.element.id) { offset, message in
                 messageRow(message, at: window.lowerBound + offset)
+                    // Off screen while the app is away: keeps its look
+                    // through the system's snapshots (`heldAppearance`).
+                    .modifier(HeldAppearance(scheme: held.flatMap { $0.rows.contains(message.id) ? $0.scheme : nil }))
                     .layoutValue(key: TurnStart.self, value: turn != nil && message.clientMsgId == turn)
             }
 
@@ -751,3 +758,12 @@ struct TurnStart: LayoutValueKey {
     static let defaultValue = false
 }
 
+/// A row that keeps the appearance `scheme` while the window's changes;
+/// nil: it follows the window, as usual.
+private struct HeldAppearance: ViewModifier {
+    let scheme: ColorScheme?
+
+    func body(content: Content) -> some View {
+        content.transformEnvironment(\.colorScheme) { if let scheme { $0 = scheme } }
+    }
+}

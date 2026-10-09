@@ -376,9 +376,49 @@ final class ChatScrollCoordinator {
         }
     }
     func layoutChanged() { send(.layoutChanged) }
+
+    /// While the app is away: the rows that were off screen when it left,
+    /// and the appearance they keep until it's back. The system lays the
+    /// window out again for each of its app-switcher snapshots, in the dark
+    /// appearance and the light, and each row laid out (40 long answers)
+    /// resolved and measured all its text again for every switch; only
+    /// what's on screen can show in a snapshot.
+    private(set) var heldAppearance: (scheme: ColorScheme, rows: Set<String>)?
+
     func background() {
         send(.background)
-        LaunchMetrics.logFootprint("going to the background, \(rowY.count) rows laid out so far")
+        if let style = scrollView?.traitCollection.userInterfaceStyle, style != .unspecified {
+            let rows = rowsOffScreen()
+            if !rows.isEmpty { heldAppearance = (style == .dark ? .dark : .light, rows) }
+        }
+        LaunchMetrics.logFootprint("going to the background, \(rowY.count) rows laid out so far, \(heldAppearance?.rows.count ?? 0) off screen")
+    }
+
+    /// No longer in the background: every row follows the window again.
+    func leftBackground() {
+        if heldAppearance != nil { heldAppearance = nil }
+    }
+
+    /// The laid-out rows wholly outside what the scroll view shows (bars,
+    /// composer and keyboard included: content shows through them), with
+    /// some room to spare. A row whose place isn't known counts as on screen.
+    private func rowsOffScreen() -> Set<String> {
+        guard let store, let m = metrics else { return [] }
+        let messages = store.messages
+        let ids = window(in: messages).map { messages[$0].id }
+        // In the rows' own space, which begins `contentTop` into the content.
+        let margin: CGFloat = 100
+        let top = m.offsetY - contentTop - margin
+        let bottom = m.offsetY + m.viewport - contentTop + margin
+        var off = Set<String>()
+        for (k, id) in ids.enumerated() {
+            guard let y = rowY[id] else { continue }
+            // It ends where the next row begins (the last, at the content's end).
+            let next = k + 1 < ids.count ? rowY[ids[k + 1]] : m.contentHeight - contentTop
+            guard let end = next else { continue }
+            if end < top || y > bottom { off.insert(id) }
+        }
+        return off
     }
 
     /// Back in the foreground, caught up: says where the view is once any
