@@ -145,6 +145,8 @@ final class ChatScrollCoordinator {
     /// short one was taken for a short drag and pulled back to the end (her
     /// phone, step 3 build: "scroll ended near the end" 200–750 pt from it).
     @ObservationIgnored private var lift: (velocity: CGFloat, at: CFTimeInterval)?
+    /// When this pan began and where the finger came down (window points).
+    @ObservationIgnored private var panStart: (at: CFTimeInterval, y: CGFloat)?
     @ObservationIgnored private var panWatcher: PanWatcher?
     @ObservationIgnored private var widthSettle: Task<Void, Never>?
     @ObservationIgnored private var insetSettle: Task<Void, Never>?
@@ -154,9 +156,27 @@ final class ChatScrollCoordinator {
         if scrollView !== self.scrollView {
             if let old = self.scrollView, let w = panWatcher { old.panGestureRecognizer.removeTarget(w, action: nil) }
             let watcher = PanWatcher { [weak self] pan in
+                guard let self else { return }
+                let now = CACurrentMediaTime()
                 switch pan.state {
-                case .began: self?.lift = nil
-                case .ended, .cancelled: self?.lift = (pan.velocity(in: pan.view).y, CACurrentMediaTime())
+                case .began:
+                    lift = nil
+                    panStart = (now, pan.location(in: nil).y - pan.translation(in: pan.view).y)
+                case .ended, .cancelled:
+                    // The speed at the end, or over the whole gesture if
+                    // that's faster: with the main thread busy (a reply
+                    // streaming in), the last touches come bunched and the
+                    // end speed of a quick flick read 125 pt/s instead of
+                    // 430, and it was taken back to the end as a short drag.
+                    // A drag that stops before lifting averages low.
+                    let end = pan.velocity(in: pan.view).y
+                    var speed = end
+                    if let start = panStart {
+                        let average = (pan.location(in: nil).y - start.y) / max(now - start.at, 0.016)
+                        if abs(average) > abs(end) { speed = average }
+                    }
+                    lift = (speed, now)
+                    panStart = nil
                 default: break
                 }
             }
