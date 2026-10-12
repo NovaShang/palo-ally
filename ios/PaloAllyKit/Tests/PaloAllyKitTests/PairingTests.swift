@@ -21,6 +21,13 @@ struct PairingTests {
         #expect(try PairingLink.parse(l.url.absoluteString) == l)
     }
 
+    /// The host's own formula (host/src/proto/e2e.ts `fingerprint`), on the
+    /// interop vectors' host key.
+    @Test func fingerprintMatchesTheHost() throws {
+        let key = try #require(Data(base64Encoded: "gTl3Dqh9F19Wo1Rmw0x+zMuNipG07jeiXfYPW4/Js5Q="))
+        #expect(PairingLink.fingerprint(of: key) == "SHA256:ajgD1fBZkCocba+8m6RykhL3yqwIY0zDrnaydSnwOCc")
+    }
+
     @Test func parsesLinkEmbeddedInText() throws {
         let l = try PairingLink.parse("扫不了的话复制这个：\n\(link()) 谢谢")
         #expect(l.daemonID == "d-abc")
@@ -82,12 +89,13 @@ struct PairingTests {
     }
 
     @Test func pairingSuccess() async throws {
-        let http = FakeHTTP(status: 200, response: #"{"status":"ok","device_id":"dev-7","host_fingerprint":"SHA256:abc","daemon_label":"Nova 的 Mac"}"#)
+        let fp = PairingLink.fingerprint(of: hostKey)
+        let http = FakeHTTP(status: 200, response: #"{"status":"ok","device_id":"dev-7","host_fingerprint":"\#(fp)","daemon_label":"Nova 的 Mac"}"#)
         let id = DeviceIdentity(privateKey: .init())
         let host = try await PairingClient(http: http).pair(link: try PairingLink.parse(link()), identity: id, deviceLabel: "iPhone")
         #expect(host.deviceID == "dev-7")
         #expect(host.hostLabel == "Nova 的 Mac")
-        #expect(host.hostFingerprint == "SHA256:abc")
+        #expect(host.hostFingerprint == fp)
         #expect(host.hostKey == hostKey)
         #expect(http.lastURL?.absoluteString == "https://relay.bentoai.dev/v1/pair?daemon_id=d-abc")
         let body = try JSONDecoder().decode([String: String].self, from: try #require(http.lastBody))
@@ -115,6 +123,15 @@ struct PairingTests {
         await #expect(throws: PairingError.malformedResponse) {
             _ = try await PairingClient(http: FakeHTTP(status: 200, response: #"{"status":"ok"}"#)).pair(link: l, identity: id, deviceLabel: "x")
         }
+        // Another computer's key answering for this QR code.
+        await #expect(throws: PairingError.wrongHost) {
+            let ack = #"{"status":"ok","device_id":"dev-7","host_fingerprint":"SHA256:ajgD1fBZkCocba+8m6RykhL3yqwIY0zDrnaydSnwOCc"}"#
+            _ = try await PairingClient(http: FakeHTTP(status: 200, response: ack)).pair(link: l, identity: id, deviceLabel: "x")
+        }
+        // No fingerprint (an older relay): let through, as before.
+        let quiet = try await PairingClient(http: FakeHTTP(status: 200, response: #"{"status":"ok","device_id":"dev-8"}"#))
+            .pair(link: l, identity: id, deviceLabel: "x")
+        #expect(quiet.deviceID == "dev-8")
         var noCode = l
         noCode.code = "12"
         await #expect(throws: PairingError.invalidCode) {

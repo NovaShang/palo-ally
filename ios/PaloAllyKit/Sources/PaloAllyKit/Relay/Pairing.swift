@@ -63,6 +63,12 @@ public struct PairingLink: Sendable, Equatable {
         code.count == 6 && code.allSatisfy { $0.isASCII && $0.isNumber }
     }
 
+    /// The host key's fingerprint as the host reports it in `pair.ack`:
+    /// `SHA256:` + base64 of SHA-256(raw key), without padding.
+    public static func fingerprint(of hostKey: Data) -> String {
+        "SHA256:" + Data(SHA256.hash(data: hostKey)).base64EncodedString().replacingOccurrences(of: "=", with: "")
+    }
+
     public var url: URL {
         var c = URLComponents()
         c.scheme = "paloally"
@@ -130,6 +136,8 @@ public struct PairedHost: Codable, Sendable, Equatable {
 
 public enum PairingError: Error, LocalizedError, Equatable {
     case invalidCode
+    /// The computer that answered isn't the one the QR code names.
+    case wrongHost
     case network(String)
     case rejected(status: Int, message: String)
     case malformedResponse
@@ -137,6 +145,7 @@ public enum PairingError: Error, LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .invalidCode: return "配对码应该是 6 位数字"
+        case .wrongHost: return "回应的电脑和二维码上的对不上，在电脑上重新生成一个再扫"
         case .network: return "网络好像不太通，稍后再试试"
         case .rejected(let status, let message):
             switch status {
@@ -213,6 +222,12 @@ public struct PairingClient: Sendable {
             throw PairingError.rejected(status: status, message: ack.error ?? ack.status ?? "HTTP \(status)")
         }
         guard let deviceID = ack.device_id, !deviceID.isEmpty else { throw PairingError.malformedResponse }
+        // The computer says which key it holds; it must be the one in the link
+        // (allies-prd §7.2). An older relay that drops the field is let through:
+        // the encrypted link checks the key again on every connection.
+        if let fp = ack.host_fingerprint, !fp.isEmpty, fp != PairingLink.fingerprint(of: link.hostKey) {
+            throw PairingError.wrongHost
+        }
         return PairedHost(relay: link.relay, daemonID: link.daemonID, deviceID: deviceID, hostKey: link.hostKey,
                           hostLabel: ack.daemon_label ?? "", hostFingerprint: ack.host_fingerprint ?? "")
     }
