@@ -293,6 +293,7 @@ describe("talking to a Pal", () => {
       { type: "user", uuid: "u4", timestamp: "2026-10-12T10:02:00Z", message: { role: "user", content: '<cross-session-message from="uds:/tmp/x.sock" from-name="笔记整理">\n设计稿在 notes/设计.md\n</cross-session-message>' }, origin: { kind: "peer", name: "笔记整理" } },
       { type: "user", uuid: "u5", timestamp: "2026-10-12T10:03:00Z", message: { role: "user", content: "后台任务完成" }, origin: { kind: "task-notification" } },
       { type: "user", uuid: "u6", timestamp: "2026-10-12T10:04:00Z", message: { role: "user", content: "<command-name>/compact</command-name>\n<command-args></command-args>" }, origin: { kind: "human" } },
+      { type: "user", uuid: "u7", timestamp: "2026-10-12T10:04:30Z", message: { role: "user", content: "This session is being continued from a previous conversation…" }, isCompactSummary: true } as any,
     ]);
     const { messages } = await t.call("pals.history", { id: pal.id, limit: 50 });
     expect(messages.map((m: any) => [m.id, m.role, m.text, m.from ?? null])).toEqual([
@@ -302,6 +303,7 @@ describe("talking to a Pal", () => {
       ["u3", "user", "主人说今晚不用部署", "帕帕"],
       ["u4", "user", "设计稿在 notes/设计.md", "笔记整理"],
       ["u6", "user", "/compact", null],
+      ["u7", "system", "前面的对话压缩过了", null],
     ]);
     expect(messages[0]).toMatchObject({ seq: Date.parse("2026-10-12T10:00:00Z"), ts: Date.parse("2026-10-12T10:00:00Z"), kind: "text", pal: pal.id });
     expect((await t.call("pals.history", { id: pal.id, before: "u3", limit: 2 })).messages.map((m: any) => m.id)).toEqual(["msg_1", "msg_2"]);
@@ -500,6 +502,11 @@ describe("pieces", () => {
   test("history mapping: a Pal's transcript's model and last words; startup errors in plain words", () => {
     const entries = [assistantEntry("第一句\n第二句", { model: "claude-sonnet-4-6" }), { type: "assistant", message: { model: "<synthetic>", content: [{ type: "text", text: "No response requested." }] } }];
     expect(transcriptModel(entries)).toBe("claude-sonnet-4-6");
+    // the model Claude Code chose, with its context size, when it's the one that replied
+    const chosen = (modelId: string) => ({ type: "attachment", attachment: { type: "model", identity: { modelId } } });
+    expect(transcriptModel([chosen("claude-sonnet-4-6[1m]"), ...entries])).toBe("claude-sonnet-4-6[1m]");
+    expect(transcriptModel([chosen("claude-opus-5-5[1m]"), ...entries])).toBe("claude-sonnet-4-6"); // switched since
+    expect(transcriptModel([chosen("claude-opus-5-5[1m]")])).toBe("claude-opus-5-5[1m]");
     expect(transcriptLastLine(entries)).toBe("第一句");
     expect(transcriptModel([])).toBeNull();
     expect(startError("Error: That session is running in the background (fb1c). Run `claude stop fb1c` first")).toBe("它还在后台跑着，先停掉它");

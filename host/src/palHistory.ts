@@ -42,6 +42,8 @@ export function userEntryMessage(m: RawSessionMessage, o: PalMapOptions): ChatMe
   if (text === null) return null;
   const ts = Date.parse(m.timestamp ?? "") || 0;
   const base = { seq: ts, id: m.uuid, role: "user" as const, kind: "text" as const, ts, pal: o.pal };
+  // Claude Code compacted the conversation: its summary isn't anyone's words.
+  if ((m as any).isCompactSummary) return { ...base, role: "system", kind: "notice", text: "前面的对话压缩过了", channel: "system" };
   const origin = m.origin;
   if (origin?.kind === "peer") return { ...base, text: peerBody(origin, text), channel: "system", from: peerName(origin, text, o) };
   // Only what the owner typed (or the host typed for them); Claude Code's own
@@ -109,15 +111,25 @@ export function pagePalMessages(all: ChatMessage[], before: string | number | un
   return all.slice(Math.max(0, end - limit), end);
 }
 
-/** The model a session last ran on, from its transcript entries (null: none recorded). */
+/**
+ * The model a session last ran on, from its transcript entries (null: none
+ * recorded). Replies record the API's model id; the model Claude Code chose
+ * (with its context size, like claude-opus-5-5[1m]) is in its own model
+ * entries, and wins when it's the same model.
+ */
 export function transcriptModel(entries: any[]): string | null {
-  for (let i = entries.length - 1; i >= 0; i--) {
+  let replied: string | null = null;
+  let chosen: string | null = null;
+  for (let i = entries.length - 1; i >= 0 && (!replied || !chosen); i--) {
     const e = entries[i];
-    if (e?.type !== "assistant" || e.isSidechain) continue;
-    const model = e.message?.model;
-    if (typeof model === "string" && model && model !== "<synthetic>") return model;
+    if (!replied && e?.type === "assistant" && !e.isSidechain) {
+      const model = e.message?.model;
+      if (typeof model === "string" && model && model !== "<synthetic>") replied = model;
+    }
+    if (!chosen && e?.type === "attachment" && e.attachment?.type === "model" && typeof e.attachment.identity?.modelId === "string") chosen = e.attachment.identity.modelId;
   }
-  return null;
+  if (chosen && (!replied || chosen.replace(/\[.*\]$/, "") === replied)) return chosen;
+  return replied ?? chosen;
 }
 
 /** The last thing said in it (a reply's first line), from transcript entries. */

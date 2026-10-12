@@ -125,6 +125,30 @@ export function readTail(path: string, maxBytes = 256 * 1024): any[] {
   }
 }
 
+/** The entries in a transcript's first `maxBytes`. */
+export function readHead(path: string, maxBytes = 256 * 1024): any[] {
+  if (!existsSync(path)) return [];
+  const fd = openSync(path, "r");
+  try {
+    const buf = Buffer.alloc(Math.min(maxBytes, fstatSync(fd).size));
+    readSync(fd, buf, 0, buf.length, 0);
+    const lines = buf.toString("utf8").split("\n");
+    if (buf.length === maxBytes) lines.pop(); // a partial last line
+    const out: any[] = [];
+    for (const l of lines) {
+      if (!l.trim()) continue;
+      try {
+        out.push(JSON.parse(l));
+      } catch {
+        // a line still being written
+      }
+    }
+    return out;
+  } finally {
+    closeSync(fd);
+  }
+}
+
 export function summarizeTail(entries: any[]): TailSummary {
   const out: TailSummary = { replies: [] };
   const answered = new Set<string>();

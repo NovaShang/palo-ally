@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import type { ApprovalManager } from "./approvals.ts";
 import { firstLine } from "./ccSessions.ts";
 import { ACTIVITY, describeActivity, describeInput, describeTool, friendlyError } from "./copy.ts";
-import { readTail, transcriptPath } from "./handoffs.ts";
+import { readHead, readTail, transcriptPath } from "./handoffs.ts";
 import type { HarnessDriver, HarnessEvent, MainSession, PermissionDecision, PermissionRequest } from "./harness/types.ts";
 import { type PalLaunch, isHelperFailure, makeSpawner } from "./palLauncher.ts";
 import { type PalMapOptions, TranscriptFollower, transcriptLastLine, transcriptModel, userEntryMessage } from "./palHistory.ts";
@@ -108,9 +108,10 @@ export class PalSession {
     private d: PalSessionDeps,
   ) {
     this.updatedAt = rec.lastUsedAt;
-    const tail = readTail(this.transcript, 128 * 1024);
+    const tail = readTail(this.transcript, 512 * 1024);
     this.lastLine = transcriptLastLine(tail);
-    if (!rec.model) rec.model = transcriptModel(tail) ?? undefined;
+    // Its model entries are written when it starts: the beginning has one too.
+    if (!rec.model) rec.model = transcriptModel([...readHead(this.transcript, 256 * 1024), ...tail]) ?? undefined;
     this.model = rec.model;
   }
 

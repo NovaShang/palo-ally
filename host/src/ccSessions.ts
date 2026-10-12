@@ -527,7 +527,7 @@ export function toCCMessages(raw: RawSessionMessage[], assistantName: string, pa
       if (text && m.message?.model !== "<synthetic>") out.push({ id: m.uuid, ts, role: "assistant", text });
       continue;
     }
-    if (m.type !== "user") continue;
+    if (m.type !== "user" || (m as any).isCompactSummary) continue;
     const text = userText(content);
     if (text === null) continue;
     const origin = m.origin;

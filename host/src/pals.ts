@@ -231,10 +231,13 @@ export class Pals {
     this.offBus = this.d.bus.on((event) => {
       if (event === "sessions.updated") this.emitSoon();
     });
+    // Those stopped for today's spending wait for tomorrow; the rest (even
+    // ones that couldn't start before) are tried again.
     let i = 0;
+    const today = this.today();
     for (const pal of this.pals.values()) {
-      if (pal.rec.stoppedFor && pal.rec.stoppedFor !== "elsewhere") continue;
-      if (pal.rec.stoppedFor === "elsewhere") pal.clearStop();
+      if (pal.rec.stoppedFor === "budget" && pal.rec.budgetDay === today) continue;
+      pal.clearStop();
       pal.queueStart();
       const t = setTimeout(() => void this.bringBack(pal, "start"), i++ * this.timing.startStaggerMs);
       this.startTimers.push(t);
