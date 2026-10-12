@@ -291,6 +291,22 @@ describe("offline, retries and limits", () => {
     expect(a.hub.allies.list()[0]!.online).toBe(true);
   });
 
+  test("a connection that finishes opening after the host stopped is closed at once, so it can't look online", async () => {
+    const net = new AllyNet();
+    const a = net.add("家人A");
+    const b = net.add("家人B");
+    await befriend(a, b);
+    for (const l of [...(b.hub.allies as any).links]) l.conn.close();
+    await tick(10);
+    const toA = (b.hub.allies as any).get(b.hub.allies.list()[0]!.id);
+    const dialing = (b.hub.allies as any).connectOut(toA.id, (b.hub.allies as any).target(toA));
+    b.hub.allies.stop();
+    await expect(dialing).rejects.toThrow("allies stopped");
+    await tick(10);
+    expect([...(b.hub.allies as any).links]).toEqual([]);
+    expect([...a.conns].filter((c) => c.client.open)).toEqual([]);
+  });
+
   test("after 3 days it gives up and tells the owner", async () => {
     const net = new AllyNet();
     const clk = clock();

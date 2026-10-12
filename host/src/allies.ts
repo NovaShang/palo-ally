@@ -164,6 +164,7 @@ export class Allies {
   private back: { code: string; pub: string; until: number; allyId: string; done: () => void } | null = null;
   private pairing = new Map<string, { hello: () => void; fail: (e: Error) => void }>();
   private timer: ReturnType<typeof setInterval> | null = null;
+  private stopped = false;
   private readonly dial: DialFn;
   private readonly pairFn: PairFn;
   private readonly now: () => number;
@@ -186,11 +187,13 @@ export class Allies {
   }
 
   start(): void {
+    this.stopped = false;
     this.timer = setInterval(() => this.tick(), allyTiming.tickMs);
     (this.timer as any).unref?.();
   }
 
   stop(): void {
+    this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     if (this.inv?.timer) clearTimeout(this.inv.timer);
     for (const l of [...this.links]) l.conn.close();
@@ -821,6 +824,11 @@ export class Allies {
     const p = (async () => {
       const link = { allyId, dir: "out", hello: true } as Link;
       link.conn = await this.dial(target, relay.identity, { message: (t) => this.receive(link, t), closed: () => this.dropLink(link) });
+      // Stopped while dialing: nothing may stay open behind the host's back.
+      if (this.stopped) {
+        link.conn.close();
+        throw new Error("allies stopped");
+      }
       this.links.add(link);
       this.out.set(allyId, link);
       const a = this.get(allyId);
