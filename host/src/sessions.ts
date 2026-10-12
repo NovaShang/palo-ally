@@ -1,5 +1,5 @@
 import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import type { ApprovalManager } from "./approvals.ts";
@@ -49,6 +49,10 @@ export interface SessionsDeps {
   readMessages?: (sessionId: string, dir: string) => Promise<RawSessionMessage[]>;
   hookWaitMs?: number;
   bun?: string; // the bun the hook runs on
+  // How helpers start. Defaults: Claude Code's own default permission mode
+  // for the owner, and the owner's default model.
+  helperMode?: () => string;
+  helperModel?: () => string | undefined;
   now?: () => number;
   log?: (s: string) => void;
 }
@@ -340,6 +344,7 @@ export class Sessions {
   async send(id: string, text: string, by: "owner" | "assistant"): Promise<void> {
     const t = text.trim();
     if (!t) throw new Error("要说的话不能是空的");
+    await this.watch.refresh(); // its socket as of now (it changes when a session restarts)
     const r = this.watch.get(id) ?? this.watch.find(id);
     if (!r || !this.watch.list().some((s) => s.id === r.sessionId)) throw new Error("没有这个会话");
     const name = this.watch.toWire(r).name;
@@ -404,7 +409,13 @@ export class Sessions {
   propose(a: { name: string; dir: string; duty: string; dailyUsd: number }): string {
     const dir = String(a.dir ?? "").trim();
     if (!dir) return "没提：要给帮手一个项目目录";
-    const p = { name: String(a.name ?? "").trim(), cwd: resolve(expandHome(dir)), duty: String(a.duty ?? "").trim(), dailyUsd: Number(a.dailyUsd) };
+    let cwd = resolve(expandHome(dir));
+    try {
+      cwd = realpathSync(cwd); // as Claude Code records it (/tmp → /private/tmp)
+    } catch {
+      /* checked below */
+    }
+    const p = { name: String(a.name ?? "").trim(), cwd, duty: String(a.duty ?? "").trim(), dailyUsd: Number(a.dailyUsd) };
     try {
       this.checkProposal(p);
     } catch (e) {
@@ -452,8 +463,9 @@ export class Sessions {
   }
 
   private async createHelper(o: { name: string; cwd: string; duty: string; dailyUsd: number }): Promise<Helper> {
-    const permissionMode = this.ownerMode();
-    const short = await this.cli.startBg({ cwd: o.cwd, name: o.name, permissionMode, prompt: o.duty });
+    const permissionMode = this.d.helperMode?.() ?? this.ownerMode();
+    const model = this.d.helperModel?.();
+    const short = await this.cli.startBg({ cwd: o.cwd, name: o.name, permissionMode, prompt: o.duty, ...(model ? { model } : {}) });
     const sessionId = await this.sessionIdOf(short);
     const h: Helper = { sessionId, name: o.name, cwd: o.cwd, duty: o.duty, dailyUsd: o.dailyUsd, short, createdAt: this.now(), state: "active", permissionMode };
     this.helpers.add(h);

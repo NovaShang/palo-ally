@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AwayDetector } from "../src/away.ts";
@@ -43,7 +43,7 @@ function setup(o: { away?: boolean; sessions?: Partial<SessionsDeps> } = {}) {
       ...o.sessions,
     },
   });
-  const project = mkdtempSync(join(tmpdir(), "paloally-project-"));
+  const project = realpathSync(mkdtempSync(join(tmpdir(), "paloally-project-")));
   const signal = () => new AbortController();
   return {
     ...ctx,

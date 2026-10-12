@@ -31,6 +31,7 @@ export interface BgStart {
   name: string;
   permissionMode: string;
   prompt: string;
+  model?: string; // default: the owner's own default model
 }
 
 export interface ClaudeCli {
@@ -196,7 +197,8 @@ export class RealClaudeCli implements ClaudeCli {
   }
 
   async startBg(o: BgStart): Promise<string> {
-    const r = await this.exec(["--bg", "-n", o.name, "--permission-mode", o.permissionMode, o.prompt], o.cwd, 60_000);
+    const model = o.model ? ["--model", o.model] : [];
+    const r = await this.exec(["--bg", "-n", o.name, "--permission-mode", o.permissionMode, ...model, o.prompt], o.cwd, 60_000);
     const short = parseBackgrounded(r.stdout + "\n" + r.stderr);
     if (!short) throw new Error("后台会话没开起来");
     return short;

@@ -9,7 +9,7 @@ import type { FakeScript } from "./fakeDriver.ts";
 import { AllyNet } from "./allyNet.ts";
 import { checkFixture, cleanup, shape, tick } from "./helpers.ts";
 import { waitFor } from "./relayClient.ts";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { AwayDetector } from "../src/away.ts";
 import type { Courier } from "../src/courier.ts";
@@ -195,7 +195,7 @@ describe("host ↔ app protocol", () => {
     await late;
     await run("sessions.history", { id: term.id, limit: 50 });
     await run("sessions.send", { id: term.id, text: "先别管登录页，把列表页做完" });
-    const project = mkdtempSync(`${tmpdir()}/site-`);
+    const project = realpathSync(mkdtempSync(`${tmpdir()}/site-`));
     await hub.toolHandlers().helper_propose({ name: "网站帮手", dir: project, duty: "你负责主人的网站：先做列表页，再做详情页。", dailyUsd: 5 });
     const proposal = hub.chat.recent(1)[0]!.proposal!;
     const helper = (await run("helper.decide", { proposalId: proposal.id, action: "create" })).session;
