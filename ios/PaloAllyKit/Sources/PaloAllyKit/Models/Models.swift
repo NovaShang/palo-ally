@@ -20,6 +20,9 @@ public enum ChatKind: String, TolerantStringEnum {
     /// An exchange with an Ally (allies-prd §7.5): their assistant's words
     /// (`dir` in), or a message to them (`dir` out, its draft card).
     case ally
+    /// The assistant proposes a helper (sessions-prd §6.6): a card with
+    /// 开吧 / 不用 (`proposal`).
+    case helper
     public static let fallback = ChatKind.unknown
 }
 
@@ -143,6 +146,8 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     public var allyName: String?
     public var dir: AllyDirection?
     public var entryId: String?
+    /// kind == .helper: the helper the assistant proposes.
+    public var proposal: HelperProposal?
 
     // Local-only state.
     public var isStreaming: Bool = false
@@ -150,7 +155,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case seq, id, role, kind, text, channel, ts, proactive, taskId, approvalId, questionId, clientMsgId, attachments, label, replyTo, card
-        case allyId, allyName, dir, entryId
+        case allyId, allyName, dir, entryId, proposal
     }
 
     public init(
@@ -185,6 +190,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         allyName = l.string("allyName")
         dir = l.decode(AllyDirection.self, "dir")
         entryId = l.string("entryId")
+        proposal = l.decode(HelperProposal.self, "proposal") ?? l.decode(HelperProposal.self, "helper")
     }
 
     public var date: Date { ts.msDate }
@@ -360,11 +366,17 @@ public struct Question: Codable, Sendable, Hashable, Identifiable {
     public var answers: [String: String]?
     public var answeredAt: Int64?
     public var answeredBy: String?
+    /// Asked by one of the computer's sessions, not the assistant itself.
+    public var source: CardSource?
+    /// A short line from the host about its state (expired: 「在电脑上等你」).
+    public var note: String?
 
     public init(id: String, items: [QuestionItem], taskId: String? = nil, status: QuestionStatus = .pending,
-                createdAt: Int64, answers: [String: String]? = nil, answeredAt: Int64? = nil, answeredBy: String? = nil) {
+                createdAt: Int64, answers: [String: String]? = nil, answeredAt: Int64? = nil, answeredBy: String? = nil,
+                source: CardSource? = nil, note: String? = nil) {
         self.id = id; self.items = items; self.taskId = taskId; self.status = status; self.createdAt = createdAt
         self.answers = answers; self.answeredAt = answeredAt; self.answeredBy = answeredBy
+        self.source = source; self.note = note
     }
 
     public init(from decoder: Decoder) throws {
@@ -377,6 +389,8 @@ public struct Question: Codable, Sendable, Hashable, Identifiable {
         answers = l.decode([String: String].self, "answers")
         answeredAt = l.millis("answeredAt")
         answeredBy = l.string("answeredBy")
+        source = l.decode(CardSource.self, "source")
+        note = l.string("note")
     }
 
     public var isPending: Bool { status == .pending }
@@ -400,18 +414,24 @@ public struct Approval: Codable, Sendable, Hashable, Identifiable {
     public var suggestedScope: String?
     /// Why the harness asked, in its own words, when it says.
     public var reason: String?
+    /// Asked by one of the computer's sessions, not the assistant itself.
+    public var source: CardSource?
+    /// A short line from the host about its state (expired: 「在电脑上等你」).
+    public var note: String?
 
     enum CodingKeys: String, CodingKey {
         case id, tool, title, detail, taskId, careful, status, createdAt, decidedAt, decidedBy, suggestedScope, reason
+        case source, note
     }
 
     public init(id: String, tool: String, title: String, detail: String, taskId: String? = nil,
                 careful: Bool, status: ApprovalStatus = .pending, createdAt: Int64,
-                decidedAt: Int64? = nil, decidedBy: String? = nil, suggestedScope: String? = nil, reason: String? = nil) {
+                decidedAt: Int64? = nil, decidedBy: String? = nil, suggestedScope: String? = nil, reason: String? = nil,
+                source: CardSource? = nil, note: String? = nil) {
         self.id = id; self.tool = tool; self.title = title; self.detail = detail; self.taskId = taskId
         self.careful = careful; self.status = status; self.createdAt = createdAt
         self.decidedAt = decidedAt; self.decidedBy = decidedBy; self.suggestedScope = suggestedScope
-        self.reason = reason
+        self.reason = reason; self.source = source; self.note = note
     }
 
     public init(from decoder: Decoder) throws {
@@ -430,13 +450,16 @@ public struct Approval: Codable, Sendable, Hashable, Identifiable {
         decidedBy = l.string("decidedBy")
         suggestedScope = l.string("suggestedScope")
         reason = l.string("reason")
+        source = l.decode(CardSource.self, "source")
+        note = l.string("note")
     }
 
     public var isPending: Bool { status == .pending }
     /// "以后这类都允许" is only offered when the harness didn't mark the prompt
-    /// as needing care and the host can describe it as a rule (a suggested scope).
+    /// as needing care and the host can describe it as a rule (a suggested
+    /// scope); never for a session's prompt (sessions-prd §3: only passed on).
     public var canRemember: Bool {
-        guard !careful, let s = suggestedScope?.trimmingCharacters(in: .whitespaces) else { return false }
+        guard source == nil, !careful, let s = suggestedScope?.trimmingCharacters(in: .whitespaces) else { return false }
         return !s.isEmpty
     }
 

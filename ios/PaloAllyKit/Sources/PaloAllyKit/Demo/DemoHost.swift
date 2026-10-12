@@ -30,13 +30,21 @@ public actor DemoHost {
     /// Allies (allies-prd §7.5): two made-up people with a few exchanges each.
     public private(set) var allies: [AllyInfo] = []
     public private(set) var allyLogs: [String: [AllyEntry]] = [:]
+    /// Sessions (sessions-prd §7): the computer's Claude Code sessions and
+    /// their conversations (with `sessions: true`; otherwise none).
+    public private(set) var sessions: [CCSession] = []
+    public private(set) var sessionLogs: [String: [CCMessage]] = [:]
+    public private(set) var hooksEnabled = true
 
     /// The computer name the demo host reports (a second demo host shows the
     /// assistant switcher).
     public nonisolated let hostName: String
 
+    /// `sessions`: the computer has Claude Code sessions (two helpers, one in
+    /// a terminal, one in the background), two of them waiting on the owner
+    /// with a card each, and the assistant proposes a helper in the chat.
     public init(speed: Double = 1, seeded: Bool = true, autoConnect: Bool = true, hostName: String = "我的 MacBook",
-                assistantName: String = "Palo", color: String = "magenta") {
+                assistantName: String = "Palo", color: String = "magenta", sessions withSessions: Bool = false) {
         self.speed = speed
         self.hostName = hostName
         settings.assistantName = assistantName
@@ -56,6 +64,15 @@ public actor DemoHost {
             self.files = s.files
             self.memory = s.memory
             (self.allies, self.allyLogs) = DemoHost.seedAllies(now: Date().epochMillis)
+            if withSessions {
+                let ss = DemoHost.seedSessions(now: Date().epochMillis, nextSeq: seq + 1)
+                self.sessions = ss.sessions
+                self.sessionLogs = ss.logs
+                self.approvals += ss.approvals
+                self.questions += ss.questions
+                self.messages.append(ss.proposal)
+                self.seq = ss.proposal.seq
+            }
         }
         // Strong on purpose: the transport keeps its host alive (demo mode and
         // tests often only hold the store/transport).
@@ -111,11 +128,14 @@ public actor DemoHost {
     /// background tasks running.
     public func applyScenario(_ name: String) {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
-        for i in approvals.indices where approvals[i].isPending {
+        // Sessions' cards: kept for the sessions' own states; otherwise
+        // settled at the computer (they leave the conversation).
+        if !name.hasPrefix("session") { settleSessionCards() }
+        for i in approvals.indices where approvals[i].isPending && approvals[i].source == nil {
             approvals[i].status = .allowed
             emit(RPCEventName.approvalUpdated, approvals[i])
         }
-        for i in questions.indices where questions[i].isPending {
+        for i in questions.indices where questions[i].isPending && questions[i].source == nil {
             if name == "answered" {
                 // `-demoState answered`: the question card after the owner chose.
                 var answers: [String: String] = [:]
@@ -174,6 +194,27 @@ public actor DemoHost {
                 var sent = e
                 sent.status = e.allyId == "al-lin" ? .queued : .seen
                 updateEntry(sent)
+            }
+        case "sessionExpired":
+            // `-demoState sessionExpired`: 网站帮手's card waited past the
+            // hook's limit; the session now asks at the computer.
+            if let i = approvals.firstIndex(where: { $0.source?.id == "cc-site" }) {
+                approvals[i].status = .expired
+                approvals[i].note = "在电脑上等你"
+                emit(RPCEventName.approvalUpdated, approvals[i])
+            }
+        case "sessionSettle":
+            // `-demoState sessionSettle`: 网站帮手's card is answered at the
+            // computer a few seconds in, and leaves the conversation.
+            Task {
+                await pause(6)
+                if let i = approvals.firstIndex(where: { $0.source?.id == "cc-site" && $0.isPending }) {
+                    approvals[i].status = .allowed
+                    approvals[i].decidedAt = Date().epochMillis
+                    approvals[i].decidedBy = "terminal"
+                    emit(RPCEventName.approvalUpdated, approvals[i])
+                    setSession("cc-site") { $0.status = .busy; $0.waitingFor = nil }
+                }
             }
         case "tables":
             // Wide tables in a reply: they scroll sideways instead of squeezing.
@@ -568,6 +609,7 @@ public actor DemoHost {
             questions[i].answeredAt = Date().epochMillis
             questions[i].answeredBy = "app"
             emit(RPCEventName.questionUpdated, questions[i])
+            if let sid = questions[i].source?.id { setSession(sid) { $0.status = .busy; $0.waitingFor = nil } }
             return ["question": try .from(questions[i])]
         case RPCMethod.approvalAnswer:
             let aid = p["id"]?.stringValue ?? ""
@@ -578,6 +620,7 @@ public actor DemoHost {
             approvals[i].decidedAt = Date().epochMillis
             approvals[i].decidedBy = "app"
             emit(RPCEventName.approvalUpdated, approvals[i])
+            if let sid = approvals[i].source?.id { setSession(sid) { $0.status = .busy; $0.waitingFor = nil } }
             return ["status": .string(approvals[i].status.rawValue)]
         case RPCMethod.watchAdd:
             let draft = try p.decode(WatchDraft.self)
@@ -777,9 +820,114 @@ public actor DemoHost {
             updateEntry(e)
             if e.status == .queued { Task { await self.deliver(e.id) } }
             return ["entry": try .from(e)]
+        case RPCMethod.sessionsList:
+            return ["sessions": try .from(sessions), "hooks": .bool(hooksEnabled)]
+        case RPCMethod.sessionsHistory:
+            let id = p["id"]?.stringValue ?? ""
+            guard let log = sessionLogs[id] else { throw DemoError(message: "没有这个会话") }
+            let limit = Int(p["limit"]?.doubleValue ?? 50)
+            var upTo = log.endIndex
+            if let before = p["before"]?.stringValue, let i = log.firstIndex(where: { $0.id == before }) { upTo = i }
+            return ["messages": try .from(Array(log[..<upTo].suffix(limit)))]
+        case RPCMethod.sessionsSend:
+            let id = p["id"]?.stringValue ?? ""
+            let text = (p["text"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let s = sessions.first(where: { $0.id == id }) else { throw DemoError(message: "没有这个会话") }
+            guard s.isRunning else { throw DemoError(message: "\(s.displayName)已经停了，先复活它") }
+            guard !text.isEmpty else { throw DemoError(message: "要说的话不能是空的") }
+            Task { await self.sessionHears(id, text) }
+            return ["ok": true]
+        case RPCMethod.sessionsControl:
+            let id = p["id"]?.stringValue ?? ""
+            guard let s = sessions.first(where: { $0.id == id }) else { throw DemoError(message: "没有这个会话") }
+            guard s.isHelper else { throw DemoError(message: "只能管帮手") }
+            switch p["action"]?.stringValue {
+            case "stop", "remove": setSession(id) { $0.status = .stopped; $0.waitingFor = nil }
+            case "restart", "revive": setSession(id) { $0.status = .idle; $0.waitingFor = nil }
+            default: throw DemoError(message: "看不懂这个操作")
+            }
+            return ["ok": true]
+        case RPCMethod.sessionsHooks:
+            hooksEnabled = p["enabled"]?.boolValue ?? hooksEnabled
+            return ["enabled": .bool(hooksEnabled)]
+        case RPCMethod.helperDecide:
+            let pid = p["proposalId"]?.stringValue ?? ""
+            guard let i = messages.firstIndex(where: { $0.proposal?.id == pid }), var proposal = messages[i].proposal else {
+                throw DemoError(message: "这个提议已经没有了")
+            }
+            guard proposal.isPending else {
+                return proposal.sessionId.flatMap { sid in sessions.first { $0.id == sid } }
+                    .map { ["session": (try? JSONValue.from($0)) ?? .null] } ?? [:]
+            }
+            var result: JSONValue = [:]
+            switch p["action"]?.stringValue {
+            case "create":
+                await pause(1.2) // a background session starts
+                let s = CCSession(id: nextID("cc"), name: proposal.name, cwd: proposal.cwd, kind: .helper, status: .busy,
+                                  lastLine: "在看交接说明…", contextTokens: 12_000, updatedAt: Date().epochMillis)
+                sessions.append(s)
+                sessionLogs[s.id] = [CCMessage(id: nextID("cm"), ts: Date().epochMillis, role: .palo,
+                                               text: "你好，我是 \(settings.assistantName)。\(proposal.duty)")]
+                emitSessions()
+                proposal.status = .created
+                proposal.sessionId = s.id
+                result = ["session": try .from(s)]
+            case "discard":
+                proposal.status = .discarded
+            default:
+                throw DemoError(message: "看不懂这个操作")
+            }
+            messages[i].proposal = proposal
+            emit(RPCEventName.chatMessage, messages[i])
+            return result
         default:
             throw DemoError(message: "unknown method \(method)")
         }
+    }
+
+    // MARK: sessions
+
+    /// The whole list (`sessions.updated {sessions}`).
+    private func emitSessions() {
+        emit(RPCEventName.sessionsUpdated, ["sessions": sessions])
+    }
+
+    private func setSession(_ id: String, _ change: (inout CCSession) -> Void) {
+        guard let i = sessions.firstIndex(where: { $0.id == id }) else { return }
+        change(&sessions[i])
+        sessions[i].updatedAt = Date().epochMillis
+        emitSessions()
+    }
+
+    /// The owner's words reach the session through the errand session (§6.4)
+    /// about three seconds later, then it answers.
+    private func sessionHears(_ id: String, _ text: String) async {
+        await pause(1.5)
+        sessionLogs[id, default: []].append(CCMessage(id: nextID("cm"), ts: Date().epochMillis, role: .palo, text: "主人：\(text)"))
+        setSession(id) { $0.status = .busy; $0.lastLine = text }
+        await pause(2)
+        let reply = "好的，按你说的办。"
+        sessionLogs[id, default: []].append(CCMessage(id: nextID("cm"), ts: Date().epochMillis, role: .assistant, text: reply))
+        setSession(id) { $0.status = .idle; $0.lastLine = reply }
+    }
+
+    /// Every session card still waiting is answered at the computer, and
+    /// those sessions carry on.
+    private func settleSessionCards() {
+        let now = Date().epochMillis
+        for i in approvals.indices where approvals[i].source != nil && approvals[i].isPending {
+            approvals[i].status = .allowed
+            approvals[i].decidedAt = now
+            approvals[i].decidedBy = "terminal"
+            emit(RPCEventName.approvalUpdated, approvals[i])
+        }
+        for i in questions.indices where questions[i].source != nil && questions[i].isPending {
+            questions[i].status = .answered
+            questions[i].answeredAt = now
+            questions[i].answeredBy = "terminal"
+            emit(RPCEventName.questionUpdated, questions[i])
+        }
+        for s in sessions where s.status == .waiting { setSession(s.id) { $0.status = .busy; $0.waitingFor = nil } }
     }
 
     // MARK: allies
@@ -906,6 +1054,97 @@ public actor DemoHost {
                      lastSeen: now - 5 * hour, lastEntry: lin.last),
         ]
         return (allies, ["al-family": family, "al-lin": lin])
+    }
+
+    struct SessionSeed {
+        var sessions: [CCSession]
+        var logs: [String: [CCMessage]]
+        var approvals: [Approval]
+        var questions: [Question]
+        /// The assistant's helper proposal in the conversation.
+        var proposal: ChatMessage
+    }
+
+    /// Two helpers, a session in a terminal and one in the background;
+    /// 网站帮手 waits to run a long command, 数据清洗 asks a question.
+    static func seedSessions(now: Int64, nextSeq: Int64) -> SessionSeed {
+        let min: Int64 = 60_000
+        let hour = 60 * min
+        let sessions = [
+            CCSession(id: "cc-site", name: "网站帮手", cwd: "/Users/demo/code/site", kind: .helper, status: .waiting,
+                      waitingFor: "想运行 npm run build", lastLine: "列表页做完了，跑一下构建看看有没有报错。",
+                      contextTokens: 182_000, updatedAt: now - min),
+            CCSession(id: "cc-notes", name: "笔记整理", cwd: "/Users/demo/Documents/notes", kind: .helper, status: .idle,
+                      lastLine: "这周的 12 篇笔记都归好类了，标签也补上了。", contextTokens: 46_000, updatedAt: now - 40 * min),
+            CCSession(id: "cc-login", name: "修登录跳转", cwd: "/Users/demo/code/app", kind: .terminal, status: .busy,
+                      lastLine: "在跑登录相关的测试，还剩 3 个文件。", contextTokens: 95_000, updatedAt: now - 2 * min),
+            CCSession(id: "cc-data", name: "问卷数据清洗", cwd: "/Users/demo/code/survey", kind: .background, status: .waiting,
+                      waitingFor: "问你缺的数据怎么处理", lastLine: "1,200 份问卷里有 37 份没填收入。",
+                      contextTokens: 310_000, updatedAt: now - 5 * min),
+        ]
+        var n = 0
+        func line(_ role: CCMessageRole, _ text: String, ago: Int64, from: String? = nil) -> CCMessage {
+            n += 1
+            return CCMessage(id: "cm-\(n)", ts: now - ago, role: role, text: text, from: from)
+        }
+        // 网站帮手: a day of work before today's, so there is an older page.
+        var site: [CCMessage] = [
+            line(.palo, "你好，我是 Palo。主人的网站在 ~/code/site，接下来由你专门负责：先做列表页，再做详情页。每天花费不超过 5 美元。",
+                 ago: 26 * hour),
+            line(.assistant, "收到。我先看一下项目结构和现有的页面。", ago: 26 * hour - min),
+        ]
+        for i in 1...30 {
+            site.append(line(.assistant, "第 \(i) 处样式调好了：间距统一成 8 的倍数，字号跟设计稿对齐。", ago: 25 * hour - Int64(i) * 2 * min))
+        }
+        site += [
+            line(.assistant, "看完了：列表页还是空的，路由已经配好。我从数据接口开始接。", ago: 3 * hour),
+            line(.owner, "列表要能按日期排序", ago: 2 * hour + 30 * min),
+            line(.assistant, "好的，加上了按日期排序，默认最新的在前。", ago: 2 * hour + 28 * min),
+            line(.peer, "网站帮手你好，主人的笔记里有一份列表页的设计稿，在 notes/设计/列表页.md。", ago: 2 * hour, from: "笔记整理"),
+            line(.assistant, "谢谢，我按那份设计稿调一下间距和字号。", ago: 2 * hour - min),
+            line(.palo, "主人：先别管登录页，把列表页做完", ago: 40 * min),
+            line(.assistant, "明白，登录页先放着。列表页做完了，跑一下构建看看有没有报错。", ago: min),
+        ]
+        let notes = [
+            line(.palo, "你好，我是 Palo。主人的笔记在 ~/Documents/notes，请每周把新笔记归类、补上标签。", ago: 5 * 24 * hour),
+            line(.assistant, "好的，我先把现有的分类看一遍。", ago: 5 * 24 * hour - min),
+            line(.assistant, "这周的 12 篇笔记都归好类了，标签也补上了。", ago: 40 * min),
+        ]
+        let login = [
+            line(.owner, "登录以后会跳回首页，应该回到原来那一页", ago: 30 * min),
+            line(.assistant, "找到了：跳转时把原来的地址丢了。我改成登录前先记下来。", ago: 25 * min),
+            line(.assistant, "在跑登录相关的测试，还剩 3 个文件。", ago: 2 * min),
+        ]
+        let data = [
+            line(.owner, "把问卷数据清洗一下，输出一份干净的表", ago: hour),
+            line(.assistant, "1,200 份问卷里有 37 份没填收入。", ago: 6 * min),
+        ]
+        let approvals = [
+            Approval(id: "sa1", tool: "Bash", title: "在电脑上运行一条命令",
+                     detail: """
+                     npm run build && \\
+                       npm run test -- --coverage --reporter=dot && \\
+                       npx playwright test tests/list-page.spec.ts --project=chromium --workers=2 && \\
+                       rsync -av --delete dist/ ~/code/site-preview/ && \\
+                       echo "构建、测试和预览都好了"
+                     """,
+                     careful: false, status: .pending, createdAt: now - min,
+                     source: CardSource(id: "cc-site", name: "网站帮手")),
+        ]
+        let questions = [
+            Question(id: "sq1", items: [
+                QuestionItem(question: "没填收入的 37 份问卷怎么处理？", header: "缺的数据", options: [
+                    QuestionOption(label: "A 直接删掉", description: "剩 1,163 份"),
+                    QuestionOption(label: "B 用中位数补上", description: "1,200 份都保留"),
+                ]),
+            ], status: .pending, createdAt: now - 5 * min, source: CardSource(id: "cc-data", name: "问卷数据清洗")),
+        ]
+        var proposal = ChatMessage(seq: nextSeq, id: "m\(nextSeq)", role: .assistant, kind: .helper,
+                                   text: "报销单每周都要理一遍，要不要开一个帮手专门管？", channel: .app, ts: now - 3 * min)
+        proposal.proposal = HelperProposal(id: "hp1", name: "报销帮手", cwd: "/Users/demo/Documents/报销",
+                                           duty: "每周把下载文件夹里的发票整理进报销表，缺的告诉你。", dailyUsd: 3)
+        return SessionSeed(sessions: sessions, logs: ["cc-site": site, "cc-notes": notes, "cc-login": login, "cc-data": data],
+                           approvals: approvals, questions: questions, proposal: proposal)
     }
 
     // MARK: canned replies

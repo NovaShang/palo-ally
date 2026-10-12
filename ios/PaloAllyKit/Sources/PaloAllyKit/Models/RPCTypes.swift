@@ -62,6 +62,19 @@ public enum RPCMethod {
 
     public static let allies: [String] = [allyList, allyInvite, allyAccept, allyRemove, allyLog, allyDraftDecide]
 
+    /// Sessions (sessions-prd §7): the computer's Claude Code sessions, one
+    /// session's conversation, the owner's words into one, 停止 / 重启 / 删除
+    /// / 复活 for helpers, the global hooks switch, and the owner's answer to
+    /// a helper proposal.
+    public static let sessionsList = "sessions.list"
+    public static let sessionsHistory = "sessions.history"
+    public static let sessionsSend = "sessions.send"
+    public static let sessionsControl = "sessions.control"
+    public static let sessionsHooks = "sessions.hooks"
+    public static let helperDecide = "helper.decide"
+
+    public static let sessions: [String] = [sessionsList, sessionsHistory, sessionsSend, sessionsControl, sessionsHooks, helperDecide]
+
     /// Every method the client knows. The contract test checks this equals
     /// the host's method set exactly.
     public static let all: [String] = [
@@ -70,7 +83,7 @@ public enum RPCMethod {
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
         suggestionsList, suggestionsDismiss, hostUpdate,
-    ] + allies
+    ] + allies + sessions
 }
 
 public enum RPCEventName {
@@ -91,11 +104,15 @@ public enum RPCEventName {
     public static let allyEntry = "ally.entry"
 
     public static let allies: [String] = [allyUpdated, allyEntry]
+    /// The session list, or one session, changed (and after a send arrives).
+    public static let sessionsUpdated = "sessions.updated"
+
+    public static let sessions: [String] = [sessionsUpdated]
 
     public static let all: [String] = [
         chatMessage, chatDelta, taskUpdated, approvalUpdated, questionUpdated, watchUpdated, artifactUpdated, settingsUpdated,
         status, commandsUpdated, suggestionsUpdated,
-    ] + allies
+    ] + allies + sessions
 }
 
 public struct EmptyParams: Codable, Sendable { public init() {} }
@@ -640,4 +657,93 @@ public struct AllyEntryResult: Decodable, Sendable {
         let l = try Lenient(decoder)
         entry = l.expect("entry", l.decode(AllyEntry.self, "entry"))
     }
+}
+
+// MARK: - Sessions
+
+/// `sessions.list → {sessions}`. `hooks`, when the host says, is whether the
+/// global hooks are on (the 设置 switch).
+public struct SessionsResult: Decodable, Sendable {
+    public var sessions: [CCSession]
+    public var hooks: Bool?
+    public init(sessions: [CCSession], hooks: Bool? = nil) { self.sessions = sessions; self.hooks = hooks }
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        sessions = l.array(CCSession.self, "sessions", or: [])
+        hooks = l.bool("hooks") ?? l.bool("hooksEnabled")
+    }
+}
+
+/// `sessions.history {id, before?, limit?}`: one session's conversation, the
+/// newest page, or the page before the message `before` (its id).
+public struct SessionHistoryParams: Codable, Sendable {
+    public var id: String
+    public var before: String?
+    public var limit: Int?
+    public init(id: String, before: String? = nil, limit: Int? = nil) { self.id = id; self.before = before; self.limit = limit }
+}
+
+/// `sessions.history → {messages}`, oldest first.
+public struct SessionMessagesResult: Decodable, Sendable {
+    public var messages: [CCMessage]
+    public init(messages: [CCMessage]) { self.messages = messages }
+    public init(from decoder: Decoder) throws { messages = try Lenient(decoder).array(CCMessage.self, "messages", or: []) }
+}
+
+/// `sessions.send {id, text}`: the owner's words, as typed, into a session.
+public struct SessionSendParams: Codable, Sendable {
+    public var id: String
+    public var text: String
+    public init(id: String, text: String) { self.id = id; self.text = text }
+}
+
+/// What the owner can do to a helper.
+public enum SessionControlAction: String, Codable, Sendable {
+    /// 停止
+    case stop
+    /// 重启: the same session, its context kept.
+    case restart
+    /// 删除
+    case remove
+    /// 复活: back from its record.
+    case revive
+}
+
+/// `sessions.control {id, action}` (helpers only).
+public struct SessionControlParams: Codable, Sendable {
+    public var id: String
+    public var action: SessionControlAction
+    public init(id: String, action: SessionControlAction) { self.id = id; self.action = action }
+}
+
+/// `sessions.hooks {enabled}` → `{enabled}`: the global hooks switch.
+public struct SessionHooksParams: Codable, Sendable {
+    public var enabled: Bool
+    public init(enabled: Bool) { self.enabled = enabled }
+}
+
+public struct SessionHooksResult: Decodable, Sendable {
+    public var enabled: Bool
+    public init(from decoder: Decoder) throws { enabled = try Lenient(decoder).bool("enabled", or: false) }
+}
+
+/// The owner's answer to a helper proposal.
+public enum HelperDecideAction: String, Codable, Sendable {
+    /// 开吧
+    case create
+    /// 不用
+    case discard
+}
+
+/// `helper.decide {proposalId, action}`.
+public struct HelperDecideParams: Codable, Sendable {
+    public var proposalId: String
+    public var action: HelperDecideAction
+    public init(proposalId: String, action: HelperDecideAction) { self.proposalId = proposalId; self.action = action }
+}
+
+/// `helper.decide → {session?}`: the new helper, when one was started.
+public struct HelperDecideResult: Decodable, Sendable {
+    public var session: CCSession?
+    public init(from decoder: Decoder) throws { session = try Lenient(decoder).decode(CCSession.self, "session") }
 }

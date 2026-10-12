@@ -116,6 +116,28 @@ public final class AppStore {
     /// Exchanges whose Ally isn't known (an event that didn't say).
     var looseAllyEntries: [String: AllyEntry] = [:]
 
+    // Sessions (AppStore+Sessions.swift).
+    /// The computer's Claude Code sessions: helpers first, then the owner's own.
+    public internal(set) var sessions: [CCSession] = []
+    /// nil until the host has answered `sessions.list`; false for a host that
+    /// doesn't know sessions yet, which hides them.
+    public internal(set) var sessionsSupported: Bool?
+    /// The global hooks switch (设置), when known.
+    public internal(set) var sessionHooksEnabled: Bool?
+    /// Each session's conversation held here, oldest first.
+    public internal(set) var sessionHistories: [String: [CCMessage]] = [:]
+    /// The oldest page held for that session was full: there may be more.
+    public internal(set) var sessionHistoryHasMore: [String: Bool] = [:]
+    /// Words sent from the app that the session's conversation doesn't show yet.
+    public internal(set) var sessionPending: [String: [SessionPendingSend]] = [:]
+    /// The owner's answers to helper proposals, until the host's copy says so.
+    public internal(set) var helperDecisions: [String: HelperProposalStatus] = [:]
+    /// Proposal → the helper it started.
+    public internal(set) var helperSessions: [String: String] = [:]
+    /// Session pages on screen (id → how many): their conversation follows
+    /// `sessions.updated`.
+    var watchedSessions: [String: Int] = [:]
+
     public func markCopied(_ id: String) { copiedClipboardIDs.insert(id) }
 
     // MARK: config
@@ -331,6 +353,7 @@ public final class AppStore {
                 resendQueued()
                 Task { await self.loadSuggestions() }
                 Task { await self.loadAllies() }
+                Task { await self.loadSessions() }
                 return
             } catch {
                 guard gen == connectGeneration else { return }
@@ -541,6 +564,8 @@ public final class AppStore {
             apply(allyUpdate: AllyUpdate(json: data))
         case RPCEventName.allyEntry:
             if let e = AllyEntryEvent(json: data) { upsert(allyEntry: e.entry, allyId: e.allyId) }
+        case RPCEventName.sessionsUpdated:
+            apply(sessionsUpdate: SessionsUpdate(json: data))
         case RPCEventName.status:
             if let s = try? (data["status"] ?? data).decode(HostStatus.self) {
                 if !s.busy, !streams.isEmpty, let finishingReply { finishingReply { applyStatus(s) } } else { atTheEnd { applyStatus(s) } }

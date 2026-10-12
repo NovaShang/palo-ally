@@ -87,11 +87,11 @@ struct AppStoreTests {
         #expect(store.recentArtifacts.map(\.id) == ["ar2", "ar3"])
         #expect(store.settings?.probeIntervalMinutes == 10)
         #expect(store.status?.model == "glm-4.6")
-        // hello + sync first; 「试试」 suggestions and the Allies (list, then each one's log) load right after
+        // hello + sync first; 「试试」 suggestions, the Allies (list, then each one's log) and the sessions load right after
         #expect(await until {
             let log = await host.requestLog
-            return Array(log.prefix(2)) == ["hello", "sync"] && log.count == 6
-                && Set(log.dropFirst(2)) == ["suggestions.list", "ally.list", "ally.log"]
+            return Array(log.prefix(2)) == ["hello", "sync"] && log.count == 7
+                && Set(log.dropFirst(2)) == ["suggestions.list", "ally.list", "ally.log", "sessions.list"]
         })
         #expect(await host.lastParams["sync"]?["sinceSeq"] == nil)
         #expect(await host.lastParams["hello"]?["client"] == "ios")
