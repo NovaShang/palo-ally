@@ -161,7 +161,7 @@ struct OrbPresenceTracking: ViewModifier {
         let running = store.tasks.filter { $0.status == .running }.count
         i.offline = lost
         i.approval = !store.pendingApprovals.isEmpty || !store.pendingQuestions.isEmpty
-            || !store.pendingAllyDrafts.isEmpty
+            || !store.pendingAllyDrafts.isEmpty || !store.pendingHelperProposals.isEmpty
         i.streaming = streaming
         i.thinking = working && !streaming
         i.background = running > 0 && !store.isBusy
@@ -210,7 +210,7 @@ struct OrbPresenceTracking: ViewModifier {
         return OrbPresence.resolve(
             speaking: OrbInput.shared.recording,
             needsOwner: !store.pendingApprovals.isEmpty || !store.pendingQuestions.isEmpty
-            || !store.pendingAllyDrafts.isEmpty,
+            || !store.pendingAllyDrafts.isEmpty || !store.pendingHelperProposals.isEmpty,
             event: eventActive,
             scrolledUp: scrolledUp,
             thinking: working && !streaming,

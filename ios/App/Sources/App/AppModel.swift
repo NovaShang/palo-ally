@@ -21,6 +21,11 @@ let appLog = Logger(subsystem: "com.novashang.paloally", category: "app")
 ///   -demoScreen hosts | switcher   设置 → 我的助理 / the assistant switcher open
 ///   -demoScreen allies | ally | allyInvite | allyAccept   「它」 with its Allies / one Ally's page
 ///                        (`-demoAlly <id>`, default the first) / the invite QR / an invite opened from the Camera
+///   -demoScreen sessions | session   the computer's Claude Code sessions on a page of their own / one
+///                        session's page (`-demoSession <id>`, default cc-site; `-demoSessionPanel stop | remove |
+///                        attach` opens it on that). `-demoState sessions` keeps only the sessions' cards in the
+///                        conversation (`sessionExpired`: 网站帮手's has expired; `sessionSettle`: it's answered at
+///                        the computer 6 s in)
 struct LaunchOptions {
     var demo: Bool
     var screen: String?
@@ -292,6 +297,8 @@ final class AppModel {
             showHostList = false
             openTaskID = nil
             openAllyID = nil
+            openSessionID = nil
+            showSessionsList = false
         case .library:
             libraryRoot = .list
             libraryPath = []
@@ -338,6 +345,16 @@ final class AppModel {
         openTaskID = nil
         assistantRoot = .tabs
         openAllyID = id
+        place = .assistant
+    }
+    /// From the conversation (a session's card, a started helper): 「它」
+    /// with that session's page open.
+    func openSession(_ id: String) {
+        showSettings = false
+        openTaskID = nil
+        openAllyID = nil
+        assistantRoot = .tabs
+        openSessionID = id
         place = .assistant
     }
     /// The way out of a single item to its whole collection.
@@ -403,6 +420,11 @@ final class AppModel {
     var openAllyID: String?
     /// 添加 Ally: the invite QR sheet.
     var showAllyInvite = false
+    /// One Claude Code session's page, open in 「它」.
+    var openSessionID: String?
+    /// The sessions on a page of their own (where the list lives is still
+    /// being decided; the demo opens it).
+    var showSessionsList = false
     /// An Ally's invite opened from the system Camera: the confirm sheet.
     var allyInvite: PendingAllyInvite?
 
@@ -469,6 +491,14 @@ final class AppModel {
             }
         case "allyInvite": showAssistant = true; showAllyInvite = true
         case "allyAccept": allyInvite = PendingAllyInvite(link: Self.demoAllyInviteLink())
+        case "sessions": showAssistant = true; showSessionsList = true
+        case "session":
+            let id = UserDefaults.standard.string(forKey: "demoSession") ?? "cc-site"
+            Task { @MainActor in
+                // Once the list has come in.
+                for _ in 0..<40 where store?.session(id: id) == nil { try? await Task.sleep(for: .milliseconds(100)) }
+                openSession(id)
+            }
         #endif
         default: break
         }
@@ -662,7 +692,7 @@ final class AppModel {
             let who = i < identities.count ? identities[i] : ("Palo", "")
             let naming = launch.screen == "naming" && i == 0
             let host = DemoHost(speed: 1, hostName: i < names.count ? names[i] : "电脑 \(i + 1)",
-                                assistantName: naming ? "" : who.0, color: naming ? "" : who.1)
+                                assistantName: naming ? "" : who.0, color: naming ? "" : who.1, sessions: i == 0)
             demoHosts[id] = host
             let s = makeStore(host.transport, id: id)
             stores[id] = s

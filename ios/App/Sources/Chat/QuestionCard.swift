@@ -8,6 +8,11 @@ import SwiftUI
 struct QuestionCard: View {
     @Environment(AppStore.self) private var store
     let question: Question
+    /// A session's card: its label opens that session's page (not on the page itself).
+    var linksSource = true
+
+    /// A session's question that expired here: the session asks at the computer now.
+    private var waitsAtComputer: Bool { store.waitsAtComputer(question) }
 
     /// Per question (by index): chosen option labels, and the 「其他」 text.
     @State private var picked: [Int: Set<String>] = [:]
@@ -19,16 +24,30 @@ struct QuestionCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
-                Image(systemName: "questionmark.bubble")
-                    .foregroundStyle(.secondary)
-                Text(question.isPending ? "想问你" : "问过你")
-                    .font(.headline)
-                Spacer(minLength: 0)
-                if !question.isPending {
-                    Text(question.status == .answered ? "已回答" : "没等到回答")
-                        .font(.caption)
+            if let asks = Copy.sessionQuestion(question) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    SessionSourceLabel(text: asks, sessionID: linksSource ? question.source?.id : nil)
+                    Spacer(minLength: 4)
+                    if question.isPending {
+                        Text(Copy.relative(question.createdAt))
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+            // A session's label already says 「X 问你」 while it asks.
+            if !(question.source?.isSession == true && (question.isPending || waitsAtComputer)) {
+                HStack(spacing: 8) {
+                    Image(systemName: "questionmark.bubble")
                         .foregroundStyle(.secondary)
+                    Text(question.isPending ? "想问你" : "问过你")
+                        .font(.headline)
+                    Spacer(minLength: 0)
+                    if !question.isPending {
+                        Text(question.status == .answered ? "已回答" : "没等到回答")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -36,7 +55,7 @@ struct QuestionCard: View {
                 ForEach(Array(question.items.enumerated()), id: \.offset) { i, item in
                     itemPicker(i, item)
                 }
-                meta
+                if question.source?.isSession != true { meta }
                 Button {
                     send()
                 } label: {
@@ -49,6 +68,11 @@ struct QuestionCard: View {
                 if let error {
                     Text(error).font(.caption).foregroundStyle(.red)
                 }
+            } else if waitsAtComputer {
+                asked
+                Label(Copy.waitsAtComputer(question.note), systemImage: "laptopcomputer")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             } else {
                 summary
             }
@@ -151,6 +175,28 @@ struct QuestionCard: View {
         .font(.caption)
         .foregroundStyle(.tertiary)
         .lineLimit(1)
+    }
+
+    // MARK: waiting at the computer
+
+    /// The questions and their options as they were asked, nothing to tap.
+    private var asked: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(question.items.enumerated()), id: \.offset) { _, item in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.question)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    ForEach(item.options, id: \.label) { option in
+                        Text("· \(option.label)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .textSelection(.enabled)
     }
 
     // MARK: answered

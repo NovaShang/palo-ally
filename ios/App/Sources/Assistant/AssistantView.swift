@@ -65,6 +65,13 @@ struct AssistantView: View {
         .navigationDestination(item: $model.openAllyID) { id in
             AllyDetailView(allyID: id).modifier(InSidebarColumn())
         }
+        // A session's card or a started helper in the conversation opens its page.
+        .navigationDestination(item: $model.openSessionID) { id in
+            SessionDetailView(sessionID: id).modifier(InSidebarColumn())
+        }
+        .navigationDestination(isPresented: $model.showSessionsList) {
+            SessionsListPage().modifier(InSidebarColumn())
+        }
         .sheet(isPresented: $model.showAllyInvite) {
             AllyInviteSheet().environment(store)
         }

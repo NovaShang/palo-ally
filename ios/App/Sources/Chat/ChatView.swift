@@ -116,7 +116,10 @@ struct ChatView: View {
         }
         // …and on a question card.
         .onChange(of: model.focusQuestionID, initial: true) { _, id in
-            guard let id, let target = store.messages.first(where: { $0.questionId == id })?.id else { return }
+            guard let id else { return }
+            let target = store.messages.first(where: { $0.questionId == id })?.id
+                ?? (store.liveEndQuestions.contains { $0.id == id } ? "question-\(id)" : nil)
+            guard let target else { return }
             model.focusQuestionID = nil
             scroll.reveal(target, after: 0.35)
         }
@@ -305,9 +308,17 @@ private struct ConversationRows: View {
             // The live end: approvals, the working line and 「试试」 (not
             // while a stretch far back is laid out on its own).
             if atTheEnd {
-                ForEach(store.unanchoredPendingApprovals) { approval in
+                // Pending ones, and a session's still waiting at the computer.
+                ForEach(store.liveEndApprovals) { approval in
                     ApprovalCard(approval: approval)
                         .id("approval-\(approval.id)")
+                }
+
+                // The computer's sessions ask here too (the assistant's own
+                // questions come with a message of their own).
+                ForEach(store.liveEndQuestions) { question in
+                    QuestionCard(question: question)
+                        .id("question-\(question.id)")
                 }
 
                 // Drafts to Allies with no message of their own: here, like approvals.

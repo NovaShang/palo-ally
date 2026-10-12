@@ -149,11 +149,17 @@ private struct AssistantMessage: View {
                 if message.kind == .task, let taskId = message.taskId {
                     TaskChip(taskId: taskId)
                 }
-                if message.kind == .approval, let id = message.approvalId, let approval = store.approval(id: id) {
+                // A session's card settled at the computer leaves (sessions-prd §5).
+                if message.kind == .approval, let id = message.approvalId, let approval = store.approval(id: id),
+                   !store.settledAtComputer(approval) {
                     ApprovalCard(approval: approval)
                 }
-                if message.kind == .question, let id = message.questionId, let question = store.question(id: id) {
+                if message.kind == .question, let id = message.questionId, let question = store.question(id: id),
+                   !store.settledAtComputer(question) {
                     QuestionCard(question: question)
+                }
+                if message.kind == .helper, let proposal = store.helperProposal(in: message) {
+                    HelperProposalCard(proposal: proposal)
                 }
             }
             Spacer(minLength: Self.trailingRoom)
@@ -164,7 +170,8 @@ private struct AssistantMessage: View {
 
     /// A question card says it all: no label, no repeated text above it.
     private var questionCardOnly: Bool {
-        message.kind == .question && message.questionId.flatMap { store.question(id: $0) } != nil
+        message.kind == .question
+            && message.questionId.flatMap { store.question(id: $0) }.map { !store.settledAtComputer($0) } == true
     }
 
     private var proactiveLabel: String {
