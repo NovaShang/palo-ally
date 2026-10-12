@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dialAlly, pairAsClient } from "../src/channels/allyLink.ts";
 import { RelayChannel, loadHostIdentity } from "../src/channels/relay.ts";
-import { b64url, sign, unb64 } from "../src/proto/e2e.ts";
+import { b64url, newIdentity, sign, unb64 } from "../src/proto/e2e.ts";
 import { handleRpc } from "../src/rpc.ts";
 import { cleanup, makeHub, testConfig } from "./helpers.ts";
 import { pairDevice, waitFor } from "./relayClient.ts";
@@ -133,7 +133,7 @@ d(`Allies over the relay (${RELAY})`, () => {
     expect(b.hub.allies.log(b.hub.allies.list()[0]!.id).at(-1)!.text).toBe("到家说一声");
   }, 30_000);
 
-  test("an Ally stream that speaks RPC is refused and closed", async () => {
+  test("an Ally stream that speaks RPC is refused and closed; a forged host fails the handshake", async () => {
     const toA = (b.hub.allies as any).get(b.hub.allies.list()[0]!.id);
     const target = { relay: RELAY, daemonId: toA.daemonId, deviceId: toA.myDeviceIdThere, hostKey: unb64(toA.hostKey) };
     const seq = a.hub.chat.lastSeq;
@@ -149,6 +149,9 @@ d(`Allies over the relay (${RELAY})`, () => {
       await waitFor(() => closed);
       expect(answers).toEqual([]);
     }
+    // a host that isn't the one we paired with can't answer for it: the
+    // welcome must be signed with the key from the invite
+    await expect(dialAlly({ ...target, hostKey: newIdentity().pub }, b.relay.identity, { message: () => {}, closed: () => {} })).rejects.toThrow("bad host signature");
     // not even sync without a hello first
     let closed = false;
     const conn = await dialAlly(target, b.relay.identity, { message: () => {}, closed: () => (closed = true) });
