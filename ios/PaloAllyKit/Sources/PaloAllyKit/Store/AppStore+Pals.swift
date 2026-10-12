@@ -91,8 +91,12 @@ extension AppStore {
             let rest = others.filter { s in !list.contains { $0.sessionId == s.id } }
             if rest != otherSessions { otherSessions = rest }
             // The host stopped waiting for one to be quit (it gave up after
-            // a while, and says so in the conversation).
-            for s in rest where s.adopting == false && adoptions[s.id] == .waitingForExit { adoptions[s.id] = nil }
+            // a while and says so in the conversation, or a device cancelled):
+            // it leaves `adopting` out.
+            for s in rest where s.adopting != true {
+                if adoptions[s.id] == .waitingForExit { adoptions[s.id] = nil }
+                cancelledWaits.remove(s.id)
+            }
         } else if otherSessions.contains(where: { s in list.contains { $0.sessionId == s.id } }) {
             otherSessions.removeAll { s in list.contains { $0.sessionId == s.id } }
         }
@@ -158,11 +162,16 @@ extension AppStore {
         }
     }
 
-    /// The owner stopped waiting for a terminal session to be quit: this
-    /// device no longer opens it when it's adopted.
-    public func cancelAdoption(sessionId: String) {
+    /// The owner stopped waiting for a terminal session to be quit: shown at
+    /// once, and the host stops waiting too (`pals.adopt {cancel}`), so
+    /// quitting it later adopts nothing. Should the host not hear it (offline),
+    /// this device still doesn't open it when it's adopted.
+    public func cancelAdoption(sessionId: String) async {
+        if let parent { return await parent.cancelAdoption(sessionId: sessionId) }
         adoptions[sessionId] = nil
         cancelledWaits.insert(sessionId)
+        _ = try? await rpc.call(RPCMethod.palsAdopt, params: PalAdoptParams(sessionId: sessionId, cancel: true),
+                                as: PalAdoptResult.self)
     }
 
     /// A session waits to be quit in its terminal before it's adopted: asked

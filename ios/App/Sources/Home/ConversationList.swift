@@ -316,7 +316,8 @@ private struct OtherSessionRow: View {
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
-            Button("取消") { store.cancelAdoption(sessionId: session.id) }
+            // The host stops waiting too: quitting it later adopts nothing.
+            Button("取消") { Task { await store.cancelAdoption(sessionId: session.id) } }
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)
                 .controlSize(.small)

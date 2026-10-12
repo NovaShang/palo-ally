@@ -207,10 +207,32 @@ struct PalsStoreTests {
         var opened = 0
         store.onAdopted = { _ in opened += 1 }
         _ = try await store.adopt(sessionId: "cc-login")
-        store.cancelAdoption(sessionId: "cc-login")
+        await store.cancelAdoption(sessionId: "cc-login")
+        // The host stops waiting too, and every device's list says so.
+        #expect(await host.lastParams["pals.adopt"] == ["sessionId": "cc-login", "cancel": true])
+        #expect(await host.waitingAdoptions.isEmpty)
+        #expect(await until { store.otherSessions.first { $0.id == "cc-login" }?.adopting == nil })
+        #expect(store.otherSessions.first { $0.id == "cc-login" }.map { store.waitsForExit($0) } == false)
+        // Adopted anyway (here, by the test): it isn't opened.
         await host.finishAdoption("cc-login")
         #expect(await until { store.pal(sessionId: "cc-login") != nil })
         #expect(opened == 0 && store.adoptions.isEmpty)
+    }
+
+    @Test func anotherDeviceCancellingTheWaitEndsItHere() async throws {
+        UserDefaults.standard.set(0, forKey: "demoAdoptAfter")
+        defer { UserDefaults.standard.removeObject(forKey: "demoAdoptAfter") }
+        let (store, _) = await demoStore()
+        #expect(try await store.adopt(sessionId: "cc-login") == .waitingForExit)
+        var session = try #require(store.otherSessions.first { $0.id == "cc-login" })
+        #expect(store.waitsForExit(session))
+        // The host's list without `adopting`: it no longer waits (cancelled elsewhere, or it gave up).
+        session.adopting = nil
+        let list: JSONValue = ["pals": try .from(store.pals), "others": try .from(store.otherSessions.map { $0.id == "cc-login" ? session : $0 }),
+                               "hooks": true]
+        store.apply(event: RPCEventName.palsUpdated, data: list)
+        #expect(store.adoptions["cc-login"] == nil)
+        #expect(!store.waitsForExit(try #require(store.otherSessions.first { $0.id == "cc-login" })))
     }
 
     @Test func handingBackGivesTheLineAndRemovingTakesItOff() async throws {

@@ -48,6 +48,15 @@ extension DemoHost {
             return ["ok": true]
         case RPCMethod.palsAdopt:
             let sid = p["sessionId"]?.stringValue ?? ""
+            if p["cancel"]?.boolValue == true {
+                // The owner stopped waiting: so does the demo's computer.
+                guard waitingAdoptions.remove(sid) != nil else {
+                    if let pal = pals.first(where: { $0.sessionId == sid }) { return ["cancelled": false, "pal": try .from(pal)] }
+                    return ["cancelled": false]
+                }
+                setOther(sid) { $0.adopting = nil }
+                return ["cancelled": true]
+            }
             guard let s = otherSessions.first(where: { $0.id == sid }) else { throw DemoError(message: "这个会话已经没有了") }
             if s.kind == .terminal {
                 // Quit in its terminal first; the demo's owner does it a few seconds later.
