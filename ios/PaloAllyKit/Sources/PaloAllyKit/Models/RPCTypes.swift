@@ -59,21 +59,36 @@ public enum RPCMethod {
     public static let allyRemove = "ally.remove"
     public static let allyLog = "ally.log"
     public static let allyDraftDecide = "ally.draft.decide"
+    /// The owner's own words to an Ally, sent as they are (allies-prd §11.3).
+    public static let allySay = "ally.say"
+    /// How the owner's assistant answers that Ally: 能对话 / 每句要你看 (§11.1).
+    public static let allyTrust = "ally.trust"
 
-    public static let allies: [String] = [allyList, allyInvite, allyAccept, allyRemove, allyLog, allyDraftDecide]
+    public static let allies: [String] = [allyList, allyInvite, allyAccept, allyRemove, allyLog, allyDraftDecide,
+                                          allySay, allyTrust]
 
-    /// Sessions (sessions-prd §7): the computer's Claude Code sessions, one
-    /// session's conversation, the owner's words into one, 停止 / 重启 / 删除
-    /// / 复活 for helpers, the global hooks switch, and the owner's answer to
-    /// a helper proposal.
+    /// Sessions (sessions-prd §7): the computer's Claude Code sessions the
+    /// host doesn't run, one session's conversation, the global hooks switch,
+    /// and the owner's answer to a proposal (it opens a Pal).
     public static let sessionsList = "sessions.list"
     public static let sessionsHistory = "sessions.history"
-    public static let sessionsSend = "sessions.send"
-    public static let sessionsControl = "sessions.control"
     public static let sessionsHooks = "sessions.hooks"
     public static let helperDecide = "helper.decide"
 
-    public static let sessions: [String] = [sessionsList, sessionsHistory, sessionsSend, sessionsControl, sessionsHooks, helperDecide]
+    public static let sessions: [String] = [sessionsList, sessionsHistory, sessionsHooks, helperDecide]
+
+    /// Pals (pals-prd §8): the list with the computer's other live sessions,
+    /// adopting one, handing one back to the terminal, removing one, a Pal's
+    /// conversation, the owner's words into it, and stopping its turn.
+    public static let palsList = "pals.list"
+    public static let palsAdopt = "pals.adopt"
+    public static let palsRelease = "pals.release"
+    public static let palsRemove = "pals.remove"
+    public static let palsHistory = "pals.history"
+    public static let palsSend = "pals.send"
+    public static let palsStop = "pals.stop"
+
+    public static let pals: [String] = [palsList, palsAdopt, palsRelease, palsRemove, palsHistory, palsSend, palsStop]
 
     /// Every method the client knows. The contract test checks this equals
     /// the host's method set exactly.
@@ -83,7 +98,7 @@ public enum RPCMethod {
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
         suggestionsList, suggestionsDismiss, hostUpdate,
-    ] + allies + sessions
+    ] + allies + sessions + pals
 }
 
 public enum RPCEventName {
@@ -108,11 +123,15 @@ public enum RPCEventName {
     public static let sessionsUpdated = "sessions.updated"
 
     public static let sessions: [String] = [sessionsUpdated]
+    /// The Pals or the computer's other sessions changed (a Pal's state too).
+    public static let palsUpdated = "pals.updated"
+
+    public static let pals: [String] = [palsUpdated]
 
     public static let all: [String] = [
         chatMessage, chatDelta, taskUpdated, approvalUpdated, questionUpdated, watchUpdated, artifactUpdated, settingsUpdated,
         status, commandsUpdated, suggestionsUpdated,
-    ] + allies + sessions
+    ] + allies + sessions + pals
 }
 
 public struct EmptyParams: Codable, Sendable { public init() {} }
@@ -554,15 +573,17 @@ public struct AuditResult: Decodable, Sendable {
     public init(from decoder: Decoder) throws { entries = try Lenient(decoder).decode([JSONValue].self, "entries", or: []) }
 }
 
-/// `chat.delta` payload.
+/// `chat.delta` payload. `pal`: the Pal whose reply it is (nil: the assistant's).
 public struct ChatDelta: Codable, Sendable {
     public var id: String
     public var text: String
-    public init(id: String, text: String) { self.id = id; self.text = text }
+    public var pal: String?
+    public init(id: String, text: String, pal: String? = nil) { self.id = id; self.text = text; self.pal = pal }
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
         id = l.string("id", or: "")
         text = l.string("text", or: "")
+        pal = l.string("pal")
     }
 }
 
@@ -650,7 +671,21 @@ public struct AllyDraftDecideParams: Codable, Sendable {
     public init(id: String, action: AllyDraftAction, text: String? = nil) { self.id = id; self.action = action; self.text = text }
 }
 
-/// `ally.draft.decide → {entry}`.
+/// `ally.say {id, text}`: the owner's own words, sent at once.
+public struct AllySayParams: Codable, Sendable {
+    public var id: String
+    public var text: String
+    public init(id: String, text: String) { self.id = id; self.text = text }
+}
+
+/// `ally.trust {id, trust}`.
+public struct AllyTrustParams: Codable, Sendable {
+    public var id: String
+    public var trust: AllyTrust
+    public init(id: String, trust: AllyTrust) { self.id = id; self.trust = trust }
+}
+
+/// `ally.draft.decide → {entry}`; also `ally.say → {entry}`.
 public struct AllyEntryResult: Decodable, Sendable {
     public var entry: AllyEntry?
     public init(from decoder: Decoder) throws {
@@ -690,32 +725,6 @@ public struct SessionMessagesResult: Decodable, Sendable {
     public init(from decoder: Decoder) throws { messages = try Lenient(decoder).array(CCMessage.self, "messages", or: []) }
 }
 
-/// `sessions.send {id, text}`: the owner's words, as typed, into a session.
-public struct SessionSendParams: Codable, Sendable {
-    public var id: String
-    public var text: String
-    public init(id: String, text: String) { self.id = id; self.text = text }
-}
-
-/// What the owner can do to a helper.
-public enum SessionControlAction: String, Codable, Sendable {
-    /// 停止
-    case stop
-    /// 重启: the same session, its context kept.
-    case restart
-    /// 删除
-    case remove
-    /// 复活: back from its record.
-    case revive
-}
-
-/// `sessions.control {id, action}` (helpers only).
-public struct SessionControlParams: Codable, Sendable {
-    public var id: String
-    public var action: SessionControlAction
-    public init(id: String, action: SessionControlAction) { self.id = id; self.action = action }
-}
-
 /// `sessions.hooks {enabled}` → `{enabled}`: the global hooks switch.
 public struct SessionHooksParams: Codable, Sendable {
     public var enabled: Bool
@@ -745,5 +754,11 @@ public struct HelperDecideParams: Codable, Sendable {
 /// `helper.decide → {session?}`: the new helper, when one was started.
 public struct HelperDecideResult: Decodable, Sendable {
     public var session: CCSession?
-    public init(from decoder: Decoder) throws { session = try Lenient(decoder).decode(CCSession.self, "session") }
+    /// A host with Pals: the Pal it opened (pals-prd §6).
+    public var pal: Pal?
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        session = l.decode(CCSession.self, "session")
+        pal = l.decode(Pal.self, "pal")
+    }
 }

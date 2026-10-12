@@ -1,49 +1,11 @@
 import PaloAllyKit
 import SwiftUI
 
-/// 「它」's Allies: other people's assistants it can pass messages to, one row
-/// each, and 添加 (a QR code to scan in person). Hidden while the computer's
-/// PaloAlly doesn't know Allies yet.
-struct AlliesSection: View {
-    @Environment(AppModel.self) private var model
-    @Environment(AppStore.self) private var store
-
-    var body: some View {
-        if store.alliesSupported != false {
-            Section {
-                ForEach(store.allies) { ally in
-                    NavigationLink {
-                        AllyDetailView(allyID: ally.id).modifier(InSidebarColumn())
-                    } label: {
-                        AllyRow(ally: ally)
-                    }
-                }
-                Button {
-                    model.showAllyInvite = true
-                } label: {
-                    // Neutral: the theme color is for 发送.
-                    Label {
-                        Text("添加").foregroundStyle(Color.primary)
-                    } icon: {
-                        Image(systemName: "plus").foregroundStyle(Color.primary)
-                    }
-                }
-                .tint(.primary)
-                .disabled(!store.connection.isOnline)
-            } header: {
-                Text("Allies").textCase(nil)
-            } footer: {
-                if store.allies.isEmpty {
-                    Text("当面扫个码，你的助理就能和对方的助理互相传话、约时间。发出去的每句话都先给你看。")
-                }
-            }
-        }
-    }
-}
-
 /// One Ally: who, the tag, the last exchange, and a dot while they're online.
 struct AllyRow: View {
     let ally: AllyInfo
+    /// The owner's assistant, for its words on the last line.
+    var assistant = ""
 
     var body: some View {
         HStack(spacing: 12) {
@@ -62,7 +24,7 @@ struct AllyRow: View {
                             .lineLimit(1)
                     }
                 }
-                Text(Copy.allyLastLine(ally))
+                Text(Copy.allyLastLine(ally, assistant: assistant))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

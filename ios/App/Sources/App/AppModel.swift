@@ -9,23 +9,23 @@ let appLog = Logger(subsystem: "com.novashang.paloally", category: "app")
 
 /// Launch options parsed from arguments / UserDefaults:
 ///   -demo YES            run against the in-memory demo host
-///   -demoScreen <name>   chat | library | assistant | settings | pairing | artifact | voice | naming | identity | avatars
+///   -demoScreen <name>   chat (the default) | list | library | settings | pairing | artifact | voice | naming |
+///                        identity | avatars | assistant (management, as the orb opens it)
 ///                        | file (DEBUG: the Markdown sheet a file card opens)
 ///                        | scrollLab (DEBUG: scroll experiments, `-labRun anchor|width|fling|sentinel`)
-///   -demoTab <name>      watches (目标) | history (履历) | memory; old values tasks → history, approvals → watches
+///   -demoTab <name>      management on watches (目标) | history (履历) | memory; old values tasks → history
 ///   -pairLink <url>      start pairing with this paloally:// link (automation; skips the open-URL prompt)
-///   -demoHosts <n>       demo with n assistants (2 shows the switcher)
+///   -demoHosts <n>       demo with n assistants (2 shows 切换助理 in management)
 ///   -demoState <name>    idle | busy | tasks — what the title capsule shows; quote — a reply quote in the composer;
 ///                        allies | alliesSent — an Ally's message and a draft back (sent, with `alliesSent`);
 ///                        `-demoDraftEdit YES` opens drafts in 改一下, `-demoAllyRemove YES` an Ally's page on 解除
-///   -demoScreen hosts | switcher   设置 → 我的助理 / the assistant switcher open
-///   -demoScreen allies | ally | allyInvite | allyAccept   「它」 with its Allies / one Ally's page
-///                        (`-demoAlly <id>`, default the first) / the invite QR / an invite opened from the Camera
-///   -demoScreen sessions | session   the computer's Claude Code sessions on a page of their own / one
-///                        session's page (`-demoSession <id>`, default cc-site; `-demoSessionPanel stop | remove |
-///                        attach` opens it on that). `-demoState sessions` keeps only the sessions' cards in the
-///                        conversation (`sessionExpired`: 网站帮手's has expired; `sessionSettle`: it's answered at
-///                        the computer 6 s in)
+///   -demoScreen hosts | switcher   设置 → 我的助理 / management with 切换助理
+///   -demoScreen ally | allyInvite | allyAccept   one Ally's page (`-demoAlly <id>`, default the first) /
+///                        the invite QR / an invite opened from the Camera
+///   -demoScreen pal      one Pal's page (`-demoPal <id>`, default pal-site; `-demoPalPanel release | released |
+///                        remove` opens it on that). `-demoAdopt <session id>` taps 接管 on the list
+///                        (`-demoAdoptAfter <s>`: when the demo's owner quits a terminal session; 0 never).
+///                        `-demoState sessions` keeps the sessions' and Pals' cards waiting
 struct LaunchOptions {
     var demo: Bool
     var screen: String?
@@ -102,39 +102,82 @@ final class AppModel {
     var store: AppStore? { activeHostID.flatMap { stores[$0] } }
     var pairedHost: PairedHost? { activeHostID.flatMap { hosts[$0] } }
 
-    // Navigation state (also driven by launch options / notifications).
-    /// The app is one horizontal space: 「它」 (the assistant) on the left, the
-    /// conversation in the middle, 「成果」 (the library) on the right. The top
-    /// buttons push the conversation aside; going back slides it home.
-    enum Place: Equatable { case assistant, chat, library }
-    var place: Place = .chat {
+    // MARK: navigation
+    // Standard iOS navigation (pals-prd §2): a list (the assistant, its Pals,
+    // its Allies) and the conversation picked from it. Phones open straight
+    // into the assistant's conversation with the list one step back, like
+    // Messages; iPads and the Mac keep the list in a collapsible sidebar.
+
+    /// What the list holds, and the detail column shows.
+    enum Conversation: Hashable {
+        case palo
+        case pal(String)
+        case ally(String)
+    }
+    /// The conversation picked in the list. Phones: nil once back on the list.
+    var selection: Conversation? = .palo {
         didSet {
-            // Large screens: 「它」 and 「成果」 are panels beside the
-            // conversation, so going to a place means opening its panel.
-            if layout != .phone {
-                if !quietPlaceChange { showColumns(for: place) }
-                return
-            }
-            guard place != oldValue else { return }
-            // What was open in a place doesn't come back next time: an item
-            // opened from the chat reverts to the place's normal root. Reset
-            // after the slide so nothing changes while it's still on screen.
-            let left = oldValue
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(450))
-                guard let self, self.place != left else { return }
-                self.resetPlace(left)
-            }
+            guard selection != oldValue else { return }
+            // Each conversation starts at its own root.
+            detailPath = NavigationPath()
+            if selection != .palo { inspectorShown = false }
         }
     }
-    /// What the assistant place shows at its root: the tabs, or one task
-    /// opened from the conversation (back from it returns to the chat).
-    enum AssistantRoot: Equatable { case tabs, task(String) }
-    var assistantRoot: AssistantRoot = .tabs
-    /// What the library place shows at its root: the list, or one artifact
-    /// opened from the conversation (back from it returns to the chat).
-    enum LibraryRoot: Equatable { case list, artifact(String) }
-    var libraryRoot: LibraryRoot = .list
+    /// Phones: the list or the conversation (the conversation at launch).
+    var compactColumn: NavigationSplitViewColumn = .detail
+    /// iPads and the Mac: the sidebar shown or put away (the system toggle).
+    var columnVisibility: NavigationSplitViewVisibility = .all
+    /// What's pushed over the conversation (phones: the assistant's
+    /// management, 成果, an item opened from the conversation).
+    var detailPath = NavigationPath()
+
+    /// Pages pushed over a conversation.
+    enum Page: Hashable {
+        /// The assistant's management: 目标, 履历, 记忆, the model, 设置.
+        case manage
+        /// 成果: the library, with search.
+        case library
+        /// One artifact, opened from the conversation.
+        case artifact(String)
+        /// One task, opened from the conversation.
+        case task(String)
+    }
+
+    /// Phones: one column, pages pushed. iPads and the Mac: the sidebar and
+    /// the conversation side by side; management is a sheet, 成果 the
+    /// inspector beside the conversation. Set by the root from the size class.
+    enum Layout: String, Equatable { case phone, split }
+    private(set) var layout: Layout = .phone
+
+    func setLayout(_ new: Layout) {
+        guard new != layout else { return }
+        layout = new
+        // What was open the other way doesn't carry over.
+        if new == .phone {
+            inspectorShown = false
+            showManagement = false
+        } else {
+            detailPath = NavigationPath()
+            if selection == nil { selection = .palo }
+        }
+    }
+
+    /// iPads and the Mac: the assistant's management, as a sheet.
+    var showManagement = false {
+        didSet { if !showManagement && oldValue { resetManagement() } }
+    }
+    /// iPads and the Mac: 成果 beside the conversation.
+    var inspectorShown = false {
+        didSet {
+            if inspectorShown != oldValue { debugLog("[layout] inspector \(inspectorShown)") }
+            if !inspectorShown && oldValue { libraryPath = [] }
+        }
+    }
+    /// The inspector's own stack: artifact ids pushed over the list.
+    var libraryPath: [String] = []
+    /// ⌘F: the 成果 search field should take focus (consumed by LibraryView,
+    /// which may only appear after the request).
+    var librarySearchRequested = false
 
     /// Bumped when a memory file is saved, so the memory list reloads its
     /// sizes and times.
@@ -142,244 +185,162 @@ final class AppModel {
     /// The Mac: a click outside the composer asks it to give up focus, so an
     /// empty field turns back into the press-to-talk button.
     var composerUnfocusRequests = 0
+    /// Each conversation's unsent words, kept while the app is open (back to
+    /// the list and in again, they're still there).
+    var drafts: [Conversation: String] = [:]
 
-    /// ⌘[ (and the in-page back buttons): one level back. A sheet or
-    /// preview closes; then a pushed page in a visible place or panel pops;
-    /// then, narrow, the place slides back to the chat, and on large screens
-    /// the open panel closes (成果 first).
-    func goBack() {
-        if NavigationBack.dismissPresented() { return }
-        if NavigationBack.popVisible() { return }
-        if layout == .phone {
-            if place != .chat { place = .chat }
-        } else {
-            closeTopPanel()
-        }
+    /// A conversation from the list, a card, a notification.
+    func open(_ c: Conversation) {
+        if selection != c { selection = c } else { detailPath = NavigationPath() }
+        compactColumn = .detail
     }
+    func openPalo() { open(.palo) }
+    func openPal(_ id: String) { open(.pal(id)) }
+    func openAlly(_ id: String) { open(.ally(id)) }
 
-    /// Large screens: put the open panel away (成果 first). Esc and ⌘[.
-    func closeTopPanel() {
-        if inspectorShown {
-            inspectorShown = false
-        } else if sidebarShown {
-            sidebarShown = false
-        }
-    }
-
-    // MARK: large-screen layout
-
-    /// How the three places are laid out, set by the root container from the
-    /// window's actual width (not the device): phone = one place at a time,
-    /// sliding; medium / wide = the conversation always on screen, 「它」
-    /// (`sidebarShown`) and 「成果」 (`inspectorShown`) as panels on either
-    /// side, closed by default. Wide windows can have both open.
-    enum Layout: String, Equatable { case phone, medium, wide }
-    private(set) var layout: Layout = .phone
-    var sidebarShown = false {
-        didSet {
-            if sidebarShown != oldValue { debugLog("[layout] sidebar \(sidebarShown) (\(layout.rawValue), place \(place))") }
-            columnChanged(.assistant, shown: sidebarShown, was: oldValue)
-        }
-    }
-    var inspectorShown = false {
-        didSet {
-            if inspectorShown != oldValue { debugLog("[layout] inspector \(inspectorShown) (\(layout.rawValue), place \(place))") }
-            columnChanged(.library, shown: inspectorShown, was: oldValue)
-        }
-    }
-    /// ⌘F: the 成果 search field should take focus (consumed by LibraryView,
-    /// which may only appear after the request).
-    var librarySearchRequested = false
-    private var quietPlaceChange = false
-
-    func setLayout(_ new: Layout) {
-        guard new != layout else { return }
-        let old = layout
-        if new == .phone {
-            // One place at a time: keep the conversation in front unless a
-            // narrower window should keep showing what was just opened.
-            let front: Place = inspectorShown && place == .library ? .library
-                : (old == .medium && sidebarShown && place == .assistant ? .assistant : .chat)
-            layout = new
-            sidebarShown = false
-            inspectorShown = false
-            quietly { place = front }
+    /// Phones: back to the list (a conversation that went away, the Ally just removed).
+    func showList() {
+        guard layout == .phone else {
+            selection = .palo
             return
         }
-        layout = new
-        // Panels are opened on demand, never by default.
-        let demoWide = launch.demoLayout == "wide"
-        sidebarShown = place == .assistant || demoWide
-        inspectorShown = place == .library || (old != .phone && inspectorShown) || demoWide
-        if new == .medium, sidebarShown, inspectorShown {
-            if place == .library { sidebarShown = false } else { inspectorShown = false }
-        }
+        compactColumn = .sidebar
+        selection = nil
     }
 
-    /// The conversation's top-left button: on phones slide to 「它」, on large
-    /// screens open or close its panel.
-    func toggleAssistant() {
-        guard layout != .phone else { showAssistant = place != .assistant; return }
-        if sidebarShown {
-            sidebarShown = false
-        } else {
-            assistantRoot = .tabs
-            place = .assistant
+    /// The orb in the title: the assistant's management (phones: pushed over
+    /// the conversation; large screens: a sheet).
+    func openManagement() {
+        guard layout == .phone else {
+            showManagement = true
+            return
         }
+        if selection != .palo { selection = .palo }
+        compactColumn = .detail
+        var path = NavigationPath()
+        path.append(Page.manage)
+        detailPath = path
     }
 
-    /// The conversation's top-right button: 「成果」 slides in, or its panel toggles.
+    /// Done with management: back to the conversation.
+    func closeManagement() {
+        if layout == .phone { detailPath = NavigationPath() } else { showManagement = false }
+    }
+
+    private func resetManagement() {
+        showSettings = false
+        showHostList = false
+        openTaskID = nil
+    }
+
+    /// ⌘1 / the Mac menu: management, or put it away.
+    func toggleManagement() {
+        if layout != .phone, showManagement { showManagement = false } else { openManagement() }
+    }
+
+    /// 成果, from the toolbar of the assistant's conversation (phones:
+    /// pushed; large screens: the inspector, or put it away).
     func toggleLibrary() {
-        guard layout != .phone else { showLibrary = place != .library; return }
-        if inspectorShown {
-            inspectorShown = false
-        } else {
-            libraryRoot = .list
-            place = .library
+        guard layout == .phone else {
+            if inspectorShown {
+                inspectorShown = false
+            } else {
+                libraryPath = []
+                inspectorShown = true
+            }
+            return
         }
+        openPalo()
+        var path = NavigationPath()
+        path.append(Page.library)
+        detailPath = path
     }
 
     /// ⌘F: 成果 with its search field focused.
     func focusLibrarySearch() {
         debugLog("[layout] search 成果")
-        libraryRoot = .list
-        libraryPath = []
-        place = .library
+        if layout == .phone {
+            toggleLibrary()
+        } else {
+            libraryPath = []
+            inspectorShown = true
+        }
         librarySearchRequested = true
     }
 
-    private func showColumns(for p: Place) {
-        switch p {
-        // Medium width has room for one panel, not both: opening one puts
-        // the other away.
-        case .assistant:
-            if !sidebarShown { sidebarShown = true }
-            if layout == .medium, inspectorShown { inspectorShown = false }
-        case .library:
-            if !inspectorShown { inspectorShown = true }
-            if layout == .medium, sidebarShown { sidebarShown = false }
-        case .chat:
-            // Medium width: the panels cover the conversation, so going to
-            // the conversation puts them away. Wide: they sit beside it.
-            if layout == .medium {
-                if sidebarShown { sidebarShown = false }
-                if inspectorShown { inspectorShown = false }
-            }
-        }
-    }
-
-    private func columnChanged(_ p: Place, shown: Bool, was: Bool) {
-        guard layout != .phone, was, !shown else { return }
-        if place == p {
-            quietly { place = p == .assistant ? (inspectorShown ? .library : .chat) : (sidebarShown ? .assistant : .chat) }
-        }
-        // Like leaving a place on phones: what was open in the panel goes
-        // back to its root, after the panel has finished closing.
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(450))
-            guard let self, self.layout != .phone else { return }
-            let stillClosed = p == .assistant ? !self.sidebarShown : !self.inspectorShown
-            if stillClosed { self.resetPlace(p) }
-        }
-    }
-
-    private func quietly(_ change: () -> Void) {
-        quietPlaceChange = true
-        change()
-        quietPlaceChange = false
-    }
-
-    private func resetPlace(_ p: Place) {
-        switch p {
-        case .assistant:
-            assistantRoot = .tabs
-            showSettings = false
-            showHostList = false
-            openTaskID = nil
-            openAllyID = nil
-            openSessionID = nil
-            showSessionsList = false
-        case .library:
-            libraryRoot = .list
-            libraryPath = []
-        case .chat:
-            break
-        }
-    }
-
-    /// Closing a place returns to the conversation. On large screens that
-    /// only puts the panel away where it covers the conversation (medium);
-    /// wide, it stays beside it.
-    var showLibrary: Bool {
-        get { layout == .phone ? place == .library : inspectorShown }
-        set {
-            if newValue { libraryRoot = .list; place = .library }
-            else if layout == .medium { inspectorShown = false }
-            else if place == .library { place = .chat }
-        }
-    }
-    var showAssistant: Bool {
-        get { layout == .phone ? place == .assistant : sidebarShown }
-        set {
-            if newValue { assistantRoot = .tabs; place = .assistant }
-            else if layout == .medium { sidebarShown = false }
-            else if place == .assistant { place = .chat }
-        }
-    }
-    /// From the conversation: slide to the item's place with just that item
-    /// open; one step back returns to the chat.
+    /// From the conversation: just that artifact; one step back returns to it.
     func openArtifact(_ id: String) {
-        libraryPath = []
-        libraryRoot = .artifact(id)
-        place = .library
+        guard layout == .phone else {
+            libraryPath = [id]
+            inspectorShown = true
+            return
+        }
+        detailPath.append(Page.artifact(id))
     }
-    func openTask(_ id: String) {
-        showSettings = false
-        openTaskID = nil
-        assistantRoot = .task(id)
-        place = .assistant
-    }
-    /// From the conversation: 「它」 with that Ally's page open.
-    func openAlly(_ id: String) {
-        showSettings = false
-        openTaskID = nil
-        assistantRoot = .tabs
-        openAllyID = id
-        place = .assistant
-    }
-    /// From the conversation (a session's card, a started helper): 「它」
-    /// with that session's page open.
-    func openSession(_ id: String) {
-        showSettings = false
-        openTaskID = nil
-        openAllyID = nil
-        assistantRoot = .tabs
-        openSessionID = id
-        place = .assistant
-    }
+
     /// The way out of a single item to its whole collection.
     func showInLibrary(_ id: String? = nil) {
-        libraryRoot = .list
-        libraryPath = id.map { [$0] } ?? []
-        place = .library
+        guard layout == .phone else {
+            libraryPath = id.map { [$0] } ?? []
+            inspectorShown = true
+            return
+        }
+        openPalo()
+        var path = NavigationPath()
+        path.append(Page.library)
+        if let id { path.append(Page.artifact(id)) }
+        detailPath = path
     }
+
+    /// From the conversation: one task's detail; one step back returns to it.
+    func openTask(_ id: String) {
+        guard layout == .phone else {
+            showSettings = false
+            openTaskID = id
+            showManagement = true
+            return
+        }
+        detailPath.append(Page.task(id))
+    }
+
+    /// 履历, from a task's detail.
     func showAllTasks() {
-        assistantRoot = .tabs
         assistantTab = .history
         openTaskID = nil
-        place = .assistant
+        if layout == .phone {
+            var path = NavigationPath()
+            path.append(Page.manage)
+            detailPath = path
+        } else {
+            showManagement = true
+        }
     }
+
+    /// 设置 (⌘, on the Mac): management with its settings page open.
+    func openSettings() {
+        openTaskID = nil
+        openManagement()
+        showSettings = true
+    }
+
+    /// ⌘[ (and the in-page back buttons): one level back. A sheet or
+    /// preview closes; then a pushed page pops; then 成果 beside the
+    /// conversation closes.
+    func goBack() {
+        if NavigationBack.dismissPresented() { return }
+        if NavigationBack.popVisible() { return }
+        if layout != .phone, inspectorShown { inspectorShown = false }
+    }
+
     var assistantTab: AssistantTab = .watches // 目标 opens first
     var showSettings = false
     var showHostList = false
-    /// The status card behind the title bar's orb.
-    var showHostSwitcher = false
     /// How much room the title bar's orb takes (kept by OrbPresenceTracking).
     var orbPresence: OrbPresence = .rest
-    /// The model / thinking-depth picker (opened from the status card).
+    /// The model / thinking-depth picker (opened from management).
     var showModelPicker = false
     var showPairingSheet = false
-    /// The 「它」 header's name-and-form editor.
+    /// The management header's name-and-form editor.
     var showIdentityEditor = false
     /// Naming was answered (or skipped) this run; the host remembers it too.
     var namingDone = false
@@ -392,22 +353,13 @@ final class AppModel {
     }
     var pairingIntent: PairingIntent = .first
 
-    /// 设置 (⌘, on the Mac): 「它」 with its settings page open.
-    func openSettings() {
-        assistantRoot = .tabs
-        openTaskID = nil
-        showSettings = true
-        showAssistant = true
-    }
-
     /// Opens the pairing screen for a given purpose.
     func startPairing(_ intent: PairingIntent) {
         pairingIntent = mode == .paired ? intent : .first
         showPairingSheet = true
     }
     var pendingPairingLink: String?
-    var libraryPath: [String] = []
-    /// Task whose detail should open on the assistant page (notification tap).
+    /// Task whose detail should open in management (large screens).
     var openTaskID: String?
     /// An approval the conversation should scroll to (notification tap).
     var focusApprovalID: String?
@@ -416,24 +368,16 @@ final class AppModel {
     /// A message the conversation should scroll to and briefly highlight
     /// (a search hit in 成果).
     var focusMessageSeq: Int64?
-    /// One Ally's page, open in 「它」 (from a label in the conversation, or launch).
-    var openAllyID: String?
     /// 添加 Ally: the invite QR sheet.
     var showAllyInvite = false
-    /// One Claude Code session's page, open in 「它」.
-    var openSessionID: String?
-    /// The sessions on a page of their own (where the list lives is still
-    /// being decided; the demo opens it).
-    var showSessionsList = false
     /// An Ally's invite opened from the system Camera: the confirm sheet.
     var allyInvite: PendingAllyInvite?
 
-    /// Slides back to the conversation and brings message `seq` into view.
+    /// Back to the assistant's conversation and brings message `seq` into view.
     func jumpToMessage(seq: Int64) {
         focusMessageSeq = seq
-        place = .chat
+        openPalo()
     }
-
     let secrets: SecretStore = KeychainSecretStore()
     let launch: LaunchOptions
     private var pushToken: Data?
@@ -446,7 +390,6 @@ final class AppModel {
             let list = PairedHostList.load(from: secrets)
             if !list.isEmpty { openPaired(list) }
         }
-        applyLaunchScreen()
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "orbSine") { OrbInput.shared.startSyntheticVoice() }
         #endif
@@ -468,18 +411,23 @@ final class AppModel {
         return "\(clientVersion) (\(build) · \(commit))"
     }
 
-    private func applyLaunchScreen() {
+    /// Launch options take effect once the root knows its layout (phones
+    /// push, large screens use a sheet and the inspector).
+    private var launchApplied = false
+
+    func applyLaunchScreen() {
+        guard !launchApplied else { return }
+        launchApplied = true
         switch launch.screen {
-        case "library": showLibrary = true
+        case "library": toggleLibrary()
         // As if tapped in the conversation; `-demoArtifact <id>` picks which.
         case "artifact": openArtifact(UserDefaults.standard.string(forKey: "demoArtifact") ?? "ar1")
-        case "assistant": showAssistant = true
-        case "settings": showAssistant = true; showSettings = true
-        case "hosts": showAssistant = true; showSettings = true; showHostList = true
-        case "switcher": showHostSwitcher = true
+        case "assistant", "switcher": openManagement()
+        case "settings": openSettings()
+        case "hosts": openSettings(); showHostList = true
         case "pairing": if mode != .unpaired { startPairing(.replace) }
-        case "identity": showAssistant = true; showIdentityEditor = true
-        case "allies": showAssistant = true
+        case "identity": openManagement(); showIdentityEditor = true
+        case "list", "allies", "sessions", "pals": showList()
         #if DEBUG
         case "file": Task { await openDemoFile() }
         case "ally":
@@ -489,23 +437,36 @@ final class AppModel {
                 for _ in 0..<40 where store?.allies.isEmpty ?? true { try? await Task.sleep(for: .milliseconds(100)) }
                 if let id = id ?? store?.allies.first?.id { openAlly(id) }
             }
-        case "allyInvite": showAssistant = true; showAllyInvite = true
+        case "allyInvite": showList(); showAllyInvite = true
         case "allyAccept": allyInvite = PendingAllyInvite(link: Self.demoAllyInviteLink())
-        case "sessions": showAssistant = true; showSessionsList = true
-        case "session":
-            let id = UserDefaults.standard.string(forKey: "demoSession") ?? "cc-site"
+        case "pal", "session":
+            let id = UserDefaults.standard.string(forKey: "demoPal") ?? UserDefaults.standard.string(forKey: "demoSession") ?? "pal-site"
             Task { @MainActor in
                 // Once the list has come in.
-                for _ in 0..<40 where store?.session(id: id) == nil { try? await Task.sleep(for: .milliseconds(100)) }
-                openSession(id)
+                for _ in 0..<40 where store?.pal(id: id) == nil { try? await Task.sleep(for: .milliseconds(100)) }
+                openPal(id)
             }
         #endif
         default: break
         }
         if let t = launch.tab, let tab = AssistantTab(launchName: t) {
             assistantTab = tab
-            showAssistant = true
+            openManagement()
         }
+        #if DEBUG
+        // `-demoAdopt <session id>`: 接管 tapped on that session in the list
+        // (`-demoAdoptAfter 0` keeps a terminal one waiting to be quit).
+        if let sid = UserDefaults.standard.string(forKey: "demoAdopt") {
+            showList()
+            Task { @MainActor in
+                for _ in 0..<40 where store?.otherSessions.contains(where: { $0.id == sid }) != true {
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+                try? await Task.sleep(for: .milliseconds(600))
+                _ = try? await store?.adopt(sessionId: sid)
+            }
+        }
+        #endif
     }
 
     #if DEBUG
@@ -617,6 +578,7 @@ final class AppModel {
     func pendingCount(_ id: String) -> Int {
         guard let s = stores[id] else { return 0 }
         return s.pendingApprovals.count + s.pendingQuestions.count + s.pendingAllyDrafts.count
+            + s.pals.reduce(0) { $0 + s.palPendingCount($1.id) }
     }
 
     /// Something is waiting on another assistant (the dot on the title).
@@ -643,7 +605,8 @@ final class AppModel {
         guard hostIDs.contains(id), id != activeHostID else { return }
         markSeen()
         activate(id)
-        place = .chat
+        selection = .palo
+        compactColumn = .detail
     }
 
     func moveHosts(from source: IndexSet, to destination: Int) {
@@ -667,6 +630,17 @@ final class AppModel {
         s.whenCommitted = { CommitWatch.shared.afterCommit($0) }
         s.revealClock = DisplayLinkRevealClock()
         s.finishingReply = { apply in ChatMotion.with(ChatMotion.follow, apply) }
+        // Each Pal's conversation streams and reveals the same way.
+        s.preparePalStore = { pal in
+            pal.whenCommitted = { CommitWatch.shared.afterCommit($0) }
+            pal.revealClock = DisplayLinkRevealClock()
+            pal.finishingReply = { apply in ChatMotion.with(ChatMotion.follow, apply) }
+        }
+        // A terminal session quit there is a Pal now: its page opens.
+        s.onAdopted = { [weak self] pal in
+            guard let self, self.activeHostID == id else { return }
+            self.openPal(pal.id)
+        }
         return s
     }
 
@@ -692,7 +666,7 @@ final class AppModel {
             let who = i < identities.count ? identities[i] : ("Palo", "")
             let naming = launch.screen == "naming" && i == 0
             let host = DemoHost(speed: 1, hostName: i < names.count ? names[i] : "电脑 \(i + 1)",
-                                assistantName: naming ? "" : who.0, color: naming ? "" : who.1, sessions: i == 0)
+                                assistantName: naming ? "" : who.0, color: naming ? "" : who.1, pals: i == 0)
             demoHosts[id] = host
             let s = makeStore(host.transport, id: id)
             stores[id] = s
@@ -802,7 +776,7 @@ final class AppModel {
             resetToUnpaired()
         } else if activeHostID == id {
             activate(hostIDs[0])
-            place = .chat
+            selection = .palo
         }
     }
 
@@ -818,8 +792,8 @@ final class AppModel {
     private func resetToUnpaired() {
         tearDownStores()
         mode = .unpaired
-        place = .chat
-        showHostSwitcher = false
+        selection = .palo
+        showManagement = false
         Self.clearTemporaryFiles()
     }
 
@@ -876,24 +850,35 @@ final class AppModel {
         for s in stores.values { s.registerPush(token: token, environment: PushEnv.current) }
     }
 
-    /// Notification tap: payload carries hostId / seq / id / taskId / approvalId.
+    /// Notification tap: payload carries hostId / seq / id / taskId / approvalId / questionId / pal.
     /// Switches to the assistant it came from first (falls back to the current
     /// one), then navigates by id — on cold launch too, before anything synced.
     func handleNotification(userInfo: [AnyHashable: Any]) {
         if let hostId = userInfo["hostId"] as? String, hostIDs.contains(hostId) { switchTo(hostId) }
-        showHostSwitcher = false
+        showManagement = false
+        // A Pal's (「X 在等你」): its page, where its cards are.
+        let pal = (userInfo["pal"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         if let approvalId = userInfo["approvalId"] as? String, !approvalId.isEmpty {
-            // Approvals live in the conversation: go there and bring the card into view.
-            place = .chat
+            // Approvals live in the conversation they came from: go there and
+            // bring the card into view.
+            if let pal { openPal(pal) } else { openCard(source: store?.approval(id: approvalId)?.source) }
             focusApprovalID = approvalId
         } else if let questionId = userInfo["questionId"] as? String, !questionId.isEmpty {
-            place = .chat
+            if let pal { openPal(pal) } else { openCard(source: store?.question(id: questionId)?.source) }
             focusQuestionID = questionId
+        } else if let pal {
+            openPal(pal)
         } else if let taskId = userInfo["taskId"] as? String, !taskId.isEmpty {
+            openPalo()
             openTask(taskId)
         } else {
-            place = .chat // a message: the conversation itself
+            openPalo() // a message: the conversation itself
         }
+    }
+
+    /// The conversation a card is shown in: its Pal's, else the assistant's.
+    private func openCard(source: CardSource?) {
+        if let source, source.isPal { openPal(source.id) } else { openPalo() }
     }
 }
 

@@ -31,6 +31,21 @@ public enum AllyEntryStatus: String, TolerantStringEnum {
     public static let fallback = AllyEntryStatus.unknown
 }
 
+/// How the owner's assistant answers an Ally (§11.1), set per Ally and
+/// changeable any time: 能对话 (it answers on its own, every word kept in the
+/// record) or 每句要你看 (every answer is a draft the owner sends).
+public enum AllyTrust: String, TolerantStringEnum {
+    case converse, review, unknown
+    public static let fallback = AllyTrust.unknown
+}
+
+/// Who wrote an exchange (§11.2, §11.4): the owner in their own words, or
+/// their assistant.
+public enum AllyAuthor: String, TolerantStringEnum {
+    case owner, assistant, unknown
+    public static let fallback = AllyAuthor.unknown
+}
+
 /// A proposed time, ISO 8601 with the sender's time zone (§7.3).
 public struct AllySlot: Codable, Sendable, Hashable {
     public var start: String
@@ -73,13 +88,19 @@ public struct AllyEntry: Codable, Sendable, Hashable, Identifiable {
     public var status: AllyEntryStatus
     /// Rejected: why, in one short sentence (「没发」「草稿过期了」「对方没收」「3 天没送到」).
     public var note: String?
+    /// Who wrote it (§11.4): their side's owner or assistant coming in; the
+    /// owner's own words or the assistant's on their behalf going out. Hosts
+    /// before §11 don't say: then it's the assistants' (the first version
+    /// passed only their words).
+    public var author: AllyAuthor?
 
-    enum CodingKeys: String, CodingKey { case id, allyId, dir, ts, text, urgent, slots, replyTo, status, note }
+    enum CodingKeys: String, CodingKey { case id, allyId, dir, ts, text, urgent, slots, replyTo, status, note, author }
 
     public init(id: String, allyId: String? = nil, dir: AllyDirection, ts: Int64, text: String, urgent: Bool = false,
-                slots: [AllySlot]? = nil, replyTo: String? = nil, status: AllyEntryStatus, note: String? = nil) {
+                slots: [AllySlot]? = nil, replyTo: String? = nil, status: AllyEntryStatus, note: String? = nil,
+                author: AllyAuthor? = nil) {
         self.id = id; self.allyId = allyId; self.dir = dir; self.ts = ts; self.text = text; self.urgent = urgent
-        self.slots = slots; self.replyTo = replyTo; self.status = status; self.note = note
+        self.slots = slots; self.replyTo = replyTo; self.status = status; self.note = note; self.author = author
     }
 
     public init(from decoder: Decoder) throws {
@@ -94,10 +115,14 @@ public struct AllyEntry: Codable, Sendable, Hashable, Identifiable {
         replyTo = l.string("replyTo")
         status = l.decode(AllyEntryStatus.self, "status", or: .unknown)
         note = l.string("note")
+        author = l.decode(AllyAuthor.self, "author")
     }
 
     /// A draft waiting for the owner's 发送 / 改一下 / 不发.
     public var isPendingDraft: Bool { status == .draft && dir != .incoming }
+
+    /// The owner's own words (said in the app, not by the assistant for them).
+    public var byOwner: Bool { author == .owner }
 }
 
 /// An Ally as the list shows it.
@@ -114,13 +139,19 @@ public struct AllyInfo: Codable, Sendable, Hashable, Identifiable {
     public var lastSeen: Int64
     /// The newest exchange either way, in any state (a draft too).
     public var lastEntry: AllyEntry?
+    /// How the owner's assistant answers them (§11.4). Hosts before §11 don't
+    /// say: every answer is a draft then (`review`, as `effectiveTrust`).
+    public var trust: AllyTrust?
+    /// How their assistant answers the owner, when they chose to say.
+    public var theirTrust: AllyTrust?
 
-    enum CodingKeys: String, CodingKey { case id, kind, ownerName, assistantName, online, lastSeen, lastEntry }
+    enum CodingKeys: String, CodingKey { case id, kind, ownerName, assistantName, online, lastSeen, lastEntry, trust, theirTrust }
 
     public init(id: String, kind: AllyKind, ownerName: String, assistantName: String, online: Bool,
-                lastSeen: Int64 = 0, lastEntry: AllyEntry? = nil) {
+                lastSeen: Int64 = 0, lastEntry: AllyEntry? = nil, trust: AllyTrust? = nil, theirTrust: AllyTrust? = nil) {
         self.id = id; self.kind = kind; self.ownerName = ownerName; self.assistantName = assistantName
         self.online = online; self.lastSeen = lastSeen; self.lastEntry = lastEntry
+        self.trust = trust; self.theirTrust = theirTrust
     }
 
     public init(from decoder: Decoder) throws {
@@ -132,7 +163,12 @@ public struct AllyInfo: Codable, Sendable, Hashable, Identifiable {
         online = l.bool("online", or: false)
         lastSeen = l.millis("lastSeen", or: 0)
         lastEntry = l.decode(AllyEntry.self, "lastEntry")
+        trust = l.decode(AllyTrust.self, "trust")
+        theirTrust = l.decode(AllyTrust.self, "theirTrust")
     }
+
+    /// The level in force: 每句要你看 unless the host says otherwise.
+    public var effectiveTrust: AllyTrust { trust == .converse ? .converse : .review }
 
     /// Who they are, in a word: the other owner's name, else their assistant's.
     public var displayName: String {

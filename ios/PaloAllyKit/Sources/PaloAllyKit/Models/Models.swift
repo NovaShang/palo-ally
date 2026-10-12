@@ -148,6 +148,12 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     public var entryId: String?
     /// kind == .helper: the helper the assistant proposes.
     public var proposal: HelperProposal?
+    /// The Pal whose conversation this is (docs/pals-prd.md §8); nil for the
+    /// assistant's own.
+    public var pal: String?
+    /// In a Pal's conversation: who said a `user` turn when it wasn't the
+    /// owner (the assistant's words reach a Pal as a turn of their own).
+    public var from: String?
 
     // Local-only state.
     public var isStreaming: Bool = false
@@ -155,7 +161,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case seq, id, role, kind, text, channel, ts, proactive, taskId, approvalId, questionId, clientMsgId, attachments, label, replyTo, card
-        case allyId, allyName, dir, entryId, proposal
+        case allyId, allyName, dir, entryId, proposal, pal, from
     }
 
     public init(
@@ -191,6 +197,8 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         dir = l.decode(AllyDirection.self, "dir")
         entryId = l.string("entryId")
         proposal = l.decode(HelperProposal.self, "proposal") ?? l.decode(HelperProposal.self, "helper")
+        pal = l.string("pal")
+        from = l.string("from")
     }
 
     public var date: Date { ts.msDate }

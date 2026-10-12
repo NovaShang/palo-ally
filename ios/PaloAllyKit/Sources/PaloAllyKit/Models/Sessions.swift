@@ -37,8 +37,11 @@ public struct CCSession: Codable, Sendable, Hashable, Identifiable {
     /// How much of its context is in use (tokens). Shown as plain information.
     public var contextTokens: Int?
     public var updatedAt: Int64
+    /// Asked to become a Pal (`pals.adopt`): the host waits for it to be quit
+    /// in its terminal. Hosts without Pals don't say.
+    public var adopting: Bool?
 
-    enum CodingKeys: String, CodingKey { case id, name, cwd, kind, status, waitingFor, lastLine, contextTokens, updatedAt }
+    enum CodingKeys: String, CodingKey { case id, name, cwd, kind, status, waitingFor, lastLine, contextTokens, updatedAt, adopting }
 
     public init(id: String, name: String, cwd: String, kind: CCSessionKind, status: CCSessionStatus,
                 waitingFor: String? = nil, lastLine: String? = nil, contextTokens: Int? = nil, updatedAt: Int64) {
@@ -57,6 +60,7 @@ public struct CCSession: Codable, Sendable, Hashable, Identifiable {
         lastLine = l.string("lastLine")
         contextTokens = l.int("contextTokens")
         updatedAt = l.millis("updatedAt", or: 0)
+        adopting = l.bool("adopting")
     }
 
     public var isHelper: Bool { kind == .helper }
@@ -153,9 +157,11 @@ public struct CCMessage: Codable, Sendable, Hashable, Identifiable {
 }
 
 /// Where an approval or a question came from, when it isn't the assistant's
-/// own (§7): `{kind: "session", id, name}`.
+/// own (§7): `{kind: "session", id, name}` for one of the computer's sessions
+/// reaching the phone through the hooks, `{kind: "pal", id, name}` for a Pal
+/// (docs/pals-prd.md §7.4), whose page shows it.
 public enum CardSourceKind: String, TolerantStringEnum {
-    case session, unknown
+    case session, pal, unknown
     public static let fallback = CardSourceKind.unknown
 }
 
@@ -178,6 +184,7 @@ public struct CardSource: Codable, Sendable, Hashable {
     }
 
     public var isSession: Bool { kind == .session }
+    public var isPal: Bool { kind == .pal }
 }
 
 // MARK: - Helper proposals
@@ -210,10 +217,12 @@ public struct HelperProposal: Codable, Sendable, Hashable, Identifiable {
     public var status: HelperProposalStatus
     /// Once started: the helper's session.
     public var sessionId: String?
+    /// A host with Pals: the Pal it became.
+    public var palId: String?
     /// Why it didn't start, when it didn't.
     public var note: String?
 
-    enum CodingKeys: String, CodingKey { case id, name, cwd, duty, dailyUsd, status, sessionId, note }
+    enum CodingKeys: String, CodingKey { case id, name, cwd, duty, dailyUsd, status, sessionId, palId, note }
 
     public init(id: String, name: String, cwd: String, duty: String, dailyUsd: Double? = nil,
                 status: HelperProposalStatus = .pending, sessionId: String? = nil, note: String? = nil) {
@@ -231,6 +240,7 @@ public struct HelperProposal: Codable, Sendable, Hashable, Identifiable {
         // A proposal that doesn't say is still on offer.
         status = l.decode(HelperProposalStatus.self, "status") ?? .pending
         sessionId = l.string("sessionId")
+        palId = l.string("palId")
         note = l.string("note")
     }
 

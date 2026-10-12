@@ -12,8 +12,8 @@ enum Platform {
         #endif
     }()
 
-    /// The Mac keeps the conversation's two place buttons in the window
-    /// toolbar (system toggles) and floats the orb in the conversation itself.
+    /// The Mac keeps the sidebar toggle and 成果 in the window toolbar and
+    /// floats the assistant's orb in its conversation itself.
     /// DEBUG `-phoneBar YES` shows the phone's bar there instead, to look at
     /// it without a simulator.
     static let barInWindowToolbar: Bool = {
@@ -24,12 +24,12 @@ enum Platform {
     }()
 }
 
-/// Mac: a standard window toolbar with only two toggles — 「它」 by the
-/// traffic lights, 成果 at the trailing edge — and no window title. They open
-/// the same panels as the phone's buttons, and slide the places in the
-/// narrow layout. The orb isn't in the toolbar: it floats at the top of
-/// the conversation (ChatView). Each place keeps its own navigation bar inside
-/// its column. Installed once per window; elsewhere it does nothing.
+/// Mac: a standard window toolbar with the system sidebar toggle by the
+/// traffic lights (it shows and hides the list) and 成果 at the trailing
+/// edge, and no window title. The orb isn't in the toolbar: it floats at the
+/// top of the assistant's conversation (ChatView). Each column keeps its own
+/// navigation bar inside it. Installed once per window; elsewhere it does
+/// nothing.
 struct MacWindowChrome: ViewModifier {
     let model: AppModel
 
@@ -99,12 +99,11 @@ private struct MacToolbarInstaller: UIViewRepresentable {
 }
 
 private extension NSToolbarItem.Identifier {
-    static let assistant = NSToolbarItem.Identifier("palo.assistant")
     static let library = NSToolbarItem.Identifier("palo.library")
 }
 
-/// The window toolbar: just the two toggles, nothing that can overflow at any
-/// width, with the same symbols as the phone's top bar.
+/// The window toolbar: the system sidebar toggle and 成果, nothing that can
+/// overflow at any width.
 @MainActor
 final class MacToolbar: NSObject, NSToolbarDelegate {
     private static var installed: [ObjectIdentifier: MacToolbar] = [:]
@@ -130,10 +129,12 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
         toolbar.allowsUserCustomization = false
     }
 
-    /// 「它」 by the traffic lights, 成果 at the trailing edge, at every width:
-    /// they open and close panels (or, narrow, slide the places), never a
-    /// split view's sidebar, so there's no tracking separator.
-    private static let items: [NSToolbarItem.Identifier] = [.assistant, .flexibleSpace, .library]
+    /// The system sidebar toggle by the traffic lights (it toggles the split
+    /// view's list), the separator that follows the sidebar's edge, and 成果
+    /// at the trailing edge.
+    private static let items: [NSToolbarItem.Identifier] = [
+        .toggleSidebar, .primarySidebarTrackingSeparatorItemIdentifier, .flexibleSpace, .library,
+    ]
 
     // MARK: NSToolbarDelegate
 
@@ -144,9 +145,6 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         switch id {
-        case .assistant:
-            return toggle(id, symbol: "sidebar.left", label: "它", tip: "显示或隐藏「它」 ⌘1",
-                          action: #selector(toggleAssistant))
         case .library:
             return toggle(id, symbol: "books.vertical", label: "成果", tip: "显示或隐藏成果 ⌘2",
                           action: #selector(toggleLibrary))
@@ -165,7 +163,6 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
         return item
     }
 
-    @objc private func toggleAssistant() { model.toggleAssistant() }
     @objc private func toggleLibrary() { model.toggleLibrary() }
 }
 #endif

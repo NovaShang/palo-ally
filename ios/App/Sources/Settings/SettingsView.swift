@@ -60,7 +60,7 @@ struct SettingsView: View {
 
                 // The computer's Claude Code sessions (sessions-prd §6.3): their
                 // prompts come to the phone while the owner is away from it.
-                if store.sessionsSupported == true {
+                if store.sessionsSupported == true || store.palsSupported == true {
                     Section {
                         Toggle("手机上处理电脑会话的确认", isOn: hooksBinding)
                             .disabled(!store.connection.isOnline)

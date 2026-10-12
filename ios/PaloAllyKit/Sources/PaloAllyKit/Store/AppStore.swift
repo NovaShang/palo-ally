@@ -24,12 +24,35 @@ public final class AppStore {
 
     // MARK: observable state
 
+    /// Whose conversation this store holds: the assistant's (the one store
+    /// per computer, which owns the link), or one Pal's (a scoped store the
+    /// assistant's makes, `palStore(_:)`: the same conversation machinery,
+    /// fed by the host's `pal`-tagged events, with everything else read from
+    /// the computer's).
+    public enum Scope: Equatable, Sendable {
+        case palo
+        case pal(String)
+    }
+    public let scope: Scope
+    /// The Pal this store is scoped to, if it is.
+    public var palID: String? { if case .pal(let id) = scope { return id } else { return nil } }
+    /// The computer's state every scope shares: the link, its lists, settings.
+    let shared: AppStoreShared
+    /// A Pal's store: the assistant's, which feeds it.
+    @ObservationIgnored weak var parent: AppStore?
+    /// The assistant's store: each Pal's scoped store, made on first use
+    /// (while a view is drawn: nothing observes the dictionary itself).
+    @ObservationIgnored var palStores: [String: AppStore] = [:]
+
     /// The link as it really is — for logic (sending, sync, what's enabled).
     /// What the owner is shown is `displayedConnection`.
-    public private(set) var connection: Connection = .idle {
-        didSet {
-            guard connection != oldValue else { return }
-            debugLog("connection: \(connection)")
+    public private(set) var connection: Connection {
+        get { shared.connection }
+        set {
+            let old = shared.connection
+            shared.connection = newValue
+            guard newValue != old else { return }
+            debugLog("connection: \(newValue)")
             connectionChanged()
         }
     }
@@ -39,10 +62,16 @@ public final class AppStore {
     /// `troubleGrace` seconds, counted from the drop or from the app becoming
     /// active, whichever is later; until then this stays calm (still online,
     /// or connecting). Being refused (pair again) shows at once.
-    public private(set) var displayedConnection: Connection = .idle
+    public private(set) var displayedConnection: Connection {
+        get { shared.displayedConnection }
+        set { shared.displayedConnection = newValue }
+    }
     /// A drop (or a refusal) the owner is being shown: it outlasted the grace
     /// period. Banners, captions and the avatar's offline look follow this.
-    public private(set) var connectionTrouble = false
+    public private(set) var connectionTrouble: Bool {
+        get { shared.connectionTrouble }
+        set { shared.connectionTrouble = newValue }
+    }
     /// How long a drop stays silent.
     public var troubleGrace: Double = 8
     /// When the current stretch without a link began (or the app became active).
@@ -50,8 +79,14 @@ public final class AppStore {
     private var troubleTimer: Task<Void, Never>?
     /// Between didEnterBackground and didBecomeActive.
     private var inBackground = false
-    public private(set) var hostName: String = ""
-    public private(set) var hostVersion: String = ""
+    public private(set) var hostName: String {
+        get { shared.hostName }
+        set { shared.hostName = newValue }
+    }
+    public private(set) var hostVersion: String {
+        get { shared.hostVersion }
+        set { shared.hostVersion = newValue }
+    }
     public private(set) var messages: [ChatMessage] = []
     /// Replies being written, by message id: their text lives here while it
     /// grows (the message's own `text` is filled in when the reply ends).
@@ -63,21 +98,51 @@ public final class AppStore {
     /// the words are all there. (The idle status comes as its own event,
     /// a moment after; a tool starting next brings a new status.)
     public private(set) var replyEndedSinceStatus = false
-    public private(set) var tasks: [AllyTask] = []
-    public private(set) var approvals: [Approval] = []
-    /// Choice cards (AskUserQuestion), newest first.
-    public private(set) var questions: [Question] = []
-    public private(set) var watches: [Watch] = []
-    public private(set) var artifacts: [Artifact] = []
-    public private(set) var settings: HostSettings? {
-        didSet { if let settings, settings != oldValue { onSettings?(settings) } }
+    public private(set) var tasks: [AllyTask] {
+        get { shared.tasks }
+        set { shared.tasks = newValue }
     }
+    public private(set) var approvals: [Approval] {
+        get { shared.approvals }
+        set { shared.approvals = newValue }
+    }
+    /// Choice cards (AskUserQuestion), newest first.
+    public private(set) var questions: [Question] {
+        get { shared.questions }
+        set { shared.questions = newValue }
+    }
+    public private(set) var watches: [Watch] {
+        get { shared.watches }
+        set { shared.watches = newValue }
+    }
+    public private(set) var artifacts: [Artifact] {
+        get { shared.artifacts }
+        set { shared.artifacts = newValue }
+    }
+    public private(set) var settings: HostSettings? {
+        get { shared.settings }
+        set {
+            let old = shared.settings
+            shared.settings = newValue
+            if let newValue, newValue != old { onSettings?(newValue) }
+        }
+    }
+    /// The assistant's: what the host says. A Pal's: its own state, from the
+    /// Pals list (`busy` while it's in a turn).
     public private(set) var status: HostStatus?
     /// Slash commands, fetched the first time the user types "/".
-    public private(set) var commands: [SlashCommand] = []
-    public private(set) var modelInfo: ModelInfo?
+    public private(set) var commands: [SlashCommand] {
+        get { shared.commands }
+        set { shared.commands = newValue }
+    }
+    public private(set) var modelInfo: ModelInfo? {
+        get { shared.modelInfo }
+        set { shared.modelInfo = newValue }
+    }
     /// Highest contiguous chat seq we hold — the `sync{sinceSeq}` cursor.
     public private(set) var lastSeq: Int64 = 0
+    /// A Pal's store: the Pal's state as last applied (`applyPal`).
+    @ObservationIgnored private var palState: PalStatus?
     /// True between a send and the first sign of a reply (drives the
     /// "收到了" feedback indicator).
     public private(set) var awaitingReply = false
@@ -100,43 +165,118 @@ public final class AppStore {
     /// Called whenever the host's settings arrive or change (the app takes
     /// the assistant's color from them).
     @ObservationIgnored public var onSettings: (@MainActor (HostSettings) -> Void)?
+    /// Set by the app on the assistant's store: readies each Pal's scoped
+    /// store as it's made (its reveal clock and the like).
+    @ObservationIgnored public var preparePalStore: (@MainActor (AppStore) -> Void)?
+    /// Set by the app on the assistant's store: a session the owner was
+    /// asked to quit in its terminal has become a Pal (its page can open).
+    @ObservationIgnored public var onAdopted: (@MainActor (Pal) -> Void)?
     /// Clipboard messages already copied on this device (local state).
-    public private(set) var copiedClipboardIDs: Set<String> = []
+    public private(set) var copiedClipboardIDs: Set<String> {
+        get { shared.copiedClipboardIDs }
+        set { shared.copiedClipboardIDs = newValue }
+    }
 
     // Allies (AppStore+Allies.swift).
     /// The Allies this computer has, in the host's order.
-    public internal(set) var allies: [AllyInfo] = []
+    public internal(set) var allies: [AllyInfo] {
+        get { shared.allies }
+        set { shared.allies = newValue }
+    }
     /// nil until the host has answered `ally.list`; false for a host that
     /// doesn't know Allies yet (older versions), which hides them.
-    public internal(set) var alliesSupported: Bool?
+    public internal(set) var alliesSupported: Bool? {
+        get { shared.alliesSupported }
+        set { shared.alliesSupported = newValue }
+    }
     /// Each Ally's exchanges held here, oldest first.
-    public internal(set) var allyLogs: [String: [AllyEntry]] = [:]
+    public internal(set) var allyLogs: [String: [AllyEntry]] {
+        get { shared.allyLogs }
+        set { shared.allyLogs = newValue }
+    }
     /// The last `ally.log` page for that Ally was full: there may be older ones.
-    public internal(set) var allyLogHasMore: [String: Bool] = [:]
+    public internal(set) var allyLogHasMore: [String: Bool] {
+        get { shared.allyLogHasMore }
+        set { shared.allyLogHasMore = newValue }
+    }
     /// Exchanges whose Ally isn't known (an event that didn't say).
-    var looseAllyEntries: [String: AllyEntry] = [:]
+    var looseAllyEntries: [String: AllyEntry] {
+        get { shared.looseAllyEntries }
+        set { shared.looseAllyEntries = newValue }
+    }
 
     // Sessions (AppStore+Sessions.swift).
     /// The computer's Claude Code sessions: helpers first, then the owner's own.
-    public internal(set) var sessions: [CCSession] = []
+    public internal(set) var sessions: [CCSession] {
+        get { shared.sessions }
+        set { shared.sessions = newValue }
+    }
     /// nil until the host has answered `sessions.list`; false for a host that
     /// doesn't know sessions yet, which hides them.
-    public internal(set) var sessionsSupported: Bool?
+    public internal(set) var sessionsSupported: Bool? {
+        get { shared.sessionsSupported }
+        set { shared.sessionsSupported = newValue }
+    }
     /// The global hooks switch (设置), when known.
-    public internal(set) var sessionHooksEnabled: Bool?
+    public internal(set) var sessionHooksEnabled: Bool? {
+        get { shared.sessionHooksEnabled }
+        set { shared.sessionHooksEnabled = newValue }
+    }
     /// Each session's conversation held here, oldest first.
-    public internal(set) var sessionHistories: [String: [CCMessage]] = [:]
+    public internal(set) var sessionHistories: [String: [CCMessage]] {
+        get { shared.sessionHistories }
+        set { shared.sessionHistories = newValue }
+    }
     /// The oldest page held for that session was full: there may be more.
-    public internal(set) var sessionHistoryHasMore: [String: Bool] = [:]
-    /// Words sent from the app that the session's conversation doesn't show yet.
-    public internal(set) var sessionPending: [String: [SessionPendingSend]] = [:]
+    public internal(set) var sessionHistoryHasMore: [String: Bool] {
+        get { shared.sessionHistoryHasMore }
+        set { shared.sessionHistoryHasMore = newValue }
+    }
     /// The owner's answers to helper proposals, until the host's copy says so.
-    public internal(set) var helperDecisions: [String: HelperProposalStatus] = [:]
+    public internal(set) var helperDecisions: [String: HelperProposalStatus] {
+        get { shared.helperDecisions }
+        set { shared.helperDecisions = newValue }
+    }
     /// Proposal → the helper it started.
-    public internal(set) var helperSessions: [String: String] = [:]
+    public internal(set) var helperSessions: [String: String] {
+        get { shared.helperSessions }
+        set { shared.helperSessions = newValue }
+    }
     /// Session pages on screen (id → how many): their conversation follows
     /// `sessions.updated`.
-    var watchedSessions: [String: Int] = [:]
+    var watchedSessions: [String: Int] {
+        get { shared.watchedSessions }
+        set { shared.watchedSessions = newValue }
+    }
+
+    // Pals (AppStore+Pals.swift).
+    /// The Pals, in the host's order.
+    public internal(set) var pals: [Pal] {
+        get { shared.pals }
+        set { shared.pals = newValue }
+    }
+    /// The computer's other live Claude Code sessions, to adopt.
+    public internal(set) var otherSessions: [CCSession] {
+        get { shared.otherSessions }
+        set { shared.otherSessions = newValue }
+    }
+    /// nil until the host has answered `pals.list`; false for a host that
+    /// doesn't know Pals yet, which hides them.
+    public internal(set) var palsSupported: Bool? {
+        get { shared.palsSupported }
+        set { shared.palsSupported = newValue }
+    }
+    /// Sessions being adopted (session id → how far along).
+    public internal(set) var adoptions: [String: PalAdoption] {
+        get { shared.adoptions }
+        set { shared.adoptions = newValue }
+    }
+    /// Waits for a terminal session to be quit that the owner stopped
+    /// watching here (the host has no way to call one off).
+    var cancelledWaits: Set<String> {
+        get { shared.cancelledWaits }
+        set { shared.cancelledWaits = newValue }
+    }
 
     public func markCopied(_ id: String) { copiedClipboardIDs.insert(id) }
 
@@ -184,6 +324,21 @@ public final class AppStore {
         self.rpc = RPCClient(transport: transport, defaultTimeout: rpcTimeout)
         self.clientKind = clientKind
         self.clientVersion = clientVersion
+        self.scope = .palo
+        self.shared = AppStoreShared()
+    }
+
+    /// One Pal's scoped store, made by the assistant's (`palStore(_:)`): it
+    /// talks over the same link and reads the same shared state.
+    init(pal id: String, parent: AppStore) {
+        self.rpc = parent.rpc
+        self.clientKind = parent.clientKind
+        self.clientVersion = parent.clientVersion
+        self.scope = .pal(id)
+        self.shared = parent.shared
+        self.parent = parent
+        self.initialHistoryLimit = parent.initialHistoryLimit
+        self.syncRetryBase = parent.syncRetryBase
     }
 
     // MARK: lifecycle
@@ -354,6 +509,9 @@ public final class AppStore {
                 Task { await self.loadSuggestions() }
                 Task { await self.loadAllies() }
                 Task { await self.loadSessions() }
+                Task { await self.loadPals() }
+                // Each Pal's conversation catches up too.
+                for child in palStores.values { Task { await child.palReconnected() } }
                 return
             } catch {
                 guard gen == connectGeneration else { return }
@@ -401,7 +559,11 @@ public final class AppStore {
     /// `eventsBefore`: how many events had arrived when the answer did (see
     /// `syncJournal`); nil takes the reply text as it is.
     @discardableResult
-    public func applySync(_ r: SyncResult, since: Int64?, eventsBefore: Int? = nil) -> Bool {
+    public func applySync(_ sync: SyncResult, since: Int64?, eventsBefore: Int? = nil) -> Bool {
+        var r = sync
+        // The assistant's conversation holds only its own messages; a Pal's
+        // come to that Pal's store.
+        if scope == .palo, r.messages.contains(where: { $0.pal != nil }) { r.messages.removeAll { $0.pal != nil } }
         if let t = r.tasks { tasks = t; sortTasks() }
         if let a = r.approvals { approvals = a; sortApprovals() }
         if let q = r.questions { questions = q.sorted { $0.createdAt > $1.createdAt } }
@@ -496,7 +658,7 @@ public final class AppStore {
     /// Applies a status snapshot. `busy == false` means the turn is over:
     /// anything still streaming is finished (a turn can end without a final
     /// `chat.message`, e.g. after an error or a stop) and the wait ends.
-    private func applyStatus(_ s: HostStatus) {
+    func applyStatus(_ s: HostStatus) {
         if s.busy != status?.busy { breadcrumb("host \(s.busy ? "busy" : "idle")") }
         status = s
         if replyEndedSinceStatus { replyEndedSinceStatus = false }
@@ -520,6 +682,11 @@ public final class AppStore {
 
     private func requestResync() {
         guard hasSynced, connection == .online || connection == .syncing else { return }
+        // A Pal's conversation has no sync of its own: its newest page again.
+        if scope != .palo {
+            Task { await self.reloadPalHistory() }
+            return
+        }
         Task { try? await self.performSync() }
     }
 
@@ -528,6 +695,13 @@ public final class AppStore {
     /// `index`: the event's place in the stream (`RPCInbound.event`), when
     /// known; `received`: when it came off the wire (system uptime).
     public func apply(event name: String, data: JSONValue, index: Int? = nil, received: TimeInterval? = nil) {
+        // A Pal's words go to that Pal's store (made only once its page is
+        // opened: until then its page loads them when it opens).
+        if scope == .palo, name == RPCEventName.chatMessage || name == RPCEventName.chatDelta,
+           let pal = data["pal"]?.stringValue, !pal.isEmpty {
+            palStores[pal]?.apply(event: name, data: data, index: index, received: received)
+            return
+        }
         switch name {
         case RPCEventName.chatMessage:
             if let m = try? data.decode(ChatMessage.self) {
@@ -566,7 +740,11 @@ public final class AppStore {
             if let e = AllyEntryEvent(json: data) { upsert(allyEntry: e.entry, allyId: e.allyId) }
         case RPCEventName.sessionsUpdated:
             apply(sessionsUpdate: SessionsUpdate(json: data))
+        case RPCEventName.palsUpdated:
+            apply(palsUpdate: PalsUpdate(json: data))
         case RPCEventName.status:
+            // The assistant's own state; a Pal's comes with the Pals list.
+            guard scope == .palo else { return }
             if let s = try? (data["status"] ?? data).decode(HostStatus.self) {
                 if !s.busy, !streams.isEmpty, let finishingReply { finishingReply { applyStatus(s) } } else { atTheEnd { applyStatus(s) } }
             }
@@ -586,7 +764,11 @@ public final class AppStore {
         }
         upsert(m)
         guard m.seq > 0 else { return }
-        if m.seq == lastSeq + 1 {
+        if scope != .palo {
+            // A Pal's numbering may skip (the host's own); it catches up on
+            // reconnect instead.
+            lastSeq = max(lastSeq, m.seq)
+        } else if m.seq == lastSeq + 1 {
             lastSeq = m.seq
         } else if m.seq > lastSeq + 1 {
             // Gap: something was missed while we weren't looking.
@@ -700,7 +882,7 @@ public final class AppStore {
     /// exactly on the end, where the anchor holds it through the change.
     @ObservationIgnored public var willChangeTheEnd: (@MainActor () -> Void)?
 
-    private func atTheEnd(_ apply: () -> Void) {
+    func atTheEnd(_ apply: () -> Void) {
         willChangeTheEnd?()
         apply()
     }
@@ -825,8 +1007,19 @@ public final class AppStore {
 
     // MARK: derived
 
-    public var pendingApprovals: [Approval] { approvals.filter(\.isPending) }
-    public var pendingQuestions: [Question] { questions.filter(\.isPending) }
+    /// Pending cards this conversation shows: the assistant's (with the
+    /// computer's other sessions'), or one Pal's.
+    public var pendingApprovals: [Approval] { approvals.filter { $0.isPending && shows($0.source) } }
+    public var pendingQuestions: [Question] { questions.filter { $0.isPending && shows($0.source) } }
+
+    /// A card from `source` belongs in this conversation: a Pal's in that
+    /// Pal's, everything else in the assistant's.
+    public func shows(_ source: CardSource?) -> Bool {
+        switch scope {
+        case .palo: source?.isPal != true
+        case .pal(let id): source?.isPal == true && source?.id == id
+        }
+    }
     public func question(id: String) -> Question? { questions.first { $0.id == id } }
 
     /// What the owner hasn't seen: replies, notices and cards newer than `seq`
@@ -1007,9 +1200,17 @@ public final class AppStore {
         do {
             let ids = try await uploadImages(clientMsgId: cid)
             let replyTo = messages.first(where: { $0.clientMsgId == cid && $0.seq == 0 })?.replyTo
-            let r: ChatSendResult = try await rpc.call(RPCMethod.chatSend,
-                                                       params: ChatSendParams(text: text, clientMsgId: cid, attachments: ids,
-                                                                              suggestionId: suggestionForMessage[cid], replyTo: replyTo))
+            let r: ChatSendResult
+            if let palID {
+                // Into the Pal as typed (nothing attached): a quoted part
+                // goes in front, the way it would be pasted in a terminal.
+                r = try await rpc.call(RPCMethod.palsSend,
+                                       params: PalSendParams(id: palID, text: Self.quoting(replyTo, in: text), clientMsgId: cid))
+            } else {
+                r = try await rpc.call(RPCMethod.chatSend,
+                                       params: ChatSendParams(text: text, clientMsgId: cid, attachments: ids,
+                                                              suggestionId: suggestionForMessage[cid], replyTo: replyTo))
+            }
             suggestionForMessage[cid] = nil
             guard let i = messages.firstIndex(where: { $0.clientMsgId == cid && $0.seq == 0 }) else { return }
             if !r.id.isEmpty, let dup = messages.firstIndex(where: { $0.id == r.id }), dup != i {
@@ -1021,7 +1222,8 @@ public final class AppStore {
             messages[i].seq = r.seq
             messages[i].delivery = .sent
             sortMessages()
-            if r.seq == lastSeq + 1 { lastSeq = r.seq } else if r.seq > lastSeq + 1 { requestResync() }
+            if scope != .palo { lastSeq = max(lastSeq, r.seq) }
+            else if r.seq == lastSeq + 1 { lastSeq = r.seq } else if r.seq > lastSeq + 1 { requestResync() }
         } catch {
             // Offline / dropped / no answer: keep it queued and resend after
             // the next reconnect. Anything else the user retries by hand.
@@ -1034,6 +1236,13 @@ public final class AppStore {
             // message just waits for the reconnect, which resends it.
             if !(offline && !connectionTrouble) { lastError = Friendly.message(error) }
         }
+    }
+
+    /// A Pal's words with what they quote in front, as a Markdown quote.
+    nonisolated static func quoting(_ reply: ReplyTo?, in text: String) -> String {
+        guard let reply, !reply.excerpt.isEmpty else { return text }
+        let quote = reply.excerpt.split(separator: "\n", omittingEmptySubsequences: false).map { "> \($0)" }.joined(separator: "\n")
+        return text.isEmpty ? quote : "\(quote)\n\n\(text)"
     }
 
     static let localImagePrefix = "local-img-"
@@ -1137,7 +1346,7 @@ public final class AppStore {
     }
 
     /// Resends everything queued while offline, oldest first.
-    private func resendQueued() {
+    func resendQueued() {
         let queued = messages.filter { $0.seq == 0 && $0.delivery == .queued && $0.clientMsgId != nil }
         for m in queued { retry(m) }
     }
@@ -1147,6 +1356,10 @@ public final class AppStore {
         guard !isLoadingOlder, let first = messages.first(where: { $0.seq > 0 }) else { return }
         isLoadingOlder = true
         defer { isLoadingOlder = false }
+        if palID != nil {
+            await loadOlderPalPage(before: first, limit: limit)
+            return
+        }
         do {
             let r: MessagesResult = try await rpc.call(RPCMethod.chatHistory,
                                                        params: ChatHistoryParams(beforeSeq: first.seq, limit: limit))
@@ -1158,6 +1371,72 @@ public final class AppStore {
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    // MARK: a Pal's conversation
+
+    /// A Pal's store: its newest page (`pals.history`). The first time it
+    /// stands for the whole conversation; after that it's merged in, so
+    /// older pages read meanwhile stay.
+    public func reloadPalHistory() async {
+        guard let palID, !syncing else { return }
+        // The reply being written comes with the page (as `sync` gives it);
+        // deltas that overtake the answer go back on after it (`syncJournal`).
+        syncing = true
+        defer {
+            syncing = false
+            syncJournal.removeAll()
+        }
+        do {
+            let limit = initialHistoryLimit
+            let (r, mark) = try await rpc.callMarked(RPCMethod.palsHistory, params: PalHistoryParams(id: palID, limit: limit),
+                                                     as: PalHistoryResult.self)
+            let page = r.messages.filter { $0.pal == nil || $0.pal == palID }
+            let top = page.map(\.seq).max() ?? 0
+            let first = !hasSynced
+            atTheEnd {
+                applySync(SyncResult(seq: top, messages: page, streaming: r.streaming), since: first ? nil : lastSeq,
+                          eventsBefore: mark)
+            }
+            if first { hasOlderMessages = page.count >= limit }
+        } catch {
+            lastError = Friendly.message(error)
+        }
+    }
+
+    /// The page before `first`, for a Pal's store (`loadOlder`).
+    private func loadOlderPalPage(before first: ChatMessage, limit: Int) async {
+        guard let palID else { return }
+        do {
+            let r: PalHistoryResult = try await rpc.call(RPCMethod.palsHistory,
+                                                         params: PalHistoryParams(id: palID, before: first.id, limit: limit))
+            let known = Set(messages.map(\.id))
+            let older = r.messages.filter { !known.contains($0.id) && ($0.pal == nil || $0.pal == palID) }
+            messages.append(contentsOf: older)
+            sortMessages()
+            hasOlderMessages = !older.isEmpty && r.messages.count >= limit
+        } catch {
+            lastError = Friendly.message(error)
+        }
+    }
+
+    /// The link came back: a Pal's store catches up and sends what waited.
+    func palReconnected() async {
+        await reloadPalHistory()
+        resendQueued()
+    }
+
+    /// The Pal's state from the list, as its store's status: busy through
+    /// its whole turn (also while a card waits on the owner), idle once the
+    /// turn is over, which finishes any reply still being written.
+    func applyPal(_ p: Pal) {
+        guard scope != .palo, p.status != palState || (p.inTurn && p.activity != status?.activity) else { return }
+        palState = p.status
+        var s = status ?? HostStatus(online: true, busy: false, model: p.model ?? "")
+        s.busy = p.inTurn
+        s.activity = p.status == .waiting ? "在等你" : (p.status == .starting ? "正在启动" : p.activity)
+        if let m = p.model, !m.isEmpty { s.model = m }
+        if !s.busy, !streams.isEmpty, let finishingReply { finishingReply { applyStatus(s) } } else { atTheEnd { applyStatus(s) } }
     }
 
     // MARK: search (成果)
@@ -1410,6 +1689,12 @@ public final class AppStore {
     /// The stop button: the assistant drops whatever it is doing. Nothing
     /// stays blocked; the next message works as usual.
     public func stop() async throws {
+        if let palID {
+            // Its turn ends; the Pals list then says it's idle.
+            _ = try await rpc.call(RPCMethod.palsStop, params: IDParams(id: palID), as: OKResult.self)
+            awaitingReply = false
+            return
+        }
         let r: StatusResult = try await rpc.call(RPCMethod.stop, params: EmptyParams())
         if let s = r.status { applyStatus(s) }
     }

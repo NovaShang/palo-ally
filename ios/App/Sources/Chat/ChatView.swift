@@ -1,11 +1,18 @@
 import PaloAllyKit
 import SwiftUI
 
+/// A conversation: the assistant's, or one Pal's (pals-prd §4), whichever
+/// the store in the environment holds (`AppStore.scope`). The same rows,
+/// streaming, paced reveal, following and composer for both; only the
+/// assistant's has the orb in its title and 成果, and a Pal's page puts its
+/// own panels in place of the composer (`bottomPanel`).
 struct ChatView: View {
     /// The conversation never gets wider than this (large screens).
     static let readableWidth: CGFloat = 760
     /// Mac: room above the first message for the small floating orb.
     static let macTopMargin: CGFloat = 22
+    /// Shown in place of the composer while it's there (a Pal's 交还终端 / 移出).
+    var bottomPanel: AnyView? = nil
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     /// Kept by MainScreen so it survives the layout switching containers.
@@ -22,6 +29,12 @@ struct ChatView: View {
     /// so the bar moving (a resize) doesn't re-render the conversation.
     @State private var orbPlacement = OrbPlacement()
     @Environment(\.scenePhase) private var scenePhase
+
+    /// The assistant's own conversation (not a Pal's).
+    private var isPalo: Bool { store.scope == .palo }
+    /// The Mac: the assistant's conversation keeps the window toolbar's
+    /// toggles and floats its orb in the column; a Pal's page has its bar.
+    private var macOrb: Bool { Platform.barInWindowToolbar && isPalo }
 
     var body: some View {
         #if DEBUG
@@ -41,7 +54,7 @@ struct ChatView: View {
         .defaultScrollAnchor(scroll.sticksToEnd ? .bottom : .top, for: .sizeChanges)
         // The Mac: the orb floats over the top of the column, so the
         // first message starts a little below it.
-        .contentMargins(.top, Platform.barInWindowToolbar ? Self.macTopMargin : 0, for: .scrollContent)
+        .contentMargins(.top, macOrb ? Self.macTopMargin : 0, for: .scrollContent)
         // No scroll targets (`scrollTargetLayout`): with them the scroll
         // view keeps "the view at the top" through every layout change, and
         // the lazy history re-estimating as a fling crosses it turned that
@@ -49,7 +62,7 @@ struct ChatView: View {
         // laid-out end begins.
         .task {
             scroll.attach(position: $position, store: store,
-                          contentTop: 12 + (Platform.barInWindowToolbar ? Self.macTopMargin : 0))
+                          contentTop: 12 + (macOrb ? Self.macTopMargin : 0))
         }
         #if DEBUG
         // `-demoDetach YES`: read from the middle of the history (for the resize test).
@@ -107,16 +120,17 @@ struct ChatView: View {
         } action: { old, new in
             scroll.geometry(old, new)
         }
-        // A notification tap on an approval brings its card into view.
+        // A notification tap on an approval brings its card into view (in
+        // the conversation it belongs to).
         .onChange(of: model.focusApprovalID, initial: true) { _, id in
-            guard let id else { return }
+            guard let id, store.shows(store.approval(id: id)?.source) else { return }
             model.focusApprovalID = nil
             let target = store.messages.first { $0.approvalId == id }?.id ?? "approval-\(id)"
             scroll.reveal(target, after: 0.35) // let the slide back to the chat land
         }
         // …and on a question card.
         .onChange(of: model.focusQuestionID, initial: true) { _, id in
-            guard let id else { return }
+            guard let id, store.shows(store.question(id: id)?.source) else { return }
             let target = store.messages.first(where: { $0.questionId == id })?.id
                 ?? (store.liveEndQuestions.contains { $0.id == id } ? "question-\(id)" : nil)
             guard let target else { return }
@@ -126,7 +140,7 @@ struct ChatView: View {
         // A search hit in 成果: make sure it's loaded, then bring it into
         // view and tint it for a moment.
         .onChange(of: model.focusMessageSeq, initial: true) { _, seq in
-            guard let seq else { return }
+            guard let seq, isPalo else { return }
             model.focusMessageSeq = nil
             Task { @MainActor in
                 guard let id = await store.revealMessage(seq: seq) else { return }
@@ -150,13 +164,13 @@ struct ChatView: View {
             // Scoped to the button: must not animate the list itself.
             .animation(.snappy(duration: 0.2), value: showJump)
         }
-        .modifier(TopStrip {
+        .modifier(TopStrip(ownFade: macOrb) {
             VStack(spacing: 0) {
                 StatusBanner()
                 // The Mac: the orb hangs small from the top middle of the
                 // column, over the messages (they start just below it and
                 // pass under it, fading) — no strip of its own.
-                if Platform.barInWindowToolbar { MacTopOrb() }
+                if macOrb { MacTopOrb() }
             }
             .frame(maxWidth: .infinity)
         })
@@ -164,6 +178,9 @@ struct ChatView: View {
         // conversation (same hold-driven motion as the orb and the zones).
         .overlay { VoiceScrimLayer() }
         .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let bottomPanel {
+                bottomPanel
+            } else {
             ComposerView(draft: draft) { text, images, files, how in
                 switch how {
                 case .typed:
@@ -178,6 +195,7 @@ struct ChatView: View {
                     _ = ChatMotion.with(nil) { store.stage(text, images: images, files: files, cid: cid) }
                 }
             }
+            }
         }
         // The live words, in the middle while holding to talk, and on their
         // way out after release: over the composer, under the orb.
@@ -185,9 +203,9 @@ struct ChatView: View {
         // The orb over the bar's middle: above the conversation, its edge
         // fade and the voice scrim, and free to be bigger than the bar.
         .overlay(alignment: .topLeading) {
-            if !Platform.barInWindowToolbar { PhoneTitleOrb(placement: orbPlacement) }
+            if isPalo && !Platform.barInWindowToolbar { PhoneTitleOrb(placement: orbPlacement) }
         }
-        .modifier(OrbPresenceTracking(scrolledUp: !scroll.following || store.viewingPast, scrolling: scroll.userScrolling))
+        .modifier(OrbTracking(enabled: isPalo, scrolledUp: !scroll.following || store.viewingPast, scrolling: scroll.userScrolling))
         // 「试试」 timing: a reply finishing counts as activity.
         .onChange(of: store.isBusy) { _, busy in if !busy { SuggestionsGate.shared.touch() } }
         // Leaving the app, and coming back (after the catch-up).
@@ -204,51 +222,55 @@ struct ChatView: View {
                 }
             }
         }
-        .navigationTitle(store.assistantName)
+        .navigationTitle(isPalo ? store.assistantName : (store.palID.flatMap { store.pal(id: $0)?.displayName } ?? ""))
         .navigationBarTitleDisplayMode(.inline)
         // Immersive, the iOS 26 look: the system bar stays but without its
         // material backdrop (iOS 27 gives the bar one by default); the
-        // conversation runs under three floating pieces (two round buttons,
-        // the orb) with only the soft scroll-edge fade, which keeps text from
-        // colliding with the clock and the orb.
+        // conversation runs under the floating pieces (the back button, the
+        // orb, 成果) with only the soft scroll-edge fade, which keeps text
+        // from colliding with the clock and the orb.
         .toolbarBackground(.hidden, for: .navigationBar)
         .scrollEdgeEffectStyle(.soft, for: .top)
-        // The Mac: the two toggles are the window toolbar's (MacToolbar), the
-        // orb floats in the strip above the messages.
-        .toolbar(Platform.barInWindowToolbar ? .hidden : .automatic, for: .navigationBar)
+        // The Mac: the assistant's conversation leaves 成果 to the window
+        // toolbar (MacToolbar) and floats its orb in the column.
+        .toolbar(macOrb ? .hidden : .automatic, for: .navigationBar)
         .toolbar {
-            if !Platform.barInWindowToolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        model.toggleAssistant() // phones: slide to 「它」; large screens: the sidebar
-                    } label: {
-                        Image(systemName: "sidebar.left")
-                    }
-                    .tint(.primary) // toolbar glyphs stay neutral; the theme color is for meaning
-                    .accessibilityLabel("「它」")
-                }
+            if isPalo && !Platform.barInWindowToolbar {
                 ToolbarItem(placement: .principal) {
                     TitleOrbSlot { frame in
                         if orbPlacement.slot != frame { orbPlacement.slot = frame }
-                    } action: { model.showHostSwitcher = true }
+                    } action: { model.openManagement() }
                 }
                 .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        model.toggleLibrary() // phones: slide to 成果; large screens: the inspector
+                        model.toggleLibrary() // phones: pushed; large screens: the inspector
                     } label: {
                         Image(systemName: "books.vertical")
                     }
-                    .tint(.primary)
+                    .tint(.primary) // toolbar glyphs stay neutral; the theme color is for meaning
                     .accessibilityLabel("成果")
                 }
             }
         }
-        .sheet(isPresented: Binding(get: { model.showModelPicker }, set: { model.showModelPicker = $0 })) {
-            ModelPickerSheet().environment(model).environment(store)
-        }
     }
 
+}
+
+/// The orb's presence follows the assistant's conversation only (a Pal's
+/// page has no orb).
+private struct OrbTracking: ViewModifier {
+    let enabled: Bool
+    let scrolledUp: Bool
+    let scrolling: Bool
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.modifier(OrbPresenceTracking(scrolledUp: scrolledUp, scrolling: scrolling))
+        } else {
+            content
+        }
+    }
 }
 
 /// The conversation's rows: its own view, so a change in the scroll state
@@ -293,7 +315,15 @@ private struct ConversationRows: View {
             }
 
             if messages.isEmpty && store.connection == .online {
-                EmptyChatHint()
+                if store.scope == .palo {
+                    EmptyChatHint()
+                } else if store.hasSynced {
+                    Text("还没有对话。在下面打字，和在终端里一样。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 60)
+                }
             }
 
             let held = scroll.heldAppearance
@@ -393,7 +423,9 @@ private struct ConversationRows: View {
     /// not under a reply that has just been finished while the status
     /// still says it's being written (it lingered there a few frames).
     private var showsBusyIndicator: Bool {
-        store.connection.isOnline && (store.awaitingReply || (store.status?.busy == true && !store.replyEndedSinceStatus))
+        // A Pal stopped on a card: the card is the news, not a spinner.
+        if let id = store.palID, store.pal(id: id)?.status == .waiting, !store.awaitingReply { return false }
+        return store.connection.isOnline && (store.awaitingReply || (store.status?.busy == true && !store.replyEndedSinceStatus))
     }
 
     private var busyActivity: String? {
@@ -455,12 +487,14 @@ private struct ConversationChanges: ViewModifier {
 /// dissolving into the messages scrolling under it. Phones keep a plain inset
 /// (their orb floats over the navigation bar, which already has the fade).
 private struct TopStrip<Strip: View>: ViewModifier {
+    /// The Mac's orb strip: solid under the toolbar, then a fade.
+    var ownFade: Bool
     @ViewBuilder let strip: () -> Strip
     /// The Mac: a short fade under the toolbar, not a band.
     private static var fade: CGFloat { 14 }
 
     func body(content: Content) -> some View {
-        if Platform.barInWindowToolbar {
+        if ownFade {
             content
                 .safeAreaInset(edge: .top, spacing: 0) {
                     strip().background {
@@ -546,7 +580,7 @@ private struct PhoneTitleOrb: View {
                 let slot = placement.slot
                 if slot.width > 0 {
                     FloatingTitleOrb(barCenterY: slot.midY, columnWidth: column.width) {
-                        model.showHostSwitcher = true
+                        model.openManagement()
                     }
                     .position(x: slot.midX - column.minX, y: slot.midY - column.minY)
                 }
@@ -567,7 +601,7 @@ private struct MacTopOrb: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .overlay(alignment: .top) {
                 FloatingTitleOrb(barCenterY: nil, columnWidth: width, topAligned: true) {
-                    model.showHostSwitcher = true
+                    model.openManagement()
                 }
                 .frame(height: 0, alignment: .top)
             }

@@ -24,18 +24,22 @@ struct PaloAllyApp: App {
                     }
                 }
         }
-        .commands { PlaceCommands(model: appDelegate.model) }
+        .commands {
+            // View → Show / Hide Sidebar (⌃⌘S), the system's.
+            SidebarCommands()
+            PlaceCommands(model: appDelegate.model)
+        }
     }
 }
 
-/// Mac menu bar / iPad hardware keyboard: the two places beside the
-/// conversation (panels on large windows, slides on narrow ones).
+/// Mac menu bar / iPad hardware keyboard: the assistant's management (the
+/// orb) and 成果 (beside the conversation on large windows).
 private struct PlaceCommands: Commands {
     let model: AppModel
 
     var body: some Commands {
         CommandGroup(before: .sidebar) {
-            Button("「它」") { model.toggleAssistant() }
+            Button("管理助理") { model.toggleManagement() }
                 .keyboardShortcut("1", modifiers: .command)
             Button("成果") { model.toggleLibrary() }
                 .keyboardShortcut("2", modifiers: .command)
@@ -44,12 +48,12 @@ private struct PlaceCommands: Commands {
             // group, and the system Find items are taken out below.
             Button("搜索成果和对话") { model.focusLibrarySearch() }
                 .keyboardShortcut("f", modifiers: .command)
-            // One level back: a sheet closes, a pushed page → its list, then
-            // the open panel closes (narrow: the place slides back to the chat).
+            // One level back: a sheet closes, a pushed page pops, then 成果
+            // beside the conversation closes.
             Button("返回") { model.goBack() }
                 .keyboardShortcut("[", modifiers: .command)
         }
-        // ⌘, : 「它」 with its settings page.
+        // ⌘, : management with its settings page.
         CommandGroup(replacing: .appSettings) {
             Button("设置…") { model.openSettings() }
                 .keyboardShortcut(",", modifiers: .command)

@@ -1,20 +1,10 @@
 import Foundation
 
-/// Words the owner sent to a session from the app, shown until the
-/// session's own conversation has them.
-public struct SessionPendingSend: Identifiable, Sendable, Hashable {
-    public enum State: Sendable, Hashable { case sending, sent, failed }
-    public var id: String
-    public var text: String
-    /// When it was sent (ms).
-    public var sentAt: Int64
-    public var state: State
-}
-
-/// Sessions (sessions-prd §5, §7): the computer's Claude Code sessions, one
-/// session's conversation, the owner's words into one, helpers' lifecycle,
-/// the hooks switch, and the owner's answer to a helper proposal. Their
-/// approvals and questions are ordinary cards with a `source`.
+/// Sessions (sessions-prd §5, §7): the computer's Claude Code sessions the
+/// host doesn't run (Pals are the ones it does), one session's conversation,
+/// the hooks switch, and the owner's answer to a proposal (which opens a
+/// Pal on hosts that have them). Their approvals and questions are ordinary
+/// cards with a `source`.
 extension AppStore {
     // MARK: reading
 
@@ -22,8 +12,6 @@ extension AppStore {
 
     /// One session's conversation held here, oldest first.
     public func sessionHistory(_ id: String) -> [CCMessage] { sessionHistories[id] ?? [] }
-
-    public func pendingSends(_ id: String) -> [SessionPendingSend] { sessionPending[id] ?? [] }
 
     // MARK: loading
 
@@ -63,7 +51,6 @@ extension AppStore {
         } else if held.isEmpty {
             sessionHistoryHasMore[id] = r.messages.count >= limit
         }
-        resolvePending(id)
         return r.messages
     }
 
@@ -132,97 +119,7 @@ extension AppStore {
         Task { _ = try? await self.loadSessionHistory(id: id) }
     }
 
-    // MARK: talking to a session
-
-    /// The owner's words into a session, as typed (§6.4). They show at once
-    /// as sent-but-not-there-yet, until the session's conversation has them.
-    public func sendToSession(id: String, text raw: String) async throws {
-        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        let p = SessionPendingSend(id: UUID().uuidString, text: text, sentAt: Date().epochMillis, state: .sending)
-        sessionPending[id, default: []].append(p)
-        try await deliver(p, to: id)
-    }
-
-    /// Sends a failed one again.
-    public func retrySend(_ pending: SessionPendingSend, to id: String) async throws {
-        setPending(id, pending.id) { $0.state = .sending; $0.sentAt = Date().epochMillis }
-        guard let p = sessionPending[id]?.first(where: { $0.id == pending.id }) else { return }
-        try await deliver(p, to: id)
-    }
-
-    /// Gives up on a failed one.
-    public func dropSend(_ pending: SessionPendingSend, from id: String) {
-        sessionPending[id]?.removeAll { $0.id == pending.id }
-    }
-
-    private func deliver(_ p: SessionPendingSend, to id: String) async throws {
-        do {
-            // The errand session may have to start first (§6.4): a few seconds.
-            _ = try await rpc.call(RPCMethod.sessionsSend, params: SessionSendParams(id: id, text: p.text),
-                                   as: OKResult.self, timeout: 45)
-            setPending(id, p.id) { $0.state = .sent }
-            // The host says when it's there (`sessions.updated`); the
-            // conversation is read again then. Once more here in case.
-            Task {
-                try? await Task.sleep(for: .seconds(4))
-                if self.sessionPending[id]?.contains(where: { $0.id == p.id }) == true {
-                    _ = try? await self.loadSessionHistory(id: id)
-                }
-            }
-        } catch {
-            setPending(id, p.id) { $0.state = .failed }
-            throw error
-        }
-    }
-
-    private func setPending(_ id: String, _ pid: String, _ change: (inout SessionPendingSend) -> Void) {
-        guard var list = sessionPending[id], let i = list.firstIndex(where: { $0.id == pid }) else { return }
-        change(&list[i])
-        sessionPending[id] = list
-    }
-
-    /// Sent words the conversation now shows are no longer pending: each
-    /// takes the first line from the owner or PaloAlly with the same words,
-    /// said around or after the send.
-    func resolvePending(_ id: String) {
-        guard let pending = sessionPending[id], !pending.isEmpty else { return }
-        let history = sessionHistory(id)
-        var used: Set<String> = []
-        var left: [SessionPendingSend] = []
-        for p in pending {
-            guard p.state != .failed else { left.append(p); continue }
-            let match = history.first { m in
-                !used.contains(m.id) && (m.role == .palo || m.role == .owner) && m.ts >= p.sentAt - 120_000
-                    && m.shownText.trimmingCharacters(in: .whitespacesAndNewlines) == p.text
-            }
-            if let match { used.insert(match.id) } else { left.append(p) }
-        }
-        sessionPending[id] = left.isEmpty ? nil : left
-    }
-
     // MARK: helpers
-
-    /// 停止 / 重启 / 删除 / 复活 (helpers only). Shown at once; the host's
-    /// list follows.
-    public func controlSession(id: String, action: SessionControlAction) async throws {
-        let before = session(id: id)
-        if var s = before {
-            switch action {
-            case .stop, .remove: s.status = .stopped
-            case .restart, .revive: s.status = .idle
-            }
-            upsert(session: s)
-        }
-        do {
-            _ = try await rpc.call(RPCMethod.sessionsControl, params: SessionControlParams(id: id, action: action),
-                                   as: OKResult.self, timeout: 30)
-        } catch {
-            if let before { upsert(session: before) }
-            throw error
-        }
-        try? await refreshSessions()
-    }
 
     /// The 设置 switch: the global hooks on or off (§6.3).
     public func setSessionHooks(_ enabled: Bool) async throws {
@@ -246,6 +143,7 @@ extension AppStore {
         guard var p = message.proposal else { return nil }
         if p.isPending, let decided = helperDecisions[p.id] { p.status = decided }
         if p.sessionId == nil { p.sessionId = helperSessions[p.id] }
+        if p.palId == nil, let sid = p.sessionId { p.palId = pal(sessionId: sid)?.id }
         return p
     }
 
@@ -265,7 +163,14 @@ extension AppStore {
             let r: HelperDecideResult = try await rpc.call(RPCMethod.helperDecide,
                                                            params: HelperDecideParams(proposalId: proposal.id, action: action),
                                                            timeout: 45)
-            if let s = r.session {
+            if let p = r.pal {
+                // A host with Pals opens one.
+                var list = pals
+                if let i = list.firstIndex(where: { $0.id == p.id }) { list[i] = p } else { list.append(p) }
+                setPals(list, others: nil)
+                helperSessions[proposal.id] = p.sessionId
+                palsSupported = true
+            } else if let s = r.session {
                 upsert(session: s)
                 helperSessions[proposal.id] = s.id
                 sessionsSupported = true
@@ -286,8 +191,9 @@ extension AppStore {
     /// list can't say yet).
     public func waitsAtComputer(_ source: CardSource?) -> Bool {
         guard let source, source.isSession else { return false }
-        guard sessionsSupported == true else { return true }
-        return session(id: source.id)?.status == .waiting
+        if let s = otherSessions.first(where: { $0.id == source.id }) ?? session(id: source.id) { return s.status == .waiting }
+        // Not on a list the host gave: it can't say yet, so it does.
+        return sessionsSupported != true && palsSupported != true
     }
 
     /// A session's card that ran past the hook's limit here (「在电脑上等你」):
@@ -332,7 +238,7 @@ extension AppStore {
     public var liveEndApprovals: [Approval] {
         let anchored = Set(messages.compactMap(\.approvalId))
         return approvals.filter { a in
-            guard !anchored.contains(a.id) else { return false }
+            guard !anchored.contains(a.id), shows(a.source) else { return false }
             if a.isPending { return true }
             return waitsAtComputer(a)
         }
@@ -344,7 +250,9 @@ extension AppStore {
     public var liveEndQuestions: [Question] {
         let anchored = Set(messages.compactMap(\.questionId))
         return questions.filter { q in
-            guard q.source?.isSession == true, !anchored.contains(q.id) else { return false }
+            // A Pal's come without a message of their own, like a session's.
+            guard q.source?.isSession == true || q.source?.isPal == true, shows(q.source), !anchored.contains(q.id)
+            else { return false }
             if q.isPending { return true }
             return waitsAtComputer(q)
         }.sorted { $0.createdAt < $1.createdAt }

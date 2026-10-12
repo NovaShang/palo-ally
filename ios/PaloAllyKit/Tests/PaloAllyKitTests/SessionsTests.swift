@@ -120,12 +120,13 @@ struct SessionsDecodingTests {
         let (created, i4) = try decode(HelperDecideResult.self, #"{"session":{"id":"s","name":"报销帮手","cwd":"/","kind":"helper","status":"busy","updatedAt":1}}"#)
         #expect(i4.isEmpty && created.session?.isHelper == true)
         let (discarded, i5) = try decode(HelperDecideResult.self, "{}")
-        #expect(i5.isEmpty && discarded.session == nil)
+        #expect(i5.isEmpty && discarded.session == nil && discarded.pal == nil)
+        // A host with Pals opens one.
+        let (pal, i6) = try decode(HelperDecideResult.self, #"{"pal":{"id":"p","name":"报销帮手","cwd":"/","sessionId":"s","status":"idle","pending":0,"createdBy":"palo","updatedAt":1}}"#)
+        #expect(i6.isEmpty && pal.pal?.createdBy == .palo)
 
         #expect(try JSONValue.from(SessionHistoryParams(id: "s")) == ["id": "s"])
         #expect(try JSONValue.from(SessionHistoryParams(id: "s", before: "m9", limit: 50)) == ["id": "s", "before": "m9", "limit": 50])
-        #expect(try JSONValue.from(SessionSendParams(id: "s", text: "先别管登录页")) == ["id": "s", "text": "先别管登录页"])
-        #expect(try JSONValue.from(SessionControlParams(id: "s", action: .revive)) == ["id": "s", "action": "revive"])
         #expect(try JSONValue.from(SessionHooksParams(enabled: false)) == ["enabled": false])
         #expect(try JSONValue.from(HelperDecideParams(proposalId: "hp1", action: .create)) == ["proposalId": "hp1", "action": "create"])
     }
@@ -249,49 +250,6 @@ struct SessionsStoreTests {
         let ts = small.sessionHistory("cc-site").map(\.ts)
         #expect(ts == ts.sorted())
         #expect(small.sessionHistory("cc-site").map(\.id) == store.sessionHistory("cc-site").map(\.id))
-    }
-
-    @Test func sentWordsWaitUntilTheConversationHasThem() async throws {
-        let (store, host) = await demoStore()
-        store.watchSession("cc-site")
-        _ = try await store.loadSessionHistory(id: "cc-site")
-        try await store.sendToSession(id: "cc-site", text: "  先别管登录页，把列表页做完  ")
-        #expect(await host.lastParams["sessions.send"] == ["id": "cc-site", "text": "先别管登录页，把列表页做完"])
-        // The host's update brings the session's conversation, with the words in it.
-        #expect(await until { store.pendingSends("cc-site").isEmpty })
-        let said = try #require(store.sessionHistory("cc-site").last { $0.role == .palo })
-        #expect(said.shownText == "先别管登录页，把列表页做完")
-        #expect(await until { store.sessionHistory("cc-site").last?.role == .assistant })
-        store.unwatchSession("cc-site")
-    }
-
-    @Test func aSendTheComputerRefusesCanBeTriedAgain() async throws {
-        let (store, _) = await demoStore()
-        try await store.controlSession(id: "cc-notes", action: .stop)
-        #expect(store.session(id: "cc-notes")?.status == .stopped)
-        await #expect(throws: RPCError.remote("笔记整理已经停了，先复活它")) {
-            try await store.sendToSession(id: "cc-notes", text: "在吗")
-        }
-        let failed = try #require(store.pendingSends("cc-notes").first)
-        #expect(failed.state == .failed && failed.text == "在吗")
-        try await store.controlSession(id: "cc-notes", action: .revive)
-        #expect(store.session(id: "cc-notes")?.status == .idle)
-        try await store.retrySend(failed, to: "cc-notes")
-        #expect(store.pendingSends("cc-notes").first?.state != .failed)
-        store.dropSend(failed, from: "cc-notes")
-        #expect(store.pendingSends("cc-notes").isEmpty)
-    }
-
-    @Test func helpersCanBeStoppedRestartedRemovedAndRevived() async throws {
-        let (store, host) = await demoStore()
-        for (action, status) in [(SessionControlAction.stop, CCSessionStatus.stopped), (.restart, .idle), (.remove, .stopped), (.revive, .idle)] {
-            try await store.controlSession(id: "cc-notes", action: action)
-            #expect(store.session(id: "cc-notes")?.status == status, "\(action)")
-            #expect(await host.lastParams["sessions.control"] == ["id": "cc-notes", "action": .string(action.rawValue)])
-        }
-        // Not a helper: the computer refuses, and nothing changes here.
-        await #expect(throws: RPCError.remote("只能管帮手")) { try await store.controlSession(id: "cc-login", action: .stop) }
-        #expect(store.session(id: "cc-login")?.status == .busy)
     }
 
     @Test func theHooksSwitch() async throws {

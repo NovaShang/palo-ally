@@ -355,3 +355,76 @@ struct AlliesStoreTests {
         #expect(store.pendingAllyDrafts[1].allyId == "al-lin" && store.pendingAllyDrafts[1].slots?.count == 2)
     }
 }
+
+/// The second version (allies-prd §11): two trust levels, the owner's own
+/// words sent directly, and who wrote each exchange.
+@MainActor
+@Suite("Allies trust and direct words")
+struct AlliesTrustTests {
+    private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> (T, [String]) {
+        let v = try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8))
+        return try LenientDiagnostics.collect { try v.decode(T.self) }
+    }
+
+    @Test func trustAndAuthorOnTheWire() throws {
+        let (a, issues) = try decode(AllyInfo.self, """
+        {"id":"a1","kind":"family","ownerName":"家人","assistantName":"小橘","online":true,"lastSeen":1,
+         "trust":"converse","theirTrust":"review"}
+        """)
+        #expect(issues.isEmpty && a.trust == .converse && a.theirTrust == .review && a.effectiveTrust == .converse)
+        // A host before §11 says neither: every answer is a draft.
+        let (old, oldIssues) = try decode(AllyInfo.self, #"{"id":"a2","kind":"mine","ownerName":"","assistantName":"Palo","online":false,"lastSeen":0}"#)
+        #expect(oldIssues.isEmpty && old.trust == nil && old.effectiveTrust == .review)
+        let (e, eIssues) = try decode(AllyEntry.self, """
+        {"id":"e1","allyId":"a1","dir":"out","ts":1,"text":"我晚点到","urgent":false,"status":"sent","author":"owner"}
+        """)
+        #expect(eIssues.isEmpty && e.byOwner)
+        let (bare, _) = try decode(AllyEntry.self, #"{"id":"e2","allyId":"a1","dir":"in","ts":1,"text":"好","urgent":false,"status":"seen"}"#)
+        #expect(bare.author == nil && !bare.byOwner)
+        #expect(try JSONValue.from(AllyTrustParams(id: "a1", trust: .review)) == ["id": "a1", "trust": "review"])
+        #expect(try JSONValue.from(AllySayParams(id: "a1", text: "好")) == ["id": "a1", "text": "好"])
+    }
+
+    @Test func theOwnersWordsGoOutAtOnce() async throws {
+        let host = DemoHost(speed: 0)
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { store.allyLogs.count == 2 })
+        let sent = try #require(try await store.say(to: "al-family", text: "  今晚吃面  "))
+        #expect(sent.text == "今晚吃面" && sent.byOwner && sent.dir == .outgoing)
+        #expect(await host.lastParams["ally.say"] == ["id": "al-family", "text": "今晚吃面"])
+        // No draft card, and no copy left behind.
+        #expect(store.pendingAllyDrafts.isEmpty)
+        #expect(store.allyLog("al-family").filter { $0.text == "今晚吃面" }.count == 1)
+        #expect(await until { store.allyEntry(id: sent.id)?.status == .seen })
+        // Their side answers.
+        #expect(await until { store.allyLog("al-family").last?.dir == .incoming })
+    }
+
+    @Test func wordsTheComputerRefusesDontStay() async throws {
+        let host = ManualHost()
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { store.connection == .online })
+        store.apply(event: RPCEventName.allyUpdated, data: ["allies": [["id": "a1", "kind": "family", "ownerName": "家人",
+                                                                      "assistantName": "小橘", "online": true, "lastSeen": 1]]])
+        let saying = Task { try await store.say(to: "a1", text: "在吗") }
+        #expect(await until { host.request("ally.say") != nil })
+        #expect(store.allyLog("a1").map(\.text) == ["在吗"]) // shown at once
+        host.transport.deliver(json: ["id": .number(Double(host.request("ally.say")!.id)), "error": ["message": "对方没收"]])
+        await #expect(throws: RPCError.remote("对方没收")) { _ = try await saying.value }
+        #expect(store.allyLog("a1").isEmpty)
+    }
+
+    @Test func changingTheTrustLevel() async throws {
+        let host = DemoHost(speed: 0)
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { store.allies.count == 2 })
+        #expect(store.ally(id: "al-lin")?.effectiveTrust == .review)
+        try await store.setTrust(.converse, for: "al-lin")
+        #expect(store.ally(id: "al-lin")?.trust == .converse)
+        #expect(await host.lastParams["ally.trust"] == ["id": "al-lin", "trust": "converse"])
+        #expect(await host.allies.first { $0.id == "al-lin" }?.trust == .converse)
+    }
+}

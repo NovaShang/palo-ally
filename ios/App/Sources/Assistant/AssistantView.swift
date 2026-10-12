@@ -1,10 +1,14 @@
 import PaloAllyKit
 import SwiftUI
 
-/// 「它」, the place left of the conversation: who it is, what it's helping
-/// with over time (目标), what it's doing and got done (履历), and what it
-/// remembers. Approvals have no tab: they're in the conversation.
+/// The assistant's management, behind the orb in its conversation's title
+/// (pals-prd §2.3): who it is, the model, what it's helping with over time
+/// (目标), what it's doing and got done (履历), what it remembers, and 设置.
+/// Phones push it over the conversation; large screens show it as a sheet
+/// (`inSheet`, with 完成). Approvals have no tab: they're in the conversation.
 struct AssistantView: View {
+    /// Shown as a sheet (large screens): it closes with 完成.
+    var inSheet = false
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
 
@@ -17,7 +21,12 @@ struct AssistantView: View {
                     .listRowBackground(Color.clear)
             }
 
-            AlliesSection()
+            Section {
+                ModelRow { model.showModelPicker = true }
+                    .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6))
+            }
+
+            HostsSection()
 
             Section {
                 Picker("分类", selection: $model.assistantTab) {
@@ -36,15 +45,23 @@ struct AssistantView: View {
             case .memory: MemorySection()
             }
         }
-        // The Mac's column shows the header's name only, not the same name above it.
-        .navigationTitle(Platform.barInWindowToolbar ? "" : store.assistantName)
+        .navigationTitle(store.assistantName)
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("management")
         .sheet(isPresented: $model.showIdentityEditor) {
             IdentityEditor(purpose: .edit).environment(model).environment(store)
         }
+        .sheet(isPresented: $model.showModelPicker) {
+            ModelPickerSheet().environment(model).environment(store)
+        }
         .toolbar {
-            // The trailing side faces the conversation (「对话 ›」 lives there).
-            ToolbarItem(placement: .topBarLeading) {
+            if inSheet {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("完成") { model.showManagement = false }
+                        .tint(.primary)
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     model.showSettings = true
                 } label: {
@@ -57,23 +74,9 @@ struct AssistantView: View {
         .navigationDestination(isPresented: $model.showSettings) {
             SettingsView().modifier(InSidebarColumn())
         }
-        // Notification tap on a task opens its detail.
+        // A task opened from the conversation (large screens) or a notification.
         .navigationDestination(item: $model.openTaskID) { id in
             TaskDetailView(taskID: id).modifier(InSidebarColumn())
-        }
-        // An Ally's label in the conversation opens their page.
-        .navigationDestination(item: $model.openAllyID) { id in
-            AllyDetailView(allyID: id).modifier(InSidebarColumn())
-        }
-        // A session's card or a started helper in the conversation opens its page.
-        .navigationDestination(item: $model.openSessionID) { id in
-            SessionDetailView(sessionID: id).modifier(InSidebarColumn())
-        }
-        .navigationDestination(isPresented: $model.showSessionsList) {
-            SessionsListPage().modifier(InSidebarColumn())
-        }
-        .sheet(isPresented: $model.showAllyInvite) {
-            AllyInviteSheet().environment(store)
         }
         .animation(.snappy, value: model.assistantTab)
     }
@@ -195,8 +198,8 @@ private struct AssistantHeader: View {
         .environment(model.store!)
 }
 
-/// A page pushed inside the 「它」 panel. On the Mac: no sidebar toggle, and
-/// the panel's own grouped background rather than the Mac form's lighter gray.
+/// A page pushed inside management. On the Mac: no sidebar toggle, and the
+/// grouped background rather than the Mac form's lighter gray.
 struct InSidebarColumn: ViewModifier {
     func body(content: Content) -> some View {
         if Platform.barInWindowToolbar {

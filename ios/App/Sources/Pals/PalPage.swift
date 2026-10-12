@@ -1,0 +1,188 @@
+import PaloAllyKit
+import SwiftUI
+
+/// A Pal's page (pals-prd §4): a remote Claude Code. Its conversation is the
+/// assistant's conversation view on the Pal's scoped store (`palStore`):
+/// streaming, the paced reveal, following the end, cards, the composer and
+/// voice, all the same; what the owner types goes in as typed. ⋯ has
+/// 停止这一轮, 交还终端 (the line that resumes it in a terminal, to copy) and
+/// 移出 Pals, each asked in the page in place of the composer.
+struct PalPage: View {
+    let palID: String
+    /// The assistant's store, which makes and feeds the Pal's.
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        PalConversation(palID: palID)
+            .environment(store.palStore(palID))
+    }
+}
+
+private struct PalConversation: View {
+    let palID: String
+    @Environment(AppModel.self) private var model
+    /// The Pal's own store.
+    @Environment(AppStore.self) private var store
+
+    enum Panel: Equatable {
+        case none
+        /// 交还终端, asked first.
+        case release
+        /// Handed back: the line that picks it up in a terminal.
+        case released(String)
+        /// 移出 Pals, asked first.
+        case remove
+        /// Something didn't work: why.
+        case notice(String)
+    }
+    @State private var panel = Panel.none
+    @State private var working = false
+    /// The Pal as last seen: it leaves the list once handed back or removed.
+    @State private var last: Pal?
+
+    private var pal: Pal? { store.pal(id: palID) ?? last }
+    /// No longer on the list (handed back, removed, or gone at the computer).
+    private var gone: Bool { store.pal(id: palID) == nil && store.palsSupported == true }
+
+    var body: some View {
+        ChatView(bottomPanel: bottom)
+            .navigationSubtitle(pal.map(Copy.palSubtitle) ?? "")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { menu }
+            }
+            .onChange(of: store.pal(id: palID), initial: true) { _, p in if let p { last = p } }
+            .animation(.snappy, value: panel)
+            #if DEBUG
+            // `-demoPalPanel release | remove | released`: the page opens on it (snapshots).
+            .task {
+                switch UserDefaults.standard.string(forKey: "demoPalPanel") {
+                case "release": panel = .release
+                case "remove": panel = .remove
+                case "released": panel = .released(pal?.resumeCommand ?? "claude --resume")
+                default: break
+                }
+            }
+            #endif
+    }
+
+    // MARK: bottom
+
+    /// In place of the composer: what's being asked, or the line to copy.
+    private var bottom: AnyView? {
+        let name = pal?.displayName ?? "它"
+        let content: AnyView
+        switch panel {
+        case .none:
+            guard gone else { return nil }
+            content = AnyView(
+                NoticePanel(text: Copy.spaced("\(name)已经不在 Pals 里了。对话记录还在电脑上。"), action: "回到列表") {
+                    model.showList()
+                })
+        case .release:
+            content = AnyView(
+                ConfirmPanel(title: "交还终端？",
+                             text: "PaloAlly 会关掉它。你在电脑的终端里运行一行命令，就从刚才的地方接着用，对话一字不丢。",
+                             action: "交还", working: working, destructive: false,
+                             cancel: { panel = .none }, confirm: { Task { await release() } }))
+        case .released(let command):
+            content = AnyView(
+                CommandPanel(title: "在终端里接着用",
+                             text: "在电脑的终端里运行这一行，就从刚才的地方接着跟它说。",
+                             command: command) { model.showList() })
+        case .remove:
+            content = AnyView(
+                ConfirmPanel(title: Copy.spaced("把\(name)移出 Pals？"),
+                             text: "PaloAlly 不再管它，它会停下。对话记录还在电脑上。",
+                             action: "移出", working: working,
+                             cancel: { panel = .none }, confirm: { Task { await remove() } }))
+        case .notice(let why):
+            content = AnyView(NoticePanel(text: why, action: "好") { panel = .none })
+        }
+        return AnyView(
+            content
+                .padding(.horizontal, 12)
+                .padding(.top, 6)
+                .padding(.bottom, 8)
+                .frame(maxWidth: ChatView.readableWidth)
+                .frame(maxWidth: .infinity)
+                .transition(.move(edge: .bottom).combined(with: .opacity)))
+    }
+
+    // MARK: menu
+
+    private var menu: some View {
+        Menu {
+            if pal?.inTurn == true || store.isBusy {
+                Button("停止这一轮", systemImage: "stop.circle") { Task { await stop() } }
+            }
+            Section {
+                Button("交还终端", systemImage: "apple.terminal") { panel = .release }
+                Button("移出 Pals", systemImage: "minus.circle", role: .destructive) { panel = .remove }
+            }
+        } label: {
+            Label("更多", systemImage: "ellipsis")
+        }
+        // Chrome stays neutral; the theme color is for 发送.
+        .tint(.primary)
+        .disabled(working || gone || !store.connection.isOnline)
+        .accessibilityIdentifier("pal-menu")
+    }
+
+    // MARK: actions
+
+    private func stop() async {
+        do {
+            try await store.stop()
+        } catch {
+            panel = .notice("没停下：\(Copy.error(error))")
+        }
+    }
+
+    private func release() async {
+        working = true
+        defer { working = false }
+        do {
+            let command = try await store.releasePal(id: palID)
+            panel = .released(command)
+        } catch {
+            panel = .notice("没交还成：\(Copy.error(error))")
+        }
+    }
+
+    private func remove() async {
+        working = true
+        defer { working = false }
+        do {
+            try await store.removePal(id: palID)
+            panel = .none
+            model.showList()
+        } catch {
+            panel = .notice("没移出：\(Copy.error(error))")
+        }
+    }
+}
+
+/// One line about how things stand, and the way on.
+private struct NoticePanel: View {
+    let text: String
+    let action: String
+    let tap: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button(action, action: tap)
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .tint(.primary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(minHeight: 52)
+        .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
+    }
+}

@@ -1,41 +1,6 @@
 import PaloAllyKit
 import SwiftUI
 
-/// The computer's Claude Code sessions as a list section: helpers first,
-/// then the owner's own (终端 / 后台). Goes in any List; hidden while the
-/// computer's PaloAlly doesn't know sessions, or has none.
-struct SessionsSection: View {
-    @Environment(AppStore.self) private var store
-    /// 「会话」 over the rows (not on a page already titled so).
-    var showsHeader = true
-
-    var body: some View {
-        if store.sessionsSupported == true, !store.sessions.isEmpty {
-            Section {
-                ForEach(store.sessions) { session in
-                    NavigationLink {
-                        SessionDetailView(sessionID: session.id).modifier(InSidebarColumn())
-                    } label: {
-                        SessionRow(session: session)
-                    }
-                }
-            } header: {
-                if showsHeader { Text("会话").textCase(nil) }
-            }
-        }
-    }
-}
-
-/// The list on a page of its own (the place it lives is still being
-/// decided; for now the demo opens it).
-struct SessionsListPage: View {
-    var body: some View {
-        List { SessionsSection(showsHeader: false) }
-            .navigationTitle("会话")
-            .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
 /// One session: its state as a dot, the name and kind, its context size,
 /// and what it waits for or said last.
 struct SessionRow: View {
@@ -107,26 +72,14 @@ struct SessionKindTag: View {
     }
 }
 
-/// 「网站帮手 想运行」 / 「数据清洗 问你」 on top of a session's card; opens
-/// that session's page when it's known.
+/// 「问卷数据清洗 问你」 on top of a card from one of the computer's other
+/// sessions (not a Pal: those have no page; 接管 in the list makes one).
 struct SessionSourceLabel: View {
-    @Environment(AppModel.self) private var model
-    @Environment(AppStore.self) private var store
     let text: String
-    /// nil: just the words (the session's own page).
+    /// Kept for the callers; the label doesn't open anything.
     let sessionID: String?
 
     var body: some View {
-        if let sessionID, store.session(id: sessionID) != nil {
-            Button { model.openSession(sessionID) } label: { label }
-                .buttonStyle(.plain)
-                .accessibilityHint("看这个会话")
-        } else {
-            label
-        }
-    }
-
-    private var label: some View {
         Label(text, systemImage: "terminal")
             .labelStyle(QuietLabelStyle())
             .lineLimit(1)

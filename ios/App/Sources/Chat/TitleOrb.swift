@@ -5,7 +5,8 @@ import SwiftUI
 /// status — calm when idle, livelier while it works, and it listens as the
 /// owner types or speaks. Only when it isn't idle does a short caption say
 /// what it's doing (or that something waits on the owner), as a small glass
-/// label across its lower part. Tapping opens the status card.
+/// label across its lower part. Tapping opens the assistant's management
+/// (目标, 履历, 记忆, the model, 设置).
 ///
 /// Phones and iPads: the orb may be bigger than the bar (see OrbPresence), so
 /// the bar only holds an invisible target (TitleOrbSlot) and the orb itself
@@ -117,13 +118,6 @@ struct FloatingTitleOrb: View {
         .animation(reduceMotion ? .easeInOut(duration: 0.25) : .spring(response: 0.42, dampingFraction: 0.58),
                    value: listen)
         .animation(.snappy, value: caption)
-        .popover(isPresented: $model.showHostSwitcher, arrowEdge: .top) {
-            StatusCard()
-                // Presented outside this view's hierarchy on some platforms: pass what it reads.
-                .environment(model)
-                .environment(store)
-                .presentationCompactAdaptation(.popover)
-        }
         // Phones: the slot in the bar speaks for it. The Mac has no slot.
         .modifier(FloatingOrbAccessibility(speaks: barCenterY == nil))
     }
@@ -241,7 +235,8 @@ private struct TitleOrbAccessibility: ViewModifier {
     func body(content: Content) -> some View {
         content
             .accessibilityLabel("\(store.assistantName)：\(store.agentStatusLine.text)")
-            .accessibilityHint(model.hasSeveralHosts ? "看它在做什么、换模型或切换助理" : "看它在做什么、换模型")
+            .accessibilityHint("管理它：目标、履历、记忆和设置")
+            .accessibilityIdentifier("title-orb")
     }
 }
 

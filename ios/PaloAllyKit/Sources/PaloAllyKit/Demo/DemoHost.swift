@@ -10,8 +10,8 @@ public actor DemoHost {
     public private(set) var seq: Int64 = 0
     public private(set) var messages: [ChatMessage] = []
     public private(set) var tasks: [AllyTask] = []
-    public private(set) var approvals: [Approval] = []
-    public private(set) var questions: [Question] = []
+    public internal(set) var approvals: [Approval] = []
+    public internal(set) var questions: [Question] = []
     public private(set) var watches: [Watch] = []
     public private(set) var artifacts: [Artifact] = []
     public private(set) var files: [String: Data] = [:] // "<artifactId>/<path>"
@@ -35,6 +35,20 @@ public actor DemoHost {
     public private(set) var sessions: [CCSession] = []
     public private(set) var sessionLogs: [String: [CCMessage]] = [:]
     public private(set) var hooksEnabled = true
+    /// Pals (pals-prd §8): the Claude Code sessions it hosts, each one's
+    /// conversation, and the computer's other live sessions to adopt (with
+    /// `pals: true`; otherwise none).
+    public internal(set) var pals: [Pal] = []
+    public internal(set) var palLogs: [String: [ChatMessage]] = [:]
+    public internal(set) var otherSessions: [CCSession] = []
+    /// A Pal's turn being written, to stop (`pals.stop`).
+    var palTurns: [String: Task<Void, Never>] = [:]
+    /// Sessions asked to be adopted that wait to be quit in their terminal.
+    var waitingAdoptions: Set<String> = []
+    /// Each Pal's reply being written (`pals.history`'s `streaming`).
+    var palWriting: [String: SyncResult.Streaming] = [:]
+    /// Seeded with Pals: an accepted proposal opens a Pal, not a helper.
+    let palsMode: Bool
 
     /// The computer name the demo host reports (a second demo host shows the
     /// assistant switcher).
@@ -43,10 +57,15 @@ public actor DemoHost {
     /// `sessions`: the computer has Claude Code sessions (two helpers, one in
     /// a terminal, one in the background), two of them waiting on the owner
     /// with a card each, and the assistant proposes a helper in the chat.
+    /// `pals`: instead, two Pals (one waiting on a card), a session in a
+    /// terminal and one in the background to adopt (the background one
+    /// asking a question), and the assistant proposes opening a Pal.
     public init(speed: Double = 1, seeded: Bool = true, autoConnect: Bool = true, hostName: String = "我的 MacBook",
-                assistantName: String = "Palo", color: String = "magenta", sessions withSessions: Bool = false) {
+                assistantName: String = "Palo", color: String = "magenta", sessions withSessions: Bool = false,
+                pals withPals: Bool = false) {
         self.speed = speed
         self.hostName = hostName
+        self.palsMode = withPals
         settings.assistantName = assistantName
         settings.color = color
         status.metAt = Date().epochMillis - 41 * 86_400_000
@@ -72,6 +91,15 @@ public actor DemoHost {
                 self.questions += ss.questions
                 self.messages.append(ss.proposal)
                 self.seq = ss.proposal.seq
+            } else if withPals {
+                let ps = DemoHost.seedPals(now: Date().epochMillis, nextSeq: seq + 1)
+                self.pals = ps.pals
+                self.palLogs = ps.logs
+                self.otherSessions = ps.others
+                self.approvals += ps.approvals
+                self.questions += ps.questions
+                self.messages.append(ps.proposal)
+                self.seq = ps.proposal.seq
             }
         }
         // Strong on purpose: the transport keeps its host alive (demo mode and
@@ -133,6 +161,7 @@ public actor DemoHost {
         // proposal stays on offer only for those and `helper`, so nothing
         // else waits on the owner.
         if !name.hasPrefix("session") { settleSessionCards() }
+        if !name.hasPrefix("session") && !name.hasPrefix("pal") { settlePalCards() }
         if !name.hasPrefix("session") && name != "helper" { withdrawProposals() }
         for i in approvals.indices where approvals[i].isPending && approvals[i].source == nil {
             approvals[i].status = .allowed
@@ -500,7 +529,7 @@ public actor DemoHost {
 
     // MARK: request handling
 
-    private func nextID(_ prefix: String) -> String {
+    func nextID(_ prefix: String) -> String {
         idCounter += 1
         return "\(prefix)-\(idCounter)"
     }
@@ -615,7 +644,14 @@ public actor DemoHost {
             questions[i].answeredAt = Date().epochMillis
             questions[i].answeredBy = "app"
             emit(RPCEventName.questionUpdated, questions[i])
-            if let sid = questions[i].source?.id { setSession(sid) { $0.status = .busy; $0.waitingFor = nil } }
+            if let source = questions[i].source {
+                if source.isPal {
+                    palCardAnswered(source.id, allowed: true)
+                } else {
+                    setSession(source.id) { $0.status = .busy; $0.waitingFor = nil }
+                    setOther(source.id) { $0.status = .busy; $0.waitingFor = nil }
+                }
+            }
             return ["question": try .from(questions[i])]
         case RPCMethod.approvalAnswer:
             let aid = p["id"]?.stringValue ?? ""
@@ -626,7 +662,14 @@ public actor DemoHost {
             approvals[i].decidedAt = Date().epochMillis
             approvals[i].decidedBy = "app"
             emit(RPCEventName.approvalUpdated, approvals[i])
-            if let sid = approvals[i].source?.id { setSession(sid) { $0.status = .busy; $0.waitingFor = nil } }
+            if let source = approvals[i].source {
+                if source.isPal {
+                    palCardAnswered(source.id, allowed: allow)
+                } else {
+                    setSession(source.id) { $0.status = .busy; $0.waitingFor = nil }
+                    setOther(source.id) { $0.status = .busy; $0.waitingFor = nil }
+                }
+            }
             return ["status": .string(approvals[i].status.rawValue)]
         case RPCMethod.watchAdd:
             let draft = try p.decode(WatchDraft.self)
@@ -826,6 +869,32 @@ public actor DemoHost {
             updateEntry(e)
             if e.status == .queued { Task { await self.deliver(e.id) } }
             return ["entry": try .from(e)]
+        case RPCMethod.allySay:
+            let id = p["id"]?.stringValue ?? ""
+            let text = (p["text"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let ally = allies.first(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Ally") }
+            guard !text.isEmpty else { throw DemoError(message: "要说的话不能是空的") }
+            let e = AllyEntry(id: nextID("ae"), allyId: id, dir: .outgoing, ts: Date().epochMillis, text: text,
+                              status: ally.online ? .sent : .queued, author: .owner)
+            updateEntry(e)
+            if ally.online {
+                Task {
+                    await self.deliver(e.id)
+                    // Their side answers a little later.
+                    await self.pause(1.5)
+                    self.receiveAllyMessage(from: id, text: "好的，收到。", author: .owner)
+                }
+            }
+            return ["entry": try .from(e)]
+        case RPCMethod.allyTrust:
+            let id = p["id"]?.stringValue ?? ""
+            guard let i = allies.firstIndex(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Ally") }
+            guard let t = p["trust"]?.stringValue.flatMap(AllyTrust.init(rawValue:)), t != .unknown else {
+                throw DemoError(message: "看不懂这个档位")
+            }
+            allies[i].trust = t
+            emitAllies()
+            return ["ally": try .from(allies[i])]
         case RPCMethod.sessionsList:
             return ["sessions": try .from(sessions), "hooks": .bool(hooksEnabled)]
         case RPCMethod.sessionsHistory:
@@ -835,24 +904,6 @@ public actor DemoHost {
             var upTo = log.endIndex
             if let before = p["before"]?.stringValue, let i = log.firstIndex(where: { $0.id == before }) { upTo = i }
             return ["messages": try .from(Array(log[..<upTo].suffix(limit)))]
-        case RPCMethod.sessionsSend:
-            let id = p["id"]?.stringValue ?? ""
-            let text = (p["text"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let s = sessions.first(where: { $0.id == id }) else { throw DemoError(message: "没有这个会话") }
-            guard s.isRunning else { throw DemoError(message: "\(s.displayName)已经停了，先复活它") }
-            guard !text.isEmpty else { throw DemoError(message: "要说的话不能是空的") }
-            Task { await self.sessionHears(id, text) }
-            return ["ok": true]
-        case RPCMethod.sessionsControl:
-            let id = p["id"]?.stringValue ?? ""
-            guard let s = sessions.first(where: { $0.id == id }) else { throw DemoError(message: "没有这个会话") }
-            guard s.isHelper else { throw DemoError(message: "只能管帮手") }
-            switch p["action"]?.stringValue {
-            case "stop", "remove": setSession(id) { $0.status = .stopped; $0.waitingFor = nil }
-            case "restart", "revive": setSession(id) { $0.status = .idle; $0.waitingFor = nil }
-            default: throw DemoError(message: "看不懂这个操作")
-            }
-            return ["ok": true]
         case RPCMethod.sessionsHooks:
             hooksEnabled = p["enabled"]?.boolValue ?? hooksEnabled
             return ["enabled": .bool(hooksEnabled)]
@@ -867,6 +918,23 @@ public actor DemoHost {
             }
             var result: JSONValue = [:]
             switch p["action"]?.stringValue {
+            case "create" where palsMode:
+                await pause(1.2) // the host starts it, the assistant's handover as its first words
+                let sid = UUID().uuidString.lowercased()
+                let pal = Pal(id: "pal-\(nextID("p"))", name: proposal.name, cwd: proposal.cwd, sessionId: sid, status: .busy,
+                              lastLine: "在看交接说明…", model: "claude-sonnet-4-5", createdBy: .palo)
+                pals.append(pal)
+                palLogs[pal.id] = []
+                appendPal(palMessage(pal.id, role: .user, text: "你好，我是 \(settings.assistantName)。\(proposal.duty)",
+                                     channel: .system, from: settings.assistantName))
+                emitPals()
+                proposal.status = .created
+                proposal.sessionId = sid
+                proposal.palId = pal.id
+                result = ["session": try .from(CCSession(id: sid, name: pal.name, cwd: pal.cwd, kind: .helper, status: .busy,
+                                                         lastLine: pal.lastLine, updatedAt: Date().epochMillis)),
+                          "pal": try .from(pal)]
+                palTurns[pal.id] = Task { await self.streamPal(pal.id, "收到。我先看一下报销文件夹，把这周的发票列出来。") }
             case "create":
                 await pause(1.2) // a background session starts
                 let s = CCSession(id: nextID("cc"), name: proposal.name, cwd: proposal.cwd, kind: .helper, status: .busy,
@@ -887,6 +955,7 @@ public actor DemoHost {
             emit(RPCEventName.chatMessage, messages[i])
             return result
         default:
+            if let r = try await dispatchPals(method, p) { return r }
             throw DemoError(message: "unknown method \(method)")
         }
     }
@@ -905,18 +974,6 @@ public actor DemoHost {
         emitSessions()
     }
 
-    /// The owner's words reach the session through the errand session (§6.4)
-    /// about three seconds later, then it answers.
-    private func sessionHears(_ id: String, _ text: String) async {
-        await pause(1.5)
-        sessionLogs[id, default: []].append(CCMessage(id: nextID("cm"), ts: Date().epochMillis, role: .palo, text: text, from: "主人"))
-        setSession(id) { $0.status = .busy; $0.lastLine = text }
-        await pause(2)
-        let reply = "好的，按你说的办。"
-        sessionLogs[id, default: []].append(CCMessage(id: nextID("cm"), ts: Date().epochMillis, role: .assistant, text: reply))
-        setSession(id) { $0.status = .idle; $0.lastLine = reply }
-    }
-
     /// Proposals still on offer are no longer (`expired`), as the host
     /// re-sends them: the same message.
     private func withdrawProposals() {
@@ -931,14 +988,14 @@ public actor DemoHost {
     private func settleSessionCards() {
         let now = Date().epochMillis
         // As the host marks them: ended without an answer here, handled there.
-        for i in approvals.indices where approvals[i].source != nil && approvals[i].isPending {
+        for i in approvals.indices where approvals[i].source?.isSession == true && approvals[i].isPending {
             approvals[i].status = .expired
             approvals[i].decidedAt = now
             approvals[i].decidedBy = "computer"
             approvals[i].note = "已在电脑上处理"
             emit(RPCEventName.approvalUpdated, approvals[i])
         }
-        for i in questions.indices where questions[i].source != nil && questions[i].isPending {
+        for i in questions.indices where questions[i].source?.isSession == true && questions[i].isPending {
             questions[i].status = .expired
             questions[i].answeredAt = now
             questions[i].answeredBy = "computer"
@@ -946,6 +1003,20 @@ public actor DemoHost {
             emit(RPCEventName.questionUpdated, questions[i])
         }
         for s in sessions where s.status == .waiting { setSession(s.id) { $0.status = .busy; $0.waitingFor = nil } }
+        for s in otherSessions where s.status == .waiting { setOther(s.id) { $0.status = .busy; $0.waitingFor = nil } }
+    }
+
+    /// Every Pal's card still waiting is answered in the app, and those Pals
+    /// go back to idle (so nothing waits on the owner in a screenshot).
+    private func settlePalCards() {
+        let now = Date().epochMillis
+        for i in approvals.indices where approvals[i].source?.isPal == true && approvals[i].isPending {
+            approvals[i].status = .allowed
+            approvals[i].decidedAt = now
+            approvals[i].decidedBy = "app"
+            emit(RPCEventName.approvalUpdated, approvals[i])
+        }
+        for p in pals where p.status == .waiting { setPal(p.id) { $0.status = .idle } }
     }
 
     // MARK: allies
@@ -988,10 +1059,10 @@ public actor DemoHost {
     }
 
     /// Their assistant passed something on: into the log and the conversation.
-    public func receiveAllyMessage(from allyId: String, text: String, urgent: Bool = false) {
+    public func receiveAllyMessage(from allyId: String, text: String, urgent: Bool = false, author: AllyAuthor = .assistant) {
         guard let ally = allies.first(where: { $0.id == allyId }) else { return }
         let e = AllyEntry(id: nextID("ae"), allyId: allyId, dir: .incoming, ts: Date().epochMillis, text: text,
-                          urgent: urgent, status: .delivered)
+                          urgent: urgent, status: .delivered, author: author)
         updateEntry(e)
         postAlly(e, name: ally.displayName)
     }
@@ -1000,7 +1071,7 @@ public actor DemoHost {
     public func makeDraft(to allyId: String, text: String, slots: [AllySlot]? = nil) {
         guard let ally = allies.first(where: { $0.id == allyId }) else { return }
         let e = AllyEntry(id: nextID("ae"), allyId: allyId, dir: .outgoing, ts: Date().epochMillis, text: text,
-                          slots: slots, status: .draft)
+                          slots: slots, status: .draft, author: .assistant)
         updateEntry(e)
         postAlly(e, name: ally.displayName)
     }
@@ -1054,22 +1125,30 @@ public actor DemoHost {
         let min: Int64 = 60_000
         let hour = 60 * min
         let day = 24 * hour
+        // Both ways, said by the people themselves or by an assistant for them (§11.2).
         let family = [
-            AllyEntry(id: "seed-1", allyId: "al-family", dir: .incoming, ts: now - 2 * day, text: "周末要不要带孩子去公园？", status: .seen),
-            AllyEntry(id: "seed-2", allyId: "al-family", dir: .outgoing, ts: now - 2 * day + 6 * min, text: "好呀，周六下午怎么样？", status: .seen),
-            AllyEntry(id: "seed-3", allyId: "al-family", dir: .incoming, ts: now - 3 * hour, text: "今晚我晚点回，大概九点。", status: .seen),
-            AllyEntry(id: "seed-4", allyId: "al-family", dir: .outgoing, ts: now - 3 * hour + 4 * min, text: "收到，路上小心。", status: .delivered),
+            AllyEntry(id: "seed-1", allyId: "al-family", dir: .incoming, ts: now - 2 * day, text: "周末要不要带孩子去公园？",
+                      status: .seen, author: .owner),
+            AllyEntry(id: "seed-2", allyId: "al-family", dir: .outgoing, ts: now - 2 * day + 6 * min, text: "好呀，周六下午怎么样？",
+                      status: .seen, author: .owner),
+            AllyEntry(id: "seed-3", allyId: "al-family", dir: .incoming, ts: now - 3 * hour, text: "今晚我晚点回，大概九点。",
+                      status: .seen, author: .assistant),
+            AllyEntry(id: "seed-4", allyId: "al-family", dir: .outgoing, ts: now - 3 * hour + 4 * min, text: "收到，路上小心。",
+                      status: .delivered, author: .assistant),
         ]
         let lin = [
-            AllyEntry(id: "seed-5", allyId: "al-lin", dir: .outgoing, ts: now - day - 2 * hour, text: "周四的读书会改到晚上八点了。", status: .seen),
-            AllyEntry(id: "seed-6", allyId: "al-lin", dir: .incoming, ts: now - day - hour, text: "好的，我准时到。", status: .seen),
-            AllyEntry(id: "seed-7", allyId: "al-lin", dir: .outgoing, ts: now - 40 * min, text: "明天的资料发你邮箱了，记得看一下。", status: .queued),
+            AllyEntry(id: "seed-5", allyId: "al-lin", dir: .outgoing, ts: now - day - 2 * hour, text: "周四的读书会改到晚上八点了。",
+                      status: .seen, author: .assistant),
+            AllyEntry(id: "seed-6", allyId: "al-lin", dir: .incoming, ts: now - day - hour, text: "好的，我准时到。",
+                      status: .seen, author: .owner),
+            AllyEntry(id: "seed-7", allyId: "al-lin", dir: .outgoing, ts: now - 40 * min, text: "明天的资料发你邮箱了，记得看一下。",
+                      status: .queued, author: .assistant),
         ]
         let allies = [
             AllyInfo(id: "al-family", kind: .family, ownerName: "家人", assistantName: "小橘", online: true,
-                     lastSeen: now - 2 * min, lastEntry: family.last),
+                     lastSeen: now - 2 * min, lastEntry: family.last, trust: .converse, theirTrust: .converse),
             AllyInfo(id: "al-lin", kind: .family, ownerName: "小林", assistantName: "阿福", online: false,
-                     lastSeen: now - 5 * hour, lastEntry: lin.last),
+                     lastSeen: now - 5 * hour, lastEntry: lin.last, trust: .review),
         ]
         return (allies, ["al-family": family, "al-lin": lin])
     }
@@ -1168,7 +1247,7 @@ public actor DemoHost {
 
     // MARK: canned replies
 
-    private func pause(_ seconds: Double) async {
+    func pause(_ seconds: Double) async {
         guard speed > 0 else { return }
         try? await Task.sleep(for: .seconds(seconds * speed))
     }

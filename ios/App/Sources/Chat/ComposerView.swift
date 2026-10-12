@@ -108,6 +108,13 @@ struct ComposerView: View {
         return String(draft.dropFirst())
     }
 
+    /// The empty field, once it's being typed in: a Pal's page is a
+    /// terminal of sorts, the assistant's a request.
+    private var prompt: String {
+        guard let id = store.palID else { return "想让我做点什么？" }
+        return Copy.spaced("跟\(store.pal(id: id)?.displayName ?? "它")说点什么")
+    }
+
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !staged.isEmpty }
     /// Idle: not editing — the field reads 「按住说话，轻点打字」 and takes presses.
     private var idle: Bool { !focused && !dictating }
@@ -248,7 +255,12 @@ struct ComposerView: View {
 
     private var capsule: some View {
         HStack(alignment: .bottom, spacing: 2) {
-            plusButton.padding(.bottom, buttonLift)
+            // A Pal takes words only (pals.send): nothing to attach.
+            if store.palID == nil {
+                plusButton.padding(.bottom, buttonLift)
+            } else {
+                Color.clear.frame(width: 12, height: 1)
+            }
             field
             trailingButton.padding(.bottom, buttonLift)
         }
@@ -337,7 +349,7 @@ struct ComposerView: View {
             // Return is a newline; sending is the send button. On a hardware
             // keyboard / Mac, Return sends (see hardwareReturn) and
             // Shift/Option/⌘+Return is a newline.
-            TextField("", text: $draft, prompt: Text(focused ? "想让我做点什么？" : ""), axis: .vertical)
+            TextField("", text: $draft, prompt: Text(focused ? prompt : ""), axis: .vertical)
                 .lineLimit(1...6)
                 .focused($focused)
                 .accessibilityIdentifier("composerField")

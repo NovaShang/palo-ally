@@ -13,6 +13,13 @@ struct HelperProposalCard: View {
     @State private var working: HelperDecideAction?
     @State private var error: String?
 
+    /// The Pal it opened (pals-prd §6), once it's on the list.
+    private var openedPal: Pal? {
+        if let id = proposal.palId, let p = store.pal(id: id) { return p }
+        guard let sid = proposal.sessionId else { return nil }
+        return store.pal(sessionId: sid)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -83,9 +90,9 @@ struct HelperProposalCard: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-            } else if proposal.status == .created, let id = proposal.sessionId, store.session(id: id) != nil {
+            } else if proposal.status == .created, let pal = openedPal {
                 Button {
-                    model.openSession(id)
+                    model.openPal(pal.id)
                 } label: {
                     Label("去看看它", systemImage: "chevron.right")
                         .labelStyle(TrailingIconLabelStyle())

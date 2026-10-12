@@ -61,7 +61,7 @@ private struct MoreIdeasSection: View {
                 ForEach(store.suggestions) { s in
                     Button {
                         store.use(s)
-                        model.showAssistant = false
+                        model.closeManagement()
                     } label: {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(s.chip).font(.body).foregroundStyle(.primary)
@@ -83,7 +83,7 @@ private struct MoreIdeasSection: View {
                     .contextMenu {
                         Button("发给它", systemImage: "paperplane") {
                             store.use(s)
-                            model.showAssistant = false
+                            model.closeManagement()
                         }
                         Button("不再显示", systemImage: "eye.slash") { withAnimation(.snappy) { store.dismiss(s) } }
                     }

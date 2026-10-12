@@ -27,6 +27,8 @@ extension AppStore {
     /// Pending drafts with no message in the conversation to show them at:
     /// they wait at its live end, where approvals do.
     public var unanchoredPendingDrafts: [AllyEntry] {
+        // Only the assistant's conversation shows them (and each Ally's page).
+        guard scope == .palo else { return [] }
         let drafts = pendingAllyDrafts
         guard !drafts.isEmpty else { return [] }
         let anchored = Set(messages.compactMap { $0.kind == .ally ? $0.entryId : nil })
@@ -174,6 +176,50 @@ extension AppStore {
         } catch {
             upsert(allyEntry: before, allyId: owner)
             throw error
+        }
+    }
+
+    /// The owner's own words to an Ally (§11.3): sent as they are, no card.
+    /// They show at once as queued; the host's copy of the exchange follows.
+    @discardableResult
+    public func say(to allyId: String, text raw: String) async throws -> AllyEntry? {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        let local = AllyEntry(id: "local-\(UUID().uuidString.lowercased())", allyId: allyId, dir: .outgoing,
+                              ts: Date().epochMillis, text: text, status: .queued, author: .owner)
+        upsert(allyEntry: local, allyId: allyId)
+        do {
+            let r: AllyEntryResult = try await rpc.call(RPCMethod.allySay, params: AllySayParams(id: allyId, text: text))
+            dropAllyEntry(local.id, from: allyId)
+            guard var e = r.entry else { return nil }
+            if e.author == nil { e.author = .owner }
+            upsert(allyEntry: e, allyId: allyId)
+            return e
+        } catch {
+            dropAllyEntry(local.id, from: allyId)
+            throw error
+        }
+    }
+
+    /// 能对话 / 每句要你看 for one Ally (§11.1), shown at once and put back
+    /// if the computer didn't take it.
+    public func setTrust(_ trust: AllyTrust, for allyId: String) async throws {
+        guard let i = allies.firstIndex(where: { $0.id == allyId }) else { return }
+        let before = allies[i]
+        allies[i].trust = trust
+        do {
+            let r: AllyResult = try await rpc.call(RPCMethod.allyTrust, params: AllyTrustParams(id: allyId, trust: trust))
+            if let a = r.ally { apply(allyUpdate: .upsert(a)) }
+        } catch {
+            if let j = allies.firstIndex(where: { $0.id == allyId }) { allies[j] = before }
+            throw error
+        }
+    }
+
+    private func dropAllyEntry(_ id: String, from allyId: String) {
+        allyLogs[allyId]?.removeAll { $0.id == id }
+        if let i = allies.firstIndex(where: { $0.id == allyId }), allies[i].lastEntry?.id == id {
+            allies[i].lastEntry = allyLogs[allyId]?.last
         }
     }
 

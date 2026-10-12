@@ -44,6 +44,7 @@ public enum JSONValue: Sendable, Hashable, Codable {
     public var stringValue: String? { if case .string(let s) = self { return s }; return nil }
     public var doubleValue: Double? { if case .number(let n) = self { return n }; return nil }
     public var boolValue: Bool? { if case .bool(let b) = self { return b }; return nil }
+    public var arrayValue: [JSONValue]? { if case .array(let a) = self { return a }; return nil }
 
     /// Encode any Encodable into a JSONValue.
     public static func from<T: Encodable>(_ value: T) throws -> JSONValue {

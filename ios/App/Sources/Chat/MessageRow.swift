@@ -61,6 +61,11 @@ private struct UserBubble: View {
                     .help("连上后会自动发")
             }
             VStack(alignment: .trailing, spacing: 4) {
+                // In a Pal's conversation: the assistant's words to it (pals-prd §4).
+                if let from = message.from?.trimmingCharacters(in: .whitespaces), !from.isEmpty, store.palID != nil {
+                    Label(Copy.assistantSays(from == "palo" ? store.assistantName : from), systemImage: "sparkles")
+                        .labelStyle(QuietLabelStyle())
+                }
                 if let reply = message.replyTo {
                     QuoteLine(reply: reply)
                 }
@@ -74,7 +79,7 @@ private struct UserBubble: View {
                     .foregroundStyle(.primary)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
-                    .background(Color(.secondarySystemFill), in: .rect(cornerRadius: 20, style: .continuous))
+                    .background { bubble }
                     .modifier(BubbleInteractions(text: message.text, enabled: !isCopy))
                     // Spoken: where its words land.
                     .modifier(VoiceEchoSlot(cid: message.clientMsgId, bubble: true))
@@ -89,6 +94,17 @@ private struct UserBubble: View {
         .opacity(message.delivery == .sending || message.delivery == .queued ? 0.75 : 1)
         // Spoken: unseen while its words fly into it.
         .modifier(VoiceEchoSlot(cid: message.clientMsgId))
+    }
+
+    /// The owner's words: a light fill. The assistant's words to a Pal: an
+    /// outline (said for the owner, not by them).
+    @ViewBuilder private var bubble: some View {
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        if store.palID != nil, !(message.from ?? "").isEmpty {
+            shape.strokeBorder(Color.primary.opacity(0.18), lineWidth: 1)
+        } else {
+            shape.fill(Color(.secondarySystemFill))
+        }
     }
 }
 

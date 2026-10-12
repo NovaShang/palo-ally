@@ -41,16 +41,35 @@ extension Copy {
         return "\(relative(a.lastSeen))在线"
     }
 
-    /// The list's last line: what was said last, and by whom when it was the owner.
-    static func allyLastLine(_ a: AllyInfo) -> String {
+    /// The list's last line: what was said last, and by whom when it was
+    /// this side (the owner, or their assistant for them).
+    static func allyLastLine(_ a: AllyInfo, assistant: String = "") -> String {
         guard let e = a.lastEntry else { return a.online ? "在线，还没有来往" : "还没有来往" }
         let text = e.text.replacingOccurrences(of: "\n", with: " ")
         if e.dir == .incoming { return text }
         switch e.status {
         case .draft: return "草稿：\(text)"
         case .rejected: return "没发：\(text)"
-        default: return "你：\(text)"
+        default:
+            if e.author == .assistant, !assistant.isEmpty { return spaced("\(assistant)：\(text)") }
+            return "你：\(text)"
         }
+    }
+
+    /// 「Palo 代你说」: over the assistant's words to an Ally for the owner.
+    static func saysForYou(_ assistant: String) -> String {
+        spaced("\(assistant.isEmpty ? "助理" : assistant)代你说")
+    }
+
+    /// The two trust levels (§11.1).
+    static func allyTrust(_ t: AllyTrust) -> String { t == .converse ? "能对话" : "每句要你看" }
+
+    /// What a trust level means, in a line.
+    static func allyTrustNote(_ t: AllyTrust, assistant: String, ally: String) -> String {
+        let a = assistant.isEmpty ? "助理" : assistant
+        return t == .converse
+            ? spaced("\(a)直接回\(ally)，每句都记在这里。")
+            : spaced("\(a)回\(ally)的每句话，都先给你看。")
     }
 
     /// A proposed time in this device's time zone: 「10月17日 周六 14:00 到 16:00」,
