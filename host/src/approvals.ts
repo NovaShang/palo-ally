@@ -55,7 +55,7 @@ export class ApprovalManager {
     for (const a of this.approvals)
       if (a.status === "pending") {
         a.status = "expired";
-        if (a.source) a.note = "在电脑上等你";
+        if (a.source?.kind === "session") a.note = "在电脑上等你";
       }
     this.persist();
   }

@@ -107,17 +107,27 @@ describe("QuestionManager", () => {
     cleanup(paths);
   });
 
-  test("a restart expires questions nobody can answer any more", async () => {
+  test("a restart expires questions nobody can answer any more; a session's goes back to its terminal, a Pal's just ends", async () => {
     const { m, paths } = mk();
     void m.request(req(ask));
+    m.ask(req(ask), { source: { kind: "session", id: "s1", name: "终端的" } });
+    m.ask(req(ask), { source: { kind: "pal", id: "pal_1", name: "网站" } });
     const again = new QuestionManager(`${paths.state}/q.json`, new Bus(), new Audit(paths.audit), {
       taskForToolUse: () => undefined,
       onCreated: () => {},
       timeoutMinutes: () => 30,
     });
     expect(again.listPending()).toHaveLength(0);
-    expect(again.list()[0]!.status).toBe("expired");
+    expect(again.list().every((q) => q.status === "expired")).toBe(true);
+    expect(again.list().map((q) => [q.source?.kind ?? "own", q.note ?? null]).sort()).toEqual([
+      ["own", null],
+      ["pal", null],
+      ["session", "在电脑上等你"],
+    ]);
     m.cancelAll("test");
+    m.cancelFor("s1", "test");
+    m.cancelFor("pal_1", "test");
+    expect(m.listPending()).toHaveLength(0);
     cleanup(paths);
   });
 });

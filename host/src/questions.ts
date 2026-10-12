@@ -42,7 +42,7 @@ export class QuestionManager {
     for (const q of this.questions)
       if (q.status === "pending") {
         q.status = "expired";
-        if (q.source) q.note = "在电脑上等你";
+        if (q.source?.kind === "session") q.note = "在电脑上等你";
       }
     this.persist();
   }
