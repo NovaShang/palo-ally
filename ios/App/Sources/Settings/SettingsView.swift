@@ -22,113 +22,135 @@ struct SettingsView: View {
     @AppStorage("asr_vocab") private var voiceVocab = ""
     var body: some View {
         @Bindable var model = model
-        Form {
-            Section {
-                ThemeSwatches(selection: themeBinding)
-            } header: {
-                Text("主题色")
-            } footer: {
-                if model.hasSeveralHosts {
-                    Text("这是「\(store.assistantName)」的颜色；每个助理一个颜色，切换时整个 App 跟着换。")
-                } else {
-                    Text("也是\(store.assistantName)的颜色。App 和桌面图标都会换成这个颜色。")
-                }
-            }
-
-            Section {
-                Toggle("免打扰", isOn: $quietOn)
-                if quietOn {
-                    DatePicker("从", selection: $quietStart, displayedComponents: .hourAndMinute)
-                    DatePicker("到", selection: $quietEnd, displayedComponents: .hourAndMinute)
-                }
-            } header: {
-                Text("什么时候别打扰我")
-            } footer: {
-                Text("这段时间里，不急的事只放进对话，不推送。")
-            }
-
-            Section {
-                Toggle("参考对话内容", isOn: $voiceUsesContext)
-                TextField("常用词", text: $voiceVocab, prompt: Text("常用词，用逗号隔开"), axis: .vertical)
-                    .lineLimit(1...4)
-            } header: {
-                Text("语音输入")
-            } footer: {
-                Text("说话时参考最近的对话和这些词，名字、术语认得更准。")
-            }
-
-            if let error {
-                Section { Text(error).foregroundStyle(.red) }
-            }
-
-            Section("连接") {
-                LabeledContent("状态", value: Copy.connection(store.displayedConnection))
-                if model.mode == .demo {
-                    LabeledContent("电脑", value: "演示")
+        ScrollViewReader { proxy in
+            Form {
+                Section {
+                    ThemeSwatches(selection: themeBinding)
+                } header: {
+                    Text("主题色")
+                } footer: {
                     if model.hasSeveralHosts {
+                        Text("这是「\(store.assistantName)」的颜色；每个助理一个颜色，切换时整个 App 跟着换。")
+                    } else {
+                        Text("也是\(store.assistantName)的颜色。App 和桌面图标都会换成这个颜色。")
+                    }
+                }
+
+                Section {
+                    Toggle("免打扰", isOn: $quietOn)
+                    if quietOn {
+                        DatePicker("从", selection: $quietStart, displayedComponents: .hourAndMinute)
+                        DatePicker("到", selection: $quietEnd, displayedComponents: .hourAndMinute)
+                    }
+                } header: {
+                    Text("什么时候别打扰我")
+                } footer: {
+                    Text("这段时间里，不急的事只放进对话，不推送。")
+                }
+
+                Section {
+                    Toggle("参考对话内容", isOn: $voiceUsesContext)
+                    TextField("常用词", text: $voiceVocab, prompt: Text("常用词，用逗号隔开"), axis: .vertical)
+                        .lineLimit(1...4)
+                } header: {
+                    Text("语音输入")
+                } footer: {
+                    Text("说话时参考最近的对话和这些词，名字、术语认得更准。")
+                }
+
+                // The computer's Claude Code sessions (sessions-prd §6.3): their
+                // prompts come to the phone while the owner is away from it.
+                if store.sessionsSupported == true {
+                    Section {
+                        Toggle("手机上处理电脑会话的确认", isOn: hooksBinding)
+                            .disabled(!store.connection.isOnline)
+                            .id("session-hooks")
+                    } footer: {
+                        Text("不在电脑前时，Claude Code 要你点头的事送到手机上。")
+                    }
+                }
+
+                if let error {
+                    Section { Text(error).foregroundStyle(.red) }
+                }
+
+                Section("连接") {
+                    LabeledContent("状态", value: Copy.connection(store.displayedConnection))
+                    if model.mode == .demo {
+                        LabeledContent("电脑", value: "演示")
+                        if model.hasSeveralHosts {
+                            NavigationLink { HostsView() } label: {
+                                LabeledContent("我的助理", value: "\(model.hostIDs.count) 个")
+                            }
+                        }
+                        Button("退出演示，去配对") { model.exitDemo() }
+                            .tint(.primary)
+                    } else if model.hasSeveralHosts {
+                        LabeledContent("电脑", value: model.displayName(model.activeHostID ?? ""))
                         NavigationLink { HostsView() } label: {
                             LabeledContent("我的助理", value: "\(model.hostIDs.count) 个")
                         }
-                    }
-                    Button("退出演示，去配对") { model.exitDemo() }
-                        .tint(.primary)
-                } else if model.hasSeveralHosts {
-                    LabeledContent("电脑", value: model.displayName(model.activeHostID ?? ""))
-                    NavigationLink { HostsView() } label: {
-                        LabeledContent("我的助理", value: "\(model.hostIDs.count) 个")
-                    }
-                } else {
-                    // One computer (most people): the plain section, as before.
-                    LabeledContent("电脑", value: store.hostName.isEmpty ? (model.pairedHost?.hostLabel ?? "—") : store.hostName)
-                    Button("换一台电脑配对") { model.startPairing(.replace) }
-                        .tint(.primary)
-                    Button(unpairing ? "正在解除…" : "解除配对", role: .destructive) { confirmUnpair = true }
-                        .disabled(unpairing)
-                        .confirmationDialog("解除和这台电脑的配对？", isPresented: $confirmUnpair, titleVisibility: .visible) {
-                            Button("解除配对", role: .destructive) {
-                                unpairing = true
-                                Task { await model.unpair() }
+                    } else {
+                        // One computer (most people): the plain section, as before.
+                        LabeledContent("电脑", value: store.hostName.isEmpty ? (model.pairedHost?.hostLabel ?? "—") : store.hostName)
+                        Button("换一台电脑配对") { model.startPairing(.replace) }
+                            .tint(.primary)
+                        Button(unpairing ? "正在解除…" : "解除配对", role: .destructive) { confirmUnpair = true }
+                            .disabled(unpairing)
+                            .confirmationDialog("解除和这台电脑的配对？", isPresented: $confirmUnpair, titleVisibility: .visible) {
+                                Button("解除配对", role: .destructive) {
+                                    unpairing = true
+                                    Task { await model.unpair() }
+                                }
+                            } message: {
+                                Text("之后要重新扫码才能连回来。")
                             }
-                        } message: {
-                            Text("之后要重新扫码才能连回来。")
+                        Button {
+                            model.startPairing(.add)
+                        } label: {
+                            Text("添加另一台电脑").font(.footnote)
                         }
-                    Button {
-                        model.startPairing(.add)
-                    } label: {
-                        Text("添加另一台电脑").font(.footnote)
+                        .tint(.secondary)
                     }
-                    .tint(.secondary)
                 }
-            }
 
-            Section {
-                LabeledContent("版本", value: model.buildStamp)
-                LabeledContent("设备编号", value: "\(VoiceInstallID.short)…")
-                // From bento: what to send when something goes wrong — the
-                // logs of the last few launches and the system's hang and
-                // crash reports.
-                ShareLink(items: DebugLog.shared.allFileURLs + DiagnosticsCollector.files) {
-                    Label("导出调试日志", systemImage: "doc.text.magnifyingglass")
-                }
-                .tint(.primary)
-                if !store.hostVersion.isEmpty {
-                    LabeledContent("电脑上的版本", value: store.hostVersion)
-                    // The host follows releases by itself; this asks it now.
-                    Button {
-                        Task { await checkHostUpdate() }
-                    } label: {
-                        HStack {
-                            Text(checkingUpdate ? "正在检查…" : "立即更新电脑上的 PaloAlly")
-                            Spacer()
-                            if checkingUpdate { ProgressView() }
-                        }
+                Section {
+                    LabeledContent("版本", value: model.buildStamp)
+                    LabeledContent("设备编号", value: "\(VoiceInstallID.short)…")
+                    // From bento: what to send when something goes wrong — the
+                    // logs of the last few launches and the system's hang and
+                    // crash reports.
+                    ShareLink(items: DebugLog.shared.allFileURLs + DiagnosticsCollector.files) {
+                        Label("导出调试日志", systemImage: "doc.text.magnifyingglass")
                     }
-                    .disabled(checkingUpdate)
-                    if let hostUpdate {
-                        Text(hostUpdate).font(.footnote).foregroundStyle(.secondary)
+                    .tint(.primary)
+                    if !store.hostVersion.isEmpty {
+                        LabeledContent("电脑上的版本", value: store.hostVersion)
+                        // The host follows releases by itself; this asks it now.
+                        Button {
+                            Task { await checkHostUpdate() }
+                        } label: {
+                            HStack {
+                                Text(checkingUpdate ? "正在检查…" : "立即更新电脑上的 PaloAlly")
+                                Spacer()
+                                if checkingUpdate { ProgressView() }
+                            }
+                        }
+                        .disabled(checkingUpdate)
+                        if let hostUpdate {
+                            Text(hostUpdate).font(.footnote).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
+        #if DEBUG
+        // `-demoSettingsAt sessions`: opens scrolled to the sessions switch (snapshots).
+        .task {
+            guard UserDefaults.standard.string(forKey: "demoSettingsAt") == "sessions" else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            withAnimation { proxy.scrollTo("session-hooks", anchor: .center) }
+        }
+        #endif
         }
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
@@ -157,6 +179,16 @@ struct SettingsView: View {
             error = nil
             Task {
                 do { try await model.setTheme(t, for: id) } catch { self.error = "颜色没改成：\(Copy.error(error))" }
+            }
+        })
+    }
+
+    /// The global hooks switch, as the computer has it (on until it says).
+    private var hooksBinding: Binding<Bool> {
+        Binding(get: { store.sessionHooksEnabled ?? true }, set: { on in
+            error = nil
+            Task {
+                do { try await store.setSessionHooks(on) } catch { self.error = "没改成：\(Copy.error(error))" }
             }
         })
     }
