@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>dev.paloally.helper</string>
+  <key>CFBundleName</key><string>PaloAlly Helper</string>
+  <key>CFBundleDisplayName</key><string>PaloAlly Helper</string>
+  <key>CFBundleExecutable</key><string>PaloAllyHelper</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSUIElement</key><true/>
+  <key>LSBackgroundOnly</key><true/>
+  <key>NSDocumentsFolderUsageDescription</key><string>PaloAlly 帮你管的 Claude Code 会话要读写这里的项目文件。</string>
+  <key>NSDesktopFolderUsageDescription</key><string>PaloAlly 帮你管的 Claude Code 会话要读写这里的项目文件。</string>
+  <key>NSDownloadsFolderUsageDescription</key><string>PaloAlly 帮你管的 Claude Code 会话要读写这里的文件。</string>
+  <key>NSRemovableVolumesUsageDescription</key><string>PaloAlly 帮你管的 Claude Code 会话要读写外接磁盘上的项目文件。</string>
+  <key>NSNetworkVolumesUsageDescription</key><string>PaloAlly 帮你管的 Claude Code 会话要读写网络磁盘上的项目文件。</string>
+</dict>
+</plist>

@@ -21,3 +21,6 @@ ios/**/Local.xcconfig
 *.provisionprofile
 *.dmg
 /build/
+
+# PaloAlly Helper builds (signed locally, never committed)
+host/helper/build/
