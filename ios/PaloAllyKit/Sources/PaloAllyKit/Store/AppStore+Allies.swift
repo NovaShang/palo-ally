@@ -141,8 +141,8 @@ extension AppStore {
     /// Hands someone's invite to this computer. Answers once both sides are
     /// paired: usually seconds; 30 at most (§7.6).
     @discardableResult
-    public func acceptAlly(link: String, kind: AllyKind) async throws -> AllyInfo? {
-        let r: AllyResult = try await rpc.call(RPCMethod.allyAccept, params: AllyAcceptParams(link: link, kind: kind),
+    public func acceptAlly(link: String, kind: AllyKind, trust: AllyTrust? = nil) async throws -> AllyInfo? {
+        let r: AllyResult = try await rpc.call(RPCMethod.allyAccept, params: AllyAcceptParams(link: link, kind: kind, trust: trust),
                                                timeout: 30)
         if let a = r.ally { apply(allyUpdate: .upsert(a)) }
         return r.ally

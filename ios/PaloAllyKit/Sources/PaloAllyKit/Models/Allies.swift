@@ -115,7 +115,8 @@ public struct AllyEntry: Codable, Sendable, Hashable, Identifiable {
         replyTo = l.string("replyTo")
         status = l.decode(AllyEntryStatus.self, "status", or: .unknown)
         note = l.string("note")
-        author = l.decode(AllyAuthor.self, "author")
+        // Required since §11.4; a first-version host leaves it out (its words were the assistants').
+        author = l.expect("author", l.decode(AllyAuthor.self, "author"))
     }
 
     /// A draft waiting for the owner's 发送 / 改一下 / 不发.
@@ -163,7 +164,8 @@ public struct AllyInfo: Codable, Sendable, Hashable, Identifiable {
         online = l.bool("online", or: false)
         lastSeen = l.millis("lastSeen", or: 0)
         lastEntry = l.decode(AllyEntry.self, "lastEntry")
-        trust = l.decode(AllyTrust.self, "trust")
+        // Required since §11.4; a first-version host leaves it out (review).
+        trust = l.expect("trust", l.decode(AllyTrust.self, "trust"))
         theirTrust = l.decode(AllyTrust.self, "theirTrust")
     }
 

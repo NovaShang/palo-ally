@@ -68,7 +68,7 @@ extension Copy {
     static func allyTrustNote(_ t: AllyTrust, assistant: String, ally: String) -> String {
         let a = assistant.isEmpty ? "助理" : assistant
         return t == .converse
-            ? spaced("\(a)直接回\(ally)，每句都记在这里。")
+            ? spaced("\(a)直接回\(ally)，每句都留着记录。")
             : spaced("\(a)回\(ally)的每句话，都先给你看。")
     }
 

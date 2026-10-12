@@ -623,11 +623,13 @@ public struct AllyInviteResult: Decodable, Sendable, Equatable {
     }
 }
 
-/// `ally.accept {link, kind}`: hand someone's invite to this computer.
+/// `ally.accept {link, kind, trust?}`: hand someone's invite to this
+/// computer, with how its assistant answers them (§11.1; none: review).
 public struct AllyAcceptParams: Codable, Sendable {
     public var link: String
     public var kind: AllyKind
-    public init(link: String, kind: AllyKind) { self.link = link; self.kind = kind }
+    public var trust: AllyTrust?
+    public init(link: String, kind: AllyKind, trust: AllyTrust? = nil) { self.link = link; self.kind = kind; self.trust = trust }
 }
 
 /// `ally.accept → {ally}`, once both halves of the pairing are done.

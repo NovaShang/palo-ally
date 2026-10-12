@@ -13,8 +13,8 @@ struct AlliesDecodingTests {
 
     @Test func allyInfoAsInThePRD() throws {
         let (a, issues) = try decode(AllyInfo.self, """
-        {"id":"al1","kind":"family","ownerName":"家人","assistantName":"小橘","online":true,"lastSeen":1791216926595,
-         "lastEntry":{"id":"e1","allyId":"al1","dir":"in","ts":1791216900000,"text":"今晚我晚点回","urgent":false,"status":"seen"}}
+        {"id":"al1","kind":"family","ownerName":"家人","assistantName":"小橘","online":true,"lastSeen":1791216926595,"trust":"review",
+         "lastEntry":{"id":"e1","allyId":"al1","dir":"in","ts":1791216900000,"text":"今晚我晚点回","urgent":false,"status":"seen","author":"assistant"}}
         """)
         #expect(issues.isEmpty)
         #expect(a.kind == .family && a.online && a.lastSeen == 1791216926595)
@@ -24,7 +24,7 @@ struct AlliesDecodingTests {
 
     @Test func allyNeverSeenAndUnknownKind() throws {
         let (a, issues) = try decode(AllyInfo.self, """
-        {"id":"al2","kind":"coworker","ownerName":"","assistantName":"阿福","online":false,"lastSeen":0}
+        {"id":"al2","kind":"coworker","ownerName":"","assistantName":"阿福","online":false,"lastSeen":0,"trust":"review"}
         """)
         #expect(a.lastSeen == 0 && a.lastEntry == nil) // 0: never reached
         #expect(a.kind == .unknown)
@@ -38,7 +38,7 @@ struct AlliesDecodingTests {
     @Test func entryWithSlotsAndEveryStatus() throws {
         let (e, issues) = try decode(AllyEntry.self, """
         {"id":"e2","allyId":"al1","dir":"out","ts":"2026-10-11T18:00:00+08:00","text":"周六下午哪个时间合适？","urgent":true,
-         "slots":[{"start":"2026-10-17T14:00:00+08:00","end":"2026-10-17T16:00:00+08:00"}],"replyTo":"e1","status":"draft"}
+         "slots":[{"start":"2026-10-17T14:00:00+08:00","end":"2026-10-17T16:00:00+08:00"}],"replyTo":"e1","status":"draft","author":"assistant"}
         """)
         #expect(issues.isEmpty)
         #expect(e.isPendingDraft && e.urgent && e.replyTo == "e1")
@@ -49,11 +49,11 @@ struct AlliesDecodingTests {
         for s in ["draft", "queued", "sent", "delivered", "seen", "rejected"] {
             #expect(AllyEntryStatus(rawValue: s) != nil)
         }
-        let (odd, oddIssues) = try decode(AllyEntry.self, #"{"id":"e3","dir":"sideways","ts":1,"text":"x","urgent":false,"status":"lost"}"#)
+        let (odd, oddIssues) = try decode(AllyEntry.self, #"{"id":"e3","dir":"sideways","ts":1,"text":"x","urgent":false,"status":"lost","author":"owner"}"#)
         #expect(odd.dir == .unknown && odd.status == .unknown && odd.allyId == nil && oddIssues.count == 3)
         #expect(!odd.isPendingDraft)
         // Rejected says why.
-        let (no, noIssues) = try decode(AllyEntry.self, #"{"id":"e4","allyId":"a","dir":"out","ts":1,"text":"x","urgent":false,"status":"rejected","note":"3 天没送到"}"#)
+        let (no, noIssues) = try decode(AllyEntry.self, #"{"id":"e4","allyId":"a","dir":"out","ts":1,"text":"x","urgent":false,"status":"rejected","note":"3 天没送到","author":"assistant"}"#)
         #expect(noIssues.isEmpty && no.status == .rejected && no.note == "3 天没送到")
         // An incoming draft is not the owner's to send.
         #expect(!AllyEntry(id: "i", dir: .incoming, ts: 1, text: "", status: .draft).isPendingDraft)
@@ -73,15 +73,15 @@ struct AlliesDecodingTests {
     }
 
     @Test func rpcResults() throws {
-        let (list, i1) = try decode(AlliesResult.self, #"{"allies":[{"id":"a","kind":"mine","ownerName":"我","assistantName":"Palo","online":true,"lastSeen":5}]}"#)
+        let (list, i1) = try decode(AlliesResult.self, #"{"allies":[{"id":"a","kind":"mine","ownerName":"我","assistantName":"Palo","online":true,"lastSeen":5,"trust":"converse"}]}"#)
         #expect(i1.isEmpty && list.allies.first?.kind == .mine)
         let (invite, i2) = try decode(AllyInviteResult.self, #"{"link":"paloally://ally?daemon=d&code=1","expiresAt":"2026-10-11T10:10:00Z"}"#)
         #expect(i2.isEmpty && invite.expiresAt == 1_791_713_400_000)
-        let (accepted, i3) = try decode(AllyResult.self, #"{"ally":{"id":"a","kind":"family","ownerName":"小林","assistantName":"阿福","online":true,"lastSeen":5}}"#)
+        let (accepted, i3) = try decode(AllyResult.self, #"{"ally":{"id":"a","kind":"family","ownerName":"小林","assistantName":"阿福","online":true,"lastSeen":5,"trust":"review","theirTrust":"converse"}}"#)
         #expect(i3.isEmpty && accepted.ally?.ownerName == "小林")
-        let (log, i4) = try decode(AllyEntriesResult.self, #"{"entries":[{"id":"e","allyId":"a","dir":"in","ts":1,"text":"嗨","urgent":false,"status":"delivered"}]}"#)
+        let (log, i4) = try decode(AllyEntriesResult.self, #"{"entries":[{"id":"e","allyId":"a","dir":"in","ts":1,"text":"嗨","urgent":false,"status":"delivered","author":"owner"}]}"#)
         #expect(i4.isEmpty && log.entries.count == 1)
-        let (decided, i5) = try decode(AllyEntryResult.self, #"{"entry":{"id":"e","allyId":"a","dir":"out","ts":1,"text":"好","urgent":false,"status":"queued"}}"#)
+        let (decided, i5) = try decode(AllyEntryResult.self, #"{"entry":{"id":"e","allyId":"a","dir":"out","ts":1,"text":"好","urgent":false,"status":"queued","author":"assistant"}}"#)
         #expect(i5.isEmpty && decided.entry?.status == .queued)
         let (_, i6) = try decode(AllyEntryResult.self, "{}")
         #expect(i6.contains { $0.contains("entry") })
@@ -372,15 +372,18 @@ struct AlliesTrustTests {
          "trust":"converse","theirTrust":"review"}
         """)
         #expect(issues.isEmpty && a.trust == .converse && a.theirTrust == .review && a.effectiveTrust == .converse)
-        // A host before §11 says neither: every answer is a draft.
+        // A host before §11 says neither (reported now, it's the protocol):
+        // every answer is a draft.
         let (old, oldIssues) = try decode(AllyInfo.self, #"{"id":"a2","kind":"mine","ownerName":"","assistantName":"Palo","online":false,"lastSeen":0}"#)
-        #expect(oldIssues.isEmpty && old.trust == nil && old.effectiveTrust == .review)
+        #expect(oldIssues.contains { $0.contains("trust") } && old.trust == nil && old.effectiveTrust == .review)
         let (e, eIssues) = try decode(AllyEntry.self, """
         {"id":"e1","allyId":"a1","dir":"out","ts":1,"text":"我晚点到","urgent":false,"status":"sent","author":"owner"}
         """)
         #expect(eIssues.isEmpty && e.byOwner)
-        let (bare, _) = try decode(AllyEntry.self, #"{"id":"e2","allyId":"a1","dir":"in","ts":1,"text":"好","urgent":false,"status":"seen"}"#)
-        #expect(bare.author == nil && !bare.byOwner)
+        let (bare, bareIssues) = try decode(AllyEntry.self, #"{"id":"e2","allyId":"a1","dir":"in","ts":1,"text":"好","urgent":false,"status":"seen"}"#)
+        #expect(bare.author == nil && !bare.byOwner && bareIssues.contains { $0.contains("author") })
+        #expect(try JSONValue.from(AllyAcceptParams(link: "l", kind: .family, trust: .converse)) == ["link": "l", "kind": "family", "trust": "converse"])
+        #expect(try JSONValue.from(AllyAcceptParams(link: "l", kind: .mine)) == ["link": "l", "kind": "mine"])
         #expect(try JSONValue.from(AllyTrustParams(id: "a1", trust: .review)) == ["id": "a1", "trust": "review"])
         #expect(try JSONValue.from(AllySayParams(id: "a1", text: "好")) == ["id": "a1", "text": "好"])
     }

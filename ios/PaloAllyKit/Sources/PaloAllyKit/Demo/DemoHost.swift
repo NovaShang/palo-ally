@@ -815,7 +815,7 @@ public actor DemoHost {
                 Task {
                     await self.pause(4)
                     self.addAlly(AllyInfo(id: self.nextID("al"), kind: .family, ownerName: "小周", assistantName: "Palo",
-                                          online: true, lastSeen: Date().epochMillis))
+                                          online: true, lastSeen: Date().epochMillis, trust: .review))
                 }
             }
             return ["link": .string(DemoHost.inviteLink(expiresAt: exp)), "expiresAt": .number(Double(exp))]
@@ -826,9 +826,11 @@ public actor DemoHost {
             guard !invite.isExpired() else { throw DemoError(message: "二维码过期了，请对方重新生成一个") }
             await pause(1.5) // both halves of the pairing
             let asked = (try? p["kind"]?.decode(AllyKind.self)) ?? .family
+            let trust = p["trust"]?.stringValue.flatMap(AllyTrust.init(rawValue:)) ?? .review
             let a = AllyInfo(id: nextID("al"), kind: asked == .unknown ? .family : asked,
                              ownerName: invite.name.isEmpty ? "新朋友" : invite.name, assistantName: "Palo",
-                             online: true, lastSeen: Date().epochMillis)
+                             online: true, lastSeen: Date().epochMillis, trust: trust == .unknown ? .review : trust,
+                             theirTrust: .review)
             allies.append(a)
             allyLogs[a.id] = []
             emitAllies()

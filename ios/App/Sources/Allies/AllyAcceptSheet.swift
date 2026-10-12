@@ -8,8 +8,10 @@ struct PendingAllyInvite: Identifiable, Equatable {
     var parsed: AllyInviteLink? { AllyInviteLink.parse(link) }
 }
 
-/// 「加「X的助理」为 Ally？」 with the tag (家人朋友 / 我的), then this
-/// computer pairs with theirs both ways. Progress and failures in plain words.
+/// 「加「X的助理」为 Ally？」 with the tag (家人朋友 / 我的) and how the
+/// owner's assistant answers them (每句要你看 unless the owner picks 能对话;
+/// allies-prd §11.1), then this computer pairs with theirs both ways.
+/// Progress and failures in plain words.
 struct AllyAcceptSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
@@ -19,6 +21,7 @@ struct AllyAcceptSheet: View {
     private enum Phase: Equatable { case asking, working, added(AllyInfo), failed(String) }
     @State private var phase = Phase.asking
     @State private var kind = AllyKind.family
+    @State private var trust = AllyTrust.review
 
     private var invite: AllyInviteLink? { pending.parsed }
     private var label: String { AllyInfo.assistantLabel(invite?.name ?? "") }
@@ -76,7 +79,8 @@ struct AllyAcceptSheet: View {
                 Label("加好了", systemImage: "checkmark.circle.fill")
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(.green)
-                Text(Copy.spaced("以后想跟\(ally.displayName)说什么、约什么时间，告诉\(store.assistantName)就行。发出去的每句话都先给你看。"))
+                Text(Copy.spaced("以后想跟\(ally.displayName)说什么、约什么时间，告诉\(store.assistantName)，或者在列表里点开 TA 直接说。")
+                     + "\n" + Copy.allyTrustNote(ally.effectiveTrust, assistant: store.assistantName, ally: ally.displayName))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -96,7 +100,7 @@ struct AllyAcceptSheet: View {
             Text("加「\(label)」为 Ally？")
                 .font(.title3.weight(.semibold))
                 .multilineTextAlignment(.center)
-            Text(Copy.spaced("加好以后，\(store.assistantName)和 TA 的助理可以互相传话、约时间。发出去的每句话都先给你看。"))
+            Text(Copy.spaced("加好以后，\(store.assistantName)和 TA 的助理可以互相传话、约时间，你也能直接跟 TA 说。"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -114,6 +118,20 @@ struct AllyAcceptSheet: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             Text(kind == .mine ? "你自己的另一台电脑。" : "别人的助理，比如家里人、朋友。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .disabled(phase == .working)
+
+        VStack(alignment: .leading, spacing: 8) {
+            Text(Copy.spaced("\(store.assistantName)怎么回 TA")).font(.footnote).foregroundStyle(.secondary)
+            Picker("怎么回 TA", selection: $trust) {
+                Text(Copy.allyTrust(.review)).tag(AllyTrust.review)
+                Text(Copy.allyTrust(.converse)).tag(AllyTrust.converse)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            Text(Copy.allyTrustNote(trust, assistant: store.assistantName, ally: "TA") + "以后随时能改。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -168,7 +186,7 @@ struct AllyAcceptSheet: View {
         }
         phase = .working
         do {
-            if let ally = try await store.acceptAlly(link: invite.link, kind: kind) {
+            if let ally = try await store.acceptAlly(link: invite.link, kind: kind, trust: trust) {
                 withAnimation(.snappy) { phase = .added(ally) }
             } else {
                 phase = .failed("没加上：电脑没说加好了没有，等一下看看列表里有没有 TA。")

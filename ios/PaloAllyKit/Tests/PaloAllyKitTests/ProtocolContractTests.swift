@@ -129,10 +129,10 @@ private let resultTypes: [String: Check] = [
 ]
 
 /// What this client already speaks that the host's fixture doesn't have
-/// yet: the second version of Allies (docs/allies-prd.md §11.4), built
-/// against the PRD while the host builds it. Each is left out of the set comparison only while the fixture lacks
-/// it; once the host writes its sample, it's checked strictly like the rest.
-private let awaitingHost: Set<String> = [RPCMethod.allySay, RPCMethod.allyTrust]
+/// yet (built against a PRD while the host builds it). Each is left out of
+/// the set comparison only while the fixture lacks it; once the host writes
+/// its sample, it's checked strictly like the rest. Nothing waits now.
+private let awaitingHost: Set<String> = []
 
 /// Event → how AppStore.apply(event:) reads the payload.
 private let eventTypes: [String: Check] = [
