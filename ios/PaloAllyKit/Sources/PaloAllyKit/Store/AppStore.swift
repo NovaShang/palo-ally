@@ -103,6 +103,19 @@ public final class AppStore {
     /// Clipboard messages already copied on this device (local state).
     public private(set) var copiedClipboardIDs: Set<String> = []
 
+    // Allies (AppStore+Allies.swift).
+    /// The Allies this computer has, in the host's order.
+    public internal(set) var allies: [AllyInfo] = []
+    /// nil until the host has answered `ally.list`; false for a host that
+    /// doesn't know Allies yet (older versions), which hides them.
+    public internal(set) var alliesSupported: Bool?
+    /// Each Ally's exchanges held here, oldest first.
+    public internal(set) var allyLogs: [String: [AllyEntry]] = [:]
+    /// The last `ally.log` page for that Ally was full: there may be older ones.
+    public internal(set) var allyLogHasMore: [String: Bool] = [:]
+    /// Exchanges whose Ally isn't known (an event that didn't say).
+    var looseAllyEntries: [String: AllyEntry] = [:]
+
     public func markCopied(_ id: String) { copiedClipboardIDs.insert(id) }
 
     // MARK: config
@@ -317,6 +330,7 @@ public final class AppStore {
                 }
                 resendQueued()
                 Task { await self.loadSuggestions() }
+                Task { await self.loadAllies() }
                 return
             } catch {
                 guard gen == connectGeneration else { return }
@@ -523,6 +537,10 @@ public final class AppStore {
             if let r = try? data.decode(CommandsResult.self) { commands = r.commands }
         case RPCEventName.suggestionsUpdated:
             if let r = try? data.decode(SuggestionsResult.self) { suggestions = r.suggestions }
+        case RPCEventName.allyUpdated:
+            apply(allyUpdate: AllyUpdate(json: data))
+        case RPCEventName.allyEntry:
+            if let e = AllyEntryEvent(json: data) { upsert(allyEntry: e.entry, allyId: e.allyId) }
         case RPCEventName.status:
             if let s = try? (data["status"] ?? data).decode(HostStatus.self) {
                 if !s.busy, !streams.isEmpty, let finishingReply { finishingReply { applyStatus(s) } } else { atTheEnd { applyStatus(s) } }

@@ -50,6 +50,17 @@ public enum RPCMethod {
     /// The host's own update: `check` only looks; otherwise it stages the newest
     /// release and switches as soon as nothing is in flight (Settings → 立即更新).
     public static let hostUpdate = "host.update"
+    /// Allies (allies-prd §7.5): the list, an invite to show as a QR code,
+    /// accepting someone else's invite, removing one, one Ally's exchanges,
+    /// and the owner's 发送 / 改一下 / 不发 on a draft.
+    public static let allyList = "ally.list"
+    public static let allyInvite = "ally.invite"
+    public static let allyAccept = "ally.accept"
+    public static let allyRemove = "ally.remove"
+    public static let allyLog = "ally.log"
+    public static let allyDraftDecide = "ally.draft.decide"
+
+    public static let allies: [String] = [allyList, allyInvite, allyAccept, allyRemove, allyLog, allyDraftDecide]
 
     /// Every method the client knows. The contract test checks this equals
     /// the host's method set exactly.
@@ -59,7 +70,7 @@ public enum RPCMethod {
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
         suggestionsList, suggestionsDismiss, hostUpdate,
-    ]
+    ] + allies
 }
 
 public enum RPCEventName {
@@ -74,11 +85,17 @@ public enum RPCEventName {
     public static let status = "status"
     public static let commandsUpdated = "commands.updated"
     public static let suggestionsUpdated = "suggestions.updated"
+    /// The Ally list or someone's online state changed.
+    public static let allyUpdated = "ally.updated"
+    /// A new exchange, or one's status changed (drafts arrive this way).
+    public static let allyEntry = "ally.entry"
+
+    public static let allies: [String] = [allyUpdated, allyEntry]
 
     public static let all: [String] = [
         chatMessage, chatDelta, taskUpdated, approvalUpdated, questionUpdated, watchUpdated, artifactUpdated, settingsUpdated,
         status, commandsUpdated, suggestionsUpdated,
-    ]
+    ] + allies
 }
 
 public struct EmptyParams: Codable, Sendable { public init() {} }
@@ -544,5 +561,83 @@ public enum WatchUpdate: Sendable {
         // Be forgiving: a bare Watch object.
         if json["id"] != nil, let watch = try? json.decode(Watch.self) { self = .upsert(watch); return }
         self = .unknown
+    }
+}
+
+// MARK: - Allies
+
+/// `ally.list → {allies}`.
+public struct AlliesResult: Decodable, Sendable {
+    public var allies: [AllyInfo]
+    public init(allies: [AllyInfo]) { self.allies = allies }
+    public init(from decoder: Decoder) throws { allies = try Lenient(decoder).array(AllyInfo.self, "allies", or: []) }
+}
+
+/// `ally.invite → {link, expiresAt}`: the app draws the link as a QR code.
+public struct AllyInviteResult: Decodable, Sendable, Equatable {
+    public var link: String
+    public var expiresAt: Int64
+    public init(link: String, expiresAt: Int64) { self.link = link; self.expiresAt = expiresAt }
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        link = l.string("link", or: "")
+        expiresAt = l.millis("expiresAt", or: 0)
+    }
+}
+
+/// `ally.accept {link, kind}`: hand someone's invite to this computer.
+public struct AllyAcceptParams: Codable, Sendable {
+    public var link: String
+    public var kind: AllyKind
+    public init(link: String, kind: AllyKind) { self.link = link; self.kind = kind }
+}
+
+/// `ally.accept → {ally}`, once both halves of the pairing are done.
+public struct AllyResult: Decodable, Sendable {
+    public var ally: AllyInfo?
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        ally = l.expect("ally", l.decode(AllyInfo.self, "ally"))
+    }
+}
+
+/// `ally.log {id, beforeTs?, limit?}`: one Ally's exchanges, older pages by `beforeTs`.
+public struct AllyLogParams: Codable, Sendable {
+    public var id: String
+    public var beforeTs: Int64?
+    public var limit: Int?
+    public init(id: String, beforeTs: Int64? = nil, limit: Int? = nil) { self.id = id; self.beforeTs = beforeTs; self.limit = limit }
+}
+
+/// `ally.log → {entries}`.
+public struct AllyEntriesResult: Decodable, Sendable {
+    public var entries: [AllyEntry]
+    public init(from decoder: Decoder) throws { entries = try Lenient(decoder).array(AllyEntry.self, "entries", or: []) }
+}
+
+/// The owner's answer to a draft card.
+public enum AllyDraftAction: String, Codable, Sendable {
+    /// 发送
+    case send
+    /// 改一下: new words for the draft.
+    case edit
+    /// 不发
+    case discard
+}
+
+/// `ally.draft.decide {id, action, text?}`.
+public struct AllyDraftDecideParams: Codable, Sendable {
+    public var id: String
+    public var action: AllyDraftAction
+    public var text: String?
+    public init(id: String, action: AllyDraftAction, text: String? = nil) { self.id = id; self.action = action; self.text = text }
+}
+
+/// `ally.draft.decide → {entry}`.
+public struct AllyEntryResult: Decodable, Sendable {
+    public var entry: AllyEntry?
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        entry = l.expect("entry", l.decode(AllyEntry.self, "entry"))
     }
 }

@@ -27,6 +27,9 @@ public actor DemoHost {
     private var idCounter = 0
     /// The reply being streamed right now (sync's `streaming`).
     private var writing: SyncResult.Streaming?
+    /// Allies (allies-prd §7.5): two made-up people with a few exchanges each.
+    public private(set) var allies: [AllyInfo] = []
+    public private(set) var allyLogs: [String: [AllyEntry]] = [:]
 
     /// The computer name the demo host reports (a second demo host shows the
     /// assistant switcher).
@@ -52,6 +55,7 @@ public actor DemoHost {
             self.artifacts = s.artifacts
             self.files = s.files
             self.memory = s.memory
+            (self.allies, self.allyLogs) = DemoHost.seedAllies(now: Date().epochMillis)
         }
         // Strong on purpose: the transport keeps its host alive (demo mode and
         // tests often only hold the store/transport).
@@ -154,6 +158,12 @@ public actor DemoHost {
         case "fresh":
             // A first-time owner: nothing said yet.
             messages.removeAll()
+        case "allies":
+            // `-demoState allies`: an Ally's message in the conversation, then
+            // a draft back to them with two times to choose from.
+            receiveAllyMessage(from: "al-family", text: "周六下午带孩子去公园，你那边几点方便？")
+            post("家人的助理问周六下午几点去公园。我看了你的日历，这两个时间都空着，回复拟好了，你看一下。")
+            makeDraft(to: "al-family", text: "周六下午都可以，这两个时间你看哪个合适？", slots: DemoHost.saturdaySlots())
         case "tables":
             // Wide tables in a reply: they scroll sideways instead of squeezing.
             post("MacBook Air 和 dev 哪台更适合常驻跑助理？", role: .user)
@@ -693,9 +703,176 @@ public actor DemoHost {
             return ["ok": .bool(had)]
         case RPCMethod.hostUpdate:
             return ["status": .string("latest"), "current": .string("0.1.3"), "detail": .string("已经是最新版")]
+        case RPCMethod.allyList:
+            return ["allies": try .from(allies)]
+        case RPCMethod.allyInvite:
+            let exp = Date().epochMillis + 10 * 60_000
+            return ["link": .string(DemoHost.inviteLink(expiresAt: exp)), "expiresAt": .number(Double(exp))]
+        case RPCMethod.allyAccept:
+            guard let invite = AllyInviteLink.parse(p["link"]?.stringValue ?? "") else {
+                throw DemoError(message: "这个链接不完整，请对方重新生成二维码")
+            }
+            guard !invite.isExpired() else { throw DemoError(message: "二维码过期了，请对方重新生成一个") }
+            await pause(1.5) // both halves of the pairing
+            let asked = (try? p["kind"]?.decode(AllyKind.self)) ?? .family
+            let a = AllyInfo(id: nextID("al"), kind: asked == .unknown ? .family : asked,
+                             ownerName: invite.name.isEmpty ? "新朋友" : invite.name, assistantName: "Palo",
+                             online: true, lastSeen: Date().epochMillis)
+            allies.append(a)
+            allyLogs[a.id] = []
+            emitAllies()
+            return ["ally": try .from(a)]
+        case RPCMethod.allyRemove:
+            let id = p["id"]?.stringValue ?? ""
+            guard allies.contains(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Ally") }
+            allies.removeAll { $0.id == id }
+            emit(RPCEventName.allyUpdated, ["removed": .string(id)] as JSONValue)
+            return ["ok": true]
+        case RPCMethod.allyLog:
+            let id = p["id"]?.stringValue ?? ""
+            let before = p["beforeTs"]?.doubleValue.map { Int64($0) } ?? Int64.max
+            let limit = Int(p["limit"]?.doubleValue ?? 50)
+            return ["entries": try .from(Array((allyLogs[id] ?? []).filter { $0.ts < before }.suffix(limit)))]
+        case RPCMethod.allyDraftDecide:
+            let id = p["id"]?.stringValue ?? ""
+            guard var e = allyLogs.values.joined().first(where: { $0.id == id }) else {
+                throw DemoError(message: "这条草稿已经没有了")
+            }
+            guard e.status == .draft else { return ["entry": try .from(e)] }
+            switch p["action"]?.stringValue {
+            case "send":
+                e.status = .queued
+            case "discard":
+                e.status = .rejected
+            case "edit":
+                let t = (p["text"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !t.isEmpty else { throw DemoError(message: "要发的话不能是空的") }
+                e.text = t
+            default:
+                throw DemoError(message: "看不懂这个操作")
+            }
+            updateEntry(e)
+            if e.status == .queued { Task { await self.deliver(e.id) } }
+            return ["entry": try .from(e)]
         default:
             throw DemoError(message: "unknown method \(method)")
         }
+    }
+
+    // MARK: allies
+
+    /// The whole list (`ally.updated`).
+    private func emitAllies() {
+        emit(RPCEventName.allyUpdated, ["allies": allies])
+    }
+
+    /// An exchange changed: its log, its Ally's last line, and `ally.entry`.
+    private func updateEntry(_ e: AllyEntry) {
+        guard let allyId = e.allyId else { return }
+        var log = allyLogs[allyId] ?? []
+        if let i = log.firstIndex(where: { $0.id == e.id }) { log[i] = e } else { log.append(e) }
+        allyLogs[allyId] = log
+        emit(RPCEventName.allyEntry, ["allyId": .string(allyId), "entry": (try? JSONValue.from(e)) ?? .null] as JSONValue)
+        if let i = allies.firstIndex(where: { $0.id == allyId }),
+           e.status != .draft, e.status != .rejected, e.ts >= (allies[i].lastEntry?.ts ?? 0) || allies[i].lastEntry?.id == e.id {
+            allies[i].lastEntry = e
+            emitAllies()
+        }
+    }
+
+    /// Sent: on its way at once when they're online, seen a little later.
+    private func deliver(_ id: String) async {
+        for next in [AllyEntryStatus.delivered, .seen] {
+            await pause(next == .delivered ? 1.2 : 3)
+            guard var e = allyLogs.values.joined().first(where: { $0.id == id }),
+                  let allyId = e.allyId, allies.first(where: { $0.id == allyId })?.online == true else { return }
+            e.status = next
+            updateEntry(e)
+        }
+    }
+
+    /// Their assistant passed something on: into the log and the conversation.
+    public func receiveAllyMessage(from allyId: String, text: String, urgent: Bool = false) {
+        guard let ally = allies.first(where: { $0.id == allyId }) else { return }
+        let e = AllyEntry(id: nextID("ae"), allyId: allyId, dir: .incoming, ts: Date().epochMillis, text: text,
+                          urgent: urgent, status: .delivered)
+        updateEntry(e)
+        postAlly(e, name: ally.displayName)
+    }
+
+    /// The assistant drafted a message to an Ally: a card for the owner.
+    public func makeDraft(to allyId: String, text: String, slots: [AllySlot]? = nil) {
+        guard let ally = allies.first(where: { $0.id == allyId }) else { return }
+        let e = AllyEntry(id: nextID("ae"), allyId: allyId, dir: .outgoing, ts: Date().epochMillis, text: text,
+                          slots: slots, status: .draft)
+        updateEntry(e)
+        postAlly(e, name: ally.displayName)
+    }
+
+    private func postAlly(_ e: AllyEntry, name: String) {
+        seq += 1
+        var m = ChatMessage(seq: seq, id: "m\(seq)", role: .assistant, kind: .ally, text: e.text, channel: .app,
+                            ts: e.ts)
+        m.allyId = e.allyId
+        m.allyName = name
+        m.dir = e.dir
+        m.entryId = e.id
+        messages.append(m)
+        emit(RPCEventName.chatMessage, m)
+    }
+
+    /// Next Saturday afternoon, two hours each, in this time zone.
+    static func saturdaySlots(now: Date = Date()) -> [AllySlot] {
+        let cal = Calendar.current
+        let day = cal.nextDate(after: now, matching: DateComponents(weekday: 7), matchingPolicy: .nextTime) ?? now
+        let f = ISO8601DateFormatter()
+        f.timeZone = .current
+        f.formatOptions = [.withInternetDateTime]
+        return [(14, 16), (16, 18)].compactMap { a, b in
+            guard let s = cal.date(bySettingHour: a, minute: 0, second: 0, of: day),
+                  let e = cal.date(bySettingHour: b, minute: 0, second: 0, of: day) else { return nil }
+            return AllySlot(start: f.string(from: s), end: f.string(from: e))
+        }
+    }
+
+    /// The demo computer's invite (§7.2); nothing answers at that relay.
+    static func inviteLink(expiresAt: Int64) -> String {
+        var c = URLComponents()
+        c.scheme = "paloally"
+        c.host = "ally"
+        c.queryItems = [
+            URLQueryItem(name: "relay", value: "https://relay.example.com"),
+            URLQueryItem(name: "daemon", value: "demo-daemon"),
+            URLQueryItem(name: "code", value: "482913"),
+            URLQueryItem(name: "hostkey", value: Data((0..<32).map { UInt8($0 * 7 % 256) }).base64URLEncodedString()),
+            URLQueryItem(name: "name", value: "小明"),
+            URLQueryItem(name: "exp", value: String(expiresAt)),
+        ]
+        return c.url?.absoluteString ?? "paloally://ally"
+    }
+
+    static func seedAllies(now: Int64) -> ([AllyInfo], [String: [AllyEntry]]) {
+        let min: Int64 = 60_000
+        let hour = 60 * min
+        let day = 24 * hour
+        let family = [
+            AllyEntry(id: "seed-1", allyId: "al-family", dir: .incoming, ts: now - 2 * day, text: "周末要不要带孩子去公园？", status: .seen),
+            AllyEntry(id: "seed-2", allyId: "al-family", dir: .outgoing, ts: now - 2 * day + 6 * min, text: "好呀，周六下午怎么样？", status: .seen),
+            AllyEntry(id: "seed-3", allyId: "al-family", dir: .incoming, ts: now - 3 * hour, text: "今晚我晚点回，大概九点。", status: .seen),
+            AllyEntry(id: "seed-4", allyId: "al-family", dir: .outgoing, ts: now - 3 * hour + 4 * min, text: "收到，路上小心。", status: .delivered),
+        ]
+        let lin = [
+            AllyEntry(id: "seed-5", allyId: "al-lin", dir: .outgoing, ts: now - day - 2 * hour, text: "周四的读书会改到晚上八点了。", status: .seen),
+            AllyEntry(id: "seed-6", allyId: "al-lin", dir: .incoming, ts: now - day - hour, text: "好的，我准时到。", status: .seen),
+            AllyEntry(id: "seed-7", allyId: "al-lin", dir: .outgoing, ts: now - 40 * min, text: "明天的资料发你邮箱了，记得看一下。", status: .queued),
+        ]
+        let allies = [
+            AllyInfo(id: "al-family", kind: .family, ownerName: "家人", assistantName: "小橘", online: true,
+                     lastSeen: now - 2 * min, lastEntry: family.last),
+            AllyInfo(id: "al-lin", kind: .family, ownerName: "小林", assistantName: "阿福", online: false,
+                     lastSeen: now - 5 * hour, lastEntry: lin.last),
+        ]
+        return (allies, ["al-family": family, "al-lin": lin])
     }
 
     // MARK: canned replies
@@ -711,8 +888,20 @@ public actor DemoHost {
         await pause(0.6)
 
         var taskToRun: AllyTask?
+        var draft: (to: String, text: String, slots: [AllySlot]?)?
         let reply: String
-        if text.contains("提醒") {
+        if text.contains("跟"), text.contains("说") || text.contains("约"),
+           let to = allies.first(where: { text.contains($0.ownerName) }) ?? allies.first {
+            // 「跟家人说今晚我晚点回」: a draft card, sent only when the owner says so.
+            if text.contains("约") {
+                draft = (to.id, "周六下午带孩子去公园，这两个时间你看哪个合适？", DemoHost.saturdaySlots())
+            } else {
+                let said = text.range(of: "说").map { String(text[$0.upperBound...]) } ?? text
+                let words = said.trimmingCharacters(in: CharacterSet(charactersIn: "：:，, ").union(.whitespaces))
+                draft = (to.id, words.isEmpty ? text : words, nil)
+            }
+            reply = "拟好了，你看一下，点发送就发给\(to.displayName)。"
+        } else if text.contains("提醒") {
             reply = "好嘞，到点我叫你 ⏰\n\n已经加进 **目标** 里了，随时可以改。"
             let w = Watch(id: nextID("w"), title: String(text.prefix(18)), kind: .schedule, instruction: text,
                           at: ["10:00"], enabled: true, createdBy: .agent)
@@ -752,6 +941,8 @@ public actor DemoHost {
         emit(RPCEventName.chatMessage, final)
         status.busy = false
         emit(RPCEventName.status, status)
+
+        if let draft { makeDraft(to: draft.to, text: draft.text, slots: draft.slots) }
 
         if var t = taskToRun {
             await pause(3)

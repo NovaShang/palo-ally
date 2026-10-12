@@ -24,19 +24,21 @@ public struct AgentStatusLine: Equatable, Sendable {
     ///   - offlineText: a short connection state when not online (nil = online).
     ///   - pendingApprovals: approvals waiting on the owner.
     ///   - pendingQuestions: choice cards waiting on the owner's answer.
+    ///   - pendingDrafts: messages to Allies waiting for 发送.
     ///   - busy: the main turn is running.
     ///   - activity: what the main turn is doing (host Status.activity).
     ///   - tasks: all tasks; running ones and ones waiting on the owner count.
-    public static func make(offlineText: String?, pendingApprovals: Int, pendingQuestions: Int = 0, busy: Bool,
-                            activity: String?, tasks: [AllyTask]) -> AgentStatusLine {
+    public static func make(offlineText: String?, pendingApprovals: Int, pendingQuestions: Int = 0, pendingDrafts: Int = 0,
+                            busy: Bool, activity: String?, tasks: [AllyTask]) -> AgentStatusLine {
         if let offlineText { return AgentStatusLine(kind: .offline, text: offlineText) }
 
         let waiting = tasks.filter { $0.status == .needsInput }.count
-        let needs = pendingApprovals + waiting + pendingQuestions
+        let needs = pendingApprovals + waiting + pendingQuestions + pendingDrafts
         if needs > 0 {
             let text: String
             if pendingQuestions == needs { text = needs == 1 ? "等你回答" : "\(needs) 个问题等你回答" }
-            else if waiting == 0 && pendingQuestions == 0 { text = "\(needs) 件等你确认" }
+            else if pendingDrafts == needs { text = needs == 1 ? "等你点发送" : "\(needs) 条等你点发送" }
+            else if waiting == 0 && pendingQuestions == 0 && pendingDrafts == 0 { text = "\(needs) 件等你确认" }
             else { text = "\(needs) 件事等你" }
             return AgentStatusLine(kind: .needsYou, text: text)
         }

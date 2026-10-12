@@ -17,6 +17,9 @@ public enum ChatKind: String, TolerantStringEnum {
     case clipboard
     /// The assistant asks the owner to choose (AskUserQuestion): a choice card.
     case question
+    /// An exchange with an Ally (allies-prd §7.5): their assistant's words
+    /// (`dir` in), or a message to them (`dir` out, its draft card).
+    case ally
     public static let fallback = ChatKind.unknown
 }
 
@@ -134,6 +137,12 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     public var replyTo: ReplyTo?
     /// A schedule goal's output (晨报 and the like): shown as a card titled by the goal.
     public var card: MessageCard?
+    /// kind == .ally: which Ally, what they're called, which way, and the
+    /// exchange it shows (`ally.log` / `ally.entry`).
+    public var allyId: String?
+    public var allyName: String?
+    public var dir: AllyDirection?
+    public var entryId: String?
 
     // Local-only state.
     public var isStreaming: Bool = false
@@ -141,6 +150,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case seq, id, role, kind, text, channel, ts, proactive, taskId, approvalId, questionId, clientMsgId, attachments, label, replyTo, card
+        case allyId, allyName, dir, entryId
     }
 
     public init(
@@ -171,6 +181,10 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         label = l.string("label")
         replyTo = l.decode(ReplyTo.self, "replyTo")
         card = l.decode(MessageCard.self, "card")
+        allyId = l.string("allyId")
+        allyName = l.string("allyName")
+        dir = l.decode(AllyDirection.self, "dir")
+        entryId = l.string("entryId")
     }
 
     public var date: Date { ts.msDate }

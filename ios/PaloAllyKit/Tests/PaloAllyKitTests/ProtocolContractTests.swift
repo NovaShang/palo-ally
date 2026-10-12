@@ -100,6 +100,12 @@ private let resultTypes: [String: Check] = [
     RPCMethod.suggestionsList: strict(SuggestionsResult.self),
     RPCMethod.suggestionsDismiss: strict(OKResult.self),
     RPCMethod.hostUpdate: strict(HostUpdateResult.self),
+    RPCMethod.allyList: strict(AlliesResult.self),
+    RPCMethod.allyInvite: strict(AllyInviteResult.self),
+    RPCMethod.allyAccept: strict(AllyResult.self),
+    RPCMethod.allyRemove: strict(OKResult.self),
+    RPCMethod.allyLog: strict(AllyEntriesResult.self),
+    RPCMethod.allyDraftDecide: strict(AllyEntryResult.self),
 ]
 
 /// Event → how AppStore.apply(event:) reads the payload.
@@ -123,7 +129,28 @@ private let eventTypes: [String: Check] = [
     RPCEventName.status: { strictIssues(HostStatus.self, $0["status"] ?? $0) },
     RPCEventName.commandsUpdated: strict(CommandsResult.self),
     RPCEventName.suggestionsUpdated: strict(SuggestionsResult.self),
+    RPCEventName.allyUpdated: { json in
+        switch AllyUpdate(json: json) {
+        case .list: return strictIssues(AlliesResult.self, json)
+        case .upsert: return strictIssues(AllyInfo.self, json["ally"] ?? json)
+        case .removed: return []
+        case .refetch: return ["AllyUpdate did not recognise the payload"]
+        }
+    },
+    RPCEventName.allyEntry: { json in
+        guard let e = AllyEntryEvent(json: json) else { return ["AllyEntryEvent did not recognise the payload"] }
+        // Not in the PRD; without it a new exchange waits for the next ally.log to find its Ally.
+        if e.allyId == nil { print("ProtocolContract: ally.entry has no allyId") }
+        return strictIssues(AllyEntry.self, json["entry"] ?? json)
+    },
 ]
+
+/// Allies arrived on the client first (allies-prd §7.5). Until the host's
+/// fixture has any of them, the name checks leave them out; once it has one,
+/// all of them must match.
+private func hostKnowsAllies(_ names: Dictionary<String, JSONValue>.Keys) -> Bool {
+    names.contains { $0.hasPrefix("ally.") }
+}
 
 @Suite("Protocol contract")
 struct ProtocolContractTests {
@@ -138,7 +165,11 @@ struct ProtocolContractTests {
         let f = try ProtocolFixture.load()
         print("ProtocolContract: using \(f.source)")
         let host = Set(f.methods.keys)
-        let client = Set(RPCMethod.all)
+        var client = Set(RPCMethod.all)
+        if !hostKnowsAllies(f.methods.keys) {
+            print("ProtocolContract: \(f.source) predates Allies; their methods aren't compared yet")
+            client.subtract(RPCMethod.allies)
+        }
         #expect(host.subtracting(client).isEmpty, "host methods the client doesn't know: \(host.subtracting(client).sorted())")
         #expect(client.subtracting(host).isEmpty, "client methods the host doesn't have: \(client.subtracting(host).sorted())")
     }
@@ -147,7 +178,8 @@ struct ProtocolContractTests {
     func eventSetMatchesHost() throws {
         let f = try ProtocolFixture.load()
         let host = Set(f.events.keys)
-        let client = Set(RPCEventName.all)
+        var client = Set(RPCEventName.all)
+        if !hostKnowsAllies(f.methods.keys) { client.subtract(RPCEventName.allies) }
         #expect(host.subtracting(client).isEmpty, "host events the client doesn't know: \(host.subtracting(client).sorted())")
         #expect(client.subtracting(host).isEmpty, "client events the host never sends: \(client.subtracting(host).sorted())")
     }
