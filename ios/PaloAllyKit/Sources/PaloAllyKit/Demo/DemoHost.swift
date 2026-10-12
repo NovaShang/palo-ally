@@ -877,6 +877,7 @@ public actor DemoHost {
             let e = AllyEntry(id: nextID("ae"), allyId: id, dir: .outgoing, ts: Date().epochMillis, text: text,
                               status: ally.online ? .sent : .queued, author: .owner)
             updateEntry(e)
+            postAlly(e, name: ally.displayName)
             if ally.online {
                 Task {
                     await self.deliver(e.id)
@@ -1081,8 +1082,11 @@ public actor DemoHost {
     private func postAlly(_ e: AllyEntry, name: String) {
         seq += 1
         let incoming = e.dir == .incoming
-        var m = ChatMessage(seq: seq, id: "m\(seq)", role: incoming ? .system : .assistant, kind: .ally, text: e.text,
+        // The owner's own words (ally.say) are theirs: role "user" (§11.4).
+        let role: ChatRole = incoming ? .system : (e.author == .owner ? .user : .assistant)
+        var m = ChatMessage(seq: seq, id: "m\(seq)", role: role, kind: .ally, text: e.text,
                             channel: .system, ts: e.ts, proactive: incoming ? true : nil)
+        m.author = e.author
         m.allyId = e.allyId
         m.allyName = name
         m.dir = e.dir

@@ -44,6 +44,7 @@ private struct AllyIncoming: View {
     let name: String
 
     private var text: String { entry?.text ?? message.text }
+    private var byThemselves: Bool { (entry?.author ?? message.author) == .owner && !name.isEmpty }
     private var allyID: String? { message.allyId ?? entry?.allyId }
 
     var body: some View {
@@ -52,7 +53,9 @@ private struct AllyIncoming: View {
                 Button {
                     if let allyID, store.ally(id: allyID) != nil { model.openAlly(allyID) }
                 } label: {
-                    Label(AllyInfo.assistantLabel(name), systemImage: "person.2.fill")
+                    // Their own words, or their assistant's (§11.2).
+                    Label(byThemselves ? name : AllyInfo.assistantLabel(name),
+                          systemImage: byThemselves ? "person.fill" : "person.2.fill")
                         .labelStyle(AllyLabelStyle())
                 }
                 .buttonStyle(.plain)
