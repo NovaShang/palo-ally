@@ -9,6 +9,11 @@ import type { FakeScript } from "./fakeDriver.ts";
 import { AllyNet } from "./allyNet.ts";
 import { checkFixture, cleanup, shape, tick } from "./helpers.ts";
 import { waitFor } from "./relayClient.ts";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { AwayDetector } from "../src/away.ts";
+import type { Courier } from "../src/courier.ts";
+import { FakeClaudeDir, FakeCli, assistantEntry } from "./fakeClaude.ts";
 
 const script: FakeScript = async (t, ctx) => {
   if (t === "派个任务") {
@@ -42,7 +47,22 @@ describe("host ↔ app protocol", () => {
   test("every method answers, every event fires; samples written for the Swift client", async () => {
     // On an in-memory Ally net, so the ally.* methods have a peer.
     const net = new AllyNet();
-    const { hub, paths, events, driver } = net.add("家人A", { script }).ctx;
+    // A made-up computer for the sessions: one terminal session, Claude Code's
+    // CLI, the courier and the owner away from the screen.
+    const claude = new FakeClaudeDir();
+    const cli = new FakeCli(claude);
+    const courier = { send: async () => ({ costUsd: 0.01 }), close() {} } as unknown as Courier;
+    const histories = new Map<string, any[]>();
+    const { hub, paths, events, driver } = net.add("家人A", {
+      script,
+      sessions: {
+        claudeDir: claude.dir,
+        cli,
+        courier,
+        away: new AwayDetector(() => null, Date.now, () => true),
+        readMessages: async (sid) => histories.get(sid) ?? [],
+      },
+    }).ctx;
     const peer = net.add("家人B");
     hub.onUnpairDevice = () => {};
     const ctx = { clientId: "app_1_dev-x", deviceId: "dev-x", channel: "app" as const, local: false };
@@ -139,6 +159,49 @@ describe("host ↔ app protocol", () => {
     await run("ally.log", { id: other.id, limit: 10 });
     await hub.idle();
     await run("ally.remove", { id: other.id });
+    // Sessions: the computer's Claude Code sessions, a session's prompt and
+    // question on the phone, words into one, and a helper proposed, started
+    // and looked after.
+    claude.register({ sessionId: "5d821f3c-0000-4000-8000-000000000001", name: "修登录跳转", cwd: "/Users/someone/code/app", status: "busy" });
+    claude.transcript("/Users/someone/code/app", "5d821f3c-0000-4000-8000-000000000001", [assistantEntry("在跑登录相关的测试。")]);
+    histories.set("5d821f3c-0000-4000-8000-000000000001", [
+      { type: "user", uuid: "c1", timestamp: "2026-10-12T10:00:00Z", message: { role: "user", content: "登录以后应该回到原来那一页" }, origin: { kind: "human" } },
+      { type: "assistant", uuid: "c2", timestamp: "2026-10-12T10:01:00Z", message: { role: "assistant", content: [{ type: "text", text: "找到了：跳转时把原来的地址丢了。" }] } },
+      { type: "user", uuid: "c3", timestamp: "2026-10-12T10:02:00Z", message: { role: "user", content: "…" }, origin: { kind: "peer", name: "笔记整理", body: "设计稿在 notes/设计.md" } },
+      { type: "user", uuid: "c4", timestamp: "2026-10-12T10:03:00Z", message: { role: "user", content: "…" }, origin: { kind: "peer", name: "PaloAlly", body: "主人：先别管登录页" } },
+    ]);
+    const term = (await run("sessions.list")).sessions[0];
+    const sig = () => ({ signal: new AbortController().signal, env: {} });
+    const prompt = hub.sessions.onHook("PermissionRequest", { session_id: term.id, cwd: term.cwd, hook_event_name: "PermissionRequest", tool_name: "Bash", tool_input: { command: "npm run build" } }, sig());
+    await tick(5);
+    const sessionCard = JSON.parse(JSON.stringify(hub.approvals.listPending()[0]!));
+    hub.approvals.answer(hub.approvals.listPending()[0]!.id, true, "app");
+    await prompt;
+    const asked = hub.sessions.onHook("PermissionRequest", {
+      session_id: term.id,
+      cwd: term.cwd,
+      hook_event_name: "PermissionRequest",
+      tool_name: "AskUserQuestion",
+      tool_input: { questions: [{ question: "方案选哪个？", header: "方案", options: [{ label: "A", description: "快" }, { label: "B", description: "稳" }], multiSelect: false }] },
+    }, sig());
+    await tick(5);
+    const sessionQuestion = JSON.parse(JSON.stringify(hub.questions.listPending()[0]!));
+    hub.questions.answer(hub.questions.listPending()[0]!.id, { "方案选哪个？": "B" }, "app");
+    await asked;
+    // one the owner didn't get to: back in the terminal
+    const late = hub.sessions.onHook("PermissionRequest", { session_id: term.id, cwd: term.cwd, hook_event_name: "PermissionRequest", tool_name: "Bash", tool_input: { command: "npm test" } }, sig());
+    await tick(5);
+    (hub.approvals as any).settle(hub.approvals.listPending()[0]!.id, "expired", "timeout", undefined, "在电脑上等你");
+    await late;
+    await run("sessions.history", { id: term.id, limit: 50 });
+    await run("sessions.send", { id: term.id, text: "先别管登录页，把列表页做完" });
+    const project = mkdtempSync(`${tmpdir()}/site-`);
+    await hub.toolHandlers().helper_propose({ name: "网站帮手", dir: project, duty: "你负责主人的网站：先做列表页，再做详情页。", dailyUsd: 5 });
+    const proposal = hub.chat.recent(1)[0]!.proposal!;
+    const helper = (await run("helper.decide", { proposalId: proposal.id, action: "create" })).session;
+    await run("sessions.control", { id: helper.id, action: "restart" });
+    await run("sessions.hooks", { enabled: true });
+    await hub.sessions.setHooks(false, "test");
     await run("stop");
     await run("device.unpair");
     await tick(150);
@@ -154,13 +217,34 @@ describe("host ↔ app protocol", () => {
     // in, and a draft card out.
     sampleEvents["ally.updated"] = events.filter((e) => e.event === "ally.updated" && e.data.allies[0]?.lastEntry).at(-1)!.data;
     const chat = events.filter((e) => e.event === "chat.message").map((e) => e.data);
-    sampleEvents["chat.message"] = JSON.parse(JSON.stringify([chat[0], chat.find((m) => m.kind === "ally" && m.dir === "in"), chat.find((m) => m.kind === "ally" && m.dir === "out")]));
+    sampleEvents["chat.message"] = JSON.parse(
+      JSON.stringify([
+        chat[0],
+        chat.find((m) => m.kind === "ally" && m.dir === "in"),
+        chat.find((m) => m.kind === "ally" && m.dir === "out"),
+        // a helper proposal, and the same message once the helper was started
+        chat.find((m) => m.kind === "helper"),
+        chat.filter((m) => m.kind === "helper").at(-1),
+      ]),
+    );
+    // Cards: the assistant's own, a session's (with its source), and a
+    // session's that went back to the computer (with a note).
+    const approvals = events.filter((e) => e.event === "approval.updated").map((e) => e.data);
+    sampleEvents["approval.updated"] = JSON.parse(JSON.stringify([approvals[0], sessionCard, approvals.find((a) => a.source && a.note)]));
+    const questions = events.filter((e) => e.event === "question.updated").map((e) => e.data);
+    sampleEvents["question.updated"] = JSON.parse(JSON.stringify([questions[0], sessionQuestion]));
+    expect(sessionCard.source).toEqual({ kind: "session", id: term.id, name: "修登录跳转" });
+    expect(sessionQuestion.source).toBeDefined();
+    // the list with a helper in it
+    sampleEvents["sessions.updated"] = events.filter((e) => e.event === "sessions.updated" && e.data.sessions.some((x: any) => x.kind === "helper")).at(-1)!.data;
     // commands.updated fires when the harness reports its list
     expect(Object.keys(sampleEvents).sort()).toEqual([...RPC_EVENTS].sort());
 
-    const fixture = { methods, events: sampleEvents };
+    // The helper's made-up folder, not this machine's temp path.
+    const fixture = JSON.parse(JSON.stringify({ methods, events: sampleEvents }).replaceAll(project, "/Users/someone/code/site"));
     checkFixture(resolve(import.meta.dir, "../../ios/PaloAllyKit/Tests/PaloAllyKitTests/Fixtures/protocol.json"), fixture, shape);
     cleanup(paths);
     cleanup(peer.ctx.paths);
+    claude.cleanup();
   });
 });

@@ -172,9 +172,12 @@ export class SessionWatch {
     );
   }
 
-  /** Reads the registry (and, when asked, `claude agents`) and tells the hub if the list changed. */
-  async refresh(o: { agents?: boolean } = {}): Promise<void> {
-    if (o.agents) await this.refreshAgents();
+  /**
+   * Reads the registry (and `claude agents` when asked, or when its last
+   * answer is older than `agentsMaxAgeMs`) and tells the hub if the list changed.
+   */
+  async refresh(o: { agents?: boolean; agentsMaxAgeMs?: number } = {}): Promise<void> {
+    if (o.agents || (o.agentsMaxAgeMs !== undefined && this.now() - this.agentsAt >= o.agentsMaxAgeMs)) await this.refreshAgents();
     this.readRegistry();
     this.emitIfChanged();
   }

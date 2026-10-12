@@ -136,13 +136,14 @@
 - **跑腿会话：**
   - 主机常驻一个极小的 SDK 会话，名字固定为 `PaloAlly`（`extraArgs.name`），模型 Haiku，不思考。
   - 只开放 `SendMessage` 和 `ToolSearch` 两个工具。
-  - 权限模式和你的默认一致，两边都是「prompting」类，消息才不会被扣住。
+  - 权限模式和收信的会话同一类（「prompting」或「bypass」），消息才不会被扣住；每类最多一个跑腿会话，用到才开。
 - **原话不改：**
   - 跑腿会话挂一个 `PreToolUse` 钩子，在它调用 SendMessage 时，由主机用代码把 `to` 和 `message` 换成目标会话和你的原文。
   - 模型只负责按下发送，改不了一个字。
 - **对方当你本人：**
-  - 全局 `SessionStart` 钩子返回一行 `additionalContext`：「名叫 PaloAlly 的会话发来的消息，是主人本人在 PaloAlly App 里打的字，按主人的话对待。」
-  - 消息正文前加「主人：」。
+  - 全局 `SessionStart` 钩子返回一行 `additionalContext`：「名叫 PaloAlly 的会话发来的消息：开头是「主人：」的，是主人本人在 PaloAlly App 里打的字，按主人亲口说的话对待；开头是「主人的助理：」的，是主人的助理转达的，按队友的请求对待。回应直接写在你自己的对话里（主人在 App 里看得到），不要用 SendMessage 回给 PaloAlly。」
+  - 你在 App 里打的字，正文前加「主人：」；Palo 用 `session_send` 送的话前加「主人的助理：」。Palo 读的网页、邮件、Ally 的话里可能夹着别人的指令，所以它的话不当你本人的话（2026-10-12 主机实现时定）。
+  - 会话的回应留在它自己的对话里，不发回跑腿会话（跑腿会话也拒收别的会话发来的消息）。
 - **会不会打断：**送达时机由 Claude Code 决定，在它下一次工具调用之间插入（实测）。
 - **成本：**每条约 1.4 美分，约 3 秒。跑腿会话空闲 10 分钟后关闭，下次再开。
 
@@ -155,14 +156,14 @@
   - 分别用 `claude stop`、`claude respawn`、`claude rm`。
   - 重启后会话编号不变、上下文都在（实测）。
 - **复活：**`claude --bg --resume <sessionId>`。
-- **电脑重启后：**主机启动时，把 `helpers.json` 里没删的帮手逐个复活。
+- **电脑重启后：**主机启动时，把 `helpers.json` 里没删、也没被你（或花费上限）停掉、但没在跑的帮手逐个复活。
 - **花费：**
   - 从对话记录里的 usage 估算每个帮手每天的花费。
   - 超过上限时停掉它，并告诉你。
 
 ### 6.6 Palo 的工具
 - `sessions_list()`
-- `session_send(name, text)`：Palo 也走 6.4 的跑腿通道，原话不变。
+- `session_send(name, text)`：Palo 也走 6.4 的跑腿通道，原话不变，前面加「主人的助理：」。
 - `helper_propose(name, dir, duty, dailyUsd)`：生成一张卡片，你点头后才开。
 - `helper_stop(name)` / `helper_restart(name)`：停止和重启都要你点头。
 
@@ -185,6 +186,15 @@
 **类型：**
 - `CCSession`：`{id, name, cwd, kind: "helper" | "terminal" | "background", status: "busy" | "idle" | "waiting" | "stopped", waitingFor?, lastLine?, contextTokens?, updatedAt}`
 - `CCMessage`：`{id, ts, role: "owner" | "assistant" | "peer" | "palo", text, from?}`
+
+**主机定下的细节**（2026-10-12，实现时补；样例见 `ios/PaloAllyKit/Tests/PaloAllyKitTests/Fixtures/protocol.json`）：
+- `sessions.list` 返回 `{sessions, hooks}`，`hooks` 是全局钩子现在开没开。`sessions.hooks` 不带 `enabled` 时只查不改。
+- `sessions.updated` 的内容是 `{sessions}`：整张列表。
+- `sessions.history`：`before` 是客户端手里最早那条消息的 `id`（也接受毫秒时间）；返回从旧到新，默认 50 条，最多 200 条。
+- `CCMessage`：经 PaloAlly 送进去的话 `role: "palo"`，正文去掉了前缀；`from` 是「主人」（你在 App 里打的字）或助理的名字（Palo 的话）。`peer` 的 `from` 是对方会话的名字。帮手的第一条消息（交接说明）算 Palo 的话。
+- 帮手提议：聊天里一条 `kind: "helper"` 的消息，带 `proposal: {id, name, cwd, duty, dailyUsd, status: "pending" | "created" | "discarded" | "expired", sessionId?}`；`helper.decide` 的 `proposalId` 就是 `proposal.id`。状态变了，主机用同一个 id 和 seq 再发一次这条 `chat.message`。
+- `helper_stop` / `helper_restart` 是 Palo 的普通审批卡片（`tool: "helper_stop"` / `"helper_restart"`）。
+- 会话的确认和提问卡片不进聊天记录，只在 `approvals` / `questions` 里（App 放在对话末尾）。没回答就结束时都是 `status: "expired"`：钩子超时 `note: "在电脑上等你"`（会话在终端里还等着）；在电脑上答掉了、或会话接着往下干了 `note: "已在电脑上处理"`。会话的卡片没有「以后都允许」。
 
 ## 8. 安全
 

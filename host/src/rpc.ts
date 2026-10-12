@@ -25,12 +25,13 @@ export const RPC_METHODS = [
   "media.upload", "media.uploadChunk", "media.get", "media.read",
   "suggestions.list", "suggestions.dismiss", "host.update",
   "ally.list", "ally.invite", "ally.accept", "ally.remove", "ally.log", "ally.draft.decide",
+  "sessions.list", "sessions.history", "sessions.send", "sessions.control", "sessions.hooks", "helper.decide",
 ] as const;
 
 export const RPC_EVENTS = [
   "chat.message", "chat.delta", "task.updated", "approval.updated", "question.updated", "watch.updated",
   "artifact.updated", "settings.updated", "status", "commands.updated",
-  "suggestions.updated", "ally.updated", "ally.entry",
+  "suggestions.updated", "ally.updated", "ally.entry", "sessions.updated",
 ] as const;
 
 // Admin methods are reachable only on the local unix socket (the owner's own
@@ -137,14 +138,14 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return { ok: !!t };
     }
     case "approval.answer": {
-      const a = hub.approvals.answer(String(p.id), !!p.allow, ctx.channel, !!p.remember);
+      const a = hub.approvals.answer(String(p.id), !!p.allow, ctx.channel, !!p.remember, ctx.deviceId);
       if (!a) throw new Error("没有这个确认请求");
       return { status: a.status };
     }
     case "question.answer": {
       const raw = p.answers && typeof p.answers === "object" ? (p.answers as Record<string, unknown>) : {};
       const answers = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, String(v ?? "")]));
-      return { question: hub.questions.answer(String(p.id ?? ""), answers, ctx.channel) };
+      return { question: hub.questions.answer(String(p.id ?? ""), answers, ctx.channel, ctx.deviceId) };
     }
     case "watch.add":
       return { watch: hub.watches.add(p, "user") };
@@ -209,6 +210,25 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return { entries: hub.allies.log(String(p.id ?? ""), p.beforeTs, p.limit) };
     case "ally.draft.decide":
       return { entry: hub.allies.decide(String(p.id ?? ""), p.action, p.text) };
+    // The computer's own Claude Code sessions (docs/sessions-prd.md §7).
+    case "sessions.list":
+      return { sessions: await hub.sessions.listFresh(), hooks: hub.sessions.hooksEnabled() };
+    case "sessions.history": {
+      const before = typeof p.before === "string" || typeof p.before === "number" ? p.before : undefined;
+      return { messages: await hub.sessions.history(String(p.id ?? ""), before, Number(p.limit ?? 50)) };
+    }
+    case "sessions.send":
+      await hub.sessions.send(String(p.id ?? ""), String(p.text ?? ""), "owner");
+      return { ok: true };
+    case "sessions.control":
+      await hub.sessions.control(String(p.id ?? ""), String(p.action ?? ""), ctx.channel);
+      return { ok: true };
+    case "sessions.hooks":
+      // No `enabled`: only says whether they're on.
+      if (typeof p.enabled !== "boolean") return { enabled: hub.sessions.hooksEnabled() };
+      return { enabled: hub.sessions.setHooks(p.enabled, ctx.channel) };
+    case "helper.decide":
+      return await hub.sessions.decide(String(p.proposalId ?? ""), String(p.action ?? ""), ctx.channel);
     case "host.update":
       // check: only look. Otherwise stage the newest release and switch to it as
       // soon as nothing is in flight (the app's 立即更新); `wait` is for the CLI.

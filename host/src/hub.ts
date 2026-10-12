@@ -29,6 +29,7 @@ import { Updater, type UpdaterDeps } from "./update.ts";
 import { type Usage, UsageLedger } from "./usage.ts";
 import { appendJsonl } from "./util.ts";
 import { WatchStore } from "./watches.ts";
+import { Sessions, type SessionsDeps } from "./sessions.ts";
 
 export type { ClientConn, WechatChannel, WechatReplyTarget } from "./channels/types.ts";
 export { timing } from "./conversation.ts";
@@ -45,6 +46,7 @@ export interface HubDeps {
   readPower?: () => PowerReading | null; // tests feed readings; default reads the OS
   updater?: Partial<UpdaterDeps>; // tests point the updater at a temp checkout
   allies?: Partial<AlliesDeps>; // tests connect hosts in memory and move the clock
+  sessions?: Partial<SessionsDeps>; // tests fake the claude CLI, the clock and whether the owner is away
 }
 
 // Hub assembles the assistant: the main conversation with the harness, the
@@ -71,6 +73,7 @@ export class Hub {
   readonly power: PowerWatcher;
   readonly updater: Updater;
   readonly allies: Allies;
+  readonly sessions: Sessions;
   private compactTimer: ReturnType<typeof setInterval> | null = null;
   private readonly info: HarnessInfo;
   private readonly proactive: Proactive;
@@ -256,6 +259,22 @@ export class Hub {
       log: (s) => this.log(`allies: ${s}`),
       ...deps.allies,
     });
+    // The computer's own Claude Code sessions: listed, their prompts on the
+    // phone while the owner is away, words into them, and helpers.
+    this.sessions = new Sessions({
+      paths: this.paths,
+      claudeDir: deps.claudeDir ?? claudeConfigDir(),
+      bus: this.bus,
+      chat: this.chat,
+      approvals: this.approvals,
+      questions: this.questions,
+      router: this.router,
+      audit: this.audit,
+      settings: () => this.config.settings,
+      mainSessionId: () => this.runtime.data.sessionId,
+      log: this.log,
+      ...deps.sessions,
+    });
     this.suggestions = new SuggestionStore(this.paths.suggestions, this.bus, {
       driver: deps.driver,
       probeModel: () => this.config.probeModel,
@@ -297,6 +316,7 @@ export class Hub {
       this.power.start();
       // New official release: staged in the background, switched to at a clean break.
       this.updater.start();
+      this.sessions.start();
     }
     this.emitStatus();
   }
@@ -308,6 +328,7 @@ export class Hub {
     this.power.stop();
     this.updater.stop();
     this.allies.stop();
+    this.sessions.stop();
     if (this.compactTimer) clearInterval(this.compactTimer);
     if (this.suggestionTimer) clearInterval(this.suggestionTimer);
     this.artifacts.stop();
@@ -472,7 +493,7 @@ export class Hub {
   // ---------------- what the harness offers ----------------
 
   toolHandlers(): ToolHandlers {
-    return makeShellTools({ tasks: this.tasks, handoffs: this.handoffs, watches: this.watches, artifacts: this.artifacts, chat: this.chat, router: this.router, audit: this.audit, wechat: this.wechat, media: this.media, allies: this.allies,
+    return makeShellTools({ tasks: this.tasks, handoffs: this.handoffs, watches: this.watches, artifacts: this.artifacts, chat: this.chat, router: this.router, audit: this.audit, wechat: this.wechat, media: this.media, allies: this.allies, sessions: this.sessions,
       ownerChannel: () => this.conversation.ownerChannel(), cwd: this.paths.home, timezone: () => this.config.settings.timezone });
   }
 

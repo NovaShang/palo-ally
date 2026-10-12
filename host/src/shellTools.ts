@@ -12,6 +12,7 @@ import { zonedParts } from "./util.ts";
 import type { WechatChannel } from "./channels/types.ts";
 import type { MediaStore } from "./media.ts";
 import type { Allies } from "./allies.ts";
+import type { Sessions } from "./sessions.ts";
 import { join, resolve } from "node:path";
 import { mimeOf } from "./artifacts.ts";
 import type { Attachment, Channel, Watch } from "./types.ts";
@@ -30,6 +31,7 @@ export interface ShellToolDeps {
   wechat?: WechatChannel | null;
   media: MediaStore;
   allies?: Allies;
+  sessions?: Sessions;
   /** Where the owner is talking from in the current turn. */
   ownerChannel: () => Channel;
   /** The assistant's working directory: relative paths resolve against it. */
@@ -174,6 +176,13 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
     // another assistant without the owner's tap on the card.
     ally_list: async () => d.allies?.toolList() ?? "[]",
     ally_send: async (args) => d.allies?.draft(args) ?? "还没有 Ally。",
+    // The computer's own Claude Code sessions. Words go in verbatim; a helper
+    // starts, stops or restarts only on the owner's tap.
+    sessions_list: async () => (d.sessions ? await d.sessions.toolList() : "[]"),
+    session_send: async ({ name, text }) => (d.sessions ? await d.sessions.toolSend(name, text) : "这台电脑上没开会话管理"),
+    helper_propose: async (a) => d.sessions?.propose(a) ?? "这台电脑上没开会话管理",
+    helper_stop: async ({ name }) => d.sessions?.requestControl(name, "stop") ?? "这台电脑上没开会话管理",
+    helper_restart: async ({ name }) => d.sessions?.requestControl(name, "restart") ?? "这台电脑上没开会话管理",
     notify_user: async ({ text, urgent }) => {
       const msg = d.chat.add({ role: "assistant", kind: "notice", text, channel: "system", proactive: true });
       // Wait for the real outcome (pushes give up after ~5 s), but never longer

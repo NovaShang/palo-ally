@@ -87,6 +87,12 @@ export interface ToolHandlers {
   Artifact(args: { file_path: string; title?: string; description?: string; files?: Record<string, string> }): Promise<string>;
   ally_list(): Promise<string>;
   ally_send(args: { to: string; text: string; urgent?: boolean; slots?: { start: string; end: string }[]; replyTo?: string }): Promise<string>;
+  // The computer's Claude Code sessions and helpers (docs/sessions-prd.md §6.6).
+  sessions_list(): Promise<string>;
+  session_send(args: { name: string; text: string }): Promise<string>;
+  helper_propose(args: { name: string; dir: string; duty: string; dailyUsd: number }): Promise<string>;
+  helper_stop(args: { name: string }): Promise<string>;
+  helper_restart(args: { name: string }): Promise<string>;
 }
 
 export interface ImageInput {

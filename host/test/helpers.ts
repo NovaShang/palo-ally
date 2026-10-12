@@ -8,6 +8,8 @@ import { scaffoldHome } from "../src/home.ts";
 import { Hub, type WechatChannel } from "../src/hub.ts";
 import type { Pusher } from "../src/router.ts";
 import type { AlliesDeps } from "../src/allies.ts";
+import type { SessionsDeps } from "../src/sessions.ts";
+import { FakeCli } from "./fakeClaude.ts";
 
 const created: string[] = [];
 
@@ -51,11 +53,17 @@ export function testConfig(over: (c: Config) => void = () => {}): Config {
   return c;
 }
 
-export function makeHub(opts: { script?: FakeScript; config?: Config; wechat?: WechatChannel; paths?: Paths; allies?: Partial<AlliesDeps> } = {}) {
+export function makeHub(
+  opts: { script?: FakeScript; config?: Config; wechat?: WechatChannel; paths?: Paths; allies?: Partial<AlliesDeps>; sessions?: Partial<SessionsDeps> } = {},
+) {
   const paths = opts.paths ?? tmpPaths();
   const driver = new FakeDriver(opts.script);
   const pusher = new RecordingPusher();
-  const hub = new Hub({ paths, config: opts.config ?? testConfig(), driver, pushers: [pusher], wechat: opts.wechat, log: () => {}, allies: opts.allies });
+  // Never this computer's Claude Code: an empty config dir and a pretend CLI.
+  const claudeDir = mkdtempSync(join(tmpdir(), "paloally-claude-"));
+  created.push(claudeDir);
+  const sessions: Partial<SessionsDeps> = { claudeDir, cli: new FakeCli(), ...opts.sessions };
+  const hub = new Hub({ paths, config: opts.config ?? testConfig(), driver, pushers: [pusher], wechat: opts.wechat, log: () => {}, allies: opts.allies, sessions });
   const events: { event: string; data: any }[] = [];
   hub.bus.on((event, data) => events.push({ event, data }));
   return { hub, driver, pusher, paths, events };

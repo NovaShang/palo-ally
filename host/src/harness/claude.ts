@@ -155,6 +155,44 @@ export function paloallyMcpServer(h: ToolHandlers) {
         async (a) => text(await h.ally_send(a)),
       ),
       tool(
+        "sessions_list",
+        "列出主人这台电脑上的 Claude Code 会话：名字、帮手 / 终端 / 后台、状态（在忙 / 空闲 / 等主人 / 停了）、目录、最后一句。",
+        {},
+        async () => text(await h.sessions_list()),
+      ),
+      tool(
+        "session_send",
+        "把一段话原样送进电脑上的某个 Claude Code 会话（对方看到的是「主人的助理：」加上这段话，回应写在它自己的对话里）。主人让你转告某个会话时用；只送话，不等回复。",
+        {
+          name: z.string().describe("会话的名字（sessions_list 里的 name）"),
+          text: z.string().describe("要送进去的原话"),
+        },
+        async (a) => text(await h.session_send(a)),
+      ),
+      tool(
+        "helper_propose",
+        "提议开一个「帮手」：一个在后台专门负责某个长期项目的 Claude Code 会话。只生成一张卡片，主人点「开吧」才会开；立即返回，别说已经开了。最多同时 3 个帮手。",
+        {
+          name: z.string().describe("帮手的名字，主人一看就懂，如「网站帮手」"),
+          dir: z.string().describe("项目目录（绝对路径或 ~/ 开头）"),
+          duty: z.string().describe("交接说明：帮手的第一条消息。写完整——它看不到主对话：项目是什么、要做什么、做到什么程度、注意什么"),
+          dailyUsd: z.number().positive().describe("每天花费上限（美元）；超过了主机会停掉它并告诉主人"),
+        },
+        async (a) => text(await h.helper_propose(a)),
+      ),
+      tool(
+        "helper_stop",
+        "停掉一个帮手（要主人在卡片上点头才执行；立即返回）。对话记录会留着，以后能重启。",
+        { name: z.string().describe("帮手的名字") },
+        async (a) => text(await h.helper_stop(a)),
+      ),
+      tool(
+        "helper_restart",
+        "重启一个帮手（同一个会话、上下文都在；停了的会重新开起来）。要主人在卡片上点头才执行；立即返回。",
+        { name: z.string().describe("帮手的名字") },
+        async (a) => text(await h.helper_restart(a)),
+      ),
+      tool(
         "notify_user",
         "主动推送一条消息给主人（手机通知；推不出去会改发微信）。只在真正要紧时用。返回的是实际送达情况：没送到就别对主人说已推送。",
         { text: z.string(), urgent: z.boolean().optional() },
