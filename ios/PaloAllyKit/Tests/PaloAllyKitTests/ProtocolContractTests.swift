@@ -143,13 +143,6 @@ private let eventTypes: [String: Check] = [
     },
 ]
 
-/// Allies arrived on the client first (allies-prd §7.5). Until the host's
-/// fixture has any of them, the name checks leave them out; once it has one,
-/// all of them must match.
-private func hostKnowsAllies(_ names: Dictionary<String, JSONValue>.Keys) -> Bool {
-    names.contains { $0.hasPrefix("ally.") }
-}
-
 @Suite("Protocol contract")
 struct ProtocolContractTests {
     @Test func mappingCoversEveryKnownName() {
@@ -163,11 +156,7 @@ struct ProtocolContractTests {
         let f = try ProtocolFixture.load()
         print("ProtocolContract: using \(f.source)")
         let host = Set(f.methods.keys)
-        var client = Set(RPCMethod.all)
-        if !hostKnowsAllies(f.methods.keys) {
-            print("ProtocolContract: \(f.source) predates Allies; their methods aren't compared yet")
-            client.subtract(RPCMethod.allies)
-        }
+        let client = Set(RPCMethod.all)
         #expect(host.subtracting(client).isEmpty, "host methods the client doesn't know: \(host.subtracting(client).sorted())")
         #expect(client.subtracting(host).isEmpty, "client methods the host doesn't have: \(client.subtracting(host).sorted())")
     }
@@ -176,8 +165,7 @@ struct ProtocolContractTests {
     func eventSetMatchesHost() throws {
         let f = try ProtocolFixture.load()
         let host = Set(f.events.keys)
-        var client = Set(RPCEventName.all)
-        if !hostKnowsAllies(f.methods.keys) { client.subtract(RPCEventName.allies) }
+        let client = Set(RPCEventName.all)
         #expect(host.subtracting(client).isEmpty, "host events the client doesn't know: \(host.subtracting(client).sorted())")
         #expect(client.subtracting(host).isEmpty, "client events the host never sends: \(client.subtracting(host).sorted())")
     }

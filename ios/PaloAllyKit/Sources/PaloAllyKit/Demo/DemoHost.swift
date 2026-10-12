@@ -164,6 +164,17 @@ public actor DemoHost {
             receiveAllyMessage(from: "al-family", text: "周六下午带孩子去公园，你那边几点方便？")
             post("家人的助理问周六下午几点去公园。我看了你的日历，这两个时间都空着，回复拟好了，你看一下。")
             makeDraft(to: "al-family", text: "周六下午都可以，这两个时间你看哪个合适？", slots: DemoHost.saturdaySlots())
+        case "alliesSent":
+            // `-demoState alliesSent`: the same, and the owner has sent it; a
+            // short one to 小林 waits in the queue (offline).
+            receiveAllyMessage(from: "al-family", text: "周六下午带孩子去公园，你那边几点方便？")
+            makeDraft(to: "al-family", text: "周六下午都可以，这两个时间你看哪个合适？", slots: DemoHost.saturdaySlots())
+            makeDraft(to: "al-lin", text: "资料我晚上再发你。")
+            for e in allyLogs.values.joined() where e.status == .draft {
+                var sent = e
+                sent.status = e.allyId == "al-lin" ? .queued : .seen
+                updateEntry(sent)
+            }
         case "tables":
             // Wide tables in a reply: they scroll sideways instead of squeezing.
             post("MacBook Air 和 dev 哪台更适合常驻跑助理？", role: .user)

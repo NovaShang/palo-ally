@@ -145,7 +145,7 @@ public struct AllyInfo: Codable, Sendable, Hashable, Identifiable {
     /// 「家人的助理」: how their messages are labelled.
     public var assistantLabel: String { Self.assistantLabel(displayName) }
 
-    /// 「小林的助理」, 「Nova 的助理」 (a space after Latin letters or digits).
+    /// 「小林的助理」, 「Alex 的助理」 (a space after Latin letters or digits).
     public static func assistantLabel(_ name: String) -> String {
         let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if n.isEmpty { return "对方的助理" }

@@ -139,7 +139,7 @@ struct AlliesDecodingTests {
         #expect(AllyInfo.assistantLabel("小林") == "小林的助理")
         #expect(AllyInfo.assistantLabel("小林的助理") == "小林的助理")
         #expect(AllyInfo.assistantLabel("  ") == "对方的助理")
-        #expect(AllyInfo.assistantLabel("Nova") == "Nova 的助理")
+        #expect(AllyInfo.assistantLabel("Alex") == "Alex 的助理")
     }
 
     @Test func draftsCountAsWaitingOnTheOwner() {
