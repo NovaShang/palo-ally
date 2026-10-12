@@ -61,6 +61,9 @@ interface Pending {
   used: boolean; // the hook already put this message into a SendMessage call
   sendId?: string; // that call's tool_use id
   delivered: boolean;
+  nudged?: boolean; // the model ended its turn without sending: told once more
+  label?: string;
+  cost?: number;
   msgId?: string;
   error?: string;
   resolve: (r: { msgId?: string; costUsd: number }) => void;
@@ -74,6 +77,7 @@ export interface CourierDeps {
   model?: string;
   idleMs?: number;
   log?: (s: string) => void;
+  trace?: (m: unknown) => void; // every SDK message (debugging)
 }
 
 class CourierSession {
@@ -105,10 +109,18 @@ class CourierSession {
         settings: { crossSessionInbound: "refuse" } as any,
         permissionMode: this.mode === "bypass" ? "bypassPermissions" : "default",
         ...(this.mode === "bypass" ? { allowDangerouslySkipPermissions: true } : {}),
-        canUseTool: async (tool, input) =>
-          tool === "SendMessage" || tool === "ToolSearch"
-            ? { behavior: "allow", updatedInput: input }
-            : { behavior: "deny", message: "Only SendMessage." },
+        // No claude.ai connectors, MCP servers or skills: a few hundred tokens of context.
+        mcpServers: {},
+        strictMcpConfig: true,
+        skills: [],
+        // The words are put in twice over: here (prompting class) and in the
+        // PreToolUse hook (bypass class, where nothing asks for permission).
+        canUseTool: async (tool, input, o) => {
+          if (tool === "ToolSearch") return { behavior: "allow", updatedInput: input };
+          if (tool !== "SendMessage") return { behavior: "deny", message: "Only SendMessage." };
+          const updated = this.fill(input, o.toolUseID);
+          return updated ? { behavior: "allow", updatedInput: updated } : { behavior: "deny", message: "Already sent." };
+        },
         hooks: { PreToolUse: [{ matcher: "SendMessage", hooks: [async (input) => this.rewrite(input)] }] },
         env: { ...cleanSessionEnv((d.env ?? (() => process.env))()), ...OWN_SESSION_ENV, CLAUDE_AGENT_SDK_CLIENT_APP: `paloally-courier/${VERSION}` },
       },
@@ -116,24 +128,32 @@ class CourierSession {
     void this.pump();
   }
 
-  // The exact recipient and words go into the call; a second call in the same turn is refused.
-  private async rewrite(input: HookInput): Promise<any> {
+  // The exact recipient and words for this SendMessage call, or null when
+  // this turn's message already went out in another call.
+  private fill(toolInput: Record<string, unknown>, toolUseId: string | undefined): Record<string, unknown> | null {
     const cur = this.current;
-    const toolInput = ((input as any).tool_input ?? {}) as Record<string, unknown>;
-    if (!cur || cur.used) {
-      return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "Already sent." } };
-    }
+    if (!cur) return null;
+    if (cur.used && toolUseId !== cur.sendId) return null;
     cur.used = true;
-    cur.sendId = (input as any).tool_use_id;
+    cur.sendId = toolUseId;
     const updated: Record<string, unknown> = { ...toolInput, to: cur.to, message: cur.message };
     if ("content" in updated) updated.content = cur.message;
     if ("recipient" in updated) updated.recipient = cur.to;
+    if ("summary" in updated) delete updated.summary;
+    return updated;
+  }
+
+  private async rewrite(input: HookInput): Promise<any> {
+    this.d.trace?.({ type: "courier_hook", input });
+    const updated = this.fill(((input as any).tool_input ?? {}) as Record<string, unknown>, (input as any).tool_use_id);
+    if (!updated) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "Already sent." } };
     return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", updatedInput: updated } };
   }
 
   private async pump(): Promise<void> {
     try {
       for await (const msg of this.q) {
+        this.d.trace?.(msg);
         const m = msg as any;
         const cur = this.current;
         if (m.type === "user" && cur && Array.isArray(m.message?.content)) {
@@ -141,8 +161,11 @@ class CourierSession {
             if (b?.type !== "tool_result" || (cur.sendId && b.tool_use_id !== cur.sendId)) continue;
             const text = typeof b.content === "string" ? b.content : Array.isArray(b.content) ? b.content.map((x: any) => x?.text ?? "").join("") : "";
             if (/"success"\s*:\s*true/.test(text) && !b.is_error) {
-              cur.delivered = true;
-              cur.msgId = /"msg_id"\s*:\s*"([^"]+)"/.exec(text)?.[1];
+              // Claude Code says what it delivered: it must be the exact words.
+              if (sentVerbatim(text, cur.message)) {
+                cur.delivered = true;
+                cur.msgId = /"msg_id"\s*:\s*"([^"]+)"/.exec(text)?.[1];
+              } else cur.error = "送出去的话和原话不一样";
             } else if (cur.used) {
               cur.error = text.slice(0, 300) || "没送到";
             }
@@ -151,9 +174,18 @@ class CourierSession {
           const total = typeof m.total_cost_usd === "number" ? m.total_cost_usd : this.lastCost;
           const cost = Math.max(0, total - this.lastCost);
           this.lastCost = total;
-          if (cur) {
+          if (cur && !cur.used && !cur.nudged && !cur.error) {
+            // It answered without sending: once more, plainly.
+            cur.nudged = true;
+            cur.cost = (cur.cost ?? 0) + cost;
+            this.input.push({
+              type: "user",
+              message: { role: "user", content: `You did not send it. Call SendMessage now (to=${cur.label}).` },
+              parent_tool_use_id: null,
+            } as SDKUserMessage);
+          } else if (cur) {
             this.current = null;
-            if (cur.delivered) cur.resolve({ msgId: cur.msgId, costUsd: cost });
+            if (cur.delivered) cur.resolve({ msgId: cur.msgId, costUsd: cost + (cur.cost ?? 0) });
             else cur.reject(new Error(cur.error ? `没送到：${cur.error}` : "没送到"));
           }
         }
@@ -179,6 +211,7 @@ class CourierSession {
       }, SEND_TIMEOUT_MS);
       const pending: Pending = {
         to,
+        label,
         message,
         used: false,
         delivered: false,
@@ -209,6 +242,28 @@ class CourierSession {
     }
     this.closed = true;
   }
+}
+
+// SendMessage's result quotes what it sent: {"success":true,"message":"“<words>” → <to>; …"}.
+export function sentVerbatim(result: string, message: string): boolean {
+  let said: string;
+  try {
+    said = String(JSON.parse(result).message ?? "");
+  } catch {
+    const m = /"message"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(result);
+    if (!m) return false;
+    try {
+      said = JSON.parse(`"${m[1]}"`);
+    } catch {
+      return false;
+    }
+  }
+  const q = /^“([\s\S]*)” → /.exec(said);
+  if (!q) return false;
+  const echo = q[1]!;
+  if (echo === message) return true;
+  // a long message is quoted cut short, with an ellipsis
+  return echo.endsWith("…") && echo.length > 20 && message.startsWith(echo.slice(0, -1));
 }
 
 export class Courier {

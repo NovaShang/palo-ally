@@ -2,11 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Courier, modeClass } from "../src/courier.ts";
+import { Courier, modeClass, sentVerbatim } from "../src/courier.ts";
 
 // A stand-in for the Agent SDK's query(): a "model" that paraphrases what it
 // was asked to send (as Haiku did in the spike) and tries to send twice.
-function fakeQuery(log: { options: any[]; delivered: any[]; turns: string[] }, o: { fail?: boolean; noSend?: boolean } = {}) {
+function fakeQuery(log: { options: any[]; delivered: any[]; turns: string[] }, o: { fail?: boolean; noSend?: boolean; tamper?: boolean } = {}) {
   return ((args: { prompt: AsyncIterable<any>; options: any }) => {
     log.options.push(args.options);
     let closed = false;
@@ -17,10 +17,17 @@ function fakeQuery(log: { options: any[]; delivered: any[]; turns: string[] }, o
         if (closed) return;
         const text = String(m.message.content);
         log.turns.push(text);
+        let sent: any = {};
         if (!o.noSend) {
-          const first = await hook({ hook_event_name: "PreToolUse", tool_name: "SendMessage", tool_use_id: "t1", tool_input: { to: "the site session", message: "Reply with: done", content: "Reply with: done" } });
+          const asked = { to: "the site session", message: "Reply with: done", content: "Reply with: done", summary: "Relay" };
+          const first = await hook({ hook_event_name: "PreToolUse", tool_name: "SendMessage", tool_use_id: "t1", tool_input: asked });
           const out = first.hookSpecificOutput;
-          if (out.permissionDecision === "allow") log.delivered.push(out.updatedInput);
+          expect(out.permissionDecision).toBe("allow");
+          // prompting class: Claude Code then asks canUseTool, with the model's own input
+          const perm = await args.options.canUseTool("SendMessage", asked, { toolUseID: "t1", signal: new AbortController().signal });
+          expect(perm.updatedInput).toEqual(out.updatedInput);
+          const sent = o.tamper ? { ...out.updatedInput, message: "Reply with: done" } : out.updatedInput;
+          log.delivered.push(sent);
           // the model tries again; refused
           const second = await hook({ hook_event_name: "PreToolUse", tool_name: "SendMessage", tool_use_id: "t2", tool_input: { to: "x", message: "y" } });
           expect(second.hookSpecificOutput.permissionDecision).toBe("deny");
@@ -28,7 +35,20 @@ function fakeQuery(log: { options: any[]; delivered: any[]; turns: string[] }, o
             type: "user",
             message: {
               role: "user",
-              content: [{ type: "tool_result", tool_use_id: "t1", content: [{ type: "text", text: o.fail ? '{"success":false,"message":"no such session"}' : '{"success":true,"message":"sent","msg_id":"abc-1"}' }] }],
+              content: [
+                {
+                  type: "tool_result",
+                  tool_use_id: "t1",
+                  content: [
+                    {
+                      type: "text",
+                      text: o.fail
+                        ? '{"success":false,"message":"no such session"}'
+                        : JSON.stringify({ success: true, message: `“${sent.message}” → ${sent.to}; in that session's inbox`, msg_id: "abc-1" }),
+                    },
+                  ],
+                },
+              ],
             },
           };
         }
@@ -53,6 +73,8 @@ describe("the courier", () => {
     const r = await courier.send({ to: "uds:/tmp/cc-socks/1.sock", label: "网站帮手", message: "主人：先别管登录页，把列表页做完", mode: "prompting" });
     expect(r).toEqual({ msgId: "abc-1", costUsd: 0.004 });
     expect(log.delivered).toEqual([{ to: "uds:/tmp/cc-socks/1.sock", message: "主人：先别管登录页，把列表页做完", content: "主人：先别管登录页，把列表页做完" }]);
+    // nothing on its way: no SendMessage goes out
+    expect(await log.options[0].canUseTool("SendMessage", { to: "a", message: "b" }, { toolUseID: "t9" })).toMatchObject({ behavior: "deny" });
     expect(log.turns[0]).toBe("TO: 网站帮手\nTEXT:\n主人：先别管登录页，把列表页做完");
     // the same session takes the next one
     await courier.send({ to: "uds:/tmp/cc-socks/1.sock", label: "网站帮手", message: "主人：好", mode: "prompting" });
@@ -63,8 +85,9 @@ describe("the courier", () => {
     expect(opt.env.PALOALLY_SESSION).toBe("1");
     expect(opt.env.CLAUDE_CODE_SESSION_ID).toBeUndefined();
     expect(opt.env.CLAUDECODE).toBeUndefined();
-    expect(await opt.canUseTool("Bash", {})).toMatchObject({ behavior: "deny" });
-    expect(await opt.canUseTool("SendMessage", { to: "a" })).toMatchObject({ behavior: "allow" });
+    expect(await opt.canUseTool("Bash", {}, {})).toMatchObject({ behavior: "deny" });
+    expect(await opt.canUseTool("ToolSearch", { query: "select:SendMessage" }, {})).toMatchObject({ behavior: "allow" });
+    expect(opt).toMatchObject({ strictMcpConfig: true, mcpServers: {}, skills: [] });
     // a bypass-mode recipient gets a courier of that class
     await courier.send({ to: "x", label: "x", message: "主人：hi", mode: "bypass" });
     expect(log.options).toHaveLength(2);
@@ -80,6 +103,11 @@ describe("the courier", () => {
     await expect(failing.send({ to: "x", label: "x", message: "主人：hi", mode: "prompting" })).rejects.toThrow("没送到");
     const idle = new Courier({ cwd: mkdtempSync(join(tmpdir(), "courier-")), query: fakeQuery(log, { noSend: true }) });
     await expect(idle.send({ to: "x", label: "x", message: "主人：hi", mode: "prompting" })).rejects.toThrow("没送到");
+    expect(log.turns.at(-1)).toBe("You did not send it. Call SendMessage now (to=x)."); // told once more first
+    // Claude Code says it delivered other words: not counted as sent
+    const tampered = new Courier({ cwd: mkdtempSync(join(tmpdir(), "courier-")), query: fakeQuery(log, { tamper: true }) });
+    await expect(tampered.send({ to: "x", label: "x", message: "主人：hi", mode: "prompting" })).rejects.toThrow("和原话不一样");
+    tampered.close();
     failing.close();
     idle.close();
   });
@@ -93,6 +121,15 @@ describe("the courier", () => {
     await courier.send({ to: "x", label: "x", message: "主人：2", mode: "prompting" });
     expect(log.options).toHaveLength(2);
     courier.close();
+  });
+
+  test("what SendMessage says it delivered is checked against the words", () => {
+    const said = (m: string) => JSON.stringify({ success: true, message: `“${m}” → uds:/tmp/cc-socks/1.sock; in that session's inbox`, msg_id: "x" });
+    expect(sentVerbatim(said("主人：先别管登录页"), "主人：先别管登录页")).toBe(true);
+    expect(sentVerbatim(said("先别管登录页"), "主人：先别管登录页")).toBe(false);
+    const long = "主人：" + "很长的一段话".repeat(50);
+    expect(sentVerbatim(said(long.slice(0, 120) + "…"), long)).toBe(true);
+    expect(sentVerbatim('{"success":true}', "x")).toBe(false);
   });
 
   test("permission modes come in two classes", () => {
