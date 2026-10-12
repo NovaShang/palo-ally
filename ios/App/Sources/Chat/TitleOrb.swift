@@ -253,6 +253,7 @@ extension AppStore {
             offlineText: connectionTrouble ? Copy.connectionShort(displayedConnection) : nil,
             pendingApprovals: pendingApprovals.count,
             pendingQuestions: pendingQuestions.count,
+            pendingDrafts: pendingAllyDrafts.count,
             busy: isBusy,
             activity: status?.activity,
             tasks: tasks

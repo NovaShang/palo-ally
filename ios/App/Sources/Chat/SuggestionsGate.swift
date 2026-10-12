@@ -58,7 +58,7 @@ final class SuggestionsGate {
         #endif
         guard !store.suggestions.isEmpty, !composerEngaged,
               store.displayedConnection == .online, !store.viewingPast,
-              !store.isBusy, store.pendingApprovals.isEmpty, store.pendingQuestions.isEmpty
+              !store.isBusy, store.pendingApprovals.isEmpty, store.pendingQuestions.isEmpty, store.pendingAllyDrafts.isEmpty
         else { return false }
         if firstUse(store) { return true }
         return now.timeIntervalSince(quietSince(store)) >= Self.quietInterval

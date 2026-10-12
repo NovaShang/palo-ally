@@ -10,16 +10,21 @@ struct MessageRow: View {
         #if DEBUG
         let _ = RenderTrace.note("row \(message.id)")
         #endif
-        switch message.role {
-        case .user:
-            UserBubble(message: message)
-        case .system:
-            NoticeRow(text: message.text)
-        case .assistant where message.kind == .clipboard:
-            ClipboardCard(message: message)
-        default:
-            // Anything the assistant says (including pushes it sends) gets full markdown.
-            AssistantMessage(message: message)
+        if message.kind == .ally {
+            // An Ally's words, or a message to one (its draft card).
+            AllyMessageRow(message: message)
+        } else {
+            switch message.role {
+            case .user:
+                UserBubble(message: message)
+            case .system:
+                NoticeRow(text: message.text)
+            case .assistant where message.kind == .clipboard:
+                ClipboardCard(message: message)
+            default:
+                // Anything the assistant says (including pushes it sends) gets full markdown.
+                AssistantMessage(message: message)
+            }
         }
     }
 }

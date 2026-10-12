@@ -310,6 +310,12 @@ private struct ConversationRows: View {
                         .id("approval-\(approval.id)")
                 }
 
+                // Drafts to Allies with no message of their own: here, like approvals.
+                ForEach(store.unanchoredPendingDrafts) { draft in
+                    AllyDraftCard(entry: draft, name: draft.allyId.flatMap { store.ally(id: $0)?.displayName } ?? "")
+                        .id("ally-draft-\(draft.id)")
+                }
+
                 if showsBusyIndicator {
                     ThinkingIndicator(activity: busyActivity, justSent: store.awaitingReply && store.status?.busy != true)
                         .id("thinking")
