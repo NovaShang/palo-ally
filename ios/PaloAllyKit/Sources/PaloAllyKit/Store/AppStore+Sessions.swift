@@ -269,6 +269,9 @@ extension AppStore {
                 upsert(session: s)
                 helperSessions[proposal.id] = s.id
                 sessionsSupported = true
+            } else if action == .create {
+                // Not started after all: the computer's copy says why (its note).
+                helperDecisions[proposal.id] = before
             }
             return r.session
         } catch {

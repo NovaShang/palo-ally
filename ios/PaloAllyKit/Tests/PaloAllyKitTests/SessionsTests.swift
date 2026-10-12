@@ -388,6 +388,26 @@ struct SessionsStoreTests {
         #expect(store.pendingHelperProposals.map(\.id) == ["hp9"])
     }
 
+    @Test func aHelperThatDidntStartStaysOnOffer() async throws {
+        let host = ManualHost()
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { store.connection == .online })
+        var m = ChatMessage(seq: 1, id: "m1", role: .assistant, kind: .helper, text: "开个帮手？", ts: 1)
+        m.proposal = HelperProposal(id: "hp8", name: "帮手", cwd: "/", duty: "做事", dailyUsd: 5)
+        store.apply(event: RPCEventName.chatMessage, data: try JSONValue.from(m))
+        let deciding = Task { try await store.decideHelper(m.proposal!, .create) }
+        #expect(await until { host.request("helper.decide") != nil })
+        // The computer couldn't start it: the card is re-sent with why, and no session comes back.
+        m.proposal?.note = "claude --bg 没成功"
+        store.apply(event: RPCEventName.chatMessage, data: try JSONValue.from(m))
+        host.respond(host.request("helper.decide")!.id, [:])
+        #expect(try await deciding.value == nil)
+        let shown = try #require(store.helperProposal(in: store.messages[0]))
+        #expect(shown.isPending && shown.note == "claude --bg 没成功")
+        #expect(store.pendingHelperProposals.map(\.id) == ["hp8"])
+    }
+
     @Test func aHostWithoutSessionsHidesThem() async throws {
         let host = ManualHost()
         let store = AppStore(transport: host.transport)

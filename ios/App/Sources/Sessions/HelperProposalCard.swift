@@ -44,10 +44,18 @@ struct HelperProposalCard: View {
             }
 
             if proposal.isPending {
-                Text("开了以后，它是电脑上的一个后台会话，随时能停。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let note = proposal.note, !note.isEmpty {
+                    // The last 开吧 didn't start it: why, and it's still on offer.
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("开了以后，它是电脑上的一个后台会话，随时能停。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 HStack(spacing: 10) {
                     Button {
                         decide(.discard)
