@@ -4,10 +4,12 @@
 //   cd bento/relay && npx wrangler dev --port 8789
 // Override with RELAY_URL. Skipped when no relay is reachable.
 //
-// Pairs both ways from one invite, sends both ways, queues while one host
-// is down and delivers when it's back, carries receipts, keeps the phone
-// pairing apart, refuses an Ally stream that tries RPC, and unpairs, after
-// which the relay itself refuses the old device.
+// Pairs both ways from one invite, sends both ways, carries the owner's own
+// words (ally.say) and, with 能对话, the assistant's direct answer from a
+// turn that can't do anything else, queues while one host is down and
+// delivers when it's back, carries receipts, keeps the phone pairing apart,
+// refuses an Ally stream that tries RPC, and unpairs, after which the relay
+// itself refuses the old device.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dialAlly, pairAsClient } from "../src/channels/allyLink.ts";
@@ -108,6 +110,47 @@ d(`Allies over the relay (${RELAY})`, () => {
     await b.rpc("ally.draft.decide", { id: b.hub.allies.log(toA.id).at(-1)!.id, action: "send" });
     await waitFor(() => b.hub.allies.log(toA.id).at(-1)!.status === "delivered");
     expect(a.hub.allies.log(toB.id).at(-1)).toMatchObject({ dir: "in", text: "好，路上小心", replyTo: draft.id });
+  }, 30_000);
+
+  test("the owner's own words go straight out, marked as theirs on the other side", async () => {
+    const toB = a.hub.allies.list()[0]!;
+    const toA = b.hub.allies.list()[0]!;
+    const t0 = Date.now();
+    const { entry } = await a.rpc("ally.say", { id: toB.id, text: "我七点到" });
+    expect(entry).toMatchObject({ author: "owner", dir: "out" });
+    await waitFor(() => a.hub.allies.log(toB.id).at(-1)!.status === "delivered");
+    expect(Date.now() - t0).toBeLessThan(5_000);
+    expect(b.hub.allies.log(toA.id).at(-1)).toMatchObject({ id: entry.id, dir: "in", text: "我七点到", author: "owner" });
+    expect(b.hub.chat.since(0).find((m) => m.entryId === entry.id)).toMatchObject({ role: "system", dir: "in", author: "owner" });
+  }, 30_000);
+
+  test("能对话: an Ally's message gets the assistant's answer straight back, and that turn can't do anything else", async () => {
+    const toB = a.hub.allies.list()[0]!;
+    const toA = b.hub.allies.list()[0]!;
+    const tried: boolean[] = [];
+    b.driver.script = async (t, ctx) => {
+      if (!t.startsWith("[Ally]")) return;
+      tried.push(await ctx.useTool("Bash", { command: "cat ~/.ssh/id_ed25519" }));
+      await ctx.opts.tools.ally_send({ to: toA.id, text: "好，七点门口见" });
+      ctx.emit({ type: "assistant_text", text: "[skip]", parentToolUseId: null });
+    };
+    const { ally } = await b.rpc("ally.trust", { id: toA.id, trust: "converse" });
+    expect(ally.trust).toBe("converse");
+    // A hears B's level in B's next hello
+    await waitFor(() => a.hub.allies.list()[0]!.theirTrust === "converse");
+    const t0 = Date.now();
+    await a.rpc("ally.say", { id: toB.id, text: "七点在门口等你？" });
+    await waitFor(() => a.hub.allies.log(toB.id).some((e) => e.dir === "in" && e.text === "好，七点门口见"), 15_000);
+    expect(Date.now() - t0).toBeLessThan(10_000);
+    expect(a.hub.allies.log(toB.id).at(-1)).toMatchObject({ dir: "in", author: "assistant" });
+    expect(b.hub.allies.log(toA.id).at(-1)).toMatchObject({ dir: "out", author: "assistant" });
+    expect(b.hub.allies.log(toA.id).some((e) => e.status === "draft")).toBe(false);
+    expect(tried).toEqual([false]);
+    expect(b.hub.audit.tail(50).some((e) => e.type === "ally.tool.denied" && e.tool === "Bash")).toBe(true);
+    await b.hub.idle();
+    b.driver.script = async () => {};
+    await b.rpc("ally.trust", { id: toA.id, trust: "review" });
+    await waitFor(() => a.hub.allies.list()[0]!.theirTrust === "review");
   }, 30_000);
 
   test("while the other host is down it queues; once it's back it's delivered", async () => {
