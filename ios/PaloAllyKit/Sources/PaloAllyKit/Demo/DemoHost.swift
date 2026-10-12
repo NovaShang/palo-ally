@@ -718,6 +718,14 @@ public actor DemoHost {
             return ["allies": try .from(allies)]
         case RPCMethod.allyInvite:
             let exp = Date().epochMillis + 10 * 60_000
+            // `-demoInviteScanned YES`: someone scans it a few seconds later.
+            if UserDefaults.standard.bool(forKey: "demoInviteScanned") {
+                Task {
+                    await self.pause(4)
+                    self.addAlly(AllyInfo(id: self.nextID("al"), kind: .family, ownerName: "小周", assistantName: "Palo",
+                                          online: true, lastSeen: Date().epochMillis))
+                }
+            }
             return ["link": .string(DemoHost.inviteLink(expiresAt: exp)), "expiresAt": .number(Double(exp))]
         case RPCMethod.allyAccept:
             guard let invite = AllyInviteLink.parse(p["link"]?.stringValue ?? "") else {
@@ -775,6 +783,12 @@ public actor DemoHost {
     }
 
     // MARK: allies
+
+    private func addAlly(_ a: AllyInfo) {
+        allies.append(a)
+        allyLogs[a.id] = []
+        emitAllies()
+    }
 
     /// The whole list (`ally.updated`, §7.6).
     private func emitAllies() {

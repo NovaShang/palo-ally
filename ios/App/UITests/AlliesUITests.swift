@@ -62,6 +62,34 @@ final class AlliesUITests: XCTestCase {
         XCTAssertTrue(app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "小林")).firstMatch.exists)
     }
 
+    /// An invite opened from outside (`-pairLink` goes through the same
+    /// handler as the system Camera's open): confirm with 我的, then they're
+    /// on the list with that tag.
+    @MainActor
+    func testAcceptingAnInviteAddsThemWithTheirTag() throws {
+        var c = URLComponents()
+        c.scheme = "paloally"
+        c.host = "ally"
+        c.queryItems = [
+            URLQueryItem(name: "relay", value: "https://relay.example.com"),
+            URLQueryItem(name: "daemon", value: "demo-other"),
+            URLQueryItem(name: "code", value: "135790"),
+            URLQueryItem(name: "hostkey", value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"),
+            URLQueryItem(name: "name", value: "小周"),
+            URLQueryItem(name: "exp", value: String(Int64(Date().timeIntervalSince1970 * 1000) + 600_000)),
+        ]
+        let app = launch(["-pairLink", c.url!.absoluteString])
+        XCTAssertTrue(app.staticTexts["加「小周的助理」为 Ally？"].waitForExistence(timeout: 15), "no confirm sheet")
+        app.buttons["我的"].tap()
+        app.buttons["加为 Ally"].tap()
+        XCTAssertTrue(app.staticTexts["加好了"].waitForExistence(timeout: 15), "never said it was added")
+        app.buttons["完成"].tap()
+        app.buttons["「它」"].tap()
+        let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "小周")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "not on the list")
+        XCTAssertTrue(row.label.contains("我的"), "tag missing: \(row.label)")
+    }
+
     @MainActor
     private func launch(_ args: [String]) -> XCUIApplication {
         let app = XCUIApplication()
