@@ -6,7 +6,7 @@ export interface ChatMessage {
   seq: number;
   id: string;
   role: "user" | "assistant" | "system";
-  kind: "text" | "task" | "approval" | "question" | "notice" | "clipboard";
+  kind: "text" | "task" | "approval" | "question" | "notice" | "clipboard" | "ally";
   text: string;
   channel: Channel;
   ts: number;
@@ -19,6 +19,13 @@ export interface ChatMessage {
   label?: string; // kind "clipboard": what the copied text is ("地址", "验证码")
   replyTo?: ReplyTo; // the owner quoted part of an earlier message
   card?: MessageCard; // a schedule goal's output (e.g. 晨报): shown as a card titled by the goal
+  // kind "ally": words to or from an Ally (docs/allies-prd.md §7.6). "in" is
+  // the other assistant's message as it arrived, "out" the draft card; the
+  // entry (ally.entry / ally.log) has the latest text and status.
+  allyId?: string;
+  allyName?: string; // the other owner's name; shown as 「<allyName>的助理」
+  dir?: "in" | "out";
+  entryId?: string;
 }
 
 export interface ReplyTo {
@@ -175,6 +182,43 @@ export interface Status {
   wechat: "off" | "connected" | "expired";
   version: string;
   metAt?: number; // when the owner first talked to it (first chat message), for 「认识你 N 天」
+}
+
+// ---- Allies (docs/allies-prd.md §6–7) ----
+
+export type AllyKind = "family" | "mine"; // 家人朋友 / 我的
+
+export type AllyStatus = "draft" | "queued" | "sent" | "delivered" | "seen" | "rejected";
+
+export interface AllySlot {
+  start: string; // ISO 8601 with a time zone
+  end: string;
+}
+
+// One message to or from an Ally. Outgoing: draft → queued → sent →
+// delivered → seen, or "rejected" (final; `note` says why in a few words).
+// Incoming: delivered → seen. An incoming entry keeps the sender's id.
+export interface AllyEntry {
+  id: string;
+  allyId: string;
+  dir: "in" | "out";
+  ts: number;
+  text: string;
+  urgent: boolean;
+  slots?: AllySlot[];
+  replyTo?: string; // the entry this answers
+  status: AllyStatus;
+  note?: string;
+}
+
+export interface AllyInfo {
+  id: string;
+  kind: AllyKind;
+  ownerName: string;
+  assistantName: string;
+  online: boolean;
+  lastSeen: number; // 0 = never reached
+  lastEntry?: AllyEntry;
 }
 
 export interface MemoryFile {
