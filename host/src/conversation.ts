@@ -389,7 +389,8 @@ export class Conversation {
 
   /** A permission prompt or a question is waiting for the owner. */
   waitingOnOwner(): boolean {
-    return this.d.approvals.listPending().length > 0 || this.d.questions.listPending().length > 0;
+    // The assistant's own prompts; a session's card on the phone is that session's wait.
+    return this.d.approvals.listPending().some((a) => !a.source) || this.d.questions.listPending().some((q) => !q.source);
   }
 
   /** Where to reply on WeChat when the current turn came from there. */

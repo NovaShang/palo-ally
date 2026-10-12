@@ -11,7 +11,17 @@ export class ChatLog {
   private seq: number;
 
   constructor(private path: string, private bus: Bus) {
-    this.messages = readJsonl<ChatMessage>(path);
+    // A message written again (update) replaces the earlier copy in place.
+    const byId = new Map<string, number>();
+    const all: ChatMessage[] = [];
+    for (const m of readJsonl<ChatMessage>(path)) {
+      const i = byId.get(m.id);
+      if (i === undefined) {
+        byId.set(m.id, all.length);
+        all.push(m);
+      } else all[i] = m;
+    }
+    this.messages = all;
     this.seq = this.messages.reduce((m, x) => Math.max(m, x.seq), 0);
   }
 
@@ -35,6 +45,23 @@ export class ChatLog {
     appendJsonl(this.path, full);
     this.bus.emit("chat.message", full);
     return full;
+  }
+
+  // update changes a message the owner acts on (a helper proposal's status):
+  // the same id and seq, sent again as chat.message for clients to replace.
+  update(id: string, patch: Partial<Omit<ChatMessage, "id" | "seq" | "ts">>): ChatMessage | undefined {
+    const i = this.messages.findIndex((m) => m.id === id);
+    if (i < 0) return undefined;
+    const next = { ...this.messages[i]!, ...patch } as ChatMessage;
+    this.messages[i] = next;
+    appendJsonl(this.path, next);
+    this.bus.emit("chat.message", next);
+    return next;
+  }
+
+  get(id: string): ChatMessage | undefined {
+    for (let i = this.messages.length - 1; i >= 0; i--) if (this.messages[i]!.id === id) return this.messages[i];
+    return undefined;
   }
 
   // delta streams partial assistant text; the final add() with the same id

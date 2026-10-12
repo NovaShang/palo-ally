@@ -6,7 +6,7 @@ export interface ChatMessage {
   seq: number;
   id: string;
   role: "user" | "assistant" | "system";
-  kind: "text" | "task" | "approval" | "question" | "notice" | "clipboard" | "ally";
+  kind: "text" | "task" | "approval" | "question" | "notice" | "clipboard" | "ally" | "helper";
   text: string;
   channel: Channel;
   ts: number;
@@ -26,6 +26,10 @@ export interface ChatMessage {
   allyName?: string; // the other owner's name; shown as 「<allyName>的助理」
   dir?: "in" | "out";
   entryId?: string;
+  // kind "helper": the assistant proposes a helper (docs/sessions-prd.md
+  // §6.6); the owner answers with helper.decide. The message is sent again
+  // (same id and seq) when the proposal's status changes.
+  proposal?: HelperProposal;
 }
 
 export interface ReplyTo {
@@ -77,6 +81,14 @@ export interface TaskActivity {
 
 export type ApprovalStatus = "pending" | "allowed" | "denied" | "expired";
 
+// A card one of the computer's Claude Code sessions asked for, not the
+// assistant itself (docs/sessions-prd.md §7).
+export interface CardSource {
+  kind: "session";
+  id: string; // the session's id (CCSession.id)
+  name: string;
+}
+
 export interface Approval {
   id: string;
   tool: string;
@@ -90,6 +102,10 @@ export interface Approval {
   decidedBy?: string;
   suggestedScope?: string;
   reason?: string; // the harness' own words for why it asked
+  source?: CardSource; // asked by a session on the computer
+  // A short line on how it ended when that isn't the owner's answer:
+  // 「在电脑上等你」 (the session asks in its terminal now), 「已在电脑上处理」.
+  note?: string;
 }
 
 // The harness asking the owner to choose (Claude Code's AskUserQuestion).
@@ -118,6 +134,8 @@ export interface Question {
   answers?: Record<string, string>;
   answeredAt?: number;
   answeredBy?: string;
+  source?: CardSource; // asked by a session on the computer
+  note?: string; // see Approval.note
 }
 
 export interface Watch {
@@ -219,6 +237,47 @@ export interface AllyInfo {
   online: boolean;
   lastSeen: number; // 0 = never reached
   lastEntry?: AllyEntry;
+}
+
+// ---- Sessions: the computer's Claude Code sessions (docs/sessions-prd.md §7) ----
+
+export type CCSessionKind = "helper" | "terminal" | "background";
+export type CCSessionStatus = "busy" | "idle" | "waiting" | "stopped";
+
+export interface CCSession {
+  id: string; // Claude Code's session id
+  name: string;
+  cwd: string;
+  kind: CCSessionKind;
+  status: CCSessionStatus;
+  waitingFor?: string;
+  lastLine?: string;
+  contextTokens?: number;
+  updatedAt: number;
+}
+
+// One line of a session's conversation. "palo": it came through PaloAlly —
+// `from` is 「主人」 for the owner's words from the app, or the assistant's
+// name for its own. "peer": another session; `from` is its name.
+export interface CCMessage {
+  id: string;
+  ts: number;
+  role: "owner" | "assistant" | "peer" | "palo";
+  text: string;
+  from?: string;
+}
+
+export type HelperProposalStatus = "pending" | "created" | "discarded" | "expired";
+
+export interface HelperProposal {
+  id: string; // helper.decide's proposalId
+  name: string;
+  cwd: string;
+  duty: string; // what it's for; becomes the helper's first message
+  dailyUsd: number;
+  status: HelperProposalStatus;
+  sessionId?: string; // once created
+  note?: string; // why it didn't start, when it didn't
 }
 
 export interface MemoryFile {

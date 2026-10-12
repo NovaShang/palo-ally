@@ -1,6 +1,7 @@
 import type { Audit } from "./audit.ts";
 import type { Bus } from "./bus.ts";
 import type { PermissionDecision, PermissionRequest } from "./harness/types.ts";
+import type { AskOptions } from "./approvals.ts";
 import type { Question, QuestionItem } from "./types.ts";
 import { newId, readJson, writeJson } from "./util.ts";
 
@@ -38,7 +39,11 @@ export class QuestionManager {
   ) {
     this.questions = readJson<Question[]>(path, []);
     // A previous process' questions can't be answered any more.
-    for (const q of this.questions) if (q.status === "pending") q.status = "expired";
+    for (const q of this.questions)
+      if (q.status === "pending") {
+        q.status = "expired";
+        if (q.source) q.note = "在电脑上等你";
+      }
     this.persist();
   }
 
@@ -56,31 +61,44 @@ export class QuestionManager {
 
   // request is canUseTool for AskUserQuestion.
   request(req: PermissionRequest): Promise<PermissionDecision> {
+    const asked = this.ask(req);
+    if (!asked) return Promise.resolve({ behavior: "deny", message: "问题格式不对，没法问主人" });
+    return asked.result;
+  }
+
+  // ask puts the question in front of the owner; null when it's malformed.
+  ask(req: PermissionRequest, o: AskOptions = {}): { question: Question; result: Promise<PermissionDecision> } | null {
     const items = parseItems(req.input);
-    if (!items.length) return Promise.resolve({ behavior: "deny", message: "问题格式不对，没法问主人" });
+    if (!items.length) return null;
     const question: Question = {
       id: newId("q_"),
       items,
       taskId: this.hooks.taskForToolUse(req.toolUseId),
       status: "pending",
       createdAt: Date.now(),
+      ...(o.source ? { source: o.source } : {}),
     };
     this.questions.push(question);
     this.persist();
-    this.audit.log("question.asked", { id: question.id, count: items.length });
+    this.audit.log("question.asked", { id: question.id, count: items.length, ...(o.source ? { session: o.source.id, sessionName: o.source.name } : {}) });
 
-    return new Promise<PermissionDecision>((resolve) => {
-      const timer = setTimeout(() => this.expire(question.id, "timeout"), this.hooks.timeoutMinutes() * 60_000);
+    const result = new Promise<PermissionDecision>((resolve) => {
+      const ms = o.timeoutMs ?? this.hooks.timeoutMinutes() * 60_000;
+      const timer = setTimeout(() => this.expire(question.id, "timeout", o.timeoutNote), ms);
       this.pending.set(question.id, { question, input: req.input, resolve, timer });
-      req.signal.addEventListener("abort", () => this.expire(question.id, "aborted"));
+      const onAbort = () => this.expire(question.id, o.abortBy ?? "aborted", o.abortNote);
+      if (req.signal.aborted) queueMicrotask(onAbort);
+      else req.signal.addEventListener("abort", onAbort);
       this.bus.emit("question.updated", question);
-      this.hooks.onCreated(question);
+      if (o.notify !== false) this.hooks.onCreated(question);
     });
+    return { question, result };
   }
 
   // answer: `answers` maps each question's text to the chosen label(s) or the
-  // owner's own words. Every question needs an answer.
-  answer(id: string, answers: Record<string, string>, by: string): Question {
+  // owner's own words. Every question needs an answer. `device`: the paired
+  // device that answered, for the audit trail.
+  answer(id: string, answers: Record<string, string>, by: string, device?: string): Question {
     const p = this.pending.get(id);
     const q = p?.question ?? this.get(id);
     if (!q) throw new Error("没有这个问题");
@@ -98,18 +116,19 @@ export class QuestionManager {
     q.answeredAt = Date.now();
     q.answeredBy = by;
     this.persist();
-    this.audit.log("question.answered", { id, by });
+    this.audit.log("question.answered", { id, by, ...(device ? { device } : {}), ...(q.source ? { session: q.source.id, sessionName: q.source.name } : {}) });
     this.bus.emit("question.updated", q);
     p.resolve({ behavior: "allow", updatedInput: { ...p.input, answers: clean } });
     return q;
   }
 
-  // cancelAll closes every open question (the stop button).
+  // cancelAll closes every open question of the assistant's (the stop
+  // button); sessions' questions are theirs.
   cancelAll(by: string): void {
-    for (const id of [...this.pending.keys()]) this.expire(id, by);
+    for (const [id, p] of [...this.pending]) if (!p.question.source) this.expire(id, by);
   }
 
-  private expire(id: string, by: string): void {
+  private expire(id: string, by: string, note?: string): void {
     const p = this.pending.get(id);
     if (!p) return;
     this.pending.delete(id);
@@ -117,8 +136,9 @@ export class QuestionManager {
     p.question.status = "expired";
     p.question.answeredAt = Date.now();
     p.question.answeredBy = by;
+    if (note) p.question.note = note;
     this.persist();
-    this.audit.log("question.expired", { id, by });
+    this.audit.log("question.expired", { id, by, ...(note ? { note } : {}), ...(p.question.source ? { session: p.question.source.id } : {}) });
     this.bus.emit("question.updated", p.question);
     p.resolve({
       behavior: "deny",
