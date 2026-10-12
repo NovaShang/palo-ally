@@ -99,10 +99,7 @@ export class Sessions {
       claudeDir: d.claudeDir,
       cli: this.cli,
       isOwn: (s) => this.isOwn(s),
-      helper: (id) => {
-        const h = this.helpers.get(id);
-        return h ? { name: h.name, cwd: h.cwd, removed: false } : undefined;
-      },
+      helper: (id) => this.helpers.get(id),
       helperIds: () => this.helpers.list().map((h) => h.sessionId),
       waitingCard: (id) => {
         const open = this.cards.get(id);
@@ -251,6 +248,7 @@ export class Sessions {
     const name = this.nameOf(sid, String(p.cwd ?? ""));
     const source: CardSource = { kind: "session", id: sid, name };
     const abort = new AbortController();
+    if (ctx.signal.aborted) return null; // the hook is already gone
     ctx.signal.addEventListener("abort", () => abort.abort());
     const card: OpenCard = { id: "", waitingFor: waitingWords(p), abort, sawWaiting: false };
     const opts = { source, timeoutMs: this.d.hookWaitMs ?? HOOK_WAIT_MS, timeoutNote: NOTE_AT_COMPUTER, abortNote: NOTE_HANDLED, abortBy: "computer", notify: false };
@@ -452,7 +450,8 @@ export class Sessions {
     const h = await this.createHelper({ name: p.name, cwd: p.cwd, duty: p.duty, dailyUsd: p.dailyUsd });
     this.settleProposal(p.id, { status: "created", sessionId: h.sessionId });
     this.d.audit.log("helper.created", { id: p.id, session: h.sessionId, name: h.name, by });
-    return { session: sessionOf(h.sessionId) ?? this.watch.toWire(this.watch.get(h.sessionId)!) };
+    const rec = this.watch.get(h.sessionId);
+    return { session: sessionOf(h.sessionId) ?? (rec ? this.watch.toWire(rec) : undefined) };
   }
 
   private settleProposal(id: string, patch: Partial<HelperProposal>): void {

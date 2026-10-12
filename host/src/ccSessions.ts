@@ -97,8 +97,8 @@ export interface SessionWatchDeps {
   cli: ClaudeCli;
   /** PaloAlly's own sessions (the main one, probes, the courier): never listed. */
   isOwn: (s: { sessionId: string; name: string; cwd: string; entrypoint?: string }) => boolean;
-  /** Helpers by session id (they're always listed, and listed first). */
-  helper: (sessionId: string) => { name: string; cwd: string; removed: boolean } | undefined;
+  /** Helpers by session id. They're always listed (removed ones as stopped, so they can be revived), helpers first. */
+  helper: (sessionId: string) => { name: string; cwd: string } | undefined;
   /** Session ids of helpers to list even when Claude Code no longer knows them. */
   helperIds: () => string[];
   /** A session's open card on the phone, if any: it's waiting on the owner. */
@@ -369,9 +369,7 @@ export class SessionWatch {
     return [...this.recs.values()].filter((r) => {
       if (r.ended) return false;
       if (this.d.isOwn({ sessionId: r.sessionId, name: r.name, cwd: r.cwd, entrypoint: r.entrypoint })) return false;
-      const h = this.d.helper(r.sessionId);
-      if (h) return !h.removed;
-      if (r.live) return true;
+      if (this.d.helper(r.sessionId) || r.live) return true;
       if (!r.bg) return false;
       // Background sessions stopped more than a week ago drop off the list.
       const last = Math.max(r.transcript?.mtime ?? 0, r.startedAt ?? 0, r.hook?.at ?? 0);
