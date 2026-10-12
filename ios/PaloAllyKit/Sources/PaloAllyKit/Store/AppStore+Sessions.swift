@@ -276,12 +276,29 @@ extension AppStore {
 
     // MARK: sessions' cards
 
-    /// A session's card is still waiting at the computer: it expired here
-    /// and the session still waits there (or the list can't say yet).
+    /// The session a card came from still waits at the computer (or the
+    /// list can't say yet).
     public func waitsAtComputer(_ source: CardSource?) -> Bool {
         guard let source, source.isSession else { return false }
         guard sessionsSupported == true else { return true }
         return session(id: source.id)?.status == .waiting
+    }
+
+    /// A session's card that ran past the hook's limit here (「在电脑上等你」):
+    /// the session asks in its terminal now, and the card stays, untappable,
+    /// while it does. One the owner handled at the computer is not this.
+    public func waitsAtComputer(_ a: Approval) -> Bool {
+        a.status == .expired && !Self.handledAtComputer(by: a.decidedBy, note: a.note) && waitsAtComputer(a.source)
+    }
+
+    public func waitsAtComputer(_ q: Question) -> Bool {
+        q.status == .expired && !Self.handledAtComputer(by: q.answeredBy, note: q.note) && waitsAtComputer(q.source)
+    }
+
+    /// The host's mark for a card that ended because the owner answered in
+    /// the terminal (`decidedBy` "computer", 「已在电脑上处理」).
+    nonisolated static func handledAtComputer(by: String?, note: String?) -> Bool {
+        by == "computer" || note == "已在电脑上处理"
     }
 
     /// Settled at the computer, not here: it leaves the conversation (§5).
@@ -289,7 +306,7 @@ extension AppStore {
         guard a.source?.isSession == true else { return false }
         switch a.status {
         case .allowed, .denied: return a.decidedBy.map { $0 != "app" } ?? false
-        case .expired: return !waitsAtComputer(a.source)
+        case .expired: return !waitsAtComputer(a)
         default: return false
         }
     }
@@ -298,7 +315,7 @@ extension AppStore {
         guard q.source?.isSession == true else { return false }
         switch q.status {
         case .answered: return q.answeredBy.map { $0 != "app" } ?? false
-        case .expired: return !waitsAtComputer(q.source)
+        case .expired: return !waitsAtComputer(q)
         default: return false
         }
     }
@@ -311,7 +328,7 @@ extension AppStore {
         return approvals.filter { a in
             guard !anchored.contains(a.id) else { return false }
             if a.isPending { return true }
-            return a.status == .expired && waitsAtComputer(a.source)
+            return waitsAtComputer(a)
         }
     }
 
@@ -323,7 +340,7 @@ extension AppStore {
         return questions.filter { q in
             guard q.source?.isSession == true, !anchored.contains(q.id) else { return false }
             if q.isPending { return true }
-            return q.status == .expired && waitsAtComputer(q.source)
+            return waitsAtComputer(q)
         }.sorted { $0.createdAt < $1.createdAt }
     }
 }

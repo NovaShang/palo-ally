@@ -200,6 +200,8 @@ public actor DemoHost {
             // hook's limit; the session now asks at the computer.
             if let i = approvals.firstIndex(where: { $0.source?.id == "cc-site" }) {
                 approvals[i].status = .expired
+                approvals[i].decidedAt = now
+                approvals[i].decidedBy = "timeout"
                 approvals[i].note = "在电脑上等你"
                 emit(RPCEventName.approvalUpdated, approvals[i])
             }
@@ -209,9 +211,10 @@ public actor DemoHost {
             Task {
                 await pause(6)
                 if let i = approvals.firstIndex(where: { $0.source?.id == "cc-site" && $0.isPending }) {
-                    approvals[i].status = .allowed
+                    approvals[i].status = .expired
                     approvals[i].decidedAt = Date().epochMillis
-                    approvals[i].decidedBy = "terminal"
+                    approvals[i].decidedBy = "computer"
+                    approvals[i].note = "已在电脑上处理"
                     emit(RPCEventName.approvalUpdated, approvals[i])
                     setSession("cc-site") { $0.status = .busy; $0.waitingFor = nil }
                 }
@@ -867,7 +870,7 @@ public actor DemoHost {
                                   lastLine: "在看交接说明…", contextTokens: 12_000, updatedAt: Date().epochMillis)
                 sessions.append(s)
                 sessionLogs[s.id] = [CCMessage(id: nextID("cm"), ts: Date().epochMillis, role: .palo,
-                                               text: "你好，我是 \(settings.assistantName)。\(proposal.duty)")]
+                                               text: "你好，我是 \(settings.assistantName)。\(proposal.duty)", from: settings.assistantName)]
                 emitSessions()
                 proposal.status = .created
                 proposal.sessionId = s.id
@@ -903,7 +906,7 @@ public actor DemoHost {
     /// about three seconds later, then it answers.
     private func sessionHears(_ id: String, _ text: String) async {
         await pause(1.5)
-        sessionLogs[id, default: []].append(CCMessage(id: nextID("cm"), ts: Date().epochMillis, role: .palo, text: "主人：\(text)"))
+        sessionLogs[id, default: []].append(CCMessage(id: nextID("cm"), ts: Date().epochMillis, role: .palo, text: text, from: "主人"))
         setSession(id) { $0.status = .busy; $0.lastLine = text }
         await pause(2)
         let reply = "好的，按你说的办。"
@@ -915,16 +918,19 @@ public actor DemoHost {
     /// those sessions carry on.
     private func settleSessionCards() {
         let now = Date().epochMillis
+        // As the host marks them: ended without an answer here, handled there.
         for i in approvals.indices where approvals[i].source != nil && approvals[i].isPending {
-            approvals[i].status = .allowed
+            approvals[i].status = .expired
             approvals[i].decidedAt = now
-            approvals[i].decidedBy = "terminal"
+            approvals[i].decidedBy = "computer"
+            approvals[i].note = "已在电脑上处理"
             emit(RPCEventName.approvalUpdated, approvals[i])
         }
         for i in questions.indices where questions[i].source != nil && questions[i].isPending {
-            questions[i].status = .answered
+            questions[i].status = .expired
             questions[i].answeredAt = now
-            questions[i].answeredBy = "terminal"
+            questions[i].answeredBy = "computer"
+            questions[i].note = "已在电脑上处理"
             emit(RPCEventName.questionUpdated, questions[i])
         }
         for s in sessions where s.status == .waiting { setSession(s.id) { $0.status = .busy; $0.waitingFor = nil } }
@@ -1090,7 +1096,7 @@ public actor DemoHost {
         // 网站帮手: a day of work before today's, so there is an older page.
         var site: [CCMessage] = [
             line(.palo, "你好，我是 Palo。主人的网站在 ~/code/site，接下来由你专门负责：先做列表页，再做详情页。每天花费不超过 5 美元。",
-                 ago: 26 * hour),
+                 ago: 26 * hour, from: "Palo"),
             line(.assistant, "收到。我先看一下项目结构和现有的页面。", ago: 26 * hour - min),
         ]
         for i in 1...30 {
@@ -1102,11 +1108,11 @@ public actor DemoHost {
             line(.assistant, "好的，加上了按日期排序，默认最新的在前。", ago: 2 * hour + 28 * min),
             line(.peer, "网站帮手你好，主人的笔记里有一份列表页的设计稿，在 notes/设计/列表页.md。", ago: 2 * hour, from: "笔记整理"),
             line(.assistant, "谢谢，我按那份设计稿调一下间距和字号。", ago: 2 * hour - min),
-            line(.palo, "主人：先别管登录页，把列表页做完", ago: 40 * min),
+            line(.palo, "先别管登录页，把列表页做完", ago: 40 * min, from: "主人"),
             line(.assistant, "明白，登录页先放着。列表页做完了，跑一下构建看看有没有报错。", ago: min),
         ]
         let notes = [
-            line(.palo, "你好，我是 Palo。主人的笔记在 ~/Documents/notes，请每周把新笔记归类、补上标签。", ago: 5 * 24 * hour),
+            line(.palo, "你好，我是 Palo。主人的笔记在 ~/Documents/notes，请每周把新笔记归类、补上标签。", ago: 5 * 24 * hour, from: "Palo"),
             line(.assistant, "好的，我先把现有的分类看一遍。", ago: 5 * 24 * hour - min),
             line(.assistant, "这周的 12 篇笔记都归好类了，标签也补上了。", ago: 40 * min),
         ]

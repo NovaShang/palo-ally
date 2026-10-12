@@ -114,7 +114,8 @@ public struct CCMessage: Codable, Sendable, Hashable, Identifiable {
     public var ts: Int64
     public var role: CCMessageRole
     public var text: String
-    /// peer: which session it came from.
+    /// peer: which session it came from. palo: 「主人」 for the owner's words
+    /// from the app, else the assistant's name for its own.
     public var from: String?
 
     enum CodingKeys: String, CodingKey { case id, ts, role, text, from }
@@ -133,10 +134,10 @@ public struct CCMessage: Codable, Sendable, Hashable, Identifiable {
     }
 
     /// What it says, as shown. Words sent through PaloAlly may arrive with
-    /// the 「主人：」 the host puts in front for the session (§6.4).
+    /// the 「主人：」 or 「主人的助理：」 the host puts in front for the session (§6.4).
     public var shownText: String {
         guard role == .palo else { return text }
-        for prefix in ["主人：", "主人:"] where text.hasPrefix(prefix) {
+        for prefix in ["主人的助理：", "主人：", "主人:"] where text.hasPrefix(prefix) {
             return String(text.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
         }
         return text
@@ -201,13 +202,15 @@ public struct HelperProposal: Codable, Sendable, Hashable, Identifiable {
     public var status: HelperProposalStatus
     /// Once started: the helper's session.
     public var sessionId: String?
+    /// Why it didn't start, when it didn't.
+    public var note: String?
 
-    enum CodingKeys: String, CodingKey { case id, name, cwd, duty, dailyUsd, status, sessionId }
+    enum CodingKeys: String, CodingKey { case id, name, cwd, duty, dailyUsd, status, sessionId, note }
 
     public init(id: String, name: String, cwd: String, duty: String, dailyUsd: Double? = nil,
-                status: HelperProposalStatus = .pending, sessionId: String? = nil) {
+                status: HelperProposalStatus = .pending, sessionId: String? = nil, note: String? = nil) {
         self.id = id; self.name = name; self.cwd = cwd; self.duty = duty; self.dailyUsd = dailyUsd
-        self.status = status; self.sessionId = sessionId
+        self.status = status; self.sessionId = sessionId; self.note = note
     }
 
     public init(from decoder: Decoder) throws {
@@ -220,6 +223,7 @@ public struct HelperProposal: Codable, Sendable, Hashable, Identifiable {
         // A proposal that doesn't say is still on offer.
         status = l.decode(HelperProposalStatus.self, "status") ?? .pending
         sessionId = l.string("sessionId")
+        note = l.string("note")
     }
 
     public var isPending: Bool { status == .pending }

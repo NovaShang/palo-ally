@@ -38,10 +38,12 @@ struct SessionsDecodingTests {
           {"id":"2","ts":2,"role":"assistant","text":"好的"},
           {"id":"3","ts":3,"role":"peer","text":"设计稿在这","from":"笔记整理"},
           {"id":"4","ts":4,"role":"palo","text":"主人：先别管登录页"},
-          {"id":"5","ts":5,"role":"palo","text":"你好，我是 Palo。"}]}
+          {"id":"5","ts":5,"role":"palo","text":"你好，我是 Palo。","from":"Palo"},
+          {"id":"6","ts":6,"role":"palo","text":"详情页也做了吧","from":"主人"}]}
         """)
         #expect(issues.isEmpty)
-        #expect(r.messages.map(\.role) == [.owner, .assistant, .peer, .palo, .palo])
+        #expect(r.messages.map(\.role) == [.owner, .assistant, .peer, .palo, .palo, .palo])
+        #expect(r.messages[5].from == "主人" && r.messages[5].shownText == "详情页也做了吧")
         #expect(r.messages[2].from == "笔记整理")
         // The 「主人：」 the host puts in front for the session isn't shown.
         #expect(r.messages[3].shownText == "先别管登录页")
@@ -68,6 +70,12 @@ struct SessionsDecodingTests {
          "status":"pending","createdAt":1,"source":{"kind":"session","id":"s2","name":"数据清洗"}}
         """)
         #expect(qIssues.isEmpty && q.source?.name == "数据清洗" && q.note == nil)
+        // Handled at the computer, not waiting there.
+        var handled = a
+        handled.decidedBy = "computer"
+        handled.note = "已在电脑上处理"
+        #expect(AppStore.handledAtComputer(by: handled.decidedBy, note: handled.note))
+        #expect(!AppStore.handledAtComputer(by: "timeout", note: "在电脑上等你"))
         // A source missing its name is reported.
         let (_, srcIssues) = try decode(CardSource.self, #"{"kind":"session","id":"s1"}"#)
         #expect(srcIssues.contains { $0.contains("name") })
@@ -87,14 +95,17 @@ struct SessionsDecodingTests {
         #expect(m.kind == .helper)
         let p = try #require(m.proposal)
         #expect(p.id == "hp1" && p.name == "网站帮手" && p.dailyUsd == 5 && p.isPending)
-        // Also read: `helper` for the object, `proposalId` and `dir`; a
-        // proposal that doesn't say is on offer.
+        // Also read: `helper` for the object, `proposalId` and `dir`; and
+        // why it didn't start.
         let (alt, altIssues) = try decode(ChatMessage.self, """
         {"seq":4,"id":"m4","role":"assistant","kind":"helper","text":"","channel":"app","ts":1,
-         "helper":{"proposalId":"hp2","name":"笔记整理","dir":"/notes","duty":"归类"}}
+         "helper":{"proposalId":"hp2","name":"笔记整理","dir":"/notes","duty":"归类","status":"expired","note":"同时开着的帮手最多 3 个"}}
         """)
         #expect(altIssues.isEmpty)
-        #expect(alt.proposal?.id == "hp2" && alt.proposal?.cwd == "/notes" && alt.proposal?.status == .pending && alt.proposal?.dailyUsd == nil)
+        #expect(alt.proposal?.id == "hp2" && alt.proposal?.cwd == "/notes" && alt.proposal?.dailyUsd == nil)
+        #expect(alt.proposal?.status == .expired && alt.proposal?.note == "同时开着的帮手最多 3 个")
+        let (bare, bareIssues) = try decode(HelperProposal.self, #"{"id":"hp3","name":"a","cwd":"/","duty":"b"}"#)
+        #expect(bareIssues.isEmpty && bare.isPending) // a proposal that doesn't say is on offer
         let again = try JSONValue.from(m).decode(ChatMessage.self)
         #expect(again.proposal == p)
     }
@@ -295,7 +306,7 @@ struct SessionsStoreTests {
         #expect(card.note == "在电脑上等你" && !card.isPending)
         // Still at the live end, as 「在电脑上等你」.
         #expect(store.liveEndApprovals.map(\.id).contains("sa1"))
-        #expect(store.waitsAtComputer(card.source) && !store.settledAtComputer(card))
+        #expect(store.waitsAtComputer(card) && !store.settledAtComputer(card))
         // Answered at the computer: the session moves on and the card goes.
         var moved = try #require(store.session(id: "cc-site"))
         moved.status = .busy
@@ -307,8 +318,8 @@ struct SessionsStoreTests {
     @Test func otherDemoStatesSettleSessionsCardsAtTheComputer() async throws {
         let (store, host) = await demoStore()
         await host.applyScenario("allies")
-        #expect(await until { store.approval(id: "sa1")?.decidedBy == "terminal" })
-        #expect(await until { store.question(id: "sq1")?.answeredBy == "terminal" })
+        #expect(await until { store.approval(id: "sa1")?.decidedBy == "computer" })
+        #expect(await until { store.question(id: "sq1")?.answeredBy == "computer" })
         let a = try #require(store.approval(id: "sa1"))
         #expect(store.settledAtComputer(a))
         #expect(await until { store.liveEndApprovals.isEmpty && store.liveEndQuestions.isEmpty })
