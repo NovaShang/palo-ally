@@ -136,10 +136,11 @@ describe("host ↔ app protocol", () => {
     await run("audit.tail", { limit: 3 });
     await run("host.update", { check: true }); // a dev checkout: managed by hand
     // Allies: an invite, then this host scans the other's, a message in, a
-    // draft out (with times), and unpairing at the end.
+    // draft out (with times), the level changed to 能对话, the owner's own
+    // words both ways, and unpairing at the end.
     await run("ally.invite");
     const { link } = await peer.hub.allies.invite();
-    const other = (await run("ally.accept", { link, kind: "family" })).ally;
+    const other = (await run("ally.accept", { link, kind: "family", trust: "review" })).ally;
     const toUs = peer.hub.allies.list()[0]!;
     await peer.hub.toolHandlers().ally_send({ to: toUs.id, text: "今晚我晚点回，大概九点", urgent: true });
     peer.hub.allies.decide(peer.hub.allies.log(toUs.id)[0]!.id, "send");
@@ -152,6 +153,11 @@ describe("host ↔ app protocol", () => {
     });
     await run("ally.draft.decide", { id: hub.allies.log(other.id).at(-1)!.id, action: "send", text: "周六下午两点带孩子去公园？" });
     await waitFor(() => hub.allies.log(other.id).at(-1)!.status === "delivered");
+    await run("ally.trust", { id: other.id, trust: "converse" });
+    await run("ally.say", { id: other.id, text: "我七点到" });
+    await waitFor(() => hub.allies.log(other.id).at(-1)!.status === "delivered");
+    peer.hub.allies.say(toUs.id, "好，门口见");
+    await waitFor(() => hub.allies.log(other.id).at(-1)!.text === "好，门口见");
     await run("ally.list");
     await run("ally.log", { id: other.id, limit: 10 });
     await hub.idle();
@@ -244,7 +250,8 @@ describe("host ↔ app protocol", () => {
     for (const e of events) if (!(e.event in sampleEvents)) sampleEvents[e.event] = JSON.parse(JSON.stringify(e.data));
     // The list once it has someone in it (with a last entry), and chat
     // messages of each shape the client draws: the owner's, an Ally's words
-    // in, and a draft card out.
+    // in (from their assistant, from them), a draft card out, and the
+    // owner's own words to an Ally.
     sampleEvents["ally.updated"] = events.filter((e) => e.event === "ally.updated" && e.data.allies[0]?.lastEntry).at(-1)!.data;
     const chat = events.filter((e) => e.event === "chat.message").map((e) => e.data);
     sampleEvents["chat.message"] = JSON.parse(
@@ -252,6 +259,8 @@ describe("host ↔ app protocol", () => {
         chat[0],
         chat.find((m) => m.kind === "ally" && m.dir === "in"),
         chat.find((m) => m.kind === "ally" && m.dir === "out"),
+        chat.find((m) => m.kind === "ally" && m.dir === "in" && m.author === "owner"),
+        chat.find((m) => m.kind === "ally" && m.role === "user"),
         // a Pal proposal, and the same message once the Pal was opened
         chat.find((m) => m.kind === "helper"),
         chat.filter((m) => m.kind === "helper").at(-1),

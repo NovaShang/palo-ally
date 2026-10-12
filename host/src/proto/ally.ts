@@ -1,10 +1,10 @@
-import type { AllyKind, AllySlot } from "../types.ts";
+import type { AllyAuthor, AllyKind, AllySlot, AllyTrust } from "../types.ts";
 import { b64url, unb64, unb64url } from "./e2e.ts";
 
 // What two hosts say to each other on an Ally stream (docs/allies-prd.md
-// §7.3, §7.6): one JSON object per sealed unit. These four types are all an
-// ally stream may carry. Anything else, every RPC method included, is refused
-// and the stream closed: an Ally can never act as the owner's app.
+// §7.3, §7.6, §11.4): one JSON object per sealed unit. These four types are
+// all an ally stream may carry. Anything else, every RPC method included, is
+// refused and the stream closed: an Ally can never act as the owner's app.
 
 export interface AllyHello {
   type: "ally.hello";
@@ -12,6 +12,9 @@ export interface AllyHello {
   assistantName: string;
   kind: AllyKind;
   version: string;
+  // §11: how the sender's assistant answers the receiver (their `theirTrust`).
+  // Absent from a pre-§11 host; a value we don't know is ignored.
+  trust?: AllyTrust;
   // pairing leg 2 only: how to pair back into the sender
   pairCode?: string;
   hostKey?: string; // b64 raw Ed25519
@@ -27,6 +30,9 @@ export interface AllyMessage {
   slots?: AllySlot[];
   replyTo?: string;
   ts: number;
+  // §11: the sender's owner in their own words, or their assistant. A
+  // pre-§11 host doesn't say: read as "assistant" (all it passed).
+  author: AllyAuthor;
 }
 
 export interface AllyReceipt {
@@ -53,6 +59,12 @@ const ID = /^[\w-]{1,64}$/;
 const DAEMON = /^[\w.-]{1,128}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:?\d{2})$/;
 const KINDS: readonly string[] = ["family", "mine"];
+const TRUSTS: readonly unknown[] = ["converse", "review"];
+
+/** A trust level from outside (an RPC parameter): the value, or null. */
+export function allyTrust(v: unknown): AllyTrust | null {
+  return TRUSTS.includes(v) ? (v as AllyTrust) : null;
+}
 
 const text = (v: unknown, max: number): string | null => (typeof v === "string" && v.length <= max ? v : null);
 
@@ -89,6 +101,7 @@ export function parseAllyWire(raw: string): AllyWire | null {
       const version = text(m.version, 40);
       if (name === null || assistantName === null || version === null || !KINDS.includes(m.kind)) return null;
       const hello: AllyHello = { type: "ally.hello", name, assistantName, kind: m.kind, version };
+      if (TRUSTS.includes(m.trust)) hello.trust = m.trust;
       if (m.pairCode !== undefined) {
         if (typeof m.pairCode !== "string" || !/^\d{6}$/.test(m.pairCode)) return null;
         hello.pairCode = m.pairCode;
@@ -110,7 +123,8 @@ export function parseAllyWire(raw: string): AllyWire | null {
     case "ally.message": {
       const t = text(m.text, ALLY_LIMITS.unitBytes);
       if (typeof m.id !== "string" || !ID.test(m.id) || t === null || typeof m.ts !== "number") return null;
-      const msg: AllyMessage = { type: "ally.message", id: m.id, text: t, urgent: m.urgent === true, ts: m.ts };
+      // Only "owner" means the owner; anything else is their assistant's.
+      const msg: AllyMessage = { type: "ally.message", id: m.id, text: t, urgent: m.urgent === true, ts: m.ts, author: m.author === "owner" ? "owner" : "assistant" };
       if (m.slots !== undefined) {
         const slots = validSlots(m.slots);
         if (!slots) return null;

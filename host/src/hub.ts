@@ -263,6 +263,7 @@ export class Hub {
       hostName: () => this.config.hostName,
       enqueue: (t) => this.conversation.enqueue(t),
       findQueued: (p) => this.conversation.findQueued(p),
+      turnAlly: () => this.conversation.allyTurnAlly(),
       log: (s) => this.log(`allies: ${s}`),
       ...deps.allies,
     });

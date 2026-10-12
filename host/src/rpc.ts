@@ -24,7 +24,7 @@ export const RPC_METHODS = [
   "settings.update", "stop", "push.register", "push.unregister", "device.unpair", "audit.tail",
   "media.upload", "media.uploadChunk", "media.get", "media.read",
   "suggestions.list", "suggestions.dismiss", "host.update",
-  "ally.list", "ally.invite", "ally.accept", "ally.remove", "ally.log", "ally.draft.decide",
+  "ally.list", "ally.invite", "ally.accept", "ally.remove", "ally.log", "ally.draft.decide", "ally.say", "ally.trust",
   "sessions.list", "sessions.history", "sessions.hooks", "helper.decide",
   "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop",
 ] as const;
@@ -204,13 +204,22 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     case "ally.invite":
       return await hub.allies.invite();
     case "ally.accept":
-      return { ally: await hub.allies.accept(String(p.link ?? ""), p.kind) };
+      return { ally: await hub.allies.accept(String(p.link ?? ""), p.kind, p.trust) };
     case "ally.remove":
       return { ok: hub.allies.remove(String(p.id ?? "")) };
     case "ally.log":
       return { entries: hub.allies.log(String(p.id ?? ""), p.beforeTs, p.limit) };
     case "ally.draft.decide":
       return { entry: hub.allies.decide(String(p.id ?? ""), p.action, p.text) };
+    // The owner's own words, sent as they are (§11.3); they're in the app, so
+    // what came in before counts as seen.
+    case "ally.say": {
+      const entry = hub.allies.say(String(p.id ?? ""), p.text);
+      if (ctx.channel === "app") hub.allies.ownerActive();
+      return { entry };
+    }
+    case "ally.trust":
+      return { ally: hub.allies.setTrust(String(p.id ?? ""), p.trust) };
     // The computer's Claude Code sessions the host doesn't run (docs/sessions-prd.md §7).
     case "sessions.list":
       return { sessions: await hub.sessions.listFresh(), hooks: hub.sessions.hooksEnabled() };

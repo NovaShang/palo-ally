@@ -175,7 +175,7 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
     // Allies: the list, and a draft for the owner to send. Nothing reaches
     // another assistant without the owner's tap on the card.
     ally_list: async () => d.allies?.toolList() ?? "[]",
-    ally_send: async (args) => d.allies?.draft(args) ?? "还没有 Ally。",
+    ally_send: async (args) => d.allies?.toolSend(args) ?? "还没有 Ally。",
     // Pals: the assistant talks to them with SendMessage itself; it only
     // lists them here, and proposes a new one (it opens on the owner's tap).
     pals_list: async () => (d.pals ? await d.pals.toolList() : "{}"),

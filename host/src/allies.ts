@@ -15,23 +15,28 @@ import {
   allyKindWord,
   allyNotSeenText,
   allyPushTitle,
+  allySentText,
+  allyTrustWord,
   allyTurnHeader,
   allyTurnMessage,
   allyUndeliveredText,
 } from "./copy.ts";
 import { type Identity, b64, fingerprint, unb64 } from "./proto/e2e.ts";
-import { ALLY_LIMITS, type AllyHello, type AllyMessage, type AllyReceipt, type AllyWire, allyInviteLink, allowedRelay, parseAllyInvite, parseAllyWire, validSlots } from "./proto/ally.ts";
+import { ALLY_LIMITS, type AllyHello, type AllyMessage, type AllyReceipt, type AllyWire, allyInviteLink, allyTrust, allowedRelay, parseAllyInvite, parseAllyWire, validSlots } from "./proto/ally.ts";
 import type { Router } from "./router.ts";
-import type { AllyEntry, AllyInfo, AllyKind, AllySlot, AllyStatus } from "./types.ts";
+import type { AllyAuthor, AllyEntry, AllyInfo, AllyKind, AllySlot, AllyStatus, AllyTrust } from "./types.ts";
 import { newId, readJson, readJsonl, truncate, writeJson, writeJsonl } from "./util.ts";
 
 // Allies (docs/allies-prd.md): two PaloAlly hosts that know each other, so
-// their assistants can pass messages and meeting times. An Ally reaches us as
-// a client of our daemon (like a phone), but its stream only ever speaks the
-// four ally.* messages: it is never attached as the owner's app and can't
-// call any RPC method. Every outgoing word starts as a draft card the owner
-// sends; incoming words are shown as they arrived and handed to the
-// assistant as an outside message, never as an instruction.
+// their assistants (and their owners) can pass messages and meeting times. An
+// Ally reaches us as a client of our daemon (like a phone), but its stream
+// only ever speaks the four ally.* messages: it is never attached as the
+// owner's app and can't call any RPC method. What goes out is the owner's own
+// words (ally.say), or the assistant's: sent at once to an Ally the owner set
+// to 能对话, a draft card the owner sends for one set to 每句要你看 (§11.1).
+// Incoming words are shown as they arrived and handed to the assistant as an
+// outside message, never as an instruction, in a turn where it can only talk
+// (Conversation's gate, allyGate.ts).
 
 /** One Ally as stored in allies.json. */
 export interface Ally {
@@ -46,12 +51,15 @@ export interface Ally {
   theirDeviceIdHere: string;
   pairedAt: number;
   lastSeen: number;
+  trust: AllyTrust; // how our assistant answers them (§11.1); "review" before §11
+  theirTrust?: AllyTrust; // how theirs answers us, from their hello
   pending?: boolean; // pairing in progress: both legs not done yet
   removedAt?: number; // unpaired: identity cleared, the log kept
 }
 
 // A log line: the wire entry plus our own bookkeeping.
-interface StoredEntry extends AllyEntry {
+interface StoredEntry extends Omit<AllyEntry, "author"> {
+  author?: AllyAuthor; // absent on entries from before §11: the assistant's words
   deliveredAt?: number;
   nudgedAt?: number; // 「还没看到」 said
 }
@@ -94,6 +102,8 @@ export interface AlliesDeps {
   hostName: () => string;
   enqueue: (t: Turn) => void;
   findQueued: (pred: (t: Turn) => boolean) => Turn | undefined;
+  // The Ally whose message the assistant is handling right now, if any.
+  turnAlly?: () => string | undefined;
   dial?: DialFn;
   pair?: PairFn;
   now?: () => number;
@@ -157,15 +167,20 @@ export class Allies {
   private readonly dial: DialFn;
   private readonly pairFn: PairFn;
   private readonly now: () => number;
-  private readonly say: (s: string) => void;
+  private readonly logLine: (s: string) => void;
 
   constructor(private d: AlliesDeps) {
     this.allies = readJson<Ally[]>(d.paths.allies, []);
+    // Allies from before §11 had no level: every reply a draft, as then.
+    if (this.allies.some((a) => !allyTrust(a.trust))) {
+      for (const a of this.allies) if (!allyTrust(a.trust)) a.trust = "review";
+      this.saveAllies();
+    }
     this.outbox = readJson<OutItem[]>(d.paths.alliesOutbox, []);
     this.dial = d.dial ?? dialAlly;
     this.pairFn = d.pair ?? pairAsClient;
     this.now = d.now ?? Date.now;
-    this.say = d.log ?? ((s) => console.log(`[allies] ${s}`));
+    this.logLine = d.log ?? ((s) => console.log(`[allies] ${s}`));
     // A pairing cut off by a restart can't finish.
     for (const a of this.allies.filter((x) => x.pending)) this.discardPending(a);
   }
@@ -205,7 +220,7 @@ export class Allies {
   /** ally_list for the assistant. */
   toolList(): string {
     return JSON.stringify(
-      this.active().map((a) => ({ id: a.id, name: a.ownerName, assistantName: a.assistantName, kind: allyKindWord(a.kind), online: this.online(a) })),
+      this.active().map((a) => ({ id: a.id, name: a.ownerName, assistantName: a.assistantName, kind: allyKindWord(a.kind), trust: allyTrustWord(a.trust), online: this.online(a) })),
     );
   }
 
@@ -249,7 +264,7 @@ export class Allies {
       if (opened.code !== inv.code) return this.closeInvite();
       this.scheduleRenew(opened.ttl);
     } catch (e) {
-      this.say(`invite renew failed: ${e}`);
+      this.logLine(`invite renew failed: ${e}`);
     }
   }
 
@@ -289,6 +304,7 @@ export class Allies {
         theirDeviceIdHere: newDeviceId(),
         pairedAt: now,
         lastSeen: now,
+        trust: "review", // until the owner changes it in the app
         pending: true,
       };
       this.allies.push(a);
@@ -302,10 +318,12 @@ export class Allies {
   // accept takes a scanned invite: pair into the inviter's daemon (leg 1),
   // tell it over the new E2E channel how to pair back into ours (leg 2), and
   // return once both are done.
-  async accept(link: string, kindIn: unknown): Promise<AllyInfo> {
+  async accept(link: string, kindIn: unknown, trustIn?: unknown): Promise<AllyInfo> {
     const relay = this.readyRelay();
     if (kindIn !== "family" && kindIn !== "mine") throw new Error("标签只能是「家人朋友」或「我的」");
     const kind: AllyKind = kindIn;
+    const trust = trustIn === undefined || trustIn === null ? "review" : allyTrust(trustIn);
+    if (!trust) throw new Error("档位只能是「能对话」或「每句要你看」");
     const inv = parseAllyInvite(link);
     const now = this.now();
     if (inv.exp && inv.exp < now) throw new Error("这个邀请过期了，请对方重新打开二维码");
@@ -325,6 +343,7 @@ export class Allies {
       theirDeviceIdHere: "",
       pairedAt: now,
       lastSeen: 0,
+      trust,
       pending: true,
     };
     let backDone!: () => void;
@@ -363,7 +382,7 @@ export class Allies {
     delete a.pending;
     a.lastSeen = this.now();
     this.saveAllies();
-    this.d.audit.log("ally.paired", { id: a.id, kind: a.kind, as: "guest" });
+    this.d.audit.log("ally.paired", { id: a.id, kind: a.kind, trust: a.trust, as: "guest" });
     this.emitList();
     return this.info(a);
   }
@@ -385,10 +404,10 @@ export class Allies {
       a.lastSeen = this.now();
       this.saveAllies();
       link.conn.send(this.hello(a));
-      this.d.audit.log("ally.paired", { id: a.id, kind: a.kind, as: "host" });
+      this.d.audit.log("ally.paired", { id: a.id, kind: a.kind, trust: a.trust, as: "host" });
       this.emitList();
     } catch (e) {
-      this.say(`pairing back failed: ${e}`);
+      this.logLine(`pairing back failed: ${e}`);
       link.conn.send({ type: "ally.bye", reason: "pairing failed" });
       setTimeout(() => this.discardPending(a), 200);
     }
@@ -441,10 +460,13 @@ export class Allies {
     this.pump();
   }
 
-  // ---------------- drafts ----------------
+  // ---------------- what goes out ----------------
 
-  // draft is ally_send: a card for the owner, never a message on the wire.
-  draft(args: { to: string; text: string; urgent?: boolean; slots?: unknown; replyTo?: string }): string {
+  // toolSend is ally_send. To an Ally the owner set to 能对话 it goes out now,
+  // the assistant's words for them; otherwise it's a draft card the owner
+  // sends (每句要你看). In a turn an Ally's message started, only the answer
+  // to that Ally can go out directly: words for anyone else wait as a draft.
+  toolSend(args: { to: string; text: string; urgent?: boolean; slots?: unknown; replyTo?: string }): string {
     const a = this.find(args.to);
     if (!a) {
       const names = this.active().map((x) => `${x.ownerName}（${x.id}）`).join("、");
@@ -460,6 +482,8 @@ export class Allies {
       slots = v;
     }
     const replyTo = typeof args.replyTo === "string" && /^[\w-]{1,64}$/.test(args.replyTo) ? args.replyTo : undefined;
+    const turnAlly = this.d.turnAlly?.();
+    const direct = a.trust === "converse" && (turnAlly === undefined || turnAlly === a.id);
     const e: StoredEntry = {
       id: newId("ae_"),
       allyId: a.id,
@@ -469,12 +493,79 @@ export class Allies {
       urgent: !!args.urgent,
       ...(slots ? { slots } : {}),
       ...(replyTo ? { replyTo } : {}),
-      status: "draft",
+      status: direct ? "queued" : "draft",
+      author: "assistant",
     };
     this.addEntry(a, e);
-    this.d.chat.add({ role: "assistant", kind: "ally", text, channel: "system", allyId: a.id, allyName: a.ownerName, dir: "out", entryId: e.id });
-    this.d.audit.log("ally.draft", { id: e.id, allyId: a.id, chars: text.length });
-    return allyDraftedText(a.ownerName, e.id);
+    this.d.chat.add({ role: "assistant", kind: "ally", text, channel: "system", allyId: a.id, allyName: a.ownerName, dir: "out", entryId: e.id, author: "assistant" });
+    if (!direct) {
+      this.d.audit.log("ally.draft", { id: e.id, allyId: a.id, chars: text.length, ...(turnAlly ? { inTurnOf: turnAlly } : {}) });
+      return allyDraftedText(a.ownerName, e.id);
+    }
+    this.queueMessage(a, e);
+    this.d.audit.log("ally.send", { id: e.id, allyId: a.id, chars: text.length, by: "assistant", ...(turnAlly ? { inTurnOf: turnAlly } : {}) });
+    this.emitList();
+    this.pump();
+    return allySentText(a.ownerName, e.id);
+  }
+
+  // say is the owner's own words to an Ally (ally.say): sent as they are,
+  // no card, through the outbox like everything else.
+  say(id: string, textIn: unknown): AllyEntry {
+    const a = this.get(id);
+    if (!a || a.pending) throw new Error("没有这个 Ally");
+    if (a.removedAt) throw new Error("已经不是 Ally 了");
+    const text = typeof textIn === "string" ? textIn.trim() : "";
+    if (!text) throw new Error("没有要发的话");
+    if (Buffer.byteLength(text) > ALLY_LIMITS.textBytes) throw new Error("太长了，一条不能超过 4 KB");
+    const e: StoredEntry = { id: newId("ae_"), allyId: a.id, dir: "out", ts: this.now(), text, urgent: false, status: "queued", author: "owner" };
+    this.addEntry(a, e);
+    // In the assistant's conversation too, as the owner's words to them.
+    this.d.chat.add({ role: "user", kind: "ally", text, channel: "system", allyId: a.id, allyName: a.ownerName, dir: "out", entryId: e.id, author: "owner" });
+    this.queueMessage(a, e);
+    this.d.audit.log("ally.send", { id: e.id, allyId: a.id, chars: text.length, by: "owner" });
+    this.emitList();
+    this.pump();
+    return publicEntry(e);
+  }
+
+  // setTrust is the owner choosing how their assistant answers this Ally
+  // (ally.trust). Their host hears it in our next hello, sent now if it can.
+  setTrust(id: string, trustIn: unknown): AllyInfo {
+    const a = this.get(id);
+    if (!a || a.pending || a.removedAt) throw new Error("没有这个 Ally");
+    const trust = allyTrust(trustIn);
+    if (!trust) throw new Error("档位只能是「能对话」或「每句要你看」");
+    if (a.trust !== trust) {
+      a.trust = trust;
+      this.saveAllies();
+      this.d.audit.log("ally.trust", { id: a.id, trust });
+      this.emitList();
+      void this.announce(a);
+    }
+    return this.info(a);
+  }
+
+  // announce tells an Ally what our hello says now (our level for them).
+  private async announce(a: Ally): Promise<void> {
+    const cur = this.out.get(a.id);
+    if (cur?.conn.open) return cur.conn.send(this.hello(a));
+    // A new connection opens with the hello.
+    await this.connectOut(a.id, this.target(a)).catch(() => this.noteFail(a.id));
+  }
+
+  private queueMessage(a: Ally, e: StoredEntry): void {
+    const msg: AllyMessage = {
+      type: "ally.message",
+      id: e.id,
+      text: e.text,
+      urgent: e.urgent,
+      ...(e.slots ? { slots: e.slots } : {}),
+      ...(e.replyTo ? { replyTo: e.replyTo } : {}),
+      ts: this.now(),
+      author: e.author ?? "assistant",
+    };
+    this.queue({ key: e.id, allyId: a.id, msg });
   }
 
   // decide is the owner on a draft card: 发送 / 改一下 / 不发.
@@ -501,16 +592,7 @@ export class Allies {
     } else if (action === "send") {
       if (a.removedAt) throw new Error("已经不是 Ally 了");
       e.status = "queued";
-      const msg: AllyMessage = {
-        type: "ally.message",
-        id: e.id,
-        text: e.text,
-        urgent: e.urgent,
-        ...(e.slots ? { slots: e.slots } : {}),
-        ...(e.replyTo ? { replyTo: e.replyTo } : {}),
-        ts: this.now(),
-      };
-      this.queue({ key: e.id, allyId: a.id, msg });
+      this.queueMessage(a, e);
     }
     this.saveLog(a.id);
     this.emitEntry(e);
@@ -606,11 +688,18 @@ export class Allies {
   }
 
   private onHello(a: Ally, h: AllyHello, link: Link): void {
-    if (link.dir === "in" && link.hello) return; // once per connection
+    // A later hello on the same connection only brings news (names, their
+    // level for us, §11): pairing and the outbox go by the first.
+    const again = link.dir === "in" && link.hello;
     link.hello = true;
     if (h.name.trim()) a.ownerName = h.name.trim();
     if (h.assistantName.trim()) a.assistantName = h.assistantName.trim();
+    if (h.trust) a.theirTrust = h.trust;
     this.saveAllies();
+    if (again) {
+      if (!a.pending) this.emitList();
+      return;
+    }
     if (a.pending) {
       if (link.dir === "in") void this.pairBack(a, h, link);
       else this.pairing.get(a.id)?.hello();
@@ -646,26 +735,39 @@ export class Allies {
       ...(m.slots ? { slots: m.slots } : {}),
       ...(m.replyTo ? { replyTo: m.replyTo } : {}),
       status: "delivered",
+      author: m.author,
     };
     this.addEntry(a, e);
     reply("delivered");
-    const msg = this.d.chat.add({ role: "system", kind: "ally", text: m.text, channel: "system", allyId: a.id, allyName: a.ownerName, dir: "in", entryId: e.id, proactive: true });
-    if (m.urgent) void this.d.router.proactive(msg, { urgent: true, title: allyPushTitle(a.ownerName) });
+    const msg = this.d.chat.add({ role: "system", kind: "ally", text: m.text, channel: "system", allyId: a.id, allyName: a.ownerName, dir: "in", entryId: e.id, author: m.author, proactive: true });
+    if (m.urgent) void this.d.router.proactive(msg, { urgent: true, title: allyPushTitle(a.ownerName, m.author) });
     this.turnFor(a, e);
-    this.d.audit.log("ally.in", { id: e.id, allyId: a.id, chars: m.text.length, urgent: m.urgent });
+    this.d.audit.log("ally.in", { id: e.id, allyId: a.id, chars: m.text.length, urgent: m.urgent, author: m.author });
     this.emitList();
   }
 
   // The assistant hears about it in a turn of its own; a second message
-  // before that turn starts joins it.
+  // before that turn starts joins it. The turn is gated (Conversation): it
+  // can talk back, read the calendar and memory, nothing else.
   private turnFor(a: Ally, e: StoredEntry): void {
-    const block = allyTurnMessage(e, randomBytes(4).toString("hex"));
+    const block = allyTurnMessage(e, randomBytes(4).toString("hex"), a.ownerName);
     const queued = this.d.findQueued((t) => t.allyId === a.id);
     if (queued) {
       queued.text += `\n\n${block}`;
       return;
     }
-    this.d.enqueue({ text: `${allyTurnHeader(a)}\n\n${block}`, origin: "system", proactive: true, label: allyPushTitle(a.ownerName), allyId: a.id });
+    this.d.enqueue({ text: `${allyTurnHeader(a, this.ownerSaidSince(a, e))}\n\n${block}`, origin: "system", proactive: true, label: allyPushTitle(a.ownerName), allyId: a.id });
+  }
+
+  // What the owner said to this Ally themselves (ally.say) since its
+  // previous message: the assistant didn't see it go out. The last three.
+  private ownerSaidSince(a: Ally, e: StoredEntry): string[] {
+    const log = this.logOf(a.id);
+    const prevIn = log.filter((x) => x.dir === "in" && x !== e).at(-1)?.ts ?? 0;
+    return log
+      .filter((x) => x.dir === "out" && x.author === "owner" && x.ts >= prevIn && x.status !== "rejected")
+      .slice(-3)
+      .map((x) => truncate(x.text.replace(/<<</g, "‹‹‹").replace(/>>>/g, "›››").replace(/\s+/g, " "), 200));
   }
 
   private onReceipt(a: Ally, r: AllyReceipt): void {
@@ -813,7 +915,7 @@ export class Allies {
         try {
           link = await this.connectOut(allyId, target);
         } catch (e) {
-          this.say(`can't reach ${allyId}: ${e instanceof Error ? e.message : e}`);
+          this.logLine(`can't reach ${allyId}: ${e instanceof Error ? e.message : e}`);
           this.noteFail(allyId);
           for (const i of due) this.failed(i);
           break;
@@ -961,7 +1063,7 @@ export class Allies {
   }
 
   private hello(a: Ally, extra: Partial<AllyHello> = {}): AllyHello {
-    return { type: "ally.hello", name: this.ownerName(), assistantName: this.d.settings().assistantName || "Palo", kind: a.kind, version: VERSION, ...extra };
+    return { type: "ally.hello", name: this.ownerName(), assistantName: this.d.settings().assistantName || "Palo", kind: a.kind, version: VERSION, trust: a.trust, ...extra };
   }
 
   private ownerName(): string {
@@ -984,6 +1086,8 @@ export class Allies {
       online: this.online(a),
       lastSeen: a.lastSeen,
       ...(last ? { lastEntry: publicEntry(last) } : {}),
+      trust: a.trust,
+      ...(a.theirTrust ? { theirTrust: a.theirTrust } : {}),
     };
   }
 
@@ -1064,10 +1168,11 @@ export class Allies {
   }
 }
 
-// The wire entry, without our bookkeeping.
+// The wire entry, without our bookkeeping. Entries from before §11 were all
+// the assistants' words.
 function publicEntry(e: StoredEntry): AllyEntry {
   const { deliveredAt: _d, nudgedAt: _n, ...rest } = e;
-  return rest;
+  return { ...rest, author: e.author ?? "assistant" };
 }
 
 // Plain words for a failed accept.

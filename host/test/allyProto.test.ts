@@ -26,6 +26,21 @@ describe("ally protocol", () => {
     expect(parseAllyWire(JSON.stringify({ type: "ally.message", id: "a", text: "x".repeat(ALLY_LIMITS.unitBytes), ts: 1 }))).toBeNull();
   });
 
+  test("§11: a message says who wrote it, a hello may say the sender's level; old and odd values don't break the stream", () => {
+    const msg = (extra: Record<string, unknown>) => parseAllyWire(JSON.stringify({ type: "ally.message", id: "ae_1", text: "hi", urgent: false, ts: 1, ...extra }));
+    expect(msg({ author: "owner" })).toMatchObject({ author: "owner" });
+    expect(msg({ author: "assistant" })).toMatchObject({ author: "assistant" });
+    expect(msg({})).toMatchObject({ author: "assistant" }); // a host from before §11
+    expect(msg({ author: "someone" })).toMatchObject({ author: "assistant" });
+    expect(msg({ author: 5 })).toMatchObject({ author: "assistant" });
+    const hello = (extra: Record<string, unknown>) => parseAllyWire(JSON.stringify({ type: "ally.hello", name: "家人", assistantName: "Palo", kind: "family", version: "1", ...extra }));
+    expect(hello({ trust: "converse" })).toMatchObject({ trust: "converse" });
+    expect(hello({ trust: "review" })).toMatchObject({ trust: "review" });
+    expect(hello({})).not.toHaveProperty("trust");
+    expect(hello({ trust: "always" })).not.toHaveProperty("trust");
+    expect(hello({ trust: "always" })).toMatchObject({ type: "ally.hello" });
+  });
+
   test("slots need a time zone and an end after the start", () => {
     expect(validSlots([{ start: "2026-10-17T14:00:00+08:00", end: "2026-10-17T16:00:00+08:00" }])).toHaveLength(1);
     expect(validSlots([{ start: "2026-10-17T14:00:00", end: "2026-10-17T16:00:00" }])).toBeNull();

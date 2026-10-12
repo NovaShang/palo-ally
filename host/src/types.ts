@@ -19,13 +19,16 @@ export interface ChatMessage {
   label?: string; // kind "clipboard": what the copied text is ("地址", "验证码")
   replyTo?: ReplyTo; // the owner quoted part of an earlier message
   card?: MessageCard; // a schedule goal's output (e.g. 晨报): shown as a card titled by the goal
-  // kind "ally": words to or from an Ally (docs/allies-prd.md §7.6). "in" is
-  // the other assistant's message as it arrived, "out" the draft card; the
-  // entry (ally.entry / ally.log) has the latest text and status.
+  // kind "ally": words to or from an Ally (docs/allies-prd.md §7.6, §11). "in"
+  // is their message as it arrived (role "system"); "out" is the assistant's
+  // (role "assistant": a draft card, or sent at once to a 能对话 Ally) or the
+  // owner's own words (role "user", from ally.say). The entry (ally.entry /
+  // ally.log) has the latest text and status.
   allyId?: string;
   allyName?: string; // the other owner's name; shown as 「<allyName>的助理」
   dir?: "in" | "out";
   entryId?: string;
+  author?: AllyAuthor; // kind "ally": who wrote it (§11.2)
   // kind "helper": the assistant proposes a Pal (docs/pals-prd.md §6, the
   // card of docs/sessions-prd.md §6.6); the owner answers with helper.decide.
   // The message is sent again (same id and seq) when the proposal's status changes.
@@ -217,6 +220,15 @@ export type AllyKind = "family" | "mine"; // 家人朋友 / 我的
 
 export type AllyStatus = "draft" | "queued" | "sent" | "delivered" | "seen" | "rejected";
 
+// How the owner's assistant answers an Ally (§11.1): "converse" (能对话) it
+// replies on its own, every word kept; "review" (每句要你看) every reply is a
+// draft card the owner sends.
+export type AllyTrust = "converse" | "review";
+
+// Who wrote an exchange (§11.2): that side's owner in their own words, or
+// their assistant.
+export type AllyAuthor = "owner" | "assistant";
+
 export interface AllySlot {
   start: string; // ISO 8601 with a time zone
   end: string;
@@ -236,6 +248,9 @@ export interface AllyEntry {
   replyTo?: string; // the entry this answers
   status: AllyStatus;
   note?: string;
+  // Who wrote it. Out: the owner (ally.say) or the assistant for them. In:
+  // the other owner or their assistant (absent from a pre-§11 host: "assistant").
+  author: AllyAuthor;
 }
 
 export interface AllyInfo {
@@ -246,6 +261,8 @@ export interface AllyInfo {
   online: boolean;
   lastSeen: number; // 0 = never reached
   lastEntry?: AllyEntry;
+  trust: AllyTrust; // how our assistant answers them
+  theirTrust?: AllyTrust; // how theirs answers us, when their host says
 }
 
 // ---- Sessions: the computer's Claude Code sessions (docs/sessions-prd.md §7) ----

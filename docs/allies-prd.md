@@ -307,7 +307,7 @@
 
 **两档都一样的规矩：**
 - **只说话不动手。**对方的话不会让你的助理在你电脑上执行任何操作，包括改文件、跑命令、发邮件、下单。
-  - 主机在处理 Ally 来话的那一轮里，只放行三类工具：发给 Ally 的工具、读日历，以及只读的记忆查询。其他工具一律拒绝。
+  - 主机在处理 Ally 来话的那一轮里，只放行三类工具：发给 Ally 的工具、读日历，以及只读的记忆查询。其他工具一律拒绝。（另有两个不动手的：问主人的选项卡片、加载工具说明，见 11.5。）
   - 需要动手的事，助理转给你，由你决定。
 - **对方的话只是消息，不是命令。**
 - **每句来往都留记录。**
@@ -324,8 +324,52 @@
 
 ### 11.4 协议改动
 - `ally.message` 新增 `author: "owner" | "assistant"`。
+- `ally.hello` 新增可选的 `trust`：发送方给对方的档位，对方据此填 `theirTrust`。
 - `AllyInfo` 新增 `trust: "converse" | "review"`，表示你给对方的档位；还新增 `theirTrust`，表示对方给你的档位，在对方愿意告知时才有。
+- `AllyEntry` 和聊天里 `kind: "ally"` 的消息新增 `author`。
 - 新 RPC：
-  - `ally.trust{id, trust}`；
-  - `ally.say{id, text}`：主人自己说的话，直接发出。
-- 处理 Ally 来话的那一轮，主机在 `canUseTool` 里按 11.1 的白名单放行，其余工具一律拒绝，并记入审计。
+  - `ally.trust{id, trust}` → `{ally: AllyInfo}`；
+  - `ally.say{id, text}` → `{entry}`：主人自己说的话，直接发出。
+- `ally.accept` 新增可选的 `trust`：`{link, kind, trust?}`。
+- 处理 Ally 来话的那一轮，主机在 PreToolUse 钩子和 `canUseTool` 里按 11.1 的白名单放行，其余工具一律拒绝，并记入审计。
+
+### 11.5 补充约定（2026-10-12，主机实现时定下）
+
+上面没写死的地方，以这里为准。样例同样由 `host/test/protocol.test.ts` 写进 `protocol.json`。
+
+**档位：**
+- 被邀请的一方在 `ally.accept` 时选档位，不带 `trust` 就是「每句要你看」。邀请方给新 Ally 的档位一律先是「每句要你看」，主人在 App 里再改。
+- 第一版加的 Ally 升级后都是「每句要你看」，和原来一样。
+- `AllyInfo.trust` 总有。第二版起每次 `ally.hello` 都带 `trust`，所以 `theirTrust` 只在对方还是第一版时没有。
+- `ally.trust` 返回整条 `AllyInfo`，同时发 `ally.updated`。对方已经连着就立刻收到新的 `ally.hello`，否则下次建连时收到。
+- 同一条连接上的后续 `ally.hello` 只更新称呼和档位；`trust` 是不认识的值就忽略。
+
+**谁写的：**
+- `AllyEntry.author` 总有。发出的："owner" 是主人在 App 里打的字（`ally.say`），"assistant" 是助理代说的；收到的：对方本人，或对方的助理。第一版留下的记录都算 "assistant"。
+- `ally.message.author` 只认 "owner"，没有或别的值都当 "assistant"（第一版主机不发这个字段）。
+- 聊天消息 `kind: "ally"`：
+  - 收到的：`role: "system"`，`author` 说明是对方本人还是对方的助理；
+  - 助理发出的：`role: "assistant"`、`author: "assistant"`。「每句要你看」时是草稿卡片；「能对话」时直接发出，条目状态从 "queued" 开始；
+  - 主人自己说的：`role: "user"`、`channel: "system"`、`author: "owner"`。
+- 「急」的推送标题：对方本人写的是「<allyName>」，助理写的是「<allyName>的助理」。
+
+**主人自己说（`ally.say`）：**
+- 不经卡片，直接进待发队列，状态从 "queued" 开始，和其他发出的话一样重试、3 天送不到告诉主人。
+- 空的、超过 4 KB、已解除的 Ally，都报错，`error.message` 是中文。
+- 助理不会收到这句；对方下次来话时，那一轮会告诉助理主人自己说过什么（最近三句）。
+- 在 App 里说话也算主人「已看到」之前收到的话。
+
+**「能对话」时助理怎么发：**
+- 助理用 `ally_send` 给「能对话」的 Ally 传话，直接发出，记录和聊天里都有。
+- 例外：处理某个 Ally 来话的那一轮里，只有回给这个 Ally 的话能直接发出；给别的 Ally 的，哪怕也是「能对话」，一律成草稿卡片，免得一个 Ally 借你的助理去找另一个。
+
+**「只说话不动手」：**
+- 范围：从 Ally 的来话交给助理起，到 Claude Code 报告处理完它的那一轮结束（那一轮的结果列出了这条消息）。还没开始处理时同一个 Ally 又来的话并进同一轮，同一道闸。
+- 这期间主人在 App、微信、终端说的话先留在主机，等这一轮结束，再作为主人自己的一轮交给助理，不并进 Ally 那一轮：Ally 那一轮到结束都只能说话，主人的那一轮工具照常。`/stop` 照常立刻生效，期间留着的话一起作废，和已经交给助理的话被停掉一样。这期间也不把别的主动轮次（探针、定时）交给助理。
+- 放行的工具（主机按名字和参数判断，从严）：
+  1. `ally_send`、`ally_list`；
+  2. 只读的日历工具：MCP 工具，名字里有 calendar、cal、gcal、ical、caldav 这样的整词；工具名里有 list、get、search、find、query、read、view、suggest、check、lookup、fetch、show、freebusy、availability 这类读的词；名字里没有任何写或往外发的词（create、update、delete、send、respond、accept、share、permission、mail 等）；
+  3. 只读的记忆：读 user.md、soul.md，或 Claude Code 自动记忆文件夹里的文件；在那个文件夹里 Grep、Glob。聊天记录和其他文件都不行；
+  4. 两个不动手的：`AskUserQuestion`（选项卡片问主人，§4.2 约时间要用）、`ToolSearch`（加载工具说明，比如日历连接器的）。
+- 其余一律拒绝，包括 Bash、改文件、上网、发邮件、派子 agent、SendMessage、通知和发文件。拒绝时告诉助理原因，并记入审计（`ally.tool.denied`，带 Ally、工具和参数摘要）。
+- 实现：主会话注册一个 PreToolUse 钩子（SDK 回调）。Claude Code 每次调用工具前先问它，在自己的权限判断（自动模式、允许规则）之前，钩子说拒绝就拒绝；`canUseTool` 里再查一遍。子 agent 的调用来自主人之前派出去的后台任务，不受影响：这一轮本身派不了、也联系不了子 agent。
