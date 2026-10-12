@@ -17,10 +17,15 @@ ios/
       Demo/                   DemoHost: an in-memory host for demo mode, previews and tests
     Tests/PaloAllyKitTests/   Swift Testing suites (+ Fixtures/e2e-vectors.json from the host)
   App/                        SwiftUI app (xcodegen project.yml → PaloAlly.xcodeproj)
-    Sources/App               entry point, AppModel (unpaired / paired / demo), push, RootView
-    Sources/Chat              main chat, markdown, composer + dictation, approval cards
+    Sources/App               entry point, AppModel (unpaired / paired / demo, navigation), push, RootView
+                              (a system split view: the list, and the conversation picked in it)
+    Sources/Home              the list: the assistant, Pals (and the computer's other sessions, to adopt), Allies
+    Sources/Chat              a conversation (the assistant's, or a Pal's on its scoped store), markdown,
+                              composer + dictation, approval cards
+    Sources/Pals              a Pal's page: its conversation, ⋯ with 停止这一轮 / 交还终端 / 移出 Pals
+    Sources/Allies            an Ally's page (the conversation with them), draft cards, invites
     Sources/Library           artifact library + preview (markdown / offline WKWebView / QuickLook)
-    Sources/Assistant         assistant page: 任务 / 审批 / 定时 / 记忆, stop button
+    Sources/Assistant         management (the orb in the assistant's title): 目标 / 履历 / 记忆, the model, 设置
     Sources/Settings          quiet hours, proactive limit, pairing management
     Sources/Pairing           QR scan (VisionKit) / paste link / manual code
   screenshots/                demo-mode screenshots from the simulator
@@ -69,10 +74,11 @@ Launch arguments (also read from UserDefaults):
 |---|---|
 | `-pairLink <paloally://…>` | start pairing with this link (automation; skips the system open-URL prompt) |
 | `-demo YES` | use the in-memory `DemoHost` (seeded Chinese sample data, streamed replies) |
-| `-demoScreen chat\|library\|artifact\|assistant\|settings\|pairing` | open that screen |
-| `-demoTab tasks\|approvals\|watches\|memory` | open the assistant page on that tab |
-| `-demoScreen sessions\|session` | the computer's Claude Code sessions on a page of their own / one session's page (`-demoSession <id>`, default `cc-site`; `-demoSessionPanel stop\|remove\|attach` opens it on that) |
-| `-demoState sessions\|sessionExpired\|sessionSettle\|helper` | only the sessions' cards wait in the conversation / 网站帮手's has expired (在电脑上等你) / it's handled at the computer 6 s in / only the helper proposal waits |
+| `-demoScreen chat\|list\|library\|artifact\|assistant\|settings\|pairing` | open that screen (`chat`, the assistant's conversation, is where the app opens; `list` is one step back; `assistant` is management, as the orb opens it) |
+| `-demoTab history\|watches\|memory` | open management on that tab |
+| `-demoScreen pal\|ally` | one Pal's page (`-demoPal <id>`, default `pal-site`; `-demoPalPanel release\|released\|remove` opens it on that) / one Ally's page (`-demoAlly <id>`) |
+| `-demoAdopt <session id>` | the list, with 接管 tapped on that session (`-demoAdoptAfter <s>`: when the demo's owner quits a terminal session, default 6; `0` never) |
+| `-demoState sessions\|helper` | the sessions' and Pals' cards wait / only the proposal to open a Pal waits |
 | `-demoSettingsAt sessions` | 设置 opens scrolled to the sessions switch |
 
 ```sh
