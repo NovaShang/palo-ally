@@ -65,6 +65,14 @@ public struct CCSession: Codable, Sendable, Hashable, Identifiable {
     /// A background job the terminal can attach to (`claude attach`).
     public var canAttach: Bool { kind == .helper || kind == .background }
 
+    /// The line that opens it in a terminal. Claude Code names a background
+    /// job by its session id's first part (`claude attach 5d821f3c`).
+    public var attachCommand: String {
+        let first = id.split(separator: "-", maxSplits: 1).first.map(String.init) ?? id
+        let short = first.count == 8 && first.allSatisfy(\.isHexDigit) && id.count > 8 ? first : id
+        return "claude attach \(short)"
+    }
+
     /// What it's called: its name, else its folder's.
     public var displayName: String {
         let n = name.trimmingCharacters(in: .whitespacesAndNewlines)

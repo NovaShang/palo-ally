@@ -177,7 +177,7 @@ struct SessionDetailView: View {
                              action: "删除", working: working,
                              cancel: { panel = .none }, confirm: { Task { await control(.remove) } })
             case .attach:
-                AttachPanel(command: "claude attach \(s.id)") { panel = .none }
+                AttachPanel(command: s.attachCommand) { panel = .none }
             case .none:
                 if s.isRunning {
                     inputBar(s)

@@ -141,6 +141,13 @@ struct SessionsDecodingTests {
         if case .refetch = SessionsUpdate(json: [:]) {} else { Issue.record("empty → refetch") }
     }
 
+    @Test func attachingInATerminal() {
+        let s = CCSession(id: "5d821f3c-0000-4000-8000-000000000001", name: "a", cwd: "/", kind: .background, status: .idle, updatedAt: 1)
+        #expect(s.attachCommand == "claude attach 5d821f3c")
+        let odd = CCSession(id: "cc-site", name: "a", cwd: "/", kind: .helper, status: .idle, updatedAt: 1)
+        #expect(odd.attachCommand == "claude attach cc-site")
+    }
+
     @Test func listOrderAndPaths() {
         let a = CCSession(id: "a", name: "终端里的", cwd: "/", kind: .terminal, status: .idle, updatedAt: 3)
         let b = CCSession(id: "b", name: "帮手一", cwd: "/", kind: .helper, status: .idle, updatedAt: 1)
