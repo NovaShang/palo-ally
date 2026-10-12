@@ -1,4 +1,4 @@
-import { createSdkMcpServer, query, tool, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, query, tool, type Options, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { VERSION } from "../config.ts";
 import type {
@@ -9,6 +9,7 @@ import type {
   MainSessionOptions,
   ProbeRequest,
   ProbeResult,
+  SessionOptions,
   ToolHandlers,
 } from "./types.ts";
 
@@ -217,7 +218,7 @@ function toCommands(list: any[] | undefined) {
 }
 
 // mapMessage turns one SDK message into zero or more harness events.
-export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTokens: number; lastError?: string }): HarnessEvent[] {
+export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTokens: number; lastError?: string; messageId?: string }): HarnessEvent[] {
   // total_cost_usd is cumulative for the session (including what a resume replays)
   const out: HarnessEvent[] = [];
   const m = msg as any;
@@ -245,8 +246,9 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
       const ev = m.event;
       // stamped on a turn's first stream event: which owner messages it answers
       if (m.parent_tool_use_id == null && m.user_message_uuid) out.push({ type: "answering", uuids: [m.user_message_uuid] });
+      if (m.parent_tool_use_id == null && ev?.type === "message_start" && typeof ev.message?.id === "string") state.messageId = ev.message.id;
       if (m.parent_tool_use_id == null && ev?.type === "content_block_delta" && ev.delta?.type === "text_delta") {
-        out.push({ type: "text_delta", text: ev.delta.text });
+        out.push({ type: "text_delta", text: ev.delta.text, ...(state.messageId ? { messageId: state.messageId } : {}) });
       } else if (ev?.type === "content_block_start" && ev.content_block?.type === "tool_use") {
         out.push({ type: "tool_start", name: ev.content_block.name, parentToolUseId: m.parent_tool_use_id ?? null });
       }
@@ -261,8 +263,9 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
         state.contextTokens =
           (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
       }
+      const messageId = typeof m.message?.id === "string" ? m.message.id : undefined;
       for (const b of m.message?.content ?? []) {
-        if (b.type === "text" && b.text) out.push({ type: "assistant_text", text: b.text, parentToolUseId: parent });
+        if (b.type === "text" && b.text) out.push({ type: "assistant_text", text: b.text, parentToolUseId: parent, ...(messageId && !parent ? { messageId } : {}) });
         else if (b.type === "tool_use") out.push({ type: "tool_use", id: b.id, name: b.name, input: b.input ?? {}, parentToolUseId: parent });
       }
       break;
@@ -300,6 +303,7 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
         sessionId: m.session_id,
         errorCategory,
         consumedUuids: Array.isArray(m.user_message_uuids) ? m.user_message_uuids : undefined,
+        ...(m.startup_failure_reason ? { startupFailure: String(m.startup_failure_reason) } : {}),
       });
       break;
     }
@@ -307,49 +311,66 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
   return out;
 }
 
+// Scheduling is the host's (durable watches); the harness' own timers live
+// only in one process and would silently die with it.
+const MAIN_DISALLOWED = ["CronCreate", "CronDelete", "CronList", "ScheduleWakeup"];
+
+type AnySessionOptions = SessionOptions & Partial<Pick<MainSessionOptions, "tools" | "sharedChrome">>;
+
 class ClaudeMainSession implements MainSession {
   private input = new AsyncQueue<SDKUserMessage>();
   private q: Query;
+  private closing = false; // close() was called: an exit is ours, not a crash
+  private readyPromise: Promise<void> | null = null;
   closed = false;
 
-  constructor(opts: MainSessionOptions) {
-    const { paloally: _ignored, ...extra } = opts.mcpServers as Record<string, any>;
-    this.q = query({
-      prompt: this.input,
-      options: {
-        cwd: opts.cwd,
-        model: opts.model,
-        ...(opts.effort ? { effort: opts.effort as any } : {}),
-        resume: opts.resumeSessionId,
-        permissionMode: opts.permissionMode as any,
-        systemPrompt: { type: "preset", preset: "claude_code", append: opts.appendSystemPrompt },
-        settingSources: ["user", "project", "local"],
-        includePartialMessages: true,
-        forwardSubagentText: true,
-        agentProgressSummaries: true, // live one-line progress for subagent tasks
-        mcpServers: { ...extra, paloally: paloallyMcpServer(opts.tools) },
-        canUseTool: async (toolName, input, o) =>
-          opts.canUseTool({
-            toolName,
-            input,
-            toolUseId: o.toolUseID,
-            title: o.title,
-            reason: o.decisionReason,
-            agentId: o.agentID,
-            signal: o.signal,
-            suggestions: o.suggestions,
-            defaultToNo: o.defaultToNo,
-            suppressAlwaysAllowRule: o.suppressAlwaysAllowRule,
-          }) as any,
-        env: { ...process.env, ...opts.env, ...OWN_SESSION_ENV, CLAUDE_AGENT_SDK_CLIENT_APP: `paloally/${VERSION}` },
-        // Scheduling is ours (durable watches); the harness' own timers live only
-        // in one process and would silently die with it.
-        disallowedTools: ["CronCreate", "CronDelete", "CronList", "ScheduleWakeup"],
-        extraArgs: opts.sharedChrome ? { chrome: null } : {},
-        stderr: opts.stderr,
+  constructor(private opts: AnySessionOptions) {
+    const { paloally: _ignored, ...extra } = (opts.mcpServers ?? {}) as Record<string, any>;
+    const main = !!opts.tools; // the assistant's own session (a Pal has none of PaloAlly's tools)
+    const extraArgs: Record<string, string | null> = {};
+    if (opts.sharedChrome) extraArgs.chrome = null;
+    if (opts.name) extraArgs.name = opts.name;
+    const options: Options = {
+      cwd: opts.cwd,
+      model: opts.model,
+      ...(opts.effort ? { effort: opts.effort as any } : {}),
+      resume: opts.resumeSessionId,
+      ...(opts.sessionId && !opts.resumeSessionId ? { sessionId: opts.sessionId } : {}),
+      permissionMode: opts.permissionMode as any,
+      ...(opts.permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
+      systemPrompt: { type: "preset", preset: "claude_code", ...(opts.appendSystemPrompt ? { append: opts.appendSystemPrompt } : {}) },
+      settingSources: ["user", "project", "local"],
+      includePartialMessages: true,
+      forwardSubagentText: true,
+      agentProgressSummaries: true, // live one-line progress for subagent tasks
+      mcpServers: main ? { ...extra, paloally: paloallyMcpServer(opts.tools!) } : extra,
+      canUseTool: async (toolName, input, o) =>
+        opts.canUseTool({
+          toolName,
+          input,
+          toolUseId: o.toolUseID,
+          title: o.title,
+          reason: o.decisionReason,
+          agentId: o.agentID,
+          signal: o.signal,
+          suggestions: o.suggestions,
+          defaultToNo: o.defaultToNo,
+          suppressAlwaysAllowRule: o.suppressAlwaysAllowRule,
+        }) as any,
+      env: {
+        ...(opts.baseEnv ?? process.env),
+        ...opts.env,
+        ...OWN_SESSION_ENV,
+        CLAUDE_AGENT_SDK_CLIENT_APP: `${main ? "paloally" : "paloally-pal"}/${VERSION}`,
       },
-    });
-    void this.pump(opts);
+      ...(main ? { disallowedTools: MAIN_DISALLOWED } : {}),
+      extraArgs,
+      stderr: opts.stderr,
+      ...(opts.spawn ? { spawnClaudeCodeProcess: (o) => opts.spawn!(o) } : {}),
+    };
+    this.q = query({ prompt: this.input, options });
+    void this.pump();
+    if (!main) return;
     this.q
       .supportedModels()
       .then((ms) =>
@@ -370,17 +391,26 @@ class ClaudeMainSession implements MainSession {
       .catch(() => {});
   }
 
-  private async pump(opts: MainSessionOptions): Promise<void> {
+  private async pump(): Promise<void> {
+    const opts = this.opts;
     const state = { lastCost: opts.priorCostUsd ?? 0, contextTokens: 0 };
+    let error: string | undefined;
     try {
       for await (const msg of this.q) {
         for (const e of mapMessage(msg, state)) opts.onEvent(e);
       }
     } catch (e) {
-      opts.onEvent({ type: "error", message: e instanceof Error ? e.message : String(e) });
+      error = e instanceof Error ? e.message : String(e);
+      opts.onEvent({ type: "error", message: error });
     } finally {
       this.closed = true;
+      if (!this.closing) opts.onExit?.(error);
     }
+  }
+
+  ready(): Promise<void> {
+    this.readyPromise ??= this.q.initializationResult().then(() => {});
+    return this.readyPromise;
   }
 
   send(t: string, uuid: string, images: ImageInput[] = []): void {
@@ -391,7 +421,13 @@ class ClaudeMainSession implements MainSession {
           ...(t ? [{ type: "text", text: t }] : []),
         ]
       : t;
-    this.input.push({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, uuid } as SDKUserMessage);
+    this.input.push({
+      type: "user",
+      message: { role: "user", content },
+      parent_tool_use_id: null,
+      uuid,
+      ...(this.opts.ownerOrigin ? { origin: { kind: "human" } } : {}),
+    } as SDKUserMessage);
   }
 
   async interrupt(): Promise<void> {
@@ -411,6 +447,7 @@ class ClaudeMainSession implements MainSession {
   }
 
   close(): void {
+    this.closing = true;
     this.input.end();
     this.q.close();
     this.closed = true;
@@ -422,6 +459,11 @@ export class ClaudeCodeDriver implements HarnessDriver {
 
   startMain(opts: MainSessionOptions): MainSession {
     return new ClaudeMainSession(opts);
+  }
+
+  startPal(opts: SessionOptions): MainSession {
+    const { tools: _none, sharedChrome: _no, ...rest } = opts as AnySessionOptions;
+    return new ClaudeMainSession(rest);
   }
 
   async runProbe(req: ProbeRequest): Promise<ProbeResult> {

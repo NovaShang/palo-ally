@@ -7,6 +7,7 @@ import type {
   PermissionDecision,
   ProbeRequest,
   ProbeResult,
+  SessionOptions,
 } from "../src/harness/types.ts";
 
 // A scripted turn: given the user text and the session's tools/permission
@@ -15,7 +16,8 @@ import type {
 export type FakeScript = (text: string, ctx: FakeCtx) => Promise<void>;
 
 export interface FakeCtx {
-  opts: MainSessionOptions;
+  opts: MainSessionOptions; // a Pal's session has no tools / prompt (cast from SessionOptions)
+  session: FakeMainSession;
   emit(e: HarnessEvent): void;
   // simulate the harness calling a tool. `ask` = the harness decided to ask
   // the owner (with its own suggestions / defaultToNo); otherwise it just runs.
@@ -37,9 +39,24 @@ export class FakeMainSession implements MainSession {
   sentImages: ImageInput[] = [];
   private total = 0;
   readonly sessionId: string;
+  readonly pal: boolean;
+  // ready() rejects with this (Claude Code refused to start), and the process ends
+  readonly failStart?: string;
 
-  constructor(readonly opts: MainSessionOptions, private script: FakeScript, private driver: FakeDriver) {
-    this.sessionId = opts.resumeSessionId ?? `sess-${++idCounter}`;
+  constructor(readonly opts: MainSessionOptions, private script: FakeScript, private driver: FakeDriver, pal = false) {
+    this.sessionId = opts.resumeSessionId ?? opts.sessionId ?? `sess-${++idCounter}`;
+    this.pal = pal;
+    this.failStart = pal ? driver.failPalStart?.(opts) : undefined;
+    if (this.failStart) {
+      const why = this.failStart;
+      queueMicrotask(() => {
+        this.closed = true;
+        opts.onEvent({ type: "error", message: why });
+        opts.onExit?.(why);
+      });
+      return;
+    }
+    if (pal) return; // a Pal says nothing until it's spoken to
     queueMicrotask(() => {
       opts.onEvent({ type: "init", sessionId: this.sessionId, model: opts.model ?? "fake-model", tools: [], terminalCommands: ["doctor"] });
       opts.onEvent({
@@ -61,7 +78,21 @@ export class FakeMainSession implements MainSession {
     });
   }
 
+  async ready(): Promise<void> {
+    if (this.failStart) throw new Error(this.failStart);
+  }
+
+  /** The process dies by itself (not through close()). */
+  crash(why = "Claude Code process exited with code 1"): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.queue = [];
+    this.opts.onEvent({ type: "error", message: why });
+    this.opts.onExit?.(why);
+  }
+
   send(text: string, uuid: string, images: ImageInput[] = []): void {
+    if (this.closed) throw new Error("closed");
     this.sent.push(text);
     this.sentImages.push(...images);
     this.queue.push({ text, uuid });
@@ -73,8 +104,10 @@ export class FakeMainSession implements MainSession {
     this.busy = true;
     while (this.queue.length && !this.closed) {
       const { text, uuid } = this.queue.shift()!;
+      if (this.pal) this.opts.onEvent({ type: "init", sessionId: this.sessionId, model: this.opts.model ?? "fake-model", tools: [] });
       const ctx: FakeCtx = {
         opts: this.opts,
+        session: this,
         emit: (e) => this.opts.onEvent(e),
         useTool: async (name, input, o = {}) => {
           const id = o.id ?? fakeId();
@@ -109,6 +142,7 @@ export class FakeMainSession implements MainSession {
       } catch (e) {
         this.opts.onEvent({ type: "error", message: String(e) });
       }
+      if (this.closed) break;
       this.total += this.driver.turnCost;
       this.opts.onEvent({
         type: "result",
@@ -148,6 +182,11 @@ export class FakeMainSession implements MainSession {
 export class FakeDriver implements HarnessDriver {
   readonly name = "fake";
   sessions: FakeMainSession[] = [];
+  pals: FakeMainSession[] = []; // every Pal process started, in order
+  // How a Pal's turn goes (default: echo, like the main one).
+  palScript: FakeScript = defaultScript;
+  // A Pal process that refuses to start: return why (e.g. it's held elsewhere).
+  failPalStart?: (opts: SessionOptions) => string | undefined;
   probes: ProbeRequest[] = [];
   stoppedTasks: string[] = [];
   liveSwitches: string[] = [];
@@ -162,6 +201,12 @@ export class FakeDriver implements HarnessDriver {
   startMain(opts: MainSessionOptions): MainSession {
     const s = new FakeMainSession(opts, (t, c) => this.script(t, c), this);
     this.sessions.push(s);
+    return s;
+  }
+
+  startPal(opts: SessionOptions): MainSession {
+    const s = new FakeMainSession(opts as MainSessionOptions, (t, c) => this.palScript(t, c), this, true);
+    this.pals.push(s);
     return s;
   }
 

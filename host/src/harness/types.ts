@@ -7,10 +7,11 @@ export type HarnessEvent =
   // the harness' slash commands (built-ins, skills, plugins…); replaces any earlier list
   | { type: "commands"; commands: SlashCommandInfo[] }
   | { type: "models"; models: ModelOption[] }
-  | { type: "text_delta"; text: string }
+  // messageId: the API message the text belongs to (a Pal's message id, the same in its transcript)
+  | { type: "text_delta"; text: string; messageId?: string }
   // the model began writing a tool call (its input may stream for minutes, e.g. a big Write)
   | { type: "tool_start"; name: string; parentToolUseId: string | null }
-  | { type: "assistant_text"; text: string; parentToolUseId: string | null }
+  | { type: "assistant_text"; text: string; parentToolUseId: string | null; messageId?: string }
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown>; parentToolUseId: string | null }
   | { type: "tool_result"; toolUseId: string; content: string; isError: boolean; parentToolUseId: string | null }
   | { type: "task_started"; taskId: string; toolUseId?: string; description: string; background?: boolean; taskType?: string }
@@ -32,6 +33,7 @@ export type HarnessEvent =
       sessionId: string;
       errorCategory?: string; // the SDK's own error kind (rate_limit, billing_error, …) when the turn failed
       consumedUuids?: string[]; // user messages this turn answered (absent on older CLIs)
+      startupFailure?: string; // why Claude Code refused to start (e.g. session_held_by_background)
     }
   | { type: "error"; message: string };
 
@@ -100,22 +102,51 @@ export interface ImageInput {
   data: string; // base64
 }
 
-export interface MainSessionOptions {
+// How to start the Claude Code process: given the command line the SDK
+// built, start it (through PaloAlly Helper, or directly) and hand back the
+// process. `onPid` gets Claude Code's own pid once it's known.
+export interface SpawnRequest {
+  command: string;
+  args: string[];
+  cwd?: string;
+  env: Record<string, string | undefined>;
+  signal?: AbortSignal;
+}
+export type Spawner = (req: SpawnRequest) => import("@anthropic-ai/claude-agent-sdk").SpawnedProcess;
+
+// What every long-lived session takes: the assistant's own (MainSessionOptions)
+// and a Pal (docs/pals-prd.md §7.1), one of the owner's Claude Code sessions
+// the host runs.
+export interface SessionOptions {
   cwd: string;
   model?: string;
   effort?: string;
   resumeSessionId?: string;
+  sessionId?: string; // a new session with this id (not with resumeSessionId)
   priorCostUsd?: number; // the resumed session's running total, so per-turn cost stays a delta
   permissionMode: string;
-  appendSystemPrompt: string;
-  tools: ToolHandlers;
+  appendSystemPrompt?: string;
   // the harness asks the owner something; safety decisions are the harness' own
   canUseTool: (req: PermissionRequest) => Promise<PermissionDecision>;
+  mcpServers?: Record<string, unknown>;
+  env?: Record<string, string>; // extra environment for the harness only (e.g. third-party model endpoint)
+  // The environment the process starts from (default: the host's own). A Pal
+  // starts from the owner's login shell, as a terminal session would.
+  baseEnv?: Record<string, string>;
+  name?: string; // the session's name, which other sessions SendMessage it by
+  spawn?: Spawner; // default: the SDK starts Claude Code itself
+  ownerOrigin?: boolean; // what send() puts in is the owner's own words (origin "human" in the transcript)
+  onEvent: (e: HarnessEvent) => void;
+  // The process ended by itself (crashed, killed, refused to start), not through close().
+  onExit?: (error?: string) => void;
+  stderr?: (s: string) => void;
+}
+
+export interface MainSessionOptions extends SessionOptions {
+  appendSystemPrompt: string;
+  tools: ToolHandlers;
   mcpServers: Record<string, unknown>;
   sharedChrome?: boolean; // enable Claude in Chrome on the owner's own browser
-  env?: Record<string, string>; // extra environment for the harness only (e.g. third-party model endpoint)
-  onEvent: (e: HarnessEvent) => void;
-  stderr?: (s: string) => void;
 }
 
 // A long-lived main conversation. send() queues a user turn; turns run in
@@ -129,6 +160,9 @@ export interface MainSession {
   // live switches; take effect from the next model call
   setModel(model?: string): Promise<void>;
   setEffort(effort?: string): Promise<void>;
+  // Resolves once Claude Code is up (it answered the SDK's first request);
+  // rejects with its reason when it refused to start.
+  ready(): Promise<void>;
   close(): void;
   readonly closed: boolean;
 }
@@ -157,5 +191,7 @@ export interface ProbeResult {
 export interface HarnessDriver {
   readonly name: string;
   startMain(opts: MainSessionOptions): MainSession;
+  // One of the owner's own sessions (a Pal): no PaloAlly tools or prompt.
+  startPal(opts: SessionOptions): MainSession;
   runProbe(req: ProbeRequest): Promise<ProbeResult>;
 }

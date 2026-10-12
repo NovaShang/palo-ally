@@ -556,6 +556,21 @@ describe("Hub: restarts", () => {
     expect((e as any).consumedUuids).toEqual(["u1"]);
     void _d;
   });
+
+  test("a reply's text carries its API message id, streamed and final; a refused start says why", async () => {
+    const { mapMessage } = await import("../src/harness/claude.ts");
+    const state = { lastCost: 0, contextTokens: 0 };
+    mapMessage({ type: "stream_event", parent_tool_use_id: null, event: { type: "message_start", message: { id: "msg_1" } } } as any, state);
+    const [d] = mapMessage({ type: "stream_event", parent_tool_use_id: null, event: { type: "content_block_delta", delta: { type: "text_delta", text: "好" } } } as any, state);
+    expect(d).toEqual({ type: "text_delta", text: "好", messageId: "msg_1" });
+    const [a] = mapMessage({ type: "assistant", parent_tool_use_id: null, message: { id: "msg_1", content: [{ type: "text", text: "好的" }] } } as any, state);
+    expect(a).toEqual({ type: "assistant_text", text: "好的", parentToolUseId: null, messageId: "msg_1" });
+    // a subagent's text keeps none (it isn't the session's own reply)
+    const [sub] = mapMessage({ type: "assistant", parent_tool_use_id: "t1", message: { id: "msg_2", content: [{ type: "text", text: "查到了" }] } } as any, state);
+    expect((sub as any).messageId).toBeUndefined();
+    const [r] = mapMessage({ type: "result", subtype: "error_during_execution", is_error: true, total_cost_usd: 0, session_id: "s", errors: ["held"], startup_failure_reason: "session_held_by_background" } as any, state);
+    expect((r as any).startupFailure).toBe("session_held_by_background");
+  });
 });
 
 describe("Hub: interruptions", () => {
