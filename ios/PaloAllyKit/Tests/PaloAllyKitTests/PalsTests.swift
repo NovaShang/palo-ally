@@ -216,7 +216,7 @@ struct PalsStoreTests {
     @Test func handingBackGivesTheLineAndRemovingTakesItOff() async throws {
         let (store, _) = await demoStore()
         let line = try await store.releasePal(id: "pal-site")
-        #expect(line == "claude --resume 5d821f3c-7a1e-4c55-9b0e-2f6d81a4c901")
+        #expect(line == "cd /Users/demo/code/site && claude --resume 5d821f3c-7a1e-4c55-9b0e-2f6d81a4c901")
         #expect(store.pal(id: "pal-site") == nil)
         try await store.removePal(id: "pal-notes")
         #expect(store.pals.isEmpty)

@@ -43,7 +43,7 @@ final class SessionsUITests: XCTestCase {
         app.buttons["交还"].firstMatch.tap()
         let line = app.staticTexts["resume-command"]
         XCTAssertTrue(line.waitForExistence(timeout: 10), "no line to resume it in a terminal")
-        XCTAssertTrue(line.label.hasPrefix("claude --resume "), line.label)
+        XCTAssertTrue(line.label.contains("claude --resume "), line.label)
         XCTAssertTrue(app.buttons["复制这一行"].exists)
         // Closing it goes back to the list, without that Pal.
         app.buttons["关上"].tap()

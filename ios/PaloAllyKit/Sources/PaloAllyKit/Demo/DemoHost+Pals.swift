@@ -73,7 +73,9 @@ extension DemoHost {
             palTurns[id]?.cancel()
             pals.removeAll { $0.id == id }
             emitPals()
-            return ["resumeCommand": .string("claude --resume \(pal.sessionId)")]
+            // As the host gives it: into its folder, then resume its record.
+            let folder = pal.cwd.contains(" ") ? "'\(pal.cwd)'" : pal.cwd
+            return ["resumeCommand": .string("cd \(folder) && claude --resume \(pal.sessionId)")]
         case RPCMethod.palsRemove:
             let id = p["id"]?.stringValue ?? ""
             guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Pal") }

@@ -82,11 +82,13 @@ struct CommandPanel: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 4) {
+                // Whole where it fits: the folder comes first in the line.
                 Text(command)
                     .font(.callout.monospaced())
                     .textSelection(.enabled)
-                    .lineLimit(1)
+                    .lineLimit(3)
                     .truncationMode(.middle)
+                    .padding(.vertical, 6)
                     .accessibilityIdentifier("resume-command")
                 Spacer(minLength: 0)
                 CopyButton(text: command, label: "复制这一行")
