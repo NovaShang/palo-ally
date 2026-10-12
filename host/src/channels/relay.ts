@@ -359,7 +359,7 @@ export class RelayChannel implements AllyRelay {
       // goes into the device list (devices are the owner's own apps).
       if (kind === "ally") {
         const pub = parseSshWirePubkey(String(msg.device_pubkey ?? ""));
-        const r = pub ? this.hub.allies.onPairAttach(pub, String(msg.device_label ?? "")) : { error: "bad device pubkey" };
+        const r = pub ? this.hub.allies.onPairAttach(pub) : { error: "bad device pubkey" };
         if ("error" in r) this.sendControl({ type: "pair.ack", request_id: reqId, status: "error", error: r.error });
         else this.sendControl({ type: "pair.ack", request_id: reqId, status: "ok", device_id: r.deviceId, host_fingerprint: fingerprint(this.identity.pub), daemon_label: r.label });
         return;

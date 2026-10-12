@@ -240,6 +240,7 @@
 - `ally.hello` 在配对第二段还带 `daemonId` 和 `relay`，A 才知道去哪个中继、找哪台主机反向配对。
 - `ally.receipt` 的 `state` 还可以是 "rejected"：超过 4 KB、超过每小时 30 条，或不是能收的消息。发送方就此停止重试。
 - 收到重复的 `ally.message`（同一个 `id`）只回执，不再显示。
+- 配对时中继看得到的 `device_label` 和 `daemon_label` 一律是 "PaloAlly"；双方的称呼只放在加密的 `ally.hello` 里。
 - `text` 不超过 4096 字节（UTF-8），一条消息整体不超过 8 KB。
 - 每次建连第一条都是 `ally.hello`。主机启动或重新连上中继时，向每个 Ally 打一声招呼；对方收到后，立刻把给这边排着的消息发出来。这样对方开机后很快就能送达，不用等下一轮重试。
 

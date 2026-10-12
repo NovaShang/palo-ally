@@ -126,6 +126,9 @@ interface Link {
 }
 
 const sixDigits = () => String(randomInt(0, 1_000_000)).padStart(6, "0");
+// What the relay sees as an Ally's label, both ways: names travel only
+// inside the E2E channel (ally.hello), never in the relay's clear text.
+const RELAY_LABEL = "PaloAlly";
 const newDeviceId = () => "al-" + newId() + newId();
 const excerpt = (s: string) => truncate(s.replace(/\s+/g, " ").trim(), 40);
 const RANK: Record<AllyStatus, number> = { draft: 0, queued: 1, sent: 2, delivered: 3, seen: 4, rejected: 5 };
@@ -257,8 +260,8 @@ export class Allies {
 
   // onPairAttach answers the relay's pair.attach for device_kind "ally"
   // (RelayChannel). Leg 1: anyone holding our invite code, once. Leg 2 of
-  // our own accept: only the inviter's host key.
-  onPairAttach(pub: Uint8Array, label: string): { deviceId: string; label: string } | { error: string } {
+  // our own accept: only the inviter's host key. Names come in the hello.
+  onPairAttach(pub: Uint8Array): { deviceId: string; label: string } | { error: string } {
     const now = this.now();
     const key = b64(pub);
     if (this.back && now < this.back.until) {
@@ -269,7 +272,7 @@ export class Allies {
       a.theirDeviceIdHere = newDeviceId();
       this.saveAllies();
       back.done();
-      return { deviceId: a.theirDeviceIdHere, label: this.ownerName() };
+      return { deviceId: a.theirDeviceIdHere, label: RELAY_LABEL };
     }
     if (this.inv && now < this.inv.expiresAt) {
       if (this.allies.some((a) => !a.removedAt && a.hostKey === key)) return { error: "already an ally" };
@@ -277,7 +280,7 @@ export class Allies {
       const a: Ally = {
         id: newId("al_"),
         kind: "family",
-        ownerName: label.trim().slice(0, 60) || "对方",
+        ownerName: "对方", // until its hello
         assistantName: "",
         daemonId: "",
         hostKey: key,
@@ -291,7 +294,7 @@ export class Allies {
       this.allies.push(a);
       this.saveAllies();
       this.d.audit.log("ally.pair.attach", { id: a.id });
-      return { deviceId: a.theirDeviceIdHere, label: this.ownerName() };
+      return { deviceId: a.theirDeviceIdHere, label: RELAY_LABEL };
     }
     return { error: "pairing not open" };
   }
@@ -339,7 +342,7 @@ export class Allies {
       this.saveAllies();
       this.back = { code: opened.code, pub: a.hostKey, until: this.now() + opened.ttl * 1000, allyId: a.id, done: backDone };
       this.pairing.set(a.id, { hello: helloDone, fail });
-      const ack = await this.pairFn(inv.relay, inv.daemonId, { code: inv.code, identity: relay.identity, label: this.ownerName(), kind: "ally" });
+      const ack = await this.pairFn(inv.relay, inv.daemonId, { code: inv.code, identity: relay.identity, label: RELAY_LABEL, kind: "ally" });
       if (ack.host_fingerprint !== fingerprint(inv.hostKey)) throw new Error("对方主机的指纹对不上，没有加");
       a.myDeviceIdThere = ack.device_id;
       this.saveAllies();
@@ -375,7 +378,7 @@ export class Allies {
       a.kind = h.kind;
       a.daemonId = h.daemonId;
       a.relay = h.relay;
-      const ack = await this.pairFn(h.relay, h.daemonId, { code: h.pairCode, identity: relay.identity, label: this.ownerName(), kind: "ally" });
+      const ack = await this.pairFn(h.relay, h.daemonId, { code: h.pairCode, identity: relay.identity, label: RELAY_LABEL, kind: "ally" });
       if (ack.host_fingerprint !== fingerprint(unb64(a.hostKey))) throw new Error("host fingerprint mismatch");
       a.myDeviceIdThere = ack.device_id;
       delete a.pending;
@@ -656,14 +659,13 @@ export class Allies {
   // The assistant hears about it in a turn of its own; a second message
   // before that turn starts joins it.
   private turnFor(a: Ally, e: StoredEntry): void {
-    const label = `ally:${a.id}`;
     const block = allyTurnMessage(e, randomBytes(4).toString("hex"));
-    const queued = this.d.findQueued((t) => t.label === label);
+    const queued = this.d.findQueued((t) => t.allyId === a.id);
     if (queued) {
       queued.text += `\n\n${block}`;
       return;
     }
-    this.d.enqueue({ text: `${allyTurnHeader(a)}\n\n${block}`, origin: "system", proactive: true, label });
+    this.d.enqueue({ text: `${allyTurnHeader(a)}\n\n${block}`, origin: "system", proactive: true, label: allyPushTitle(a.ownerName), allyId: a.id });
   }
 
   private onReceipt(a: Ally, r: AllyReceipt): void {

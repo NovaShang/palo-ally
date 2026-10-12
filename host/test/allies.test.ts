@@ -37,6 +37,8 @@ describe("pairing", () => {
     await waitFor(() => a.hub.allies.list().length === 1);
     expect(a.hub.allies.list()[0]).toMatchObject({ kind: "mine", ownerName: "家人B", assistantName: "家人B的Palo" });
     expect(events.at(-1).allies).toHaveLength(1);
+    // the relay never sees a name: those travel in the encrypted hello
+    expect(new Set(net.labels)).toEqual(new Set(["PaloAlly"]));
     // each relay pinned the other's device, and it's not a phone
     expect(a.devices.size).toBe(1);
     expect(b.devices.size).toBe(1);
@@ -82,7 +84,7 @@ describe("pairing", () => {
   test("leg 1 is refused with no invite open; leg 2 only takes the inviter's key", () => {
     const net = new AllyNet();
     const a = net.add("家人A");
-    expect(a.hub.allies.onPairAttach(newIdentity().pub, "x")).toEqual({ error: "pairing not open" });
+    expect(a.hub.allies.onPairAttach(newIdentity().pub)).toEqual({ error: "pairing not open" });
   });
 
   test("the invite's relay window is renewed with the same code, unless something replaced it", async () => {
@@ -101,7 +103,7 @@ describe("pairing", () => {
     a.lastCode = code;
     a.keepCodes = false;
     await a.hub.allies.renewInvite();
-    expect(a.hub.allies.onPairAttach(newIdentity().pub, "x")).toEqual({ error: "pairing not open" });
+    expect(a.hub.allies.onPairAttach(newIdentity().pub)).toEqual({ error: "pairing not open" });
   });
 });
 

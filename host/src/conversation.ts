@@ -25,6 +25,7 @@ export interface Turn {
   uuids?: string[]; // user messages this turn answers
   watchId?: string; // a schedule run: its reply becomes the goal's progress line
   maintenance?: boolean; // housekeeping for the harness (native /compact): nothing shown, nothing pushed
+  allyId?: string; // an Ally's message: more from the same Ally joins it while it waits
 }
 
 type OwnerMessage = { origin: Channel; wechat?: WechatReplyTarget };

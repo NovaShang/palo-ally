@@ -99,6 +99,7 @@ export class MemConn implements AllyConn {
 
 export class AllyNet {
   hosts = new Map<string, NetHost>();
+  labels: string[] = []; // what the relay saw as device_label / daemon_label
   private n = 0;
 
   // add makes a hub on this net. `name` goes into user.md as the owner's 称呼.
@@ -127,9 +128,10 @@ export class AllyNet {
     if (h.slot.code !== req.code) throw new PairError(401, "bad code");
     h.slot = null;
     if (req.kind !== "ally") throw new PairError(502, "not an ally");
-    const r = h.hub.allies.onPairAttach(req.identity.pub, req.label);
+    const r = h.hub.allies.onPairAttach(req.identity.pub);
     if ("error" in r) throw new PairError(502, r.error);
     h.devices.set(r.deviceId, b64(req.identity.pub));
+    this.labels.push(req.label, r.label);
     return { device_id: r.deviceId, host_fingerprint: fingerprint(h.identity.pub), daemon_label: r.label };
   }
 
