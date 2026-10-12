@@ -58,6 +58,7 @@
 		9B34F0015CBA0682AF1B48BC /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32922EB865184F7F70CAB365 /* AppTheme.swift */; };
 		9E8BAB6F1769D57EC0C617C0 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97B4D23870E594B624074F8D /* ComposerView.swift */; };
 		9EFDA851328EB4700879F945 /* QuestionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEB06BF1C700F1FEE8FBA962 /* QuestionCard.swift */; };
+		9F471EF33EB831461DD0E4A0 /* AlliesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B37F21F4341F2E8ECB3BEB1 /* AlliesUITests.swift */; };
 		A0550980F6891AA9B038F7B6 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 15DEAD73806EBE1C701B9FCB /* MarkdownUI */; };
 		AACC2B792ABD1AFC63ECC6B2 /* ScrollLabUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED42874198579F1FB37DC41 /* ScrollLabUITests.swift */; };
 		AEBD8CD9FD2F1F20EA8FEDAD /* HostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53AE60C8605BA97074A29F1A /* HostsView.swift */; };
@@ -99,6 +100,7 @@
 		0B2339DF9459035E591FCB19 /* PaloAlly.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PaloAlly.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0CC0C56E78F856900F1C91A8 /* ApprovalCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalCard.swift; sourceTree = "<group>"; };
 		152387F3158810B91BB9A668 /* AllyCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllyCopy.swift; sourceTree = "<group>"; };
+		1B37F21F4341F2E8ECB3BEB1 /* AlliesUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlliesUITests.swift; sourceTree = "<group>"; };
 		1C8CC906F00EAFD38D91A3CD /* ComposerPressGesture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerPressGesture.swift; sourceTree = "<group>"; };
 		2A0AB3E164ECDB40C83C785A /* VoiceExitUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceExitUITests.swift; sourceTree = "<group>"; };
 		2BD7B104CFAE4D190F69E603 /* TouchScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchScript.swift; sourceTree = "<group>"; };
@@ -280,6 +282,7 @@
 		A1BDE3EB13E5736E34C5AA67 /* UITests */ = {
 			isa = PBXGroup;
 			children = (
+				1B37F21F4341F2E8ECB3BEB1 /* AlliesUITests.swift */,
 				3027F62ADAB6BF3E4CFADE4C /* AppLog.swift */,
 				519EA8CCFA1176D5CDDF3D1F /* ChatScrollUITests.swift */,
 				7ED42874198579F1FB37DC41 /* ScrollLabUITests.swift */,
@@ -471,6 +474,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9F471EF33EB831461DD0E4A0 /* AlliesUITests.swift in Sources */,
 				576B3D9CF39D64A7CE5A0582 /* AppLog.swift in Sources */,
 				6A3F40F12C7DD391D2815F87 /* ChatScrollUITests.swift in Sources */,
 				AACC2B792ABD1AFC63ECC6B2 /* ScrollLabUITests.swift in Sources */,

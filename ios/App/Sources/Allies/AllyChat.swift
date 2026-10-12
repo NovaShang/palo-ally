@@ -156,6 +156,7 @@ struct AllyDraftCard: View {
                 TextField("要发的话", text: $text, axis: .vertical)
                     .lineLimit(2...10)
                     .focused($focused)
+                    .accessibilityIdentifier("ally-draft-text")
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
                     .background(.fill.tertiary, in: .rect(cornerRadius: 14, style: .continuous))
