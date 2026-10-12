@@ -21,15 +21,19 @@ host/        桌面 host = 一个 CLI 程序（Bun + TypeScript），daemon + on
     chat.ts             主对话存档（History）+ seq + 补发
     router.ts           输出路由（App / CLI / 微信 / 推送）
     allies.ts           Allies：和别人的助理传话、约时间，配对、待发队列、回执（docs/allies-prd.md）
-    sessions.ts         电脑上的 Claude Code 会话（docs/sessions-prd.md）：列表、对话记录、确认送到手机、送话、帮手
+    pals.ts             Pal（docs/pals-prd.md）：主机自己跑的 Claude Code 会话；接管、交还终端、移出、Palo 开 Pal、一直开着、最多 5 个（state/pals.json）
+    palSession.ts       一个 Pal：resume 它的记录跑起来、主人的话、流式回复、确认和提问、意外退出后自动接上、绝不两个进程写同一份记录
+    palHistory.ts       Pal 的对话记录 → ChatMessage；跟着记录读别的会话发进来的话
+    palLauncher.ts      Pal 的进程经 PaloAlly 小助手启动（找不到就直接启动），用主人登录 shell 的环境
+    sessions.ts         电脑上其他 Claude Code 会话（docs/sessions-prd.md）：列表、对话记录、不在电脑前时确认送到手机
     ccSessions.ts       读 Claude Code 的登记表 / claude agents / 对话记录，合成会话列表
     ccHooks.ts          全局钩子：安装 / 卸载、钩子脚本（~/.paloally/bin/cc-hook）、主机这头的 run/hooks.sock
-    ccCli.ts            claude 命令行（agents --json、--bg、stop、respawn、rm），用主人登录 shell 的环境
-    ccHelpers.ts        帮手记录（state/helpers.json）和每天的花费
-    courier.ts          跑腿会话：名叫 PaloAlly 的 Haiku 会话用 SendMessage 原样送话
+    ccCli.ts            claude 命令行（agents --json、stop），用主人登录 shell 的环境
+    ccSpend.ts          一个会话每天花了多少（从对话记录里的 usage 算）
     away.ts             主人在不在电脑前（锁屏或键鼠空闲 3 分钟）
     channels/           local（unix socket）、relay（E2E + 经 relay 推送）、allyLink（作为客户端连别人的主机）、wechat（iLink）、apns（直推回退）
     proto/              线协议：帧、E2E 握手与封装、RPC 类型、主机之间的 ally.* 消息
+  helper/               PaloAlly 小助手（PaloAlly Helper.app）：Swift 源码 + build.sh（构建并用 Developer ID 签名；签好的 app 不进仓库）
   test/                 bun test
 ios/         Apple 原生客户端（SwiftUI，iOS + Mac Catalyst）
   PaloAllyKit/          Swift package：协议模型、加密、relay 传输、状态 store（swift test）
@@ -41,13 +45,12 @@ relay/       不新写：复用 github.com/NovaShang/bento 的 relay/（bento-re
 
 `paloally start` 前台跑 daemon（`paloally service install` 装成 launchd/systemd 常驻）。daemon 内：
 
-- **一个主会话**：Claude Agent SDK `query()`，streaming input（AsyncIterable），常驻；所有通道的用户消息排进同一个输入队列。session id 持久化，进程重启 `resume`。
+- **一个主会话**：Claude Agent SDK `query()`，streaming input（AsyncIterable），常驻；所有通道的用户消息排进同一个输入队列。session id 持久化，进程重启 `resume`。会话名固定为 `Palo`（`--name`），Pal 用 SendMessage 回它就发给这个名字。
 - **idle 处理**：空闲 `session.idleCloseMinutes` 后关掉 CLI 子进程（省资源），下条消息 `resume` 同一会话。上下文与压缩交给 harness；外壳只记录压缩事件（`compact_boundary`）用于 §12.3 评估。
 - **探针**：独立短上下文 `query()`（便宜模型、`persistSession:false`、结构化输出），只在有 watch 到期时才跑；没到期的 tick 零调用。
 - **本地控制面**：`~/.paloally/run/host.sock`（unix socket，行分隔 JSON，同一套 RPC），CLI 子命令通过它和 daemon 说话。
-- **会话钩子**（docs/sessions-prd.md §6.3）：`~/.paloally/run/hooks.sock`。全局钩子跑 `~/.paloally/bin/cc-hook <事件名> # PaloAlly`（行尾的注释是 PaloAlly 条目的记号，卸载只删带它的）：主机没在跑（没有 socket）时直接退出，只有 SessionStart 照样打印那句信任声明；否则写一行 `{event, payload, env}`，主机立刻回 `{"ack":true}`，再回 `{"output": <钩子要打印的 JSON 或 null>}`。350 毫秒内没有 ack、连不上、出任何错，钩子都无输出退出。`PALOALLY_SESSION=1`（主机自己起的会话：主会话、探针、跑腿会话）直接退出。
-- **跑腿会话**：送话时才开，名叫 `PaloAlly`，Haiku、不思考，只有 SendMessage / ToolSearch，`PreToolUse` 钩子把收件人和原文写进调用；按对方权限模式的类（bypass / prompting）各一个，空闲 10 分钟关掉。
-
+- **会话钩子**（docs/sessions-prd.md §6.3）：`~/.paloally/run/hooks.sock`。全局钩子跑 `~/.paloally/bin/cc-hook <事件名> # PaloAlly`（行尾的注释是 PaloAlly 条目的记号，卸载只删带它的）：主机没在跑（没有 socket）时直接退出；否则写一行 `{event, payload, env}`，主机立刻回 `{"ack":true}`，再回 `{"output": <钩子要打印的 JSON 或 null>}`。350 毫秒内没有 ack、连不上、出任何错，钩子都无输出退出。`PALOALLY_SESSION=1`（主机自己起的会话：主会话、探针、Pal）直接退出。
+- **Pal**（docs/pals-prd.md §7）：每个 Pal 一个 SDK `query()`（streaming input，`resume` 它的记录；Palo 新开的用 `sessionId` 指定 id），常驻不关，会话名就是列表里的名字（`--name`），没有 PaloAlly 的工具，系统提示末尾加一句它由 PaloAlly 托管。进程经 PaloAlly 小助手启动（`spawnClaudeCodeProcess`）：主机起小助手 → 小助手以 `responsibility_spawnattrs_setdisclaim` 再起一份自己 → 那一份起 claude，标准输入输出一路继承；fd 3 上报 claude 的 pid。环境用主人登录 shell 的（去掉会话变量）。确认和提问走 `canUseTool`，成了带 `source: {kind:"pal"}` 的卡片。别的会话发进来的话只在记录里，主机跟着记录读出来。意外退出后按 2/5/15/30/60 秒重试，10 分钟内失败超过 5 次就停下并说明原因；主机启动时把 Pal 逐个接回来。绝不两个进程写同一份记录：启动前查登记表和 `claude agents`，有别的进程拿着就不启动（主机上次留下的孤儿进程先停掉）；跑着时每 5 秒查一次，别处打开了就立刻让开。
 ## 3. 外壳给主 agent 的工具（in-process MCP server `paloally`）
 
 | 工具 | 作用 |
@@ -60,10 +63,8 @@ relay/       不新写：复用 github.com/NovaShang/bento 的 relay/（bento-re
 | `notify_user(text, urgent?)` | 主动推送（经路由器：App 推送；微信只发非敏感回执） |
 | `ally_list()` | Ally 列表：id、对方主人的称呼、助理名、标签、是否在线 |
 | `ally_send(to, text, urgent?, slots?, replyTo?)` | 只生成草稿卡片（聊天里 `kind:"ally"`、`dir:"out"`），立即返回；主人点「发送」（`ally.draft.decide`）才进待发队列 |
-| `sessions_list()` | 电脑上的 Claude Code 会话：名字、帮手 / 终端 / 后台、状态、目录、最后一句 |
-| `session_send(name, text)` | 经跑腿会话把原话送进某个会话，前面加「主人的助理：」 |
-| `helper_propose(name, dir, duty, dailyUsd)` | 只生成提议卡片（聊天里 `kind:"helper"`），立即返回；主人点「开吧」（`helper.decide`）才开 |
-| `helper_stop(name)` / `helper_restart(name)` | 生成审批卡片（`tool:"helper_stop"`/`"helper_restart"`），立即返回；主人点允许后执行 |
+| `pals_list()` | 主人的 Pal（名字 = SendMessage 的 to、目录、状态、最后一句）和电脑上其他会话；跟 Pal 说话用原生 SendMessage |
+| `pal_propose(name, dir, duty, dailyUsd)` | 只生成提议卡片（聊天里 `kind:"helper"`），立即返回；主人点「开吧」（`helper.decide`）才开，交接说明是 Pal 的第一条消息 |
 
 ## 4. 安全（全部依赖 harness）
 
@@ -116,15 +117,21 @@ ChatMessage { seq:number; id:string; role:"user"|"assistant"|"system";
   allyId?:string; allyName?:string; dir?:"in"|"out"; entryId?:string
   /* kind "ally"：收到的话 role "system"，草稿卡片 role "assistant"；最新文字和状态看 entry */;
   proposal?:HelperProposal
-  /* kind "helper"：Palo 提议开帮手；状态变了，同一条消息（同 id、同 seq）再发一次 chat.message */ }
+  /* kind "helper"：Palo 提议开 Pal；状态变了，同一条消息（同 id、同 seq）再发一次 chat.message */;
+  pal?:string /* 属于哪个 Pal 的对话（Pal.id）；没有 = Palo 的。Pal 的消息不进 Palo 的对话，seq = 毫秒时间 */;
+  from?:string /* Pal 对话里不是主人说的 user 消息：助理的名字（Palo 的话）或别的会话的名字 */ }
 HelperProposal { id /* helper.decide 的 proposalId */; name; cwd; duty; dailyUsd:number;
-  status:"pending"|"created"|"discarded"|"expired"; sessionId? /* 开了以后 */; note? }
-CCSession { id /* Claude Code 的 session id */; name; cwd; kind:"helper"|"terminal"|"background";
-  status:"busy"|"idle"|"waiting"|"stopped"; waitingFor?; lastLine?; contextTokens?:number; updatedAt }
+  status:"pending"|"created"|"discarded"|"expired"; sessionId? /* 开了以后 */; palId?; note? }
+Pal { id /* pal_… */; name /* SendMessage 用的名字 */; cwd; sessionId;
+  status:"busy"|"idle"|"waiting"|"starting"|"stopped"; activity?; note? /* stopped 的原因 */;
+  lastLine?; pending:number; model?; createdBy:"owner"|"palo"; updatedAt }
+CCSession { id /* Claude Code 的 session id */; name; cwd; kind:"terminal"|"background" /* "helper" 不再出现 */;
+  status:"busy"|"idle"|"waiting"|"stopped"; waitingFor?; lastLine?; contextTokens?:number; updatedAt;
+  adopting?:boolean /* pals.adopt 在等它在终端里退出 */ }
 CCMessage { id; ts; role:"owner"|"assistant"|"peer"|"palo"; text; from?
-  /* owner：主人在电脑上打的字；palo：经 PaloAlly 送进去的，from 为「主人」（主人在 App 里打的字，已去掉「主人：」）
-     或助理的名字（助理的话）；peer：别的会话发来的，from 为它的名字 */ }
-CardSource { kind:"session"; id /* CCSession.id */; name }
+  /* owner：主人在电脑上打的字；palo：助理（会话名 Palo）用 SendMessage 发来的，from 为助理的名字；
+     peer：别的会话发来的，from 为它的名字 */ }
+CardSource { kind:"session"|"pal"; id /* CCSession.id 或 Pal.id */; name }
 AllyInfo { id; kind:"family"|"mine"; ownerName; assistantName; online:boolean;
   lastSeen:number /*0 = 没联系上过*/; lastEntry?:AllyEntry }
 AllyEntry { id; allyId; dir:"in"|"out"; ts; text; urgent:boolean;
@@ -191,14 +198,19 @@ ModelOption { value; displayName; description; efforts:string[] }
 | `ally.remove` | `{id}` | `{ok}`（发 `ally.bye`，中继忘掉对方设备，记录保留） |
 | `ally.log` | `{id, beforeTs?, limit?}` | `{entries:AllyEntry[]}`（从旧到新，默认 50 条，最多 200） |
 | `ally.draft.decide` | `{id, action:"send"\|"edit"\|"discard", text?}` | `{entry}`（send 带 text 就发改过的；edit 只改文字；discard 记为 rejected「没发」） |
-| `sessions.list` | `{}` | `{sessions:CCSession[], hooks:boolean}`（帮手在前；hooks = 全局钩子开着没有） |
+| `sessions.list` | `{}` | `{sessions:CCSession[], hooks:boolean}`（未接管的会话，最近活动的在前；hooks = 全局钩子开着没有） |
 | `sessions.history` | `{id, before?, limit?}` | `{messages:CCMessage[]}`（从旧到新；before = 客户端手里最早一条的 id，也接受毫秒时间；默认 50 条，最多 200） |
-| `sessions.send` | `{id, text}` | `{ok}`（送达 = Claude Code 说进了对方的收件箱；之后推 `sessions.updated`。会话停了报错「X已经停了，先复活它」） |
-| `sessions.control` | `{id, action:"stop"\|"restart"\|"remove"\|"revive"}` | `{ok}`（只对帮手；restart 一个停了的帮手 = 复活） |
 | `sessions.hooks` | `{enabled?}` | `{enabled}`（不带 enabled 只查不改） |
-| `helper.decide` | `{proposalId, action:"create"\|"discard"}` | `{session?}`（create 返回开好的帮手；已经答过的再答一次，返回原来的结果） |
+| `helper.decide` | `{proposalId, action:"create"\|"discard"}` | `{pal?}`（create 返回开好的 Pal；已经答过的再答一次，返回原来的结果） |
+| `pals.list` | `{}` | `{pals:Pal[], others:CCSession[], hooks:boolean, helper:boolean}`（helper = Pal 经 PaloAlly 小助手启动） |
+| `pals.adopt` | `{sessionId}` | `{pal}`，或 `{waiting:"exit-in-terminal"}`（终端会话：退出后自动接管，结果看 `pals.updated`） |
+| `pals.release` | `{id}` | `{resumeCommand}`（`cd <目录> && claude --resume <sessionId>`；返回时主机的进程已退出） |
+| `pals.remove` | `{id}` | `{ok}` |
+| `pals.history` | `{id, before?, limit?}` | `{messages:ChatMessage[], streaming?}`（从旧到新；before = 最早一条的 id 或毫秒时间；默认 50，最多 200；streaming 同 `sync`） |
+| `pals.send` | `{id, text, clientMsgId?}` | `{id, seq}`（同一 clientMsgId 只送一次；停着的 Pal 先接着跑） |
+| `pals.stop` | `{id}` | `{ok}`（结束当前这一轮，它开着的卡片按拒绝处理） |
 
-**事件**（`RPC_EVENTS`）：`chat.message`（ChatMessage）、`chat.delta`（`{id, text}` 追加文本，最终以同 id 的 `chat.message` 收尾；轮次中断时外壳也会补发收尾）、`task.updated`（Task）、`approval.updated`（Approval）、`watch.updated`（`{watch}` 或 `{removed:id}`）、`artifact.updated`（Artifact）、`settings.updated`（Settings）、`status`（Status）、`commands.updated`（`{commands}`）、`ally.updated`（`{allies}`，整张列表）、`ally.entry`（`{entry}`，新的来往或状态变化）、`sessions.updated`（`{sessions}`，整张会话列表；列表变了就发，送话送达后也发一次）。会话的确认和提问走 `approval.updated` / `question.updated`，带 `source`。
+**事件**（`RPC_EVENTS`）：`chat.message`（ChatMessage）、`chat.delta`（`{id, text}` 追加文本，最终以同 id 的 `chat.message` 收尾；轮次中断时外壳也会补发收尾）、`task.updated`（Task）、`approval.updated`（Approval）、`watch.updated`（`{watch}` 或 `{removed:id}`）、`artifact.updated`（Artifact）、`settings.updated`（Settings）、`status`（Status）、`commands.updated`（`{commands}`）、`ally.updated`（`{allies}`，整张列表）、`ally.entry`（`{entry}`，新的来往或状态变化）、`sessions.updated`（`{sessions}`，整张未接管会话的列表，变了就发）、`pals.updated`（同 `pals.list` 的结果，变了就发整张）。`chat.message` / `chat.delta` 带 `pal` 时属于那个 Pal 的对话（`chat.delta` 是 `{id, text, pal?}`）。会话和 Pal 的确认和提问走 `approval.updated` / `question.updated`，带 `source`。
 
 Ally 的连接（别人的主机作为客户端连进来）不走上面这些：只接受 `ally.hello` / `ally.message` / `ally.receipt` / `ally.bye` 四种，其他一律断开（`docs/allies-prd.md` §7.3、§7.6）。
 

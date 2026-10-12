@@ -84,11 +84,18 @@ Palo 提议，你点头，主机新开一个会话，第一条消息是 Palo 写
   - 经小助手启动的进程，macOS 是否把权限记在小助手头上；
   - 标准输入输出能否稳定转接。
 - 验证失败时，退回由主机直接启动，并在 App 里如实说明权限限制。
+- **验证结果（2026-10-12，主机实现时测）：**
+  - 小助手（`host/helper`，`host/helper/build.sh` 构建并用 Developer ID 签名）用 `responsibility_spawnattrs_setdisclaim` 再起一份自己，这一份对自己负责，claude 是它的子进程。系统查到 claude 的「负责进程」就是小助手（`PaloAllyHelper --check <pid>`）。
+  - 同一条 `ls ~/Library/Safari`（完全磁盘访问才能读的目录）：从有权限的终端直接起的会话能读；经小助手起的会话被拒绝。说明权限确实按小助手算；主人给小助手「完全磁盘访问」后，所有 Pal 都有。
+  - 标准输入输出直接继承下去，中间不转手；一轮对话、工具调用、resume 都正常，退出码和信号原样传递。
+  - 小助手没装或起不来时，主机直接启动 claude，`pals.list` 的 `helper: false`，App 说明权限跟主机一样。
 
 ### 7.4 其他
 - **确认和提问：**走 SDK 的 `canUseTool`。卡片带 `source: {kind: "pal", id, name}`，复用现有的审批和提问。
 - **推送：**Pal 在等你时推送「X 在等你」，同一个 Pal 10 分钟内最多一次。
 - **去掉的部分：**`sessions-prd.md` 里的 `claude --bg` 帮手和跑腿转话都去掉。全局钩子只用于未接管的会话。
+- **Palo 的名字：**Palo 自己的会话名固定为 `Palo`（SendMessage 用的名字），Pal 回它就发给 `Palo`；Pal 对话里来自这个名字的话显示为助理说的。Pal 的系统提示末尾加一句：它由 PaloAlly 托管、主人在手机上看，名叫 Palo 的会话是主人的助理。
+- **同类权限：**SendMessage 只在两边权限模式同一类时立刻送达（Palo 是 auto）。主人的默认模式若是 bypassPermissions，Palo 发给 Pal 的话会被扣住。
 
 ## 8. 接口（在 `sessions.*` 基础上调整）
 
@@ -108,6 +115,29 @@ Palo 提议，你点头，主机新开一个会话，第一条消息是 Palo 写
 - 审批和提问带 `source`。
 
 `Pal`：`{id, name, cwd, sessionId, status: "busy" | "idle" | "waiting" | "starting" | "stopped", lastLine?, pending, model?, createdBy: "owner" | "palo"}`
+
+**主机定下的细节**（2026-10-12，实现时补；样例见 `ios/PaloAllyKit/Tests/PaloAllyKitTests/Fixtures/protocol.json`）：
+- `pals.list` 和 `pals.updated` 的内容一样：`{pals, others, hooks, helper}`。
+  - `others`：电脑上其他会话（`CCSession[]`，不含 Pal）；等着在终端里退出、退出后就接管的那个带 `adopting: true`。
+  - `hooks`：全局钩子开没开（同 `sessions.list`）。
+  - `helper`：Pal 是不是经 PaloAlly 小助手启动。false 时 Pal 的 macOS 权限跟主机一样，App 如实说明。
+  - 列表或任何一个 Pal 的状态变了，就发整张。Pal 按最近活动排在前面。
+- `Pal` 另有三个字段：`activity?`（busy 时在干嘛，同 `Status.activity`）、`note?`（stopped 时为什么：花费过了上限 / 接连启动不起来 / 在别处打开了）、`updatedAt`。`id` 是 `pal_…`，不是 `sessionId`；除了 `pals.adopt`，各方法都用 `id`。
+- `pals.adopt`：
+  - 已经是 Pal 的，返回原来那个。
+  - 终端会话返回 `{waiting: "exit-in-terminal"}`。主机每 0.5 秒看一次原进程，它退出后自动接管，新的 Pal 出现在 `pals.updated` 里。等 30 分钟还没退出就不等了，Palo 的对话里说一声。
+  - 停不下来、resume 失败、已经满 5 个，都报错，原因在错误信息里；满了时点名最久没用的那个。
+- `pals.release` 返回 `{resumeCommand: "cd <目录> && claude --resume <sessionId>"}`，带 `cd` 是为了在原目录里接着跑。返回时主机的进程已经退出。
+- `pals.history`：`before` 是客户端手里最早那条的 `id`（也接受毫秒时间）；返回从旧到新，默认 50 条，最多 200 条。最新一页另带 `streaming?: {id, text}`：正在写的回复，之后的 `chat.delta` 接着往上追加。
+- Pal 的消息（`chat.message` / `chat.delta` 带 `pal`）：
+  - 不进 Palo 的对话。`seq` 就是毫秒时间，只用来排序，不要算进 Palo 的 sync 序号。
+  - 回复的 `id` 是 API 消息的 id：流式、收尾和历史里都一样。主人打的字，`id` 就是记录里那条的 uuid。
+  - 别的会话发进来的话是 `role: "user"`，带 `from`：Palo 的话 `from` 是助理的名字，别的会话的话 `from` 是那个会话的名字。Palo 开的 Pal 的第一条（交接说明）也算 Palo 的话。
+- `pals.send`：同一个 `clientMsgId` 重发只送一次。停着的 Pal（花费上限、接连起不来）会先接着跑；在别处开着时报错。
+- `pals.stop`：结束当前这一轮，这个 Pal 还开着的卡片按「拒绝」处理。
+- 卡片：带 `source: {kind: "pal", id, name}`，不进 Palo 的聊天记录（App 放在 Pal 对话的末尾）。Pal 的卡片有「以后都允许」（`suggestedScope`，规则存在 Claude Code 自己那里），等待时长同主人设的确认等待时间。「X 在等你」的推送 data 带 `pal`。
+- `helper.decide` 的 create 现在返回 `{pal?}`（原来是 `{session?}`）。`HelperProposal` 开好以后带 `palId`。
+- 去掉：`sessions.send`、`sessions.control`。保留：`sessions.list`、`sessions.history`、`sessions.hooks`、`sessions.updated`，都只含未接管的会话。
 
 ## 9. 验收
 

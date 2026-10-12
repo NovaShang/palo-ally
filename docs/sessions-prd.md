@@ -1,5 +1,7 @@
 # PaloAlly · 会话管理 PRD（第一版；部分已被 pals-prd.md 取代）
 
+> 2026-10-12 起：帮手（§2.1、§4.4、§6.5）、跑腿转话（§6.4，含 SessionStart 的那句信任声明）、`sessions.send` / `sessions.control` 和 Palo 的 `session_send` / `helper_stop` / `helper_restart` 都已去掉，由 Pal 取代（`pals-prd.md`）。帮手的提议卡片和 `helper.decide` 留着，用来开 Pal。全局钩子、在不在电脑前、对话记录读取照旧。
+
 2026-10-12。这一版让 PaloAlly 管起用户电脑上现成的 Claude Code 会话，同时把三层体系里的第二层「帮手」落地。所有机制都基于 Claude Code 2.1.282 的实测（临时目录里的后台会话，数据见文末附录）。
 
 ## 1. 一句话
