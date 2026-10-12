@@ -1,4 +1,4 @@
-# PaloAlly · 会话管理 PRD（第一版）
+# PaloAlly · 会话管理 PRD（第一版；部分已被 pals-prd.md 取代）
 
 2026-10-12。这一版让 PaloAlly 管起用户电脑上现成的 Claude Code 会话，同时把三层体系里的第二层「帮手」落地。所有机制都基于 Claude Code 2.1.282 的实测（临时目录里的后台会话，数据见文末附录）。
 
