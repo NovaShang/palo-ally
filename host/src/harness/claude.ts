@@ -45,8 +45,8 @@ class AsyncQueue<T> implements AsyncIterable<T> {
 
 const text = (s: string) => ({ content: [{ type: "text" as const, text: s }] });
 
-// Every Claude Code session the host starts itself (the main one, probes, the
-// courier) carries this, so PaloAlly's global hooks skip them: their prompts
+// Every Claude Code session the host starts itself (the main one, probes,
+// Pals) carries this, so PaloAlly's global hooks skip them: their prompts
 // already reach the owner through the host's own approvals.
 export const OWN_SESSION_ENV = { PALOALLY_SESSION: "1" } as const;
 
