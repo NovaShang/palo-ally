@@ -15,8 +15,8 @@ extension AppStore {
 
     // MARK: loading
 
-    /// After every catch-up. A host that doesn't know sessions says so once,
-    /// and they stay hidden.
+    /// A host from before Pals, after every catch-up (`loadPals` asks). One
+    /// that doesn't know sessions either says so once, and they stay hidden.
     public func loadSessions() async {
         do {
             try await refreshSessions()
@@ -96,11 +96,19 @@ extension AppStore {
         case .removed(let id):
             sessions.removeAll { $0.id == id }
         case .changed(let id):
-            Task { try? await self.refreshSessions() }
+            refetchComputerSessions()
             if watchedSessions[id] != nil { reloadHistory(id) }
         case .refetch:
-            Task { try? await self.refreshSessions() }
+            refetchComputerSessions()
             for id in watchedSessions.keys { reloadHistory(id) }
+        }
+    }
+
+    /// The list read again: from `pals.list` on a host with Pals (its
+    /// `others` are what the list shows), `sessions.list` on one before them.
+    private func refetchComputerSessions() {
+        Task {
+            if self.palsSupported == true { try? await self.refreshPals() } else { try? await self.refreshSessions() }
         }
     }
 

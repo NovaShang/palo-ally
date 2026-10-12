@@ -222,7 +222,10 @@ struct SessionsStoreTests {
         let host = DemoHost(speed: 0)
         let store = AppStore(transport: host.transport)
         store.start()
-        #expect(await until { store.sessionsSupported == true })
+        // A host with Pals: the computer's sessions come with them, and none are asked for apart
+        #expect(await until { store.palsSupported == true })
+        #expect(await !host.requestLog.contains("sessions.list"))
+        #expect(store.otherSessions.isEmpty && store.sessionHooksEnabled == true)
         #expect(store.sessions.isEmpty && store.liveEndQuestions.isEmpty && store.pendingHelperProposals.isEmpty)
     }
 
@@ -377,7 +380,13 @@ struct SessionsStoreTests {
         let host = ManualHost()
         let store = AppStore(transport: host.transport)
         store.start()
+        // Pals first; a host from before them is asked for its sessions instead
+        #expect(await until { host.request("pals.list") != nil })
+        #expect(host.request("sessions.list") == nil)
+        host.transport.deliver(json: ["id": .number(Double(host.request("pals.list")!.id)),
+                                      "error": ["message": "unknown method pals.list"]])
         #expect(await until { host.request("sessions.list") != nil })
+        #expect(store.palsSupported == false)
         host.transport.deliver(json: ["id": .number(Double(host.request("sessions.list")!.id)),
                                       "error": ["message": "unknown method sessions.list"]])
         #expect(await until { store.sessionsSupported == false })

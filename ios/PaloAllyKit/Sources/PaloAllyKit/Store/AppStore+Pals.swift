@@ -41,16 +41,21 @@ extension AppStore {
 
     // MARK: loading
 
-    /// After every catch-up. A host that doesn't know Pals says so once, and
-    /// they stay hidden.
+    /// After every catch-up. `pals.list` brings the Pals, the computer's
+    /// other sessions and the hooks switch in one answer, so `sessions.list`
+    /// isn't asked as well. A host from before Pals says so once: they stay
+    /// hidden, and that host's sessions are asked for instead.
     public func loadPals() async {
         do {
             try await refreshPals()
         } catch {
             if case .remote(let m)? = error as? RPCError, m.lowercased().contains("unknown method") {
                 palsSupported = false
+                await loadSessions()
             }
+            return
         }
+        for id in watchedSessions.keys { _ = try? await loadSessionHistory(id: id) }
     }
 
     public func refreshPals() async throws {

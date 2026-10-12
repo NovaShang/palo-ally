@@ -508,7 +508,7 @@ public final class AppStore {
                 resendQueued()
                 Task { await self.loadSuggestions() }
                 Task { await self.loadAllies() }
-                Task { await self.loadSessions() }
+                // The Pals with the computer's other sessions (a host from before Pals: its sessions).
                 Task { await self.loadPals() }
                 // Each Pal's conversation catches up too.
                 for child in palStores.values { Task { await child.palReconnected() } }

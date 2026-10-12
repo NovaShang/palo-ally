@@ -49,6 +49,8 @@ public actor DemoHost {
     var palWriting: [String: SyncResult.Streaming] = [:]
     /// Seeded with Pals: an accepted proposal opens a Pal, not a helper.
     let palsMode: Bool
+    /// Seeded with sessions: a host from before Pals, which doesn't know `pals.*`.
+    let sessionsMode: Bool
 
     /// The computer name the demo host reports (a second demo host shows the
     /// assistant switcher).
@@ -66,6 +68,7 @@ public actor DemoHost {
         self.speed = speed
         self.hostName = hostName
         self.palsMode = withPals
+        self.sessionsMode = withSessions && !withPals
         settings.assistantName = assistantName
         settings.color = color
         status.metAt = Date().epochMillis - 41 * 86_400_000
@@ -958,7 +961,7 @@ public actor DemoHost {
             emit(RPCEventName.chatMessage, messages[i])
             return result
         default:
-            if let r = try await dispatchPals(method, p) { return r }
+            if !sessionsMode, let r = try await dispatchPals(method, p) { return r }
             throw DemoError(message: "unknown method \(method)")
         }
     }

@@ -141,6 +141,7 @@ Palo 提议，你点头，主机新开一个会话，第一条消息是 Palo 写
 - 卡片：带 `source: {kind: "pal", id, name}`，不进 Palo 的聊天记录（App 放在 Pal 对话的末尾）。Pal 的卡片有「以后都允许」（`suggestedScope`，规则存在 Claude Code 自己那里），等待时长同主人设的确认等待时间。「X 在等你」的推送 data 带 `pal`。
 - `helper.decide` 的 create 现在返回 `{pal?}`（原来是 `{session?}`）。`HelperProposal` 开好以后带 `palId`。
 - 去掉：`sessions.send`、`sessions.control`。保留：`sessions.list`、`sessions.history`、`sessions.hooks`、`sessions.updated`，都只含未接管的会话。
+  - App 连上后只调 `pals.list`：其他会话（`others`）和钩子开关（`hooks`）都在里面，不再另调 `sessions.list`。只有不认识 `pals.list` 的旧主机才改调 `sessions.list`。钩子开关照旧用 `sessions.hooks` 改。
 
 ## 9. 验收
 
