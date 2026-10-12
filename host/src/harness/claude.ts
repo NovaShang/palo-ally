@@ -44,6 +44,11 @@ class AsyncQueue<T> implements AsyncIterable<T> {
 
 const text = (s: string) => ({ content: [{ type: "text" as const, text: s }] });
 
+// Every Claude Code session the host starts itself (the main one, probes, the
+// courier) carries this, so PaloAlly's global hooks skip them: their prompts
+// already reach the owner through the host's own approvals.
+export const OWN_SESSION_ENV = { PALOALLY_SESSION: "1" } as const;
+
 export function paloallyMcpServer(h: ToolHandlers) {
   return createSdkMcpServer({
     name: "paloally",
@@ -298,7 +303,7 @@ class ClaudeMainSession implements MainSession {
             defaultToNo: o.defaultToNo,
             suppressAlwaysAllowRule: o.suppressAlwaysAllowRule,
           }) as any,
-        env: { ...process.env, ...opts.env, CLAUDE_AGENT_SDK_CLIENT_APP: `paloally/${VERSION}` },
+        env: { ...process.env, ...opts.env, ...OWN_SESSION_ENV, CLAUDE_AGENT_SDK_CLIENT_APP: `paloally/${VERSION}` },
         // Scheduling is ours (durable watches); the harness' own timers live only
         // in one process and would silently die with it.
         disallowedTools: ["CronCreate", "CronDelete", "CronList", "ScheduleWakeup"],
@@ -407,7 +412,7 @@ export class ClaudeCodeDriver implements HarnessDriver {
           permissionMode: "auto",
           permissionPrompts: "none",
           outputFormat: { type: "json_schema", schema: req.outputSchema },
-          env: { ...process.env, ...req.env, CLAUDE_AGENT_SDK_CLIENT_APP: `paloally-probe/${VERSION}` },
+          env: { ...process.env, ...req.env, ...OWN_SESSION_ENV, CLAUDE_AGENT_SDK_CLIENT_APP: `paloally-probe/${VERSION}` },
         },
       });
       for await (const msg of q) {

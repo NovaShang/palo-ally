@@ -48,6 +48,17 @@ export class Paths {
     if (Buffer.byteLength(p) <= 100) return p;
     return join("/tmp", `paloally-${createHash("sha256").update(this.root).digest("hex").slice(0, 16)}.sock`);
   }
+  // The hook Claude Code sessions run (docs/sessions-prd.md §6.3) asks the host here.
+  get hookSocket() {
+    const p = join(this.run, "hooks.sock");
+    if (Buffer.byteLength(p) <= 100) return p;
+    return join("/tmp", `paloally-${createHash("sha256").update(this.root).digest("hex").slice(0, 16)}-hooks.sock`);
+  }
+  get bin() { return join(this.root, "bin"); }
+  get ccHooks() { return join(this.state, "cc-hooks.json"); }
+  get ccSettingsBackup() { return join(this.state, "cc-settings.backup.json"); }
+  get helpers() { return join(this.state, "helpers.json"); }
+  get courier() { return join(this.root, "courier"); }
   get logs() { return join(this.root, "logs"); }
   get browserProfile() { return join(this.root, "browser-profile"); }
 }
