@@ -190,6 +190,74 @@
 
 `AllyInfo`：`{id, kind, ownerName, assistantName, online, lastSeen, lastEntry?}`。
 
+### 7.6 补充约定（2026-10-11，主机实现时定下）
+
+上面没写死的地方，以这里为准。主机的样例由 `host/test/protocol.test.ts` 写进 `protocol.json`。
+
+**App 与主机：**
+- `AllyInfo`：
+  - `kind` 是 "family" 或 "mine"；
+  - `lastSeen` 是毫秒时间戳，0 表示还没联系上过；
+  - `online`：现在有连接，或 5 分钟内联系上过、之后没失败过；
+  - `lastEntry` 是最新的一条来往，任何状态都算，包括草稿。
+- `AllyEntry`：`{id, allyId, dir, ts, text, urgent, slots?, replyTo?, status, note?}`。
+  - `status` 的走向：
+    - 发出：draft → queued → sent → delivered → seen；
+    - 收到：delivered → seen；
+    - "sent" 表示已交给对方主机，还没收到回执；
+    - "rejected" 是终态，没发出去，`note` 用一句话说原因：「没发」「草稿过期了」「对方没收」「3 天没送到」。
+  - 来话的 `id` 和发送方的相同。
+- `ally.invite`：
+  - 链接里的 `exp` 和返回的 `expiresAt` 都是毫秒时间戳；
+  - 邀请 10 分钟有效，只能用一次；再调一次就换一个新邀请。
+- `ally.accept`：
+  - 两段配对都完成后才返回，通常几秒，App 的超时请放到 30 秒；
+  - 失败时 `error.message` 是给主人看的中文。
+- `ally.log`：
+  - 按 `ts` 从旧到新；
+  - `beforeTs` 不含本身；
+  - `limit` 默认 50，最多 200；
+  - 已解除的 Ally 也能查。
+- `ally.draft.decide`：
+  - `send`：带 `text` 就发改过的文字；
+  - `edit`：必须带 `text`，只改文字，仍是草稿；
+  - `discard`：状态变 "rejected"，`note` 为「没发」；
+  - 对已经发出的条目再点 `send`，原样返回，不会重发。
+- 事件：
+  - `ally.updated` 的内容是 `{allies: AllyInfo[]}`，整张列表，和 `ally.list` 相同；
+  - `ally.entry` 的内容是 `{entry: AllyEntry}`。
+- 聊天消息 `kind: "ally"`：
+  - `channel` 为 "system"；
+  - 收到的：`role: "system"`、`proactive: true`；
+  - 发出的：`role: "assistant"`，就是草稿卡片；
+  - `allyName` 是对方主人的称呼，App 显示成「<allyName>的助理」；
+  - `text` 是插入那一刻的原话，最新文字和状态以 `entryId` 对应的条目为准；
+  - 收到的话永远不会以 `role: "user"` 出现。
+- 「已看到」：收到的话进聊天之后，App 的下一次 `sync`，或主人在 App、终端说的下一句话。
+
+**主机与主机（§7.3）：**
+- 每条是一个 JSON 对象，类型字段叫 `type`，例如 `{"type":"ally.hello", …}`。
+- `ally.hello` 在配对第二段还带 `daemonId` 和 `relay`，A 才知道去哪个中继、找哪台主机反向配对。
+- `ally.receipt` 的 `state` 还可以是 "rejected"：超过 4 KB、超过每小时 30 条，或不是能收的消息。发送方就此停止重试。
+- 收到重复的 `ally.message`（同一个 `id`）只回执，不再显示。
+- `text` 不超过 4096 字节（UTF-8），一条消息整体不超过 8 KB。
+- 每次建连第一条都是 `ally.hello`。主机启动或重新连上中继时，向每个 Ally 打一声招呼；对方收到后，立刻把给这边排着的消息发出来。这样对方开机后很快就能送达，不用等下一轮重试。
+
+**中继（§7.4）：**
+- `pair.open` 接受可选的 `code`（6 位数字）。主机续开窗口时用同一个码，二维码不用变。
+- `device.revoke{device_id}`：
+  - 中继删除 `device:<id>`，并记下这个 id 已撤销，否则它下次连接时会被重新登记；
+  - 关掉它正开着的通道；
+  - 回 `device.revoked{device_id}`；
+  - 之后这个 id 再来连接，返回 401。
+- 手机解除配对时，主机也发 `device.revoke`。
+
+**主机行为：**
+- 主人的称呼：取 `user.md` 里「称呼」或「名字」那一行；没有就用电脑账户的全名，再没有就用电脑名。
+- 「还没看到」：送到 4 小时后还没「已看到」，发送方助理说一次；赶上免打扰时段，就等时段结束再说。
+- 配对 2 分钟内两段没走完，就作废，并让中继忘掉对方的设备。
+- 来话给 Palo 的那一轮还没开始时，同一个 Ally 再来的话并进同一轮。
+
 ## 8. 安全
 
 - Ally 连接只开放 §7.3 的四种消息，不能调用任何 RPC，所以拿不到对话、记忆、产物，也不能让助理执行任何事。
