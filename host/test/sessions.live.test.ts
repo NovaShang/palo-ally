@@ -58,7 +58,7 @@ d("live: a helper as a real background session", () => {
   new HookInstaller({ paths, claudeDir: join(paths.root, "unused-claude") }).writeScripts();
   mkdirSync(join(project, ".claude"), { recursive: true });
   const hooks: Record<string, unknown[]> = {};
-  for (const [ev, timeout] of Object.entries(HOOK_EVENTS)) hooks[ev] = [{ hooks: [{ type: "command", command: hookCommand(paths), timeout }] }];
+  for (const [ev, timeout] of Object.entries(HOOK_EVENTS)) hooks[ev] = [{ hooks: [{ type: "command", command: hookCommand(paths, ev), timeout }] }];
   writeFileSync(join(project, ".claude", "settings.json"), JSON.stringify({ hooks }, null, 2));
 
   const hub = new Hub({

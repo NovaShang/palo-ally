@@ -131,9 +131,9 @@ export class Sessions {
     } catch (e) {
       this.log(`hook socket: ${e}`);
     }
-    // A new host version may change the hook script: keep it current.
+    // A new host version may change the hook script or its entries: keep them current.
     try {
-      if (this.installer.installed()) this.installer.writeScripts();
+      this.installer.refresh();
     } catch (e) {
       this.log(`hook script: ${e}`);
     }

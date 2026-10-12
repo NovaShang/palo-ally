@@ -25,10 +25,10 @@ const OWNER = {
 };
 
 // Runs the installed hook like Claude Code does: through a shell, the payload on stdin.
-function runHook(paths: { bin: string }, payload: unknown, env: Record<string, string> = {}): Promise<{ out: string; ms: number; code: number | null }> {
+function runHook(paths: { bin: string }, payload: any, env: Record<string, string> = {}): Promise<{ out: string; ms: number; code: number | null }> {
   return new Promise((resolve) => {
     const t0 = performance.now();
-    const p = spawn("/bin/sh", ["-c", `'${join(paths.bin, "cc-hook")}' # PaloAlly`], { env: { ...process.env, PALOALLY_SESSION: "", ...env } });
+    const p = spawn("/bin/sh", ["-c", `'${join(paths.bin, "cc-hook")}' ${payload.hook_event_name} # PaloAlly`], { env: { ...process.env, PALOALLY_SESSION: "", ...env } });
     let out = "";
     p.stdout.on("data", (d) => (out += d));
     p.on("close", (code) => resolve({ out, ms: performance.now() - t0, code }));
@@ -39,7 +39,7 @@ function runHook(paths: { bin: string }, payload: unknown, env: Record<string, s
 const perm = { session_id: "s-1", cwd: "/tmp/x", hook_event_name: "PermissionRequest", tool_name: "Bash", tool_input: { command: "npm run build" } };
 
 describe("global hook install", () => {
-  test("install appends PaloAlly's entries after the owner's; uninstall gives back the same file, byte for byte", () => {
+  test("install appends PaloAlly's entries after the owner's; uninstall gives back the same file, byte for byte", async () => {
     const { inst, file, paths } = setup();
     const original = JSON.stringify(OWNER, null, 4) + "\n";
     writeFileSync(file, original);
@@ -55,7 +55,7 @@ describe("global hook install", () => {
       const ours = s.hooks[ev].at(-1).hooks[0];
       expect(isPaloAllyHook(ours)).toBe(true);
       expect(ours.timeout).toBe(timeout);
-      expect(ours.command).toContain(join(paths.bin, "cc-hook"));
+      expect(ours.command).toBe(`'${join(paths.bin, "cc-hook")}' ${ev} # PaloAlly`);
     }
     expect(s.hooks.PermissionRequest[0].hooks[0].timeout).toBe(300);
     expect(readFileSync(paths.ccSettingsBackup, "utf8")).toBe(original);
@@ -66,6 +66,16 @@ describe("global hook install", () => {
     inst.install();
     expect(readFileSync(file, "utf8")).toBe(once);
     expect(readFileSync(paths.ccSettingsBackup, "utf8")).toBe(original);
+    // a host start with nothing to change leaves the file alone
+    const { mtimeMs } = (await import("node:fs")).statSync(file);
+    inst.refresh();
+    expect((await import("node:fs")).statSync(file).mtimeMs).toBe(mtimeMs);
+    // entries an older version wrote are brought up to date
+    const old = JSON.parse(readFileSync(file, "utf8"));
+    old.hooks.Stop.at(-1).hooks[0].command = `'${join(paths.bin, "cc-hook")}' # PaloAlly`;
+    writeFileSync(file, JSON.stringify(old, null, 4) + "\n");
+    inst.refresh();
+    expect(readFileSync(file, "utf8")).toBe(once);
     inst.uninstall();
     expect(readFileSync(file, "utf8")).toBe(original);
     expect(inst.installed()).toBe(false);
@@ -131,7 +141,7 @@ describe("the hook script", () => {
   test("host down: no socket, a stale socket, or a host that never answers — exits within 0.5 s with no output", async () => {
     const { inst, paths } = setup();
     inst.writeScripts();
-    // no socket at all
+    // no socket at all: it doesn't even start bun
     let r = await runHook(paths, perm);
     expect(r.out).toBe("");
     expect(r.code).toBe(0);
@@ -141,7 +151,8 @@ describe("the hook script", () => {
     const stale = createServer();
     await new Promise<void>((res) => stale.listen(paths.hookSocket, () => res()));
     await new Promise<void>((res) => stale.close(() => res()));
-    if (!existsSync(paths.hookSocket)) symlinkSync("/nonexistent", paths.hookSocket); // left behind by a crash
+    expect(existsSync(paths.hookSocket)).toBe(true); // left behind, as after a crash
+    await runHook(paths, { ...perm, hook_event_name: "Stop" }); // bun's first start, off the clock
     r = await runHook(paths, perm);
     expect(r.out).toBe("");
     expect(r.ms).toBeLessThan(500);
@@ -193,7 +204,7 @@ describe("the hook script", () => {
       expect(seen.map((s) => s.event)).toEqual(["PermissionRequest", "Stop"]);
       expect(seen[1]!.payload.last_assistant_message).toBe("好了");
       // Claude Code kills the hook when the prompt is answered in the terminal.
-      const p = spawn("/bin/sh", ["-c", `exec '${join(paths.bin, "cc-hook")}'`], { env: { ...process.env, PALOALLY_SESSION: "" } });
+      const p = spawn("/bin/sh", ["-c", `exec '${join(paths.bin, "cc-hook")}' PermissionRequest`], { env: { ...process.env, PALOALLY_SESSION: "" } });
       p.stdin.end(JSON.stringify({ ...perm, tool_input: { command: "wait" } }));
       await new Promise((r) => setTimeout(r, 300));
       p.kill("SIGTERM");

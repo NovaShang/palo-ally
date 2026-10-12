@@ -41,8 +41,8 @@ export const HOOK_ACK_MS = 350;
 
 const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
-export function hookCommand(paths: Paths): string {
-  return `${shq(join(paths.bin, "cc-hook"))} ${MARK}`;
+export function hookCommand(paths: Paths, event: string): string {
+  return `${shq(join(paths.bin, "cc-hook"))} ${event} ${MARK}`;
 }
 
 export function isPaloAllyHook(h: unknown): boolean {
@@ -50,15 +50,18 @@ export function isPaloAllyHook(h: unknown): boolean {
   return typeof cmd === "string" && cmd.trimEnd().endsWith(MARK);
 }
 
-// The shell wrapper: PaloAlly's own sessions (PALOALLY_SESSION=1) and a
-// missing bun leave at once, without starting anything.
+// The shell wrapper: PaloAlly's own sessions (PALOALLY_SESSION=1), a host
+// that isn't running (no socket) and a missing bun leave at once, without
+// starting anything. SessionStart still goes on: it prints its line anyway.
 function wrapperScript(bun: string, script: string, socket: string): string {
   return `#!/bin/sh
 # PaloAlly's Claude Code hook (installed by PaloAlly; the app's 会话 switch removes it).
 [ "$PALOALLY_SESSION" = "1" ] && exit 0
+SOCK=${shq(socket)}
+[ -S "$SOCK" ] || [ "$1" = "SessionStart" ] || exit 0
 BUN=${shq(bun)}
 [ -x "$BUN" ] || exit 0
-exec "$BUN" ${shq(script)} ${shq(socket)}
+exec "$BUN" ${shq(script)} "$SOCK"
 `;
 }
 
@@ -159,6 +162,27 @@ export class HookInstaller {
     return Object.keys(HOOK_EVENTS).some((ev) => Array.isArray(hooks[ev]) && hooks[ev].some((g: any) => g?.hooks?.some?.(isPaloAllyHook)));
   }
 
+  /**
+   * At the host's start, with the hooks on: the scripts follow this host's
+   * version, and entries an older version wrote are brought up to date
+   * (the settings file is only written when something differs).
+   */
+  refresh(): void {
+    if (!this.installed()) return;
+    this.writeScripts();
+    let s: any;
+    try {
+      s = JSON.parse(readFileSync(this.settingsPath, "utf8"));
+    } catch {
+      return;
+    }
+    const current = Object.entries(HOOK_EVENTS).every(([ev, timeout]) => {
+      const ours = (Array.isArray(s.hooks?.[ev]) ? s.hooks[ev] : []).flatMap((g: any) => (Array.isArray(g?.hooks) ? g.hooks.filter(isPaloAllyHook) : []));
+      return ours.length === 1 && ours[0].command === hookCommand(this.o.paths, ev) && ours[0].timeout === timeout;
+    });
+    if (!current) this.install();
+  }
+
   /** (Re)writes the hook scripts; their content follows this host's version. */
   writeScripts(): void {
     const { paths } = this.o;
@@ -189,11 +213,10 @@ export class HookInstaller {
     };
     const next = { ...stripped };
     const hooks: Record<string, unknown[]> = next.hooks && typeof next.hooks === "object" ? { ...next.hooks } : {};
-    const command = hookCommand(this.o.paths);
     for (const [ev, timeout] of Object.entries(HOOK_EVENTS)) {
       const list = Array.isArray(hooks[ev]) ? [...hooks[ev]!] : [];
       if (!Array.isArray(hooks[ev]) || prev?.created.events.includes(ev)) created.events.push(ev);
-      list.push({ hooks: [{ type: "command", command, timeout }] });
+      list.push({ hooks: [{ type: "command", command: hookCommand(this.o.paths, ev), timeout }] });
       hooks[ev] = list;
     }
     next.hooks = hooks;
