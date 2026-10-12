@@ -1,9 +1,10 @@
 import XCTest
 
-/// Allies (allies-prd §5) against the demo host on an iPhone simulator, with
-/// real taps: the draft card's 发送 and 改一下 in the conversation
-/// (`-demoState allies`: an Ally's message, then a draft back), and an Ally's
-/// page in 「它」 with 解除 confirmed in place.
+/// Allies (allies-prd §5, §11) against the demo host on an iPhone simulator,
+/// with real taps: the draft card's 发送 and 改一下 in the assistant's
+/// conversation (`-demoState allies`: an Ally's message, then a draft back);
+/// an Ally's page from the list, where the owner's words go straight out,
+/// ⋯ changes the trust level and 解除 is confirmed in place.
 final class AlliesUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
@@ -43,14 +44,14 @@ final class AlliesUITests: XCTestCase {
 
     @MainActor
     func testRemovingAnAllyAsksInPlaceThenTakesThemOff() throws {
-        let app = launch(["-demoScreen", "allies"])
-        let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "路上小心")).firstMatch
+        let app = launch(["-demoScreen", "list"])
+        let row = app.descendants(matching: .any)["row-ally-al-family"]
         XCTAssertTrue(row.waitForExistence(timeout: 15), "no row for 家人")
         row.tap()
-        XCTAssertTrue(app.staticTexts["来往记录"].waitForExistence(timeout: 5))
-        let remove = app.buttons["解除"].firstMatch
-        for _ in 0..<6 where !remove.isHittable { app.swipeUp() }
-        remove.tap()
+        let more = app.buttons["ally-menu"].firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 5), "no ⋯ on the Ally's page")
+        more.tap()
+        app.buttons["解除"].firstMatch.tap()
         // In the page, not a dialog: the explanation and two buttons.
         XCTAssertTrue(app.buttons["算了"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.alerts.count, 0)
@@ -58,8 +59,40 @@ final class AlliesUITests: XCTestCase {
         app.buttons["解除"].firstMatch.tap()
         // Back on the list, without them.
         XCTAssertTrue(app.staticTexts["Allies"].waitForExistence(timeout: 10))
-        XCTAssertFalse(app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "路上小心")).firstMatch.exists)
-        XCTAssertTrue(app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "小林")).firstMatch.exists)
+        XCTAssertFalse(app.descendants(matching: .any)["row-ally-al-family"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["row-ally-al-lin"].exists)
+    }
+
+    /// The owner's own words on an Ally's page go out as they are: no draft
+    /// card, their state under them, and the other side answers.
+    @MainActor
+    func testOwnWordsOnAnAllysPageGoStraightOut() throws {
+        let app = launch(["-demoScreen", "ally", "-demoAlly", "al-family"])
+        let field = app.descendants(matching: .any)["ally-input"]
+        XCTAssertTrue(field.waitForExistence(timeout: 15), "no input on the Ally's page")
+        // The assistant's words for the owner say so.
+        XCTAssertTrue(app.staticTexts["Palo 代你说"].firstMatch.exists, "the assistant's words aren't marked")
+        field.tap()
+        field.typeText("今晚吃面")
+        app.buttons["发送"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["今晚吃面"].waitForExistence(timeout: 5), "the words don't show")
+        XCTAssertFalse(app.buttons["改一下"].exists, "a card where none should be")
+        XCTAssertTrue(app.staticTexts["对方已看到"].waitForExistence(timeout: 15), "no state under the words")
+        XCTAssertTrue(app.staticTexts["好的，收到。"].waitForExistence(timeout: 10), "their answer didn't come")
+    }
+
+    /// ⋯ changes how the owner's assistant answers them, and the page says it.
+    @MainActor
+    func testTheTrustLevelChangesFromTheMenu() throws {
+        let app = launch(["-demoScreen", "ally", "-demoAlly", "al-family"])
+        let note = app.descendants(matching: .any)["ally-trust"].firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 15))
+        XCTAssertTrue(note.label.contains("直接回"), note.label)
+        app.buttons["ally-menu"].firstMatch.tap()
+        app.buttons["每句要你看"].firstMatch.tap()
+        let changed = NSPredicate(format: "label CONTAINS %@", "都先给你看")
+        expectation(for: changed, evaluatedWith: note)
+        waitForExpectations(timeout: 10)
     }
 
     /// An invite opened from outside (`-pairLink` goes through the same
@@ -84,8 +117,10 @@ final class AlliesUITests: XCTestCase {
         app.buttons["加为 Ally"].tap()
         XCTAssertTrue(app.staticTexts["加好了"].waitForExistence(timeout: 15), "never said it was added")
         app.buttons["完成"].tap()
-        app.buttons["「它」"].tap()
-        let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "小周")).firstMatch
+        // Back to the list: they're under Allies.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let row = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+                                                                       "row-ally-", "小周")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10), "not on the list")
         XCTAssertTrue(row.label.contains("我的"), "tag missing: \(row.label)")
     }

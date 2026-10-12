@@ -1,52 +1,70 @@
 import XCTest
 
-/// Sessions (sessions-prd §5) against the demo host on an iPhone simulator,
-/// with real taps: words typed on a session's page land in its conversation;
-/// 停止 is asked in the page and 复活 brings it back; a helper proposal's 开吧
-/// starts a helper whose page opens from the card; a session's card at the
-/// conversation's end goes once it's answered.
+/// Pals (pals-prd §4, §6) and the computer's other sessions against the demo
+/// host on an iPhone simulator, with real taps: words typed on a Pal's page
+/// land in its conversation and it answers; 交还终端 and 移出 Pals are asked
+/// in the page; a proposal's 开吧 opens a Pal whose page opens from the card;
+/// a Pal's card is on its own page, another session's in the assistant's
+/// conversation, and each goes once answered.
 final class SessionsUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
     }
 
     @MainActor
-    func testWordsSentFromTheAppLandInTheSession() throws {
-        let app = launch(["-demoScreen", "session"])
-        let field = app.descendants(matching: .any).matching(identifier: "session-input").firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 15), "no input on the session's page")
-        field.tap()
-        field.typeText("详情页也一起做了吧")
+    func testWordsTypedOnAPalsPageLandInItsConversation() throws {
+        // The composer's keyboard comes up a few seconds in (`-demoKeyboard`):
+        // a tap on it would first ask for the microphone in the simulator.
+        let app = launch(["-demoScreen", "pal", "-demoPal", "pal-notes", "-demoKeyboard", "4:600"])
+        XCTAssertTrue(app.navigationBars.staticTexts["笔记整理"].waitForExistence(timeout: 15), "the Pal's page didn't open")
+        XCTAssertTrue(app.buttons["按住说话，轻点打字"].firstMatch.exists, "no composer on the Pal's page")
+        let field = app.descendants(matching: .any)["composerField"]
+        expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: field)
+        waitForExpectations(timeout: 10)
+        field.typeText("把上周的也归一下")
         app.buttons["发送"].firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["详情页也一起做了吧"].waitForExistence(timeout: 5), "the words don't show while they go")
-        // In the session's own conversation, then its answer.
-        let answer = app.staticTexts["好的，按你说的办。"]
-        if !answer.waitForExistence(timeout: 15) { print("---- tree\n\(app.debugDescription)") }
-        XCTAssertTrue(answer.exists, "the session never answered")
-        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "详情页也一起做了吧")).count, 1)
+        XCTAssertTrue(text(app, "把上周的也归一下").waitForExistence(timeout: 5), "the words don't show")
+        // It streams its answer, the way the assistant's do.
+        XCTAssertTrue(text(app, "好的，按你说的办").waitForExistence(timeout: 15), "the Pal never answered")
+        XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "把上周的也归一下")).count, 1)
     }
 
     @MainActor
-    func testStoppingAsksInThePageAndReviveBringsItBack() throws {
-        let app = launch(["-demoScreen", "session", "-demoSession", "cc-notes"])
-        let more = app.buttons["更多"].firstMatch
-        XCTAssertTrue(more.waitForExistence(timeout: 15), "no ⋯ on a helper's page")
+    func testHandingBackShowsTheLineAndRemovingAsksInThePage() throws {
+        let app = launch(["-demoScreen", "pal", "-demoPal", "pal-notes"])
+        let more = app.buttons["pal-menu"].firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 15), "no ⋯ on a Pal's page")
         more.tap()
-        app.buttons["停止"].firstMatch.tap()
-        // In the page, not a dialog.
+        app.buttons["交还终端"].firstMatch.tap()
+        // Asked in the page, not a dialog.
         XCTAssertTrue(app.buttons["算了"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.alerts.count, 0)
         XCTAssertEqual(app.sheets.count, 0)
-        app.buttons["停止"].firstMatch.tap()
-        let revive = app.buttons["复活"].firstMatch
-        XCTAssertTrue(revive.waitForExistence(timeout: 10), "a stopped helper offers no 复活")
-        revive.tap()
-        let field = app.descendants(matching: .any).matching(identifier: "session-input").firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 10), "revived, but no input again")
+        app.buttons["交还"].firstMatch.tap()
+        let line = app.staticTexts["resume-command"]
+        XCTAssertTrue(line.waitForExistence(timeout: 10), "no line to resume it in a terminal")
+        XCTAssertTrue(line.label.hasPrefix("claude --resume "), line.label)
+        XCTAssertTrue(app.buttons["复制这一行"].exists)
+        // Closing it goes back to the list, without that Pal.
+        app.buttons["关上"].tap()
+        XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.descendants(matching: .any)["row-pal-pal-notes"].exists)
+
+        // 移出 Pals, on the other one.
+        app.descendants(matching: .any)["row-pal-pal-site"].tap()
+        let menu = app.buttons["pal-menu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 10))
+        menu.tap()
+        app.buttons["移出 Pals"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["算了"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.alerts.count, 0)
+        app.buttons["移出"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.descendants(matching: .any)["row-pal-pal-site"].exists)
     }
 
     @MainActor
-    func testYesToAProposalStartsAHelperThatOpensFromTheCard() throws {
+    func testYesToAProposalOpensAPalWhosePageOpensFromTheCard() throws {
         let app = launch(["-demoState", "helper"])
         let yes = app.buttons["开吧"].firstMatch
         XCTAssertTrue(yes.waitForExistence(timeout: 15), "no 开吧 on the proposal")
@@ -54,22 +72,42 @@ final class SessionsUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["已经开了"].waitForExistence(timeout: 10), "the card never said it started")
         XCTAssertFalse(app.buttons["不用"].exists)
         app.buttons["去看看它"].firstMatch.tap()
-        XCTAssertTrue(app.navigationBars.staticTexts["报销帮手"].waitForExistence(timeout: 10), "the helper's page didn't open")
+        XCTAssertTrue(app.navigationBars.staticTexts["报销帮手"].waitForExistence(timeout: 10), "the Pal's page didn't open")
+        // The assistant's handover is its first words there.
+        XCTAssertTrue(text(app, "Palo 说").waitForExistence(timeout: 10), "the assistant's words aren't marked")
     }
 
     @MainActor
-    func testASessionsCardGoesOnceAnswered() throws {
+    func testEachCardWaitsWhereItBelongsAndGoesOnceAnswered() throws {
         let app = launch(["-demoState", "sessions"])
-        let label = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "网站帮手 想运行")).firstMatch
-        XCTAssertTrue(label.waitForExistence(timeout: 15), "no source on the session's card")
-        let allow = app.buttons["允许"].firstMatch
-        XCTAssertTrue(allow.waitForExistence(timeout: 5))
-        allow.tap()
-        let gone = NSPredicate(format: "exists == false")
-        expectation(for: gone, evaluatedWith: label)
+        // Another session's question: in the assistant's conversation.
+        let asks = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "问卷数据清洗 问你")).firstMatch
+        XCTAssertTrue(asks.waitForExistence(timeout: 15), "no source on the session's card")
+        // The Pal's card isn't here.
+        XCTAssertFalse(text(app, "npm run build").exists)
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "B 用中位数补上")).firstMatch.tap()
+        app.buttons["发送"].firstMatch.tap()
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: asks)
         waitForExpectations(timeout: 10)
-        // The other session's question is still there.
-        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "问卷数据清洗 问你")).firstMatch.exists)
+
+        // The Pal's card: on its page, with its count on the list.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let row = app.descendants(matching: .any)["row-pal-pal-site"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        XCTAssertTrue(row.label.contains("1 件等你"), row.label)
+        row.tap()
+        let allow = app.buttons["允许"].firstMatch
+        XCTAssertTrue(allow.waitForExistence(timeout: 10), "the Pal's card isn't on its page")
+        allow.tap()
+        XCTAssertTrue(text(app, "构建通过了").waitForExistence(timeout: 15), "it didn't carry on")
+        XCTAssertFalse(app.buttons["允许"].exists)
+    }
+
+    // MARK: -
+
+    @MainActor
+    private func text(_ app: XCUIApplication, _ s: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", s, s)).firstMatch
     }
 
     @MainActor
