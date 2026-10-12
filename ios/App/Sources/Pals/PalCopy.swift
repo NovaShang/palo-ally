@@ -26,22 +26,32 @@ extension Copy {
         }
     }
 
-    /// The row's second line: 「等你 · 列表页做完了…」, or just its last words.
+    /// The row's second line: 「等你 · 列表页做完了…」, 「已停 · 今天的花费到上限了」,
+    /// or just its last words.
     static func palLine(_ p: Pal) -> String {
-        let line = (p.lastLine ?? "").replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
+        let line = oneLine(p.status == .stopped ? (p.note ?? p.lastLine) : (p.status == .busy ? (p.activity ?? p.lastLine) : p.lastLine))
         switch p.status {
         case .idle where !line.isEmpty: return line
         default: return line.isEmpty ? palStatus(p.status) : "\(palStatus(p.status)) · \(line)"
         }
     }
 
-    /// A Pal page's subtitle: 「在忙 · ~/code/site」.
+    /// A Pal page's subtitle: 「在忙 · ~/code/site」; stopped, why.
     static func palSubtitle(_ p: Pal) -> String {
-        [palStatus(p.status), p.shortCwd].filter { !$0.isEmpty }.joined(separator: " · ")
+        let second = p.status == .stopped ? oneLine(p.note).nonEmpty ?? p.shortCwd : p.shortCwd
+        return [palStatus(p.status), second].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    private static func oneLine(_ s: String?) -> String {
+        (s ?? "").replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
     }
 
     /// 「Palo 说」: over the assistant's words in a Pal's conversation.
     static func assistantSays(_ name: String) -> String {
         spaced("\(name.isEmpty ? "助理" : name)说")
     }
+}
+
+private extension String {
+    var nonEmpty: String? { isEmpty ? nil : self }
 }
