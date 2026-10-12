@@ -65,6 +65,12 @@ export interface PermissionRequest {
   suppressAlwaysAllowRule?: boolean;
 }
 
+// A host rule checked before every tool call of the session, whatever the
+// harness' permission mode would decide (Claude Code: a PreToolUse hook, which
+// runs before auto approvals and before canUseTool). A string denies the call
+// with that message; null leaves it to the harness as usual.
+export type ToolGate = (req: { toolName: string; input: Record<string, unknown>; agentId?: string; via: "hook" | "canUseTool" }) => string | null;
+
 export type PermissionDecision =
   | { behavior: "allow"; updatedInput?: Record<string, unknown>; updatedPermissions?: unknown[] }
   | { behavior: "deny"; message: string };
@@ -125,6 +131,7 @@ export interface SessionOptions {
   appendSystemPrompt?: string;
   // the harness asks the owner something; safety decisions are the harness' own
   canUseTool: (req: PermissionRequest) => Promise<PermissionDecision>;
+  toolGate?: ToolGate; // the assistant's own session: 「只说话不动手」 in an Ally's turn
   mcpServers?: Record<string, unknown>;
   env?: Record<string, string>; // extra environment for the harness only (e.g. third-party model endpoint)
   // The environment the process starts from (default: the host's own). A Pal

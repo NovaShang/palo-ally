@@ -1,4 +1,4 @@
-import { createSdkMcpServer, query, tool, type Options, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, query, tool, type Options, type PreToolUseHookInput, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { VERSION } from "../config.ts";
 import type {
@@ -296,6 +296,77 @@ const MAIN_DISALLOWED = ["CronCreate", "CronDelete", "CronList", "ScheduleWakeup
 
 type AnySessionOptions = SessionOptions & Partial<Pick<MainSessionOptions, "tools" | "sharedChrome">>;
 
+// sessionOptions is what a long-lived session asks the SDK for (exported so
+// tests can check it without starting Claude Code).
+export function sessionOptions(opts: AnySessionOptions): Options {
+  const { paloally: _ignored, ...extra } = (opts.mcpServers ?? {}) as Record<string, any>;
+  const main = !!opts.tools; // the assistant's own session (a Pal has none of PaloAlly's tools)
+  const extraArgs: Record<string, string | null> = {};
+  if (opts.sharedChrome) extraArgs.chrome = null;
+  if (opts.name) extraArgs.name = opts.name;
+  const gate = opts.toolGate;
+  return {
+    cwd: opts.cwd,
+    model: opts.model,
+    ...(opts.effort ? { effort: opts.effort as any } : {}),
+    resume: opts.resumeSessionId,
+    ...(opts.sessionId && !opts.resumeSessionId ? { sessionId: opts.sessionId } : {}),
+    permissionMode: opts.permissionMode as any,
+    ...(opts.permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
+    systemPrompt: { type: "preset", preset: "claude_code", ...(opts.appendSystemPrompt ? { append: opts.appendSystemPrompt } : {}) },
+    settingSources: ["user", "project", "local"],
+    includePartialMessages: true,
+    forwardSubagentText: true,
+    agentProgressSummaries: true, // live one-line progress for subagent tasks
+    mcpServers: main ? { ...extra, paloally: paloallyMcpServer(opts.tools!) } : extra,
+    canUseTool: async (toolName, input, o) =>
+      opts.canUseTool({
+        toolName,
+        input,
+        toolUseId: o.toolUseID,
+        title: o.title,
+        reason: o.decisionReason,
+        agentId: o.agentID,
+        signal: o.signal,
+        suggestions: o.suggestions,
+        defaultToNo: o.defaultToNo,
+        suppressAlwaysAllowRule: o.suppressAlwaysAllowRule,
+      }) as any,
+    // The host's gate runs as a PreToolUse hook: Claude Code consults it for
+    // every call before its own permission decision, so it also covers what
+    // auto mode or an allow rule would approve without asking canUseTool
+    // (a hook's deny wins over both; SDK callback hooks run even when the
+    // owner's settings turn hooks off).
+    ...(gate
+      ? {
+          hooks: {
+            PreToolUse: [
+              {
+                hooks: [
+                  async (input) => {
+                    const i = input as PreToolUseHookInput;
+                    const deny = gate({ toolName: i.tool_name, input: (i.tool_input ?? {}) as Record<string, unknown>, agentId: i.agent_id, via: "hook" });
+                    return deny ? { hookSpecificOutput: { hookEventName: "PreToolUse" as const, permissionDecision: "deny" as const, permissionDecisionReason: deny } } : {};
+                  },
+                ],
+              },
+            ],
+          },
+        }
+      : {}),
+    env: {
+      ...(opts.baseEnv ?? process.env),
+      ...opts.env,
+      ...OWN_SESSION_ENV,
+      CLAUDE_AGENT_SDK_CLIENT_APP: `${main ? "paloally" : "paloally-pal"}/${VERSION}`,
+    },
+    ...(main ? { disallowedTools: MAIN_DISALLOWED } : {}),
+    extraArgs,
+    stderr: opts.stderr,
+    ...(opts.spawn ? { spawnClaudeCodeProcess: (o) => opts.spawn!(o) } : {}),
+  };
+}
+
 class ClaudeMainSession implements MainSession {
   private input = new AsyncQueue<SDKUserMessage>();
   private q: Query;
@@ -304,49 +375,8 @@ class ClaudeMainSession implements MainSession {
   closed = false;
 
   constructor(private opts: AnySessionOptions) {
-    const { paloally: _ignored, ...extra } = (opts.mcpServers ?? {}) as Record<string, any>;
     const main = !!opts.tools; // the assistant's own session (a Pal has none of PaloAlly's tools)
-    const extraArgs: Record<string, string | null> = {};
-    if (opts.sharedChrome) extraArgs.chrome = null;
-    if (opts.name) extraArgs.name = opts.name;
-    const options: Options = {
-      cwd: opts.cwd,
-      model: opts.model,
-      ...(opts.effort ? { effort: opts.effort as any } : {}),
-      resume: opts.resumeSessionId,
-      ...(opts.sessionId && !opts.resumeSessionId ? { sessionId: opts.sessionId } : {}),
-      permissionMode: opts.permissionMode as any,
-      ...(opts.permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
-      systemPrompt: { type: "preset", preset: "claude_code", ...(opts.appendSystemPrompt ? { append: opts.appendSystemPrompt } : {}) },
-      settingSources: ["user", "project", "local"],
-      includePartialMessages: true,
-      forwardSubagentText: true,
-      agentProgressSummaries: true, // live one-line progress for subagent tasks
-      mcpServers: main ? { ...extra, paloally: paloallyMcpServer(opts.tools!) } : extra,
-      canUseTool: async (toolName, input, o) =>
-        opts.canUseTool({
-          toolName,
-          input,
-          toolUseId: o.toolUseID,
-          title: o.title,
-          reason: o.decisionReason,
-          agentId: o.agentID,
-          signal: o.signal,
-          suggestions: o.suggestions,
-          defaultToNo: o.defaultToNo,
-          suppressAlwaysAllowRule: o.suppressAlwaysAllowRule,
-        }) as any,
-      env: {
-        ...(opts.baseEnv ?? process.env),
-        ...opts.env,
-        ...OWN_SESSION_ENV,
-        CLAUDE_AGENT_SDK_CLIENT_APP: `${main ? "paloally" : "paloally-pal"}/${VERSION}`,
-      },
-      ...(main ? { disallowedTools: MAIN_DISALLOWED } : {}),
-      extraArgs,
-      stderr: opts.stderr,
-      ...(opts.spawn ? { spawnClaudeCodeProcess: (o) => opts.spawn!(o) } : {}),
-    };
+    const options = sessionOptions(opts);
     this.q = query({ prompt: this.input, options });
     void this.pump();
     if (!main) return;
@@ -441,7 +471,7 @@ export class ClaudeCodeDriver implements HarnessDriver {
   }
 
   startPal(opts: SessionOptions): MainSession {
-    const { tools: _none, sharedChrome: _no, ...rest } = opts as AnySessionOptions;
+    const { tools: _none, sharedChrome: _no, toolGate: _gate, ...rest } = opts as AnySessionOptions;
     return new ClaudeMainSession(rest);
   }
 

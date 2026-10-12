@@ -21,12 +21,15 @@ export interface FakeCtx {
   // resolves when the turn is interrupted (the stop button)
   interrupted: Promise<void>;
   emit(e: HarnessEvent): void;
-  // simulate the harness calling a tool. `ask` = the harness decided to ask
-  // the owner (with its own suggestions / defaultToNo); otherwise it just runs.
+  // simulate the harness calling a tool. The host's gate (Claude Code: a
+  // PreToolUse hook) is consulted first, for every call. `ask` = the harness
+  // then decided to ask the owner (with its own suggestions / defaultToNo);
+  // otherwise it just runs (auto mode, an allow rule). `run` is the tool's
+  // effect: called only if the call goes through.
   useTool(
     name: string,
     input: Record<string, unknown>,
-    opts?: { id?: string; parent?: string | null; ask?: boolean; defaultToNo?: boolean; suggestions?: unknown[]; reason?: string },
+    opts?: { id?: string; parent?: string | null; ask?: boolean; defaultToNo?: boolean; suggestions?: unknown[]; reason?: string; run?: () => unknown },
   ): Promise<boolean>;
 }
 
@@ -128,25 +131,38 @@ export class FakeMainSession implements MainSession {
         useTool: async (name, input, o = {}) => {
           const id = o.id ?? fakeId();
           this.opts.onEvent({ type: "tool_use", id, name, input, parentToolUseId: o.parent ?? null });
+          const agentId = o.parent ? `agent-${o.parent}` : undefined;
           let allowed = true;
-          if (o.ask) {
+          let content = "ok";
+          const gated = this.opts.toolGate?.({ toolName: name, input, agentId, via: "hook" }) ?? null;
+          if (gated) {
+            allowed = false;
+            content = gated;
+            this.driver.gateDenials.push({ tool: name, message: gated });
+          } else if (o.ask) {
             const d = await this.opts.canUseTool({
               toolName: name,
               input,
               toolUseId: id,
+              agentId,
               signal: new AbortController().signal,
               defaultToNo: o.defaultToNo,
               suggestions: o.suggestions,
               reason: o.reason,
             });
             allowed = d.behavior === "allow";
+            if (d.behavior === "deny") content = d.message;
             this.driver.decisions.push({ tool: name, decision: d });
             if (d.behavior === "allow" && d.updatedPermissions) this.driver.appliedPermissions.push(...d.updatedPermissions);
+          }
+          if (allowed) {
+            this.driver.ran.push(name);
+            await o.run?.();
           }
           this.opts.onEvent({
             type: "tool_result",
             toolUseId: id,
-            content: allowed ? "ok" : "denied",
+            content: allowed ? content : content === "ok" ? "denied" : content,
             isError: !allowed,
             parentToolUseId: o.parent ?? null,
           });
@@ -212,6 +228,8 @@ export class FakeDriver implements HarnessDriver {
   liveSwitches: string[] = [];
   appliedPermissions: unknown[] = []; // rules the owner chose to remember (harness-side)
   decisions: { tool: string; decision: PermissionDecision }[] = []; // every canUseTool answer, in order
+  gateDenials: { tool: string; message: string }[] = []; // calls the host's gate (the PreToolUse hook) refused
+  ran: string[] = []; // tools that went through and ran, in order
   turnCost = 0.001;
   contextTokens = 1000; // what each turn's result reports
   probeResponder: (req: ProbeRequest) => ProbeResult = () => ({ output: { results: [] }, costUsd: 0.0001 });

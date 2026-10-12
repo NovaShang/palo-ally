@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
+import { allyTurnTool, type AllyGateScope } from "./allyGate.ts";
 import type { ApprovalManager } from "./approvals.ts";
 import { ASK_TOOL, type QuestionManager } from "./questions.ts";
 import type { Audit } from "./audit.ts";
 import type { WechatChannel, WechatReplyTarget } from "./channels/types.ts";
 import type { ChatLog } from "./chat.ts";
 import type { Config, Paths } from "./config.ts";
-import { ACTIVITY, ACTIVITY_BACKGROUND, budgetNotice, describeActivity, friendlyError } from "./copy.ts";
+import { ACTIVITY, ACTIVITY_BACKGROUND, allyToolDenied, budgetNotice, describeActivity, friendlyError } from "./copy.ts";
 import { behaviorPrompt } from "./home.ts";
-import type { HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
+import type { HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption, SlashCommandInfo, ToolGate, ToolHandlers } from "./harness/types.ts";
+import { autoMemoryDir } from "./memory.ts";
 import type { Router } from "./router.ts";
 import type { RuntimeState } from "./runtime.ts";
 import type { TaskTracker } from "./tasks.ts";
@@ -29,6 +31,7 @@ export interface Turn {
 }
 
 type OwnerMessage = { origin: Channel; wechat?: WechatReplyTarget };
+type HeldMessage = { text: string; origin: Channel; wechat?: WechatReplyTarget; images?: ImageInput[] };
 
 const SKIP = /^\s*\[skip\]\s*$/i;
 
@@ -107,6 +110,14 @@ export class Conversation {
   private openTools = new Set<string>(); // main-thread tool calls without a result yet
   private budgetNoticeDay = "";
   private compactReason: string | null = null; // our /compact turn is queued or running
+  // 「只说话不动手」(docs/allies-prd.md §11.1): an Ally's message is in the
+  // harness and the turn answering it hasn't finished, i.e. from sending it
+  // until a result says it consumed that message (however the harness
+  // queued it). Meanwhile every main-thread tool call goes through the gate,
+  // nothing else is sent to the harness, and the owner's words are held.
+  private allyGate: { allyId: string; uuid: string } | null = null;
+  private held: HeldMessage[] = [];
+  private gateTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private d: ConversationDeps) {
     this.lastContextTokens = d.runtime.data.contextTokens ?? 0;
@@ -123,7 +134,12 @@ export class Conversation {
 
   // Nothing in flight at all (safe to restart the process).
   get quiet(): boolean {
-    return !this.current && !this.queue.length && !this.pending.size;
+    return !this.current && !this.queue.length && !this.pending.size && !this.allyGate && !this.held.length;
+  }
+
+  /** The Ally whose message the harness is handling now (its turn is gated), if any. */
+  allyTurnAlly(): string | undefined {
+    return this.allyGate?.allyId;
   }
 
   // Resolves when the turn queue is drained (tests, CLI one-shots).
@@ -146,7 +162,16 @@ export class Conversation {
   // Owner messages go to the harness immediately, even mid-turn: Claude Code
   // queues them or folds them into the running turn, so "好了吗" gets heard
   // while work is in progress. Only proactive turns wait for idle.
+  //
+  // Except during an Ally's turn: the owner's words wait for it to end, then
+  // go as a turn of their own. Folded into it they'd lend the Ally's message
+  // the owner's say, or be answered with the Ally turn's few tools.
   sendOwner(text: string, origin: Channel, wechat?: WechatReplyTarget, images?: ImageInput[]): void {
+    if (this.allyGate) {
+      this.held.push({ text, origin, wechat, images });
+      this.d.audit.log("ally.turn.held", { allyId: this.allyGate.allyId, origin });
+      return;
+    }
     const uuid = randomUUID();
     this.pending.set(uuid, { origin, wechat, sentAt: Date.now() });
     if (!this.current) this.beginTurn({ text, origin, proactive: false, wechat, uuids: [uuid] });
@@ -160,7 +185,7 @@ export class Conversation {
 
   private pump(): void {
     this.expirePending();
-    if (this.current || this.pending.size || !this.queue.length) {
+    if (this.current || this.pending.size || this.allyGate || this.held.length || !this.queue.length) {
       this.flushWaitersIfIdle();
       return;
     }
@@ -175,6 +200,10 @@ export class Conversation {
       return this.pump();
     }
     const uuid = randomUUID();
+    if (turn.allyId) {
+      this.allyGate = { allyId: turn.allyId, uuid };
+      this.d.audit.log("ally.turn.start", { allyId: turn.allyId });
+    }
     this.beginTurn({ ...turn, uuids: [uuid] });
     this.ensureSession().send(turn.text, uuid);
   }
@@ -235,7 +264,14 @@ export class Conversation {
       appendSystemPrompt: behaviorPrompt(this.d.paths) + `\n\n主人所在时区：${cfg.settings.timezone}。`,
       tools: this.d.tools(),
       // AskUserQuestion is a question for the owner, not a permission prompt.
-      canUseTool: (req) => (req.toolName === ASK_TOOL ? this.d.questions.request(req) : this.d.approvals.request(req)),
+      // In an Ally's turn the gate answers first (the hook already did; this
+      // is the second lock).
+      canUseTool: (req) => {
+        const deny = this.gateTool({ toolName: req.toolName, input: req.input, agentId: req.agentId, via: "canUseTool" });
+        if (deny) return Promise.resolve({ behavior: "deny", message: deny });
+        return req.toolName === ASK_TOOL ? this.d.questions.request(req) : this.d.approvals.request(req);
+      },
+      toolGate: (req) => this.gateTool(req),
       mcpServers: this.d.mcpServers(),
       sharedChrome: cfg.browser.enabled && cfg.browser.mode === "shared",
       env: cfg.env,
@@ -359,15 +395,25 @@ export class Conversation {
         if (this.current?.maintenance) this.compactReason = null;
         break;
       }
-      case "result":
+      case "result": {
+        const gate = this.allyGate;
+        // The Ally's turn is over once a result consumed its message (an
+        // older CLI that doesn't list them: once our turn for it ends).
+        const gateDone = !!gate && (e.consumedUuids ? e.consumedUuids.includes(gate.uuid) : !!this.current?.uuids?.includes(gate.uuid));
         this.d.runtime.update({ sessionCostUsd: e.totalCostUsd });
+        // The owner's held words go before anything queued behind this turn.
+        if (gateDone) this.endAllyGate("done");
         this.endTurn(e.costUsd, e.contextTokens, e.isError ? e.text : undefined, this.consume(e.consumedUuids), e.errorCategory);
+        if (this.allyGate) this.watchGate();
         break;
+      }
       case "error":
         this.d.log(`harness error: ${e.message}`);
         this.session?.close();
         this.session = null;
         this.pending.clear();
+        // The Ally's message died with the process; the owner's held words didn't.
+        if (this.allyGate) this.endAllyGate("harness error");
         if (this.current) this.endTurn(0, this.lastContextTokens, e.message);
         break;
     }
@@ -388,6 +434,52 @@ export class Conversation {
       await wechat.stopTyping?.();
       if (this.current === turn) void wechat.startTyping?.(target);
     });
+  }
+
+  // ---------------- an Ally's turn: 只说话不动手 ----------------
+
+  // gateTool is the host's rule for a tool call: in an Ally's turn, only
+  // what allyGate.ts lets through; otherwise nothing to say. A subagent's call
+  // (agentId) belongs to work the owner started earlier (this turn can't start
+  // or message one: Agent and SendMessage are denied here), so it isn't gated.
+  private gateTool: ToolGate = (req) => {
+    const g = this.allyGate;
+    if (!g || req.agentId) return null;
+    if (allyTurnTool(req.toolName, req.input ?? {}, this.allyScope()).ok) return null;
+    this.d.audit.log("ally.tool.denied", { allyId: g.allyId, tool: req.toolName, via: req.via, input: truncate(JSON.stringify(req.input ?? {}), 300) });
+    return allyToolDenied(req.toolName);
+  };
+
+  private allyScope(): AllyGateScope {
+    const home = this.d.paths.home;
+    return { home, memoryDir: autoMemoryDir(home, this.d.config().env?.CLAUDE_CONFIG_DIR || undefined) };
+  }
+
+  // endAllyGate lifts the gate and sends the owner's held words, each as it
+  // would have gone (they reach the harness after the Ally's turn is over).
+  private endAllyGate(why: string): void {
+    const g = this.allyGate;
+    if (!g) return;
+    this.allyGate = null;
+    if (this.gateTimer) clearTimeout(this.gateTimer);
+    this.gateTimer = null;
+    this.d.audit.log("ally.turn.end", { allyId: g.allyId, why, held: this.held.length });
+    for (const h of this.held.splice(0)) this.sendOwner(h.text, h.origin, h.wechat, h.images);
+  }
+
+  // Our turn ended but the harness hasn't said it consumed the Ally's message
+  // (it queued it behind something else). The gate stays until it does; if
+  // the harness goes quiet without ever getting to it, the gate ends.
+  private watchGate(): void {
+    if (this.gateTimer) clearTimeout(this.gateTimer);
+    this.gateTimer = setTimeout(() => {
+      if (!this.allyGate) return;
+      if (this.current) return this.watchGate();
+      this.d.log("an Ally's message got no result; its turn ends here");
+      this.endAllyGate("no result");
+      this.pump();
+    }, timing.implicitQuietMs);
+    (this.gateTimer as any).unref?.();
   }
 
   /** A permission prompt or a question is waiting for the owner. */
@@ -553,7 +645,7 @@ export class Conversation {
   }
 
   onIdle(): void {
-    if (this.current || this.queue.length || !this.session) return;
+    if (this.current || this.queue.length || this.allyGate || this.held.length || !this.session) return;
     // Close the CLI process; the next message resumes the same conversation.
     // (Keeping the context in shape is the harness' job: it compacts on its own.)
     if (!this.d.tasks.live().length && !this.waitingOnOwner()) {
@@ -570,6 +662,12 @@ export class Conversation {
   stopAll(by: string): void {
     this.d.audit.log("stop", { by });
     this.queue = [];
+    // As with words already sent: stopped, not carried over.
+    if (this.allyGate) {
+      this.held = [];
+      this.allyGate = null;
+      if (this.gateTimer) clearTimeout(this.gateTimer);
+    }
     this.d.approvals.denyAll(`stop:${by}`);
     this.d.questions.cancelAll(`stop:${by}`);
     for (const t of this.d.tasks.running()) {
