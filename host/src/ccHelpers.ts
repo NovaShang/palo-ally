@@ -92,6 +92,7 @@ export class HelperStore {
     const p = this.proposal(id);
     if (!p) return undefined;
     Object.assign(p, patch);
+    for (const k of Object.keys(patch) as (keyof typeof patch)[]) if (patch[k] === undefined) delete (p as any)[k];
     this.save();
     return p;
   }

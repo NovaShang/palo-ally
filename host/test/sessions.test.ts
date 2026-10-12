@@ -337,7 +337,17 @@ describe("helpers", () => {
     expect(hub.chat.get(hub.chat.recent(1)[0]!.id)!.proposal!.status).toBe("discarded");
     expect(cli.started).toHaveLength(0);
     expect(await tools.helper_propose({ name: "二", dir: "/no/such/folder", duty: "做事", dailyUsd: 1 })).toContain("找不到目录");
-    for (const n of ["A", "B", "C"]) {
+    // Claude Code couldn't start it: still on offer, and the card says why
+    cli.fail.startBg = "claude --bg 没成功：not logged in";
+    await tools.helper_propose({ name: "三", dir: project, duty: "做事", dailyUsd: 1 });
+    const p3 = hub.chat.recent(1)[0]!;
+    await expect(hub.sessions.decide(p3.proposal!.id, "create", "app")).rejects.toThrow("not logged in");
+    expect(hub.chat.get(p3.id)!.proposal).toMatchObject({ status: "pending", note: "claude --bg 没成功：not logged in" });
+    delete cli.fail.startBg;
+    await hub.sessions.decide(p3.proposal!.id, "create", "app");
+    expect(hub.chat.get(p3.id)!.proposal!.status).toBe("created");
+    expect(hub.chat.get(p3.id)!.proposal!.note).toBeUndefined();
+    for (const n of ["A", "B"]) {
       await tools.helper_propose({ name: n, dir: project, duty: "做事", dailyUsd: 1 });
       await hub.sessions.decide(hub.chat.recent(1)[0]!.proposal!.id, "create", "app");
     }

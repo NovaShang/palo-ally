@@ -445,10 +445,19 @@ export class Sessions {
       return {};
     }
     if (action !== "create") throw new Error("看不懂这个操作");
-    if (this.helpers.running().length >= MAX_HELPERS) throw new Error(`已经有 ${MAX_HELPERS} 个帮手在跑了，先停掉一个`);
-    this.checkProposal(p);
-    const h = await this.createHelper({ name: p.name, cwd: p.cwd, duty: p.duty, dailyUsd: p.dailyUsd });
-    this.settleProposal(p.id, { status: "created", sessionId: h.sessionId });
+    let h: Helper;
+    try {
+      if (this.helpers.running().length >= MAX_HELPERS) throw new Error(`已经有 ${MAX_HELPERS} 个帮手在跑了，先停掉一个`);
+      this.checkProposal(p);
+      h = await this.createHelper({ name: p.name, cwd: p.cwd, duty: p.duty, dailyUsd: p.dailyUsd });
+    } catch (e) {
+      // Still on offer; the card says why it didn't start.
+      const why = e instanceof Error ? e.message : String(e);
+      this.settleProposal(p.id, { note: why });
+      this.d.audit.log("helper.failed", { id: p.id, why, by });
+      throw e;
+    }
+    this.settleProposal(p.id, { status: "created", sessionId: h.sessionId, note: undefined });
     this.d.audit.log("helper.created", { id: p.id, session: h.sessionId, name: h.name, by });
     const rec = this.watch.get(h.sessionId);
     return { session: sessionOf(h.sessionId) ?? (rec ? this.watch.toWire(rec) : undefined) };
