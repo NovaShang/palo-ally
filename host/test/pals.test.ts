@@ -125,6 +125,39 @@ describe("adopting a session", () => {
     await t.hub.pals.stopAndWait();
   });
 
+  test("cancelling the wait for a terminal session: the host stops waiting at once (the list says so), and quitting it later adopts nothing", async () => {
+    const t = setup();
+    const term = liveProcess();
+    const sid = "bbbb2222-0000-4000-8000-000000000003";
+    t.claude.register({ sessionId: sid, name: "修登录", cwd: t.project, pid: term.pid });
+    t.claude.transcript(t.project, sid, [assistantEntry("登录跳转修好了。")]);
+    expect(await t.call("pals.adopt", { sessionId: sid })).toEqual({ waiting: "exit-in-terminal" });
+    await waitFor(() => t.lastList()?.others.find((s: any) => s.id === sid)?.adopting === true);
+    const n = t.events.filter((e) => e.event === "pals.updated").length;
+    expect(await t.call("pals.adopt", { sessionId: sid, cancel: true })).toEqual({ cancelled: true });
+    // other devices hear it straight away
+    const after = t.events.filter((e) => e.event === "pals.updated").slice(n);
+    expect(after.length).toBeGreaterThan(0);
+    expect(after.at(-1)!.data.others.find((s: any) => s.id === sid)).toMatchObject({ kind: "terminal" });
+    expect(after.at(-1)!.data.others.find((s: any) => s.id === sid).adopting).toBeUndefined();
+    expect(t.hub.pals.adopting(sid)).toBe(false);
+    expect(t.hub.audit.tail(10).find((e) => e.type === "pal.adopt_cancelled")).toMatchObject({ session: sid, name: "修登录" });
+    // quit in the terminal afterwards: nothing is adopted
+    term.kill("SIGTERM");
+    await exited(term);
+    t.claude.unregister(sid);
+    await tick(300);
+    expect(t.hub.pals.list()).toEqual([]);
+    expect(t.driver.pals).toHaveLength(0);
+    // nothing waiting: says so; one that's a Pal comes back as it
+    expect(await t.call("pals.adopt", { sessionId: sid, cancel: true })).toEqual({ cancelled: false });
+    const bg = bgSession(t);
+    const { pal } = await t.call("pals.adopt", { sessionId: bg });
+    expect(await t.call("pals.adopt", { sessionId: bg, cancel: true })).toEqual({ cancelled: false, pal: expect.objectContaining({ id: pal.id }) });
+    expect(t.hub.pals.list()).toHaveLength(1);
+    await t.hub.pals.stopAndWait();
+  });
+
   test("never two writers: a background session that won't stop isn't adopted; a Pal's transcript opened elsewhere makes the Pal step aside and stay down while that lasts", async () => {
     const t = setup({ spawn: true });
     const sid = bgSession(t);

@@ -103,6 +103,7 @@ Palo 提议，你点头，主机新开一个会话，第一条消息是 Palo 写
 |---|---|---|
 | `pals.list` | `{}` | `{pals: Pal[], others: CCSession[], hooks}` |
 | `pals.adopt` | `{sessionId}` | `{pal}`，或 `{waiting: "exit-in-terminal"}` |
+| `pals.adopt` | `{sessionId, cancel: true}` | `{cancelled}`，不再等终端退出 |
 | `pals.release` | `{id}` | `{resumeCommand}` |
 | `pals.remove` | `{id}` | `{ok}` |
 | `pals.history` | `{id, before?, limit?}` | `{messages}`，格式同 `chat.history` |
@@ -127,6 +128,7 @@ Palo 提议，你点头，主机新开一个会话，第一条消息是 Palo 写
   - 已经是 Pal 的，返回原来那个。
   - 终端会话返回 `{waiting: "exit-in-terminal"}`。主机每 0.5 秒看一次原进程，它退出后自动接管，新的 Pal 出现在 `pals.updated` 里。等 30 分钟还没退出就不等了，Palo 的对话里说一声。
   - 停不下来、resume 失败、已经满 5 个，都报错，原因在错误信息里；满了时点名最久没用的那个。
+  - 取消（`{sessionId, cancel: true}`）：主机不再等，之后在终端里退出也不会接管，并立刻发 `pals.updated`（这个会话不再带 `adopting`）。返回 `{cancelled: true}`；没有在等的返回 `{cancelled: false}`，已经接管成 Pal 的另带 `pal`。
 - `pals.release` 返回 `{resumeCommand: "cd <目录> && claude --resume <sessionId>"}`，带 `cd` 是为了在原目录里接着跑。返回时主机的进程已经退出。
 - `pals.history`：`before` 是客户端手里最早那条的 `id`（也接受毫秒时间）；返回从旧到新，默认 50 条，最多 200 条。最新一页另带 `streaming?: {id, text}`：正在写的回复，之后的 `chat.delta` 接着往上追加。
 - Pal 的消息（`chat.message` / `chat.delta` 带 `pal`）：

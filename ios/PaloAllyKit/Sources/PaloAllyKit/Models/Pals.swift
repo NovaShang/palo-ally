@@ -105,10 +105,12 @@ public struct PalsResult: Decodable, Sendable {
     }
 }
 
-/// `pals.adopt {sessionId}`.
+/// `pals.adopt {sessionId}`; with `cancel`, the host stops waiting for that
+/// terminal session to be quit.
 public struct PalAdoptParams: Codable, Sendable {
     public var sessionId: String
-    public init(sessionId: String) { self.sessionId = sessionId }
+    public var cancel: Bool?
+    public init(sessionId: String, cancel: Bool? = nil) { self.sessionId = sessionId; self.cancel = cancel }
 }
 
 /// Why an adoption hasn't finished yet.
@@ -121,17 +123,23 @@ public enum PalAdoptWaiting: String, TolerantStringEnum {
 }
 
 /// `pals.adopt → {pal}` once it's a Pal, or `{waiting: "exit-in-terminal"}`.
+/// Cancelling: `{cancelled}` (whether the host was waiting), with `pal` when
+/// it had become one already.
 public struct PalAdoptResult: Decodable, Sendable {
     public var pal: Pal?
     public var waiting: PalAdoptWaiting?
+    public var cancelled: Bool?
 
-    public init(pal: Pal? = nil, waiting: PalAdoptWaiting? = nil) { self.pal = pal; self.waiting = waiting }
+    public init(pal: Pal? = nil, waiting: PalAdoptWaiting? = nil, cancelled: Bool? = nil) {
+        self.pal = pal; self.waiting = waiting; self.cancelled = cancelled
+    }
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
         pal = l.decode(Pal.self, "pal")
         waiting = l.decode(PalAdoptWaiting.self, "waiting")
-        if pal == nil && waiting == nil { _ = l.expect("pal", pal) }
+        cancelled = l.bool("cancelled")
+        if pal == nil && waiting == nil && cancelled == nil { _ = l.expect("pal", pal) }
     }
 }
 

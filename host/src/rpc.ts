@@ -238,6 +238,8 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     case "pals.list":
       return await hub.pals.listFresh();
     case "pals.adopt":
+      // cancel: the owner stopped waiting for a terminal session to be quit.
+      if (p.cancel === true) return hub.pals.cancelAdopt(String(p.sessionId ?? ""), ctx.channel);
       return await hub.pals.adopt(String(p.sessionId ?? ""), ctx.channel);
     case "pals.release":
       return await hub.pals.release(String(p.id ?? ""), ctx.channel);

@@ -500,6 +500,26 @@ export class Pals {
     return pal;
   }
 
+  /**
+   * pals.adopt {cancel: true}: the owner no longer waits for a terminal
+   * session to be quit; the host stops waiting too, and quitting it later
+   * adopts nothing. `cancelled` says whether it was waiting; one that became a
+   * Pal already comes back as that Pal.
+   */
+  cancelAdopt(sessionId: string, by: string): { cancelled: boolean; pal?: Pal } {
+    const sid = String(sessionId ?? "").trim();
+    const w = this.waiting.get(sid);
+    if (!w) {
+      const pal = sid ? this.get(sid) : undefined;
+      return pal && pal.rec.sessionId === sid ? { cancelled: false, pal: pal.toWire() } : { cancelled: false };
+    }
+    if (w.timer) clearTimeout(w.timer);
+    this.waiting.delete(sid);
+    this.d.audit.log("pal.adopt_cancelled", { session: sid, name: w.session.name, by });
+    this.emitNow();
+    return { cancelled: true };
+  }
+
   // A terminal session: once its process is gone (the owner typed /exit),
   // it's taken over by itself, within a second or so.
   private waitForExit(sessionId: string, holders: Holder[], session: CCSession, by: string): void {
@@ -520,6 +540,8 @@ export class Pals {
         return;
       }
       const again = await this.holders(sessionId);
+      // Cancelled while the processes were being looked up.
+      if (this.waiting.get(sessionId) !== w) return;
       if (again.length) {
         w.pids = again.map((h) => h.pid);
         w.timer = setTimeout(() => void tick(), this.timing.exitPollMs);

@@ -67,7 +67,8 @@ describe("host ↔ app protocol", () => {
       const r = await handleRpc(hub, { method, params }, ctx);
       return JSON.parse(JSON.stringify(r ?? null));
     };
-    const methods: Record<string, { params: unknown; result: unknown }> = {};
+    type Sample = { params: unknown; result: unknown };
+    const methods: Record<string, Sample | Sample[]> = {};
     const run = async (method: string, params: unknown = {}) => (methods[method] = { params, result: await call(method, params) }).result as any;
 
     await run("hello", { client: "ios", version: "test" });
@@ -235,6 +236,12 @@ describe("host ↔ app protocol", () => {
     await hub.toolHandlers().pal_propose({ name: "文档", dir: project, duty: "你负责主人的文档：先把安装说明写完。", dailyUsd: 5 });
     const proposal = hub.chat.recent(1)[0]!.proposal!;
     const opened = (await run("helper.decide", { proposalId: proposal.id, action: "create" })).pal;
+    // The owner stops waiting for the terminal session to be quit: pals.adopt
+    // has two samples, adopting and cancelling.
+    const adopted = methods["pals.adopt"]!;
+    const cancelled = { params: { sessionId: term.id, cancel: true }, result: await call("pals.adopt", { sessionId: term.id, cancel: true }) };
+    expect(cancelled.result).toEqual({ cancelled: true });
+    methods["pals.adopt"] = [adopted as Sample, cancelled];
     await run("pals.release", { id: pal.id });
     await run("pals.remove", { id: opened.id });
     hub.pals.stop();
