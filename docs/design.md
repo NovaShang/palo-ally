@@ -45,7 +45,7 @@ relay/       不新写：复用 github.com/NovaShang/bento 的 relay/（bento-re
 - **idle 处理**：空闲 `session.idleCloseMinutes` 后关掉 CLI 子进程（省资源），下条消息 `resume` 同一会话。上下文与压缩交给 harness；外壳只记录压缩事件（`compact_boundary`）用于 §12.3 评估。
 - **探针**：独立短上下文 `query()`（便宜模型、`persistSession:false`、结构化输出），只在有 watch 到期时才跑；没到期的 tick 零调用。
 - **本地控制面**：`~/.paloally/run/host.sock`（unix socket，行分隔 JSON，同一套 RPC），CLI 子命令通过它和 daemon 说话。
-- **会话钩子**（docs/sessions-prd.md §6.3）：`~/.paloally/run/hooks.sock`。全局钩子跑 `~/.paloally/bin/cc-hook`：写一行 `{event, payload, env}`，主机立刻回 `{"ack":true}`，再回 `{"output": <钩子要打印的 JSON 或 null>}`。350 毫秒内没有 ack、连不上、出任何错，钩子都无输出退出。`PALOALLY_SESSION=1`（主机自己起的会话：主会话、探针、跑腿会话）直接退出。
+- **会话钩子**（docs/sessions-prd.md §6.3）：`~/.paloally/run/hooks.sock`。全局钩子跑 `~/.paloally/bin/cc-hook <事件名> # PaloAlly`（行尾的注释是 PaloAlly 条目的记号，卸载只删带它的）：主机没在跑（没有 socket）时直接退出，只有 SessionStart 照样打印那句信任声明；否则写一行 `{event, payload, env}`，主机立刻回 `{"ack":true}`，再回 `{"output": <钩子要打印的 JSON 或 null>}`。350 毫秒内没有 ack、连不上、出任何错，钩子都无输出退出。`PALOALLY_SESSION=1`（主机自己起的会话：主会话、探针、跑腿会话）直接退出。
 - **跑腿会话**：送话时才开，名叫 `PaloAlly`，Haiku、不思考，只有 SendMessage / ToolSearch，`PreToolUse` 钩子把收件人和原文写进调用；按对方权限模式的类（bypass / prompting）各一个，空闲 10 分钟关掉。
 
 ## 3. 外壳给主 agent 的工具（in-process MCP server `paloally`）
