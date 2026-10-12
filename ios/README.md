@@ -71,6 +71,9 @@ Launch arguments (also read from UserDefaults):
 | `-demo YES` | use the in-memory `DemoHost` (seeded Chinese sample data, streamed replies) |
 | `-demoScreen chat\|library\|artifact\|assistant\|settings\|pairing` | open that screen |
 | `-demoTab tasks\|approvals\|watches\|memory` | open the assistant page on that tab |
+| `-demoScreen sessions\|session` | the computer's Claude Code sessions on a page of their own / one session's page (`-demoSession <id>`, default `cc-site`; `-demoSessionPanel stop\|remove\|attach` opens it on that) |
+| `-demoState sessions\|sessionExpired\|sessionSettle\|helper` | only the sessions' cards wait in the conversation / 网站帮手's has expired (在电脑上等你) / it's handled at the computer 6 s in / only the helper proposal waits |
+| `-demoSettingsAt sessions` | 设置 opens scrolled to the sessions switch |
 
 ```sh
 xcrun simctl install booted <DerivedData>/Build/Products/Debug-iphonesimulator/PaloAlly.app
