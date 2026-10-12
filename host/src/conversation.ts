@@ -133,6 +133,11 @@ export class Conversation {
     return this.queue.some(pred);
   }
 
+  /** A turn still waiting to start, so more can be added to it. */
+  findQueued(pred: (t: Turn) => boolean): Turn | undefined {
+    return this.queue.find(pred);
+  }
+
   // ---------------- inputs ----------------
 
   // Owner messages go to the harness immediately, even mid-turn: Claude Code

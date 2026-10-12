@@ -20,8 +20,9 @@ host/        桌面 host = 一个 CLI 程序（Bun + TypeScript），daemon + on
     memory.ts           核心文件 + 原生 auto memory 的可见/可编辑投影
     chat.ts             主对话存档（History）+ seq + 补发
     router.ts           输出路由（App / CLI / 微信 / 推送）
-    channels/           local（unix socket）、relay（E2E + 经 relay 推送）、wechat（iLink）、apns（直推回退）
-    proto/              线协议：帧、E2E 握手与封装、RPC 类型
+    allies.ts           Allies：和别人的助理传话、约时间，配对、待发队列、回执（docs/allies-prd.md）
+    channels/           local（unix socket）、relay（E2E + 经 relay 推送）、allyLink（作为客户端连别人的主机）、wechat（iLink）、apns（直推回退）
+    proto/              线协议：帧、E2E 握手与封装、RPC 类型、主机之间的 ally.* 消息
   test/                 bun test
 ios/         Apple 原生客户端（SwiftUI，iOS + Mac Catalyst）
   PaloAllyKit/          Swift package：协议模型、加密、relay 传输、状态 store（swift test）
@@ -48,6 +49,8 @@ relay/       不新写：复用 github.com/NovaShang/bento 的 relay/（bento-re
 | `SendUserFile(files, caption?, status, display?, temporary?)` | 照 Claude Code 原生 SendUserFile 定义（多一个 `temporary`）：文件在对话里显示成卡片（图片直接显示），默认同时进产出物库；`status: proactive` 推送；主人在微信上时也发到微信 |
 | `Artifact(file_path, title?, description?, files?)` | 照 Claude Code 原生 Artifact 发布：要长期留存的页面/文档进产出物库并在对话里出卡片；同一路径再发布 = 更新 |
 | `notify_user(text, urgent?)` | 主动推送（经路由器：App 推送；微信只发非敏感回执） |
+| `ally_list()` | Ally 列表：id、对方主人的称呼、助理名、标签、是否在线 |
+| `ally_send(to, text, urgent?, slots?, replyTo?)` | 只生成草稿卡片（聊天里 `kind:"ally"`、`dir:"out"`），立即返回；主人点「发送」（`ally.draft.decide`）才进待发队列 |
 
 ## 4. 安全（全部依赖 harness）
 
@@ -93,10 +96,17 @@ relay/       不新写：复用 github.com/NovaShang/bento 的 relay/（bento-re
 
 ```ts
 ChatMessage { seq:number; id:string; role:"user"|"assistant"|"system";
-  kind:"text"|"task"|"approval"|"notice"; text:string;
+  kind:"text"|"task"|"approval"|"notice"|"ally"; text:string;
   channel:"app"|"cli"|"wechat"|"probe"|"schedule"|"system"; ts:number /*ms*/;
   proactive?:boolean; taskId?:string; approvalId?:string;
-  clientMsgId?:string /* chat.send 带来的会原样回显 */ }
+  clientMsgId?:string /* chat.send 带来的会原样回显 */;
+  allyId?:string; allyName?:string; dir?:"in"|"out"; entryId?:string
+  /* kind "ally"：收到的话 role "system"，草稿卡片 role "assistant"；最新文字和状态看 entry */ }
+AllyInfo { id; kind:"family"|"mine"; ownerName; assistantName; online:boolean;
+  lastSeen:number /*0 = 没联系上过*/; lastEntry?:AllyEntry }
+AllyEntry { id; allyId; dir:"in"|"out"; ts; text; urgent:boolean;
+  slots?:{start:string; end:string}[] /*ISO 8601 带时区*/; replyTo?:string;
+  status:"draft"|"queued"|"sent"|"delivered"|"seen"|"rejected"; note?:string /*rejected 的原因*/ }
 Task { id; title; summary; status:"running"|"done"|"failed"|"needs_input"|"stopped";
   source:"auto"|"report"; createdAt; updatedAt; activityCount:number }
 TaskActivity { ts; kind:"tool_use"|"tool_result"|"text"; tool?:string; text:string }
@@ -148,8 +158,16 @@ ModelOption { value; displayName; description; efforts:string[] }
 | `push.register` / `push.unregister` | `{token, env?}` / `{token}` | `{ok}` |
 | `device.unpair` | `{}` | `{ok}`（移除发起调用的这台设备） |
 | `audit.tail` | `{limit}` | `{entries}` |
+| `ally.list` | `{}` | `{allies:AllyInfo[]}` |
+| `ally.invite` | `{}` | `{link, expiresAt}`（`paloally://ally?relay&daemon&code&hostkey&name&exp`，10 分钟，一次性；App 画成二维码） |
+| `ally.accept` | `{link, kind:"family"\|"mine"}` | `{ally:AllyInfo}`（两段配对都完成才返回，通常几秒） |
+| `ally.remove` | `{id}` | `{ok}`（发 `ally.bye`，中继忘掉对方设备，记录保留） |
+| `ally.log` | `{id, beforeTs?, limit?}` | `{entries:AllyEntry[]}`（从旧到新，默认 50 条，最多 200） |
+| `ally.draft.decide` | `{id, action:"send"\|"edit"\|"discard", text?}` | `{entry}`（send 带 text 就发改过的；edit 只改文字；discard 记为 rejected「没发」） |
 
-**事件**（`RPC_EVENTS`）：`chat.message`（ChatMessage）、`chat.delta`（`{id, text}` 追加文本，最终以同 id 的 `chat.message` 收尾；轮次中断时外壳也会补发收尾）、`task.updated`（Task）、`approval.updated`（Approval）、`watch.updated`（`{watch}` 或 `{removed:id}`）、`artifact.updated`（Artifact）、`settings.updated`（Settings）、`status`（Status）、`commands.updated`（`{commands}`）。
+**事件**（`RPC_EVENTS`）：`chat.message`（ChatMessage）、`chat.delta`（`{id, text}` 追加文本，最终以同 id 的 `chat.message` 收尾；轮次中断时外壳也会补发收尾）、`task.updated`（Task）、`approval.updated`（Approval）、`watch.updated`（`{watch}` 或 `{removed:id}`）、`artifact.updated`（Artifact）、`settings.updated`（Settings）、`status`（Status）、`commands.updated`（`{commands}`）、`ally.updated`（`{allies}`，整张列表）、`ally.entry`（`{entry}`，新的来往或状态变化）。
+
+Ally 的连接（别人的主机作为客户端连进来）不走上面这些：只接受 `ally.hello` / `ally.message` / `ally.receipt` / `ally.bye` 四种，其他一律断开（`docs/allies-prd.md` §7.3、§7.6）。
 
 ## 6. 路由规则
 

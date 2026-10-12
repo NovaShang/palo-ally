@@ -36,6 +36,9 @@ export class Paths {
   get wechat() { return join(this.state, "wechat.json"); }
   get media() { return join(this.state, "media"); }
   get suggestions() { return join(this.state, "suggestions.json"); }
+  get allies() { return join(this.state, "allies.json"); }
+  get allyLogs() { return join(this.state, "allies"); }
+  get alliesOutbox() { return join(this.state, "allies-outbox.json"); }
   get identity() { return join(this.root, "identity.json"); }
   get audit() { return join(this.root, "audit"); }
   get run() { return join(this.root, "run"); }

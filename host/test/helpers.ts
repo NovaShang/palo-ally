@@ -7,6 +7,7 @@ import { FakeDriver, type FakeScript } from "./fakeDriver.ts";
 import { scaffoldHome } from "../src/home.ts";
 import { Hub, type WechatChannel } from "../src/hub.ts";
 import type { Pusher } from "../src/router.ts";
+import type { AlliesDeps } from "../src/allies.ts";
 
 const created: string[] = [];
 
@@ -41,6 +42,7 @@ export class RecordingPusher implements Pusher {
 
 export function testConfig(over: (c: Config) => void = () => {}): Config {
   const c = defaultConfig();
+  c.hostName = "Mac"; // not this machine's name: samples are committed
   c.settings.timezone = "UTC";
   c.settings.quietHours = null;
   c.relay.enabled = false;
@@ -49,11 +51,11 @@ export function testConfig(over: (c: Config) => void = () => {}): Config {
   return c;
 }
 
-export function makeHub(opts: { script?: FakeScript; config?: Config; wechat?: WechatChannel; paths?: Paths } = {}) {
+export function makeHub(opts: { script?: FakeScript; config?: Config; wechat?: WechatChannel; paths?: Paths; allies?: Partial<AlliesDeps> } = {}) {
   const paths = opts.paths ?? tmpPaths();
   const driver = new FakeDriver(opts.script);
   const pusher = new RecordingPusher();
-  const hub = new Hub({ paths, config: opts.config ?? testConfig(), driver, pushers: [pusher], wechat: opts.wechat, log: () => {} });
+  const hub = new Hub({ paths, config: opts.config ?? testConfig(), driver, pushers: [pusher], wechat: opts.wechat, log: () => {}, allies: opts.allies });
   const events: { event: string; data: any }[] = [];
   hub.bus.on((event, data) => events.push({ event, data }));
   return { hub, driver, pusher, paths, events };

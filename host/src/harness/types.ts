@@ -85,6 +85,8 @@ export interface ToolHandlers {
   copy_to_clipboard(args: { text: string; label?: string }): Promise<string>;
   SendUserFile(args: { files: string[]; caption?: string; status: "normal" | "proactive"; display?: "render" | "attach"; temporary?: boolean }): Promise<string>;
   Artifact(args: { file_path: string; title?: string; description?: string; files?: Record<string, string> }): Promise<string>;
+  ally_list(): Promise<string>;
+  ally_send(args: { to: string; text: string; urgent?: boolean; slots?: { start: string; end: string }[]; replyTo?: string }): Promise<string>;
 }
 
 export interface ImageInput {

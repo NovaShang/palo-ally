@@ -129,6 +129,27 @@ export function paloallyMcpServer(h: ToolHandlers) {
         async (a) => text(await h.copy_to_clipboard(a)),
       ),
       tool(
+        "ally_list",
+        "列出主人的 Ally（别人的助理，或主人自己另一台电脑上的助理）：id、对方主人的称呼、助理名、标签（家人朋友 / 我的）、现在是否在线。",
+        {},
+        async () => text(await h.ally_list()),
+      ),
+      tool(
+        "ally_send",
+        "给一个 Ally 拟一条要传的话：只生成草稿卡片，主人点「发送」才会发出，主人也可以改或不发。发给 Ally 的每句话都必须用它。立即返回，别对主人说已经发出去了。",
+        {
+          to: z.string().describe("Ally 的 id，或对方主人的称呼"),
+          text: z.string().describe("要传的原话，像主人自己会说的那样；不超过 4 KB"),
+          urgent: z.boolean().optional().describe("真的急才标：对方会立刻收到推送"),
+          slots: z
+            .array(z.object({ start: z.string(), end: z.string() }))
+            .optional()
+            .describe("约时间时的候选时段，ISO 8601 带时区，如 2026-10-17T14:00:00+08:00；最多 5 个"),
+          replyTo: z.string().optional().describe("回复对方哪一条（那条消息的 id）"),
+        },
+        async (a) => text(await h.ally_send(a)),
+      ),
+      tool(
         "notify_user",
         "主动推送一条消息给主人（手机通知；推不出去会改发微信）。只在真正要紧时用。返回的是实际送达情况：没送到就别对主人说已推送。",
         { text: z.string(), urgent: z.boolean().optional() },

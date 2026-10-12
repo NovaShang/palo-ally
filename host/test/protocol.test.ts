@@ -6,7 +6,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { RPC_EVENTS, RPC_METHODS, handleRpc } from "../src/rpc.ts";
 import type { FakeScript } from "./fakeDriver.ts";
-import { checkFixture, cleanup, makeHub, shape, tick } from "./helpers.ts";
+import { AllyNet } from "./allyNet.ts";
+import { checkFixture, cleanup, shape, tick } from "./helpers.ts";
+import { waitFor } from "./relayClient.ts";
 
 const script: FakeScript = async (t, ctx) => {
   if (t === "派个任务") {
@@ -38,7 +40,10 @@ const script: FakeScript = async (t, ctx) => {
 
 describe("host ↔ app protocol", () => {
   test("every method answers, every event fires; samples written for the Swift client", async () => {
-    const { hub, paths, events, driver } = makeHub({ script });
+    // On an in-memory Ally net, so the ally.* methods have a peer.
+    const net = new AllyNet();
+    const { hub, paths, events, driver } = net.add("家人A", { script }).ctx;
+    const peer = net.add("家人B");
     hub.onUnpairDevice = () => {};
     const ctx = { clientId: "app_1_dev-x", deviceId: "dev-x", channel: "app" as const, local: false };
     const call = async (method: string, params: unknown = {}) => {
@@ -99,7 +104,8 @@ describe("host ↔ app protocol", () => {
     await run("artifact.pin", { id: "brief", pinned: true });
     await run("memory.list");
     const mem = await run("memory.read", { path: "user.md" });
-    await run("memory.write", { path: "user.md", content: "# 关于主人\n", baseUpdatedAt: mem.updatedAt });
+    // keeps the 称呼 line: an Ally invite carries the owner's name
+    await run("memory.write", { path: "user.md", content: "# 关于主人\n\n- 称呼：家人A\n", baseUpdatedAt: mem.updatedAt });
     await run("settings.update", { patch: { probeIntervalMinutes: 15, assistantName: "帕帕", color: "teal" } });
     await run("push.register", { token: "a".repeat(64), env: "sandbox" });
     await run("push.unregister", { token: "a".repeat(64) });
@@ -112,6 +118,27 @@ describe("host ↔ app protocol", () => {
     await run("suggestions.dismiss", { id: hub.suggestions.list()[0]!.id });
     await run("audit.tail", { limit: 3 });
     await run("host.update", { check: true }); // a dev checkout: managed by hand
+    // Allies: an invite, then this host scans the other's, a message in, a
+    // draft out (with times), and unpairing at the end.
+    await run("ally.invite");
+    const { link } = await peer.hub.allies.invite();
+    const other = (await run("ally.accept", { link, kind: "family" })).ally;
+    const toUs = peer.hub.allies.list()[0]!;
+    await peer.hub.toolHandlers().ally_send({ to: toUs.id, text: "今晚我晚点回，大概九点", urgent: true });
+    peer.hub.allies.decide(peer.hub.allies.log(toUs.id)[0]!.id, "send");
+    await waitFor(() => hub.allies.log(other.id).length === 1);
+    await hub.toolHandlers().ally_send({
+      to: other.id,
+      text: "周六下午带孩子去公园？",
+      slots: [{ start: "2026-10-17T14:00:00+08:00", end: "2026-10-17T17:00:00+08:00" }],
+      replyTo: hub.allies.log(other.id)[0]!.id,
+    });
+    await run("ally.draft.decide", { id: hub.allies.log(other.id).at(-1)!.id, action: "send", text: "周六下午两点带孩子去公园？" });
+    await waitFor(() => hub.allies.log(other.id).at(-1)!.status === "delivered");
+    await run("ally.list");
+    await run("ally.log", { id: other.id, limit: 10 });
+    await hub.idle();
+    await run("ally.remove", { id: other.id });
     await run("stop");
     await run("device.unpair");
     await tick(150);
@@ -122,11 +149,18 @@ describe("host ↔ app protocol", () => {
 
     const sampleEvents: Record<string, unknown> = {};
     for (const e of events) if (!(e.event in sampleEvents)) sampleEvents[e.event] = JSON.parse(JSON.stringify(e.data));
+    // The list once it has someone in it (with a last entry), and chat
+    // messages of each shape the client draws: the owner's, an Ally's words
+    // in, and a draft card out.
+    sampleEvents["ally.updated"] = events.filter((e) => e.event === "ally.updated" && e.data.allies[0]?.lastEntry).at(-1)!.data;
+    const chat = events.filter((e) => e.event === "chat.message").map((e) => e.data);
+    sampleEvents["chat.message"] = JSON.parse(JSON.stringify([chat[0], chat.find((m) => m.kind === "ally" && m.dir === "in"), chat.find((m) => m.kind === "ally" && m.dir === "out")]));
     // commands.updated fires when the harness reports its list
     expect(Object.keys(sampleEvents).sort()).toEqual([...RPC_EVENTS].sort());
 
     const fixture = { methods, events: sampleEvents };
     checkFixture(resolve(import.meta.dir, "../../ios/PaloAllyKit/Tests/PaloAllyKitTests/Fixtures/protocol.json"), fixture, shape);
     cleanup(paths);
+    cleanup(peer.ctx.paths);
   });
 });

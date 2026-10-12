@@ -205,7 +205,7 @@
     - 发出：draft → queued → sent → delivered → seen；
     - 收到：delivered → seen；
     - "sent" 表示已交给对方主机，还没收到回执；
-    - "rejected" 是终态，没发出去，`note` 用一句话说原因：「没发」「草稿过期了」「对方没收」「3 天没送到」。
+    - "rejected" 是终态，没发出去，`note` 用一句话说原因：「没发」「草稿过期了」「对方没收」「3 天没送到」「已解除」。
   - 来话的 `id` 和发送方的相同。
 - `ally.invite`：
   - 链接里的 `exp` 和返回的 `expiresAt` 都是毫秒时间戳；

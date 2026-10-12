@@ -187,5 +187,6 @@ function hintFor(msg: ChatMessage): string {
   if (msg.kind === "approval") return `有个操作等你确认（回复「同意 ${msg.approvalId?.slice(-4)}」或「拒绝 ${msg.approvalId?.slice(-4)}」，或在 App 里看详情）`;
   if (msg.kind === "question") return "有个问题等你回答（在 App 里选一下就行）";
   if (msg.kind === "task") return "有个任务有结果了";
+  if (msg.kind === "ally") return "有一条 Ally 传来的话";
   return "我有事想跟你说";
 }

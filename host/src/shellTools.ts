@@ -11,6 +11,7 @@ import { nextRunAt } from "./probe.ts";
 import { zonedParts } from "./util.ts";
 import type { WechatChannel } from "./channels/types.ts";
 import type { MediaStore } from "./media.ts";
+import type { Allies } from "./allies.ts";
 import { join, resolve } from "node:path";
 import { mimeOf } from "./artifacts.ts";
 import type { Attachment, Channel, Watch } from "./types.ts";
@@ -28,6 +29,7 @@ export interface ShellToolDeps {
   audit: Audit;
   wechat?: WechatChannel | null;
   media: MediaStore;
+  allies?: Allies;
   /** Where the owner is talking from in the current turn. */
   ownerChannel: () => Channel;
   /** The assistant's working directory: relative paths resolve against it. */
@@ -168,6 +170,10 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
       if (target && d.wechat) await d.wechat.reply(target, text).catch(() => {});
       return "已放到主人的手机剪贴板（若主人当时不在 App 里，对话里有一键复制的卡片）";
     },
+    // Allies: the list, and a draft for the owner to send. Nothing reaches
+    // another assistant without the owner's tap on the card.
+    ally_list: async () => d.allies?.toolList() ?? "[]",
+    ally_send: async (args) => d.allies?.draft(args) ?? "还没有 Ally。",
     notify_user: async ({ text, urgent }) => {
       const msg = d.chat.add({ role: "assistant", kind: "notice", text, channel: "system", proactive: true });
       // Wait for the real outcome (pushes give up after ~5 s), but never longer

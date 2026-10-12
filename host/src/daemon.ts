@@ -28,7 +28,7 @@ export async function startDaemon(
 ): Promise<Daemon> {
   scaffoldHome(paths);
   // Older installs wrote these world-readable; they hold tokens and the host key.
-  for (const f of [paths.config, paths.identity, paths.wechat, paths.devices, paths.pushTokens]) {
+  for (const f of [paths.config, paths.identity, paths.wechat, paths.devices, paths.pushTokens, paths.allies, paths.alliesOutbox]) {
     try {
       chmodSync(f, 0o600);
     } catch {
@@ -87,6 +87,8 @@ export async function startDaemon(
     relayRef = relay;
     const r = relay;
     hub.onUnpairDevice = (deviceId) => r.removeDevice(deviceId);
+    // Allies pair, dial out and revoke through this connection.
+    hub.allies.setRelay(relay);
     void relay.start();
   }
 

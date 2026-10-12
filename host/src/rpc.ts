@@ -24,12 +24,13 @@ export const RPC_METHODS = [
   "settings.update", "stop", "push.register", "push.unregister", "device.unpair", "audit.tail",
   "media.upload", "media.uploadChunk", "media.get", "media.read",
   "suggestions.list", "suggestions.dismiss", "host.update",
+  "ally.list", "ally.invite", "ally.accept", "ally.remove", "ally.log", "ally.draft.decide",
 ] as const;
 
 export const RPC_EVENTS = [
   "chat.message", "chat.delta", "task.updated", "approval.updated", "question.updated", "watch.updated",
   "artifact.updated", "settings.updated", "status", "commands.updated",
-  "suggestions.updated",
+  "suggestions.updated", "ally.updated", "ally.entry",
 ] as const;
 
 // Admin methods are reachable only on the local unix socket (the owner's own
@@ -43,6 +44,9 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return { hostName: hub.config.hostName, version: hub.status().version, status: hub.status() };
     case "sync": {
       const since = typeof p.sinceSeq === "number" ? p.sinceSeq : undefined;
+      // The app syncs when it comes to the foreground: an Ally's message
+      // already in the chat counts as seen.
+      if (ctx.channel === "app") hub.allies.ownerActive();
       return {
         seq: hub.chat.lastSeq,
         messages: since === undefined ? hub.chat.recent(100) : hub.chat.since(since, 500),
@@ -193,6 +197,18 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return { ok: true };
     case "audit.tail":
       return { entries: hub.audit.tail(Math.min(Number(p.limit ?? 50), 500)) };
+    case "ally.list":
+      return { allies: hub.allies.list() };
+    case "ally.invite":
+      return await hub.allies.invite();
+    case "ally.accept":
+      return { ally: await hub.allies.accept(String(p.link ?? ""), p.kind) };
+    case "ally.remove":
+      return { ok: hub.allies.remove(String(p.id ?? "")) };
+    case "ally.log":
+      return { entries: hub.allies.log(String(p.id ?? ""), p.beforeTs, p.limit) };
+    case "ally.draft.decide":
+      return { entry: hub.allies.decide(String(p.id ?? ""), p.action, p.text) };
     case "host.update":
       // check: only look. Otherwise stage the newest release and switch to it as
       // soon as nothing is in flight (the app's 立即更新); `wait` is for the CLI.

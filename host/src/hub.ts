@@ -1,3 +1,4 @@
+import { Allies, type AlliesDeps } from "./allies.ts";
 import { ApprovalManager } from "./approvals.ts";
 import { ArtifactLibrary } from "./artifacts.ts";
 import { Audit } from "./audit.ts";
@@ -43,6 +44,7 @@ export interface HubDeps {
   claudeDir?: string; // Claude Code's config dir (session registry, transcripts); tests point it elsewhere
   readPower?: () => PowerReading | null; // tests feed readings; default reads the OS
   updater?: Partial<UpdaterDeps>; // tests point the updater at a temp checkout
+  allies?: Partial<AlliesDeps>; // tests connect hosts in memory and move the clock
 }
 
 // Hub assembles the assistant: the main conversation with the harness, the
@@ -68,6 +70,7 @@ export class Hub {
   readonly handoffs: HandoffTracker;
   readonly power: PowerWatcher;
   readonly updater: Updater;
+  readonly allies: Allies;
   private compactTimer: ReturnType<typeof setInterval> | null = null;
   private readonly info: HarnessInfo;
   private readonly proactive: Proactive;
@@ -238,6 +241,21 @@ export class Hub {
           channel: "system",
         }),
     });
+    // Other people's assistants: messages in both directions, every outgoing
+    // word a draft the owner sends. Our relay is handed over by RelayChannel.
+    this.allies = new Allies({
+      paths: this.paths,
+      bus: this.bus,
+      chat: this.chat,
+      router: this.router,
+      audit: this.audit,
+      settings: () => this.config.settings,
+      hostName: () => this.config.hostName,
+      enqueue: (t) => this.conversation.enqueue(t),
+      findQueued: (p) => this.conversation.findQueued(p),
+      log: (s) => this.log(`allies: ${s}`),
+      ...deps.allies,
+    });
     this.suggestions = new SuggestionStore(this.paths.suggestions, this.bus, {
       driver: deps.driver,
       probeModel: () => this.config.probeModel,
@@ -268,6 +286,7 @@ export class Hub {
       this.suggestionTimer = setInterval(() => this.suggestions.maybeRefresh("daily"), 3600_000);
     }
     if (opts.watchArtifacts !== false) this.artifacts.watch();
+    this.allies.start();
     if (opts.probe !== false) {
       // Work handed to other sessions: the host follows it itself.
       this.handoffs.startTimer();
@@ -288,6 +307,7 @@ export class Hub {
     this.handoffs.stop();
     this.power.stop();
     this.updater.stop();
+    this.allies.stop();
     if (this.compactTimer) clearInterval(this.compactTimer);
     if (this.suggestionTimer) clearInterval(this.suggestionTimer);
     this.artifacts.stop();
@@ -338,6 +358,8 @@ export class Hub {
       ...(attachments.length ? { attachments } : {}),
       ...(replyTo ? { replyTo } : {}),
     });
+    // The owner is here: an Ally's message shown before now has been seen.
+    if (channel === "app" || channel === "cli") this.allies.ownerActive();
     const answered = cmd === null && channel === "wechat" && !attachments.length ? this.answerOnWechat(t) : null;
     if (answered === "") return msg; // it answered an open question; the harness carries on
     if (answered !== null || cmd !== null) {
@@ -450,7 +472,7 @@ export class Hub {
   // ---------------- what the harness offers ----------------
 
   toolHandlers(): ToolHandlers {
-    return makeShellTools({ tasks: this.tasks, handoffs: this.handoffs, watches: this.watches, artifacts: this.artifacts, chat: this.chat, router: this.router, audit: this.audit, wechat: this.wechat, media: this.media,
+    return makeShellTools({ tasks: this.tasks, handoffs: this.handoffs, watches: this.watches, artifacts: this.artifacts, chat: this.chat, router: this.router, audit: this.audit, wechat: this.wechat, media: this.media, allies: this.allies,
       ownerChannel: () => this.conversation.ownerChannel(), cwd: this.paths.home, timezone: () => this.config.settings.timezone });
   }
 

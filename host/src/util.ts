@@ -32,6 +32,14 @@ export function appendJsonl(path: string, value: unknown): void {
   appendFileSync(path, JSON.stringify(value) + "\n", { mode: 0o600 });
 }
 
+// writeJsonl replaces a whole JSONL file, atomically like writeJson.
+export function writeJsonl(path: string, rows: unknown[]): void {
+  ensureDir(dirname(path));
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, rows.map((r) => JSON.stringify(r) + "\n").join(""), { mode: 0o600 });
+  renameSync(tmp, path);
+}
+
 export function readJsonl<T>(path: string): T[] {
   let raw: string;
   try {

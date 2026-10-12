@@ -1,3 +1,4 @@
+import type { AllyRelay } from "../allies.ts";
 import type { Hub } from "../hub.ts";
 import { hostAccept, parseHandshake, parseSshWirePubkey, b64, b64url, fingerprint, newIdentity, sign, unb64, type Identity, type Secure } from "../proto/e2e.ts";
 import { serveRpc } from "../rpc.ts";
@@ -57,6 +58,8 @@ interface Stream {
   secure: Secure | null;
   deviceId?: string;
   clientId?: string;
+  // an Ally's host: its units go to the ally handler, never to the RPC
+  ally?: { message(text: string): void; closed(): void };
 }
 
 export type RelayState = "disconnected" | "connecting" | "connected";
@@ -81,8 +84,10 @@ export interface RelayPushResult {
 export const relayPushTiming = { timeoutMs: 5_000, unsupportedMs: 10 * 60_000 };
 
 // RelayChannel keeps the daemon socket to the relay alive, handles pairing,
-// and terminates E2E per stream. Each stream becomes one app client of the hub.
-export class RelayChannel {
+// and terminates E2E per stream. Each stream of a paired device becomes one
+// app client of the hub; a stream of an Ally's host goes to hub.allies and
+// can only speak the ally.* messages.
+export class RelayChannel implements AllyRelay {
   private ws: WebSocket | null = null;
   private streams = new Map<number, Stream>();
   private backoff = 1000;
@@ -90,6 +95,8 @@ export class RelayChannel {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private lastPong = 0;
   private pairWaiter: ((code: { code: string; ttl: number }) => void) | null = null;
+  private lastWindowCode: string | null = null;
+  private revokeWaiters = new Map<string, () => void>();
   private pushWaiters = new Map<string, (r: RelayPushResult) => void>();
   /** The relay has answered a push at least once (so a timeout is transient). */
   private pushAnswered = false;
@@ -100,8 +107,8 @@ export class RelayChannel {
 
   constructor(
     private hub: Hub,
-    private relayUrl: string,
-    private identity: Identity,
+    readonly relayUrl: string,
+    readonly identity: Identity,
     readonly daemonId: string,
     private devicesPath: string,
     private log: (s: string) => void = (s) => console.log(`[relay] ${s}`),
@@ -115,8 +122,9 @@ export class RelayChannel {
     const list = this.devices();
     const next = list.filter((d) => d.deviceId !== deviceId);
     writeJson(this.devicesPath, next);
-    // Drop live streams of a revoked device.
+    // Drop live streams of a revoked device, and have the relay forget it.
     for (const s of this.streams.values()) if (s.deviceId === deviceId) this.closeStream(s.id);
+    if (next.length !== list.length) void this.revokeDevice(deviceId);
     return next.length !== list.length;
   }
 
@@ -172,6 +180,7 @@ export class RelayChannel {
       this.log(`connected as ${this.daemonId}`);
       stableTimer = setTimeout(() => (this.backoff = 1000), 60_000);
       this.pingTimer = setInterval(() => this.ping(), 30_000);
+      this.hub.allies.onRelayConnected();
     };
     ws.onmessage = (ev) => {
       this.lastPong = Date.now();
@@ -250,17 +259,54 @@ export class RelayChannel {
 
   // openPairing asks the relay for a 6-digit code and returns the link the
   // app scans.
-  openPairing(ttlSec = 120): Promise<{ code: string; ttl: number; link: string }> {
+  async openPairing(ttlSec = 120): Promise<{ code: string; ttl: number; link: string }> {
+    const { code, ttl } = await this.openWindow(ttlSec);
+    this.pairOpenUntil = Date.now() + ttl * 1000;
+    const link = `paloally://pair?relay=${encodeURIComponent(this.relayUrl)}&daemon=${encodeURIComponent(this.daemonId)}&code=${code}&hostkey=${b64url(this.identity.pub)}`;
+    return { code, ttl, link };
+  }
+
+  // openAllyWindow opens (or renews, with the same code) the relay's pairing
+  // slot for an Ally. The relay has one slot: a phone window open before is
+  // gone, so phones are refused until the next openPairing.
+  async openAllyWindow(code: string, ttlSec: number): Promise<{ code: string; ttl: number }> {
+    const r = await this.openWindow(ttlSec, code);
+    this.pairOpenUntil = 0;
+    return r;
+  }
+
+  windowCode(): string | null {
+    return this.lastWindowCode;
+  }
+
+  private openWindow(ttlSec: number, code?: string): Promise<{ code: string; ttl: number }> {
     if (this.state !== "connected") return Promise.reject(new Error("还没连上中转服务器"));
     return new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(new Error("中转服务器没回配对码")), 10_000);
-      this.pairWaiter = ({ code, ttl }) => {
+      this.pairWaiter = (r) => {
         clearTimeout(t);
-        this.pairOpenUntil = Date.now() + ttl * 1000;
-        const link = `paloally://pair?relay=${encodeURIComponent(this.relayUrl)}&daemon=${encodeURIComponent(this.daemonId)}&code=${code}&hostkey=${b64url(this.identity.pub)}`;
-        resolve({ code, ttl, link });
+        this.lastWindowCode = r.code;
+        resolve(r);
       };
-      this.sendControl({ type: "pair.open", ttl_sec: ttlSec });
+      this.sendControl({ type: "pair.open", ttl_sec: ttlSec, ...(code ? { code } : {}) });
+    });
+  }
+
+  // revokeDevice has the relay forget a device's pinned key for good (and
+  // close its open tunnels). Resolves true once the relay confirmed; a relay
+  // without the feature never does.
+  revokeDevice(deviceId: string): Promise<boolean> {
+    if (this.state !== "connected") return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const t = setTimeout(() => {
+        this.revokeWaiters.delete(deviceId);
+        resolve(false);
+      }, 5_000);
+      this.revokeWaiters.set(deviceId, () => {
+        clearTimeout(t);
+        resolve(true);
+      });
+      this.sendControl({ type: "device.revoke", device_id: deviceId });
     });
   }
 
@@ -299,11 +345,29 @@ export class RelayChannel {
       if (!done) return;
       this.pushWaiters.delete(String(msg.nonce));
       done({ ok: !!msg.ok, status: Number(msg.status ?? 0), ...(msg.reason ? { reason: String(msg.reason) } : {}) });
+    } else if (msg.type === "device.revoked") {
+      const done = this.revokeWaiters.get(String(msg.device_id ?? ""));
+      this.revokeWaiters.delete(String(msg.device_id ?? ""));
+      done?.();
     } else if (msg.type === "pair.opened") {
       this.pairWaiter?.({ code: String(msg.code), ttl: Number(msg.ttl_sec ?? 60) });
       this.pairWaiter = null;
     } else if (msg.type === "pair.attach") {
       const reqId = msg.request_id;
+      const kind = String(msg.device_kind ?? "");
+      // Another host pairing as an Ally: hub.allies decides, and it never
+      // goes into the device list (devices are the owner's own apps).
+      if (kind === "ally") {
+        const pub = parseSshWirePubkey(String(msg.device_pubkey ?? ""));
+        const r = pub ? this.hub.allies.onPairAttach(pub, String(msg.device_label ?? "")) : { error: "bad device pubkey" };
+        if ("error" in r) this.sendControl({ type: "pair.ack", request_id: reqId, status: "error", error: r.error });
+        else this.sendControl({ type: "pair.ack", request_id: reqId, status: "ok", device_id: r.deviceId, host_fingerprint: fingerprint(this.identity.pub), daemon_label: r.label });
+        return;
+      }
+      if (kind) {
+        this.sendControl({ type: "pair.ack", request_id: reqId, status: "error", error: "unknown device kind" });
+        return;
+      }
       // Only accept attaches while a window we opened is live.
       if (Date.now() > this.pairOpenUntil) {
         this.sendControl({ type: "pair.ack", request_id: reqId, status: "error", error: "pairing not open" });
@@ -340,12 +404,28 @@ export class RelayChannel {
     if (!s.secure) {
       try {
         const hello = parseHandshake(unit);
+        // An Ally's host is looked up first: if its id ever matched a phone's,
+        // it lands in the narrower role.
         const r = hostAccept(hello, this.identity, (id) => {
+          const ally = this.hub.allies.inboundKey(id);
+          if (ally) return ally;
           const d = this.devices().find((x) => x.deviceId === id);
           return d ? unb64(d.pub) : null;
         });
         s.secure = r.secure;
         s.deviceId = r.deviceId;
+        if (this.hub.allies.inboundKey(r.deviceId)) {
+          const streams = this.streams;
+          this.send(buildFrame(T_DATA, s.id, r.reply));
+          s.ally = this.hub.allies.attachInbound(r.deviceId, {
+            send: (m) => this.sendSealed(s, m),
+            close: () => this.closeStream(s.id),
+            get open() {
+              return !!s.secure && streams.has(s.id);
+            },
+          });
+          return;
+        }
         s.clientId = `app_${s.id}_${r.deviceId}`;
         this.send(buildFrame(T_DATA, s.id, r.reply));
         this.hub.attach({ id: s.clientId, kind: "app", send: (m) => this.sendSealed(s, m) });
@@ -355,6 +435,17 @@ export class RelayChannel {
         this.send(buildFrame(T_DATA, s.id, new Uint8Array([0x01, ...err])));
         this.closeStream(s.id);
       }
+      return;
+    }
+    if (s.ally) {
+      let text: string;
+      try {
+        text = s.secure.opener.open(unit);
+      } catch {
+        this.closeStream(s.id);
+        return;
+      }
+      s.ally.message(text);
       return;
     }
     let req: any;
@@ -391,6 +482,7 @@ export class RelayChannel {
     const s = this.streams.get(id);
     if (s?.clientId) this.hub.detach(s.clientId);
     this.streams.delete(id);
+    s?.ally?.closed();
   }
 
   connectedStreams(): number {
