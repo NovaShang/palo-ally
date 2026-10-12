@@ -157,12 +157,6 @@ private let eventTypes: [String: Check] = [
     },
 ]
 
-/// Sessions arrived on the client first (sessions-prd §7). Until the host's
-/// fixture has any of them, the name checks leave them out; once it has one,
-/// all of them must match.
-private func hostKnowsSessions(_ names: Dictionary<String, JSONValue>.Keys) -> Bool {
-    names.contains { $0.hasPrefix("sessions.") || $0.hasPrefix("helper.") }
-}
 
 @Suite("Protocol contract")
 struct ProtocolContractTests {
@@ -177,11 +171,7 @@ struct ProtocolContractTests {
         let f = try ProtocolFixture.load()
         print("ProtocolContract: using \(f.source)")
         let host = Set(f.methods.keys)
-        var client = Set(RPCMethod.all)
-        if !hostKnowsSessions(f.methods.keys) {
-            print("ProtocolContract: \(f.source) predates sessions; their methods aren't compared yet")
-            client.subtract(RPCMethod.sessions)
-        }
+        let client = Set(RPCMethod.all)
         #expect(host.subtracting(client).isEmpty, "host methods the client doesn't know: \(host.subtracting(client).sorted())")
         #expect(client.subtracting(host).isEmpty, "client methods the host doesn't have: \(client.subtracting(host).sorted())")
     }
@@ -190,8 +180,7 @@ struct ProtocolContractTests {
     func eventSetMatchesHost() throws {
         let f = try ProtocolFixture.load()
         let host = Set(f.events.keys)
-        var client = Set(RPCEventName.all)
-        if !hostKnowsSessions(f.methods.keys) { client.subtract(RPCEventName.sessions) }
+        let client = Set(RPCEventName.all)
         #expect(host.subtracting(client).isEmpty, "host events the client doesn't know: \(host.subtracting(client).sorted())")
         #expect(client.subtracting(host).isEmpty, "client events the host never sends: \(client.subtracting(host).sorted())")
     }

@@ -166,6 +166,12 @@ struct SessionsDecodingTests {
         #expect(AppStore.merge([m("x", 1)], [m("y", 1)], older: false).map(\.id) == ["x", "y"])
     }
 
+    @Test func helperControlCardsInPlainWords() {
+        #expect(Friendly.tool("helper_stop") == "停帮手")
+        #expect(Friendly.tool("mcp__paloally__helper_restart") == "重启帮手")
+        #expect(Friendly.tool("Bash") == "运行命令")
+    }
+
     @Test func proposalsCountAsWaitingOnTheOwner() {
         let one = AgentStatusLine.make(offlineText: nil, pendingApprovals: 0, pendingProposals: 1, busy: false, activity: nil, tasks: [])
         #expect(one == AgentStatusLine(kind: .needsYou, text: "等你点头"))

@@ -9,6 +9,8 @@ public enum Friendly {
     /// appear as whole tokens of the tool name (so "thread" never matches
     /// "read", and "credit" never matches "edit").
     static let toolRules: [([String], String)] = [
+        // The assistant asking to stop or restart a helper (sessions-prd §6.6).
+        (["helper", "stop"], "停帮手"), (["helper", "restart"], "重启帮手"),
         (["send", "email"], "发邮件"), (["send", "mail"], "发邮件"), (["send", "message"], "发消息"),
         (["wechat"], "微信"), (["weixin"], "微信"),
         (["email"], "邮件"), (["gmail"], "邮件"), (["mail"], "邮件"),
