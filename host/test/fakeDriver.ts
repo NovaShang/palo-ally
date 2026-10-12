@@ -18,6 +18,8 @@ export type FakeScript = (text: string, ctx: FakeCtx) => Promise<void>;
 export interface FakeCtx {
   opts: MainSessionOptions; // a Pal's session has no tools / prompt (cast from SessionOptions)
   session: FakeMainSession;
+  // resolves when the turn is interrupted (the stop button)
+  interrupted: Promise<void>;
   emit(e: HarnessEvent): void;
   // simulate the harness calling a tool. `ask` = the harness decided to ask
   // the owner (with its own suggestions / defaultToNo); otherwise it just runs.
@@ -40,6 +42,8 @@ export class FakeMainSession implements MainSession {
   private total = 0;
   readonly sessionId: string;
   readonly pal: boolean;
+  private interruptWaiters: (() => void)[] = [];
+  proc?: import("node:child_process").ChildProcess; // a stand-in process (driver.spawnPals)
   // ready() rejects with this (Claude Code refused to start), and the process ends
   readonly failStart?: string;
 
@@ -56,7 +60,17 @@ export class FakeMainSession implements MainSession {
       });
       return;
     }
-    if (pal) return; // a Pal says nothing until it's spoken to
+    if (pal) {
+      // A real process stands in for Claude Code, started through the
+      // host's spawner (so its pid is known, as through PaloAlly Helper).
+      if (driver.spawnPals && opts.spawn) {
+        this.proc = opts.spawn({ command: "/bin/sleep", args: ["600"], cwd: opts.cwd, env: { PATH: process.env.PATH } }) as any;
+        this.proc!.on("exit", () => {
+          if (!this.closed) this.crash("Claude Code process exited");
+        });
+      }
+      return; // a Pal says nothing until it's spoken to
+    }
     queueMicrotask(() => {
       opts.onEvent({ type: "init", sessionId: this.sessionId, model: opts.model ?? "fake-model", tools: [], terminalCommands: ["doctor"] });
       opts.onEvent({
@@ -87,6 +101,7 @@ export class FakeMainSession implements MainSession {
     if (this.closed) return;
     this.closed = true;
     this.queue = [];
+    if (this.proc && this.proc.exitCode === null) this.proc.kill("SIGKILL");
     this.opts.onEvent({ type: "error", message: why });
     this.opts.onExit?.(why);
   }
@@ -108,6 +123,7 @@ export class FakeMainSession implements MainSession {
       const ctx: FakeCtx = {
         opts: this.opts,
         session: this,
+        interrupted: new Promise<void>((r) => this.interruptWaiters.push(r)),
         emit: (e) => this.opts.onEvent(e),
         useTool: async (name, input, o = {}) => {
           const id = o.id ?? fakeId();
@@ -160,6 +176,7 @@ export class FakeMainSession implements MainSession {
 
   async interrupt(): Promise<void> {
     this.queue = [];
+    for (const w of this.interruptWaiters.splice(0)) w();
   }
 
   async setModel(model?: string): Promise<void> {
@@ -176,6 +193,7 @@ export class FakeMainSession implements MainSession {
 
   close(): void {
     this.closed = true;
+    if (this.proc && this.proc.exitCode === null) this.proc.kill("SIGTERM");
   }
 }
 
@@ -187,6 +205,8 @@ export class FakeDriver implements HarnessDriver {
   palScript: FakeScript = defaultScript;
   // A Pal process that refuses to start: return why (e.g. it's held elsewhere).
   failPalStart?: (opts: SessionOptions) => string | undefined;
+  // Start a stand-in process for each Pal through the host's spawner.
+  spawnPals = false;
   probes: ProbeRequest[] = [];
   stoppedTasks: string[] = [];
   liveSwitches: string[] = [];

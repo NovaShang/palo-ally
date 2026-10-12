@@ -12,7 +12,6 @@ import { waitFor } from "./relayClient.ts";
 import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { AwayDetector } from "../src/away.ts";
-import type { Courier } from "../src/courier.ts";
 import { FakeClaudeDir, FakeCli, assistantEntry } from "./fakeClaude.ts";
 
 const script: FakeScript = async (t, ctx) => {
@@ -47,18 +46,16 @@ describe("host ↔ app protocol", () => {
   test("every method answers, every event fires; samples written for the Swift client", async () => {
     // On an in-memory Ally net, so the ally.* methods have a peer.
     const net = new AllyNet();
-    // A made-up computer for the sessions: one terminal session, Claude Code's
-    // CLI, the courier and the owner away from the screen.
+    // A made-up computer for the sessions: one terminal session, one
+    // background session, Claude Code's CLI and the owner away from the screen.
     const claude = new FakeClaudeDir();
     const cli = new FakeCli(claude);
-    const courier = { send: async () => ({ costUsd: 0.01 }), close() {} } as unknown as Courier;
     const histories = new Map<string, any[]>();
     const { hub, paths, events, driver } = net.add("家人A", {
       script,
       sessions: {
         claudeDir: claude.dir,
         cli,
-        courier,
         away: new AwayDetector(() => null, Date.now, () => true),
         readMessages: async (sid) => histories.get(sid) ?? [],
       },
@@ -160,15 +157,14 @@ describe("host ↔ app protocol", () => {
     await hub.idle();
     await run("ally.remove", { id: other.id });
     // Sessions: the computer's Claude Code sessions, a session's prompt and
-    // question on the phone, words into one, and a helper proposed, started
-    // and looked after.
+    // question on the phone through the hooks.
     claude.register({ sessionId: "5d821f3c-0000-4000-8000-000000000001", name: "修登录跳转", cwd: "/Users/someone/code/app", status: "busy" });
     claude.transcript("/Users/someone/code/app", "5d821f3c-0000-4000-8000-000000000001", [assistantEntry("在跑登录相关的测试。")]);
     histories.set("5d821f3c-0000-4000-8000-000000000001", [
       { type: "user", uuid: "c1", timestamp: "2026-10-12T10:00:00Z", message: { role: "user", content: "登录以后应该回到原来那一页" }, origin: { kind: "human" } },
       { type: "assistant", uuid: "c2", timestamp: "2026-10-12T10:01:00Z", message: { role: "assistant", content: [{ type: "text", text: "找到了：跳转时把原来的地址丢了。" }] } },
       { type: "user", uuid: "c3", timestamp: "2026-10-12T10:02:00Z", message: { role: "user", content: "…" }, origin: { kind: "peer", name: "笔记整理", body: "设计稿在 notes/设计.md" } },
-      { type: "user", uuid: "c4", timestamp: "2026-10-12T10:03:00Z", message: { role: "user", content: "…" }, origin: { kind: "peer", name: "PaloAlly", body: "主人：先别管登录页" } },
+      { type: "user", uuid: "c4", timestamp: "2026-10-12T10:03:00Z", message: { role: "user", content: "…" }, origin: { kind: "peer", name: "Palo", body: "主人说先别管登录页" } },
     ]);
     const term = (await run("sessions.list")).sessions[0];
     const sig = () => ({ signal: new AbortController().signal, env: {} });
@@ -194,14 +190,48 @@ describe("host ↔ app protocol", () => {
     (hub.approvals as any).settle(hub.approvals.listPending()[0]!.id, "expired", "timeout", undefined, "在电脑上等你");
     await late;
     await run("sessions.history", { id: term.id, limit: 50 });
-    await run("sessions.send", { id: term.id, text: "先别管登录页，把列表页做完" });
-    const project = realpathSync(mkdtempSync(`${tmpdir()}/site-`));
-    await hub.toolHandlers().helper_propose({ name: "网站帮手", dir: project, duty: "你负责主人的网站：先做列表页，再做详情页。", dailyUsd: 5 });
-    const proposal = hub.chat.recent(1)[0]!.proposal!;
-    const helper = (await run("helper.decide", { proposalId: proposal.id, action: "create" })).session;
-    await run("sessions.control", { id: helper.id, action: "restart" });
     await run("sessions.hooks", { enabled: true });
     await hub.sessions.setHooks(false, "test");
+    // Pals: the terminal session waits to be quit there; a background one is
+    // adopted (its words, its streamed reply, its card, its history); the
+    // assistant opens one; one goes back to the terminal, one out of the list.
+    driver.palScript = async (text, c) => {
+      if (text === "要确认") {
+        await c.useTool("Bash", { command: "npm run build" }, { ask: true });
+        return;
+      }
+      const id = `msg_0${text.length}`;
+      c.emit({ type: "text_delta", text: "好，", messageId: id });
+      c.emit({ type: "assistant_text", text: "好，列表页这就做。", parentToolUseId: null, messageId: id });
+    };
+    expect((await call("pals.adopt", { sessionId: term.id })).waiting).toBe("exit-in-terminal");
+    const site = "/Users/someone/code/site";
+    const bgId = "7a3e9c10-0000-4000-8000-000000000002";
+    cli.bg({ sessionId: bgId, name: "网站", cwd: site });
+    claude.transcript(site, bgId, [assistantEntry("列表页的样式好了。", { model: "claude-sonnet-4-6" })]);
+    await run("pals.list");
+    const pal = (await run("pals.adopt", { sessionId: bgId })).pal;
+    histories.set(bgId, [
+      { type: "user", uuid: "p1", timestamp: "2026-10-12T11:00:00Z", message: { role: "user", content: "列表要能按日期排序" }, origin: { kind: "human" } },
+      { type: "assistant", uuid: "p2", timestamp: "2026-10-12T11:00:05Z", message: { id: "msg_01", role: "assistant", content: [{ type: "text", text: "加上了。" }] } },
+      { type: "user", uuid: "p3", timestamp: "2026-10-12T11:01:00Z", message: { role: "user", content: "…" }, origin: { kind: "peer", name: "Palo", body: "主人说今晚不用部署" } },
+    ]);
+    await run("pals.send", { id: pal.id, text: "把列表页做完", clientMsgId: "c-pal-1" });
+    await waitFor(() => events.some((e) => e.event === "chat.message" && e.data.pal && e.data.role === "assistant"));
+    await run("pals.history", { id: pal.id, limit: 50 });
+    void hub.pals.send(pal.id, "要确认");
+    await waitFor(() => hub.approvals.listPending().length === 1);
+    const palCard = JSON.parse(JSON.stringify(hub.approvals.listPending()[0]!));
+    hub.approvals.answer(palCard.id, true, "app");
+    await waitFor(() => hub.pals.list().every((p) => p.status === "idle"));
+    await run("pals.stop", { id: pal.id });
+    const project = realpathSync(mkdtempSync(`${tmpdir()}/site-`));
+    await hub.toolHandlers().pal_propose({ name: "文档", dir: project, duty: "你负责主人的文档：先把安装说明写完。", dailyUsd: 5 });
+    const proposal = hub.chat.recent(1)[0]!.proposal!;
+    const opened = (await run("helper.decide", { proposalId: proposal.id, action: "create" })).pal;
+    await run("pals.release", { id: pal.id });
+    await run("pals.remove", { id: opened.id });
+    hub.pals.stop();
     await run("stop");
     await run("device.unpair");
     await tick(150);
@@ -222,29 +252,37 @@ describe("host ↔ app protocol", () => {
         chat[0],
         chat.find((m) => m.kind === "ally" && m.dir === "in"),
         chat.find((m) => m.kind === "ally" && m.dir === "out"),
-        // a helper proposal, and the same message once the helper was started
+        // a Pal proposal, and the same message once the Pal was opened
         chat.find((m) => m.kind === "helper"),
         chat.filter((m) => m.kind === "helper").at(-1),
+        // a Pal's conversation: the owner's words, its reply, the assistant's handover
+        chat.find((m) => m.pal && m.role === "user" && !m.from),
+        chat.find((m) => m.pal && m.role === "assistant"),
+        chat.find((m) => m.pal && m.from),
       ]),
     );
-    // Cards: the assistant's own, a session's (with its source), and a
-    // session's that went back to the computer (with a note).
+    sampleEvents["chat.delta"] = [events.find((e) => e.event === "chat.delta" && !e.data.pal)!.data, events.find((e) => e.event === "chat.delta" && e.data.pal)!.data];
+    // Cards: the assistant's own, a session's (with its source), a
+    // session's that went back to the computer (with a note), and a Pal's.
     const approvals = events.filter((e) => e.event === "approval.updated").map((e) => e.data);
-    sampleEvents["approval.updated"] = JSON.parse(JSON.stringify([approvals[0], sessionCard, approvals.find((a) => a.source && a.note)]));
+    sampleEvents["approval.updated"] = JSON.parse(JSON.stringify([approvals[0], sessionCard, approvals.find((a) => a.source && a.note), palCard]));
+    expect(palCard.source).toEqual({ kind: "pal", id: pal.id, name: "网站" });
     const questions = events.filter((e) => e.event === "question.updated").map((e) => e.data);
     sampleEvents["question.updated"] = JSON.parse(JSON.stringify([questions[0], sessionQuestion]));
     expect(sessionCard.source).toEqual({ kind: "session", id: term.id, name: "修登录跳转" });
     expect(sessionQuestion.source).toBeDefined();
-    // the list with a helper in it
-    sampleEvents["sessions.updated"] = events.filter((e) => e.event === "sessions.updated" && e.data.sessions.some((x: any) => x.kind === "helper")).at(-1)!.data;
+    // the computer's sessions; the Pals (a list with both, a terminal session being adopted among the others)
+    sampleEvents["sessions.updated"] = events.filter((e) => e.event === "sessions.updated" && e.data.sessions.length).at(-1)!.data;
+    sampleEvents["pals.updated"] = events.filter((e) => e.event === "pals.updated" && e.data.pals.length === 2 && e.data.others.some((x: any) => x.adopting)).at(-1)!.data;
     // commands.updated fires when the harness reports its list
     expect(Object.keys(sampleEvents).sort()).toEqual([...RPC_EVENTS].sort());
 
-    // The helper's made-up folder, not this machine's temp path.
+    // The made-up folder, not this machine's temp path.
     const fixture = JSON.parse(JSON.stringify({ methods, events: sampleEvents }).replaceAll(project, "/Users/someone/code/site"));
     checkFixture(resolve(import.meta.dir, "../../ios/PaloAllyKit/Tests/PaloAllyKitTests/Fixtures/protocol.json"), fixture, shape);
     cleanup(paths);
     cleanup(peer.ctx.paths);
     claude.cleanup();
+    cli.close();
   });
 });

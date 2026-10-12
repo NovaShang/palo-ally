@@ -72,6 +72,8 @@ export interface ConversationDeps {
   onModels: (models: ModelOption[]) => void;
   onTerminalCommands: (names: string[]) => void;
   statusChanged: () => void;
+  // the session's name, which other sessions SendMessage it by
+  peerName?: () => string;
   // a schedule run answered: record it as the goal's progress line
   onGoalResult?: (watchId: string, text: string) => void;
   // work handed to another session the assistant is waiting on
@@ -237,6 +239,7 @@ export class Conversation {
       mcpServers: this.d.mcpServers(),
       sharedChrome: cfg.browser.enabled && cfg.browser.mode === "shared",
       env: cfg.env,
+      ...(this.d.peerName ? { name: this.d.peerName() } : {}),
       onEvent: (e) => this.d.onEvent(e),
       stderr: (s) => appendJsonl(`${this.d.paths.logs}/harness-stderr.jsonl`, { ts: Date.now(), s: truncate(s, 2000) }),
     });

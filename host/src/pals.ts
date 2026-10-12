@@ -1,0 +1,811 @@
+import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
+import { readFileSync, realpathSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, join, resolve, sep } from "node:path";
+import type { ApprovalManager } from "./approvals.ts";
+import type { Audit } from "./audit.ts";
+import type { Bus } from "./bus.ts";
+import type { ClaudeCli } from "./ccCli.ts";
+import { type RawSessionMessage, type RegistryEntry, readRegistry } from "./ccSessions.ts";
+import { SpendMeter } from "./ccSpend.ts";
+import type { ChatLog } from "./chat.ts";
+import type { Paths, Settings } from "./config.ts";
+import type { HarnessDriver } from "./harness/types.ts";
+import { PalLauncher, type PalLaunch } from "./palLauncher.ts";
+import { pagePalMessages, toPalMessages } from "./palHistory.ts";
+import { HeldElsewhere, type Holder, type PalRecord, PalSession } from "./palSession.ts";
+import type { QuestionManager } from "./questions.ts";
+import type { Router } from "./router.ts";
+import type { Sessions } from "./sessions.ts";
+import type { CCSession, ChatMessage, HelperProposal, Pal } from "./types.ts";
+import { newId, readJson, writeJson, zonedParts } from "./util.ts";
+
+// Pals (docs/pals-prd.md): Claude Code sessions the host runs itself. The
+// owner adopts one of the computer's sessions (a background one is stopped
+// first; one in a terminal is taken over once the owner quits it there), or
+// the assistant opens a new one on the owner's 开吧. Each stays up with a
+// fixed name the assistant reaches it by (SendMessage), comes back after a
+// crash or a restart of the Mac, and goes back to the terminal on 交还终端.
+// At most five at a time. One transcript is never written by two processes.
+
+export const MAX_PALS = 5;
+/** The assistant's own session name: Pals see its SendMessages as from it, and answer it there. */
+export const PALO_NAME = "Palo";
+const PUSH_EVERY_MS = 10 * 60_000;
+
+// What a Pal is told about where it runs, on top of Claude Code's own prompt.
+export const PAL_PROMPT = (paloName: string) =>
+  `你现在由 PaloAlly 托管：主人在手机上的 PaloAlly App 里看这段对话、在这里打字，你要的确认和选项提问也都送到主人手机上。` +
+  `名叫「${paloName}」的会话是主人的助理：它发来的消息按队友的请求对待；要回它，用 SendMessage 发给 ${paloName}。`;
+
+interface PalFile {
+  pals: PalRecord[];
+  proposals: (HelperProposal & { createdAt: number; messageId?: string })[];
+}
+
+export interface PalsDeps {
+  paths: Paths;
+  claudeDir: string;
+  bus: Bus;
+  chat: ChatLog;
+  approvals: ApprovalManager;
+  questions: QuestionManager;
+  router: Router;
+  audit: Audit;
+  driver: HarnessDriver;
+  sessions: Sessions;
+  cli: ClaudeCli;
+  settings: () => Settings;
+  /** How Pals start (PaloAlly Helper, or directly). */
+  launch?: () => Promise<PalLaunch>;
+  usesHelper?: () => boolean;
+  helperFailed?: (why: string) => void;
+  helperApp?: () => string | undefined;
+  launchMode?: () => "auto" | "helper" | "direct";
+  readMessages?: (sessionId: string, dir: string) => Promise<RawSessionMessage[]>;
+  /** A Pal's permission mode; default: the owner's own default for Claude Code. */
+  palMode?: () => string;
+  /** A Pal's model; default: what its transcript last ran on (a new one: the owner's default). */
+  palModel?: () => string | undefined;
+  paloName?: () => string;
+  registry?: () => RegistryEntry[];
+  pidAlive?: (pid: number) => boolean;
+  kill?: (pid: number, signal: NodeJS.Signals) => void;
+  timing?: Partial<PalsTiming>;
+  now?: () => number;
+  log?: (s: string) => void;
+}
+
+export interface PalsTiming {
+  readyMs: number; // Claude Code up after starting
+  restartMs: number[]; // back off between restarts after a crash
+  exitWaitMs: number; // a process asked to end, before it's killed
+  exitPollMs: number; // how often a terminal session's process is checked while adopting
+  adoptWaitMs: number; // how long an adoption waits for the owner to quit in the terminal
+  stopWaitMs: number; // a background session stopping (claude stop) before giving up
+  guardMs: number; // how often running Pals are checked for another process on their transcript
+  startStaggerMs: number; // between Pals coming back at the host's start
+}
+
+const TIMING: PalsTiming = {
+  readyMs: 45_000,
+  restartMs: [2_000, 5_000, 15_000, 30_000, 60_000],
+  exitWaitMs: 6_000,
+  exitPollMs: 500,
+  adoptWaitMs: 30 * 60_000,
+  stopWaitMs: 15_000,
+  guardMs: 5_000,
+  startStaggerMs: 1_500,
+};
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e: any) {
+    return e?.code === "EPERM";
+  }
+}
+
+const expandHome = (p: string) => (p === "~" ? homedir() : p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
+const shq = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
+
+function within(root: string, p: string): boolean {
+  if (!p) return false;
+  const r = resolve(root);
+  const x = resolve(p);
+  return x === r || x.startsWith(r + sep);
+}
+
+/** Claude Code's own default permission mode for the owner's sessions. */
+export function ownerMode(claudeDir: string): string {
+  try {
+    const s = JSON.parse(readFileSync(join(claudeDir, "settings.json"), "utf8"));
+    const m = s?.permissions?.defaultMode;
+    if (typeof m === "string" && m) return m;
+  } catch {
+    /* none */
+  }
+  return "default";
+}
+
+interface Waiting {
+  sessionId: string;
+  pids: number[];
+  since: number;
+  timer: ReturnType<typeof setTimeout> | null;
+  session: CCSession;
+  by: string;
+}
+
+export class Pals {
+  private data: PalFile;
+  private pals = new Map<string, PalSession>();
+  private waiting = new Map<string, Waiting>();
+  private readonly timing: PalsTiming;
+  private readonly meter: SpendMeter;
+  private readonly launcher: PalLauncher;
+  private lastPush = new Map<string, number>();
+  private retried = new Map<string, number>(); // a Pal open elsewhere: when it was last tried again
+  private sent = new Map<string, Map<string, { id: string; seq: number }>>(); // per Pal: clientMsgId → reply
+  private lastEmitted = "";
+  private emitTimer: ReturnType<typeof setTimeout> | null = null;
+  private guardTimer: ReturnType<typeof setInterval> | null = null;
+  private dayTimer: ReturnType<typeof setInterval> | null = null;
+  private startTimers: ReturnType<typeof setTimeout>[] = [];
+  private offBus: (() => void) | null = null;
+  private started = false;
+
+  constructor(private d: PalsDeps) {
+    this.timing = { ...TIMING, ...d.timing };
+    this.meter = new SpendMeter(d.claudeDir);
+    this.launcher = new PalLauncher({ root: d.paths.root, helperApp: d.helperApp, mode: d.launchMode, log: (s) => this.log(s) });
+    const saved = readJson<Partial<PalFile>>(d.paths.pals, {});
+    this.data = { pals: Array.isArray(saved.pals) ? saved.pals : [], proposals: Array.isArray(saved.proposals) ? saved.proposals : [] };
+    for (const rec of this.data.pals) this.pals.set(rec.id, this.session(rec));
+  }
+
+  private log(s: string): void {
+    this.d.log?.(`pals: ${s}`);
+  }
+
+  private now(): number {
+    return this.d.now?.() ?? Date.now();
+  }
+
+  private save(): void {
+    writeJson(this.d.paths.pals, this.data);
+  }
+
+  private registry(): RegistryEntry[] {
+    return this.d.registry?.() ?? readRegistry(join(this.d.claudeDir, "sessions"));
+  }
+
+  private alive(pid: number): boolean {
+    return (this.d.pidAlive ?? pidAlive)(pid);
+  }
+
+  private session(rec: PalRecord): PalSession {
+    return new PalSession(rec, {
+      driver: this.d.driver,
+      approvals: this.d.approvals,
+      questions: this.d.questions,
+      claudeDir: this.d.claudeDir,
+      launch: () => (this.d.launch ?? (() => this.launcher.launch()))(),
+      helperFailed: (why) => (this.d.helperFailed ?? ((w) => this.launcher.markBroken(w)))(why),
+      holders: (sid, own) => this.holders(sid, own),
+      emit: (event, data) => this.d.bus.emit(event, data),
+      changed: () => this.emitSoon(),
+      save: () => this.save(),
+      mapOptions: () => this.mapOptions(rec),
+      appendPrompt: () => PAL_PROMPT(this.paloName()),
+      onWaiting: (pal, body, ids) => this.pushWaiting(pal, body, ids),
+      onTurnEnd: (pal) => this.checkBudget(pal),
+      onStopped: (pal) => this.onStopped(pal),
+      pidAlive: (pid) => this.alive(pid),
+      kill: this.d.kill ?? ((pid, sig) => process.kill(pid, sig)),
+      timing: this.timing,
+      now: () => this.now(),
+      log: (s) => this.log(s),
+    });
+  }
+
+  private paloName(): string {
+    return this.d.paloName?.() ?? PALO_NAME;
+  }
+
+  private assistantName(): string {
+    return this.d.settings().assistantName || "Palo";
+  }
+
+  private mapOptions(rec: PalRecord) {
+    return { assistantName: this.assistantName(), paloName: this.paloName(), ...(rec.duty ? { duty: rec.duty } : {}) };
+  }
+
+  // ---------------- lifecycle ----------------
+
+  /** At the host's start: every Pal comes back (a few seconds apart), and the checks begin. */
+  start(): void {
+    if (this.started) return;
+    this.started = true;
+    this.offBus = this.d.bus.on((event) => {
+      if (event === "sessions.updated") this.emitSoon();
+    });
+    let i = 0;
+    for (const pal of this.pals.values()) {
+      if (pal.rec.stoppedFor && pal.rec.stoppedFor !== "elsewhere") continue;
+      if (pal.rec.stoppedFor === "elsewhere") pal.clearStop();
+      pal.queueStart();
+      const t = setTimeout(() => void this.bringBack(pal, "start"), i++ * this.timing.startStaggerMs);
+      this.startTimers.push(t);
+    }
+    this.guardTimer = setInterval(() => this.guard(), this.timing.guardMs);
+    (this.guardTimer as any).unref?.();
+    this.dayTimer = setInterval(() => this.newDay(), 60_000);
+    (this.dayTimer as any).unref?.();
+    this.emitSoon();
+  }
+
+  /** The host stops: every Pal's process ends (they come back at the next start). */
+  stop(): void {
+    this.started = false;
+    this.offBus?.();
+    for (const t of this.startTimers.splice(0)) clearTimeout(t);
+    if (this.guardTimer) clearInterval(this.guardTimer);
+    if (this.dayTimer) clearInterval(this.dayTimer);
+    if (this.emitTimer) clearTimeout(this.emitTimer);
+    for (const w of this.waiting.values()) if (w.timer) clearTimeout(w.timer);
+    this.waiting.clear();
+    for (const pal of this.pals.values()) void pal.shutdown();
+  }
+
+  /** Waits until every Pal's process is gone (tests, the CLI). */
+  async stopAndWait(): Promise<void> {
+    this.stop();
+    await Promise.all([...this.pals.values()].map((p) => p.shutdown()));
+  }
+
+  private async bringBack(pal: PalSession, why: string): Promise<void> {
+    if (!this.pals.has(pal.id)) return;
+    try {
+      await pal.start();
+      this.d.audit.log("pal.resumed", { pal: pal.id, name: pal.rec.name, why });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.log(`couldn't bring back ${pal.rec.name}: ${msg}`);
+      if (e instanceof HeldElsewhere) pal.stopFor("elsewhere", msg);
+      else pal.stopFor("failed", `没能接着跑：${msg}`);
+    }
+  }
+
+  /** Nothing in flight in any Pal (safe to restart the host). */
+  quiet(): boolean {
+    return [...this.pals.values()].every((p) => {
+      const s = p.status();
+      return s === "idle" || s === "stopped";
+    });
+  }
+
+  // ---------------- the list ----------------
+
+  list(): Pal[] {
+    return [...this.pals.values()].map((p) => p.toWire()).sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  isPal(sessionId: string): boolean {
+    return [...this.pals.values()].some((p) => p.rec.sessionId === sessionId);
+  }
+
+  /** pals.adopt is waiting for this session to quit in its terminal. */
+  adopting(sessionId: string): boolean {
+    return this.waiting.has(sessionId);
+  }
+
+  get helper(): boolean {
+    return this.d.usesHelper?.() ?? this.launcher.usesHelper;
+  }
+
+  payload(others = this.d.sessions.list()) {
+    return { pals: this.list(), others, hooks: this.d.sessions.hooksEnabled(), helper: this.helper };
+  }
+
+  /** pals.list: read the computer's sessions again first. */
+  async listFresh() {
+    return this.payload(await this.d.sessions.listFresh());
+  }
+
+  private emitSoon(): void {
+    if (this.emitTimer) return;
+    this.emitTimer = setTimeout(() => {
+      this.emitTimer = null;
+      this.emitNow();
+    }, 30);
+    (this.emitTimer as any).unref?.();
+  }
+
+  emitNow(): void {
+    const p = this.payload();
+    const key = JSON.stringify(p);
+    if (key === this.lastEmitted) return;
+    this.lastEmitted = key;
+    this.d.bus.emit("pals.updated", p);
+  }
+
+  /** A Pal by id, or by its name or session id (the assistant's tools). */
+  get(key: string): PalSession | undefined {
+    const k = key.trim();
+    if (!k) return undefined;
+    const all = [...this.pals.values()];
+    return this.pals.get(k) ?? all.find((p) => p.rec.sessionId === k) ?? all.find((p) => p.rec.name === k) ?? all.find((p) => p.rec.name.toLowerCase() === k.toLowerCase());
+  }
+
+  private mustGet(id: string): PalSession {
+    const p = this.pals.get(id) ?? this.get(id);
+    if (!p) throw new Error("没有这个 Pal");
+    return p;
+  }
+
+  // ---------------- never two writers ----------------
+
+  /** The live processes holding a session's transcript, other than `own`. */
+  async holders(sessionId: string, own?: number): Promise<Holder[]> {
+    const out = new Map<number, Holder>();
+    for (const e of this.registry()) {
+      if (e.sessionId !== sessionId || e.pid === own) continue;
+      out.set(e.pid, { pid: e.pid, bg: e.kind === "bg" || e.kind === "background", ...(e.jobId ? { shortId: e.jobId } : {}) });
+    }
+    try {
+      for (const a of await this.d.cli.agents()) {
+        if (a.sessionId !== sessionId || !a.pid || a.pid === own || out.has(a.pid) || !this.alive(a.pid)) continue;
+        out.set(a.pid, { pid: a.pid, bg: a.kind === "background" || a.kind === "bg", ...(a.id ? { shortId: a.id } : {}) });
+      }
+    } catch (e) {
+      this.log(`claude agents failed: ${e instanceof Error ? e.message : e}`);
+    }
+    return [...out.values()];
+  }
+
+  // A running Pal whose transcript another process opened (the owner resumed
+  // it in a terminal): the Pal steps aside at once. Once that process is gone,
+  // the Pal comes back (it's always on).
+  private guard(): void {
+    let entries: RegistryEntry[];
+    try {
+      entries = this.registry();
+    } catch {
+      return;
+    }
+    const now = this.now();
+    for (const pal of this.pals.values()) {
+      const held = entries.filter((e) => e.sessionId === pal.rec.sessionId);
+      if (pal.rec.stoppedFor === "elsewhere") {
+        if (held.length || now - (this.retried.get(pal.id) ?? 0) < 30_000) continue;
+        this.retried.set(pal.id, now);
+        pal.clearStop();
+        void this.bringBack(pal, "free again");
+        continue;
+      }
+      const own = pal.pid;
+      if (!pal.running || !own) continue;
+      const other = held.find((e) => e.pid !== own);
+      if (!other) continue;
+      this.d.audit.log("pal.elsewhere", { pal: pal.id, name: pal.rec.name, pid: other.pid });
+      pal.stopFor("elsewhere", "在别处打开了（终端或后台），这边先停下，免得两边一起写；那边退出后会自己接上");
+    }
+  }
+
+  private onStopped(pal: PalSession): void {
+    this.emitSoon();
+    if (pal.rec.stoppedFor === "budget") return; // said already
+    this.d.audit.log("pal.stopped", { pal: pal.id, name: pal.rec.name, why: pal.rec.stoppedFor, note: pal.rec.note });
+  }
+
+  // ---------------- adopting ----------------
+
+  private room(): void {
+    if (this.pals.size < MAX_PALS) return;
+    const oldest = [...this.pals.values()].sort((a, b) => a.rec.lastUsedAt - b.rec.lastUsedAt)[0]!;
+    throw new Error(`已经有 ${MAX_PALS} 个 Pal 了，先移出一个（最久没用的是「${oldest.rec.name}」）`);
+  }
+
+  private uniqueName(want: string, liveNames: string[] = []): string {
+    const base = want.replace(/[\r\n\t]+/g, " ").trim().slice(0, 40) || "Pal";
+    const taken = new Set([...[...this.pals.values()].map((p) => p.rec.name.toLowerCase()), this.paloName().toLowerCase(), ...liveNames.map((n) => n.toLowerCase())]);
+    if (!taken.has(base.toLowerCase())) return base;
+    for (let i = 2; ; i++) if (!taken.has(`${base} ${i}`.toLowerCase())) return `${base} ${i}`;
+  }
+
+  private add(rec: PalRecord): PalSession {
+    this.data.pals = [...this.data.pals.filter((r) => r.id !== rec.id), rec];
+    this.save();
+    const pal = this.session(rec);
+    this.pals.set(rec.id, pal);
+    return pal;
+  }
+
+  private drop(pal: PalSession): void {
+    this.pals.delete(pal.id);
+    this.data.pals = this.data.pals.filter((r) => r.id !== pal.id);
+    this.sent.delete(pal.id);
+    this.lastPush.delete(pal.id);
+    this.save();
+  }
+
+  /**
+   * pals.adopt: one of the computer's sessions becomes a Pal. A background
+   * session is stopped first; a terminal session is waited for (the owner
+   * quits it there) and taken over once its process is gone.
+   */
+  async adopt(sessionId: string, by: string): Promise<{ pal: Pal } | { waiting: "exit-in-terminal" }> {
+    const sid = String(sessionId ?? "").trim();
+    if (!sid) throw new Error("没有这个会话");
+    const have = this.get(sid);
+    if (have && have.rec.sessionId === sid) return { pal: have.toWire() };
+    if (this.waiting.has(sid)) return { waiting: "exit-in-terminal" };
+    this.room();
+    await this.d.sessions.watch.refresh({ agents: true });
+    const rec = this.d.sessions.watch.get(sid);
+    if (!rec?.cwd) throw new Error("没有这个会话");
+    const session = this.d.sessions.watch.toWire(rec);
+    let holders = await this.holders(sid);
+    const bg = holders.filter((h) => h.bg);
+    if (bg.length) {
+      const short = bg.find((h) => h.shortId)?.shortId ?? rec.shortId;
+      if (!short) throw new Error("它在后台跑着，但找不到它的编号，没法停下它");
+      await this.d.cli.stop(short);
+      this.d.audit.log("pal.stopped_bg", { session: sid, short, by });
+      // Stopped means its process is gone, not just its entry in the lists.
+      const end = this.now() + this.timing.stopWaitMs;
+      const stillBg = async () => (holders = await this.holders(sid)).some((h) => h.bg) || bg.some((h) => this.alive(h.pid));
+      while ((await stillBg()) && this.now() < end) await new Promise((r) => setTimeout(r, 200));
+      if (await stillBg()) throw new Error("它停不下来，没有接管");
+    }
+    if (holders.length) {
+      this.waitForExit(sid, holders, session, by);
+      return { waiting: "exit-in-terminal" };
+    }
+    return { pal: (await this.finishAdopt(session, by)).toWire() };
+  }
+
+  private async finishAdopt(s: CCSession, by: string): Promise<PalSession> {
+    this.room();
+    const live = this.d.sessions.list().filter((x) => x.id !== s.id && x.status !== "stopped").map((x) => x.name);
+    const now = this.now();
+    const model = this.d.palModel?.();
+    const rec: PalRecord = {
+      id: newId("pal_"),
+      sessionId: s.id,
+      name: this.uniqueName(s.name || basename(s.cwd), live),
+      cwd: s.cwd,
+      createdBy: "owner",
+      createdAt: now,
+      lastUsedAt: now,
+      permissionMode: this.d.palMode?.() ?? ownerMode(this.d.claudeDir),
+      ...(model ? { model } : {}),
+    };
+    const pal = this.add(rec);
+    try {
+      await pal.start();
+    } catch (e) {
+      await pal.shutdown();
+      this.drop(pal);
+      this.emitSoon();
+      throw e;
+    }
+    this.d.audit.log("pal.adopted", { pal: rec.id, session: s.id, name: rec.name, cwd: rec.cwd, by });
+    this.emitNow();
+    return pal;
+  }
+
+  // A terminal session: once its process is gone (the owner typed /exit),
+  // it's taken over by itself, within a second or so.
+  private waitForExit(sessionId: string, holders: Holder[], session: CCSession, by: string): void {
+    const w: Waiting = { sessionId, pids: holders.map((h) => h.pid), since: this.now(), timer: null, session, by };
+    this.waiting.set(sessionId, w);
+    this.d.audit.log("pal.adopt_waiting", { session: sessionId, name: session.name, pids: w.pids, by });
+    const tick = async () => {
+      w.timer = null;
+      if (this.waiting.get(sessionId) !== w) return;
+      if (w.pids.some((p) => this.alive(p))) {
+        if (this.now() - w.since > this.timing.adoptWaitMs) {
+          this.waiting.delete(sessionId);
+          this.emitSoon();
+          this.notice(`等了 ${Math.round(this.timing.adoptWaitMs / 60_000)} 分钟，「${session.name}」还没在终端里退出，先不接管了。要接管，退出它以后再点一次「接管」。`);
+          return;
+        }
+        w.timer = setTimeout(() => void tick(), this.timing.exitPollMs);
+        return;
+      }
+      const again = await this.holders(sessionId);
+      if (again.length) {
+        w.pids = again.map((h) => h.pid);
+        w.timer = setTimeout(() => void tick(), this.timing.exitPollMs);
+        return;
+      }
+      this.waiting.delete(sessionId);
+      try {
+        await this.finishAdopt(session, by);
+      } catch (e) {
+        const why = e instanceof Error ? e.message : String(e);
+        this.d.audit.log("pal.adopt_failed", { session: sessionId, why });
+        this.notice(`接管「${session.name}」没成功：${why}`);
+      }
+      this.emitSoon();
+    };
+    w.timer = setTimeout(() => void tick(), this.timing.exitPollMs);
+    this.emitSoon();
+  }
+
+  private notice(text: string): void {
+    this.d.chat.add({ role: "system", kind: "notice", text, channel: "system" });
+  }
+
+  // ---------------- 交还终端 / 移出 ----------------
+
+  /** pals.release: the host's process ends; the owner picks it up in a terminal. */
+  async release(id: string, by: string): Promise<{ resumeCommand: string }> {
+    const pal = this.mustGet(id);
+    await pal.shutdown();
+    this.drop(pal);
+    this.d.audit.log("pal.released", { pal: pal.id, session: pal.rec.sessionId, name: pal.rec.name, by });
+    this.emitNow();
+    return { resumeCommand: `cd ${shq(pal.rec.cwd)} && claude --resume ${pal.rec.sessionId}` };
+  }
+
+  /** pals.remove: out of the Pals; its transcript stays where Claude Code keeps it. */
+  async remove(id: string, by: string): Promise<void> {
+    const pal = this.mustGet(id);
+    await pal.shutdown();
+    this.drop(pal);
+    this.d.audit.log("pal.removed", { pal: pal.id, session: pal.rec.sessionId, name: pal.rec.name, by });
+    this.emitNow();
+  }
+
+  // ---------------- talking to a Pal ----------------
+
+  /** pals.send: the owner's words, as typed. A retried send (same clientMsgId) goes in once. */
+  async send(id: string, text: string, clientMsgId?: string): Promise<{ id: string; seq: number }> {
+    const pal = this.mustGet(id);
+    const cid = clientMsgId ? String(clientMsgId).slice(0, 100) : undefined;
+    const seen = cid ? this.sent.get(pal.id)?.get(cid) : undefined;
+    if (seen) return seen;
+    const wasStopped = pal.rec.stoppedFor;
+    const msg = await pal.send(String(text ?? ""), cid ? { clientMsgId: cid } : {});
+    if (wasStopped) this.d.audit.log("pal.resumed", { pal: pal.id, name: pal.rec.name, why: "owner" });
+    const out = { id: msg.id, seq: msg.seq };
+    if (cid) {
+      let m = this.sent.get(pal.id);
+      if (!m) this.sent.set(pal.id, (m = new Map()));
+      m.set(cid, out);
+      if (m.size > 200) m.delete(m.keys().next().value!);
+    }
+    this.d.audit.log("pal.send", { pal: pal.id, name: pal.rec.name, chars: msg.text.length });
+    return out;
+  }
+
+  /** pals.stop: ends the current turn. */
+  async stopTurn(id: string, by: string): Promise<void> {
+    const pal = this.mustGet(id);
+    await pal.interrupt(by);
+    this.d.audit.log("pal.stop", { pal: pal.id, name: pal.rec.name, by });
+  }
+
+  /**
+   * pals.history: its conversation from its transcript, a page at a time; the
+   * newest page also has the reply being written right now (`streaming`,
+   * whose later chat.delta events append to it).
+   */
+  async history(id: string, before?: string | number, limit = 50): Promise<{ messages: ChatMessage[]; streaming?: { id: string; text: string } }> {
+    const pal = this.mustGet(id);
+    const read = this.d.readMessages ?? ((sid: string, dir: string) => getSessionMessages(sid, { dir }) as Promise<RawSessionMessage[]>);
+    let raw: RawSessionMessage[] = [];
+    try {
+      raw = await read(pal.rec.sessionId, pal.rec.cwd);
+    } catch {
+      raw = []; // a new Pal's transcript isn't there before its first message
+    }
+    const all = toPalMessages(raw, { pal: pal.id, ...this.mapOptions(pal.rec) });
+    const messages = pagePalMessages(all, before, Math.max(1, Math.min(Number(limit) || 50, 200)));
+    const streaming = before === undefined ? pal.streaming() : null;
+    return { messages, ...(streaming ? { streaming } : {}) };
+  }
+
+  // 「X 在等你」: at most once per Pal every 10 minutes.
+  private pushWaiting(pal: PalSession, body: string, ids: { approvalId?: string; questionId?: string }): void {
+    const now = this.now();
+    if (now - (this.lastPush.get(pal.id) ?? 0) < PUSH_EVERY_MS) return;
+    this.lastPush.set(pal.id, now);
+    const msg: ChatMessage = {
+      seq: 0,
+      id: newId("m_"),
+      role: "assistant",
+      kind: ids.questionId ? "question" : "approval",
+      text: body,
+      channel: "system",
+      ts: now,
+      pal: pal.id,
+      ...(ids.approvalId ? { approvalId: ids.approvalId } : {}),
+      ...(ids.questionId ? { questionId: ids.questionId } : {}),
+    };
+    void this.d.router.proactive(msg, { title: `${pal.rec.name} 在等你` }).catch(() => {});
+  }
+
+  // ---------------- spending (Pals the assistant opened) ----------------
+
+  private today(): string {
+    return zonedParts(this.now(), this.d.settings().timezone).dateKey;
+  }
+
+  spentToday(pal: PalSession): number {
+    const tz = this.d.settings().timezone;
+    return this.meter.spentOn(pal.rec.cwd, pal.rec.sessionId, this.today(), tz);
+  }
+
+  private checkBudget(pal: PalSession): void {
+    const limit = pal.rec.dailyUsd;
+    if (!limit || pal.rec.stoppedFor) return;
+    const spent = this.spentToday(pal);
+    if (spent <= limit) return;
+    pal.rec.budgetDay = this.today();
+    pal.stopFor("budget", `今天花了约 $${spent.toFixed(2)}，过了每天 $${limit} 的上限，明天接着跑；跟它说话也会让它接着跑`);
+    this.d.audit.log("pal.budget", { pal: pal.id, name: pal.rec.name, spentUsd: Number(spent.toFixed(2)), dailyUsd: limit });
+    const msg = this.d.chat.add({
+      role: "assistant",
+      kind: "notice",
+      text: `「${pal.rec.name}」今天花了约 $${spent.toFixed(2)}，超过了每天 $${limit} 的上限，我先让它停下。明天它会接着跑；要它现在就接着做，在它的对话里跟它说一句就行。`,
+      channel: "system",
+      proactive: true,
+    });
+    void this.d.router.proactive(msg, { title: "Pal 停了" }).catch(() => {});
+  }
+
+  // A new day: Pals stopped for spending come back.
+  private newDay(): void {
+    const day = this.today();
+    for (const pal of this.pals.values()) {
+      if (pal.rec.stoppedFor !== "budget" || pal.rec.budgetDay === day) continue;
+      pal.clearStop();
+      void this.bringBack(pal, "new day");
+    }
+  }
+
+  // ---------------- the assistant opens a Pal (docs/pals-prd.md §6) ----------------
+
+  private checkProposal(p: { name: string; cwd: string; duty: string; dailyUsd: number }): void {
+    if (!p.name.trim()) throw new Error("Pal 要有个名字");
+    if ([...p.name].length > 30) throw new Error("Pal 的名字太长了");
+    if (!p.duty.trim()) throw new Error("要写清楚它负责什么");
+    if (!(p.dailyUsd > 0) || p.dailyUsd > 1000) throw new Error("每天的花费上限要大于 0");
+    let dir = false;
+    try {
+      dir = statSync(p.cwd).isDirectory();
+    } catch {
+      dir = false;
+    }
+    if (!dir) throw new Error(`找不到目录 ${p.cwd}`);
+    if (within(this.d.paths.root, p.cwd)) throw new Error("Pal 不能开在 PaloAlly 自己的目录里");
+    const same = this.get(p.name);
+    if (same && same.rec.name.toLowerCase() === p.name.trim().toLowerCase()) throw new Error(`已经有一个叫「${p.name}」的 Pal 了`);
+    if (p.name.trim().toLowerCase() === this.paloName().toLowerCase()) throw new Error(`「${p.name}」是助理自己的名字`);
+  }
+
+  /** pal_propose: a card in the conversation; the Pal starts on the owner's 开吧. */
+  propose(a: { name: string; dir: string; duty: string; dailyUsd: number }): string {
+    const dir = String(a.dir ?? "").trim();
+    if (!dir) return "没提：要给它一个项目目录";
+    let cwd = resolve(expandHome(dir));
+    try {
+      cwd = realpathSync(cwd); // as Claude Code records it (/tmp → /private/tmp)
+    } catch {
+      /* checked below */
+    }
+    const p = { name: String(a.name ?? "").trim(), cwd, duty: String(a.duty ?? "").trim(), dailyUsd: Number(a.dailyUsd) };
+    try {
+      this.checkProposal(p);
+    } catch (e) {
+      return `没提：${e instanceof Error ? e.message : e}`;
+    }
+    if (this.pals.size >= MAX_PALS) {
+      const oldest = [...this.pals.values()].sort((x, y) => x.rec.lastUsedAt - y.rec.lastUsedAt)[0]!;
+      return `已经有 ${MAX_PALS} 个 Pal 了（最多 ${MAX_PALS} 个）。先问主人要不要把最久没用的「${oldest.rec.name}」移出 Pals（主人在它的页面右上角点「移出 Pals」）。`;
+    }
+    const proposal: HelperProposal = { id: newId("hp_"), ...p, status: "pending" };
+    const home = homedir();
+    const where = p.cwd.startsWith(home + sep) ? `~/${p.cwd.slice(home.length + 1)}` : p.cwd;
+    const msg = this.d.chat.add({ role: "assistant", kind: "helper", text: `开一个 Pal「${p.name}」专门管 ${where}？`, channel: "system", proposal });
+    this.data.proposals = [...this.data.proposals, { ...proposal, createdAt: this.now(), messageId: msg.id }].slice(-50);
+    this.save();
+    this.d.audit.log("pal.proposed", { id: proposal.id, name: p.name, cwd: p.cwd, dailyUsd: p.dailyUsd });
+    return `已经给主人看了开 Pal 的卡片（${proposal.id}）。主人点「开吧」才会开，现在还没开，别说已经开了。`;
+  }
+
+  private settleProposal(id: string, patch: Partial<HelperProposal>): void {
+    const p = this.data.proposals.find((x) => x.id === id);
+    if (!p) return;
+    Object.assign(p, patch);
+    for (const k of Object.keys(patch) as (keyof HelperProposal)[]) if (patch[k] === undefined) delete (p as any)[k];
+    this.save();
+    if (!p.messageId) return;
+    const { createdAt: _c, messageId: _m, ...proposal } = p;
+    this.d.chat.update(p.messageId, { proposal });
+  }
+
+  /** helper.decide: 开吧 opens the Pal (and returns it), 不用 drops the proposal. */
+  async decide(proposalId: string, action: string, by: string): Promise<{ pal?: Pal }> {
+    const p = this.data.proposals.find((x) => x.id === proposalId);
+    if (!p) throw new Error("这个提议已经没有了");
+    if (p.status !== "pending") {
+      const pal = p.palId ? this.pals.get(p.palId) : undefined;
+      return pal ? { pal: pal.toWire() } : {};
+    }
+    if (action === "discard") {
+      this.settleProposal(p.id, { status: "discarded" });
+      this.d.audit.log("pal.proposal_discarded", { id: p.id, by });
+      return {};
+    }
+    if (action !== "create") throw new Error("看不懂这个操作");
+    let pal: PalSession;
+    try {
+      this.room();
+      this.checkProposal(p);
+      pal = await this.create({ name: p.name, cwd: p.cwd, duty: p.duty, dailyUsd: p.dailyUsd });
+    } catch (e) {
+      // Still on offer; the card says why it didn't start.
+      const why = e instanceof Error ? e.message : String(e);
+      this.settleProposal(p.id, { note: why });
+      this.d.audit.log("pal.create_failed", { id: p.id, why, by });
+      throw e;
+    }
+    this.settleProposal(p.id, { status: "created", sessionId: pal.rec.sessionId, palId: pal.id, note: undefined });
+    this.d.audit.log("pal.created", { id: p.id, pal: pal.id, session: pal.rec.sessionId, name: pal.rec.name, by });
+    return { pal: pal.toWire() };
+  }
+
+  // A new session in its folder, the assistant's handover as its first message.
+  private async create(o: { name: string; cwd: string; duty: string; dailyUsd: number }): Promise<PalSession> {
+    const now = this.now();
+    const model = this.d.palModel?.();
+    const rec: PalRecord = {
+      id: newId("pal_"),
+      sessionId: crypto.randomUUID(),
+      name: o.name.trim(),
+      cwd: o.cwd,
+      createdBy: "palo",
+      createdAt: now,
+      lastUsedAt: now,
+      permissionMode: this.d.palMode?.() ?? ownerMode(this.d.claudeDir),
+      duty: o.duty,
+      dailyUsd: o.dailyUsd,
+      ...(model ? { model } : {}),
+    };
+    const pal = this.add(rec);
+    try {
+      await pal.start();
+      await pal.send(o.duty, { from: this.assistantName() });
+    } catch (e) {
+      await pal.shutdown();
+      this.drop(pal);
+      this.emitSoon();
+      throw e;
+    }
+    this.emitNow();
+    return pal;
+  }
+
+  // ---------------- the assistant's tools ----------------
+
+  async toolList(): Promise<string> {
+    const others = await this.d.sessions.listFresh().catch(() => this.d.sessions.list());
+    return JSON.stringify({
+      pals: this.list().map((p) => ({
+        name: p.name, // SendMessage's `to`
+        dir: p.cwd,
+        status: p.status,
+        ...(p.lastLine ? { lastLine: p.lastLine } : {}),
+        ...(p.note ? { note: p.note } : {}),
+        openedBy: p.createdBy === "palo" ? "你" : "主人",
+      })),
+      otherSessions: others.map((s) => ({ name: s.name, kind: s.kind === "terminal" ? "终端" : "后台", status: s.status, dir: s.cwd, ...(s.lastLine ? { lastLine: s.lastLine } : {}) })),
+    });
+  }
+}

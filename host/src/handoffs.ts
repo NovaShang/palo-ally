@@ -216,6 +216,8 @@ export interface HandoffDeps {
   log: (s: string) => void;
   now?: () => number;
   registry?: SessionRegistry;
+  /** A Pal (the host runs it): its cards reach the owner's phone by themselves. */
+  isPal?: (sessionId: string) => boolean;
 }
 
 const MIN = 60_000;
@@ -420,12 +422,15 @@ export class HandoffTracker {
     const before = { state: h.state, line: h.lastLine };
 
     if (peer.status === "waiting") {
-      // Blocked in its own terminal (a question or a permission prompt).
+      // Blocked on the owner: a Pal's card is on the phone already; any
+      // other session asks in its own terminal.
+      const pal = this.d.isPal?.(peer.sessionId) ?? false;
       const what = tail.pendingQuestion?.text || peer.waitingFor || "需要你确认";
       h.state = "waiting";
-      h.lastLine = `在电脑上等你：${what}`;
+      h.lastLine = `${pal ? "在 App 里等你" : "在电脑上等你"}：${what}`;
       const key = tail.pendingQuestion?.id ?? String(peer.statusUpdatedAt ?? "");
       this.d.tasks.updatePeer(h.taskId, "needs_input", h.lastLine);
+      if (pal) h.notifiedKey = key;
       if (h.notifiedKey !== key) {
         h.notifiedKey = key;
         this.d.audit.log("handoff.waiting", { taskId: h.taskId, peer: peer.name });

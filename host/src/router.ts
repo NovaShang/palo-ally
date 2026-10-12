@@ -148,7 +148,7 @@ export class Router {
       tried = true;
       try {
         // A half-open connection (laptop slept) must not hang the caller.
-        const n = await withTimeout(p.push(title, body, { seq: msg.seq, id: msg.id, taskId: msg.taskId, approvalId: msg.approvalId, questionId: msg.questionId }), PUSH_TIMEOUT_MS);
+        const n = await withTimeout(p.push(title, body, { seq: msg.seq, id: msg.id, taskId: msg.taskId, approvalId: msg.approvalId, questionId: msg.questionId, ...(msg.pal ? { pal: msg.pal } : {}) }), PUSH_TIMEOUT_MS);
         if (n === 0) continue; // no device registered with this pusher
         pushed = true;
         if (typeof n === "number") devices = (devices ?? 0) + n;

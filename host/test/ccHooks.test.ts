@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFil
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { HOOK_EVENTS, HookInstaller, HookServer, TRUST_LINE, isPaloAllyHook } from "../src/ccHooks.ts";
+import { HOOK_EVENTS, HookInstaller, HookServer, isPaloAllyHook } from "../src/ccHooks.ts";
 import { tmpPaths } from "./helpers.ts";
 
 function setup() {
@@ -168,14 +168,15 @@ describe("the hook script", () => {
     expect(r.ms).toBeLessThan(500);
   });
 
-  test("PaloAlly's own sessions skip it; SessionStart says how to take PaloAlly's messages even with no host", async () => {
+  test("PaloAlly's own sessions (the assistant, its Pals) skip it; with no host SessionStart says nothing either", async () => {
     const { inst, paths } = setup();
     inst.writeScripts();
     let r = await runHook(paths, perm, { PALOALLY_SESSION: "1" });
     expect(r.out).toBe("");
     expect(r.ms).toBeLessThan(500);
     r = await runHook(paths, { session_id: "s-1", hook_event_name: "SessionStart", source: "startup" });
-    expect(JSON.parse(r.out)).toEqual({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: TRUST_LINE } });
+    expect(r.out).toBe("");
+    expect(r.code).toBe(0);
     r = await runHook(paths, { session_id: "s-1", hook_event_name: "SessionStart" }, { PALOALLY_SESSION: "1" });
     expect(r.out).toBe("");
   });

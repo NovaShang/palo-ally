@@ -5,14 +5,13 @@ import { join } from "node:path";
 
 // The `claude` command line, for what only it does: listing sessions
 // (`claude agents --json`, which doesn't start Claude Code's background
-// service) and starting, stopping, restarting, removing and reviving
-// background sessions (docs/sessions-prd.md §6.5).
+// service) and stopping a background session before it becomes a Pal
+// (docs/pals-prd.md §5).
 //
-// Commands run in the owner's login-shell environment, not the host's: the
-// first background session starts Claude Code's background service, and
-// every later one inherits that environment. Variables a running Claude Code
-// session sets for its children (CLAUDE_CODE_*, CLAUDECODE, PALOALLY_SESSION…)
-// are taken out, so nothing of the host's own sessions leaks in.
+// Commands run in the owner's login-shell environment, not the host's (Pals
+// start from it too). Variables a running Claude Code session sets for its
+// children (CLAUDE_CODE_*, CLAUDECODE, PALOALLY_SESSION…) are taken out, so
+// nothing of the host's own sessions leaks in.
 
 export interface AgentEntry {
   pid?: number;
@@ -26,24 +25,11 @@ export interface AgentEntry {
   state?: string; // written by the model; not trusted (PRD §6.1)
 }
 
-export interface BgStart {
-  cwd: string;
-  name: string;
-  permissionMode: string;
-  prompt: string;
-  model?: string; // default: the owner's own default model
-}
-
 export interface ClaudeCli {
   /** `claude agents --json --all`: live sessions and background ones, stopped too. */
   agents(): Promise<AgentEntry[]>;
-  /** `claude --bg -n <name> --permission-mode <mode> "<prompt>"` in `cwd`; resolves the short id. */
-  startBg(o: BgStart): Promise<string>;
-  /** `claude --bg --resume <sessionId> ["<prompt>"]` in `cwd`; resolves the short id. */
-  resumeBg(o: { cwd: string; sessionId: string; prompt?: string }): Promise<string>;
+  /** `claude stop <short>`: a background session stops (its transcript and its job stay). */
   stop(short: string): Promise<void>;
-  respawn(short: string): Promise<void>;
-  rm(short: string): Promise<void>;
 }
 
 // Set by Claude Code for the processes a session runs; never passed on.
@@ -196,30 +182,7 @@ export class RealClaudeCli implements ClaudeCli {
     return parseAgents(r.stdout);
   }
 
-  async startBg(o: BgStart): Promise<string> {
-    const model = o.model ? ["--model", o.model] : [];
-    const r = await this.exec(["--bg", "-n", o.name, "--permission-mode", o.permissionMode, ...model, o.prompt], o.cwd, 60_000);
-    const short = parseBackgrounded(r.stdout + "\n" + r.stderr);
-    if (!short) throw new Error("后台会话没开起来");
-    return short;
-  }
-
-  async resumeBg(o: { cwd: string; sessionId: string; prompt?: string }): Promise<string> {
-    const r = await this.exec(["--bg", "--resume", o.sessionId, ...(o.prompt ? [o.prompt] : [])], o.cwd, 60_000);
-    const short = parseBackgrounded(r.stdout + "\n" + r.stderr);
-    if (!short) throw new Error("后台会话没复活");
-    return short;
-  }
-
   async stop(short: string): Promise<void> {
     await this.exec(["stop", short]);
-  }
-
-  async respawn(short: string): Promise<void> {
-    await this.exec(["respawn", short], undefined, 60_000);
-  }
-
-  async rm(short: string): Promise<void> {
-    await this.exec(["rm", short]);
   }
 }

@@ -3,9 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AwayDetector } from "../src/away.ts";
-import { TRUST_LINE } from "../src/ccHooks.ts";
 import { pageMessages, toCCMessages } from "../src/ccSessions.ts";
-import type { Courier } from "../src/courier.ts";
 import { handleRpc } from "../src/rpc.ts";
 import type { SessionsDeps } from "../src/sessions.ts";
 import { DEAD_PID, FakeClaudeDir, FakeCli, assistantEntry } from "./fakeClaude.ts";
@@ -14,29 +12,16 @@ import { makeHub, tick } from "./helpers.ts";
 const dirs: FakeClaudeDir[] = [];
 afterAll(() => dirs.forEach((d) => d.cleanup()));
 
-class FakeCourier {
-  sent: { to: string; label: string; message: string; mode: string }[] = [];
-  fail = "";
-  async send(o: { to: string; label: string; message: string; mode: string }) {
-    if (this.fail) throw new Error(this.fail);
-    this.sent.push(o);
-    return { msgId: "m1", costUsd: 0.01 };
-  }
-  close() {}
-}
-
 function setup(o: { away?: boolean; sessions?: Partial<SessionsDeps> } = {}) {
   const claude = new FakeClaudeDir();
   dirs.push(claude);
   const cli = new FakeCli(claude);
-  const courier = new FakeCourier();
   let away = o.away ?? true;
   const raw = new Map<string, any[]>();
   const ctx = makeHub({
     sessions: {
       claudeDir: claude.dir,
       cli,
-      courier: courier as unknown as Courier,
       away: new AwayDetector(() => null, Date.now, () => away),
       readMessages: async (sid) => raw.get(sid) ?? [],
       hookWaitMs: 5_000,
@@ -49,7 +34,6 @@ function setup(o: { away?: boolean; sessions?: Partial<SessionsDeps> } = {}) {
     ...ctx,
     claude,
     cli,
-    courier,
     raw,
     project,
     setAway: (v: boolean) => (away = v),
@@ -67,7 +51,7 @@ describe("the computer's sessions", () => {
     claude.register({ sessionId: "aaaa1111-1", name: "修登录", cwd: "/w/app", status: "busy" });
     claude.register({ sessionId: "bbbb2222-1", name: "数据清洗", cwd: "/w/data", kind: "bg", status: "waiting", waitingFor: "permission" });
     claude.register({ sessionId: "cccc3333-1", name: "home-1b", cwd: paths.home, entrypoint: "sdk-ts" }); // the assistant
-    claude.register({ sessionId: "dddd4444-1", name: "PaloAlly", cwd: paths.courier, entrypoint: "sdk-ts" }); // the courier
+    claude.register({ sessionId: "dddd4444-1", name: "PaloAlly", cwd: join(paths.root, "probe"), entrypoint: "sdk-ts" }); // a probe
     claude.register({ sessionId: "eeee5555-1", name: "旧的", cwd: "/w/old", pid: DEAD_PID }); // its process is gone
     // background sessions Claude Code knows but that aren't running
     cli.agentsList = [
@@ -110,12 +94,7 @@ describe("the computer's sessions", () => {
     expect(hub.sessions.list()[0]).toMatchObject({ name: "后台的", kind: "background", status: "idle", contextTokens: 46_941 });
   });
 
-  test("the SessionStart hook's line says how to take PaloAlly's words", () => {
-    expect(TRUST_LINE).toContain("名叫 PaloAlly 的会话");
-    expect(TRUST_LINE).toContain("「主人：」");
-  });
-
-  test("a conversation: the owner, the session, other sessions, and words through PaloAlly; pages by message id", () => {
+  test("a conversation: the owner, the session, other sessions, and the assistant's words; pages by message id", () => {
     const raw = [
       { type: "user", uuid: "1", timestamp: "2026-10-12T10:00:00Z", message: { role: "user", content: "列表要能按日期排序" }, origin: { kind: "human" } },
       { type: "assistant", uuid: "2", timestamp: "2026-10-12T10:00:05Z", message: { role: "assistant", content: [{ type: "thinking", thinking: "" }] } },
@@ -128,19 +107,19 @@ describe("the computer's sessions", () => {
         message: { role: "user", content: 'Another Claude session sent a message:\n<cross-session-message from="uds:/tmp/x.sock" from-name="笔记整理" from-mode="prompting">\n设计稿在 notes/设计.md\n</cross-session-message>\n\nThis came from another Claude session' },
         origin: { kind: "peer", name: "笔记整理" },
       },
-      { type: "user", uuid: "6", timestamp: "2026-10-12T10:02:00Z", message: { role: "user", content: "…" }, origin: { kind: "peer", name: "PaloAlly", body: "主人：先别管登录页，把列表页做完" } },
-      { type: "user", uuid: "7", timestamp: "2026-10-12T10:03:00Z", message: { role: "user", content: "…" }, origin: { kind: "peer", name: "PaloAlly", body: "主人的助理：主人说今晚不用部署" } },
+      { type: "user", uuid: "6", timestamp: "2026-10-12T10:02:00Z", message: { role: "user", content: "…" }, origin: { kind: "peer", name: "PaloAlly", body: "先别管登录页，把列表页做完" } },
+      { type: "user", uuid: "7", timestamp: "2026-10-12T10:03:00Z", message: { role: "user", content: "…" }, origin: { kind: "peer", name: "Palo", body: "主人说今晚不用部署" } },
       { type: "user", uuid: "8", timestamp: "2026-10-12T10:04:00Z", message: { role: "user", content: "<command-name>/compact</command-name>\n<command-args></command-args>" }, origin: { kind: "human" } },
       { type: "user", uuid: "9", timestamp: "2026-10-12T10:04:01Z", message: { role: "user", content: "<local-command-stdout>Compacted</local-command-stdout>" } },
       { type: "user", uuid: "10", timestamp: "2026-10-12T10:05:00Z", message: { role: "user", content: "后台任务完成" }, origin: { kind: "task-notification" } },
     ];
-    const msgs = toCCMessages(raw as any, "Palo");
+    const msgs = toCCMessages(raw as any, "帕帕", "Palo");
     expect(msgs.map((m) => [m.id, m.role, m.text, m.from])).toEqual([
       ["1", "owner", "列表要能按日期排序", undefined],
       ["3", "assistant", "加上了。", undefined],
       ["5", "peer", "设计稿在 notes/设计.md", "笔记整理"],
-      ["6", "palo", "先别管登录页，把列表页做完", "主人"],
-      ["7", "palo", "主人说今晚不用部署", "Palo"],
+      ["6", "peer", "先别管登录页，把列表页做完", "PaloAlly"],
+      ["7", "palo", "主人说今晚不用部署", "帕帕"],
       ["8", "owner", "/compact", undefined],
     ]);
     expect(msgs[0]!.ts).toBe(Date.parse("2026-10-12T10:00:00Z"));
@@ -264,172 +243,6 @@ describe("a session's prompts on the phone", () => {
     expect(hub.approvals.listPending()).toHaveLength(3);
     for (const x of hub.approvals.listPending()) hub.approvals.answer(x.id, true, "app");
     await Promise.all([a, b, c]);
-  });
-});
-
-describe("words into a session", () => {
-  test("sent verbatim through the courier, with 主人： in front, to the session's own socket", async () => {
-    const { hub, claude, courier, events } = setup();
-    claude.register({ sessionId: "s1", name: "网站帮手", cwd: "/w/site" });
-    await hub.sessions.watch.refresh();
-    const ctx = { clientId: "c", channel: "app" as const, local: false };
-    expect(await handleRpc(hub, { method: "sessions.send", params: { id: "s1", text: "  先别管登录页，把列表页做完 " } }, ctx)).toEqual({ ok: true });
-    expect(courier.sent).toEqual([{ to: "uds:/tmp/cc-socks/s1.sock", label: "网站帮手", message: "主人：先别管登录页，把列表页做完", mode: "prompting" }]);
-    expect(hub.audit.tail(5).find((e) => e.type === "session.send")).toMatchObject({ session: "s1", by: "owner" });
-    // then the list is sent again so the app reads the conversation
-    const before = sessionsEvents(events).length;
-    await tick(900);
-    expect(sessionsEvents(events).length).toBeGreaterThan(before);
-    // the assistant's words say they're the assistant's
-    expect(await hub.toolHandlers().session_send({ name: "网站帮手", text: "主人说今晚不用部署" })).toContain("已原样送到");
-    expect(courier.sent.at(-1)!.message).toBe("主人的助理：主人说今晚不用部署");
-    // a bypass-mode session gets a courier of its class
-    await hub.sessions.onHook("Stop", { session_id: "s1", permission_mode: "bypassPermissions" }, { signal: new AbortController().signal, env: {} });
-    await hub.sessions.send("s1", "hi", "owner");
-    expect(courier.sent.at(-1)!.mode).toBe("bypass");
-    // a session that isn't there, or isn't running
-    await expect(handleRpc(hub, { method: "sessions.send", params: { id: "nope", text: "hi" } }, ctx)).rejects.toThrow("没有这个会话");
-    claude.unregister("s1");
-    await hub.sessions.watch.refresh();
-    expect(hub.sessions.list()).toHaveLength(0);
-  });
-});
-
-describe("helpers", () => {
-  test("proposed in the conversation; 开吧 starts a background session in its folder; the list shows it first", async () => {
-    const { hub, cli, project, events, raw } = setup();
-    const r = await hub.toolHandlers().helper_propose({ name: "网站帮手", dir: project, duty: "你负责网站：先做列表页。", dailyUsd: 5 });
-    expect(r).toContain("主人点「开吧」才会开");
-    const card = hub.chat.recent(1)[0]!;
-    expect(card).toMatchObject({ kind: "helper", proposal: { name: "网站帮手", cwd: project, duty: "你负责网站：先做列表页。", dailyUsd: 5, status: "pending" } });
-    expect(cli.started).toHaveLength(0);
-    const ctx = { clientId: "c", channel: "app" as const, local: false };
-    const out = (await handleRpc(hub, { method: "helper.decide", params: { proposalId: card.proposal!.id, action: "create" } }, ctx)) as any;
-    expect(cli.started).toEqual([{ cwd: project, name: "网站帮手", permissionMode: "default", prompt: "你负责网站：先做列表页。" }]);
-    expect(out.session).toMatchObject({ name: "网站帮手", cwd: project, kind: "helper", status: "busy" });
-    const saved = JSON.parse(readFileSync(hub.paths.helpers, "utf8"));
-    expect(saved.helpers[0]).toMatchObject({ name: "网站帮手", cwd: project, dailyUsd: 5, sessionId: out.session.id, short: out.session.id.slice(0, 8), state: "active" });
-    expect(Object.keys(saved.helpers[0])).toEqual(expect.arrayContaining(["createdAt"]));
-    // the card shows it was started (the same message, sent again)
-    const again = events.filter((e) => e.event === "chat.message" && e.data.id === card.id).at(-1)!.data;
-    expect(again).toMatchObject({ seq: card.seq, proposal: { status: "created", sessionId: out.session.id } });
-    expect(hub.chat.get(card.id)!.proposal!.status).toBe("created");
-    // deciding twice gives the same helper
-    expect(((await handleRpc(hub, { method: "helper.decide", params: { proposalId: card.proposal!.id, action: "create" } }, ctx)) as any).session.id).toBe(out.session.id);
-    expect(cli.started).toHaveLength(1);
-    // its handover, typed in for it, shows as the assistant's words
-    raw.set(out.session.id, [
-      { type: "user", uuid: "h1", timestamp: "2026-10-12T10:00:00Z", message: { role: "user", content: "你负责网站：先做列表页。" }, origin: { kind: "human" } },
-      { type: "user", uuid: "h2", timestamp: "2026-10-12T10:05:00Z", message: { role: "user", content: "你负责网站：先做列表页。" }, origin: { kind: "human" } },
-    ]);
-    expect((await hub.sessions.history(out.session.id)).map((m) => [m.role, m.from])).toEqual([
-      ["palo", "Palo"],
-      ["owner", undefined],
-    ]);
-  });
-
-  test("不用 drops it; at most three helpers; a folder that isn't there is refused", async () => {
-    const { hub, project, cli } = setup();
-    const tools = hub.toolHandlers();
-    await tools.helper_propose({ name: "一", dir: project, duty: "做事", dailyUsd: 1 });
-    const p1 = hub.chat.recent(1)[0]!.proposal!;
-    await hub.sessions.decide(p1.id, "discard", "app");
-    expect(hub.chat.get(hub.chat.recent(1)[0]!.id)!.proposal!.status).toBe("discarded");
-    expect(cli.started).toHaveLength(0);
-    expect(await tools.helper_propose({ name: "二", dir: "/no/such/folder", duty: "做事", dailyUsd: 1 })).toContain("找不到目录");
-    // Claude Code couldn't start it: still on offer, and the card says why
-    cli.fail.startBg = "claude --bg 没成功：not logged in";
-    await tools.helper_propose({ name: "三", dir: project, duty: "做事", dailyUsd: 1 });
-    const p3 = hub.chat.recent(1)[0]!;
-    await expect(hub.sessions.decide(p3.proposal!.id, "create", "app")).rejects.toThrow("not logged in");
-    expect(hub.chat.get(p3.id)!.proposal).toMatchObject({ status: "pending", note: "claude --bg 没成功：not logged in" });
-    delete cli.fail.startBg;
-    await hub.sessions.decide(p3.proposal!.id, "create", "app");
-    expect(hub.chat.get(p3.id)!.proposal!.status).toBe("created");
-    expect(hub.chat.get(p3.id)!.proposal!.note).toBeUndefined();
-    for (const n of ["A", "B"]) {
-      await tools.helper_propose({ name: n, dir: project, duty: "做事", dailyUsd: 1 });
-      await hub.sessions.decide(hub.chat.recent(1)[0]!.proposal!.id, "create", "app");
-    }
-    expect(await tools.helper_propose({ name: "D", dir: project, duty: "做事", dailyUsd: 1 })).toContain("已经有 3 个帮手");
-    expect(hub.sessions.list().filter((s) => s.kind === "helper")).toHaveLength(3);
-  });
-
-  test("停止 / 重启 / 删除 / 复活 go to Claude Code; only for helpers", async () => {
-    const { hub, cli, claude, project } = setup();
-    await hub.toolHandlers().helper_propose({ name: "网站帮手", dir: project, duty: "做网站", dailyUsd: 5 });
-    const { session } = await hub.sessions.decide(hub.chat.recent(1)[0]!.proposal!.id, "create", "app");
-    const id = session!.id;
-    const short = id.slice(0, 8);
-    const ctx = { clientId: "c", channel: "app" as const, local: false };
-    const control = (action: string) => handleRpc(hub, { method: "sessions.control", params: { id, action } }, ctx);
-    await control("stop");
-    expect(hub.sessions.list()[0]!.status).toBe("stopped");
-    await control("restart"); // stopped: comes back from its transcript
-    expect(hub.sessions.list()[0]!.status).not.toBe("stopped");
-    await control("restart"); // running: respawned, same session
-    await control("remove");
-    expect(hub.sessions.list()[0]).toMatchObject({ id, kind: "helper", status: "stopped" });
-    await control("revive");
-    expect(cli.calls).toEqual([`startBg 网站帮手`, `stop ${short}`, `resumeBg ${short}`, `respawn ${short}`, `rm ${short}`, `resumeBg ${short}`]);
-    expect(hub.sessions.list()[0]!.status).not.toBe("stopped");
-    expect(hub.audit.tail(30).filter((e) => e.type === "helper.control").map((e) => e.action)).toEqual(["stop", "restart", "restart", "remove", "revive"]);
-    claude.register({ sessionId: "t1", name: "终端的", cwd: "/w/t" });
-    await hub.sessions.watch.refresh();
-    await expect(handleRpc(hub, { method: "sessions.control", params: { id: "t1", action: "stop" } }, ctx)).rejects.toThrow("只能管帮手");
-  });
-
-  test("the assistant's helper_stop / helper_restart wait for the owner's tap", async () => {
-    const { hub, cli, project } = setup();
-    await hub.toolHandlers().helper_propose({ name: "网站帮手", dir: project, duty: "做网站", dailyUsd: 5 });
-    await hub.sessions.decide(hub.chat.recent(1)[0]!.proposal!.id, "create", "app");
-    expect(await hub.toolHandlers().helper_stop({ name: "网站帮手" })).toContain("主人点头后才会执行");
-    const card = hub.approvals.listPending()[0]!;
-    expect(card).toMatchObject({ tool: "helper_stop", title: "停掉帮手「网站帮手」" });
-    expect(cli.calls).toEqual(["startBg 网站帮手"]);
-    hub.approvals.answer(card.id, true, "app");
-    await tick(20);
-    expect(cli.calls.at(-1)).toMatch(/^stop /);
-    expect(await hub.toolHandlers().helper_stop({ name: "没有的" })).toContain("没有这个会话");
-  });
-
-  test("after the Mac restarts, active helpers that aren't running are revived", async () => {
-    const { hub, cli, claude, project } = setup();
-    await hub.toolHandlers().helper_propose({ name: "网站帮手", dir: project, duty: "做网站", dailyUsd: 5 });
-    const { session } = await hub.sessions.decide(hub.chat.recent(1)[0]!.proposal!.id, "create", "app");
-    // the machine went down: nothing running
-    claude.unregister(session!.id);
-    for (const a of cli.agentsList) delete a.pid;
-    await (hub.sessions as any).reviveAfterRestart();
-    expect(cli.calls.at(-1)).toBe(`resumeBg ${session!.id.slice(0, 8)}`);
-    expect(hub.sessions.list()[0]!.status).not.toBe("stopped");
-    // running ones are left alone
-    const n = cli.calls.length;
-    await (hub.sessions as any).reviveAfterRestart();
-    expect(cli.calls.length).toBe(n);
-  });
-
-  test("a helper that spends more than its daily limit is stopped, and the owner hears it", async () => {
-    const { hub, cli, claude, project, pusher } = setup();
-    await hub.toolHandlers().helper_propose({ name: "网站帮手", dir: project, duty: "做网站", dailyUsd: 0.04 });
-    const { session } = await hub.sessions.decide(hub.chat.recent(1)[0]!.proposal!.id, "create", "app");
-    const id = session!.id;
-    // one API message is written as several entries; only its last usage counts
-    const u = { input_tokens: 10, output_tokens: 1000, cache_read_input_tokens: 100_000, cache_creation_input_tokens: 0 };
-    claude.transcript(project, id, [
-      assistantEntry("a", { id: "msg_1", model: "claude-sonnet-4-6", usage: { ...u, output_tokens: 1 } }),
-      assistantEntry("a", { id: "msg_1", model: "claude-sonnet-4-6", usage: u }),
-      assistantEntry("b", { id: "msg_2", model: "claude-sonnet-4-6", usage: u, at: "2020-01-01T00:00:00Z" }), // another day
-    ]);
-    // $3/M in × 10 + $15/M out × 1000 + $0.30/M cache reads × 100k
-    expect(hub.sessions.spentToday(id)).toBeCloseTo((10 * 3 + 1000 * 15 + 100_000 * 0.3) / 1e6, 6);
-    await hub.sessions.checkBudgets();
-    expect(cli.calls.at(-1)).toBe("stop " + id.slice(0, 8));
-    await hub.sessions.checkBudgets();
-    expect(cli.calls.filter((c) => c.startsWith("stop"))).toHaveLength(1); // once a day
-    expect(hub.chat.recent(1)[0]!.text).toContain("超过了每天 $0.04 的上限");
-    expect(pusher.pushes.at(-1)!.title).toBe("帮手停了");
-    expect(hub.audit.tail(10).find((e) => e.type === "helper.budget")).toMatchObject({ session: id, dailyUsd: 0.04 });
   });
 });
 

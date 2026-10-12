@@ -26,10 +26,17 @@ export interface ChatMessage {
   allyName?: string; // the other owner's name; shown as 「<allyName>的助理」
   dir?: "in" | "out";
   entryId?: string;
-  // kind "helper": the assistant proposes a helper (docs/sessions-prd.md
-  // §6.6); the owner answers with helper.decide. The message is sent again
-  // (same id and seq) when the proposal's status changes.
+  // kind "helper": the assistant proposes a Pal (docs/pals-prd.md §6, the
+  // card of docs/sessions-prd.md §6.6); the owner answers with helper.decide.
+  // The message is sent again (same id and seq) when the proposal's status changes.
   proposal?: HelperProposal;
+  // A Pal's conversation (docs/pals-prd.md §8): the Pal's id. Absent = the
+  // assistant's own. A Pal's messages aren't kept in the assistant's
+  // conversation: `seq` is their time in ms, and pals.history reads them back.
+  pal?: string;
+  // In a Pal's conversation, who said a user line that isn't the owner's:
+  // the assistant's name for its words, or another session's name.
+  from?: string;
 }
 
 export interface ReplyTo {
@@ -82,10 +89,12 @@ export interface TaskActivity {
 export type ApprovalStatus = "pending" | "allowed" | "denied" | "expired";
 
 // A card one of the computer's Claude Code sessions asked for, not the
-// assistant itself (docs/sessions-prd.md §7).
+// assistant itself: "session", one the host doesn't run, through PaloAlly's
+// hooks while the owner is away (docs/sessions-prd.md §7); "pal", a Pal
+// (docs/pals-prd.md §7.4), always.
 export interface CardSource {
-  kind: "session";
-  id: string; // the session's id (CCSession.id)
+  kind: "session" | "pal";
+  id: string; // the session's id (CCSession.id), or the Pal's (Pal.id)
   name: string;
 }
 
@@ -248,11 +257,33 @@ export interface CCSession {
   id: string; // Claude Code's session id
   name: string;
   cwd: string;
-  kind: CCSessionKind;
+  kind: CCSessionKind; // "helper" isn't used any more (Pals replaced helpers)
   status: CCSessionStatus;
   waitingFor?: string;
   lastLine?: string;
   contextTokens?: number;
+  updatedAt: number;
+  // pals.adopt is waiting for it to quit in its terminal (/exit), then it becomes a Pal
+  adopting?: boolean;
+}
+
+// ---- Pals (docs/pals-prd.md §8) ----
+
+export type PalStatus = "busy" | "idle" | "waiting" | "starting" | "stopped";
+
+// A Claude Code session the host runs itself, by resuming its transcript.
+export interface Pal {
+  id: string;
+  name: string; // fixed: the list's, and the name the assistant SendMessages it by
+  cwd: string;
+  sessionId: string; // Claude Code's (claude --resume <sessionId>)
+  status: PalStatus;
+  activity?: string; // busy: what it's doing, in plain words
+  note?: string; // stopped: why (spending limit, couldn't start, open somewhere else)
+  lastLine?: string;
+  pending: number; // its cards waiting on the owner
+  model?: string;
+  createdBy: "owner" | "palo";
   updatedAt: number;
 }
 
@@ -273,10 +304,11 @@ export interface HelperProposal {
   id: string; // helper.decide's proposalId
   name: string;
   cwd: string;
-  duty: string; // what it's for; becomes the helper's first message
+  duty: string; // what it's for; becomes the Pal's first message
   dailyUsd: number;
   status: HelperProposalStatus;
   sessionId?: string; // once created
+  palId?: string; // once created: the Pal it became
   note?: string; // why it didn't start, when it didn't
 }
 

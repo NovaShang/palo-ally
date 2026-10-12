@@ -1,7 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync, watch, type FSWatcher } from "node:fs";
 import { basename, join } from "node:path";
 import type { AgentEntry, ClaudeCli } from "./ccCli.ts";
-import { ASSISTANT_PREFIX, COURIER_NAME, OWNER_PREFIX } from "./ccHooks.ts";
 import { readTail, transcriptPath } from "./handoffs.ts";
 import type { CCMessage, CCSession, CCSessionKind, CCSessionStatus } from "./types.ts";
 import { truncate } from "./util.ts";
@@ -86,7 +85,7 @@ export interface SessionRecord {
   lastLine?: string;
   lastLineAt?: number;
   contextTokens?: number;
-  permissionMode?: string; // from its hooks; the courier matches its class
+  permissionMode?: string; // from its hooks
   transcript?: { size: number; mtime: number };
   ended?: boolean; // an interactive session that said SessionEnd
   seenInRegistry?: boolean;
@@ -95,12 +94,10 @@ export interface SessionRecord {
 export interface SessionWatchDeps {
   claudeDir: string;
   cli: ClaudeCli;
-  /** PaloAlly's own sessions (the main one, probes, the courier): never listed. */
+  /** PaloAlly's own sessions (the main one, probes, its Pals): never listed. */
   isOwn: (s: { sessionId: string; name: string; cwd: string; entrypoint?: string }) => boolean;
-  /** Helpers by session id. They're always listed (removed ones as stopped, so they can be revived), helpers first. */
-  helper: (sessionId: string) => { name: string; cwd: string } | undefined;
-  /** Session ids of helpers to list even when Claude Code no longer knows them. */
-  helperIds: () => string[];
+  /** pals.adopt waits for this one to quit in its terminal. */
+  adopting?: (sessionId: string) => boolean;
   /** A session's open card on the phone, if any: it's waiting on the owner. */
   waitingCard: (sessionId: string) => string | undefined;
   onChange: (sessions: CCSession[]) => void;
@@ -216,7 +213,7 @@ export class SessionWatch {
     }
     // Background sessions `claude agents` no longer lists were removed.
     for (const r of [...this.recs.values()]) {
-      if (r.bg && !r.live && !seen.has(r.sessionId) && !this.d.helper(r.sessionId)) this.recs.delete(r.sessionId);
+      if (r.bg && !r.live && !seen.has(r.sessionId)) this.recs.delete(r.sessionId);
     }
   }
 
@@ -259,12 +256,7 @@ export class SessionWatch {
       r.live = false;
       r.reg = undefined;
       this.d.onRegistryStatus?.(r.sessionId, "gone");
-      if (!r.bg && !this.d.helper(r.sessionId)) this.recs.delete(r.sessionId);
-    }
-    // Helpers Claude Code doesn't know any more (removed) still have a record.
-    for (const id of this.d.helperIds()) {
-      const h = this.d.helper(id);
-      if (h && !this.recs.has(id)) this.record(id, { name: h.name, cwd: h.cwd, bg: true }).live = false;
+      if (!r.bg) this.recs.delete(r.sessionId);
     }
   }
 
@@ -369,7 +361,7 @@ export class SessionWatch {
     return [...this.recs.values()].filter((r) => {
       if (r.ended) return false;
       if (this.d.isOwn({ sessionId: r.sessionId, name: r.name, cwd: r.cwd, entrypoint: r.entrypoint })) return false;
-      if (this.d.helper(r.sessionId) || r.live) return true;
+      if (r.live) return true;
       if (!r.bg) return false;
       // Background sessions stopped more than a week ago drop off the list.
       const last = Math.max(r.transcript?.mtime ?? 0, r.startedAt ?? 0, r.hook?.at ?? 0);
@@ -378,15 +370,14 @@ export class SessionWatch {
   }
 
   list(): CCSession[] {
-    const out = this.visible().map((r) => this.toWire(r));
-    // Helpers first, then the rest; the most recently active first within each.
-    const rank = (s: CCSession) => (s.kind === "helper" ? 0 : 1);
-    return out.sort((a, b) => rank(a) - rank(b) || b.updatedAt - a.updatedAt);
+    // The most recently active first.
+    return this.visible()
+      .map((r) => this.toWire(r))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
   toWire(r: SessionRecord): CCSession {
-    const h = this.d.helper(r.sessionId);
-    const kind: CCSessionKind = h ? "helper" : r.bg ? "background" : "terminal";
+    const kind: CCSessionKind = r.bg ? "background" : "terminal";
     let status: CCSessionStatus;
     let waitingFor: string | undefined;
     const card = this.d.waitingCard(r.sessionId);
@@ -404,14 +395,15 @@ export class SessionWatch {
     const updatedAt = Math.max(r.reg?.at ?? 0, r.hook?.at ?? 0, r.lastLineAt ?? 0, r.transcript?.mtime ?? 0, r.startedAt ?? 0) || this.now();
     return {
       id: r.sessionId,
-      name: r.name || h?.name || basename(r.cwd || h?.cwd || "") || "会话",
-      cwd: r.cwd || h?.cwd || "",
+      name: r.name || basename(r.cwd || "") || "会话",
+      cwd: r.cwd || "",
       kind,
       status,
       ...(waitingFor ? { waitingFor } : {}),
       ...(r.lastLine ? { lastLine: r.lastLine } : {}),
       ...(r.contextTokens ? { contextTokens: r.contextTokens } : {}),
       updatedAt: Math.round(updatedAt),
+      ...(this.d.adopting?.(r.sessionId) ? { adopting: true } : {}),
     };
   }
 
@@ -494,7 +486,7 @@ export interface RawSessionMessage {
 
 // A peer message's own words: the SDK keeps them as `origin.body`; older
 // entries only have them inside the <cross-session-message> wrapper.
-function peerBody(origin: any, content: string): string {
+export function peerBody(origin: any, content: string): string {
   if (typeof origin?.body === "string") return origin.body;
   const m = /<cross-session-message[^>]*>\n?([\s\S]*?)\n?<\/cross-session-message>/.exec(content);
   let body = m?.[1] ?? content;
@@ -514,8 +506,12 @@ function userText(content: unknown): string | null {
   return t || null;
 }
 
-/** Turns a session's messages into what the app shows (CCMessage), oldest first. */
-export function toCCMessages(raw: RawSessionMessage[], assistantName: string): CCMessage[] {
+/**
+ * Turns a session's messages into what the app shows (CCMessage), oldest
+ * first. Words from the assistant's own session (SendMessage, by its name)
+ * are "palo"; other sessions' are "peer".
+ */
+export function toCCMessages(raw: RawSessionMessage[], assistantName: string, paloName = "Palo"): CCMessage[] {
   const out: CCMessage[] = [];
   for (const m of raw) {
     if (m.parent_tool_use_id) continue; // a subagent's
@@ -538,14 +534,8 @@ export function toCCMessages(raw: RawSessionMessage[], assistantName: string): C
     if (origin?.kind === "peer") {
       const from = typeof origin.name === "string" ? origin.name : "";
       const body = peerBody(origin, text);
-      if (from === COURIER_NAME) {
-        // Through PaloAlly: the owner's words from the app, or the assistant's.
-        if (body.startsWith(OWNER_PREFIX)) out.push({ id: m.uuid, ts, role: "palo", text: body.slice(OWNER_PREFIX.length), from: "主人" });
-        else if (body.startsWith(ASSISTANT_PREFIX)) out.push({ id: m.uuid, ts, role: "palo", text: body.slice(ASSISTANT_PREFIX.length), from: assistantName });
-        else out.push({ id: m.uuid, ts, role: "palo", text: body, from: COURIER_NAME });
-      } else {
-        out.push({ id: m.uuid, ts, role: "peer", text: body, ...(from ? { from } : {}) });
-      }
+      if (from && from === paloName) out.push({ id: m.uuid, ts, role: "palo", text: body, from: assistantName });
+      else out.push({ id: m.uuid, ts, role: "peer", text: body, ...(from ? { from } : {}) });
       continue;
     }
     // Only what the owner typed; Claude Code's own notices and reminders aren't.

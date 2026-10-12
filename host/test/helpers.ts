@@ -9,6 +9,7 @@ import { Hub, type WechatChannel } from "../src/hub.ts";
 import type { Pusher } from "../src/router.ts";
 import type { AlliesDeps } from "../src/allies.ts";
 import type { SessionsDeps } from "../src/sessions.ts";
+import type { PalsDeps } from "../src/pals.ts";
 import { FakeCli } from "./fakeClaude.ts";
 
 const created: string[] = [];
@@ -54,7 +55,7 @@ export function testConfig(over: (c: Config) => void = () => {}): Config {
 }
 
 export function makeHub(
-  opts: { script?: FakeScript; config?: Config; wechat?: WechatChannel; paths?: Paths; allies?: Partial<AlliesDeps>; sessions?: Partial<SessionsDeps> } = {},
+  opts: { script?: FakeScript; config?: Config; wechat?: WechatChannel; paths?: Paths; allies?: Partial<AlliesDeps>; sessions?: Partial<SessionsDeps>; pals?: Partial<PalsDeps> } = {},
 ) {
   const paths = opts.paths ?? tmpPaths();
   const driver = new FakeDriver(opts.script);
@@ -63,7 +64,9 @@ export function makeHub(
   const claudeDir = mkdtempSync(join(tmpdir(), "paloally-claude-"));
   created.push(claudeDir);
   const sessions: Partial<SessionsDeps> = { claudeDir, cli: new FakeCli(), ...opts.sessions };
-  const hub = new Hub({ paths, config: opts.config ?? testConfig(), driver, pushers: [pusher], wechat: opts.wechat, log: () => {}, allies: opts.allies, sessions });
+  // Pals start directly (no PaloAlly Helper) from a plain environment.
+  const pals: Partial<PalsDeps> = { launch: async () => ({ helper: null, env: { PATH: process.env.PATH ?? "/usr/bin:/bin" } }), usesHelper: () => false, ...opts.pals };
+  const hub = new Hub({ paths, config: opts.config ?? testConfig(), driver, pushers: [pusher], wechat: opts.wechat, log: () => {}, allies: opts.allies, sessions, pals });
   const events: { event: string; data: any }[] = [];
   hub.bus.on((event, data) => events.push({ event, data }));
   return { hub, driver, pusher, paths, events };

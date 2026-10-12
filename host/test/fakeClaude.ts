@@ -1,10 +1,11 @@
 // Stand-ins for Claude Code on the computer: its session registry, transcripts
 // and the `claude` command line for background sessions. Lets the sessions
 // logic run against a made-up computer without starting anything.
+import { type ChildProcess, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentEntry, BgStart, ClaudeCli } from "../src/ccCli.ts";
+import type { AgentEntry, ClaudeCli } from "../src/ccCli.ts";
 import { transcriptPath } from "../src/handoffs.ts";
 
 export const DEAD_PID = 999_999;
@@ -85,10 +86,10 @@ export function assistantEntry(text: string, o: { id?: string; model?: string; a
 export class FakeCli implements ClaudeCli {
   agentsList: AgentEntry[] = [];
   calls: string[] = [];
-  started: BgStart[] = [];
   agentsCalls = 0;
-  fail: Partial<Record<"startBg" | "stop" | "respawn" | "rm" | "resumeBg", string>> = {};
-  private n = 0;
+  fail: Partial<Record<"stop", string>> = {};
+  // `claude stop` that doesn't take (the process stays)
+  stuck = false;
 
   constructor(private claude?: FakeClaudeDir) {}
 
@@ -97,48 +98,33 @@ export class FakeCli implements ClaudeCli {
     return this.agentsList.map((a) => ({ ...a }));
   }
 
-  async startBg(o: BgStart): Promise<string> {
-    this.calls.push(`startBg ${o.name}`);
-    if (this.fail.startBg) throw new Error(this.fail.startBg);
-    this.started.push(o);
-    const short = `${(0xabc000 + ++this.n).toString(16)}0`.slice(0, 8).padEnd(8, "0");
-    const sessionId = `${short}-0000-4000-8000-000000000000`;
-    this.agentsList.push({ id: short, pid: process.pid, cwd: o.cwd, kind: "background", sessionId, name: o.name, startedAt: Date.now() });
-    this.claude?.register({ sessionId, name: o.name, cwd: o.cwd, kind: "bg", status: "busy" });
-    return short;
-  }
+  private procs = new Map<string, ChildProcess>();
 
-  async resumeBg(o: { cwd: string; sessionId: string; prompt?: string }): Promise<string> {
-    this.calls.push(`resumeBg ${o.sessionId.slice(0, 8)}`);
-    if (this.fail.resumeBg) throw new Error(this.fail.resumeBg);
+  /** A background session Claude Code's service runs (a stand-in process). */
+  bg(o: { sessionId: string; name: string; cwd: string; status?: string }): string {
     const short = o.sessionId.slice(0, 8);
-    const a = this.agentsList.find((x) => x.sessionId === o.sessionId);
-    if (a) a.pid = process.pid;
-    else this.agentsList.push({ id: short, pid: process.pid, cwd: o.cwd, kind: "background", sessionId: o.sessionId, name: "revived" });
-    this.claude?.register({ sessionId: o.sessionId, name: a?.name ?? "revived", cwd: o.cwd, kind: "bg", status: "idle" });
+    const p = spawn("/bin/sleep", ["300"]);
+    p.unref();
+    this.procs.set(short, p);
+    this.agentsList.push({ id: short, pid: p.pid, cwd: o.cwd, kind: "background", sessionId: o.sessionId, name: o.name, startedAt: Date.now() });
+    this.claude?.register({ sessionId: o.sessionId, name: o.name, cwd: o.cwd, kind: "bg", status: o.status ?? "idle", pid: p.pid });
     return short;
   }
 
   async stop(short: string): Promise<void> {
     this.calls.push(`stop ${short}`);
     if (this.fail.stop) throw new Error(this.fail.stop);
+    if (this.stuck) return;
     const a = this.agentsList.find((x) => x.id === short);
     if (a) {
       delete a.pid;
       this.claude?.unregister(a.sessionId);
     }
+    this.procs.get(short)?.kill("SIGKILL");
   }
 
-  async respawn(short: string): Promise<void> {
-    this.calls.push(`respawn ${short}`);
-    if (this.fail.respawn) throw new Error(this.fail.respawn);
-  }
-
-  async rm(short: string): Promise<void> {
-    this.calls.push(`rm ${short}`);
-    if (this.fail.rm) throw new Error(this.fail.rm);
-    const a = this.agentsList.find((x) => x.id === short);
-    if (a) this.claude?.unregister(a.sessionId);
-    this.agentsList = this.agentsList.filter((x) => x.id !== short);
+  /** Every stand-in process ends. */
+  close(): void {
+    for (const p of this.procs.values()) if (p.exitCode === null) p.kill("SIGKILL");
   }
 }

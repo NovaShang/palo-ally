@@ -1,108 +1,11 @@
 import { closeSync, existsSync, fstatSync, openSync, readdirSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { transcriptPath } from "./handoffs.ts";
-import type { HelperProposal } from "./types.ts";
-import { readJson, writeJson, zonedParts } from "./util.ts";
+import { zonedParts } from "./util.ts";
 
-// Helpers (docs/sessions-prd.md §6.5): background Claude Code sessions the
-// host opened for the owner, one per long-running project. Claude Code runs
-// them (`claude --bg`); the host keeps their record in state/helpers.json —
-// name, folder, job short id, session id, daily spending limit, when made —
-// so it can stop, restart, remove and revive them, bring them back after the
-// Mac restarts, and stop one that spends more than its limit in a day.
-
-export const MAX_HELPERS = 3;
-
-export interface Helper {
-  sessionId: string;
-  name: string;
-  cwd: string;
-  duty: string;
-  dailyUsd: number;
-  short: string; // Claude Code's job id (`claude stop <short>`)
-  createdAt: number;
-  // active: should be running (revived after a restart of the Mac);
-  // stopped: the owner (or its spending limit) stopped it; removed: `claude rm`.
-  state: "active" | "stopped" | "removed";
-  stoppedFor?: "owner" | "budget";
-  budgetDay?: string; // the day it was stopped for spending (once a day)
-  permissionMode: string;
-}
-
-interface HelperFile {
-  helpers: Helper[];
-  proposals: (HelperProposal & { createdAt: number; messageId?: string })[];
-}
-
-export class HelperStore {
-  private data: HelperFile;
-
-  constructor(private path: string) {
-    const d = readJson<Partial<HelperFile>>(path, {});
-    this.data = { helpers: Array.isArray(d.helpers) ? d.helpers : [], proposals: Array.isArray(d.proposals) ? d.proposals : [] };
-  }
-
-  list(): Helper[] {
-    return this.data.helpers;
-  }
-
-  get(sessionId: string): Helper | undefined {
-    return this.data.helpers.find((h) => h.sessionId === sessionId);
-  }
-
-  byName(name: string): Helper | undefined {
-    const n = name.trim();
-    const live = this.data.helpers.filter((h) => h.state !== "removed");
-    return live.find((h) => h.name === n) ?? live.find((h) => h.name.toLowerCase() === n.toLowerCase()) ?? this.data.helpers.find((h) => h.name === n);
-  }
-
-  /** Helpers that count toward the limit of three. */
-  running(): Helper[] {
-    return this.data.helpers.filter((h) => h.state === "active");
-  }
-
-  add(h: Helper): void {
-    this.data.helpers = [...this.data.helpers.filter((x) => x.sessionId !== h.sessionId), h];
-    this.save();
-  }
-
-  update(sessionId: string, patch: Partial<Helper>): Helper | undefined {
-    const h = this.get(sessionId);
-    if (!h) return undefined;
-    Object.assign(h, patch);
-    for (const k of Object.keys(patch) as (keyof Helper)[]) if (patch[k] === undefined) delete h[k];
-    this.save();
-    return h;
-  }
-
-  proposals(): HelperFile["proposals"] {
-    return this.data.proposals;
-  }
-
-  proposal(id: string): HelperFile["proposals"][number] | undefined {
-    return this.data.proposals.find((p) => p.id === id);
-  }
-
-  addProposal(p: HelperFile["proposals"][number]): void {
-    this.data.proposals = [...this.data.proposals, p].slice(-50);
-    this.save();
-  }
-
-  updateProposal(id: string, patch: Partial<HelperProposal> & { messageId?: string }): HelperFile["proposals"][number] | undefined {
-    const p = this.proposal(id);
-    if (!p) return undefined;
-    Object.assign(p, patch);
-    for (const k of Object.keys(patch) as (keyof typeof patch)[]) if (patch[k] === undefined) delete (p as any)[k];
-    this.save();
-    return p;
-  }
-
-  private save(): void {
-    writeJson(this.path, this.data);
-  }
-}
-
-// ---------------- what a helper spends ----------------
+// What a Claude Code session spends per day, from its transcript (the
+// usage Claude Code records with each reply). A Pal the assistant opened has
+// a daily limit (docs/pals-prd.md §6); the host stops it past that.
 
 // US dollars per million tokens: input, output; cache writes are 1.25× input
 // (5 minutes) or 2× (1 hour); cache reads 0.1× input unless listed.

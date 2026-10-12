@@ -25,13 +25,14 @@ export const RPC_METHODS = [
   "media.upload", "media.uploadChunk", "media.get", "media.read",
   "suggestions.list", "suggestions.dismiss", "host.update",
   "ally.list", "ally.invite", "ally.accept", "ally.remove", "ally.log", "ally.draft.decide",
-  "sessions.list", "sessions.history", "sessions.send", "sessions.control", "sessions.hooks", "helper.decide",
+  "sessions.list", "sessions.history", "sessions.hooks", "helper.decide",
+  "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop",
 ] as const;
 
 export const RPC_EVENTS = [
   "chat.message", "chat.delta", "task.updated", "approval.updated", "question.updated", "watch.updated",
   "artifact.updated", "settings.updated", "status", "commands.updated",
-  "suggestions.updated", "ally.updated", "ally.entry", "sessions.updated",
+  "suggestions.updated", "ally.updated", "ally.entry", "sessions.updated", "pals.updated",
 ] as const;
 
 // Admin methods are reachable only on the local unix socket (the owner's own
@@ -210,25 +211,39 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return { entries: hub.allies.log(String(p.id ?? ""), p.beforeTs, p.limit) };
     case "ally.draft.decide":
       return { entry: hub.allies.decide(String(p.id ?? ""), p.action, p.text) };
-    // The computer's own Claude Code sessions (docs/sessions-prd.md §7).
+    // The computer's Claude Code sessions the host doesn't run (docs/sessions-prd.md §7).
     case "sessions.list":
       return { sessions: await hub.sessions.listFresh(), hooks: hub.sessions.hooksEnabled() };
     case "sessions.history": {
       const before = typeof p.before === "string" || typeof p.before === "number" ? p.before : undefined;
       return { messages: await hub.sessions.history(String(p.id ?? ""), before, Number(p.limit ?? 50)) };
     }
-    case "sessions.send":
-      await hub.sessions.send(String(p.id ?? ""), String(p.text ?? ""), "owner");
-      return { ok: true };
-    case "sessions.control":
-      await hub.sessions.control(String(p.id ?? ""), String(p.action ?? ""), ctx.channel);
-      return { ok: true };
     case "sessions.hooks":
       // No `enabled`: only says whether they're on.
       if (typeof p.enabled !== "boolean") return { enabled: hub.sessions.hooksEnabled() };
       return { enabled: hub.sessions.setHooks(p.enabled, ctx.channel) };
+    // The assistant's proposal card: 开吧 opens a Pal (docs/pals-prd.md §6).
     case "helper.decide":
-      return await hub.sessions.decide(String(p.proposalId ?? ""), String(p.action ?? ""), ctx.channel);
+      return await hub.pals.decide(String(p.proposalId ?? ""), String(p.action ?? ""), ctx.channel);
+    // Pals: Claude Code sessions the host runs itself (docs/pals-prd.md §8).
+    case "pals.list":
+      return await hub.pals.listFresh();
+    case "pals.adopt":
+      return await hub.pals.adopt(String(p.sessionId ?? ""), ctx.channel);
+    case "pals.release":
+      return await hub.pals.release(String(p.id ?? ""), ctx.channel);
+    case "pals.remove":
+      await hub.pals.remove(String(p.id ?? ""), ctx.channel);
+      return { ok: true };
+    case "pals.history": {
+      const before = typeof p.before === "string" || typeof p.before === "number" ? p.before : undefined;
+      return await hub.pals.history(String(p.id ?? ""), before, Number(p.limit ?? 50));
+    }
+    case "pals.send":
+      return await hub.pals.send(String(p.id ?? ""), String(p.text ?? ""), typeof p.clientMsgId === "string" ? p.clientMsgId : undefined);
+    case "pals.stop":
+      await hub.pals.stopTurn(String(p.id ?? ""), ctx.channel);
+      return { ok: true };
     case "host.update":
       // check: only look. Otherwise stage the newest release and switch to it as
       // soon as nothing is in flight (the app's 立即更新); `wait` is for the CLI.

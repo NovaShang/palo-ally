@@ -128,6 +128,11 @@ export class QuestionManager {
     for (const [id, p] of [...this.pending]) if (!p.question.source) this.expire(id, by);
   }
 
+  // cancelFor closes one session's or Pal's open questions.
+  cancelFor(sourceId: string, by: string): void {
+    for (const [id, p] of [...this.pending]) if (p.question.source?.id === sourceId) this.expire(id, by);
+  }
+
   private expire(id: string, by: string, note?: string): void {
     const p = this.pending.get(id);
     if (!p) return;

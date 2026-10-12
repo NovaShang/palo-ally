@@ -57,8 +57,7 @@ export class Paths {
   get bin() { return join(this.root, "bin"); }
   get ccHooks() { return join(this.state, "cc-hooks.json"); }
   get ccSettingsBackup() { return join(this.state, "cc-settings.backup.json"); }
-  get helpers() { return join(this.state, "helpers.json"); }
-  get courier() { return join(this.root, "courier"); }
+  get pals() { return join(this.state, "pals.json"); }
   get logs() { return join(this.root, "logs"); }
   get browserProfile() { return join(this.root, "browser-profile"); }
 }
@@ -129,6 +128,11 @@ export interface Config {
     command?: string[]; // MCP server command; default Playwright MCP
   };
   extraMcpServers: Record<string, unknown>;
+  // Pals (docs/pals-prd.md §7.3): how their Claude Code processes start.
+  // auto: through PaloAlly Helper when it's installed (its macOS permissions
+  // apply), else directly; helperApp: where the helper is, if not in
+  // ~/Applications or /Applications.
+  pals: { launch: "auto" | "direct"; helperApp?: string };
   // extra environment for the harness, e.g. ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN for third-party models
   env?: Record<string, string>;
   settings: Settings;
@@ -156,6 +160,7 @@ export function defaultConfig(): Config {
       mode: "shared",
     },
     extraMcpServers: {},
+    pals: { launch: "auto" },
     settings: {
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Los_Angeles",
       quietHours: { start: "23:00", end: "08:00" },

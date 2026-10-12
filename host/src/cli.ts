@@ -32,7 +32,7 @@ const HELP = `PaloAlly ${VERSION} — 把 Claude Code 变成常驻、会主动�
   artifacts              产物资料库
   memory [路径]          记忆文件
   settings [key value]   打扰频率、免打扰时段等
-  sessions [hooks on|off]  电脑上的 Claude Code 会话；hooks 开关：不在电脑前时把会话的确认送到手机
+  sessions [hooks on|off]  Pals 和电脑上的其他 Claude Code 会话；hooks 开关：不在电脑前时把会话的确认送到手机
   stop                   手上的事全部停下
   restart [--now]        等手头的事办完再重启（--now 立刻重启，会打断正在办的事）
   update [--check|--now] 更新到最新正式版（默认等手头的事办完；--check 只看看有没有新版本）
@@ -393,11 +393,15 @@ async function main(): Promise<void> {
         console.log(r.enabled ? "全局钩子：开（会话的确认在你不在电脑前时送到手机）" : "全局钩子：关");
         return;
       }
-      const r = await call("sessions.list");
-      const kind: Record<string, string> = { helper: "帮手", terminal: "终端", background: "后台" };
-      const status: Record<string, string> = { busy: "在忙", idle: "空闲", waiting: "等你", stopped: "停了" };
-      if (!r.sessions.length) console.log("电脑上没有 Claude Code 会话。");
-      for (const x of r.sessions)
+      const r = await call("pals.list");
+      const kind: Record<string, string> = { terminal: "终端", background: "后台" };
+      const status: Record<string, string> = { busy: "在忙", idle: "空闲", waiting: "等你", stopped: "停了", starting: "在启动" };
+      if (r.pals.length) console.log(`Pals${r.helper ? "" : "（没装 PaloAlly Helper：由主机直接启动，macOS 权限跟主机一样）"}：`);
+      for (const p of r.pals)
+        console.log(`${status[p.status] ?? p.status} ${p.name}  ${p.cwd}${p.pending ? `  ${p.pending} 件等你` : ""}${p.note ? `\n    ${p.note}` : ""}${p.lastLine ? `\n    ${p.lastLine}` : ""}`);
+      if (!r.others.length) console.log(r.pals.length ? "电脑上没有别的 Claude Code 会话。" : "电脑上没有 Claude Code 会话。");
+      else console.log("电脑上的其他会话：");
+      for (const x of r.others)
         console.log(`${status[x.status] ?? x.status} ${x.name}（${kind[x.kind] ?? x.kind}）  ${x.cwd}${x.waitingFor ? `\n    等：${x.waitingFor}` : ""}${x.lastLine ? `\n    ${x.lastLine}` : ""}`);
       console.log(`全局钩子：${r.hooks ? "开" : "关"}（paloally sessions hooks on|off）`);
       return;

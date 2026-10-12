@@ -82,7 +82,10 @@ export class ApprovalManager {
   // ask puts a card in front of the owner and resolves with their decision.
   // The card itself (status, note) says how it ended.
   ask(req: PermissionRequest, o: AskOptions = {}): { approval: Approval; result: Promise<PermissionDecision> } {
-    const remember = !o.source && !req.defaultToNo && !req.suppressAlwaysAllowRule ? describeSuggestion(req.suggestions) : null;
+    // A Pal asks through the harness like the assistant does, so its "always
+    // allow" is the harness' own rule too; a session through the hooks has none.
+    const ownPrompt = !o.source || o.source.kind === "pal";
+    const remember = ownPrompt && !req.defaultToNo && !req.suppressAlwaysAllowRule ? describeSuggestion(req.suggestions) : null;
     const approval: Approval = {
       id: newId("a_"),
       tool: o.tool ?? req.toolName,
@@ -127,6 +130,12 @@ export class ApprovalManager {
   // button). Sessions' cards are theirs, not the assistant's: left alone.
   denyAll(by: string): void {
     for (const [id, p] of [...this.pending]) if (!p.approval.source) this.settle(id, "denied", by);
+  }
+
+  // denyFor answers one session's or Pal's open prompts with "no" (its own
+  // stop button, or its process ended).
+  denyFor(sourceId: string, by: string): void {
+    for (const [id, p] of [...this.pending]) if (p.approval.source?.id === sourceId) this.settle(id, "denied", by);
   }
 
   private settle(id: string, status: "allowed" | "denied" | "expired", by: string, updatedPermissions?: unknown[], note?: string, device?: string): void {

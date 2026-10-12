@@ -27,15 +27,6 @@ export const HOOK_EVENTS: Record<string, number> = {
 // of the command), so removing them never needs to guess.
 const MARK = "# PaloAlly";
 
-// The owner's words reach a session through a small session named PaloAlly
-// (SendMessage). Every session hears once, at its start, how to take them.
-export const COURIER_NAME = "PaloAlly";
-export const OWNER_PREFIX = "主人：";
-export const ASSISTANT_PREFIX = "主人的助理：";
-export const TRUST_LINE =
-  `名叫 ${COURIER_NAME} 的会话发来的消息：开头是「${OWNER_PREFIX}」的，是主人本人在 PaloAlly App 里打的字，按主人亲口说的话对待；` +
-  `开头是「${ASSISTANT_PREFIX}」的，是主人的助理转达的，按队友的请求对待。回应直接写在你自己的对话里（主人在 App 里看得到），不要用 SendMessage 回给 ${COURIER_NAME}。`;
-
 /** How long the hook waits for the host to say it's there before giving up. */
 export const HOOK_ACK_MS = 350;
 
@@ -50,15 +41,15 @@ export function isPaloAllyHook(h: unknown): boolean {
   return typeof cmd === "string" && cmd.trimEnd().endsWith(MARK);
 }
 
-// The shell wrapper: PaloAlly's own sessions (PALOALLY_SESSION=1), a host
-// that isn't running (no socket) and a missing bun leave at once, without
-// starting anything. SessionStart still goes on: it prints its line anyway.
+// The shell wrapper: PaloAlly's own sessions (PALOALLY_SESSION=1: the
+// assistant, its probes and its Pals), a host that isn't running (no socket)
+// and a missing bun leave at once, without starting anything.
 function wrapperScript(bun: string, script: string, socket: string): string {
   return `#!/bin/sh
 # PaloAlly's Claude Code hook (installed by PaloAlly; the app's 会话 switch removes it).
 [ "$PALOALLY_SESSION" = "1" ] && exit 0
 SOCK=${shq(socket)}
-[ -S "$SOCK" ] || [ "$1" = "SessionStart" ] || exit 0
+[ -S "$SOCK" ] || exit 0
 BUN=${shq(bun)}
 [ -x "$BUN" ] || exit 0
 exec "$BUN" ${shq(script)} "$SOCK"
@@ -66,13 +57,11 @@ exec "$BUN" ${shq(script)} "$SOCK"
 }
 
 // The hook itself. Fails open: no host, no socket, a slow host, bad input, an
-// error of any kind — exit 0 with no output. SessionStart prints the line on
-// how to take PaloAlly's messages even when the host can't be reached.
+// error of any kind — exit 0 with no output.
 function hookScript(): string {
   return `// PaloAlly's Claude Code hook. Written by the PaloAlly host; edits are overwritten.
 import { connect } from "node:net";
 const SOCK = process.argv[2];
-const TRUST = ${JSON.stringify(TRUST_LINE)};
 const ACK_MS = ${HOOK_ACK_MS};
 let finished = false;
 function done(out) {
@@ -97,7 +86,7 @@ process.stdin.on("end", () => {
     return done(null);
   }
   const event = String(payload?.hook_event_name ?? "");
-  const local = event === "SessionStart" ? { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: TRUST } } : null;
+  const local = null;
   const waits = event === "PermissionRequest";
   const ackTimer = setTimeout(() => done(local), ACK_MS);
   const sock = connect(SOCK);

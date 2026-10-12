@@ -30,6 +30,7 @@ import { type Usage, UsageLedger } from "./usage.ts";
 import { appendJsonl } from "./util.ts";
 import { WatchStore } from "./watches.ts";
 import { Sessions, type SessionsDeps } from "./sessions.ts";
+import { PALO_NAME, Pals, type PalsDeps } from "./pals.ts";
 
 export type { ClientConn, WechatChannel, WechatReplyTarget } from "./channels/types.ts";
 export { timing } from "./conversation.ts";
@@ -47,6 +48,7 @@ export interface HubDeps {
   updater?: Partial<UpdaterDeps>; // tests point the updater at a temp checkout
   allies?: Partial<AlliesDeps>; // tests connect hosts in memory and move the clock
   sessions?: Partial<SessionsDeps>; // tests fake the claude CLI, the clock and whether the owner is away
+  pals?: Partial<PalsDeps>; // tests fake how Pals start, the registry and the timing
 }
 
 // Hub assembles the assistant: the main conversation with the harness, the
@@ -74,6 +76,7 @@ export class Hub {
   readonly updater: Updater;
   readonly allies: Allies;
   readonly sessions: Sessions;
+  readonly pals: Pals;
   private compactTimer: ReturnType<typeof setInterval> | null = null;
   private readonly info: HarnessInfo;
   private readonly proactive: Proactive;
@@ -156,6 +159,8 @@ export class Hub {
       onModels: (m) => this.info.saveModels(m),
       onTerminalCommands: (n) => this.info.setTerminalCommands(n),
       statusChanged: () => this.emitStatus(),
+      // Pals reach the assistant (and it them) by this name with SendMessage.
+      peerName: () => PALO_NAME,
       handoffsInFlight: () => this.handoffs.inFlight(),
       onGoalResult: (id, text) => {
         const w = this.watches.get(id);
@@ -183,6 +188,8 @@ export class Hub {
         return 0;
       },
       audit: this.audit,
+      // A Pal's prompts reach the phone by themselves: nothing to chase.
+      isPal: (sessionId) => this.pals.isPal(sessionId),
       log: (s) => this.log(s),
     });
     this.power = new PowerWatcher({
@@ -259,21 +266,43 @@ export class Hub {
       log: (s) => this.log(`allies: ${s}`),
       ...deps.allies,
     });
-    // The computer's own Claude Code sessions: listed, their prompts on the
-    // phone while the owner is away, words into them, and helpers.
+    // The computer's own Claude Code sessions the host doesn't run: listed,
+    // and their prompts on the phone while the owner is away.
     this.sessions = new Sessions({
       paths: this.paths,
       claudeDir: deps.claudeDir ?? claudeConfigDir(),
       bus: this.bus,
-      chat: this.chat,
       approvals: this.approvals,
       questions: this.questions,
       router: this.router,
       audit: this.audit,
       settings: () => this.config.settings,
       mainSessionId: () => this.runtime.data.sessionId,
+      isPal: (sessionId) => this.pals?.isPal(sessionId) ?? false,
+      adopting: (sessionId) => this.pals?.adopting(sessionId) ?? false,
+      paloName: () => PALO_NAME,
       log: this.log,
       ...deps.sessions,
+    });
+    // Pals: Claude Code sessions the host runs itself (docs/pals-prd.md).
+    this.pals = new Pals({
+      paths: this.paths,
+      claudeDir: deps.sessions?.claudeDir ?? deps.claudeDir ?? claudeConfigDir(),
+      bus: this.bus,
+      chat: this.chat,
+      approvals: this.approvals,
+      questions: this.questions,
+      router: this.router,
+      audit: this.audit,
+      driver: deps.driver,
+      sessions: this.sessions,
+      cli: this.sessions.cli,
+      settings: () => this.config.settings,
+      helperApp: () => this.config.pals?.helperApp,
+      launchMode: () => this.config.pals?.launch ?? "auto",
+      ...(deps.sessions?.readMessages ? { readMessages: deps.sessions.readMessages } : {}),
+      log: this.log,
+      ...deps.pals,
     });
     this.suggestions = new SuggestionStore(this.paths.suggestions, this.bus, {
       driver: deps.driver,
@@ -317,6 +346,8 @@ export class Hub {
       // New official release: staged in the background, switched to at a clean break.
       this.updater.start();
       this.sessions.start();
+      // Every Pal comes back: they stay up so SendMessage always reaches them.
+      this.pals.start();
     }
     this.emitStatus();
   }
@@ -329,6 +360,7 @@ export class Hub {
     this.updater.stop();
     this.allies.stop();
     this.sessions.stop();
+    this.pals.stop();
     if (this.compactTimer) clearInterval(this.compactTimer);
     if (this.suggestionTimer) clearInterval(this.suggestionTimer);
     this.artifacts.stop();
@@ -472,7 +504,7 @@ export class Hub {
 
   /** Nothing in flight at all: safe to restart the process. */
   quietForRestart(): boolean {
-    return this.conversation.quiet && !this.tasks.live().length && !this.conversation.waitingOnOwner();
+    return this.conversation.quiet && !this.tasks.live().length && !this.conversation.waitingOnOwner() && this.pals.quiet();
   }
 
   // restartWhenIdle exits once nothing is in flight; the service manager
@@ -493,7 +525,7 @@ export class Hub {
   // ---------------- what the harness offers ----------------
 
   toolHandlers(): ToolHandlers {
-    return makeShellTools({ tasks: this.tasks, handoffs: this.handoffs, watches: this.watches, artifacts: this.artifacts, chat: this.chat, router: this.router, audit: this.audit, wechat: this.wechat, media: this.media, allies: this.allies, sessions: this.sessions,
+    return makeShellTools({ tasks: this.tasks, handoffs: this.handoffs, watches: this.watches, artifacts: this.artifacts, chat: this.chat, router: this.router, audit: this.audit, wechat: this.wechat, media: this.media, allies: this.allies, pals: this.pals,
       ownerChannel: () => this.conversation.ownerChannel(), cwd: this.paths.home, timezone: () => this.config.settings.timezone });
   }
 
