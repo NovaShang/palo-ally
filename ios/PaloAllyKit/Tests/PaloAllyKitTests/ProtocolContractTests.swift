@@ -138,9 +138,7 @@ private let eventTypes: [String: Check] = [
         }
     },
     RPCEventName.allyEntry: { json in
-        guard let e = AllyEntryEvent(json: json) else { return ["AllyEntryEvent did not recognise the payload"] }
-        // Not in the PRD; without it a new exchange waits for the next ally.log to find its Ally.
-        if e.allyId == nil { print("ProtocolContract: ally.entry has no allyId") }
+        guard AllyEntryEvent(json: json) != nil else { return ["AllyEntryEvent did not recognise the payload"] }
         return strictIssues(AllyEntry.self, json["entry"] ?? json)
     },
 ]

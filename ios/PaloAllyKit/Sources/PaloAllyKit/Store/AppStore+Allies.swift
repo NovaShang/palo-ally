@@ -97,7 +97,7 @@ extension AppStore {
     }
 
     /// An exchange arrived or changed: into its Ally's log, and the list's
-    /// last line when it's the newest.
+    /// last line when it's the newest (in any state, as the host keeps it).
     func upsert(allyEntry incoming: AllyEntry, allyId: String?) {
         var e = incoming
         guard let owner = allyId ?? e.allyId ?? allyID(ofEntry: e.id) else {
@@ -116,8 +116,7 @@ extension AppStore {
         allyLogs[owner] = log
         if let i = allies.firstIndex(where: { $0.id == owner }) {
             let last = allies[i].lastEntry
-            let counts = e.status != .draft && e.status != .rejected
-            if last?.id == e.id || (counts && e.ts >= (last?.ts ?? 0)) { allies[i].lastEntry = e }
+            if last?.id == e.id || e.ts >= (last?.ts ?? 0) { allies[i].lastEntry = e }
         }
     }
 
@@ -138,11 +137,11 @@ extension AppStore {
     }
 
     /// Hands someone's invite to this computer. Answers once both sides are
-    /// paired, which can take up to a minute.
+    /// paired: usually seconds; 30 at most (§7.6).
     @discardableResult
     public func acceptAlly(link: String, kind: AllyKind) async throws -> AllyInfo? {
         let r: AllyResult = try await rpc.call(RPCMethod.allyAccept, params: AllyAcceptParams(link: link, kind: kind),
-                                               timeout: 90)
+                                               timeout: 30)
         if let a = r.ally { apply(allyUpdate: .upsert(a)) }
         return r.ally
     }
@@ -160,10 +159,11 @@ extension AppStore {
         let owner = draft.allyId ?? allyID(ofEntry: draft.id)
         let before = allyEntry(id: draft.id) ?? draft
         var shown = before
+        if let text { shown.text = text }
         switch action {
         case .send: shown.status = .queued
-        case .discard: shown.status = .rejected
-        case .edit: if let text { shown.text = text }
+        case .discard: shown.status = .rejected; shown.note = "没发"
+        case .edit: break
         }
         upsert(allyEntry: shown, allyId: owner)
         do {
@@ -177,16 +177,11 @@ extension AppStore {
         }
     }
 
-    /// 发送, with the owner's own words if they changed them (改一下 → 发送).
+    /// 发送, with the owner's own words if they changed them (改一下 → 发送):
+    /// `send` with `text` sends the changed words (§7.6).
     public func send(draft: AllyEntry, text: String? = nil) async throws {
-        var current = draft
         let words = text?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let words, !words.isEmpty, words != draft.text {
-            let edited = try await decide(draft, .edit, text: words)
-            // A computer that takes 改一下 as "send these words" has sent it already.
-            if let edited, edited.status != .draft { return }
-            current = edited ?? draft
-        }
-        try await decide(current, .send)
+        let changed = words.flatMap { $0.isEmpty || $0 == draft.text ? nil : $0 }
+        try await decide(draft, .send, text: changed)
     }
 }

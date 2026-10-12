@@ -22,8 +22,9 @@ public enum AllyDirection: String, TolerantStringEnum {
     public static let fallback = AllyDirection.unknown
 }
 
-/// An exchange's state. Outgoing: draft (waiting for the owner) → queued →
-/// sent → delivered → seen, or rejected (not sent). Incoming ones arrive
+/// An exchange's state (§7.6). Outgoing: draft (waiting for the owner) →
+/// queued → sent (handed to their computer, no receipt yet) → delivered →
+/// seen; or rejected, final, with a `note` saying why. Incoming ones arrive
 /// delivered and become seen once the owner has had them on screen.
 public enum AllyEntryStatus: String, TolerantStringEnum {
     case draft, queued, sent, delivered, seen, rejected, unknown
@@ -58,8 +59,8 @@ public struct AllySlot: Codable, Sendable, Hashable {
 /// One exchange with an Ally: a message either way, or a draft of one.
 public struct AllyEntry: Codable, Sendable, Hashable, Identifiable {
     public var id: String
-    /// Which Ally. Not in the §6.1 record; present on `ally.entry` events
-    /// when the host includes it, and filled in by the store otherwise.
+    /// Which Ally (§7.6). Optional here only so an entry the store can't
+    /// place yet still shows.
     public var allyId: String?
     public var dir: AllyDirection
     public var ts: Int64
@@ -70,19 +71,21 @@ public struct AllyEntry: Codable, Sendable, Hashable, Identifiable {
     /// The entry this one answers.
     public var replyTo: String?
     public var status: AllyEntryStatus
+    /// Rejected: why, in one short sentence (「没发」「草稿过期了」「对方没收」「3 天没送到」).
+    public var note: String?
 
-    enum CodingKeys: String, CodingKey { case id, allyId, dir, ts, text, urgent, slots, replyTo, status }
+    enum CodingKeys: String, CodingKey { case id, allyId, dir, ts, text, urgent, slots, replyTo, status, note }
 
     public init(id: String, allyId: String? = nil, dir: AllyDirection, ts: Int64, text: String, urgent: Bool = false,
-                slots: [AllySlot]? = nil, replyTo: String? = nil, status: AllyEntryStatus) {
+                slots: [AllySlot]? = nil, replyTo: String? = nil, status: AllyEntryStatus, note: String? = nil) {
         self.id = id; self.allyId = allyId; self.dir = dir; self.ts = ts; self.text = text; self.urgent = urgent
-        self.slots = slots; self.replyTo = replyTo; self.status = status
+        self.slots = slots; self.replyTo = replyTo; self.status = status; self.note = note
     }
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
         id = l.string("id", or: UUID().uuidString)
-        allyId = l.string("allyId")
+        allyId = l.expect("allyId", l.string("allyId"))
         dir = l.decode(AllyDirection.self, "dir", or: .unknown)
         ts = l.millis("ts", or: 0)
         text = l.string("text", or: "")
@@ -90,6 +93,7 @@ public struct AllyEntry: Codable, Sendable, Hashable, Identifiable {
         slots = l.array(AllySlot.self, "slots")
         replyTo = l.string("replyTo")
         status = l.decode(AllyEntryStatus.self, "status", or: .unknown)
+        note = l.string("note")
     }
 
     /// A draft waiting for the owner's 发送 / 改一下 / 不发.
@@ -104,16 +108,17 @@ public struct AllyInfo: Codable, Sendable, Hashable, Identifiable {
     public var ownerName: String
     /// Their assistant's own name.
     public var assistantName: String
+    /// Connected now, or reached in the last 5 minutes without a failure since.
     public var online: Bool
-    /// When their computer was last reached (ms); nil if never.
-    public var lastSeen: Int64?
-    /// The latest exchange either way.
+    /// When their computer was last reached (ms); 0 if never.
+    public var lastSeen: Int64
+    /// The newest exchange either way, in any state (a draft too).
     public var lastEntry: AllyEntry?
 
     enum CodingKeys: String, CodingKey { case id, kind, ownerName, assistantName, online, lastSeen, lastEntry }
 
     public init(id: String, kind: AllyKind, ownerName: String, assistantName: String, online: Bool,
-                lastSeen: Int64? = nil, lastEntry: AllyEntry? = nil) {
+                lastSeen: Int64 = 0, lastEntry: AllyEntry? = nil) {
         self.id = id; self.kind = kind; self.ownerName = ownerName; self.assistantName = assistantName
         self.online = online; self.lastSeen = lastSeen; self.lastEntry = lastEntry
     }
@@ -125,8 +130,7 @@ public struct AllyInfo: Codable, Sendable, Hashable, Identifiable {
         ownerName = l.string("ownerName", or: "")
         assistantName = l.string("assistantName", or: "")
         online = l.bool("online", or: false)
-        // Required, but null means never reached.
-        lastSeen = l.has("lastSeen") ? l.millis("lastSeen") : l.expect("lastSeen", l.millis("lastSeen"))
+        lastSeen = l.millis("lastSeen", or: 0)
         lastEntry = l.decode(AllyEntry.self, "lastEntry")
     }
 
@@ -202,9 +206,9 @@ public struct AllyInviteLink: Sendable, Equatable {
     }
 }
 
-/// `ally.updated` payload. The PRD leaves its shape open, so any of:
-/// `{allies: [...]}` (the whole list), `{ally: {...}}` or a bare AllyInfo
-/// (one changed), `{removed: id}`. Anything else: fetch the list again.
+/// `ally.updated` payload: the whole list, `{allies: [...]}` (§7.6). Also
+/// read: `{ally: {...}}` or a bare AllyInfo (one changed) and `{removed: id}`.
+/// Anything else: fetch the list again.
 public enum AllyUpdate: Sendable {
     case list([AllyInfo])
     case upsert(AllyInfo)
@@ -220,7 +224,8 @@ public enum AllyUpdate: Sendable {
     }
 }
 
-/// `ally.entry` payload: `{allyId, entry}`, or a bare entry (with its `allyId`).
+/// `ally.entry` payload: `{entry}`, the entry carrying its `allyId` (§7.6).
+/// Also read: `{allyId, entry}`, or a bare entry.
 public struct AllyEntryEvent: Sendable {
     public var allyId: String?
     public var entry: AllyEntry

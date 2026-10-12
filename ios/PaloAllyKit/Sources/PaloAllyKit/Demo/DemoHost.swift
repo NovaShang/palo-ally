@@ -726,7 +726,7 @@ public actor DemoHost {
             let id = p["id"]?.stringValue ?? ""
             guard allies.contains(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Ally") }
             allies.removeAll { $0.id == id }
-            emit(RPCEventName.allyUpdated, ["removed": .string(id)] as JSONValue)
+            emitAllies()
             return ["ok": true]
         case RPCMethod.allyLog:
             let id = p["id"]?.stringValue ?? ""
@@ -738,16 +738,20 @@ public actor DemoHost {
             guard var e = allyLogs.values.joined().first(where: { $0.id == id }) else {
                 throw DemoError(message: "这条草稿已经没有了")
             }
+            // Already decided: as it is, never sent twice (§7.6).
             guard e.status == .draft else { return ["entry": try .from(e)] }
+            let words = p["text"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
             switch p["action"]?.stringValue {
             case "send":
+                // With text: the owner's changed words go out.
+                if let words, !words.isEmpty { e.text = words }
                 e.status = .queued
             case "discard":
                 e.status = .rejected
+                e.note = "没发"
             case "edit":
-                let t = (p["text"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !t.isEmpty else { throw DemoError(message: "要发的话不能是空的") }
-                e.text = t
+                guard let words, !words.isEmpty else { throw DemoError(message: "要发的话不能是空的") }
+                e.text = words
             default:
                 throw DemoError(message: "看不懂这个操作")
             }
@@ -761,20 +765,21 @@ public actor DemoHost {
 
     // MARK: allies
 
-    /// The whole list (`ally.updated`).
+    /// The whole list (`ally.updated`, §7.6).
     private func emitAllies() {
         emit(RPCEventName.allyUpdated, ["allies": allies])
     }
 
-    /// An exchange changed: its log, its Ally's last line, and `ally.entry`.
+    /// An exchange changed: its log, its Ally's last line (the newest, in
+    /// any state), and `ally.entry {entry}`.
     private func updateEntry(_ e: AllyEntry) {
         guard let allyId = e.allyId else { return }
         var log = allyLogs[allyId] ?? []
         if let i = log.firstIndex(where: { $0.id == e.id }) { log[i] = e } else { log.append(e) }
         allyLogs[allyId] = log
-        emit(RPCEventName.allyEntry, ["allyId": .string(allyId), "entry": (try? JSONValue.from(e)) ?? .null] as JSONValue)
+        emit(RPCEventName.allyEntry, ["entry": (try? JSONValue.from(e)) ?? .null] as JSONValue)
         if let i = allies.firstIndex(where: { $0.id == allyId }),
-           e.status != .draft, e.status != .rejected, e.ts >= (allies[i].lastEntry?.ts ?? 0) || allies[i].lastEntry?.id == e.id {
+           allies[i].lastEntry?.id == e.id || e.ts >= (allies[i].lastEntry?.ts ?? 0) {
             allies[i].lastEntry = e
             emitAllies()
         }
@@ -809,10 +814,13 @@ public actor DemoHost {
         postAlly(e, name: ally.displayName)
     }
 
+    /// Into the conversation as the host does it (§7.6): their words as a
+    /// system message, a draft as the assistant's card.
     private func postAlly(_ e: AllyEntry, name: String) {
         seq += 1
-        var m = ChatMessage(seq: seq, id: "m\(seq)", role: .assistant, kind: .ally, text: e.text, channel: .app,
-                            ts: e.ts)
+        let incoming = e.dir == .incoming
+        var m = ChatMessage(seq: seq, id: "m\(seq)", role: incoming ? .system : .assistant, kind: .ally, text: e.text,
+                            channel: .system, ts: e.ts, proactive: incoming ? true : nil)
         m.allyId = e.allyId
         m.allyName = name
         m.dir = e.dir

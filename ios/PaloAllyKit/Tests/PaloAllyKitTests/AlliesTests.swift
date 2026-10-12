@@ -14,7 +14,7 @@ struct AlliesDecodingTests {
     @Test func allyInfoAsInThePRD() throws {
         let (a, issues) = try decode(AllyInfo.self, """
         {"id":"al1","kind":"family","ownerName":"家人","assistantName":"小橘","online":true,"lastSeen":1791216926595,
-         "lastEntry":{"id":"e1","dir":"in","ts":1791216900000,"text":"今晚我晚点回","urgent":false,"status":"seen"}}
+         "lastEntry":{"id":"e1","allyId":"al1","dir":"in","ts":1791216900000,"text":"今晚我晚点回","urgent":false,"status":"seen"}}
         """)
         #expect(issues.isEmpty)
         #expect(a.kind == .family && a.online && a.lastSeen == 1791216926595)
@@ -24,11 +24,11 @@ struct AlliesDecodingTests {
 
     @Test func allyNeverSeenAndUnknownKind() throws {
         let (a, issues) = try decode(AllyInfo.self, """
-        {"id":"al2","kind":"coworker","ownerName":"","assistantName":"阿福","online":false,"lastSeen":null}
+        {"id":"al2","kind":"coworker","ownerName":"","assistantName":"阿福","online":false,"lastSeen":0}
         """)
-        #expect(a.lastSeen == nil && a.lastEntry == nil)
+        #expect(a.lastSeen == 0 && a.lastEntry == nil) // 0: never reached
         #expect(a.kind == .unknown)
-        #expect(issues.count == 1 && issues[0].contains("coworker")) // null lastSeen is fine, the kind isn't
+        #expect(issues.count == 1 && issues[0].contains("coworker"))
         #expect(a.displayName == "阿福")
         // Missing lastSeen altogether is reported.
         let (_, missing) = try decode(AllyInfo.self, #"{"id":"x","kind":"mine","ownerName":"a","assistantName":"b","online":true}"#)
@@ -37,7 +37,7 @@ struct AlliesDecodingTests {
 
     @Test func entryWithSlotsAndEveryStatus() throws {
         let (e, issues) = try decode(AllyEntry.self, """
-        {"id":"e2","dir":"out","ts":"2026-10-11T18:00:00+08:00","text":"周六下午哪个时间合适？","urgent":true,
+        {"id":"e2","allyId":"al1","dir":"out","ts":"2026-10-11T18:00:00+08:00","text":"周六下午哪个时间合适？","urgent":true,
          "slots":[{"start":"2026-10-17T14:00:00+08:00","end":"2026-10-17T16:00:00+08:00"}],"replyTo":"e1","status":"draft"}
         """)
         #expect(issues.isEmpty)
@@ -50,18 +50,22 @@ struct AlliesDecodingTests {
             #expect(AllyEntryStatus(rawValue: s) != nil)
         }
         let (odd, oddIssues) = try decode(AllyEntry.self, #"{"id":"e3","dir":"sideways","ts":1,"text":"x","urgent":false,"status":"lost"}"#)
-        #expect(odd.dir == .unknown && odd.status == .unknown && oddIssues.count == 2)
+        #expect(odd.dir == .unknown && odd.status == .unknown && odd.allyId == nil && oddIssues.count == 3)
         #expect(!odd.isPendingDraft)
+        // Rejected says why.
+        let (no, noIssues) = try decode(AllyEntry.self, #"{"id":"e4","allyId":"a","dir":"out","ts":1,"text":"x","urgent":false,"status":"rejected","note":"3 天没送到"}"#)
+        #expect(noIssues.isEmpty && no.status == .rejected && no.note == "3 天没送到")
         // An incoming draft is not the owner's to send.
         #expect(!AllyEntry(id: "i", dir: .incoming, ts: 1, text: "", status: .draft).isPendingDraft)
     }
 
     @Test func chatMessageOfKindAlly() throws {
         let (m, issues) = try decode(ChatMessage.self, """
-        {"seq":7,"id":"m7","role":"assistant","kind":"ally","text":"今晚我晚点回","channel":"app","ts":1,
+        {"seq":7,"id":"m7","role":"system","kind":"ally","text":"今晚我晚点回","channel":"system","ts":1,"proactive":true,
          "allyId":"al1","allyName":"家人","dir":"in","entryId":"e1"}
         """)
         #expect(issues.isEmpty)
+        #expect(m.role == .system && m.channel == .system)
         #expect(m.kind == .ally && m.allyId == "al1" && m.allyName == "家人" && m.dir == .incoming && m.entryId == "e1")
         // And back out the same (the demo host and fixtures encode messages).
         let again = try JSONValue.from(m).decode(ChatMessage.self)
@@ -75,9 +79,9 @@ struct AlliesDecodingTests {
         #expect(i2.isEmpty && invite.expiresAt == 1_791_713_400_000)
         let (accepted, i3) = try decode(AllyResult.self, #"{"ally":{"id":"a","kind":"family","ownerName":"小林","assistantName":"阿福","online":true,"lastSeen":5}}"#)
         #expect(i3.isEmpty && accepted.ally?.ownerName == "小林")
-        let (log, i4) = try decode(AllyEntriesResult.self, #"{"entries":[{"id":"e","dir":"in","ts":1,"text":"嗨","urgent":false,"status":"delivered"}]}"#)
+        let (log, i4) = try decode(AllyEntriesResult.self, #"{"entries":[{"id":"e","allyId":"a","dir":"in","ts":1,"text":"嗨","urgent":false,"status":"delivered"}]}"#)
         #expect(i4.isEmpty && log.entries.count == 1)
-        let (decided, i5) = try decode(AllyEntryResult.self, #"{"entry":{"id":"e","dir":"out","ts":1,"text":"好","urgent":false,"status":"queued"}}"#)
+        let (decided, i5) = try decode(AllyEntryResult.self, #"{"entry":{"id":"e","allyId":"a","dir":"out","ts":1,"text":"好","urgent":false,"status":"queued"}}"#)
         #expect(i5.isEmpty && decided.entry?.status == .queued)
         let (_, i6) = try decode(AllyEntryResult.self, "{}")
         #expect(i6.contains { $0.contains("entry") })
@@ -177,15 +181,15 @@ struct AlliesStoreTests {
         await host.applyScenario("allies")
         #expect(await until { store.messages.filter { $0.kind == .ally }.count == 2 && store.pendingAllyDrafts.count == 1 })
         let incoming = try #require(store.messages.first { $0.kind == .ally && $0.dir == .incoming })
-        #expect(incoming.allyName == "家人" && incoming.text.contains("公园"))
+        #expect(incoming.allyName == "家人" && incoming.text.contains("公园") && incoming.role == .system)
         #expect(store.allyEntry(id: incoming.entryId!)?.status == .delivered)
         let draft = try #require(store.pendingAllyDrafts.first)
         #expect(draft.allyId == "al-family" && draft.slots?.count == 2)
         // Its card has a place in the conversation, so nothing waits at the end.
         #expect(store.messages.contains { $0.entryId == draft.id && $0.dir == .outgoing })
         #expect(store.unanchoredPendingDrafts.isEmpty)
-        // The list's last line is the newest exchange, not the draft.
-        #expect(store.ally(id: "al-family")?.lastEntry?.id == incoming.entryId)
+        // The list's last line is the newest exchange, the draft included (§7.6).
+        #expect(store.ally(id: "al-family")?.lastEntry?.id == draft.id)
     }
 
     @Test func sendingADraftGoesQueuedThenDeliveredThenSeen() async throws {
@@ -217,12 +221,15 @@ struct AlliesStoreTests {
         try await store.send(draft: draft, text: "  今晚九点到家  ")
         let sent = try #require(store.allyEntry(id: draft.id))
         #expect(sent.text == "今晚九点到家" && sent.status != .draft)
-        #expect(await host.requestLog.filter { $0 == "ally.draft.decide" }.count == 2) // edit, then send
+        // One call: send with the changed words (§7.6).
+        #expect(await host.lastParams["ally.draft.decide"] == ["id": .string(draft.id), "action": "send", "text": "今晚九点到家"])
         // Unchanged words: just 发送.
         await host.makeDraft(to: "al-family", text: "好的")
         #expect(await until { store.pendingAllyDrafts.count == 1 })
-        try await store.send(draft: store.pendingAllyDrafts[0], text: "好的")
-        #expect(await host.requestLog.filter { $0 == "ally.draft.decide" }.count == 3)
+        let second = store.pendingAllyDrafts[0]
+        try await store.send(draft: second, text: "好的")
+        #expect(await host.lastParams["ally.draft.decide"] == ["id": .string(second.id), "action": "send"])
+        #expect(await host.requestLog.filter { $0 == "ally.draft.decide" }.count == 2)
     }
 
     @Test func notSendingMarksItRejected() async throws {
@@ -232,9 +239,9 @@ struct AlliesStoreTests {
         let draft = store.pendingAllyDrafts[0]
         try await store.decide(draft, .discard)
         #expect(store.allyEntry(id: draft.id)?.status == .rejected)
+        #expect(store.allyEntry(id: draft.id)?.note == "没发")
         #expect(store.pendingAllyDrafts.isEmpty)
-        // A rejected draft never becomes the list's last line.
-        #expect(store.ally(id: "al-family")?.lastEntry?.id == "seed-4")
+        #expect(store.ally(id: "al-family")?.lastEntry?.status == .rejected)
     }
 
     @Test func aDecisionTheComputerRefusesIsPutBack() async throws {
@@ -254,21 +261,23 @@ struct AlliesStoreTests {
         #expect(store.pendingAllyDrafts.map(\.id) == ["e9"])
     }
 
-    @Test func aComputerThatSendsOnEditIsNotAskedTwice() async throws {
+    @Test func changedWordsGoWithTheSend() async throws {
         let host = ManualHost()
         let store = AppStore(transport: host.transport)
         store.start()
         #expect(await until { store.connection == .online })
         let draft = AllyEntry(id: "e1", allyId: "a", dir: .outgoing, ts: 5, text: "原话", status: .draft)
-        store.apply(event: RPCEventName.allyEntry, data: ["allyId": "a", "entry": try JSONValue.from(draft)])
+        store.apply(event: RPCEventName.allyEntry, data: ["entry": try JSONValue.from(draft)])
+        #expect(store.allyLog("a").map(\.id) == ["e1"]) // the entry says whose it is
         let sending = Task { try await store.send(draft: draft, text: "新的话") }
         #expect(await until { host.request("ally.draft.decide") != nil })
         let req = host.request("ally.draft.decide")!
-        #expect(req.params == ["id": "e1", "action": "edit", "text": "新的话"])
-        host.respond(req.id, ["entry": ["id": "e1", "dir": "out", "ts": 5, "text": "新的话", "urgent": false, "status": "queued"]])
+        #expect(req.params == ["id": "e1", "action": "send", "text": "新的话"])
+        #expect(store.allyEntry(id: "e1")?.text == "新的话" && store.allyEntry(id: "e1")?.status == .queued) // at once
+        host.respond(req.id, ["entry": ["id": "e1", "allyId": "a", "dir": "out", "ts": 5, "text": "新的话", "urgent": false, "status": "sent"]])
         try await sending.value
         #expect(host.requests.filter { $0.method == "ally.draft.decide" }.count == 1)
-        #expect(store.allyEntry(id: "e1")?.status == .queued)
+        #expect(store.allyEntry(id: "e1")?.status == .sent)
     }
 
     @Test func aHostWithoutAlliesHidesThem() async throws {
