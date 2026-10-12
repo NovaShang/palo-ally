@@ -263,6 +263,79 @@ describe("talking to a Pal", () => {
     await t.hub.pals.stopAndWait();
   });
 
+  test("the list follows it promptly (pals.updated within 300 ms): busy, a card waiting, the card answered, the turn's end, 停止 — also when Claude Code is slow to end a stopped turn", async () => {
+    let slowStop = 0;
+    let finish!: () => void;
+    const t = setup({
+      palScript: async (text, ctx) => {
+        if (text === "要确认") {
+          await ctx.useTool("Bash", { command: "npm run build" }, { ask: true });
+          await new Promise<void>((r) => (finish = r));
+          ctx.emit({ type: "assistant_text", text: "构建好了", parentToolUseId: null, messageId: "msg_build" });
+          return;
+        }
+        ctx.emit({ type: "tool_use", id: `t-${text}`, name: "Bash", input: { command: "sleep 100" }, parentToolUseId: null });
+        await ctx.interrupted;
+        // Claude Code ends a stopped turn at once, or a while later (a tool slow to stop)
+        if (slowStop) {
+          await tick(slowStop);
+          ctx.emit({ type: "text_delta", text: "停", messageId: "msg_late" });
+          ctx.emit({ type: "tool_use", id: "t-late", name: "Read", input: { file_path: "/x" }, parentToolUseId: null });
+        }
+      },
+    });
+    const { pal } = await t.call("pals.adopt", { sessionId: bgSession(t) });
+    const lists: { at: number; status: string; pending: number }[] = [];
+    t.hub.bus.on((event, data: any) => {
+      if (event === "pals.updated") lists.push({ at: Date.now(), status: data.pals[0]?.status, pending: data.pals[0]?.pending });
+    });
+    // how long after `since` the list first said `want`
+    const said = async (want: string, since: number) => {
+      await waitFor(() => lists.some((l) => l.at >= since && l.status === want), 3_000);
+      return lists.find((l) => l.at >= since && l.status === want)!.at - since;
+    };
+
+    // a card: waiting, then answered (busy again), then the turn's end
+    let t0 = Date.now();
+    await t.call("pals.send", { id: pal.id, text: "要确认" });
+    expect(await said("waiting", t0)).toBeLessThan(300);
+    t0 = Date.now();
+    await t.call("approval.answer", { id: t.hub.approvals.listPending()[0]!.id, allow: true });
+    expect(await said("busy", t0)).toBeLessThan(300);
+    t0 = Date.now();
+    finish();
+    expect(await said("idle", t0)).toBeLessThan(300);
+
+    // 停止, Claude Code ending the turn at once
+    await t.call("pals.send", { id: pal.id, text: "长活" });
+    await waitFor(() => t.hub.pals.list()[0]!.status === "busy");
+    t0 = Date.now();
+    await t.call("pals.stop", { id: pal.id });
+    expect(await said("idle", t0)).toBeLessThan(300);
+
+    // 停止, Claude Code taking 1.5 s: the list says it stopped anyway, and
+    // what's left of that turn doesn't make it busy again
+    slowStop = 1_500;
+    await t.call("pals.send", { id: pal.id, text: "又一个长活" });
+    await waitFor(() => t.hub.pals.list()[0]!.status === "busy");
+    t0 = Date.now();
+    await t.call("pals.stop", { id: pal.id });
+    expect(Date.now() - t0).toBeLessThan(300);
+    expect(await said("idle", t0)).toBeLessThan(300);
+    await waitFor(() => t.palEvents("chat.delta").some((d) => d.id === "msg_late"), 3_000);
+    await tick(100);
+    expect(lists.filter((l) => l.at >= t0 + 300).every((l) => l.status === "idle")).toBe(true);
+    expect(t.hub.pals.list()[0]!.status).toBe("idle");
+    // no error notice for the stopped turn, and the next turn works as usual
+    expect(t.palEvents("chat.message").some((m) => m.kind === "notice")).toBe(false);
+    slowStop = 0;
+    await t.call("pals.send", { id: pal.id, text: "再来" });
+    expect(await said("busy", Date.now() - 50)).toBeLessThan(400);
+    await t.call("pals.stop", { id: pal.id });
+    await waitFor(() => t.hub.pals.list()[0]!.status === "idle");
+    await t.hub.pals.stopAndWait();
+  });
+
   test("its permission prompt and question are cards with the Pal as source, wherever the owner is; one push per 10 minutes; allow lets it run, with the harness' always-allow on offer", async () => {
     const t = setup({
       palScript: async (text, ctx) => {

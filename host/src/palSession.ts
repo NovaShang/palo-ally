@@ -77,6 +77,7 @@ export interface PalSessionDeps {
 
 const MAX_FAILURES = 5; // restarts within FAILURE_WINDOW_MS before it stays stopped
 const FAILURE_WINDOW_MS = 10 * 60_000;
+const STOP_SETTLE_MS = 250; // a stopped turn not ended by Claude Code by then is ended here
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -93,6 +94,8 @@ export class PalSession {
   private turnOpen = false;
   private pendingUuids = new Set<string>();
   private interrupted = false;
+  private windingDown = false; // ended here after 停止: what's left of that turn doesn't make it busy again
+  private turnEndWaiters: (() => void)[] = [];
   private activity = "";
   private streamId: string | null = null;
   private streamText = "";
@@ -357,6 +360,8 @@ export class PalSession {
     this.turnOpen = false;
     this.pendingUuids.clear();
     this.activity = "";
+    this.windingDown = false;
+    for (const w of this.turnEndWaiters.splice(0)) w();
     this.dropCards(why);
     if (wasBusy && !this.closing) this.notice("刚才这一轮被打断了（它的进程意外退出）。我会自动把它接上，再跟它说一次就行。");
   }
@@ -451,20 +456,30 @@ export class PalSession {
     this.rec.lastUsedAt = ts;
     this.d.save();
     proc.send(t, uuid);
+    this.windingDown = false;
     this.touch();
     return msg;
   }
 
-  /** 停止: ends the current turn; its open cards are answered no. */
+  /**
+   * 停止: ends the current turn; its open cards are answered no. The list
+   * shows it stopped within a moment: Claude Code ends a stopped turn with
+   * its result at once, and one it's slower to wind down (a tool that takes
+   * a while to stop) is ended here, its late events not making it busy again.
+   */
   async interrupt(by: string): Promise<void> {
     this.dropCards(`stop:${by}`);
-    if (!this.busy || !this.proc) return;
+    this.d.changed();
+    const proc = this.proc;
+    if (!this.busy || !proc) return;
     this.interrupted = true;
-    await this.proc.interrupt();
-    // Claude Code ends the turn with a result; if it doesn't, end it here.
-    setTimeout(() => {
-      if (this.interrupted && this.busy) this.endTurn();
-    }, 5_000).unref?.();
+    const ended = new Promise<void>((r) => this.turnEndWaiters.push(r));
+    void proc.interrupt();
+    await Promise.race([ended, sleep(STOP_SETTLE_MS)]);
+    if (this.interrupted && this.busy && proc === this.proc) {
+      this.endTurn();
+      this.windingDown = true;
+    }
   }
 
   // ---------------- what it says ----------------
@@ -479,7 +494,7 @@ export class PalSession {
   }
 
   private beginTurn(): void {
-    if (this.turnOpen) return;
+    if (this.turnOpen || this.windingDown) return;
     this.turnOpen = true;
     this.activity = "";
     this.touch();
@@ -491,6 +506,7 @@ export class PalSession {
     this.pendingUuids.clear();
     this.interrupted = false;
     this.activity = "";
+    for (const w of this.turnEndWaiters.splice(0)) w();
     this.touch();
   }
 
@@ -505,7 +521,7 @@ export class PalSession {
   }
 
   private setActivity(a: string | null): void {
-    if (a === null || a === this.activity) return;
+    if (a === null || a === this.activity || this.windingDown) return;
     this.activity = a;
     this.d.changed();
   }
@@ -518,6 +534,7 @@ export class PalSession {
           this.rec.model = e.model;
           this.d.save();
         }
+        this.windingDown = false; // a new turn
         this.beginTurn();
         // A turn it started by itself is often another session's message: show it.
         setTimeout(() => this.follower?.poke(), 300).unref?.();
@@ -561,8 +578,10 @@ export class PalSession {
         this.setActivity(describeActivity(e.name));
         break;
       case "result": {
+        const stopped = this.interrupted || this.windingDown; // its error is the stop, not news
+        this.windingDown = false;
         for (const u of e.consumedUuids ?? [...this.pendingUuids]) this.pendingUuids.delete(u);
-        if (e.isError && !this.interrupted && !e.startupFailure) this.notice(friendlyError(e.text, e.errorCategory));
+        if (e.isError && !stopped && !e.startupFailure) this.notice(friendlyError(e.text, e.errorCategory));
         this.rec.lastUsedAt = this.d.now();
         if (this.pendingUuids.size) {
           this.closeStream();
