@@ -7,7 +7,7 @@ import SwiftUI
 ///   A — our TwoDrops shader alone (colored glass, thickness-based see-through).
 ///   C — what the app uses: system Liquid Glass (GlassDropsView) with the
 ///       shader over it for depth and highlights.
-/// Open with `-demoScreen glassDrops`, or long-press the 「它」 header avatar.
+/// Open with `-demoScreen glassDrops`, or long-press the avatar in management's header.
 struct GlassDropsDemo: View {
     var theme: AppTheme
     var close: (() -> Void)?

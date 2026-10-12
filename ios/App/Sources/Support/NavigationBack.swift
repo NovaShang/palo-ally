@@ -1,11 +1,11 @@
 import UIKit
 
 /// ⌘[ on large screens: pop one page off the navigation stack the owner is
-/// looking at. Several stacks can be on screen at once (the 「它」 sidebar,
-/// the conversation, 成果); the narrow layout keeps the off-screen places
-/// alive beside the window. Only stacks actually inside the window count, and
-/// of those the rightmost one with something pushed (成果, then 「它」). A
-/// sheet or preview on top has its own way out (Esc / its buttons).
+/// looking at. Several stacks can be on screen at once (the list, the
+/// conversation, 成果 beside it). Only stacks actually inside the window
+/// count, and of those the rightmost one with something pushed (成果, then
+/// the conversation). A sheet or preview on top has its own way out (Esc /
+/// its buttons).
 @MainActor
 enum NavigationBack {
     /// A sheet, popover or preview on top: close it (SwiftUI's own

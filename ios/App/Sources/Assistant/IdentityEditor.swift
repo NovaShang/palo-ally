@@ -2,7 +2,7 @@ import PaloAllyKit
 import SwiftUI
 
 /// Name the assistant and pick its color. Shown once after the first pairing
-/// (「给它起个名字，选个颜色」) and later from the 「它」 header. Both live on
+/// (「给它起个名字，选个颜色」) and later from management's header. Both live on
 /// the computer: the name in soul.md (so it knows what it's called) and in its
 /// settings, the color in its settings — every phone and Mac sees the same.
 /// The color is also the app's theme color.
