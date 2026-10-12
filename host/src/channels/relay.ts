@@ -405,16 +405,21 @@ export class RelayChannel implements AllyRelay {
       try {
         const hello = parseHandshake(unit);
         // An Ally's host is looked up first: if its id ever matched a phone's,
-        // it lands in the narrower role.
+        // it lands in the narrower role. The role is the one whose key
+        // verified the handshake.
+        let isAlly = false;
         const r = hostAccept(hello, this.identity, (id) => {
-          const ally = this.hub.allies.inboundKey(id);
-          if (ally) return ally;
+          const allyKey = this.hub.allies.inboundKey(id);
+          if (allyKey) {
+            isAlly = true;
+            return allyKey;
+          }
           const d = this.devices().find((x) => x.deviceId === id);
           return d ? unb64(d.pub) : null;
         });
         s.secure = r.secure;
         s.deviceId = r.deviceId;
-        if (this.hub.allies.inboundKey(r.deviceId)) {
+        if (isAlly) {
           const streams = this.streams;
           this.send(buildFrame(T_DATA, s.id, r.reply));
           s.ally = this.hub.allies.attachInbound(r.deviceId, {
