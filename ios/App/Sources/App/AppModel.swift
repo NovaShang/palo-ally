@@ -148,17 +148,32 @@ final class AppModel {
     /// inspector beside the conversation. Set by the root from the size class.
     enum Layout: String, Equatable { case phone, split }
     private(set) var layout: Layout = .phone
+    /// A short window (a big phone on its side): 成果 is pushed, not beside
+    /// the conversation (there's no room for a column).
+    var shortWindow = false {
+        didSet { if shortWindow && inspectorShown { setLayout(.phone, converting: true) } }
+    }
+    /// 成果 opens beside the conversation (large screens) rather than pushed.
+    var libraryBeside: Bool { layout == .split && !shortWindow }
 
-    func setLayout(_ new: Layout) {
-        guard new != layout else { return }
-        layout = new
-        // What was open the other way doesn't carry over.
+    func setLayout(_ new: Layout, converting: Bool = false) {
+        guard new != layout || converting else { return }
+        if !converting { layout = new }
         if new == .phone {
-            inspectorShown = false
-            showManagement = false
-        } else {
-            detailPath = NavigationPath()
-            if selection == nil { selection = .palo }
+            // 成果 beside the conversation becomes 成果 pushed over it (a
+            // sheet, management, stays a sheet).
+            if inspectorShown {
+                let items = libraryPath
+                inspectorShown = false
+                var path = NavigationPath()
+                path.append(Page.library)
+                for id in items { path.append(Page.artifact(id)) }
+                if selection != .palo { selection = .palo }
+                detailPath = path
+            }
+        } else if selection == nil {
+            // Back on the list (phones) is the assistant's conversation beside it.
+            selection = .palo
         }
     }
 
@@ -241,7 +256,7 @@ final class AppModel {
     /// 成果, from the toolbar of the assistant's conversation (phones:
     /// pushed; large screens: the inspector, or put it away).
     func toggleLibrary() {
-        guard layout == .phone else {
+        guard !libraryBeside else {
             if inspectorShown {
                 inspectorShown = false
             } else {
@@ -259,7 +274,7 @@ final class AppModel {
     /// ⌘F: 成果 with its search field focused.
     func focusLibrarySearch() {
         debugLog("[layout] search 成果")
-        if layout == .phone {
+        if !libraryBeside {
             toggleLibrary()
         } else {
             libraryPath = []
@@ -270,7 +285,7 @@ final class AppModel {
 
     /// From the conversation: just that artifact; one step back returns to it.
     func openArtifact(_ id: String) {
-        guard layout == .phone else {
+        guard !libraryBeside else {
             libraryPath = [id]
             inspectorShown = true
             return
@@ -280,7 +295,7 @@ final class AppModel {
 
     /// The way out of a single item to its whole collection.
     func showInLibrary(_ id: String? = nil) {
-        guard layout == .phone else {
+        guard !libraryBeside else {
             libraryPath = id.map { [$0] } ?? []
             inspectorShown = true
             return
@@ -329,7 +344,7 @@ final class AppModel {
     func goBack() {
         if NavigationBack.dismissPresented() { return }
         if NavigationBack.popVisible() { return }
-        if layout != .phone, inspectorShown { inspectorShown = false }
+        if libraryBeside, inspectorShown { inspectorShown = false }
     }
 
     var assistantTab: AssistantTab = .watches // 目标 opens first

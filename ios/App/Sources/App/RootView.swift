@@ -164,6 +164,7 @@ struct MainScreen: View {
     @Environment(AppStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.verticalSizeClass) private var heightClass
     @State private var voice = VoiceInputController()
 
     var body: some View {
@@ -176,9 +177,11 @@ struct MainScreen: View {
             ConversationDetail()
         }
         .onChange(of: sizeClass, initial: true) { _, c in
+            model.shortWindow = heightClass == .compact
             model.setLayout(c == .compact ? .phone : .split)
             model.applyLaunchScreen()
         }
+        .onChange(of: heightClass) { _, h in model.shortWindow = h == .compact }
         .environment(voice)
         // Voice input hears better with the conversation's names and terms.
         .task(id: ObjectIdentifier(store)) {
@@ -275,7 +278,7 @@ private struct ConversationDetail: View {
         .modifier(LibraryInspector(model: model, store: store))
         .background {
             // Esc puts 成果 away, like ⌘[.
-            if model.layout != .phone && model.inspectorShown {
+            if model.libraryBeside && model.inspectorShown {
                 Button("关闭成果") { model.inspectorShown = false }
                     .keyboardShortcut(.cancelAction)
                     .opacity(0)
@@ -295,7 +298,7 @@ private struct LibraryInspector: ViewModifier {
     let store: AppStore
 
     func body(content: Content) -> some View {
-        if model.layout == .phone {
+        if !model.libraryBeside {
             content
         } else {
             // Opened only on demand: the system may close it (too narrow) but
