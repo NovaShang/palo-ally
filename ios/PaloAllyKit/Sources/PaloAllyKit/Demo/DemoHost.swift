@@ -129,8 +129,11 @@ public actor DemoHost {
     public func applyScenario(_ name: String) {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         // Sessions' cards: kept for the sessions' own states; otherwise
-        // settled at the computer (they leave the conversation).
+        // settled at the computer (they leave the conversation). The helper
+        // proposal stays on offer only for those and `helper`, so nothing
+        // else waits on the owner.
         if !name.hasPrefix("session") { settleSessionCards() }
+        if !name.hasPrefix("session") && name != "helper" { withdrawProposals() }
         for i in approvals.indices where approvals[i].isPending && approvals[i].source == nil {
             approvals[i].status = .allowed
             emit(RPCEventName.approvalUpdated, approvals[i])
@@ -914,6 +917,15 @@ public actor DemoHost {
         setSession(id) { $0.status = .idle; $0.lastLine = reply }
     }
 
+    /// Proposals still on offer are no longer (`expired`), as the host
+    /// re-sends them: the same message.
+    private func withdrawProposals() {
+        for i in messages.indices where messages[i].proposal?.isPending == true {
+            messages[i].proposal?.status = .expired
+            emit(RPCEventName.chatMessage, messages[i])
+        }
+    }
+
     /// Every session card still waiting is answered at the computer, and
     /// those sessions carry on.
     private func settleSessionCards() {
@@ -1091,7 +1103,8 @@ public actor DemoHost {
         var n = 0
         func line(_ role: CCMessageRole, _ text: String, ago: Int64, from: String? = nil) -> CCMessage {
             n += 1
-            return CCMessage(id: "cm-\(n)", ts: now - ago, role: role, text: text, from: from)
+            // Not the shape of nextID's ("cm-1"), so later lines never share an id.
+            return CCMessage(id: "seed-cm\(n)", ts: now - ago, role: role, text: text, from: from)
         }
         // 网站帮手: a day of work before today's, so there is an older page.
         var site: [CCMessage] = [

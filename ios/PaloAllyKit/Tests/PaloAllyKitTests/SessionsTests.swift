@@ -162,6 +162,10 @@ struct SessionsDecodingTests {
         changed.text = "改过"
         let again = AppStore.merge(older + latest, [changed, m("e", 5)], older: false)
         #expect(again.map(\.id) == ["a", "b", "c", "d", "e"] && again[3].text == "改过")
+        // A page with one id twice keeps one line, the later copy.
+        var twice = m("c", 3)
+        twice.text = "后来的"
+        #expect(AppStore.merge([], [m("c", 3), twice], older: false).map(\.text) == ["后来的"])
         // Equal times keep the order they came in.
         #expect(AppStore.merge([m("x", 1)], [m("y", 1)], older: false).map(\.id) == ["x", "y"])
     }
@@ -330,6 +334,8 @@ struct SessionsStoreTests {
         #expect(store.settledAtComputer(a))
         #expect(await until { store.liveEndApprovals.isEmpty && store.liveEndQuestions.isEmpty })
         #expect(await until { !store.sessions.contains { $0.status == .waiting } })
+        // Nothing else waits on the owner either: the proposal is withdrawn.
+        #expect(await until { store.pendingHelperProposals.isEmpty })
         // The assistant's own decided cards are not "settled at the computer".
         var own = a
         own.source = nil

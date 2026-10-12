@@ -71,6 +71,9 @@ extension AppStore {
     /// already takes the page's copy. Oldest first by time, the arrival order
     /// kept among equal times.
     nonisolated static func merge(_ held: [CCMessage], _ page: [CCMessage], older: Bool) -> [CCMessage] {
+        // One line per id (the page's last copy): the list is keyed by id.
+        var seen: Set<String> = []
+        let page = page.reversed().filter { seen.insert($0.id).inserted }.reversed()
         let pageIDs = Set(page.map(\.id))
         let rest = held.filter { !pageIDs.contains($0.id) }
         let joined = older ? page + rest : rest + page
