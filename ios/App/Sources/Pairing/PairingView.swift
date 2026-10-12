@@ -177,6 +177,16 @@ struct PairingView: View {
 
     private func submit() {
         error = nil
+        // Someone's Ally invite, not a computer's pairing link.
+        if AllyInviteLink.isAllyLink(linkText) {
+            guard model.mode != .unpaired else {
+                error = "这是加 Ally 的二维码。先把这台设备和你自己的电脑连上，再扫它。"
+                return
+            }
+            model.allyInvite = PendingAllyInvite(link: linkText.trimmingCharacters(in: .whitespacesAndNewlines))
+            if isSheet { dismiss() }
+            return
+        }
         do {
             var link = try PairingLink.parse(linkText)
             let typed = code.filter(\.isNumber)

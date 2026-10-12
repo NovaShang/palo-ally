@@ -221,6 +221,10 @@ struct MainScreen: View {
         .sheet(isPresented: Binding(get: { needsNaming }, set: { if !$0 { model.namingDone = true } })) {
             IdentityEditor(purpose: .firstTime).environment(model).environment(store)
         }
+        // An Ally's invite opened from the system Camera.
+        .sheet(item: Binding(get: { model.allyInvite }, set: { model.allyInvite = $0 })) { pending in
+            AllyAcceptSheet(pending: pending).environment(model).environment(store)
+        }
     }
 
     private func switchContainer(to l: AppModel.Layout) {

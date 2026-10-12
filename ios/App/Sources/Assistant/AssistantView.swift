@@ -17,6 +17,8 @@ struct AssistantView: View {
                     .listRowBackground(Color.clear)
             }
 
+            AlliesSection()
+
             Section {
                 Picker("分类", selection: $model.assistantTab) {
                     ForEach(AssistantTab.allCases, id: \.self) { tab in
@@ -58,6 +60,13 @@ struct AssistantView: View {
         // Notification tap on a task opens its detail.
         .navigationDestination(item: $model.openTaskID) { id in
             TaskDetailView(taskID: id).modifier(InSidebarColumn())
+        }
+        // An Ally's label in the conversation opens their page.
+        .navigationDestination(item: $model.openAllyID) { id in
+            AllyDetailView(allyID: id).modifier(InSidebarColumn())
+        }
+        .sheet(isPresented: $model.showAllyInvite) {
+            AllyInviteSheet().environment(store)
         }
         .animation(.snappy, value: model.assistantTab)
     }

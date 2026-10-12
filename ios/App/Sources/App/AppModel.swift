@@ -15,8 +15,12 @@ let appLog = Logger(subsystem: "com.novashang.paloally", category: "app")
 ///   -demoTab <name>      watches (目标) | history (履历) | memory; old values tasks → history, approvals → watches
 ///   -pairLink <url>      start pairing with this paloally:// link (automation; skips the open-URL prompt)
 ///   -demoHosts <n>       demo with n assistants (2 shows the switcher)
-///   -demoState <name>    idle | busy | tasks — what the title capsule shows; quote — a reply quote in the composer
+///   -demoState <name>    idle | busy | tasks — what the title capsule shows; quote — a reply quote in the composer;
+///                        allies | alliesSent — an Ally's message and a draft back (sent, with `alliesSent`);
+///                        `-demoDraftEdit YES` opens drafts in 改一下, `-demoAllyRemove YES` an Ally's page on 解除
 ///   -demoScreen hosts | switcher   设置 → 我的助理 / the assistant switcher open
+///   -demoScreen allies | ally | allyInvite | allyAccept   「它」 with its Allies / one Ally's page
+///                        (`-demoAlly <id>`, default the first) / the invite QR / an invite opened from the Camera
 struct LaunchOptions {
     var demo: Bool
     var screen: String?
@@ -287,6 +291,7 @@ final class AppModel {
             showSettings = false
             showHostList = false
             openTaskID = nil
+            openAllyID = nil
         case .library:
             libraryRoot = .list
             libraryPath = []
@@ -325,6 +330,14 @@ final class AppModel {
         showSettings = false
         openTaskID = nil
         assistantRoot = .task(id)
+        place = .assistant
+    }
+    /// From the conversation: 「它」 with that Ally's page open.
+    func openAlly(_ id: String) {
+        showSettings = false
+        openTaskID = nil
+        assistantRoot = .tabs
+        openAllyID = id
         place = .assistant
     }
     /// The way out of a single item to its whole collection.
@@ -386,6 +399,12 @@ final class AppModel {
     /// A message the conversation should scroll to and briefly highlight
     /// (a search hit in 成果).
     var focusMessageSeq: Int64?
+    /// One Ally's page, open in 「它」 (from a label in the conversation, or launch).
+    var openAllyID: String?
+    /// 添加 Ally: the invite QR sheet.
+    var showAllyInvite = false
+    /// An Ally's invite opened from the system Camera: the confirm sheet.
+    var allyInvite: PendingAllyInvite?
 
     /// Slides back to the conversation and brings message `seq` into view.
     func jumpToMessage(seq: Int64) {
@@ -438,8 +457,18 @@ final class AppModel {
         case "switcher": showHostSwitcher = true
         case "pairing": if mode != .unpaired { startPairing(.replace) }
         case "identity": showAssistant = true; showIdentityEditor = true
+        case "allies": showAssistant = true
         #if DEBUG
         case "file": Task { await openDemoFile() }
+        case "ally":
+            let id = UserDefaults.standard.string(forKey: "demoAlly")
+            Task { @MainActor in
+                // Once the list has come in.
+                for _ in 0..<40 where store?.allies.isEmpty ?? true { try? await Task.sleep(for: .milliseconds(100)) }
+                if let id = id ?? store?.allies.first?.id { openAlly(id) }
+            }
+        case "allyInvite": showAssistant = true; showAllyInvite = true
+        case "allyAccept": allyInvite = PendingAllyInvite(link: Self.demoAllyInviteLink())
         #endif
         default: break
         }
@@ -450,6 +479,22 @@ final class AppModel {
     }
 
     #if DEBUG
+    /// `-demoScreen allyAccept`: someone else's invite, as the Camera opens it.
+    static func demoAllyInviteLink() -> String {
+        var c = URLComponents()
+        c.scheme = "paloally"
+        c.host = "ally"
+        c.queryItems = [
+            URLQueryItem(name: "relay", value: "https://relay.example.com"),
+            URLQueryItem(name: "daemon", value: "demo-other"),
+            URLQueryItem(name: "code", value: "135790"),
+            URLQueryItem(name: "hostkey", value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"),
+            URLQueryItem(name: "name", value: "小林"),
+            URLQueryItem(name: "exp", value: String(Date().epochMillis + 10 * 60_000)),
+        ]
+        return c.url?.absoluteString ?? "paloally://ally"
+    }
+
     /// `-demoScreen file`: the morning brief as if its card in the chat was
     /// tapped — the Markdown sheet, for snapshots.
     private func openDemoFile() async {
@@ -541,7 +586,7 @@ final class AppModel {
 
     func pendingCount(_ id: String) -> Int {
         guard let s = stores[id] else { return 0 }
-        return s.pendingApprovals.count + s.pendingQuestions.count
+        return s.pendingApprovals.count + s.pendingQuestions.count + s.pendingAllyDrafts.count
     }
 
     /// Something is waiting on another assistant (the dot on the title).
@@ -767,6 +812,14 @@ final class AppModel {
 
     func handle(url: URL) {
         guard url.scheme?.lowercased() == "paloally" else { return }
+        // Someone else's assistant (the system Camera opened their QR code):
+        // confirmed in a sheet over the conversation, added on this computer.
+        if AllyInviteLink.isAllyLink(url.absoluteString) {
+            appLog.info("ally invite received (mode \(String(describing: self.mode), privacy: .public))")
+            debugLog("ally invite received (mode \(String(describing: self.mode)))")
+            allyInvite = PendingAllyInvite(link: url.absoluteString)
+            return
+        }
         appLog.info("pairing link received (mode \(String(describing: self.mode), privacy: .public))")
         debugLog("pairing link received (mode \(String(describing: self.mode)))")
         pendingPairingLink = url.absoluteString
