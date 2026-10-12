@@ -20,7 +20,8 @@ host/        桌面 host = 一个 CLI 程序（Bun + TypeScript），daemon + on
     memory.ts           核心文件 + 原生 auto memory 的可见/可编辑投影
     chat.ts             主对话存档（History）+ seq + 补发
     router.ts           输出路由（App / CLI / 微信 / 推送）
-    allies.ts           Allies：和别人的助理传话、约时间，配对、待发队列、回执（docs/allies-prd.md）
+    allies.ts           Allies：和别人的助理传话、约时间，配对、档位、待发队列、回执（docs/allies-prd.md）
+    allyGate.ts         处理 Ally 来话那一轮的工具白名单（「只说话不动手」，allies-prd §11.5）
     pals.ts             Pal（docs/pals-prd.md）：主机自己跑的 Claude Code 会话；接管、交还终端、移出、Palo 开 Pal、一直开着、最多 5 个（state/pals.json）
     palSession.ts       一个 Pal：resume 它的记录跑起来、主人的话、流式回复、确认和提问、意外退出后自动接上、绝不两个进程写同一份记录
     palHistory.ts       Pal 的对话记录 → ChatMessage；跟着记录读别的会话发进来的话
@@ -61,18 +62,19 @@ relay/       不新写：复用 github.com/NovaShang/bento 的 relay/（bento-re
 | `SendUserFile(files, caption?, status, display?, temporary?)` | 照 Claude Code 原生 SendUserFile 定义（多一个 `temporary`）：文件在对话里显示成卡片（图片直接显示），默认同时进产出物库；`status: proactive` 推送；主人在微信上时也发到微信 |
 | `Artifact(file_path, title?, description?, files?)` | 照 Claude Code 原生 Artifact 发布：要长期留存的页面/文档进产出物库并在对话里出卡片；同一路径再发布 = 更新 |
 | `notify_user(text, urgent?)` | 主动推送（经路由器：App 推送；微信只发非敏感回执） |
-| `ally_list()` | Ally 列表：id、对方主人的称呼、助理名、标签、是否在线 |
-| `ally_send(to, text, urgent?, slots?, replyTo?)` | 只生成草稿卡片（聊天里 `kind:"ally"`、`dir:"out"`），立即返回；主人点「发送」（`ally.draft.decide`）才进待发队列 |
+| `ally_list()` | Ally 列表：id、对方主人的称呼、助理名、标签、档位（能对话 / 每句要你看）、是否在线 |
+| `ally_send(to, text, urgent?, slots?, replyTo?)` | 给「能对话」的 Ally 直接发出；给「每句要你看」的只生成草稿卡片，主人点「发送」（`ally.draft.decide`）才进待发队列。聊天里都是 `kind:"ally"`、`dir:"out"`、`role:"assistant"`。处理某个 Ally 来话的那一轮里，只有回给它的话能直接发出，给别的 Ally 的一律是草稿 |
 | `pals_list()` | 主人的 Pal（名字 = SendMessage 的 to、目录、状态、最后一句）和电脑上其他会话；跟 Pal 说话用原生 SendMessage |
 | `pal_propose(name, dir, duty, dailyUsd)` | 只生成提议卡片（聊天里 `kind:"helper"`），立即返回；主人点「开吧」（`helper.decide`）才开，交接说明是 Pal 的第一条消息 |
 
 ## 4. 安全（全部依赖 harness）
 
-- 判断哪些操作能做、哪些要问：Claude Code 的 `auto` 模式和它自己的权限规则。外壳没有自己的闸门、规则或分类器。
+- 判断哪些操作能做、哪些要问：Claude Code 的 `auto` 模式和它自己的权限规则。外壳没有自己的规则或分类器，只有一道闸门，见下一条。
+- 例外：处理 Ally 来话的那一轮（从来话交给 harness，到 harness 的某个 result 的 `user_message_uuids` 列出它为止），外壳只放行 `allyGate.ts` 的白名单：`ally_send` / `ally_list`、只读日历（按名字判断）、只读记忆（user.md、soul.md、自动记忆文件夹）、`AskUserQuestion`、`ToolSearch`。闸门是主会话的 PreToolUse 钩子（SDK 回调）：Claude Code 每次调工具都先问它，在 auto 模式和允许规则之前，说拒绝就拒绝；`canUseTool` 里再查一遍。每次拒绝记审计 `ally.tool.denied`。这期间主人的话留在外壳，那一轮结束后作为主人的一轮再交给 harness；别的主动轮次也等着。子 agent 的调用（`agent_id`）不受这道闸门管。
 - `canUseTool` → 审批卡片，转到 App / 微信 / 终端，多端先答先得，超时默认拒绝。卡片标「做了撤不回」= harness 给的 `defaultToNo`；「以后都允许」= 原样交回 harness 的 `suggestions`（`updatedPermissions`），规则存在 Claude Code 自己的设置里。
 - 停下：harness 的 `interrupt()` + `stopTask()`；卡死的轮次直接结束、换新进程（resume 同一会话），不留阻塞状态。
 - 探针：`permissionMode: "auto"` + `permissionPrompts: "none"`，只加载读类工具（为了上下文短，不是安全名单）。
-- 审计：工具调用以 harness 的会话记录为准；外壳只记自己的事件（确认决定、推送、重启）。
+- 审计：工具调用以 harness 的会话记录为准；外壳只记自己的事件（确认决定、推送、重启、Ally 那一轮被拒的工具）。
 
 ## 5. 线协议（host ↔ 客户端）
 
@@ -114,8 +116,10 @@ ChatMessage { seq:number; id:string; role:"user"|"assistant"|"system";
   channel:"app"|"cli"|"wechat"|"probe"|"schedule"|"system"; ts:number /*ms*/;
   proactive?:boolean; taskId?:string; approvalId?:string;
   clientMsgId?:string /* chat.send 带来的会原样回显 */;
-  allyId?:string; allyName?:string; dir?:"in"|"out"; entryId?:string
-  /* kind "ally"：收到的话 role "system"，草稿卡片 role "assistant"；最新文字和状态看 entry */;
+  allyId?:string; allyName?:string; dir?:"in"|"out"; entryId?:string; author?:"owner"|"assistant"
+  /* kind "ally"：收到的话 role "system"（author 是对方本人或对方的助理）；助理发出的 role "assistant"
+     （草稿卡片，或「能对话」时直接发出）；主人自己说的（ally.say）role "user"、channel "system"；
+     最新文字和状态看 entry */;
   proposal?:HelperProposal
   /* kind "helper"：Palo 提议开 Pal；状态变了，同一条消息（同 id、同 seq）再发一次 chat.message */;
   pal?:string /* 属于哪个 Pal 的对话（Pal.id）；没有 = Palo 的。Pal 的消息不进 Palo 的对话，seq = 毫秒时间 */;
@@ -133,10 +137,13 @@ CCMessage { id; ts; role:"owner"|"assistant"|"peer"|"palo"; text; from?
      peer：别的会话发来的，from 为它的名字 */ }
 CardSource { kind:"session"|"pal"; id /* CCSession.id 或 Pal.id */; name }
 AllyInfo { id; kind:"family"|"mine"; ownerName; assistantName; online:boolean;
-  lastSeen:number /*0 = 没联系上过*/; lastEntry?:AllyEntry }
+  lastSeen:number /*0 = 没联系上过*/; lastEntry?:AllyEntry;
+  trust:"converse"|"review" /* 你的助理怎么回对方：能对话 / 每句要你看 */;
+  theirTrust?:"converse"|"review" /* 对方的助理怎么回你；对方是第一版主机时没有 */ }
 AllyEntry { id; allyId; dir:"in"|"out"; ts; text; urgent:boolean;
   slots?:{start:string; end:string}[] /*ISO 8601 带时区*/; replyTo?:string;
-  status:"draft"|"queued"|"sent"|"delivered"|"seen"|"rejected"; note?:string /*rejected 的原因*/ }
+  status:"draft"|"queued"|"sent"|"delivered"|"seen"|"rejected"; note?:string /*rejected 的原因*/;
+  author:"owner"|"assistant" /* 发出的：主人自己 / 助理代说；收到的：对方本人 / 对方的助理 */ }
 Task { id; title; summary; status:"running"|"done"|"failed"|"needs_input"|"stopped";
   source:"auto"|"report"; createdAt; updatedAt; activityCount:number }
 TaskActivity { ts; kind:"tool_use"|"tool_result"|"text"; tool?:string; text:string }
@@ -194,10 +201,12 @@ ModelOption { value; displayName; description; efforts:string[] }
 | `audit.tail` | `{limit}` | `{entries}` |
 | `ally.list` | `{}` | `{allies:AllyInfo[]}` |
 | `ally.invite` | `{}` | `{link, expiresAt}`（`paloally://ally?relay&daemon&code&hostkey&name&exp`，10 分钟，一次性；App 画成二维码） |
-| `ally.accept` | `{link, kind:"family"\|"mine"}` | `{ally:AllyInfo}`（两段配对都完成才返回，通常几秒） |
+| `ally.accept` | `{link, kind:"family"\|"mine", trust?:"converse"\|"review"}` | `{ally:AllyInfo}`（两段配对都完成才返回，通常几秒；不带 trust 是 review。邀请方那边新 Ally 一律先是 review） |
 | `ally.remove` | `{id}` | `{ok}`（发 `ally.bye`，中继忘掉对方设备，记录保留） |
 | `ally.log` | `{id, beforeTs?, limit?}` | `{entries:AllyEntry[]}`（从旧到新，默认 50 条，最多 200） |
 | `ally.draft.decide` | `{id, action:"send"\|"edit"\|"discard", text?}` | `{entry}`（send 带 text 就发改过的；edit 只改文字；discard 记为 rejected「没发」） |
+| `ally.say` | `{id, text}` | `{entry}`（主人自己的话，author "owner"，不经卡片直接进待发队列；也算主人「已看到」） |
+| `ally.trust` | `{id, trust:"converse"\|"review"}` | `{ally:AllyInfo}`（同时发 `ally.updated`；对方从下一个 `ally.hello` 得知） |
 | `sessions.list` | `{}` | `{sessions:CCSession[], hooks:boolean}`（未接管的会话，最近活动的在前；hooks = 全局钩子开着没有） |
 | `sessions.history` | `{id, before?, limit?}` | `{messages:CCMessage[]}`（从旧到新；before = 客户端手里最早一条的 id，也接受毫秒时间；默认 50 条，最多 200） |
 | `sessions.hooks` | `{enabled?}` | `{enabled}`（不带 enabled 只查不改） |
@@ -212,7 +221,7 @@ ModelOption { value; displayName; description; efforts:string[] }
 
 **事件**（`RPC_EVENTS`）：`chat.message`（ChatMessage）、`chat.delta`（`{id, text}` 追加文本，最终以同 id 的 `chat.message` 收尾；轮次中断时外壳也会补发收尾）、`task.updated`（Task）、`approval.updated`（Approval）、`watch.updated`（`{watch}` 或 `{removed:id}`）、`artifact.updated`（Artifact）、`settings.updated`（Settings）、`status`（Status）、`commands.updated`（`{commands}`）、`ally.updated`（`{allies}`，整张列表）、`ally.entry`（`{entry}`，新的来往或状态变化）、`sessions.updated`（`{sessions}`，整张未接管会话的列表，变了就发）、`pals.updated`（同 `pals.list` 的结果，变了就发整张）。`chat.message` / `chat.delta` 带 `pal` 时属于那个 Pal 的对话（`chat.delta` 是 `{id, text, pal?}`）。会话和 Pal 的确认和提问走 `approval.updated` / `question.updated`，带 `source`。
 
-Ally 的连接（别人的主机作为客户端连进来）不走上面这些：只接受 `ally.hello` / `ally.message` / `ally.receipt` / `ally.bye` 四种，其他一律断开（`docs/allies-prd.md` §7.3、§7.6）。
+Ally 的连接（别人的主机作为客户端连进来）不走上面这些：只接受 `ally.hello` / `ally.message` / `ally.receipt` / `ally.bye` 四种，其他一律断开（`docs/allies-prd.md` §7.3、§7.6）。第二版（§11.4、§11.5）：`ally.message` 带 `author`（没有或不认识的值当 "assistant"），`ally.hello` 带可选的 `trust`（发送方给对方的档位，对方存成 `theirTrust`；同一连接上后来的 hello 只更新称呼和档位）。
 
 ## 6. 路由规则
 
