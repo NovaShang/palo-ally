@@ -10,6 +10,7 @@ import type { RelayState } from "../src/channels/relay.ts";
 import type { Config } from "../src/config.ts";
 import { type Identity, b64, fingerprint, newIdentity } from "../src/proto/e2e.ts";
 import type { FakeScript } from "./fakeDriver.ts";
+import type { HarnessDriver } from "../src/harness/types.ts";
 import type { SessionsDeps } from "../src/sessions.ts";
 import { makeHub, testConfig, tick } from "./helpers.ts";
 
@@ -104,11 +105,12 @@ export class AllyNet {
   private n = 0;
 
   // add makes a hub on this net. `name` goes into user.md as the owner's 称呼.
-  add(name: string, opts: { config?: (c: Config) => void; now?: () => number; script?: FakeScript; sessions?: Partial<SessionsDeps> } = {}): NetHost {
+  add(name: string, opts: { config?: (c: Config) => void; now?: () => number; script?: FakeScript; sessions?: Partial<SessionsDeps>; harness?: HarnessDriver } = {}): NetHost {
     const daemonId = `pa-test-${++this.n}`;
     let host: NetHost;
     const ctx = makeHub({
       script: opts.script,
+      harness: opts.harness,
       config: testConfig((c) => {
         c.settings.assistantName = `${name}的Palo`;
         opts.config?.(c);

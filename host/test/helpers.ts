@@ -10,6 +10,7 @@ import type { Pusher } from "../src/router.ts";
 import type { AlliesDeps } from "../src/allies.ts";
 import type { SessionsDeps } from "../src/sessions.ts";
 import type { PalsDeps } from "../src/pals.ts";
+import type { HarnessDriver } from "../src/harness/types.ts";
 import { FakeCli } from "./fakeClaude.ts";
 
 const created: string[] = [];
@@ -55,7 +56,16 @@ export function testConfig(over: (c: Config) => void = () => {}): Config {
 }
 
 export function makeHub(
-  opts: { script?: FakeScript; config?: Config; wechat?: WechatChannel; paths?: Paths; allies?: Partial<AlliesDeps>; sessions?: Partial<SessionsDeps>; pals?: Partial<PalsDeps> } = {},
+  opts: {
+    script?: FakeScript;
+    config?: Config;
+    wechat?: WechatChannel;
+    paths?: Paths;
+    allies?: Partial<AlliesDeps>;
+    sessions?: Partial<SessionsDeps>;
+    pals?: Partial<PalsDeps>;
+    harness?: HarnessDriver; // a real one (live tests); `driver` is then unused
+  } = {},
 ) {
   const paths = opts.paths ?? tmpPaths();
   const driver = new FakeDriver(opts.script);
@@ -66,7 +76,7 @@ export function makeHub(
   const sessions: Partial<SessionsDeps> = { claudeDir, cli: new FakeCli(), ...opts.sessions };
   // Pals start directly (no PaloAlly Helper) from a plain environment.
   const pals: Partial<PalsDeps> = { launch: async () => ({ helper: null, env: { PATH: process.env.PATH ?? "/usr/bin:/bin" } }), usesHelper: () => false, ...opts.pals };
-  const hub = new Hub({ paths, config: opts.config ?? testConfig(), driver, pushers: [pusher], wechat: opts.wechat, log: () => {}, allies: opts.allies, sessions, pals });
+  const hub = new Hub({ paths, config: opts.config ?? testConfig(), driver: opts.harness ?? driver, pushers: [pusher], wechat: opts.wechat, log: () => {}, allies: opts.allies, sessions, pals });
   const events: { event: string; data: any }[] = [];
   hub.bus.on((event, data) => events.push({ event, data }));
   return { hub, driver, pusher, paths, events };
