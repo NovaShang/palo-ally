@@ -249,7 +249,7 @@ extension AppStore {
             pendingApprovals: pendingApprovals.count,
             pendingQuestions: pendingQuestions.count,
             pendingDrafts: pendingAllyDrafts.count,
-            pendingProposals: pendingHelperProposals.count,
+            pendingProposals: pendingProposalCount,
             busy: isBusy,
             activity: status?.activity,
             tasks: tasks

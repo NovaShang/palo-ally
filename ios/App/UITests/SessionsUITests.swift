@@ -5,7 +5,8 @@ import XCTest
 /// land in its conversation and it answers; 交还终端 and 移出 Pals are asked
 /// in the page; a proposal's 开吧 opens a Pal whose page opens from the card;
 /// a Pal's card is on its own page, another session's in the assistant's
-/// conversation, and each goes once answered.
+/// conversation, and each goes once answered; the assistant's card proposing
+/// to take over a conversation that ended does so only on 接管.
 final class SessionsUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
@@ -103,7 +104,56 @@ final class SessionsUITests: XCTestCase {
         XCTAssertFalse(app.buttons["允许"].exists)
     }
 
+    /// The assistant's pal_adopt card (pals-prd §10): nothing until 接管,
+    /// then 已经接过来了 and the Pal's page from the card.
+    @MainActor
+    func testTheAssistantsAdoptCardTakesItOverOnYes() throws {
+        let app = launch(["-demoState", "adopt"])
+        let card = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "pal-adopt-")).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 15), "no card")
+        XCTAssertTrue(text(app, "接管「首页改成两栏布局」").exists, "the card doesn't say what")
+        XCTAssertTrue(text(app, "~/code/site").exists, "the card doesn't say where")
+        app.buttons["接管"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["已经接过来了"].waitForExistence(timeout: 10), "the card never said it was taken over")
+        XCTAssertFalse(app.buttons["不用"].exists)
+        attach(app, "card-adopted")
+        app.buttons["去看看它"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars.staticTexts["首页改成两栏布局"].waitForExistence(timeout: 10), "the Pal's page didn't open")
+    }
+
+    @MainActor
+    func testNoToTheAdoptCardTakesNothingOver() throws {
+        let app = launch(["-demoState", "adopt"])
+        let no = app.buttons["不用"].firstMatch
+        XCTAssertTrue(no.waitForExistence(timeout: 15))
+        no.tap()
+        XCTAssertTrue(app.staticTexts["没接"].waitForExistence(timeout: 10), "the card never said no")
+        XCTAssertFalse(app.buttons["接管"].exists)
+        attach(app, "card-discarded")
+    }
+
+    /// The computer couldn't take it over: the card says why and stays on offer.
+    @MainActor
+    func testAnAdoptCardThatFailsSaysWhyAndStaysOnOffer() throws {
+        let app = launch(["-demoState", "adopt", "-demoAdoptError", "有别的进程开着它"])
+        let yes = app.buttons["接管"].firstMatch
+        XCTAssertTrue(yes.waitForExistence(timeout: 15))
+        yes.tap()
+        XCTAssertTrue(text(app, "没接成：有别的进程开着它").waitForExistence(timeout: 10), "no reason given")
+        XCTAssertTrue(app.buttons["接管"].firstMatch.isEnabled, "not on offer again")
+        XCTAssertFalse(app.staticTexts["已经接过来了"].exists)
+        attach(app, "card-failed")
+    }
+
     // MARK: -
+
+    @MainActor
+    private func attach(_ app: XCUIApplication, _ name: String) {
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = name
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
 
     @MainActor
     private func text(_ app: XCUIApplication, _ s: String) -> XCUIElement {

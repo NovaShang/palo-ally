@@ -22,31 +22,18 @@ struct HelperProposalCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: "person.badge.plus")
-                    .foregroundStyle(.secondary)
-                Text(proposal.name.isEmpty ? "帮手" : proposal.name)
-                    .font(.headline)
-                    .foregroundStyle(proposal.status == .discarded ? .secondary : .primary)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                if let state {
-                    Text(state)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .contentTransition(.opacity)
-                }
-            }
+            ProposalHeader(symbol: "person.badge.plus", title: proposal.name.isEmpty ? "帮手" : proposal.name,
+                           dimmed: proposal.status == .discarded, state: state)
 
             VStack(alignment: .leading, spacing: 6) {
                 if !proposal.cwd.isEmpty {
-                    row("目录", CCSession.shortPath(proposal.cwd))
+                    ProposalFact(name: "目录", value: CCSession.shortPath(proposal.cwd))
                 }
                 if !proposal.duty.isEmpty {
-                    row("负责", proposal.duty)
+                    ProposalFact(name: "负责", value: proposal.duty)
                 }
                 if let limit = Copy.dailyLimit(proposal.dailyUsd) {
-                    row("花费", limit)
+                    ProposalFact(name: "花费", value: limit)
                 }
             }
 
@@ -63,65 +50,20 @@ struct HelperProposalCard: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                HStack(spacing: 10) {
-                    Button {
-                        decide(.discard)
-                    } label: {
-                        Text("不用").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.secondary)
-                    Button {
-                        decide(.create)
-                    } label: {
-                        Text(working == .create ? "正在开…" : "开吧").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                .controlSize(.large)
-                .buttonBorderShape(.capsule)
-                .disabled(working != nil || !store.connection.isOnline)
+                ProposalButtons(no: "不用", yes: "开吧", yesWorking: "正在开…", working: working,
+                                enabled: store.connection.isOnline, decide: decide)
                 if let error {
                     Text(error).font(.caption).foregroundStyle(.red)
                 }
             } else if proposal.status != .created, let note = proposal.note, !note.isEmpty {
                 // Why it didn't start.
-                Text(note)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                ProposalNote(text: note)
             } else if proposal.status == .created, let pal = openedPal {
-                Button {
-                    model.openPal(pal.id)
-                } label: {
-                    Label("去看看它", systemImage: "chevron.right")
-                        .labelStyle(TrailingIconLabelStyle())
-                        .font(.subheadline)
-                }
-                .buttonStyle(.borderless)
-                .tint(.primary)
+                OpenPalButton { model.openPal(pal.id) }
             }
         }
-        .padding(16)
-        .background(.background.secondary, in: .rect(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(proposal.isPending ? Color.primary.opacity(0.12) : Color.clear, lineWidth: 1)
-        }
+        .modifier(ProposalCardStyle(pending: proposal.isPending))
         .animation(.snappy, value: proposal.status)
-    }
-
-    private func row(_ name: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(name)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-        }
-        .font(.subheadline)
     }
 
     private var state: String? {
@@ -144,6 +86,129 @@ struct HelperProposalCard: View {
             }
             working = nil
         }
+    }
+}
+
+// MARK: - the pieces both proposal cards are made of
+
+/// A proposal card's look: on the conversation's secondary background, with
+/// a thin outline while it waits on the owner. Content, not chrome: no glass.
+struct ProposalCardStyle: ViewModifier {
+    let pending: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .padding(16)
+            .background(.background.secondary, in: .rect(cornerRadius: 22, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(pending ? Color.primary.opacity(0.12) : Color.clear, lineWidth: 1)
+            }
+    }
+}
+
+/// A glyph, what's proposed, and once answered how it went (small, on the right).
+struct ProposalHeader: View {
+    let symbol: String
+    let title: String
+    var dimmed = false
+    let state: String?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: symbol)
+                .foregroundStyle(.secondary)
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(dimmed ? .secondary : .primary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            if let state {
+                Text(state)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                    .contentTransition(.opacity)
+            }
+        }
+    }
+}
+
+/// One fact on a proposal card: what it is, then its value.
+struct ProposalFact: View {
+    let name: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(name)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
+        .font(.subheadline)
+    }
+}
+
+/// No, then yes: yes is the one button in the theme color.
+struct ProposalButtons: View {
+    let no: String
+    let yes: String
+    let yesWorking: String
+    let working: HelperDecideAction?
+    let enabled: Bool
+    let decide: (HelperDecideAction) -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button {
+                decide(.discard)
+            } label: {
+                Text(no).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(.secondary)
+            Button {
+                decide(.create)
+            } label: {
+                Text(working == .create ? yesWorking : yes).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .controlSize(.large)
+        .buttonBorderShape(.capsule)
+        .disabled(working != nil || !enabled)
+    }
+}
+
+/// Why it didn't happen, in the computer's words.
+struct ProposalNote: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// 「去看看它 ›」: the Pal it became.
+struct OpenPalButton: View {
+    let open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            Label("去看看它", systemImage: "chevron.right")
+                .labelStyle(TrailingIconLabelStyle())
+                .font(.subheadline)
+        }
+        .buttonStyle(.borderless)
+        .tint(.primary)
     }
 }
 

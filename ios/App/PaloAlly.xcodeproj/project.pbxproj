@@ -67,6 +67,7 @@
 		AACC2B792ABD1AFC63ECC6B2 /* ScrollLabUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED42874198579F1FB37DC41 /* ScrollLabUITests.swift */; };
 		AEBD8CD9FD2F1F20EA8FEDAD /* HostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53AE60C8605BA97074A29F1A /* HostsView.swift */; };
 		AF358643F472D615D617552B /* SessionCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45CEF451F12A8A4C25B55191 /* SessionCopy.swift */; };
+		B490B9FA51E4124CBAFA3E40 /* PalAdoptCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC1D1CBDA6FA6542D9C2163F /* PalAdoptCard.swift */; };
 		B7DF0900ABDDFACC50FFF6B2 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7769E0FBCB029211A3B7B532 /* QRScannerView.swift */; };
 		B8976F3E44EC1376603FA764 /* CopyButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDCE2B703ACB5F034BAA47C0 /* CopyButton.swift */; };
 		BD4FF27A75229466B01F0C58 /* AllyRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BF9FAB008423BFA9FBCBB73 /* AllyRows.swift */; };
@@ -180,6 +181,7 @@
 		DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		E2D39963E4A18BA170B29805 /* CommitWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitWatch.swift; sourceTree = "<group>"; };
 		E9E4508DECE36B39CF27552D /* WatchesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchesSection.swift; sourceTree = "<group>"; };
+		EC1D1CBDA6FA6542D9C2163F /* PalAdoptCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PalAdoptCard.swift; sourceTree = "<group>"; };
 		ED44385988595B39B2E86EEC /* HardwareKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HardwareKeyboard.swift; sourceTree = "<group>"; };
 		EDCE2B703ACB5F034BAA47C0 /* CopyButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopyButton.swift; sourceTree = "<group>"; };
 		EEB06BF1C700F1FEE8FBA962 /* QuestionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuestionCard.swift; sourceTree = "<group>"; };
@@ -404,6 +406,7 @@
 		F92D5316DD67BCF35575CB1F /* Pals */ = {
 			isa = PBXGroup;
 			children = (
+				EC1D1CBDA6FA6542D9C2163F /* PalAdoptCard.swift */,
 				2B4899D65015CCAB78463CEA /* PalCopy.swift */,
 				5DB5E3F3B5ED735CB237E3A6 /* PalPage.swift */,
 			);
@@ -587,6 +590,7 @@
 				04349A876C131982F60AE09F /* OrbPresence.swift in Sources */,
 				FA83D3D84066AABEF70725C9 /* PagePanels.swift in Sources */,
 				F10B59DC6D408555F64C2858 /* PairingView.swift in Sources */,
+				B490B9FA51E4124CBAFA3E40 /* PalAdoptCard.swift in Sources */,
 				96F66305E9AF6718FC0FFFDC /* PalCopy.swift in Sources */,
 				098271F0DB79A7EC10E8782F /* PalPage.swift in Sources */,
 				31D752A67A0592C5BA7B46B1 /* PaloAllyApp.swift in Sources */,

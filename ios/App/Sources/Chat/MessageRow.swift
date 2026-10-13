@@ -147,7 +147,7 @@ private struct AssistantMessage: View {
                 if let atts = message.attachments, !atts.isEmpty {
                     AttachmentStrip(attachments: atts)
                 }
-                if (!message.text.isEmpty || message.isStreaming) && !questionCardOnly {
+                if (!message.text.isEmpty || message.isStreaming) && !questionCardOnly && !adoptCardOnly {
                     // One system text view per answer: free selection across
                     // paragraphs, like Notes / Safari. 「引用回复」 quotes a selection.
                     // The same view while it's written and once it's finished
@@ -177,6 +177,9 @@ private struct AssistantMessage: View {
                 if message.kind == .helper, let proposal = store.helperProposal(in: message) {
                     HelperProposalCard(proposal: proposal)
                 }
+                if let proposal = store.adoptProposal(in: message) {
+                    PalAdoptCard(proposal: proposal)
+                }
             }
             Spacer(minLength: Self.trailingRoom)
         }
@@ -188,6 +191,12 @@ private struct AssistantMessage: View {
     private var questionCardOnly: Bool {
         message.kind == .question
             && message.questionId.flatMap { store.question(id: $0) }.map { !store.settledAtComputer($0) } == true
+    }
+
+    /// A `pal_adopt` card says it all (接管「标题」 and its folder): the
+    /// host's line above it would only repeat it.
+    private var adoptCardOnly: Bool {
+        message.kind == .palAdopt && message.adoption != nil
     }
 
     private var proactiveLabel: String {
