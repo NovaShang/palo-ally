@@ -158,3 +158,32 @@ Palo 提议，你点头，主机新开一个会话，第一条消息是 Palo 写
 
 - 主机里写死「一个主会话」的地方：路径、Conversation、Hub、状态、预算、RPC 都只认一个会话（2026-10-11 研究）。改成按会话区分的工作量估计 6-8 小时。
 - SDK 能 resume 磁盘上的任何会话记录；后台管理进程还握着的会话会报 `session_held_by_background`，所以接管前必须先停（2026-10-12 实测）。
+
+## 10. 接管最近的对话（2026-10-12 主人同意）
+
+已经退出的 Claude Code 对话，也能直接接进 Pals，不用回终端重新打开。
+
+- **列出：**
+  - 主机用 SDK 的 `listSessions` 读磁盘上的对话记录，列出最近 30 天里退出了的对话，最多 50 个，按目录分组、按最后修改时间倒序。
+  - 不列：
+    - 正在运行的会话（它们在 `others` 里）；
+    - 已经是 Pal 的；
+    - PaloAlly 自己的会话（Palo、探针、测试用的临时目录）。
+- **每条：**会话编号、目录、标题、最后修改时间、记录大小。
+  - 标题依次取：自定义标题、Claude Code 的摘要、第一句话的前 40 个字。
+- **接管：**沿用 `pals.adopt{sessionId}`。对已经退出的对话，没有进程要停，直接 resume，几秒内成为 Pal。双写保护照旧：接管前再查一次有没有进程握着这份记录。
+- **App：**Pals 一节最后加一行「最近的对话」，点进去是按目录分组的列表，点一条就接管并打开它的 Pal 页。
+- **Palo：**
+  - 新工具 `pals_recent(folder?)` 列出这些对话。
+  - 新工具 `pal_adopt(sessionId)` 不直接接管，而是生成一张卡片「接管『标题』（目录）」，主人点「接管」才接（和 `pal_propose` 一样，走 `helper.decide` 同类的卡片流程）。
+  - 主人说「把 X 目录里那个对话接过来」时，Palo 先查，再出卡片；有多个候选时让主人选。
+
+接口：
+
+| 方法 | 参数 | 返回 |
+|---|---|---|
+| `pals.recent` | `{folder?, limit?}` | `{sessions: RecentSession[]}` |
+
+`RecentSession`：`{sessionId, cwd, title, lastModified, size}`
+
+卡片：聊天消息 `kind: "pal_adopt"`，带 `proposal: {id, sessionId, cwd, title, status: "pending" | "adopted" | "discarded" | "failed", palId?, note?}`。主人点「接管」或「不用」，用 `helper.decide{proposalId, action: "create" | "discard"}`。
