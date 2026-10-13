@@ -132,8 +132,8 @@ private let resultTypes: [String: Check] = [
 /// What this client already speaks that the host's fixture doesn't have
 /// yet (built against a PRD while the host builds it). Each is left out of
 /// the set comparison only while the fixture lacks it; once the host writes
-/// its sample, it's checked strictly like the rest.
-private let awaitingHost: Set<String> = [RPCMethod.palsRecent]
+/// its sample, it's checked strictly like the rest. Nothing waits now.
+private let awaitingHost: Set<String> = []
 
 /// Event → how AppStore.apply(event:) reads the payload.
 private let eventTypes: [String: Check] = [

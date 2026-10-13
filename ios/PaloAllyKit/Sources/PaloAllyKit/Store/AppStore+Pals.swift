@@ -247,12 +247,14 @@ extension AppStore {
     /// the host's copy, and the Pal it became once that's known.
     public func adoptProposal(in message: ChatMessage) -> PalAdoptProposal? {
         guard message.kind == .palAdopt, var p = message.adoption else { return nil }
-        if p.isPending, let decided = adoptDecisions[p.id] { p.status = decided }
+        // Still on offer: waiting, or not taken over last time (tapped again).
+        if p.isPending || p.status == .failed, let decided = adoptDecisions[p.id] { p.status = decided }
         if p.palId == nil { p.palId = adoptProposalPals[p.id] ?? (p.status == .adopted ? pal(sessionId: p.sessionId)?.id : nil) }
         return p
     }
 
-    /// Cards waiting for 接管 / 不用.
+    /// Cards waiting for 接管 / 不用 (one that failed is still on offer, but
+    /// doesn't wait on the owner).
     public var pendingAdoptProposals: [PalAdoptProposal] {
         messages.compactMap { adoptProposal(in: $0) }.filter(\.isPending)
     }
@@ -282,7 +284,8 @@ extension AppStore {
                 return p
             }
             if action == .create {
-                // Not adopted after all: the computer's copy of the card says why.
+                // Not adopted after all: the computer's copy of the card says
+                // why (failed, with a note), and it can be tapped again.
                 adoptDecisions[proposal.id] = before
             }
             return nil

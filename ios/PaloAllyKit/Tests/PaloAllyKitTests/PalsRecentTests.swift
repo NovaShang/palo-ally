@@ -229,13 +229,21 @@ struct RecentStoreTests {
         #expect(try await deciding.value == nil)
         let shown = try #require(store.adoptProposal(in: store.messages[0]))
         #expect(shown.status == .failed && shown.note == "有别的进程开着它")
+        #expect(store.pendingAdoptProposals.isEmpty) // still on offer, but not waiting on the owner
+        // Tapped again: shown at once, as the first time.
+        let again = Task { try await store.decideAdopt(shown, .create) }
+        #expect(await until { host.requests.filter { $0.method == "helper.decide" }.count == 2 })
+        #expect(store.adoptProposal(in: store.messages[0])?.status == .adopted)
+        host.respond(host.request("helper.decide")!.id, [:])
+        #expect(try await again.value == nil)
+        #expect(store.adoptProposal(in: store.messages[0])?.status == .failed)
 
         // A refused answer puts the card back on offer.
         var n = ChatMessage(seq: 2, id: "m2", role: .assistant, kind: .palAdopt, text: "", channel: .system, ts: 2)
         n.adoption = PalAdoptProposal(id: "pa8", sessionId: "s8", cwd: "/a", title: "t")
         store.apply(event: RPCEventName.chatMessage, data: try JSONValue.from(n))
         let refused = Task { try await store.decideAdopt(n.adoption!, .create) }
-        #expect(await until { host.requests.filter { $0.method == "helper.decide" }.count == 2 })
+        #expect(await until { host.requests.filter { $0.method == "helper.decide" }.count == 3 })
         let id = try #require(host.request("helper.decide")?.id)
         host.transport.deliver(json: ["id": .number(Double(id)), "error": ["message": "没连上"]])
         await #expect(throws: RPCError.remote("没连上")) { _ = try await refused.value }

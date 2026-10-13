@@ -244,7 +244,8 @@ extension DemoHost {
     /// proposal isn't one.
     func decideAdoptCard(_ pid: String, action: String?) async throws -> JSONValue? {
         guard let i = messages.firstIndex(where: { $0.adoption?.id == pid }), var card = messages[i].adoption else { return nil }
-        guard card.isPending else {
+        // Answered for good; one that failed can be tapped again (as the host's).
+        guard card.status != .adopted, card.status != .discarded else {
             return card.palId.flatMap { id in pals.first { $0.id == id } }.map { ["pal": (try? JSONValue.from($0)) ?? .null] } ?? [:]
         }
         var result: JSONValue = [:]
@@ -257,6 +258,7 @@ extension DemoHost {
             } else if let pal = pals.first(where: { $0.sessionId == card.sessionId }) ?? adoptRecent(card.sessionId) {
                 card.status = .adopted
                 card.palId = pal.id
+                card.note = nil
                 result = ["pal": try .from(pal)]
             } else {
                 card.status = .failed
@@ -264,6 +266,7 @@ extension DemoHost {
             }
         case "discard":
             card.status = .discarded
+            card.note = nil
         default:
             throw DemoError(message: "看不懂这个操作")
         }

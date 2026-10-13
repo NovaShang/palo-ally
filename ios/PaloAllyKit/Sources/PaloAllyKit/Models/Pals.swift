@@ -310,7 +310,7 @@ public enum PalAdoptProposalStatus: String, TolerantStringEnum {
     case adopted
     /// 不用.
     case discarded
-    /// 接管 didn't work: `note` says why.
+    /// 接管 didn't work: `note` says why. Still on offer: 接管 can be tapped again.
     case failed
     case unknown
     public static let fallback = PalAdoptProposalStatus.unknown
