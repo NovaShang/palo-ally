@@ -3,7 +3,9 @@
 // tests. Only the Hub talks to a driver.
 
 export type HarnessEvent =
-  | { type: "init"; sessionId: string; model: string; tools: string[]; terminalCommands?: string[] }
+  // permissionMode: the mode it actually runs in, which may not be the one
+  // asked for (Claude Code quietly drops auto for a model without it)
+  | { type: "init"; sessionId: string; model: string; tools: string[]; terminalCommands?: string[]; permissionMode?: string }
   // the harness' slash commands (built-ins, skills, plugins…); replaces any earlier list
   | { type: "commands"; commands: SlashCommandInfo[] }
   | { type: "models"; models: ModelOption[] }

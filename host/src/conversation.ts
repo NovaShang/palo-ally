@@ -90,6 +90,7 @@ export interface ConversationDeps {
 // and keeps proactive turns waiting until the harness is idle.
 export class Conversation {
   model = ""; // the model the harness reports running
+  permissionMode = ""; // the permission mode it reports running in (not always the configured one)
   activity = "";
   private session: MainSession | null = null;
   private queue: Turn[] = [];
@@ -118,6 +119,7 @@ export class Conversation {
   private allyGate: { allyId: string; uuid: string } | null = null;
   private held: HeldMessage[] = [];
   private gateTimer: ReturnType<typeof setTimeout> | null = null;
+  private modeChecked = false; // this process' permission mode was compared with the config
 
   constructor(private d: ConversationDeps) {
     this.lastContextTokens = d.runtime.data.contextTokens ?? 0;
@@ -254,6 +256,7 @@ export class Conversation {
     if (this.session && !this.session.closed) return this.session;
     const cfg = this.d.config();
     const rt = this.d.runtime.data;
+    this.modeChecked = false;
     this.session = this.d.driver.startMain({
       cwd: this.d.paths.home,
       model: cfg.model,
@@ -331,6 +334,7 @@ export class Conversation {
         break;
       case "init":
         this.model = e.model;
+        if (e.permissionMode) this.checkMode(e.permissionMode, e.model);
         if (e.terminalCommands) this.d.onTerminalCommands(e.terminalCommands);
         if (this.d.runtime.data.sessionId !== e.sessionId) this.d.runtime.update({ sessionId: e.sessionId });
         this.d.statusChanged();
@@ -434,6 +438,19 @@ export class Conversation {
       await wechat.stopTyping?.();
       if (this.current === turn) void wechat.startTyping?.(target);
     });
+  }
+
+  // Claude Code doesn't refuse a permission mode it can't run: it starts in
+  // another (auto mode needs a model that has it; otherwise it's "default").
+  // Said once per process, so a quiet downgrade shows in the log and audit.
+  private checkMode(effective: string, model: string): void {
+    this.permissionMode = effective;
+    if (this.modeChecked) return;
+    this.modeChecked = true;
+    const configured = this.d.config().permissionMode;
+    if (!configured || effective === configured) return;
+    this.d.log(`harness runs in permission mode ${effective}, not the configured ${configured} (model ${model})`);
+    this.d.audit.log("harness.mode_mismatch", { configured, effective, model });
   }
 
   // ---------------- an Ally's turn: 只说话不动手 ----------------

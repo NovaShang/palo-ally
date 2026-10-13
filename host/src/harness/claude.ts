@@ -204,7 +204,14 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
   switch (m.type) {
     case "system":
       if (m.subtype === "init")
-        out.push({ type: "init", sessionId: m.session_id, model: m.model, tools: m.tools ?? [], terminalCommands: m.terminal_slash_commands });
+        out.push({
+          type: "init",
+          sessionId: m.session_id,
+          model: m.model,
+          tools: m.tools ?? [],
+          terminalCommands: m.terminal_slash_commands,
+          ...(typeof m.permissionMode === "string" ? { permissionMode: m.permissionMode } : {}),
+        });
       else if (m.subtype === "commands_changed") out.push({ type: "commands", commands: toCommands(m.commands) });
       else if (m.subtype === "local_command_output" && m.content)
         out.push({ type: "assistant_text", text: String(m.content), parentToolUseId: null });

@@ -75,7 +75,8 @@ export class FakeMainSession implements MainSession {
       return; // a Pal says nothing until it's spoken to
     }
     queueMicrotask(() => {
-      opts.onEvent({ type: "init", sessionId: this.sessionId, model: opts.model ?? "fake-model", tools: [], terminalCommands: ["doctor"] });
+      const permissionMode = driver.permissionModeFor?.(opts.permissionMode) ?? opts.permissionMode;
+      opts.onEvent({ type: "init", sessionId: this.sessionId, model: opts.model ?? "fake-model", tools: [], terminalCommands: ["doctor"], permissionMode });
       opts.onEvent({
         type: "commands",
         commands: [
@@ -233,6 +234,8 @@ export class FakeDriver implements HarnessDriver {
   turnCost = 0.001;
   contextTokens = 1000; // what each turn's result reports
   probeResponder: (req: ProbeRequest) => ProbeResult = () => ({ output: { results: [] }, costUsd: 0.0001 });
+  // the permission mode a session reports running in (default: the one asked for)
+  permissionModeFor?: (requested: string) => string;
 
   constructor(public script: FakeScript = defaultScript) {}
 

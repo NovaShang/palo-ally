@@ -628,6 +628,42 @@ describe("Hub: model & effort", () => {
     await expect(hub.setModel({ effort: "turbo" })).rejects.toThrow();
     cleanup(paths);
   });
+
+  test("a permission mode the harness quietly didn't take is logged and audited, once per process", async () => {
+    const logs: string[] = [];
+    const { hub, driver, paths } = makeHub({ config: testConfig((c) => (c.permissionMode = "auto")) });
+    (hub.conversation as any).d.log = (s: string) => logs.push(s);
+    const mismatches = () => hub.audit.tail(50).filter((e) => e.type === "harness.mode_mismatch");
+    // as Claude Code does for a model without auto mode
+    driver.permissionModeFor = (m) => (m === "auto" ? "default" : m);
+    hub.userMessage("1", "app");
+    await hub.idle();
+    hub.userMessage("2", "app");
+    await hub.idle();
+    expect(mismatches()).toEqual([expect.objectContaining({ configured: "auto", effective: "default", model: "fake-model" })]);
+    expect(logs.filter((l) => l.includes("permission mode default, not the configured auto"))).toHaveLength(1);
+    expect(hub.conversation.permissionMode).toBe("default");
+    // the next process says it again
+    hub.onIdle();
+    hub.userMessage("3", "app");
+    await hub.idle();
+    expect(driver.sessions).toHaveLength(2);
+    expect(mismatches()).toHaveLength(2);
+    // running as configured: nothing to say
+    driver.permissionModeFor = undefined;
+    hub.onIdle();
+    hub.userMessage("4", "app");
+    await hub.idle();
+    expect(mismatches()).toHaveLength(2);
+    expect(hub.conversation.permissionMode).toBe("auto");
+    cleanup(paths);
+  });
+
+  test("the harness' init says which permission mode it runs in", async () => {
+    const { mapMessage } = await import("../src/harness/claude.ts");
+    const [e] = mapMessage({ type: "system", subtype: "init", session_id: "s", model: "m", tools: [], permissionMode: "default" } as any, { lastCost: 0, contextTokens: 0 });
+    expect(e).toMatchObject({ type: "init", sessionId: "s", model: "m", permissionMode: "default" });
+  });
 });
 
 describe("Hub: settings can't break it", () => {
