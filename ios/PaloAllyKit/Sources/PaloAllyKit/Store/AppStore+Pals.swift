@@ -1,8 +1,10 @@
 import Foundation
 
-/// Pals (pals-prd §3–§5, §8): the list with the computer's other live
+/// Pals (pals-prd §3–§5, §8, §10): the list with the computer's other live
 /// sessions, each Pal's scoped store (its conversation; see `Scope`),
-/// adopting a session, handing a Pal back to the terminal, and removing one.
+/// adopting a session (a live one, or one that ended lately), the
+/// assistant's `pal_adopt` cards, handing a Pal back to the terminal, and
+/// removing one.
 extension AppStore {
     // MARK: reading
 
@@ -91,6 +93,10 @@ extension AppStore {
     /// session waiting to be adopted that is a Pal now is done.
     func setPals(_ list: [Pal], others: [CCSession]?) {
         if list != pals { pals = list }
+        // A recent conversation adopted (here, from a card, or on another device) is a Pal now.
+        if let recent = recentSessions, recent.contains(where: { s in list.contains { $0.sessionId == s.sessionId } }) {
+            recentSessions = recent.filter { s in !list.contains { $0.sessionId == s.sessionId } }
+        }
         if let others {
             // A session becoming a Pal leaves the others.
             let rest = others.filter { s in !list.contains { $0.sessionId == s.id } }
@@ -209,5 +215,80 @@ extension AppStore {
         _ = try await rpc.call(RPCMethod.palsRemove, params: IDParams(id: id), as: OKResult.self, timeout: 30)
         setPals(pals.filter { $0.id != id }, others: nil)
         try? await refreshPals()
+    }
+
+    // MARK: recent conversations (§10)
+
+    /// `pals.recent`: the computer's conversations that ended in the last 30
+    /// days, to adopt (`adopt(sessionId:)` resumes one straight away). A
+    /// host from before them says so once (`recentSupported` false).
+    public func refreshRecent() async throws {
+        if let parent { return try await parent.refreshRecent() }
+        do {
+            // The host reads the records on disk.
+            let r: PalsRecentResult = try await rpc.call(RPCMethod.palsRecent, params: PalsRecentParams(), timeout: 30)
+            recentSessions = r.sessions.filter { pal(sessionId: $0.sessionId) == nil }
+            recentSupported = true
+        } catch {
+            if case .remote(let m)? = error as? RPCError, m.lowercased().contains("unknown method") { recentSupported = false }
+            throw error
+        }
+    }
+
+    /// The recent conversations by folder, the folder used most lately
+    /// first; with a query, those whose title or folder has it.
+    public func recentFolders(matching query: String = "") -> [RecentFolder] {
+        RecentFolder.group(recentSessions ?? [], matching: query)
+    }
+
+    // MARK: the assistant's pal_adopt cards (§10)
+
+    /// The card a message shows, with the owner's answer when it's newer than
+    /// the host's copy, and the Pal it became once that's known.
+    public func adoptProposal(in message: ChatMessage) -> PalAdoptProposal? {
+        guard message.kind == .palAdopt, var p = message.adoption else { return nil }
+        if p.isPending, let decided = adoptDecisions[p.id] { p.status = decided }
+        if p.palId == nil { p.palId = adoptProposalPals[p.id] ?? (p.status == .adopted ? pal(sessionId: p.sessionId)?.id : nil) }
+        return p
+    }
+
+    /// Cards waiting for 接管 / 不用.
+    public var pendingAdoptProposals: [PalAdoptProposal] {
+        messages.compactMap { adoptProposal(in: $0) }.filter(\.isPending)
+    }
+
+    /// Proposals of either kind waiting on the owner (a helper's 开吧, a
+    /// conversation's 接管).
+    public var pendingProposalCount: Int { pendingHelperProposals.count + pendingAdoptProposals.count }
+
+    /// 接管 / 不用 on a card (`helper.decide`), shown at once and put back if
+    /// the computer didn't take it. 接管 returns the Pal it became.
+    @discardableResult
+    public func decideAdopt(_ proposal: PalAdoptProposal, _ action: HelperDecideAction) async throws -> Pal? {
+        if let parent { return try await parent.decideAdopt(proposal, action) }
+        let before = adoptDecisions[proposal.id]
+        adoptDecisions[proposal.id] = action == .create ? .adopted : .discarded
+        do {
+            // Resuming a record takes a few seconds.
+            let r: HelperDecideResult = try await rpc.call(RPCMethod.helperDecide,
+                                                           params: HelperDecideParams(proposalId: proposal.id, action: action),
+                                                           timeout: 45)
+            if let p = r.pal {
+                var list = pals
+                if let i = list.firstIndex(where: { $0.id == p.id }) { list[i] = p } else { list.append(p) }
+                setPals(list, others: nil)
+                adoptProposalPals[proposal.id] = p.id
+                palsSupported = true
+                return p
+            }
+            if action == .create {
+                // Not adopted after all: the computer's copy of the card says why.
+                adoptDecisions[proposal.id] = before
+            }
+            return nil
+        } catch {
+            adoptDecisions[proposal.id] = before
+            throw error
+        }
     }
 }

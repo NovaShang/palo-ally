@@ -126,17 +126,25 @@ private let resultTypes: [String: Check] = [
     },
     RPCMethod.palsSend: strict(ChatSendResult.self),
     RPCMethod.palsStop: strict(OKResult.self),
+    RPCMethod.palsRecent: strict(PalsRecentResult.self),
 ]
 
 /// What this client already speaks that the host's fixture doesn't have
 /// yet (built against a PRD while the host builds it). Each is left out of
 /// the set comparison only while the fixture lacks it; once the host writes
-/// its sample, it's checked strictly like the rest. Nothing waits now.
-private let awaitingHost: Set<String> = []
+/// its sample, it's checked strictly like the rest.
+private let awaitingHost: Set<String> = [RPCMethod.palsRecent]
 
 /// Event → how AppStore.apply(event:) reads the payload.
 private let eventTypes: [String: Check] = [
-    RPCEventName.chatMessage: strict(ChatMessage.self),
+    RPCEventName.chatMessage: { json in
+        // A `pal_adopt` card's proposal is read as one (not as a helper's).
+        var issues = strictIssues(ChatMessage.self, json)
+        if json["kind"]?.stringValue == "pal_adopt", (try? json.decode(ChatMessage.self))?.adoption == nil {
+            issues.append("a pal_adopt message without its proposal")
+        }
+        return issues
+    },
     RPCEventName.chatDelta: strict(ChatDelta.self),
     RPCEventName.taskUpdated: strict(AllyTask.self),
     RPCEventName.approvalUpdated: strict(Approval.self),

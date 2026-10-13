@@ -87,8 +87,11 @@ public enum RPCMethod {
     public static let palsHistory = "pals.history"
     public static let palsSend = "pals.send"
     public static let palsStop = "pals.stop"
+    /// The computer's conversations that have ended lately, to adopt (§10).
+    public static let palsRecent = "pals.recent"
 
-    public static let pals: [String] = [palsList, palsAdopt, palsRelease, palsRemove, palsHistory, palsSend, palsStop]
+    public static let pals: [String] = [palsList, palsAdopt, palsRelease, palsRemove, palsHistory, palsSend, palsStop,
+                                        palsRecent]
 
     /// Every method the client knows. The contract test checks this equals
     /// the host's method set exactly.
@@ -738,15 +741,15 @@ public struct SessionHooksResult: Decodable, Sendable {
     public init(from decoder: Decoder) throws { enabled = try Lenient(decoder).bool("enabled", or: false) }
 }
 
-/// The owner's answer to a helper proposal.
+/// The owner's answer to a helper proposal or a `pal_adopt` card.
 public enum HelperDecideAction: String, Codable, Sendable {
-    /// 开吧
+    /// 开吧 / 接管
     case create
     /// 不用
     case discard
 }
 
-/// `helper.decide {proposalId, action}`.
+/// `helper.decide {proposalId, action}`: a helper proposal, or a `pal_adopt` card.
 public struct HelperDecideParams: Codable, Sendable {
     public var proposalId: String
     public var action: HelperDecideAction

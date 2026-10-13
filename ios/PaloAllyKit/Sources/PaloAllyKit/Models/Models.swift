@@ -23,6 +23,9 @@ public enum ChatKind: String, TolerantStringEnum {
     /// The assistant proposes a helper (sessions-prd §6.6): a card with
     /// 开吧 / 不用 (`proposal`).
     case helper
+    /// The assistant proposes adopting a recent conversation as a Pal
+    /// (pals-prd §10): a card with 接管 / 不用 (`proposal`, read as `adoption`).
+    case palAdopt = "pal_adopt"
     public static let fallback = ChatKind.unknown
 }
 
@@ -151,6 +154,9 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     public var author: AllyAuthor?
     /// kind == .helper: the helper the assistant proposes.
     public var proposal: HelperProposal?
+    /// kind == .palAdopt: the conversation the assistant proposes adopting
+    /// (`proposal` on the wire, as a helper's is).
+    public var adoption: PalAdoptProposal?
     /// The Pal whose conversation this is (docs/pals-prd.md §8); nil for the
     /// assistant's own.
     public var pal: String?
@@ -200,9 +206,47 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         dir = l.decode(AllyDirection.self, "dir")
         entryId = l.string("entryId")
         author = l.decode(AllyAuthor.self, "author")
-        proposal = l.decode(HelperProposal.self, "proposal") ?? l.decode(HelperProposal.self, "helper")
+        if kind == .palAdopt {
+            adoption = l.expect("proposal", l.decode(PalAdoptProposal.self, "proposal"))
+        } else {
+            proposal = l.decode(HelperProposal.self, "proposal") ?? l.decode(HelperProposal.self, "helper")
+        }
         pal = l.string("pal")
         from = l.string("from")
+    }
+
+    /// As the host sends it: a `pal_adopt` card's proposal goes out as
+    /// `proposal`, like a helper's (the demo host speaks the same wire).
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(seq, forKey: .seq)
+        try c.encode(id, forKey: .id)
+        try c.encode(role, forKey: .role)
+        try c.encode(kind, forKey: .kind)
+        try c.encode(text, forKey: .text)
+        try c.encode(channel, forKey: .channel)
+        try c.encode(ts, forKey: .ts)
+        try c.encodeIfPresent(proactive, forKey: .proactive)
+        try c.encodeIfPresent(taskId, forKey: .taskId)
+        try c.encodeIfPresent(approvalId, forKey: .approvalId)
+        try c.encodeIfPresent(questionId, forKey: .questionId)
+        try c.encodeIfPresent(clientMsgId, forKey: .clientMsgId)
+        try c.encodeIfPresent(attachments, forKey: .attachments)
+        try c.encodeIfPresent(label, forKey: .label)
+        try c.encodeIfPresent(replyTo, forKey: .replyTo)
+        try c.encodeIfPresent(card, forKey: .card)
+        try c.encodeIfPresent(allyId, forKey: .allyId)
+        try c.encodeIfPresent(allyName, forKey: .allyName)
+        try c.encodeIfPresent(dir, forKey: .dir)
+        try c.encodeIfPresent(entryId, forKey: .entryId)
+        try c.encodeIfPresent(author, forKey: .author)
+        if kind == .palAdopt {
+            try c.encodeIfPresent(adoption, forKey: .proposal)
+        } else {
+            try c.encodeIfPresent(proposal, forKey: .proposal)
+        }
+        try c.encodeIfPresent(pal, forKey: .pal)
+        try c.encodeIfPresent(from, forKey: .from)
     }
 
     public var date: Date { ts.msDate }

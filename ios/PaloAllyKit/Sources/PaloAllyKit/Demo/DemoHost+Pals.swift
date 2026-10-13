@@ -5,7 +5,10 @@ import Foundation
 /// A Pal answers what the owner types by streaming a reply, the way the
 /// assistant does; 接管 on the background session takes a moment, on the
 /// terminal one it waits to be quit there (`-demoAdoptAfter <s>`, default 6;
-/// 0 never).
+/// 0 never). Seven conversations that ended lately, in three folders, adopt
+/// in a moment (§10; `-demoAdoptError <why>` makes that fail,
+/// `-demoRecentEmpty YES` leaves none); the assistant proposes one with a
+/// `pal_adopt` card when asked to 接过来 (`-demoState adopt`).
 extension DemoHost {
     // MARK: requests
 
@@ -57,6 +60,16 @@ extension DemoHost {
                 setOther(sid) { $0.adopting = nil }
                 return ["cancelled": true]
             }
+            // Already a Pal: the same one.
+            if let pal = pals.first(where: { $0.sessionId == sid }) { return ["pal": try .from(pal)] }
+            if recentSessions.contains(where: { $0.sessionId == sid }) {
+                await pause(1.5) // nothing to stop: its record is resumed under the host
+                if let why = UserDefaults.standard.string(forKey: "demoAdoptError"), !why.isEmpty {
+                    throw DemoError(message: why)
+                }
+                guard let pal = adoptRecent(sid) else { throw DemoError(message: "这个对话已经找不到了") }
+                return ["pal": try .from(pal)]
+            }
             guard let s = otherSessions.first(where: { $0.id == sid }) else { throw DemoError(message: "这个会话已经没有了") }
             if s.kind == .terminal {
                 // Quit in its terminal first; the demo's owner does it a few seconds later.
@@ -76,6 +89,15 @@ extension DemoHost {
             await pause(1.5) // `claude stop`, then resumed under the host
             guard let pal = finishAdoption(sid) else { throw DemoError(message: "这个会话已经没有了") }
             return ["pal": try .from(pal)]
+        case RPCMethod.palsRecent:
+            if UserDefaults.standard.bool(forKey: "demoRecentEmpty") { return ["sessions": .array([])] }
+            await pause(0.4) // the host reads the records on disk
+            var list = recentSessions.sorted { $0.lastModified > $1.lastModified }
+            if let folder = p["folder"]?.stringValue, !folder.isEmpty {
+                list = list.filter { $0.cwd == folder || $0.cwd.hasSuffix("/" + folder) }
+            }
+            let limit = Int(p["limit"]?.doubleValue ?? 50)
+            return ["sessions": try .from(Array(list.prefix(min(50, max(1, limit)))))]
         case RPCMethod.palsRelease:
             let id = p["id"]?.stringValue ?? ""
             guard let pal = pals.first(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Pal") }
@@ -170,6 +192,86 @@ extension DemoHost {
         return pals.first { $0.id == id }
     }
 
+    // MARK: recent conversations (§10)
+
+    /// A conversation that ended is a Pal now: its record resumed, under its title.
+    @discardableResult
+    func adoptRecent(_ sid: String) -> Pal? {
+        guard let r = recentSessions.first(where: { $0.sessionId == sid }) else { return nil }
+        recentSessions.removeAll { $0.sessionId == sid }
+        let id = "pal-\(nextID("p"))"
+        let lines = DemoHost.recentLines[sid] ?? [(.user, r.title), (.assistant, "好，我先看一下相关的文件。")]
+        let pal = Pal(id: id, name: r.displayTitle, cwd: r.cwd, sessionId: sid, status: .idle, lastLine: lines.last?.1,
+                      model: "claude-opus-5-5", createdBy: .owner, updatedAt: Date().epochMillis)
+        pals.insert(pal, at: 0)
+        palLogs[id] = lines.enumerated().map { i, l in
+            var m = ChatMessage(seq: Int64(i + 1), id: "\(id)-\(i + 1)", role: l.0, kind: .text, text: l.1,
+                                channel: l.0 == .user ? .cli : .app,
+                                ts: r.lastModified - Int64(60_000 * (lines.count - i)))
+            m.pal = id
+            return m
+        }
+        setPal(id) { _ in }
+        return pals.first { $0.id == id }
+    }
+
+    /// The recent conversation a request names (its folder or words in its
+    /// title), else the newest.
+    func recentMatch(_ text: String) -> RecentSession? {
+        let newest = recentSessions.sorted { $0.lastModified > $1.lastModified }
+        let words = text.split(whereSeparator: { " ，,。的里那个把接过来管对话".contains($0) }).map(String.init).filter { !$0.isEmpty }
+        func score(_ r: RecentSession) -> Int {
+            let folder = (r.cwd as NSString).lastPathComponent.lowercased()
+            return words.reduce(0) { n, w in
+                n + (folder == w.lowercased() ? 2 : 0) + (r.title.contains(w) ? 1 : 0)
+            }
+        }
+        return newest.max { score($0) < score($1) || (score($0) == score($1) && $0.lastModified < $1.lastModified) } ?? newest.first
+    }
+
+    /// The assistant asks before adopting it: a `pal_adopt` card.
+    func proposeAdopting(_ r: RecentSession) {
+        seq += 1
+        var m = ChatMessage(seq: seq, id: "m\(seq)", role: .assistant, kind: .palAdopt,
+                            text: "接管「\(r.displayTitle)」（\(CCSession.shortPath(r.cwd))）？", channel: .system,
+                            ts: Date().epochMillis)
+        m.adoption = PalAdoptProposal(id: nextID("pa"), sessionId: r.sessionId, cwd: r.cwd, title: r.title)
+        messages.append(m)
+        emit(RPCEventName.chatMessage, m)
+    }
+
+    /// 接管 / 不用 on a `pal_adopt` card (`helper.decide`); nil when the
+    /// proposal isn't one.
+    func decideAdoptCard(_ pid: String, action: String?) async throws -> JSONValue? {
+        guard let i = messages.firstIndex(where: { $0.adoption?.id == pid }), var card = messages[i].adoption else { return nil }
+        guard card.isPending else {
+            return card.palId.flatMap { id in pals.first { $0.id == id } }.map { ["pal": (try? JSONValue.from($0)) ?? .null] } ?? [:]
+        }
+        var result: JSONValue = [:]
+        switch action {
+        case "create":
+            await pause(1.5)
+            if let why = UserDefaults.standard.string(forKey: "demoAdoptError"), !why.isEmpty {
+                card.status = .failed
+                card.note = why
+            } else if let pal = pals.first(where: { $0.sessionId == card.sessionId }) ?? adoptRecent(card.sessionId) {
+                card.status = .adopted
+                card.palId = pal.id
+                result = ["pal": try .from(pal)]
+            } else {
+                card.status = .failed
+                card.note = "这个对话已经找不到了"
+            }
+        case "discard":
+            card.status = .discarded
+        default:
+            throw DemoError(message: "看不懂这个操作")
+        }
+        messages[i].adoption = card
+        emit(RPCEventName.chatMessage, messages[i])
+        return result
+    }
+
     /// What the demo's other sessions said before they were adopted.
     private func sessionLines(for s: CCSession) -> [(role: ChatRole, text: String)] {
         switch s.name {
@@ -239,7 +341,30 @@ extension DemoHost {
         var questions: [Question]
         /// The assistant proposes opening a Pal in the conversation.
         var proposal: ChatMessage
+        /// Conversations that ended lately, in three folders.
+        var recent: [RecentSession]
     }
+
+    /// What the recent conversations said, by session (their records once adopted).
+    static let recentLines: [String: [(ChatRole, String)]] = [
+        "7c1e9a52-3f0b-4d8e-9a61-0b5c2e7d4f10": [
+            (.user, "首页改成两栏布局，左边放文章列表，右边放简介"),
+            (.assistant, "好，我先看一下首页现在的结构。"),
+            (.assistant, "两栏改好了，窄屏下自动变回一栏。还差简介的头像没换。"),
+        ],
+        "2b8d4f61-9e3a-4c7b-8d20-6a1f5e9c3b72": [
+            (.user, "手机上点菜单没反应"),
+            (.assistant, "找到了：菜单按钮被顶部的横幅盖住了。我把横幅的层级调低了，你在手机上再试一下。"),
+        ],
+        "e4a7c3d9-1b6f-4e2a-b8c5-9d0e7f3a2c61": [
+            (.user, "收藏页加上按标签筛选"),
+            (.assistant, "加好了：顶部一排标签，点一个只看这类菜谱，再点一次取消。"),
+        ],
+        "5f2c8e1a-7d4b-4a9c-a3e6-1c8b0d5f7e24": [
+            (.user, "整理一下十一月去东京的行程，按天排"),
+            (.assistant, "排好了，一共 5 天，第三天下午空着，可以留给购物。"),
+        ],
+    ]
 
     /// 网站帮手 waits to run a long command; 笔记整理 is idle; 修登录跳转 runs in
     /// a terminal and 问卷数据清洗 in the background, asking a question.
@@ -319,7 +444,24 @@ extension DemoHost {
                                    text: "报销单每周都要理一遍，要不要开一个 Pal 专门管？", channel: .app, ts: now - 3 * min)
         proposal.proposal = HelperProposal(id: "hp1", name: "报销帮手", cwd: "/Users/demo/Documents/报销",
                                            duty: "每周把下载文件夹里的发票整理进报销表，缺的告诉你。", dailyUsd: 3)
+        let day = 24 * hour
+        let recent = [
+            RecentSession(sessionId: "7c1e9a52-3f0b-4d8e-9a61-0b5c2e7d4f10", cwd: "/Users/demo/code/site",
+                          title: "首页改成两栏布局", lastModified: now - 20 * hour, size: 486_000),
+            RecentSession(sessionId: "2b8d4f61-9e3a-4c7b-8d20-6a1f5e9c3b72", cwd: "/Users/demo/code/site",
+                          title: "修复手机上菜单点不开", lastModified: now - 3 * day, size: 152_000),
+            RecentSession(sessionId: "a91d6b30-4c2e-4f7a-9b18-3e5d7c0a8f45", cwd: "/Users/demo/code/site",
+                          title: "帮我看看为什么构建在 CI 上会超时，本地是好的", lastModified: now - 6 * day, size: 1_240_000),
+            RecentSession(sessionId: "e4a7c3d9-1b6f-4e2a-b8c5-9d0e7f3a2c61", cwd: "/Users/demo/code/recipes",
+                          title: "收藏页加上按标签筛选", lastModified: now - 2 * hour, size: 98_000),
+            RecentSession(sessionId: "c6b2e8f4-5a1d-4b3c-9e7f-2d4a6c8e0b13", cwd: "/Users/demo/code/recipes",
+                          title: "导入旧数据时报错", lastModified: now - 2 * day, size: 310_000),
+            RecentSession(sessionId: "5f2c8e1a-7d4b-4a9c-a3e6-1c8b0d5f7e24", cwd: "/Users/demo/Documents/旅行",
+                          title: "整理十一月东京行程", lastModified: now - 5 * hour, size: 64_000),
+            RecentSession(sessionId: "d3f9a1c7-8e2b-4d6a-b5c4-7a0e3f1d9b86", cwd: "/Users/demo/Documents/旅行",
+                          title: "比较三家酒店的退改规则", lastModified: now - 9 * day, size: 205_000),
+        ]
         return PalSeed(pals: pals, logs: ["pal-site": log("pal-site", site), "pal-notes": log("pal-notes", notes)],
-                       others: others, approvals: approvals, questions: questions, proposal: proposal)
+                       others: others, approvals: approvals, questions: questions, proposal: proposal, recent: recent)
     }
 }

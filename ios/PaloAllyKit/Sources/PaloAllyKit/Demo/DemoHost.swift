@@ -7,8 +7,8 @@ public actor DemoHost {
 
     /// Multiplier for artificial delays (0 = instant, for tests).
     public var speed: Double
-    public private(set) var seq: Int64 = 0
-    public private(set) var messages: [ChatMessage] = []
+    public internal(set) var seq: Int64 = 0
+    public internal(set) var messages: [ChatMessage] = []
     public private(set) var tasks: [AllyTask] = []
     public internal(set) var approvals: [Approval] = []
     public internal(set) var questions: [Question] = []
@@ -41,6 +41,8 @@ public actor DemoHost {
     public internal(set) var pals: [Pal] = []
     public internal(set) var palLogs: [String: [ChatMessage]] = [:]
     public internal(set) var otherSessions: [CCSession] = []
+    /// Conversations that ended lately (pals-prd §10), to adopt.
+    public internal(set) var recentSessions: [RecentSession] = []
     /// A Pal's turn being written, to stop (`pals.stop`).
     var palTurns: [String: Task<Void, Never>] = [:]
     /// Sessions asked to be adopted that wait to be quit in their terminal.
@@ -99,6 +101,7 @@ public actor DemoHost {
                 self.pals = ps.pals
                 self.palLogs = ps.logs
                 self.otherSessions = ps.others
+                self.recentSessions = ps.recent
                 self.approvals += ps.approvals
                 self.questions += ps.questions
                 self.messages.append(ps.proposal)
@@ -253,6 +256,14 @@ public actor DemoHost {
                     emit(RPCEventName.approvalUpdated, approvals[i])
                     setSession("cc-site") { $0.status = .busy; $0.waitingFor = nil }
                 }
+            }
+        case "adopt":
+            // `-demoState adopt`: the owner asked for a conversation that
+            // ended; the assistant found it and asks with a card (§10).
+            post("把 site 里改首页的那个对话接过来", role: .user)
+            if let found = recentMatch("site 首页") {
+                post("找到了，是 \(CCSession.shortPath(found.cwd)) 里那个。")
+                proposeAdopting(found)
             }
         case "tables":
             // Wide tables in a reply: they scroll sideways instead of squeezing.
@@ -915,6 +926,7 @@ public actor DemoHost {
             return ["enabled": .bool(hooksEnabled)]
         case RPCMethod.helperDecide:
             let pid = p["proposalId"]?.stringValue ?? ""
+            if palsMode, let r = try await decideAdoptCard(pid, action: p["action"]?.stringValue) { return r }
             guard let i = messages.firstIndex(where: { $0.proposal?.id == pid }), var proposal = messages[i].proposal else {
                 throw DemoError(message: "这个提议已经没有了")
             }
@@ -1268,6 +1280,7 @@ public actor DemoHost {
 
         var taskToRun: AllyTask?
         var draft: (to: String, text: String, slots: [AllySlot]?)?
+        var adoptCard: RecentSession?
         let reply: String
         if text.contains("跟"), text.contains("说") || text.contains("约"),
            let to = allies.first(where: { text.contains($0.ownerName) }) ?? allies.first {
@@ -1286,6 +1299,10 @@ public actor DemoHost {
                           at: ["10:00"], enabled: true, createdBy: .agent)
             watches.append(w)
             emit(RPCEventName.watchUpdated, ["watch": (try? JSONValue.from(w)) ?? .null] as JSONValue)
+        } else if palsMode, text.contains("接过来") || text.contains("接管"), let found = recentMatch(text) {
+            // 「把 site 里那个对话接过来」: found, and a card to say yes to (pals-prd §10).
+            adoptCard = found
+            reply = "找到了，是 \(CCSession.shortPath(found.cwd)) 里那个。"
         } else if ["帮我", "查", "整理", "比较", "找"].contains(where: text.contains) {
             let now = Date().epochMillis
             let t = AllyTask(id: nextID("t"), title: String(text.replacingOccurrences(of: "帮我", with: "").prefix(16)),
@@ -1322,6 +1339,7 @@ public actor DemoHost {
         emit(RPCEventName.status, status)
 
         if let draft { makeDraft(to: draft.to, text: draft.text, slots: draft.slots) }
+        if let adoptCard { proposeAdopting(adoptCard) }
 
         if var t = taskToRun {
             await pause(3)

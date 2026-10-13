@@ -207,3 +207,156 @@ public enum PalsUpdate: Sendable {
         self = .refetch
     }
 }
+
+// MARK: - Recent conversations (§10)
+
+/// A Claude Code conversation on the computer that has ended (in the last
+/// 30 days), not a Pal and not PaloAlly's own: `pals.adopt {sessionId}`
+/// resumes it as a Pal straight away, with no process to stop.
+public struct RecentSession: Codable, Sendable, Hashable, Identifiable {
+    public var sessionId: String
+    /// Its project folder.
+    public var cwd: String
+    /// Its custom title, else Claude Code's summary, else the start of its first words.
+    public var title: String
+    /// When its record last changed (epoch ms).
+    public var lastModified: Int64
+    /// Its record's size in bytes.
+    public var size: Int64
+
+    public var id: String { sessionId }
+
+    enum CodingKeys: String, CodingKey { case sessionId, cwd, title, lastModified, size }
+
+    public init(sessionId: String, cwd: String, title: String, lastModified: Int64, size: Int64 = 0) {
+        self.sessionId = sessionId; self.cwd = cwd; self.title = title; self.lastModified = lastModified; self.size = size
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        sessionId = l.string("sessionId", or: "")
+        cwd = l.string("cwd", or: "")
+        title = l.string("title", or: "")
+        lastModified = l.millis("lastModified", or: 0)
+        size = l.int64("size", or: 0)
+    }
+
+    /// What it's called: its title on one line, else its folder's name.
+    public var displayTitle: String {
+        let t = title.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? RecentFolder.name(of: cwd) : t
+    }
+}
+
+/// `pals.recent {folder?, limit?}`: one folder's, or all of them.
+public struct PalsRecentParams: Codable, Sendable {
+    public var folder: String?
+    public var limit: Int?
+    public init(folder: String? = nil, limit: Int? = nil) { self.folder = folder; self.limit = limit }
+}
+
+/// `pals.recent → {sessions}`.
+public struct PalsRecentResult: Decodable, Sendable {
+    public var sessions: [RecentSession]
+    public init(sessions: [RecentSession]) { self.sessions = sessions }
+    public init(from decoder: Decoder) throws {
+        sessions = try Lenient(decoder).array(RecentSession.self, "sessions", or: [])
+    }
+}
+
+/// One folder's recent conversations, newest first.
+public struct RecentFolder: Sendable, Hashable, Identifiable {
+    public var cwd: String
+    public var sessions: [RecentSession]
+    public var id: String { cwd }
+
+    /// Its last path component (「site」), the home folder as 「~」.
+    public var name: String { Self.name(of: cwd) }
+    /// The whole path, the home folder as 「~」.
+    public var path: String { CCSession.shortPath(cwd) }
+
+    static func name(of cwd: String) -> String {
+        let short = CCSession.shortPath(cwd)
+        let last = (short as NSString).lastPathComponent
+        return last.isEmpty ? short : last
+    }
+
+    /// By folder: the folder used most lately first, each one's newest first.
+    /// With a query, only those whose title or folder has it (any case).
+    public static func group(_ sessions: [RecentSession], matching query: String = "") -> [RecentFolder] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let shown = q.isEmpty ? sessions : sessions.filter {
+            $0.displayTitle.lowercased().contains(q) || CCSession.shortPath($0.cwd).lowercased().contains(q)
+        }
+        var byFolder: [String: [RecentSession]] = [:]
+        for s in shown { byFolder[s.cwd, default: []].append(s) }
+        return byFolder.map { cwd, list in
+            RecentFolder(cwd: cwd, sessions: list.sorted { ($0.lastModified, $0.sessionId) > ($1.lastModified, $1.sessionId) })
+        }
+        .sorted { a, b in
+            let (x, y) = (a.sessions.first?.lastModified ?? 0, b.sessions.first?.lastModified ?? 0)
+            return x != y ? x > y : a.cwd < b.cwd
+        }
+    }
+}
+
+// MARK: - The assistant proposing to adopt one (§10, `pal_adopt`)
+
+/// Where a `pal_adopt` card stands.
+public enum PalAdoptProposalStatus: String, TolerantStringEnum {
+    /// Waiting for the owner's 接管 / 不用.
+    case pending
+    /// 接管: it's a Pal now (`palId`).
+    case adopted
+    /// 不用.
+    case discarded
+    /// 接管 didn't work: `note` says why.
+    case failed
+    case unknown
+    public static let fallback = PalAdoptProposalStatus.unknown
+}
+
+/// The assistant proposing to adopt a recent conversation: a card in its
+/// conversation (`kind: "pal_adopt"`); nothing is adopted until the owner's
+/// 接管 (`helper.decide`, as a helper proposal).
+public struct PalAdoptProposal: Codable, Sendable, Hashable, Identifiable {
+    public var id: String
+    /// The conversation to adopt.
+    public var sessionId: String
+    public var cwd: String
+    public var title: String
+    public var status: PalAdoptProposalStatus
+    /// Adopted: the Pal it became.
+    public var palId: String?
+    /// Why it wasn't adopted, when it wasn't.
+    public var note: String?
+
+    enum CodingKeys: String, CodingKey { case id, sessionId, cwd, title, status, palId, note }
+
+    public init(id: String, sessionId: String, cwd: String, title: String, status: PalAdoptProposalStatus = .pending,
+                palId: String? = nil, note: String? = nil) {
+        self.id = id; self.sessionId = sessionId; self.cwd = cwd; self.title = title; self.status = status
+        self.palId = palId; self.note = note
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        id = l.string("id", or: UUID().uuidString)
+        sessionId = l.string("sessionId", or: "")
+        cwd = l.string("cwd", or: "")
+        title = l.string("title", or: "")
+        status = l.decode(PalAdoptProposalStatus.self, "status", or: .pending)
+        palId = l.string("palId")
+        note = l.string("note")
+    }
+
+    public var isPending: Bool { status == .pending }
+
+    /// Its title on one line, else its folder's name.
+    public var displayTitle: String {
+        RecentSession(sessionId: sessionId, cwd: cwd, title: title, lastModified: 0).displayTitle
+    }
+
+    /// The folder for people: the home folder as 「~」.
+    public var shortCwd: String { CCSession.shortPath(cwd) }
+}

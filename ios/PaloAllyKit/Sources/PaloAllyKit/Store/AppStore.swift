@@ -277,6 +277,27 @@ public final class AppStore {
         get { shared.cancelledWaits }
         set { shared.cancelledWaits = newValue }
     }
+    /// The computer's conversations that ended lately (§10), newest first;
+    /// nil until `pals.recent` has answered.
+    public internal(set) var recentSessions: [RecentSession]? {
+        get { shared.recentSessions }
+        set { shared.recentSessions = newValue }
+    }
+    /// false for a host that doesn't know `pals.recent` yet.
+    public internal(set) var recentSupported: Bool? {
+        get { shared.recentSupported }
+        set { shared.recentSupported = newValue }
+    }
+    /// The owner's answers to `pal_adopt` cards, until the host's copy says so.
+    public internal(set) var adoptDecisions: [String: PalAdoptProposalStatus] {
+        get { shared.adoptDecisions }
+        set { shared.adoptDecisions = newValue }
+    }
+    /// A `pal_adopt` card → the Pal it became.
+    public internal(set) var adoptProposalPals: [String: String] {
+        get { shared.adoptProposalPals }
+        set { shared.adoptProposalPals = newValue }
+    }
 
     public func markCopied(_ id: String) { copiedClipboardIDs.insert(id) }
 
