@@ -4,6 +4,10 @@
 // and starts Claude Code's background service if it isn't running. Run with:
 //   PALOALLY_LIVE_PALS=1 bun test test/pals.live.test.ts
 //
+// The last test takes over a conversation that already ended (pals-prd §10):
+// a terminal session quit with /exit is listed by pals.recent (a `claude -p`
+// run in the same folder isn't) and adopted with its context.
+//
 // Everything runs in temporary folders. Claude Code's own settings, the
 // owner's sessions and any running PaloAlly host are left alone: the test
 // only reads Claude Code's session registry, and its hub never installs or
@@ -93,8 +97,9 @@ d("live: Pals run by the host", () => {
   const paths = tmpPaths();
   const scratch = realpathSync(process.env.PALOALLY_LIVE_DIR ?? join(paths.root, ".."));
   const tag = Math.random().toString(36).slice(2, 6);
-  const projects = { bg: "", term: "", palo: "" };
-  for (const k of Object.keys(projects) as (keyof typeof projects)[]) projects[k] = realpathSync(mkdtempSync(join(scratch, `pal-live-${k}-`)));
+  const projects = { bg: "", term: "", palo: "", recent: "" };
+  // (bun runs a skipped describe's body too: no folders then, as nothing would remove them)
+  for (const k of Object.keys(projects) as (keyof typeof projects)[]) projects[k] = LIVE ? realpathSync(mkdtempSync(join(scratch, `pal-live-${k}-`))) : "";
   const claudeDir = claudeConfigDir();
   const cli = new RealClaudeCli();
   const helperExe = findHelper(helperCandidates(paths.root, process.env.PALOALLY_HELPER_APP ?? resolve(import.meta.dir, "../helper/build", HELPER_APP)));
@@ -143,6 +148,8 @@ d("live: Pals run by the host", () => {
   let termPal: Pal;
   let bgSid = "";
   let termSid = "";
+  let recentSid = "";
+  let printSid = "";
   const palMessages = (id: string) => events.filter((e) => e.event === "chat.message" && e.data.pal === id).map((e) => e.data);
 
   // Anything a Pal asks while the test isn't looking at it is allowed (SendMessage may ask).
@@ -168,6 +175,7 @@ d("live: Pals run by the host", () => {
     const spent = (cwd: string, sid: string) => (sid ? meter.spentOn(cwd, sid, day, "UTC") : 0);
     const paloSid = readRegistry(join(claudeDir, "sessions")).find((e) => e.name === paloName)?.sessionId ?? paloSidSeen;
     facts.costUsd = Number((spent(projects.bg, bgSid) + spent(projects.term, termSid) + spent(projects.palo, paloSid)).toFixed(3));
+    facts.recentCostUsd = Number((spent(projects.recent, recentSid) + spent(projects.recent, printSid)).toFixed(3));
     // what Claude Code kept for the test folders
     for (const dir of Object.values(projects)) {
       const proj = join(claudeDir, "projects", resolve(dir).replace(/[^A-Za-z0-9]/g, "-"));
@@ -397,6 +405,68 @@ d("live: Pals run by the host", () => {
       expect(hub.pals.list()).toEqual([]);
       expect(readRegistry(join(claudeDir, "sessions")).some((e) => e.sessionId === termSid)).toBe(false);
       mkdirSync(join(paths.root, "done"), { recursive: true });
+    },
+    T,
+  );
+
+  test(
+    "最近的对话: a terminal session quit with /exit is listed (a claude -p run isn't), and taken over at once with its context; the answer comes from it",
+    async () => {
+      const name = `recent-${tag}`;
+      const script = join(paths.root, "term_session.py");
+      writeFileSync(script, PTY);
+      const env = await loginEnv();
+      const pty = spawn("python3", [script, projects.recent, name, "Remember the codeword 'juniper'. Reply with exactly: noted"], { env, stdio: ["pipe", "pipe", "inherit"] });
+      ptys.push(pty);
+      const entry = await waitFor("its registry entry", () => readRegistry(join(claudeDir, "sessions")).find((e) => e.name === name), 60_000, 250);
+      recentSid = entry.sessionId;
+      await waitFor("its first answer", () => replied(transcriptEntries(claudeDir, projects.recent, recentSid), /noted/i), 120_000, 500);
+      // while it runs, it's one of the others, not a recent one
+      expect((await hub.pals.recent({ folder: projects.recent })).some((s) => s.sessionId === recentSid)).toBe(false);
+      pty.stdin!.write("exit\n");
+      await waitFor("the terminal session to quit", () => {
+        try {
+          process.kill(entry.pid, 0);
+          return false;
+        } catch {
+          return true;
+        }
+      }, 30_000, 50);
+      // a claude -p run in the same folder: programmatic, not listed
+      const printed = spawnSync(findClaude(env)!, ["-p", "--model", "haiku", "--output-format", "json", "Reply with exactly: ok"], { cwd: projects.recent, env, encoding: "utf8", timeout: 120_000 });
+      printSid = JSON.parse(printed.stdout).session_id;
+      expect(printSid).toBeTruthy();
+      const t0 = Date.now();
+      const listed = await waitFor("it among the recent ones", async () => (await hub.pals.recent({ folder: projects.recent })).find((s) => s.sessionId === recentSid), 30_000, 1_000);
+      timings.recentListed = Date.now() - t0;
+      expect(listed).toMatchObject({ sessionId: recentSid, cwd: projects.recent, title: name });
+      expect(listed.size).toBe(statSync(transcriptPath(claudeDir, projects.recent, recentSid)).size);
+      expect((await hub.pals.recent({ folder: projects.recent })).map((s) => s.sessionId)).toEqual([recentSid]);
+      expect(existsSync(transcriptPath(claudeDir, projects.recent, printSid))).toBe(true);
+      // a fresh look at every conversation on this computer (read only)
+      (hub.pals as any).recentList.invalidate();
+      const t1 = Date.now();
+      await hub.pals.recent();
+      timings.recentFresh = Date.now() - t1;
+      // taken over: no process to stop, resumed under its title
+      const t2 = Date.now();
+      const r = await hub.pals.adopt(recentSid, "test");
+      timings.adoptEnded = Date.now() - t2;
+      expect("pal" in r).toBe(true);
+      const pal = (r as { pal: Pal }).pal;
+      expect(pal).toMatchObject({ name, cwd: projects.recent, sessionId: recentSid, status: "idle", createdBy: "owner" });
+      expect(timings.adoptEnded).toBeLessThan(10_000);
+      expect((await hub.pals.recent({ folder: projects.recent })).some((s) => s.sessionId === recentSid)).toBe(false);
+      // its conversation came with it, and it still knows the codeword
+      const { messages } = await hub.pals.history(pal.id);
+      expect(messages.some((m) => m.role === "user" && m.text.includes("juniper"))).toBe(true);
+      expect(messages.some((m) => m.role === "assistant" && /noted/i.test(m.text))).toBe(true);
+      await hub.pals.send(pal.id, "What is the codeword I asked you to remember? Reply with just the word.");
+      await waitFor("its answer", () => palMessages(pal.id).some((m) => m.role === "assistant" && /juniper/i.test(m.text)), 120_000);
+      // out of the list again, it's a recent one again
+      await hub.pals.remove(pal.id, "test");
+      expect(readRegistry(join(claudeDir, "sessions")).some((e) => e.sessionId === recentSid)).toBe(false);
+      expect((await hub.pals.recent({ folder: projects.recent })).map((s) => s.sessionId)).toEqual([recentSid]);
     },
     T,
   );
