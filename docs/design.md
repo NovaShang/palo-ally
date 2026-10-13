@@ -67,6 +67,8 @@ relay/       不新写：复用 github.com/NovaShang/bento 的 relay/（bento-re
 | `ally_send(to, text, urgent?, slots?, replyTo?)` | 给「能对话」的 Ally 直接发出；给「每句要你看」的只生成草稿卡片，主人点「发送」（`ally.draft.decide`）才进待发队列。聊天里都是 `kind:"ally"`、`dir:"out"`、`role:"assistant"`。处理某个 Ally 来话的那一轮里，只有回给它的话能直接发出，给别的 Ally 的一律是草稿 |
 | `pals_list()` | 主人的 Pal（名字 = SendMessage 的 to、目录、状态、最后一句）和电脑上其他会话；跟 Pal 说话用原生 SendMessage |
 | `pal_propose(name, dir, duty, dailyUsd)` | 只生成提议卡片（聊天里 `kind:"helper"`），立即返回；主人点「开吧」（`helper.decide`）才开，交接说明是 Pal 的第一条消息 |
+| `pals_recent(folder?)` | 最近 30 天里退出了的对话（同 `pals.recent`，最多 30 条）：sessionId、目录、标题、最后活动时间；folder 是路径或目录名 |
+| `pal_adopt(sessionId)` | 只生成接管卡片「接管『标题』（目录）」（聊天里 `kind:"pal_adopt"`），立即返回；主人点「接管」（`helper.decide`）才接。正开着的、已经是 Pal 的、PaloAlly 自己的不出卡片 |
 
 ## 4. 安全（全部依赖 harness）
 
@@ -113,7 +115,7 @@ relay/       不新写：复用 github.com/NovaShang/bento 的 relay/（bento-re
 
 ```ts
 ChatMessage { seq:number; id:string; role:"user"|"assistant"|"system";
-  kind:"text"|"task"|"approval"|"question"|"notice"|"clipboard"|"ally"|"helper"; text:string;
+  kind:"text"|"task"|"approval"|"question"|"notice"|"clipboard"|"ally"|"helper"|"pal_adopt"; text:string;
   channel:"app"|"cli"|"wechat"|"probe"|"schedule"|"system"; ts:number /*ms*/;
   proactive?:boolean; taskId?:string; approvalId?:string;
   clientMsgId?:string /* chat.send 带来的会原样回显 */;
@@ -121,12 +123,15 @@ ChatMessage { seq:number; id:string; role:"user"|"assistant"|"system";
   /* kind "ally"：收到的话 role "system"（author 是对方本人或对方的助理）；助理发出的 role "assistant"
      （草稿卡片，或「能对话」时直接发出）；主人自己说的（ally.say）role "user"、channel "system"；
      最新文字和状态看 entry */;
-  proposal?:HelperProposal
-  /* kind "helper"：Palo 提议开 Pal；状态变了，同一条消息（同 id、同 seq）再发一次 chat.message */;
+  proposal?:HelperProposal|PalAdoptProposal
+  /* kind "helper"：Palo 提议开 Pal（HelperProposal）；kind "pal_adopt"：Palo 提议接管一个退出了的对话
+     （PalAdoptProposal）。状态变了，同一条消息（同 id、同 seq）再发一次 chat.message */;
   pal?:string /* 属于哪个 Pal 的对话（Pal.id）；没有 = Palo 的。Pal 的消息不进 Palo 的对话，seq = 毫秒时间 */;
   from?:string /* Pal 对话里不是主人说的 user 消息：助理的名字（Palo 的话）或别的会话的名字 */ }
 HelperProposal { id /* helper.decide 的 proposalId */; name; cwd; duty; dailyUsd:number;
   status:"pending"|"created"|"discarded"|"expired"; sessionId? /* 开了以后 */; palId?; note? }
+PalAdoptProposal { id /* helper.decide 的 proposalId */; sessionId; cwd; title;
+  status:"pending"|"adopted"|"discarded"|"failed"; palId? /* 接管了以后 */; note? /* failed 的原因 */ }
 RecentSession { sessionId; cwd; title /* 自定义标题，否则 Claude Code 的摘要，否则第一句话的前 40 个字 */;
   lastModified:number /*ms*/; size:number /* 记录的字节数 */ }
 Pal { id /* pal_… */; name /* SendMessage 用的名字 */; cwd; sessionId;
@@ -213,7 +218,7 @@ ModelOption { value; displayName; description; efforts:string[] }
 | `sessions.list` | `{}` | `{sessions:CCSession[], hooks:boolean}`（未接管的会话，最近活动的在前；hooks = 全局钩子开着没有） |
 | `sessions.history` | `{id, before?, limit?}` | `{messages:CCMessage[]}`（从旧到新；before = 客户端手里最早一条的 id，也接受毫秒时间；默认 50 条，最多 200） |
 | `sessions.hooks` | `{enabled?}` | `{enabled}`（不带 enabled 只查不改） |
-| `helper.decide` | `{proposalId, action:"create"\|"discard"}` | `{pal?}`（create 返回开好的 Pal；已经答过的再答一次，返回原来的结果） |
+| `helper.decide` | `{proposalId, action:"create"\|"discard"}` | `{pal?}`（create 返回开好或接管好的 Pal；已经答过的再答一次，返回原来的结果。`pal_adopt` 卡片接管不成时返回 `{}`，卡片变成 failed、带原因，可以再点） |
 | `pals.list` | `{}` | `{pals:Pal[], others:CCSession[], hooks:boolean, helper:boolean}`（helper = Pal 经 PaloAlly 小助手启动） |
 | `pals.adopt` | `{sessionId}` | `{pal}`，或 `{waiting:"exit-in-terminal"}`（终端会话：退出后自动接管，结果看 `pals.updated`；已经退出的对话直接 resume，返回 `{pal}`） |
 | `pals.release` | `{id}` | `{resumeCommand}`（`cd <目录> && claude --resume <sessionId>`；返回时主机的进程已退出） |

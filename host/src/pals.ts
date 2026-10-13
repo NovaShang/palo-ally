@@ -18,7 +18,7 @@ import { HeldElsewhere, type Holder, type PalRecord, PalSession } from "./palSes
 import type { QuestionManager } from "./questions.ts";
 import type { Router } from "./router.ts";
 import type { Sessions } from "./sessions.ts";
-import type { ChatMessage, HelperProposal, Pal, RecentSession } from "./types.ts";
+import type { ChatMessage, HelperProposal, Pal, PalAdoptProposal, RecentSession } from "./types.ts";
 import { newId, readJson, writeJson, zonedParts } from "./util.ts";
 
 // Pals (docs/pals-prd.md): Claude Code sessions the host runs itself. The
@@ -29,7 +29,8 @@ import { newId, readJson, writeJson, zonedParts } from "./util.ts";
 // crash or a restart of the Mac, and goes back to the terminal on 交还终端.
 // At most five at a time. One transcript is never written by two processes.
 // A conversation that ended on the computer lately can be taken over too
-// (§10): listed by pals.recent, resumed directly by pals.adopt.
+// (§10): listed by pals.recent, resumed directly by pals.adopt, or proposed
+// by the assistant on a card the owner answers.
 
 export const MAX_PALS = 5;
 /** The assistant's own session name: Pals see its SendMessages as from it, and answer it there. */
@@ -50,6 +51,8 @@ export const PAL_PROMPT = (paloName: string) =>
 interface PalFile {
   pals: PalRecord[];
   proposals: (HelperProposal & { createdAt: number; messageId?: string })[];
+  // the assistant's cards proposing to take over an ended conversation (pal_adopt)
+  adoptions: (PalAdoptProposal & { createdAt: number; messageId?: string })[];
   // Pals the owner took out of the list (交还终端 / 移出): listed again among the recent ones
   former: { sessionId: string; cwd: string; at: number }[];
 }
@@ -184,7 +187,7 @@ export class Pals {
     this.launcher = new PalLauncher({ root: d.paths.root, helperApp: d.helperApp, mode: d.launchMode, log: (s) => this.log(s) });
     const saved = readJson<Partial<PalFile>>(d.paths.pals, {});
     const list = <T>(v: T[] | undefined): T[] => (Array.isArray(v) ? v : []);
-    this.data = { pals: list(saved.pals), proposals: list(saved.proposals), former: list(saved.former) };
+    this.data = { pals: list(saved.pals), proposals: list(saved.proposals), adoptions: list(saved.adoptions), former: list(saved.former) };
     this.recentList = new RecentSessions({
       claudeDir: d.claudeDir,
       roots: () => ownRoots(d.paths.root),
@@ -507,24 +510,24 @@ export class Pals {
   /**
    * pals.adopt: one of the computer's sessions becomes a Pal. A background
    * session is stopped first; a terminal session is waited for (the owner
-   * quits it there) and taken over once its process is gone. A conversation
-   * that ended is resumed at once.
+   * quits it there) and taken over once its process is gone, unless `wait`
+   * is false (then it's an error). A conversation that ended is resumed at once.
    */
-  adopt(sessionId: string, by: string): Promise<{ pal: Pal } | { waiting: "exit-in-terminal" }> {
+  adopt(sessionId: string, by: string, o: { wait?: boolean } = {}): Promise<{ pal: Pal } | { waiting: "exit-in-terminal" }> {
     const sid = String(sessionId ?? "").trim();
     if (!sid) return Promise.reject(new Error("没有这个会话"));
     const have = this.get(sid);
     if (have && have.rec.sessionId === sid) return Promise.resolve({ pal: have.toWire() });
     if (this.waiting.has(sid)) return Promise.resolve({ waiting: "exit-in-terminal" });
-    // Asked twice at once (two devices): one adoption.
+    // Asked twice at once (two devices, a card and the list): one adoption.
     const inFlight = this.adopts.get(sid);
     if (inFlight) return inFlight;
-    const p = this.doAdopt(sid, by).finally(() => this.adopts.delete(sid));
+    const p = this.doAdopt(sid, by, o).finally(() => this.adopts.delete(sid));
     this.adopts.set(sid, p);
     return p;
   }
 
-  private async doAdopt(sid: string, by: string): Promise<{ pal: Pal } | { waiting: "exit-in-terminal" }> {
+  private async doAdopt(sid: string, by: string, o: { wait?: boolean }): Promise<{ pal: Pal } | { waiting: "exit-in-terminal" }> {
     this.room();
     await this.d.sessions.watch.refresh({ agents: true });
     const rec = this.d.sessions.watch.get(sid);
@@ -546,6 +549,7 @@ export class Pals {
       if (await stillBg()) throw new Error("它停不下来，没有接管");
     }
     if (holders.length) {
+      if (o.wait === false) throw new Error("它在终端里开着：先在终端里退出它（/exit），再接管");
       this.waitForExit(sid, holders, session, by);
       return { waiting: "exit-in-terminal" };
     }
@@ -847,8 +851,10 @@ export class Pals {
     this.d.chat.update(p.messageId, { proposal });
   }
 
-  /** helper.decide: 开吧 opens the Pal (and returns it), 不用 drops the proposal. */
+  /** helper.decide: 开吧 opens the Pal (and returns it), 不用 drops the proposal. A pal_adopt card: 接管 / 不用. */
   async decide(proposalId: string, action: string, by: string): Promise<{ pal?: Pal }> {
+    const card = this.data.adoptions.find((x) => x.id === proposalId);
+    if (card) return this.decideAdopt(card, action, by);
     const p = this.data.proposals.find((x) => x.id === proposalId);
     if (!p) throw new Error("这个提议已经没有了");
     if (p.status !== "pending") {
@@ -909,7 +915,90 @@ export class Pals {
     return pal;
   }
 
+  // ---------------- the assistant proposes taking over an ended one (§10) ----------------
+
+  /** pal_adopt: a card 「接管『标题』（目录）」; the conversation is taken over on the owner's 接管. */
+  async proposeAdopt(a: { sessionId: string }): Promise<string> {
+    const key = String(a?.sessionId ?? "").trim();
+    if (!key) return "没提：要给出这个对话的 sessionId（用 pals_recent 查）";
+    const sid = await this.recentList.fullId(key);
+    const pal = this.get(sid);
+    if (pal && pal.rec.sessionId === sid) return `它已经是 Pal「${pal.rec.name}」了，不用再接管；给它派活用 SendMessage 发给「${pal.rec.name}」。`;
+    if (this.takenIds().has(sid))
+      return "没提：这个对话现在还开着（在终端里或后台），不是已经退出的。要接管它，请主人在 Pals 列表里对它点「接管」。";
+    const found = await this.recentList.find(sid);
+    if (typeof found === "string") return `没提：${found}`;
+    const open = this.data.adoptions.find((p) => p.sessionId === sid && p.status === "pending");
+    if (open) return `已经有一张接管它的卡片在等主人点了（${open.id}），不用再提。`;
+    if (this.pals.size >= MAX_PALS) {
+      const oldest = [...this.pals.values()].sort((x, y) => x.rec.lastUsedAt - y.rec.lastUsedAt)[0]!;
+      return `已经有 ${MAX_PALS} 个 Pal 了（最多 ${MAX_PALS} 个）。先问主人要不要把最久没用的「${oldest.rec.name}」移出 Pals（主人在它的页面右上角点「移出 Pals」）。`;
+    }
+    const proposal: PalAdoptProposal = { id: newId("pa_"), sessionId: sid, cwd: found.cwd, title: found.title, status: "pending" };
+    const where = tildePath(found.cwd);
+    const msg = this.d.chat.add({ role: "assistant", kind: "pal_adopt", text: `接管「${found.title}」（${where}）？`, channel: "system", proposal });
+    this.data.adoptions = [...this.data.adoptions, { ...proposal, createdAt: this.now(), messageId: msg.id }].slice(-50);
+    this.save();
+    this.d.audit.log("pal.adopt_proposed", { id: proposal.id, session: sid, cwd: found.cwd });
+    return `已经给主人看了接管的卡片（${proposal.id}）：接管「${found.title}」（${where}）。主人点「接管」才会接，现在还没接，别说已经接了。`;
+  }
+
+  private settleAdopt(id: string, patch: Partial<PalAdoptProposal>): void {
+    const p = this.data.adoptions.find((x) => x.id === id);
+    if (!p) return;
+    Object.assign(p, patch);
+    for (const k of Object.keys(patch) as (keyof PalAdoptProposal)[]) if (patch[k] === undefined) delete (p as any)[k];
+    this.save();
+    if (!p.messageId) return;
+    const { createdAt: _c, messageId: _m, ...proposal } = p;
+    this.d.chat.update(p.messageId, { proposal });
+  }
+
+  // 接管 takes it over (and returns the Pal); 不用 drops the card. One that
+  // couldn't be taken over says why on the card (failed, with a note) and
+  // can be tapped again; one taken over gives its Pal again.
+  private async decideAdopt(card: PalFile["adoptions"][number], action: string, by: string): Promise<{ pal?: Pal }> {
+    if (card.status === "adopted" || card.status === "discarded") {
+      const pal = card.palId ? this.pals.get(card.palId) : undefined;
+      return pal ? { pal: pal.toWire() } : {};
+    }
+    if (action === "discard") {
+      this.settleAdopt(card.id, { status: "discarded", note: undefined });
+      this.d.audit.log("pal.adopt_discarded", { id: card.id, session: card.sessionId, by });
+      return {};
+    }
+    if (action !== "create") throw new Error("看不懂这个操作");
+    try {
+      const r = await this.adopt(card.sessionId, by, { wait: false });
+      if (!("pal" in r)) throw new Error("它在终端里开着：先在终端里退出它（/exit），再接管");
+      this.settleAdopt(card.id, { status: "adopted", palId: r.pal.id, note: undefined });
+      this.d.audit.log("pal.adopt_accepted", { id: card.id, pal: r.pal.id, session: card.sessionId, by });
+      return { pal: r.pal };
+    } catch (e) {
+      const why = e instanceof Error ? e.message : String(e);
+      this.settleAdopt(card.id, { status: "failed", note: why });
+      this.d.audit.log("pal.adopt_failed", { id: card.id, session: card.sessionId, why, by });
+      return {};
+    }
+  }
+
   // ---------------- the assistant's tools ----------------
+
+  /** pals_recent: the ended conversations, for the assistant to pick from (or ask the owner). */
+  async toolRecent(a: { folder?: string } = {}): Promise<string> {
+    const all = await this.recentEntries({ folder: a?.folder });
+    const tz = this.d.settings().timezone;
+    const when = (ms: number) => {
+      const p = zonedParts(ms, tz);
+      return `${p.dateKey} ${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
+    };
+    const shown = all.slice(0, 30);
+    return JSON.stringify({
+      sessions: shown.map((e) => ({ sessionId: e.sessionId, dir: tildePath(e.cwd), title: e.title, lastActive: when(e.lastModified) })),
+      ...(all.length > shown.length ? { more: all.length - shown.length } : {}),
+      ...(all.length ? {} : { note: a?.folder ? "这个目录里没有最近退出的对话" : "最近 30 天里没有退出了的对话" }),
+    });
+  }
 
   async toolList(): Promise<string> {
     const others = await this.d.sessions.listFresh().catch(() => this.d.sessions.list());

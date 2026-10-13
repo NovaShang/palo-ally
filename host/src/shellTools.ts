@@ -177,9 +177,12 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
     ally_list: async () => d.allies?.toolList() ?? "[]",
     ally_send: async (args) => d.allies?.toolSend(args) ?? "还没有 Ally。",
     // Pals: the assistant talks to them with SendMessage itself; it only
-    // lists them here, and proposes a new one (it opens on the owner's tap).
+    // lists them here, and proposes a new one or taking over a conversation
+    // that ended (either happens on the owner's tap).
     pals_list: async () => (d.pals ? await d.pals.toolList() : "{}"),
     pal_propose: async (a) => d.pals?.propose(a) ?? "这台电脑上没开 Pal",
+    pals_recent: async (a) => (d.pals ? await d.pals.toolRecent(a) : "{}"),
+    pal_adopt: async (a) => (d.pals ? await d.pals.proposeAdopt(a) : "这台电脑上没开 Pal"),
     notify_user: async ({ text, urgent }) => {
       const msg = d.chat.add({ role: "assistant", kind: "notice", text, channel: "system", proactive: true });
       // Wait for the real outcome (pushes give up after ~5 s), but never longer

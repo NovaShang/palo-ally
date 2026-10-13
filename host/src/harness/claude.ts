@@ -173,6 +173,18 @@ export function paloallyMcpServer(h: ToolHandlers) {
         async (a) => text(await h.pal_propose(a)),
       ),
       tool(
+        "pals_recent",
+        "列出这台电脑上最近 30 天里已经退出了的 Claude Code 对话（最新的在前）：sessionId、目录、标题、最后活动时间。正开着的会话和已经是 Pal 的不在这里（看 pals_list）。主人要把以前的某个对话接回来时用它查。",
+        { folder: z.string().optional().describe("只看某个目录里的：绝对路径、~/ 开头的路径，或目录名（如 site）") },
+        async (a) => text(await h.pals_recent(a)),
+      ),
+      tool(
+        "pal_adopt",
+        "提议把一个已经退出的 Claude Code 对话接回来当 Pal（接着原来的上下文跑，由 PaloAlly 托管）。只生成一张卡片「接管『标题』（目录）」，主人点「接管」才会接；立即返回，别说已经接了。",
+        { sessionId: z.string().describe("pals_recent 给的 sessionId") },
+        async (a) => text(await h.pal_adopt(a)),
+      ),
+      tool(
         "notify_user",
         "主动推送一条消息给主人（手机通知；推不出去会改发微信）。只在真正要紧时用。返回的是实际送达情况：没送到就别对主人说已推送。",
         { text: z.string(), urgent: z.boolean().optional() },

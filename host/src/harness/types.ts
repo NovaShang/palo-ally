@@ -100,6 +100,9 @@ export interface ToolHandlers {
   // Pals and the computer's other Claude Code sessions (docs/pals-prd.md §6).
   pals_list(): Promise<string>;
   pal_propose(args: { name: string; dir: string; duty: string; dailyUsd: number }): Promise<string>;
+  // Conversations that ended on the computer, and taking one over (§10).
+  pals_recent(args: { folder?: string }): Promise<string>;
+  pal_adopt(args: { sessionId: string }): Promise<string>;
 }
 
 export interface ImageInput {

@@ -231,7 +231,8 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       // No `enabled`: only says whether they're on.
       if (typeof p.enabled !== "boolean") return { enabled: hub.sessions.hooksEnabled() };
       return { enabled: hub.sessions.setHooks(p.enabled, ctx.channel) };
-    // The assistant's proposal card: 开吧 opens a Pal (docs/pals-prd.md §6).
+    // The assistant's proposal cards: 开吧 opens a Pal (docs/pals-prd.md §6),
+    // 接管 takes over a conversation that ended (§10).
     case "helper.decide":
       return await hub.pals.decide(String(p.proposalId ?? ""), String(p.action ?? ""), ctx.channel);
     // Pals: Claude Code sessions the host runs itself (docs/pals-prd.md §8).

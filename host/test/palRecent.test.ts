@@ -1,17 +1,20 @@
 // 接管最近的对话 (docs/pals-prd.md §10): the conversations that ended on the
-// computer lately (pals.recent, over a made-up listSessions), and taking one
-// over directly (pals.adopt).
+// computer lately (pals.recent, over a made-up listSessions), taking one
+// over directly (pals.adopt), and the assistant's card for it (pal_adopt,
+// helper.decide).
 import { afterAll, describe, expect, test } from "bun:test";
 import { type ChildProcess, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SDKSessionInfo } from "@anthropic-ai/claude-agent-sdk";
 import { AwayDetector } from "../src/away.ts";
 import { type RegistryEntry, readRegistry } from "../src/ccSessions.ts";
+import { BEHAVIOR } from "../src/home.ts";
 import { folderMatch, isOwnFolder, palNameFor, type RecentSource, recentTitle, shortName } from "../src/palRecent.ts";
 import { MAX_PALS, type PalsTiming } from "../src/pals.ts";
 import { handleRpc } from "../src/rpc.ts";
+import type { PalAdoptProposal } from "../src/types.ts";
 import type { FakeScript } from "./fakeDriver.ts";
 import { FakeClaudeDir, FakeCli, assistantEntry } from "./fakeClaude.ts";
 import { makeHub, tick } from "./helpers.ts";
@@ -261,6 +264,108 @@ describe("taking an ended one over (pals.adopt)", () => {
     await expect(t.call("pals.adopt", { sessionId: t.ended(t.folder("x"), { transcript: false }) })).rejects.toThrow("找不到它的对话记录");
     await expect(t.call("pals.adopt", { sessionId: "f0000000-0000-4000-8000-000000000000" })).rejects.toThrow("没有这个会话");
     expect(t.driver.pals).toHaveLength(0);
+  });
+});
+
+describe("the assistant brings one back (pals_recent, pal_adopt)", () => {
+  test("it lists them, its card adopts on 接管 only (the card says so, with the Pal), and a second 接管 gives the same Pal", async () => {
+    const t = setup();
+    const site = t.folder("site");
+    const notes = t.folder("notes");
+    const a = t.ended(site, { customTitle: "首页改成两栏", ago: HOUR });
+    t.ended(notes, { customTitle: "旅行清单", ago: 2 * HOUR });
+    const tools = t.hub.toolHandlers();
+    const listed = JSON.parse(await tools.pals_recent({}));
+    expect(listed.sessions.map((s: any) => s.title)).toEqual(["首页改成两栏", "旅行清单"]);
+    expect(listed.sessions[0]).toEqual({ sessionId: a, dir: site.startsWith(homedir()) ? `~${site.slice(homedir().length)}` : site, title: "首页改成两栏", lastActive: expect.stringMatching(/^\d{4}-\d\d-\d\d \d\d:\d\d$/) });
+    expect(JSON.parse(await tools.pals_recent({ folder: "notes" })).sessions.map((s: any) => s.title)).toEqual(["旅行清单"]);
+    expect(JSON.parse(await tools.pals_recent({ folder: "nowhere" }))).toEqual({ sessions: [], note: "这个目录里没有最近退出的对话" });
+
+    // a card, nothing started; by its first characters too
+    const said = await tools.pal_adopt({ sessionId: a.slice(0, 8) });
+    expect(said).toContain("主人点「接管」才会接，现在还没接");
+    const card = t.hub.chat.recent(1)[0]!;
+    expect(card).toMatchObject({ role: "assistant", kind: "pal_adopt", channel: "system", text: expect.stringContaining("接管「首页改成两栏」（") });
+    expect(card.proposal).toEqual({ id: expect.stringMatching(/^pa_/), sessionId: a, cwd: site, title: "首页改成两栏", status: "pending" });
+    expect(t.driver.pals).toHaveLength(0);
+    expect(await tools.pal_adopt({ sessionId: a })).toContain("已经有一张接管它的卡片");
+
+    // 接管: the Pal, and the card (the same message, sent again) says so
+    const before = t.events.filter((e) => e.event === "chat.message" && e.data.id === card.id).length;
+    const { pal } = await t.call("helper.decide", { proposalId: card.proposal!.id, action: "create" });
+    expect(pal).toMatchObject({ sessionId: a, cwd: site, name: "首页改成两栏", status: "idle" });
+    expect(t.hub.chat.get(card.id)!.proposal).toEqual({ ...(card.proposal as PalAdoptProposal), status: "adopted", palId: pal.id });
+    const resent = t.events.filter((e) => e.event === "chat.message" && e.data.id === card.id);
+    expect(resent.length).toBe(before + 1);
+    expect(resent.at(-1)!.data).toMatchObject({ seq: card.seq, kind: "pal_adopt", proposal: { status: "adopted", palId: pal.id } });
+    expect((await t.call("helper.decide", { proposalId: card.proposal!.id, action: "create" })).pal.id).toBe(pal.id);
+    expect(t.driver.pals).toHaveLength(1);
+    // it's a Pal now, not a recent one
+    expect(await tools.pal_adopt({ sessionId: a })).toContain("已经是 Pal「首页改成两栏」");
+    expect(JSON.parse(await tools.pals_recent({})).sessions.map((s: any) => s.title)).toEqual(["旅行清单"]);
+    expect(t.hub.audit.tail(20).map((e) => e.type)).toEqual(expect.arrayContaining(["pal.adopt_proposed", "pal.adopt_accepted"]));
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("不用 adopts nothing; one that couldn't be taken over says why on the card and can be tapped again; what isn't an ended one gets no card", async () => {
+    const t = setup();
+    const site = t.folder("site");
+    const tools = t.hub.toolHandlers();
+    const a = t.ended(site, { customTitle: "不要了" });
+    await tools.pal_adopt({ sessionId: a });
+    const no = t.hub.chat.recent(1)[0]!;
+    expect(await t.call("helper.decide", { proposalId: no.proposal!.id, action: "discard" })).toEqual({});
+    expect(t.hub.chat.get(no.id)!.proposal!.status).toBe("discarded");
+    expect(await t.call("helper.decide", { proposalId: no.proposal!.id, action: "create" })).toEqual({});
+    expect(t.driver.pals).toHaveLength(0);
+
+    // Claude Code won't resume it: failed, with why; tapped again once it would, adopted
+    const b = t.ended(site, { customTitle: "再试一次" });
+    await tools.pal_adopt({ sessionId: b });
+    const retry = t.hub.chat.recent(1)[0]!;
+    t.driver.failPalStart = () => "Error: not logged in";
+    expect(await t.call("helper.decide", { proposalId: retry.proposal!.id, action: "create" })).toEqual({});
+    expect(t.hub.chat.get(retry.id)!.proposal).toMatchObject({ status: "failed", note: "Claude Code 没登录" });
+    expect(t.hub.pals.list()).toEqual([]);
+    t.driver.failPalStart = undefined;
+    const { pal } = await t.call("helper.decide", { proposalId: retry.proposal!.id, action: "create" });
+    expect(t.hub.chat.get(retry.id)!.proposal).toEqual({ ...(retry.proposal as PalAdoptProposal), status: "adopted", palId: pal.id });
+
+    // opened in a terminal after the card: not taken over (no waiting behind a card)
+    const c = t.ended(site, { customTitle: "又打开了" });
+    await tools.pal_adopt({ sessionId: c });
+    const opened = t.hub.chat.recent(1)[0]!;
+    const term = liveProcess();
+    t.claude.register({ sessionId: c, name: "又打开了", cwd: site, pid: term.pid });
+    expect(await t.call("helper.decide", { proposalId: opened.proposal!.id, action: "create" })).toEqual({});
+    expect(t.hub.chat.get(opened.id)!.proposal).toMatchObject({ status: "failed", note: expect.stringContaining("先在终端里退出它") });
+    expect(t.hub.pals.adopting(c)).toBe(false);
+
+    // no card: running now, unknown, PaloAlly's own
+    expect(await tools.pal_adopt({ sessionId: c })).toContain("现在还开着");
+    expect(await tools.pal_adopt({ sessionId: "f0000000-0000-4000-8000-000000000000" })).toBe("没提：没有这个会话");
+    expect(await tools.pal_adopt({ sessionId: t.ended(t.paths.home, { customTitle: "Palo" }) })).toContain("PaloAlly 自己的会话");
+    expect(await tools.pal_adopt({ sessionId: "" })).toContain("pals_recent");
+    term.kill("SIGKILL");
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("with five Pals it asks the owner to make room first", async () => {
+    const t = setup();
+    const site = t.folder("site");
+    for (let i = 1; i <= MAX_PALS; i++) {
+      await t.call("pals.adopt", { sessionId: t.ended(site, { customTitle: `项目${i}` }) });
+      await tick(2);
+    }
+    expect(await t.hub.toolHandlers().pal_adopt({ sessionId: t.ended(site, { customTitle: "第六个" }) })).toContain("最久没用的「项目1」");
+    expect(t.hub.chat.recent(5).some((m) => m.kind === "pal_adopt")).toBe(false);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("its instructions: look first, ask when there are several, then the card", () => {
+    expect(BEHAVIOR).toContain("mcp__paloally__pals_recent");
+    expect(BEHAVIOR).toContain("mcp__paloally__pal_adopt");
+    expect(BEHAVIOR).toMatch(/有好几个候选时，先用 AskUserQuestion 让主人选/);
   });
 });
 

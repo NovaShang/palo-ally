@@ -6,7 +6,7 @@ export interface ChatMessage {
   seq: number;
   id: string;
   role: "user" | "assistant" | "system";
-  kind: "text" | "task" | "approval" | "question" | "notice" | "clipboard" | "ally" | "helper";
+  kind: "text" | "task" | "approval" | "question" | "notice" | "clipboard" | "ally" | "helper" | "pal_adopt";
   text: string;
   channel: Channel;
   ts: number;
@@ -31,8 +31,10 @@ export interface ChatMessage {
   author?: AllyAuthor; // kind "ally": who wrote it (§11.2)
   // kind "helper": the assistant proposes a Pal (docs/pals-prd.md §6, the
   // card of docs/sessions-prd.md §6.6); the owner answers with helper.decide.
+  // kind "pal_adopt": the assistant proposes taking over a conversation that
+  // ended on the computer (docs/pals-prd.md §10); the same helper.decide.
   // The message is sent again (same id and seq) when the proposal's status changes.
-  proposal?: HelperProposal;
+  proposal?: HelperProposal | PalAdoptProposal;
   // A Pal's conversation (docs/pals-prd.md §8): the Pal's id. Absent = the
   // assistant's own. A Pal's messages aren't kept in the assistant's
   // conversation: `seq` is their time in ms, and pals.history reads them back.
@@ -338,6 +340,20 @@ export interface RecentSession {
   title: string; // its custom title, else Claude Code's summary, else its first words
   lastModified: number; // ms: when its transcript last changed
   size: number; // its transcript's bytes
+}
+
+export type PalAdoptStatus = "pending" | "adopted" | "discarded" | "failed";
+
+// The assistant's card proposing to take one over (pal_adopt); the owner
+// answers with helper.decide.
+export interface PalAdoptProposal {
+  id: string; // helper.decide's proposalId
+  sessionId: string;
+  cwd: string;
+  title: string;
+  status: PalAdoptStatus;
+  palId?: string; // adopted: the Pal it became
+  note?: string; // failed: why
 }
 
 export interface MemoryFile {

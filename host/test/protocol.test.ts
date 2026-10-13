@@ -240,7 +240,8 @@ describe("host ↔ app protocol", () => {
     await hub.toolHandlers().pal_propose({ name: "文档", dir: project, duty: "你负责主人的文档：先把安装说明写完。", dailyUsd: 5 });
     const proposal = hub.chat.recent(1)[0]!.proposal!;
     const opened = (await run("helper.decide", { proposalId: proposal.id, action: "create" })).pal;
-    // 最近的对话: one that ended in the same folder, listed.
+    // 最近的对话: one that ended in the same folder, listed; the assistant's
+    // card for it, and the same card once the owner took it over.
     const endedId = "3c9d2e71-0000-4000-8000-000000000003";
     claude.transcript(project, endedId, [
       { type: "user", uuid: "r1", timestamp: "2026-10-12T09:00:00Z", message: { role: "user", content: "把首页改成两栏" }, origin: { kind: "human" } },
@@ -249,6 +250,9 @@ describe("host ↔ app protocol", () => {
     ended.push({ sessionId: endedId, summary: "首页改成两栏", customTitle: "首页改成两栏", firstPrompt: "把首页改成两栏", lastModified: Date.parse("2026-10-12T09:01:00Z"), cwd: project });
     await run("pals.recent", {});
     expect(methods["pals.recent"]).toMatchObject({ result: { sessions: [{ sessionId: endedId, cwd: project, title: "首页改成两栏" }] } });
+    await hub.toolHandlers().pal_adopt({ sessionId: endedId });
+    const adoptCard = hub.chat.recent(1)[0]!;
+    expect((await call("helper.decide", { proposalId: adoptCard.proposal!.id, action: "create" })).pal.sessionId).toBe(endedId);
     // The owner stops waiting for the terminal session to be quit: pals.adopt
     // has two samples, adopting and cancelling.
     const adopted = methods["pals.adopt"]!;
@@ -284,6 +288,9 @@ describe("host ↔ app protocol", () => {
         // a Pal proposal, and the same message once the Pal was opened
         chat.find((m) => m.kind === "helper"),
         chat.filter((m) => m.kind === "helper").at(-1),
+        // a card proposing to take over an ended conversation, and the same once it was
+        chat.find((m) => m.kind === "pal_adopt"),
+        chat.filter((m) => m.kind === "pal_adopt").at(-1),
         // a Pal's conversation: the owner's words, its reply, the assistant's handover
         chat.find((m) => m.pal && m.role === "user" && !m.from),
         chat.find((m) => m.pal && m.role === "assistant"),
