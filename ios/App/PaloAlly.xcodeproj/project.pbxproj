@@ -17,6 +17,7 @@
 		12AEBFDF8D57FB231AAEC5EA /* PaloAllyFilePreview in Frameworks */ = {isa = PBXBuildFile; productRef = AABA5B7E56189876EB3B0314 /* PaloAllyFilePreview */; };
 		14B345533E896BA15AF0E35A /* AssistantAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57B6C3C8A61AE25FA5811B53 /* AssistantAvatar.swift */; };
 		18D2CA8A4488ACABE53E79AC /* SessionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08BF2FEA6B01AE016C219995 /* SessionsUITests.swift */; };
+		1DE8C727D5321DC66D124470 /* RecentConversationsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = D755DBF551DF6ECB709CA222 /* RecentConversationsPage.swift */; };
 		1F13B32F1A120C451958B347 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D85821DAF90FE3998B520913 /* LibraryView.swift */; };
 		2D506F2643BDD7A799D90712 /* RenderTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50E0126923CF0519FD3C3F3E /* RenderTrace.swift */; };
 		31D752A67A0592C5BA7B46B1 /* PaloAllyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C0D86FFE5D13BEF644D76F /* PaloAllyApp.swift */; };
@@ -177,6 +178,7 @@
 		C833EE588EFE3BF8D5622F37 /* NavigationBack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationBack.swift; sourceTree = "<group>"; };
 		CBCDB8D7D89100A7DE024651 /* GlassDropsDemo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassDropsDemo.swift; sourceTree = "<group>"; };
 		CE88A85588E9422D316877C2 /* MarkdownFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownFile.swift; sourceTree = "<group>"; };
+		D755DBF551DF6ECB709CA222 /* RecentConversationsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentConversationsPage.swift; sourceTree = "<group>"; };
 		D85821DAF90FE3998B520913 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		E2D39963E4A18BA170B29805 /* CommitWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitWatch.swift; sourceTree = "<group>"; };
@@ -409,6 +411,7 @@
 				EC1D1CBDA6FA6542D9C2163F /* PalAdoptCard.swift */,
 				2B4899D65015CCAB78463CEA /* PalCopy.swift */,
 				5DB5E3F3B5ED735CB237E3A6 /* PalPage.swift */,
+				D755DBF551DF6ECB709CA222 /* RecentConversationsPage.swift */,
 			);
 			path = Pals;
 			sourceTree = "<group>";
@@ -597,6 +600,7 @@
 				B7DF0900ABDDFACC50FFF6B2 /* QRScannerView.swift in Sources */,
 				9EFDA851328EB4700879F945 /* QuestionCard.swift in Sources */,
 				D844BFFB6A6F7E72355AF873 /* QuickLook.swift in Sources */,
+				1DE8C727D5321DC66D124470 /* RecentConversationsPage.swift in Sources */,
 				2D506F2643BDD7A799D90712 /* RenderTrace.swift in Sources */,
 				7BE1EBB1FD3930584F6FBB48 /* ReplyText.swift in Sources */,
 				F7BB5BDB265CB2F858DDF473 /* RootView.swift in Sources */,

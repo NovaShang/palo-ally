@@ -3,7 +3,8 @@ import XCTest
 /// Standard navigation (pals-prd §2, §3, §5) against the demo host on an
 /// iPhone simulator: the app opens in the assistant's conversation, back is
 /// the list, a Pal and an Ally open from it, the orb opens management, 成果
-/// is the conversation's toolbar button, and 接管 adopts a session in place.
+/// is the conversation's toolbar button, 接管 adopts a session in place, and
+/// 最近的对话 adopts one that ended.
 final class NavigationUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
@@ -29,8 +30,11 @@ final class NavigationUITests: XCTestCase {
         XCTAssertTrue(row(app, "row-palo").exists, "no row for the assistant")
         XCTAssertTrue(row(app, "row-pal-pal-site").exists && row(app, "row-pal-pal-notes").exists)
         XCTAssertTrue(app.buttons["adopt-cc-login"].exists, "another session has no 接管")
-        XCTAssertTrue(app.buttons["添加"].exists, "no 添加 under Allies")
+        XCTAssertTrue(row(app, "row-recent").exists, "no 最近的对话 under Pals")
+        // The list runs past the screen: Allies' last row is further down.
+        XCTAssertTrue(scrolledTo(app, app.buttons["添加"]), "no 添加 under Allies")
         // And in again.
+        app.swipeDown()
         row(app, "row-palo").tap()
         XCTAssertTrue(app.buttons["title-orb"].waitForExistence(timeout: 5))
     }
@@ -130,7 +134,71 @@ final class NavigationUITests: XCTestCase {
         XCTAssertTrue(option.waitForExistence(timeout: 5), "its question isn't on its page")
     }
 
+    /// 最近的对话 (pals-prd §10): a conversation that ended, asked in its
+    /// row, then its Pal's page; back on the list it's a Pal.
+    @MainActor
+    func testAdoptingARecentConversationOpensItsPage() throws {
+        let app = launch(["-demoScreen", "list"])
+        let recent = row(app, "row-recent")
+        XCTAssertTrue(recent.waitForExistence(timeout: 15), "no 最近的对话 under Pals")
+        recent.tap()
+        XCTAssertTrue(app.navigationBars.staticTexts["最近的对话"].waitForExistence(timeout: 5), "the page didn't open")
+        // By folder, the folder's path under its name.
+        XCTAssertTrue(app.staticTexts["~/code/site"].waitForExistence(timeout: 10) || text(app, "~/code/site").exists,
+                      "no folder path")
+        let one = row(app, "recent-7c1e9a52-3f0b-4d8e-9a61-0b5c2e7d4f10")
+        XCTAssertTrue(one.waitForExistence(timeout: 10), "the conversation isn't listed")
+        one.tap()
+        // Asked in its row, not a dialog.
+        XCTAssertTrue(text(app, "接管「首页改成两栏布局」？").waitForExistence(timeout: 5), "not asked")
+        XCTAssertEqual(app.alerts.count, 0)
+        XCTAssertEqual(app.sheets.count, 0)
+        app.buttons["接管"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars.staticTexts["首页改成两栏布局"].waitForExistence(timeout: 15), "its Pal's page didn't open")
+        XCTAssertTrue(text(app, "两栏改好了").waitForExistence(timeout: 10), "its conversation so far isn't there")
+        back(app)
+        XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "首页改成两栏布局")).firstMatch.exists,
+                      "it isn't a Pal on the list")
+    }
+
+    /// When the computer can't, the row says why in plain words, and 好 puts it back.
+    @MainActor
+    func testARecentConversationThatCantBeAdoptedSaysWhy() throws {
+        let app = launch(["-demoScreen", "recent", "-demoAdoptError", "已经开着 5 个 Pal 了，最久没用的是「笔记整理」"])
+        let one = row(app, "recent-e4a7c3d9-1b6f-4e2a-b8c5-9d0e7f3a2c61")
+        XCTAssertTrue(one.waitForExistence(timeout: 15))
+        one.tap()
+        app.buttons["接管"].firstMatch.tap()
+        XCTAssertTrue(text(app, "没接管成：已经开着 5 个 Pal 了").waitForExistence(timeout: 10), "no reason given")
+        attach(app, "recent-failed")
+        app.buttons["好"].firstMatch.tap()
+        XCTAssertTrue(one.waitForExistence(timeout: 5), "the row didn't come back")
+        XCTAssertTrue(app.navigationBars.staticTexts["最近的对话"].exists, "left the page")
+    }
+
     // MARK: -
+
+    @MainActor
+    private func text(_ app: XCUIApplication, _ s: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", s, s)).firstMatch
+    }
+
+    /// Scrolls the list up until the element is there (a list only makes
+    /// the rows on screen).
+    @MainActor
+    private func scrolledTo(_ app: XCUIApplication, _ element: XCUIElement) -> Bool {
+        for _ in 0..<4 where !element.exists { app.swipeUp() }
+        return element.exists
+    }
+
+    @MainActor
+    private func attach(_ app: XCUIApplication, _ name: String) {
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = name
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
 
     @MainActor
     private func row(_ app: XCUIApplication, _ id: String) -> XCUIElement {

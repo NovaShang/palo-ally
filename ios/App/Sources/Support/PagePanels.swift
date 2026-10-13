@@ -2,8 +2,8 @@ import PaloAllyKit
 import SwiftUI
 
 // Pieces a conversation page puts at its bottom in place of its input, and
-// the quiet labels over messages and cards. Shared by a Pal's page and an
-// Ally's (they began as a session's page).
+// the quiet labels over messages and cards. Shared by a Pal's page, an
+// Ally's (they began as a session's page) and 最近的对话.
 
 /// Small glyph and words, quiet: the label over a message or on a card.
 struct QuietLabelStyle: LabelStyle {
@@ -24,10 +24,22 @@ struct ConfirmPanel: View {
     let action: String
     let working: Bool
     var destructive = true
+    /// On glass at the page's bottom; false: inside a list row, where it was tapped.
+    var glass = true
     let cancel: () -> Void
     let confirm: () -> Void
 
     var body: some View {
+        if glass {
+            content
+                .padding(16)
+                .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title).font(.headline)
             Text(text)
@@ -50,8 +62,38 @@ struct ConfirmPanel: View {
             .buttonBorderShape(.capsule)
             .disabled(working)
         }
-        .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
+    }
+}
+
+/// One line about how things stand, and the way on.
+struct NoticePanel: View {
+    let text: String
+    let action: String
+    /// On glass at the page's bottom; false: inside a list row.
+    var glass = true
+    let tap: () -> Void
+
+    var body: some View {
+        let line = HStack(spacing: 12) {
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button(action, action: tap)
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .tint(.primary)
+        }
+        if glass {
+            line
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .frame(minHeight: 52)
+                .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
+        } else {
+            line
+        }
     }
 }
 

@@ -161,28 +161,3 @@ private struct PalConversation: View {
         }
     }
 }
-
-/// One line about how things stand, and the way on.
-private struct NoticePanel: View {
-    let text: String
-    let action: String
-    let tap: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Text(text)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-            Button(action, action: tap)
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
-                .tint(.primary)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .frame(minHeight: 52)
-        .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
-    }
-}

@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The list (pals-prd §3): the assistant on top; Pals (the ones PaloAlly
 /// hosts, then the computer's other live Claude Code sessions, dimmer, with
-/// 接管); Allies, with 添加. Each row says on its right how many things wait
+/// 接管, then 最近的对话 for the ones that ended); Allies, with 添加. Each row says on its right how many things wait
 /// on the owner there. Phones: one step back from a conversation, like
 /// Messages; iPads and the Mac: the sidebar.
 struct ConversationList: View {
@@ -27,6 +27,9 @@ struct ConversationList: View {
                     ForEach(store.otherSessions) { session in
                         OtherSessionRow(session: session)
                     }
+                    RecentListRow()
+                        .tag(AppModel.Conversation.recent)
+                        .accessibilityIdentifier("row-recent")
                 } header: {
                     Text("Pals").textCase(nil)
                 } footer: {
@@ -163,7 +166,25 @@ private struct PaloRow: View {
     /// that need the owner.
     private var waiting: Int {
         store.pendingApprovals.count + store.pendingQuestions.count + store.pendingAllyDrafts.count
-            + store.pendingHelperProposals.count + store.tasks.filter { $0.status == .needsInput }.count
+            + store.pendingProposalCount + store.tasks.filter { $0.status == .needsInput }.count
+    }
+}
+
+/// 最近的对话 (pals-prd §10): the conversations that ended on the computer
+/// lately, to take over. A plain row, neutral like 添加; its glyph and words
+/// line up with the Pals' tiles and names above.
+private struct RecentListRow: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 19))
+                .foregroundStyle(.secondary)
+                .frame(width: 40)
+                .accessibilityHidden(true)
+            Text("最近的对话")
+                .foregroundStyle(Color.primary)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

@@ -26,6 +26,9 @@ let appLog = Logger(subsystem: "com.novashang.paloally", category: "app")
 ///                        remove` opens it on that). `-demoAdopt <session id>` taps 接管 on the list
 ///                        (`-demoAdoptAfter <s>`: when the demo's owner quits a terminal session; 0 never).
 ///                        `-demoState sessions` keeps the sessions' and Pals' cards waiting
+///   -demoScreen recent   最近的对话 (`-demoRecentPick <session id>` opens it asking 接管; `-demoRecentEmpty YES`
+///                        none; `-demoAdoptError <why>` makes 接管 fail). `-demoState adopt`: the assistant's
+///                        pal_adopt card in its conversation
 struct LaunchOptions {
     var demo: Bool
     var screen: String?
@@ -113,6 +116,9 @@ final class AppModel {
         case palo
         case pal(String)
         case ally(String)
+        /// 最近的对话 (pals-prd §10): conversations that ended on the
+        /// computer lately, to take over; one adopted opens as its Pal.
+        case recent
     }
     /// The conversation picked in the list. Phones: nil once back on the list.
     var selection: Conversation? = .palo {
@@ -443,6 +449,7 @@ final class AppModel {
         case "pairing": if mode != .unpaired { startPairing(.replace) }
         case "identity": openManagement(); showIdentityEditor = true
         case "list", "allies", "sessions", "pals": showList()
+        case "recent": open(.recent)
         #if DEBUG
         case "file": Task { await openDemoFile() }
         case "ally":

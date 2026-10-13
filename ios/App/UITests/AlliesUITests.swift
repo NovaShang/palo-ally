@@ -121,6 +121,9 @@ final class AlliesUITests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
         let row = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
                                                                        "row-ally-", "小周")).firstMatch
+        // The list runs past the screen: the newest Ally is further down.
+        XCTAssertTrue(app.staticTexts["Allies"].waitForExistence(timeout: 10) || app.staticTexts["Pals"].exists, "not back on the list")
+        for _ in 0..<4 where !row.exists { app.swipeUp() }
         XCTAssertTrue(row.waitForExistence(timeout: 10), "not on the list")
         XCTAssertTrue(row.label.contains("我的"), "tag missing: \(row.label)")
     }
