@@ -26,6 +26,7 @@ host/        桌面 host = 一个 CLI 程序（Bun + TypeScript），daemon + on
     palSession.ts       一个 Pal：resume 它的记录跑起来、主人的话、流式回复、确认和提问、意外退出后自动接上、绝不两个进程写同一份记录
     palHistory.ts       Pal 的对话记录 → ChatMessage；跟着记录读别的会话发进来的话
     palLauncher.ts      Pal 的进程经 PaloAlly 小助手启动（找不到就直接启动），用主人登录 shell 的环境
+    palRecent.ts        最近退出了的对话（pals-prd §10）：SDK 的 listSessions，跟 /resume 一样不列 claude -p 和 SDK 应用的会话，不列 PaloAlly 自己的目录
     sessions.ts         电脑上其他 Claude Code 会话（docs/sessions-prd.md）：列表、对话记录、不在电脑前时确认送到手机
     ccSessions.ts       读 Claude Code 的登记表 / claude agents / 对话记录，合成会话列表
     ccHooks.ts          全局钩子：安装 / 卸载、钩子脚本（~/.paloally/bin/cc-hook）、主机这头的 run/hooks.sock
@@ -126,6 +127,8 @@ ChatMessage { seq:number; id:string; role:"user"|"assistant"|"system";
   from?:string /* Pal 对话里不是主人说的 user 消息：助理的名字（Palo 的话）或别的会话的名字 */ }
 HelperProposal { id /* helper.decide 的 proposalId */; name; cwd; duty; dailyUsd:number;
   status:"pending"|"created"|"discarded"|"expired"; sessionId? /* 开了以后 */; palId?; note? }
+RecentSession { sessionId; cwd; title /* 自定义标题，否则 Claude Code 的摘要，否则第一句话的前 40 个字 */;
+  lastModified:number /*ms*/; size:number /* 记录的字节数 */ }
 Pal { id /* pal_… */; name /* SendMessage 用的名字 */; cwd; sessionId;
   status:"busy"|"idle"|"waiting"|"starting"|"stopped"; activity?; note? /* stopped 的原因 */;
   lastLine?; pending:number; model?; createdBy:"owner"|"palo"; updatedAt }
@@ -212,12 +215,13 @@ ModelOption { value; displayName; description; efforts:string[] }
 | `sessions.hooks` | `{enabled?}` | `{enabled}`（不带 enabled 只查不改） |
 | `helper.decide` | `{proposalId, action:"create"\|"discard"}` | `{pal?}`（create 返回开好的 Pal；已经答过的再答一次，返回原来的结果） |
 | `pals.list` | `{}` | `{pals:Pal[], others:CCSession[], hooks:boolean, helper:boolean}`（helper = Pal 经 PaloAlly 小助手启动） |
-| `pals.adopt` | `{sessionId}` | `{pal}`，或 `{waiting:"exit-in-terminal"}`（终端会话：退出后自动接管，结果看 `pals.updated`） |
+| `pals.adopt` | `{sessionId}` | `{pal}`，或 `{waiting:"exit-in-terminal"}`（终端会话：退出后自动接管，结果看 `pals.updated`；已经退出的对话直接 resume，返回 `{pal}`） |
 | `pals.release` | `{id}` | `{resumeCommand}`（`cd <目录> && claude --resume <sessionId>`；返回时主机的进程已退出） |
 | `pals.remove` | `{id}` | `{ok}` |
 | `pals.history` | `{id, before?, limit?}` | `{messages:ChatMessage[], streaming?}`（从旧到新；before = 最早一条的 id 或毫秒时间；默认 50，最多 200；streaming 同 `sync`） |
 | `pals.send` | `{id, text, clientMsgId?}` | `{id, seq}`（同一 clientMsgId 只送一次；停着的 Pal 先接着跑） |
 | `pals.stop` | `{id}` | `{ok}`（结束当前这一轮，它开着的卡片按拒绝处理） |
+| `pals.recent` | `{folder?, limit?}` | `{sessions:RecentSession[]}`（最近 30 天里退出了的对话，最新的在前，默认也最多 50 个；不含正开着的、Pal、PaloAlly 自己的；folder 是路径（该目录及以下）或目录名） |
 
 **事件**（`RPC_EVENTS`）：`chat.message`（ChatMessage）、`chat.delta`（`{id, text}` 追加文本，最终以同 id 的 `chat.message` 收尾；轮次中断时外壳也会补发收尾）、`task.updated`（Task）、`approval.updated`（Approval）、`watch.updated`（`{watch}` 或 `{removed:id}`）、`artifact.updated`（Artifact）、`settings.updated`（Settings）、`status`（Status）、`commands.updated`（`{commands}`）、`ally.updated`（`{allies}`，整张列表）、`ally.entry`（`{entry}`，新的来往或状态变化）、`sessions.updated`（`{sessions}`，整张未接管会话的列表，变了就发）、`pals.updated`（同 `pals.list` 的结果，变了就发整张）。`chat.message` / `chat.delta` 带 `pal` 时属于那个 Pal 的对话（`chat.delta` 是 `{id, text, pal?}`）。会话和 Pal 的确认和提问走 `approval.updated` / `question.updated`，带 `source`。
 

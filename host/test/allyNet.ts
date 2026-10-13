@@ -12,6 +12,7 @@ import { type Identity, b64, fingerprint, newIdentity } from "../src/proto/e2e.t
 import type { FakeScript } from "./fakeDriver.ts";
 import type { HarnessDriver } from "../src/harness/types.ts";
 import type { SessionsDeps } from "../src/sessions.ts";
+import type { PalsDeps } from "../src/pals.ts";
 import { makeHub, testConfig, tick } from "./helpers.ts";
 
 export const NET_URL = "https://relay.test";
@@ -105,7 +106,7 @@ export class AllyNet {
   private n = 0;
 
   // add makes a hub on this net. `name` goes into user.md as the owner's 称呼.
-  add(name: string, opts: { config?: (c: Config) => void; now?: () => number; script?: FakeScript; sessions?: Partial<SessionsDeps>; harness?: HarnessDriver } = {}): NetHost {
+  add(name: string, opts: { config?: (c: Config) => void; now?: () => number; script?: FakeScript; sessions?: Partial<SessionsDeps>; pals?: Partial<PalsDeps>; harness?: HarnessDriver } = {}): NetHost {
     const daemonId = `pa-test-${++this.n}`;
     let host: NetHost;
     const ctx = makeHub({
@@ -117,6 +118,7 @@ export class AllyNet {
       }),
       allies: { dial: (t, me, h) => this.dial(t, me, h), pair: (relay, id, req) => this.pair(relay, id, req), ...(opts.now ? { now: opts.now } : {}) },
       sessions: opts.sessions,
+      pals: opts.pals,
     });
     writeFileSync(ctx.paths.userMd, `# 关于主人\n\n- 称呼：${name}\n`);
     host = new NetHost(this, daemonId, ctx);

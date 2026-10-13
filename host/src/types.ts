@@ -329,6 +329,17 @@ export interface HelperProposal {
   note?: string; // why it didn't start, when it didn't
 }
 
+// ---- 接管最近的对话 (docs/pals-prd.md §10) ----
+
+// A Claude Code conversation on the computer that ended lately (pals.recent).
+export interface RecentSession {
+  sessionId: string;
+  cwd: string;
+  title: string; // its custom title, else Claude Code's summary, else its first words
+  lastModified: number; // ms: when its transcript last changed
+  size: number; // its transcript's bytes
+}
+
 export interface MemoryFile {
   path: string;
   scope: "core" | "auto";

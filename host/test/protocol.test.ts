@@ -13,6 +13,7 @@ import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { AwayDetector } from "../src/away.ts";
 import { FakeClaudeDir, FakeCli, assistantEntry } from "./fakeClaude.ts";
+import type { SDKSessionInfo } from "@anthropic-ai/claude-agent-sdk";
 
 const script: FakeScript = async (t, ctx) => {
   if (t === "派个任务") {
@@ -51,6 +52,8 @@ describe("host ↔ app protocol", () => {
     const claude = new FakeClaudeDir();
     const cli = new FakeCli(claude);
     const histories = new Map<string, any[]>();
+    // The conversations that ended on the computer, as the SDK's listSessions gives them.
+    const ended: SDKSessionInfo[] = [];
     const { hub, paths, events, driver } = net.add("家人A", {
       script,
       sessions: {
@@ -59,6 +62,7 @@ describe("host ↔ app protocol", () => {
         away: new AwayDetector(() => null, Date.now, () => true),
         readMessages: async (sid) => histories.get(sid) ?? [],
       },
+      pals: { recentSource: { list: async () => ended, info: async (sid) => ended.find((i) => i.sessionId === sid) } },
     }).ctx;
     const peer = net.add("家人B");
     hub.onUnpairDevice = () => {};
@@ -236,6 +240,15 @@ describe("host ↔ app protocol", () => {
     await hub.toolHandlers().pal_propose({ name: "文档", dir: project, duty: "你负责主人的文档：先把安装说明写完。", dailyUsd: 5 });
     const proposal = hub.chat.recent(1)[0]!.proposal!;
     const opened = (await run("helper.decide", { proposalId: proposal.id, action: "create" })).pal;
+    // 最近的对话: one that ended in the same folder, listed.
+    const endedId = "3c9d2e71-0000-4000-8000-000000000003";
+    claude.transcript(project, endedId, [
+      { type: "user", uuid: "r1", timestamp: "2026-10-12T09:00:00Z", message: { role: "user", content: "把首页改成两栏" }, origin: { kind: "human" } },
+      { type: "assistant", uuid: "r2", timestamp: "2026-10-12T09:01:00Z", message: { id: "msg_r2", model: "claude-sonnet-4-6", role: "assistant", content: [{ type: "text", text: "两栏的样式好了。" }] } },
+    ]);
+    ended.push({ sessionId: endedId, summary: "首页改成两栏", customTitle: "首页改成两栏", firstPrompt: "把首页改成两栏", lastModified: Date.parse("2026-10-12T09:01:00Z"), cwd: project });
+    await run("pals.recent", {});
+    expect(methods["pals.recent"]).toMatchObject({ result: { sessions: [{ sessionId: endedId, cwd: project, title: "首页改成两栏" }] } });
     // The owner stops waiting for the terminal session to be quit: pals.adopt
     // has two samples, adopting and cancelling.
     const adopted = methods["pals.adopt"]!;

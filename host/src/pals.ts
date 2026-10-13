@@ -13,11 +13,12 @@ import type { Paths, Settings } from "./config.ts";
 import type { HarnessDriver } from "./harness/types.ts";
 import { PalLauncher, type PalLaunch } from "./palLauncher.ts";
 import { pagePalMessages, toPalMessages } from "./palHistory.ts";
+import { RECENT_MAX, type RecentEntry, RecentSessions, type RecentSource, folderMatch, ownRoots, palNameFor, recentWire } from "./palRecent.ts";
 import { HeldElsewhere, type Holder, type PalRecord, PalSession } from "./palSession.ts";
 import type { QuestionManager } from "./questions.ts";
 import type { Router } from "./router.ts";
 import type { Sessions } from "./sessions.ts";
-import type { CCSession, ChatMessage, HelperProposal, Pal } from "./types.ts";
+import type { ChatMessage, HelperProposal, Pal, RecentSession } from "./types.ts";
 import { newId, readJson, writeJson, zonedParts } from "./util.ts";
 
 // Pals (docs/pals-prd.md): Claude Code sessions the host runs itself. The
@@ -27,11 +28,19 @@ import { newId, readJson, writeJson, zonedParts } from "./util.ts";
 // fixed name the assistant reaches it by (SendMessage), comes back after a
 // crash or a restart of the Mac, and goes back to the terminal on 交还终端.
 // At most five at a time. One transcript is never written by two processes.
+// A conversation that ended on the computer lately can be taken over too
+// (§10): listed by pals.recent, resumed directly by pals.adopt.
 
 export const MAX_PALS = 5;
 /** The assistant's own session name: Pals see its SendMessages as from it, and answer it there. */
 export const PALO_NAME = "Palo";
 const PUSH_EVERY_MS = 10 * 60_000;
+
+/** A folder as the owner says it: ~/… under the home folder. */
+function tildePath(p: string): string {
+  const home = homedir();
+  return p === home ? "~" : p.startsWith(home + sep) ? `~/${p.slice(home.length + 1)}` : p;
+}
 
 // What a Pal is told about where it runs, on top of Claude Code's own prompt.
 export const PAL_PROMPT = (paloName: string) =>
@@ -41,6 +50,15 @@ export const PAL_PROMPT = (paloName: string) =>
 interface PalFile {
   pals: PalRecord[];
   proposals: (HelperProposal & { createdAt: number; messageId?: string })[];
+  // Pals the owner took out of the list (交还终端 / 移出): listed again among the recent ones
+  former: { sessionId: string; cwd: string; at: number }[];
+}
+
+/** A session to adopt: its id, the Pal's name and its folder. */
+interface Adoptee {
+  id: string;
+  name: string;
+  cwd: string;
 }
 
 export interface PalsDeps {
@@ -63,6 +81,8 @@ export interface PalsDeps {
   helperApp?: () => string | undefined;
   launchMode?: () => "auto" | "helper" | "direct";
   readMessages?: (sessionId: string, dir: string) => Promise<RawSessionMessage[]>;
+  /** The computer's ended conversations (the SDK's listSessions / getSessionInfo). */
+  recentSource?: RecentSource;
   /** A Pal's permission mode; default: the owner's own default for Claude Code. */
   palMode?: () => string;
   /** A Pal's model; default: what its transcript last ran on (a new one: the owner's default). */
@@ -134,7 +154,7 @@ interface Waiting {
   pids: number[];
   since: number;
   timer: ReturnType<typeof setTimeout> | null;
-  session: CCSession;
+  session: Adoptee;
   by: string;
 }
 
@@ -145,6 +165,8 @@ export class Pals {
   private readonly timing: PalsTiming;
   private readonly meter: SpendMeter;
   private readonly launcher: PalLauncher;
+  private readonly recentList: RecentSessions;
+  private adopts = new Map<string, Promise<{ pal: Pal } | { waiting: "exit-in-terminal" }>>(); // in flight, by session id
   private lastPush = new Map<string, number>();
   private retried = new Map<string, number>(); // a Pal open elsewhere: when it was last tried again
   private sent = new Map<string, Map<string, { id: string; seq: number }>>(); // per Pal: clientMsgId → reply
@@ -161,7 +183,16 @@ export class Pals {
     this.meter = new SpendMeter(d.claudeDir);
     this.launcher = new PalLauncher({ root: d.paths.root, helperApp: d.helperApp, mode: d.launchMode, log: (s) => this.log(s) });
     const saved = readJson<Partial<PalFile>>(d.paths.pals, {});
-    this.data = { pals: Array.isArray(saved.pals) ? saved.pals : [], proposals: Array.isArray(saved.proposals) ? saved.proposals : [] };
+    const list = <T>(v: T[] | undefined): T[] => (Array.isArray(v) ? v : []);
+    this.data = { pals: list(saved.pals), proposals: list(saved.proposals), former: list(saved.former) };
+    this.recentList = new RecentSessions({
+      claudeDir: d.claudeDir,
+      roots: () => ownRoots(d.paths.root),
+      formerPals: () => this.data.former,
+      source: d.recentSource,
+      now: () => this.now(),
+      log: (s) => this.log(s),
+    });
     for (const rec of this.data.pals) this.pals.set(rec.id, this.session(rec));
   }
 
@@ -317,6 +348,39 @@ export class Pals {
     return this.payload(await this.d.sessions.listFresh());
   }
 
+  // ---------------- 最近的对话 (§10) ----------------
+
+  /**
+   * pals.recent: the conversations that ended on the computer in the last 30
+   * days, newest first (at most 50): not what's running (`others`), not a
+   * Pal, not PaloAlly's own. `folder` (a path, or a folder's name) narrows it.
+   */
+  async recent(o: { folder?: string; limit?: number } = {}): Promise<RecentSession[]> {
+    return (await this.recentEntries(o)).map(recentWire);
+  }
+
+  private async recentEntries(o: { folder?: string; limit?: number } = {}): Promise<RecentEntry[]> {
+    const all = await this.recentList.all();
+    const taken = this.takenIds();
+    const match = folderMatch(o.folder);
+    const limit = Math.max(1, Math.min(Math.floor(Number(o.limit)) || RECENT_MAX, RECENT_MAX));
+    return all.filter((e) => !taken.has(e.sessionId) && match(e.cwd)).slice(0, limit);
+  }
+
+  // Sessions that aren't ended ones: the Pals, those being adopted, and the
+  // computer's running (or stopped background) sessions.
+  private takenIds(): Set<string> {
+    const ids = new Set<string>([...this.pals.values()].map((p) => p.rec.sessionId));
+    for (const id of [...this.waiting.keys(), ...this.adopts.keys()]) ids.add(id);
+    for (const s of this.d.sessions.list()) ids.add(s.id);
+    try {
+      for (const e of this.registry()) ids.add(e.sessionId);
+    } catch {
+      /* the next look */
+    }
+    return ids;
+  }
+
   private emitSoon(): void {
     if (this.emitTimer) return;
     this.emitTimer = setTimeout(() => {
@@ -426,30 +490,48 @@ export class Pals {
     return pal;
   }
 
-  private drop(pal: PalSession): void {
+  // `out`: the owner took it out of the list; it's among the recent ones again.
+  private drop(pal: PalSession, out = false): void {
     this.pals.delete(pal.id);
     this.data.pals = this.data.pals.filter((r) => r.id !== pal.id);
     this.sent.delete(pal.id);
     this.lastPush.delete(pal.id);
+    if (out) {
+      const { sessionId, cwd } = pal.rec;
+      this.data.former = [...this.data.former.filter((f) => f.sessionId !== sessionId), { sessionId, cwd, at: this.now() }].slice(-20);
+      this.recentList.invalidate();
+    }
     this.save();
   }
 
   /**
    * pals.adopt: one of the computer's sessions becomes a Pal. A background
    * session is stopped first; a terminal session is waited for (the owner
-   * quits it there) and taken over once its process is gone.
+   * quits it there) and taken over once its process is gone. A conversation
+   * that ended is resumed at once.
    */
-  async adopt(sessionId: string, by: string): Promise<{ pal: Pal } | { waiting: "exit-in-terminal" }> {
+  adopt(sessionId: string, by: string): Promise<{ pal: Pal } | { waiting: "exit-in-terminal" }> {
     const sid = String(sessionId ?? "").trim();
-    if (!sid) throw new Error("没有这个会话");
+    if (!sid) return Promise.reject(new Error("没有这个会话"));
     const have = this.get(sid);
-    if (have && have.rec.sessionId === sid) return { pal: have.toWire() };
-    if (this.waiting.has(sid)) return { waiting: "exit-in-terminal" };
+    if (have && have.rec.sessionId === sid) return Promise.resolve({ pal: have.toWire() });
+    if (this.waiting.has(sid)) return Promise.resolve({ waiting: "exit-in-terminal" });
+    // Asked twice at once (two devices): one adoption.
+    const inFlight = this.adopts.get(sid);
+    if (inFlight) return inFlight;
+    const p = this.doAdopt(sid, by).finally(() => this.adopts.delete(sid));
+    this.adopts.set(sid, p);
+    return p;
+  }
+
+  private async doAdopt(sid: string, by: string): Promise<{ pal: Pal } | { waiting: "exit-in-terminal" }> {
     this.room();
     await this.d.sessions.watch.refresh({ agents: true });
     const rec = this.d.sessions.watch.get(sid);
-    if (!rec?.cwd) throw new Error("没有这个会话");
-    const session = this.d.sessions.watch.toWire(rec);
+    // Not one of the computer's sessions now: a conversation that ended (§10).
+    if (!rec?.cwd) return { pal: (await this.adoptEnded(sid, by)).toWire() };
+    const wire = this.d.sessions.watch.toWire(rec);
+    const session: Adoptee = { id: wire.id, name: wire.name, cwd: wire.cwd };
     let holders = await this.holders(sid);
     const bg = holders.filter((h) => h.bg);
     if (bg.length) {
@@ -470,7 +552,18 @@ export class Pals {
     return { pal: (await this.finishAdopt(session, by)).toWire() };
   }
 
-  private async finishAdopt(s: CCSession, by: string): Promise<PalSession> {
+  // A conversation that ended: no process to stop, it's resumed at once. Never
+  // two writers: nothing may hold its transcript now (the Pal looks once more
+  // right before it starts, and steps aside if anything opens it later).
+  private async adoptEnded(sid: string, by: string): Promise<PalSession> {
+    const found = await this.recentList.find(sid);
+    if (typeof found === "string") throw new Error(found);
+    const holders = await this.holders(sid);
+    if (holders.length) throw new Error(`它刚在别处打开了（进程 ${holders.map((h) => h.pid).join("、")}），没有接管`);
+    return this.finishAdopt({ id: sid, name: palNameFor(found), cwd: found.cwd }, by, true);
+  }
+
+  private async finishAdopt(s: Adoptee, by: string, ended = false): Promise<PalSession> {
     this.room();
     const live = this.d.sessions.list().filter((x) => x.id !== s.id && x.status !== "stopped").map((x) => x.name);
     const now = this.now();
@@ -495,7 +588,7 @@ export class Pals {
       this.emitSoon();
       throw e;
     }
-    this.d.audit.log("pal.adopted", { pal: rec.id, session: s.id, name: rec.name, cwd: rec.cwd, by });
+    this.d.audit.log("pal.adopted", { pal: rec.id, session: s.id, name: rec.name, cwd: rec.cwd, by, ...(ended ? { ended: true } : {}) });
     this.emitNow();
     return pal;
   }
@@ -522,7 +615,7 @@ export class Pals {
 
   // A terminal session: once its process is gone (the owner typed /exit),
   // it's taken over by itself, within a second or so.
-  private waitForExit(sessionId: string, holders: Holder[], session: CCSession, by: string): void {
+  private waitForExit(sessionId: string, holders: Holder[], session: Adoptee, by: string): void {
     const w: Waiting = { sessionId, pids: holders.map((h) => h.pid), since: this.now(), timer: null, session, by };
     this.waiting.set(sessionId, w);
     this.d.audit.log("pal.adopt_waiting", { session: sessionId, name: session.name, pids: w.pids, by });
@@ -571,7 +664,7 @@ export class Pals {
   async release(id: string, by: string): Promise<{ resumeCommand: string }> {
     const pal = this.mustGet(id);
     await pal.shutdown();
-    this.drop(pal);
+    this.drop(pal, true);
     this.d.audit.log("pal.released", { pal: pal.id, session: pal.rec.sessionId, name: pal.rec.name, by });
     this.emitNow();
     return { resumeCommand: `cd ${shq(pal.rec.cwd)} && claude --resume ${pal.rec.sessionId}` };
@@ -581,7 +674,7 @@ export class Pals {
   async remove(id: string, by: string): Promise<void> {
     const pal = this.mustGet(id);
     await pal.shutdown();
-    this.drop(pal);
+    this.drop(pal, true);
     this.d.audit.log("pal.removed", { pal: pal.id, session: pal.rec.sessionId, name: pal.rec.name, by });
     this.emitNow();
   }
@@ -735,8 +828,7 @@ export class Pals {
       return `已经有 ${MAX_PALS} 个 Pal 了（最多 ${MAX_PALS} 个）。先问主人要不要把最久没用的「${oldest.rec.name}」移出 Pals（主人在它的页面右上角点「移出 Pals」）。`;
     }
     const proposal: HelperProposal = { id: newId("hp_"), ...p, status: "pending" };
-    const home = homedir();
-    const where = p.cwd.startsWith(home + sep) ? `~/${p.cwd.slice(home.length + 1)}` : p.cwd;
+    const where = tildePath(p.cwd);
     const msg = this.d.chat.add({ role: "assistant", kind: "helper", text: `开一个 Pal「${p.name}」专门管 ${where}？`, channel: "system", proposal });
     this.data.proposals = [...this.data.proposals, { ...proposal, createdAt: this.now(), messageId: msg.id }].slice(-50);
     this.save();

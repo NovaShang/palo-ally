@@ -26,7 +26,7 @@ export const RPC_METHODS = [
   "suggestions.list", "suggestions.dismiss", "host.update",
   "ally.list", "ally.invite", "ally.accept", "ally.remove", "ally.log", "ally.draft.decide", "ally.say", "ally.trust",
   "sessions.list", "sessions.history", "sessions.hooks", "helper.decide",
-  "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop",
+  "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop", "pals.recent",
 ] as const;
 
 export const RPC_EVENTS = [
@@ -255,6 +255,9 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     case "pals.stop":
       await hub.pals.stopTurn(String(p.id ?? ""), ctx.channel);
       return { ok: true };
+    // The conversations that ended on the computer lately (§10); pals.adopt takes one over.
+    case "pals.recent":
+      return { sessions: await hub.pals.recent({ folder: typeof p.folder === "string" ? p.folder : undefined, limit: p.limit }) };
     case "host.update":
       // check: only look. Otherwise stage the newest release and switch to it as
       // soon as nothing is in flight (the app's 立即更新); `wait` is for the CLI.

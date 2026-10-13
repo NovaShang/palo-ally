@@ -187,3 +187,11 @@ Palo 提议，你点头，主机新开一个会话，第一条消息是 Palo 写
 `RecentSession`：`{sessionId, cwd, title, lastModified, size}`
 
 卡片：聊天消息 `kind: "pal_adopt"`，带 `proposal: {id, sessionId, cwd, title, status: "pending" | "adopted" | "discarded" | "failed", palId?, note?}`。主人点「接管」或「不用」，用 `helper.decide{proposalId, action: "create" | "discard"}`。
+
+**主机定下的细节**（2026-10-12，实现时补；样例见 `protocol.json` 的 `pals.recent`）：
+- `pals.recent`：
+  - 按最后修改时间倒序的一张表，按目录分组是 App 的事。`limit` 默认 50，最多 50。`folder` 给路径时是这个目录和它下面的，给名字时按目录名找。
+  - 跟 Claude Code 的 `/resume` 一样，不列 `claude -p` 跑的和别的应用用 SDK 开的会话；Palo 开的 Pal 被移出或交还终端以后例外，照样列。
+  - 也不列：PaloAlly 测试用的临时目录（`paloally-…`）和 Claude Code 子 agent 的临时目录（`/tmp/claude-<uid>/…`）；目录已经没了的；记录不在 Claude Code 给这个目录放记录的地方的（resume 不回来）。
+  - 读 SDK 的 `listSessions`（每份记录只读开头和结尾各 64 KB），结果留 5 秒。
+- `pals.adopt` 接管退出了的对话：不用停进程，直接 resume，返回 `{pal}`。名字取自定义标题（16 个字以内，长了在词边上截），没有就用目录名；重名加编号。接管前那一刻要是有进程开着这份记录，报错不接管。
