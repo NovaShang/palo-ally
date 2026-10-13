@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { allyTurnHeader } from "../src/copy.ts";
 import { handleRpc } from "../src/rpc.ts";
 import { AllyNet, MemConn, type NetHost, befriend } from "./allyNet.ts";
 import type { FakeScript } from "./fakeDriver.ts";
@@ -89,6 +90,27 @@ describe("trust levels", () => {
 });
 
 describe("能对话", () => {
+  test("the turn tells the assistant who its reply is for: 能对话 answers the Ally directly, 每句要你看 drafts for the owner", () => {
+    const ally = { id: "al_1", ownerName: "家人B", assistantName: "小助" };
+    const converse = allyTurnHeader({ ...ally, trust: "converse" });
+    const review = allyTurnHeader({ ...ally, trust: "review" });
+    expect(converse).not.toBe(review);
+    // both: only talk, and the reply goes through ally_send to this Ally
+    for (const h of [converse, review]) {
+      expect(h).toContain('mcp__paloally__ally_send(to="al_1"');
+      expect(h).toContain("这一轮只能回话");
+    }
+    expect(converse).toContain("你直接回答对方");
+    expect(converse).toContain("只有主人看得到，对方看不到");
+    expect(converse).toContain("只有需要主人知道或决定的事才跟主人说");
+    expect(converse).not.toContain("草稿");
+    expect(review).toContain("你的回话是草稿");
+    expect(review).toContain("主人点「发送」才会发出");
+    expect(review).not.toContain("直接回答对方");
+    // an Ally from before §11 has no level: as 每句要你看
+    expect(allyTurnHeader(ally)).toBe(review);
+  });
+
   test("the assistant's words to a 能对话 Ally go out at once, kept in the log and the chat; 每句要你看 is still a card", async () => {
     const net = new AllyNet();
     const a = net.add("家人A");
