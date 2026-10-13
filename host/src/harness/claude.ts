@@ -374,6 +374,41 @@ export function sessionOptions(opts: AnySessionOptions): Options {
   };
 }
 
+// The probe's web lookups, approved up front. A probe runs unattended in auto
+// mode, but Claude Code runs auto mode only on models that have it: on the
+// cheap probe model (Haiku 4.5) it starts in "default" instead, where these
+// ask first, and with nobody to answer they'd be refused every time. They
+// only read; the rest (Read/Glob/Grep inside the probe's folder) runs anyway,
+// and anything else, connectors included, is still the mode's call.
+const PROBE_PREAPPROVED = new Set(["WebFetch", "WebSearch"]);
+
+// probeOptions is what a probe run asks the SDK for (exported so tests can
+// check it without starting Claude Code).
+export function probeOptions(req: ProbeRequest): Options {
+  return {
+    cwd: req.cwd,
+    model: req.model,
+    systemPrompt: req.systemPrompt, // short custom prompt, not the full Claude Code one
+    settingSources: [], // no CLAUDE.md / user settings: keep the context short
+    tools: req.tools,
+    allowedTools: req.tools.filter((t) => PROBE_PREAPPROVED.has(t)),
+    mcpServers: req.mcpServers as any,
+    ...(req.strictMcp ? { strictMcpConfig: true, skills: [] } : {}),
+    persistSession: false,
+    maxTurns: req.maxTurns,
+    // A probe looks things up and answers in a fixed schema; extended
+    // thinking was most of its output tokens (and of its cost).
+    thinking: { type: "disabled" },
+    // Unattended: the harness' classifier decides each call (where the model
+    // has auto mode), and anything it would ask a human about is denied at
+    // once (nobody is there to answer).
+    permissionMode: "auto",
+    permissionPrompts: "none",
+    outputFormat: { type: "json_schema", schema: req.outputSchema },
+    env: { ...process.env, ...req.env, ...OWN_SESSION_ENV, CLAUDE_AGENT_SDK_CLIENT_APP: `paloally-probe/${VERSION}` },
+  };
+}
+
 class ClaudeMainSession implements MainSession {
   private input = new AsyncQueue<SDKUserMessage>();
   private q: Query;
@@ -487,35 +522,15 @@ export class ClaudeCodeDriver implements HarnessDriver {
     let cost = 0;
     let error: string | undefined;
     let usage: Record<string, unknown> | undefined;
+    let denied: string[] = [];
     try {
-      const q = query({
-        prompt: req.prompt,
-        options: {
-          cwd: req.cwd,
-          model: req.model,
-          systemPrompt: req.systemPrompt, // short custom prompt, not the full Claude Code one
-          settingSources: [], // no CLAUDE.md / user settings: keep the context short
-          tools: req.tools,
-          mcpServers: req.mcpServers as any,
-          ...(req.strictMcp ? { strictMcpConfig: true, skills: [] } : {}),
-          persistSession: false,
-          maxTurns: req.maxTurns,
-          // A probe looks things up and answers in a fixed schema; extended
-          // thinking was most of its output tokens (and of its cost).
-          thinking: { type: "disabled" },
-          // Unattended: the harness' classifier decides each call, and anything it
-          // would ask a human about is denied at once (nobody is there to answer).
-          permissionMode: "auto",
-          permissionPrompts: "none",
-          outputFormat: { type: "json_schema", schema: req.outputSchema },
-          env: { ...process.env, ...req.env, ...OWN_SESSION_ENV, CLAUDE_AGENT_SDK_CLIENT_APP: `paloally-probe/${VERSION}` },
-        },
-      });
+      const q = query({ prompt: req.prompt, options: probeOptions(req) });
       for await (const msg of q) {
         const m = msg as any;
         if (m.type === "result") {
           cost = m.total_cost_usd ?? 0;
           usage = m.modelUsage;
+          denied = (m.permission_denials ?? []).map((d: any) => String(d.tool_name));
           if (m.subtype === "success") output = m.structured_output ?? m.result;
           else error = m.errors?.join("; ") || m.subtype;
         }
@@ -523,6 +538,6 @@ export class ClaudeCodeDriver implements HarnessDriver {
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }
-    return { output, costUsd: cost, error, usage };
+    return { output, costUsd: cost, error, usage, ...(denied.length ? { denied } : {}) };
   }
 }

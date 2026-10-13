@@ -184,10 +184,13 @@ export class ProbeScheduler {
     });
     this.host.spend(res.costUsd);
     this.host.log(`probe run: ${due.length} watch(es), $${res.costUsd.toFixed(4)} ${res.usage ? JSON.stringify(res.usage) : ""}`);
+    // A refused tool doesn't fail the run (the probe answers "nothing new"), so say it here.
+    const denied = res.denied?.length ? { denied: [...new Set(res.denied)] } : {};
+    if (denied.denied) this.host.log(`probe tools refused: ${denied.denied.join(", ")}`);
     if (res.error) {
       const reason = truncate(res.error, 300);
       this.host.log(`probe error: ${reason}`);
-      this.host.audit?.("probe.error", { reason, watches: due.map((w) => w.id), costUsd: res.costUsd });
+      this.host.audit?.("probe.error", { reason, watches: due.map((w) => w.id), costUsd: res.costUsd, ...denied });
       // Don't hammer a failing probe: mark checked so it waits a full interval.
       for (const w of due) this.host.watches.touch(w.id, { lastCheckedAt: now, lastResult: { at: now, ok: false, reason } });
       return { checked: due.length, triggered: 0 };
@@ -215,7 +218,7 @@ export class ProbeScheduler {
       const line = own || (patch.lastTriggeredAt === now && typeof r?.summary === "string" ? r.summary : undefined);
       if (line) this.host.watches.progress(w.id, line);
     }
-    this.host.audit?.("probe.run", { watches: due.map((w) => w.id), triggered: triggers.length, costUsd: res.costUsd });
+    this.host.audit?.("probe.run", { watches: due.map((w) => w.id), triggered: triggers.length, costUsd: res.costUsd, ...denied });
     if (triggers.length) this.host.onTriggers(triggers);
     return { checked: due.length, triggered: triggers.length };
   }

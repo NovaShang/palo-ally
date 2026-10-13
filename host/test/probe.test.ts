@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { Bus } from "../src/bus.ts";
 import { FakeDriver } from "./fakeDriver.ts";
+import { probeOptions } from "../src/harness/claude.ts";
 import { ProbeScheduler, dueSlot, nextRunAt, probeHealth, type ProbeHost, type ProbeTrigger } from "../src/probe.ts";
 import type { Watch } from "../src/types.ts";
 import { inWindow, parseHHMM, zonedParts } from "../src/util.ts";
@@ -285,6 +286,30 @@ describe("ProbeScheduler", () => {
     // gone quiet for more than two intervals: stale
     expect(probeHealth(m.watches.list(), T0 + 30 * 60_000).stale).toBe(1);
     cleanup(m.paths);
+  });
+
+  test("tools the harness refused during a run are logged and audited with it", async () => {
+    const audits: [string, Record<string, unknown>][] = [];
+    const logs: string[] = [];
+    const m = mk({ audit: (t, d) => audits.push([t, d]), log: (s) => logs.push(s) });
+    const w = m.watches.add({ title: "x", instruction: "y", intervalMinutes: 5 }, "agent");
+    m.driver.probeResponder = () => ({ output: { results: [{ watch_id: w.id, triggered: false }] }, costUsd: 0.01, denied: ["mcp__mail__list", "mcp__mail__list"] });
+    await m.probe.tick(T0);
+    expect(audits.at(-1)).toEqual(["probe.run", expect.objectContaining({ denied: ["mcp__mail__list"] })]);
+    expect(logs).toContain("probe tools refused: mcp__mail__list");
+    m.driver.probeResponder = () => ({ output: { results: [{ watch_id: w.id, triggered: false }] }, costUsd: 0.01 });
+    await m.probe.tick(T0 + 6 * 60_000);
+    expect(audits.at(-1)![1].denied).toBeUndefined();
+    cleanup(m.paths);
+  });
+
+  test("a probe's web lookups are approved up front: on a model without auto mode nobody could approve them", () => {
+    const req = { model: "claude-haiku-4-5", cwd: "/tmp", systemPrompt: "", prompt: "", mcpServers: {}, outputSchema: {}, maxTurns: 3, strictMcp: true };
+    const o = probeOptions({ ...req, tools: ["Read", "Glob", "Grep", "WebFetch", "WebSearch"] });
+    expect(o.allowedTools).toEqual(["WebFetch", "WebSearch"]);
+    expect(o).toMatchObject({ permissionMode: "auto", permissionPrompts: "none", tools: ["Read", "Glob", "Grep", "WebFetch", "WebSearch"] });
+    // nothing else is approved by name: connectors stay the permission mode's call
+    expect(probeOptions({ ...req, tools: [] }).allowedTools).toEqual([]);
   });
 
   test("schedule watches fire without a probe; skipIfActive suppresses", async () => {

@@ -179,7 +179,7 @@ export interface ProbeRequest {
   systemPrompt: string;
   prompt: string;
   mcpServers: Record<string, unknown>;
-  tools: string[]; // which built-in tools to load (context size, not a safety list)
+  tools: string[]; // which built-in tools to load (context size, not a safety list); web ones among them are pre-approved
   outputSchema: Record<string, unknown>;
   maxTurns: number;
   // true: only mcpServers above (no claude.ai connectors / user config / skills) — keeps context ~2k tokens
@@ -192,6 +192,7 @@ export interface ProbeResult {
   costUsd: number;
   error?: string;
   usage?: Record<string, unknown>; // per-model token usage, for cost tuning
+  denied?: string[]; // tools the harness refused this run, by name
 }
 
 export interface HarnessDriver {
