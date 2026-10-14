@@ -89,7 +89,8 @@ targets:
         ENABLE_PREVIEWS: YES
         CODE_SIGN_STYLE: Automatic
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
-  # DEBUG drills that need real touches (flings), on an iPhone simulator.
+  # DEBUG drills that need real touches (flings), on an iPhone simulator;
+  # MacScrollWheelUITests, with real scroll-wheel events, on Mac Catalyst.
   PaloAllyUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -103,7 +104,12 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.novashang.paloally.uitests
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Automatic
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,6"
+        SUPPORTS_MACCATALYST: YES
+        DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
+        # On the Mac only the Mac's own tests (the others drive an iPhone).
+        EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]: "*"
+        INCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]: MacScrollWheelUITests.swift
 schemes:
   PaloAlly:
     build:

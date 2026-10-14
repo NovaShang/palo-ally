@@ -12,6 +12,7 @@
 		08BF7949F94B89DDD05C3319 /* AssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056B108C0177A1156F312E84 /* AssistantView.swift */; };
 		098271F0DB79A7EC10E8782F /* PalPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DB5E3F3B5ED735CB237E3A6 /* PalPage.swift */; };
 		0D88459427BC2C3B5A6385B0 /* AllyCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 152387F3158810B91BB9A668 /* AllyCopy.swift */; };
+		0F39329E305A6477FBD720F0 /* MacScrollWheelUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C23F1133E2D253017B448FCB /* MacScrollWheelUITests.swift */; };
 		11BECFB67315E8AFAF47D91A /* SelectableMarkdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07A26E3CEF36BC017C91F461 /* SelectableMarkdown.swift */; };
 		1243481AFE63A1EA7053C0F2 /* MarkdownTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9AE7E7579FE5764F145260C /* MarkdownTableView.swift */; };
 		12AEBFDF8D57FB231AAEC5EA /* PaloAllyFilePreview in Frameworks */ = {isa = PBXBuildFile; productRef = AABA5B7E56189876EB3B0314 /* PaloAllyFilePreview */; };
@@ -172,6 +173,7 @@
 		C0309622DA447C8E1B5069A2 /* ClipboardCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardCard.swift; sourceTree = "<group>"; };
 		C0ED44802BFA212B62DF504F /* LaunchMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchMetrics.swift; sourceTree = "<group>"; };
 		C1B780A4AAD93BEE438E5D12 /* ScrollLab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollLab.swift; sourceTree = "<group>"; };
+		C23F1133E2D253017B448FCB /* MacScrollWheelUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacScrollWheelUITests.swift; sourceTree = "<group>"; };
 		C3C390EEBB6E830AE2684F1C /* DiagnosticsCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsCollector.swift; sourceTree = "<group>"; };
 		C3C69EFBC6FE3651296709B5 /* ChatScrollCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollCoordinator.swift; sourceTree = "<group>"; };
 		C54007F5ADFE246BFE4EBB60 /* TitleOrb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleOrb.swift; sourceTree = "<group>"; };
@@ -325,6 +327,7 @@
 				1B37F21F4341F2E8ECB3BEB1 /* AlliesUITests.swift */,
 				3027F62ADAB6BF3E4CFADE4C /* AppLog.swift */,
 				519EA8CCFA1176D5CDDF3D1F /* ChatScrollUITests.swift */,
+				C23F1133E2D253017B448FCB /* MacScrollWheelUITests.swift */,
 				7204F49936E047B0B9DD85FC /* NavigationUITests.swift */,
 				7ED42874198579F1FB37DC41 /* ScrollLabUITests.swift */,
 				B7EADFA6C31C6254DED78C80 /* ScrollStressUITests.swift */,
@@ -534,6 +537,7 @@
 				9F471EF33EB831461DD0E4A0 /* AlliesUITests.swift in Sources */,
 				576B3D9CF39D64A7CE5A0582 /* AppLog.swift in Sources */,
 				6A3F40F12C7DD391D2815F87 /* ChatScrollUITests.swift in Sources */,
+				0F39329E305A6477FBD720F0 /* MacScrollWheelUITests.swift in Sources */,
 				6FAF60052DD6375026A2F352 /* NavigationUITests.swift in Sources */,
 				AACC2B792ABD1AFC63ECC6B2 /* ScrollLabUITests.swift in Sources */,
 				44A392DEF7BF333CB2960BE4 /* ScrollStressUITests.swift in Sources */,
@@ -733,7 +737,10 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = "*";
 				GENERATE_INFOPLIST_FILE = YES;
+				"INCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = MacScrollWheelUITests.swift;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -742,7 +749,8 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.novashang.paloally.uitests;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = 1;
+				SUPPORTS_MACCATALYST = YES;
+				TARGETED_DEVICE_FAMILY = "1,6";
 				TEST_TARGET_NAME = PaloAlly;
 			};
 			name = Debug;
@@ -752,7 +760,10 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = "*";
 				GENERATE_INFOPLIST_FILE = YES;
+				"INCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = MacScrollWheelUITests.swift;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -761,7 +772,8 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.novashang.paloally.uitests;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = 1;
+				SUPPORTS_MACCATALYST = YES;
+				TARGETED_DEVICE_FAMILY = "1,6";
 				TEST_TARGET_NAME = PaloAlly;
 			};
 			name = Release;
