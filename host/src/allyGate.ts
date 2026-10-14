@@ -25,9 +25,13 @@ import { isAbsolute, join, resolve, sep } from "node:path";
 //   4. Two that run nothing: AskUserQuestion (a choice card for the owner,
 //      the 约时间 flow of §4.2) and ToolSearch (loads a deferred tool's
 //      schema, e.g. a calendar connector's).
+//   5. Telling the owner: mcp__paloally__notify_user, a push to the owner's
+//      own phone, so an Ally's urgent word can reach them without waiting
+//      for the turn to end (the owner's call, 2026-10-13). It only informs;
+//      SendMessage to other sessions stays denied.
 // Denied, among everything else: Bash, Write, Edit, NotebookEdit, WebFetch,
 // WebSearch, Agent / Task (no subagents), SendMessage, the paloally tools
-// that act or tell (notify_user, SendUserFile, register_watch, …), mail
+// that act or reach anyone but the owner (SendUserFile, register_watch, …), mail
 // tools, and any calendar tool that writes.
 
 export interface AllyGateScope {
@@ -35,10 +39,11 @@ export interface AllyGateScope {
   memoryDir: string; // Claude Code's auto memory for it
 }
 
-export type AllyToolVerdict = { ok: true; kind: "ally" | "calendar" | "memory" | "plumbing" } | { ok: false };
+export type AllyToolVerdict = { ok: true; kind: "ally" | "calendar" | "memory" | "plumbing" | "owner" } | { ok: false };
 
 const ALLY_TOOLS = new Set(["mcp__paloally__ally_send", "mcp__paloally__ally_list"]);
 const PLUMBING = new Set(["AskUserQuestion", "ToolSearch"]);
+const TELL_OWNER = "mcp__paloally__notify_user";
 const CORE = ["user.md", "soul.md"];
 
 const CALENDAR_WORDS = new Set(["calendar", "calendars", "cal", "gcal", "ical", "caldav"]);
@@ -108,6 +113,7 @@ export function isMemoryRead(name: string, input: Record<string, unknown>, scope
 export function allyTurnTool(name: string, input: Record<string, unknown>, scope: AllyGateScope): AllyToolVerdict {
   if (ALLY_TOOLS.has(name)) return { ok: true, kind: "ally" };
   if (PLUMBING.has(name)) return { ok: true, kind: "plumbing" };
+  if (name === TELL_OWNER) return { ok: true, kind: "owner" };
   if (isCalendarReadTool(name)) return { ok: true, kind: "calendar" };
   if (isMemoryRead(name, input ?? {}, scope)) return { ok: true, kind: "memory" };
   return { ok: false };
