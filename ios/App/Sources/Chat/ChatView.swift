@@ -377,6 +377,8 @@ private struct ConversationRows: View {
         .background(ScrollViewHook { scroll.attach(scrollView: $0) })
         // A quote above a bubble jumps to what it quotes.
         .environment(\.chatScrollTo) { id in scroll.reveal(id) }
+        // 展开全部 / 收起 on a long message: the change stays in its row.
+        .environment(\.chatRowResizing) { id, folding in scroll.resizing(id, folding: folding) }
         // Beside a sidebar or inspector the column gets roomier margins.
         .padding(.horizontal, asColumn ? 28 : 16)
         .environment(\.messageGutter, asColumn ? 28 : 16)

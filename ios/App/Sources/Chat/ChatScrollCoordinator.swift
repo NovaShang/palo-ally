@@ -391,6 +391,40 @@ final class ChatScrollCoordinator {
     }
     func layoutChanged() { send(.layoutChanged) }
 
+    /// The reader is about to unfold (展开全部) or fold (收起) a long message:
+    /// the change stays in its row, nothing else moves. Off the end (on it,
+    /// the bottom anchor would push the message up as it grows), holding the
+    /// row in place: unfolding, it grows down from where it is; folding one
+    /// whose top is above the view, the row after it is held, so the
+    /// message ends where it did and 展开全部 comes back under the finger.
+    /// True when the change may animate (no correction follows it).
+    func resizing(_ id: String, folding: Bool) -> Bool {
+        send(.resizing)
+        // The end the position may still name would be applied again as
+        // the content changes size.
+        release()
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(450))
+            send(.resized)
+        }
+        guard Self.holdsTopRow, let m = metrics, let store, let top = onScreen(id, m) else { return true }
+        var held = id
+        if folding, top < 0 {
+            let messages = store.messages
+            let w = window(in: messages)
+            if let i = messages.firstIndex(where: { $0.id == id }), w.contains(i + 1), rowY[messages[i + 1].id] != nil {
+                held = messages[i + 1].id
+            }
+        }
+        holding = true
+        topID = held
+        heldAt = onScreen(held, m)
+        #if DEBUG
+        ChatScroll.pinTrace("\(folding ? "folding" : "unfolding") \(id), holding \(held) at \(Int(heldAt ?? 0)) pt below the top")
+        #endif
+        return held == id
+    }
+
     /// While the app is away: the rows that were off screen when it left,
     /// and the appearance they keep until it's back. The system lays the
     /// window out again for each of its app-switcher snapshots, in the dark

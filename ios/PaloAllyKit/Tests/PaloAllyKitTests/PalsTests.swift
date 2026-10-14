@@ -286,6 +286,27 @@ struct PalsStoreTests {
         #expect(await until { store.palsSupported == false })
         #expect(store.pals.isEmpty)
     }
+
+    /// Long words another agent sent a Pal fold: the assistant's and another
+    /// session's, never the owner's or the Pal's own, and nothing in the
+    /// assistant's own conversation. Unfolded stays so while the app runs.
+    @Test func longWordsFromAnotherAgentFold() async throws {
+        let (store, _) = await demoStore()
+        let notes = store.palStore("pal-notes")
+        #expect(await until { notes.hasSynced && notes.messages.count > 3 })
+        let palo = try #require(notes.messages.first { $0.from == "Palo" })
+        let peer = try #require(notes.messages.first { $0.from == "网站帮手" })
+        #expect(notes.folds(palo) && notes.folds(peer))
+        #expect(notes.messages.filter { notes.folds($0) }.map(\.id) == [palo.id, peer.id])
+        #expect(!store.folds(palo))
+        // Long by characters: whole only up to the folded lines.
+        #expect(MessageFold.wholeLines(String(repeating: "字", count: 280)) == MessageFold.maxLines)
+        #expect(MessageFold.wholeLines(String(repeating: "字", count: 281)) == MessageFold.foldedLines)
+        notes.setUnfolded(palo.id, true)
+        #expect(store.palStore("pal-notes").unfolded == [palo.id])
+        notes.setUnfolded(palo.id, false)
+        #expect(notes.unfolded.isEmpty)
+    }
 }
 
 @Suite("Pals quoting")

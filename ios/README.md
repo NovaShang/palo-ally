@@ -76,7 +76,7 @@ Launch arguments (also read from UserDefaults):
 | `-demo YES` | use the in-memory `DemoHost` (seeded Chinese sample data, streamed replies) |
 | `-demoScreen chat\|list\|library\|artifact\|assistant\|settings\|pairing` | open that screen (`chat`, the assistant's conversation, is where the app opens; `list` is one step back; `assistant` is management, as the orb opens it) |
 | `-demoTab history\|watches\|memory` | open management on that tab |
-| `-demoScreen pal\|ally` | one Pal's page (`-demoPal <id>`, default `pal-site`; `-demoPalPanel release\|released\|remove` opens it on that) / one Ally's page (`-demoAlly <id>`) |
+| `-demoScreen pal\|ally` | one Pal's page (`-demoPal <id>`, default `pal-site`; `-demoPalPanel release\|released\|remove` opens it on that; `-demoUnfold <message id>` opens that long message unfolded) / one Ally's page (`-demoAlly <id>`) |
 | `-demoAdopt <session id>` | the list, with 接管 tapped on that session (`-demoAdoptAfter <s>`: when the demo's owner quits a terminal session, default 6; `0` never) |
 | `-demoState sessions\|helper` | the sessions' and Pals' cards wait / only the proposal to open a Pal waits |
 | `-demoSettingsAt sessions` | 设置 opens scrolled to the sessions switch |

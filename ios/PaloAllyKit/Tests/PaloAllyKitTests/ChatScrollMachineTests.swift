@@ -398,4 +398,34 @@ struct ChatScrollMachineTests {
         _ = m.reduce(.gliding(true))
         #expect(m.reduce(.gliding(false)) == [])
     }
+
+    // MARK: folding a long message
+
+    /// On the end, 展开全部 lets go of it: the bottom anchor would push the
+    /// message up, out from under the reader, as it grows. Still on the end
+    /// once it's laid out (all of it fits): following again.
+    @Test func unfoldingOnTheEndLetsGoAndComesBackIfItFits() {
+        var m = machine(.following)
+        #expect(m.reduce(.resizing) == [.log("following → detached (a message folded or unfolded)"), .holdTopRow(true)])
+        #expect(m.mode == .detached)
+        #expect(m.reduce(.resized) == [.log("detached → following (resized on the end)"), .holdTopRow(false)])
+        #expect(m.mode == .following)
+    }
+
+    /// Unfolded past the end: the reader stays on it, with 回到最新.
+    @Test func unfoldingPastTheEndKeepsTheReaderThere() {
+        var m = machine(.following)
+        _ = m.reduce(.resizing)
+        _ = m.reduce(.scrolled(distance: 300))
+        #expect(m.reduce(.resized) == [])
+        #expect(m.mode == .detached && m.showsJump)
+    }
+
+    @Test func foldingWhileReadingBackMovesNothing() {
+        var m = machine(.detached, distance: 900)
+        #expect(m.reduce(.resizing) == [])
+        _ = m.reduce(.scrolled(distance: 700))
+        #expect(m.reduce(.resized) == [])
+        #expect(m.mode == .detached)
+    }
 }

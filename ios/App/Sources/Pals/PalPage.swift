@@ -61,6 +61,8 @@ private struct PalConversation: View {
                 case "released": panel = .released(pal?.resumeCommand ?? "claude --resume")
                 default: break
                 }
+                // `-demoUnfold <message id>`: that long message opens unfolded.
+                if let id = UserDefaults.standard.string(forKey: "demoUnfold") { store.setUnfolded(id, true) }
             }
             #endif
     }

@@ -75,7 +75,7 @@ private struct UserBubble: View {
                 if !message.text.isEmpty {
                 // A quiet "this is mine" marker, not an accent: the owner's
                 // words matter no more than the assistant's.
-                Text(MarkdownBlock.attributed(message.text))
+                BubbleText(message: message)
                     .foregroundStyle(.primary)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
@@ -105,6 +105,87 @@ private struct UserBubble: View {
         } else {
             shape.fill(Color(.secondarySystemFill))
         }
+    }
+}
+
+/// A bubble's words. Long ones another agent sent a Pal (`MessageFold`)
+/// fold to their first lines, faded, with 展开全部; unfolded, 收起. Whether
+/// it folds is decided as it's laid out, in one pass: no row lays out whole
+/// and then folds.
+private struct BubbleText: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.chatRowResizing) private var resizing
+    let message: ChatMessage
+
+    var body: some View {
+        let text = Text(MarkdownBlock.attributed(message.text))
+        if !store.folds(message) {
+            text
+        } else if store.unfolded.contains(message.id) {
+            VStack(alignment: .leading, spacing: 6) {
+                text
+                toggle("收起", folding: true)
+            }
+        } else {
+            // As tall as the text at `wholeLines`: whole when it's no
+            // taller, else folded.
+            LinesCap {
+                text
+                    .lineLimit(MessageFold.wholeLines(message.text))
+                    .hidden()
+                    .accessibilityHidden(true)
+                ViewThatFits(in: .vertical) {
+                    text
+                    VStack(alignment: .leading, spacing: 6) {
+                        text
+                            .lineLimit(MessageFold.foldedLines)
+                            .mask {
+                                LinearGradient(stops: [.init(color: .black, location: 0.5), .init(color: .black.opacity(0.08), location: 1)],
+                                               startPoint: .top, endPoint: .bottom)
+                            }
+                        toggle("展开全部", folding: false)
+                    }
+                    // Its own height, even where nothing fits.
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    /// Quiet, not the theme color.
+    private func toggle(_ title: String, folding: Bool) -> some View {
+        Button(title) {
+            let animates = resizing?(message.id, folding) ?? true
+            if animates {
+                withAnimation(.snappy) { store.setUnfolded(message.id, !folding) }
+            } else {
+                store.setUnfolded(message.id, !folding)
+            }
+        }
+        .font(.footnote)
+        .buttonStyle(.borderless)
+        .tint(.secondary)
+    }
+}
+
+/// Lays out its second view in the height its first takes (unseen): there
+/// `ViewThatFits` picks the whole text if it fits, else the folded one.
+private struct LinesCap: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count == 2 else { return .zero }
+        return subviews[1].sizeThatFits(capped(proposal.width, subviews))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 2 else { return }
+        let width = proposal.width ?? bounds.width
+        subviews[0].place(at: bounds.origin, proposal: ProposedViewSize(width: width, height: nil))
+        subviews[1].place(at: bounds.origin, proposal: capped(width, subviews))
+    }
+
+    private func capped(_ width: CGFloat?, _ subviews: Subviews) -> ProposedViewSize {
+        let cap = subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil)).height
+        return ProposedViewSize(width: width, height: cap + 0.5)
     }
 }
 
@@ -537,6 +618,9 @@ private struct GoalCard: View {
 extension EnvironmentValues {
     /// Scrolls the conversation to a message id (set by ChatView).
     @Entry var chatScrollTo: ((String) -> Void)? = nil
+    /// A message is about to fold or unfold (set by ChatView): true when
+    /// the change may animate.
+    @Entry var chatRowResizing: ((_ id: String, _ folding: Bool) -> Bool)? = nil
     /// The conversation's side margin, so tables can scroll edge to edge.
     @Entry var messageGutter: CGFloat = 16
 }

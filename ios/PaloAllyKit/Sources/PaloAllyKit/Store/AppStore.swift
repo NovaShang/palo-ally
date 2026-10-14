@@ -88,6 +88,9 @@ public final class AppStore {
         set { shared.hostVersion = newValue }
     }
     public private(set) var messages: [ChatMessage] = []
+    /// Long messages from another agent the owner unfolded (`MessageFold`),
+    /// by id: they stay open while the app runs.
+    public internal(set) var unfolded: Set<String> = []
     /// Replies being written, by message id: their text lives here while it
     /// grows (the message's own `text` is filled in when the reply ends).
     public private(set) var streams: [String: StreamingReply] = [:]

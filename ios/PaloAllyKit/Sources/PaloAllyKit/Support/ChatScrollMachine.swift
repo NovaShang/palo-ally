@@ -66,6 +66,10 @@ public struct ChatScrollMachine: Equatable, Sendable {
         /// bottom anchor glides the view along, and on the way the view is
         /// a little off the end. Off: the glide is over.
         case gliding(Bool)
+        /// The reader folds or unfolds a long message (展开全部 / 收起).
+        case resizing
+        /// That change has been laid out.
+        case resized
     }
 
     public enum Effect: Equatable, Sendable {
@@ -245,6 +249,20 @@ public struct ChatScrollMachine: Equatable, Sendable {
 
         case .background:
             return [.log("background: \(mode.rawValue)")]
+
+        case .resizing:
+            // On the end, the bottom anchor would keep the end still and
+            // push the message up, out from under the reader, as it grows:
+            // let go of the end, so what's above it stays where it is.
+            guard mode != .detached else { return [] }
+            return detach("a message folded or unfolded")
+
+        case .resized:
+            // Still on the end (it folded, or all of it fits): following again.
+            guard mode == .detached, !phase.isUser, distance <= Self.atEnd else { return [] }
+            mode = .following
+            unseenBelow = false
+            return [.log("detached → following (resized on the end)"), .holdTopRow(false)]
         }
     }
 

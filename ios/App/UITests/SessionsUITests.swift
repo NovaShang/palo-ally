@@ -147,6 +147,39 @@ final class SessionsUITests: XCTestCase {
 
     // MARK: -
 
+    /// A long message the assistant sent a Pal folds to its first lines with
+    /// 展开全部; tapped, all of it shows with 收起, growing down from where it
+    /// was. Another session's long message stays folded.
+    @MainActor
+    func testALongMessageFromTheAssistantFoldsAndUnfolds() throws {
+        let app = launch(["-demoScreen", "pal", "-demoPal", "pal-notes"])
+        XCTAssertTrue(app.navigationBars.staticTexts["笔记整理"].waitForExistence(timeout: 15), "the Pal's page didn't open")
+        let brief = text(app, "主人想让这周的笔记整理多做几件事")
+        XCTAssertTrue(brief.waitForExistence(timeout: 10), "no long message from the assistant")
+        let unfold = app.buttons.matching(NSPredicate(format: "label == %@", "展开全部"))
+        XCTAssertEqual(unfold.count, 2, "both long messages from other agents should fold")
+        if !unfold.element(boundBy: 0).isHittable { app.swipeDown() }
+        let folded = brief.frame
+        let button = unfold.element(boundBy: 0)
+        XCTAssertTrue(button.isHittable)
+        XCTAssertGreaterThan(button.frame.minY, folded.minY, "展开全部 isn't under the message")
+        attach(app, "folded")
+        button.tap()
+
+        let fold = app.buttons["收起"]
+        XCTAssertTrue(fold.waitForExistence(timeout: 5), "no 收起 once unfolded")
+        XCTAssertEqual(unfold.count, 1, "the other long message should stay folded")
+        // All of it: much taller, from the same place.
+        let whole = brief.frame
+        XCTAssertGreaterThan(whole.height, folded.height * 1.8, "it didn't unfold")
+        XCTAssertEqual(whole.minY, folded.minY, accuracy: 2, "unfolding moved the message")
+        attach(app, "unfolded")
+
+        fold.tap()
+        XCTAssertTrue(unfold.element(boundBy: 1).waitForExistence(timeout: 5), "收起 didn't fold it again")
+        XCTAssertEqual(brief.frame.height, folded.height, accuracy: 2)
+    }
+
     @MainActor
     private func attach(_ app: XCUIApplication, _ name: String) {
         let shot = XCTAttachment(screenshot: app.screenshot())
