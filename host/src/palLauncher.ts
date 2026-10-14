@@ -14,6 +14,14 @@ import type { Spawner } from "./harness/types.ts";
 // environment, as a terminal session would, without the variables of any
 // running session.
 
+// A helper without Full Disk Access is worse than none: macOS holds a Claude
+// Code process it started at the first protected file it touches, asks for
+// approval, denies it, and the process never moves again (no CPU, deaf to
+// SIGTERM; seen three times on 2026-10-13, each at a sandboxd "request
+// approval" for kTCCServiceSystemPolicyAllFiles attributed to the helper).
+// So in "auto" the helper is used only once it can read a file only Full
+// Disk Access opens; until then Pals start directly, as the assistant does.
+
 export const HELPER_APP = "PaloAlly Helper.app";
 const HELPER_EXE = "Contents/MacOS/PaloAllyHelper";
 const HELPER_VERSION = "1";
@@ -87,12 +95,45 @@ export function makeSpawner(helper: string | null, hooks: SpawnHooks): Spawner {
   };
 }
 
+/** A file only Full Disk Access can read (macOS keeps it for every user). */
+export const FDA_PROBE = join(homedir(), "Library/Application Support/com.apple.TCC/TCC.db");
+
+/**
+ * Whether the helper holds Full Disk Access: it reads one byte of FDA_PROBE
+ * through itself. A probe macOS holds is killed after `timeoutMs` and counts
+ * as no.
+ */
+export function helperHasFullDiskAccess(exe: string, timeoutMs = 3_000, probe = FDA_PROBE): Promise<boolean> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (ok: boolean) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(ok);
+    };
+    const p = spawn(exe, ["--", "/usr/bin/head", "-c", "1", probe], { stdio: "ignore" });
+    const timer = setTimeout(() => {
+      try {
+        p.kill("SIGKILL");
+      } catch {
+        /* gone */
+      }
+      finish(false);
+    }, timeoutMs);
+    p.on("error", () => finish(false));
+    p.on("exit", (code) => finish(code === 0));
+  });
+}
+
 export interface LauncherOptions {
   root: string;
   helperApp?: () => string | undefined; // config.pals.helperApp
   mode?: () => "auto" | "helper" | "direct"; // config.pals.launch
   env?: () => Promise<Record<string, string>>; // default: the owner's login shell
   find?: (candidates: string[]) => string | null;
+  /** Whether the helper holds Full Disk Access (tests fake it). */
+  fda?: (exe: string) => Promise<boolean>;
   log?: (s: string) => void;
 }
 
@@ -102,6 +143,7 @@ export interface LauncherOptions {
 export class PalLauncher {
   private found: { at: number; exe: string | null } | null = null;
   private broken: string | null = null;
+  private access: { at: number; exe: string; ok: boolean } | null = null;
 
   constructor(private o: LauncherOptions) {}
 
@@ -116,9 +158,26 @@ export class PalLauncher {
     return this.found.exe;
   }
 
-  /** Whether Pals start through the helper now. */
+  /** Whether Pals start through the helper now (as of the last check of its access). */
   get usesHelper(): boolean {
-    return !!this.helperExe();
+    const exe = this.helperExe();
+    if (!exe) return false;
+    if ((this.o.mode?.() ?? "auto") === "helper") return true;
+    return !!this.access && this.access.exe === exe && this.access.ok;
+  }
+
+  /** The helper to start through, if it may be used: in "auto", only with Full Disk Access (checked again every minute). */
+  private async usableHelper(): Promise<string | null> {
+    const exe = this.helperExe();
+    if (!exe || (this.o.mode?.() ?? "auto") === "helper") return exe;
+    if (!this.access || this.access.exe !== exe || Date.now() - this.access.at > 60_000) {
+      const ok = await (this.o.fda ?? helperHasFullDiskAccess)(exe).catch(() => false);
+      if (ok !== this.access?.ok) {
+        this.o.log?.(ok ? "PaloAlly Helper has Full Disk Access: Pals start through it" : "PaloAlly Helper has no Full Disk Access yet: Pals start directly");
+      }
+      this.access = { at: Date.now(), exe, ok };
+    }
+    return this.access.ok ? exe : null;
   }
 
   /** The helper itself failed (not Claude Code): start directly from now on. */
@@ -129,7 +188,7 @@ export class PalLauncher {
   }
 
   async launch(): Promise<PalLaunch> {
-    return { helper: this.helperExe(), env: await (this.o.env ?? loginEnv)() };
+    return { helper: await this.usableHelper(), env: await (this.o.env ?? loginEnv)() };
   }
 }
 

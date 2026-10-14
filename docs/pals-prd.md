@@ -200,3 +200,9 @@ Palo 提议，你点头，主机新开一个会话，第一条消息是 Palo 写
   - 点「接管」：`helper.decide` 返回 `{pal}`，卡片变成 adopted、带 `palId`；再点一次返回同一个 Pal。
   - 接不成（resume 失败、满 5 个、这时在终端里开着）：返回 `{}`，卡片变成 failed、`note` 写原因；可以再点「接管」重试。在终端里开着的不会等它退出（那种在 Pals 列表里点「接管」）。
   - 点「不用」：返回 `{}`，卡片变成 discarded。
+
+## 11. 小助手没有完全磁盘访问时直接启动（2026-10-13）
+
+实测根因：经 PaloAlly Helper 启动的 Claude Code 一碰到受保护的文件，macOS 就把这次访问挂起，转给 sandboxd 去问 tccd。Helper 没有完全磁盘访问，tccd 30 毫秒内拒了，但进程从此不再动：CPU 为 0，不理 SIGTERM，连接也被服务器关掉。10:57、12:48、17:45 三次卡死，每次都精确对上一条 kTCCServiceSystemPolicyAllFiles 的 approval 请求，责任方都是 dev.paloally.helper。
+
+做法：`pals.launch` 为 "auto" 时，主机启动 Pal 前先经 Helper 读一个只有完全磁盘访问才能读的文件（`~/Library/Application Support/com.apple.TCC/TCC.db` 的 1 个字节），3 秒超时，每分钟最多查一次。读得到才经 Helper 启动，否则直接启动，和 Palo 一样。主人给 Helper 开了完全磁盘访问之后，下一个启动的 Pal 自动改经 Helper。
