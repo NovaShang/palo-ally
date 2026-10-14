@@ -23,7 +23,9 @@ import { TaskTracker } from "./tasks.ts";
 import type { Attachment, Channel, ChatMessage, Status, Task, Watch, ReplyTo } from "./types.ts";
 import { MediaStore } from "./media.ts";
 import { BRIEF_TITLE, ensureMorningBrief } from "./brief.ts";
-import { HandoffTracker, claudeConfigDir } from "./handoffs.ts";
+import { HandoffTracker, claudeConfigDir, transcriptPath } from "./handoffs.ts";
+import { readRegistry } from "./ccSessions.ts";
+import { StallWatch, type StallWatchDeps, WATCHDOG_DEFAULTS, apiSockets, diagnoseInto, killHard } from "./stallWatch.ts";
 import { PowerWatcher, type PowerReading, readPower } from "./power.ts";
 import { Updater, type UpdaterDeps } from "./update.ts";
 import { type Usage, UsageLedger } from "./usage.ts";
@@ -49,6 +51,7 @@ export interface HubDeps {
   allies?: Partial<AlliesDeps>; // tests connect hosts in memory and move the clock
   sessions?: Partial<SessionsDeps>; // tests fake the claude CLI, the clock and whether the owner is away
   pals?: Partial<PalsDeps>; // tests fake how Pals start, the registry and the timing
+  stallWatch?: Partial<StallWatchDeps>; // tests drive the watchdog's clock and checks
 }
 
 // Hub assembles the assistant: the main conversation with the harness, the
@@ -77,6 +80,7 @@ export class Hub {
   readonly allies: Allies;
   readonly sessions: Sessions;
   readonly pals: Pals;
+  readonly stallWatch: StallWatch;
   private compactTimer: ReturnType<typeof setInterval> | null = null;
   private readonly info: HarnessInfo;
   private readonly proactive: Proactive;
@@ -305,6 +309,42 @@ export class Hub {
       log: this.log,
       ...deps.pals,
     });
+    // The stall watchdog: the assistant's own process and every Pal's.
+    const claudeDir = deps.sessions?.claudeDir ?? deps.claudeDir ?? claudeConfigDir();
+    const mainTranscript = () => {
+      const sid = this.runtime.data.sessionId;
+      return sid ? transcriptPath(claudeDir, this.paths.home, sid) : undefined;
+    };
+    const mainPid = () => {
+      const sid = this.runtime.data.sessionId;
+      if (!sid) return undefined;
+      try {
+        return readRegistry(`${claudeDir}/sessions`).find((e) => e.sessionId === sid)?.pid;
+      } catch {
+        return undefined;
+      }
+    };
+    this.stallWatch = new StallWatch({
+      targets: () => [
+        this.conversation.stallTarget({
+          name: () => this.config.settings.assistantName || PALO_NAME,
+          pid: mainPid,
+          transcript: mainTranscript,
+          kill: (pid) => killHard(pid),
+        }),
+        ...this.pals.stallTargets(),
+      ],
+      config: () => ({ ...WATCHDOG_DEFAULTS, ...this.config.watchdog }),
+      notify: (text) => {
+        const msg = this.chat.add({ role: "assistant", kind: "notice", text, channel: "system", proactive: true });
+        void this.router.proactive(msg, { title: "自动重启" }).catch(() => {});
+      },
+      audit: (type, data) => this.audit.log(type, data),
+      sockets: apiSockets,
+      diagnose: (pid, name) => diagnoseInto(`${this.paths.logs}/stalls`, pid, name),
+      log: (s) => this.log(s),
+      ...deps.stallWatch,
+    });
     this.suggestions = new SuggestionStore(this.paths.suggestions, this.bus, {
       driver: deps.driver,
       probeModel: () => this.config.probeModel,
@@ -349,6 +389,8 @@ export class Hub {
       this.sessions.start();
       // Every Pal comes back: they stay up so SendMessage always reaches them.
       this.pals.start();
+      // A session stuck mid-work is restarted and resumed, the owner told.
+      this.stallWatch.start();
     }
     this.emitStatus();
   }
@@ -362,6 +404,7 @@ export class Hub {
     this.allies.stop();
     this.sessions.stop();
     this.pals.stop();
+    this.stallWatch.stop();
     if (this.compactTimer) clearInterval(this.compactTimer);
     if (this.suggestionTimer) clearInterval(this.suggestionTimer);
     this.artifacts.stop();

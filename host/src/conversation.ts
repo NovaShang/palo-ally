@@ -12,6 +12,7 @@ import type { HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption,
 import { autoMemoryDir } from "./memory.ts";
 import type { Router } from "./router.ts";
 import type { RuntimeState } from "./runtime.ts";
+import { type StallRecovery, type StallTarget, WATCHDOG_DEFAULTS, transcriptHas } from "./stallWatch.ts";
 import type { TaskTracker } from "./tasks.ts";
 import type { Channel, Task } from "./types.ts";
 import type { UsageLedger } from "./usage.ts";
@@ -37,6 +38,18 @@ const SKIP = /^\s*\[skip\]\s*$/i;
 
 // A turn the harness started by itself is closed if it goes quiet without a result.
 export const timing = { implicitQuietMs: 90_000 };
+
+// What the assistant is told after the watchdog restarted it mid-turn.
+export const STALL_CONTINUE = "（PaloAlly：你的进程刚才卡住了，已经重启并续上。请接着做上一轮没做完的事；已经做完的话，简单说一句就好。）";
+const STALL_CONTINUE_PROACTIVE = "（PaloAlly：你的进程刚才卡住了，已经重启并续上。请接着做上一轮没做完的事；没有要做的就只回 [skip]。）";
+
+/** Where the stall watchdog finds the assistant's process and transcript (the hub knows). */
+export interface MainStallHooks {
+  name: () => string;
+  pid: () => number | undefined;
+  transcript: () => string | undefined;
+  kill: (pid: number | undefined) => Promise<void>;
+}
 
 // Compaction (PRD §6.1): the harness compacts natively; the host only picks an
 // earlier moment than its ~1M default. A clean break means nothing is running
@@ -107,8 +120,10 @@ export class Conversation {
   private turnWaiters: (() => void)[] = [];
   // Every owner message sent to the harness and not yet answered, by uuid.
   // A turn counts as answering the owner only once its result lists the uuid.
-  private pending = new Map<string, OwnerMessage & { sentAt: number }>();
+  private pending = new Map<string, OwnerMessage & { sentAt: number; text: string; images?: ImageInput[] }>();
   private openTools = new Set<string>(); // main-thread tool calls without a result yet
+  private liveTools = new Map<string, string>(); // every tool call without a result yet (subagents' too): id → name
+  private lastEventAt = 0;
   private budgetNoticeDay = "";
   private compactReason: string | null = null; // our /compact turn is queued or running
   // 「只说话不动手」(docs/allies-prd.md §11.1): an Ally's message is in the
@@ -175,7 +190,7 @@ export class Conversation {
       return;
     }
     const uuid = randomUUID();
-    this.pending.set(uuid, { origin, wechat, sentAt: Date.now() });
+    this.pending.set(uuid, { origin, wechat, sentAt: Date.now(), text, ...(images?.length ? { images } : {}) });
     if (!this.current) this.beginTurn({ text, origin, proactive: false, wechat, uuids: [uuid] });
     this.ensureSession().send(text, uuid, images);
   }
@@ -212,8 +227,10 @@ export class Conversation {
 
   // Owner messages the harness never answered (e.g. lost in a crash) stop
   // blocking proactive turns after a while.
+  // (Not before the stall watchdog has had its chance to resend them.)
   private expirePending(): void {
-    const cutoff = Date.now() - 10 * 60_000;
+    const stall = this.d.config().watchdog?.stallMinutes ?? WATCHDOG_DEFAULTS.stallMinutes;
+    const cutoff = Date.now() - Math.max(10, 2 * stall) * 60_000;
     for (const [u, p] of this.pending) if (p.sentAt < cutoff && !this.current?.uuids?.includes(u)) this.pending.delete(u);
   }
 
@@ -298,6 +315,9 @@ export class Conversation {
   // ---------------- harness events ----------------
 
   onHarnessEvent(e: HarnessEvent): void {
+    this.lastEventAt = Date.now();
+    if (e.type === "tool_use") this.liveTools.set(e.id, e.name);
+    else if (e.type === "tool_result") this.liveTools.delete(e.toolUseId);
     // The harness names the owner messages a turn answers on its first frames:
     // start that turn with exactly those, instead of guessing.
     if (e.type === "answering" && !this.current) {
@@ -416,6 +436,7 @@ export class Conversation {
         this.session?.close();
         this.session = null;
         this.pending.clear();
+        this.liveTools.clear();
         // The Ally's message died with the process; the owner's held words didn't.
         if (this.allyGate) this.endAllyGate("harness error");
         if (this.current) this.endTurn(0, this.lastContextTokens, e.message);
@@ -556,6 +577,7 @@ export class Conversation {
       this.deltaText = "";
     }
     this.openTools.clear();
+    this.liveTools.clear();
     this.d.usage.add("mainUsd", costUsd);
     if (turn?.maintenance) {
       // A /compact turn: its own result says nothing about the context (the
@@ -670,6 +692,87 @@ export class Conversation {
       this.session = null;
       this.d.metric({ type: "idle_close", contextTokens: this.lastContextTokens });
     }
+  }
+
+  // ---------------- the stall watchdog ----------------
+
+  /** What the stall watchdog watches (stallWatch.ts): the assistant's own process. */
+  stallTarget(h: MainStallHooks): StallTarget {
+    return {
+      key: "main",
+      get name() {
+        return h.name();
+      },
+      busy: () => !!this.session && !this.session.closed && (!!this.current || this.pending.size > 0),
+      waiting: () => this.waitingOnOwner(),
+      openTools: () => [...this.liveTools.values()],
+      lastActivity: () => Math.max(this.lastEventAt, this.session?.lastActivity ?? 0),
+      pid: () => h.pid(),
+      transcript: () => h.transcript(),
+      recover: () => this.recoverStall(h),
+    };
+  }
+
+  /**
+   * The process froze mid-work: it's ended (killed if it must be) and the
+   * next one resumes the same session. The owner's words it never took go in
+   * again; a turn it was in is asked to go on, as the same kind of turn. An
+   * Ally's turn isn't: its message died with the process, as after a crash.
+   */
+  async recoverStall(h: Pick<MainStallHooks, "pid" | "transcript" | "kill">): Promise<StallRecovery> {
+    const pid = h.pid();
+    const turn = this.current;
+    const gate = this.allyGate;
+    const session = this.session;
+    this.session = null;
+    session?.close();
+    await h.kill(pid);
+    // Nothing writes the transcript now: what's in it was taken.
+    const path = h.transcript();
+    const sent = [...this.pending];
+    const untaken = sent.filter(([uuid]) => !transcriptHas(path, uuid));
+    const taken = sent.filter(([uuid]) => !untaken.some(([u]) => u === uuid)).map(([, p]) => p);
+    this.pending.clear();
+    if (gate) {
+      this.allyGate = null;
+      if (this.gateTimer) clearTimeout(this.gateTimer);
+      this.gateTimer = null;
+      this.d.audit.log("ally.turn.end", { allyId: gate.allyId, why: "stalled", held: this.held.length });
+    }
+    this.d.log(`main session stalled; resuming it (${untaken.length} message(s) to send again)`);
+    // The turn it was in (or the one it had just taken the owner's words for) goes on first.
+    const resumeAs: Pick<Turn, "origin" | "proactive" | "wechat" | "watchId"> | null =
+      untaken.length || gate || turn?.maintenance ? null : (turn ?? (taken.length ? { origin: taken[0]!.origin, proactive: false, wechat: taken[0]!.wechat } : null));
+    if (resumeAs) {
+      this.queue.unshift({
+        text: resumeAs.proactive ? STALL_CONTINUE_PROACTIVE : STALL_CONTINUE,
+        origin: resumeAs.origin,
+        proactive: resumeAs.proactive,
+        wechat: resumeAs.wechat,
+        label: "resume",
+        ...(resumeAs.watchId ? { watchId: resumeAs.watchId } : {}),
+      });
+    }
+    const now = Date.now();
+    for (const [uuid, p] of untaken) this.pending.set(uuid, { ...p, sentAt: now });
+    if (turn) this.endTurn(0, this.lastContextTokens);
+    if (untaken.length) {
+      if (!this.current) {
+        this.beginTurn({
+          text: "",
+          origin: untaken[0]![1].origin,
+          proactive: false,
+          wechat: untaken.map(([, p]) => p.wechat).find(Boolean),
+          uuids: untaken.map(([u]) => u),
+        });
+      }
+      for (const [uuid, p] of untaken) this.ensureSession().send(p.text, uuid, p.images);
+    }
+    // The owner's words held for the Ally's turn go now, each as it would have.
+    for (const m of this.held.splice(0)) this.sendOwner(m.text, m.origin, m.wechat, m.images);
+    this.pump();
+    this.d.statusChanged();
+    return { resent: untaken.length, continued: !!resumeAs };
   }
 
   // ---------------- stop ----------------

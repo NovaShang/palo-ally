@@ -18,6 +18,7 @@ import { HeldElsewhere, type Holder, type PalRecord, PalSession } from "./palSes
 import type { QuestionManager } from "./questions.ts";
 import type { Router } from "./router.ts";
 import type { Sessions } from "./sessions.ts";
+import type { StallTarget } from "./stallWatch.ts";
 import type { ChatMessage, HelperProposal, Pal, PalAdoptProposal, RecentSession } from "./types.ts";
 import { newId, readJson, writeJson, zonedParts } from "./util.ts";
 
@@ -313,6 +314,11 @@ export class Pals {
       if (e instanceof HeldElsewhere) pal.stopFor("elsewhere", msg);
       else pal.stopFor("failed", `没能接着跑：${msg}`);
     }
+  }
+
+  /** What the stall watchdog watches: every Pal. */
+  stallTargets(): StallTarget[] {
+    return [...this.pals.values()].map((p) => p.stallTarget());
   }
 
   /** Nothing in flight in any Pal (safe to restart the host). */

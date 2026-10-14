@@ -174,6 +174,9 @@ export interface MainSession {
   ready(): Promise<void>;
   close(): void;
   readonly closed: boolean;
+  // When the process last said anything on its SDK stream (any message, ms):
+  // the stall watchdog's sign of life.
+  readonly lastActivity?: number;
 }
 
 export interface ProbeRequest {

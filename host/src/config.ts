@@ -133,6 +133,11 @@ export interface Config {
   // apply), else directly; helperApp: where the helper is, if not in
   // ~/Applications or /Applications.
   pals: { launch: "auto" | "direct"; helperApp?: string };
+  // The stall watchdog (stallWatch.ts): a session with work in it that shows
+  // no progress for stallMinutes (toolMinutes while a tool call like a long
+  // Bash runs) is killed and resumed, the owner told; at most
+  // maxRestartsPerHour per session, then the owner is told instead.
+  watchdog: { enabled: boolean; stallMinutes: number; toolMinutes: number; maxRestartsPerHour: number };
   // extra environment for the harness, e.g. ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN for third-party models
   env?: Record<string, string>;
   settings: Settings;
@@ -161,6 +166,7 @@ export function defaultConfig(): Config {
     },
     extraMcpServers: {},
     pals: { launch: "auto" },
+    watchdog: { enabled: true, stallMinutes: 10, toolMinutes: 60, maxRestartsPerHour: 3 },
     settings: {
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Los_Angeles",
       quietHours: { start: "23:00", end: "08:00" },

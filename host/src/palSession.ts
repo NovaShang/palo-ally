@@ -8,6 +8,7 @@ import type { HarnessDriver, HarnessEvent, MainSession, PermissionDecision, Perm
 import { type PalLaunch, isHelperFailure, makeSpawner } from "./palLauncher.ts";
 import { type PalMapOptions, TranscriptFollower, transcriptLastLine, transcriptModel, userEntryMessage } from "./palHistory.ts";
 import { ASK_TOOL, type QuestionManager } from "./questions.ts";
+import { type StallRecovery, type StallTarget, transcriptHas } from "./stallWatch.ts";
 import type { CardSource, ChatMessage, Pal, PalStatus } from "./types.ts";
 import { newId, truncate } from "./util.ts";
 
@@ -79,6 +80,9 @@ const MAX_FAILURES = 5; // restarts within FAILURE_WINDOW_MS before it stays sto
 const FAILURE_WINDOW_MS = 10 * 60_000;
 const STOP_SETTLE_MS = 250; // a stopped turn not ended by Claude Code by then is ended here
 
+/** What a Pal is told after the watchdog restarted it mid-turn. */
+export const STALL_CONTINUE = "（PaloAlly：你的进程刚才卡住了，已经重启并续上。请接着做上一轮没做完的事；已经做完的话，简单说一句就好。）";
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export class PalSession {
@@ -93,6 +97,9 @@ export class PalSession {
   private failures: number[] = [];
   private turnOpen = false;
   private pendingUuids = new Set<string>();
+  private pendingText = new Map<string, { text: string; from?: string }>(); // the owner's words not yet taken, by uuid
+  private openTools = new Map<string, string>(); // tool calls without a result yet (subagents' too): id → name
+  private lastEventAt = 0;
   private interrupted = false;
   private windingDown = false; // ended here after 停止: what's left of that turn doesn't make it busy again
   private turnEndWaiters: (() => void)[] = [];
@@ -359,6 +366,8 @@ export class PalSession {
     const wasBusy = this.busy;
     this.turnOpen = false;
     this.pendingUuids.clear();
+    this.pendingText.clear();
+    this.openTools.clear();
     this.activity = "";
     this.windingDown = false;
     for (const w of this.turnEndWaiters.splice(0)) w();
@@ -420,6 +429,53 @@ export class PalSession {
     return this.streamId && this.streamText ? { id: this.streamId, text: this.streamText } : null;
   }
 
+  // ---------------- the stall watchdog ----------------
+
+  /** What the stall watchdog watches (stallWatch.ts). */
+  stallTarget(): StallTarget {
+    return {
+      key: this.rec.id,
+      name: this.rec.name,
+      busy: () => this.running && this.busy,
+      waiting: () => this.pendingCards() > 0,
+      openTools: () => [...this.openTools.values()],
+      lastActivity: () => Math.max(this.lastEventAt, this.proc?.lastActivity ?? 0),
+      pid: () => this.pid,
+      transcript: () => this.transcript,
+      recover: () => this.recoverStall(),
+    };
+  }
+
+  /**
+   * Its process froze mid-work: it's ended (killed if it must be) and the
+   * same session resumes. The owner's words it never took go in again (same
+   * ids, so the app shows them once); a turn it was in is asked to go on.
+   */
+  async recoverStall(): Promise<StallRecovery> {
+    const inTurn = this.turnOpen || this.pendingUuids.size > 0;
+    const pending = [...this.pendingText];
+    await this.shutdown();
+    // Nothing writes its transcript now: what's in it was taken.
+    const untaken = pending.filter(([uuid]) => !transcriptHas(this.transcript, uuid));
+    this.d.log(`pal ${this.rec.name}: stalled; resuming it (${untaken.length} message(s) to send again)`);
+    await this.start();
+    const proc = this.proc;
+    if (!proc || !this.up) throw new Error(`「${this.rec.name}」没能重新起来`);
+    this.notice("刚才卡住了，PaloAlly 已经自动重启它并续上。");
+    for (const [uuid, p] of untaken) {
+      this.pendingUuids.add(uuid);
+      this.pendingText.set(uuid, p);
+      proc.send(p.text, uuid);
+    }
+    let continued = false;
+    if (!untaken.length && inTurn) {
+      await this.send(STALL_CONTINUE, { from: "PaloAlly" });
+      continued = true;
+    }
+    this.touch();
+    return { resent: untaken.length, continued };
+  }
+
   // ---------------- the owner's words ----------------
 
   /** The owner's words (or the assistant's handover, `from`), into the session as typed. */
@@ -453,6 +509,7 @@ export class PalSession {
     this.emitted.add(uuid);
     this.d.emit("chat.message", msg);
     this.pendingUuids.add(uuid);
+    this.pendingText.set(uuid, { text: t, ...(o.from ? { from: o.from } : {}) });
     this.rec.lastUsedAt = ts;
     this.d.save();
     proc.send(t, uuid);
@@ -504,6 +561,7 @@ export class PalSession {
     this.closeStream();
     this.turnOpen = false;
     this.pendingUuids.clear();
+    this.pendingText.clear();
     this.interrupted = false;
     this.activity = "";
     for (const w of this.turnEndWaiters.splice(0)) w();
@@ -527,6 +585,7 @@ export class PalSession {
   }
 
   private onEvent(e: HarnessEvent): void {
+    this.lastEventAt = this.d.now();
     switch (e.type) {
       case "init":
         if (e.model && e.model !== this.model) {
@@ -571,8 +630,12 @@ export class PalSession {
         this.touch();
         break;
       }
+      case "tool_result":
+        this.openTools.delete(e.toolUseId);
+        break;
       case "tool_start":
       case "tool_use":
+        if (e.type === "tool_use") this.openTools.set(e.id, e.name);
         if (e.parentToolUseId) break;
         this.beginTurn();
         this.setActivity(describeActivity(e.name));
@@ -580,7 +643,10 @@ export class PalSession {
       case "result": {
         const stopped = this.interrupted || this.windingDown; // its error is the stop, not news
         this.windingDown = false;
-        for (const u of e.consumedUuids ?? [...this.pendingUuids]) this.pendingUuids.delete(u);
+        for (const u of e.consumedUuids ?? [...this.pendingUuids]) {
+          this.pendingUuids.delete(u);
+          this.pendingText.delete(u);
+        }
         if (e.isError && !stopped && !e.startupFailure) this.notice(friendlyError(e.text, e.errorCategory));
         this.rec.lastUsedAt = this.d.now();
         if (this.pendingUuids.size) {

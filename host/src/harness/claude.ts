@@ -427,6 +427,7 @@ class ClaudeMainSession implements MainSession {
   private closing = false; // close() was called: an exit is ours, not a crash
   private readyPromise: Promise<void> | null = null;
   closed = false;
+  lastActivity = 0;
 
   constructor(private opts: AnySessionOptions) {
     const main = !!opts.tools; // the assistant's own session (a Pal has none of PaloAlly's tools)
@@ -460,6 +461,7 @@ class ClaudeMainSession implements MainSession {
     let error: string | undefined;
     try {
       for await (const msg of this.q) {
+        this.lastActivity = Date.now();
         for (const e of mapMessage(msg, state)) opts.onEvent(e);
       }
     } catch (e) {
