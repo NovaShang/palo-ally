@@ -28,6 +28,11 @@ enum ChatScroll {
             viewport = g.visibleRect.height
             width = g.visibleRect.width
         }
+
+        var reading: ChatScrollMachine.Reading {
+            .init(offsetY: offsetY, contentHeight: contentHeight, width: width, viewport: viewport,
+                  insetTop: insetTop, bottomInset: bottomInset)
+        }
     }
 
     /// The latest distance from the end (for the logs).

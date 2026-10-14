@@ -119,6 +119,9 @@ final class ChatScrollCoordinator {
     /// A correction asked for and not yet seen in the geometry, and when.
     @ObservationIgnored private var pendingY: CGFloat?
     @ObservationIgnored private var pendingSince: TimeInterval = 0
+    /// Until when a scroll of ours may still be moving the list (see
+    /// `ours(animated:)`): the list moving then isn't the reader.
+    @ObservationIgnored private var oursUntil: TimeInterval = 0
     // The row being read (while detached).
     @ObservationIgnored private var holding = false
     @ObservationIgnored private var topID: String?
@@ -148,6 +151,15 @@ final class ChatScrollCoordinator {
     /// When this pan began and where the finger came down (window points).
     @ObservationIgnored private var panStart: (at: CFTimeInterval, y: CGFloat)?
     @ObservationIgnored private var panWatcher: PanWatcher?
+    /// A mouse wheel or a trackpad can scroll the list: on a Mac or an iPad,
+    /// never on an iPhone (which then works exactly as without them).
+    static let hasScrollInput = UIDevice.current.userInterfaceIdiom != .phone
+    /// Sees the scroll view's wheel and trackpad scrolls (`ScrollInputWatcher`).
+    @ObservationIgnored private var scrollInput: ScrollInputWatcher?
+    /// When a wheel or trackpad last scrolled the list, and when the list
+    /// last moved by it (a trackpad's scroll coasts on after its last event).
+    @ObservationIgnored private var lastScrollInput: TimeInterval = -.infinity
+    @ObservationIgnored private var lastIndirectMove: TimeInterval = -.infinity
     @ObservationIgnored private var widthSettle: Task<Void, Never>?
     @ObservationIgnored private var insetSettle: Task<Void, Never>?
 
@@ -182,6 +194,12 @@ final class ChatScrollCoordinator {
             }
             scrollView.panGestureRecognizer.addTarget(watcher, action: #selector(PanWatcher.panned(_:)))
             panWatcher = watcher
+            if let old = scrollInput { old.view?.removeGestureRecognizer(old) }
+            if Self.hasScrollInput {
+                let input = ScrollInputWatcher { [weak self] in self?.lastScrollInput = ProcessInfo.processInfo.systemUptime }
+                scrollView.addGestureRecognizer(input)
+                scrollInput = input
+            }
         }
         self.scrollView = scrollView
         #if DEBUG
@@ -373,6 +391,7 @@ final class ChatScrollCoordinator {
         guard machine.gliding, machine.mode == .following, !machine.phase.isUser, let sv = scrollView else { return }
         let end = sv.contentSize.height + sv.adjustedContentInset.bottom - sv.bounds.height
         guard end > sv.contentOffset.y + 0.5 else { return }
+        ours(animated: false)
         sv.setContentOffset(CGPoint(x: sv.contentOffset.x, y: end), animated: false)
     }
 
@@ -400,6 +419,7 @@ final class ChatScrollCoordinator {
     /// True when the change may animate (no correction follows it).
     func resizing(_ id: String, folding: Bool) -> Bool {
         send(.resizing)
+        ours(animated: true)
         // The end the position may still name would be applied again as
         // the content changes size.
         release()
@@ -487,6 +507,7 @@ final class ChatScrollCoordinator {
     func tour(_ ids: [String]) async {
         let laidOut = store.map { s in Set(s.messages[window(in: s.messages)].map(\.id)) } ?? []
         for id in ids.reversed() where laidOut.contains(id) {
+            ours(animated: false)
             position?.wrappedValue.scrollTo(id: id, anchor: .top)
             try? await Task.sleep(for: .milliseconds(40))
         }
@@ -707,9 +728,13 @@ final class ChatScrollCoordinator {
         #if DEBUG
         defer { probeHeldRow(); probeTurn() }
         #endif
+        // The reader scrolling with no finger (a mouse wheel on a Mac): no
+        // phase or finger says so, only the list moving on its own.
+        let indirect = isIndirectScroll(old, new)
         if let want = pendingY, abs(new.offsetY - old.offsetY) > 0.5 {
-            // Learn how `scrollTo(y:)` maps to the offset (a sane answer only).
-            if abs(want - new.offsetY - new.insetTop) < 200 { yBias = want - new.offsetY }
+            // Learn how `scrollTo(y:)` maps to the offset (a sane answer only;
+            // not from the reader's wheel, after a correction that never moved).
+            if !indirect, abs(want - new.offsetY - new.insetTop) < 200 { yBias = want - new.offsetY }
             pendingY = nil
         }
         // Following, SwiftUI's bottom anchor moves its offset to keep the end
@@ -728,7 +753,7 @@ final class ChatScrollCoordinator {
             #endif
             sv.contentOffset.y = new.offsetY
         }
-        send(.scrolled(distance: new.distanceFromBottom))
+        send(indirect ? .indirectScroll(distance: new.distanceFromBottom) : .scrolled(distance: new.distanceFromBottom))
         checkGlideKeepsUp(new.distanceFromBottom)
         // The reader's finger: how far it has moved on the screen. Without
         // the UIKit view (it should always be there), the list's own move.
@@ -738,7 +763,13 @@ final class ChatScrollCoordinator {
                 // the pan's own translation gets adjusted when the list is
                 // moved under it.
                 let pan = sv.panGestureRecognizer
-                if pan.state == .began || pan.state == .changed {
+                if Self.hasScrollInput, pan.state == .began || pan.state == .changed, pan.numberOfTouches == 0 {
+                    // A trackpad (a Mac's, an iPad's): no finger on the
+                    // screen, and the pointer stays where it is. The list's
+                    // own move is the reader's (not while it grows).
+                    if abs(new.contentHeight - old.contentHeight) < 0.5 { fallbackDrag -= new.offsetY - old.offsetY }
+                    send(.finger(fallbackDrag))
+                } else if pan.state == .began || pan.state == .changed {
                     let y = pan.location(in: nil).y
                     if fingerStart == nil { fingerStart = y - pan.translation(in: sv).y }
                     send(.finger(y - (fingerStart ?? y)))
@@ -757,8 +788,11 @@ final class ChatScrollCoordinator {
         }
         #endif
         // Anything moving the list while it rests (a rotation, insets
-        // changing): the held row back where it belongs.
-        if holding, !machine.phase.isUser { holdRow(fromRow: false) }
+        // changing): the held row back where it belongs. Unless that was
+        // the reader: the row under the top now is the one to hold.
+        if holding, !machine.phase.isUser {
+            if indirect { takeHeldRow() } else { holdRow(fromRow: false) }
+        }
         // The keyboard rising (not the composer's first layout): once it has
         // risen. Its animation, or the hold-to-talk capsule, change the inset
         // every frame, and a scroll to the end per frame piled up animations
@@ -852,6 +886,7 @@ final class ChatScrollCoordinator {
         }
         pendingY = target
         pendingSince = t
+        ours(animated: false)
         position.wrappedValue.scrollTo(y: target)
         #if DEBUG
         if ChatScroll.pinTraceOn {
@@ -909,15 +944,18 @@ final class ChatScrollCoordinator {
             guard let m = metrics, let position, windowHi == nil else { return toEnd(animated: false) }
             let end = m.contentHeight + m.bottomInset - m.viewport
             release()
+            ours(animated: false)
             position.wrappedValue.scrollTo(y: max(0, end - m.viewport) + (yBias ?? m.insetTop))
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(32))
                 guard machine.mode == .returning, !machine.phase.isUser else { return }
+                ours(animated: true)
                 withAnimation(.snappy(duration: 0.3)) { position.wrappedValue.scrollTo(edge: .bottom) }
             }
         case .loadLatestThenEnd:
             Task { @MainActor in
                 await store?.returnToLatest()
+                ours(animated: false)
                 position?.wrappedValue.scrollTo(edge: .bottom)
             }
         case .center(let id):
@@ -926,6 +964,7 @@ final class ChatScrollCoordinator {
                 // isn't there goes nowhere).
                 if layOut(id) { await awaitRow(id) }
                 release()
+                ours(animated: true)
                 withAnimation(.snappy) { position?.wrappedValue.scrollTo(id: id, anchor: .center) }
             }
         case .holdTopRow(let on):
@@ -998,6 +1037,7 @@ final class ChatScrollCoordinator {
         }
         let animated = animated && ProcessInfo.processInfo.systemUptime >= instantUntil
         let go = {
+            self.ours(animated: animated)
             if animated {
                 withAnimation(.snappy) { position.wrappedValue.scrollTo(edge: .bottom) }
             } else {
@@ -1014,6 +1054,32 @@ final class ChatScrollCoordinator {
             toEndPending = false
             go()
         }
+    }
+
+    /// A scroll of ours is about to move the list: until it has (an animated
+    /// one takes about half a second, and a little more to settle), the
+    /// list moving isn't the reader.
+    private func ours(animated: Bool) {
+        let until = ProcessInfo.processInfo.systemUptime + (animated ? 0.8 : 0.2)
+        if until > oursUntil { oursUntil = until }
+    }
+
+    /// The list moved from `old` to `new` because the reader scrolled with
+    /// a mouse wheel or a trackpad (on a Mac these come with no scroll phase
+    /// of the reader's, or none SwiftUI reports): one was used in the last
+    /// half second, or the list is still coasting from it, frame after
+    /// frame. Read before `pendingY` is cleared.
+    private func isIndirectScroll(_ old: ChatScroll.Metrics, _ new: ChatScroll.Metrics) -> Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        let input = now - lastScrollInput < 0.5 || now - lastIndirectMove < 0.05
+        let oursOnItsWay = now < oursUntil || (pendingY != nil && now - pendingSince < 0.5) || machine.mode == .returning
+        let indirect = ChatScrollMachine.isIndirectScroll(from: old.reading, to: new.reading, scrollInput: input,
+                                                          oursOnItsWay: oursOnItsWay, phase: machine.phase)
+        if indirect { lastIndirectMove = now }
+        #if DEBUG
+        if indirect { ChatScroll.pinTrace("wheel or trackpad: by \(Int(new.offsetY - old.offsetY)), \(Int(new.distanceFromBottom)) pt from the end") }
+        #endif
+        return indirect
     }
 
     /// The scroll position without a target: nothing for the scroll view to
@@ -1042,6 +1108,32 @@ private final class PanWatcher: NSObject {
     let changed: (UIPanGestureRecognizer) -> Void
     init(_ changed: @escaping (UIPanGestureRecognizer) -> Void) { self.changed = changed }
     @objc func panned(_ pan: UIPanGestureRecognizer) { changed(pan) }
+}
+
+/// Sees a mouse wheel's or a trackpad's scrolls over the list, alongside the
+/// scroll view's own pan gesture (it never takes a touch, so on an iPhone it
+/// never fires). The list moving then is the reader's doing.
+@MainActor
+private final class ScrollInputWatcher: UIPanGestureRecognizer, UIGestureRecognizerDelegate {
+    private let used: () -> Void
+
+    init(_ used: @escaping () -> Void) {
+        self.used = used
+        super.init(target: nil, action: nil)
+        addTarget(self, action: #selector(scrolled))
+        allowedScrollTypesMask = .all
+        allowedTouchTypes = []
+        cancelsTouchesInView = false
+        delaysTouchesBegan = false
+        delaysTouchesEnded = false
+        delegate = self
+    }
+
+    @objc private func scrolled() { used() }
+
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        true
+    }
 }
 
 /// Finds the UIKit scroll view a SwiftUI ScrollView is backed by, from a view

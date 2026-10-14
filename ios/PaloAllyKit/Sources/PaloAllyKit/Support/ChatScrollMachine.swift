@@ -43,6 +43,11 @@ public struct ChatScrollMachine: Equatable, Sendable {
         /// The finger left the screen moving at this speed (points a second,
         /// positive: down, flinging older messages into view).
         case lifted(velocity: CGFloat)
+        /// The reader scrolled with no finger on the screen (a mouse wheel
+        /// or a trackpad on a Mac; see `isIndirectScroll`). `distance` from
+        /// the end now. These come with no scroll phase of the reader's (or
+        /// none SwiftUI reports), so `.finger` and `.lifted` never come.
+        case indirectScroll(distance: CGFloat)
         /// A message, or more of one, arrived at the end.
         case grewBelow
         /// The keyboard (or a taller composer) took room at the bottom.
@@ -187,6 +192,28 @@ public struct ChatScrollMachine: Equatable, Sendable {
             detachedThisTouch = true
             return detach("fling")
 
+        case .indirectScroll(let d):
+            let before = distance
+            distance = d
+            guard !phase.isUser else { return [] }
+            switch mode {
+            case .following:
+                // Away from the end, as far as a drag that lets go: let go.
+                // (Toward it, the view is on its way back.)
+                guard d > before, d >= Self.detachDrag else { return [] }
+                return detach("scrolled without a finger")
+            case .detached:
+                // Back near the end: following it again, from on it.
+                guard d < before, d <= Self.reattachDistance else { return [] }
+                mode = .following
+                unseenBelow = false
+                var fx: [Effect] = [.log("detached → following (scrolled back to the end)"), .holdTopRow(false)]
+                if d > Self.atEnd { fx.append(.toEnd(animated: true)) }
+                return fx
+            case .returning:
+                return []
+            }
+
         case .grewBelow:
             if mode == .detached, !nearEnd, !unseenBelow { unseenBelow = true }
             // Following but a little off the end (a landing that fell short):
@@ -264,6 +291,44 @@ public struct ChatScrollMachine: Equatable, Sendable {
             unseenBelow = false
             return [.log("detached → following (resized on the end)"), .holdTopRow(false)]
         }
+    }
+
+    /// One reading of the scroll geometry, for `isIndirectScroll`.
+    public struct Reading: Equatable, Sendable {
+        public var offsetY: CGFloat
+        public var contentHeight: CGFloat
+        public var width: CGFloat
+        public var viewport: CGFloat
+        public var insetTop: CGFloat
+        public var bottomInset: CGFloat
+
+        public init(offsetY: CGFloat, contentHeight: CGFloat, width: CGFloat, viewport: CGFloat,
+                    insetTop: CGFloat, bottomInset: CGFloat) {
+            self.offsetY = offsetY
+            self.contentHeight = contentHeight
+            self.width = width
+            self.viewport = viewport
+            self.insetTop = insetTop
+            self.bottomInset = bottomInset
+        }
+    }
+
+    /// Whether the list moving from `old` to `new` is the reader scrolling
+    /// with no finger (`.indirectScroll`): a wheel or a trackpad was just
+    /// used (`scrollInput`), the list moved, nothing changed size (growth,
+    /// a rotation, the keyboard: the system and the bottom anchor move the
+    /// list for those), no scroll of ours is on its way, and no finger is
+    /// on the list (its scrolls are read from the finger). Without the
+    /// input, a move is never the reader's: SwiftUI applies a scroll
+    /// position again, or moves the list a frame after a size change, on
+    /// its own (on an iPhone that's all there is).
+    public static func isIndirectScroll(from old: Reading, to new: Reading, scrollInput: Bool, oursOnItsWay: Bool,
+                                        phase: Phase) -> Bool {
+        guard scrollInput, !phase.isUser, !oursOnItsWay, abs(new.offsetY - old.offsetY) > 0.5 else { return false }
+        func same(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) < 0.5 }
+        return same(new.contentHeight, old.contentHeight) && same(new.width, old.width)
+            && same(new.viewport, old.viewport) && same(new.insetTop, old.insetTop)
+            && same(new.bottomInset, old.bottomInset)
     }
 
     private mutating func detach(_ why: String) -> [Effect] {

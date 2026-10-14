@@ -158,6 +158,128 @@ struct ChatScrollMachineTests {
         #expect(n.reduce(.phase(.idle)) == [])
     }
 
+    // MARK: scrolling with no finger (a mouse wheel, a trackpad)
+
+    /// A wheel's steps: the list moves with no scroll phase of the reader's.
+    func wheel(_ m: inout M, to distances: [CGFloat]) -> [M.Effect] {
+        distances.flatMap { m.reduce(.indirectScroll(distance: $0)) }
+    }
+
+    @Test func wheelUpFromTheEndLetsGo() {
+        var m = machine(.following)
+        #expect(wheel(&m, to: [4]) == [])
+        #expect(m.mode == .following)
+        #expect(wheel(&m, to: [40, 120]) == [.log("following → detached (scrolled without a finger)"), .holdTopRow(true)])
+        #expect(m.mode == .detached)
+        #expect(m.showsJump)
+        // Further up: nothing moves it back.
+        #expect(wheel(&m, to: [400, 900]) == [])
+        #expect(m.mode == .detached)
+        // Resting there, idle: nothing either.
+        #expect(m.reduce(.scrolled(distance: 900)) == [])
+        #expect(m.reduce(.grewBelow) == [])
+        #expect(m.mode == .detached)
+    }
+
+    /// Mid-glide (a reply streaming in) the view is a little off the end on
+    /// its way down: a wheel up from there lets go too.
+    @Test func wheelUpWhileAReplyGlidesInLetsGo() {
+        var m = machine(.following)
+        _ = m.reduce(.gliding(true))
+        _ = m.reduce(.scrolled(distance: 60))
+        // The anchor gliding down is not the reader.
+        #expect(wheel(&m, to: [30, 10]) == [])
+        #expect(m.mode == .following)
+        #expect(wheel(&m, to: [70]).first == .log("following → detached (scrolled without a finger)"))
+        #expect(m.mode == .detached)
+        // Over: it doesn't pull the view back.
+        #expect(m.reduce(.gliding(false)) == [])
+    }
+
+    @Test func wheelBackDownToTheEndFollowsAgain() {
+        var m = machine(.following)
+        _ = wheel(&m, to: [100, 600])
+        #expect(m.mode == .detached)
+        #expect(wheel(&m, to: [300]) == [])
+        #expect(m.mode == .detached)
+        // On the end: following, nothing to scroll.
+        #expect(wheel(&m, to: [0]) == [.log("detached → following (scrolled back to the end)"), .holdTopRow(false)])
+        #expect(m.mode == .following)
+        #expect(!m.showsJump)
+    }
+
+    /// Stopping a little short of the end, as a drag ending there does:
+    /// following again, onto the end.
+    @Test func wheelBackNearTheEndFollowsAgainOnTheEnd() {
+        var m = machine(.detached, distance: 800)
+        #expect(wheel(&m, to: [200, 40]) == [.log("detached → following (scrolled back to the end)"), .holdTopRow(false), .toEnd(animated: true)])
+        #expect(m.mode == .following)
+    }
+
+    @Test func wheelUpNearTheEndWhileReadingBackStaysReadingBack() {
+        var m = machine(.detached, distance: 20)
+        #expect(wheel(&m, to: [30, 50]) == [])
+        #expect(m.mode == .detached)
+    }
+
+    @Test func wheelDuringTheWayDownChangesNothing() {
+        var m = machine(.returning, distance: 3000)
+        #expect(wheel(&m, to: [2000, 40]) == [])
+        #expect(m.mode == .returning)
+    }
+
+    /// A finger's scrolls are read from the finger, not from the list.
+    @Test func noIndirectScrollUnderAFinger() {
+        var m = machine(.following)
+        _ = m.reduce(.phase(.tracking))
+        #expect(wheel(&m, to: [100]) == [])
+        #expect(m.mode == .following)
+    }
+
+    // What counts as one.
+
+    func reading(offset: CGFloat = 1000, height: CGFloat = 5000, width: CGFloat = 400, viewport: CGFloat = 800,
+                 top: CGFloat = 100, bottom: CGFloat = 80) -> M.Reading {
+        M.Reading(offsetY: offset, contentHeight: height, width: width, viewport: viewport, insetTop: top, bottomInset: bottom)
+    }
+
+    @Test func theListMovingAloneIsTheReader() {
+        #expect(M.isIndirectScroll(from: reading(), to: reading(offset: 960), scrollInput: true, oursOnItsWay: false, phase: .idle))
+        // A wheel's smooth scroll may report as an animation.
+        #expect(M.isIndirectScroll(from: reading(), to: reading(offset: 1040), scrollInput: true, oursOnItsWay: false, phase: .animating))
+    }
+
+    /// No wheel or trackpad just used (always so on an iPhone): the list
+    /// moving on its own is SwiftUI's, never the reader's.
+    @Test func withoutAWheelOrTrackpadNothingIsTheReader() {
+        #expect(!M.isIndirectScroll(from: reading(), to: reading(offset: 960), scrollInput: false, oursOnItsWay: false, phase: .idle))
+        #expect(!M.isIndirectScroll(from: reading(), to: reading(offset: 1040), scrollInput: false, oursOnItsWay: false, phase: .animating))
+    }
+
+    @Test func growthWithTheOffsetStillIsNotTheReader() {
+        #expect(!M.isIndirectScroll(from: reading(), to: reading(height: 5400), scrollInput: true, oursOnItsWay: false, phase: .idle))
+        // The bottom anchor keeping the end in view as it grows.
+        #expect(!M.isIndirectScroll(from: reading(), to: reading(offset: 1400, height: 5400), scrollInput: true, oursOnItsWay: false, phase: .idle))
+    }
+
+    @Test func ourScrollIsNotTheReader() {
+        #expect(!M.isIndirectScroll(from: reading(), to: reading(offset: 600), scrollInput: true, oursOnItsWay: true, phase: .idle))
+        #expect(!M.isIndirectScroll(from: reading(), to: reading(offset: 600), scrollInput: true, oursOnItsWay: true, phase: .animating))
+    }
+
+    @Test func aResizeOrTheKeyboardIsNotTheReader() {
+        #expect(!M.isIndirectScroll(from: reading(), to: reading(offset: 900, width: 700), scrollInput: true, oursOnItsWay: false, phase: .idle))
+        #expect(!M.isIndirectScroll(from: reading(), to: reading(offset: 900, viewport: 600), scrollInput: true, oursOnItsWay: false, phase: .idle))
+        #expect(!M.isIndirectScroll(from: reading(), to: reading(offset: 1300, bottom: 380), scrollInput: true, oursOnItsWay: false, phase: .idle))
+        #expect(!M.isIndirectScroll(from: reading(), to: reading(offset: 950, top: 50), scrollInput: true, oursOnItsWay: false, phase: .idle))
+    }
+
+    @Test func aFingersScrollIsNotAnIndirectOne() {
+        #expect(!M.isIndirectScroll(from: reading(), to: reading(offset: 900), scrollInput: true, oursOnItsWay: false, phase: .interacting))
+        #expect(!M.isIndirectScroll(from: reading(), to: reading(offset: 900), scrollInput: true, oursOnItsWay: false, phase: .decelerating))
+        #expect(!M.isIndirectScroll(from: reading(), to: reading(), scrollInput: true, oursOnItsWay: false, phase: .idle))
+    }
+
     // MARK: any → send
 
     @Test(arguments: [M.Mode.following, .detached, .returning])
