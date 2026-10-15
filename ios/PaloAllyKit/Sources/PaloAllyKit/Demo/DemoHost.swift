@@ -49,6 +49,10 @@ public actor DemoHost {
     var waitingAdoptions: Set<String> = []
     /// Each Pal's reply being written (`pals.history`'s `streaming`).
     var palWriting: [String: SyncResult.Streaming] = [:]
+    /// The computer's sessions looked at without taking them over (§14), and
+    /// the live one that's still going (a line now and then).
+    var viewedLogs: [String: [CCMessage]] = [:]
+    var viewedTails: Set<String> = []
     /// Asleep Pals being woken (§12), for words that come meanwhile to wait on.
     var palWakes: [String: Task<Void, Never>] = [:]
     /// Seeded with Pals: an accepted proposal opens a Pal, not a helper.
@@ -918,7 +922,7 @@ public actor DemoHost {
             return ["sessions": try .from(sessions), "hooks": .bool(hooksEnabled)]
         case RPCMethod.sessionsHistory:
             let id = p["id"]?.stringValue ?? ""
-            guard let log = sessionLogs[id] else { throw DemoError(message: "没有这个会话") }
+            guard let log = sessionLogs[id] ?? (palsMode ? viewedSessionLog(id) : nil) else { throw DemoError(message: "没有这个会话") }
             let limit = Int(p["limit"]?.doubleValue ?? 50)
             var upTo = log.endIndex
             if let before = p["before"]?.stringValue, let i = log.firstIndex(where: { $0.id == before }) { upTo = i }

@@ -271,3 +271,25 @@ public enum SessionsUpdate: Sendable {
         self = .refetch
     }
 }
+
+extension ChatMessage {
+    /// A line of one of the computer's sessions as the conversation view
+    /// shows it (its read-only page, pals-prd §14): the owner's words typed
+    /// at the computer, the session's replies, another session's words (and
+    /// the assistant's) under their name, as on a Pal's page. `seq` is its
+    /// time (only for order).
+    public init(session m: CCMessage, sessionID: String) {
+        let seq = max(1, m.ts)
+        switch m.role {
+        case .assistant, .unknown:
+            self.init(seq: seq, id: m.id, role: .assistant, kind: .text, text: m.text, channel: .app, ts: m.ts)
+        case .owner:
+            self.init(seq: seq, id: m.id, role: .user, kind: .text, text: m.text, channel: .cli, ts: m.ts)
+        case .palo where (m.from ?? "主人") == "主人":
+            self.init(seq: seq, id: m.id, role: .user, kind: .text, text: m.shownText, channel: .app, ts: m.ts)
+        case .palo, .peer:
+            self.init(seq: seq, id: m.id, role: .user, kind: .text, text: m.shownText, channel: .system, ts: m.ts)
+            from = m.from?.isEmpty == false ? m.from : "另一个会话"
+        }
+    }
+}

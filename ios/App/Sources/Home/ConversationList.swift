@@ -31,8 +31,10 @@ struct ConversationList: View {
                                     .disabled(!store.connection.isOnline)
                             }
                     }
+                    // Tapped: its conversation, read only, with 接管 there (§14).
                     ForEach(store.otherSessions) { session in
                         OtherSessionRow(session: session)
+                            .tag(AppModel.Conversation.session(session.id))
                     }
                     RecentListRow()
                         .tag(AppModel.Conversation.recent)

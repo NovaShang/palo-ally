@@ -397,3 +397,50 @@ struct PalsRenameTests {
     }
 }
 
+/// Looking at a session without taking it over (pals-prd §14): its
+/// conversation in a read-only store, what's new on the next look, its
+/// cards at its end, another agent's long words folded.
+@MainActor
+@Suite("Sessions looked at", .serialized)
+struct SessionViewTests {
+    @Test func aLiveSessionsConversationReadOnlyWithItsCards() async throws {
+        let host = DemoHost(speed: 0, pals: true)
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { store.pals.count == 4 && store.otherSessions.count == 2 })
+        let login = store.sessionStore("cc-login")
+        #expect(store.sessionStore("cc-login") === login && login.viewedSessionID == "cc-login" && login.palID == nil)
+        #expect(await until { login.hasSynced && login.messages.count >= 4 })
+        #expect(await host.lastParams["sessions.history"]?["id"] == "cc-login")
+        let first = try #require(login.messages.first)
+        #expect(first.role == .user && first.channel == .cli && first.text.contains("登录以后会跳回首页"))
+        let peer = try #require(login.messages.first { $0.from == "笔记整理" })
+        #expect(login.folds(peer) && !login.folds(first))
+        // the next look has what it said since
+        let before = login.messages.count
+        await login.reloadSessionPage()
+        #expect(login.messages.count > before && login.messages.last?.text.contains("测试文件跑完了") == true)
+        #expect(Set(login.messages.map(\.id)).count == login.messages.count)
+        // its cards at its end (the other one's question isn't here; it stays with the assistant's too)
+        let data = store.sessionStore("cc-data")
+        #expect(await until { data.hasSynced })
+        #expect(data.liveEndQuestions.map(\.id) == ["sq1"] && login.liveEndQuestions.isEmpty)
+        #expect(store.liveEndQuestions.map(\.id) == ["sq1"])
+        #expect(!store.messages.contains { $0.text.contains("登录以后会跳回首页") })
+    }
+
+    @Test func aConversationThatEndedReadsToo() async throws {
+        let host = DemoHost(speed: 0, pals: true)
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { store.pals.count == 4 })
+        try await store.refreshRecent()
+        let id = "7c1e9a52-3f0b-4d8e-9a61-0b5c2e7d4f10"
+        #expect(store.viewedSession(id)?.name == "首页改成两栏布局" && store.viewedSession(id)?.live == nil)
+        let page = store.sessionStore(id)
+        #expect(await until { page.messages.count == 3 })
+        #expect(page.messages.last?.text.contains("两栏改好了") == true)
+        // nothing taken over by looking
+        #expect(store.pal(sessionId: id) == nil)
+    }
+}

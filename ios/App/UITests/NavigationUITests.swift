@@ -165,12 +165,16 @@ final class NavigationUITests: XCTestCase {
         let one = row(app, "recent-7c1e9a52-3f0b-4d8e-9a61-0b5c2e7d4f10")
         XCTAssertTrue(one.waitForExistence(timeout: 10), "the conversation isn't listed")
         one.tap()
-        // Asked in its row, not a dialog.
-        XCTAssertTrue(text(app, "接管「首页改成两栏布局」？").waitForExistence(timeout: 5), "not asked")
+        // Its conversation, read only (§14), with 接管 at the bottom; no dialog.
+        XCTAssertTrue(app.navigationBars.staticTexts["首页改成两栏布局"].waitForExistence(timeout: 10), "its page didn't open")
+        XCTAssertTrue(text(app, "两栏改好了").waitForExistence(timeout: 10), "its conversation so far isn't there")
+        XCTAssertTrue(text(app, "接管后可以在这里跟它说话").exists, "no 接管 bar")
+        XCTAssertFalse(app.buttons["pal-menu"].exists, "a Pal's page before it was taken over")
         XCTAssertEqual(app.alerts.count, 0)
         XCTAssertEqual(app.sheets.count, 0)
-        app.buttons["接管"].firstMatch.tap()
-        XCTAssertTrue(app.navigationBars.staticTexts["首页改成两栏布局"].waitForExistence(timeout: 15), "its Pal's page didn't open")
+        app.buttons["session-adopt"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["pal-menu"].waitForExistence(timeout: 15), "its Pal's page didn't open")
+        XCTAssertTrue(app.navigationBars.staticTexts["首页改成两栏布局"].exists)
         XCTAssertTrue(text(app, "两栏改好了").waitForExistence(timeout: 10), "its conversation so far isn't there")
         back(app)
         XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 5))
@@ -185,12 +189,14 @@ final class NavigationUITests: XCTestCase {
         let one = row(app, "recent-e4a7c3d9-1b6f-4e2a-b8c5-9d0e7f3a2c61")
         XCTAssertTrue(one.waitForExistence(timeout: 15))
         one.tap()
-        app.buttons["接管"].firstMatch.tap()
+        let adopt = app.buttons["session-adopt"].firstMatch
+        XCTAssertTrue(adopt.waitForExistence(timeout: 10), "no 接管 on its page")
+        adopt.tap()
         XCTAssertTrue(text(app, "没接管成：已经开着 5 个 Pal 了").waitForExistence(timeout: 10), "no reason given")
         attach(app, "recent-failed")
         app.buttons["好"].firstMatch.tap()
-        XCTAssertTrue(one.waitForExistence(timeout: 5), "the row didn't come back")
-        XCTAssertTrue(app.navigationBars.staticTexts["最近的对话"].exists, "left the page")
+        XCTAssertTrue(adopt.waitForExistence(timeout: 5), "接管 didn't come back")
+        XCTAssertFalse(app.buttons["pal-menu"].exists, "it became a Pal after all")
     }
 
     // MARK: -

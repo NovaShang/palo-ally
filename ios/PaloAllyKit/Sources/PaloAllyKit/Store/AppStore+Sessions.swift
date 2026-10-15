@@ -13,6 +13,28 @@ extension AppStore {
     /// One session's conversation held here, oldest first.
     public func sessionHistory(_ id: String) -> [CCMessage] { sessionHistories[id] ?? [] }
 
+    /// A session's read-only store (pals-prd §14): its conversation in the
+    /// conversation view, its cards at the end. Made on first use and kept
+    /// while the app runs. Its page asks for what's new every few seconds.
+    public func sessionStore(_ id: String) -> AppStore {
+        if let parent { return parent.sessionStore(id) }
+        if let s = sessionStores[id] { return s }
+        let s = AppStore(session: id, parent: self)
+        sessionStores[id] = s
+        preparePalStore?(s)
+        if connection.isOnline { Task { await s.reloadSessionPage() } }
+        return s
+    }
+
+    /// One of the computer's sessions by id: a live one, else one that ended lately.
+    public func viewedSession(_ id: String) -> (name: String, cwd: String, live: CCSession?)? {
+        if let s = otherSessions.first(where: { $0.id == id }) ?? sessions.first(where: { $0.id == id }) {
+            return (s.name, s.cwd, s)
+        }
+        if let r = recentSessions?.first(where: { $0.sessionId == id }) { return (r.displayTitle, r.cwd, nil) }
+        return nil
+    }
+
     // MARK: loading
 
     /// A host from before Pals, after every catch-up (`loadPals` asks). One

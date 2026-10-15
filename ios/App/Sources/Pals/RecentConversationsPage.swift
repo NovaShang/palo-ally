@@ -3,9 +3,10 @@ import SwiftUI
 
 /// 最近的对话 (pals-prd §10): the Claude Code conversations that ended on the
 /// computer in the last 30 days, by folder (the one used most lately first),
-/// each with its title and when it was last used. Tapping one asks 接管 right
-/// there in its row, never a dialog; once adopted it's a Pal and its page
-/// opens. The system search field narrows the list by title or folder.
+/// each with its title and when it was last used. Tapping one opens its
+/// conversation, read only, with 接管 at the bottom (§14; `-demoRecentPick`
+/// asks 接管 in its row instead, for snapshots). The system search field
+/// narrows the list by title or folder.
 struct RecentConversationsPage: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
@@ -178,9 +179,9 @@ struct RecentConversationsPage: View {
         }
     }
 
-    /// Asks about that one (in place of any other being asked about).
+    /// Opens its conversation, read only, with 接管 at the bottom (§14).
     private func pick(_ s: RecentSession) {
-        asking = Asking(session: s, step: .confirm)
+        model.openSession(s.sessionId)
     }
 
     private func adopt(_ s: RecentSession) async {

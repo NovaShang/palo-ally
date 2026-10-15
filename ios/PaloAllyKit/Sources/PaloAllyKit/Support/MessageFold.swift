@@ -23,7 +23,7 @@ extension AppStore {
     /// Folds when long: words another agent sent this Pal (the assistant's
     /// or another session's), not the owner's and not the Pal's own.
     public func folds(_ m: ChatMessage) -> Bool {
-        guard palID != nil, m.role == .user, m.kind != .ally else { return false }
+        guard scope != .palo, m.role == .user, m.kind != .ally else { return false }
         return !(m.from ?? "").trimmingCharacters(in: .whitespaces).isEmpty
     }
 

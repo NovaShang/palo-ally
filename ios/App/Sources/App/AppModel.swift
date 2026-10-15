@@ -119,6 +119,8 @@ final class AppModel {
         /// 最近的对话 (pals-prd §10): conversations that ended on the
         /// computer lately, to take over; one adopted opens as its Pal.
         case recent
+        /// One of the computer's sessions that isn't a Pal, read only (§14).
+        case session(String)
     }
     /// The conversation picked in the list. Phones: nil once back on the list.
     var selection: Conversation? = .palo {
@@ -217,6 +219,7 @@ final class AppModel {
     }
     func openPalo() { open(.palo) }
     func openPal(_ id: String) { open(.pal(id)) }
+    func openSession(_ id: String) { open(.session(id)) }
     func openAlly(_ id: String) { open(.ally(id)) }
 
     /// Phones: back to the list (a conversation that went away, the Ally just removed).

@@ -312,6 +312,46 @@ extension DemoHost {
         }
     }
 
+    // MARK: looking without taking over (§14)
+
+    /// A session that isn't a Pal, as `sessions.history` reads it: one of the
+    /// others (the busy one adds a line every few seconds while it's looked
+    /// at), or a conversation that ended lately.
+    func viewedSessionLog(_ id: String) -> [CCMessage]? {
+        if let log = viewedLogs[id] { return log }
+        let now = Date().epochMillis
+        var lines: [(CCMessageRole, String, String?)]
+        if let s = otherSessions.first(where: { $0.id == id }) {
+            lines = sessionLines(for: s).map { ($0.role == .user ? .owner : .assistant, $0.text, nil) }
+            if s.id == "cc-login" {
+                lines.insert((.peer, "你好，我是笔记整理。登录页的文案在 notes/产品/登录.md 里，主人上周改过一版：按钮叫「继续」，不叫「下一步」；忘记密码的链接放在输入框下面，不放在按钮旁边；错误提示用一句话说清楚哪里不对，不要只写「出错了」。改完跳转以后，顺手把这几处也对一下。", "笔记整理"), at: 1)
+            }
+        } else if let r = recentSessions.first(where: { $0.sessionId == id }) {
+            lines = (DemoHost.recentLines[id] ?? [(.user, r.title), (.assistant, "好，我先看一下相关的文件。")])
+                .map { ($0.0 == .user ? .owner : .assistant, $0.1, nil) }
+        } else {
+            return nil
+        }
+        let log = lines.enumerated().map { i, l in
+            CCMessage(id: "\(id)-v\(i + 1)", ts: now - Int64(60_000 * (lines.count - i)), role: l.0, text: l.1, from: l.2)
+        }
+        viewedLogs[id] = log
+        if otherSessions.first(where: { $0.id == id })?.status == .busy, !viewedTails.contains(id) {
+            viewedTails.insert(id)
+            let after = UserDefaults.standard.object(forKey: "demoTailEvery") != nil
+                ? UserDefaults.standard.double(forKey: "demoTailEvery") : 4
+            Task {
+                for n in 1...6 {
+                    await self.pause(after)
+                    guard self.otherSessions.contains(where: { $0.id == id }) else { return }
+                    self.viewedLogs[id, default: []].append(CCMessage(id: "\(id)-t\(n)", ts: Date().epochMillis, role: .assistant,
+                                                                      text: "第 \(n) 个测试文件跑完了，都通过。"))
+                }
+            }
+        }
+        return log
+    }
+
     // MARK: asleep and awake (§12)
 
     /// An asleep Pal's session resumes (`starting` meanwhile); one awake is

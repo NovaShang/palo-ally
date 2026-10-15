@@ -62,7 +62,7 @@ private struct UserBubble: View {
             }
             VStack(alignment: .trailing, spacing: 4) {
                 // In a Pal's conversation: the assistant's words to it (pals-prd §4).
-                if let from = message.from?.trimmingCharacters(in: .whitespaces), !from.isEmpty, store.palID != nil {
+                if let from = message.from?.trimmingCharacters(in: .whitespaces), !from.isEmpty, store.scope != .palo {
                     Label(Copy.assistantSays(from == "palo" ? store.assistantName : from), systemImage: "sparkles")
                         .labelStyle(QuietLabelStyle())
                 }
@@ -100,7 +100,7 @@ private struct UserBubble: View {
     /// outline (said for the owner, not by them).
     @ViewBuilder private var bubble: some View {
         let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
-        if store.palID != nil, !(message.from ?? "").isEmpty {
+        if store.scope != .palo, !(message.from ?? "").isEmpty {
             shape.strokeBorder(Color.primary.opacity(0.18), lineWidth: 1)
         } else {
             shape.fill(Color(.secondarySystemFill))

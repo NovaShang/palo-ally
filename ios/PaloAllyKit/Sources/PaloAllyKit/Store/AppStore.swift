@@ -32,10 +32,14 @@ public final class AppStore {
     public enum Scope: Equatable, Sendable {
         case palo
         case pal(String)
+        /// One of the computer's sessions, not a Pal, read only (pals-prd §14).
+        case session(String)
     }
     public let scope: Scope
     /// The Pal this store is scoped to, if it is.
     public var palID: String? { if case .pal(let id) = scope { return id } else { return nil } }
+    /// The session (not a Pal) this store shows read only, if it does (§14).
+    public var viewedSessionID: String? { if case .session(let id) = scope { return id } else { return nil } }
     /// The computer's state every scope shares: the link, its lists, settings.
     let shared: AppStoreShared
     /// A Pal's store: the assistant's, which feeds it.
@@ -43,6 +47,8 @@ public final class AppStore {
     /// The assistant's store: each Pal's scoped store, made on first use
     /// (while a view is drawn: nothing observes the dictionary itself).
     @ObservationIgnored var palStores: [String: AppStore] = [:]
+    /// …and each session's read-only one (§14).
+    @ObservationIgnored var sessionStores: [String: AppStore] = [:]
 
     /// The link as it really is — for logic (sending, sync, what's enabled).
     /// What the owner is shown is `displayedConnection`.
@@ -356,11 +362,16 @@ public final class AppStore {
 
     /// One Pal's scoped store, made by the assistant's (`palStore(_:)`): it
     /// talks over the same link and reads the same shared state.
-    init(pal id: String, parent: AppStore) {
+    convenience init(pal id: String, parent: AppStore) { self.init(scope: .pal(id), parent: parent) }
+
+    /// A session's read-only store (§14), made by the assistant's (`sessionStore(_:)`).
+    convenience init(session id: String, parent: AppStore) { self.init(scope: .session(id), parent: parent) }
+
+    init(scope: Scope, parent: AppStore) {
         self.rpc = parent.rpc
         self.clientKind = parent.clientKind
         self.clientVersion = parent.clientVersion
-        self.scope = .pal(id)
+        self.scope = scope
         self.shared = parent.shared
         self.parent = parent
         self.initialHistoryLimit = parent.initialHistoryLimit
@@ -538,6 +549,7 @@ public final class AppStore {
                 Task { await self.loadPals() }
                 // Each Pal's conversation catches up too.
                 for child in palStores.values { Task { await child.palReconnected() } }
+                for child in sessionStores.values { Task { await child.reloadSessionPage() } }
                 return
             } catch {
                 guard gen == connectGeneration else { return }
@@ -708,6 +720,10 @@ public final class AppStore {
 
     private func requestResync() {
         guard hasSynced, connection == .online || connection == .syncing else { return }
+        if viewedSessionID != nil {
+            Task { await self.reloadSessionPage() }
+            return
+        }
         // A Pal's conversation has no sync of its own: its newest page again.
         if scope != .palo {
             Task { await self.reloadPalHistory() }
@@ -1044,6 +1060,7 @@ public final class AppStore {
         switch scope {
         case .palo: source?.isPal != true
         case .pal(let id): source?.isPal == true && source?.id == id
+        case .session(let id): source?.isSession == true && source?.id == id
         }
     }
     public func question(id: String) -> Question? { questions.first { $0.id == id } }
@@ -1395,6 +1412,10 @@ public final class AppStore {
             await loadOlderPalPage(before: first, limit: limit)
             return
         }
+        if viewedSessionID != nil {
+            await loadOlderSessionPage(before: first, limit: limit)
+            return
+        }
         do {
             let r: MessagesResult = try await rpc.call(RPCMethod.chatHistory,
                                                        params: ChatHistoryParams(beforeSeq: first.seq, limit: limit))
@@ -1447,6 +1468,52 @@ public final class AppStore {
                                                          params: PalHistoryParams(id: palID, before: first.id, limit: limit))
             let known = Set(messages.map(\.id))
             let older = r.messages.filter { !known.contains($0.id) && ($0.pal == nil || $0.pal == palID) }
+            messages.append(contentsOf: older)
+            sortMessages()
+            hasOlderMessages = !older.isEmpty && r.messages.count >= limit
+        } catch {
+            lastError = Friendly.message(error)
+        }
+    }
+
+    // MARK: a session's conversation, read only (§14)
+
+    /// A session's store: its newest page (`sessions.history`), merged into
+    /// what's there. An open page asks again every few seconds: what the
+    /// session said since shows up.
+    public func reloadSessionPage() async {
+        guard let id = viewedSessionID, !syncing else { return }
+        syncing = true
+        defer { syncing = false }
+        do {
+            let limit = initialHistoryLimit
+            let r: SessionMessagesResult = try await rpc.call(RPCMethod.sessionsHistory, params: SessionHistoryParams(id: id, limit: limit))
+            let page = r.messages.map { ChatMessage(session: $0, sessionID: id) }
+            let first = !hasSynced
+            let known = Set(messages.map(\.id))
+            let fresh = page.filter { !known.contains($0.id) }
+            if !fresh.isEmpty || first {
+                atTheEnd {
+                    messages.append(contentsOf: fresh)
+                    sortMessages()
+                }
+            }
+            if first { hasOlderMessages = page.count >= limit }
+            hasSynced = true
+            lastSeq = max(lastSeq, page.map(\.seq).max() ?? 0)
+            lastError = nil
+        } catch {
+            lastError = Friendly.message(error)
+        }
+    }
+
+    private func loadOlderSessionPage(before first: ChatMessage, limit: Int) async {
+        guard let id = viewedSessionID else { return }
+        do {
+            let r: SessionMessagesResult = try await rpc.call(RPCMethod.sessionsHistory,
+                                                              params: SessionHistoryParams(id: id, before: first.id, limit: limit))
+            let known = Set(messages.map(\.id))
+            let older = r.messages.map { ChatMessage(session: $0, sessionID: id) }.filter { !known.contains($0.id) }
             messages.append(contentsOf: older)
             sortMessages()
             hasOlderMessages = !older.isEmpty && r.messages.count >= limit

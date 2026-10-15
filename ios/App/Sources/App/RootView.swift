@@ -265,6 +265,8 @@ private struct ConversationDetail: View {
                     AllyConversationView(allyID: id).id("ally-\(id)")
                 case .recent:
                     RecentConversationsPage()
+                case .session(let id):
+                    SessionPage(sessionID: id).id("session-\(id)")
                 }
             }
             .modifier(InContentNavigationBar())

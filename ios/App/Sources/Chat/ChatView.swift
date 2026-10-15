@@ -222,7 +222,8 @@ struct ChatView: View {
                 }
             }
         }
-        .navigationTitle(isPalo ? store.assistantName : (store.palID.flatMap { store.pal(id: $0)?.displayName } ?? ""))
+        .navigationTitle(isPalo ? store.assistantName
+            : store.palID.flatMap { store.pal(id: $0)?.displayName } ?? store.viewedSessionID.flatMap { store.viewedSession($0)?.name } ?? "")
         .navigationBarTitleDisplayMode(.inline)
         // Immersive, the iOS 26 look: the system bar stays but without its
         // material backdrop (iOS 27 gives the bar one by default); the

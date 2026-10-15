@@ -119,6 +119,38 @@ final class SessionsUITests: XCTestCase {
         }
     }
 
+    /// 不接管也能看 (pals-prd §14): a live session from the list opens read
+    /// only, its words, another agent's long ones folded, new lines while
+    /// it's open, 接管 at the bottom; 接管 (a terminal session: quit there
+    /// first) and its page becomes the Pal's. Another one's card is at its end.
+    @MainActor
+    func testASessionOpensReadOnlyAndTakingItOverMakesItAPal() throws {
+        let app = launch(["-demoScreen", "list", "-demoTailEvery", "2", "-demoAdoptAfter", "4"])
+        let data = app.descendants(matching: .any)["row-session-cc-data"]
+        XCTAssertTrue(data.waitForExistence(timeout: 15), "no other session on the list")
+        data.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
+        XCTAssertTrue(app.navigationBars.staticTexts["问卷数据清洗"].waitForExistence(timeout: 10), "its page didn't open")
+        XCTAssertTrue(text(app, "没填收入的 37 份问卷怎么处理？").waitForExistence(timeout: 10), "its card isn't at its end")
+        app.navigationBars.buttons.firstMatch.tap()
+        let login = app.descendants(matching: .any)["row-session-cc-login"]
+        XCTAssertTrue(login.waitForExistence(timeout: 10))
+        login.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
+        XCTAssertTrue(app.navigationBars.staticTexts["修登录跳转"].waitForExistence(timeout: 10), "its page didn't open")
+        XCTAssertTrue(text(app, "登录以后会跳回首页").waitForExistence(timeout: 10), "its history isn't there")
+        XCTAssertTrue(text(app, "接管后可以在这里跟它说话").exists, "no 接管 bar")
+        XCTAssertFalse(app.buttons["按住说话，轻点打字"].exists, "a composer on a read-only page")
+        XCTAssertTrue(app.buttons["展开全部"].firstMatch.exists, "another agent's long words aren't folded")
+        // New lines while it's open.
+        XCTAssertTrue(text(app, "第 1 个测试文件跑完了").waitForExistence(timeout: 15), "nothing new came in")
+        attach(app, "session-read-only")
+        app.buttons["session-adopt"].firstMatch.tap()
+        XCTAssertTrue(text(app, "请在终端里输入 /exit").waitForExistence(timeout: 10), "not asked to quit it in the terminal")
+        attach(app, "session-waiting")
+        XCTAssertTrue(app.buttons["pal-menu"].waitForExistence(timeout: 20), "its page didn't become the Pal's")
+        XCTAssertTrue(app.navigationBars.staticTexts["修登录跳转"].exists)
+        XCTAssertTrue(app.buttons["按住说话，轻点打字"].firstMatch.exists, "no composer once it's a Pal")
+    }
+
     @MainActor
     func testHandingBackShowsTheLineAndRemovingAsksInThePage() throws {
         let app = launch(["-demoScreen", "pal", "-demoPal", "pal-notes"])
