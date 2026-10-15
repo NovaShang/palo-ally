@@ -91,6 +91,20 @@ final class NavigationUITests: XCTestCase {
         XCTAssertTrue(app.buttons["title-orb"].waitForExistence(timeout: 5))
     }
 
+    /// A Markdown item in 成果 opens rendered, and back is the list again.
+    @MainActor
+    func testAMarkdownItemOpensFromTheLibrary() throws {
+        let app = launch(["-demoScreen", "library"])
+        let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "每日晨报")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 15), "no Markdown item in 成果")
+        row.tap()
+        XCTAssertTrue(app.navigationBars.staticTexts["每日晨报"].waitForExistence(timeout: 5), "the item didn't open")
+        let heading = app.webViews.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "今日晨报")).firstMatch
+        XCTAssertTrue(heading.waitForExistence(timeout: 10), "the Markdown wasn't rendered")
+        back(app)
+        XCTAssertTrue(app.navigationBars.staticTexts["成果"].waitForExistence(timeout: 5), "back didn't return to 成果")
+    }
+
     /// A terminal session: quit it there first. The list says so in place,
     /// then the Pal's page opens by itself once it's done.
     @MainActor

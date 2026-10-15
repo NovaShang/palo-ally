@@ -69,6 +69,7 @@
 		AACC2B792ABD1AFC63ECC6B2 /* ScrollLabUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED42874198579F1FB37DC41 /* ScrollLabUITests.swift */; };
 		AEBD8CD9FD2F1F20EA8FEDAD /* HostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53AE60C8605BA97074A29F1A /* HostsView.swift */; };
 		AF358643F472D615D617552B /* SessionCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45CEF451F12A8A4C25B55191 /* SessionCopy.swift */; };
+		B2032FE442E03D4426BA7760 /* MacLibraryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10351FDBF285D30A12AA443 /* MacLibraryUITests.swift */; };
 		B490B9FA51E4124CBAFA3E40 /* PalAdoptCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC1D1CBDA6FA6542D9C2163F /* PalAdoptCard.swift */; };
 		B7DF0900ABDDFACC50FFF6B2 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7769E0FBCB029211A3B7B532 /* QRScannerView.swift */; };
 		B8976F3E44EC1376603FA764 /* CopyButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDCE2B703ACB5F034BAA47C0 /* CopyButton.swift */; };
@@ -163,6 +164,7 @@
 		9C1205FC1B401AE4865CFE52 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		A047E4D10313D33DC6FA1B11 /* MemorySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemorySection.swift; sourceTree = "<group>"; };
 		A098FD42D9BDB280E3B70F24 /* AllyConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllyConversationView.swift; sourceTree = "<group>"; };
+		A10351FDBF285D30A12AA443 /* MacLibraryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLibraryUITests.swift; sourceTree = "<group>"; };
 		A636E701CD74733FD3960096 /* ReplyText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplyText.swift; sourceTree = "<group>"; };
 		A9DA59D1C706A7BFC0795353 /* GlassDrops.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassDrops.swift; sourceTree = "<group>"; };
 		A9FC6DD7E0D29DDA214A18CE /* PaloAllyUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PaloAllyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -327,6 +329,7 @@
 				1B37F21F4341F2E8ECB3BEB1 /* AlliesUITests.swift */,
 				3027F62ADAB6BF3E4CFADE4C /* AppLog.swift */,
 				519EA8CCFA1176D5CDDF3D1F /* ChatScrollUITests.swift */,
+				A10351FDBF285D30A12AA443 /* MacLibraryUITests.swift */,
 				C23F1133E2D253017B448FCB /* MacScrollWheelUITests.swift */,
 				7204F49936E047B0B9DD85FC /* NavigationUITests.swift */,
 				7ED42874198579F1FB37DC41 /* ScrollLabUITests.swift */,
@@ -537,6 +540,7 @@
 				9F471EF33EB831461DD0E4A0 /* AlliesUITests.swift in Sources */,
 				576B3D9CF39D64A7CE5A0582 /* AppLog.swift in Sources */,
 				6A3F40F12C7DD391D2815F87 /* ChatScrollUITests.swift in Sources */,
+				B2032FE442E03D4426BA7760 /* MacLibraryUITests.swift in Sources */,
 				0F39329E305A6477FBD720F0 /* MacScrollWheelUITests.swift in Sources */,
 				6FAF60052DD6375026A2F352 /* NavigationUITests.swift in Sources */,
 				AACC2B792ABD1AFC63ECC6B2 /* ScrollLabUITests.swift in Sources */,
@@ -740,7 +744,7 @@
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				"EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = "*";
 				GENERATE_INFOPLIST_FILE = YES;
-				"INCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = MacScrollWheelUITests.swift;
+				"INCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = "MacScrollWheelUITests.swift MacLibraryUITests.swift";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -763,7 +767,7 @@
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				"EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = "*";
 				GENERATE_INFOPLIST_FILE = YES;
-				"INCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = MacScrollWheelUITests.swift;
+				"INCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = "MacScrollWheelUITests.swift MacLibraryUITests.swift";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
