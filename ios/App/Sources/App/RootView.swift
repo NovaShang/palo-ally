@@ -176,6 +176,9 @@ struct MainScreen: View {
         } detail: {
             ConversationDetail()
         }
+        // 成果 beside the conversation: on the split view, not in its detail
+        // column (see LibraryInspector).
+        .modifier(LibraryInspector(model: model, store: store))
         .onChange(of: sizeClass, initial: true) { _, c in
             model.shortWindow = heightClass == .compact
             model.setLayout(c == .compact ? .phone : .split)
@@ -244,10 +247,9 @@ struct MainScreen: View {
 }
 
 /// The detail column: the conversation picked in the list, with pages
-/// pushed over it (phones), and 成果 beside it (large screens).
+/// pushed over it (phones).
 private struct ConversationDetail: View {
     @Environment(AppModel.self) private var model
-    @Environment(AppStore.self) private var store
 
     var body: some View {
         @Bindable var model = model
@@ -277,7 +279,6 @@ private struct ConversationDetail: View {
         }
         // Each conversation keeps its own unsent words.
         .environment(\.chatDraft, Binding(get: { model.drafts[current] ?? "" }, set: { model.drafts[current] = $0 }))
-        .modifier(LibraryInspector(model: model, store: store))
         .background {
             // Esc puts 成果 away, like ⌘[.
             if model.libraryBeside && model.inspectorShown {
@@ -295,6 +296,12 @@ private struct ConversationDetail: View {
 /// Large screens: 成果 in the inspector beside the conversation. Phones push
 /// it instead, and don't get the modifier at all (an inspector that isn't
 /// shown still lends its toolbar and search field to the conversation there).
+///
+/// It goes on the split view itself. Inside the detail column, the
+/// inspector's own stack was taken for the column's: on the Mac a click on
+/// an item only highlighted its row, and opening one from the conversation
+/// (changing `libraryPath`) crashed SwiftUI comparing that path with the
+/// conversation's (`AnyNavigationPath.Error.comparisonTypeMismatch`).
 private struct LibraryInspector: ViewModifier {
     let model: AppModel
     let store: AppStore
