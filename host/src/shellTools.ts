@@ -181,6 +181,7 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
     // that ended (either happens on the owner's tap).
     pals_list: async () => (d.pals ? await d.pals.toolList() : "{}"),
     pal_propose: async (a) => d.pals?.propose(a) ?? "这台电脑上没开 Pal",
+    pal_send: async (a) => (d.pals ? await d.pals.toolSend(a) : "这台电脑上没开 Pal"),
     pals_recent: async (a) => (d.pals ? await d.pals.toolRecent(a) : "{}"),
     pal_adopt: async (a) => (d.pals ? await d.pals.proposeAdopt(a) : "这台电脑上没开 Pal"),
     notify_user: async ({ text, urgent }) => {

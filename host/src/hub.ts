@@ -526,6 +526,8 @@ export class Hub {
     if (e.type === "init") this.suggestions.setConnectors(e.tools);
     // The assistant handing work to another session (main thread only).
     if (e.type === "tool_use" && !e.parentToolUseId && e.name === "SendMessage") this.handoffs.onSend(e.id, e.input);
+    // …or to a Pal with pal_send (asleep or awake), followed the same way.
+    if (e.type === "tool_use" && !e.parentToolUseId && e.name === "mcp__paloally__pal_send") this.handoffs.onSend(e.id, { to: e.input.name, message: e.input.text });
     if (e.type === "tool_result" && !e.parentToolUseId) this.handoffs.onSendResult(e.toolUseId, e.content, e.isError);
     this.conversation.onHarnessEvent(e);
   }

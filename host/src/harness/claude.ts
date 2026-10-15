@@ -157,13 +157,24 @@ export function paloallyMcpServer(h: ToolHandlers) {
       ),
       tool(
         "pals_list",
-        "列出主人的 Pal（这台电脑上由 PaloAlly 托管的 Claude Code 会话：名字就是 SendMessage 的 to、目录、状态、最后一句），以及电脑上其他还开着的 Claude Code 会话。要给某个 Pal 派活或问它进展，用 SendMessage 发给它的名字。",
+        "列出主人的 Pal（这台电脑上由 PaloAlly 托管的 Claude Code 会话：名字、目录、状态、最后一句；status 为 asleep 的是睡着了，进程关着），以及电脑上其他还开着的 Claude Code 会话。要给某个 Pal 派活或问它进展，用 pal_send 发给它的名字。",
+
         {},
         async () => text(await h.pals_list()),
       ),
       tool(
+        "pal_send",
+        "给一个 Pal 发话（派活、问进展、转告主人的话）。醒着的和睡着的都行：睡着的主机先叫醒它（几秒），再把话送进去，它看到的是你发来的消息。它回你的话会作为消息回到你这里。",
+        {
+          name: z.string().describe("Pal 的名字（pals_list 里的 name）"),
+          text: z.string().describe("要对它说的话，写完整：它看不到主对话"),
+        },
+        async (a) => text(await h.pal_send(a)),
+      ),
+      tool(
         "pal_propose",
-        "提议开一个 Pal：一个专门负责某个长期项目的 Claude Code 会话，由 PaloAlly 托管、一直开着。只生成一张卡片，主人点「开吧」才会开；立即返回，别说已经开了。最多同时 5 个 Pal。",
+        "提议开一个 Pal：一个专门负责某个长期项目的 Claude Code 会话，由 PaloAlly 托管，闲着时会睡下、有事时叫醒。只生成一张卡片，主人点「开吧」才会开；立即返回，别说已经开了。",
+
         {
           name: z.string().describe("Pal 的名字，主人一看就懂，如「网站」；也是你以后 SendMessage 给它用的名字"),
           dir: z.string().describe("项目目录（绝对路径或 ~/ 开头）"),

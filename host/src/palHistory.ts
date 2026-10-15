@@ -55,6 +55,8 @@ export function userEntryMessage(m: RawSessionMessage, o: PalMapOptions): ChatMe
     return { ...base, text: `${cmd[1]!.trim()}${args ? ` ${args}` : ""}`, channel: "app" };
   }
   const t = text.trim();
+  // The assistant's pal_send: put in by the host the way a SendMessage reads.
+  if (/^<cross-session-message[^>]*from-name="/.test(t)) return { ...base, text: peerBody(null, t), channel: "system", from: peerName(null, t, o) };
   if (!t || /^(<local-command-|<system-reminder>|<command-message>|Caveat: |<cross-session-message)/.test(t)) return null;
   return { ...base, text: t, channel: "app" };
 }

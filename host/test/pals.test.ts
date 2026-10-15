@@ -10,6 +10,7 @@ import { pagePalMessages, toPalMessages, transcriptLastLine, transcriptModel } f
 import { MAX_AWAKE, MAX_PALS, PALO_NAME, type PalsDeps, type PalsTiming } from "../src/pals.ts";
 import { type PalRecord, startError } from "../src/palSession.ts";
 import type { Paths } from "../src/config.ts";
+import { BEHAVIOR } from "../src/home.ts";
 import { handleRpc } from "../src/rpc.ts";
 import type { FakeScript } from "./fakeDriver.ts";
 import { FakeClaudeDir, FakeCli, assistantEntry } from "./fakeClaude.ts";
@@ -704,6 +705,31 @@ describe("asleep and awake (§12)", () => {
     expect(await t.call("approval.answer", { id: card.id, allow: true })).toEqual({ status: "denied" });
     await waitFor(() => statusOf(t, pal.id) === "idle" && t.driver.pals.length === 2);
     expect(t.hub.audit.tail(30).find((e) => e.type === "pal.woke")).toMatchObject({ pal: pal.id, why: "card" });
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("the assistant's pal_send reaches an asleep Pal: it's woken, the words go in as the assistant's (a SendMessage from its session to the Pal), and read back so", async () => {
+    const t = setup();
+    const sid = bgSession(t);
+    const { pal } = await t.call("pals.adopt", { sessionId: sid });
+    await sleepNow(t, pal.id);
+    const tools = t.hub.toolHandlers();
+    expect(await tools.pal_send({ name: "网站", text: "把登录页的测试补上，做完告诉我" })).toBe("已经送到「网站」（它刚才睡着，已经叫醒）。它回你的话会作为消息回到你这里。");
+    const woken = t.driver.pals[1]!;
+    expect(woken.opts.resumeSessionId).toBe(sid);
+    const wrapped = `<cross-session-message from="paloally" from-name="${PALO_NAME}">\n把登录页的测试补上，做完告诉我\n</cross-session-message>`;
+    expect(woken.sent).toEqual([wrapped]);
+    expect(t.palEvents("chat.message").find((m) => m.role === "user")).toMatchObject({ text: "把登录页的测试补上，做完告诉我", from: "Palo", channel: "system", pal: pal.id });
+    // read back from its transcript: the assistant's words, not the owner's
+    t.raw.set(sid, [{ type: "user", uuid: "s1", timestamp: "2026-10-15T10:00:00Z", message: { role: "user", content: wrapped }, origin: { kind: "human" } }]);
+    expect((await t.call("pals.history", { id: pal.id })).messages).toEqual([expect.objectContaining({ id: "s1", text: "把登录页的测试补上，做完告诉我", from: "Palo" })]);
+    // awake: straight in; by any case of its name
+    expect(await tools.pal_send({ name: "网站", text: "还有首页" })).toBe("已经送到「网站」。它回你的话会作为消息回到你这里。");
+    expect(t.driver.pals).toHaveLength(2);
+    expect(await tools.pal_send({ name: "没有的", text: "在吗" })).toContain("没有叫「没有的」的 Pal");
+    expect(await tools.pal_send({ name: "网站", text: " " })).toContain("空的");
+    expect(BEHAVIOR).toContain("mcp__paloally__pal_send");
+    expect(BEHAVIOR).toMatch(/醒着睡着都有效/);
     await t.hub.pals.stopAndWait();
   });
 

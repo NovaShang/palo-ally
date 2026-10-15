@@ -93,6 +93,10 @@ export const STALL_CONTINUE = "（PaloAlly：你的进程刚才卡住了，已�
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Words from another session (the assistant's pal_send), as Claude Code shows a SendMessage. */
+export function peerWrap(name: string, text: string): string {
+  return `<cross-session-message from="paloally" from-name="${name.replace(/"/g, "")}">\n${text}\n</cross-session-message>`;
+}
 
 export class PalSession {
   private proc: MainSession | null = null;
@@ -559,12 +563,13 @@ export class PalSession {
   // ---------------- the owner's words ----------------
 
   /**
-   * The owner's words (or the assistant's handover, `from`), into the
-   * session as typed; asleep, it's woken first. Words go in one after
-   * another in the order they came, also those that come while it's being
-   * woken.
+   * The owner's words (or the assistant's, `from`), into the session as
+   * typed; asleep, it's woken first. Words go in one after another in the
+   * order they came, also those that come while it's being woken. `peer`:
+   * they're another session's (the assistant's pal_send), shown to it as a
+   * SendMessage from that name.
    */
-  send(text: string, o: { clientMsgId?: string; from?: string } = {}): Promise<ChatMessage> {
+  send(text: string, o: { clientMsgId?: string; from?: string; peer?: string } = {}): Promise<ChatMessage> {
     const t = text.trim();
     if (!t) return Promise.reject(new Error("要说的话不能是空的"));
     this.queuedSends++;
@@ -573,7 +578,7 @@ export class PalSession {
     return run;
   }
 
-  private async deliver(t: string, o: { clientMsgId?: string; from?: string }): Promise<ChatMessage> {
+  private async deliver(t: string, o: { clientMsgId?: string; from?: string; peer?: string }): Promise<ChatMessage> {
     if (this.rec.stoppedFor) this.clearStop();
     try {
       await this.start();
@@ -600,11 +605,12 @@ export class PalSession {
     };
     this.emitted.add(uuid);
     this.d.emit("chat.message", msg);
+    const content = o.peer ? peerWrap(o.peer, t) : t;
     this.pendingUuids.add(uuid);
-    this.pendingText.set(uuid, { text: t, ...(o.from ? { from: o.from } : {}) });
+    this.pendingText.set(uuid, { text: content, ...(o.from ? { from: o.from } : {}) });
     this.rec.lastUsedAt = ts;
     this.d.save();
-    proc.send(t, uuid);
+    proc.send(content, uuid);
     this.windingDown = false;
     this.touch();
     return msg;

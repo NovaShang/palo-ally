@@ -300,7 +300,7 @@ export class HandoffTracker {
     const send = this.pendingSends.get(toolUseId);
     if (!send) return;
     this.pendingSends.delete(toolUseId);
-    if (isError || /"success"\s*:\s*false/.test(content)) return;
+    if (isError || /"success"\s*:\s*false/.test(content) || /^没送/.test(content)) return;
     const peer = this.registry.resolve(send.to);
     if (!peer || this.isHome(peer)) return;
     const existing = this.open().find((h) => h.peer.sessionId === peer.sessionId);

@@ -33,8 +33,8 @@ import { newId, readJson, writeJson, zonedParts } from "./util.ts";
 // five awake: one idle 20 minutes is put to sleep (its process ends, its
 // record stays), and past five awake the least recently used idle one goes
 // first. Busy or waiting ones are never put to sleep (past five for a while,
-// then). The owner's words, 叫醒 or a card of its answered wake it: the same
-// session resumes and the words go in, in order.
+// then). The owner's words, 叫醒, a card of its answered or the assistant's
+// pal_send wake it: the same session resumes and the words go in, in order.
 // A conversation that ended on the computer lately can be taken over too
 // (§10): listed by pals.recent, resumed directly by pals.adopt, or proposed
 // by the assistant on a card the owner answers.
@@ -1067,7 +1067,7 @@ export class Pals {
     if (!key) return "没提：要给出这个对话的 sessionId（用 pals_recent 查）";
     const sid = await this.recentList.fullId(key);
     const pal = this.get(sid);
-    if (pal && pal.rec.sessionId === sid) return `它已经是 Pal「${pal.rec.name}」了，不用再接管；给它派活用 SendMessage 发给「${pal.rec.name}」。`;
+    if (pal && pal.rec.sessionId === sid) return `它已经是 Pal「${pal.rec.name}」了，不用再接管；给它派活用 pal_send 发给「${pal.rec.name}」。`;
     if (this.takenIds().has(sid))
       return "没提：这个对话现在还开着（在终端里或后台），不是已经退出的。要接管它，请主人在 Pals 列表里对它点「接管」。";
     const found = await this.recentList.find(sid);
@@ -1142,11 +1142,36 @@ export class Pals {
     });
   }
 
+  /**
+   * pal_send: the assistant's words to a Pal by name, asleep or awake (one
+   * asleep is woken first). They go in as the handover does, shown as the
+   * assistant's (「Palo 说」), and the Pal reads them as a SendMessage from
+   * the assistant's session, which it answers there.
+   */
+  async toolSend(a: { name: string; text: string }): Promise<string> {
+    const name = String(a?.name ?? "").trim();
+    const text = String(a?.text ?? "").trim();
+    if (!name) return "没送：要给出 Pal 的名字（pals_list 里的 name）";
+    if (!text) return "没送：要说的话是空的";
+    const pal = this.get(name);
+    if (!pal) return `没送：没有叫「${name}」的 Pal（用 pals_list 看名字）`;
+    const wasAsleep = this.wakingFor(pal, "assistant");
+    try {
+      await pal.send(text, { from: this.assistantName(), peer: this.paloName() });
+    } catch (e) {
+      this.waking.delete(pal.id);
+      return `没送到「${pal.rec.name}」：${e instanceof Error ? e.message : e}`;
+    }
+    this.balanceSoon();
+    this.d.audit.log("pal.send", { pal: pal.id, name: pal.rec.name, chars: text.length, by: "assistant" });
+    return `已经送到「${pal.rec.name}」${wasAsleep ? "（它刚才睡着，已经叫醒）" : ""}。它回你的话会作为消息回到你这里。`;
+  }
+
   async toolList(): Promise<string> {
     const others = await this.d.sessions.listFresh().catch(() => this.d.sessions.list());
     return JSON.stringify({
       pals: this.list().map((p) => ({
-        name: p.name, // SendMessage's `to`
+        name: p.name, // pal_send's (and SendMessage's) name
         dir: p.cwd,
         status: p.status,
         ...(p.lastLine ? { lastLine: p.lastLine } : {}),

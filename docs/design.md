@@ -52,7 +52,7 @@ relay/       不新写：复用 github.com/NovaShang/bento 的 relay/（bento-re
 - **探针**：独立短上下文 `query()`（便宜模型、`persistSession:false`、结构化输出），只在有 watch 到期时才跑；没到期的 tick 零调用。
 - **本地控制面**：`~/.paloally/run/host.sock`（unix socket，行分隔 JSON，同一套 RPC），CLI 子命令通过它和 daemon 说话。
 - **会话钩子**（docs/sessions-prd.md §6.3）：`~/.paloally/run/hooks.sock`。全局钩子跑 `~/.paloally/bin/cc-hook <事件名> # PaloAlly`（行尾的注释是 PaloAlly 条目的记号，卸载只删带它的）：主机没在跑（没有 socket）时直接退出；否则写一行 `{event, payload, env}`，主机立刻回 `{"ack":true}`，再回 `{"output": <钩子要打印的 JSON 或 null>}`。350 毫秒内没有 ack、连不上、出任何错，钩子都无输出退出。`PALOALLY_SESSION=1`（主机自己起的会话：主会话、探针、Pal）直接退出。
-- **Pal**（docs/pals-prd.md §7）：每个 Pal 一个 SDK `query()`（streaming input，`resume` 它的记录；Palo 新开的用 `sessionId` 指定 id），常驻不关，会话名就是列表里的名字（`--name`），没有 PaloAlly 的工具，系统提示末尾加一句它由 PaloAlly 托管。进程经 PaloAlly 小助手启动（`spawnClaudeCodeProcess`）：主机起小助手 → 小助手以 `responsibility_spawnattrs_setdisclaim` 再起一份自己 → 那一份起 claude，标准输入输出一路继承；fd 3 上报 claude 的 pid。环境用主人登录 shell 的（去掉会话变量）。确认和提问走 `canUseTool`，成了带 `source: {kind:"pal"}` 的卡片。别的会话发进来的话只在记录里，主机跟着记录读出来。意外退出后按 2/5/15/30/60 秒重试，10 分钟内失败超过 5 次就停下并说明原因；主机启动时把醒着的 Pal 逐个接回来（睡着的保持睡着）。睡下和叫醒（pals-prd §12）：空闲 20 分钟（没有在跑的一轮、没有没收下的话、没有等主人的卡片、没有没结束的工具或后台任务）的 Pal 睡下：进程正常关掉，记录留着、标成 `status:"asleep"`；醒着的超过 5 个时，最久没用的空闲那个先睡；在忙或在等主人的从不睡，6 个都忙就暂时超出。主人的话、`pals.wake`、答它的卡片都会先 resume 同一个会话再送话，叫醒期间来的话排队，醒了按顺序送进去。叫醒后第一轮的花费（result 的 `total_cost_usd` 减去上一次的累计）记成 `lastWakeUsd`。看门狗只看醒着的。绝不两个进程写同一份记录：启动前查登记表和 `claude agents`，有别的进程拿着就不启动（主机上次留下的孤儿进程先停掉）；跑着时每 5 秒查一次，别处打开了就立刻让开。
+- **Pal**（docs/pals-prd.md §7）：每个 Pal 一个 SDK `query()`（streaming input，`resume` 它的记录；Palo 新开的用 `sessionId` 指定 id），常驻不关，会话名就是列表里的名字（`--name`），没有 PaloAlly 的工具，系统提示末尾加一句它由 PaloAlly 托管。进程经 PaloAlly 小助手启动（`spawnClaudeCodeProcess`）：主机起小助手 → 小助手以 `responsibility_spawnattrs_setdisclaim` 再起一份自己 → 那一份起 claude，标准输入输出一路继承；fd 3 上报 claude 的 pid。环境用主人登录 shell 的（去掉会话变量）。确认和提问走 `canUseTool`，成了带 `source: {kind:"pal"}` 的卡片。别的会话发进来的话只在记录里，主机跟着记录读出来。意外退出后按 2/5/15/30/60 秒重试，10 分钟内失败超过 5 次就停下并说明原因；主机启动时把醒着的 Pal 逐个接回来（睡着的保持睡着）。睡下和叫醒（pals-prd §12）：空闲 20 分钟（没有在跑的一轮、没有没收下的话、没有等主人的卡片、没有没结束的工具或后台任务）的 Pal 睡下：进程正常关掉，记录留着、标成 `status:"asleep"`；醒着的超过 5 个时，最久没用的空闲那个先睡；在忙或在等主人的从不睡，6 个都忙就暂时超出。主人的话、`pals.wake`、答它的卡片、Palo 的 `pal_send` 都会先 resume 同一个会话再送话，叫醒期间来的话排队，醒了按顺序送进去。叫醒后第一轮的花费（result 的 `total_cost_usd` 减去上一次的累计）记成 `lastWakeUsd`。看门狗只看醒着的。绝不两个进程写同一份记录：启动前查登记表和 `claude agents`，有别的进程拿着就不启动（主机上次留下的孤儿进程先停掉）；跑着时每 5 秒查一次，别处打开了就立刻让开。
 ## 3. 外壳给主 agent 的工具（in-process MCP server `paloally`）
 
 | 工具 | 作用 |
@@ -65,7 +65,8 @@ relay/       不新写：复用 github.com/NovaShang/bento 的 relay/（bento-re
 | `notify_user(text, urgent?)` | 主动推送（经路由器：App 推送；微信只发非敏感回执） |
 | `ally_list()` | Ally 列表：id、对方主人的称呼、助理名、标签、档位（能对话 / 每句要你看）、是否在线 |
 | `ally_send(to, text, urgent?, slots?, replyTo?)` | 给「能对话」的 Ally 直接发出；给「每句要你看」的只生成草稿卡片，主人点「发送」（`ally.draft.decide`）才进待发队列。聊天里都是 `kind:"ally"`、`dir:"out"`、`role:"assistant"`。处理某个 Ally 来话的那一轮里，只有回给它的话能直接发出，给别的 Ally 的一律是草稿 |
-| `pals_list()` | 主人的 Pal（名字 = SendMessage 的 to、目录、状态、最后一句）和电脑上其他会话；跟 Pal 说话用原生 SendMessage |
+| `pals_list()` | 主人的 Pal（名字、目录、状态（asleep 是睡着了）、最后一句）和电脑上其他会话；跟 Pal 说话用 `pal_send` |
+| `pal_send(name, text)` | 给一个 Pal 发话，醒着睡着都行：睡着的先叫醒（同一个会话 resume），再把话送进去。Pal 对话里显示为「Palo 说」（`from` = 助理的名字），Pal 那边读到的是来自 `Palo` 会话的 SendMessage，回话照旧用 SendMessage 发给 Palo。原生 SendMessage 只送得到醒着的。处理 Ally 来话的那一轮里不许用 |
 | `pal_propose(name, dir, duty, dailyUsd)` | 只生成提议卡片（聊天里 `kind:"helper"`），立即返回；主人点「开吧」（`helper.decide`）才开，交接说明是 Pal 的第一条消息 |
 | `pals_recent(folder?)` | 最近 30 天里退出了的对话（同 `pals.recent`，最多 30 条）：sessionId、目录、标题、最后活动时间；folder 是路径或目录名 |
 | `pal_adopt(sessionId)` | 只生成接管卡片「接管『标题』（目录）」（聊天里 `kind:"pal_adopt"`），立即返回；主人点「接管」（`helper.decide`）才接。正开着的、已经是 Pal 的、PaloAlly 自己的不出卡片 |
