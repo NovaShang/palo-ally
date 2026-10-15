@@ -285,6 +285,7 @@ export class Hub {
       mainSessionId: () => this.runtime.data.sessionId,
       isPal: (sessionId) => this.pals?.isPal(sessionId) ?? false,
       adopting: (sessionId) => this.pals?.adopting(sessionId) ?? false,
+      endedCwd: async (sessionId) => this.pals?.endedCwd(sessionId),
       paloName: () => PALO_NAME,
       log: this.log,
       ...deps.sessions,

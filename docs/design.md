@@ -217,7 +217,7 @@ ModelOption { value; displayName; description; efforts:string[] }
 | `ally.say` | `{id, text}` | `{entry}`（主人自己的话，author "owner"，不经卡片直接进待发队列；也算主人「已看到」） |
 | `ally.trust` | `{id, trust:"converse"\|"review"}` | `{ally:AllyInfo}`（同时发 `ally.updated`；对方从下一个 `ally.hello` 得知） |
 | `sessions.list` | `{}` | `{sessions:CCSession[], hooks:boolean}`（未接管的会话，最近活动的在前；hooks = 全局钩子开着没有） |
-| `sessions.history` | `{id, before?, limit?}` | `{messages:CCMessage[]}`（从旧到新；before = 客户端手里最早一条的 id，也接受毫秒时间；默认 50 条，最多 200） |
+| `sessions.history` | `{id, before?, limit?}` | `{messages:CCMessage[]}`（从旧到新；before = 客户端手里最早一条的 id，也接受毫秒时间；默认 50 条，最多 200。`id` 可以是电脑上开着的会话，也可以是 `pals.recent` 里退出了的对话（目录从 Claude Code 的记录里查）。只读：不写记录、不占着它。App 开着这个会话的页面时每 3 秒再要一次最新一页，记录的大小和修改时间没变时主机不再读一遍） |
 | `sessions.hooks` | `{enabled?}` | `{enabled}`（不带 enabled 只查不改） |
 | `helper.decide` | `{proposalId, action:"create"\|"discard"}` | `{pal?}`（create 返回开好或接管好的 Pal；已经答过的再答一次，返回原来的结果。`pal_adopt` 卡片接管不成时返回 `{}`，卡片变成 failed、带原因，可以再点） |
 | `pals.list` | `{}` | `{pals:Pal[], others:CCSession[], hooks:boolean, helper:boolean}`（所有 Pal，包括睡着的；helper = Pal 经 PaloAlly 小助手启动） |

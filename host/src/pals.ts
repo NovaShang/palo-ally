@@ -504,6 +504,12 @@ export class Pals {
     return all.filter((e) => !taken.has(e.sessionId) && match(e.cwd)).slice(0, limit);
   }
 
+  /** A conversation that ended (sessions.history, §14): its folder, when it's one pals.recent would list. */
+  async endedCwd(sessionId: string): Promise<string | undefined> {
+    const found = await this.recentList.find(sessionId);
+    return typeof found === "string" ? undefined : found.cwd;
+  }
+
   // Sessions that aren't ended ones: the Pals, those being adopted, and the
   // computer's running (or stopped background) sessions.
   private takenIds(): Set<string> {

@@ -4,7 +4,7 @@
 // helper.decide).
 import { afterAll, describe, expect, test } from "bun:test";
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SDKSessionInfo } from "@anthropic-ai/claude-agent-sdk";
@@ -369,6 +369,39 @@ describe("the assistant brings one back (pals_recent, pal_adopt)", () => {
     expect(BEHAVIOR).toContain("mcp__paloally__pals_recent");
     expect(BEHAVIOR).toContain("mcp__paloally__pal_adopt");
     expect(BEHAVIOR).toMatch(/有好几个候选时，先用 AskUserQuestion 让主人选/);
+  });
+});
+
+describe("looking without taking over (§14)", () => {
+  test("sessions.history reads a conversation that ended (its folder from Claude Code's record) without taking it over or writing to it; an open page asking again sees what was added, and an unchanged transcript isn't read again", async () => {
+    const t = setup();
+    const site = t.folder("site");
+    const sid = t.ended(site, { customTitle: "首页改成两栏" });
+    const path = join(t.claude.dir, "projects", site.replace(/[^A-Za-z0-9]/g, "-"), `${sid}.jsonl`);
+    const line = (uuid: string, role: "user" | "assistant", text: string) =>
+      role === "user"
+        ? { type: "user", uuid, timestamp: "2026-10-12T09:00:00Z", message: { role: "user", content: text }, origin: { kind: "human" } }
+        : { type: "assistant", uuid, timestamp: "2026-10-12T09:01:00Z", message: { id: `msg_${uuid}`, role: "assistant", content: [{ type: "text", text }] } };
+    t.raw.set(sid, [line("u1", "user", "把首页改成两栏"), line("a1", "assistant", "两栏的样式好了。")]);
+    const before = readFileSync(path, "utf8");
+    const first = await t.call("sessions.history", { id: sid });
+    expect(first.messages.map((m: any) => [m.role, m.text])).toEqual([["owner", "把首页改成两栏"], ["assistant", "两栏的样式好了。"]]);
+    // nothing taken over, nothing written
+    expect(t.hub.pals.list()).toEqual([]);
+    expect(t.driver.pals).toHaveLength(0);
+    expect(readFileSync(path, "utf8")).toBe(before);
+    // the transcript didn't change: not read again (what the reader would say now isn't asked)
+    t.raw.set(sid, [...t.raw.get(sid)!, line("u2", "user", "还没写进记录")]);
+    expect((await t.call("sessions.history", { id: sid })).messages).toHaveLength(2);
+    // Claude Code wrote more (a live one going on): the next look has it
+    appendFileSync(path, JSON.stringify(line("u2", "user", "还没写进记录")) + "\n");
+    t.raw.set(sid, [...t.raw.get(sid)!, line("a2", "assistant", "新的一句")]);
+    const next = await t.call("sessions.history", { id: sid });
+    expect(next.messages.map((m: any) => m.text).slice(-2)).toEqual(["还没写进记录", "新的一句"]);
+    // older pages as before; one it doesn't know isn't found
+    expect((await t.call("sessions.history", { id: sid, before: "a2", limit: 1 })).messages.map((m: any) => m.id)).toEqual(["u2"]);
+    await expect(t.call("sessions.history", { id: "f0000000-0000-4000-8000-000000000000" })).rejects.toThrow("没有这个会话");
+    await t.hub.pals.stopAndWait();
   });
 });
 

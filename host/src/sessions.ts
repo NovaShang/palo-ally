@@ -1,5 +1,7 @@
 import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
+import { statSync } from "node:fs";
 import { resolve, sep } from "node:path";
+import { transcriptPath } from "./handoffs.ts";
 import type { ApprovalManager } from "./approvals.ts";
 import type { Audit } from "./audit.ts";
 import { AwayDetector } from "./away.ts";
@@ -47,6 +49,8 @@ export interface SessionsDeps {
   cli?: ClaudeCli;
   away?: AwayDetector;
   readMessages?: (sessionId: string, dir: string) => Promise<RawSessionMessage[]>;
+  /** A conversation that ended (pals-prd §14): its folder, from Claude Code's own record (getSessionInfo). */
+  endedCwd?: (sessionId: string) => Promise<string | undefined>;
   hookWaitMs?: number;
   bun?: string; // the bun the hook runs on
   now?: () => number;
@@ -150,13 +154,45 @@ export class Sessions {
     return this.list();
   }
 
+  /**
+   * sessions.history: one of the computer's sessions, read only (pals-prd
+   * §14): a live one, or a conversation that ended (its folder from Claude
+   * Code's record). An open page asks again every few seconds for what's
+   * new; a transcript that hasn't changed since (size and time) isn't read
+   * again. Reading never writes to it or holds it.
+   */
   async history(id: string, before?: string | number, limit = 50): Promise<CCMessage[]> {
     const r = this.watch.get(id) ?? this.watch.find(id);
-    if (!r?.sessionId || !r.cwd) throw new Error("没有这个会话");
-    const read = this.d.readMessages ?? ((sid: string, dir: string) => getSessionMessages(sid, { dir }) as Promise<RawSessionMessage[]>);
-    const name = this.d.settings().assistantName || "Palo";
-    const all = toCCMessages(await read(r.sessionId, r.cwd), name, this.d.paloName?.() ?? "Palo");
+    let sid = r?.sessionId;
+    let cwd = r?.cwd;
+    if (!sid || !cwd) {
+      const key = String(id ?? "").trim();
+      const ended = key ? await this.d.endedCwd?.(key).catch(() => undefined) : undefined;
+      if (!ended) throw new Error("没有这个会话");
+      sid = key;
+      cwd = ended;
+    }
+    const all = await this.readAll(sid, cwd);
     return pageMessages(all, before, Math.max(1, Math.min(Number(limit) || 50, 200)));
+  }
+
+  private lastRead: { key: string; stamp: string; messages: CCMessage[] } | null = null;
+
+  private async readAll(sid: string, cwd: string): Promise<CCMessage[]> {
+    const name = this.d.settings().assistantName || "Palo";
+    const key = `${sid}\n${cwd}\n${name}`;
+    let stamp = "";
+    try {
+      const st = statSync(transcriptPath(this.d.claudeDir, cwd, sid));
+      stamp = `${st.size}:${st.mtimeMs}`;
+    } catch {
+      /* not there (or not where Claude Code keeps it): read as asked */
+    }
+    if (stamp && this.lastRead?.key === key && this.lastRead.stamp === stamp) return this.lastRead.messages;
+    const read = this.d.readMessages ?? ((s: string, dir: string) => getSessionMessages(s, { dir }) as Promise<RawSessionMessage[]>);
+    const messages = toCCMessages(await read(sid, cwd), name, this.d.paloName?.() ?? "Palo");
+    this.lastRead = stamp ? { key, stamp, messages } : null;
+    return messages;
   }
 
   // ---------------- the global hooks ----------------
