@@ -240,6 +240,17 @@ describe("host ↔ app protocol", () => {
     await hub.toolHandlers().pal_propose({ name: "文档", dir: project, duty: "你负责主人的文档：先把安装说明写完。", dailyUsd: 5 });
     const proposal = hub.chat.recent(1)[0]!.proposal!;
     const opened = (await run("helper.decide", { proposalId: proposal.id, action: "create" })).pal;
+    // 网站 goes to sleep (§12); words wake it (what waking cost is kept), and
+    // pals.wake does too; asleep again, as the list's sample shows it.
+    const putToSleep = () => (hub.pals as any).putToSleep(hub.pals.get(pal.id), "test") as Promise<void>;
+    await putToSleep();
+    await call("pals.send", { id: pal.id, text: "接着做" });
+    await waitFor(() => hub.pals.list().find((p) => p.id === pal.id)?.lastWakeUsd !== undefined);
+    await putToSleep();
+    const woke = (await run("pals.wake", { id: pal.id })).pal;
+    expect([woke.status, typeof woke.lastWakeUsd]).toEqual(["idle", "number"]);
+    await putToSleep();
+    await waitFor(() => events.some((e) => e.event === "pals.updated" && e.data.pals.some((p: any) => p.id === pal.id && p.status === "asleep" && p.lastWakeUsd)));
     // 最近的对话: one that ended in the same folder, listed; the assistant's
     // card for it, and the same card once the owner took it over.
     const endedId = "3c9d2e71-0000-4000-8000-000000000003";

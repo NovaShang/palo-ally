@@ -42,7 +42,7 @@ export class FakeMainSession implements MainSession {
   private busy = false;
   sent: string[] = [];
   sentImages: ImageInput[] = [];
-  private total = 0;
+  private total: number;
   readonly sessionId: string;
   readonly pal: boolean;
   private interruptWaiters: (() => void)[] = [];
@@ -53,6 +53,8 @@ export class FakeMainSession implements MainSession {
   constructor(readonly opts: MainSessionOptions, private script: FakeScript, private driver: FakeDriver, pal = false) {
     this.sessionId = opts.resumeSessionId ?? opts.sessionId ?? `sess-${++idCounter}`;
     this.pal = pal;
+    // Resumed, Claude Code goes on from the session's running total.
+    this.total = opts.resumeSessionId ? (driver.totals.get(opts.resumeSessionId) ?? 0) : 0;
     this.failStart = pal ? driver.failPalStart?.(opts) : undefined;
     if (this.failStart) {
       const why = this.failStart;
@@ -177,6 +179,7 @@ export class FakeMainSession implements MainSession {
       }
       if (this.closed) break;
       this.total += this.driver.turnCost;
+      this.driver.totals.set(this.sessionId, this.total);
       this.opts.onEvent({
         type: "result",
         isError: false,
@@ -232,6 +235,7 @@ export class FakeDriver implements HarnessDriver {
   gateDenials: { tool: string; message: string }[] = []; // calls the host's gate (the PreToolUse hook) refused
   ran: string[] = []; // tools that went through and ran, in order
   turnCost = 0.001;
+  totals = new Map<string, number>(); // each session's running total of cost, as a resume goes on from it
   contextTokens = 1000; // what each turn's result reports
   probeResponder: (req: ProbeRequest) => ProbeResult = () => ({ output: { results: [] }, costUsd: 0.0001 });
   // the permission mode a session reports running in (default: the one asked for)

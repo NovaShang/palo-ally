@@ -26,7 +26,7 @@ export const RPC_METHODS = [
   "suggestions.list", "suggestions.dismiss", "host.update",
   "ally.list", "ally.invite", "ally.accept", "ally.remove", "ally.log", "ally.draft.decide", "ally.say", "ally.trust",
   "sessions.list", "sessions.history", "sessions.hooks", "helper.decide",
-  "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop", "pals.recent",
+  "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop", "pals.recent", "pals.wake",
 ] as const;
 
 export const RPC_EVENTS = [
@@ -141,12 +141,16 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     case "approval.answer": {
       const a = hub.approvals.answer(String(p.id), !!p.allow, ctx.channel, !!p.remember, ctx.deviceId);
       if (!a) throw new Error("没有这个确认请求");
+      // A Pal's card answered after it went to sleep: it's woken (§12).
+      if (a.source?.kind === "pal") hub.pals.cardAnswered(a.source.id);
       return { status: a.status };
     }
     case "question.answer": {
       const raw = p.answers && typeof p.answers === "object" ? (p.answers as Record<string, unknown>) : {};
       const answers = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, String(v ?? "")]));
-      return { question: hub.questions.answer(String(p.id ?? ""), answers, ctx.channel, ctx.deviceId) };
+      const q = hub.questions.answer(String(p.id ?? ""), answers, ctx.channel, ctx.deviceId);
+      if (q?.source?.kind === "pal") hub.pals.cardAnswered(q.source.id);
+      return { question: q };
     }
     case "watch.add":
       return { watch: hub.watches.add(p, "user") };
@@ -256,6 +260,9 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     case "pals.stop":
       await hub.pals.stopTurn(String(p.id ?? ""), ctx.channel);
       return { ok: true };
+    // An asleep Pal (§12) resumes; pals.send wakes one by itself too.
+    case "pals.wake":
+      return { pal: await hub.pals.wake(String(p.id ?? ""), ctx.channel) };
     // The conversations that ended on the computer lately (§10); pals.adopt takes one over.
     case "pals.recent":
       return { sessions: await hub.pals.recent({ folder: typeof p.folder === "string" ? p.folder : undefined, limit: p.limit }) };

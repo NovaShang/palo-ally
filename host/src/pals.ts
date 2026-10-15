@@ -28,12 +28,21 @@ import { newId, readJson, writeJson, zonedParts } from "./util.ts";
 // the assistant opens a new one on the owner's 开吧. Each stays up with a
 // fixed name the assistant reaches it by (SendMessage), comes back after a
 // crash or a restart of the Mac, and goes back to the terminal on 交还终端.
-// At most five at a time. One transcript is never written by two processes.
+// One transcript is never written by two processes.
+// No practical limit on how many (§12; 50, against mistakes), but at most
+// five awake: one idle 20 minutes is put to sleep (its process ends, its
+// record stays), and past five awake the least recently used idle one goes
+// first. Busy or waiting ones are never put to sleep (past five for a while,
+// then). The owner's words, 叫醒 or a card of its answered wake it: the same
+// session resumes and the words go in, in order.
 // A conversation that ended on the computer lately can be taken over too
 // (§10): listed by pals.recent, resumed directly by pals.adopt, or proposed
 // by the assistant on a card the owner answers.
 
-export const MAX_PALS = 5;
+/** How many Pals at most (a safety limit, §12). */
+export const MAX_PALS = 50;
+/** How many awake (with a process) at once, before idle ones are put to sleep. */
+export const MAX_AWAKE = 5;
 /** The assistant's own session name: Pals see its SendMessages as from it, and answer it there. */
 export const PALO_NAME = "Palo";
 const PUSH_EVERY_MS = 10 * 60_000;
@@ -109,6 +118,8 @@ export interface PalsTiming {
   stopWaitMs: number; // a background session stopping (claude stop) before giving up
   guardMs: number; // how often running Pals are checked for another process on their transcript
   startStaggerMs: number; // between Pals coming back at the host's start
+  sleepIdleMs: number; // idle this long, an awake Pal is put to sleep
+  sleepCheckMs: number; // how often that's looked at
 }
 
 const TIMING: PalsTiming = {
@@ -120,6 +131,8 @@ const TIMING: PalsTiming = {
   stopWaitMs: 15_000,
   guardMs: 5_000,
   startStaggerMs: 1_500,
+  sleepIdleMs: 20 * 60_000,
+  sleepCheckMs: 30_000,
 };
 
 function pidAlive(pid: number): boolean {
@@ -178,6 +191,9 @@ export class Pals {
   private emitTimer: ReturnType<typeof setTimeout> | null = null;
   private guardTimer: ReturnType<typeof setInterval> | null = null;
   private dayTimer: ReturnType<typeof setInterval> | null = null;
+  private sleepTimer: ReturnType<typeof setInterval> | null = null;
+  private balanceTimer: ReturnType<typeof setTimeout> | null = null;
+  private waking = new Set<string>(); // asleep Pals being woken (said once)
   private startTimers: ReturnType<typeof setTimeout>[] = [];
   private offBus: (() => void) | null = null;
   private started = false;
@@ -235,8 +251,15 @@ export class Pals {
       mapOptions: () => this.mapOptions(rec),
       appendPrompt: () => PAL_PROMPT(this.paloName()),
       onWaiting: (pal, body, ids) => this.pushWaiting(pal, body, ids),
-      onTurnEnd: (pal) => this.checkBudget(pal),
+      onTurnEnd: (pal) => {
+        this.checkBudget(pal);
+        this.balanceSoon();
+      },
       onStopped: (pal) => this.onStopped(pal),
+      onWoke: (pal) => {
+        this.waking.delete(pal.id);
+        this.balanceSoon();
+      },
       pidAlive: (pid) => this.alive(pid),
       kill: this.d.kill ?? ((pid, sig) => process.kill(pid, sig)),
       timing: this.timing,
@@ -259,7 +282,11 @@ export class Pals {
 
   // ---------------- lifecycle ----------------
 
-  /** At the host's start: every Pal comes back (a few seconds apart), and the checks begin. */
+  /**
+   * At the host's start: the Pals that were awake come back (a few seconds
+   * apart; the five used most lately, if more were), those asleep stay
+   * asleep, and the checks begin.
+   */
   start(): void {
     if (this.started) return;
     this.started = true;
@@ -270,8 +297,11 @@ export class Pals {
     // ones that couldn't start before) are tried again.
     let i = 0;
     const today = this.today();
-    for (const pal of this.pals.values()) {
-      if (pal.rec.stoppedFor === "budget" && pal.rec.budgetDay === today) continue;
+    const back = [...this.pals.values()]
+      .filter((p) => p.rec.status !== "asleep" && !(p.rec.stoppedFor === "budget" && p.rec.budgetDay === today))
+      .sort((a, b) => b.rec.lastUsedAt - a.rec.lastUsedAt);
+    for (const pal of back.slice(MAX_AWAKE)) pal.markAsleep();
+    for (const pal of back.slice(0, MAX_AWAKE)) {
       pal.clearStop();
       pal.queueStart();
       const t = setTimeout(() => void this.bringBack(pal, "start"), i++ * this.timing.startStaggerMs);
@@ -281,6 +311,8 @@ export class Pals {
     (this.guardTimer as any).unref?.();
     this.dayTimer = setInterval(() => this.newDay(), 60_000);
     (this.dayTimer as any).unref?.();
+    this.sleepTimer = setInterval(() => this.balance(), this.timing.sleepCheckMs);
+    (this.sleepTimer as any).unref?.();
     this.emitSoon();
   }
 
@@ -291,6 +323,9 @@ export class Pals {
     for (const t of this.startTimers.splice(0)) clearTimeout(t);
     if (this.guardTimer) clearInterval(this.guardTimer);
     if (this.dayTimer) clearInterval(this.dayTimer);
+    if (this.sleepTimer) clearInterval(this.sleepTimer);
+    if (this.balanceTimer) clearTimeout(this.balanceTimer);
+    this.balanceTimer = null;
     if (this.emitTimer) clearTimeout(this.emitTimer);
     for (const w of this.waiting.values()) if (w.timer) clearTimeout(w.timer);
     this.waiting.clear();
@@ -316,17 +351,100 @@ export class Pals {
     }
   }
 
-  /** What the stall watchdog watches: every Pal. */
+  /** What the stall watchdog watches: the Pals that are awake. */
   stallTargets(): StallTarget[] {
-    return [...this.pals.values()].map((p) => p.stallTarget());
+    return [...this.pals.values()].filter((p) => p.awake).map((p) => p.stallTarget());
   }
 
   /** Nothing in flight in any Pal (safe to restart the host). */
   quiet(): boolean {
     return [...this.pals.values()].every((p) => {
       const s = p.status();
-      return s === "idle" || s === "stopped";
+      return s === "idle" || s === "stopped" || s === "asleep";
     });
+  }
+
+  // ---------------- asleep and awake (§12) ----------------
+
+  private balanceSoon(): void {
+    if (this.balanceTimer || !this.started) return;
+    this.balanceTimer = setTimeout(() => {
+      this.balanceTimer = null;
+      this.balance();
+    }, 50);
+    (this.balanceTimer as any).unref?.();
+  }
+
+  /**
+   * Awake ones idle 20 minutes go to sleep; past five awake, the least
+   * recently used idle ones too. Busy or waiting ones never: past five for a
+   * while, then, until one of them is done.
+   */
+  private balance(): void {
+    if (!this.started) return;
+    const now = this.now();
+    for (const p of this.pals.values()) {
+      if (!p.awake) continue;
+      const since = p.idleSince();
+      if (since !== null && now - since >= this.timing.sleepIdleMs) void this.putToSleep(p, "idle");
+    }
+    const awake = [...this.pals.values()].filter((p) => p.awake);
+    let over = awake.length - MAX_AWAKE;
+    if (over <= 0) return;
+    const idle = awake.filter((p) => p.idleSince() !== null).sort((a, b) => a.rec.lastUsedAt - b.rec.lastUsedAt);
+    for (const p of idle) {
+      if (over-- <= 0) break;
+      void this.putToSleep(p, "more than five awake");
+    }
+  }
+
+  private async putToSleep(pal: PalSession, why: string): Promise<void> {
+    this.d.audit.log("pal.slept", { pal: pal.id, name: pal.rec.name, why });
+    this.log(`${pal.rec.name} goes to sleep (${why})`);
+    const done = pal.sleep();
+    this.emitSoon();
+    await done;
+    this.emitSoon();
+  }
+
+  /**
+   * pals.wake: the same session resumes (it's a moment), and it counts as
+   * just used. One awake already is left as it is; one stopped (its spending
+   * limit, couldn't start) carries on, as the owner's words would make it.
+   */
+  async wake(id: string, why: string): Promise<Pal> {
+    const pal = this.mustGet(id);
+    this.wakingFor(pal, why);
+    if (pal.rec.stoppedFor) pal.clearStop();
+    pal.rec.lastUsedAt = this.now();
+    try {
+      await pal.start();
+    } catch (e) {
+      this.waking.delete(pal.id);
+      if (e instanceof HeldElsewhere) pal.markStopped("elsewhere", e.message);
+      throw e;
+    }
+    this.save();
+    this.emitSoon();
+    this.balanceSoon();
+    return pal.toWire();
+  }
+
+  // An asleep Pal is about to be woken: said once, however many words wait.
+  private wakingFor(pal: PalSession, why: string): boolean {
+    if (!pal.asleep) return false;
+    if (this.waking.has(pal.id)) return true;
+    this.waking.add(pal.id);
+    this.d.audit.log("pal.woke", { pal: pal.id, name: pal.rec.name, why });
+    this.log(`waking ${pal.rec.name} (${why})`);
+    return true;
+  }
+
+  /** A card of a Pal's was answered: one asleep is woken (in the background). */
+  cardAnswered(palId: string): void {
+    const pal = this.pals.get(palId);
+    if (!pal?.asleep) return;
+    void this.wake(pal.id, "card").catch((e) => this.log(`couldn't wake ${pal.rec.name}: ${e instanceof Error ? e.message : e}`));
   }
 
   // ---------------- the list ----------------
@@ -458,7 +576,9 @@ export class Pals {
         if (held.length || now - (this.retried.get(pal.id) ?? 0) < 30_000) continue;
         this.retried.set(pal.id, now);
         pal.clearStop();
-        void this.bringBack(pal, "free again");
+        // One that was asleep (woken while open elsewhere) goes back to sleep.
+        if (pal.rec.status === "asleep") this.emitSoon();
+        else void this.bringBack(pal, "free again");
         continue;
       }
       const own = pal.pid;
@@ -478,10 +598,19 @@ export class Pals {
 
   // ---------------- adopting ----------------
 
+  private oldest(): PalSession {
+    return [...this.pals.values()].sort((a, b) => a.rec.lastUsedAt - b.rec.lastUsedAt)[0]!;
+  }
+
   private room(): void {
     if (this.pals.size < MAX_PALS) return;
-    const oldest = [...this.pals.values()].sort((a, b) => a.rec.lastUsedAt - b.rec.lastUsedAt)[0]!;
-    throw new Error(`已经有 ${MAX_PALS} 个 Pal 了，先移出一个（最久没用的是「${oldest.rec.name}」）`);
+    throw new Error(`已经有 ${MAX_PALS} 个 Pal 了，先移出一个（最久没用的是「${this.oldest().rec.name}」）`);
+  }
+
+  // What the assistant's tools say when there's no room.
+  private full(): string | null {
+    if (this.pals.size < MAX_PALS) return null;
+    return `已经有 ${MAX_PALS} 个 Pal 了（最多 ${MAX_PALS} 个）。先问主人要不要把最久没用的「${this.oldest().rec.name}」移出 Pals（主人在它的页面右上角点「移出 Pals」）。`;
   }
 
   private uniqueName(want: string, liveNames: string[] = []): string {
@@ -600,6 +729,7 @@ export class Pals {
     }
     this.d.audit.log("pal.adopted", { pal: rec.id, session: s.id, name: rec.name, cwd: rec.cwd, by, ...(ended ? { ended: true } : {}) });
     this.emitNow();
+    this.balanceSoon();
     return pal;
   }
 
@@ -691,14 +821,23 @@ export class Pals {
 
   // ---------------- talking to a Pal ----------------
 
-  /** pals.send: the owner's words, as typed. A retried send (same clientMsgId) goes in once. */
+  /**
+   * pals.send: the owner's words, as typed. One asleep is woken first (what
+   * comes meanwhile goes in after, in order). A retried send (same
+   * clientMsgId) goes in once.
+   */
   async send(id: string, text: string, clientMsgId?: string): Promise<{ id: string; seq: number }> {
     const pal = this.mustGet(id);
     const cid = clientMsgId ? String(clientMsgId).slice(0, 100) : undefined;
     const seen = cid ? this.sent.get(pal.id)?.get(cid) : undefined;
     if (seen) return seen;
     const wasStopped = pal.rec.stoppedFor;
-    const msg = await pal.send(String(text ?? ""), cid ? { clientMsgId: cid } : {});
+    this.wakingFor(pal, "owner");
+    const msg = await pal.send(String(text ?? ""), cid ? { clientMsgId: cid } : {}).catch((e) => {
+      this.waking.delete(pal.id);
+      throw e;
+    });
+    this.balanceSoon();
     if (wasStopped) this.d.audit.log("pal.resumed", { pal: pal.id, name: pal.rec.name, why: "owner" });
     const out = { id: msg.id, seq: msg.seq };
     if (cid) {
@@ -833,10 +972,8 @@ export class Pals {
     } catch (e) {
       return `没提：${e instanceof Error ? e.message : e}`;
     }
-    if (this.pals.size >= MAX_PALS) {
-      const oldest = [...this.pals.values()].sort((x, y) => x.rec.lastUsedAt - y.rec.lastUsedAt)[0]!;
-      return `已经有 ${MAX_PALS} 个 Pal 了（最多 ${MAX_PALS} 个）。先问主人要不要把最久没用的「${oldest.rec.name}」移出 Pals（主人在它的页面右上角点「移出 Pals」）。`;
-    }
+    const full = this.full();
+    if (full) return full;
     const proposal: HelperProposal = { id: newId("hp_"), ...p, status: "pending" };
     const where = tildePath(p.cwd);
     const msg = this.d.chat.add({ role: "assistant", kind: "helper", text: `开一个 Pal「${p.name}」专门管 ${where}？`, channel: "system", proposal });
@@ -918,6 +1055,7 @@ export class Pals {
       throw e;
     }
     this.emitNow();
+    this.balanceSoon();
     return pal;
   }
 
@@ -936,10 +1074,8 @@ export class Pals {
     if (typeof found === "string") return `没提：${found}`;
     const open = this.data.adoptions.find((p) => p.sessionId === sid && p.status === "pending");
     if (open) return `已经有一张接管它的卡片在等主人点了（${open.id}），不用再提。`;
-    if (this.pals.size >= MAX_PALS) {
-      const oldest = [...this.pals.values()].sort((x, y) => x.rec.lastUsedAt - y.rec.lastUsedAt)[0]!;
-      return `已经有 ${MAX_PALS} 个 Pal 了（最多 ${MAX_PALS} 个）。先问主人要不要把最久没用的「${oldest.rec.name}」移出 Pals（主人在它的页面右上角点「移出 Pals」）。`;
-    }
+    const full = this.full();
+    if (full) return full;
     const proposal: PalAdoptProposal = { id: newId("pa_"), sessionId: sid, cwd: found.cwd, title: found.title, status: "pending" };
     const where = tildePath(found.cwd);
     const msg = this.d.chat.add({ role: "assistant", kind: "pal_adopt", text: `接管「${found.title}」（${where}）？`, channel: "system", proposal });

@@ -21,6 +21,9 @@ import { newId, truncate } from "./util.ts";
 // and comes back by itself when its process ends without being asked to.
 // Never two processes on one transcript: it doesn't start while another
 // process holds the session, and it leaves as soon as one turns up.
+// Idle a while, it's put to sleep (§12): its process ends, its record stays;
+// the next word for it (or 叫醒) resumes the same session first. Words that
+// come in meanwhile wait their turn and go in in the order they came.
 
 export interface PalRecord {
   id: string;
@@ -38,6 +41,9 @@ export interface PalRecord {
   budgetDay?: string;
   note?: string; // why it's stopped
   pid?: number; // Claude Code's pid while the host runs it (an orphan after the host died)
+  status?: "asleep"; // put to sleep (§12): no process until it's woken; absent = awake
+  lastWakeUsd?: number; // what the first turn after its last wake cost
+  costTotalUsd?: number; // Claude Code's running total for the session, as its last result said
 }
 
 /** Another process holding a session's transcript. */
@@ -67,6 +73,8 @@ export interface PalSessionDeps {
   onWaiting: (pal: PalSession, body: string, ids: { approvalId?: string; questionId?: string }) => void;
   /** A turn ended (its spending is checked). */
   onTurnEnd: (pal: PalSession) => void;
+  /** It was asleep and is up again. */
+  onWoke?: (pal: PalSession) => void;
   /** It stopped by itself for good (couldn't start again, or opened elsewhere). */
   onStopped: (pal: PalSession) => void;
   pidAlive: (pid: number) => boolean;
@@ -85,6 +93,7 @@ export const STALL_CONTINUE = "（PaloAlly：你的进程刚才卡住了，已�
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+
 export class PalSession {
   private proc: MainSession | null = null;
   private up = false; // the process answered and is ours to talk to
@@ -99,6 +108,7 @@ export class PalSession {
   private pendingUuids = new Set<string>();
   private pendingText = new Map<string, { text: string; from?: string }>(); // the owner's words not yet taken, by uuid
   private openTools = new Map<string, string>(); // tool calls without a result yet (subagents' too): id → name
+  private turnTools = new Set<string>(); // …those of its own turn: none outlives the turn's end
   private lastEventAt = 0;
   private interrupted = false;
   private windingDown = false; // ended here after 停止: what's left of that turn doesn't make it busy again
@@ -109,6 +119,14 @@ export class PalSession {
   private replyTexts = new Map<string, string>(); // a reply's text so far, by its id (several blocks join)
   private emitted = new Set<string>(); // ids already sent to the app
   private follower: TranscriptFollower | null = null;
+  private sleeping: Promise<void> | null = null; // being put to sleep: its process is ending
+  private upAt = 0;
+  private bgTasks = new Set<string>(); // its background tasks still running (a subagent in the background)
+  private sendChain: Promise<unknown> = Promise.resolve(); // words go in one after another, in order
+  private queuedSends = 0; // words waiting to go in (it's being woken for them)
+  private wakeCost = false; // woken: the next turn's cost is what waking cost
+  private priorTotal: number | undefined; // its running total when this process started
+  private firstResult = true;
   private lastLine?: string;
   private updatedAt: number;
   model?: string;
@@ -146,6 +164,28 @@ export class PalSession {
     return this.turnOpen || this.pendingUuids.size > 0;
   }
 
+  /** Put to sleep: no process (its record is kept); being put to sleep counts. */
+  get asleep(): boolean {
+    return this.rec.status === "asleep" && !this.up && !this.starting;
+  }
+
+  /** It has a process, or one is coming up: what counts towards the five awake. */
+  get awake(): boolean {
+    return !this.asleep && !this.rec.stoppedFor && (this.up || !!this.starting || !!this.restartTimer || this.queued);
+  }
+
+  /**
+   * Since when it's had nothing on: no turn, no words it hasn't taken (nor
+   * any waiting to go in), no card on the owner, no tool or background task
+   * open. null: it isn't idle (or isn't running).
+   */
+  idleSince(): number | null {
+    if (!this.running || this.starting || this.sleeping) return null;
+    if (this.turnOpen || this.windingDown || this.pendingUuids.size || this.queuedSends || this.openTools.size || this.bgTasks.size) return null;
+    if (this.pendingCards() > 0) return null;
+    return Math.max(this.lastEventAt, this.rec.lastUsedAt, this.upAt);
+  }
+
   // ---------------- the list ----------------
 
   source(): CardSource {
@@ -162,7 +202,7 @@ export class PalSession {
 
   status(): PalStatus {
     if (this.rec.stoppedFor) return "stopped";
-    if (!this.up) return this.starting || this.restartTimer || this.queued ? "starting" : "stopped";
+    if (!this.up) return this.starting || this.restartTimer || this.queued ? "starting" : this.rec.status === "asleep" ? "asleep" : "stopped";
     if (this.pendingCards() > 0) return "waiting";
     return this.busy ? "busy" : "idle";
   }
@@ -180,6 +220,7 @@ export class PalSession {
       ...(this.lastLine ? { lastLine: this.lastLine } : {}),
       pending: this.pendingCards(),
       ...(this.model ? { model: this.model } : {}),
+      ...(typeof this.rec.lastWakeUsd === "number" ? { lastWakeUsd: this.rec.lastWakeUsd } : {}),
       createdBy: this.rec.createdBy,
       updatedAt: Math.round(this.updatedAt),
     };
@@ -199,6 +240,8 @@ export class PalSession {
 
   /** Starts (or resumes) its process; resolves once Claude Code is up. */
   start(): Promise<void> {
+    // Being put to sleep: once its process is gone, it's woken.
+    if (this.sleeping) return this.sleeping.then(() => this.start());
     this.queued = false;
     if (this.running) return Promise.resolve();
     if (this.starting) return this.starting;
@@ -251,6 +294,8 @@ export class PalSession {
       cwd: rec.cwd,
       ...(resume ? { resumeSessionId: rec.sessionId } : { sessionId: rec.sessionId }),
       model: rec.model,
+      // so a turn's cost is its own, not the session's running total
+      ...(typeof rec.costTotalUsd === "number" ? { priorCostUsd: rec.costTotalUsd } : {}),
       permissionMode: rec.permissionMode,
       appendSystemPrompt: this.d.appendPrompt(),
       name: rec.name,
@@ -290,10 +335,20 @@ export class PalSession {
       throw new Error("已经关了");
     }
     this.up = true;
+    this.upAt = this.d.now();
+    this.priorTotal = rec.costTotalUsd;
+    this.firstResult = true;
+    const woke = rec.status === "asleep";
+    if (woke) {
+      delete rec.status;
+      this.wakeCost = true;
+      this.d.save();
+    }
     this.follower?.stop();
     this.follower = new TranscriptFollower(this.transcript, (e) => this.onTranscript(e));
     this.follower.start();
-    this.d.log(`pal ${rec.name}: up (pid ${rec.pid ?? "?"}, ${launch.helper ? "through PaloAlly Helper" : "direct"}${resume ? ", resumed" : ""})`);
+    if (woke) this.d.onWoke?.(this);
+    this.d.log(`pal ${rec.name}: up (pid ${rec.pid ?? "?"}, ${launch.helper ? "through PaloAlly Helper" : "direct"}${resume ? ", resumed" : ""}${woke ? ", woken" : ""})`);
   }
 
   private async waitExit(): Promise<void> {
@@ -368,6 +423,9 @@ export class PalSession {
     this.pendingUuids.clear();
     this.pendingText.clear();
     this.openTools.clear();
+    this.turnTools.clear();
+    this.bgTasks.clear();
+    this.wakeCost = false;
     this.activity = "";
     this.windingDown = false;
     for (const w of this.turnEndWaiters.splice(0)) w();
@@ -406,6 +464,28 @@ export class PalSession {
     this.rec.budgetDay = undefined;
     this.rec.note = undefined;
     this.failures = [];
+    this.d.save();
+  }
+
+  /**
+   * Puts it to sleep (§12): its process ends cleanly, its record stays,
+   * marked asleep (also across the host's restarts); the next start wakes it.
+   */
+  sleep(): Promise<void> {
+    if (this.sleeping) return this.sleeping;
+    this.rec.status = "asleep";
+    this.d.save();
+    this.sleeping = this.shutdown().finally(() => {
+      this.sleeping = null;
+      this.d.changed();
+    });
+    this.d.changed();
+    return this.sleeping;
+  }
+
+  /** Marked asleep without a process to end (the host's start, past five awake). */
+  markAsleep(): void {
+    this.rec.status = "asleep";
     this.d.save();
   }
 
@@ -478,10 +558,22 @@ export class PalSession {
 
   // ---------------- the owner's words ----------------
 
-  /** The owner's words (or the assistant's handover, `from`), into the session as typed. */
-  async send(text: string, o: { clientMsgId?: string; from?: string } = {}): Promise<ChatMessage> {
+  /**
+   * The owner's words (or the assistant's handover, `from`), into the
+   * session as typed; asleep, it's woken first. Words go in one after
+   * another in the order they came, also those that come while it's being
+   * woken.
+   */
+  send(text: string, o: { clientMsgId?: string; from?: string } = {}): Promise<ChatMessage> {
     const t = text.trim();
-    if (!t) throw new Error("要说的话不能是空的");
+    if (!t) return Promise.reject(new Error("要说的话不能是空的"));
+    this.queuedSends++;
+    const run = this.sendChain.then(() => this.deliver(t, o)).finally(() => this.queuedSends--);
+    this.sendChain = run.catch(() => {});
+    return run;
+  }
+
+  private async deliver(t: string, o: { clientMsgId?: string; from?: string }): Promise<ChatMessage> {
     if (this.rec.stoppedFor) this.clearStop();
     try {
       await this.start();
@@ -632,11 +724,19 @@ export class PalSession {
       }
       case "tool_result":
         this.openTools.delete(e.toolUseId);
+        this.turnTools.delete(e.toolUseId);
+        break;
+      case "background_tasks":
+        this.bgTasks = new Set(e.taskIds);
+        break;
+      case "task_notification":
+        this.bgTasks.delete(e.taskId);
         break;
       case "tool_start":
       case "tool_use":
         if (e.type === "tool_use") this.openTools.set(e.id, e.name);
         if (e.parentToolUseId) break;
+        if (e.type === "tool_use") this.turnTools.add(e.id);
         this.beginTurn();
         this.setActivity(describeActivity(e.name));
         break;
@@ -647,7 +747,11 @@ export class PalSession {
           this.pendingUuids.delete(u);
           this.pendingText.delete(u);
         }
+        // its own tool calls end with the turn (a stopped one may not say so)
+        for (const id of this.turnTools) this.openTools.delete(id);
+        this.turnTools.clear();
         if (e.isError && !stopped && !e.startupFailure) this.notice(friendlyError(e.text, e.errorCategory));
+        this.noteCost(e.costUsd, e.totalCostUsd);
         this.rec.lastUsedAt = this.d.now();
         if (this.pendingUuids.size) {
           this.closeStream();
@@ -662,6 +766,29 @@ export class PalSession {
         this.d.log(`pal ${this.rec.name}: ${e.message}`);
         break;
     }
+  }
+
+  // A turn's cost: Claude Code's running total less what it was before. A
+  // resumed process starts from the session's total so far (when Claude Code
+  // kept it; otherwise from 0, and the turn's cost is the whole new total).
+  // The first turn after a wake is what waking cost (the prompt cache has
+  // mostly gone cold): kept for the list, unless the total before is unknown.
+  private noteCost(costUsd: number, total: number): void {
+    let cost: number | null = costUsd;
+    if (this.firstResult) {
+      this.firstResult = false;
+      const prior = this.priorTotal;
+      cost = prior === undefined ? null : total >= prior ? total - prior : total;
+    }
+    if (Number.isFinite(total)) this.rec.costTotalUsd = total;
+    if (this.wakeCost) {
+      this.wakeCost = false;
+      if (cost !== null && Number.isFinite(cost)) {
+        this.rec.lastWakeUsd = Math.round(cost * 10_000) / 10_000;
+        this.d.log(`pal ${this.rec.name}: waking cost $${cost.toFixed(4)}`);
+      }
+    }
+    this.d.save();
   }
 
   // Lines that reach it without passing through the host: another session's

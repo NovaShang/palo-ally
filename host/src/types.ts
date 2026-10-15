@@ -288,7 +288,9 @@ export interface CCSession {
 
 // ---- Pals (docs/pals-prd.md §8) ----
 
-export type PalStatus = "busy" | "idle" | "waiting" | "starting" | "stopped";
+// "asleep" (§12): idle a while, its process ended; the record stays and the
+// next word for it (or pals.wake) resumes it.
+export type PalStatus = "busy" | "idle" | "waiting" | "starting" | "stopped" | "asleep";
 
 // A Claude Code session the host runs itself, by resuming its transcript.
 export interface Pal {
@@ -302,6 +304,7 @@ export interface Pal {
   lastLine?: string;
   pending: number; // its cards waiting on the owner
   model?: string;
+  lastWakeUsd?: number; // what the first turn after its last wake cost (USD)
   createdBy: "owner" | "palo";
   updatedAt: number;
 }

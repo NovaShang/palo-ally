@@ -7,12 +7,13 @@ import { AwayDetector } from "../src/away.ts";
 import { transcriptPath } from "../src/handoffs.ts";
 import { findHelper, makeSpawner } from "../src/palLauncher.ts";
 import { pagePalMessages, toPalMessages, transcriptLastLine, transcriptModel } from "../src/palHistory.ts";
-import { MAX_PALS, PALO_NAME, type PalsTiming } from "../src/pals.ts";
-import { startError } from "../src/palSession.ts";
+import { MAX_AWAKE, MAX_PALS, PALO_NAME, type PalsDeps, type PalsTiming } from "../src/pals.ts";
+import { type PalRecord, startError } from "../src/palSession.ts";
+import type { Paths } from "../src/config.ts";
 import { handleRpc } from "../src/rpc.ts";
 import type { FakeScript } from "./fakeDriver.ts";
 import { FakeClaudeDir, FakeCli, assistantEntry } from "./fakeClaude.ts";
-import { makeHub, tick } from "./helpers.ts";
+import { makeHub, tick, tmpPaths } from "./helpers.ts";
 import { waitFor } from "./relayClient.ts";
 
 const dirs: FakeClaudeDir[] = [];
@@ -46,7 +47,7 @@ const echo: FakeScript = async (text, ctx) => {
   ctx.emit({ type: "assistant_text", text: reply, parentToolUseId: null, messageId: id });
 };
 
-function setup(o: { spawn?: boolean; timing?: Partial<PalsTiming>; palScript?: FakeScript; settings?: string } = {}) {
+function setup(o: { spawn?: boolean; timing?: Partial<PalsTiming>; palScript?: FakeScript; settings?: string; pals?: Partial<PalsDeps>; seed?: (paths: Paths, claudeDir: string) => void } = {}) {
   const claude = new FakeClaudeDir();
   dirs.push(claude);
   const cli = new FakeCli(claude);
@@ -54,9 +55,12 @@ function setup(o: { spawn?: boolean; timing?: Partial<PalsTiming>; palScript?: F
   const raw = new Map<string, any[]>();
   const readMessages = async (sid: string) => raw.get(sid) ?? [];
   if (o.settings) writeFileSync(join(claude.dir, "settings.json"), o.settings);
+  const paths = tmpPaths();
+  o.seed?.(paths, claude.dir);
   const ctx = makeHub({
+    paths,
     sessions: { claudeDir: claude.dir, cli, away: new AwayDetector(() => null, Date.now, () => false), readMessages },
-    pals: { readMessages, timing: { ...FAST, ...o.timing } },
+    pals: { readMessages, timing: { ...FAST, ...o.timing }, ...o.pals },
   });
   ctx.driver.spawnPals = o.spawn ?? false;
   ctx.driver.palScript = o.palScript ?? echo;
@@ -194,19 +198,39 @@ describe("adopting a session", () => {
     await t.hub.pals.stopAndWait();
   });
 
-  test("a session it doesn't know, a session already gone, and room for five", async () => {
-    const t = setup();
-    await expect(t.call("pals.adopt", { sessionId: "nope" })).rejects.toThrow("没有这个会话");
-    for (let i = 1; i <= MAX_PALS; i++) {
-      const sid = bgSession(t, `项目${i}`, `cccc000${i}-0000-4000-8000-00000000000${i}`);
-      await t.call("pals.adopt", { sessionId: sid });
-      await tick(2);
-    }
+  test("a session it doesn't know, and room for fifty: past that adopting and proposing are refused, naming the one least recently used", async () => {
+    // fifty already, all asleep (as pals.json keeps them)
+    const t = setup({
+      seed: (paths, claudeDir) => {
+        const now = Date.now();
+        const pals: PalRecord[] = Array.from({ length: MAX_PALS }, (_, i) => ({
+          id: `pal_seed${i + 1}`,
+          sessionId: `cccc${String(i + 1).padStart(4, "0")}-0000-4000-8000-000000000000`,
+          name: `项目${i + 1}`,
+          cwd: claudeDir,
+          createdBy: "owner",
+          createdAt: now - 100_000,
+          lastUsedAt: now - 100_000 + i,
+          permissionMode: "default",
+          status: "asleep",
+        }));
+        writeFileSync(paths.pals, JSON.stringify({ pals }));
+      },
+    });
+    // all listed, asleep; none of them started
+    const list = await t.call("pals.list");
+    expect(list.pals).toHaveLength(MAX_PALS);
+    expect(list.pals.every((p: any) => p.status === "asleep")).toBe(true);
+    expect(t.driver.pals).toHaveLength(0);
     // the one least recently used is named
-    await t.call("pals.send", { id: t.hub.pals.get("项目1")!.id, text: "接着做" });
+    await t.call("pals.send", { id: "pal_seed1", text: "接着做" });
     await t.hub.idle();
-    const sixth = bgSession(t, "第六个", "dddd0006-0000-4000-8000-000000000006");
-    await expect(t.call("pals.adopt", { sessionId: sixth })).rejects.toThrow("最久没用的是「项目2」");
+    const more = bgSession(t, "第五十一个", "dddd0051-0000-4000-8000-000000000051");
+    await expect(t.call("pals.adopt", { sessionId: more })).rejects.toThrow(`已经有 ${MAX_PALS} 个 Pal 了，先移出一个（最久没用的是「项目2」）`);
+    expect(await t.hub.toolHandlers().pal_propose({ name: "新的", dir: t.project, duty: "做事", dailyUsd: 1 })).toContain(`已经有 ${MAX_PALS} 个 Pal 了`);
+    await t.call("pals.remove", { id: "pal_seed2" });
+    await expect(t.call("pals.adopt", { sessionId: "nope" })).rejects.toThrow("没有这个会话");
+    expect((await t.call("pals.adopt", { sessionId: more })).pal).toMatchObject({ name: "第五十一个", status: "idle" });
     await t.hub.pals.stopAndWait();
   });
 
@@ -494,6 +518,223 @@ describe("always on", () => {
     await t.call("pals.stop", { id: pal.id });
     await waitFor(() => t.hub.quietForRestart());
     await t.hub.pals.stopAndWait();
+  });
+});
+
+describe("asleep and awake (§12)", () => {
+  // Puts one to sleep now, as the host does when it's been idle long enough.
+  const sleepNow = (t: ReturnType<typeof setup>, id: string) => (t.hub.pals as any).putToSleep(t.hub.pals.get(id)!, "test") as Promise<void>;
+  const statusOf = (t: ReturnType<typeof setup>, id: string) => t.hub.pals.list().find((p) => p.id === id)!.status;
+  const savedRec = (t: ReturnType<typeof setup>, id: string) => (JSON.parse(readFileSync(t.paths.pals, "utf8")).pals as PalRecord[]).find((r) => r.id === id)!;
+
+  test("idle for the set time, a Pal goes to sleep: its process ends cleanly, its record stays (asleep), the list says so at once, and the watchdog no longer watches it", async () => {
+    const t = setup({ spawn: true, timing: { sleepIdleMs: 300, sleepCheckMs: 30 } });
+    const { pal } = await t.call("pals.adopt", { sessionId: bgSession(t) });
+    await t.call("pals.send", { id: pal.id, text: "看一下" });
+    await waitFor(() => t.palEvents("chat.message").some((m) => m.role === "assistant"));
+    const proc = t.driver.pals[0]!.proc!;
+    expect(t.hub.pals.stallTargets()).toHaveLength(1);
+    await tick(100);
+    expect(statusOf(t, pal.id)).toBe("idle");
+    const t0 = Date.now();
+    await waitFor(() => statusOf(t, pal.id) === "asleep", 3_000);
+    expect(Date.now() - t0).toBeGreaterThan(100);
+    await exited(proc);
+    expect(t.driver.pals[0]!.closed).toBe(true);
+    await waitFor(() => t.lastList()?.pals[0]?.status === "asleep", 1_000);
+    expect(savedRec(t, pal.id)).toMatchObject({ status: "asleep", sessionId: pal.sessionId });
+    expect(savedRec(t, pal.id).pid).toBeUndefined();
+    expect(t.hub.pals.stallTargets()).toEqual([]);
+    expect(t.hub.pals.quiet()).toBe(true);
+    expect(t.hub.audit.tail(20).find((e) => e.type === "pal.slept")).toMatchObject({ pal: pal.id, why: "idle" });
+    // its history still reads as usual
+    expect((await t.call("pals.history", { id: pal.id })).messages).toEqual([]);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("never one that's busy or waiting on the owner: it stays up however long, and sleeps once it's done", async () => {
+    const t = setup({
+      timing: { sleepIdleMs: 100, sleepCheckMs: 20 },
+      palScript: async (text, ctx) => {
+        if (text === "要确认") {
+          await ctx.useTool("Bash", { command: "npm run build" }, { ask: true });
+          return;
+        }
+        if (text === "后台") {
+          ctx.emit({ type: "task_started", taskId: "bg1", toolUseId: "ag1", description: "跑全部测试", background: true });
+          ctx.emit({ type: "background_tasks", taskIds: ["bg1"] });
+          return;
+        }
+        ctx.emit({ type: "tool_use", id: `t-${text}`, name: "Bash", input: { command: "sleep 100" }, parentToolUseId: null });
+        await ctx.interrupted;
+      },
+    });
+    const { pal } = await t.call("pals.adopt", { sessionId: bgSession(t) });
+    // busy
+    await t.call("pals.send", { id: pal.id, text: "长活" });
+    await waitFor(() => statusOf(t, pal.id) === "busy");
+    await tick(400);
+    expect(statusOf(t, pal.id)).toBe("busy");
+    await t.call("pals.stop", { id: pal.id });
+    await waitFor(() => statusOf(t, pal.id) === "asleep", 2_000);
+    // waiting on a card (it's woken for it first)
+    await t.call("pals.send", { id: pal.id, text: "要确认" });
+    await waitFor(() => statusOf(t, pal.id) === "waiting");
+    await tick(400);
+    expect(statusOf(t, pal.id)).toBe("waiting");
+    await t.call("approval.answer", { id: t.hub.approvals.listPending()[0]!.id, allow: true });
+    await waitFor(() => statusOf(t, pal.id) === "asleep", 2_000);
+    // a background task still running after the turn
+    await t.call("pals.send", { id: pal.id, text: "后台" });
+    await waitFor(() => statusOf(t, pal.id) === "idle");
+    await tick(400);
+    expect(statusOf(t, pal.id)).toBe("idle");
+    (t.hub.pals.get(pal.id) as any).onEvent({ type: "task_notification", taskId: "bg1", status: "completed", summary: "好了" });
+    await waitFor(() => statusOf(t, pal.id) === "asleep", 2_000);
+    expect(t.driver.pals).toHaveLength(3);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test(`past ${MAX_AWAKE} awake the least recently used idle one goes to sleep; busy ones never, so six busy stay six until one is done`, async () => {
+    const t = setup({
+      timing: { sleepCheckMs: 30 },
+      palScript: async (text, ctx) => {
+        if (text !== "长活") return echo(text, ctx);
+        ctx.emit({ type: "tool_use", id: `t-${Math.random()}`, name: "Bash", input: { command: "sleep 100" }, parentToolUseId: null });
+        await ctx.interrupted;
+      },
+    });
+    const ids: string[] = [];
+    for (let i = 1; i <= MAX_AWAKE; i++) {
+      ids.push((await t.call("pals.adopt", { sessionId: bgSession(t, `项目${i}`, `cccc000${i}-0000-4000-8000-00000000000${i}`) })).pal.id);
+      await tick(3);
+    }
+    await t.call("pals.send", { id: ids[0], text: "接着做" });
+    await t.hub.idle();
+    await tick(100);
+    expect(t.hub.pals.list().filter((p) => p.status === "asleep")).toEqual([]);
+    // a sixth: 项目2 is the one used least lately
+    const sixth = (await t.call("pals.adopt", { sessionId: bgSession(t, "第六个", "dddd0006-0000-4000-8000-000000000006") })).pal.id;
+    await waitFor(() => t.hub.pals.list().some((p) => p.status === "asleep"), 2_000);
+    expect(t.hub.pals.list().filter((p) => p.status === "asleep").map((p) => p.name)).toEqual(["项目2"]);
+    expect(t.hub.audit.tail(30).find((e) => e.type === "pal.slept")).toMatchObject({ name: "项目2", why: "more than five awake" });
+    // all five awake busy, then the asleep one woken for work: six busy, none put to sleep
+    for (const id of [ids[0]!, ...ids.slice(2), sixth]) await t.call("pals.send", { id, text: "长活" });
+    await t.call("pals.send", { id: ids[1], text: "长活" });
+    await waitFor(() => t.hub.pals.list().filter((p) => p.status === "busy").length === 6, 2_000);
+    await tick(200);
+    expect(t.hub.pals.list().filter((p) => p.status === "busy")).toHaveLength(6);
+    // one is done: it's the one idle, so it sleeps; back to five awake
+    await t.call("pals.stop", { id: ids[3] });
+    await waitFor(() => statusOf(t, ids[3]!) === "asleep", 2_000);
+    expect(t.hub.pals.list().filter((p) => p.status === "busy")).toHaveLength(5);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("words to an asleep Pal wake it: the same session resumes, what comes meanwhile waits and goes in after, in order; the first turn's cost is what waking cost", async () => {
+    let slow = 0;
+    const t = setup({
+      pals: {
+        launch: async () => {
+          if (slow) await tick(slow);
+          return { helper: null, env: { PATH: process.env.PATH ?? "/usr/bin:/bin" } };
+        },
+      },
+    });
+    t.driver.turnCost = 0.0123;
+    const sid = bgSession(t);
+    const { pal } = await t.call("pals.adopt", { sessionId: sid });
+    await t.call("pals.send", { id: pal.id, text: "第一句" });
+    await waitFor(() => statusOf(t, pal.id) === "idle" && t.palEvents("chat.message").some((m) => m.role === "assistant"));
+    expect(savedRec(t, pal.id).costTotalUsd).toBeCloseTo(0.0123);
+    await sleepNow(t, pal.id);
+    expect(statusOf(t, pal.id)).toBe("asleep");
+    const lists: string[] = [];
+    t.hub.bus.on((event, data: any) => {
+      if (event === "pals.updated") lists.push(data.pals[0].status);
+    });
+    // three at once while it takes a while to come up
+    slow = 300;
+    const sends = ["一", "二", "三"].map((text, i) => t.call("pals.send", { id: pal.id, text, clientMsgId: `w-${i}` }));
+    await tick(50);
+    expect(statusOf(t, pal.id)).toBe("starting");
+    const sent = await Promise.all(sends);
+    expect(t.driver.pals).toHaveLength(2);
+    const woken = t.driver.pals[1]!;
+    expect(woken.opts.resumeSessionId).toBe(sid);
+    expect(woken.opts.priorCostUsd).toBeCloseTo(0.0123);
+    expect(woken.sent).toEqual(["一", "二", "三"]);
+    expect(sent.map((s) => s.seq)).toEqual([...sent.map((s) => s.seq)].sort((a, b) => a - b));
+    const mine = t.palEvents("chat.message").filter((m) => m.role === "user").map((m) => m.text);
+    expect(mine).toEqual(["第一句", "一", "二", "三"]);
+    await waitFor(() => statusOf(t, pal.id) === "idle");
+    expect(lists).toContain("starting");
+    // waking cost: the first turn after it (the fake's cost for a turn)
+    const after = t.hub.pals.list()[0]!;
+    expect(after.lastWakeUsd).toBeCloseTo(0.0123);
+    expect(savedRec(t, pal.id).status).toBeUndefined();
+    await waitFor(() => t.lastList()?.pals[0]?.lastWakeUsd !== undefined, 1_000);
+    expect(t.hub.audit.tail(30).filter((e) => e.type === "pal.woke").map((e) => e.why)).toEqual(["owner"]);
+    // pals.wake: one awake is left as it is
+    expect((await t.call("pals.wake", { id: pal.id })).pal).toMatchObject({ id: pal.id, status: "idle" });
+    expect(t.driver.pals).toHaveLength(2);
+    // asleep: it resumes, and comes back saying so
+    slow = 0;
+    await sleepNow(t, pal.id);
+    expect((await t.call("pals.wake", { id: pal.id })).pal).toMatchObject({ id: pal.id, status: "idle", lastWakeUsd: 0.0123 });
+    expect(t.driver.pals).toHaveLength(3);
+    await expect(t.call("pals.wake", { id: "pal_nope" })).rejects.toThrow("没有这个 Pal");
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("answering a card of a Pal that went to sleep wakes it", async () => {
+    const t = setup({
+      palScript: async (_text, ctx) => {
+        await ctx.useTool("Bash", { command: "npm run build" }, { ask: true });
+      },
+    });
+    const { pal } = await t.call("pals.adopt", { sessionId: bgSession(t) });
+    await t.call("pals.send", { id: pal.id, text: "构建" });
+    await waitFor(() => t.hub.approvals.listPending().length === 1);
+    const card = t.hub.approvals.listPending()[0]!;
+    // the card went unanswered (here: stopped), and it went to sleep
+    await t.call("pals.stop", { id: pal.id });
+    await waitFor(() => statusOf(t, pal.id) === "idle");
+    await sleepNow(t, pal.id);
+    expect(await t.call("approval.answer", { id: card.id, allow: true })).toEqual({ status: "denied" });
+    await waitFor(() => statusOf(t, pal.id) === "idle" && t.driver.pals.length === 2);
+    expect(t.hub.audit.tail(30).find((e) => e.type === "pal.woke")).toMatchObject({ pal: pal.id, why: "card" });
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("after the host restarts only the Pals that were awake come back; those asleep stay asleep (pals.json says which), at most five awake", async () => {
+    const t = setup({ spawn: true });
+    const a = (await t.call("pals.adopt", { sessionId: bgSession(t, "甲", "aaaa0001-0000-4000-8000-000000000001") })).pal;
+    const b = (await t.call("pals.adopt", { sessionId: bgSession(t, "乙", "aaaa0002-0000-4000-8000-000000000002") })).pal;
+    await sleepNow(t, a.id);
+    await t.hub.pals.stopAndWait();
+    expect(savedRec(t, a.id).status).toBe("asleep");
+    expect(savedRec(t, b.id).status).toBeUndefined();
+    const { Pals } = await import("../src/pals.ts");
+    const again = new Pals({ ...(t.hub.pals as any).d, timing: FAST });
+    again.start();
+    expect(again.list().find((p) => p.id === a.id)!.status).toBe("asleep");
+    expect(again.list().find((p) => p.id === b.id)!.status).toBe("starting");
+    await waitFor(() => again.list().find((p) => p.id === b.id)!.status === "idle", 5_000);
+    expect(t.driver.pals.map((p) => p.opts.name)).toEqual(["甲", "乙", "乙"]);
+    await again.stopAndWait();
+    // seven were awake: the five used most lately come back
+    const recs: PalRecord[] = JSON.parse(readFileSync(t.paths.pals, "utf8")).pals;
+    const now = Date.now();
+    for (let i = 1; i <= 7; i++)
+      recs.push({ id: `pal_w${i}`, sessionId: `bbbb000${i}-0000-4000-8000-000000000000`, name: `醒${i}`, cwd: t.project, createdBy: "owner", createdAt: now, lastUsedAt: now + i, permissionMode: "default" });
+    writeFileSync(t.paths.pals, JSON.stringify({ pals: recs }));
+    const third = new Pals({ ...(t.hub.pals as any).d, timing: FAST });
+    third.start();
+    const back = third.list().filter((p) => p.status === "starting").map((p) => p.name);
+    expect(back.sort()).toEqual(["醒3", "醒4", "醒5", "醒6", "醒7"]);
+    expect(third.list().filter((p) => p.status === "asleep").map((p) => p.name).sort()).toEqual(["乙", "甲", "醒1", "醒2"]);
+    await third.stopAndWait();
   });
 });
 

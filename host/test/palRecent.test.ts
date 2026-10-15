@@ -227,8 +227,11 @@ describe("taking an ended one over (pals.adopt)", () => {
     const [x, y] = await Promise.all([t.call("pals.adopt", { sessionId: s5 }), t.call("pals.adopt", { sessionId: s5 })]);
     expect(x.pal.id).toBe(y.pal.id);
     expect(t.driver.pals).toHaveLength(5);
-    // room for five
-    await expect(t.call("pals.adopt", { sessionId: t.ended(site, { customTitle: "第六个" }) })).rejects.toThrow(`已经有 ${MAX_PALS} 个 Pal 了`);
+    // a sixth is taken over too: the least recently used idle one goes to sleep (§12)
+    const sixth = await t.call("pals.adopt", { sessionId: t.ended(site, { customTitle: "第六个" }) });
+    expect(sixth.pal.status).toBe("idle");
+    await waitFor(() => t.hub.pals.list().some((p) => p.status === "asleep"));
+    expect(t.hub.pals.list().filter((p) => p.status === "asleep").map((p) => p.id)).toEqual([pal.id]);
     await t.hub.pals.stopAndWait();
   });
 
@@ -350,7 +353,7 @@ describe("the assistant brings one back (pals_recent, pal_adopt)", () => {
     await t.hub.pals.stopAndWait();
   });
 
-  test("with five Pals it asks the owner to make room first", async () => {
+  test("with fifty Pals it asks the owner to make room first", async () => {
     const t = setup();
     const site = t.folder("site");
     for (let i = 1; i <= MAX_PALS; i++) {

@@ -4,6 +4,10 @@
 // and starts Claude Code's background service if it isn't running. Run with:
 //   PALOALLY_LIVE_PALS=1 bun test test/pals.live.test.ts
 //
+// One test lets a Pal go to sleep (pals-prd §12, with an idle time of a
+// few seconds) and wakes it with the owner's words: the same session, its
+// context intact; what waking cost is printed with the facts.
+//
 // The last test takes over a conversation that already ended (pals-prd §10):
 // a terminal session quit with /exit is listed by pals.recent (a `claude -p`
 // run in the same folder isn't) and adopted with its context.
@@ -27,6 +31,7 @@ import { ClaudeCodeDriver } from "../src/harness/claude.ts";
 import { Hub } from "../src/hub.ts";
 import { HELPER_APP, findHelper, helperCandidates } from "../src/palLauncher.ts";
 import type { PalsDeps } from "../src/pals.ts";
+import type { PalRecord } from "../src/palSession.ts";
 import type { Pal } from "../src/types.ts";
 import { FakeDriver } from "./fakeDriver.ts";
 import { RecordingPusher, testConfig, tmpPaths } from "./helpers.ts";
@@ -121,6 +126,7 @@ d("live: Pals run by the host", () => {
     helperApp: () => (helperExe ? resolve(helperExe, "../../..") : undefined),
     launchMode: () => (helperExe ? "auto" : "direct"),
     log: (s) => logs.push(s),
+    timing: { sleepCheckMs: 500 }, // the idle time stays 20 minutes but in the sleep test
   };
   const logs: string[] = [];
 
@@ -213,8 +219,9 @@ d("live: Pals run by the host", () => {
       const holders = readRegistry(join(claudeDir, "sessions")).filter((e) => e.sessionId === bgSid);
       await waitFor("its registry entry", () => readRegistry(join(claudeDir, "sessions")).some((e) => e.sessionId === bgSid && e.pid === pid), 20_000);
       expect(holders.every((e) => e.pid === pid)).toBe(true);
-      // who macOS holds responsible for it
-      if (helperExe) {
+      // who macOS holds responsible for it (through the helper only once it has Full Disk Access, §11)
+      facts.launchedThrough = hub.pals.helper ? "PaloAlly Helper" : "direct";
+      if (helperExe && hub.pals.helper) {
         const responsible = Number(spawnSync(helperExe, ["--check", String(pid)], { encoding: "utf8" }).stdout.trim());
         const comm = spawnSync("ps", ["-o", "comm=", "-p", String(responsible)], { encoding: "utf8" }).stdout.trim();
         facts.responsible = comm;
@@ -234,9 +241,56 @@ d("live: Pals run by the host", () => {
       expect(mine.origin).toEqual({ kind: "human" });
       expect(mine.message.content).toBe("What is the codeword I asked you to remember? Reply with just the word.");
       // the app reads the same ids back from history
-      const { messages } = await hub.pals.history(bgPal.id);
+      // (once Claude Code has written the reply to its transcript)
+      const { messages } = await waitFor("the reply in its history", async () => {
+        const h = await hub.pals.history(bgPal.id);
+        return h.messages.some((m) => m.id === reply.id) && h;
+      }, 20_000, 200);
       expect(messages.some((m) => m.id === sent.id && m.role === "user")).toBe(true);
       expect(messages.some((m) => m.id === reply.id && m.role === "assistant")).toBe(true);
+    },
+    T,
+  );
+
+  test(
+    "asleep and awake: idle past the (here tiny) idle time it goes to sleep, its process gone; the owner's words wake the same session, which still knows the codeword and answers",
+    async () => {
+      const pal = hub.pals.get(bgPal.id)!;
+      const pid = pal.pid!;
+      const timing = (hub.pals as any).timing;
+      timing.sleepIdleMs = 3_000;
+      const t0 = Date.now();
+      await waitFor("it to go to sleep", () => hub.pals.list().find((p) => p.id === bgPal.id)?.status === "asleep", 60_000, 100);
+      timings.idleToAsleep = Date.now() - t0;
+      timing.sleepIdleMs = 20 * 60_000;
+      await waitFor("its process to end", () => {
+        try {
+          process.kill(pid, 0);
+          return false;
+        } catch {
+          return true;
+        }
+      }, 20_000, 50);
+      await waitFor("its registry entry to go", () => !readRegistry(join(claudeDir, "sessions")).some((e) => e.sessionId === bgSid), 20_000, 100);
+      const saved = (JSON.parse(readFileSync(paths.pals, "utf8")).pals as PalRecord[]).find((r) => r.id === bgPal.id)!;
+      expect(saved).toMatchObject({ status: "asleep", sessionId: bgSid });
+      expect(hub.pals.stallTargets().some((s) => s.key === bgPal.id)).toBe(false);
+      // the owner's words wake it: the same session resumes, then they go in
+      const t1 = Date.now();
+      const sent = await hub.pals.send(bgPal.id, "Without using any tools: what is the codeword I asked you to remember at the very start? Reply with just the word.");
+      timings.wakeAndSend = Date.now() - t1;
+      expect(pal.pid).toBeGreaterThan(0);
+      expect(pal.pid).not.toBe(pid);
+      const reply = await waitFor("its answer", () => palMessages(bgPal.id).find((m) => m.role === "assistant" && m.ts >= t1 && /apricot/i.test(m.text)), 120_000);
+      expect(reply.text.toLowerCase()).toContain("apricot");
+      const mine = await waitFor("its line in the transcript", () => transcriptEntries(claudeDir, projects.bg, bgSid).find((e) => e.uuid === sent.id), 20_000);
+      expect(mine.origin).toEqual({ kind: "human" });
+      // what waking cost: the first turn after it
+      const woke = await waitFor("the wake's cost", () => hub.pals.list().find((p) => p.id === bgPal.id && typeof p.lastWakeUsd === "number"), 20_000);
+      facts.wakeUsd = woke.lastWakeUsd;
+      expect(woke.status).toBe("idle");
+      expect(woke.lastWakeUsd!).toBeGreaterThan(0);
+      expect(woke.lastWakeUsd!).toBeLessThan(0.2);
     },
     T,
   );

@@ -22,7 +22,7 @@ host/        桌面 host = 一个 CLI 程序（Bun + TypeScript），daemon + on
     router.ts           输出路由（App / CLI / 微信 / 推送）
     allies.ts           Allies：和别人的助理传话、约时间，配对、档位、待发队列、回执（docs/allies-prd.md）
     allyGate.ts         处理 Ally 来话那一轮的工具白名单（「只说话不动手」，allies-prd §11.5）
-    pals.ts             Pal（docs/pals-prd.md）：主机自己跑的 Claude Code 会话；接管、交还终端、移出、Palo 开 Pal、一直开着、最多 5 个（state/pals.json）
+    pals.ts             Pal（docs/pals-prd.md）：主机自己跑的 Claude Code 会话；接管、交还终端、移出、Palo 开 Pal、最多 50 个、同时醒着最多 5 个（闲了睡下，有事叫醒；state/pals.json）
     palSession.ts       一个 Pal：resume 它的记录跑起来、主人的话、流式回复、确认和提问、意外退出后自动接上、绝不两个进程写同一份记录
     palHistory.ts       Pal 的对话记录 → ChatMessage；跟着记录读别的会话发进来的话
     palLauncher.ts      Pal 的进程经 PaloAlly 小助手启动（找不到就直接启动），用主人登录 shell 的环境
@@ -52,7 +52,7 @@ relay/       不新写：复用 github.com/NovaShang/bento 的 relay/（bento-re
 - **探针**：独立短上下文 `query()`（便宜模型、`persistSession:false`、结构化输出），只在有 watch 到期时才跑；没到期的 tick 零调用。
 - **本地控制面**：`~/.paloally/run/host.sock`（unix socket，行分隔 JSON，同一套 RPC），CLI 子命令通过它和 daemon 说话。
 - **会话钩子**（docs/sessions-prd.md §6.3）：`~/.paloally/run/hooks.sock`。全局钩子跑 `~/.paloally/bin/cc-hook <事件名> # PaloAlly`（行尾的注释是 PaloAlly 条目的记号，卸载只删带它的）：主机没在跑（没有 socket）时直接退出；否则写一行 `{event, payload, env}`，主机立刻回 `{"ack":true}`，再回 `{"output": <钩子要打印的 JSON 或 null>}`。350 毫秒内没有 ack、连不上、出任何错，钩子都无输出退出。`PALOALLY_SESSION=1`（主机自己起的会话：主会话、探针、Pal）直接退出。
-- **Pal**（docs/pals-prd.md §7）：每个 Pal 一个 SDK `query()`（streaming input，`resume` 它的记录；Palo 新开的用 `sessionId` 指定 id），常驻不关，会话名就是列表里的名字（`--name`），没有 PaloAlly 的工具，系统提示末尾加一句它由 PaloAlly 托管。进程经 PaloAlly 小助手启动（`spawnClaudeCodeProcess`）：主机起小助手 → 小助手以 `responsibility_spawnattrs_setdisclaim` 再起一份自己 → 那一份起 claude，标准输入输出一路继承；fd 3 上报 claude 的 pid。环境用主人登录 shell 的（去掉会话变量）。确认和提问走 `canUseTool`，成了带 `source: {kind:"pal"}` 的卡片。别的会话发进来的话只在记录里，主机跟着记录读出来。意外退出后按 2/5/15/30/60 秒重试，10 分钟内失败超过 5 次就停下并说明原因；主机启动时把 Pal 逐个接回来。绝不两个进程写同一份记录：启动前查登记表和 `claude agents`，有别的进程拿着就不启动（主机上次留下的孤儿进程先停掉）；跑着时每 5 秒查一次，别处打开了就立刻让开。
+- **Pal**（docs/pals-prd.md §7）：每个 Pal 一个 SDK `query()`（streaming input，`resume` 它的记录；Palo 新开的用 `sessionId` 指定 id），常驻不关，会话名就是列表里的名字（`--name`），没有 PaloAlly 的工具，系统提示末尾加一句它由 PaloAlly 托管。进程经 PaloAlly 小助手启动（`spawnClaudeCodeProcess`）：主机起小助手 → 小助手以 `responsibility_spawnattrs_setdisclaim` 再起一份自己 → 那一份起 claude，标准输入输出一路继承；fd 3 上报 claude 的 pid。环境用主人登录 shell 的（去掉会话变量）。确认和提问走 `canUseTool`，成了带 `source: {kind:"pal"}` 的卡片。别的会话发进来的话只在记录里，主机跟着记录读出来。意外退出后按 2/5/15/30/60 秒重试，10 分钟内失败超过 5 次就停下并说明原因；主机启动时把醒着的 Pal 逐个接回来（睡着的保持睡着）。睡下和叫醒（pals-prd §12）：空闲 20 分钟（没有在跑的一轮、没有没收下的话、没有等主人的卡片、没有没结束的工具或后台任务）的 Pal 睡下：进程正常关掉，记录留着、标成 `status:"asleep"`；醒着的超过 5 个时，最久没用的空闲那个先睡；在忙或在等主人的从不睡，6 个都忙就暂时超出。主人的话、`pals.wake`、答它的卡片都会先 resume 同一个会话再送话，叫醒期间来的话排队，醒了按顺序送进去。叫醒后第一轮的花费（result 的 `total_cost_usd` 减去上一次的累计）记成 `lastWakeUsd`。看门狗只看醒着的。绝不两个进程写同一份记录：启动前查登记表和 `claude agents`，有别的进程拿着就不启动（主机上次留下的孤儿进程先停掉）；跑着时每 5 秒查一次，别处打开了就立刻让开。
 ## 3. 外壳给主 agent 的工具（in-process MCP server `paloally`）
 
 | 工具 | 作用 |
@@ -135,8 +135,8 @@ PalAdoptProposal { id /* helper.decide 的 proposalId */; sessionId; cwd; title;
 RecentSession { sessionId; cwd; title /* 自定义标题，否则 Claude Code 的摘要，否则第一句话的前 40 个字 */;
   lastModified:number /*ms*/; size:number /* 记录的字节数 */ }
 Pal { id /* pal_… */; name /* SendMessage 用的名字 */; cwd; sessionId;
-  status:"busy"|"idle"|"waiting"|"starting"|"stopped"; activity?; note? /* stopped 的原因 */;
-  lastLine?; pending:number; model?; createdBy:"owner"|"palo"; updatedAt }
+  status:"busy"|"idle"|"waiting"|"starting"|"stopped"|"asleep" /* asleep：睡着了，没有进程 */; activity?; note? /* stopped 的原因 */;
+  lastLine?; pending:number; model?; lastWakeUsd? /* 上次叫醒后第一轮花了多少（美元） */; createdBy:"owner"|"palo"; updatedAt }
 CCSession { id /* Claude Code 的 session id */; name; cwd; kind:"terminal"|"background" /* "helper" 不再出现 */;
   status:"busy"|"idle"|"waiting"|"stopped"; waitingFor?; lastLine?; contextTokens?:number; updatedAt;
   adopting?:boolean /* pals.adopt 在等它在终端里退出 */ }
@@ -219,12 +219,13 @@ ModelOption { value; displayName; description; efforts:string[] }
 | `sessions.history` | `{id, before?, limit?}` | `{messages:CCMessage[]}`（从旧到新；before = 客户端手里最早一条的 id，也接受毫秒时间；默认 50 条，最多 200） |
 | `sessions.hooks` | `{enabled?}` | `{enabled}`（不带 enabled 只查不改） |
 | `helper.decide` | `{proposalId, action:"create"\|"discard"}` | `{pal?}`（create 返回开好或接管好的 Pal；已经答过的再答一次，返回原来的结果。`pal_adopt` 卡片接管不成时返回 `{}`，卡片变成 failed、带原因，可以再点） |
-| `pals.list` | `{}` | `{pals:Pal[], others:CCSession[], hooks:boolean, helper:boolean}`（helper = Pal 经 PaloAlly 小助手启动） |
-| `pals.adopt` | `{sessionId}` | `{pal}`，或 `{waiting:"exit-in-terminal"}`（终端会话：退出后自动接管，结果看 `pals.updated`；已经退出的对话直接 resume，返回 `{pal}`） |
+| `pals.list` | `{}` | `{pals:Pal[], others:CCSession[], hooks:boolean, helper:boolean}`（所有 Pal，包括睡着的；helper = Pal 经 PaloAlly 小助手启动） |
+| `pals.adopt` | `{sessionId}` | `{pal}`，或 `{waiting:"exit-in-terminal"}`（终端会话：退出后自动接管，结果看 `pals.updated`；已经退出的对话直接 resume，返回 `{pal}`；已经有 50 个 Pal 时报错） |
 | `pals.release` | `{id}` | `{resumeCommand}`（`cd <目录> && claude --resume <sessionId>`；返回时主机的进程已退出） |
 | `pals.remove` | `{id}` | `{ok}` |
 | `pals.history` | `{id, before?, limit?}` | `{messages:ChatMessage[], streaming?}`（从旧到新；before = 最早一条的 id 或毫秒时间；默认 50，最多 200；streaming 同 `sync`） |
-| `pals.send` | `{id, text, clientMsgId?}` | `{id, seq}`（同一 clientMsgId 只送一次；停着的 Pal 先接着跑） |
+| `pals.send` | `{id, text, clientMsgId?}` | `{id, seq}`（同一 clientMsgId 只送一次；睡着的先叫醒，叫醒期间来的话排队按顺序送进去，送进去了才返回；停着的 Pal 先接着跑） |
+| `pals.wake` | `{id}` | `{pal}`（睡着的 resume 同一个会话，起来了才返回；醒着的原样返回） |
 | `pals.stop` | `{id}` | `{ok}`（结束当前这一轮，它开着的卡片按拒绝处理） |
 | `pals.recent` | `{folder?, limit?}` | `{sessions:RecentSession[]}`（最近 30 天里退出了的对话，最新的在前，默认也最多 50 个；不含正开着的、Pal、PaloAlly 自己的；folder 是路径（该目录及以下）或目录名） |
 
