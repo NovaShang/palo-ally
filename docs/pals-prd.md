@@ -206,3 +206,22 @@ Palo 提议，你点头，主机新开一个会话，第一条消息是 Palo 写
 实测根因：经 PaloAlly Helper 启动的 Claude Code 一碰到受保护的文件，macOS 就把这次访问挂起，转给 sandboxd 去问 tccd。Helper 没有完全磁盘访问，tccd 30 毫秒内拒了，但进程从此不再动：CPU 为 0，不理 SIGTERM，连接也被服务器关掉。10:57、12:48、17:45 三次卡死，每次都精确对上一条 kTCCServiceSystemPolicyAllFiles 的 approval 请求，责任方都是 dev.paloally.helper。
 
 做法：`pals.launch` 为 "auto" 时，主机启动 Pal 前先经 Helper 读一个只有完全磁盘访问才能读的文件（`~/Library/Application Support/com.apple.TCC/TCC.db` 的 1 个字节），3 秒超时，每分钟最多查一次。读得到才经 Helper 启动，否则直接启动，和 Palo 一样。主人给 Helper 开了完全磁盘访问之后，下一个启动的 Pal 自动改经 Helper。
+
+## 12. Pal 不设数量上限，只限同时醒着的（2026-10-15 主人定）
+
+用户往往开着很多 Claude Code 会话，同时最多 5 个 Pal 不够用。
+
+- **数量：**Pal 的总数基本不限，安全上限 50，只为防止误操作。
+- **醒着的：**同时醒着（进程在跑）的 Pal 最多 5 个。
+  - 空闲 20 分钟、手上没有活、没有在等主人回答的 Pal 自动睡下：主机关掉它的进程，会话记录不动，列表里显示「睡着」。
+  - 醒着的超过 5 个时，最久没用的先睡。
+  - 正在干活或在等主人的 Pal 不会被强行睡下；如果 6 个都在忙，就暂时超出。
+- **叫醒：**主人在 Pal 页发话、Palo 要找它、主人点它的确认卡片，都会先 resume 原会话（约 2-3 秒），再把话送进去。消息不会丢：叫醒期间先排队，醒了按顺序送进去。
+- **Palo 找 Pal：**
+  - 醒着的 Pal 照旧用原生 SendMessage。
+  - 睡着的 Pal 没有进程，SendMessage 送不到。所以新增工具 `pal_send(name, text)`：主机叫醒它，再把这句话标成「Palo 说」送进去。提示词里写明：找 Pal 用 `pal_send`，它对醒着的和睡着的都有效。
+- **花费：**睡过一阵再叫醒，模型的提示缓存多半已经过期，叫醒后的那一轮要重新写一次缓存，所以会贵一些，上下文越大越贵。列表里每个 Pal 显示上次叫醒花了多少。
+- **重启后：**电脑或主机重启后，只拉起重启前醒着的 Pal，睡着的保持睡着。
+- **看门狗：**只看醒着的。
+
+接口：`Pal.status` 新增 `"asleep"`。新增 `pals.wake{id}`，返回 `{pal}`。`pals.send` 发给睡着的 Pal 时会自动叫醒，不需要另调 wake。`pals.list` 返回所有 Pal，包括睡着的。
