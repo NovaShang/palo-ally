@@ -30,6 +30,37 @@ final class SessionsUITests: XCTestCase {
         XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "把上周的也归一下")).count, 1)
     }
 
+    /// An asleep Pal (pals-prd §12): its history is there; words for it say
+    /// 「正在叫醒…」 until it's up, then it answers; back on the list it's awake.
+    @MainActor
+    func testWordsForAnAsleepPalWakeItAndItAnswers() throws {
+        let app = launch(["-demoScreen", "pal", "-demoPal", "pal-blog", "-demoKeyboard", "4:600", "-demoWakeAfter", "2.5"])
+        XCTAssertTrue(app.navigationBars.staticTexts["博客改版"].waitForExistence(timeout: 15), "the Pal's page didn't open")
+        XCTAssertTrue(text(app, "评论区的样式改好了").waitForExistence(timeout: 10), "its history isn't there")
+        XCTAssertTrue(text(app, "睡着 · 上次叫醒约 $0.04").exists, "the page doesn't say it's asleep")
+        attach(app, "asleep-pal")
+        let field = app.descendants(matching: .any)["composerField"]
+        expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: field)
+        waitForExpectations(timeout: 10)
+        field.typeText("评论区再加个点赞")
+        app.buttons["发送"].firstMatch.tap()
+        XCTAssertTrue(text(app, "正在叫醒").waitForExistence(timeout: 3), "no 正在叫醒 while it wakes")
+        attach(app, "waking-pal")
+        XCTAssertTrue(text(app, "好的，按你说的办").waitForExistence(timeout: 15), "the woken Pal never answered")
+        XCTAssertFalse(text(app, "正在叫醒").exists)
+        XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "评论区再加个点赞")).count, 1)
+        // Back on the list: awake now; the other one still asleep, after the awake ones.
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 10))
+        let blog = app.descendants(matching: .any)["row-pal-pal-blog"]
+        let photos = app.descendants(matching: .any)["row-pal-pal-photos"]
+        XCTAssertTrue(blog.waitForExistence(timeout: 5) && photos.exists)
+        XCTAssertFalse(blog.label.contains("睡着"), "it still shows asleep")
+        XCTAssertTrue(photos.label.contains("睡着"), "the asleep one doesn't say so")
+        XCTAssertLessThan(blog.frame.minY, photos.frame.minY)
+        attach(app, "list-after-wake")
+    }
+
     @MainActor
     func testHandingBackShowsTheLineAndRemovingAsksInThePage() throws {
         let app = launch(["-demoScreen", "pal", "-demoPal", "pal-notes"])

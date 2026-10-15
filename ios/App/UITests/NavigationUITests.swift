@@ -56,8 +56,10 @@ final class NavigationUITests: XCTestCase {
     @MainActor
     func testAnAllyOpensFromTheList() throws {
         let app = launch(["-demoScreen", "list"])
+        XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 15))
+        // Below the Pals (asleep ones too): the list scrolls to it.
         let ally = row(app, "row-ally-al-family")
-        XCTAssertTrue(ally.waitForExistence(timeout: 15))
+        XCTAssertTrue(scrolledTo(app, ally), "no Ally row")
         ally.tap()
         XCTAssertTrue(app.navigationBars.staticTexts["家人"].waitForExistence(timeout: 5), "the Ally's page didn't open")
         XCTAssertTrue(app.descendants(matching: .any)["ally-input"].exists)

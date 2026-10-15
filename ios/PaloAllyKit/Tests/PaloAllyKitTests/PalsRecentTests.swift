@@ -109,7 +109,7 @@ struct RecentStoreTests {
         let host = DemoHost(speed: 0, pals: true)
         let store = AppStore(transport: host.transport)
         store.start()
-        _ = await until { store.connection == .online && store.pals.count == 2 }
+        _ = await until { store.connection == .online && store.pals.count == 4 }
         return (store, host)
     }
 

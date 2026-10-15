@@ -26,6 +26,10 @@ struct PalsDecodingTests {
         let (_, missing) = try decode(Pal.self, #"{"id":"p3","name":"a","status":"idle"}"#)
         #expect(missing.contains { $0.contains("sessionId") } && missing.contains { $0.contains("pending") }
             && missing.contains { $0.contains("createdBy") } && missing.contains { $0.contains("cwd") })
+        // Asleep (§12), with what waking it cost last time.
+        let (asleep, asleepIssues) = try decode(Pal.self, #"{"id":"p5","name":"a","cwd":"/","sessionId":"s","status":"asleep","pending":0,"createdBy":"owner","lastWakeUsd":0.0412,"updatedAt":5}"#)
+        #expect(asleepIssues.isEmpty && asleep.isAsleep && !asleep.inTurn && asleep.lastWakeUsd == 0.0412)
+        #expect(bare.lastWakeUsd == nil)
         // A new status from a newer host doesn't drop the Pal.
         let (odd, oddIssues) = try decode(Pal.self, #"{"id":"p4","name":"a","cwd":"/","sessionId":"s","status":"dreaming","pending":0,"createdBy":"owner"}"#)
         #expect(odd.status == .unknown && oddIssues.count == 1)
@@ -44,6 +48,11 @@ struct PalsDecodingTests {
         #expect(a2.isEmpty && waiting.pal == nil && waiting.waiting == .exitInTerminal)
         let (_, a3) = try decode(PalAdoptResult.self, #"{}"#)
         #expect(!a3.isEmpty)
+
+        let (woke, w1) = try decode(PalWakeResult.self, #"{"pal":{"id":"p1","name":"a","cwd":"/","sessionId":"s1","status":"idle","pending":0,"createdBy":"owner","lastWakeUsd":0.03}}"#)
+        #expect(w1.isEmpty && woke.pal?.status == .idle && woke.pal?.lastWakeUsd == 0.03)
+        let (_, w2) = try decode(PalWakeResult.self, #"{}"#)
+        #expect(!w2.isEmpty)
 
         let (released, r1) = try decode(PalReleaseResult.self, #"{"resumeCommand":"claude --resume s1"}"#)
         #expect(r1.isEmpty && released.resumeCommand == "claude --resume s1")
@@ -77,14 +86,15 @@ struct PalsStoreTests {
         let host = DemoHost(speed: 0, pals: true)
         let store = AppStore(transport: host.transport)
         store.start()
-        _ = await until { store.connection == .online && store.pals.count == 2 }
+        _ = await until { store.connection == .online && store.pals.count == 4 }
         return (store, host)
     }
 
     @Test func listLoadsWithTheOtherSessions() async throws {
         let (store, _) = await demoStore()
         #expect(store.palsSupported == true && store.sessionHooksEnabled == true)
-        #expect(store.pals.map(\.name) == ["网站帮手", "笔记整理"])
+        #expect(store.pals.map(\.name) == ["网站帮手", "笔记整理", "博客改版", "照片整理"])
+        #expect(store.listedPals.filter(\.isAsleep).map(\.name) == ["博客改版", "照片整理"])
         #expect(store.otherSessions.map(\.name) == ["修登录跳转", "问卷数据清洗"])
         #expect(store.palPendingCount("pal-site") == 1 && store.palPendingCount("pal-notes") == 0)
         #expect(store.sessionPendingCount("cc-data") == 1)
@@ -150,7 +160,7 @@ struct PalsStoreTests {
         let host = DemoHost(speed: 1, pals: true)
         let store = AppStore(transport: host.transport)
         store.start()
-        #expect(await until { store.pals.count == 2 })
+        #expect(await until { store.pals.count == 4 })
         let notes = store.palStore("pal-notes")
         #expect(await until { notes.hasSynced })
         notes.send("开始吧")
@@ -179,7 +189,7 @@ struct PalsStoreTests {
         #expect(pal.name == "问卷数据清洗" && pal.sessionId == "cc-data")
         #expect(await host.lastParams["pals.adopt"] == ["sessionId": "cc-data"])
         #expect(store.adoptions.isEmpty)
-        #expect(await until { !store.otherSessions.contains { $0.id == "cc-data" } && store.pals.count == 3 })
+        #expect(await until { !store.otherSessions.contains { $0.id == "cc-data" } && store.pals.count == 5 })
         // Its question is the Pal's now.
         #expect(await until { store.question(id: "sq1")?.source?.id == pal.id })
         #expect(store.liveEndQuestions.isEmpty)
@@ -241,7 +251,7 @@ struct PalsStoreTests {
         #expect(line == "cd /Users/demo/code/site && claude --resume 5d821f3c-7a1e-4c55-9b0e-2f6d81a4c901")
         #expect(store.pal(id: "pal-site") == nil)
         try await store.removePal(id: "pal-notes")
-        #expect(store.pals.isEmpty)
+        #expect(store.pals.map(\.id) == ["pal-blog", "pal-photos"])
     }
 
     @Test func aProposalOpensAPal() async throws {
@@ -315,5 +325,40 @@ struct PalsQuotingTests {
         #expect(AppStore.quoting(nil, in: "好") == "好")
         #expect(AppStore.quoting(ReplyTo(messageId: "m", excerpt: "第一行\n第二行"), in: "这里改一下")
             == "> 第一行\n> 第二行\n\n这里改一下")
+    }
+}
+
+/// Asleep and awake (pals-prd §12): the list's order, and words for an
+/// asleep Pal waking it first, its page saying so.
+@MainActor
+@Suite("Pals asleep and awake", .serialized)
+struct PalsSleepTests {
+    @Test func theListPutsAwakeOnesFirstEachByLastUse() {
+        let p = { (id: String, s: PalStatus, at: Int64?) in Pal(id: id, name: id, cwd: "/", sessionId: id, status: s, updatedAt: at) }
+        let order = Pal.listed([p("a", .asleep, 50), p("b", .idle, 10), p("c", .asleep, 90), p("d", .busy, 20), p("e", .idle, nil), p("f", .waiting, 10)])
+        #expect(order.map(\.id) == ["d", "b", "f", "e", "c", "a"])
+    }
+
+    @Test func wordsForAnAsleepPalWakeItFirstAndThePageSaysSo() async throws {
+        UserDefaults.standard.removeObject(forKey: "demoWakeAfter")
+        let host = DemoHost(speed: 1, pals: true)
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { store.pals.count == 4 })
+        #expect(store.pal(id: "pal-blog")?.isAsleep == true && store.pal(id: "pal-blog")?.lastWakeUsd == 0.04)
+        let blog = store.palStore("pal-blog")
+        #expect(await until { blog.hasSynced && blog.messages.count == 3 })
+        #expect(blog.status?.busy != true && !blog.isBusy)
+        blog.send("评论区再加个点赞")
+        #expect(await until { blog.status?.busy == true && blog.status?.activity == AppStore.wakingActivity })
+        #expect(await until(5) { store.pal(id: "pal-blog")?.status == .busy || store.pal(id: "pal-blog")?.status == .idle })
+        #expect(blog.status?.activity != AppStore.wakingActivity)
+        #expect(await until(8) { blog.messages.last?.text.hasPrefix("好的，按你说的办。") == true })
+        #expect(blog.messages.filter { $0.text == "评论区再加个点赞" }.count == 1)
+        #expect(await host.lastParams["pals.send"]?["id"] == "pal-blog")
+        // 叫醒 ahead of any words: pals.wake
+        let woke = try await store.wakePal(id: "pal-photos")
+        #expect(woke?.status == .idle && store.pal(id: "pal-photos")?.status == .idle)
+        #expect(await host.lastParams["pals.wake"] == ["id": "pal-photos"])
     }
 }

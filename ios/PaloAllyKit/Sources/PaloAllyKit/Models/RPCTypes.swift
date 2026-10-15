@@ -89,9 +89,11 @@ public enum RPCMethod {
     public static let palsStop = "pals.stop"
     /// The computer's conversations that have ended lately, to adopt (§10).
     public static let palsRecent = "pals.recent"
+    /// An asleep Pal resumed (§12); `pals.send` wakes one too.
+    public static let palsWake = "pals.wake"
 
     public static let pals: [String] = [palsList, palsAdopt, palsRelease, palsRemove, palsHistory, palsSend, palsStop,
-                                        palsRecent]
+                                        palsRecent, palsWake]
 
     /// Every method the client knows. The contract test checks this equals
     /// the host's method set exactly.

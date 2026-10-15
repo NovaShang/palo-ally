@@ -49,6 +49,8 @@ public actor DemoHost {
     var waitingAdoptions: Set<String> = []
     /// Each Pal's reply being written (`pals.history`'s `streaming`).
     var palWriting: [String: SyncResult.Streaming] = [:]
+    /// Asleep Pals being woken (§12), for words that come meanwhile to wait on.
+    var palWakes: [String: Task<Void, Never>] = [:]
     /// Seeded with Pals: an accepted proposal opens a Pal, not a helper.
     let palsMode: Bool
     /// Seeded with sessions: a host from before Pals, which doesn't know `pals.*`.

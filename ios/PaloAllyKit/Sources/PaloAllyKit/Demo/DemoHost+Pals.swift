@@ -8,7 +8,9 @@ import Foundation
 /// 0 never). Seven conversations that ended lately, in three folders, adopt
 /// in a moment (§10; `-demoAdoptError <why>` makes that fail,
 /// `-demoRecentEmpty YES` leaves none); the assistant proposes one with a
-/// `pal_adopt` card when asked to 接过来 (`-demoState adopt`).
+/// `pal_adopt` card when asked to 接过来 (`-demoState adopt`). Two more Pals
+/// are asleep (§12): words for one wake it first (`-demoWakeAfter <s>`,
+/// default 1.5), and `-demoPals <n>` adds n more asleep ones (a long list).
 extension DemoHost {
     // MARK: requests
 
@@ -36,12 +38,19 @@ extension DemoHost {
             guard let pal = pals.first(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Pal") }
             guard pal.status != .stopped else { throw DemoError(message: "\(pal.displayName)停了") }
             guard !text.isEmpty else { throw DemoError(message: "要说的话不能是空的") }
+            // Asleep: its session resumes first; the words go in once it's up.
+            if pal.isAsleep || pal.status == .starting { await wakePal(id) }
             var m = palMessage(id, role: .user, text: text, channel: .app)
             m.clientMsgId = p["clientMsgId"]?.stringValue
             appendPal(m)
             palTurns[id]?.cancel()
             palTurns[id] = Task { await self.palAnswers(id, to: text) }
             return ["id": .string(m.id), "seq": .number(Double(m.seq))]
+        case RPCMethod.palsWake:
+            let id = p["id"]?.stringValue ?? ""
+            guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Pal") }
+            await wakePal(id)
+            return ["pal": try .from(pals.first { $0.id == id })]
         case RPCMethod.palsStop:
             let id = p["id"]?.stringValue ?? ""
             guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Pal") }
@@ -290,6 +299,25 @@ extension DemoHost {
         }
     }
 
+    // MARK: asleep and awake (§12)
+
+    /// An asleep Pal's session resumes (`starting` meanwhile); one awake is
+    /// left as it is. Words that come meanwhile wait for the same wake.
+    func wakePal(_ id: String) async {
+        if let t = palWakes[id] { return await t.value }
+        guard pals.first(where: { $0.id == id })?.isAsleep == true else { return }
+        setPal(id) { $0.status = .starting }
+        let after = UserDefaults.standard.object(forKey: "demoWakeAfter") != nil
+            ? UserDefaults.standard.double(forKey: "demoWakeAfter") : 1.5
+        let t = Task {
+            await self.pause(after)
+            self.setPal(id) { $0.status = .idle; $0.updatedAt = Date().epochMillis }
+        }
+        palWakes[id] = t
+        await t.value
+        palWakes[id] = nil
+    }
+
     // MARK: turns
 
     /// The owner said something: it works on it, streams its answer, and is idle again.
@@ -369,8 +397,9 @@ extension DemoHost {
         ],
     ]
 
-    /// 网站帮手 waits to run a long command; 笔记整理 is idle; 修登录跳转 runs in
-    /// a terminal and 问卷数据清洗 in the background, asking a question.
+    /// 网站帮手 waits to run a long command; 笔记整理 is idle; 博客改版 and
+    /// 照片整理 are asleep; 修登录跳转 runs in a terminal and 问卷数据清洗 in
+    /// the background, asking a question.
     static func seedPals(now: Int64, nextSeq: Int64) -> PalSeed {
         let min: Int64 = 60_000
         let hour = 60 * min
@@ -380,6 +409,13 @@ extension DemoHost {
                 createdBy: .palo),
             Pal(id: "pal-notes", name: "笔记整理", cwd: "/Users/demo/Documents/notes", sessionId: "9a40c2e7-1b3d-4e8f-a6c5-77d0e3b2f418",
                 status: .idle, lastLine: "这周的 12 篇笔记都归好类了，标签也补上了。", model: "claude-sonnet-4-5", createdBy: .owner),
+            // Idle a while, put to sleep (§12).
+            Pal(id: "pal-blog", name: "博客改版", cwd: "/Users/demo/code/blog", sessionId: "3e7b9d21-6c4a-4f8e-b2d0-8a1c5e9f7b34",
+                status: .asleep, lastLine: "评论区的样式改好了，等你有空看看。", model: "claude-sonnet-4-5", createdBy: .owner,
+                updatedAt: now - 2 * 24 * hour, lastWakeUsd: 0.04),
+            Pal(id: "pal-photos", name: "照片整理", cwd: "/Users/demo/Pictures/整理", sessionId: "b5c1e8a4-2d7f-4a3b-9e60-4f2d8c1a7e95",
+                status: .asleep, lastLine: "去年的照片按月份分好了，重复的挪进了「待删」。", model: "claude-sonnet-4-5", createdBy: .palo,
+                updatedAt: now - 6 * 24 * hour),
         ]
         let others = [
             CCSession(id: "cc-login", name: "修登录跳转", cwd: "/Users/demo/code/app", kind: .terminal, status: .busy,
@@ -482,7 +518,27 @@ extension DemoHost {
             RecentSession(sessionId: "d3f9a1c7-8e2b-4d6a-b5c4-7a0e3f1d9b86", cwd: "/Users/demo/Documents/旅行",
                           title: "比较三家酒店的退改规则", lastModified: now - 9 * day, size: 205_000),
         ]
-        return PalSeed(pals: pals, logs: ["pal-site": log("pal-site", site), "pal-notes": log("pal-notes", notes)],
+        let blog: [(ChatRole, String, Int64, ChatChannel, String?)] = [
+            (.user, "博客的评论区太挤了，改得松一点", 2 * 24 * hour + 30 * min, .cli, nil),
+            (.assistant, "好，我把评论之间的间距加大，头像缩小一点。", 2 * 24 * hour + 29 * min, .app, nil),
+            (.assistant, "评论区的样式改好了，等你有空看看。", 2 * 24 * hour, .app, nil),
+        ]
+        let photos: [(ChatRole, String, Int64, ChatChannel, String?)] = [
+            (.user, "你好，我是 Palo。主人的照片在 ~/Pictures/整理，按月份分好，重复的先别删。", 7 * 24 * hour, .system, "Palo"),
+            (.assistant, "去年的照片按月份分好了，重复的挪进了「待删」。", 6 * 24 * hour, .app, nil),
+        ]
+        var allPals = pals
+        var logs = ["pal-site": log("pal-site", site), "pal-notes": log("pal-notes", notes),
+                    "pal-blog": log("pal-blog", blog), "pal-photos": log("pal-photos", photos)]
+        // `-demoPals <n>`: n more asleep (a long list).
+        let more = UserDefaults.standard.integer(forKey: "demoPals")
+        for i in stride(from: 1, through: max(0, more), by: 1) {
+            let id = "pal-more-\(i)"
+            allPals.append(Pal(id: id, name: "项目 \(i)", cwd: "/Users/demo/code/project-\(i)", sessionId: "more-\(i)", status: .asleep,
+                               lastLine: "第 \(i) 个项目的事办完了。", createdBy: .owner, updatedAt: now - Int64(7 + i) * 24 * hour))
+            logs[id] = log(id, [(.assistant, "第 \(i) 个项目的事办完了。", Int64(7 + i) * 24 * hour, .app, nil)])
+        }
+        return PalSeed(pals: allPals, logs: logs,
                        others: others, approvals: approvals, questions: questions, proposal: proposal, recent: recent)
     }
 }

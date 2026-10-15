@@ -8,9 +8,11 @@ import Foundation
 // The computer's other live sessions come with the list, to adopt.
 
 /// What a Pal is doing (§8). `waiting` = a card waits on the owner;
-/// `starting` = its process is coming up (adopting, or after a restart).
+/// `starting` = its process is coming up (adopting, after a restart, or
+/// being woken); `asleep` = idle a while, its process ended (§12): its
+/// conversation is all there, and words for it wake it first.
 public enum PalStatus: String, TolerantStringEnum {
-    case busy, idle, waiting, starting, stopped, unknown
+    case busy, idle, waiting, starting, stopped, asleep, unknown
     public static let fallback = PalStatus.unknown
 }
 
@@ -35,6 +37,9 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
     /// How many of its cards wait on the owner.
     public var pending: Int
     public var model: String?
+    /// What the first turn after its last wake cost (USD): a cold start
+    /// writes its context to the cache again (§12).
+    public var lastWakeUsd: Double?
     public var createdBy: PalCreator
     /// Busy: what it's doing, in plain words.
     public var activity: String?
@@ -42,14 +47,16 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
     public var note: String?
     public var updatedAt: Int64?
 
-    enum CodingKeys: String, CodingKey { case id, name, cwd, sessionId, status, lastLine, pending, model, createdBy, activity, note, updatedAt }
+    enum CodingKeys: String, CodingKey {
+        case id, name, cwd, sessionId, status, lastLine, pending, model, lastWakeUsd, createdBy, activity, note, updatedAt
+    }
 
     public init(id: String, name: String, cwd: String, sessionId: String, status: PalStatus, lastLine: String? = nil,
                 pending: Int = 0, model: String? = nil, createdBy: PalCreator = .owner, activity: String? = nil,
-                note: String? = nil, updatedAt: Int64? = nil) {
+                note: String? = nil, updatedAt: Int64? = nil, lastWakeUsd: Double? = nil) {
         self.id = id; self.name = name; self.cwd = cwd; self.sessionId = sessionId; self.status = status
         self.lastLine = lastLine; self.pending = pending; self.model = model; self.createdBy = createdBy
-        self.activity = activity; self.note = note; self.updatedAt = updatedAt
+        self.activity = activity; self.note = note; self.updatedAt = updatedAt; self.lastWakeUsd = lastWakeUsd
     }
 
     public init(from decoder: Decoder) throws {
@@ -62,6 +69,7 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
         lastLine = l.string("lastLine")
         pending = l.int("pending", or: 0)
         model = l.string("model")
+        lastWakeUsd = l.double("lastWakeUsd")
         createdBy = l.decode(PalCreator.self, "createdBy", or: .unknown)
         activity = l.string("activity")
         note = l.string("note")
@@ -70,6 +78,21 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
 
     /// In a turn: working, or stopped in it on a card the owner must answer.
     public var inTurn: Bool { status == .busy || status == .waiting }
+
+    /// Asleep (§12): no process; words for it wake it first.
+    public var isAsleep: Bool { status == .asleep }
+
+    /// The list's order: the awake ones, then those asleep, each the most
+    /// lately used first (as the host has them when it doesn't say).
+    public static func listed(_ pals: [Pal]) -> [Pal] {
+        pals.enumerated()
+            .sorted { a, b in
+                if a.element.isAsleep != b.element.isAsleep { return !a.element.isAsleep }
+                let (x, y) = (a.element.updatedAt ?? 0, b.element.updatedAt ?? 0)
+                return x != y ? x > y : a.offset < b.offset
+            }
+            .map(\.element)
+    }
 
     /// What it's called: its name, else its folder's.
     public var displayName: String {
@@ -140,6 +163,17 @@ public struct PalAdoptResult: Decodable, Sendable {
         waiting = l.decode(PalAdoptWaiting.self, "waiting")
         cancelled = l.bool("cancelled")
         if pal == nil && waiting == nil && cancelled == nil { _ = l.expect("pal", pal) }
+    }
+}
+
+/// `pals.wake {id}` → `{pal}`: an asleep Pal resumed (§12; the host
+/// answers once it's up). Words for it (`pals.send`) wake it as well.
+public struct PalWakeResult: Decodable, Sendable {
+    public var pal: Pal?
+    public init(pal: Pal?) { self.pal = pal }
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        pal = l.expect("pal", l.decode(Pal.self, "pal"))
     }
 }
 

@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Pals' wording: states, the list's second line, a page's subtitle.
 extension Copy {
-    /// 在忙 / 空闲 / 等你 / 正在启动 / 已停.
+    /// 在忙 / 空闲 / 等你 / 正在启动 / 已停 / 睡着.
     static func palStatus(_ s: PalStatus) -> String {
         switch s {
         case .busy: "在忙"
@@ -11,18 +11,20 @@ extension Copy {
         case .waiting: "等你"
         case .starting: "正在启动"
         case .stopped: "已停"
+        case .asleep: "睡着"
         case .unknown: "不清楚"
         }
     }
 
     /// The state's dot: green while working, orange while it waits on the
-    /// owner, gray otherwise; none when it's stopped. Not the theme color.
+    /// owner, gray otherwise; none when it's stopped or asleep (asleep has
+    /// its moon). Not the theme color.
     static func palStatusColor(_ s: PalStatus) -> Color? {
         switch s {
         case .busy, .starting: .green
         case .waiting: .orange
         case .idle: Color(.systemGray3)
-        case .stopped, .unknown: nil
+        case .stopped, .asleep, .unknown: nil
         }
     }
 
@@ -36,10 +38,22 @@ extension Copy {
         }
     }
 
-    /// A Pal page's subtitle: 「在忙 · ~/code/site」; stopped, why.
-    static func palSubtitle(_ p: Pal) -> String {
-        let second = p.status == .stopped ? oneLine(p.note).nonEmpty ?? p.shortCwd : p.shortCwd
+    /// A Pal page's subtitle: 「在忙 · ~/code/site」; stopped, why; asleep,
+    /// what waking it cost last time when that's known; being woken, so.
+    static func palSubtitle(_ p: Pal, waking: Bool = false) -> String {
+        if waking { return "正在叫醒…" }
+        let second: String
+        switch p.status {
+        case .stopped: second = oneLine(p.note).nonEmpty ?? p.shortCwd
+        case .asleep: second = p.lastWakeUsd.map(wakeCost) ?? p.shortCwd
+        default: second = p.shortCwd
+        }
         return [palStatus(p.status), second].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    /// 「上次叫醒约 $0.04」: a cold start costs more than a turn (§12).
+    static func wakeCost(_ usd: Double) -> String {
+        usd < 0.01 ? "上次叫醒不到 $0.01" : "上次叫醒约 $\(String(format: "%.2f", usd))"
     }
 
     private static func oneLine(_ s: String?) -> String {

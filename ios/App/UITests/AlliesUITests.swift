@@ -46,7 +46,10 @@ final class AlliesUITests: XCTestCase {
     func testRemovingAnAllyAsksInPlaceThenTakesThemOff() throws {
         let app = launch(["-demoScreen", "list"])
         let row = app.descendants(matching: .any)["row-ally-al-family"]
-        XCTAssertTrue(row.waitForExistence(timeout: 15), "no row for 家人")
+        // Below the Pals (asleep ones too): the list scrolls to it.
+        XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 15), "not on the list")
+        for _ in 0..<4 where !row.exists { app.swipeUp() }
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "no row for 家人")
         row.tap()
         let more = app.buttons["ally-menu"].firstMatch
         XCTAssertTrue(more.waitForExistence(timeout: 5), "no ⋯ on the Ally's page")
@@ -58,9 +61,12 @@ final class AlliesUITests: XCTestCase {
         XCTAssertEqual(app.sheets.count, 0)
         app.buttons["解除"].firstMatch.tap()
         // Back on the list, without them.
-        XCTAssertTrue(app.staticTexts["Allies"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 10) || app.staticTexts["Allies"].exists, "not back on the list")
+        let lin = app.descendants(matching: .any)["row-ally-al-lin"]
+        for _ in 0..<4 where !lin.exists { app.swipeUp() }
+        XCTAssertTrue(lin.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Allies"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["row-ally-al-family"].exists)
-        XCTAssertTrue(app.descendants(matching: .any)["row-ally-al-lin"].exists)
     }
 
     /// The owner's own words on an Ally's page go out as they are: no draft

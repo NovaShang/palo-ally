@@ -19,7 +19,8 @@ struct ConversationList: View {
 
             if store.palsSupported == true {
                 Section {
-                    ForEach(store.pals) { pal in
+                    // Awake ones first, then those asleep; a long list just scrolls.
+                    ForEach(store.listedPals) { pal in
                         PalRow(pal: pal)
                             .tag(AppModel.Conversation.pal(pal.id))
                             .accessibilityIdentifier("row-pal-\(pal.id)")
@@ -189,9 +190,10 @@ private struct RecentListRow: View {
 }
 
 /// The round tile on a Pal's or a session's row: a terminal glyph, its
-/// state as a dot.
+/// state as a dot; asleep, a quiet moon in its place.
 struct PalTile: View {
     let dot: Color?
+    var asleep = false
     var size: CGFloat = 40
 
     var body: some View {
@@ -201,7 +203,14 @@ struct PalTile: View {
             .frame(width: size, height: size)
             .background(.fill.tertiary, in: .circle)
             .overlay(alignment: .bottomTrailing) {
-                if let dot {
+                if asleep {
+                    Image(systemName: "moon.zzz")
+                        .font(.system(size: size * 0.24, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: size * 0.42, height: size * 0.42)
+                        .background(Color(.secondarySystemGroupedBackground), in: .circle)
+                        .offset(x: size * 0.08, y: size * 0.08)
+                } else if let dot {
                     Circle()
                         .fill(dot)
                         .frame(width: size * 0.28, height: size * 0.28)
@@ -220,7 +229,7 @@ private struct PalRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            PalTile(dot: Copy.palStatusColor(pal.status))
+            PalTile(dot: Copy.palStatusColor(pal.status), asleep: pal.isAsleep)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(pal.displayName)

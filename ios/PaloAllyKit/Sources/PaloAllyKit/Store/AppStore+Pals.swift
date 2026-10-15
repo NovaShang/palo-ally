@@ -10,6 +10,10 @@ extension AppStore {
 
     public func pal(id: String) -> Pal? { pals.first { $0.id == id } }
 
+    /// The Pals as the list shows them: awake ones first, then those asleep
+    /// (§12), each the most lately used first.
+    public var listedPals: [Pal] { Pal.listed(pals) }
+
     /// The Pal resuming that Claude Code session, if one does.
     public func pal(sessionId: String) -> Pal? { pals.first { $0.sessionId == sessionId } }
 
@@ -194,6 +198,23 @@ extension AppStore {
     /// The failed adoption's note was read.
     public func clearAdoption(sessionId: String) {
         if case .failed? = adoptions[sessionId] { adoptions[sessionId] = nil }
+    }
+
+    // MARK: waking (§12)
+
+    /// 叫醒: an asleep Pal resumes its session (the host answers once it's
+    /// up). Words for it wake it by themselves; this is for waking it ahead.
+    @discardableResult
+    public func wakePal(id: String) async throws -> Pal? {
+        if let parent { return try await parent.wakePal(id: id) }
+        // Resuming a session takes a few seconds.
+        let r: PalWakeResult = try await rpc.call(RPCMethod.palsWake, params: IDParams(id: id), timeout: 45)
+        if let p = r.pal {
+            var list = pals
+            if let i = list.firstIndex(where: { $0.id == p.id }) { list[i] = p } else { list.append(p) }
+            setPals(list, others: nil)
+        }
+        return r.pal
     }
 
     // MARK: releasing and removing

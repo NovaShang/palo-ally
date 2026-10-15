@@ -127,6 +127,7 @@ private let resultTypes: [String: Check] = [
     RPCMethod.palsSend: strict(ChatSendResult.self),
     RPCMethod.palsStop: strict(OKResult.self),
     RPCMethod.palsRecent: strict(PalsRecentResult.self),
+    RPCMethod.palsWake: strict(PalWakeResult.self),
 ]
 
 /// What this client already speaks that the host's fixture doesn't have

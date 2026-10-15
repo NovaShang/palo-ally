@@ -146,6 +146,8 @@ public final class AppStore {
     public private(set) var lastSeq: Int64 = 0
     /// A Pal's store: the Pal's state as last applied (`applyPal`).
     @ObservationIgnored private var palState: PalStatus?
+    /// A Pal's store: it's being woken (§12) for words sent to it asleep.
+    @ObservationIgnored private var palWaking = false
     /// True between a send and the first sign of a reply (drives the
     /// "收到了" feedback indicator).
     public private(set) var awaitingReply = false
@@ -1226,10 +1228,13 @@ public final class AppStore {
             let replyTo = messages.first(where: { $0.clientMsgId == cid && $0.seq == 0 })?.replyTo
             let r: ChatSendResult
             if let palID {
+                // Asleep: the host wakes it first (a few seconds), and says so here.
+                if pal(id: palID)?.isAsleep == true { showWaking() }
                 // Into the Pal as typed (nothing attached): a quoted part
                 // goes in front, the way it would be pasted in a terminal.
                 r = try await rpc.call(RPCMethod.palsSend,
-                                       params: PalSendParams(id: palID, text: Self.quoting(replyTo, in: text), clientMsgId: cid))
+                                       params: PalSendParams(id: palID, text: Self.quoting(replyTo, in: text), clientMsgId: cid),
+                                       timeout: 45)
             } else {
                 r = try await rpc.call(RPCMethod.chatSend,
                                        params: ChatSendParams(text: text, clientMsgId: cid, attachments: ids,
@@ -1256,6 +1261,12 @@ public final class AppStore {
                 messages[i].delivery = offline ? .queued : .failed
             }
             awaitingReply = false
+            // It didn't wake: the page says what the list says again.
+            if palWaking, let palID, let p = pal(id: palID), p.status != .starting {
+                palWaking = false
+                palState = nil
+                applyPal(p)
+            }
             // A drop still within its grace period isn't an error yet: the
             // message just waits for the reconnect, which resends it.
             if !(offline && !connectionTrouble) { lastError = Friendly.message(error) }
@@ -1455,12 +1466,30 @@ public final class AppStore {
     /// turn is over, which finishes any reply still being written.
     func applyPal(_ p: Pal) {
         guard scope != .palo, p.status != palState || (p.inTurn && p.activity != status?.activity) else { return }
+        // Coming up from asleep is being woken: 「正在叫醒…」 until it's up.
+        let waking = p.status == .starting && (palState == .asleep || palWaking)
+        palWaking = waking
         palState = p.status
         var s = status ?? HostStatus(online: true, busy: false, model: p.model ?? "")
-        s.busy = p.inTurn
-        s.activity = p.status == .waiting ? "在等你" : (p.status == .starting ? "正在启动" : p.activity)
+        s.busy = p.inTurn || waking
+        s.activity = waking ? Self.wakingActivity
+            : p.status == .waiting ? "在等你" : (p.status == .starting ? "正在启动" : p.activity)
         if let m = p.model, !m.isEmpty { s.model = m }
         if !s.busy, !streams.isEmpty, let finishingReply { finishingReply { applyStatus(s) } } else { atTheEnd { applyStatus(s) } }
+    }
+
+    /// What a Pal's page says while it's being woken (§12).
+    public static let wakingActivity = "正在叫醒"
+
+    /// Words for an asleep Pal: 「正在叫醒…」 at once, until the list says it's up.
+    func showWaking() {
+        guard scope != .palo else { return }
+        palWaking = true
+        palState = nil // whatever the list says next is news
+        var s = status ?? HostStatus(online: true, busy: false, model: "")
+        s.busy = true
+        s.activity = Self.wakingActivity
+        atTheEnd { applyStatus(s) }
     }
 
     // MARK: search (成果)

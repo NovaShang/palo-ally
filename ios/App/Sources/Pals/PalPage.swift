@@ -43,10 +43,12 @@ private struct PalConversation: View {
     private var pal: Pal? { store.pal(id: palID) ?? last }
     /// No longer on the list (handed back, removed, or gone at the computer).
     private var gone: Bool { store.pal(id: palID) == nil && store.palsSupported == true }
+    /// Words sent to it asleep: it's being woken (§12).
+    private var waking: Bool { store.status?.busy == true && store.status?.activity == AppStore.wakingActivity }
 
     var body: some View {
         ChatView(bottomPanel: bottom)
-            .navigationSubtitle(pal.map(Copy.palSubtitle) ?? "")
+            .navigationSubtitle(pal.map { Copy.palSubtitle($0, waking: waking) } ?? "")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { menu }
             }
