@@ -217,6 +217,36 @@ extension AppStore {
         return r.pal
     }
 
+    // MARK: naming (§13)
+
+    /// 重命名: the host renames it, and Claude Code's title for it too (a
+    /// name another Pal has comes back with a number). Shown at once; put
+    /// back when the host says no.
+    @discardableResult
+    public func renamePal(id: String, name: String) async throws -> Pal? {
+        if let parent { return try await parent.renamePal(id: id, name: name) }
+        let want = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !want.isEmpty else { throw RPCError.remote("名字不能是空的") }
+        let before = pals
+        if let i = pals.firstIndex(where: { $0.id == id }) {
+            var list = pals
+            list[i].name = want
+            setPals(list, others: nil)
+        }
+        do {
+            let r: PalRenameResult = try await rpc.call(RPCMethod.palsRename, params: PalRenameParams(id: id, name: want), timeout: 30)
+            if let p = r.pal {
+                var list = pals
+                if let i = list.firstIndex(where: { $0.id == p.id }) { list[i] = p } else { list.append(p) }
+                setPals(list, others: nil)
+            }
+            return r.pal
+        } catch {
+            setPals(before, others: nil)
+            throw error
+        }
+    }
+
     // MARK: releasing and removing
 
     /// 交还终端: the host closes its own process; the returned line resumes

@@ -128,6 +128,7 @@ private let resultTypes: [String: Check] = [
     RPCMethod.palsStop: strict(OKResult.self),
     RPCMethod.palsRecent: strict(PalsRecentResult.self),
     RPCMethod.palsWake: strict(PalWakeResult.self),
+    RPCMethod.palsRename: strict(PalRenameResult.self),
 ]
 
 /// What this client already speaks that the host's fixture doesn't have

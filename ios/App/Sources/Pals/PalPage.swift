@@ -5,8 +5,9 @@ import SwiftUI
 /// assistant's conversation view on the Pal's scoped store (`palStore`):
 /// streaming, the paced reveal, following the end, cards, the composer and
 /// voice, all the same; what the owner types goes in as typed. ⋯ has
-/// 停止这一轮, 交还终端 (the line that resumes it in a terminal, to copy) and
-/// 移出 Pals, each asked in the page in place of the composer.
+/// 停止这一轮, 重命名 (the system's alert), 交还终端 (the line that resumes it
+/// in a terminal, to copy) and 移出 Pals, these two asked in the page in
+/// place of the composer.
 struct PalPage: View {
     let palID: String
     /// The assistant's store, which makes and feeds the Pal's.
@@ -37,6 +38,8 @@ private struct PalConversation: View {
     }
     @State private var panel = Panel.none
     @State private var working = false
+    /// 重命名 asked.
+    @State private var renaming: Pal?
     /// The Pal as last seen: it leaves the list once handed back or removed.
     @State private var last: Pal?
 
@@ -54,6 +57,7 @@ private struct PalConversation: View {
             }
             .onChange(of: store.pal(id: palID), initial: true) { _, p in if let p { last = p } }
             .animation(.snappy, value: panel)
+            .palRename($renaming)
             #if DEBUG
             // `-demoPalPanel release | remove | released`: the page opens on it (snapshots).
             .task {
@@ -119,6 +123,7 @@ private struct PalConversation: View {
             if pal?.inTurn == true || store.isBusy {
                 Button("停止这一轮", systemImage: "stop.circle") { Task { await stop() } }
             }
+            Button("重命名", systemImage: "pencil") { renaming = pal }
             Section {
                 Button("交还终端", systemImage: "apple.terminal") { panel = .release }
                 Button("移出 Pals", systemImage: "minus.circle", role: .destructive) { panel = .remove }
@@ -164,4 +169,48 @@ private struct PalConversation: View {
             panel = .notice("没移出：\(Copy.error(error))")
         }
     }
+}
+
+/// 重命名 (pals-prd §13): the system's alert with the name filled in. Claude
+/// Code's title for the session changes too; a name another Pal has comes
+/// back with a number. Used by the Pal's page and its row on the list.
+struct PalRenameAlert: ViewModifier {
+    @Binding var pal: Pal?
+    @Environment(AppStore.self) private var store
+    @State private var text = ""
+    @State private var failure: String?
+
+    func body(content: Content) -> some View {
+        content
+            .alert("重命名", isPresented: Binding(get: { pal != nil }, set: { if !$0 { pal = nil } })) {
+                TextField("名字", text: $text)
+                    .accessibilityIdentifier("pal-rename-field")
+                Button("取消", role: .cancel) { pal = nil }
+                Button("好") {
+                    let id = pal?.id
+                    let name = text
+                    pal = nil
+                    guard let id else { return }
+                    Task {
+                        do {
+                            try await store.renamePal(id: id, name: name)
+                        } catch {
+                            failure = "没改成：\(Copy.error(error))"
+                        }
+                    }
+                }
+                .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } message: {
+                Text("电脑上的 Claude Code 里也会是这个名字。")
+            }
+            .alert(failure ?? "", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+                Button("好", role: .cancel) { failure = nil }
+            }
+            .onChange(of: pal?.id) { _, id in if id != nil { text = pal?.displayName ?? "" } }
+    }
+}
+
+extension View {
+    /// 重命名 a Pal: set `pal` to ask.
+    func palRename(_ pal: Binding<Pal?>) -> some View { modifier(PalRenameAlert(pal: pal)) }
 }

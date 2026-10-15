@@ -362,3 +362,38 @@ struct PalsSleepTests {
         #expect(await host.lastParams["pals.wake"] == ["id": "pal-photos"])
     }
 }
+
+/// Naming a Pal (pals-prd §13): `pals.rename`, the list following it, a
+/// name another Pal has coming back with a number.
+@MainActor
+@Suite("Pals renamed", .serialized)
+struct PalsRenameTests {
+    @Test func renamingGoesToTheHostAndTheListFollows() async throws {
+        let host = DemoHost(speed: 0, pals: true)
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { store.pals.count == 4 })
+        let p = try await store.renamePal(id: "pal-notes", name: "  读书笔记 ")
+        #expect(p?.name == "读书笔记" && store.pal(id: "pal-notes")?.name == "读书笔记")
+        #expect(await host.lastParams["pals.rename"] == ["id": "pal-notes", "name": "读书笔记"])
+        // its page's store reads the same list
+        #expect(store.palStore("pal-notes").pal(id: "pal-notes")?.name == "读书笔记")
+        // a name another Pal has: with a number
+        #expect(try await store.renamePal(id: "pal-notes", name: "网站帮手")?.name == "网站帮手 2")
+        // nothing to call it: not sent, the name stays
+        await #expect(throws: (any Error).self) { try await store.renamePal(id: "pal-notes", name: " ") }
+        #expect(store.pal(id: "pal-notes")?.name == "网站帮手 2")
+        // the host says no: the name goes back
+        await #expect(throws: (any Error).self) { try await store.renamePal(id: "pal-notes", name: String(repeating: "长", count: 41)) }
+        #expect(store.pal(id: "pal-notes")?.name == "网站帮手 2")
+    }
+
+    @Test func renameParamsAndAnswer() throws {
+        let data = try JSONEncoder().encode(PalRenameParams(id: "p1", name: "官网"))
+        #expect(try JSONDecoder().decode(JSONValue.self, from: data) == ["id": "p1", "name": "官网"])
+        let v = try JSONDecoder().decode(JSONValue.self, from: Data(#"{"pal":{"id":"p1","name":"官网","cwd":"/","sessionId":"s","status":"idle","pending":0,"createdBy":"owner"}}"#.utf8))
+        let (r, issues) = try LenientDiagnostics.collect { try v.decode(PalRenameResult.self) }
+        #expect(issues.isEmpty && r.pal?.name == "官网")
+    }
+}
+

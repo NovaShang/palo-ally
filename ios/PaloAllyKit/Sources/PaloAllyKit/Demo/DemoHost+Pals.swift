@@ -51,6 +51,19 @@ extension DemoHost {
             guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Pal") }
             await wakePal(id)
             return ["pal": try .from(pals.first { $0.id == id })]
+        case RPCMethod.palsRename:
+            let id = p["id"]?.stringValue ?? ""
+            let want = (p["name"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Pal") }
+            guard !want.isEmpty else { throw DemoError(message: "名字不能是空的") }
+            guard want.count <= 40 else { throw DemoError(message: "名字太长了（最多 40 个字）") }
+            // As the host's: a name another Pal has gets a number.
+            let taken = Set(pals.filter { $0.id != id }.map { $0.name.lowercased() })
+            var name = want
+            var n = 2
+            while taken.contains(name.lowercased()) { name = "\(want) \(n)"; n += 1 }
+            setPal(id) { $0.name = name }
+            return ["pal": try .from(pals.first { $0.id == id })]
         case RPCMethod.palsStop:
             let id = p["id"]?.stringValue ?? ""
             guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Pal") }

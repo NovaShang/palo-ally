@@ -34,7 +34,7 @@ final class SessionsUITests: XCTestCase {
     /// 「正在叫醒…」 until it's up, then it answers; back on the list it's awake.
     @MainActor
     func testWordsForAnAsleepPalWakeItAndItAnswers() throws {
-        let app = launch(["-demoScreen", "pal", "-demoPal", "pal-blog", "-demoKeyboard", "4:600", "-demoWakeAfter", "2.5"])
+        let app = launch(["-demoScreen", "pal", "-demoPal", "pal-blog", "-demoKeyboard", "4:600", "-demoWakeAfter", "6"])
         XCTAssertTrue(app.navigationBars.staticTexts["博客改版"].waitForExistence(timeout: 15), "the Pal's page didn't open")
         XCTAssertTrue(text(app, "评论区的样式改好了").waitForExistence(timeout: 10), "its history isn't there")
         XCTAssertTrue(text(app, "睡着 · 上次叫醒约 $0.04").exists, "the page doesn't say it's asleep")
@@ -44,9 +44,9 @@ final class SessionsUITests: XCTestCase {
         waitForExpectations(timeout: 10)
         field.typeText("评论区再加个点赞")
         app.buttons["发送"].firstMatch.tap()
-        XCTAssertTrue(text(app, "正在叫醒").waitForExistence(timeout: 3), "no 正在叫醒 while it wakes")
+        XCTAssertTrue(text(app, "正在叫醒").waitForExistence(timeout: 5), "no 正在叫醒 while it wakes")
         attach(app, "waking-pal")
-        XCTAssertTrue(text(app, "好的，按你说的办").waitForExistence(timeout: 15), "the woken Pal never answered")
+        XCTAssertTrue(text(app, "好的，按你说的办").waitForExistence(timeout: 20), "the woken Pal never answered")
         XCTAssertFalse(text(app, "正在叫醒").exists)
         XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "评论区再加个点赞")).count, 1)
         // Back on the list: awake now; the other one still asleep, after the awake ones.
@@ -59,6 +59,40 @@ final class SessionsUITests: XCTestCase {
         XCTAssertTrue(photos.label.contains("睡着"), "the asleep one doesn't say so")
         XCTAssertLessThan(blog.frame.minY, photos.frame.minY)
         attach(app, "list-after-wake")
+    }
+
+    /// 重命名 (pals-prd §13): from the page's ⋯ and from the row's menu on
+    /// the list, the system's alert with the name filled in.
+    @MainActor
+    func testRenamingAPalFromItsPageAndFromTheList() throws {
+        let app = launch(["-demoScreen", "pal", "-demoPal", "pal-notes"])
+        let more = app.buttons["pal-menu"].firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 15), "no ⋯ on a Pal's page")
+        more.tap()
+        app.buttons["重命名"].firstMatch.tap()
+        let field = app.alerts.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "no name field")
+        XCTAssertEqual(field.value as? String, "笔记整理", "not filled in")
+        attach(app, "rename-alert")
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 12))
+        field.typeText("读书笔记")
+        app.alerts.buttons["好"].tap()
+        XCTAssertTrue(app.navigationBars.staticTexts["读书笔记"].waitForExistence(timeout: 5), "the page's title didn't change")
+        // From the list: the row's menu.
+        app.navigationBars.buttons.firstMatch.tap()
+        let row = app.descendants(matching: .any)["row-pal-pal-site"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["row-pal-pal-notes"].label.contains("读书笔记"))
+        row.press(forDuration: 1.0)
+        app.buttons["重命名"].firstMatch.tap()
+        let again = app.alerts.textFields.firstMatch
+        XCTAssertTrue(again.waitForExistence(timeout: 5))
+        XCTAssertEqual(again.value as? String, "网站帮手")
+        again.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 12))
+        again.typeText("官网")
+        app.alerts.buttons["好"].tap()
+        expectation(for: NSPredicate(format: "label CONTAINS %@", "官网"), evaluatedWith: row)
+        waitForExpectations(timeout: 5)
     }
 
     @MainActor

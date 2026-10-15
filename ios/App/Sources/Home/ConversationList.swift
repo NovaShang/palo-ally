@@ -9,6 +9,8 @@ import SwiftUI
 struct ConversationList: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
+    /// 重命名 asked from a Pal's row (pals-prd §13).
+    @State private var renaming: Pal?
 
     var body: some View {
         @Bindable var model = model
@@ -24,6 +26,10 @@ struct ConversationList: View {
                         PalRow(pal: pal)
                             .tag(AppModel.Conversation.pal(pal.id))
                             .accessibilityIdentifier("row-pal-\(pal.id)")
+                            .contextMenu {
+                                Button("重命名", systemImage: "pencil") { renaming = pal }
+                                    .disabled(!store.connection.isOnline)
+                            }
                     }
                     ForEach(store.otherSessions) { session in
                         OtherSessionRow(session: session)
@@ -72,6 +78,7 @@ struct ConversationList: View {
         .navigationTitle(Platform.barInWindowToolbar ? "" : "PaloAlly")
         .toolbar(Platform.barInWindowToolbar ? .hidden : .automatic, for: .navigationBar)
         .modifier(MacSidebarToggle())
+        .palRename($renaming)
         .animation(.snappy, value: store.pals)
         .animation(.snappy, value: store.otherSessions)
         .animation(.snappy, value: store.adoptions)

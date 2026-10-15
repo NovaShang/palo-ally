@@ -177,6 +177,17 @@ public struct PalWakeResult: Decodable, Sendable {
     }
 }
 
+/// `pals.rename {id, name}` (§13): Claude Code's title for the session
+/// changes too; a name another Pal has comes back with a number.
+public struct PalRenameParams: Codable, Sendable {
+    public var id: String
+    public var name: String
+    public init(id: String, name: String) { self.id = id; self.name = name }
+}
+
+/// `pals.rename → {pal}`, as `pals.wake` answers.
+public typealias PalRenameResult = PalWakeResult
+
 /// `pals.release → {resumeCommand}`: the line that picks it up in a terminal.
 public struct PalReleaseResult: Decodable, Sendable {
     public var resumeCommand: String
