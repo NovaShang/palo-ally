@@ -95,6 +95,30 @@ final class SessionsUITests: XCTestCase {
         waitForExpectations(timeout: 5)
     }
 
+    /// A reply has no buttons under it: 拷贝整条 / 回复 are in its text's
+    /// menu (long press), with the selection's own items; 回复 quotes it.
+    /// Light and dark.
+    @MainActor
+    func testAReplysCopyAndReplyAreInItsMenu() throws {
+        for look in ["light", "dark"] {
+            let app = launch(["-demoScreen", "pal", "-demoPal", "pal-notes", "-demoAppearance", look])
+            XCTAssertTrue(app.navigationBars.staticTexts["笔记整理"].waitForExistence(timeout: 15), "the Pal's page didn't open")
+            let reply = app.textViews.matching(NSPredicate(format: "value CONTAINS %@", "12 篇笔记都归好类了")).firstMatch
+            XCTAssertTrue(reply.waitForExistence(timeout: 10), "no reply")
+            XCTAssertFalse(app.buttons["复制这条回答"].exists, "a copy button under the reply")
+            XCTAssertFalse(app.buttons["回复这条"].exists, "a reply button under the reply")
+            attach(app, "reply-\(look)")
+            reply.press(forDuration: 1.0)
+            XCTAssertTrue(app.menuItems["拷贝整条"].waitForExistence(timeout: 5) || app.buttons["拷贝整条"].exists, "no 拷贝整条 in the menu")
+            attach(app, "reply-menu-\(look)")
+            (app.menuItems["回复"].exists ? app.menuItems["回复"] : app.buttons["回复"]).firstMatch.tap()
+            // 回复: the answer is quoted over the composer.
+            XCTAssertTrue(app.buttons["不回复了"].firstMatch.waitForExistence(timeout: 5), "回复 quoted nothing")
+            attach(app, "reply-quoted-\(look)")
+            app.terminate()
+        }
+    }
+
     @MainActor
     func testHandingBackShowsTheLineAndRemovingAsksInThePage() throws {
         let app = launch(["-demoScreen", "pal", "-demoPal", "pal-notes"])

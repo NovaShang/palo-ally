@@ -158,6 +158,7 @@ private struct LivePiece: View {
 }
 
 private struct LiveMarkdown: UIViewRepresentable {
+    @Environment(\.wholeReply) private var wholeReply
     let model: ReplyTextModel
     /// Unused here: a new value is what makes SwiftUI measure again.
     let height: CGFloat
@@ -166,6 +167,7 @@ private struct LiveMarkdown: UIViewRepresentable {
     func makeUIView(context: Context) -> LiveTextHost {
         let host = LiveTextHost()
         host.text.onQuote = onQuote
+        host.text.wholeReply = wholeReply
         host.text.reportsHeightItself = true
         model.attach(host)
         return host
@@ -173,6 +175,7 @@ private struct LiveMarkdown: UIViewRepresentable {
 
     func updateUIView(_ host: LiveTextHost, context: Context) {
         host.text.onQuote = onQuote
+        host.text.wholeReply = wholeReply
         // Unchanged text returns at once.
         host.text.render(source: model.liveText, streaming: model.streaming, linkColor: model.linkColor)
     }

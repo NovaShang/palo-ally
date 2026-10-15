@@ -230,17 +230,13 @@ private struct AssistantMessage: View {
                 }
                 if (!message.text.isEmpty || message.isStreaming) && !questionCardOnly && !adoptCardOnly {
                     // One system text view per answer: free selection across
-                    // paragraphs, like Notes / Safari. 「引用回复」 quotes a selection.
-                    // The same view while it's written and once it's finished
-                    // (the text view finishes it in place).
+                    // paragraphs, like Notes / Safari. Its menu (long press,
+                    // right click on a Mac) has 「引用回复」 for a selection and,
+                    // once it's finished, 拷贝 / 回复 for the whole answer: no
+                    // buttons under every reply. The same view while it's
+                    // written and once it's finished (it finishes in place).
                     ReplyText(message: message)
-                }
-                if !message.isStreaming, !message.text.isEmpty, message.kind == .text {
-                    // The whole answer in one tap; small and quiet.
-                    HStack(spacing: 0) {
-                        CopyButton(text: message.text, label: "复制这条回答", glyphAlignment: .leading)
-                        ReplyButton { store.quote(message) }
-                    }
+                        .environment(\.wholeReply, wholeReply)
                 }
                 }
                 if message.kind == .task, let taskId = message.taskId {
@@ -267,6 +263,13 @@ private struct AssistantMessage: View {
     }
 
     static let trailingRoom = AssistantMessageLayout.trailingRoom
+
+    /// 拷贝 / 回复 for the whole answer, in its text's menu; not while it's written.
+    private var wholeReply: WholeReplyActions? {
+        guard !message.isStreaming, !message.text.isEmpty, message.kind == .text else { return nil }
+        let text = message.text
+        return WholeReplyActions(copy: { Clipboard.copy(text) }, reply: { [store] in store.quote(message) })
+    }
 
     /// A question card says it all: no label, no repeated text above it.
     private var questionCardOnly: Bool {
@@ -519,21 +522,11 @@ private struct FileCard: View {
     }
 }
 
-/// 「回复」 under an answer: quotes the whole answer. Same quiet style as the copy glyph.
-struct ReplyButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "arrowshape.turn.up.left")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundStyle(.secondary)
-                .frame(width: 32, height: 32)
-                .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("回复这条")
-    }
+/// 拷贝 / 回复 for a whole answer: in its text's menu (long press, right
+/// click), where the selection's own items are.
+struct WholeReplyActions {
+    let copy: () -> Void
+    let reply: () -> Void
 }
 
 /// What the owner quoted, above their bubble: one or two quiet lines. Tap →
@@ -623,4 +616,6 @@ extension EnvironmentValues {
     @Entry var chatRowResizing: ((_ id: String, _ folding: Bool) -> Bool)? = nil
     /// The conversation's side margin, so tables can scroll edge to edge.
     @Entry var messageGutter: CGFloat = 16
+    /// The answer a reply's text belongs to: 拷贝 / 回复 in its menu.
+    @Entry var wholeReply: WholeReplyActions? = nil
 }

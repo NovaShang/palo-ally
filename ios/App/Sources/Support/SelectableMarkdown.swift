@@ -19,16 +19,19 @@ struct SelectableMarkdown: UIViewRepresentable {
     /// 「引用回复」 in the selection menu: called with the selected text.
     var onQuote: ((String) -> Void)? = nil
     @Environment(\.appTheme) private var theme
+    @Environment(\.wholeReply) private var wholeReply
 
     func makeUIView(context: Context) -> MarkdownTextView {
         let view = MarkdownTextView.make()
         view.onQuote = onQuote
+        view.wholeReply = wholeReply
         view.render(source: source, streaming: streaming, linkColor: theme.uiColor)
         return view
     }
 
     func updateUIView(_ view: MarkdownTextView, context: Context) {
         view.onQuote = onQuote
+        view.wholeReply = wholeReply
         view.render(source: source, streaming: streaming, linkColor: theme.uiColor)
     }
 
@@ -49,6 +52,8 @@ struct SelectableMarkdown: UIViewRepresentable {
 
 final class MarkdownTextView: UITextView, UITextViewDelegate {
     var onQuote: ((String) -> Void)?
+    /// The whole answer's 拷贝 / 回复, in the same menu.
+    var wholeReply: WholeReplyActions?
     private var lastSource: String?
     private var lastStreaming = false
     private var lastLinkColor: UIColor?
@@ -473,17 +478,34 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         UIPasteboard.general.string = text.replacingOccurrences(of: "\u{2028}", with: "\n")
     }
 
-    /// Adds 「引用回复」 to the system selection menu: quotes just the selection.
+    /// The system selection menu (long press; right click on a Mac), with
+    /// 「引用回复」 for just the selection and, for a finished answer, 拷贝 /
+    /// 回复 for the whole of it.
     func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
-        guard onQuote != nil, range.length > 0 else { return nil }
-        let selected = (textView.text as NSString).substring(with: range)
-            .replacingOccurrences(of: "\u{2028}", with: "\n")
-            .replacingOccurrences(of: " ▍", with: "")
-        let quote = UIAction(title: "引用回复", image: UIImage(systemName: "arrowshape.turn.up.left")) { [weak self] _ in
-            self?.onQuote?(selected)
-            textView.selectedTextRange = nil
+        var items: [UIMenuElement] = []
+        if let whole = wholeReply {
+            // First: the menu's compact row shows the first few.
+            items.append(UIAction(title: "拷贝整条", image: UIImage(systemName: "doc.on.doc")) { _ in
+                whole.copy()
+                textView.selectedTextRange = nil
+            })
+            items.append(UIAction(title: "回复", image: UIImage(systemName: "arrowshape.turn.up.left")) { _ in
+                whole.reply()
+                textView.selectedTextRange = nil
+            })
         }
-        return UIMenu(children: [quote] + suggestedActions)
+        if onQuote != nil, range.length > 0 {
+            let selected = (textView.text as NSString).substring(with: range)
+                .replacingOccurrences(of: "\u{2028}", with: "\n")
+                .replacingOccurrences(of: " ▍", with: "")
+            items.append(UIAction(title: "引用回复", image: UIImage(systemName: "text.quote")) { [weak self] _ in
+                self?.onQuote?(selected)
+                textView.selectedTextRange = nil
+            })
+        }
+        guard !items.isEmpty else { return nil }
+        items += suggestedActions
+        return items.isEmpty ? nil : UIMenu(children: items)
     }
 }
 
