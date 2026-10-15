@@ -42,6 +42,7 @@ export interface PalRecord {
   note?: string; // why it's stopped
   pid?: number; // Claude Code's pid while the host runs it (an orphan after the host died)
   status?: "asleep"; // put to sleep (§12): no process until it's woken; absent = awake
+  formerNames?: string[]; // what it was called before (§13): the assistant may still say one
   lastWakeUsd?: number; // what the first turn after its last wake cost
   costTotalUsd?: number; // Claude Code's running total for the session, as its last result said
 }
@@ -75,6 +76,8 @@ export interface PalSessionDeps {
   onTurnEnd: (pal: PalSession) => void;
   /** It was asleep and is up again. */
   onWoke?: (pal: PalSession) => void;
+  /** Right before its process starts: its name is read back from Claude Code's title (§13). */
+  beforeStart?: (pal: PalSession) => Promise<void>;
   /** It stopped by itself for good (couldn't start again, or opened elsewhere). */
   onStopped: (pal: PalSession) => void;
   pidAlive: (pid: number) => boolean;
@@ -133,6 +136,8 @@ export class PalSession {
   private firstResult = true;
   private lastLine?: string;
   private updatedAt: number;
+  /** The name its process started under: other sessions' SendMessage reaches it by that until it starts again. */
+  spawnedAs?: string;
   model?: string;
 
   constructor(
@@ -273,6 +278,8 @@ export class PalSession {
     if (orphans.length) holders = await this.d.holders(rec.sessionId);
     if (holders.length) throw new HeldElsewhere(`「${rec.name}」在别处开着（进程 ${holders.map((h) => h.pid).join("、")}），没有接着跑`);
     if (this.closing) throw new Error("已经关了");
+    // Renamed while it had no process (in a terminal, say): it starts under that name.
+    await this.d.beforeStart?.(this).catch(() => {});
 
     const launch = await this.d.launch();
     let exitDone!: () => void;
@@ -302,7 +309,7 @@ export class PalSession {
       ...(typeof rec.costTotalUsd === "number" ? { priorCostUsd: rec.costTotalUsd } : {}),
       permissionMode: rec.permissionMode,
       appendSystemPrompt: this.d.appendPrompt(),
-      name: rec.name,
+      name: (this.spawnedAs = rec.name),
       spawn,
       baseEnv: launch.env,
       ownerOrigin: true,
@@ -506,6 +513,18 @@ export class PalSession {
     await this.waitExit();
     this.rec.pid = undefined;
     this.d.save();
+  }
+
+  /**
+   * Retitles the session in its running process (Claude Code's own rename,
+   * as a rename in an IDE is), so the process keeps the new title and
+   * writes it, not the old one. False: there's no process to ask.
+   */
+  async renameLive(title: string): Promise<boolean> {
+    const proc = this.proc;
+    if (!this.running || !proc?.rename) return false;
+    await proc.rename(title, this.rec.sessionId);
+    return true;
   }
 
   /** The reply being streamed right now (all its text so far), for a page opened mid-reply. */

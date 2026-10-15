@@ -764,6 +764,132 @@ describe("asleep and awake (§12)", () => {
   });
 });
 
+describe("its name follows Claude Code's title (§13)", () => {
+  // Claude Code's title for each session, as getSessionInfo reads it.
+  function titled(o: { spawn?: boolean } = {}) {
+    const titles = new Map<string, { customTitle?: string; summary?: string; firstPrompt?: string }>();
+    const renamed: { sid: string; title: string; dir: string }[] = [];
+    const t = setup({
+      spawn: o.spawn,
+      pals: {
+        recentSource: {
+          list: async () => [],
+          info: async (sid) => {
+            const x = titles.get(sid);
+            return x ? ({ sessionId: sid, lastModified: Date.now(), summary: x.summary ?? x.customTitle ?? "", ...x } as any) : undefined;
+          },
+        },
+        renameSession: async (sid, title, dir) => {
+          renamed.push({ sid, title, dir });
+          titles.set(sid, { ...titles.get(sid), customTitle: title });
+        },
+      },
+    });
+    return { ...t, titles, renamed };
+  }
+
+  test("after a turn its name is Claude Code's title again (a /rename in it): the list says so, a name another Pal has gets a number, and it stays put", async () => {
+    const t = titled();
+    const a = bgSession(t, "网站", "aaaa0001-0000-4000-8000-000000000001");
+    const b = bgSession(t, "笔记", "aaaa0002-0000-4000-8000-000000000002");
+    t.titles.set(a, { customTitle: "网站" });
+    t.titles.set(b, { customTitle: "笔记" });
+    const pa = (await t.call("pals.adopt", { sessionId: a })).pal;
+    const pb = (await t.call("pals.adopt", { sessionId: b })).pal;
+    expect([pa.name, pb.name]).toEqual(["网站", "笔记"]);
+    // /rename in it: Claude Code's custom title changes; after the turn, so does the name
+    t.titles.set(a, { customTitle: "网站改版" });
+    await t.call("pals.send", { id: pa.id, text: "/rename 网站改版" });
+    await waitFor(() => t.hub.pals.get(pa.id)!.rec.name === "网站改版");
+    await waitFor(() => t.lastList()?.pals.some((p: any) => p.id === pa.id && p.name === "网站改版"), 1_000);
+    expect(t.hub.audit.tail(30).find((e) => e.type === "pal.renamed")).toMatchObject({ pal: pa.id, from: "网站", to: "网站改版", by: "claude" });
+    // the other one is given the same title: it gets a number, and keeps it turn after turn
+    t.titles.set(b, { customTitle: "网站改版" });
+    for (const text of ["一", "二", "三"]) {
+      await t.call("pals.send", { id: pb.id, text });
+      await t.hub.idle();
+      await tick(20);
+    }
+    expect(t.hub.pals.get(pb.id)!.rec.name).toBe("网站改版 2");
+    expect(t.hub.audit.tail(50).filter((e) => e.type === "pal.renamed" && e.pal === pb.id)).toHaveLength(1);
+    // no title read back (only the head and tail are read): the name stays
+    t.titles.set(a, { summary: "Fix the login redirect", firstPrompt: "修登录" });
+    await t.call("pals.send", { id: pa.id, text: "再来" });
+    await t.hub.idle();
+    await tick(50);
+    expect(t.hub.pals.get(pa.id)!.rec.name).toBe("网站改版");
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("its process renamed itself (the registry says so, the title wasn't read): that's its name too", async () => {
+    const t = titled({ spawn: true });
+    const sid = bgSession(t, "网站", "aaaa0003-0000-4000-8000-000000000003");
+    t.titles.set(sid, { customTitle: "网站" });
+    const { pal } = await t.call("pals.adopt", { sessionId: sid });
+    const pid = t.hub.pals.get(pal.id)!.pid!;
+    t.titles.set(sid, {});
+    t.claude.register({ sessionId: sid, name: "官网", cwd: t.project, pid, entrypoint: "sdk-ts", nameSource: "user" });
+    await t.call("pals.send", { id: pal.id, text: "好" });
+    await waitFor(() => t.hub.pals.get(pal.id)!.rec.name === "官网");
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("pals.rename: Claude Code is asked to rename it (in its process when it runs, in its transcript when asleep); the list follows; the assistant's pal_send reaches it by its new name, its old one and its id, without a restart; the next start uses the new name", async () => {
+    const t = titled();
+    const sid = bgSession(t, "网站", "aaaa0004-0000-4000-8000-000000000004");
+    t.titles.set(sid, { customTitle: "网站" });
+    const other = bgSession(t, "笔记", "aaaa0005-0000-4000-8000-000000000005");
+    t.titles.set(other, { customTitle: "笔记" });
+    const { pal } = await t.call("pals.adopt", { sessionId: sid });
+    await t.call("pals.adopt", { sessionId: other });
+    const procs = t.driver.pals.length;
+    // running: Claude Code's own rename in its process
+    const r = await t.call("pals.rename", { id: pal.id, name: "  官网  " });
+    expect(r.pal).toMatchObject({ id: pal.id, name: "官网", status: "idle" });
+    expect(t.driver.renames).toEqual([{ title: "官网", sessionId: sid }]);
+    expect(t.renamed).toEqual([]);
+    expect(t.lastList().pals.find((p: any) => p.id === pal.id).name).toBe("官网");
+    expect(t.hub.audit.tail(20).find((e) => e.type === "pal.renamed")).toMatchObject({ from: "网站", to: "官网", by: "app" });
+    t.titles.set(sid, { customTitle: "官网" }); // what Claude Code now has
+    // the assistant reaches it by the new name, the old one and the id; no restart
+    const tools = t.hub.toolHandlers();
+    for (const name of ["官网", "网站", pal.id]) expect(await tools.pal_send({ name, text: `找你：${name}` })).toBe("已经送到「官网」。它回你的话会作为消息回到你这里。");
+    expect(t.driver.pals).toHaveLength(procs);
+    expect(t.driver.pals[0]!.sent.filter((s) => s.includes("找你："))).toHaveLength(3);
+    expect(t.driver.pals[0]!.opts.name).toBe("网站"); // its process keeps the name it started under
+    expect(JSON.parse(await tools.pals_list()).pals.find((p: any) => p.id === pal.id)).toMatchObject({ id: pal.id, name: "官网" });
+    // a name another Pal has gets a number; empty, too long or the assistant's own isn't taken
+    expect((await t.call("pals.rename", { id: pal.id, name: "笔记" })).pal.name).toBe("笔记 2");
+    await expect(t.call("pals.rename", { id: pal.id, name: " " })).rejects.toThrow("名字不能是空的");
+    await expect(t.call("pals.rename", { id: pal.id, name: "Palo" })).rejects.toThrow("助理自己的名字");
+    await expect(t.call("pals.rename", { id: pal.id, name: "长".repeat(41) })).rejects.toThrow("太长");
+    // asleep: into its transcript (no process to ask), and it wakes under the new name
+    t.titles.set(sid, { customTitle: "笔记 2" });
+    await (t.hub.pals as any).putToSleep(t.hub.pals.get(pal.id), "test");
+    expect((await t.call("pals.rename", { id: pal.id, name: "官网" })).pal).toMatchObject({ name: "官网", status: "asleep" });
+    expect(t.renamed).toEqual([{ sid, title: "官网", dir: t.project }]);
+    await t.call("pals.wake", { id: pal.id });
+    expect(t.driver.pals.at(-1)!.opts.name).toBe("官网");
+    expect(t.hub.pals.get(pal.id)!.rec.name).toBe("官网");
+    await expect(t.call("pals.rename", { id: "pal_nope", name: "x" })).rejects.toThrow("没有这个 Pal");
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("renamed in a terminal while it was asleep: it wakes under that name", async () => {
+    const t = titled();
+    const sid = bgSession(t, "网站", "aaaa0006-0000-4000-8000-000000000006");
+    t.titles.set(sid, { customTitle: "网站" });
+    const { pal } = await t.call("pals.adopt", { sessionId: sid });
+    await (t.hub.pals as any).putToSleep(t.hub.pals.get(pal.id), "test");
+    t.titles.set(sid, { customTitle: "博客" });
+    await t.call("pals.send", { id: pal.id, text: "在吗" });
+    expect(t.driver.pals.at(-1)!.opts.name).toBe("博客");
+    expect(t.hub.pals.get(pal.id)!.rec.name).toBe("博客");
+    expect(await t.hub.toolHandlers().pal_send({ name: "网站", text: "旧名字也行" })).toContain("已经送到「博客」");
+    await t.hub.pals.stopAndWait();
+  });
+});
+
 describe("back to the terminal", () => {
   test("交还终端: the host's process is gone before the line to resume it comes back; 移出: out of the list; the transcript stays", async () => {
     const t = setup({ spawn: true });

@@ -157,16 +157,16 @@ export function paloallyMcpServer(h: ToolHandlers) {
       ),
       tool(
         "pals_list",
-        "列出主人的 Pal（这台电脑上由 PaloAlly 托管的 Claude Code 会话：名字、目录、状态、最后一句；status 为 asleep 的是睡着了，进程关着），以及电脑上其他还开着的 Claude Code 会话。要给某个 Pal 派活或问它进展，用 pal_send 发给它的名字。",
+        "列出主人的 Pal（这台电脑上由 PaloAlly 托管的 Claude Code 会话：id、现在的名字、目录、状态、最后一句；status 为 asleep 的是睡着了，进程关着；名字会变，以这里为准），以及电脑上其他还开着的 Claude Code 会话。要给某个 Pal 派活或问它进展，用 pal_send 发给它的 id 或名字。",
 
         {},
         async () => text(await h.pals_list()),
       ),
       tool(
         "pal_send",
-        "给一个 Pal 发话（派活、问进展、转告主人的话）。醒着的和睡着的都行：睡着的主机先叫醒它（几秒），再把话送进去，它看到的是你发来的消息。它回你的话会作为消息回到你这里。",
+        "给一个 Pal 发话（派活、问进展、转告主人的话）。给 Pal 发话只用它，不用 SendMessage。醒着的和睡着的都行：睡着的主机先叫醒它（几秒），再把话送进去，它看到的是你发来的消息。它回你的话会作为消息回到你这里。",
         {
-          name: z.string().describe("Pal 的名字（pals_list 里的 name）"),
+          name: z.string().describe("Pal 的 id 或名字（pals_list 里的 id / name；它以前的名字也认）"),
           text: z.string().describe("要对它说的话，写完整：它看不到主对话"),
         },
         async (a) => text(await h.pal_send(a)),
@@ -520,6 +520,14 @@ class ClaudeMainSession implements MainSession {
 
   async setEffort(effort?: string): Promise<void> {
     await this.q.applyFlagSettings({ effortLevel: (effort ?? null) as any });
+  }
+
+  // Claude Code's rename_session control request, as the SDK's Query sends
+  // it (source "host": the CLI counts it as the owner's own rename).
+  async rename(title: string, sessionId?: string): Promise<void> {
+    const q = this.q as unknown as { renameSession?: (title: string, sessionId?: string) => Promise<void> };
+    if (typeof q.renameSession !== "function") throw new Error("这个版本的 Claude Code 改不了名字");
+    await q.renameSession(title, sessionId);
   }
 
   close(): void {

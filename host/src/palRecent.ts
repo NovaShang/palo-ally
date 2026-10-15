@@ -1,4 +1,4 @@
-import { getSessionInfo, listSessions, type SDKSessionInfo } from "@anthropic-ai/claude-agent-sdk";
+import { getSessionInfo, listSessions, renameSession, type SDKSessionInfo } from "@anthropic-ai/claude-agent-sdk";
 import { realpathSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
@@ -29,6 +29,7 @@ export interface RecentSource {
 /** A listed session, with its custom title (a Pal's name comes from it). */
 export interface RecentEntry extends RecentSession {
   customTitle?: string;
+  generatedTitle?: string; // Claude Code's own title for it (its summary, when that isn't its first words)
 }
 
 export interface RecentDeps {
@@ -44,6 +45,14 @@ export interface RecentDeps {
 
 // The SDK reads Claude Code's own folder (CLAUDE_CONFIG_DIR or ~/.claude);
 // for any other (a test's), there's nothing it could list.
+/** Retitles a session that has no process (the SDK's renameSession): only in this computer's own Claude Code folder. */
+export function sdkRename(claudeDir: string): (sessionId: string, title: string, dir: string) => Promise<void> {
+  return async (sid, title, dir) => {
+    if (resolve(claudeDir) !== resolve(claudeConfigDir())) return;
+    await renameSession(sid, title, { dir });
+  };
+}
+
 export function sdkSource(claudeDir: string): RecentSource {
   const same = () => resolve(claudeDir) === resolve(claudeConfigDir());
   return {
@@ -114,9 +123,24 @@ export function shortName(s: string, max = 16): string {
   return out.replace(/[\s,.;:!?，。；：、！？\-–—_]+$/, "");
 }
 
-/** The Pal's name: its custom title, short, else its folder's name. A first prompt doesn't make a name. */
-export function palNameFor(e: { customTitle?: string; cwd: string }): string {
-  return shortName(e.customTitle ?? "") || shortName(basename(e.cwd)) || "Pal";
+/**
+ * A Pal's name from its session (§13): its custom title (/rename, a rename
+ * in PaloAlly, the name it was started under), else the title Claude Code
+ * gave it (its summary, when that isn't just its first words), else its
+ * folder's name.
+ */
+export function palTitle(i: Partial<Pick<SDKSessionInfo, "customTitle" | "summary" | "firstPrompt">> | undefined, cwd: string): string {
+  const custom = oneLine(i?.customTitle);
+  if (custom) return [...custom].slice(0, 40).join("");
+  const first = oneLine(i?.firstPrompt);
+  const summary = oneLine(i?.summary);
+  if (summary && summary !== first) return shortName(summary);
+  return shortName(basename(cwd)) || "Pal";
+}
+
+/** An adopted Pal's first name (§13's order): its custom title, Claude Code's own title, its folder's name. A first prompt doesn't make a name. */
+export function palNameFor(e: { customTitle?: string; generatedTitle?: string; cwd: string }): string {
+  return palTitle({ customTitle: e.customTitle, summary: e.generatedTitle ?? "", firstPrompt: "" }, e.cwd);
 }
 
 export class RecentSessions {
@@ -196,6 +220,8 @@ export class RecentSessions {
       return "找不到它的对话记录";
     }
     const custom = oneLine(i.customTitle);
+    const summary = oneLine(i.summary);
+    const generated = summary && summary !== custom && summary !== oneLine(i.firstPrompt) ? summary : "";
     return {
       sessionId: i.sessionId,
       cwd,
@@ -203,6 +229,7 @@ export class RecentSessions {
       lastModified: Math.round(i.lastModified),
       size,
       ...(custom ? { customTitle: custom } : {}),
+      ...(generated ? { generatedTitle: generated } : {}),
     };
   }
 

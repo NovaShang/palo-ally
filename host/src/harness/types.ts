@@ -171,6 +171,8 @@ export interface MainSession {
   // live switches; take effect from the next model call
   setModel(model?: string): Promise<void>;
   setEffort(effort?: string): Promise<void>;
+  // Retitles the session in this process (Claude Code's own rename; a Pal, pals-prd §13).
+  rename?(title: string, sessionId?: string): Promise<void>;
   // Resolves once Claude Code is up (it answered the SDK's first request);
   // rejects with its reason when it refused to start.
   ready(): Promise<void>;

@@ -27,6 +27,7 @@ export interface RegistryEntry {
   jobId?: string;
   socketPath?: string;
   startedAt?: number;
+  nameSource?: string; // "user" (named: -n, /rename) or "derived"
 }
 
 function pidAlive(pid: number): boolean {
@@ -60,6 +61,7 @@ export function readRegistry(dir: string, alive: (pid: number) => boolean = pidA
         jobId: typeof o.jobId === "string" ? o.jobId : undefined,
         socketPath: typeof o.messagingSocketPath === "string" ? o.messagingSocketPath : undefined,
         startedAt: typeof o.startedAt === "number" ? o.startedAt : undefined,
+        nameSource: typeof o.nameSource === "string" ? o.nameSource : undefined,
       });
     } catch {
       // a file mid-write; the next read gets it

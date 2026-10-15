@@ -26,6 +26,7 @@ export class FakeClaudeDir {
     waitingFor?: string;
     pid?: number;
     at?: number;
+    nameSource?: "user" | "derived";
   }): void {
     mkdirSync(join(this.dir, "sessions"), { recursive: true });
     const file = this.files.get(o.sessionId) ?? join(this.dir, "sessions", `${10_000 + ++this.n}.json`);
@@ -39,6 +40,7 @@ export class FakeClaudeDir {
         kind: o.kind ?? "interactive",
         entrypoint: o.entrypoint ?? "cli",
         name: o.name,
+        ...(o.nameSource ? { nameSource: o.nameSource } : {}),
         status: o.status ?? "idle",
         ...(o.waitingFor ? { waitingFor: o.waitingFor } : {}),
         messagingSocketPath: `/tmp/cc-socks/${o.sessionId.slice(0, 6)}.sock`,

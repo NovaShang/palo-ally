@@ -1,5 +1,5 @@
 import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
-import { readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
 import type { ApprovalManager } from "./approvals.ts";
@@ -13,7 +13,7 @@ import type { Paths, Settings } from "./config.ts";
 import type { HarnessDriver } from "./harness/types.ts";
 import { PalLauncher, type PalLaunch } from "./palLauncher.ts";
 import { pagePalMessages, toPalMessages } from "./palHistory.ts";
-import { RECENT_MAX, type RecentEntry, RecentSessions, type RecentSource, folderMatch, ownRoots, palNameFor, recentWire } from "./palRecent.ts";
+import { RECENT_MAX, type RecentEntry, RecentSessions, type RecentSource, folderMatch, ownRoots, palNameFor, palTitle, recentWire, sdkRename, sdkSource } from "./palRecent.ts";
 import { HeldElsewhere, type Holder, type PalRecord, PalSession } from "./palSession.ts";
 import type { QuestionManager } from "./questions.ts";
 import type { Router } from "./router.ts";
@@ -35,6 +35,9 @@ import { newId, readJson, writeJson, zonedParts } from "./util.ts";
 // first. Busy or waiting ones are never put to sleep (past five for a while,
 // then). The owner's words, 叫醒, a card of its answered or the assistant's
 // pal_send wake it: the same session resumes and the words go in, in order.
+// Its name follows Claude Code's title for the session (§13): read back
+// after each turn and before each start, and pals.rename retitles it there.
+// The assistant reaches it by id or any of its names (pal_send).
 // A conversation that ended on the computer lately can be taken over too
 // (§10): listed by pals.recent, resumed directly by pals.adopt, or proposed
 // by the assistant on a card the owner answers.
@@ -94,8 +97,10 @@ export interface PalsDeps {
   helperApp?: () => string | undefined;
   launchMode?: () => "auto" | "helper" | "direct";
   readMessages?: (sessionId: string, dir: string) => Promise<RawSessionMessage[]>;
-  /** The computer's ended conversations (the SDK's listSessions / getSessionInfo). */
+  /** The computer's ended conversations (the SDK's listSessions / getSessionInfo); also each Pal's title (§13). */
   recentSource?: RecentSource;
+  /** Retitles a session that has no process (the SDK's renameSession). */
+  renameSession?: (sessionId: string, title: string, dir: string) => Promise<void>;
   /** A Pal's permission mode; default: the owner's own default for Claude Code. */
   palMode?: () => string;
   /** A Pal's model; default: what its transcript last ran on (a new one: the owner's default). */
@@ -183,6 +188,8 @@ export class Pals {
   private readonly meter: SpendMeter;
   private readonly launcher: PalLauncher;
   private readonly recentList: RecentSessions;
+  private readonly source: RecentSource;
+  private naming = new Map<string, Promise<void>>(); // titles being read back, by Pal
   private adopts = new Map<string, Promise<{ pal: Pal } | { waiting: "exit-in-terminal" }>>(); // in flight, by session id
   private lastPush = new Map<string, number>();
   private retried = new Map<string, number>(); // a Pal open elsewhere: when it was last tried again
@@ -205,11 +212,12 @@ export class Pals {
     const saved = readJson<Partial<PalFile>>(d.paths.pals, {});
     const list = <T>(v: T[] | undefined): T[] => (Array.isArray(v) ? v : []);
     this.data = { pals: list(saved.pals), proposals: list(saved.proposals), adoptions: list(saved.adoptions), former: list(saved.former) };
+    this.source = d.recentSource ?? sdkSource(d.claudeDir);
     this.recentList = new RecentSessions({
       claudeDir: d.claudeDir,
       roots: () => ownRoots(d.paths.root),
       formerPals: () => this.data.former,
-      source: d.recentSource,
+      source: this.source,
       now: () => this.now(),
       log: (s) => this.log(s),
     });
@@ -254,7 +262,9 @@ export class Pals {
       onTurnEnd: (pal) => {
         this.checkBudget(pal);
         this.balanceSoon();
+        void this.readTitle(pal);
       },
+      beforeStart: (pal) => this.readTitle(pal),
       onStopped: (pal) => this.onStopped(pal),
       onWoke: (pal) => {
         this.waking.delete(pal.id);
@@ -525,12 +535,19 @@ export class Pals {
     this.d.bus.emit("pals.updated", p);
   }
 
-  /** A Pal by id, or by its name or session id (the assistant's tools). */
+  /** A Pal by id, or by its name or session id (the assistant's tools); then by a name it had before (§13). */
   get(key: string): PalSession | undefined {
     const k = key.trim();
     if (!k) return undefined;
     const all = [...this.pals.values()];
-    return this.pals.get(k) ?? all.find((p) => p.rec.sessionId === k) ?? all.find((p) => p.rec.name === k) ?? all.find((p) => p.rec.name.toLowerCase() === k.toLowerCase());
+    const lower = k.toLowerCase();
+    return (
+      this.pals.get(k) ??
+      all.find((p) => p.rec.sessionId === k) ??
+      all.find((p) => p.rec.name === k) ??
+      all.find((p) => p.rec.name.toLowerCase() === lower) ??
+      [...all].reverse().find((p) => p.rec.formerNames?.some((n) => n.toLowerCase() === lower))
+    );
   }
 
   private mustGet(id: string): PalSession {
@@ -613,11 +630,86 @@ export class Pals {
     return `已经有 ${MAX_PALS} 个 Pal 了（最多 ${MAX_PALS} 个）。先问主人要不要把最久没用的「${this.oldest().rec.name}」移出 Pals（主人在它的页面右上角点「移出 Pals」）。`;
   }
 
-  private uniqueName(want: string, liveNames: string[] = []): string {
+  // `except`: the Pal being renamed (its own name isn't taken).
+  private uniqueName(want: string, liveNames: string[] = [], except?: PalSession): string {
     const base = want.replace(/[\r\n\t]+/g, " ").trim().slice(0, 40) || "Pal";
-    const taken = new Set([...[...this.pals.values()].map((p) => p.rec.name.toLowerCase()), this.paloName().toLowerCase(), ...liveNames.map((n) => n.toLowerCase())]);
+    const others = [...this.pals.values()].filter((p) => p !== except).map((p) => p.rec.name.toLowerCase());
+    const taken = new Set([...others, this.paloName().toLowerCase(), ...liveNames.map((n) => n.toLowerCase())]);
     if (!taken.has(base.toLowerCase())) return base;
     for (let i = 2; ; i++) if (!taken.has(`${base} ${i}`.toLowerCase())) return `${base} ${i}`;
+  }
+
+  // ---------------- its name (§13) ----------------
+
+  /**
+   * Its name, read back from Claude Code's title for the session: after a
+   * turn (a /rename in it, or one on claude.ai) and right before it starts
+   * (one in a terminal while it slept). A Pal always runs under its name, so
+   * Claude Code always has it as the custom title; when the read doesn't
+   * find one (it only looks at the transcript's head and tail), the name
+   * stays, unless the process' own registry entry says it was renamed.
+   * Unique among the Pals (「网站 2」).
+   */
+  readTitle(pal: PalSession): Promise<void> {
+    const busy = this.naming.get(pal.id);
+    if (busy) return busy;
+    const p = this.doReadTitle(pal).finally(() => this.naming.delete(pal.id));
+    this.naming.set(pal.id, p);
+    return p;
+  }
+
+  private async doReadTitle(pal: PalSession): Promise<void> {
+    let info: Awaited<ReturnType<RecentSource["info"]>>;
+    try {
+      info = await this.source.info(pal.rec.sessionId, pal.rec.cwd);
+    } catch (e) {
+      this.log(`couldn't read ${pal.rec.name}'s title: ${e instanceof Error ? e.message : e}`);
+      return;
+    }
+    if (!this.pals.has(pal.id)) return;
+    let want = info?.customTitle?.trim() ? palTitle(info, pal.rec.cwd) : "";
+    if (!want && pal.running && pal.pid) {
+      // Renamed in the process (/rename): its entry in Claude Code's registry says so.
+      const entry = this.registry().find((e) => e.pid === pal.pid && e.sessionId === pal.rec.sessionId);
+      if (entry?.nameSource === "user" && entry.name && entry.name !== pal.spawnedAs) want = entry.name;
+    }
+    if (!want) return;
+    this.setName(pal, this.uniqueName(want, [], pal), "claude");
+  }
+
+  private setName(pal: PalSession, name: string, by: string): boolean {
+    const from = pal.rec.name;
+    if (name === from) return false;
+    pal.rec.formerNames = [...(pal.rec.formerNames ?? []).filter((n) => n !== name && n !== from), from].slice(-5);
+    pal.rec.name = name;
+    this.save();
+    this.d.audit.log("pal.renamed", { pal: pal.id, from, to: name, by });
+    this.log(`${from} is called ${name} now (${by})`);
+    this.emitSoon();
+    return true;
+  }
+
+  /**
+   * pals.rename: the owner names it. Claude Code's own title changes too
+   * (in its process when it's running, as /rename would; in its transcript
+   * when it isn't), so a terminal, /resume and claude.ai say the same. A name
+   * another Pal has gets a number. It isn't restarted: other sessions reach it
+   * under the new name once it starts again (the assistant, by pal_send, at once).
+   */
+  async rename(id: string, name: string, by: string): Promise<Pal> {
+    const pal = this.mustGet(id);
+    const want = String(name ?? "").replace(/\s+/g, " ").trim();
+    if (!want) throw new Error("名字不能是空的");
+    if ([...want].length > 40) throw new Error("名字太长了（最多 40 个字）");
+    if (want.toLowerCase() === this.paloName().toLowerCase()) throw new Error(`「${want}」是助理自己的名字`);
+    const unique = this.uniqueName(want, [], pal);
+    if (!(await pal.renameLive(unique))) {
+      // No process: into its transcript, where Claude Code reads it (none yet: it starts under it).
+      if (existsSync(pal.transcript)) await (this.d.renameSession ?? sdkRename(this.d.claudeDir))(pal.rec.sessionId, unique, pal.rec.cwd);
+    }
+    this.setName(pal, unique, by);
+    this.emitNow();
+    return pal.toWire();
   }
 
   private add(rec: PalRecord): PalSession {
@@ -1171,7 +1263,8 @@ export class Pals {
     const others = await this.d.sessions.listFresh().catch(() => this.d.sessions.list());
     return JSON.stringify({
       pals: this.list().map((p) => ({
-        name: p.name, // pal_send's (and SendMessage's) name
+        id: p.id, // pal_send takes it, or the name
+        name: p.name, // its name now (it can change: the owner or Claude Code renames it)
         dir: p.cwd,
         status: p.status,
         ...(p.lastLine ? { lastLine: p.lastLine } : {}),

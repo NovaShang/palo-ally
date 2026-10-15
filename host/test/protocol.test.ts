@@ -270,6 +270,8 @@ describe("host ↔ app protocol", () => {
     const cancelled = { params: { sessionId: term.id, cancel: true }, result: await call("pals.adopt", { sessionId: term.id, cancel: true }) };
     expect(cancelled.result).toEqual({ cancelled: true });
     methods["pals.adopt"] = [adopted as Sample, cancelled];
+    // The owner names it (§13): Claude Code's title for the session changes too.
+    expect((await run("pals.rename", { id: pal.id, name: "网站改版" })).pal.name).toBe("网站改版");
     await run("pals.release", { id: pal.id });
     await run("pals.remove", { id: opened.id });
     hub.pals.stop();

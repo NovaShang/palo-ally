@@ -11,7 +11,7 @@ import type { SDKSessionInfo } from "@anthropic-ai/claude-agent-sdk";
 import { AwayDetector } from "../src/away.ts";
 import { type RegistryEntry, readRegistry } from "../src/ccSessions.ts";
 import { BEHAVIOR } from "../src/home.ts";
-import { folderMatch, isOwnFolder, palNameFor, type RecentSource, recentTitle, shortName } from "../src/palRecent.ts";
+import { folderMatch, isOwnFolder, palNameFor, palTitle, type RecentSource, recentTitle, shortName } from "../src/palRecent.ts";
 import { MAX_PALS, type PalsTiming } from "../src/pals.ts";
 import { handleRpc } from "../src/rpc.ts";
 import type { PalAdoptProposal } from "../src/types.ts";
@@ -215,9 +215,9 @@ describe("taking an ended one over (pals.adopt)", () => {
     expect(t.hub.audit.tail(10).find((e) => e.type === "pal.adopted")).toMatchObject({ session: a, name: "首页改成两栏", ended: true });
     // again: the same Pal
     expect((await t.call("pals.adopt", { sessionId: a })).pal.id).toBe(pal.id);
-    // a long title is cut short at a word; no title of its own: its folder's name; a name in use gets a number
+    // its custom title as it is (§13: the name follows Claude Code's title); no title of its own: its folder's name; a name in use gets a number
     const long = await t.call("pals.adopt", { sessionId: t.ended(site, { customTitle: "Refactor the authentication middleware" }) });
-    expect(long.pal.name).toBe("Refactor the");
+    expect(long.pal.name).toBe("Refactor the authentication middleware");
     const bare = await t.call("pals.adopt", { sessionId: t.ended(notes, { firstPrompt: "帮我把旅行的笔记按城市整理一下" }) });
     expect(bare.pal.name).toBe("notes");
     const twice = await t.call("pals.adopt", { sessionId: t.ended(notes, { customTitle: "首页改成两栏" }) });
@@ -383,6 +383,14 @@ describe("pieces", () => {
     expect(shortName("「网站」")).toBe("网站");
     expect(palNameFor({ customTitle: "", cwd: "/Users/someone/code/palo-ally" })).toBe("palo-ally");
     expect(palNameFor({ customTitle: "修登录", cwd: "/x" })).toBe("修登录");
+    // §13's order: a custom title, then Claude Code's own title (short), then the folder
+    expect(palNameFor({ generatedTitle: "Fix the login redirect after sign in", cwd: "/x/site" })).toBe("Fix the login");
+    expect(palNameFor({ customTitle: "网站", generatedTitle: "Fix the login", cwd: "/x/site" })).toBe("网站");
+    expect(palTitle({ customTitle: "  首页\n改成两栏 ", summary: "x", firstPrompt: "y" }, "/x/site")).toBe("首页 改成两栏");
+    expect(palTitle({ summary: "Fix the login redirect", firstPrompt: "登录完回不到原来那页" }, "/x/site")).toBe("Fix the login");
+    expect(palTitle({ summary: "登录完回不到原来那页", firstPrompt: "登录完回不到原来那页" }, "/x/site")).toBe("site");
+    expect(palTitle(undefined, "/x/site")).toBe("site");
+    expect(palTitle({ customTitle: "a".repeat(60) }, "/x")).toBe("a".repeat(40));
     const tmp = realpathSync(tmpdir());
     expect(isOwnFolder("/Users/someone/.paloally/home", ["/Users/someone/.paloally"])).toBe(true);
     expect(isOwnFolder(join(tmp, "paloally-test-x", "home"), [])).toBe(true);

@@ -19,7 +19,7 @@
 // pty, the transcripts of its folders) is removed at the end.
 import { afterAll, describe, expect, test } from "bun:test";
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { getSessionInfo, query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { AwayDetector } from "../src/away.ts";
@@ -291,6 +291,33 @@ d("live: Pals run by the host", () => {
       expect(woke.status).toBe("idle");
       expect(woke.lastWakeUsd!).toBeGreaterThan(0);
       expect(woke.lastWakeUsd!).toBeLessThan(0.2);
+    },
+    T,
+  );
+
+  test(
+    "pals.rename (§13): a running Pal is renamed in its process and Claude Code's title says so, also after the process ends; renamed while asleep, it wakes under that name",
+    async () => {
+      const pal = hub.pals.get(bgPal.id)!;
+      const title = async () => (await getSessionInfo(bgSid, { dir: projects.bg }))?.customTitle;
+      const renamed = `live-renamed-${tag}`;
+      expect((await hub.pals.rename(bgPal.id, renamed, "test")).name).toBe(renamed);
+      await waitFor("Claude Code's title", async () => (await title()) === renamed, 20_000, 250);
+      // its process ends (asleep): the title it writes on the way out is the new one
+      const timing = (hub.pals as any).timing;
+      timing.sleepIdleMs = 1_000;
+      await waitFor("it to go to sleep", () => hub.pals.list().find((p) => p.id === bgPal.id)?.status === "asleep", 60_000, 100);
+      timing.sleepIdleMs = 20 * 60_000;
+      await waitFor("its process to end", () => !readRegistry(join(claudeDir, "sessions")).some((e) => e.sessionId === bgSid), 20_000, 100);
+      expect(await title()).toBe(renamed);
+      // back to its first name while asleep (its transcript), and it wakes under it (the later tests SendMessage it by that)
+      expect((await hub.pals.rename(bgPal.id, bgPal.name, "test")).name).toBe(bgPal.name);
+      expect(await title()).toBe(bgPal.name);
+      await hub.pals.wake(bgPal.id, "test");
+      expect(pal.spawnedAs).toBe(bgPal.name);
+      await waitFor("its registry entry under that name", () => readRegistry(join(claudeDir, "sessions")).some((e) => e.sessionId === bgSid && e.name === bgPal.name), 20_000, 100);
+      expect(await title()).toBe(bgPal.name);
+      facts.renamed = true;
     },
     T,
   );

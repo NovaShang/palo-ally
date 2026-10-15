@@ -233,3 +233,25 @@ Palo 提议，你点头，主机新开一个会话，第一条消息是 Palo 写
 - `Pal.lastWakeUsd`：叫醒后第一轮的花费，美元。主机启动 Pal 时把上一次 result 的累计花费交给 SDK，第一轮的 `total_cost_usd` 减去它就是这一轮的；累计比上次还小时说明 Claude Code 没接上旧的累计，整个就是这一轮的。上一次的累计不知道（睡前一轮也没跑过）时不记。
 - 重启：只拉起重启前醒着的；醒着的多于 5 个时只拉起最近用过的 5 个，其余标成睡着。
 - `pal_send`：话以 `<cross-session-message from="paloally" from-name="Palo">` 包着送进去，和原生 SendMessage 一样；Pal 对话里显示为「Palo 说」，历史里读回来也是。
+
+## 13. Pal 的名字跟着 Claude Code 走（2026-10-15 主人定）
+
+以前 Pal 的名字在接管时定死。Claude Code 自己会改会话的名字：主人用 `/rename` 起的自定义标题，Claude Code 也会自己生成标题。
+
+- **名字从哪来，**按顺序：
+  1. 会话的自定义标题（`/rename`，`getSessionInfo().customTitle`）；
+  2. Claude Code 自己生成的标题（`summary`，只是第一句话的不算）；
+  3. 目录名。
+- **什么时候读：**每轮结束后、每次启动（包括叫醒）前，各读一次。`getSessionInfo` 只读记录的头尾，很便宜。名字变了就改 `Pal.name`，发 `pals.updated`。
+- **不重名：**撞名的加「 2」。
+- **主人改名：**新增 `pals.rename{id, name}`，同时改 Claude Code 那边的标题，终端、`/resume`、claude.ai 看到的是同一个名字。改完以后 Claude Code 的自定义标题就是这个名字，上面的读法读回来也是它。SDK 不能清掉自定义标题，所以名字不能是空的。
+- **SendMessage 的名字：**进程的会话名在启动时定（`--name`）。改名以后下次启动或叫醒才用新名字，不为这个重启。
+- **Palo 找 Pal 只用 `pal_send`，**按 id、现在的名字或以前的名字都能找到。Pal 回 Palo 照旧用 SendMessage 发给 `Palo`，Palo 的名字不变。提示词里写明以 `pals_list` 的名字为准。
+- **App：**Pal 页右上角菜单和列表里长按 Pal 那一行，都有「重命名」，用系统的输入框，先填好现在的名字。
+
+**主机定下的细节**（2026-10-15，实现时补；样例见 `protocol.json` 的 `pals.rename`）：
+- Pal 启动时总带着 `--name <名字>`，Claude Code 会把它写成自定义标题，退出时再写一次。所以醒着、跑过的 Pal 一定有自定义标题；第 2、3 条只在接管时起名用。读不到自定义标题（它离记录的头尾太远）时名字不动；这时如果它进程的登记项是 `nameSource: "user"`、名字和启动时不一样，就当它改了名。
+- 自定义标题最多取 40 个字；Claude Code 生成的标题按词截到 16 个字。接管时也按这个顺序起名（以前会把长的自定义标题截短，现在不截）。
+- `pals.rename`：跑着的 Pal 用进程里的 `rename_session` 控制请求改（Claude Code 当成主人自己改的，退出时写的也是新名字）；睡着或停着的用 SDK 的 `renameSession` 写进记录。名字最多 40 个字，不能是助理的名字。返回 `{pal}`。
+- Pal 记下以前的 5 个名字，`pal_send` 用旧名字也找得到；`pals_list` 给 Palo 的每一项带 `id`。
+

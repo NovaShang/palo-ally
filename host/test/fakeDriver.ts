@@ -211,6 +211,11 @@ export class FakeMainSession implements MainSession {
     this.driver.stoppedTasks.push(_taskId);
   }
 
+  // Claude Code's rename in this process (a Pal, pals-prd §13).
+  async rename(title: string, sessionId?: string): Promise<void> {
+    this.driver.renames.push({ title, sessionId });
+  }
+
   close(): void {
     this.closed = true;
     if (this.proc && this.proc.exitCode === null) this.proc.kill("SIGTERM");
@@ -235,7 +240,8 @@ export class FakeDriver implements HarnessDriver {
   gateDenials: { tool: string; message: string }[] = []; // calls the host's gate (the PreToolUse hook) refused
   ran: string[] = []; // tools that went through and ran, in order
   turnCost = 0.001;
-  totals = new Map<string, number>(); // each session's running total of cost, as a resume goes on from it
+  totals = new Map<string, number>();
+  renames: { title: string; sessionId?: string }[] = []; // Claude Code renames asked of running processes // each session's running total of cost, as a resume goes on from it
   contextTokens = 1000; // what each turn's result reports
   probeResponder: (req: ProbeRequest) => ProbeResult = () => ({ output: { results: [] }, costUsd: 0.0001 });
   // the permission mode a session reports running in (default: the one asked for)
