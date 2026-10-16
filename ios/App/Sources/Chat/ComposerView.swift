@@ -16,7 +16,10 @@ import UniformTypeIdentifiers
 ///   field: tap again to stop, the words land at the end of the draft to
 ///   edit (never auto-sent); a send button appears beside it when there's
 ///   something to send;
-/// - [+] → photos or files, staged above the capsule.
+/// - [+] → photos or files, staged above the capsule; also dropped on the
+///   conversation or pasted into the field (`ComposerIntake`).
+///
+/// The same composer for the assistant and for a Pal (pals-prd §15).
 struct ComposerView: View {
     @Environment(AppStore.self) private var store
     @Environment(AppModel.self) private var model
@@ -27,6 +30,8 @@ struct ComposerView: View {
     /// or spoken (placed at once under the voice scrim, its words then fly
     /// into it; sent once the final words come, `AppStore.sendStaged`).
     enum Outgoing { case typed, spoken(cid: String) }
+    /// Dropped and pasted images and files, to stage.
+    var intake: ComposerIntake? = nil
     let onSend: (String, [AppStore.OutgoingImage], [AppStore.OutgoingFile], Outgoing) -> Void
     /// Images and files picked or pasted for the next message (bento's staged attachments).
     @State private var staged: [Staged] = []
@@ -250,6 +255,8 @@ struct ComposerView: View {
         .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { addFiles(urls) }
         }
+        // Dropped on the conversation or pasted: staged as if picked.
+        .modifier(IntakeHooks(intake: intake, staged: $staged, focused: focused, room: Self.maxStaged, addImages: addImages))
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { image in
                 showCamera = false
@@ -261,12 +268,7 @@ struct ComposerView: View {
 
     private var capsule: some View {
         HStack(alignment: .bottom, spacing: 2) {
-            // A Pal takes words only (pals.send): nothing to attach.
-            if store.palID == nil {
-                plusButton.padding(.bottom, buttonLift)
-            } else {
-                Color.clear.frame(width: 12, height: 1)
-            }
+            plusButton.padding(.bottom, buttonLift)
             field
             trailingButton.padding(.bottom, buttonLift)
         }
@@ -827,8 +829,48 @@ private struct CameraPicker: UIViewControllerRepresentable {
     }
 }
 
+/// Staging what was dropped or pasted (ComposerIntake), and ⌘V with a
+/// picture or a copied file while the field has focus; text pastes as always.
+private struct IntakeHooks: ViewModifier {
+    let intake: ComposerIntake?
+    @Binding var staged: [Staged]
+    let focused: Bool
+    let room: Int
+    let addImages: ([Data]) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: intake?.incoming.count ?? 0, initial: true) { _, n in
+                guard n > 0, let intake else { return }
+                staged.append(contentsOf: intake.incoming.prefix(max(0, room - staged.count)))
+                intake.incoming = []
+            }
+            .onChange(of: focused, initial: true) { _, on in
+                guard let intake else { return }
+                ComposerPaste.handler = on ? { [weak intake] pb in
+                    guard ComposerPaste.hasAttachable(pb), let intake else { return false }
+                    intake.take(pb.itemProviders)
+                    return true
+                } : nil
+            }
+            .onDisappear { if focused { ComposerPaste.handler = nil } }
+            #if DEBUG
+            // `-demoStage YES`: a picture and a file staged, as if picked (UI tests).
+            .task {
+                guard UserDefaults.standard.bool(forKey: "demoStage"), staged.isEmpty else { return }
+                let picture = UIGraphicsImageRenderer(size: CGSize(width: 120, height: 80)).image { c in
+                    UIColor.systemTeal.setFill()
+                    c.fill(CGRect(x: 0, y: 0, width: 120, height: 80))
+                }
+                if let data = picture.pngData() { addImages([data]) }
+                staged.append(.file(AppStore.OutgoingFile(data: Data("第一行\n第二行\n".utf8), mediaType: "text/plain", name: "说明.txt")))
+            }
+            #endif
+    }
+}
+
 /// Something staged for the next message.
-enum Staged {
+enum Staged: Sendable {
     case image(AppStore.OutgoingImage)
     case file(AppStore.OutgoingFile)
 }

@@ -270,6 +270,47 @@ describe("talking to a Pal", () => {
     await t.hub.pals.stopAndWait();
   });
 
+  test("images and files, as Palo takes them: an image goes in as an image block, a file is put in its folder's .paloally/inbox (git ignores it) and named in the words; the page shows the message as sent, also read back from the transcript", async () => {
+    const t = setup();
+    const sid = bgSession(t);
+    const { pal } = await t.call("pals.adopt", { sessionId: sid });
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
+    const img = await t.call("media.upload", { mediaType: "image/png", data: png });
+    const doc = await t.call("media.uploadChunk", { name: "说明.txt", mediaType: "text/plain", offset: 0, data: Buffer.from("第一行").toString("base64"), done: true });
+    const sent = await t.call("pals.send", { id: pal.id, text: "看看这两个", clientMsgId: "c-att", attachments: [img.id, doc.id] });
+    await waitFor(() => t.palEvents("chat.message").some((m) => m.role === "assistant"));
+    const proc = t.driver.pals[0]!;
+    const inbox = join(t.project, ".paloally", "inbox", doc.id, "说明.txt");
+    expect(proc.sent).toEqual([`看看这两个\n[文件] ${inbox}`]);
+    expect(proc.sentImages).toEqual([{ mediaType: "image/png", data: png }]);
+    expect(readFileSync(inbox, "utf8")).toBe("第一行");
+    expect(readFileSync(join(t.project, ".paloally", ".gitignore"), "utf8")).toContain("*");
+    const mine = t.palEvents("chat.message").find((m) => m.id === sent.id)!;
+    expect(mine).toMatchObject({ role: "user", text: "看看这两个", clientMsgId: "c-att", attachments: [{ id: img.id, kind: "image" }, { id: doc.id, kind: "file", name: "说明.txt" }] });
+    // an image alone (no words); nothing at all is refused, as is an id that wasn't uploaded
+    const only = await t.call("pals.send", { id: pal.id, text: "", attachments: [img.id] });
+    await waitFor(() => proc.sent.length === 2);
+    expect(proc.sent[1]).toBe("");
+    expect(proc.sentImages).toHaveLength(2);
+    await expect(t.call("pals.send", { id: pal.id, text: "  " })).rejects.toThrow("不能是空的");
+    await expect(t.call("pals.send", { id: pal.id, text: "这个", attachments: ["img_nope"] })).rejects.toThrow("附件没传上来");
+    // read back from the transcript: as sent
+    t.raw.set(sid, [
+      { type: "user", uuid: sent.id, timestamp: "2026-10-12T10:00:00Z", message: { role: "user", content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: png } }, { type: "text", text: `看看这两个\n[文件] ${inbox}` }] }, origin: { kind: "human" } },
+      { type: "user", uuid: only.id, timestamp: "2026-10-12T10:01:00Z", message: { role: "user", content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: png } }] }, origin: { kind: "human" } },
+      { type: "user", uuid: "u-term", timestamp: "2026-10-12T10:02:00Z", message: { role: "user", content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: png } }] }, origin: { kind: "human" } },
+    ] as any);
+    const { messages } = await t.call("pals.history", { id: pal.id });
+    expect(messages.map((m: any) => [m.id, m.text, (m.attachments ?? []).map((a: any) => a.id)])).toEqual([
+      [sent.id, "看看这两个", [img.id, doc.id]],
+      [only.id, "", [img.id]],
+      // pasted in a terminal: no record of it here
+      ["u-term", "（图片）", []],
+    ]);
+    expect(t.hub.audit.tail(10).filter((e) => e.type === "pal.send").at(-1)).toMatchObject({ attachments: 1 });
+    await t.hub.pals.stopAndWait();
+  });
+
   test("busy while it works (with what it's doing), and 停止 ends the turn and answers its open cards no — the assistant's own are left alone", async () => {
     const t = setup({
       palScript: async (_text, ctx) => {

@@ -37,11 +37,14 @@ extension DemoHost {
             let text = (p["text"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard let pal = pals.first(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Pal") }
             guard pal.status != .stopped else { throw DemoError(message: "\(pal.displayName)停了") }
-            guard !text.isEmpty else { throw DemoError(message: "要说的话不能是空的") }
+            // Images and files go with the words, as Palo takes them (pals-prd §15).
+            let atts = try attachments(p["attachments"])
+            guard !text.isEmpty || atts != nil else { throw DemoError(message: "要说的话不能是空的") }
             // Asleep: its session resumes first; the words go in once it's up.
             if pal.isAsleep || pal.status == .starting { await wakePal(id) }
             var m = palMessage(id, role: .user, text: text, channel: .app)
             m.clientMsgId = p["clientMsgId"]?.stringValue
+            m.attachments = atts
             appendPal(m)
             palTurns[id]?.cancel()
             palTurns[id] = Task { await self.palAnswers(id, to: text) }

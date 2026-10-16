@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, copyFileSync, existsSync, linkSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { CHUNK, mimeOf } from "./artifacts.ts";
@@ -31,6 +31,7 @@ function sniff(b: Buffer): string | null {
 const newId = (p: string) => `${p}_${Date.now().toString(36)}${randomBytes(4).toString("hex")}`;
 
 const UPLOAD_CHUNK_MAX = 256 * 1024;
+const SAFE_UUID = /^[0-9a-zA-Z-]{8,64}$/;
 
 /** One chunk of a file the owner sends from the app (media.uploadChunk). */
 export interface UploadChunk {
@@ -45,6 +46,9 @@ export interface UploadChunk {
 export class MediaStore {
   /** In-flight uploads: id → bytes received so far. */
   private uploads = new Map<string, { name: string; mediaType: string; received: number }>();
+
+  /** remember / recall, by message uuid (null: looked, nothing there). */
+  private sent = new Map<string, { text: string; attachments: Attachment[] } | null>();
 
   constructor(private dir: string) {}
 
@@ -164,6 +168,71 @@ export class MediaStore {
       closeSync(fd);
     }
     return { data: buf.toString("base64"), size, mime: mimeOf(full), eof: offset + len >= size };
+  }
+
+  /**
+   * A file the owner sent a Pal, where the Pal reads it: its own folder's
+   * `.paloally/inbox/<id>/<name>`. Inside its working directory Claude Code
+   * reads it without asking (outside, every Read is a card); the folder
+   * ignores itself for git. A hard link where it can be (no second copy),
+   * else a copy. A folder it can't write to: the stored file's own path.
+   */
+  inbox(id: string, cwd: string): string | null {
+    const from = this.filePath(id);
+    if (!from) return null;
+    try {
+      const root = join(cwd, ".paloally");
+      const dir = join(root, "inbox", id);
+      const to = join(dir, basename(from));
+      mkdirSync(dir, { recursive: true });
+      if (!existsSync(join(root, ".gitignore"))) writeFileSync(join(root, ".gitignore"), "# PaloAlly: files sent from the app\n*\n");
+      if (!existsSync(to)) {
+        try {
+          linkSync(from, to);
+        } catch {
+          copyFileSync(from, to);
+        }
+      }
+      return to;
+    } catch {
+      return from;
+    }
+  }
+
+  /**
+   * What the owner sent a Pal under one message uuid: the words as typed and
+   * what went with them. A Pal's page reads its transcript, where an image
+   * is only its bytes and a file only a path; this gives the page back the
+   * message as sent.
+   */
+  remember(uuid: string, sent: { text: string; attachments: Attachment[] }): void {
+    if (!SAFE_UUID.test(uuid)) return;
+    this.sent.set(uuid, sent);
+    try {
+      mkdirSync(join(this.dir, "sent"), { recursive: true });
+      writeFileSync(join(this.dir, "sent", `${uuid}.json`), JSON.stringify(sent));
+    } catch {
+      /* the page then shows the transcript's words */
+    }
+  }
+
+  recall(uuid: string): { text: string; attachments: Attachment[] } | undefined {
+    if (!SAFE_UUID.test(uuid)) return undefined;
+    const have = this.sent.get(uuid);
+    if (have !== undefined) return have ?? undefined;
+    const path = join(this.dir, "sent", `${uuid}.json`);
+    let got: { text: string; attachments: Attachment[] } | null = null;
+    if (existsSync(path)) {
+      try {
+        const v = JSON.parse(readFileSync(path, "utf8"));
+        if (typeof v?.text === "string" && Array.isArray(v.attachments)) got = v;
+      } catch {
+        /* torn */
+      }
+    }
+    this.sent.set(uuid, got);
+    if (this.sent.size > 2000) this.sent.delete(this.sent.keys().next().value!);
+    return got ?? undefined;
   }
 
   filePath(id: string): string | null {

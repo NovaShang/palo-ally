@@ -57,6 +57,10 @@ public actor DemoHost {
     /// the live one that's still going (a line now and then).
     var viewedLogs: [String: [CCMessage]] = [:]
     var viewedTails: Set<String> = []
+    /// Images and files sent from the app (media.upload / uploadChunk), by id;
+    /// uploads still coming in, by upload id.
+    var media: [String: DemoMedia] = [:]
+    var uploads: [String: DemoMedia] = [:]
     /// Asleep Pals being woken (§12), for words that come meanwhile to wait on.
     var palWakes: [String: Task<Void, Never>] = [:]
     /// Seeded with Pals: an accepted proposal opens a Pal, not a helper.
@@ -620,6 +624,7 @@ public actor DemoHost {
             var m = ChatMessage(seq: seq, id: "m\(seq)", role: .user, kind: .text, text: text, channel: .app,
                                 ts: Date().epochMillis, clientMsgId: cid)
             if let r = p["replyTo"], let reply = try? r.decode(ReplyTo.self) { m.replyTo = reply }
+            if let atts = try attachments(p["attachments"]) { m.attachments = atts }
             if !text.hasPrefix("/") { m.uuid = "u-\(m.id)" }
             messages.append(m)
             emit(RPCEventName.chatMessage, m)
@@ -1015,6 +1020,7 @@ public actor DemoHost {
             emit(RPCEventName.chatMessage, messages[i])
             return result
         default:
+            if let r = try dispatchMedia(method, p) { return r }
             if !sessionsMode, let r = try await dispatchPals(method, p) { return r }
             throw DemoError(message: "unknown method \(method)")
         }

@@ -1276,10 +1276,11 @@ public final class AppStore {
             if let palID {
                 // Asleep: the host wakes it first (a few seconds), and says so here.
                 if pal(id: palID)?.isAsleep == true { showWaking() }
-                // Into the Pal as typed (nothing attached): a quoted part
+                // Into the Pal as typed, with what's attached: a quoted part
                 // goes in front, the way it would be pasted in a terminal.
                 r = try await rpc.call(RPCMethod.palsSend,
-                                       params: PalSendParams(id: palID, text: Self.quoting(replyTo, in: text), clientMsgId: cid),
+                                       params: PalSendParams(id: palID, text: Self.quoting(replyTo, in: text), clientMsgId: cid,
+                                                             attachments: ids),
                                        timeout: 45)
             } else {
                 r = try await rpc.call(RPCMethod.chatSend,

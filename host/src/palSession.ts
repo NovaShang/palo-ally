@@ -4,13 +4,14 @@ import type { ApprovalManager } from "./approvals.ts";
 import { firstLine } from "./ccSessions.ts";
 import { ACTIVITY, describeActivity, describeInput, describeTool, friendlyError } from "./copy.ts";
 import { readHead, readTail, transcriptPath } from "./handoffs.ts";
-import type { FilesRewound, HarnessDriver, HarnessEvent, MainSession, PermissionDecision, PermissionRequest } from "./harness/types.ts";
+import type { FilesRewound, HarnessDriver, HarnessEvent, ImageInput, MainSession, PermissionDecision, PermissionRequest } from "./harness/types.ts";
+import type { MediaStore } from "./media.ts";
 import { type PalLaunch, isHelperFailure, makeSpawner } from "./palLauncher.ts";
 import { type PalMapOptions, TranscriptFollower, toPalMessages, transcriptLastLine, transcriptModel, userEntryMessage } from "./palHistory.ts";
 import { ASK_TOOL, type QuestionManager } from "./questions.ts";
 import { type ForkSession, type PendingRewind, REWIND_BUSY, REWIND_NOT_FOUND, REWIND_NO_FILES, beforeCompaction, chainTo, hasFileCheckpoint, leafOf, ownerText, readTranscript } from "./rewind.ts";
 import { type StallRecovery, type StallTarget, transcriptHas } from "./stallWatch.ts";
-import type { CardSource, ChatMessage, Pal, PalStatus } from "./types.ts";
+import type { Attachment, CardSource, ChatMessage, Pal, PalStatus } from "./types.ts";
 import { newId, truncate } from "./util.ts";
 
 // One Pal (docs/pals-prd.md §4, §7): one of the owner's Claude Code
@@ -89,6 +90,8 @@ export interface PalSessionDeps {
   kill: (pid: number, signal: NodeJS.Signals) => void;
   /** Copies a session up to one entry as a new one (a rewind past a compaction). */
   forkSession: ForkSession;
+  /** What the owner attaches: images as Palo gets them, files put where the Pal reads them. */
+  media?: Pick<MediaStore, "read" | "inbox" | "remember" | "recall">;
   timing: { readyMs: number; restartMs: number[]; exitWaitMs: number };
   now: () => number;
   log: (s: string) => void;
@@ -120,7 +123,7 @@ export class PalSession {
   private failures: number[] = [];
   private turnOpen = false;
   private pendingUuids = new Set<string>();
-  private pendingText = new Map<string, { text: string; from?: string }>(); // the owner's words not yet taken, by uuid
+  private pendingText = new Map<string, { text: string; from?: string; images?: ImageInput[] }>(); // the owner's words not yet taken, by uuid
   private openTools = new Map<string, string>(); // tool calls without a result yet (subagents' too): id → name
   private turnTools = new Set<string>(); // …those of its own turn: none outlives the turn's end
   private lastEventAt = 0;
@@ -584,7 +587,7 @@ export class PalSession {
     for (const [uuid, p] of untaken) {
       this.pendingUuids.add(uuid);
       this.pendingText.set(uuid, p);
-      proc.send(p.text, uuid);
+      proc.send(p.text, uuid, p.images);
     }
     let continued = false;
     if (!untaken.length && inTurn) {
@@ -602,18 +605,20 @@ export class PalSession {
    * typed; asleep, it's woken first. Words go in one after another in the
    * order they came, also those that come while it's being woken. `peer`:
    * they're another session's (the assistant's pal_send), shown to it as a
-   * SendMessage from that name.
+   * SendMessage from that name. `attachments` (the owner's, media ids):
+   * images go in as image blocks, the way Palo gets them; files are put in
+   * its folder's .paloally/inbox and named in the words as 「[文件] path」.
    */
-  send(text: string, o: { clientMsgId?: string; from?: string; peer?: string } = {}): Promise<ChatMessage> {
+  send(text: string, o: { clientMsgId?: string; from?: string; peer?: string; attachments?: Attachment[] } = {}): Promise<ChatMessage> {
     const t = text.trim();
-    if (!t) return Promise.reject(new Error("要说的话不能是空的"));
+    if (!t && !o.attachments?.length) return Promise.reject(new Error("要说的话不能是空的"));
     this.queuedSends++;
     const run = this.sendChain.then(() => this.deliver(t, o)).finally(() => this.queuedSends--);
     this.sendChain = run.catch(() => {});
     return run;
   }
 
-  private async deliver(t: string, o: { clientMsgId?: string; from?: string; peer?: string }): Promise<ChatMessage> {
+  private async deliver(t: string, o: { clientMsgId?: string; from?: string; peer?: string; attachments?: Attachment[] }): Promise<ChatMessage> {
     if (this.rec.stoppedFor) this.clearStop();
     try {
       await this.start();
@@ -637,18 +642,38 @@ export class PalSession {
       pal: this.rec.id,
       ...(o.clientMsgId ? { clientMsgId: o.clientMsgId } : {}),
       ...(o.from ? { from: o.from } : {}),
+      ...(o.attachments?.length ? { attachments: o.attachments } : {}),
     };
+    const { images, body } = this.withAttachments(t, o.attachments ?? []);
+    // Its page reads the transcript, which has only the bytes and the paths: kept as sent.
+    if (o.attachments?.length) this.d.media?.remember(uuid, { text: t, attachments: o.attachments });
     this.emitted.add(uuid);
     this.d.emit("chat.message", msg);
-    const content = o.peer ? peerWrap(o.peer, t) : t;
+    const content = o.peer ? peerWrap(o.peer, body) : body;
     this.pendingUuids.add(uuid);
-    this.pendingText.set(uuid, { text: content, ...(o.from ? { from: o.from } : {}) });
+    this.pendingText.set(uuid, { text: content, ...(o.from ? { from: o.from } : {}), ...(images.length ? { images } : {}) });
     this.rec.lastUsedAt = ts;
     this.d.save();
-    proc.send(content, uuid);
+    proc.send(content, uuid, images);
     this.windingDown = false;
     this.touch();
     return msg;
+  }
+
+  /** The words and image blocks a message with attachments goes in as. */
+  private withAttachments(t: string, attachments: Attachment[]): { images: ImageInput[]; body: string } {
+    const images: ImageInput[] = [];
+    const files: string[] = [];
+    for (const a of attachments) {
+      if (a.kind === "image") {
+        const m = this.d.media?.read(a.id);
+        if (m) images.push({ mediaType: m.mediaType, data: m.data });
+      } else if (a.kind === "file") {
+        const path = this.d.media?.inbox(a.id, this.rec.cwd);
+        if (path) files.push(`[文件] ${path}`);
+      }
+    }
+    return { images, body: [t, ...files].filter((x) => x.trim()).join("\n") };
   }
 
   /**
@@ -899,7 +924,9 @@ export class PalSession {
     const i = chain.findIndex((e) => e.uuid === uuid);
     if (i < 0) throw new Error(REWIND_NOT_FOUND);
     const entry = chain[i];
-    const text = ownerText(entry);
+    // Sent from the app with images or files: its words as typed, without the files' paths.
+    const sent = this.d.media?.recall(uuid);
+    const text = sent ? sent.text : ownerText(entry);
     // The owner's own words only: not the assistant's (pal_send), not another session's.
     if (text === null || /^\s*<cross-session-message/.test(text) || (this.rec.duty && i === chain.findIndex((e) => ownerText(e) !== null) && text.trim() === this.rec.duty.trim()))
       throw new Error("这一条不是你说的，不能回到这里");

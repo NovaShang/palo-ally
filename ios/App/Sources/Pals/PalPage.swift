@@ -50,8 +50,9 @@ private struct PalConversation: View {
     private var waking: Bool { store.status?.busy == true && store.status?.activity == AppStore.wakingActivity }
 
     var body: some View {
-        ChatView(bottomPanel: bottom)
-            .navigationSubtitle(pal.map { Copy.palSubtitle($0, waking: waking) } ?? "")
+        ChatView(bottomPanel: bottom, pageTop: .init(subtitle: subtitle, dot: waking ? .green : pal.flatMap { Copy.palStatusColor($0.status) },
+                                                     menu: AnyView(menu)))
+            .navigationSubtitle(subtitle)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { menu }
             }
@@ -72,6 +73,9 @@ private struct PalConversation: View {
             }
             #endif
     }
+
+    /// Its state and folder (在忙 / 空闲 / 睡着 / 等你), under its name.
+    private var subtitle: String { pal.map { Copy.palSubtitle($0, waking: waking) } ?? "" }
 
     // MARK: bottom
 
@@ -119,7 +123,7 @@ private struct PalConversation: View {
     // MARK: menu
 
     private var menu: some View {
-        Menu {
+        PageMenu(label: "更多") {
             if pal?.inTurn == true || store.isBusy {
                 Button("停止这一轮", systemImage: "stop.circle") { Task { await stop() } }
             }
@@ -128,11 +132,7 @@ private struct PalConversation: View {
                 Button("交还终端", systemImage: "apple.terminal") { panel = .release }
                 Button("移出 Pals", systemImage: "minus.circle", role: .destructive) { panel = .remove }
             }
-        } label: {
-            Label("更多", systemImage: "ellipsis")
         }
-        // Chrome stays neutral; the theme color is for 发送.
-        .tint(.primary)
         .disabled(working || gone || !store.connection.isOnline)
         .accessibilityIdentifier("pal-menu")
     }

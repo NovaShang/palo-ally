@@ -322,6 +322,7 @@ export class Hub {
       settings: () => this.config.settings,
       helperApp: () => this.config.pals?.helperApp,
       launchMode: () => this.config.pals?.launch ?? "auto",
+      media: this.media,
       ...(deps.sessions?.readMessages ? { readMessages: deps.sessions.readMessages } : {}),
       log: this.log,
       ...deps.pals,

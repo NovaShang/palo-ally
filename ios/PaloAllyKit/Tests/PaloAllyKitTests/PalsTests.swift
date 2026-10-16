@@ -156,6 +156,30 @@ struct PalsStoreTests {
         #expect(store.messages.count == before)
     }
 
+    @Test func imagesAndFilesGoWithTheWordsAsToPalo() async throws {
+        let (store, host) = await demoStore()
+        let notes = store.palStore("pal-notes")
+        #expect(await until { notes.hasSynced })
+        let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==")!
+        notes.send("照这个改", images: [.init(data: png, mediaType: "image/png")],
+                   files: [.init(data: Data("要点".utf8), mediaType: "text/plain", name: "要点.txt")])
+        // Shown at once from the local bytes.
+        #expect(notes.messages.last?.attachments?.count == 2)
+        #expect(await until { notes.messages.contains { $0.text == "照这个改" && $0.delivery == .sent } })
+        let params = try #require(await host.lastParams["pals.send"])
+        guard case .array(let ids)? = params["attachments"] else { Issue.record("no attachments"); return }
+        #expect(ids.count == 2)
+        let sent = try #require(notes.messages.first { $0.text == "照这个改" })
+        #expect(sent.attachments?.map(\.kind) == ["image", "file"])
+        #expect(sent.attachments?.last?.name == "要点.txt")
+        // The uploaded image is there under the host's id, the file reads back.
+        let imageID = try #require(sent.attachments?.first?.id)
+        #expect(notes.images[imageID] == png)
+        let fileID = try #require(sent.attachments?.last?.id)
+        #expect(try await notes.fileData(fileID) == Data("要点".utf8))
+        #expect(notes.messages.filter { $0.text == "照这个改" }.count == 1)
+    }
+
     @Test func stopEndsItsTurn() async throws {
         let host = DemoHost(speed: 1, pals: true)
         let store = AppStore(transport: host.transport)

@@ -11,6 +11,7 @@ import { SpendMeter } from "./ccSpend.ts";
 import type { ChatLog } from "./chat.ts";
 import type { Paths, Settings } from "./config.ts";
 import type { HarnessDriver } from "./harness/types.ts";
+import type { MediaStore } from "./media.ts";
 import { PalLauncher, type PalLaunch } from "./palLauncher.ts";
 import { pagePalMessages, toPalMessages } from "./palHistory.ts";
 import type { ForkSession } from "./rewind.ts";
@@ -20,7 +21,7 @@ import type { QuestionManager } from "./questions.ts";
 import type { Router } from "./router.ts";
 import type { Sessions } from "./sessions.ts";
 import type { StallTarget } from "./stallWatch.ts";
-import type { ChatMessage, HelperProposal, Pal, PalAdoptProposal, RecentSession } from "./types.ts";
+import type { Attachment, ChatMessage, HelperProposal, Pal, PalAdoptProposal, RecentSession } from "./types.ts";
 import { newId, readJson, writeJson, zonedParts } from "./util.ts";
 
 // Pals (docs/pals-prd.md): Claude Code sessions the host runs itself. The
@@ -112,6 +113,8 @@ export interface PalsDeps {
   kill?: (pid: number, signal: NodeJS.Signals) => void;
   /** Copies a session up to one entry as a new one (default: the SDK's forkSession). */
   forkSession?: ForkSession;
+  /** The owner's images and files (media.upload / uploadChunk), as Palo takes them. */
+  media?: MediaStore;
   timing?: Partial<PalsTiming>;
   now?: () => number;
   log?: (s: string) => void;
@@ -275,7 +278,8 @@ export class Pals {
       },
       pidAlive: (pid) => this.alive(pid),
       kill: this.d.kill ?? ((pid, sig) => process.kill(pid, sig)),
-      forkSession: this.d.forkSession ?? ((sid, o) => sdkForkSession(sid, o)),
+      forkSession: this.forkSession,
+      ...(this.d.media ? { media: this.d.media } : {}),
       timing: this.timing,
       now: () => this.now(),
       log: (s) => this.log(s),
@@ -291,7 +295,17 @@ export class Pals {
   }
 
   private mapOptions(rec: PalRecord) {
-    return { assistantName: this.assistantName(), paloName: this.paloName(), ...(rec.duty ? { duty: rec.duty } : {}) };
+    const media = this.d.media;
+    return {
+      assistantName: this.assistantName(),
+      paloName: this.paloName(),
+      ...(rec.duty ? { duty: rec.duty } : {}),
+      ...(media ? { recall: (uuid: string) => media.recall(uuid) } : {}),
+    };
+  }
+
+  private get forkSession(): ForkSession {
+    return this.d.forkSession ?? ((sid, o) => sdkForkSession(sid, o));
   }
 
   // ---------------- lifecycle ----------------
@@ -907,14 +921,30 @@ export class Pals {
   /** pals.release: the host's process ends; the owner picks it up in a terminal. */
   async release(id: string, by: string): Promise<{ resumeCommand: string }> {
     const pal = this.mustGet(id);
+    // Gone back (回到这里重来) and not spoken to since, its fork has no
+    // transcript yet, and the old session would bring back all it left
+    // behind (a terminal resumes a session whole). The conversation as it
+    // stands is copied into a session of its own first (the SDK's
+    // forkSession, as a rewind past a compaction is), and that's the one
+    // the terminal resumes. Gone back to its very first message, nothing is
+    // kept: a fresh `claude` in its folder. Copied before its process ends,
+    // so a copy that fails leaves it as it was.
+    const pending = pal.pendingRewind();
+    let sid: string | null = pal.rec.sessionId;
+    if (pending) {
+      sid = pending.at
+        ? (await this.forkSession(pending.from, { dir: pal.rec.cwd, upToMessageId: pending.at, title: pal.rec.name }).catch((e) => {
+            throw new Error(`没能交还：${e instanceof Error ? e.message : e}`);
+          })).sessionId
+        : null;
+    }
     await pal.shutdown();
+    // (Spoken to meanwhile after all: its own session has it now.)
+    if (pending && !pal.pendingRewind()) sid = pal.rec.sessionId;
     this.drop(pal, true);
-    this.d.audit.log("pal.released", { pal: pal.id, session: pal.rec.sessionId, name: pal.rec.name, by });
+    this.d.audit.log("pal.released", { pal: pal.id, session: sid ?? "", name: pal.rec.name, by, ...(pending ? { rewound: pending.from } : {}) });
     this.emitNow();
-    // Gone back and not spoken to since, there's no new session yet: the old
-    // one (a terminal resumes it whole; only the SDK can resume part of one).
-    const sid = pal.pendingRewind()?.from ?? pal.rec.sessionId;
-    return { resumeCommand: `cd ${shq(pal.rec.cwd)} && claude --resume ${sid}` };
+    return { resumeCommand: sid ? `cd ${shq(pal.rec.cwd)} && claude --resume ${sid}` : `cd ${shq(pal.rec.cwd)} && claude` };
   }
 
   /** pals.remove: out of the Pals; its transcript stays where Claude Code keeps it. */
@@ -933,14 +963,14 @@ export class Pals {
    * comes meanwhile goes in after, in order). A retried send (same
    * clientMsgId) goes in once.
    */
-  async send(id: string, text: string, clientMsgId?: string): Promise<{ id: string; seq: number }> {
+  async send(id: string, text: string, clientMsgId?: string, attachments: Attachment[] = []): Promise<{ id: string; seq: number }> {
     const pal = this.mustGet(id);
     const cid = clientMsgId ? String(clientMsgId).slice(0, 100) : undefined;
     const seen = cid ? this.sent.get(pal.id)?.get(cid) : undefined;
     if (seen) return seen;
     const wasStopped = pal.rec.stoppedFor;
     this.wakingFor(pal, "owner");
-    const msg = await pal.send(String(text ?? ""), cid ? { clientMsgId: cid } : {}).catch((e) => {
+    const msg = await pal.send(String(text ?? ""), { ...(cid ? { clientMsgId: cid } : {}), ...(attachments.length ? { attachments } : {}) }).catch((e) => {
       this.waking.delete(pal.id);
       throw e;
     });
@@ -953,7 +983,7 @@ export class Pals {
       m.set(cid, out);
       if (m.size > 200) m.delete(m.keys().next().value!);
     }
-    this.d.audit.log("pal.send", { pal: pal.id, name: pal.rec.name, chars: msg.text.length });
+    this.d.audit.log("pal.send", { pal: pal.id, name: pal.rec.name, chars: msg.text.length, ...(attachments.length ? { attachments: attachments.length } : {}) });
     return out;
   }
 

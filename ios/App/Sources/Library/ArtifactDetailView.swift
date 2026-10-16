@@ -6,6 +6,7 @@ import WebKit
 
 struct ArtifactDetailView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
     let artifactID: String
     @State private var selectedPath: String?
     @State private var content: Loaded?
@@ -118,9 +119,42 @@ struct ArtifactDetailView: View {
                 }
             }
         }
+        // The Mac (in 成果 beside the conversation): to the column's top, back,
+        // its title and one menu floating (MacPageStrip).
+        .macPageTop(artifact?.title ?? "", back: { dismiss() }, trailing: artifact.map { AnyView(macMenu($0)) })
         // Reload whenever the host rewrites the artifact ("live" artifacts).
         .task(id: "\(artifact?.updatedAt ?? 0)|\(selectedPath ?? "")") {
             await load()
+        }
+    }
+
+    /// The Mac's strip: the bar's actions in one menu.
+    private func macMenu(_ artifact: Artifact) -> some View {
+        MacStripMenu(label: "更多") {
+            if let content {
+                ShareLink(item: content.fileURL) { Label("共享", systemImage: "square.and.arrow.up") }
+            }
+            Button {
+                Task { try? await store.setPinned(artifact, !artifact.pinned) }
+            } label: {
+                Label(artifact.pinned ? "取消置顶" : "置顶", systemImage: artifact.pinned ? "pin.slash" : "pin")
+            }
+            if let content, isMarkdown(artifact, content.path) {
+                Button {
+                    showSource.toggle()
+                } label: {
+                    Label(showSource ? "查看排版" : "查看源码",
+                          systemImage: showSource ? "doc.richtext" : "chevron.left.forwardslash.chevron.right")
+                }
+            }
+            if artifact.files.count > 1 {
+                Picker("文件", selection: Binding(get: { currentPath(artifact) }, set: { selectedPath = $0 })) {
+                    ForEach(artifact.files, id: \.path) { f in
+                        Text("\(f.path)  \(Copy.byteSize(f.size))").tag(f.path)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
         }
     }
 

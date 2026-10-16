@@ -1,6 +1,6 @@
 import { closeSync, existsSync, fstatSync, openSync, readSync, watch, type FSWatcher } from "node:fs";
 import { type RawSessionMessage, firstLine, peerBody } from "./ccSessions.ts";
-import type { ChatMessage } from "./types.ts";
+import type { Attachment, ChatMessage } from "./types.ts";
 
 // A Pal's conversation as the app shows it (docs/pals-prd.md §4, §8): the
 // same ChatMessage shape as the assistant's own, read from the session's
@@ -16,6 +16,13 @@ export interface PalMapOptions {
   assistantName: string; // how the assistant (Palo) is called; its words show as 「<name>」
   paloName: string; // the session name the assistant sends from (its SendMessage name)
   duty?: string; // a Pal the assistant opened: its first message is the assistant's handover
+  // What the owner sent with images or files, by its uuid (MediaStore.recall):
+  // the transcript has only the image bytes and the files' paths.
+  recall?: (uuid: string) => { text: string; attachments: Attachment[] } | undefined;
+}
+
+function hasImage(content: unknown): boolean {
+  return Array.isArray(content) && content.some((b: any) => b?.type === "image");
 }
 
 function userText(content: unknown): string | null {
@@ -39,7 +46,9 @@ export function peerName(origin: any, content: string, o: PalMapOptions): string
 export function userEntryMessage(m: RawSessionMessage, o: PalMapOptions): ChatMessage | null {
   // (Claude Code's own lines it marks meta, as the transcript has them, aren't anyone's words.)
   if (m.type !== "user" || m.parent_tool_use_id || (m as any).isMeta) return null;
-  const text = userText(m.message?.content);
+  const content = m.message?.content;
+  // An image sent on its own has no words.
+  const text = userText(content) ?? (hasImage(content) ? "" : null);
   if (text === null) return null;
   const ts = Date.parse(m.timestamp ?? "") || 0;
   const base = { seq: ts, id: m.uuid, role: "user" as const, kind: "text" as const, ts, pal: o.pal };
@@ -58,6 +67,10 @@ export function userEntryMessage(m: RawSessionMessage, o: PalMapOptions): ChatMe
   const t = text.trim();
   // The assistant's pal_send: put in by the host the way a SendMessage reads.
   if (/^<cross-session-message[^>]*from-name="/.test(t)) return { ...base, text: peerBody(null, t), channel: "system", from: peerName(null, t, o) };
+  // Sent from the app with images or files: as it was sent.
+  const sent = o.recall?.(m.uuid);
+  if (sent) return { ...base, text: sent.text, channel: "app", ...(sent.attachments.length ? { attachments: sent.attachments } : {}) };
+  if (!t && hasImage(content)) return { ...base, text: "（图片）", channel: "app" };
   if (!t || /^(<local-command-|<system-reminder>|<command-message>|Caveat: |<cross-session-message)/.test(t)) return null;
   return { ...base, text: t, channel: "app" };
 }

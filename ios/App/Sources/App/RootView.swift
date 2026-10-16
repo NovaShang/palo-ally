@@ -355,6 +355,10 @@ private struct LibraryPanel: View {
                             .accessibilityLabel("关闭成果")
                     }
                 }
+                // The Mac: to the window's top, its title floating (MacPageStrip).
+                .macPageTop("成果", trailing: AnyView(
+                    MacStripButton { model.inspectorShown = false } label: { Image(systemName: "xmark") }
+                        .accessibilityLabel("关闭成果")))
         }
         .environment(\.placesAsColumns, true)
         .background(Color(.systemGroupedBackground).ignoresSafeArea())

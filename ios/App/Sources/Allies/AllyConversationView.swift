@@ -101,6 +101,8 @@ struct AllyConversationView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { menu(ally) }
         }
+        // The Mac: to the window's top, its name and menu floating (MacPageStrip).
+        .macPageTop(ally.displayName, subtitle: Copy.allyPresence(ally), trailing: AnyView(menu(ally)))
         .refreshable { _ = try? await store.loadAllyLog(id: allyID) }
         .animation(.snappy, value: panel)
         .animation(.snappy, value: log.count)
@@ -179,7 +181,7 @@ struct AllyConversationView: View {
     // MARK: menu
 
     private func menu(_ ally: AllyInfo) -> some View {
-        Menu {
+        PageMenu(label: "更多") {
             Section("你的助理怎么回 TA") {
                 ForEach([AllyTrust.converse, .review], id: \.self) { t in
                     Button {
@@ -196,11 +198,7 @@ struct AllyConversationView: View {
             Section {
                 Button("解除", systemImage: "person.2.slash", role: .destructive) { panel = .remove }
             }
-        } label: {
-            Label("更多", systemImage: "ellipsis")
         }
-        // Chrome stays neutral; the theme color is for 发送.
-        .tint(.primary)
         .disabled(working || store.ally(id: allyID) == nil || !store.connection.isOnline)
         .accessibilityIdentifier("ally-menu")
     }

@@ -30,6 +30,32 @@ final class SessionsUITests: XCTestCase {
         XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "把上周的也归一下")).count, 1)
     }
 
+    /// A Pal's composer is the assistant's (pals-prd §15): [+] with photos
+    /// and files; an image and a file staged (`-demoStage`, as if picked) go
+    /// with the words and show in its conversation, and it answers.
+    @MainActor
+    func testAPalTakesImagesAndFilesLikeTheAssistant() throws {
+        let app = launch(["-demoScreen", "pal", "-demoPal", "pal-notes", "-demoStage", "YES"])
+        XCTAssertTrue(app.navigationBars.staticTexts["笔记整理"].waitForExistence(timeout: 15), "the Pal's page didn't open")
+        let plus = app.buttons["添加照片或文件"].firstMatch
+        XCTAssertTrue(plus.waitForExistence(timeout: 5), "no [+] on a Pal's composer")
+        plus.tap()
+        XCTAssertTrue(app.buttons["照片"].waitForExistence(timeout: 5), "no 照片 in [+]")
+        XCTAssertTrue(app.buttons["文件"].exists, "no 文件 in [+]")
+        attach(app, "pal-plus-menu")
+        app.buttons["照片"].firstMatch.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 0, dy: -300)).tap()
+        XCTAssertTrue(text(app, "说明.txt").waitForExistence(timeout: 5), "the file isn't staged")
+        XCTAssertTrue(app.buttons["移除"].firstMatch.exists, "nothing staged")
+        attach(app, "pal-staged")
+        app.buttons["发送"].firstMatch.tap()
+        XCTAssertTrue(text(app, "好的，按你说的办").waitForExistence(timeout: 15), "the Pal never answered")
+        XCTAssertFalse(app.buttons["移除"].firstMatch.exists, "still staged after sending")
+        XCTAssertTrue(text(app, "说明.txt").exists, "the file isn't in the conversation")
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "图片")).firstMatch.exists, "the image isn't in the conversation")
+        XCTAssertFalse(text(app, "没发出去").exists, "it didn't go")
+        attach(app, "pal-sent-attachments")
+    }
+
     /// An asleep Pal (pals-prd §12): its history is there; words for it say
     /// 「正在叫醒…」 until it's up, then it answers; back on the list it's awake.
     @MainActor

@@ -1,5 +1,5 @@
 import type { Hub } from "./hub.ts";
-import type { Channel } from "./types.ts";
+import type { Attachment, Channel } from "./types.ts";
 import { readJson, writeJson } from "./util.ts";
 
 export interface RpcContext {
@@ -72,13 +72,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       // A retried send (the first one did arrive) must not run twice.
       const dup = cid ? hub.chat.findByClientMsgId(cid) : undefined;
       if (dup) return { id: dup.id, seq: dup.seq };
-      const attachments = (Array.isArray(p.attachments) ? p.attachments : [])
-        .slice(0, 10)
-        .map((id: unknown) => {
-          const a = hub.media.attachment(String(id));
-          if (!a) throw new Error("附件没传上来，重发一次");
-          return a;
-        });
+      const attachments = attachmentsOf(hub, p.attachments);
       const r = p.replyTo;
       const replyTo =
         r && typeof r.messageId === "string" && typeof r.excerpt === "string" && r.excerpt.trim()
@@ -262,8 +256,9 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       const before = typeof p.before === "string" || typeof p.before === "number" ? p.before : undefined;
       return await hub.pals.history(String(p.id ?? ""), before, Number(p.limit ?? 50));
     }
+    // The owner's words, with images and files as Palo takes them (media.upload / uploadChunk).
     case "pals.send":
-      return await hub.pals.send(String(p.id ?? ""), String(p.text ?? ""), typeof p.clientMsgId === "string" ? p.clientMsgId : undefined);
+      return await hub.pals.send(String(p.id ?? ""), String(p.text ?? ""), typeof p.clientMsgId === "string" ? p.clientMsgId : undefined, attachmentsOf(hub, p.attachments));
     case "pals.stop":
       await hub.pals.stopTurn(String(p.id ?? ""), ctx.channel);
       return { ok: true };
@@ -294,6 +289,15 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       if (ctx.local && admin && req.method) return await admin(req.method, p);
       throw new Error(`unknown method: ${req.method}`);
   }
+}
+
+// The media ids a chat.send or pals.send carries, as attachments (at most 10).
+function attachmentsOf(hub: Hub, ids: unknown): Attachment[] {
+  return (Array.isArray(ids) ? ids : []).slice(0, 10).map((id: unknown) => {
+    const a = hub.media.attachment(String(id));
+    if (!a) throw new Error("附件没传上来，重发一次");
+    return a;
+  });
 }
 
 // serve runs one request and shapes the response envelope.

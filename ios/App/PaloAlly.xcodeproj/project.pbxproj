@@ -29,6 +29,7 @@
 		35FFC7556E0F870EC7DEBA7B /* RewindPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 983D40336B75C10D27DE0A94 /* RewindPanel.swift */; };
 		3615E6CE5D1C09A3629F48B6 /* WatchesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9E4508DECE36B39CF27552D /* WatchesSection.swift */; };
 		3781DAA15A3A54E048E7DC38 /* VoiceExitUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0AB3E164ECDB40C83C785A /* VoiceExitUITests.swift */; };
+		3C76FAC3CB40F969A3336E7C /* MacPageStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45C629F71CF477E2F94ADCC2 /* MacPageStrip.swift */; };
 		42A52F693D0C3EF2BF03E594 /* PaloAllyKit in Frameworks */ = {isa = PBXBuildFile; productRef = C72366410B2F41DC5EBD75BE /* PaloAllyKit */; };
 		42F6ACB32AA6D01DA32DF8B1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FB010AC69CB9C0C890D26829 /* Assets.xcassets */; };
 		44A392DEF7BF333CB2960BE4 /* ScrollStressUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7EADFA6C31C6254DED78C80 /* ScrollStressUITests.swift */; };
@@ -40,6 +41,7 @@
 		4FB859813BD2430EFFD25E56 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */; };
 		559D3E68E1F059A769EBD02A /* MarkdownFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE88A85588E9422D316877C2 /* MarkdownFile.swift */; };
 		576B3D9CF39D64A7CE5A0582 /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3027F62ADAB6BF3E4CFADE4C /* AppLog.swift */; };
+		58010BF040ECA3EE20E7D206 /* ComposerIntake.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6913CFC059408D7033A0C3E /* ComposerIntake.swift */; };
 		58FA01FB519DE507B656FDAE /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63DF4E96D0F73A16748CF819 /* SettingsView.swift */; };
 		59BA9DDA8B99C7CDA3D9418C /* NavigationBack.swift in Sources */ = {isa = PBXBuildFile; fileRef = C833EE588EFE3BF8D5622F37 /* NavigationBack.swift */; };
 		5A830F51813FA925FD0C8480 /* GlassDrops.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9DA59D1C706A7BFC0795353 /* GlassDrops.swift */; };
@@ -158,6 +160,7 @@
 		3C8BBDD7B0248070C25E81AB /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		3CEEB31655EFAEC6828526DF /* AllyInviteSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllyInviteSheet.swift; sourceTree = "<group>"; };
 		4165C6D84EFA478FBE5F799D /* HostSwitcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostSwitcher.swift; sourceTree = "<group>"; };
+		45C629F71CF477E2F94ADCC2 /* MacPageStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPageStrip.swift; sourceTree = "<group>"; };
 		45CEF451F12A8A4C25B55191 /* SessionCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCopy.swift; sourceTree = "<group>"; };
 		4B87BB3BCA4EF713FD6F4888 /* PaloAllyKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PaloAllyKit; path = ../PaloAllyKit; sourceTree = SOURCE_ROOT; };
 		4FBD3843044FE94D50902206 /* ChatScroll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScroll.swift; sourceTree = "<group>"; };
@@ -226,6 +229,7 @@
 		EEB06BF1C700F1FEE8FBA962 /* QuestionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuestionCard.swift; sourceTree = "<group>"; };
 		EF9B71414B8BB238CEE54BC1 /* DisplayCorners.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayCorners.swift; sourceTree = "<group>"; };
 		EFF3C59774AD6CD3FE7F5AAA /* ArtifactDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactDetailView.swift; sourceTree = "<group>"; };
+		F6913CFC059408D7033A0C3E /* ComposerIntake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerIntake.swift; sourceTree = "<group>"; };
 		F881AEFDC8F959F0506046DD /* SpeechDictation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechDictation.swift; sourceTree = "<group>"; };
 		F9AE7E7579FE5764F145260C /* MarkdownTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTableView.swift; sourceTree = "<group>"; };
 		FB010AC69CB9C0C890D26829 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -342,6 +346,7 @@
 				C3C69EFBC6FE3651296709B5 /* ChatScrollCoordinator.swift */,
 				5458CC8523AA61D0A0852ABA /* ChatView.swift */,
 				C0309622DA447C8E1B5069A2 /* ClipboardCard.swift */,
+				F6913CFC059408D7033A0C3E /* ComposerIntake.swift */,
 				1C8CC906F00EAFD38D91A3CD /* ComposerPressGesture.swift */,
 				97B4D23870E594B624074F8D /* ComposerView.swift */,
 				4165C6D84EFA478FBE5F799D /* HostSwitcher.swift */,
@@ -402,6 +407,7 @@
 				ED44385988595B39B2E86EEC /* HardwareKeyboard.swift */,
 				36184756C7B818CDFB8CB839 /* ImagePrep.swift */,
 				C0ED44802BFA212B62DF504F /* LaunchMetrics.swift */,
+				45C629F71CF477E2F94ADCC2 /* MacPageStrip.swift */,
 				CE88A85588E9422D316877C2 /* MarkdownFile.swift */,
 				F9AE7E7579FE5764F145260C /* MarkdownTableView.swift */,
 				DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */,
@@ -644,6 +650,7 @@
 				81A11C9A7F625540126701DA /* ChatView.swift in Sources */,
 				EF4C57CF1068151AD36D302D /* ClipboardCard.swift in Sources */,
 				44FDFDE5AC5121A21873B8D2 /* CommitWatch.swift in Sources */,
+				58010BF040ECA3EE20E7D206 /* ComposerIntake.swift in Sources */,
 				68C6CE08D07F5F2626210EE4 /* ComposerPressGesture.swift in Sources */,
 				9E8BAB6F1769D57EC0C617C0 /* ComposerView.swift in Sources */,
 				E5E19652341F8D47F5ED0578 /* ConversationList.swift in Sources */,
@@ -661,6 +668,7 @@
 				DCA8A63C55C45480F50AFD5A /* ImagePrep.swift in Sources */,
 				8D665CDE4487C8044D34A563 /* LaunchMetrics.swift in Sources */,
 				1F13B32F1A120C451958B347 /* LibraryView.swift in Sources */,
+				3C76FAC3CB40F969A3336E7C /* MacPageStrip.swift in Sources */,
 				BDF3039826DF37370998D0F1 /* MacWindow.swift in Sources */,
 				559D3E68E1F059A769EBD02A /* MarkdownFile.swift in Sources */,
 				1243481AFE63A1EA7053C0F2 /* MarkdownTableView.swift in Sources */,

@@ -514,6 +514,44 @@ describe("a Pal", () => {
     await t.hub.pals.stopAndWait();
   });
 
+  test("交还终端 right after going back: the conversation as it stands is copied into a session of its own, and that's the one the terminal resumes (never the old session, which still has what was dropped)", async () => {
+    const t = palSetup({ forks: fakeForks });
+    const { pal, sid } = await adopted(t);
+    await t.call("pals.rewind", { id: pal.id, messageId: "p2" });
+    const fork = t.hub.pals.get(pal.id)!.rec.sessionId;
+    const { resumeCommand } = await t.call("pals.release", { id: pal.id });
+    expect(t.forks.calls).toEqual([{ sessionId: sid, dir: t.project, upToMessageId: "r1b", title: "网站" }]);
+    const copy = `copy-1-${sid.slice(0, 8)}`;
+    expect(resumeCommand).toBe(`cd ${t.project} && claude --resume ${copy}`);
+    expect(resumeCommand).not.toContain(sid);
+    expect(resumeCommand).not.toContain(fork);
+    // the copy ends where the conversation was cut: what went isn't there
+    const kept = readTranscript(transcriptPath(t.claude.dir, t.project, copy));
+    expect(kept.map((e) => e.forkedFrom.messageUuid)).toEqual(["p1", "r1", "peer", "r1b"]);
+    expect(t.hub.pals.list()).toEqual([]);
+    expect(t.hub.audit.tail(10).find((e) => e.type === "pal.released")).toMatchObject({ session: copy, rewound: sid });
+  });
+
+  test("交还终端 after going back to its very first message: nothing is kept, so the line starts Claude Code afresh in its folder", async () => {
+    const t = palSetup({ forks: fakeForks });
+    const { pal } = await adopted(t);
+    await t.call("pals.rewind", { id: pal.id, messageId: "p1" });
+    const { resumeCommand } = await t.call("pals.release", { id: pal.id });
+    expect(t.forks.calls).toEqual([]);
+    expect(resumeCommand).toBe(`cd ${t.project} && claude`);
+  });
+
+  test("交还终端 once the fork has its own transcript: that session, as usual", async () => {
+    const t = palSetup({ forks: fakeForks });
+    const { pal } = await adopted(t);
+    await t.call("pals.rewind", { id: pal.id, messageId: "p2" });
+    const fork = t.hub.pals.get(pal.id)!.rec.sessionId;
+    t.claude.transcript(t.project, fork, [user("p1", null, "先建 note.txt", 0, { origin: { kind: "human" } }), reply("r1", "p1", "建好了", 1, "msg_r1"), user("n2", "r1", "改成 three", 20, { origin: { kind: "human" } })]);
+    const { resumeCommand } = await t.call("pals.release", { id: pal.id });
+    expect(t.forks.calls).toEqual([]);
+    expect(resumeCommand).toBe(`cd ${t.project} && claude --resume ${fork}`);
+  });
+
   test("asleep, it stays asleep; woken, it comes up on the fork", async () => {
     const t = palSetup();
     const { pal, sid } = await adopted(t);

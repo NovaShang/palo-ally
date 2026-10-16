@@ -62,7 +62,11 @@ describe("host ↔ app protocol", () => {
         away: new AwayDetector(() => null, Date.now, () => true),
         readMessages: async (sid) => histories.get(sid) ?? [],
       },
-      pals: { recentSource: { list: async () => ended, info: async (sid) => ended.find((i) => i.sessionId === sid) } },
+      pals: {
+        recentSource: { list: async () => ended, info: async (sid) => ended.find((i) => i.sessionId === sid) },
+        // 交还终端 after going back copies the conversation as it stands (the SDK's forkSession).
+        forkSession: async () => ({ sessionId: "9d4e2b60-0000-4000-8000-000000000004" }),
+      },
     }).ctx;
     const peer = net.add("家人B");
     hub.onUnpairDevice = () => {};
@@ -249,6 +253,13 @@ describe("host ↔ app protocol", () => {
     ]);
     await run("pals.send", { id: pal.id, text: "把列表页做完", clientMsgId: "c-pal-1" });
     await waitFor(() => events.some((e) => e.event === "chat.message" && e.data.pal && e.data.role === "assistant"));
+    // With an image and a file, the media ids chat.send takes too.
+    const plainSend = methods["pals.send"] as Sample;
+    const shot = await call("media.upload", { mediaType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==" });
+    const spec = await call("media.uploadChunk", { name: "列表.md", mediaType: "text/markdown", offset: 0, data: Buffer.from("按日期排序").toString("base64"), done: true });
+    const withFiles = { id: pal.id, text: "照这张图和这份说明改", clientMsgId: "c-pal-2", attachments: [shot.id, spec.id] };
+    methods["pals.send"] = [plainSend, { params: withFiles, result: await call("pals.send", withFiles) }];
+    await waitFor(() => events.some((e) => e.event === "chat.message" && e.data.pal && e.data.clientMsgId === "c-pal-2"));
     await run("pals.history", { id: pal.id, limit: 50 });
     void hub.pals.send(pal.id, "要确认");
     await waitFor(() => hub.approvals.listPending().length === 1);

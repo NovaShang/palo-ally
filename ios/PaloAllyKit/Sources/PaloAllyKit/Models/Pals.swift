@@ -222,13 +222,17 @@ public struct PalHistoryResult: Decodable, Sendable {
     }
 }
 
-/// `pals.send {id, text, clientMsgId?}` → `{id, seq}`: the owner's words,
-/// as typed, into a Pal.
+/// `pals.send {id, text, clientMsgId?, attachments?}` → `{id, seq}`: the
+/// owner's words, as typed, into a Pal, with images and files as Palo takes
+/// them (media ids from media.upload / uploadChunk; pals-prd §15).
 public struct PalSendParams: Codable, Sendable {
     public var id: String
     public var text: String
     public var clientMsgId: String?
-    public init(id: String, text: String, clientMsgId: String? = nil) { self.id = id; self.text = text; self.clientMsgId = clientMsgId }
+    public var attachments: [String]?
+    public init(id: String, text: String, clientMsgId: String? = nil, attachments: [String]? = nil) {
+        self.id = id; self.text = text; self.clientMsgId = clientMsgId; self.attachments = attachments
+    }
 }
 
 /// `pals.updated`: read as the whole list (`{pals, others?, hooks?}`, as

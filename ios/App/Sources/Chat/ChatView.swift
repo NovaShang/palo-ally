@@ -13,6 +13,14 @@ struct ChatView: View {
     static let macTopMargin: CGFloat = 6
     /// Shown in place of the composer while it's there (a Pal's 交还终端 / 移出).
     var bottomPanel: AnyView? = nil
+    /// The Mac: what a Pal's or a session's page shows in its strip at the
+    /// top (no navigation bar there, MacPageStrip): the status line and the menu.
+    var pageTop: PageTop? = nil
+    struct PageTop {
+        var subtitle = ""
+        var dot: Color? = nil
+        var menu: AnyView? = nil
+    }
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     /// Kept by MainScreen so it survives the layout switching containers.
@@ -28,6 +36,8 @@ struct ChatView: View {
     /// Where the bar's middle is (phones): read only by the orb's own overlay,
     /// so the bar moving (a resize) doesn't re-render the conversation.
     @State private var orbPlacement = OrbPlacement()
+    /// Images and files dropped on the conversation or pasted, for the composer.
+    @State private var intake = ComposerIntake()
     @Environment(\.scenePhase) private var scenePhase
 
     /// The assistant's own conversation (not a Pal's).
@@ -35,6 +45,13 @@ struct ChatView: View {
     /// The Mac: the assistant's conversation keeps the window toolbar's
     /// toggles and floats its orb in the column; a Pal's page has its bar.
     private var macOrb: Bool { Platform.barInWindowToolbar && isPalo }
+    /// The Mac: a Pal's or a session's page runs to the window's top too,
+    /// its title and menu floating in a strip (MacPageStrip).
+    private var macPage: Bool { Platform.barInWindowToolbar && !isPalo }
+    private var title: String {
+        isPalo ? store.assistantName
+            : store.palID.flatMap { store.pal(id: $0)?.displayName } ?? store.viewedSessionID.flatMap { store.viewedSession($0)?.name } ?? ""
+    }
 
     var body: some View {
         #if DEBUG
@@ -53,7 +70,7 @@ struct ChatView: View {
         .defaultScrollAnchor(.bottom, for: .alignment)
         .defaultScrollAnchor(scroll.sticksToEnd ? .bottom : .top, for: .sizeChanges)
         // The Mac: the first message starts a little below the orb.
-        .contentMargins(.top, macOrb ? Self.macTopMargin : 0, for: .scrollContent)
+        .contentMargins(.top, macOrb || macPage ? Self.macTopMargin : 0, for: .scrollContent)
         // No scroll targets (`scrollTargetLayout`): with them the scroll
         // view keeps "the view at the top" through every layout change, and
         // the lazy history re-estimating as a fling crosses it turned that
@@ -61,7 +78,7 @@ struct ChatView: View {
         // laid-out end begins.
         .task {
             scroll.attach(position: $position, store: store,
-                          contentTop: 12 + (macOrb ? Self.macTopMargin : 0))
+                          contentTop: 12 + (macOrb || macPage ? Self.macTopMargin : 0))
         }
         #if DEBUG
         // `-demoDetach YES`: read from the middle of the history (for the resize test).
@@ -163,8 +180,11 @@ struct ChatView: View {
             // Scoped to the button: must not animate the list itself.
             .animation(.snappy(duration: 0.2), value: showJump)
         }
-        .modifier(TopStrip(asBar: macOrb) {
+        .modifier(TopStrip(asBar: macOrb || macPage) {
             VStack(spacing: 0) {
+                if macPage {
+                    MacPageStrip(title: title, subtitle: pageTop?.subtitle ?? "", dot: pageTop?.dot, trailing: pageTop?.menu)
+                }
                 StatusBanner()
                 // The Mac: the orb hangs small from the top middle of the
                 // column, just below the window's titlebar; the messages
@@ -173,6 +193,8 @@ struct ChatView: View {
             }
             .frame(maxWidth: .infinity)
         })
+        // Images and files dropped anywhere on it go to the composer.
+        .modifier(ComposerDropTarget(intake: intake, enabled: bottomPanel == nil && store.rewindTarget == nil))
         // While holding to talk, the screen's background covers the
         // conversation (same hold-driven motion as the orb and the zones).
         .overlay { VoiceScrimLayer() }
@@ -184,7 +206,7 @@ struct ChatView: View {
             } else if let bottomPanel {
                 bottomPanel
             } else {
-            ComposerView(draft: draft) { text, images, files, how in
+            ComposerView(draft: draft, intake: intake) { text, images, files, how in
                 switch how {
                 case .typed:
                     // The message rises to the top as it appears (design §3.5).
@@ -225,8 +247,7 @@ struct ChatView: View {
                 }
             }
         }
-        .navigationTitle(isPalo ? store.assistantName
-            : store.palID.flatMap { store.pal(id: $0)?.displayName } ?? store.viewedSessionID.flatMap { store.viewedSession($0)?.name } ?? "")
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         // Immersive, the iOS 26 look: the system bar stays but without its
         // material backdrop (iOS 27 gives the bar one by default); the
@@ -237,7 +258,7 @@ struct ChatView: View {
         .scrollEdgeEffectStyle(.soft, for: .top)
         // The Mac: the assistant's conversation leaves 成果 to the window
         // toolbar (MacToolbar) and floats its orb in the column.
-        .toolbar(macOrb ? .hidden : .automatic, for: .navigationBar)
+        .toolbar(macOrb || macPage ? .hidden : .automatic, for: .navigationBar)
         .toolbar {
             if isPalo && !Platform.barInWindowToolbar {
                 ToolbarItem(placement: .principal) {
