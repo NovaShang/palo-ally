@@ -80,7 +80,7 @@ private struct UserBubble: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
                     .background { bubble }
-                    .modifier(BubbleInteractions(text: message.text, enabled: !isCopy))
+                    .modifier(BubbleInteractions(text: message.text, enabled: !isCopy, rewind: rewind))
                     // Spoken: where its words land.
                     .modifier(VoiceEchoSlot(cid: message.clientMsgId, bubble: true))
                 }
@@ -94,6 +94,13 @@ private struct UserBubble: View {
         .opacity(message.delivery == .sending || message.delivery == .queued ? 0.75 : 1)
         // Spoken: unseen while its words fly into it.
         .modifier(VoiceEchoSlot(cid: message.clientMsgId))
+    }
+
+    /// 回到这里重来 (docs/rewind-prd.md): the confirmation comes up in place
+    /// of the composer, the messages that would go dimmed.
+    private var rewind: (() -> Void)? {
+        guard store.canRewind(to: message) else { return nil }
+        return { [store, message] in withAnimation(.snappy) { store.rewindTarget = message } }
     }
 
     /// The owner's words: a light fill. The assistant's words to a Pal: an
@@ -189,16 +196,21 @@ private struct LinesCap: Layout {
     }
 }
 
-/// The bubble's copy menu and text selection (not on the flying copy).
+/// The bubble's menu (long press; right click on a Mac) and text selection
+/// (not on the flying copy): 复制, and 回到这里重来 on the owner's own words.
 private struct BubbleInteractions: ViewModifier {
     let text: String
     let enabled: Bool
+    var rewind: (() -> Void)?
 
     func body(content: Content) -> some View {
         if enabled {
             content
                 .contextMenu {
                     Button("复制", systemImage: "doc.on.doc") { Clipboard.copy(text) }
+                    if let rewind {
+                        Button("回到这里重来", systemImage: "arrow.uturn.backward", action: rewind)
+                    }
                 }
                 .textSelection(.enabled)
         } else {

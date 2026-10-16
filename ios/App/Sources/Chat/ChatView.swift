@@ -177,7 +177,11 @@ struct ChatView: View {
         // conversation (same hold-driven motion as the orb and the zones).
         .overlay { VoiceScrimLayer() }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if let bottomPanel {
+            // 回到这里重来: asked in place of the composer (docs/rewind-prd.md §3).
+            if let target = store.rewindTarget {
+                RewindPanel(target: target)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if let bottomPanel {
                 bottomPanel
             } else {
             ComposerView(draft: draft) { text, images, files, how in
@@ -327,8 +331,11 @@ private struct ConversationRows: View {
             }
 
             let held = scroll.heldAppearance
+            // 回到这里重来 being asked: what would go is dimmed.
+            let leaving = store.rewindTarget.flatMap { t in messages.firstIndex { $0.id == t.id } }
             ForEach(Array(messages[window].enumerated()), id: \.element.id) { offset, message in
                 messageRow(message, at: window.lowerBound + offset)
+                    .opacity(leaving.map { window.lowerBound + offset >= $0 } == true ? RewindPanel.dimmed : 1)
                     // Off screen while the app is away: keeps its look
                     // through the system's snapshots (`heldAppearance`).
                     .modifier(HeldAppearance(scheme: held.flatMap { $0.rows.contains(message.id) ? $0.scheme : nil }))
@@ -338,6 +345,7 @@ private struct ConversationRows: View {
             // The live end: approvals, the working line and 「试试」 (not
             // while a stretch far back is laid out on its own).
             if atTheEnd {
+                Group {
                 // Pending ones, and a session's still waiting at the computer.
                 ForEach(store.liveEndApprovals) { approval in
                     ApprovalCard(approval: approval)
@@ -368,6 +376,9 @@ private struct ConversationRows: View {
                 // that must not re-render the conversation.
                 SuggestionsSlot(willSend: { scroll.willSend() })
                     .id("suggestions")
+                }
+                // 回到这里重来 being asked: the live end goes too.
+                .opacity(leaving == nil ? 1 : RewindPanel.dimmed)
             }
         }
         // Rows report their place in the content (it changes only

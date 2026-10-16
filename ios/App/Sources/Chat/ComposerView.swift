@@ -171,6 +171,12 @@ struct ComposerView: View {
         .animation(.snappy, value: slashQuery)
         .animation(.snappy, value: staged.count)
         .onChange(of: focusToken) { focused = true }
+        // Back from 回到这里重来 with the message's words: straight on to editing them.
+        .onAppear {
+            guard model.focusComposerOnAppear else { return }
+            model.focusComposerOnAppear = false
+            focusToken += 1
+        }
         #if DEBUG
         // `-demoKeyboard "4:3"`: type 4 s in (the keyboard rises), stop 3 s later.
         .task {

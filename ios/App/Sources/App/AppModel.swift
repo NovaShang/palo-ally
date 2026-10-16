@@ -208,6 +208,9 @@ final class AppModel {
     /// The Mac: a click outside the composer asks it to give up focus, so an
     /// empty field turns back into the press-to-talk button.
     var composerUnfocusRequests = 0
+    /// The composer that appears next takes the keyboard (back from
+    /// 回到这里重来, with the message's words in it).
+    var focusComposerOnAppear = false
     /// Each conversation's unsent words, kept while the app is open (back to
     /// the list and in again, they're still there).
     var drafts: [Conversation: String] = [:]
@@ -667,11 +670,14 @@ final class AppModel {
         s.whenCommitted = { CommitWatch.shared.afterCommit($0) }
         s.revealClock = DisplayLinkRevealClock()
         s.finishingReply = { apply in ChatMotion.with(ChatMotion.follow, apply) }
+        // 回到这里重来: the messages that leave fade out.
+        s.animateRewind = { apply in withAnimation(RewindPanel.leaving, apply) }
         // Each Pal's conversation streams and reveals the same way.
         s.preparePalStore = { pal in
             pal.whenCommitted = { CommitWatch.shared.afterCommit($0) }
             pal.revealClock = DisplayLinkRevealClock()
             pal.finishingReply = { apply in ChatMotion.with(ChatMotion.follow, apply) }
+            pal.animateRewind = { apply in withAnimation(RewindPanel.leaving, apply) }
         }
         // A terminal session quit there is a Pal now: its page opens.
         s.onAdopted = { [weak self] pal in
