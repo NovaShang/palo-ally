@@ -83,6 +83,14 @@ extension DemoHost {
             palTurns[id]?.cancel()
             palTurns[id] = nil
             palWriting[id] = nil
+            // Its process ended: its open cards go (answered no), as the host's do.
+            for j in approvals.indices where approvals[j].source?.id == id && approvals[j].status == .pending {
+                approvals[j].status = .denied
+                approvals[j].decidedAt = Date().epochMillis
+                approvals[j].decidedBy = "rewind"
+                emit(RPCEventName.approvalUpdated, approvals[j])
+            }
+            setPal(id) { $0.status = .idle; $0.pending = 0 }
             let gone = log[i...].map(\.id)
             palLogs[id] = Array(log[..<i])
             emit(RPCEventName.chatRewound, ChatRewound(id: mid, ids: gone, pal: id))

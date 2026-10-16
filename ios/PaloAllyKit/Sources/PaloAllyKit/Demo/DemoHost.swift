@@ -140,8 +140,10 @@ public actor DemoHost {
                      proactive: Bool? = nil, taskId: String? = nil, approvalId: String? = nil,
                      broadcast: Bool = true) -> ChatMessage {
         seq += 1
-        let m = ChatMessage(seq: seq, id: "m\(seq)", role: role, kind: kind, text: text, channel: channel,
+        var m = ChatMessage(seq: seq, id: "m\(seq)", role: role, kind: kind, text: text, channel: channel,
                             ts: Date().epochMillis, proactive: proactive, taskId: taskId, approvalId: approvalId)
+        // The owner's words carry the uuid the host keeps them under (回到这里重来).
+        if role == .user, kind == .text { m.uuid = "u-\(m.id)" }
         messages.append(m)
         if broadcast { emit(RPCEventName.chatMessage, m) }
         return m
