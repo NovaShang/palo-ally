@@ -728,6 +728,17 @@
         }
       }
     },
+    "停止朗读" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop reading"
+          }
+        }
+      }
+    },
     "停止这一轮" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2913,6 +2924,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "New messages"
+          }
+        }
+      }
+    },
+    "朗读" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read aloud"
           }
         }
       }

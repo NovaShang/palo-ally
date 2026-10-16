@@ -52,6 +52,8 @@ final class SpeechDictation {
 
     func start() {
         breadcrumb("voice start")
+        // Dictation owns the audio session: reading aloud stops.
+        ReadAloud.shared.stop()
         startedAt = Date()
         errorMessage = nil
         transcript = ""

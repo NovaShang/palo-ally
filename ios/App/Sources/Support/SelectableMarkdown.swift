@@ -502,6 +502,14 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
                 whole.reply()
                 textView.selectedTextRange = nil
             })
+            if let readAloud = whole.readAloud {
+                let reading = whole.isReading()
+                items.append(UIAction(title: reading ? String(localized: "停止朗读") : String(localized: "朗读"),
+                                      image: UIImage(systemName: reading ? "stop.circle" : "speaker.wave.2")) { _ in
+                    readAloud()
+                    textView.selectedTextRange = nil
+                })
+            }
         }
         if onQuote != nil, range.length > 0 {
             let selected = (textView.text as NSString).substring(with: range)
