@@ -72,6 +72,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        // A paloally: link tapped in a conversation.
+        InAppLinks.open = { [model] in model.handle(url: $0) }
         // Voice logs already carry "[voice]"; append the time since the press.
         voiceLogSink = { debugLog("\($0)\(VoiceTiming.suffix)") }
         // Random per-device id the relay meters voice by; logged so a device

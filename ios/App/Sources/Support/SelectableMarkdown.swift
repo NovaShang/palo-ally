@@ -478,6 +478,15 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         UIPasteboard.general.string = text.replacingOccurrences(of: "\u{2028}", with: "\n")
     }
 
+    /// A `paloally:` link (a pairing link, an Ally's invite) opens here, as
+    /// a click on one elsewhere does, never through the system: on a Mac
+    /// with two builds it could open the other one.
+    func textView(_ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction) -> UIAction? {
+        guard case .link(let url) = textItem.content, url.scheme?.lowercased() == AppLink.scheme,
+              let open = InAppLinks.open else { return defaultAction }
+        return UIAction { _ in open(url) }
+    }
+
     /// The system selection menu (long press; right click on a Mac), with
     /// 「引用回复」 for just the selection and, for a finished answer, 拷贝 /
     /// 回复 for the whole of it.
@@ -753,8 +762,9 @@ enum MarkdownRenderer {
     }
 
     /// Inline markdown (bold, italic, `code`, ~~strike~~, links) via Foundation.
+    /// A bare `paloally://` link (the assistant's pair_link) is a link too.
     private static func inline(_ text: String, font: UIFont, style: NSParagraphStyle, color: UIColor = .label) -> NSAttributedString {
-        let parsed = (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+        let parsed = (try? AttributedString(markdown: AppLink.markingBareLinks(in: text), options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(text)
         let out = NSMutableAttributedString()
         for run in parsed.runs {
@@ -1060,4 +1070,11 @@ final class TextFadeClock {
         return String(format: "p50 %.2f, p95 %.2f, max %.1f ms", at(0.5), at(0.95), sorted.last ?? 0)
     }
 
+}
+
+/// Where a `paloally:` link tapped in a conversation goes: the app's own
+/// handler (set at launch).
+@MainActor
+enum InAppLinks {
+    static var open: ((URL) -> Void)?
 }
