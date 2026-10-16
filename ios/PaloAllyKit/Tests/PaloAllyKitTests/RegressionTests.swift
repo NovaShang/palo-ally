@@ -368,6 +368,13 @@ struct WordingRegressionTests {
         #expect(Friendly.message(RPCError.remote("没有这个文件")) == "没有这个文件")
         #expect(Friendly.message(RPCError.remote("Error: something at foo.js:12")) == "电脑那边出了点问题，稍后再试")
         #expect(!Friendly.message(RPCError.remote("打不开 /Users/x/secret")).contains("/Users"))
+        // The host speaking English (its language is en): its own sentences pass, a runtime's don't.
+        #expect(Friendly.message(RPCError.remote("No such task")) == "No such task")
+        #expect(Friendly.message(RPCError.remote("The attachment didn't upload. Send it again.")) == "The attachment didn't upload. Send it again.")
+        #expect(Friendly.message(RPCError.remote("Unexpected token < in JSON at position 0")) == "电脑那边出了点问题，稍后再试")
+        #expect(Friendly.message(RPCError.remote("fetch failed")) == "电脑那边出了点问题，稍后再试")
+        #expect(Friendly.message(RPCError.remote("Permission denied")) == "电脑那边没有权限做这个")
+        #expect(Friendly.message(RPCError.remote("Unknown method: foo.bar")) == "电脑上的 PaloAlly 版本太旧，需要更新一下")
         #expect(RPCError.remote("EACCES").errorDescription == "电脑那边没有权限做这个")
     }
 

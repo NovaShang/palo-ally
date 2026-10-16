@@ -44,7 +44,7 @@ final class ComposerIntake {
         guard let type = types.first(where: { $0.conforms(to: .data) && !$0.conforms(to: .text) }) ?? types.first,
               let d = await data(p, type.identifier) else { return nil }
         let name = p.suggestedName.map { n in n.contains(".") ? n : n + (type.preferredFilenameExtension.map { ".\($0)" } ?? "") }
-        return file(d, name: name ?? "文件")
+        return file(d, name: name ?? String(localized: "文件"))
     }
 
     private static func file(_ d: Data, name: String) -> Staged? {

@@ -218,7 +218,7 @@ struct MainScreen: View {
             if voice.previewText == nil { voice.abort() }
         }
         .onAppear {
-            if model.launch.screen == "voice" { voice.showPreview("你好，你好，你好，我正在说话") }
+            if model.launch.screen == "voice" { voice.showPreview("你好，你好，你好，我正在说话" /* i18n-ok: demo preview text */) }
             model.markSeen()
         }
         // Everything on screen counts as seen (drives the other assistants' unread dots).
@@ -365,7 +365,7 @@ private struct LibraryPanel: View {
                     }
                 }
                 // The Mac: to the window's top, its title floating (MacPageStrip).
-                .macPageTop("成果", trailing: AnyView(
+                .macPageTop(String(localized: "成果"), trailing: AnyView(
                     MacStripButton { model.inspectorShown = false } label: { Image(systemName: "xmark") }
                         .accessibilityLabel("关闭成果")))
         }

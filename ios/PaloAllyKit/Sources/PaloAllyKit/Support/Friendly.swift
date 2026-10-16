@@ -97,19 +97,40 @@ public enum Friendly {
         return loc("出了点问题，稍后再试")
     }
 
-    /// Host-side error text. Chinese sentences from the host pass through;
-    /// technical text is mapped to plain words.
+    /// Host-side error text. A sentence the host wrote for the owner (Chinese,
+    /// or English when the host's language is en) passes through; technical
+    /// text is mapped to plain words in the app's language.
     public static func remote(_ m: String) -> String {
         let lower = m.lowercased()
-        if lower.contains("enoent") || lower.contains("no such file") || lower.contains("not found") { return loc("找不到这个文件") }
-        if lower.contains("eacces") || lower.contains("eperm") || lower.contains("permission denied") { return loc("电脑那边没有权限做这个") }
+        if lower.contains("enoent") { return loc("找不到这个文件") }
+        if lower.contains("eacces") || lower.contains("eperm") { return loc("电脑那边没有权限做这个") }
         if lower.contains("enospc") { return loc("电脑的空间不够了") }
         if lower.contains("eisdir") { return loc("这是个文件夹，不是文件") }
-        if lower.contains("timeout") || lower.contains("timed out") || lower.contains("etimedout") { return loc("等太久了，稍后再试") }
-        if lower.contains("too large") || lower.contains("e2big") { return loc("文件太大了") }
+        if lower.contains("etimedout") { return loc("等太久了，稍后再试") }
+        if lower.contains("e2big") { return loc("文件太大了") }
         if lower.contains("unknown method") { return loc("电脑上的 PaloAlly 版本太旧，需要更新一下") }
+        if lower.contains("no such file") { return loc("找不到这个文件") }
+        if lower.contains("permission denied") { return loc("电脑那边没有权限做这个") }
+        if lower.contains("timeout") || lower.contains("timed out") { return loc("等太久了，稍后再试") }
+        if isHostSentence(m) { return m }
+        if lower.contains("not found") { return loc("找不到这个文件") }
+        if lower.contains("too large") { return loc("文件太大了") }
         if containsCJK(m) && !looksTechnical(m) { return m }
         return loc("电脑那边出了点问题，稍后再试")
+    }
+
+    /// An English sentence in the host's own words ("No such task", "The
+    /// attachment didn't upload. Send it again."): short, starts with a capital,
+    /// at least two words, none of a runtime's vocabulary.
+    static func isHostSentence(_ s: String) -> Bool {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (3...200).contains(t.count), let first = t.first, first.isUppercase, first.isASCII,
+              !t.contains("\n"), !containsCJK(t), !looksTechnical(t),
+              t.split(separator: " ").count >= 2 else { return false }
+        let lower = t.lowercased()
+        let runtime = ["undefined", "null", "exception", "unexpected", "cannot ", "is not a function", "json", "stack",
+                       "fetch failed", "socket", "econn", "errno", "traceback", "syntax", "invalid token", "{", "}", "<", "0x"]
+        return !runtime.contains { lower.contains($0) }
     }
 
     static func containsCJK(_ s: String) -> Bool {

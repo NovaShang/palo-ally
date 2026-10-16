@@ -108,14 +108,14 @@ struct RecentConversationsPage: View {
     @ViewBuilder private func ask(_ a: Asking) -> some View {
         switch a.step {
         case .confirm:
-            ConfirmPanel(title: Copy.spaced("接管「\(a.session.displayTitle)」？"),
-                         text: "它会出现在 Pals 里，接着上次的地方聊。",
-                         action: "接管", working: working, destructive: false, glass: false,
+            ConfirmPanel(title: Copy.spaced(String(localized: "接管「\(a.session.displayTitle)」？")),
+                         text: String(localized: "它会出现在 Pals 里，接着上次的地方聊。"),
+                         action: String(localized: "接管"), working: working, destructive: false, glass: false,
                          cancel: { asking = nil }, confirm: { Task { await adopt(a.session) } })
         case .waiting:
             VStack(alignment: .leading, spacing: 8) {
                 Text(a.session.displayTitle).font(.headline)
-                NoticePanel(text: "它还在终端里开着。请在终端里输入 /exit 退出它，退出后自动接管。", action: "取消", glass: false) {
+                NoticePanel(text: String(localized: "它还在终端里开着。请在终端里输入 /exit 退出它，退出后自动接管。"), action: String(localized: "取消"), glass: false) {
                     asking = nil
                     Task { await store.cancelAdoption(sessionId: a.session.sessionId) }
                 }
@@ -123,7 +123,7 @@ struct RecentConversationsPage: View {
         case .failed(let why):
             VStack(alignment: .leading, spacing: 8) {
                 Text(a.session.displayTitle).font(.headline)
-                NoticePanel(text: Copy.spaced("没接管成：\(why)"), action: "好", glass: false) { asking = nil }
+                NoticePanel(text: Copy.spaced(String(localized: "没接管成：\(why)")), action: String(localized: "好"), glass: false) { asking = nil }
             }
         }
     }
@@ -134,25 +134,25 @@ struct RecentConversationsPage: View {
         if shown {
             Group {
                 if store.recentSupported == false {
-                    line("电脑上的 PaloAlly 还不能列出这些，更新以后再来看。")
+                    line(String(localized: "电脑上的 PaloAlly 还不能列出这些，更新以后再来看。"))
                 } else if store.recentSessions == nil {
                     if let loadError {
                         VStack(spacing: 12) {
-                            line("没读到：\(loadError)")
+                            line(String(localized: "没读到：\(loadError)"))
                             Button("再试一次") { Task { await load() } }
                                 .buttonStyle(.bordered)
                                 .buttonBorderShape(.capsule)
                                 .tint(.primary)
                         }
                     } else if !store.connection.isOnline {
-                        line("连上电脑以后才能看到。")
+                        line(String(localized: "连上电脑以后才能看到。"))
                     } else {
                         ProgressView()
                     }
                 } else if store.recentSessions?.isEmpty == true {
-                    line("最近 30 天里没有可以接管的对话。")
+                    line(String(localized: "最近 30 天里没有可以接管的对话。"))
                 } else {
-                    line("没有找到「\(query.trimmingCharacters(in: .whitespacesAndNewlines))」")
+                    line(String(localized: "没有找到「\(query.trimmingCharacters(in: .whitespacesAndNewlines))」"))
                 }
             }
             .padding(32)

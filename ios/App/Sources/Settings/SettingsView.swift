@@ -88,7 +88,7 @@ struct SettingsView: View {
                             Task { await checkHostUpdate() }
                         } label: {
                             HStack {
-                                Text(checkingUpdate ? "正在检查…" : "立即更新电脑上的 PaloAlly")
+                                Text(checkingUpdate ? String(localized: "正在检查…") : String(localized: "立即更新电脑上的 PaloAlly"))
                                 Spacer()
                                 if checkingUpdate { ProgressView() }
                             }
@@ -134,7 +134,7 @@ struct SettingsView: View {
             guard let id = model.activeHostID else { return }
             error = nil
             Task {
-                do { try await model.setTheme(t, for: id) } catch { self.error = "颜色没改成：\(Copy.error(error))" }
+                do { try await model.setTheme(t, for: id) } catch { self.error = String(localized: "颜色没改成：\(Copy.error(error))") }
             }
         })
     }
@@ -144,7 +144,7 @@ struct SettingsView: View {
         Binding(get: { store.sessionHooksEnabled ?? true }, set: { on in
             error = nil
             Task {
-                do { try await store.setSessionHooks(on) } catch { self.error = "没改成：\(Copy.error(error))" }
+                do { try await store.setSessionHooks(on) } catch { self.error = String(localized: "没改成：\(Copy.error(error))") }
             }
         })
     }
@@ -159,12 +159,13 @@ struct SettingsView: View {
         do {
             let r = try await store.updateHost(check: false)
             switch r.status {
-            case "latest": hostUpdate = "已经是最新版（\(r.current)）"
-            case "staged", "updating": hostUpdate = "新版本 \(r.latest ?? "") 已下好，电脑手头的事一完就换上，会自动重启"
+            case "latest": hostUpdate = String(localized: "已经是最新版（\(r.current)）")
+            case "staged", "updating": let latest = r.latest ?? ""
+                hostUpdate = String(localized: "新版本 \(latest) 已下好，电脑手头的事一完就换上，会自动重启")
             default: hostUpdate = r.detail ?? r.status
             }
         } catch {
-            hostUpdate = "没检查成功：\(error.localizedDescription)"
+            hostUpdate = String(localized: "没检查成功：\(Copy.error(error))")
         }
     }
 
@@ -195,7 +196,7 @@ struct SettingsView: View {
             do {
                 try await store.updateSettings(patch: patch)
             } catch {
-                self.error = "没改成：\(Copy.error(error))"
+                self.error = String(localized: "没改成：\(Copy.error(error))")
                 // Put the controls back to what the computer actually has.
                 prefill()
             }

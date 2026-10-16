@@ -24,15 +24,17 @@ struct DevicesPage: View {
     @State private var newName = ""
     @State private var showInvite = false
 
+    private var activeName: String { model.displayName(model.activeHostID ?? "") }
+
     var body: some View {
         List {
             Section {
                 ForEach(model.hostIDs, id: \.self) { id in
                     hostRow(id)
                     if confirmUnpair == id {
-                        ConfirmPanel(title: "解除和「\(model.displayName(id))」的配对？",
-                                     text: "之后要重新配对才能连回来。那台电脑上的对话和记忆不受影响。",
-                                     action: "解除配对", working: unpairing == id, glass: false,
+                        ConfirmPanel(title: String(localized: "解除和「\(model.displayName(id))」的配对？"),
+                                     text: String(localized: "之后要重新配对才能连回来。那台电脑上的对话和记忆不受影响。"),
+                                     action: String(localized: "解除配对"), working: unpairing == id, glass: false,
                                      cancel: { confirmUnpair = nil },
                                      confirm: { Task { await unpair(id) } })
                             .transition(.opacity)
@@ -65,9 +67,9 @@ struct DevicesPage: View {
                 ForEach(devices) { d in
                     deviceRow(d)
                     if confirmRemove == d.deviceId {
-                        ConfirmPanel(title: "移除「\(d.label)」？",
-                                     text: "它会断开，要重新配对才能连回来。",
-                                     action: "移除", working: removing == d.deviceId, glass: false,
+                        ConfirmPanel(title: String(localized: "移除「\(d.label)」？"),
+                                     text: String(localized: "它会断开，要重新配对才能连回来。"),
+                                     action: String(localized: "移除"), working: removing == d.deviceId, glass: false,
                                      cancel: { confirmRemove = nil },
                                      confirm: { Task { await remove(d) } })
                             .transition(.opacity)
@@ -88,7 +90,7 @@ struct DevicesPage: View {
                 Text("连着这台电脑的设备")
             } footer: {
                 if model.hasSeveralHosts {
-                    Text("这台电脑是「\(model.displayName(model.activeHostID ?? ""))」。")
+                    Text("这台电脑是「\(activeName)」。")
                 }
             }
 
@@ -98,7 +100,7 @@ struct DevicesPage: View {
         }
         .navigationTitle("电脑与设备")
         .navigationBarTitleDisplayMode(.inline)
-        .macPageTop("电脑与设备")
+        .macPageTop(String(localized: "电脑与设备"))
         .animation(.snappy, value: confirmUnpair)
         .animation(.snappy, value: confirmRemove)
         .animation(.snappy, value: devices)
@@ -182,8 +184,8 @@ struct DevicesPage: View {
     }
 
     private func hostState(_ id: String) -> String {
-        guard let s = model.stores[id] else { return "离线" }
-        if s.displayedConnection.isOnline { return model.mode == .demo ? "演示中" : "在线" }
+        guard let s = model.stores[id] else { return String(localized: "离线") }
+        if s.displayedConnection.isOnline { return model.mode == .demo ? String(localized: "演示中") : String(localized: "在线") }
         return Copy.connectionShort(s.displayedConnection)
     }
 
@@ -232,9 +234,9 @@ struct DevicesPage: View {
     private func deviceLine(_ d: PairedDevice) -> String {
         let platform = d.platform == "mac" ? "Mac" : d.platform == "ios" ? "iOS" : ""
         let seen: String
-        if d.current || d.online { seen = "在线" }
-        else if let t = d.lastSeen, t > 0 { seen = "最后在线 \(Copy.relative(t))" }
-        else { seen = "还没连过" }
+        if d.current || d.online { seen = String(localized: "在线") }
+        else if let t = d.lastSeen, t > 0 { seen = String(localized: "最后在线 \(Copy.relative(t))") }
+        else { seen = String(localized: "还没连过") }
         return [platform, seen].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
@@ -247,7 +249,7 @@ struct DevicesPage: View {
             devicesError = nil
         } catch {
             // An older computer doesn't list them.
-            devicesError = "电脑上的 PaloAlly 更新以后，这里能看到连着它的设备。"
+            devicesError = String(localized: "电脑上的 PaloAlly 更新以后，这里能看到连着它的设备。")
         }
         loaded = true
     }
@@ -268,7 +270,7 @@ struct DevicesPage: View {
             devices.removeAll { $0.deviceId == d.deviceId }
             problem = nil
         } catch {
-            problem = "没移除成：\(Copy.error(error))"
+            problem = String(localized: "没移除成：\(Copy.error(error))")
         }
     }
 }
@@ -409,7 +411,7 @@ struct DeviceInviteSheet: View {
                     UIPasteboard.general.string = link
                     copied = true
                 } label: {
-                    Label(copied ? "拷贝好了" : "拷贝", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    Label(copied ? String(localized: "拷贝好了") : String(localized: "拷贝"), systemImage: copied ? "checkmark" : "doc.on.doc")
                 }
                 .accessibilityIdentifier("invite-copy")
                 ShareLink(item: link) { Label("共享", systemImage: "square.and.arrow.up") }
@@ -438,12 +440,13 @@ struct DeviceInviteSheet: View {
     /// 「还剩 4:32，只能用一次」.
     private func expiryLine(now: Date) -> String {
         guard let invite, invite.expiresAt > 0 else {
-            if loading { return "正在生成…" }
-            return store.connection.isOnline ? " " : "还没连上你的电脑，连上就生成"
+            if loading { return String(localized: "正在生成…") }
+            return store.connection.isOnline ? " " : String(localized: "还没连上你的电脑，连上就生成")
         }
         let left = Int((Double(invite.expiresAt - now.epochMillis) / 1000).rounded(.up))
-        if left <= 0 { return "这个二维码过期了" }
-        return "还剩 \(left / 60):\(String(format: "%02d", left % 60))，只能用一次"
+        if left <= 0 { return String(localized: "这个二维码过期了") }
+        let seconds = String(format: "%02d", left % 60)
+        return String(localized: "还剩 \(left / 60):\(seconds)，只能用一次")
     }
 
     private func load() async {
@@ -456,7 +459,7 @@ struct DeviceInviteSheet: View {
             invite = r
             code = QRCode.image(for: r.link)
         } catch {
-            self.error = "没生成出来：\(Copy.error(error))"
+            self.error = String(localized: "没生成出来：\(Copy.error(error))")
         }
     }
 }

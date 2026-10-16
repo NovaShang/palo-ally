@@ -80,34 +80,34 @@ private struct PalConversation: View {
 
     /// In place of the composer: what's being asked, or the line to copy.
     private var bottom: AnyView? {
-        let name = pal?.displayName ?? "它"
+        let name = pal?.displayName ?? String(localized: "它")
         let content: AnyView
         switch panel {
         case .none:
             guard gone else { return nil }
             content = AnyView(
-                NoticePanel(text: Copy.spaced("\(name)已经不在 Pals 里了。对话记录还在电脑上。"), action: "回到列表") {
+                NoticePanel(text: Copy.spaced(String(localized: "\(name)已经不在 Pals 里了。对话记录还在电脑上。")), action: String(localized: "回到列表")) {
                     model.showList()
                 })
         case .release:
             content = AnyView(
-                ConfirmPanel(title: "交还终端？",
-                             text: "PaloAlly 会关掉它。你在电脑的终端里运行一行命令，就从刚才的地方接着用，对话一字不丢。",
-                             action: "交还", working: working, destructive: false,
+                ConfirmPanel(title: String(localized: "交还终端？"),
+                             text: String(localized: "PaloAlly 会关掉它。你在电脑的终端里运行一行命令，就从刚才的地方接着用，对话一字不丢。"),
+                             action: String(localized: "交还"), working: working, destructive: false,
                              cancel: { panel = .none }, confirm: { Task { await release() } }))
         case .released(let command):
             content = AnyView(
-                CommandPanel(title: "在终端里接着用",
-                             text: "在电脑的终端里运行这一行，就从刚才的地方接着跟它说。",
+                CommandPanel(title: String(localized: "在终端里接着用"),
+                             text: String(localized: "在电脑的终端里运行这一行，就从刚才的地方接着跟它说。"),
                              command: command) { model.showList() })
         case .remove:
             content = AnyView(
-                ConfirmPanel(title: Copy.spaced("把\(name)移出 Pals？"),
-                             text: "PaloAlly 不再管它，它会停下。对话记录还在电脑上。",
-                             action: "移出", working: working,
+                ConfirmPanel(title: Copy.spaced(String(localized: "把\(name)移出 Pals？")),
+                             text: String(localized: "PaloAlly 不再管它，它会停下。对话记录还在电脑上。"),
+                             action: String(localized: "移出"), working: working,
                              cancel: { panel = .none }, confirm: { Task { await remove() } }))
         case .notice(let why):
-            content = AnyView(NoticePanel(text: why, action: "好") { panel = .none })
+            content = AnyView(NoticePanel(text: why, action: String(localized: "好")) { panel = .none })
         }
         return AnyView(
             content
@@ -122,7 +122,7 @@ private struct PalConversation: View {
     // MARK: menu
 
     private var menu: some View {
-        PageMenu(label: "更多") {
+        PageMenu(label: String(localized: "更多")) {
             if pal?.inTurn == true || store.isBusy {
                 Button("停止这一轮", systemImage: "stop.circle") { Task { await stop() } }
             }
@@ -145,7 +145,7 @@ private struct PalConversation: View {
         do {
             try await store.stop()
         } catch {
-            panel = .notice("没停下：\(Copy.error(error))")
+            panel = .notice(String(localized: "没停下：\(Copy.error(error))"))
         }
     }
 
@@ -156,7 +156,7 @@ private struct PalConversation: View {
             let command = try await store.releasePal(id: palID)
             panel = .released(command)
         } catch {
-            panel = .notice("没交还成：\(Copy.error(error))")
+            panel = .notice(String(localized: "没交还成：\(Copy.error(error))"))
         }
     }
 
@@ -168,7 +168,7 @@ private struct PalConversation: View {
             panel = .none
             model.showList()
         } catch {
-            panel = .notice("没移出：\(Copy.error(error))")
+            panel = .notice(String(localized: "没移出：\(Copy.error(error))"))
         }
     }
 }
@@ -197,7 +197,7 @@ struct PalRenameAlert: ViewModifier {
                         do {
                             try await store.renamePal(id: id, name: name)
                         } catch {
-                            failure = "没改成：\(Copy.error(error))"
+                            failure = String(localized: "没改成：\(Copy.error(error))")
                         }
                     }
                 }

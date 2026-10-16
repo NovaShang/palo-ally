@@ -182,11 +182,11 @@ private struct PaloRow: View {
     /// Otherwise what was said last (what waits on the owner is the count).
     private func secondLine(_ line: AgentStatusLine) -> String {
         guard line.kind != .working, line.kind != .offline, let m = lastMessage else {
-            return line.kind == .needsYou ? "等你" : line.text
+            return line.kind == .needsYou ? String(localized: "等你") : line.text
         }
         let text = m.text.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
         if text.isEmpty { return line.text }
-        return m.role == .user ? "你：\(text)" : text
+        return m.role == .user ? String(localized: "你：\(text)") : text
     }
 
     /// Cards, drafts and proposals waiting in its conversation, and tasks
@@ -219,7 +219,7 @@ private struct AssistantSwitcher: View {
                         } else if waiting > 0 || unread > 0 {
                             // A small dot, and what it is under the name.
                             Text(label)
-                            Text(waiting > 0 ? "\(waiting) 件等你" : "有新消息")
+                            Text(waiting > 0 ? String(localized: "\(waiting) 件等你") : String(localized: "有新消息"))
                             Image(systemName: "circlebadge.fill")
                         } else {
                             Text(label)
@@ -404,7 +404,7 @@ private struct OtherSessionRow: View {
 
     private func secondLine(_ a: PalAdoption?) -> String {
         switch a {
-        case .working?: return "正在接管…"
+        case .working?: return String(localized: "正在接管…")
         case .failed(let why)?: return why
         default:
             let line = Copy.sessionLine(session)

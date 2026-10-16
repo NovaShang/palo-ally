@@ -48,7 +48,7 @@ extension AppStore {
             do {
                 outcome = try await callRewind(m, restoreFiles: restoreFiles)
                 break
-            } catch RPCError.remote(let why) where why.contains("还在忙") && attempt < 11 {  // i18n-ok: the host's own words
+            } catch RPCError.remote(let why) where (why.contains("还在忙") || why.contains("still busy")) && attempt < 11 {  // i18n-ok: the host's own words, in either language
                 // Stopped once; it may take a moment to wind down.
                 if !stopped {
                     stopped = true

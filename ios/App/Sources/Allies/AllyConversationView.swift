@@ -65,7 +65,7 @@ struct AllyConversationView: View {
                 if !loaded && log.isEmpty {
                     ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
                 } else if log.isEmpty {
-                    Text(Copy.spaced("还没有来往。在下面打字，直接发给\(ally.displayName)。"))
+                    Text(Copy.spaced(String(localized: "还没有来往。在下面打字，直接发给\(ally.displayName)。")))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
@@ -116,7 +116,7 @@ struct AllyConversationView: View {
                 AllyKindTag(kind: ally.kind)
                 let a = ally.assistantName.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !a.isEmpty, a != ally.displayName {
-                    Text(Copy.spaced("TA 的助理叫\(a)"))
+                    Text(Copy.spaced(String(localized: "TA 的助理叫\(a)")))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -158,13 +158,13 @@ struct AllyConversationView: View {
             }
             switch panel {
             case .remove:
-                ConfirmPanel(title: Copy.spaced("和\(ally.displayName)解除？"),
-                             text: "解除后，你们两边的列表里都不再有对方。要再加，得当面扫码。",
-                             action: "解除", working: working,
+                ConfirmPanel(title: Copy.spaced(String(localized: "和\(ally.displayName)解除？")),
+                             text: String(localized: "解除后，你们两边的列表里都不再有对方。要再加，得当面扫码。"),
+                             action: String(localized: "解除"), working: working,
                              cancel: { panel = .none }, confirm: { Task { await remove() } })
             case .none:
                 if store.ally(id: allyID) != nil {
-                    WordsInputBar(placeholder: Copy.spaced("跟\(ally.displayName)说点什么"), text: draft,
+                    WordsInputBar(placeholder: Copy.spaced(String(localized: "跟\(ally.displayName)说点什么")), text: draft,
                                   enabled: store.connection.isOnline, send: send, identifier: "ally-input")
                 }
             }
@@ -179,7 +179,7 @@ struct AllyConversationView: View {
     // MARK: menu
 
     private func menu(_ ally: AllyInfo) -> some View {
-        PageMenu(label: "更多") {
+        PageMenu(label: String(localized: "更多")) {
             Section("你的助理怎么回 TA") {
                 ForEach([AllyTrust.converse, .review], id: \.self) { t in
                     Button {
@@ -212,7 +212,7 @@ struct AllyConversationView: View {
             do {
                 try await store.say(to: allyID, text: text)
             } catch {
-                self.error = "没发出去：\(Copy.error(error))"
+                self.error = String(localized: "没发出去：\(Copy.error(error))")
                 if draft.wrappedValue.isEmpty { draft.wrappedValue = text }
             }
         }
@@ -220,7 +220,7 @@ struct AllyConversationView: View {
 
     private func setTrust(_ t: AllyTrust) async {
         error = nil
-        do { try await store.setTrust(t, for: allyID) } catch { self.error = "没改成：\(Copy.error(error))" }
+        do { try await store.setTrust(t, for: allyID) } catch { self.error = String(localized: "没改成：\(Copy.error(error))") }
     }
 
     private func remove() async {
@@ -231,7 +231,7 @@ struct AllyConversationView: View {
             panel = .none
             model.showList()
         } catch {
-            self.error = "没解除成：\(Copy.error(error))"
+            self.error = String(localized: "没解除成：\(Copy.error(error))")
         }
         working = false
     }

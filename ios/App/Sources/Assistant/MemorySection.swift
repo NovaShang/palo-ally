@@ -181,7 +181,7 @@ struct MemoryEditorView: View {
                 original = text
                 message = String(localized: "存好了")
                 onSaved()
-            } catch RPCError.remote(let m) where m.contains("刚被助理改过") {  // i18n-ok: the host's own words
+            } catch RPCError.remote(let m) where m.contains("刚被助理改过") || m.contains("just changed this file") {  // i18n-ok: the host's own words, in either language
                 conflict = true
             } catch {
                 message = String(localized: "没存上：\(Copy.error(error))")

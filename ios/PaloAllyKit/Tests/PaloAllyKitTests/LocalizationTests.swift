@@ -11,24 +11,6 @@ struct LocalizationTests {
     static let ios: URL = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 
-    /// Files whose strings are still to be moved into the catalog, with how many
-    /// Chinese literals each still has. A file here may only get fewer; one that
-    /// isn't here must have none. Delete the entry when the file is done.
-    static let pending: [String: Int] = [
-        "App/Sources/Assistant/ModelRow.swift": 2,
-        "App/Sources/Settings/SettingsView.swift": 7,
-        "App/Sources/Home/ConversationList.swift": 4,
-        "App/Sources/App/RootView.swift": 2,
-        "App/Sources/Chat/ComposerIntake.swift": 1,
-        "App/Sources/Chat/ComposerView.swift": 10,
-        "App/Sources/Pals/RecentConversationsPage.swift": 10,
-        "App/Sources/Pals/PalAdoptCard.swift": 7,
-        "App/Sources/Pals/PalPage.swift": 16,
-        "App/Sources/Pals/PalCopy.swift": 10,
-        "App/Sources/Allies/AllyConversationView.swift": 10,
-        "App/Sources/Devices/DevicesPage.swift": 21,
-    ]
-
     // MARK: the scan
 
     static let cjk = try! NSRegularExpression(pattern: #"[一-鿿]"#)
@@ -98,12 +80,69 @@ struct LocalizationTests {
         for url in Self.scanned() {
             let rel = String(url.path.dropFirst(Self.ios.path.count + 1))
             let hits = Self.unlocalized(in: try String(contentsOf: url, encoding: .utf8))
-            let allowed = Self.pending[rel] ?? 0
-            if hits.count > allowed {
-                for (n, line) in hits { problems.append("\(rel):\(n): \(line)") }
-            }
+            for (n, line) in hits { problems.append("\(rel):\(n): \(line)") }
         }
         #expect(problems.isEmpty, "Chinese text that skips localization (use Text(\"…\"), String(localized:), or `// i18n-ok: why`):\n\(problems.joined(separator: "\n"))")
+    }
+
+    /// The literal keys a source asks the catalog for: `String(localized: "…")`
+    /// in the app, `loc("…")` in the Kit, with each interpolation as `%@`.
+    static func requestedKeys(in source: String, call: String) -> [String] {
+        var keys: [String] = []
+        var rest = Substring(source)
+        while let r = rest.range(of: call) {
+            rest = rest[r.upperBound...]
+            guard rest.first == "\"" else { continue }
+            var i = rest.index(after: rest.startIndex)
+            var key = ""
+            var depth = 0
+            var closed = false
+            while i < rest.endIndex {
+                let c = rest[i]
+                if depth == 0 {
+                    if c == "\\", rest.index(after: i) < rest.endIndex, rest[rest.index(after: i)] == "(" {
+                        depth = 1; key += "%@"; i = rest.index(i, offsetBy: 2); continue
+                    }
+                    if c == "\"" { closed = true; break }
+                    if c == "\n" { break }
+                    key.append(c)
+                } else {
+                    if c == "(" { depth += 1 } else if c == ")" { depth -= 1 }
+                }
+                i = rest.index(after: i)
+            }
+            if closed { keys.append(key) }
+        }
+        return keys
+    }
+
+    /// A key with every number/object slot as `%@`, so `%lld` and `%@` compare equal.
+    static func slotless(_ key: String) -> String {
+        key.replacingOccurrences(of: #"%(?:\d+\$)?(?:l+d|@|lf|f|d)"#, with: "%@", options: .regularExpression)
+    }
+
+    /// A Chinese key that no catalog has shows Chinese on an English device.
+    @Test func everyRequestedKeyIsInACatalog() throws {
+        func keys(_ paths: [String]) throws -> Set<String> {
+            var out: Set<String> = []
+            for path in paths where FileManager.default.fileExists(atPath: Self.ios.appendingPathComponent(path).path) {
+                out.formUnion((try Self.catalog(path)["strings"] as! [String: Any]).keys.map(Self.slotless))
+            }
+            return out
+        }
+        let app = try keys(["App/Resources/Localizable.xcstrings", "App/Resources/Files.xcstrings", "App/Resources/Library.xcstrings"])
+        let kit = try keys(["PaloAllyKit/Sources/PaloAllyKit/Resources/Localizable.xcstrings"])
+        var problems: [String] = []
+        for url in Self.scanned() {
+            let rel = String(url.path.dropFirst(Self.ios.path.count + 1))
+            let source = try String(contentsOf: url, encoding: .utf8)
+            let isKit = rel.hasPrefix("PaloAllyKit/")
+            let requested = Self.requestedKeys(in: source, call: isKit ? "loc(" : "String(localized: ")
+            for key in requested where Self.matches(Self.cjk, key) && !(isKit ? kit : app).contains(Self.slotless(key)) {
+                problems.append("\(rel): \(key)")
+            }
+        }
+        #expect(problems.isEmpty, "Keys missing from the String Catalog (no English):\n\(problems.joined(separator: "\n"))")
     }
 
     @Test func theScannerSeesWhatItShould() {
@@ -113,11 +152,13 @@ struct LocalizationTests {
         let b = String(localized: "好")
         Button("好", action: go)
         Text(flag ? "坏" : "坏")
+        Label(copied ? "好" : "坏", systemImage: "x")
+        PageMenu(label: "更多") {
         // let c = "注释"
         let d = "坏" // 注释
         let e = "豁免" // i18n-ok: the host's words
         """)
-        #expect(hits.map(\.0) == [2, 5, 7])
+        #expect(hits.map(\.0) == [2, 5, 6, 7, 9])
     }
 
     // MARK: the catalogs
@@ -146,7 +187,7 @@ struct LocalizationTests {
     }
 
     @Test(arguments: ["App/Resources/Localizable.xcstrings", "PaloAllyKit/Sources/PaloAllyKit/Resources/Localizable.xcstrings",
-                      "App/Resources/InfoPlist.xcstrings", "App/Resources/Files.xcstrings"])
+                      "App/Resources/InfoPlist.xcstrings", "App/Resources/Files.xcstrings", "App/Resources/Library.xcstrings"])
     func everyKeyHasAnEnglishTranslationWithTheSameSlots(path: String) throws {
         let strings = try Self.catalog(path)["strings"] as! [String: [String: Any]]
         #expect(!strings.isEmpty)

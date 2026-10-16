@@ -110,7 +110,7 @@ struct RewindPanel: View {
                 model.focusComposerOnAppear = false
                 working = false
                 let why = Friendly.message(error)
-                if why.contains("代码没法恢复") {  // i18n-ok: the host's own words
+                if why.contains("代码没法恢复") || why.contains("can't be restored") {  // i18n-ok: the host's own words, in either language
                     // Said in place of the switch: the conversation can still go back.
                     canRestore = false
                     restoreFiles = false

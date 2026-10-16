@@ -122,6 +122,17 @@
         }
       }
     },
+    "%@已经不在 Pals 里了。对话记录还在电脑上。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is no longer in Pals. The conversation is still on your computer."
+          }
+        }
+      }
+    },
     "%@已经在你的 Allies 里了。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -162,6 +173,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ replies to %2$@ directly and keeps a record of every message."
+          }
+        }
+      }
+    },
+    "%@说" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ says"
           }
         }
       }
@@ -233,6 +255,39 @@
         }
       }
     },
+    "PaloAlly 不再管它，它会停下。对话记录还在电脑上。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PaloAlly will stop managing it, and it will stop. The conversation stays on your computer."
+          }
+        }
+      }
+    },
+    "PaloAlly 会关掉它。你在电脑的终端里运行一行命令，就从刚才的地方接着用，对话一字不丢。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PaloAlly will close it. Run one command in your computer’s terminal to pick up where you left off, with the whole conversation intact."
+          }
+        }
+      }
+    },
+    "TA 的助理叫%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Their assistant is %@"
+          }
+        }
+      }
+    },
     "· 为了「%@」" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -295,6 +350,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Last run"
+          }
+        }
+      }
+    },
+    "上次叫醒不到 $0.01" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last wake-up cost under $0.01"
+          }
+        }
+      }
+    },
+    "上次叫醒约 $%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last wake-up cost about $%@"
           }
         }
       }
@@ -431,6 +508,17 @@
         }
       }
     },
+    "之后要重新配对才能连回来。那台电脑上的对话和记忆不受影响。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You’ll need to pair again to reconnect. Conversations and memory on that computer aren’t affected."
+          }
+        }
+      }
+    },
     "也是%@的颜色。App 和桌面图标都会换成这个颜色。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -453,6 +541,17 @@
         }
       }
     },
+    "交还" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hand back"
+          }
+        }
+      }
+    },
     "交还终端" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -460,6 +559,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hand back to terminal"
+          }
+        }
+      }
+    },
+    "交还终端？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hand back to the terminal?"
           }
         }
       }
@@ -1355,6 +1465,17 @@
         }
       }
     },
+    "和%@解除？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove %@?"
+          }
+        }
+      }
+    },
     "品红" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1373,6 +1494,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Which day"
+          }
+        }
+      }
+    },
+    "回到列表" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back to list"
           }
         }
       }
@@ -1509,6 +1641,17 @@
         }
       }
     },
+    "在听…再点一下麦克风结束" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Listening… tap the mic again to finish"
+          }
+        }
+      }
+    },
     "在对话里交代一件事，它在做和做完的都会记在这里。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1564,6 +1707,17 @@
         }
       }
     },
+    "在电脑的终端里运行这一行，就从刚才的地方接着跟它说。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run this line in your computer’s terminal to pick up where you left off."
+          }
+        }
+      }
+    },
     "在线" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1582,6 +1736,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Online, no messages yet"
+          }
+        }
+      }
+    },
+    "在终端里接着用" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue in the terminal"
           }
         }
       }
@@ -1707,6 +1872,17 @@
         }
       }
     },
+    "它" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "it"
+          }
+        }
+      }
+    },
     "它会停止替你盯着这件事。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1718,6 +1894,17 @@
         }
       }
     },
+    "它会出现在 Pals 里，接着上次的地方聊。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It will appear in Pals, picking up where you left off."
+          }
+        }
+      }
+    },
     "它会定期替你查看或推进，有进展会更新在这里；需要你的时候会标出来。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1725,6 +1912,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "It checks in or moves things forward for you. Progress shows up here, and anything that needs you is marked."
+          }
+        }
+      }
+    },
+    "它会断开，要重新配对才能连回来。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It will disconnect and need to pair again to reconnect."
           }
         }
       }
@@ -2037,6 +2235,28 @@
         }
       }
     },
+    "已经接过来了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taken over"
+          }
+        }
+      }
+    },
+    "已经是最新版（%@）" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Up to date (%@)"
+          }
+        }
+      }
+    },
     "已经解除了" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2268,6 +2488,17 @@
         }
       }
     },
+    "想让我做点什么？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What should I do?"
+          }
+        }
+      }
+    },
     "想问你" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2418,6 +2649,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Can’t find this task"
+          }
+        }
+      }
+    },
+    "把%@移出 Pals？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove %@ from Pals?"
           }
         }
       }
@@ -2587,6 +2829,28 @@
         }
       }
     },
+    "接管「%@」" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take over “%@”"
+          }
+        }
+      }
+    },
+    "接管「%@」？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take over “%@”?"
+          }
+        }
+      }
+    },
     "接管中…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2741,6 +3005,28 @@
         }
       }
     },
+    "文件太大（最多 100MB）" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File too large (100 MB max)"
+          }
+        }
+      }
+    },
+    "新版本 %@ 已下好，电脑手头的事一完就换上，会自动重启" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version %@ is downloaded. Your computer will switch to it when it’s done with what it’s doing, and restart by itself."
+          }
+        }
+      }
+    },
     "新的目标" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2873,6 +3159,28 @@
         }
       }
     },
+    "最后在线 %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last online %@"
+          }
+        }
+      }
+    },
+    "最近 30 天里没有可以接管的对话。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No conversations to take over from the last 30 days."
+          }
+        }
+      }
+    },
     "最近更新" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2913,6 +3221,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "What would you like me to do?"
+          }
+        }
+      }
+    },
+    "有图片读不了，换一张试试" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t read a picture. Try another."
+          }
+        }
+      }
+    },
+    "有文件读不了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t read a file"
           }
         }
       }
@@ -3148,6 +3478,17 @@
         }
       }
     },
+    "正在叫醒…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waking…"
+          }
+        }
+      }
+    },
     "正在同步…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3166,6 +3507,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Listening to you, %@"
+          }
+        }
+      }
+    },
+    "正在启动" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starting"
           }
         }
       }
@@ -3221,6 +3573,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Thinking…"
+          }
+        }
+      }
+    },
+    "正在接管…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taking over…"
           }
         }
       }
@@ -3550,6 +3913,17 @@
         }
       }
     },
+    "没交还成：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t hand back: %@"
+          }
+        }
+      }
+    },
     "没保存上：%@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3568,6 +3942,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t stop it: %@"
+          }
+        }
+      }
+    },
+    "没停下：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t stop: %@"
           }
         }
       }
@@ -3671,6 +4056,17 @@
         }
       }
     },
+    "没听清" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Didn’t catch that"
+          }
+        }
+      }
+    },
     "没存上：%@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3715,6 +4111,28 @@
         }
       }
     },
+    "没接" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not taken over"
+          }
+        }
+      }
+    },
+    "没接成：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t take over: %@"
+          }
+        }
+      }
+    },
     "没接管成：%@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3737,6 +4155,17 @@
         }
       }
     },
+    "没有找到「%@」" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No results for “%@”"
+          }
+        }
+      }
+    },
     "没来得及回，已自动拒绝" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3744,6 +4173,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No reply in time, denied automatically"
+          }
+        }
+      }
+    },
+    "没检查成功：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t check: %@"
           }
         }
       }
@@ -3770,6 +4210,28 @@
         }
       }
     },
+    "没移出：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t remove: %@"
+          }
+        }
+      }
+    },
+    "没移除成：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t remove: %@"
+          }
+        }
+      }
+    },
     "没等到回答" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3777,6 +4239,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No answer"
+          }
+        }
+      }
+    },
+    "没解除成：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t remove: %@"
+          }
+        }
+      }
+    },
+    "没读到：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t load: %@"
           }
         }
       }
@@ -3876,6 +4360,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Clear"
+          }
+        }
+      }
+    },
+    "演示中" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demo"
           }
         }
       }
@@ -4023,6 +4518,28 @@
         }
       }
     },
+    "电脑上的 PaloAlly 更新以后，这里能看到连着它的设备。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once PaloAlly on your computer is updated, the devices connected to it show up here."
+          }
+        }
+      }
+    },
+    "电脑上的 PaloAlly 还不能列出这些，更新以后再来看。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PaloAlly on your computer can’t list these yet. Update it and check back."
+          }
+        }
+      }
+    },
     "电脑上的版本" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4144,6 +4661,17 @@
         }
       }
     },
+    "睡着" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asleep"
+          }
+        }
+      }
+    },
     "石墨" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4151,6 +4679,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Graphite"
+          }
+        }
+      }
+    },
+    "离线" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline"
+          }
+        }
+      }
+    },
+    "移出" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove"
           }
         }
       }
@@ -4173,6 +4723,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remove"
+          }
+        }
+      }
+    },
+    "移除「%@」？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove “%@”?"
           }
         }
       }
@@ -4485,6 +5046,28 @@
         }
       }
     },
+    "解除后，你们两边的列表里都不再有对方。要再加，得当面扫码。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You’ll both disappear from each other’s lists. To add again, you’ll need to scan a code in person."
+          }
+        }
+      }
+    },
+    "解除和「%@」的配对？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unpair from “%@”?"
+          }
+        }
+      }
+    },
     "解除配对" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4772,6 +5355,17 @@
         }
       }
     },
+    "跟%@说点什么" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Message %@"
+          }
+        }
+      }
+    },
     "过期了" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4839,6 +5433,17 @@
         }
       }
     },
+    "还剩 %lld:%@，只能用一次" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld:%2$@ left. Works once."
+          }
+        }
+      }
+    },
     "还可以让它…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4901,6 +5506,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No messages yet"
+          }
+        }
+      }
+    },
+    "还没有来往。在下面打字，直接发给%@。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing yet. Type below to message %@ directly."
           }
         }
       }
@@ -4978,6 +5594,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not connected to your computer yet. You can add once connected."
+          }
+        }
+      }
+    },
+    "还没连过" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Never connected"
           }
         }
       }
@@ -5246,6 +5873,17 @@
         }
       }
     },
+    "连上电脑以后才能看到。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect to your computer to see these."
+          }
+        }
+      }
+    },
     "连不上电脑" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5506,6 +6144,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Teal"
+          }
+        }
+      }
+    },
+    "颜色没改成：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t change the color: %@"
           }
         }
       }

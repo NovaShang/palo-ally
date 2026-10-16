@@ -8,11 +8,12 @@ struct ModelRow: View {
 
     var body: some View {
         let value = store.modelLine
+        let shown = value.isEmpty ? String(localized: "默认") : value
         Button(action: open) {
             HStack(spacing: 6) {
                 Text("模型")
                 Spacer(minLength: 12)
-                Text(value.isEmpty ? "默认" : value).foregroundStyle(.secondary).lineLimit(1)
+                Text(shown).foregroundStyle(.secondary).lineLimit(1)
                 Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
             }
             .font(.callout)
@@ -22,6 +23,6 @@ struct ModelRow: View {
         }
         .buttonStyle(.plain)
         .task { try? await store.loadModels() }
-        .accessibilityLabel("模型：\(value.isEmpty ? "默认" : value)，点一下更换")
+        .accessibilityLabel(String(localized: "模型：\(shown)，点一下更换"))
     }
 }

@@ -24,18 +24,18 @@ struct PalAdoptCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ProposalHeader(symbol: "clock.arrow.circlepath", title: Copy.spaced("接管「\(proposal.displayTitle)」"),
+            ProposalHeader(symbol: "clock.arrow.circlepath", title: Copy.spaced(String(localized: "接管「\(proposal.displayTitle)」")),
                            dimmed: proposal.status == .discarded, state: state)
 
             if !proposal.cwd.isEmpty {
-                ProposalFact(name: "目录", value: proposal.shortCwd)
+                ProposalFact(name: String(localized: "目录"), value: proposal.shortCwd)
             }
 
             switch proposal.status {
             case .pending, .failed:
                 if proposal.status == .failed, let note = proposal.note, !note.isEmpty {
                     // The last 接管 didn't work: why, and it's still on offer.
-                    Text(Copy.spaced("没接成：\(note)"))
+                    Text(Copy.spaced(String(localized: "没接成：\(note)")))
                         .font(.caption)
                         .foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)
@@ -45,7 +45,7 @@ struct PalAdoptCard: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                ProposalButtons(no: "不用", yes: "接管", yesWorking: "接管中…", working: working,
+                ProposalButtons(no: String(localized: "不用"), yes: String(localized: "接管"), yesWorking: String(localized: "接管中…"), working: working,
                                 enabled: store.connection.isOnline, decide: decide)
                 if let error {
                     Text(error).font(.caption).foregroundStyle(.red)
@@ -73,8 +73,8 @@ struct PalAdoptCard: View {
     private var state: String? {
         switch proposal.status {
         case .pending, .failed, .unknown: nil
-        case .adopted: "已经接过来了"
-        case .discarded: "没接"
+        case .adopted: String(localized: "已经接过来了")
+        case .discarded: String(localized: "没接")
         }
     }
 
@@ -85,7 +85,7 @@ struct PalAdoptCard: View {
             do {
                 try await store.decideAdopt(proposal, action)
             } catch {
-                self.error = action == .create ? "没接成：\(Copy.error(error))" : "没发出去：\(Copy.error(error))"
+                self.error = action == .create ? String(localized: "没接成：\(Copy.error(error))") : String(localized: "没发出去：\(Copy.error(error))")
             }
             working = nil
         }

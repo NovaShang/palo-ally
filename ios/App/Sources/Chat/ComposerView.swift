@@ -118,8 +118,18 @@ struct ComposerView: View {
     /// The empty field, once it's being typed in: a Pal's page is a
     /// terminal of sorts, the assistant's a request.
     private var prompt: String {
-        guard let id = store.palID else { return "想让我做点什么？" }
-        return Copy.spaced("跟\(store.pal(id: id)?.displayName ?? "它")说点什么")
+        guard let id = store.palID else { return String(localized: "想让我做点什么？") }
+        let name = store.pal(id: id)?.displayName ?? String(localized: "它")
+        return Copy.spaced(String(localized: "跟\(name)说点什么"))
+    }
+
+    /// Where letting go would land, as the hold says it.
+    private var releaseHint: String {
+        switch voice.target {
+        case .send: String(localized: "松开 发送")
+        case .cancel: String(localized: "松开 取消")
+        default: String(localized: "松开 编辑")
+        }
     }
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !staged.isEmpty }
@@ -399,7 +409,7 @@ struct ComposerView: View {
                 Group {
                     if voiceStarted {
                         // Just where release lands; the orb is the level meter.
-                        Text(voice.target == .send ? "松开 发送" : "松开 \(voice.target == .cancel ? "取消" : "编辑")")
+                        Text(releaseHint)
                             .contentTransition(.opacity)
                             .foregroundStyle(voice.target == .send ? Color.primary : .secondary)
                             .transition(.scale(scale: 0.85).combined(with: .opacity))
@@ -410,7 +420,7 @@ struct ComposerView: View {
                             Text("按住说话，轻点打字")
                                 .foregroundStyle(pressing ? .secondary : .tertiary)
                                 .opacity(1 - Double(voice.presence))
-                            Text(voice.target == .send ? "松开 发送" : "松开 \(voice.target == .cancel ? "取消" : "编辑")")
+                            Text(releaseHint)
                                 .foregroundStyle(voice.target == .send ? Color.primary : .secondary)
                                 .opacity(Double(voice.presence))
                         }
@@ -447,7 +457,7 @@ struct ComposerView: View {
     private var dictationPreview: String {
         let t = voice.dictation.transcript
         if !t.isEmpty { return t }
-        return finishingDictation ? "识别中…" : "在听…再点一下麦克风结束"
+        return finishingDictation ? String(localized: "识别中…") : String(localized: "在听…再点一下麦克风结束")
     }
 
     /// Mic (always there, also while typing) and, when there's something to
@@ -493,7 +503,7 @@ struct ComposerView: View {
         }
         .buttonStyle(.plain)
         .disabled(finishingDictation || voice.isActive || voice.isArmed)
-        .accessibilityLabel(dictating ? "结束语音输入" : "语音输入")
+        .accessibilityLabel(dictating ? String(localized: "结束语音输入") : String(localized: "语音输入"))
     }
 
     // MARK: - Voice
@@ -649,7 +659,7 @@ struct ComposerView: View {
             let (_, final) = await voice.end()
             debugLog("[voice] final: \(final.count) characters")
             guard !final.isEmpty else {
-                voice.leave(.unheard(edit: target == .edit), words: voice.dictation.errorMessage ?? "没听清")
+                voice.leave(.unheard(edit: target == .edit), words: voice.dictation.errorMessage ?? String(localized: "没听清"))
                 return
             }
             land(target, final)
@@ -782,7 +792,7 @@ struct ComposerView: View {
         let room = Self.maxStaged - staged.count
         let prepared = raw.prefix(room).compactMap(ImagePrep.process)
         staged.append(contentsOf: prepared.map(Staged.image))
-        if prepared.count < min(raw.count, room) { voice.dictation.errorMessage = "有图片读不了，换一张试试" }
+        if prepared.count < min(raw.count, room) { voice.dictation.errorMessage = String(localized: "有图片读不了，换一张试试") }
     }
 
     /// Files from the Files app. Pictures among them go as images (so the
@@ -792,8 +802,8 @@ struct ComposerView: View {
         for url in urls.prefix(Self.maxStaged - staged.count) {
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { problem = "有文件读不了"; continue }
-            guard data.count <= Self.maxFileBytes else { problem = "文件太大（最多 100MB）"; continue }
+            guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { problem = String(localized: "有文件读不了"); continue }
+            guard data.count <= Self.maxFileBytes else { problem = String(localized: "文件太大（最多 100MB）"); continue }
             let type = UTType(filenameExtension: url.pathExtension)
             if type?.conforms(to: .image) == true, let img = ImagePrep.process(data) {
                 staged.append(.image(img))
