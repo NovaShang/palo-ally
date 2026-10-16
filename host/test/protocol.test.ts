@@ -96,6 +96,20 @@ describe("host ↔ app protocol", () => {
     (hub as any).onSchedule(hub.watches.add({ title: "晨报", instruction: "写晨报", at: ["07:30"] }, "user"));
     await hub.idle();
     await run("sync", {});
+    // 回到这里重来: back to just before one of the owner's messages, in its
+    // transcript as Claude Code wrote it; a client that was away hears of it
+    // on its next sync (a second sample).
+    const seqBefore = hub.chat.lastSeq;
+    const again = hub.userMessage("帮我订周六中午的餐厅", "app")!;
+    await hub.idle();
+    claude.transcript(paths.home, hub.status().sessionId!, [
+      { type: "user", uuid: "e1", parentUuid: null, timestamp: "2026-10-16T08:00:00Z", message: { role: "user", content: "你好" } },
+      { type: "assistant", uuid: "e2", parentUuid: "e1", timestamp: "2026-10-16T08:00:01Z", message: { id: "msg_e2", role: "assistant", content: [{ type: "text", text: "你好，我在。" }] } },
+      { type: "user", uuid: again.uuid, parentUuid: "e2", timestamp: "2026-10-16T08:01:00Z", message: { role: "user", content: again.text } },
+    ]);
+    expect((await run("chat.rewind", { messageId: again.id })).text).toBe("帮我订周六中午的餐厅");
+    methods["sync"] = [methods["sync"] as Sample, { params: { sinceSeq: seqBefore }, result: await call("sync", { sinceSeq: seqBefore }) }];
+    expect(((methods["sync"] as Sample[])[1]!.result as any).rewound[0]).toBe(again.id);
     await run("chat.history", { beforeSeq: 99, limit: 10 });
     const found = await run("chat.search", { query: "你好", limit: 5 });
     expect(found.messages.length).toBeGreaterThan(0);
@@ -242,6 +256,19 @@ describe("host ↔ app protocol", () => {
     hub.approvals.answer(palCard.id, true, "app");
     await waitFor(() => hub.pals.list().every((p) => p.status === "idle"));
     await run("pals.stop", { id: pal.id });
+    // 回到这里重来 in the Pal: whether its files can go back, and going back with them
+    claude.transcript(site, bgId, [
+      { type: "user", uuid: "p1", parentUuid: null, timestamp: "2026-10-12T11:00:00Z", message: { role: "user", content: "列表要能按日期排序" }, origin: { kind: "human" } },
+      { type: "assistant", uuid: "p2", parentUuid: "p1", timestamp: "2026-10-12T11:00:05Z", message: { id: "msg_01", role: "assistant", content: [{ type: "text", text: "加上了。" }] } },
+      { type: "file-history-snapshot", messageId: "p4", snapshot: { messageId: "p4", trackedFileBackups: {} } },
+      { type: "user", uuid: "p4", parentUuid: "p2", timestamp: "2026-10-12T11:02:00Z", message: { role: "user", content: "再把表头固定住" }, origin: { kind: "human" } },
+      { type: "assistant", uuid: "p5", parentUuid: "p4", timestamp: "2026-10-12T11:02:09Z", message: { id: "msg_02", role: "assistant", content: [{ type: "text", text: "固定好了。" }] } },
+    ]);
+    const check = { params: { id: pal.id, messageId: "p4", check: true }, result: await call("pals.rewind", { id: pal.id, messageId: "p4", check: true }) };
+    expect(check.result).toEqual({ canRestoreFiles: true });
+    const rewound = { params: { id: pal.id, messageId: "p4", restoreFiles: true }, result: await call("pals.rewind", { id: pal.id, messageId: "p4", restoreFiles: true }) };
+    expect(rewound.result).toEqual({ text: "再把表头固定住", filesRestored: true });
+    methods["pals.rewind"] = [check, rewound];
     const project = realpathSync(mkdtempSync(`${tmpdir()}/site-`));
     await hub.toolHandlers().pal_propose({ name: "文档", dir: project, duty: "你负责主人的文档：先把安装说明写完。", dailyUsd: 5 });
     const proposal = hub.chat.recent(1)[0]!.proposal!;
@@ -316,6 +343,8 @@ describe("host ↔ app protocol", () => {
         chat.find((m) => m.pal && m.from),
       ]),
     );
+    // the assistant's conversation gone back, and a Pal's
+    sampleEvents["chat.rewound"] = [events.find((e) => e.event === "chat.rewound" && !e.data.pal)!.data, events.find((e) => e.event === "chat.rewound" && e.data.pal)!.data];
     sampleEvents["chat.delta"] = [events.find((e) => e.event === "chat.delta" && !e.data.pal)!.data, events.find((e) => e.event === "chat.delta" && e.data.pal)!.data];
     // Cards: the assistant's own, a session's (with its source), a
     // session's that went back to the computer (with a note), and a Pal's.

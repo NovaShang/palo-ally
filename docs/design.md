@@ -52,7 +52,8 @@ relay/       不新写：复用 github.com/NovaShang/bento 的 relay/（bento-re
 - **探针**：独立短上下文 `query()`（便宜模型、`persistSession:false`、结构化输出），只在有 watch 到期时才跑；没到期的 tick 零调用。
 - **本地控制面**：`~/.paloally/run/host.sock`（unix socket，行分隔 JSON，同一套 RPC），CLI 子命令通过它和 daemon 说话。
 - **会话钩子**（docs/sessions-prd.md §6.3）：`~/.paloally/run/hooks.sock`。全局钩子跑 `~/.paloally/bin/cc-hook <事件名> # PaloAlly`（行尾的注释是 PaloAlly 条目的记号，卸载只删带它的）：主机没在跑（没有 socket）时直接退出；否则写一行 `{event, payload, env}`，主机立刻回 `{"ack":true}`，再回 `{"output": <钩子要打印的 JSON 或 null>}`。350 毫秒内没有 ack、连不上、出任何错，钩子都无输出退出。`PALOALLY_SESSION=1`（主机自己起的会话：主会话、探针、Pal）直接退出。
-- **Pal**（docs/pals-prd.md §7）：每个 Pal 一个 SDK `query()`（streaming input，`resume` 它的记录；Palo 新开的用 `sessionId` 指定 id），常驻不关，会话名就是列表里的名字（`--name`），没有 PaloAlly 的工具，系统提示末尾加一句它由 PaloAlly 托管。进程经 PaloAlly 小助手启动（`spawnClaudeCodeProcess`）：主机起小助手 → 小助手以 `responsibility_spawnattrs_setdisclaim` 再起一份自己 → 那一份起 claude，标准输入输出一路继承；fd 3 上报 claude 的 pid。环境用主人登录 shell 的（去掉会话变量）。确认和提问走 `canUseTool`，成了带 `source: {kind:"pal"}` 的卡片。别的会话发进来的话只在记录里，主机跟着记录读出来。意外退出后按 2/5/15/30/60 秒重试，10 分钟内失败超过 5 次就停下并说明原因；主机启动时把醒着的 Pal 逐个接回来（睡着的保持睡着）。睡下和叫醒（pals-prd §12）：空闲 20 分钟（没有在跑的一轮、没有没收下的话、没有等主人的卡片、没有没结束的工具或后台任务）的 Pal 睡下：进程正常关掉，记录留着、标成 `status:"asleep"`；醒着的超过 5 个时，最久没用的空闲那个先睡；在忙或在等主人的从不睡，6 个都忙就暂时超出。主人的话、`pals.wake`、答它的卡片、Palo 的 `pal_send` 都会先 resume 同一个会话再送话，叫醒期间来的话排队，醒了按顺序送进去。叫醒后第一轮的花费（result 的 `total_cost_usd` 减去上一次的累计）记成 `lastWakeUsd`。看门狗只看醒着的。名字（pals-prd §13）：跟着 Claude Code 给这个会话的标题走，每轮结束后和每次启动前用 `getSessionInfo` 读一次（只读记录的头尾），自定义标题变了就改名；读不到自定义标题时名字不动，除非它进程的登记项（`nameSource:"user"`）说它改了名。重名加「 2」。`pals.rename` 让 Claude Code 也改：跑着的用进程里的 `rename_session` 控制请求（跟 IDE 里改名一样），没进程的用 SDK 的 `renameSession` 写进记录。进程的会话名（别的会话 SendMessage 用的）启动时定，改名后下次启动才换；Palo 给 Pal 发话只用 `pal_send`（按 id、现在的名字或以前的名字找）。绝不两个进程写同一份记录：启动前查登记表和 `claude agents`，有别的进程拿着就不启动（主机上次留下的孤儿进程先停掉）；跑着时每 5 秒查一次，别处打开了就立刻让开。
+- **Pal**（docs/pals-prd.md §7）：每个 Pal 一个 SDK `query()`（streaming input，`resume` 它的记录；Palo 新开的用 `sessionId` 指定 id），常驻不关，会话名就是列表里的名字（`--name`），没有 PaloAlly 的工具，系统提示末尾加一句它由 PaloAlly 托管。进程经 PaloAlly 小助手启动（`spawnClaudeCodeProcess`）：主机起小助手 → 小助手以 `responsibility_spawnattrs_setdisclaim` 再起一份自己 → 那一份起 claude，标准输入输出一路继承；fd 3 上报 claude 的 pid。环境用主人登录 shell 的（去掉会话变量）。确认和提问走 `canUseTool`，成了带 `source: {kind:"pal"}` 的卡片。别的会话发进来的话只在记录里，主机跟着记录读出来。意外退出后按 2/5/15/30/60 秒重试，10 分钟内失败超过 5 次就停下并说明原因；主机启动时把醒着的 Pal 逐个接回来（睡着的保持睡着）。睡下和叫醒（pals-prd §12）：空闲 20 分钟（没有在跑的一轮、没有没收下的话、没有等主人的卡片、没有没结束的工具或后台任务）的 Pal 睡下：进程正常关掉，记录留着、标成 `status:"asleep"`；醒着的超过 5 个时，最久没用的空闲那个先睡；在忙或在等主人的从不睡，6 个都忙就暂时超出。主人的话、`pals.wake`、答它的卡片、Palo 的 `pal_send` 都会先 resume 同一个会话再送话，叫醒期间来的话排队，醒了按顺序送进去。叫醒后第一轮的花费（result 的 `total_cost_usd` 减去上一次的累计）记成 `lastWakeUsd`。看门狗只看醒着的。名字（pals-prd §13）：跟着 Claude Code 给这个会话的标题走，每轮结束后和每次启动前用 `getSessionInfo` 读一次（只读记录的头尾），自定义标题变了就改名；读不到自定义标题时名字不动，除非它进程的登记项（`nameSource:"user"`）说它改了名。重名加「 2」。`pals.rename` 让 Claude Code 也改：跑着的用进程里的 `rename_session` 控制请求（跟 IDE 里改名一样），没进程的用 SDK 的 `renameSession` 写进记录。进程的会话名（别的会话 SendMessage 用的）启动时定，改名后下次启动才换；Palo 给 Pal 发话只用 `pal_send`（按 id、现在的名字或以前的名字找）。绝不两个进程写同一份记录：启动前查登记表和 `claude agents`，有别的进程拿着就不启动（主机上次留下的孤儿进程先停掉）；跑着时每 5 秒查一次，别处打开了就立刻让开。Pal 开着 Claude Code 的文件快照（`enableFileCheckpointing`）。
+- **回到这里重来**（docs/rewind-prd.md，`rewind.ts`）：Palo 和 Pal 都分叉成新会话，原会话的记录不动。分叉点是主人那条消息在记录里的上一条（`parentUuid`，压缩边界跨过去用 `logicalParentUuid`）。分叉点在最近一次压缩之后：下次启动用 `resume` + `forkSession` + 指定新 `sessionId` + `resumeSessionAt`，Claude Code 到第一条消息才写新记录，在那之前「待分叉」记在 runtime.json / Pal 的记录（`rewind: {from, at, cut}`），每次启动照它分叉；在压缩之前：SDK 的 `forkSession` 立刻抄一份（新 uuid），之后照常 resume。Pal 恢复代码：先停掉它，在原会话上起一个不说话的进程调 `rewindFiles`，再分叉。Palo 撤回的消息在 chat.jsonl 标 `rewound`（占一个 seq，不再给客户端）；Pal 的对话在新记录出现前从原会话读到分叉点。Pal 以前的会话记在 `formerSessions`，不出现在「最近的对话」里。
 ## 3. 外壳给主 agent 的工具（in-process MCP server `paloally`）
 
 | 工具 | 作用 |
@@ -128,7 +129,8 @@ ChatMessage { seq:number; id:string; role:"user"|"assistant"|"system";
   /* kind "helper"：Palo 提议开 Pal（HelperProposal）；kind "pal_adopt"：Palo 提议接管一个退出了的对话
      （PalAdoptProposal）。状态变了，同一条消息（同 id、同 seq）再发一次 chat.message */;
   pal?:string /* 属于哪个 Pal 的对话（Pal.id）；没有 = Palo 的。Pal 的消息不进 Palo 的对话，seq = 毫秒时间 */;
-  from?:string /* Pal 对话里不是主人说的 user 消息：助理的名字（Palo 的话）或别的会话的名字 */ }
+  from?:string /* Pal 对话里不是主人说的 user 消息：助理的名字（Palo 的话）或别的会话的名字 */;
+  uuid?:string /* Palo 对话里主人的消息在 Claude Code 记录里的 uuid；有它才能「回到这里重来」（docs/rewind-prd.md） */ }
 HelperProposal { id /* helper.decide 的 proposalId */; name; cwd; duty; dailyUsd:number;
   status:"pending"|"created"|"discarded"|"expired"; sessionId? /* 开了以后 */; palId?; note? }
 PalAdoptProposal { id /* helper.decide 的 proposalId */; sessionId; cwd; title;
@@ -185,9 +187,10 @@ ModelOption { value; displayName; description; efforts:string[] }
 | method | params | result |
 |---|---|---|
 | `hello` | `{client:"ios"\|"mac"\|"cli", version}` | `{hostName, version, status}` |
-| `sync` | `{sinceSeq?:number}` | `{seq, messages, tasks, approvals, watches, artifacts, settings, status, streaming?}`（messages：sinceSeq 之后的，最多 500；无 sinceSeq 时最近 100。streaming：正在写的回复 `{id, text}`，text 是到目前为止的全文，替换客户端手里同 id 的内容，之后的 chat.delta 接着追加） |
+| `sync` | `{sinceSeq?:number}` | `{seq, messages, tasks, approvals, watches, artifacts, settings, status, streaming?, rewound?}`（rewound：sinceSeq 之后撤回的消息 id，客户端拿掉；messages：sinceSeq 之后的，最多 500；无 sinceSeq 时最近 100。streaming：正在写的回复 `{id, text}`，text 是到目前为止的全文，替换客户端手里同 id 的内容，之后的 chat.delta 接着追加） |
 | `chat.send` | `{text, clientMsgId?}` | `{id, seq}`（同一 clientMsgId 重发只执行一次，返回原来的） |
 | `chat.history` | `{beforeSeq, limit}` | `{messages}` |
+| `chat.rewind` | `{messageId}` | `{text}`（回到主人这条消息之前：这条和之后的撤回，文字给输入框；正在忙时报错「它还在忙，先停下再重来」。docs/rewind-prd.md） |
 | `commands.list` | `{}` | `{commands:SlashCommand[]}` |
 | `model.get` | `{}` | `{model, setting, effort, models:ModelOption[]}` |
 | `model.set` | `{model?:string\|null, effort?:string\|null}` | `{status}` |
@@ -229,9 +232,10 @@ ModelOption { value; displayName; description; efforts:string[] }
 | `pals.wake` | `{id}` | `{pal}`（睡着的 resume 同一个会话，起来了才返回；醒着的原样返回） |
 | `pals.rename` | `{id, name}` | `{pal}`（Claude Code 给这个会话的标题也改，终端、`/resume`、claude.ai 看到的一样；名字不能空、最多 40 个字、不能是助理的名字，别的 Pal 用着的加「 2」；不重启它） |
 | `pals.stop` | `{id}` | `{ok}`（结束当前这一轮，它开着的卡片按拒绝处理） |
+| `pals.rewind` | `{id, messageId, restoreFiles?}` / `{id, messageId, check: true}` | `{text, filesRestored}` / `{canRestoreFiles}`（Pal 回到主人这条消息之前，`restoreFiles` 时代码也回到那时；没有这条的文件快照报「这一步之前的代码没法恢复」，对话不动。docs/rewind-prd.md） |
 | `pals.recent` | `{folder?, limit?}` | `{sessions:RecentSession[]}`（最近 30 天里退出了的对话，最新的在前，默认也最多 50 个；不含正开着的、Pal、PaloAlly 自己的；folder 是路径（该目录及以下）或目录名） |
 
-**事件**（`RPC_EVENTS`）：`chat.message`（ChatMessage）、`chat.delta`（`{id, text}` 追加文本，最终以同 id 的 `chat.message` 收尾；轮次中断时外壳也会补发收尾）、`task.updated`（Task）、`approval.updated`（Approval）、`watch.updated`（`{watch}` 或 `{removed:id}`）、`artifact.updated`（Artifact）、`settings.updated`（Settings）、`status`（Status）、`commands.updated`（`{commands}`）、`ally.updated`（`{allies}`，整张列表）、`ally.entry`（`{entry}`，新的来往或状态变化）、`sessions.updated`（`{sessions}`，整张未接管会话的列表，变了就发）、`pals.updated`（同 `pals.list` 的结果，变了就发整张）。`chat.message` / `chat.delta` 带 `pal` 时属于那个 Pal 的对话（`chat.delta` 是 `{id, text, pal?}`）。会话和 Pal 的确认和提问走 `approval.updated` / `question.updated`，带 `source`。
+**事件**（`RPC_EVENTS`）：`chat.message`（ChatMessage）、`chat.delta`（`{id, text}` 追加文本，最终以同 id 的 `chat.message` 收尾；轮次中断时外壳也会补发收尾）、`chat.rewound`（`{id, ids, pal?}`：回到这里重来，`id` 那条和它之后的都拿掉，`ids` 是主机知道的那些；断线时错过的，`sync{sinceSeq}` 的 `rewound` 给出 id）、`task.updated`（Task）、`approval.updated`（Approval）、`watch.updated`（`{watch}` 或 `{removed:id}`）、`artifact.updated`（Artifact）、`settings.updated`（Settings）、`status`（Status）、`commands.updated`（`{commands}`）、`ally.updated`（`{allies}`，整张列表）、`ally.entry`（`{entry}`，新的来往或状态变化）、`sessions.updated`（`{sessions}`，整张未接管会话的列表，变了就发）、`pals.updated`（同 `pals.list` 的结果，变了就发整张）。`chat.message` / `chat.delta` 带 `pal` 时属于那个 Pal 的对话（`chat.delta` 是 `{id, text, pal?}`）。会话和 Pal 的确认和提问走 `approval.updated` / `question.updated`，带 `source`。
 
 Ally 的连接（别人的主机作为客户端连进来）不走上面这些：只接受 `ally.hello` / `ally.message` / `ally.receipt` / `ally.bye` 四种，其他一律断开（`docs/allies-prd.md` §7.3、§7.6）。第二版（§11.4、§11.5）：`ally.message` 带 `author`（没有或不认识的值当 "assistant"），`ally.hello` 带可选的 `trust`（发送方给对方的档位，对方存成 `theirTrust`；同一连接上后来的 hello 只更新称呼和档位）。
 

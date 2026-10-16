@@ -39,11 +39,12 @@
   - Pal 从现在起开 `enableFileCheckpointing`，只有之后的轮次能恢复；
   - 恢复时主机先停掉 Pal，用原会话起一个不说话的进程，调 `rewindFiles(这条的 uuid)`，关掉，再分叉；
   - 记录里没有这条的文件快照，或恢复失败：报「这一步之前的代码没法恢复」，对话不动。
+- **分叉点在最近一次压缩之前：**Claude Code 只从最近一次压缩往后接着跑，`resumeSessionAt` 找不到那条（报 No message found）。这时改用 SDK 的 `forkSession(原会话, {upToMessageId: 分叉点})` 立刻抄一份到新会话，直接 resume 它。抄出来的 uuid 是新的：Palo 的 chat.jsonl 跟着换，Pal 的页面重新读一次。
 - **2026-10-16 实测（haiku）：**
   - 我们给的 uuid 就是记录里那条的 uuid；
   - 分叉后消息的 uuid 不变，文件快照跟着分叉走；
   - 换一个进程照样能恢复文件；
-  - 分叉点之后压缩过也能回去（live test）。
+  - 压缩之前的点用 `forkSession` 抄一份，接着聊，模型只知道那之前的事（live test）。
 
 ### 4.2 消息和记录对上
 
@@ -81,7 +82,7 @@
 
 ## 5. 不做
 
-- 撤销对话以外的事。
+- 撤销对话以外的事。Claude Code 的自动记忆（memory 文件夹）也算对话以外，不撤销。
 - 带图片或附件的消息：重来时只有文字回到输入框。
 - 记录里对不上的老消息。
 
