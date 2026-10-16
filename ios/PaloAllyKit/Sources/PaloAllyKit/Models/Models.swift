@@ -764,18 +764,22 @@ public struct HostSettings: Codable, Sendable, Hashable {
     /// The assistant's color, which is also the app's theme color (an
     /// AppTheme preset key, e.g. "magenta"). Empty = not chosen yet.
     public var color: String
+    /// The language the host writes in: "zh", "en", or "" (follows what the
+    /// device said in hello). Hosts that predate it don't send it.
+    public var language: String
 
     enum CodingKeys: String, CodingKey {
-        case timezone, quietHours, probeIntervalMinutes, approvalTimeoutMinutes, wechatProactive, assistantName, color
+        case timezone, quietHours, probeIntervalMinutes, approvalTimeoutMinutes, wechatProactive, assistantName, color, language
     }
 
     public init(timezone: String = TimeZone.current.identifier, quietHours: QuietHours? = nil,
                 probeIntervalMinutes: Int = 15, approvalTimeoutMinutes: Int = 30,
-                wechatProactive: WechatProactive = .hint, assistantName: String = "", color: String = "") {
+                wechatProactive: WechatProactive = .hint, assistantName: String = "", color: String = "",
+                language: String = "") {
         self.timezone = timezone; self.quietHours = quietHours
         self.probeIntervalMinutes = probeIntervalMinutes; self.approvalTimeoutMinutes = approvalTimeoutMinutes
         self.wechatProactive = wechatProactive
-        self.assistantName = assistantName; self.color = color
+        self.assistantName = assistantName; self.color = color; self.language = language
     }
 
     public init(from decoder: Decoder) throws {
@@ -788,6 +792,7 @@ public struct HostSettings: Codable, Sendable, Hashable {
         wechatProactive = l.decode(WechatProactive.self, "wechatProactive", or: d.wechatProactive)
         assistantName = l.string("assistantName", or: "")
         color = l.string("color", or: "")
+        language = l.string("language", or: "")
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -801,6 +806,8 @@ public struct HostSettings: Codable, Sendable, Hashable {
         if wechatProactive != .unknown { try c.encode(wechatProactive, forKey: .wechatProactive) }
         try c.encode(assistantName, forKey: .assistantName)
         try c.encode(color, forKey: .color)
+        // Only once the host has said one: older hosts would not know the key.
+        if !language.isEmpty { try c.encode(language, forKey: .language) }
     }
 }
 
