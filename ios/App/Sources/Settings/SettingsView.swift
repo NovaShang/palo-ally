@@ -93,6 +93,10 @@ struct SettingsView: View {
                     } else {
                         // One computer (most people): the plain section, as before.
                         LabeledContent("电脑", value: store.hostName.isEmpty ? (model.pairedHost?.hostLabel ?? "—") : store.hostName)
+                        // Another computer's assistant beside this one (a pairing
+                        // link clicked on this device does the same).
+                        Button("添加另一台电脑") { model.startPairing(.add) }
+                            .tint(.primary)
                         Button("换一台电脑配对") { model.startPairing(.replace) }
                             .tint(.primary)
                         Button(unpairing ? "正在解除…" : "解除配对", role: .destructive) { confirmUnpair = true }
@@ -105,12 +109,6 @@ struct SettingsView: View {
                             } message: {
                                 Text("之后要重新扫码才能连回来。")
                             }
-                        Button {
-                            model.startPairing(.add)
-                        } label: {
-                            Text("添加另一台电脑").font(.footnote)
-                        }
-                        .tint(.secondary)
                     }
                 }
 
