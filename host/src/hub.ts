@@ -20,7 +20,7 @@ import { setSoulName } from "./home.ts";
 import { makeShellTools } from "./shellTools.ts";
 import { SuggestionStore } from "./suggestions.ts";
 import { TaskTracker } from "./tasks.ts";
-import type { Attachment, Channel, ChatMessage, Status, Task, Watch, ReplyTo } from "./types.ts";
+import type { Attachment, Channel, ChatMessage, PairedDevice, Status, Task, Watch, ReplyTo } from "./types.ts";
 import { MediaStore } from "./media.ts";
 import { BRIEF_TITLE, ensureMorningBrief } from "./brief.ts";
 import { HandoffTracker, claudeConfigDir, transcriptPath } from "./handoffs.ts";
@@ -32,7 +32,7 @@ import { type Usage, UsageLedger } from "./usage.ts";
 import { randomUUID } from "node:crypto";
 import { forkSession as sdkForkSession } from "@anthropic-ai/claude-agent-sdk";
 import { type ForkSession, REWIND_NOT_FOUND, beforeCompaction, chainTo, findEntry, forkedUuids, leafOf, matchOwnerEntry, readTranscript } from "./rewind.ts";
-import { appendJsonl } from "./util.ts";
+import { appendJsonl, readJson, writeJson } from "./util.ts";
 import { WatchStore } from "./watches.ts";
 import { Sessions, type SessionsDeps } from "./sessions.ts";
 import { PALO_NAME, Pals, type PalsDeps } from "./pals.ts";
@@ -103,6 +103,11 @@ export class Hub {
   private wechatQuestions = new Set<string>();
   // set by the daemon: drops a paired device (its relay pairing)
   onUnpairDevice?: (deviceId: string) => void;
+  /** The owner's paired devices, as the relay keeps them (set by the daemon when the relay is on). */
+  devices?: {
+    list: () => { deviceId: string; label: string; pairedAt: number; lastSeen?: number }[];
+    remove: (deviceId: string) => boolean;
+  };
   // set by the daemon: opens the relay's pairing window for one more of the
   // owner's devices (what `paloally pair` opens) and gives back its link
   openPairing?: (ttlSec: number) => Promise<{ code: string; ttl: number; link: string }>;
@@ -758,6 +763,58 @@ export class Hub {
 
   usage(): Usage {
     return this.ledger.today();
+  }
+
+  // ---------------- the owner's devices (docs/devices-prd.md) ----------------
+
+  /** What a device's app said in hello: its platform; and when it was last here. */
+  noteDevice(deviceId: string, client: unknown): void {
+    const meta = readJson<Record<string, { platform?: string; lastSeen?: number }>>(this.paths.deviceMeta, {});
+    const was = meta[deviceId] ?? {};
+    const platform = client === "ios" || client === "mac" ? client : was.platform;
+    meta[deviceId] = { ...(platform ? { platform } : {}), lastSeen: Date.now() };
+    writeJson(this.paths.deviceMeta, meta);
+  }
+
+  /** device.list: the devices paired with this computer, the asking one marked. */
+  listDevices(current?: string): PairedDevice[] {
+    const meta = readJson<Record<string, { platform?: string; lastSeen?: number }>>(this.paths.deviceMeta, {});
+    // Connected right now: relay clients are app_<stream>_<device id>.
+    const online = new Set([...this.clients.keys()].flatMap((id) => (id.startsWith("app_") ? [id.split("_").slice(2).join("_")] : [])));
+    return (this.devices?.list() ?? [])
+      .map((d): PairedDevice => {
+        const m = meta[d.deviceId] ?? {};
+        const seen = Math.max(d.lastSeen ?? 0, m.lastSeen ?? 0);
+        return {
+          deviceId: d.deviceId,
+          label: d.label,
+          ...(m.platform === "ios" || m.platform === "mac" ? { platform: m.platform as "ios" | "mac" } : {}),
+          pairedAt: d.pairedAt,
+          ...(seen ? { lastSeen: seen } : {}),
+          online: online.has(d.deviceId),
+          current: d.deviceId === current,
+        };
+      })
+      .sort((a, b) => Number(b.current) - Number(a.current) || (b.lastSeen ?? 0) - (a.lastSeen ?? 0));
+  }
+
+  /**
+   * device.remove: another of the owner's devices stops being paired (its
+   * connection closes, the relay forgets it). Never the asking device: that
+   * one leaves with device.unpair.
+   */
+  removeDevice(deviceId: string, by: { deviceId?: string; channel: string }): void {
+    if (!this.devices) throw new Error("这台电脑没开远程连接");
+    if (deviceId && deviceId === by.deviceId) throw new Error("这是你正在用的这台，要断开它请用「解除配对」");
+    const d = this.devices.list().find((x) => x.deviceId === deviceId);
+    if (!d) throw new Error("没有这台设备");
+    this.devices.remove(deviceId);
+    const meta = readJson<Record<string, unknown>>(this.paths.deviceMeta, {});
+    if (deviceId in meta) {
+      delete meta[deviceId];
+      writeJson(this.paths.deviceMeta, meta);
+    }
+    this.audit.log("device.removed", { deviceId, label: d.label, by: by.deviceId ?? by.channel });
   }
 
   // ---------------- clients ----------------

@@ -174,6 +174,8 @@ Artifact { id; title; type; mainFile; pinned:boolean; updatedAt;
 Settings { timezone; quietHours:{start:"HH:MM"; end:"HH:MM"}|null;
   maxProactivePerDay:number; probeIntervalMinutes:number; approvalTimeoutMinutes:number;
   wechatProactive:"off"|"hint"|"full" }
+PairedDevice { deviceId; label; platform?:"ios"|"mac" /* 那台设备的 App 在 hello 里说的 */; pairedAt:number;
+  lastSeen?:number; online:boolean /* 现在连着 */; current:boolean /* 就是发起调用的这台 */ }
 Status { online:boolean; busy:boolean; activity?:string /* 忙时在干嘛 */;
   model:string; effort?:string; sessionId?:string;
   wechat:"off"|"connected"|"expired"; version:string }
@@ -210,6 +212,8 @@ ModelOption { value; displayName; description; efforts:string[] }
 | `stop` | `{}` | `{status}`（harness 的 interrupt + stopTask；不留阻塞状态） |
 | `push.register` / `push.unregister` | `{token, env?}` / `{token}` | `{ok}` |
 | `device.unpair` | `{}` | `{ok}`（移除发起调用的这台设备） |
+| `device.list` | `{}` | `{devices:PairedDevice[]}`（这台电脑配对过的主人的设备，发起调用的这台在最前、`current: true`；只给主人自己的设备和本机命令行。docs/devices-prd.md） |
+| `device.remove` | `{deviceId}` | `{ok}`（断开另一台设备、让 relay 忘掉它，记审计 `device.removed`；不能是发起调用的这台（用 `device.unpair`）） |
 | `audit.tail` | `{limit}` | `{entries}` |
 | `ally.list` | `{}` | `{allies:AllyInfo[]}` |
 | `ally.invite` | `{}` | `{link, expiresAt}`（`paloally://ally?relay&daemon&code&hostkey&name&exp`，10 分钟，一次性；App 画成二维码） |

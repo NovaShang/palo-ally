@@ -27,7 +27,7 @@ export const RPC_METHODS = [
   "ally.list", "ally.invite", "ally.accept", "ally.remove", "ally.log", "ally.draft.decide", "ally.say", "ally.trust",
   "sessions.list", "sessions.history", "sessions.hooks", "helper.decide",
   "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop", "pals.recent", "pals.wake", "pals.rename", "pals.rewind",
-  "pair.invite",
+  "pair.invite", "device.list", "device.remove",
 ] as const;
 
 export const RPC_EVENTS = [
@@ -44,6 +44,8 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
   const p = req.params ?? {};
   switch (req.method) {
     case "hello":
+      // Which app this device is (the list of devices shows it).
+      if (ctx.deviceId) hub.noteDevice(ctx.deviceId, p.client);
       return { hostName: hub.config.hostName, version: hub.status().version, status: hub.status() };
     case "sync": {
       const since = typeof p.sinceSeq === "number" ? p.sinceSeq : undefined;
@@ -202,6 +204,15 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       // after replying: removing the device closes this very connection
       setTimeout(() => hub.onUnpairDevice?.(ctx.deviceId!), 100);
       return { ok: true };
+    // The owner's devices paired with this computer (docs/devices-prd.md):
+    // the owner's own apps and the local CLI only, never an Ally.
+    case "device.list":
+      ownerOnly(ctx);
+      return { devices: hub.listDevices(ctx.deviceId) };
+    case "device.remove":
+      ownerOnly(ctx);
+      hub.removeDevice(String(p.deviceId ?? ""), { deviceId: ctx.deviceId, channel: ctx.channel });
+      return { ok: true };
     case "audit.tail":
       return { entries: hub.audit.tail(Math.min(Number(p.limit ?? 50), 500)) };
     case "ally.list":
@@ -279,7 +290,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     // A link that pairs one more of the owner's devices (5 minutes, one
     // device): for the owner's own apps and the local CLI, never an Ally.
     case "pair.invite":
-      if (!ctx.local && !ctx.deviceId) throw new Error("只有主人自己的设备能添加新设备");
+      ownerOnly(ctx, "只有主人自己的设备能添加新设备");
       return await hub.pairInvite(ctx.channel);
     case "host.update":
       // check: only look. Otherwise stage the newest release and switch to it as
@@ -289,6 +300,12 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       if (ctx.local && admin && req.method) return await admin(req.method, p);
       throw new Error(`unknown method: ${req.method}`);
   }
+}
+
+// The owner's own paired devices and the local socket; an Ally's host never
+// reaches these methods, and anything else without a device is refused.
+function ownerOnly(ctx: RpcContext, why = "只有主人自己的设备能管理设备"): void {
+  if (!ctx.local && !ctx.deviceId) throw new Error(why);
 }
 
 // The media ids a chat.send or pals.send carries, as attachments (at most 10).

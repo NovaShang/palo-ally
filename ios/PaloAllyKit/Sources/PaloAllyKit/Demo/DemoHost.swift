@@ -61,6 +61,10 @@ public actor DemoHost {
     /// uploads still coming in, by upload id.
     var media: [String: DemoMedia] = [:]
     var uploads: [String: DemoMedia] = [:]
+    /// The owner's other devices paired with this computer (device.list);
+    /// the one asking is added from what its hello said.
+    var otherDevices: [PairedDevice] = DemoHost.demoDevices()
+    var helloClient = "ios"
     /// Asleep Pals being woken (§12), for words that come meanwhile to wait on.
     var palWakes: [String: Task<Void, Never>] = [:]
     /// Seeded with Pals: an accepted proposal opens a Pal, not a helper.
@@ -603,6 +607,7 @@ public actor DemoHost {
     private func dispatch(_ method: String, _ p: JSONValue) async throws -> JSONValue {
         switch method {
         case RPCMethod.hello:
+            if let c = p["client"]?.stringValue { helloClient = c }
             return ["hostName": .string(hostName), "version": .string(status.version), "status": try .from(status)]
         case RPCMethod.sync:
             let since = p["sinceSeq"]?.doubleValue.map { Int64($0) }
@@ -1021,6 +1026,7 @@ public actor DemoHost {
             return result
         default:
             if let r = try dispatchMedia(method, p) { return r }
+            if let r = try dispatchDevices(method, p) { return r }
             if !sessionsMode, let r = try await dispatchPals(method, p) { return r }
             throw DemoError(message: "unknown method \(method)")
         }

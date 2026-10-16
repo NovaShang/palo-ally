@@ -105,6 +105,10 @@ public enum RPCMethod {
     /// A link that pairs one more of the owner's devices with this computer
     /// (5 minutes, one device): for a later 添加设备.
     public static let pairInvite = "pair.invite"
+    /// The owner's devices paired with this computer, and taking one off
+    /// (docs/devices-prd.md); the owner's own apps only.
+    public static let deviceList = "device.list"
+    public static let deviceRemove = "device.remove"
 
     /// Every method the client knows. The contract test checks this equals
     /// the host's method set exactly.
@@ -113,7 +117,7 @@ public enum RPCMethod {
         approvalAnswer, questionAnswer, watchAdd, watchUpdate, watchRemove, artifactList, artifactRead, artifactPin,
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
-        suggestionsList, suggestionsDismiss, hostUpdate, pairInvite,
+        suggestionsList, suggestionsDismiss, hostUpdate, pairInvite, deviceList, deviceRemove,
     ] + allies + sessions + pals
 }
 

@@ -32,6 +32,7 @@ export class Paths {
   get usage() { return join(this.state, "usage.json"); }
   get metrics() { return join(this.state, "metrics.jsonl"); }
   get devices() { return join(this.state, "devices.json"); }
+  get deviceMeta() { return join(this.state, "device-meta.json"); }
   get pushTokens() { return join(this.state, "push-tokens.json"); }
   get wechat() { return join(this.state, "wechat.json"); }
   get media() { return join(this.state, "media"); }

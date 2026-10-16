@@ -210,6 +210,21 @@ export interface Artifact {
   files: { path: string; size: number }[];
 }
 
+/**
+ * One of the owner's devices paired with this computer (device.list,
+ * docs/devices-prd.md). `platform` is what the app said in hello (absent
+ * until it has connected since); `current` is the device asking.
+ */
+export interface PairedDevice {
+  deviceId: string;
+  label: string;
+  platform?: "ios" | "mac";
+  pairedAt: number;
+  lastSeen?: number; // ms; absent: never connected since pairing
+  online: boolean; // connected right now
+  current: boolean;
+}
+
 export interface Status {
   online: boolean;
   busy: boolean;

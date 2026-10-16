@@ -164,6 +164,16 @@ describe("host ↔ app protocol", () => {
     const invite = await run("pair.invite");
     expect(invite.link).toStartWith("paloally://pair?");
     expect(invite.expiresAt - Date.now()).toBeGreaterThan(290_000);
+    // The owner's devices (docs/devices-prd.md): this one (said hello as an
+    // iPhone), a Mac paired earlier; the Mac taken off from here.
+    const paired = [
+      { deviceId: "dev-x", label: "iPhone", pub: "", pairedAt: Date.parse("2026-10-01T09:00:00Z"), lastSeen: Date.now() },
+      { deviceId: "dev-mac", label: "书房的 Mac", pub: "", pairedAt: Date.parse("2026-10-02T09:00:00Z"), lastSeen: Date.parse("2026-10-15T20:00:00Z") },
+    ];
+    hub.devices = { list: () => paired, remove: (id) => paired.splice(paired.findIndex((d) => d.deviceId === id), 1).length > 0 };
+    const listed = await run("device.list");
+    expect(listed.devices.map((d: any) => [d.deviceId, d.current, d.platform ?? null])).toEqual([["dev-x", true, "ios"], ["dev-mac", false, null]]);
+    expect(await run("device.remove", { deviceId: "dev-mac" })).toEqual({ ok: true });
     // Allies: an invite, then this host scans the other's, a message in, a
     // draft out (with times), the level changed to 能对话, the owner's own
     // words both ways, and unpairing at the end.
