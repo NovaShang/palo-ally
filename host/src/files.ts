@@ -245,6 +245,10 @@ export class FileBrowser {
     const bases = scope.kind === "palo" ? [root, join(root, "artifacts")] : [root];
     const out: { text: string; path: string; size: number }[] = [];
     const seen = new Set<string>();
+    // The tree walks for names that aren't where the reply said: a few, and
+    // a second in all, so one message full of names can't keep the host busy.
+    let walks = 0;
+    const walkUntil = Date.now() + 1000;
     for (const raw of candidates.slice(0, 40)) {
       if (typeof raw !== "string") continue;
       const text = raw.slice(0, 1024);
@@ -260,7 +264,8 @@ export class FileBrowser {
           break;
         }
       }
-      if (!hit && !p.startsWith("/") && !p.startsWith("~") && !p.split("/").includes("..")) {
+      if (!hit && !p.startsWith("/") && !p.startsWith("~") && !p.split("/").includes("..") && walks < 8 && Date.now() < walkUntil) {
+        walks++;
         // A short walk: the name may sit deeper than the reply said.
         const want = p.replace(/^\.\/+/, "");
         const found = this.search(scope, want.split("/").pop()!, 20, { maxDirs: 600, ms: 300 }).matches.find(
