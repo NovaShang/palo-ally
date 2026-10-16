@@ -1,9 +1,39 @@
 # PaloAlly
 
+English · [中文](README.zh.md)
+
 PaloAlly turns the coding agent you already run (V1: Claude Code) into an always-on personal assistant: it stays running on your machine, finds you on your phone or WeChat when something matters, and remembers you. Your data and models stay on your own machine.
 
 - Product: [`docs/paloally-prd-v2.md`](docs/paloally-prd-v2.md)
 - Implementation design and wire protocol: [`docs/design.md`](docs/design.md)
+
+## What it is
+
+You talk to one assistant (named Palo by default) from the iPhone or Mac app, from WeChat, or from the terminal. It is a single long conversation. The assistant is Claude Code running as a service on your computer, with a small shell around it that adds the parts a phone needs: push notifications, approval and question cards you answer by tapping, a library of the files it made for you, goals it watches over time, and a morning brief.
+
+- **Goals.** Ask it to watch something (a flight price, a mailbox, a habit) and it registers a goal. A cheap probe checks it on a schedule and only interrupts you when something is worth your attention.
+- **Safety stays with Claude Code.** Claude Code decides what needs approval; when it asks, the question reaches your phone. Everything it does is written to an audit log.
+- **Cost.** It uses your own Claude login or API key (or a third-party Anthropic-compatible model). Daily budgets for the probe and the main conversation are in `config.json`.
+
+### Pals
+
+A Pal is a Claude Code session on your computer that PaloAlly hosts for you. Use one for a project that runs for days: you open it in the app and talk to it directly, see its output as it streams, and answer its approval and question cards on your phone. The assistant can start a Pal for a long project (you tap to confirm), send it work and read what it answers, and you can adopt an earlier Claude Code conversation as a Pal. Idle Pals sleep and wake when needed. "Hand back to the terminal" gives you a `claude --resume` line to continue it yourself. Design: [`docs/pals-prd.md`](docs/pals-prd.md).
+
+### Allies
+
+An Ally is another person's PaloAlly (or your own on another computer). You add each other by scanning a QR code; after that the two assistants can pass messages and arrange a time by comparing calendars. For each Ally you choose a level: the assistant either drafts every reply for you to send, or may answer on its own. Every message either way is kept in a log you can read. What an Ally sends is treated as a message, never as an instruction, and in that turn the assistant can only reply, read your calendar and search memory. Design: [`docs/allies-prd.md`](docs/allies-prd.md).
+
+### Privacy
+
+- The assistant, its memory, files and chat log live on your computer under `~/.paloally`. Model calls go to whichever Claude (or compatible) endpoint you configured.
+- The app and the host talk through a relay, end-to-end encrypted: the relay sees who connects, not what is said. Ally messages are encrypted the same way, host to host.
+- Push notifications carry a short text through Apple's push service; WeChat goes through Tencent's servers and is not end-to-end encrypted, so by default only a hint (not the content) is sent there, and secrets are never sent over WeChat.
+- Voice input in the app is transcribed through the relay with per-install limits.
+- The repo is public; nothing in it is tied to a person or a device.
+
+### Language
+
+The assistant speaks Chinese or English. The setting is `language` (`zh` or `en`). Until you set it, the first of your devices that connects reports its preferred language and the host uses that; failing that, the language of your Mac. Change it any time with `paloally settings language en` (or `zh`) or in the app. The assistant's replies, notices, push titles, the CLI and the starter files (`user.md`, `soul.md`) follow it; files you have edited are never rewritten. How it is built: [`docs/design.md`](docs/design.md), section 7.
 
 ## Pieces
 

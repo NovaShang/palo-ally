@@ -188,7 +188,7 @@ ModelOption { value; displayName; description; efforts:string[] }
 
 | method | params | result |
 |---|---|---|
-| `hello` | `{client:"ios"\|"mac"\|"cli", version}` | `{hostName, version, status}` |
+| `hello` | `{client:"ios"\|"mac"\|"cli", version, locale?}` | `{hostName, version, status, language}`（locale：App 的首选语言，BCP 47，如 `zh-Hans-CN`、`en-US`，可不带，旧 App 不带也行；主机的 `settings.language` 还没设时，第一个带 locale 的主人设备决定它（zh* 是 zh，其他是 en）；已经设了就不动。language：主机现在说的语言 `"zh"\|"en"`，加了这一项旧客户端照常解码） |
 | `sync` | `{sinceSeq?:number}` | `{seq, messages, tasks, approvals, watches, artifacts, settings, status, streaming?, rewound?}`（rewound：sinceSeq 之后撤回的消息 id，客户端拿掉；messages：sinceSeq 之后的，最多 500；无 sinceSeq 时最近 100。streaming：正在写的回复 `{id, text}`，text 是到目前为止的全文，替换客户端手里同 id 的内容，之后的 chat.delta 接着追加） |
 | `chat.send` | `{text, clientMsgId?, attachments?, replyTo?}` | `{id, seq}`（同一 clientMsgId 重发只执行一次，返回原来的；attachments 是 `media.upload` / `media.uploadChunk` 给的 id，最多 10 个） |
 | `chat.history` | `{beforeSeq, limit}` | `{messages}` |
@@ -251,3 +251,24 @@ Ally 的连接（别人的主机作为客户端连进来）不走上面这些：
 - 手机推送走 relay：APNs 密钥属于 App 开发者，只放在 relay 的 Worker secrets 里（别人的主机不可能有它）。主机把 App 注册的推送 token 连同提示文字，经已认证的 daemon socket 发 `push` 控制消息，relay 校验「这台主机在此配对过设备」、按主机限频（10/分钟、60/小时）后代发 APNs，回 `push_result`（见 bento `docs/relay-protocol.md`）。推送内容只放提示，正文进 App 后再经 E2E 取；以后可加 Notification Service Extension 做端到端加密的推送正文。`config.apns` 配了密钥的主机（开发者自用）在 relay 推不了时（掉线、relay 版本旧、未配置）回退为主机直推。
 - 免打扰时段内的非 urgent 主动消息不推送，只进主对话；超过 `maxProactivePerDay` 同理。
 - host 掉线：启动时若距上次心跳 > 2×tick，主对话发「我掉线过」通知，并对错过的定时 watch 补跑一次。
+
+## 7. 语言（中文 / 英文）
+
+主机面向主人的每一句话都有中文和英文两份，一台主机同一时间说一种话，就是主人的语言。
+
+**选哪种。**`settings.language`：`"zh"`、`"en"` 或 `""`（还没选）。
+1. 设了就用它。`paloally settings language en|zh` 或 App 经 `settings.update` 改，改完立刻生效，`settings.updated` 事件照常发。
+2. 没设：主人的设备在 `hello` 里带 `locale`（`parseLocale`：以 zh 开头是 zh，其他是 en），第一个带的写进 `settings.language`，之后不再被别的设备改。只认 App 通道，本地 CLI 的 hello 不算。
+3. 还没有设备报告过：用 Mac 的首选语言（`defaults read -g AppleLanguages`，`systemLanguage()`），没有就 en。这时 `settings.language` 保持 `""`，等第一个设备来定。环境变量 `PALOALLY_LANG` 可以顶掉第 3 步，测试用。
+`paloally` 命令行是单独的进程，启动时按同样的顺序读配置选语言。
+
+**怎么做。**`host/src/i18n/`：
+- `index.ts`：`t(key, params)`、`tIn(lang, key, params)`、`setLang` / `getLang`、`parseLocale`、`systemLanguage`。占位符写 `{name}`。语言是进程级的一个值，Hub 启动和 `settings.language` 变化时设置；常量不能在 import 时算好，要写成函数或 getter。
+- `zh/<area>.ts` 是键的来源（`as const`），`en/<area>.ts` 的类型是 `Record<keyof typeof zhArea, string>`，缺一句英文 `tsc` 就过不了。区域：`copy`（活动行、聊天句、卡片、Ally 回合）、`config`、`hub`（hub / rpc / 工具返回 / 推送 / 微信提示 / 探针与晨报的提示词）、`allies`、`pals`（Pal、会话、转交、回到这里重来）、`cli`（命令行、setup、update、service、power 等）。键用区域前缀，互不冲突。
+- `test/i18n.test.ts` 遍历两本字典：键一一对应、占位符一致、英文里没有汉字。
+
+**行为提示词。**`home.ts` 的 `BEHAVIORS.zh` / `BEHAVIORS.en` 是同一份规则的两种写法（英文版是主版本，模型对英文指令最稳）；`behaviorPrompt(paths, lang)` 在最前面加一行 `Reply in the owner's language: zh (Chinese, 中文)` 或 `... en (English)`。「好的，我来办」这类回应范例只在 zh 版里。`user.md` 里的称呼认「称呼 / 名字 / 姓名 / Name / Call me」。
+
+**核心文件。**`scaffoldHome(paths, lang)` 只创建缺的文件，绝不覆盖。主机的语言后来定下来时，`localizeDefaultHome` 把仍然和出厂内容一模一样的 `CLAUDE.md` / `user.md` / `soul.md` 换成新语言；改过的不动。
+
+**不翻译的。**发给其他主机的 Ally 协议（结构和字段）不变；`[来自微信]`、`[文件]`、`[图片]`、`[探针]`、`[定时]` 这些给模型认的标记保持原样；给模型看的 MCP 工具说明（`harness/claude.ts`）、日志、审计类型、代码注释保持中文或英文原样。Ally 来话里主机生成的文字（回执、备注、解除通知）在收的这台主机上按它主人的语言生成。
