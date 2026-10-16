@@ -3,9 +3,12 @@ import SwiftUI
 
 /// The list (pals-prd §3): the assistant on top; Pals (the ones PaloAlly
 /// hosts, then the computer's other live Claude Code sessions, dimmer, with
-/// 接管, then 最近的对话 for the ones that ended); Allies, with 添加. Each row says on its right how many things wait
-/// on the owner there. Phones: one step back from a conversation, like
-/// Messages; iPads and the Mac: the sidebar.
+/// 接管, then 最近的对话 for the ones that ended); Allies, with 添加; and
+/// last, quietly, 电脑与设备 (docs/devices-prd.md). Each row says on its
+/// right how many things wait on the owner there. With several computers
+/// paired, the assistant's name on the first row switches between them.
+/// Phones: one step back from a conversation, like Messages; iPads and the
+/// Mac: the sidebar.
 struct ConversationList: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
@@ -75,6 +78,13 @@ struct ConversationList: View {
                     }
                 }
             }
+
+            // The computers and the devices paired with them: quiet, last.
+            Section {
+                DevicesListRow()
+                    .tag(AppModel.Conversation.devices)
+                    .accessibilityIdentifier("row-devices")
+            }
         }
         // The Mac's sidebar has no title of its own; phones and iPads name the app.
         .navigationTitle(Platform.barInWindowToolbar ? "" : "PaloAlly")
@@ -132,9 +142,13 @@ private struct PaloRow: View {
                 .frame(width: 44, height: 44)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(store.assistantName.isEmpty ? "Palo" : store.assistantName)
-                        .font(.body.weight(.semibold))
-                        .lineLimit(1)
+                    if model.hasSeveralHosts {
+                        AssistantSwitcher(name: name)
+                    } else {
+                        Text(name)
+                            .font(.body.weight(.semibold))
+                            .lineLimit(1)
+                    }
                     Spacer(minLength: 4)
                     if let ts = lastMessage?.ts, ts > 0 {
                         Text(Copy.relative(ts))
@@ -154,8 +168,11 @@ private struct PaloRow: View {
             }
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
+        // Several computers: the switcher in it is a control of its own.
+        .accessibilityElement(children: model.hasSeveralHosts ? .contain : .combine)
     }
+
+    private var name: String { store.assistantName.isEmpty ? "Palo" : store.assistantName }
 
     private var lastMessage: ChatMessage? {
         store.messages.last { $0.seq > 0 && $0.kind != .approval }
@@ -177,6 +194,84 @@ private struct PaloRow: View {
     private var waiting: Int {
         store.pendingApprovals.count + store.pendingQuestions.count + store.pendingAllyDrafts.count
             + store.pendingProposalCount + store.tasks.filter { $0.status == .needsInput }.count
+    }
+}
+
+/// Several computers paired: the assistant's name with a ⌄, a system menu
+/// of every assistant (the current one ticked, a dot on one with something
+/// new or waiting) and 电脑与设备… (docs/devices-prd.md §2).
+private struct AssistantSwitcher: View {
+    @Environment(AppModel.self) private var model
+    let name: String
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Menu {
+                ForEach(model.hostIDs, id: \.self) { id in
+                    Button {
+                        withAnimation(.snappy) { model.switchTo(id) }
+                    } label: {
+                        let label = model.assistantLabel(id)
+                        let waiting = model.pendingCount(id)
+                        let unread = model.unreadCount(id)
+                        if id == model.activeHostID {
+                            Label(label, systemImage: "checkmark")
+                        } else if waiting > 0 || unread > 0 {
+                            // A small dot, and what it is under the name.
+                            Text(label)
+                            Text(waiting > 0 ? "\(waiting) 件等你" : "有新消息")
+                            Image(systemName: "circlebadge.fill")
+                        } else {
+                            Text(label)
+                        }
+                    }
+                    .accessibilityIdentifier("switch-\(id)")
+                }
+                Divider()
+                Button("电脑与设备…", systemImage: "desktopcomputer") { model.open(.devices) }
+            } label: {
+                if Platform.isMac {
+                    // The Mac draws a menu's label as a button's title, and
+                    // its own ⌄ after it (menuIndicator).
+                    Text(name).font(.body.weight(.semibold))
+                } else {
+                    HStack(spacing: 3) {
+                        Text(name).font(.body.weight(.semibold))
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .foregroundStyle(Color.primary)
+                    .contentShape(.rect)
+                }
+            }
+            .menuIndicator(Platform.isMac ? .visible : .hidden)
+            .buttonStyle(.borderless)
+            .tint(.primary)
+            .fixedSize()
+            .accessibilityIdentifier("assistant-switcher")
+            .accessibilityLabel("\(name)，切换助理")
+            // Something new or waiting on another assistant.
+            if model.othersNeedAttention {
+                Circle().fill(.orange).frame(width: 6, height: 6).accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+/// 电脑与设备: the last row, quiet (secondary), like 最近的对话.
+private struct DevicesListRow: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "desktopcomputer")
+                .font(.system(size: 17))
+                .foregroundStyle(.secondary)
+                .frame(width: 40)
+                .accessibilityHidden(true)
+            Text("电脑与设备")
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

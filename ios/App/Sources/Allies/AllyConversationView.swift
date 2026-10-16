@@ -98,9 +98,7 @@ struct AllyConversationView: View {
         .navigationTitle(ally.displayName)
         .navigationSubtitle(Copy.allyPresence(ally))
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { menu(ally) }
-        }
+        .modifier(BarMenu { menu(ally) })
         // The Mac: to the window's top, its name and menu floating (MacPageStrip).
         .macPageTop(ally.displayName, subtitle: Copy.allyPresence(ally), trailing: AnyView(menu(ally)))
         .refreshable { _ = try? await store.loadAllyLog(id: allyID) }

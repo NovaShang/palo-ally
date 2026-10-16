@@ -53,9 +53,7 @@ private struct PalConversation: View {
         ChatView(bottomPanel: bottom, pageTop: .init(subtitle: subtitle, dot: waking ? .green : pal.flatMap { Copy.palStatusColor($0.status) },
                                                      menu: AnyView(menu)))
             .navigationSubtitle(subtitle)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { menu }
-            }
+            .modifier(BarMenu { menu })
             .onChange(of: store.pal(id: palID), initial: true) { _, p in if let p { last = p } }
             .animation(.snappy, value: panel)
             .palRename($renaming)

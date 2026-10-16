@@ -121,6 +121,9 @@ final class AppModel {
         case recent
         /// One of the computer's sessions that isn't a Pal, read only (§14).
         case session(String)
+        /// 电脑与设备 (docs/devices-prd.md): the paired computers, and the
+        /// devices paired with the current one.
+        case devices
     }
     /// The conversation picked in the list. Phones: nil once back on the list.
     var selection: Conversation? = .palo {
@@ -256,7 +259,6 @@ final class AppModel {
 
     private func resetManagement() {
         showSettings = false
-        showHostList = false
         openTaskID = nil
     }
 
@@ -361,7 +363,6 @@ final class AppModel {
 
     var assistantTab: AssistantTab = .watches // 目标 opens first
     var showSettings = false
-    var showHostList = false
     /// How much room the title bar's orb takes (kept by OrbPresenceTracking).
     var orbPresence: OrbPresence = .rest
     /// The model / thinking-depth picker (opened from management).
@@ -463,7 +464,7 @@ final class AppModel {
         case "artifact": openArtifact(UserDefaults.standard.string(forKey: "demoArtifact") ?? "ar1")
         case "assistant", "switcher": openManagement()
         case "settings": openSettings()
-        case "hosts": openSettings(); showHostList = true
+        case "hosts", "devices": open(.devices)
         case "pairing": if mode != .unpaired { startPairing(.replace) }
         case "identity": openManagement(); showIdentityEditor = true
         case "list", "allies", "sessions", "pals": showList()
@@ -479,8 +480,14 @@ final class AppModel {
             }
         case "allyInvite": showList(); showAllyInvite = true
         case "allyAccept": allyInvite = PendingAllyInvite(link: Self.demoAllyInviteLink())
-        case "pal", "session":
-            let id = UserDefaults.standard.string(forKey: "demoPal") ?? UserDefaults.standard.string(forKey: "demoSession") ?? "pal-site"
+        // `-demoSession <id>`: one of the computer's sessions, read only (default the first).
+        case "session":
+            Task { @MainActor in
+                for _ in 0..<40 where store?.otherSessions.isEmpty ?? true { try? await Task.sleep(for: .milliseconds(100)) }
+                if let id = UserDefaults.standard.string(forKey: "demoSession") ?? store?.otherSessions.first?.id { openSession(id) }
+            }
+        case "pal":
+            let id = UserDefaults.standard.string(forKey: "demoPal") ?? "pal-site"
             Task { @MainActor in
                 // Once the list has come in.
                 for _ in 0..<40 where store?.pal(id: id) == nil { try? await Task.sleep(for: .milliseconds(100)) }
@@ -543,8 +550,17 @@ final class AppModel {
 
     // MARK: assistants
 
-    /// More than one assistant: the title becomes a switcher.
+    /// More than one assistant: the list's first row switches between them.
     var hasSeveralHosts: Bool { hostIDs.count > 1 }
+
+    /// 「Palo（家里的 Mac）」: an assistant by its name and its computer's.
+    func assistantLabel(_ id: String) -> String {
+        let name = stores[id]?.assistantName.trimmingCharacters(in: .whitespaces) ?? ""
+        return "\(name.isEmpty ? "Palo" : name)（\(displayName(id))）"
+    }
+
+    /// The computer's assistant is there now, as the owner is shown it.
+    func isOnline(_ id: String) -> Bool { stores[id]?.displayedConnection.isOnline ?? false }
 
     func displayName(_ id: String) -> String {
         if let n = meta.names[id], !n.isEmpty { return n }
@@ -626,14 +642,6 @@ final class AppModel {
         hostIDs.contains { $0 != activeHostID && (unreadCount($0) > 0 || pendingCount($0) > 0) }
     }
 
-    /// Switcher order: assistants waiting on an approval first, then the owner's order.
-    var switcherOrder: [String] {
-        hostIDs.enumerated().sorted { a, b in
-            let (pa, pb) = (pendingCount(a.element) > 0, pendingCount(b.element) > 0)
-            return pa != pb ? pa : a.offset < b.offset
-        }.map(\.element)
-    }
-
     /// The owner has seen everything on the current assistant up to now.
     func markSeen() {
         guard let id = activeHostID, let s = stores[id], s.hasSynced, meta.lastSeen[id] != s.lastSeq else { return }
@@ -647,11 +655,6 @@ final class AppModel {
         activate(id)
         selection = .palo
         compactColumn = .detail
-    }
-
-    func moveHosts(from source: IndexSet, to destination: Int) {
-        hostIDs.move(fromOffsets: source, toOffset: destination)
-        if mode == .paired { try? PairedHostList.save(hostIDs.compactMap { hosts[$0] }, to: secrets) }
     }
 
     private func activate(_ id: String) {

@@ -60,10 +60,10 @@ struct MacPageStrip: View {
             }
         }
         .tint(.primary) // chrome stays neutral; the theme color is for 发送
+        // Compact, like the orb's strip: the system's scroll edge ends at its bottom.
         .padding(.horizontal, 14)
-        .padding(.top, 4)
-        .padding(.bottom, 6)
-        .frame(maxWidth: .infinity, minHeight: 44)
+        .padding(.bottom, 4)
+        .frame(maxWidth: .infinity, minHeight: 34)
     }
 }
 
@@ -144,6 +144,20 @@ struct PageMenu<Content: View>: View {
             }
             // Chrome stays neutral; the theme color is for 发送.
             .tint(.primary)
+        }
+    }
+}
+
+/// Phones and iPads: the page's menu in the navigation bar. The Mac has it in
+/// the page's strip, and no toolbar at all.
+struct BarMenu<Item: View>: ViewModifier {
+    @ViewBuilder let item: () -> Item
+
+    func body(content: Content) -> some View {
+        if Platform.barInWindowToolbar {
+            content
+        } else {
+            content.toolbar { ToolbarItem(placement: .topBarTrailing, content: item) }
         }
     }
 }

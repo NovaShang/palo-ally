@@ -11,8 +11,6 @@ struct SettingsView: View {
     @State private var quietEnd = WatchEditor.date(hour: 8, minute: 0)
     @State private var loaded = false
     @State private var error: String?
-    @State private var confirmUnpair = false
-    @State private var unpairing = false
     @State private var hostUpdate: String? // the last 检查更新 answer, shown under the host version
     @State private var checkingUpdate = false
     /// Pending quiet-hours save; DatePickers fire on every tick of the wheel.
@@ -21,7 +19,6 @@ struct SettingsView: View {
     @AppStorage("asr_auto_context") private var voiceUsesContext = true
     @AppStorage("asr_vocab") private var voiceVocab = ""
     var body: some View {
-        @Bindable var model = model
         ScrollViewReader { proxy in
             Form {
                 Section {
@@ -74,44 +71,6 @@ struct SettingsView: View {
                     Section { Text(error).foregroundStyle(.red) }
                 }
 
-                Section("连接") {
-                    LabeledContent("状态", value: Copy.connection(store.displayedConnection))
-                    if model.mode == .demo {
-                        LabeledContent("电脑", value: "演示")
-                        if model.hasSeveralHosts {
-                            NavigationLink { HostsView() } label: {
-                                LabeledContent("我的助理", value: "\(model.hostIDs.count) 个")
-                            }
-                        }
-                        Button("退出演示，去配对") { model.exitDemo() }
-                            .tint(.primary)
-                    } else if model.hasSeveralHosts {
-                        LabeledContent("电脑", value: model.displayName(model.activeHostID ?? ""))
-                        NavigationLink { HostsView() } label: {
-                            LabeledContent("我的助理", value: "\(model.hostIDs.count) 个")
-                        }
-                    } else {
-                        // One computer (most people): the plain section, as before.
-                        LabeledContent("电脑", value: store.hostName.isEmpty ? (model.pairedHost?.hostLabel ?? "—") : store.hostName)
-                        // Another computer's assistant beside this one (a pairing
-                        // link clicked on this device does the same).
-                        Button("添加另一台电脑") { model.startPairing(.add) }
-                            .tint(.primary)
-                        Button("换一台电脑配对") { model.startPairing(.replace) }
-                            .tint(.primary)
-                        Button(unpairing ? "正在解除…" : "解除配对", role: .destructive) { confirmUnpair = true }
-                            .disabled(unpairing)
-                            .confirmationDialog("解除和这台电脑的配对？", isPresented: $confirmUnpair, titleVisibility: .visible) {
-                                Button("解除配对", role: .destructive) {
-                                    unpairing = true
-                                    Task { await model.unpair() }
-                                }
-                            } message: {
-                                Text("之后要重新扫码才能连回来。")
-                            }
-                    }
-                }
-
                 Section {
                     LabeledContent("版本", value: model.buildStamp)
                     LabeledContent("设备编号", value: "\(VoiceInstallID.short)…")
@@ -152,7 +111,6 @@ struct SettingsView: View {
         }
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(isPresented: $model.showHostList) { HostsView() }
         .onAppear(perform: prefill)
         .onChange(of: store.settings) { prefill() }
         .onChange(of: quietOn) { if loaded { quietSave?.cancel(); push(["quietHours": quietValue]) } }

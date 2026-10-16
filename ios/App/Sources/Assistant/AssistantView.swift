@@ -26,8 +26,6 @@ struct AssistantView: View {
                     .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6))
             }
 
-            HostsSection()
-
             Section {
                 Picker("分类", selection: $model.assistantTab) {
                     ForEach(AssistantTab.allCases, id: \.self) { tab in

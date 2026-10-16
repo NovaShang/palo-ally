@@ -278,6 +278,8 @@ private struct ConversationDetail: View {
                     RecentConversationsPage()
                 case .session(let id):
                     SessionPage(sessionID: id).id("session-\(id)")
+                case .devices:
+                    DevicesPage()
                 }
             }
             .modifier(InContentNavigationBar())
