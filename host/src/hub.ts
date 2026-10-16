@@ -37,6 +37,7 @@ import { appendJsonl, readJson, writeJson } from "./util.ts";
 import { WatchStore } from "./watches.ts";
 import { Sessions, type SessionsDeps } from "./sessions.ts";
 import { PALO_NAME, Pals, type PalsDeps } from "./pals.ts";
+import { FileBrowser } from "./files.ts";
 
 export type { ClientConn, WechatChannel, WechatReplyTarget } from "./channels/types.ts";
 export { timing } from "./conversation.ts";
@@ -88,6 +89,8 @@ export class Hub {
   readonly allies: Allies;
   readonly sessions: Sessions;
   readonly pals: Pals;
+  /** Files on the computer, read-only (docs/files-prd.md). */
+  readonly files: FileBrowser;
   readonly stallWatch: StallWatch;
   private compactTimer: ReturnType<typeof setInterval> | null = null;
   private readonly info: HarnessInfo;
@@ -123,6 +126,7 @@ export class Hub {
     this.ledger = new UsageLedger(this.paths.usage, () => this.config.settings.timezone);
 
     this.audit = new Audit(this.paths.audit);
+    this.files = new FileBrowser({ paths: this.paths, audit: this.audit, palCwd: (id) => this.pals?.list().find((p) => p.id === id)?.cwd });
     this.chat = new ChatLog(this.paths.chat, this.bus);
     this.tasks = new TaskTracker(this.paths.tasks, this.paths.taskActivity, this.bus, (t, k) => this.proactive.onTaskTransition(t, k));
     this.watches = new WatchStore(this.paths.watches, this.bus);

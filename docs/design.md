@@ -33,6 +33,7 @@ host/        桌面 host = 一个 CLI 程序（Bun + TypeScript），daemon + on
     ccCli.ts            claude 命令行（agents --json、stop），用主人登录 shell 的环境
     ccSpend.ts          一个会话每天花了多少（从对话记录里的 usage 算）
     away.ts             主人在不在电脑前（锁屏或键鼠空闲 3 分钟）
+    files.ts            电脑上的文件，只读（docs/files-prd.md）：Pal 的项目目录、助理的 home、主人打开过的文件夹；列目录、分块读、搜文件名、把回复里的路径解析成文件
     channels/           local（unix socket）、relay（E2E + 经 relay 推送）、allyLink（作为客户端连别人的主机）、wechat（iLink）、apns（直推回退）
     proto/              线协议：帧、E2E 握手与封装、RPC 类型、主机之间的 ally.* 消息
   helper/               PaloAlly 小助手（PaloAlly Helper.app）：Swift 源码 + build.sh（构建并用 Developer ID 签名；签好的 app 不进仓库）
@@ -80,6 +81,7 @@ relay/       不新写：复用 github.com/NovaShang/bento 的 relay/（bento-re
 - 停下：harness 的 `interrupt()` + `stopTask()`；卡死的轮次直接结束、换新进程（resume 同一会话），不留阻塞状态。
 - 探针：`permissionMode: "auto"` + `permissionPrompts: "none"`，只加载读类工具（为了上下文短，不是安全名单）。
 - 审计：工具调用以 harness 的会话记录为准；外壳只记自己的事件（确认决定、推送、重启、Ally 那一轮被拒的工具）。
+- 电脑上的文件（`files.*`，docs/files-prd.md）：只读，只给主人自己的设备和本机命令行（同 `device.list`）；Ally 的连接只收四种 `ally.*` 消息，到不了这里。范围（`scope`）：`{kind:"pal",id}` 是这个 Pal 的工作目录，`{kind:"palo"}` 是助理的 home（含 artifacts），`{kind:"folder",id}` 是主人打开过的文件夹（`state/folders.json`）。每个路径（相对范围根、绝对或 `~/`）先 `realpath`（跟随软链接），结果必须在范围根（也是 realpath）之内，`..`、指向外面的软链接、不存在的一律报同一句「找不到」；`~/.paloally` 里除了助理的 home 以外，任何范围都看不到（列表里不出现，读、搜都不行）。列目录默认隐藏 `.git`、`node_modules`、`.build`、`DerivedData`、`.DS_Store`（`showHidden` 才给）；搜索不进这些和其他机器生成的大目录，也不顺着软链接往下走。超过 5 MB 的文件只给大小（`tooLarge`），不读内容。每次读（offset 0 那一块）记审计 `files.read {scope, path, size, by}`；加、移除文件夹记 `files.folder.added` / `files.folder.removed`。加文件夹不能是 `/`、个人文件夹本身、`~/.paloally` 或它里面的。
 
 ## 5. 线协议（host ↔ 客户端）
 
@@ -180,6 +182,9 @@ Status { online:boolean; busy:boolean; activity?:string /* 忙时在干嘛 */;
   model:string; effort?:string; sessionId?:string;
   wechat:"off"|"connected"|"expired"; version:string }
 MemoryFile { path; scope:"core"|"auto"; size; updatedAt }
+FileScope = {kind:"pal"; id /* Pal.id */} | {kind:"palo"} | {kind:"folder"; id /* OwnerFolder.id */}
+FileEntry { name; kind:"file"|"dir"; size /* 文件夹是 0 */; mtime:number /*ms*/ }
+OwnerFolder { id /* fld_… */; path /* 绝对、realpath */; name; addedAt:number /*ms*/ }
 SlashCommand { name; description; argumentHint? }
 ModelOption { value; displayName; description; efforts:string[] }
 ```
@@ -214,6 +219,14 @@ ModelOption { value; displayName; description; efforts:string[] }
 | `device.unpair` | `{}` | `{ok}`（移除发起调用的这台设备） |
 | `device.list` | `{}` | `{devices:PairedDevice[]}`（这台电脑配对过的主人的设备，发起调用的这台在最前、`current: true`；只给主人自己的设备和本机命令行。docs/devices-prd.md） |
 | `device.remove` | `{deviceId}` | `{ok}`（断开另一台设备、让 relay 忘掉它，记审计 `device.removed`；不能是发起调用的这台（用 `device.unpair`）） |
+| `files.list` | `{scope, path?, showHidden?}` | `{root, path, entries:FileEntry[], truncated}`（root：范围根的绝对路径；path：规范化后相对 root 的路径，`""` 是根；文件夹在前，按名字；最多 2000 个） |
+| `files.read` | `{scope, path, offset?, length?}` | `{data /*b64*/, size, mime, eof, tooLarge?}`（同 `artifact.read`，每块 ≤ 256 KiB；超过 5 MB 时 data 为空、`tooLarge: true`） |
+| `files.search` | `{scope, query, limit?}` | `{matches:[{path, kind}], partial}`（文件名不分大小写，带 `/` 时匹配路径；名字本身 > 开头 > 包含，文件在前，浅的在前；默认 50，最多 200；走不完时 partial） |
+| `files.resolve` | `{scope, paths:string[]}` 或 `{scope, text}` | `{files:[{text, path, size}]}`（App 用 PathDetection 从回复里找出的路径，一次最多 40 个；相对路径按 Pal 的目录（Palo：home，再 artifacts）解析，裸文件名或截短的路径在树里找（只认整段后缀相同的）；只返回解析成范围内文件的，path 相对范围根） |
+| `files.folders.list` | `{}` | `{folders:OwnerFolder[]}` |
+| `files.folders.browse` | `{path?, showHidden?}` | `{path, parent, entries:FileEntry[], truncated}`（选文件夹用：一层，只有文件夹，从个人文件夹开始；parent 为 null 是到了 `/`） |
+| `files.folders.add` | `{path}` | `{folder:OwnerFolder}`（同一个文件夹再加返回原来的；最多 50 个） |
+| `files.folders.remove` | `{id}` | `{ok}` |
 | `audit.tail` | `{limit}` | `{entries}` |
 | `ally.list` | `{}` | `{allies:AllyInfo[]}` |
 | `ally.invite` | `{}` | `{link, expiresAt}`（`paloally://ally?relay&daemon&code&hostkey&name&exp`，10 分钟，一次性；App 画成二维码） |

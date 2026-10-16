@@ -3,7 +3,7 @@
 // samples to the Swift test fixtures (decoded strictly on the client side).
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { RPC_EVENTS, RPC_METHODS, handleRpc } from "../src/rpc.ts";
 import type { FakeScript } from "./fakeDriver.ts";
 import { AllyNet } from "./allyNet.ts";
@@ -327,6 +327,24 @@ describe("host ↔ app protocol", () => {
     // The owner names it (§13): Claude Code's title for the session changes too.
     expect((await run("pals.rename", { id: pal.id, name: "网站改版" })).pal.name).toBe("网站改版");
     await run("pals.release", { id: pal.id });
+    // Files on the computer (docs/files-prd.md), read-only: the opened Pal's
+    // project folder, and the same folder opened from the preview pane.
+    mkdirSync(join(project, "src"), { recursive: true });
+    writeFileSync(join(project, "README.md"), "# 文档\n安装说明见 src/app.ts\n");
+    writeFileSync(join(project, "src", "app.ts"), "export const app = 1;\n");
+    writeFileSync(join(project, "video.mov"), Buffer.alloc(5 * 1024 * 1024 + 1));
+    const scope = { kind: "pal", id: opened.id };
+    await run("files.list", { scope, path: "" });
+    const read = { params: { scope, path: "README.md" }, result: await call("files.read", { scope, path: "README.md" }) };
+    const big = { params: { scope, path: "video.mov" }, result: await call("files.read", { scope, path: "video.mov" }) };
+    expect(big.result.tooLarge).toBe(true);
+    methods["files.read"] = [read, big];
+    await run("files.search", { scope, query: "app", limit: 20 });
+    expect((await run("files.resolve", { scope, paths: ["src/app.ts", "README.md:2", "src/nope.ts"] })).files).toHaveLength(2);
+    await run("files.folders.browse", { path: project });
+    const folder = (await run("files.folders.add", { path: project })).folder;
+    await run("files.folders.list", {});
+    await run("files.folders.remove", { id: folder.id });
     await run("pals.remove", { id: opened.id });
     hub.pals.stop();
     await run("stop");
@@ -383,7 +401,9 @@ describe("host ↔ app protocol", () => {
     expect(Object.keys(sampleEvents).sort()).toEqual([...RPC_EVENTS].sort());
 
     // The made-up folder, not this machine's temp path.
-    const fixture = JSON.parse(JSON.stringify({ methods, events: sampleEvents }).replaceAll(project, "/Users/someone/code/site"));
+    const fixture = JSON.parse(
+      JSON.stringify({ methods, events: sampleEvents }).replaceAll(project, "/Users/someone/code/site").replaceAll(dirname(project), "/Users/someone/code"),
+    );
     checkFixture(resolve(import.meta.dir, "../../ios/PaloAllyKit/Tests/PaloAllyKitTests/Fixtures/protocol.json"), fixture, shape);
     cleanup(paths);
     cleanup(peer.ctx.paths);

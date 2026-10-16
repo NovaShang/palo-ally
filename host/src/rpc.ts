@@ -2,6 +2,7 @@ import type { Hub } from "./hub.ts";
 import type { Attachment, Channel } from "./types.ts";
 import { readJson, writeJson } from "./util.ts";
 import { t } from "./i18n/index.ts";
+import { parseScope } from "./files.ts";
 
 export interface RpcContext {
   clientId: string;
@@ -29,6 +30,7 @@ export const RPC_METHODS = [
   "sessions.list", "sessions.history", "sessions.hooks", "helper.decide",
   "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop", "pals.recent", "pals.wake", "pals.rename", "pals.rewind",
   "pair.invite", "device.list", "device.remove",
+  "files.list", "files.read", "files.search", "files.resolve", "files.folders.list", "files.folders.browse", "files.folders.add", "files.folders.remove",
 ] as const;
 
 export const RPC_EVENTS = [
@@ -295,6 +297,36 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     case "pair.invite":
       ownerOnly(ctx, t("rpc.err.ownerAdd"));
       return await hub.pairInvite(ctx.channel);
+    // Files on the computer, read-only (docs/files-prd.md): the owner's own
+    // devices and the local CLI only, never an Ally or a stranger.
+    case "files.list":
+      ownerOnly(ctx, t("files.err.owner"));
+      return hub.files.list(parseScope(p.scope), typeof p.path === "string" ? p.path : "", p.showHidden === true);
+    case "files.read":
+      ownerOnly(ctx, t("files.err.owner"));
+      return hub.files.read(parseScope(p.scope), String(p.path ?? ""), Number(p.offset ?? 0), Number(p.length ?? 256 * 1024), ctx.deviceId ?? ctx.channel);
+    case "files.search":
+      ownerOnly(ctx, t("files.err.owner"));
+      return hub.files.search(parseScope(p.scope), String(p.query ?? ""), Number(p.limit ?? 50));
+    case "files.resolve": {
+      ownerOnly(ctx, t("files.err.owner"));
+      // `paths`: what the app found in a reply; `text`: one of them.
+      const paths = Array.isArray(p.paths) ? p.paths.map(String) : typeof p.text === "string" ? [p.text] : [];
+      return hub.files.resolve(parseScope(p.scope), paths);
+    }
+    case "files.folders.list":
+      ownerOnly(ctx, t("files.err.owner"));
+      return { folders: hub.files.folders() };
+    case "files.folders.browse":
+      ownerOnly(ctx, t("files.err.owner"));
+      return hub.files.browse(typeof p.path === "string" ? p.path : undefined, p.showHidden === true);
+    case "files.folders.add":
+      ownerOnly(ctx, t("files.err.owner"));
+      return { folder: hub.files.addFolder(String(p.path ?? ""), ctx.deviceId ?? ctx.channel) };
+    case "files.folders.remove":
+      ownerOnly(ctx, t("files.err.owner"));
+      hub.files.removeFolder(String(p.id ?? ""), ctx.deviceId ?? ctx.channel);
+      return { ok: true };
     case "host.update":
       // check: only look. Otherwise stage the newest release and switch to it as
       // soon as nothing is in flight (the app's 立即更新); `wait` is for the CLI.

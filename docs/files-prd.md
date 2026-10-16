@@ -44,4 +44,6 @@
 | `files.search` | `{scope, query, limit?}` | `{matches: [{path, kind}]}` |
 | `files.resolve` | `{scope, text}` | 把对话里的路径解析成可预览的文件 |
 
-`scope` 取 `{kind: "pal", id}` 或 `{kind: "palo"}`。
+| `files.folders.list` / `browse` / `add` / `remove` | 见 docs/design.md | 主人打开过的文件夹：选、记住、移除 |
+
+`scope` 取 `{kind: "pal", id}`、`{kind: "palo"}` 或 `{kind: "folder", id}`。`files.resolve` 一次收 App 找出的多个路径（`paths`）。
