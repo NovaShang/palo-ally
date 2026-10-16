@@ -58,7 +58,10 @@ enum Copy {
     }
 
     /// Friendly names for tool identifiers ("用一个工具" when unknown).
-    static func tool(_ raw: String?) -> String { Friendly.tool(raw) }
+    static func tool(_ raw: String?) -> String {
+        let label = Friendly.tool(raw)
+        return label.prefix(1).uppercased() + label.dropFirst()  // "open a web page" → "Open a web page"
+    }
 
     /// Any error as a short plain sentence (no paths, codes or errno names).
     static func error(_ e: Error) -> String { Friendly.message(e) }
