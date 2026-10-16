@@ -17,6 +17,22 @@ public enum MessageFold {
     public static func wholeLines(_ text: String) -> Int {
         text.count > maxCharacters ? foldedLines : maxLines
     }
+
+    /// Lines a folded quote (above the owner's words) shows.
+    public static let quoteFoldedLines = 2
+    /// A quote with more lines than this folds.
+    public static let quoteMaxLines = 3
+    /// A quote longer than this folds.
+    public static let quoteMaxCharacters = 120
+
+    /// Whether a quote is long enough to fold to `quoteFoldedLines`.
+    public static func quoteFolds(_ text: String) -> Bool {
+        text.count > quoteMaxCharacters
+            || text.split(separator: "\n", omittingEmptySubsequences: false).count > quoteMaxLines
+    }
+
+    /// The key a message's quote is unfolded under (`AppStore.unfolded`).
+    public static func quoteKey(_ messageId: String) -> String { "quote:" + messageId }
 }
 
 extension AppStore {

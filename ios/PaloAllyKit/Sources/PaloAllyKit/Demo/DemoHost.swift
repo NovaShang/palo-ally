@@ -294,6 +294,30 @@ public actor DemoHost {
                 post("找到了，是 \(CCSession.shortPath(found.cwd)) 里那个。")
                 proposeAdopting(found)
             }
+        case "longQuote":
+            // `-demoState longQuote`: a reply, then the owner's words quoting a long
+            // stretch of it (folds to two lines) and, below, a short quote (doesn't).
+            let reply = post("""
+            ## 周末安排
+
+            周六上午 10 点提醒你给妈妈打电话，周日下午去超市。
+            这周的家务清单已经整理好，一共 7 项，其中 3 项可以交给扫地机器人，剩下的 4 项我按重要程度排了顺序，你有空的时候看一下就行。
+
+            ```
+            make clean && make all
+            ```
+
+            详细内容见[清单](https://example.com/list)。
+            """)
+            let long = "周六上午 10 点提醒你给妈妈打电话，周日下午去超市。\n这周的家务清单已经整理好，一共 7 项，其中 3 项可以交给扫地机器人，剩下的 4 项我按重要程度排了顺序，你有空的时候看一下就行。\n详细内容见清单，其中扫地机器人负责的三项放在最前面，方便你周末出门前先确认一遍。"
+            var q1 = post("这段先不动，晚点我再看", role: .user, broadcast: false)
+            q1.replyTo = ReplyTo(messageId: reply.id, excerpt: long)
+            messages[messages.count - 1] = q1
+            emit(RPCEventName.chatMessage, q1)
+            var q2 = post("周日去超市这条改到下午四点", role: .user, broadcast: false)
+            q2.replyTo = ReplyTo(messageId: reply.id, excerpt: "周日下午去超市")
+            messages[messages.count - 1] = q2
+            emit(RPCEventName.chatMessage, q2)
         case "tables":
             // Wide tables in a reply: they scroll sideways instead of squeezing.
             post("MacBook Air 和 dev 哪台更适合常驻跑助理？", role: .user)

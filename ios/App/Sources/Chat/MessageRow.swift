@@ -67,7 +67,7 @@ private struct UserBubble: View {
                         .labelStyle(QuietLabelStyle())
                 }
                 if let reply = message.replyTo {
-                    QuoteLine(reply: reply)
+                    QuoteLine(reply: reply, messageId: message.id)
                 }
                 if let atts = message.attachments, !atts.isEmpty {
                     AttachmentStrip(attachments: atts)
@@ -280,7 +280,10 @@ private struct AssistantMessage: View {
     private var wholeReply: WholeReplyActions? {
         guard !message.isStreaming, !message.text.isEmpty, message.kind == .text else { return nil }
         let text = message.text
-        return WholeReplyActions(copy: { Clipboard.copy(text) }, reply: { [store] in store.quote(message) })
+        let id = message.id
+        return WholeReplyActions(copy: { Clipboard.copy(text) }, reply: { [store] in store.quote(message) },
+                                 readAloud: { ReadAloud.shared.toggle(id: id, markdown: text) },
+                                 isReading: { ReadAloud.shared.isReading(id) })
     }
 
     /// A question card says it all: no label, no repeated text above it.
@@ -539,30 +542,56 @@ private struct FileCard: View {
 struct WholeReplyActions {
     let copy: () -> Void
     let reply: () -> Void
+    /// 朗读 / 停止朗读 (nil: not offered), and which of the two the menu shows now.
+    var readAloud: (() -> Void)? = nil
+    var isReading: () -> Bool = { false }
 }
 
 /// What the owner quoted, above their bubble: one or two quiet lines. Tap →
 /// scroll to the quoted message if it's loaded.
 private struct QuoteLine: View {
+    @Environment(AppStore.self) private var store
     @Environment(\.chatScrollTo) private var scrollTo
+    @Environment(\.chatRowResizing) private var resizing
     let reply: ReplyTo
+    let messageId: String
+
+    private var key: String { MessageFold.quoteKey(messageId) }
+    private var foldable: Bool { MessageFold.quoteFolds(reply.excerpt) }
+    private var open: Bool { store.unfolded.contains(key) }
 
     var body: some View {
-        Button {
-            scrollTo?(reply.messageId)
-        } label: {
-            HStack(alignment: .top, spacing: 6) {
-                Capsule().fill(.tertiary).frame(width: 2.5)
-                Text(reply.excerpt)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
+        HStack(alignment: .top, spacing: 6) {
+            Capsule().fill(.tertiary).frame(width: 2.5)
+            VStack(alignment: .leading, spacing: 2) {
+                Button {
+                    scrollTo?(reply.messageId)
+                } label: {
+                    Text(reply.excerpt)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(foldable && !open ? MessageFold.quoteFoldedLines : (foldable ? nil : 2))
+                        .multilineTextAlignment(.leading)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("回复：\(reply.excerpt)")
+                if foldable {
+                    Button(open ? String(localized: "收起") : String(localized: "展开")) {
+                        let folding = open
+                        if resizing?(messageId, folding) ?? true {
+                            withAnimation(.snappy) { store.setUnfolded(key, !folding) }
+                        } else {
+                            store.setUnfolded(key, !folding)
+                        }
+                    }
+                    .font(.caption)
+                    .buttonStyle(.borderless)
+                    .tint(.secondary)
+                    .accessibilityIdentifier("quote-fold-toggle")
+                }
             }
-            .fixedSize(horizontal: false, vertical: true)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("回复：\(reply.excerpt)")
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
