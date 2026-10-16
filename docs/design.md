@@ -63,7 +63,7 @@ relay/       不新写：复用 github.com/NovaShang/bento 的 relay/（bento-re
 | `register_watch(title, instruction, interval_minutes? , at?, kind?)` | 自注册 watch，外壳持久化 |
 | `list_watches()` / `remove_watch(id)` | |
 | `SendUserFile(files, caption?, status, display?, temporary?)` | 照 Claude Code 原生 SendUserFile 定义（多一个 `temporary`）：文件在对话里显示成卡片（图片直接显示），默认同时进产出物库；`status: proactive` 推送；主人在微信上时也发到微信 |
-| `Artifact(file_path, title?, description?, files?)` | 照 Claude Code 原生 Artifact 发布：要长期留存的页面/文档进产出物库并在对话里出卡片；同一路径再发布 = 更新 |
+| `Artifact(file_path, title?, description?, files?, folder?)` | 照 Claude Code 原生 Artifact 发布：要长期留存的页面/文档进产出物库并在对话里出卡片；同一路径再发布 = 更新 |
 | `notify_user(text, urgent?)` | 主动推送（经路由器：App 推送；微信只发非敏感回执） |
 | `ally_list()` | Ally 列表：id、对方主人的称呼、助理名、标签、档位（能对话 / 每句要你看）、是否在线 |
 | `ally_send(to, text, urgent?, slots?, replyTo?)` | 给「能对话」的 Ally 直接发出；给「每句要你看」的只生成草稿卡片，主人点「发送」（`ally.draft.decide`）才进待发队列。聊天里都是 `kind:"ally"`、`dir:"out"`、`role:"assistant"`。处理某个 Ally 来话的那一轮里，只有回给它的话能直接发出，给别的 Ally 的一律是草稿 |
@@ -171,7 +171,7 @@ Question 同样有 source? 和 note?。会话的卡片不进聊天记录（没�
 Watch { id; title; kind:"check"|"schedule"; instruction; intervalMinutes?:number;
   at?:string[] /*"HH:MM" 本地时区*/; enabled:boolean; createdBy:"agent"|"user";
   lastCheckedAt?; lastTriggeredAt?; skipIfActiveMinutes?:number }
-Artifact { id; title; type; mainFile; pinned:boolean; updatedAt;
+Artifact { id; title; type; mainFile; pinned:boolean; folder:string /*助理起的分组名，没有为 ""，见 docs/files-prd.md*/; updatedAt;
   files:{path:string; size:number}[] }
 Settings { timezone; quietHours:{start:"HH:MM"; end:"HH:MM"}|null;
   maxProactivePerDay:number; probeIntervalMinutes:number; approvalTimeoutMinutes:number;

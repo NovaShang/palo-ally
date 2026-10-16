@@ -13,6 +13,7 @@
 		08BF7949F94B89DDD05C3319 /* AssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056B108C0177A1156F312E84 /* AssistantView.swift */; };
 		098271F0DB79A7EC10E8782F /* PalPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DB5E3F3B5ED735CB237E3A6 /* PalPage.swift */; };
 		0D88459427BC2C3B5A6385B0 /* AllyCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 152387F3158810B91BB9A668 /* AllyCopy.swift */; };
+		0E77DE320655E3AF25D35E3C /* LibraryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32BABFABC9E5D0E0A33EB98E /* LibraryUITests.swift */; };
 		0F39329E305A6477FBD720F0 /* MacScrollWheelUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C23F1133E2D253017B448FCB /* MacScrollWheelUITests.swift */; };
 		11BECFB67315E8AFAF47D91A /* SelectableMarkdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07A26E3CEF36BC017C91F461 /* SelectableMarkdown.swift */; };
 		1243481AFE63A1EA7053C0F2 /* MarkdownTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9AE7E7579FE5764F145260C /* MarkdownTableView.swift */; };
@@ -41,6 +42,7 @@
 		44ECD2EA670526AE861F2D53 /* TitleOrb.swift in Sources */ = {isa = PBXBuildFile; fileRef = C54007F5ADFE246BFE4EBB60 /* TitleOrb.swift */; };
 		44FDFDE5AC5121A21873B8D2 /* CommitWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2D39963E4A18BA170B29805 /* CommitWatch.swift */; };
 		46E97A6512E66B0B08BA9EBE /* TwoDrops.metal in Sources */ = {isa = PBXBuildFile; fileRef = 74530C1E36CA8A834978230F /* TwoDrops.metal */; };
+		48CAA762BAA00EB5DC7F3642 /* Library.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D72D0CA17F9FA74BB118F51D /* Library.xcstrings */; };
 		49FC3A9BC4977938A273A936 /* OrbInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 727BCDF8F4AA67625E0359C0 /* OrbInput.swift */; };
 		4F5CB6A64C1B55C6CD52D725 /* SuggestionChips.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC058EC00155E4856AE7B909 /* SuggestionChips.swift */; };
 		4FB859813BD2430EFFD25E56 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF61EA93ABB93BA46D581B36 /* MarkdownText.swift */; };
@@ -172,6 +174,7 @@
 		2FFD6E49BA1DD7665E79691E /* QuickLook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLook.swift; sourceTree = "<group>"; };
 		3027F62ADAB6BF3E4CFADE4C /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
 		32922EB865184F7F70CAB365 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
+		32BABFABC9E5D0E0A33EB98E /* LibraryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryUITests.swift; sourceTree = "<group>"; };
 		34C10B9EDE3ED2D4FEA147D9 /* ReadAloudUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadAloudUITests.swift; sourceTree = "<group>"; };
 		3564B78F37E2CB3375A1AE1F /* AllyAcceptSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllyAcceptSheet.swift; sourceTree = "<group>"; };
 		36184756C7B818CDFB8CB839 /* ImagePrep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePrep.swift; sourceTree = "<group>"; };
@@ -245,6 +248,7 @@
 		CDC2E8C597F725F4794D716E /* DevicesUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesUITests.swift; sourceTree = "<group>"; };
 		CE88A85588E9422D316877C2 /* MarkdownFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownFile.swift; sourceTree = "<group>"; };
 		D33957C27F95340EE61598B7 /* Files.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Files.xcstrings; sourceTree = "<group>"; };
+		D72D0CA17F9FA74BB118F51D /* Library.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Library.xcstrings; sourceTree = "<group>"; };
 		D755DBF551DF6ECB709CA222 /* RecentConversationsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentConversationsPage.swift; sourceTree = "<group>"; };
 		D85821DAF90FE3998B520913 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		D95BA32DB8AF65BB9C5A56C7 /* DevicesPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesPage.swift; sourceTree = "<group>"; };
@@ -427,6 +431,7 @@
 				519EA8CCFA1176D5CDDF3D1F /* ChatScrollUITests.swift */,
 				CDC2E8C597F725F4794D716E /* DevicesUITests.swift */,
 				1F2A68E3DD919B5284C96444 /* FilesUITests.swift */,
+				32BABFABC9E5D0E0A33EB98E /* LibraryUITests.swift */,
 				24E36607C5409252B9B2D6FD /* LocalizationUITests.swift */,
 				A10351FDBF285D30A12AA443 /* MacLibraryUITests.swift */,
 				C23F1133E2D253017B448FCB /* MacScrollWheelUITests.swift */,
@@ -517,6 +522,7 @@
 				FB010AC69CB9C0C890D26829 /* Assets.xcassets */,
 				D33957C27F95340EE61598B7 /* Files.xcstrings */,
 				2702A873DF14736BD0666093 /* InfoPlist.xcstrings */,
+				D72D0CA17F9FA74BB118F51D /* Library.xcstrings */,
 				3685BC2B956E15CA736C2606 /* Localizable.xcstrings */,
 			);
 			path = Resources;
@@ -664,6 +670,7 @@
 				42F6ACB32AA6D01DA32DF8B1 /* Assets.xcassets in Resources */,
 				806EDC44C77589F492009E76 /* Files.xcstrings in Resources */,
 				3A1CC789034F8E7D767BCBD1 /* InfoPlist.xcstrings in Resources */,
+				48CAA762BAA00EB5DC7F3642 /* Library.xcstrings in Resources */,
 				D60D838CF74D191726EC03AD /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -680,6 +687,7 @@
 				6A3F40F12C7DD391D2815F87 /* ChatScrollUITests.swift in Sources */,
 				41F18635FAB268564293325E /* DevicesUITests.swift in Sources */,
 				A9F1785A4DCAA4FE1A838DB7 /* FilesUITests.swift in Sources */,
+				0E77DE320655E3AF25D35E3C /* LibraryUITests.swift in Sources */,
 				2175FC6EEE394CD7DB490C5A /* LocalizationUITests.swift in Sources */,
 				B2032FE442E03D4426BA7760 /* MacLibraryUITests.swift in Sources */,
 				0F39329E305A6477FBD720F0 /* MacScrollWheelUITests.swift in Sources */,
