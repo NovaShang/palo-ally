@@ -98,6 +98,8 @@ struct AppStoreTests {
         #expect(await !host.requestLog.contains("sessions.list"))
         #expect(await host.lastParams["sync"]?["sinceSeq"] == nil)
         #expect(await host.lastParams["hello"]?["client"] == "ios")
+        // hello tells the host which language the device is set to.
+        #expect(await host.lastParams["hello"]?["locale"]?.stringValue == Locale.preferredLanguages.first)
         // a1 is anchored by a chat message; a2 is not.
         #expect(store.unanchoredPendingApprovals.map(\.id) == ["a2"])
     }

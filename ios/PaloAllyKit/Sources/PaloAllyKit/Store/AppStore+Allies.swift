@@ -170,7 +170,7 @@ extension AppStore {
         if let text { shown.text = text }
         switch action {
         case .send: shown.status = .queued
-        case .discard: shown.status = .rejected; shown.note = "没发"
+        case .discard: shown.status = .rejected; shown.note = loc("没发")
         case .edit: break
         }
         upsert(allyEntry: shown, allyId: owner)

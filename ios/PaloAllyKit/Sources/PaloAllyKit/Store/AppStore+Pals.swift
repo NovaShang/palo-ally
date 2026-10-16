@@ -226,7 +226,7 @@ extension AppStore {
     public func renamePal(id: String, name: String) async throws -> Pal? {
         if let parent { return try await parent.renamePal(id: id, name: name) }
         let want = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !want.isEmpty else { throw RPCError.remote("名字不能是空的") }
+        guard !want.isEmpty else { throw FriendlyError(loc("名字不能是空的")) }
         let before = pals
         if let i = pals.firstIndex(where: { $0.id == id }) {
             var list = pals

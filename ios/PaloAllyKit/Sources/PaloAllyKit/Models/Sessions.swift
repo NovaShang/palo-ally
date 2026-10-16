@@ -82,7 +82,7 @@ public struct CCSession: Codable, Sendable, Hashable, Identifiable {
         let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if !n.isEmpty { return n }
         let folder = (cwd as NSString).lastPathComponent
-        return folder.isEmpty || folder == "/" ? "会话" : folder
+        return folder.isEmpty || folder == "/" ? loc("会话") : folder
     }
 
     /// The folder for people: the home folder as 「~」.
@@ -149,7 +149,7 @@ public struct CCMessage: Codable, Sendable, Hashable, Identifiable {
     /// the 「主人：」 or 「主人的助理：」 the host puts in front for the session (§6.4).
     public var shownText: String {
         guard role == .palo else { return text }
-        for prefix in ["主人的助理：", "主人：", "主人:"] where text.hasPrefix(prefix) {
+        for prefix in ["主人的助理：", "主人：", "主人:"] where text.hasPrefix(prefix) {  // i18n-ok: the host's own words
             return String(text.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
         }
         return text
@@ -285,11 +285,11 @@ extension ChatMessage {
             self.init(seq: seq, id: m.id, role: .assistant, kind: .text, text: m.text, channel: .app, ts: m.ts)
         case .owner:
             self.init(seq: seq, id: m.id, role: .user, kind: .text, text: m.text, channel: .cli, ts: m.ts)
-        case .palo where (m.from ?? "主人") == "主人":
+        case .palo where (m.from ?? "主人") == "主人":  // i18n-ok: the host's own words
             self.init(seq: seq, id: m.id, role: .user, kind: .text, text: m.shownText, channel: .app, ts: m.ts)
         case .palo, .peer:
             self.init(seq: seq, id: m.id, role: .user, kind: .text, text: m.shownText, channel: .system, ts: m.ts)
-            from = m.from?.isEmpty == false ? m.from : "另一个会话"
+            from = m.from?.isEmpty == false ? m.from : loc("另一个会话")
         }
     }
 }

@@ -1572,13 +1572,13 @@ public final class AppStore {
         var s = status ?? HostStatus(online: true, busy: false, model: p.model ?? "")
         s.busy = p.inTurn || waking
         s.activity = waking ? Self.wakingActivity
-            : p.status == .waiting ? "在等你" : (p.status == .starting ? "正在启动" : p.activity)
+            : p.status == .waiting ? loc("在等你") : (p.status == .starting ? loc("正在启动") : p.activity)
         if let m = p.model, !m.isEmpty { s.model = m }
         if !s.busy, !streams.isEmpty, let finishingReply { finishingReply { applyStatus(s) } } else { atTheEnd { applyStatus(s) } }
     }
 
     /// What a Pal's page says while it's being woken (§12).
-    public static let wakingActivity = "正在叫醒"
+    public static let wakingActivity = loc("正在叫醒")
 
     /// Words for an asleep Pal: 「正在叫醒…」 at once, until the list says it's up.
     func showWaking() {

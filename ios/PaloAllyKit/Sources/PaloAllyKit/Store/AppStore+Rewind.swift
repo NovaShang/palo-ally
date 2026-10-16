@@ -48,7 +48,7 @@ extension AppStore {
             do {
                 outcome = try await callRewind(m, restoreFiles: restoreFiles)
                 break
-            } catch RPCError.remote(let why) where why.contains("还在忙") && attempt < 11 {
+            } catch RPCError.remote(let why) where why.contains("还在忙") && attempt < 11 {  // i18n-ok: the host's own words
                 // Stopped once; it may take a moment to wind down.
                 if !stopped {
                     stopped = true
@@ -57,7 +57,7 @@ extension AppStore {
                 try await Task.sleep(for: .milliseconds(250))
             }
         }
-        guard let outcome else { throw RPCError.remote("它还在忙，先停下再重来") }
+        guard let outcome else { throw FriendlyError(loc("它还在忙，先停下再重来")) }
         dropRewound(from: m.id, ids: [])
         // The quote it carried comes back with its words (the assistant's).
         if palID == nil, let reply = m.replyTo { replyDraft = reply }

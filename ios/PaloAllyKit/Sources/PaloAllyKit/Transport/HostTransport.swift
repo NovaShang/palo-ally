@@ -23,8 +23,8 @@ public enum TransportError: Error, LocalizedError, Equatable {
     case timeout
     public var errorDescription: String? {
         switch self {
-        case .notConnected: "还没连上"
-        case .timeout: "等太久了"
+        case .notConnected: loc("还没连上")
+        case .timeout: loc("等太久了")
         }
     }
 }

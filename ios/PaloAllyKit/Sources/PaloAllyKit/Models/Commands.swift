@@ -83,12 +83,12 @@ public struct ModelInfo: Decodable, Sendable, Hashable {
 public enum EffortName {
     public static func label(_ e: String?) -> String {
         switch e {
-        case "low": "浅"
-        case "medium": "中"
-        case "high": "深"
-        case "xhigh": "很深"
-        case "max": "最深"
-        default: "默认"
+        case "low": loc("浅")
+        case "medium": loc("中")
+        case "high": loc("深")
+        case "xhigh": loc("很深")
+        case "max": loc("最深")
+        default: loc("默认")
         }
     }
 }
@@ -98,7 +98,7 @@ public enum ModelName {
     public static func short(_ id: String) -> String {
         let base = id.replacingOccurrences(of: #"\[.*\]$"#, with: "", options: .regularExpression)
         let parts = base.split(separator: "-").map(String.init)
-        guard parts.first == "claude", parts.count >= 3 else { return base.isEmpty ? "默认" : base }
+        guard parts.first == "claude", parts.count >= 3 else { return base.isEmpty ? loc("默认") : base }
         let family = parts[1].prefix(1).uppercased() + parts[1].dropFirst()
         let version = parts.dropFirst(2).filter { $0.count <= 2 && Int($0) != nil }.joined(separator: ".")
         return version.isEmpty ? family : "\(family) \(version)"

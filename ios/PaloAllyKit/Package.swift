@@ -3,6 +3,8 @@ import PackageDescription
 
 let package = Package(
     name: "PaloAllyKit",
+    // Chinese is the development language; English comes from the String Catalogs.
+    defaultLocalization: "zh-Hans",
     platforms: [.iOS(.v26), .macOS(.v26), .macCatalyst(.v26)],
     products: [
         .library(name: "PaloAllyKit", targets: ["PaloAllyKit"]),
@@ -10,7 +12,7 @@ let package = Package(
         .library(name: "PaloAllyFilePreview", targets: ["PaloAllyFilePreview"]),
     ],
     targets: [
-        .target(name: "PaloAllyKit"),
+        .target(name: "PaloAllyKit", resources: [.process("Resources")]),
         // Voice input ported from bento's BentoVoiceKit; built in the Swift 5
         // language mode it was written for.
         .target(name: "PaloAllyVoice", swiftSettings: [.swiftLanguageMode(.v5)]),

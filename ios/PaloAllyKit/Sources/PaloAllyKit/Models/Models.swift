@@ -538,14 +538,14 @@ public struct Approval: Codable, Sendable, Hashable, Identifiable {
         let value = String(trimmed[trimmed.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
         switch kind {
         case "cmd":
-            return value.isEmpty ? "这类命令" : "「\(value)」这类命令"
+            return value.isEmpty ? loc("这类命令") : loc("「\(value)」这类命令")
         case "domain":
-            return value.isEmpty ? "这个网站" : "\(value) 这个网站"
+            return value.isEmpty ? loc("这个网站") : loc("\(value) 这个网站")
         case "path":
             let name = (value as NSString).lastPathComponent
-            return name.isEmpty || name == "/" ? "这个文件夹" : "「\(name)」这个文件夹"
+            return name.isEmpty || name == "/" ? loc("这个文件夹") : loc("「\(name)」这个文件夹")
         case "tool":
-            return "这个工具"
+            return loc("这个工具")
         default:
             return nil
         }

@@ -24,7 +24,7 @@ public struct PairedDevice: Codable, Sendable, Hashable, Identifiable {
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
         deviceId = l.string("deviceId", or: "")
-        label = l.string("label", or: "设备")
+        label = l.string("label", or: loc("设备"))
         platform = l.string("platform")
         pairedAt = l.millis("pairedAt", or: 0)
         lastSeen = l.millis("lastSeen")

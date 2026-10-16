@@ -20,9 +20,9 @@ public struct PairingLink: Sendable, Equatable {
         case notAPairingLink, missingDaemon, badHostKey, badRelay, badCode
         public var errorDescription: String? {
             switch self {
-            case .notAPairingLink: "这不是配对链接"
-            case .missingDaemon, .badHostKey, .badRelay: "配对链接不完整，请重新复制一次"
-            case .badCode: "配对码应该是 6 位数字"
+            case .notAPairingLink: loc("这不是配对链接")
+            case .missingDaemon, .badHostKey, .badRelay: loc("配对链接不完整，请重新复制一次")
+            case .badCode: loc("配对码应该是 6 位数字")
             }
         }
     }
@@ -144,18 +144,18 @@ public enum PairingError: Error, LocalizedError, Equatable {
 
     public var errorDescription: String? {
         switch self {
-        case .invalidCode: return "配对码应该是 6 位数字"
-        case .wrongHost: return "回应的电脑和二维码上的对不上，在电脑上重新生成一个再扫"
-        case .network: return "网络好像不太通，稍后再试试"
+        case .invalidCode: return loc("配对码应该是 6 位数字")
+        case .wrongHost: return loc("回应的电脑和二维码上的对不上，在电脑上重新生成一个再扫")
+        case .network: return loc("网络好像不太通，稍后再试试")
         case .rejected(let status, let message):
             switch status {
-            case 401: return "配对码不对，再核对一下"
-            case 429: return "试错太多次了，等一分钟再来"
-            case 503: return "电脑那边好像没开着，先打开它再试"
-            case 400 where message.contains("no pairing window"): return "配对码过期了，在电脑上重新生成一个"
-            default: return "没能连上（\(message)）"
+            case 401: return loc("配对码不对，再核对一下")
+            case 429: return loc("试错太多次了，等一分钟再来")
+            case 503: return loc("电脑那边好像没开着，先打开它再试")
+            case 400 where message.contains("no pairing window"): return loc("配对码过期了，在电脑上重新生成一个")
+            default: return loc("没能连上（\(message)）")
             }
-        case .malformedResponse: return "电脑那边的回复看不懂，可能需要更新一下"
+        case .malformedResponse: return loc("电脑那边的回复看不懂，可能需要更新一下")
         }
     }
 }

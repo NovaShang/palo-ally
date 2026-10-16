@@ -9,10 +9,10 @@ public enum RPCError: Error, LocalizedError, Equatable {
 
     public var errorDescription: String? {
         switch self {
-        case .notConnected, .disconnected: "暂时连不上，等连上了再试"
-        case .timeout: "等太久了，稍后再试"
+        case .notConnected, .disconnected: loc("暂时连不上，等连上了再试")
+        case .timeout: loc("等太久了，稍后再试")
         case .remote(let m): Friendly.remote(m)
-        case .badResponse: "收到的回复看不懂"
+        case .badResponse: loc("收到的回复看不懂")
         }
     }
 }

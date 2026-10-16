@@ -38,26 +38,26 @@ public struct AgentStatusLine: Equatable, Sendable {
         let needs = pendingApprovals + waiting + pendingQuestions + pendingDrafts + pendingProposals
         if needs > 0 {
             let text: String
-            if pendingQuestions == needs { text = needs == 1 ? "等你回答" : "\(needs) 个问题等你回答" }
-            else if pendingDrafts == needs { text = needs == 1 ? "等你点发送" : "\(needs) 条等你点发送" }
-            else if pendingProposals == needs { text = needs == 1 ? "等你点头" : "\(needs) 个提议等你点头" }
-            else if waiting == 0 && pendingQuestions == 0 && pendingDrafts == 0 && pendingProposals == 0 { text = "\(needs) 件等你确认" }
-            else { text = "\(needs) 件事等你" }
+            if pendingQuestions == needs { text = needs == 1 ? loc("等你回答") : loc("\(needs) 个问题等你回答") }
+            else if pendingDrafts == needs { text = needs == 1 ? loc("等你点发送") : loc("\(needs) 条等你点发送") }
+            else if pendingProposals == needs { text = needs == 1 ? loc("等你点头") : loc("\(needs) 个提议等你点头") }
+            else if waiting == 0 && pendingQuestions == 0 && pendingDrafts == 0 && pendingProposals == 0 { text = loc("\(needs) 件等你确认") }
+            else { text = loc("\(needs) 件事等你") }
             return AgentStatusLine(kind: .needsYou, text: text)
         }
 
         let running = tasks.filter { $0.status == .running }.sorted { $0.updatedAt > $1.updatedAt }
         if busy {
             var text = Self.doing(activity)
-            if !running.isEmpty { text += " · 另有 \(running.count) 件事" }
+            if !running.isEmpty { text += loc(" · 另有 \(running.count) 件事") }
             return AgentStatusLine(kind: .working, text: text)
         }
         if let latest = running.first {
             let line = Self.latestLine(latest)
             if running.count == 1 { return AgentStatusLine(kind: .tasks, text: line) }
-            return AgentStatusLine(kind: .tasks, text: "\(running.count) 件事在做 · \(line)")
+            return AgentStatusLine(kind: .tasks, text: loc("\(running.count) 件事在做 · \(line)"))
         }
-        return AgentStatusLine(kind: .idle, text: "空闲")
+        return AgentStatusLine(kind: .idle, text: loc("空闲"))
     }
 
     /// 「在看网页…」, or 「在想…」 when the host didn't say.
@@ -65,13 +65,13 @@ public struct AgentStatusLine: Equatable, Sendable {
         let a = (activity ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "…", with: "")
             .replacingOccurrences(of: "...", with: "")
-        return (a.isEmpty ? "在想" : a) + "…"
+        return (a.isEmpty ? loc("在想") : a) + "…"
     }
 
     /// A running task's latest progress line (the harness' own summary), or
     /// its title while there's none yet.
     static func latestLine(_ t: AllyTask) -> String {
         let s = t.summary.trimmingCharacters(in: .whitespacesAndNewlines)
-        return s.isEmpty ? "在做：\(t.title)" : s
+        return s.isEmpty ? loc("在做：\(t.title)") : s
     }
 }

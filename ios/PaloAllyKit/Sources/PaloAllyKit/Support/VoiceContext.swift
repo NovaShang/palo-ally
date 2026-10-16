@@ -121,10 +121,10 @@ public enum VoiceContext {
     static func terms(in text: String) -> [String] {
         var out: [String] = []
         for m in matches(#"[「《“"]([^」》”"]{1,20})[」》”"]"#, in: text, group: 1) { out.append(m) }
-        for m in matches(#"[A-Za-z0-9一-鿿]*[A-Za-z][A-Za-z0-9._+#/-]*[A-Za-z0-9+#][A-Za-z0-9一-鿿]*"#, in: text) {
+        for m in matches(#"[A-Za-z0-9一-鿿]*[A-Za-z][A-Za-z0-9._+#/-]*[A-Za-z0-9+#][A-Za-z0-9一-鿿]*"#, in: text) {  // i18n-ok: pattern
             if m.count >= 2 { out.append(m) }
         }
-        for m in matches(#"[¥$€£]?\d[\d,.:]*\s?(?:%|[A-Za-z]{1,4}|[元块号点月日年岁个件页天周])?"#, in: text) {
+        for m in matches(#"[¥$€£]?\d[\d,.:]*\s?(?:%|[A-Za-z]{1,4}|[元块号点月日年岁个件页天周])?"#, in: text) {  // i18n-ok: pattern
             let t = m.trimmingCharacters(in: .whitespaces)
             if t.count >= 2 { out.append(t) }
         }

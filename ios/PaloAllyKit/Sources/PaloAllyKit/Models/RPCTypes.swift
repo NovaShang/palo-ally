@@ -169,7 +169,12 @@ public struct OKResult: Decodable, Sendable {
 public struct HelloParams: Codable, Sendable {
     public var client: String
     public var version: String
-    public init(client: String, version: String) { self.client = client; self.version = version }
+    /// The language this device is set to ("zh-Hans-CN", "en-US"), so the host
+    /// can answer and write in it. Optional: a host that doesn't know it ignores it.
+    public var locale: String?
+    public init(client: String, version: String, locale: String? = Locale.preferredLanguages.first) {
+        self.client = client; self.version = version; self.locale = locale
+    }
 }
 
 public struct HelloResult: Decodable, Sendable {
