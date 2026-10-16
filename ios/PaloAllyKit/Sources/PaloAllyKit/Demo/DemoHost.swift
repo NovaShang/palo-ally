@@ -65,6 +65,8 @@ public actor DemoHost {
     /// the one asking is added from what its hello said.
     var otherDevices: [PairedDevice] = DemoHost.demoDevices()
     var helloClient = "ios"
+    /// Folders the owner opened from the preview pane (files.folders.*).
+    var ownerFolders: [OwnerFolder] = []
     /// Asleep Pals being woken (§12), for words that come meanwhile to wait on.
     var palWakes: [String: Task<Void, Never>] = [:]
     /// Seeded with Pals: an accepted proposal opens a Pal, not a helper.
@@ -1027,6 +1029,7 @@ public actor DemoHost {
         default:
             if let r = try dispatchMedia(method, p) { return r }
             if let r = try dispatchDevices(method, p) { return r }
+            if let r = try dispatchFiles(method, p) { return r }
             if !sessionsMode, let r = try await dispatchPals(method, p) { return r }
             throw DemoError(message: "unknown method \(method)")
         }

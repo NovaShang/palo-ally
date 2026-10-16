@@ -110,6 +110,21 @@ public enum RPCMethod {
     public static let deviceList = "device.list"
     public static let deviceRemove = "device.remove"
 
+    /// Files on the computer, read-only (docs/files-prd.md): a folder's
+    /// children, a file in chunks, names, the paths in a reply, and the
+    /// folders the owner opened from the preview pane.
+    public static let filesList = "files.list"
+    public static let filesRead = "files.read"
+    public static let filesSearch = "files.search"
+    public static let filesResolve = "files.resolve"
+    public static let filesFoldersList = "files.folders.list"
+    public static let filesFoldersBrowse = "files.folders.browse"
+    public static let filesFoldersAdd = "files.folders.add"
+    public static let filesFoldersRemove = "files.folders.remove"
+
+    public static let files: [String] = [filesList, filesRead, filesSearch, filesResolve, filesFoldersList,
+                                         filesFoldersBrowse, filesFoldersAdd, filesFoldersRemove]
+
     /// Every method the client knows. The contract test checks this equals
     /// the host's method set exactly.
     public static let all: [String] = [
@@ -118,7 +133,7 @@ public enum RPCMethod {
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
         suggestionsList, suggestionsDismiss, hostUpdate, pairInvite, deviceList, deviceRemove,
-    ] + allies + sessions + pals
+    ] + allies + sessions + pals + files
 }
 
 public enum RPCEventName {
