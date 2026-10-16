@@ -166,9 +166,18 @@ struct OwnerFoldersSection: View {
                 .accessibilityIdentifier("owner-folder-\(f.name)")
             }
             Button { picking = true } label: {
-                Label { Text("打开文件夹…", tableName: "Files") } icon: { Image(systemName: "folder.badge.plus") }
+                HStack(spacing: 12) {
+                    Image(systemName: "plus")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 40, height: 40)
+                        .background(.fill.tertiary, in: .rect(cornerRadius: 10, style: .continuous))
+                    Text("打开文件夹…", tableName: "Files")
+                    Spacer(minLength: 0)
+                }
+                .contentShape(.rect)
             }
-            .tint(.primary)
+            .buttonStyle(.plain)
             .accessibilityIdentifier("open-folder")
         } header: {
             Text("文件夹", tableName: "Files")
@@ -192,11 +201,13 @@ struct OwnerFoldersSection: View {
     private func load() async {
         if let list = try? await store.ownerFolders() { folders = list }
         #if DEBUG
-        // `-demoOpenFolder <path>`: that folder opened from here (snapshots).
-        if let path = UserDefaults.standard.string(forKey: "demoOpenFolder"), folders.isEmpty,
-           let f = try? await store.addOwnerFolder(path: path) {
-            folders = [f]
-            model.openFolder(f.id)
+        // `-demoOpenFolder <path>`: that folder opened from here; `-demoAddFolder
+        // <path>`: only remembered (snapshots).
+        for (key, open) in [("demoAddFolder", false), ("demoOpenFolder", true)] {
+            guard let path = UserDefaults.standard.string(forKey: key), !folders.contains(where: { $0.path == path }),
+                  let f = try? await store.addOwnerFolder(path: path) else { continue }
+            folders.append(f)
+            if open { model.openFolder(f.id) }
         }
         #endif
     }

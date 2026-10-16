@@ -159,6 +159,8 @@ private struct LivePiece: View {
 
 private struct LiveMarkdown: UIViewRepresentable {
     @Environment(\.wholeReply) private var wholeReply
+    /// Paths in the reply that are files on the computer become links (FileLinks).
+    @Environment(\.fileLinks) private var fileLinks
     let model: ReplyTextModel
     /// Unused here: a new value is what makes SwiftUI measure again.
     let height: CGFloat
@@ -168,6 +170,7 @@ private struct LiveMarkdown: UIViewRepresentable {
         let host = LiveTextHost()
         host.text.onQuote = onQuote
         host.text.wholeReply = wholeReply
+        host.text.fileLinks = fileLinks
         host.text.reportsHeightItself = true
         model.attach(host)
         return host
@@ -176,6 +179,7 @@ private struct LiveMarkdown: UIViewRepresentable {
     func updateUIView(_ host: LiveTextHost, context: Context) {
         host.text.onQuote = onQuote
         host.text.wholeReply = wholeReply
+        host.text.fileLinks = fileLinks
         // Unchanged text returns at once.
         host.text.render(source: model.liveText, streaming: model.streaming, linkColor: model.linkColor)
     }
