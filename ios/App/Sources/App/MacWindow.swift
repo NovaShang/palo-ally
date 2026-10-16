@@ -98,6 +98,27 @@ private struct MacToolbarInstaller: UIViewRepresentable {
     }
 }
 
+/// The Mac app's AppKit bundle (PlugIns/PaloAllyAppKit.bundle, from
+/// ios/App/AppKitSupport): window work UIKit has no API for.
+@MainActor
+enum AppKitBundle {
+    private static let object: NSObject? = {
+        guard let url = Bundle.main.builtInPlugInsURL?.appendingPathComponent("PaloAllyAppKit.bundle"),
+              let bundle = Bundle(url: url), bundle.load(),
+              let type = bundle.principalClass as? NSObject.Type else {
+            debugLog("[mac] the AppKit bundle didn't load")
+            return nil
+        }
+        return type.init()
+    }()
+
+    /// The window with this toolbar: its content runs under a transparent
+    /// titlebar, the traffic lights and toolbar items floating over it.
+    static func immerseWindows(toolbar id: String) {
+        _ = object?.perform(NSSelectorFromString("immerseWindowsWithToolbar:"), with: id)
+    }
+}
+
 private extension NSToolbarItem.Identifier {
     static let library = NSToolbarItem.Identifier("palo.library")
 }
@@ -118,7 +139,9 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
         installed[key] = bar
         titlebar.titleVisibility = .hidden
         titlebar.toolbarStyle = .unified
+        titlebar.separatorStyle = .none
         titlebar.toolbar = bar.toolbar
+        AppKitBundle.immerseWindows(toolbar: bar.toolbar.identifier)
     }
 
     private init(model: AppModel) {

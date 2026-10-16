@@ -51,6 +51,7 @@
 		771DA9C8AA0708C69B5C0D2B /* MessageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51926AB68F34CBF76C2C1507 /* MessageRow.swift */; };
 		7BD8D9724ED4EFF78AB71306 /* SessionPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79CD58E84DE9E5FA0BD784A8 /* SessionPage.swift */; };
 		7BE1EBB1FD3930584F6FBB48 /* ReplyText.swift in Sources */ = {isa = PBXBuildFile; fileRef = A636E701CD74733FD3960096 /* ReplyText.swift */; };
+		7C49EEB2F46719ABE8116550 /* ImmersiveWindows.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD2957D3A96C28EC915BD9BD /* ImmersiveWindows.swift */; };
 		7FA2E7E1309D4680A571ACCC /* SpeechDictation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F881AEFDC8F959F0506046DD /* SpeechDictation.swift */; };
 		8086BAF205FD7F48D481A5F4 /* SuggestionsGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76CCDDF52E61A55777BF897F /* SuggestionsGate.swift */; };
 		81A11C9A7F625540126701DA /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5458CC8523AA61D0A0852ABA /* ChatView.swift */; };
@@ -59,6 +60,7 @@
 		8781C04CFC02A3A8620CA135 /* StallWatchdog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C7EC5D880932CD6C79433E3 /* StallWatchdog.swift */; };
 		8850FBC4AA7695D4260E332B /* DiagnosticsCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3C390EEBB6E830AE2684F1C /* DiagnosticsCollector.swift */; };
 		8D665CDE4487C8044D34A563 /* LaunchMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0ED44802BFA212B62DF504F /* LaunchMetrics.swift */; };
+		8E8B98B7834D42E37464E1E3 /* PaloAllyAppKit.bundle in Embed Dependencies */ = {isa = PBXBuildFile; fileRef = 0420ADEBD7C7A5E9F8EB5142 /* PaloAllyAppKit.bundle */; platformFilter = maccatalyst; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		90CE987F9EA4BB408FB5F7FE /* DisplayCorners.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF9B71414B8BB238CEE54BC1 /* DisplayCorners.swift */; };
 		915E679855ECCC711E941595 /* HelperProposalCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94A3E8B6B87E2BA510008492 /* HelperProposalCard.swift */; };
 		96F66305E9AF6718FC0FFFDC /* PalCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B4899D65015CCAB78463CEA /* PalCopy.swift */; };
@@ -106,9 +108,31 @@
 			remoteGlobalIDString = 8A3A01C4674BF948CC526587;
 			remoteInfo = PaloAlly;
 		};
+		6C9D8D75C220F81449DDA494 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D5B8AE0FC6277E598E5B66A6 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0005DDC0295D1775C23B9703;
+			remoteInfo = PaloAllyAppKit;
+		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		DDA7E766D1BE0E481FA8D9CB /* Embed Dependencies */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				8E8B98B7834D42E37464E1E3 /* PaloAllyAppKit.bundle in Embed Dependencies */,
+			);
+			name = "Embed Dependencies";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		0420ADEBD7C7A5E9F8EB5142 /* PaloAllyAppKit.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PaloAllyAppKit.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
 		056B108C0177A1156F312E84 /* AssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantView.swift; sourceTree = "<group>"; };
 		07A26E3CEF36BC017C91F461 /* SelectableMarkdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectableMarkdown.swift; sourceTree = "<group>"; };
 		08BF2FEA6B01AE016C219995 /* SessionsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionsUITests.swift; sourceTree = "<group>"; };
@@ -174,6 +198,7 @@
 		B7EADFA6C31C6254DED78C80 /* ScrollStressUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollStressUITests.swift; sourceTree = "<group>"; };
 		B81417C9AB023AED7ACC4AC2 /* AllyChat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllyChat.swift; sourceTree = "<group>"; };
 		BC058EC00155E4856AE7B909 /* SuggestionChips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionChips.swift; sourceTree = "<group>"; };
+		BD2957D3A96C28EC915BD9BD /* ImmersiveWindows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImmersiveWindows.swift; sourceTree = "<group>"; };
 		C0309622DA447C8E1B5069A2 /* ClipboardCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardCard.swift; sourceTree = "<group>"; };
 		C0ED44802BFA212B62DF504F /* LaunchMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchMetrics.swift; sourceTree = "<group>"; };
 		C1B780A4AAD93BEE438E5D12 /* ScrollLab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollLab.swift; sourceTree = "<group>"; };
@@ -224,6 +249,14 @@
 			path = Settings;
 			sourceTree = "<group>";
 		};
+		0FAB345EA9B744F0FC935013 /* AppKitSupport */ = {
+			isa = PBXGroup;
+			children = (
+				BD2957D3A96C28EC915BD9BD /* ImmersiveWindows.swift */,
+			);
+			path = AppKitSupport;
+			sourceTree = "<group>";
+		};
 		105F3C7BD76CBDFF94E0FD0A /* Library */ = {
 			isa = PBXGroup;
 			children = (
@@ -248,6 +281,7 @@
 			isa = PBXGroup;
 			children = (
 				0B2339DF9459035E591FCB19 /* PaloAlly.app */,
+				0420ADEBD7C7A5E9F8EB5142 /* PaloAllyAppKit.bundle */,
 				A9FC6DD7E0D29DDA214A18CE /* PaloAllyUITests.xctest */,
 			);
 			name = Products;
@@ -379,6 +413,7 @@
 		A8CFB74D95C7496EBA124D8B = {
 			isa = PBXGroup;
 			children = (
+				0FAB345EA9B744F0FC935013 /* AppKitSupport */,
 				9BD016BFF046608279DFDDD7 /* Packages */,
 				F7E550407E24F7FF8D8C5656 /* Resources */,
 				F581AFA2F3A1B888E360DB69 /* Sources */,
@@ -441,6 +476,23 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		0005DDC0295D1775C23B9703 /* PaloAllyAppKit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EAE99054F9FAA364BC70E228 /* Build configuration list for PBXNativeTarget "PaloAllyAppKit" */;
+			buildPhases = (
+				BF3770807B7D5E166DF8908A /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PaloAllyAppKit;
+			packageProductDependencies = (
+			);
+			productName = PaloAllyAppKit;
+			productReference = 0420ADEBD7C7A5E9F8EB5142 /* PaloAllyAppKit.bundle */;
+			productType = "com.apple.product-type.bundle";
+		};
 		8A3A01C4674BF948CC526587 /* PaloAlly */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 934163F72DF4ED1CCD132F1B /* Build configuration list for PBXNativeTarget "PaloAlly" */;
@@ -448,10 +500,12 @@
 				93777E8F09BA1D6D0A1263C5 /* Sources */,
 				6A0FB17BF5FD37EB77F68998 /* Resources */,
 				825B694BE74899AAD0A668D5 /* Frameworks */,
+				DDA7E766D1BE0E481FA8D9CB /* Embed Dependencies */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				6C2E912CB615DAEC45E08D90 /* PBXTargetDependency */,
 			);
 			name = PaloAlly;
 			packageProductDependencies = (
@@ -491,6 +545,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					0005DDC0295D1775C23B9703 = {
+						ProvisioningStyle = Automatic;
+					};
 					8A3A01C4674BF948CC526587 = {
 						ProvisioningStyle = Automatic;
 					};
@@ -519,6 +576,7 @@
 			projectRoot = "";
 			targets = (
 				8A3A01C4674BF948CC526587 /* PaloAlly */,
+				0005DDC0295D1775C23B9703 /* PaloAllyAppKit */,
 				99B72C1E75B07AA5D2248A0A /* PaloAllyUITests */,
 			);
 		};
@@ -634,9 +692,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		BF3770807B7D5E166DF8908A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7C49EEB2F46719ABE8116550 /* ImmersiveWindows.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		6C2E912CB615DAEC45E08D90 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilter = maccatalyst;
+			target = 0005DDC0295D1775C23B9703 /* PaloAllyAppKit */;
+			targetProxy = 6C9D8D75C220F81449DDA494 /* PBXContainerItemProxy */;
+		};
 		C7D82997EC93D30955DF164D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 8A3A01C4674BF948CC526587 /* PaloAlly */;
@@ -733,10 +805,28 @@
 				ONLY_ACTIVE_ARCH = YES;
 				PALOALLY_COMMIT = dev;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		452F933953338A1B15E78825 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSPrincipalClass = PaloAllyImmersiveWindows;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.novashang.paloally.appkit;
+				PRODUCT_NAME = PaloAllyAppKit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
 			};
 			name = Debug;
 		};
@@ -838,7 +928,6 @@
 				MTL_FAST_MATH = YES;
 				PALOALLY_COMMIT = dev;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 6.0;
@@ -874,6 +963,25 @@
 			};
 			name = Release;
 		};
+		F47021176CF7EEE2E51F278F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSPrincipalClass = PaloAllyImmersiveWindows;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.novashang.paloally.appkit;
+				PRODUCT_NAME = PaloAllyAppKit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -900,6 +1008,15 @@
 			buildConfigurations = (
 				259A35521F65461FDA23A41C /* Debug */,
 				E0ECE91D4289E98B71A4725D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EAE99054F9FAA364BC70E228 /* Build configuration list for PBXNativeTarget "PaloAllyAppKit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				452F933953338A1B15E78825 /* Debug */,
+				F47021176CF7EEE2E51F278F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

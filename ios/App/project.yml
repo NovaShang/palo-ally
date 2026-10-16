@@ -33,6 +33,13 @@ targets:
       - package: PaloAllyKit
         product: PaloAllyFilePreview
       - package: MarkdownUI
+      # The Mac only: AppKit for the window (ImmersiveWindows), loaded from PlugIns.
+      - target: PaloAllyAppKit
+        platformFilter: macOS
+        embed: true
+        codeSign: true
+        copy:
+          destination: plugins
     entitlements:
       path: PaloAlly.entitlements
       properties:
@@ -89,6 +96,21 @@ targets:
         ENABLE_PREVIEWS: YES
         CODE_SIGN_STYLE: Automatic
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+  # The Mac app's AppKit bundle (ios/App/AppKitSupport), loaded at launch.
+  PaloAllyAppKit:
+    type: bundle
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: AppKitSupport
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.novashang.paloally.appkit
+        PRODUCT_NAME: PaloAllyAppKit
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSPrincipalClass: PaloAllyImmersiveWindows
+        CODE_SIGN_STYLE: Automatic
+        SKIP_INSTALL: YES
   # DEBUG drills that need real touches (flings), on an iPhone simulator;
   # MacScrollWheelUITests (real scroll-wheel events) and MacLibraryUITests
   # (成果 in the inspector), on Mac Catalyst.

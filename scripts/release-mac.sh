@@ -101,8 +101,11 @@ ent["get-task-allow"] = False
 plistlib.dump(ent, open(sys.argv[3], "wb"))
 PY
 cp "$PROFILE" "$APP/Contents/embedded.provisionprofile"
-# Nested code first (none today: the packages link statically), then the app.
-find "$APP/Contents" \( -name "*.framework" -o -name "*.dylib" -o -name "*.appex" -o -name "*.xpc" \) -prune -print0 2>/dev/null |
+# Nested code first (the packages link statically; PlugIns has the app's
+# AppKit bundle, which it loads, so it must carry the same signature), then
+# the app.
+find "$APP/Contents" \( -name "*.framework" -o -name "*.dylib" -o -name "*.appex" -o -name "*.xpc" \
+  -o -path "$APP/Contents/PlugIns/*.bundle" \) -prune -print0 2>/dev/null |
   while IFS= read -r -d '' nested; do
     codesign --force --timestamp --options runtime --sign "$SIGN_IDENTITY" ${KC_ARGS[@]+"${KC_ARGS[@]}"} "$nested"
   done
