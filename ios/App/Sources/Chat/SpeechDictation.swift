@@ -164,8 +164,8 @@ final class SpeechDictation {
 
     private static func friendly(_ message: String) -> String {
         let m = message.lowercased()
-        if m.contains("permission") { return "需要在「设置」里允许使用麦克风" }
-        if m.contains("quota") { return "今天的语音额度用完了，明天再试" }
-        return "语音识别没连上，再试一次"
+        if m.contains("permission") { return String(localized: "需要在「设置」里允许使用麦克风") }
+        if m.contains("quota") { return String(localized: "今天的语音额度用完了，明天再试") }
+        return String(localized: "语音识别没连上，再试一次")
     }
 }

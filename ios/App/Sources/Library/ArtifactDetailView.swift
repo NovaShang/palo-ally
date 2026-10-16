@@ -95,13 +95,13 @@ struct ArtifactDetailView: View {
                         Button {
                             Task { try? await store.setPinned(artifact, !artifact.pinned) }
                         } label: {
-                            Label(artifact.pinned ? "取消置顶" : "置顶", systemImage: artifact.pinned ? "pin.slash" : "pin")
+                            Label(artifact.pinned ? String(localized: "取消置顶") : String(localized: "置顶"), systemImage: artifact.pinned ? "pin.slash" : "pin")
                         }
                         if let content, isMarkdown(artifact, content.path) {
                             Button {
                                 showSource.toggle()
                             } label: {
-                                Label(showSource ? "查看排版" : "查看源码",
+                                Label(showSource ? String(localized: "查看排版") : String(localized: "查看源码"),
                                       systemImage: showSource ? "doc.richtext" : "chevron.left.forwardslash.chevron.right")
                             }
                         }
@@ -130,20 +130,20 @@ struct ArtifactDetailView: View {
 
     /// The Mac's strip: the bar's actions in one menu.
     private func macMenu(_ artifact: Artifact) -> some View {
-        MacStripMenu(label: "更多") {
+        MacStripMenu(label: String(localized: "更多")) {
             if let content {
                 ShareLink(item: content.fileURL) { Label("共享", systemImage: "square.and.arrow.up") }
             }
             Button {
                 Task { try? await store.setPinned(artifact, !artifact.pinned) }
             } label: {
-                Label(artifact.pinned ? "取消置顶" : "置顶", systemImage: artifact.pinned ? "pin.slash" : "pin")
+                Label(artifact.pinned ? String(localized: "取消置顶") : String(localized: "置顶"), systemImage: artifact.pinned ? "pin.slash" : "pin")
             }
             if let content, isMarkdown(artifact, content.path) {
                 Button {
                     showSource.toggle()
                 } label: {
-                    Label(showSource ? "查看排版" : "查看源码",
+                    Label(showSource ? String(localized: "查看排版") : String(localized: "查看源码"),
                           systemImage: showSource ? "doc.richtext" : "chevron.left.forwardslash.chevron.right")
                 }
             }
@@ -230,7 +230,7 @@ struct ArtifactDetailView: View {
             if content == nil {
                 self.error = msg
             } else {
-                refreshError = "没刷新成功：\(msg)"
+                refreshError = String(localized: "没刷新成功：\(msg)")
             }
         }
     }

@@ -17,7 +17,7 @@ final class MacLibraryUITests: XCTestCase {
     @MainActor
     func testAMarkdownItemOpensInTheInspector() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-demo", "YES", "-demoWindow", "1300x850"]
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "-demo", "YES", "-demoWindow", "1300x850"]
         app.launch()
         defer { app.terminate() }
 

@@ -607,7 +607,7 @@ final class ChatScrollUITests: XCTestCase {
     @MainActor
     private func launch(_ args: [String]) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments += ["-demo", "YES", "-pinTrace", "YES"] + args
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "-demo", "YES", "-pinTrace", "YES"] + args
         if let extra = ProcessInfo.processInfo.environment["STRESS_ARGS"] {
             app.launchArguments += extra.split(separator: " ").map(String.init)
         }

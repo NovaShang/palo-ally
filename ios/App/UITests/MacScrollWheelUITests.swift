@@ -42,7 +42,7 @@ final class MacScrollWheelUITests: XCTestCase {
     @MainActor
     private func wheel(_ args: [String], streaming: Bool) throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-demo", "YES", "-demoState", "long"] + args
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "-demo", "YES", "-demoState", "long"] + args
         app.launch()
         defer { app.terminate() }
         let marker = app.descendants(matching: .any)

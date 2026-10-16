@@ -15,7 +15,7 @@ final class PairLinkUITests: XCTestCase {
     @MainActor
     func testALinkClickedWhileTheAppRunsAsksToAddTheComputer() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-demo", "YES"]
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "-demo", "YES"]
         app.launch()
         defer { app.terminate() }
         XCTAssertTrue(app.buttons["title-orb"].waitForExistence(timeout: 20), "the conversation never appeared")
@@ -29,7 +29,7 @@ final class PairLinkUITests: XCTestCase {
     func testALinkThatLaunchesTheAppAsksToAddTheComputer() throws {
         let app = XCUIApplication()
         // The link the app was opened with, as on a cold start.
-        app.launchArguments += ["-demo", "YES", "-pairLink", link]
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "-demo", "YES", "-pairLink", link]
         app.launch()
         defer { app.terminate() }
         try confirmShows(in: app)

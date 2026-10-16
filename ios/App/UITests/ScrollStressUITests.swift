@@ -14,7 +14,7 @@ final class ScrollStressUITests: XCTestCase {
     @MainActor
     func testFlingWhileStreamingAndSyncing() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-demo", "YES", "-demoState", "stress"]
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "-demo", "YES", "-demoState", "stress"]
         if let extra = ProcessInfo.processInfo.environment["STRESS_ARGS"] {
             app.launchArguments += extra.split(separator: " ").map(String.init)
         }

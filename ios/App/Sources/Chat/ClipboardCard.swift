@@ -21,7 +21,7 @@ struct ClipboardCard: View {
                 Image(systemName: "doc.on.clipboard")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
-                Text(message.label ?? "复制到剪贴板")
+                Text(message.label ?? String(localized: "复制到剪贴板"))
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -31,7 +31,7 @@ struct ClipboardCard: View {
                     store.markCopied(message.id)
                     justCopied = true
                 } label: {
-                    Label(copied ? "已复制" : "复制", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    Label(copied ? String(localized: "已复制") : String(localized: "复制"), systemImage: copied ? "checkmark" : "doc.on.doc")
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(copied ? .secondary : .primary)
                         .contentTransition(.symbolEffect(.replace))
@@ -41,7 +41,7 @@ struct ClipboardCard: View {
                 .controlSize(.small)
                 .tint(.primary)
                 .sensoryFeedback(.success, trigger: justCopied) { _, now in now }
-                .accessibilityLabel(copied ? "已复制，再复制一次" : "复制")
+                .accessibilityLabel(copied ? String(localized: "已复制，再复制一次") : String(localized: "复制"))
             }
 
             Text(message.text)
@@ -52,7 +52,7 @@ struct ClipboardCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if isLong {
-                Button(expanded ? "收起" : "展开") {
+                Button(expanded ? String(localized: "收起") : String(localized: "展开")) {
                     withAnimation(.snappy) { expanded.toggle() }
                 }
                 .font(.footnote)

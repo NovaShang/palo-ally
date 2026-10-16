@@ -33,7 +33,7 @@ struct AllyAcceptSheet: View {
                     if let invite {
                         content(invite)
                     } else {
-                        problem("这个链接不完整", "请对方在 TA 的 PaloAlly 里重新点「添加」，再扫一次新的二维码。")
+                        problem(String(localized: "这个链接不完整"), String(localized: "请对方在 TA 的 PaloAlly 里重新点「添加」，再扫一次新的二维码。"))
                     }
                 }
                 .padding(.horizontal, 24)
@@ -79,7 +79,7 @@ struct AllyAcceptSheet: View {
                 Label("加好了", systemImage: "checkmark.circle.fill")
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(.green)
-                Text(Copy.spaced("以后想跟\(ally.displayName)说什么、约什么时间，告诉\(store.assistantName)，或者在列表里点开 TA 直接说。")
+                Text(Copy.spaced(String(localized: "以后想跟\(ally.displayName)说什么、约什么时间，告诉\(store.assistantName)，或者在列表里点开 TA 直接说。"))
                      + "\n" + Copy.allyTrustNote(ally.effectiveTrust, assistant: store.assistantName, ally: ally.displayName))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -87,7 +87,7 @@ struct AllyAcceptSheet: View {
             }
         default:
             if invite.isExpired() && phase == .asking {
-                problem("这个二维码过期了", "请对方重新点「添加」，生成一个新的再扫。")
+                problem(String(localized: "这个二维码过期了"), String(localized: "请对方重新点「添加」，生成一个新的再扫。"))
             } else {
                 question(invite)
             }
@@ -100,7 +100,7 @@ struct AllyAcceptSheet: View {
             Text("加「\(label)」为 Ally？")
                 .font(.title3.weight(.semibold))
                 .multilineTextAlignment(.center)
-            Text(Copy.spaced("加好以后，\(store.assistantName)和 TA 的助理可以互相传话、约时间，你也能直接跟 TA 说。"))
+            Text(Copy.spaced(String(localized: "加好以后，\(store.assistantName)和 TA 的助理可以互相传话、约时间，你也能直接跟 TA 说。")))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -117,21 +117,21 @@ struct AllyAcceptSheet: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            Text(kind == .mine ? "你自己的另一台电脑。" : "别人的助理，比如家里人、朋友。")
+            Text(kind == .mine ? String(localized: "你自己的另一台电脑。") : String(localized: "别人的助理，比如家里人、朋友。"))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
         .disabled(phase == .working)
 
         VStack(alignment: .leading, spacing: 8) {
-            Text(Copy.spaced("\(store.assistantName)怎么回 TA")).font(.footnote).foregroundStyle(.secondary)
+            Text(Copy.spaced(String(localized: "\(store.assistantName)怎么回 TA"))).font(.footnote).foregroundStyle(.secondary)
             Picker("怎么回 TA", selection: $trust) {
                 Text(Copy.allyTrust(.review)).tag(AllyTrust.review)
                 Text(Copy.allyTrust(.converse)).tag(AllyTrust.converse)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            Text(Copy.allyTrustNote(trust, assistant: store.assistantName, ally: "TA") + "以后随时能改。")
+            Text(Copy.allyTrustNote(trust, assistant: store.assistantName, ally: "TA") + String(localized: "以后随时能改。"))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -141,7 +141,7 @@ struct AllyAcceptSheet: View {
             Button {
                 Task { await accept(invite) }
             } label: {
-                Text(phase == .working ? "正在加…" : "加为 Ally").frame(maxWidth: .infinity)
+                Text(phase == .working ? String(localized: "正在加…") : String(localized: "加为 Ally")).frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.capsule)
@@ -181,7 +181,7 @@ struct AllyAcceptSheet: View {
 
     private func accept(_ invite: AllyInviteLink) async {
         guard !invite.isExpired() else {
-            phase = .failed("这个二维码刚刚过期了，请对方重新生成一个。")
+            phase = .failed(String(localized: "这个二维码刚刚过期了，请对方重新生成一个。"))
             return
         }
         phase = .working
@@ -189,10 +189,10 @@ struct AllyAcceptSheet: View {
             if let ally = try await store.acceptAlly(link: invite.link, kind: kind, trust: trust) {
                 withAnimation(.snappy) { phase = .added(ally) }
             } else {
-                phase = .failed("没加上：电脑没说加好了没有，等一下看看列表里有没有 TA。")
+                phase = .failed(String(localized: "没加上：电脑没说加好了没有，等一下看看列表里有没有 TA。"))
             }
         } catch {
-            phase = .failed("没加上：\(Copy.error(error))")
+            phase = .failed(String(localized: "没加上：\(Copy.error(error))"))
         }
     }
 }

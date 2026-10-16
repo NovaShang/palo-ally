@@ -132,7 +132,7 @@ final class VoiceExitUITests: XCTestCase {
     @MainActor
     private func hold(_ words: String, seconds: Double, streaming: Bool = false, extra: [String] = []) -> (XCUIApplication, AppLog) {
         let app = XCUIApplication()
-        app.launchArguments += ["-demo", "YES", "-demoState", "long", "-turnTrace", "YES", "-frameTrace", "YES",
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "-demo", "YES", "-demoState", "long", "-turnTrace", "YES", "-frameTrace", "YES",
                                 "-voiceDrill", "\(seconds)", "-voiceDrillDelay", "5", "-voiceDrillText", words]
             + (streaming ? [] : ["-demoStreamDelay", "600"]) + extra
         if let more = ProcessInfo.processInfo.environment["STRESS_ARGS"] {

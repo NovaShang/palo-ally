@@ -428,8 +428,8 @@ struct VoiceInputPanel: View {
         // With Reduce Motion they only fade.
         let grow = reduceMotion ? 1 : p
         HStack(spacing: 16) {
-            VoiceZone(icon: "xmark", title: "取消", tint: .red, hot: voice.target == .cancel)
-            VoiceZone(icon: "character.cursor.ibeam", title: "编辑", tint: .accentColor, hot: voice.target == .edit)
+            VoiceZone(icon: "xmark", title: String(localized: "取消"), tint: .red, hot: voice.target == .cancel)
+            VoiceZone(icon: "character.cursor.ibeam", title: String(localized: "编辑"), tint: .accentColor, hot: voice.target == .edit)
         }
         .frame(height: Self.zoneHeight)
         .padding(.horizontal, 6)
@@ -449,9 +449,9 @@ struct VoiceInputPanel: View {
 
     private var hint: String {
         switch voice.target {
-        case .send: "松开 发送"
-        case .cancel: "松开 取消"
-        case .edit: "松开 编辑"
+        case .send: String(localized: "松开 发送")
+        case .cancel: String(localized: "松开 取消")
+        case .edit: String(localized: "松开 编辑")
         }
     }
 }
@@ -574,12 +574,12 @@ private struct VoiceWordsStage: View {
     private var shownText: String {
         switch voice.exit {
         case .unheard: return voice.exitWords
-        case .some: return voice.exitWords.isEmpty ? "说吧，我在听…" : voice.exitWords
+        case .some: return voice.exitWords.isEmpty ? String(localized: "说吧，我在听…") : voice.exitWords
         case nil:
-            if voice.resolving { return "识别中…" }
+            if voice.resolving { return String(localized: "识别中…") }
             let t = voice.transcript
             if let error = voice.dictation.errorMessage, t.isEmpty { return error }
-            return t.isEmpty ? "说吧，我在听…" : t
+            return t.isEmpty ? String(localized: "说吧，我在听…") : t
         }
     }
 

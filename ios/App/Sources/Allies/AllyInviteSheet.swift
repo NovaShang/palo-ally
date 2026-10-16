@@ -140,13 +140,13 @@ struct AllyInviteSheet: View {
     /// 「18:12 前有效，只能用一次」; the last minute counts down.
     private func expiryLine(now: Date) -> String {
         guard let invite, invite.expiresAt > 0 else {
-            if loading { return "正在生成…" }
-            return store.connection.isOnline ? " " : "还没连上你的电脑，连上就生成"
+            if loading { return String(localized: "正在生成…") }
+            return store.connection.isOnline ? " " : String(localized: "还没连上你的电脑，连上就生成")
         }
         let left = Double(invite.expiresAt - now.epochMillis) / 1000
-        if left <= 0 { return "这个二维码过期了" }
-        if left < 60 { return "还剩 \(Int(left.rounded(.up))) 秒，只能用一次" }
-        return "\(Copy.clock(invite.expiresAt)) 前有效，只能用一次"
+        if left <= 0 { return String(localized: "这个二维码过期了") }
+        if left < 60 { return String(localized: "还剩 \(Int(left.rounded(.up))) 秒，只能用一次") }
+        return String(localized: "\(Copy.clock(invite.expiresAt)) 前有效，只能用一次")
     }
 
     private func load() async {
@@ -158,7 +158,7 @@ struct AllyInviteSheet: View {
             invite = r
             code = QRCode.image(for: r.link)
         } catch {
-            self.error = "没生成出来：\(Copy.error(error))"
+            self.error = String(localized: "没生成出来：\(Copy.error(error))")
         }
     }
 }

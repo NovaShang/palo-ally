@@ -14,7 +14,7 @@ enum Clipboard {
 /// A small copy affordance that flashes a checkmark for feedback.
 struct CopyButton: View {
     let text: String
-    var label = "复制"
+    var label = String(localized: "复制")
     /// Where the glyph sits inside its (larger, invisible) tap area — `.leading`
     /// lines it up with text above it.
     var glyphAlignment: Alignment = .center
@@ -33,7 +33,7 @@ struct CopyButton: View {
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(copied ? "已复制" : label)
+        .accessibilityLabel(copied ? String(localized: "已复制") : label)
         .sensoryFeedback(.success, trigger: copied) { _, now in now }
         .task(id: copied) {
             guard copied else { return }

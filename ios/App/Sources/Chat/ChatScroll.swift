@@ -109,7 +109,7 @@ struct JumpToLatestButton: View {
             }
         }
         .animation(.snappy(duration: 0.2), value: hasNew)
-        .accessibilityLabel(hasNew ? "回到最新，下面有新消息" : "回到最新")
+        .accessibilityLabel(hasNew ? String(localized: "回到最新，下面有新消息") : String(localized: "回到最新"))
         .accessibilityIdentifier("jumpToLatest")
     }
 }

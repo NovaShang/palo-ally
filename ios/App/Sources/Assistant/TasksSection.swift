@@ -45,13 +45,10 @@ struct HistoryDay {
     }
 
     static func dayTitle(_ date: Date, now: Date, calendar: Calendar) -> String {
-        if calendar.isDate(date, inSameDayAs: now) { return "今天" }
-        if let y = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: y) { return "昨天" }
+        if calendar.isDate(date, inSameDayAs: now) { return String(localized: "今天") }
+        if let y = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: y) { return String(localized: "昨天") }
         let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "zh_CN")
-        f.dateFormat = sameYear ? "M月d日" : "yyyy年M月d日"
-        return f.string(from: date)
+        return sameYear ? date.formatted(.dateTime.month().day()) : date.formatted(.dateTime.year().month().day())
     }
 }
 
@@ -62,11 +59,11 @@ enum TaskKind {
     init(_ task: AllyTask) {
         let text = (task.title + " " + task.summary).lowercased()
         func has(_ words: [String]) -> Bool { words.contains { text.contains($0) } }
-        if has(["邮件", "邮箱", "email", "gmail", "mail", "回信"]) { self = .email }
-        else if has(["日程", "日历", "会议", "提醒", "calendar", "约"]) { self = .calendar }
-        else if has(["代码", "脚本", "bug", "程序", "部署", "仓库", "code", "git"]) { self = .code }
-        else if has(["ppt", "pptx", "文档", "报告", "pdf", "表格", "excel", "xlsx", "doc", "周报", "文章", "稿"]) { self = .document }
-        else if has(["网页", "网站", "浏览", "搜索", "查", "比价", "订", "http", "链接"]) { self = .web }
+        if has(["邮件", "邮箱", "email", "gmail", "mail", "回信"]) { self = .email }  // i18n-ok: matches Chinese task titles
+        else if has(["日程", "日历", "会议", "提醒", "calendar", "约"]) { self = .calendar }  // i18n-ok: matches Chinese task titles
+        else if has(["代码", "脚本", "bug", "程序", "部署", "仓库", "code", "git"]) { self = .code }  // i18n-ok: matches Chinese task titles
+        else if has(["ppt", "pptx", "文档", "报告", "pdf", "表格", "excel", "xlsx", "doc", "周报", "文章", "稿"]) { self = .document }  // i18n-ok: matches Chinese task titles
+        else if has(["网页", "网站", "浏览", "搜索", "查", "比价", "订", "http", "链接"]) { self = .web }  // i18n-ok: matches Chinese task titles
         else { self = .generic }
     }
 
@@ -93,10 +90,10 @@ private struct RunningHistoryRow: View {
             HStack(alignment: .top, spacing: 12) {
                 TaskStatusIcon(status: task.status)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(task.title.isEmpty ? "一件事" : task.title)
+                    Text(task.title.isEmpty ? String(localized: "一件事") : task.title)
                         .font(.body)
                         .lineLimit(2)
-                    Text(task.summary.isEmpty ? (task.status == .needsInput ? "需要你" : "刚开始") : task.summary)
+                    Text(task.summary.isEmpty ? (task.status == .needsInput ? String(localized: "需要你") : String(localized: "刚开始")) : task.summary)
                         .font(.subheadline)
                         .foregroundStyle(task.status == .needsInput ? Color.orange : .secondary)
                         .lineLimit(2)
@@ -123,7 +120,7 @@ private struct DoneHistoryRow: View {
             .split(whereSeparator: \.isNewline).first.map(String.init)?
             .trimmingCharacters(in: .whitespaces) ?? ""
         if succeeded, !firstLine.isEmpty { return firstLine }
-        return task.title.isEmpty ? "一件事" : task.title
+        return task.title.isEmpty ? String(localized: "一件事") : task.title
     }
 
     var body: some View {
@@ -154,8 +151,8 @@ private struct DoneHistoryRow: View {
     private var meta: String {
         var parts: [String] = []
         switch task.status {
-        case .failed: parts.append("没办成")
-        case .stopped: parts.append("停下了")
+        case .failed: parts.append(String(localized: "没办成"))
+        case .stopped: parts.append(String(localized: "停下了"))
         default: break
         }
         // The title, when the outcome line isn't already it.
@@ -218,7 +215,7 @@ struct TaskDetailView: View {
                                 Button("停下", role: .destructive) {
                                     Task {
                                         do { try await store.stopTask(id: task.id) } catch {
-                                            self.error = "没停下来：\(Copy.error(error))"
+                                            self.error = String(localized: "没停下来：\(Copy.error(error))")
                                         }
                                     }
                                 }
@@ -233,7 +230,7 @@ struct TaskDetailView: View {
                     if loading && activity.isEmpty {
                         ProgressView().frame(maxWidth: .infinity)
                     } else if activity.isEmpty {
-                        Text(error ?? "还没有记录到过程").foregroundStyle(.secondary)
+                        Text(error ?? String(localized: "还没有记录到过程")).foregroundStyle(.secondary)
                     } else {
                         ForEach(Array(activity.enumerated()), id: \.offset) { _, item in
                             ActivityRow(item: item)
@@ -275,7 +272,7 @@ private struct ActivityRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 if item.kind != .text, let tool = item.tool, !tool.isEmpty {
                     let name = item.label ?? Copy.tool(tool)
-                    Text(item.kind == .toolResult ? "\(name) · 结果" : name)
+                    Text(item.kind == .toolResult ? String(localized: "\(name) · 结果") : name)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                 }

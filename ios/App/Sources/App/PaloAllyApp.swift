@@ -13,7 +13,6 @@ struct PaloAllyApp: App {
         WindowGroup {
             RootView()
                 .environment(appDelegate.model)
-                .environment(\.locale, Locale(identifier: "zh-Hans"))
                 .onOpenURL { appDelegate.model.handle(url: $0) }
                 .onChange(of: scenePhase) { _, phase in
                     breadcrumb("scene \(phase)")

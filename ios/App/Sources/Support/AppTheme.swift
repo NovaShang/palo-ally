@@ -19,15 +19,15 @@ enum AppTheme: String, CaseIterable, Identifiable {
 
     var name: String {
         switch self {
-        case .magenta: "洋红"
-        case .orchid: "品红"
-        case .rose: "玫红"
-        case .berry: "深洋红"
-        case .blue: "蓝"
-        case .violet: "紫"
-        case .teal: "青绿"
-        case .orange: "橙"
-        case .graphite: "石墨"
+        case .magenta: String(localized: "洋红")
+        case .orchid: String(localized: "品红")
+        case .rose: String(localized: "玫红")
+        case .berry: String(localized: "深洋红")
+        case .blue: String(localized: "蓝")
+        case .violet: String(localized: "紫")
+        case .teal: String(localized: "青绿")
+        case .orange: String(localized: "橙")
+        case .graphite: String(localized: "石墨")
         }
     }
 

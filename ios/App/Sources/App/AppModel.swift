@@ -63,9 +63,9 @@ enum AssistantTab: String, CaseIterable, Hashable {
 
     var title: String {
         switch self {
-        case .watches: "目标"
-        case .history: "履历"
-        case .memory: "记忆"
+        case .watches: String(localized: "目标")
+        case .history: String(localized: "履历")
+        case .memory: String(localized: "记忆")
         }
     }
 
@@ -566,7 +566,7 @@ final class AppModel {
         if let n = meta.names[id], !n.isEmpty { return n }
         if let s = stores[id], !s.hostName.isEmpty { return s.hostName }
         if let h = hosts[id], !h.hostLabel.isEmpty { return h.hostLabel }
-        return "电脑"
+        return String(localized: "电脑")
     }
 
     func rename(_ id: String, to name: String) {
@@ -705,13 +705,13 @@ final class AppModel {
     func startDemo() {
         tearDownStores()
         meta = HostMeta.load(demo: true)
-        let names = ["我的 MacBook", "云端"]
+        let names = ["我的 MacBook", "云端"]  // i18n-ok: demo data
         for i in 0..<max(1, launch.demoHosts) {
             let id = "demo-\(i + 1)"
-            let identities = [("Palo", "magenta"), ("小云", "blue")]
+            let identities = [("Palo", "magenta"), ("小云", "blue")]  // i18n-ok: demo data
             let who = i < identities.count ? identities[i] : ("Palo", "")
             let naming = launch.screen == "naming" && i == 0
-            let host = DemoHost(speed: 1, hostName: i < names.count ? names[i] : "电脑 \(i + 1)",
+            let host = DemoHost(speed: 1, hostName: i < names.count ? names[i] : "电脑 \(i + 1)",  // i18n-ok: demo data
                                 assistantName: naming ? "" : who.0, color: naming ? "" : who.1, pals: i == 0)
             demoHosts[id] = host
             let s = makeStore(host.transport, id: id)
@@ -722,7 +722,7 @@ final class AppModel {
             s.start()
             // -demoState quote: the composer with a reply quote open (screenshots).
             if launch.demoState == "quote" {
-                s.replyDraft = ReplyTo(messageId: "m1", excerpt: "十一月回国机票降到 ¥4,860，比昨天低 ¥320")
+                s.replyDraft = ReplyTo(messageId: "m1", excerpt: "十一月回国机票降到 ¥4,860，比昨天低 ¥320")  // i18n-ok: demo data
             }
         }
         mode = .demo

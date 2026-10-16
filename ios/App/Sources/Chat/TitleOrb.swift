@@ -263,6 +263,6 @@ extension AppStore {
         let name = ModelName.short(status?.model ?? modelInfo?.model ?? "")
         guard !name.isEmpty else { return "" }
         guard let effort = status?.effort, !effort.isEmpty else { return name }
-        return "\(name) · 思考：\(EffortName.label(effort))"
+        return String(localized: "\(name) · 思考：\(EffortName.label(effort))")
     }
 }

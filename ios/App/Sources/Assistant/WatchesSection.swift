@@ -125,7 +125,7 @@ private struct AskForGoal: View {
     private func send() {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
-        store.send("帮我把这件事设成一个目标，长期帮我盯着或推进：\(t)")
+        store.send(String(localized: "帮我把这件事设成一个目标，长期帮我盯着或推进：\(t)"))
         text = ""
         focused = false
         sent = true
@@ -164,10 +164,10 @@ private struct GoalRow: View {
 
     private var goalLine: String {
         switch goal.state {
-        case .done: return goal.outcome ?? goal.progress ?? "办到了"
-        case .waiting: return "需要你 · " + (goal.progress ?? "看一下")
-        case .paused: return "已暂停" + (goal.progress.map { " · \($0)" } ?? "")
-        default: return goal.progress ?? "刚开始，还没有进展"
+        case .done: return goal.outcome ?? goal.progress ?? String(localized: "办到了")
+        case .waiting: return String(localized: "需要你 · ") + (goal.progress ?? String(localized: "看一下"))
+        case .paused: return String(localized: "已暂停") + (goal.progress.map { " · \($0)" } ?? "")
+        default: return goal.progress ?? String(localized: "刚开始，还没有进展")
         }
     }
 
@@ -230,7 +230,7 @@ struct GoalDetail: View {
 
                     Section("它怎么做") {
                         Text(g.instruction)
-                        LabeledContent(g.kind == .check ? "多久看一次" : "什么时候做", value: Copy.watchSchedule(g))
+                        LabeledContent(g.kind == .check ? String(localized: "多久看一次") : String(localized: "什么时候做"), value: Copy.watchSchedule(g))
                         if let t = g.lastCheckedAt {
                             LabeledContent("上次", value: Copy.relative(t))
                         }
@@ -251,7 +251,7 @@ struct GoalDetail: View {
                     }
 
                     Section {
-                        Button(g.enabled ? "暂停" : (g.state == .done ? "重新开始" : "继续")) {
+                        Button(g.enabled ? String(localized: "暂停") : (g.state == .done ? String(localized: "重新开始") : String(localized: "继续"))) {
                             Task {
                                 do { try await store.setWatch(g, enabled: !g.enabled) } catch { self.error = Copy.error(error) }
                             }
@@ -262,7 +262,7 @@ struct GoalDetail: View {
                         if let error { Text(error).foregroundStyle(.red) }
                     }
                 }
-                .navigationTitle(g.title.isEmpty ? "目标" : g.title)
+                .navigationTitle(g.title.isEmpty ? String(localized: "目标") : g.title)
                 .navigationBarTitleDisplayMode(.inline)
                 .sheet(isPresented: $editing) {
                     NavigationStack { WatchEditor(existing: g) }.environment(store)
@@ -332,7 +332,7 @@ struct WatchEditor: View {
                     if cadence == .monthly {
                         Picker("哪天", selection: $day) {
                             ForEach(dayChoices, id: \.self) { d in
-                                Text(d == -1 ? "最后一天" : "\(d) 号").tag(d)
+                                Text(d == -1 ? String(localized: "最后一天") : String(localized: "\(d) 号")).tag(d)
                             }
                         }
                     }
@@ -353,11 +353,11 @@ struct WatchEditor: View {
                         Label("加一个时间", systemImage: "plus")
                     }
                 } header: {
-                    Text(cadence == .monthly ? "那天几点" : "每天几点")
+                    Text(cadence == .monthly ? String(localized: "那天几点") : String(localized: "每天几点"))
                 } footer: {
                     Text(cadence == .monthly && (day == -1 || day > 28)
-                         ? "按电脑那边的时区。小月没有这天时，就在月底那天做。"
-                         : "按电脑那边的时区。")
+                         ? String(localized: "按电脑那边的时区。小月没有这天时，就在月底那天做。")
+                         : String(localized: "按电脑那边的时区。"))
                 }
             } else {
                 Section("多久看一次") { intervalStepper }
@@ -371,7 +371,7 @@ struct WatchEditor: View {
                 Section { Text(error).foregroundStyle(.red) }
             }
         }
-        .navigationTitle(existing == nil ? "新的目标" : "调整怎么做")
+        .navigationTitle(existing == nil ? String(localized: "新的目标") : String(localized: "调整怎么做"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
@@ -450,7 +450,7 @@ struct WatchEditor: View {
                 }
                 dismiss()
             } catch {
-                self.error = "没保存上：\(Copy.error(error))"
+                self.error = String(localized: "没保存上：\(Copy.error(error))")
             }
             saving = false
         }

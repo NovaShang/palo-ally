@@ -80,9 +80,9 @@ private struct MemoryRow: View {
 
     static func displayName(_ path: String) -> String {
         switch (path as NSString).lastPathComponent {
-        case "user.md": "关于你"
-        case "soul.md": "它的性格"
-        case "MEMORY.md": "记忆目录"
+        case "user.md": String(localized: "关于你")
+        case "soul.md": String(localized: "它的性格")
+        case "MEMORY.md": String(localized: "记忆目录")
         default: ((path as NSString).lastPathComponent as NSString).deletingPathExtension
         }
     }
@@ -130,7 +130,7 @@ struct MemoryEditorView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button(saving ? "正在存…" : "保存") { save() }
+                Button(saving ? String(localized: "正在存…") : String(localized: "保存")) { save() }
                     .disabled(text == original || saving || loading || loadError != nil || conflict)
             }
         }
@@ -168,7 +168,7 @@ struct MemoryEditorView: View {
         loading = false
     }
 
-    static let conflictMessage = "这个文件刚被助理改过，请重新打开再改"
+    static let conflictMessage = String(localized: "这个文件刚被助理改过，请重新打开再改")
 
     private func save() {
         saving = true
@@ -179,12 +179,12 @@ struct MemoryEditorView: View {
                 // isn't refused as a conflict with ourselves.
                 baseUpdatedAt = try await store.writeMemory(path: file.path, content: text, baseUpdatedAt: baseUpdatedAt)
                 original = text
-                message = "存好了"
+                message = String(localized: "存好了")
                 onSaved()
-            } catch RPCError.remote(let m) where m.contains("刚被助理改过") {
+            } catch RPCError.remote(let m) where m.contains("刚被助理改过") {  // i18n-ok: the host's own words
                 conflict = true
             } catch {
-                message = "没存上：\(Copy.error(error))"
+                message = String(localized: "没存上：\(Copy.error(error))")
             }
             saving = false
         }
@@ -194,9 +194,9 @@ struct MemoryEditorView: View {
 private enum MemoryRowName {
     static func name(_ path: String) -> String {
         switch (path as NSString).lastPathComponent {
-        case "user.md": "关于你"
-        case "soul.md": "它的性格"
-        case "MEMORY.md": "记忆目录"
+        case "user.md": String(localized: "关于你")
+        case "soul.md": String(localized: "它的性格")
+        case "MEMORY.md": String(localized: "记忆目录")
         default: (path as NSString).lastPathComponent
         }
     }

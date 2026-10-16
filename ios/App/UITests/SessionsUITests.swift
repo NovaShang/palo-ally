@@ -343,7 +343,7 @@ final class SessionsUITests: XCTestCase {
     @MainActor
     private func launch(_ args: [String]) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments += ["-demo", "YES"] + args
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "-demo", "YES"] + args
         app.launch()
         return app
     }

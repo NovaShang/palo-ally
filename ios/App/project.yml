@@ -2,6 +2,7 @@ name: PaloAlly
 options:
   bundleIdPrefix: com.novashang
   developmentLanguage: zh-Hans
+  knownRegions: [zh-Hans, en, Base]
   deploymentTarget:
     iOS: "26.0"
   createIntermediateGroups: true
@@ -95,7 +96,10 @@ targets:
         ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "AppIcon-orchid AppIcon-rose AppIcon-berry AppIcon-blue AppIcon-violet AppIcon-teal AppIcon-orange AppIcon-graphite"
         ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: NO
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-        SWIFT_EMIT_LOC_STRINGS: NO
+        SWIFT_EMIT_LOC_STRINGS: YES
+        LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+        # Keys are the Chinese sentences; no Swift symbols are made from them.
+        STRING_CATALOG_GENERATE_SYMBOLS: NO
         ENABLE_PREVIEWS: YES
         CODE_SIGN_STYLE: Automatic
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES

@@ -15,8 +15,8 @@ struct MarkdownSourceToggle: View {
             Image(systemName: raw ? "doc.richtext" : "chevron.left.forwardslash.chevron.right")
         }
         .tint(.primary)
-        .accessibilityLabel(raw ? "看排版" : "看源文本")
-        .help(raw ? "看排版" : "看源文本")
+        .accessibilityLabel(raw ? String(localized: "看排版") : String(localized: "看源文本"))
+        .help(raw ? String(localized: "看排版") : String(localized: "看源文本"))
     }
 }
 

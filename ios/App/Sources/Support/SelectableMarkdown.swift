@@ -494,11 +494,11 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         var items: [UIMenuElement] = []
         if let whole = wholeReply {
             // First: the menu's compact row shows the first few.
-            items.append(UIAction(title: "拷贝整条", image: UIImage(systemName: "doc.on.doc")) { _ in
+            items.append(UIAction(title: String(localized: "拷贝整条"), image: UIImage(systemName: "doc.on.doc")) { _ in
                 whole.copy()
                 textView.selectedTextRange = nil
             })
-            items.append(UIAction(title: "回复", image: UIImage(systemName: "arrowshape.turn.up.left")) { _ in
+            items.append(UIAction(title: String(localized: "回复"), image: UIImage(systemName: "arrowshape.turn.up.left")) { _ in
                 whole.reply()
                 textView.selectedTextRange = nil
             })
@@ -507,7 +507,7 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
             let selected = (textView.text as NSString).substring(with: range)
                 .replacingOccurrences(of: "\u{2028}", with: "\n")
                 .replacingOccurrences(of: " ▍", with: "")
-            items.append(UIAction(title: "引用回复", image: UIImage(systemName: "text.quote")) { [weak self] _ in
+            items.append(UIAction(title: String(localized: "引用回复"), image: UIImage(systemName: "text.quote")) { [weak self] _ in
                 self?.onQuote?(selected)
                 textView.selectedTextRange = nil
             })

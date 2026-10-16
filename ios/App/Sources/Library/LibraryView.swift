@@ -152,11 +152,11 @@ struct LibraryView: View {
 
     private func speaker(_ hit: ChatSearchHit) -> String {
         switch hit.role {
-        case .user: return hit.channel == .wechat ? "我 · 微信" : "我"
+        case .user: return hit.channel == .wechat ? String(localized: "我 · 微信") : String(localized: "我")
         case .assistant:
             let name = store.settings?.assistantName.trimmingCharacters(in: .whitespaces) ?? ""
-            return name.isEmpty ? "助理" : name
-        default: return "提示"
+            return name.isEmpty ? String(localized: "助理") : name
+        default: return String(localized: "提示")
         }
     }
 
@@ -202,7 +202,7 @@ struct LibraryView: View {
             Button {
                 Task { try? await store.setPinned(a, !a.pinned) }
             } label: {
-                Label(a.pinned ? "取消置顶" : "置顶", systemImage: a.pinned ? "pin.slash" : "pin")
+                Label(a.pinned ? String(localized: "取消置顶") : String(localized: "置顶"), systemImage: a.pinned ? "pin.slash" : "pin")
             }
             .tint(.orange)
         }
@@ -210,7 +210,7 @@ struct LibraryView: View {
             Button {
                 Task { try? await store.setPinned(a, !a.pinned) }
             } label: {
-                Label(a.pinned ? "取消置顶" : "置顶", systemImage: a.pinned ? "pin.slash" : "pin")
+                Label(a.pinned ? String(localized: "取消置顶") : String(localized: "置顶"), systemImage: a.pinned ? "pin.slash" : "pin")
             }
         }
     }

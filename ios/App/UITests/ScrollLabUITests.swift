@@ -27,7 +27,7 @@ final class ScrollLabUITests: XCTestCase {
         var report: [String] = []
         for mode in ["animated", "instant", "none", "duringDrag"] {
             let app = XCUIApplication()
-            app.launchArguments += ["-demo", "YES", "-demoScreen", "scrollLab", "-labRun", "fling", "-labFlingMode", mode]
+            app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "-demo", "YES", "-demoScreen", "scrollLab", "-labRun", "fling", "-labFlingMode", mode]
             app.launch()
             sleep(3)
             let window = app.windows.firstMatch
@@ -54,7 +54,7 @@ final class ScrollLabUITests: XCTestCase {
     @MainActor
     func testLabTouch() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-demo", "YES", "-demoScreen", "scrollLab", "-labRun", "touch"]
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "-demo", "YES", "-demoScreen", "scrollLab", "-labRun", "touch"]
         app.launch()
         let log = AppLog()
         XCTAssertTrue(log.wait(timeout: 20) { _ in AppLog().count("[lab] touch growing") > 0 })
@@ -75,7 +75,7 @@ final class ScrollLabUITests: XCTestCase {
     @MainActor
     private func lab(_ run: String, until done: String, timeout: TimeInterval) throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-demo", "YES", "-demoScreen", "scrollLab", "-labRun", run]
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "-demo", "YES", "-demoScreen", "scrollLab", "-labRun", run]
         app.launch()
         let log = AppLog()
         XCTAssertTrue(log.wait(timeout: timeout) { _ in AppLog().count(done) > 0 }, "the lab didn’t finish")

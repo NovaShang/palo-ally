@@ -143,7 +143,7 @@ struct AllyDraftCard: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: "paperplane")
                     .foregroundStyle(.secondary)
-                Text(Copy.spaced("发给\(name.isEmpty ? "对方" : name)"))
+                Text(Copy.spaced(String(localized: "发给\(name.isEmpty ? String(localized: "对方") : name)")))
                     .font(.headline)
                     .lineLimit(1)
                 Spacer(minLength: 0)
@@ -263,7 +263,7 @@ struct AllyDraftCard: View {
                 try await store.send(draft: entry, text: words)
                 editing = false
             } catch {
-                self.error = "没发出去：\(Copy.error(error))"
+                self.error = String(localized: "没发出去：\(Copy.error(error))")
             }
             working = false
         }
@@ -273,7 +273,7 @@ struct AllyDraftCard: View {
         working = true
         error = nil
         Task {
-            do { try await store.decide(entry, .discard) } catch { self.error = "没改成：\(Copy.error(error))" }
+            do { try await store.decide(entry, .discard) } catch { self.error = String(localized: "没改成：\(Copy.error(error))") }
             working = false
         }
     }

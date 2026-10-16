@@ -22,18 +22,18 @@ struct HelperProposalCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ProposalHeader(symbol: "person.badge.plus", title: proposal.name.isEmpty ? "帮手" : proposal.name,
+            ProposalHeader(symbol: "person.badge.plus", title: proposal.name.isEmpty ? String(localized: "帮手") : proposal.name,
                            dimmed: proposal.status == .discarded, state: state)
 
             VStack(alignment: .leading, spacing: 6) {
                 if !proposal.cwd.isEmpty {
-                    ProposalFact(name: "目录", value: CCSession.shortPath(proposal.cwd))
+                    ProposalFact(name: String(localized: "目录"), value: CCSession.shortPath(proposal.cwd))
                 }
                 if !proposal.duty.isEmpty {
-                    ProposalFact(name: "负责", value: proposal.duty)
+                    ProposalFact(name: String(localized: "负责"), value: proposal.duty)
                 }
                 if let limit = Copy.dailyLimit(proposal.dailyUsd) {
-                    ProposalFact(name: "花费", value: limit)
+                    ProposalFact(name: String(localized: "花费"), value: limit)
                 }
             }
 
@@ -50,7 +50,7 @@ struct HelperProposalCard: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                ProposalButtons(no: "不用", yes: "开吧", yesWorking: "正在开…", working: working,
+                ProposalButtons(no: String(localized: "不用"), yes: String(localized: "开吧"), yesWorking: String(localized: "正在开…"), working: working,
                                 enabled: store.connection.isOnline, decide: decide)
                 if let error {
                     Text(error).font(.caption).foregroundStyle(.red)
@@ -69,9 +69,9 @@ struct HelperProposalCard: View {
     private var state: String? {
         switch proposal.status {
         case .pending, .unknown: nil
-        case .created: "已经开了"
-        case .discarded: "没开"
-        case .expired: "过期了"
+        case .created: String(localized: "已经开了")
+        case .discarded: String(localized: "没开")
+        case .expired: String(localized: "过期了")
         }
     }
 
@@ -82,7 +82,7 @@ struct HelperProposalCard: View {
             do {
                 try await store.decideHelper(proposal, action)
             } catch {
-                self.error = action == .create ? "没开成：\(Copy.error(error))" : "没发出去：\(Copy.error(error))"
+                self.error = action == .create ? String(localized: "没开成：\(Copy.error(error))") : String(localized: "没发出去：\(Copy.error(error))")
             }
             working = nil
         }

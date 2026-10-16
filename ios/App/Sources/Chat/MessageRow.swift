@@ -85,7 +85,7 @@ private struct UserBubble: View {
                     .modifier(VoiceEchoSlot(cid: message.clientMsgId, bubble: true))
                 }
                 if message.channel == .wechat || message.channel == .cli {
-                    Label(message.channel == .wechat ? "来自微信" : "来自电脑", systemImage: message.channel == .wechat ? "message" : "laptopcomputer")
+                    Label(message.channel == .wechat ? String(localized: "来自微信") : String(localized: "来自电脑"), systemImage: message.channel == .wechat ? "message" : "laptopcomputer")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -131,7 +131,7 @@ private struct BubbleText: View {
         } else if store.unfolded.contains(message.id) {
             VStack(alignment: .leading, spacing: 6) {
                 text
-                toggle("收起", folding: true)
+                toggle(String(localized: "收起"), folding: true)
             }
         } else {
             // As tall as the text at `wholeLines`: whole when it's no
@@ -150,7 +150,7 @@ private struct BubbleText: View {
                                 LinearGradient(stops: [.init(color: .black, location: 0.5), .init(color: .black.opacity(0.08), location: 1)],
                                                startPoint: .top, endPoint: .bottom)
                             }
-                        toggle("展开全部", folding: false)
+                        toggle(String(localized: "展开全部"), folding: false)
                     }
                     // Its own height, even where nothing fits.
                     .fixedSize(horizontal: false, vertical: true)
@@ -297,9 +297,9 @@ private struct AssistantMessage: View {
 
     private var proactiveLabel: String {
         switch message.channel {
-        case .schedule: "到点提醒"
-        case .probe: "我留意到"
-        default: "主动找你"
+        case .schedule: String(localized: "到点提醒")
+        case .probe: String(localized: "我留意到")
+        default: String(localized: "主动找你")
         }
     }
 }
@@ -403,7 +403,7 @@ private struct AttachmentStrip: View {
         }
         .frame(width: side, height: side)
         .clipShape(.rect(cornerRadius: 16, style: .continuous))
-        .accessibilityLabel(a.name ?? "图片")
+        .accessibilityLabel(a.name ?? String(localized: "图片"))
         .accessibilityAddTraits(.isButton)
     }
 
@@ -475,7 +475,7 @@ private struct AttachmentStrip: View {
             return try await QuickLookPresenter.file(key: a.id, name: a.name ?? "file") { try await store.fileData(a.id) }
         default: // image
             let ext = a.mediaType.split(separator: "/").last.map(String.init) ?? "jpg"
-            return try await QuickLookPresenter.file(key: a.id, name: a.name ?? "图片.\(ext == "jpeg" ? "jpg" : ext)") {
+            return try await QuickLookPresenter.file(key: a.id, name: a.name ?? String(localized: "图片.\(ext == "jpeg" ? "jpg" : ext)")) {
                 if let d = store.images[a.id] { return d }
                 await store.loadImage(a.id)
                 guard let d = store.images[a.id] else { throw CocoaError(.fileReadUnknown) }
@@ -498,7 +498,7 @@ private struct FileCard: View {
                 .frame(width: 40, height: 40)
                 .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
-                Text(attachment.name ?? "文件").font(.callout.weight(.medium)).lineLimit(1)
+                Text(attachment.name ?? String(localized: "文件")).font(.callout.weight(.medium)).lineLimit(1)
                 Text(detail).font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
@@ -528,9 +528,9 @@ private struct FileCard: View {
 
     private var detail: String {
         var parts: [String] = []
-        if attachment.kind == "artifact" { parts.append("在产出物库") }
+        if attachment.kind == "artifact" { parts.append(String(localized: "在产出物库")) }
         if let s = attachment.size { parts.append(ByteCountFormatter.string(fromByteCount: s, countStyle: .file)) }
-        return parts.isEmpty ? "点开查看" : parts.joined(separator: " · ")
+        return parts.isEmpty ? String(localized: "点开查看") : parts.joined(separator: " · ")
     }
 }
 
@@ -589,7 +589,7 @@ private struct GoalCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text(card.title.isEmpty ? "到点提醒" : card.title).font(.headline)
+                Text(card.title.isEmpty ? String(localized: "到点提醒") : card.title).font(.headline)
                 Spacer()
                 Text(Copy.clock(message.ts)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
             }

@@ -32,7 +32,7 @@ struct SessionRow: View {
         }
         .padding(.vertical, 3)
         .accessibilityElement(children: .combine)
-        .accessibilityValue(Copy.contextSize(session.contextTokens).map { "上下文 \($0)" } ?? "")
+        .accessibilityValue(Copy.contextSize(session.contextTokens).map { String(localized: "上下文 \($0)") } ?? "")
     }
 
     /// 「等你 · 想运行 npm run build」.

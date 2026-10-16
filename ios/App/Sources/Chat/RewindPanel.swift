@@ -27,7 +27,7 @@ struct RewindPanel: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("回到这里重来？")
                     .font(.headline)
-                Text(store.busyForRewind ? "它还在忙，重来会先停下这一轮。之后的对话会被撤回，已经做过的事不会撤销。" : "之后的对话会被撤回，已经做过的事不会撤销。")
+                Text(store.busyForRewind ? String(localized: "它还在忙，重来会先停下这一轮。之后的对话会被撤回，已经做过的事不会撤销。") : String(localized: "之后的对话会被撤回，已经做过的事不会撤销。"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -110,7 +110,7 @@ struct RewindPanel: View {
                 model.focusComposerOnAppear = false
                 working = false
                 let why = Friendly.message(error)
-                if why.contains("代码没法恢复") {
+                if why.contains("代码没法恢复") {  // i18n-ok: the host's own words
                     // Said in place of the switch: the conversation can still go back.
                     canRestore = false
                     restoreFiles = false

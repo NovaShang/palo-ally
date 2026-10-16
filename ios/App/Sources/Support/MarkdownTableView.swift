@@ -58,7 +58,7 @@ struct MarkdownTableView: View {
         VStack(alignment: .leading, spacing: 4) {
             scroller
             if table.rows.count > Self.rowLimit {
-                Button(showAll ? "收起" : "展开全部 \(table.rows.count) 行") {
+                Button(showAll ? String(localized: "收起") : String(localized: "展开全部 \(table.rows.count) 行")) {
                     withAnimation(.snappy) { showAll.toggle() }
                 }
                 .font(.subheadline)

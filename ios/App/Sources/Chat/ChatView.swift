@@ -636,12 +636,12 @@ struct StatusBanner: View {
             // Only a drop that has lasted (or a refusal): returning to the app
             // always starts with a quick reconnect, which isn't news.
             if case .rejected = store.displayedConnection {
-                banner(icon: "link.badge.plus", tint: .red, text: "这台设备需要重新配对") {
+                banner(icon: "link.badge.plus", tint: .red, text: String(localized: "这台设备需要重新配对")) {
                     Button("去配对") { model.startPairing(.replace) }
                         .buttonStyle(.glassProminent)
                 }
             } else if store.connectionTrouble {
-                banner(icon: "wifi.exclamationmark", tint: .secondary, text: "连不上电脑，正在重试…") {
+                banner(icon: "wifi.exclamationmark", tint: .secondary, text: String(localized: "连不上电脑，正在重试…")) {
                     Button("重试") { store.reconnectNow() }
                         .buttonStyle(.glass)
                         .tint(.primary)
@@ -675,8 +675,8 @@ struct ThinkingIndicator: View {
 
     private var text: String {
         if let activity { return activity }
-        if justSent { return slow ? "收到啦，正在想…" : "收到" }
-        return "正在想…"
+        if justSent { return slow ? String(localized: "收到啦，正在想…") : String(localized: "收到") }
+        return String(localized: "正在想…")
     }
 
     var body: some View {

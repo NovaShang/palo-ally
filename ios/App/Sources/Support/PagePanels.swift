@@ -41,8 +41,8 @@ struct ConfirmPanel: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.headline)
-            Text(text)
+            Text(LocalizedText.verbatimKey(title)).font(.headline)
+            Text(LocalizedText.verbatimKey(text))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -53,7 +53,7 @@ struct ConfirmPanel: View {
                 .buttonStyle(.bordered)
                 .tint(.secondary)
                 Button(action: confirm) {
-                    Text(working ? "\(action)中…" : action).frame(maxWidth: .infinity)
+                    Text(working ? String(localized: "正在处理…") : LocalizedText.verbatimKey(action)).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(destructive ? .red : .accentColor)
@@ -133,7 +133,7 @@ struct CommandPanel: View {
                     .padding(.vertical, 6)
                     .accessibilityIdentifier("resume-command")
                 Spacer(minLength: 0)
-                CopyButton(text: command, label: "复制这一行")
+                CopyButton(text: command, label: String(localized: "复制这一行"))
             }
             .padding(.leading, 12)
             .padding(.vertical, 4)

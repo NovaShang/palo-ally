@@ -77,7 +77,7 @@ struct ModelPickerSheet: View {
                 ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.tint(.primary) }
             }
             .task {
-                do { try await store.loadModels() } catch { self.error = "没取到可选模型：\(Copy.error(error))" }
+                do { try await store.loadModels() } catch { self.error = String(localized: "没取到可选模型：\(Copy.error(error))") }
             }
         }
         .presentationDetents([.medium, .large])

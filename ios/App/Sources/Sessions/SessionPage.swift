@@ -68,7 +68,7 @@ private struct SessionConversation: View {
         guard let s = shown else { return "" }
         let folder = CCSession.shortPath(s.cwd)
         if let live = s.live { return "\(Copy.sessionStatus(live.status)) · \(folder)" }
-        return "已退出 · \(folder)"
+        return String(localized: "已退出 · \(folder)")
     }
 
     // MARK: the bar
@@ -85,7 +85,7 @@ private struct SessionConversation: View {
                     Button {
                         Task { await adopt() }
                     } label: {
-                        Text(step == .working ? "接管中…" : "接管")
+                        Text(step == .working ? String(localized: "接管中…") : String(localized: "接管"))
                     }
                     .buttonStyle(.borderedProminent)
                     .buttonBorderShape(.capsule)
@@ -96,12 +96,12 @@ private struct SessionConversation: View {
                 .padding(.vertical, 10)
                 .glassEffect(.regular, in: .capsule)
             case .waiting:
-                NoticePanel(text: "它还在终端里开着。请在终端里输入 /exit 退出它，退出后自动接管。", action: "取消") {
+                NoticePanel(text: String(localized: "它还在终端里开着。请在终端里输入 /exit 退出它，退出后自动接管。"), action: String(localized: "取消")) {
                     step = .idle
                     Task { await store.cancelAdoption(sessionId: sessionID) }
                 }
             case .failed(let why):
-                NoticePanel(text: Copy.spaced("没接管成：\(why)"), action: "好") { step = .idle }
+                NoticePanel(text: Copy.spaced(String(localized: "没接管成：\(why)")), action: String(localized: "好")) { step = .idle }
             }
         }
         .padding(.horizontal, 12)

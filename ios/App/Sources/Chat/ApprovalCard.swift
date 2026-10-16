@@ -27,7 +27,7 @@ struct ApprovalCard: View {
     /// A session's command: its label already says 「X 想运行」, so no title
     /// row repeats it (unless the harness marked it as needing care).
     private var sessionCommand: Bool {
-        fromSession && !approval.careful && Friendly.tool(approval.tool) == "运行命令" && (approval.isPending || waitsAtComputer)
+        fromSession && !approval.careful && Friendly.runsCommand(approval.tool) && (approval.isPending || waitsAtComputer)
     }
 
     var body: some View {
@@ -47,7 +47,7 @@ struct ApprovalCard: View {
                 HStack(spacing: 8) {
                     Image(systemName: approval.careful ? "exclamationmark.shield.fill" : "hand.raised.fill")
                         .foregroundStyle(approval.careful ? Color.orange : Color.secondary)
-                    Text(approval.title.isEmpty ? "需要你点个头" : approval.title)
+                    Text(approval.title.isEmpty ? String(localized: "需要你点个头") : approval.title)
                         .font(.headline)
                     Spacer(minLength: 0)
                     if !approval.isPending && !waitsAtComputer {
@@ -78,7 +78,7 @@ struct ApprovalCard: View {
                             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { wholeHeight = $0 }
                     }
                 if foldable {
-                    Button(expanded ? "收起" : "展开全部") { withAnimation(.snappy) { expanded.toggle() } }
+                    Button(expanded ? String(localized: "收起") : String(localized: "展开全部")) { withAnimation(.snappy) { expanded.toggle() } }
                         .font(.caption)
                         .buttonStyle(.borderless)
                         .tint(.secondary)
@@ -171,9 +171,9 @@ struct ApprovalCard: View {
 
     private var rememberTitle: String {
         if let scope = approval.friendlyScope {
-            return "以后都允许：\(scope)"
+            return String(localized: "以后都允许：\(scope)")
         }
-        return "以后这类都允许"
+        return String(localized: "以后这类都允许")
     }
 
     private var statusColor: Color {
@@ -191,7 +191,7 @@ struct ApprovalCard: View {
             do {
                 try await store.answer(approval, allow: allow, remember: remember)
             } catch {
-                self.error = "没发出去：\(Friendly.message(error))"
+                self.error = String(localized: "没发出去：\(Friendly.message(error))")
             }
             working = false
         }

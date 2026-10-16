@@ -59,7 +59,7 @@ struct IdentityEditor: View {
                 .padding(.bottom, 24)
             }
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle(purpose == .firstTime ? "" : "名字和颜色")
+            .navigationTitle(purpose == .firstTime ? "" : String(localized: "名字和颜色"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if purpose == .edit {
@@ -68,7 +68,7 @@ struct IdentityEditor: View {
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(purpose == .firstTime ? "好了" : "完成", action: save)
+                    Button(purpose == .firstTime ? String(localized: "好了") : String(localized: "完成"), action: save)
                         .disabled(saving)
                 }
             }
@@ -101,7 +101,7 @@ struct IdentityEditor: View {
                 dismiss()
                 AppTheme.applyIcon(model.iconTheme)
             } catch {
-                self.error = "没存上：\(Copy.error(error))"
+                self.error = String(localized: "没存上：\(Copy.error(error))")
             }
             saving = false
         }

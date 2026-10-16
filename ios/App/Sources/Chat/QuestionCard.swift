@@ -40,11 +40,11 @@ struct QuestionCard: View {
                 HStack(spacing: 8) {
                     Image(systemName: "questionmark.bubble")
                         .foregroundStyle(.secondary)
-                    Text(question.isPending ? "想问你" : "问过你")
+                    Text(question.isPending ? String(localized: "想问你") : String(localized: "问过你"))
                         .font(.headline)
                     Spacer(minLength: 0)
                     if !question.isPending {
-                        Text(question.status == .answered ? "已回答" : "没等到回答")
+                        Text(question.status == .answered ? String(localized: "已回答") : String(localized: "没等到回答"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -59,7 +59,7 @@ struct QuestionCard: View {
                 Button {
                     send()
                 } label: {
-                    Text(working ? "发送中…" : "发送").frame(maxWidth: .infinity)
+                    Text(working ? String(localized: "发送中…") : String(localized: "发送")).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .buttonBorderShape(.capsule)
@@ -92,7 +92,7 @@ struct QuestionCard: View {
     private func itemPicker(_ i: Int, _ item: QuestionItem) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             if let header = item.header, !header.isEmpty {
-                Text(item.multiSelect ? "\(header) · 可多选" : header)
+                Text(item.multiSelect ? String(localized: "\(header) · 可多选") : header)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else if item.multiSelect {
@@ -267,7 +267,7 @@ struct QuestionCard: View {
             do {
                 try await store.answer(question, answers: answers)
             } catch {
-                self.error = "没发出去：\(Friendly.message(error))"
+                self.error = String(localized: "没发出去：\(Friendly.message(error))")
             }
             working = false
         }

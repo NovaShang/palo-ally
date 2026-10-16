@@ -16,7 +16,7 @@ struct SuggestionChips: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(greeting ? "直接说就行，或者试试这些：" : "试试")
+            Text(greeting ? String(localized: "直接说就行，或者试试这些：") : String(localized: "试试"))
                 .font(.footnote)
                 .foregroundStyle(.tertiary)
                 .padding(.leading, 2)
