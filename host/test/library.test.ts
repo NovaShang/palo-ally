@@ -33,6 +33,25 @@ describe("ArtifactLibrary", () => {
     cleanup(paths);
   });
 
+  test("folder: a short group name the assistant gives, kept when published again, cleaned, removable", () => {
+    const paths = tmpPaths();
+    const lib = new ArtifactLibrary(paths.artifacts, new Bus());
+    mkdirSync(join(paths.artifacts, "bills"));
+    writeFileSync(join(paths.artifacts, "bills", "bills.md"), "# 账单");
+    expect(lib.get("bills")!.folder).toBe(""); // nothing said: not in any group
+    expect(lib.publish("bills", "水电煤", "bills.md", "markdown", false, "  理财/家里\n ").folder).toBe("理财 家里");
+    // published again without a folder: it stays where it was
+    expect(lib.publish("bills", "水电煤", "bills.md").folder).toBe("理财 家里");
+    expect(lib.list()[0]!.folder).toBe("理财 家里");
+    expect(lib.publish("bills", "水电煤", "bills.md", undefined, undefined, "x".repeat(80)).folder).toHaveLength(30);
+    expect(lib.publish("bills", "水电煤", "bills.md", undefined, undefined, "").folder).toBe("");
+    // publishFile passes it through
+    writeFileSync(join(paths.home, "plan.md"), "# 计划");
+    expect(lib.publishFile(join(paths.home, "plan.md"), { folder: "旅行" }).folder).toBe("旅行");
+    expect(lib.publishFile(join(paths.home, "plan.md")).folder).toBe("旅行");
+    cleanup(paths);
+  });
+
   test("chunked reads, path traversal refused, change detection", () => {
     const paths = tmpPaths();
     const bus = new Bus();

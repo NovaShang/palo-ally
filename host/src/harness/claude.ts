@@ -123,6 +123,7 @@ export function paloallyMcpServer(h: ToolHandlers) {
           title: z.string().optional().describe("A short name for it."),
           description: z.string().optional().describe("One sentence about it, shown with the card."),
           files: z.record(z.string(), z.string()).optional().describe("Supporting files: published path → source path."),
+          folder: z.string().optional().describe("The group it is kept under in the library: a short name in the owner's language (理财, 旅行, 家务), reused for related things. Omit to leave it where it is."),
         },
         async (a) => text(await h.Artifact(a)),
       ),

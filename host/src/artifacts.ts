@@ -15,6 +15,7 @@ interface Meta {
   mainFile?: string;
   pinned?: boolean;
   updatedAt?: number;
+  folder?: string;
 }
 
 const MIME: Record<string, string> = {
@@ -36,6 +37,11 @@ const MIME: Record<string, string> = {
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 };
+
+/** The name of the group an artifact is kept under (成果 → 按文件夹): one short line, no slashes. */
+export function cleanFolder(raw: unknown): string {
+  return typeof raw === "string" ? raw.replace(/[\\/\n\r\t]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 30) : "";
+}
 
 export function mimeOf(path: string): string {
   return MIME[extname(path).toLowerCase()] ?? "application/octet-stream";
@@ -85,6 +91,7 @@ export class ArtifactLibrary {
       type: meta.type || (mainFile ? extname(mainFile).slice(1) || "file" : "folder"),
       mainFile,
       pinned: !!meta.pinned,
+      folder: cleanFolder(meta.folder),
       updatedAt: Math.max(meta.updatedAt ?? 0, newest),
       files: files.map((f) => ({ path: f.path, size: f.size })),
     };
@@ -96,7 +103,7 @@ export class ArtifactLibrary {
    * source. Publishing the same path again updates the same artifact. A file
    * already inside artifacts/<slug>/ is published in place.
    */
-  publishFile(filePath: string, opts: { title?: string; files?: Record<string, string> } = {}): Artifact {
+  publishFile(filePath: string, opts: { title?: string; files?: Record<string, string>; folder?: string } = {}): Artifact {
     const full = resolve(filePath);
     if (!existsSync(full) || !statSync(full).isFile()) throw new Error(t("artifact.notFile", { path: filePath }));
     const name = basename(full);
@@ -123,10 +130,10 @@ export class ArtifactLibrary {
     }
     // Keep an earlier title on re-publish (not the folder-name guess list() makes).
     const prevTitle = readJson<Meta>(join(folder, META), {}).title;
-    return this.publish(slug, opts.title?.trim() || prevTitle || name, main);
+    return this.publish(slug, opts.title?.trim() || prevTitle || name, main, undefined, undefined, opts.folder);
   }
 
-  publish(slug: string, title: string, mainFile: string, type?: string, pinned?: boolean): Artifact {
+  publish(slug: string, title: string, mainFile: string, type?: string, pinned?: boolean, group?: string): Artifact {
     if (!/^[\w一-龥][\w.\-一-龥]*$/.test(slug)) throw new Error(t("artifact.badSlug"));
     const folder = join(this.dir, slug);
     ensureDir(folder);
@@ -139,6 +146,12 @@ export class ArtifactLibrary {
       pinned: pinned ?? prev.pinned ?? false,
       updatedAt: Date.now(),
     };
+    // Publishing again without a folder keeps the one it had; an empty one takes it out.
+    if (group !== undefined) {
+      const f = cleanFolder(group);
+      if (f) meta.folder = f;
+      else delete meta.folder;
+    }
     writeJson(join(folder, META), meta);
     const a = this.get(slug)!;
     this.signatures.set(slug, a.updatedAt);

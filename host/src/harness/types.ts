@@ -94,7 +94,7 @@ export interface ToolHandlers {
   notify_user(args: { text: string; urgent?: boolean }): Promise<string>;
   copy_to_clipboard(args: { text: string; label?: string }): Promise<string>;
   SendUserFile(args: { files: string[]; caption?: string; status: "normal" | "proactive"; display?: "render" | "attach"; temporary?: boolean }): Promise<string>;
-  Artifact(args: { file_path: string; title?: string; description?: string; files?: Record<string, string> }): Promise<string>;
+  Artifact(args: { file_path: string; title?: string; description?: string; files?: Record<string, string>; folder?: string }): Promise<string>;
   ally_list(): Promise<string>;
   ally_send(args: { to: string; text: string; urgent?: boolean; slots?: { start: string; end: string }[]; replyTo?: string }): Promise<string>;
   // Pals and the computer's other Claude Code sessions (docs/pals-prd.md §6).

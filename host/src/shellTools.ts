@@ -146,9 +146,9 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
     },
     // Modelled on Claude Code's own Artifact publish: a page or document the
     // owner keeps and revisits; same path again = an update of the same one.
-    Artifact: async ({ file_path, title, description, files }) => {
+    Artifact: async ({ file_path, title, description, files, folder }) => {
       try {
-        const a = d.artifacts.publishFile(resolve(d.cwd, file_path), { title, files });
+        const a = d.artifacts.publishFile(resolve(d.cwd, file_path), { title, files, folder });
         d.chat.add({
           role: "assistant",
           kind: "text",

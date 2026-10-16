@@ -697,15 +697,17 @@ public struct Artifact: Codable, Sendable, Hashable, Identifiable {
     public var type: String
     public var mainFile: String
     public var pinned: Bool
+    /// The group the assistant kept it under ("理财", "旅行"); "" for none (older hosts too).
+    public var folder: String
     public var updatedAt: Int64
     public var files: [ArtifactFile]
 
-    enum CodingKeys: String, CodingKey { case id, title, type, mainFile, pinned, updatedAt, files }
+    enum CodingKeys: String, CodingKey { case id, title, type, mainFile, pinned, folder, updatedAt, files }
 
     public init(id: String, title: String, type: String, mainFile: String, pinned: Bool = false,
-                updatedAt: Int64, files: [ArtifactFile] = []) {
+                folder: String = "", updatedAt: Int64, files: [ArtifactFile] = []) {
         self.id = id; self.title = title; self.type = type; self.mainFile = mainFile; self.pinned = pinned
-        self.updatedAt = updatedAt; self.files = files
+        self.folder = folder; self.updatedAt = updatedAt; self.files = files
     }
 
     public init(from decoder: Decoder) throws {
@@ -715,6 +717,7 @@ public struct Artifact: Codable, Sendable, Hashable, Identifiable {
         type = l.string("type", or: "")
         mainFile = l.string("mainFile", or: "")
         pinned = l.bool("pinned", or: false)
+        folder = l.string("folder", or: "").trimmingCharacters(in: .whitespaces)
         updatedAt = l.millis("updatedAt", or: 0)
         files = l.array(ArtifactFile.self, "files", or: [])
     }

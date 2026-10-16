@@ -84,7 +84,7 @@ struct AppStoreTests {
         #expect(Set(store.watches.map(\.state)) == [.waiting, .tracking, .done, .paused])
         #expect(store.watches.first { $0.id == "w6" }?.progress == "每天比价，现在最低 ¥4,860")
         #expect(store.pinnedArtifacts.map(\.id) == ["ar1"])
-        #expect(store.recentArtifacts.map(\.id) == ["ar2", "ar3"])
+        #expect(store.recentArtifacts.map(\.id) == ["ar2", "ar4", "ar3", "ar5", "ar6", "ar7", "ar8", "ar9"])
         #expect(store.settings?.probeIntervalMinutes == 10)
         #expect(store.status?.model == "glm-4.6")
         // hello + sync first; 「试试」 suggestions, the Allies (list, then each one's log) and the Pals (with

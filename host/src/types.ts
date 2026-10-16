@@ -206,6 +206,8 @@ export interface Artifact {
   type: string;
   mainFile: string;
   pinned: boolean;
+  /** The group it is kept under in 成果, "" for none. */
+  folder: string;
   updatedAt: number;
   files: { path: string; size: number }[];
 }

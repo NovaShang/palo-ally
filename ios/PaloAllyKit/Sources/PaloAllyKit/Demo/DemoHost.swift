@@ -1598,19 +1598,31 @@ public actor DemoHost {
         <h3>酒店</h3><p>静安全季酒店，两晚 ¥960，离会场步行 8 分钟。</p></body></html>
         """
         let csv = "日期,类别,金额\n09-01,餐饮,86\n09-03,交通,32\n09-08,购物,459\n09-15,餐饮,128\n09-22,房租,4500\n"
-        let artifacts = [
-            Artifact(id: "ar1", title: "每日晨报", type: "markdown", mainFile: "briefing.md", pinned: true,
-                     updatedAt: now - 5 * hour, files: [ArtifactFile(path: "briefing.md", size: Int64(briefing.utf8.count))]),
-            Artifact(id: "ar2", title: "上海出行比价", type: "html", mainFile: "index.html", pinned: false,
-                     updatedAt: now - 3 * hour, files: [ArtifactFile(path: "index.html", size: Int64(compare.utf8.count))]),
-            Artifact(id: "ar3", title: "九月开销", type: "table", mainFile: "spending.csv", pinned: false,
-                     updatedAt: now - 26 * hour, files: [ArtifactFile(path: "spending.csv", size: Int64(csv.utf8.count))]),
+        // More of what a household keeps, spread over days and folders (成果 按文件夹 / 按时间).
+        let more: [(id: String, title: String, folder: String, hoursAgo: Int64, body: String)] = [
+            ("ar4", "上海行程", "旅行", 8, "# 上海行程\n\n- 周二 07:30 出发\n- 周四晚上回杭州\n"),
+            ("ar5", "水电燃气账单", "理财", 30, "# 水电燃气\n\n- 电费 ¥186\n- 燃气 ¥64\n- 水费 ¥42\n"),
+            ("ar6", "本周菜单", "家务", 52, "# 本周菜单\n\n- 周一 番茄牛腩\n- 周二 清蒸鲈鱼\n- 周三 青菜豆腐汤\n"),
+            ("ar7", "暑假阅读清单", "", 78, "# 暑假阅读清单\n\n- 《夏洛的网》\n- 《城南旧事》\n"),
+            ("ar8", "装修预算", "家务", 150, "# 装修预算\n\n- 厨房 ¥18,000\n- 卫生间 ¥12,500\n"),
+            ("ar9", "保险到期提醒", "理财", 300, "# 保险到期\n\n- 车险 11 月 3 日\n- 家财险 次年 2 月\n"),
         ]
+        let artifacts = [
+            Artifact(id: "ar1", title: "每日晨报", type: "markdown", mainFile: "briefing.md", pinned: true, folder: "日常",
+                     updatedAt: now - 5 * hour, files: [ArtifactFile(path: "briefing.md", size: Int64(briefing.utf8.count))]),
+            Artifact(id: "ar2", title: "上海出行比价", type: "html", mainFile: "index.html", pinned: false, folder: "旅行",
+                     updatedAt: now - 3 * hour, files: [ArtifactFile(path: "index.html", size: Int64(compare.utf8.count))]),
+            Artifact(id: "ar3", title: "九月开销", type: "table", mainFile: "spending.csv", pinned: false, folder: "理财",
+                     updatedAt: now - 26 * hour, files: [ArtifactFile(path: "spending.csv", size: Int64(csv.utf8.count))]),
+        ] + more.map { m in
+            Artifact(id: m.id, title: m.title, type: "markdown", mainFile: "\(m.id).md", folder: m.folder,
+                     updatedAt: now - m.hoursAgo * hour, files: [ArtifactFile(path: "\(m.id).md", size: Int64(m.body.utf8.count))])
+        }
         let files: [String: Data] = [
             "ar1/briefing.md": Data(briefing.utf8),
             "ar2/index.html": Data(compare.utf8),
             "ar3/spending.csv": Data(csv.utf8),
-        ]
+        ].merging(Dictionary(uniqueKeysWithValues: more.map { ("\($0.id)/\($0.id).md", Data($0.body.utf8)) })) { a, _ in a }
         let memory: [String: (scope: MemoryScope, content: String, updatedAt: Int64)] = [
             "user.md": (.core, "# 关于我\n\n- 住在杭州，常去上海出差\n- 喜欢靠窗座位\n- 不吃香菜\n", now - 48 * hour),
             "soul.md": (.core, "# 说话方式\n\n简短、温暖，不啰嗦。重要的事情先说结论。\n", now - 72 * hour),
