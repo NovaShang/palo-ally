@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		030B52AAEED423A6E7E8C177 /* PairLinkUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02A414F23E433BB4EA6F9700 /* PairLinkUITests.swift */; };
 		04349A876C131982F60AE09F /* OrbPresence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89680F4F2AB77C09AE302E26 /* OrbPresence.swift */; };
 		0567FEE9B5F6C1B2C6A33AAC /* ScrollLab.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1B780A4AAD93BEE438E5D12 /* ScrollLab.swift */; };
 		08BF7949F94B89DDD05C3319 /* AssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056B108C0177A1156F312E84 /* AssistantView.swift */; };
@@ -132,6 +133,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		02A414F23E433BB4EA6F9700 /* PairLinkUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairLinkUITests.swift; sourceTree = "<group>"; };
 		0420ADEBD7C7A5E9F8EB5142 /* PaloAllyAppKit.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PaloAllyAppKit.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
 		056B108C0177A1156F312E84 /* AssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantView.swift; sourceTree = "<group>"; };
 		07A26E3CEF36BC017C91F461 /* SelectableMarkdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectableMarkdown.swift; sourceTree = "<group>"; };
@@ -369,6 +371,7 @@
 				A10351FDBF285D30A12AA443 /* MacLibraryUITests.swift */,
 				C23F1133E2D253017B448FCB /* MacScrollWheelUITests.swift */,
 				7204F49936E047B0B9DD85FC /* NavigationUITests.swift */,
+				02A414F23E433BB4EA6F9700 /* PairLinkUITests.swift */,
 				7ED42874198579F1FB37DC41 /* ScrollLabUITests.swift */,
 				B7EADFA6C31C6254DED78C80 /* ScrollStressUITests.swift */,
 				08BF2FEA6B01AE016C219995 /* SessionsUITests.swift */,
@@ -604,6 +607,7 @@
 				B2032FE442E03D4426BA7760 /* MacLibraryUITests.swift in Sources */,
 				0F39329E305A6477FBD720F0 /* MacScrollWheelUITests.swift in Sources */,
 				6FAF60052DD6375026A2F352 /* NavigationUITests.swift in Sources */,
+				030B52AAEED423A6E7E8C177 /* PairLinkUITests.swift in Sources */,
 				AACC2B792ABD1AFC63ECC6B2 /* ScrollLabUITests.swift in Sources */,
 				44A392DEF7BF333CB2960BE4 /* ScrollStressUITests.swift in Sources */,
 				18D2CA8A4488ACABE53E79AC /* SessionsUITests.swift in Sources */,
@@ -804,6 +808,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				PALOALLY_COMMIT = dev;
+				PALOALLY_URL_SCHEME = paloally;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -927,6 +932,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PALOALLY_COMMIT = dev;
+				PALOALLY_URL_SCHEME = paloally;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";

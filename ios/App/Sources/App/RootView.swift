@@ -244,6 +244,8 @@ struct MainScreen: View {
         .sheet(isPresented: $model.showAllyInvite) {
             AllyInviteSheet().environment(store)
         }
+        // A pairing link for this very computer: for passing on to another device.
+        .modifier(LinkForAnotherDeviceAlert(model: model))
     }
 
     /// Asked once per computer: it's paired, its settings arrived and it has no name yet.

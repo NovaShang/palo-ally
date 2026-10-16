@@ -18,6 +18,9 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     # Device and release builds pass the short git hash; local builds say "dev".
     PALOALLY_COMMIT: dev
+    # The URL scheme the app registers for pairing links. A test build passes
+    # another (PALOALLY_URL_SCHEME=paloally-devtest) so the installed app keeps paloally:.
+    PALOALLY_URL_SCHEME: paloally
 targets:
   PaloAlly:
     type: application
@@ -78,7 +81,7 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: com.novashang.paloally.pair
             CFBundleURLSchemes:
-              - paloally
+              - $(PALOALLY_URL_SCHEME)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.novashang.paloally

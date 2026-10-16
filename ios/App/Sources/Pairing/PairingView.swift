@@ -13,8 +13,8 @@ struct PairingView: View {
     @State private var showManual = false
     @State private var working = false
     @State private var error: String?
-    /// A link that arrived from outside (URL open / launch option) while this
-    /// device is already paired: ask before adding another computer.
+    /// A link that arrived from outside (a click, the Camera, a launch
+    /// option) while this device already has an assistant: 「添加这台电脑？」.
     @State private var confirmAdd = false
 
     /// Only when the owner asked to add another computer does this screen
@@ -45,8 +45,8 @@ struct PairingView: View {
                     .padding(.top, 24)
 
                     VStack(alignment: .leading, spacing: 12) {
-                        step(1, "在电脑上运行 paloally pair，屏幕上会出现一个二维码。")
-                        step(2, QRScannerView.isAvailable ? "用这台设备扫一扫，或者把链接复制过来。" : "把电脑上显示的配对链接复制过来。")
+                        step(1, "在电脑上运行 paloally pair，会出现二维码和链接；或者在已经连上的设备上跟助理说「连一台新设备」。")
+                        step(2, QRScannerView.isAvailable ? "用这台设备扫二维码，或者在这台设备上点开链接。" : "在这台设备上点开链接，或者把它复制过来。")
                         step(3, "连上之后，数据只在你的电脑和这台设备之间加密传送。")
                     }
                     .padding(18)
@@ -135,15 +135,19 @@ struct PairingView: View {
             .onAppear(perform: takePendingLink)
             // A link can also arrive while this screen is already showing.
             .onChange(of: model.pendingPairingLink) { takePendingLink() }
-            .confirmationDialog("连上这台电脑？", isPresented: $confirmAdd, titleVisibility: .visible) {
-                Button("换成这台") { model.pairingIntent = .replace; submit() }
-                Button("两台都留着") { model.pairingIntent = .add; submit() }
+            .confirmationDialog("添加这台电脑？", isPresented: $confirmAdd, titleVisibility: .visible) {
+                Button("添加") { submit() }
+                if model.mode == .paired {
+                    Button("换掉「\(currentHostLabel)」") { model.pairingIntent = .replace; submit() }
+                }
                 Button("不用", role: .cancel) {
                     linkText = ""
                     if isSheet { dismiss() }
                 }
             } message: {
-                Text("收到了一个配对链接。现在连着「\(currentHostLabel)」。")
+                Text(model.mode == .paired
+                     ? "收到一个配对链接。添加后两台电脑的助理都在这里，点对话顶部的名字切换。"
+                     : "收到一个配对链接。添加后离开演示，连上那台电脑上的助理。")
             }
         }
     }
@@ -156,8 +160,11 @@ struct PairingView: View {
         guard let pending = model.pendingPairingLink else { return }
         model.pendingPairingLink = nil
         linkText = pending
-        // Already paired and the link came from outside: ask what to do.
-        if model.mode == .paired && model.pairingIntent == .first {
+        // From outside, with an assistant here already: ask first.
+        if model.confirmPairingLink {
+            model.confirmPairingLink = false
+            appLog.info("pairing link: asking 添加这台电脑？ (mode \(String(describing: model.mode), privacy: .public))")
+            debugLog("pairing link: asking 添加这台电脑？ (mode \(String(describing: model.mode)))")
             confirmAdd = true
         } else {
             submit()
@@ -214,6 +221,51 @@ struct PairingView: View {
             self.error = (error as? LocalizedError)?.errorDescription ?? "这不是配对链接"
             showManual = true
         }
+    }
+}
+
+/// A pairing link for a computer this device is already paired with (the
+/// assistant's pair_link, tapped on the device it was sent to): it's for
+/// another device, so it's offered for passing on, and kept unused.
+struct LinkForAnotherDeviceAlert: ViewModifier {
+    let model: AppModel
+
+    func body(content: Content) -> some View {
+        let pending = model.linkForAnotherDevice
+        content.alert("这台设备已经连着「\(pending.map { model.displayName($0.hostID) } ?? "")」",
+                      isPresented: Binding(get: { model.linkForAnotherDevice != nil },
+                                           set: { if !$0 { model.linkForAnotherDevice = nil } }),
+                      presenting: pending) { p in
+            Button("共享…") {
+                // Once the alert is gone: it can't present the share sheet.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(400))
+                    SystemShare.present(p.link)
+                }
+            }
+            Button("拷贝链接") { UIPasteboard.general.string = p.link }
+            Button("好", role: .cancel) {}
+        } message: { _ in
+            Text("这个链接是给另一台设备用的：用隔空投送发过去，或者拷贝后在那台设备上粘贴，在那里点开。")
+        }
+    }
+}
+
+/// The system share sheet (隔空投送, 信息, 拷贝…) over whatever is showing.
+@MainActor
+enum SystemShare {
+    static func present(_ text: String) {
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive } ?? UIApplication.shared.connectedScenes.first as? UIWindowScene
+        guard let window = scene?.keyWindow ?? scene?.windows.first, var top = window.rootViewController else { return }
+        while let next = top.presentedViewController, !next.isBeingDismissed { top = next }
+        let items: [Any] = [URL(string: text) ?? text]
+        let sheet = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        // iPad and Mac: a popover, from the middle of the window.
+        sheet.popoverPresentationController?.sourceView = window
+        sheet.popoverPresentationController?.sourceRect = CGRect(x: window.bounds.midX, y: window.bounds.midY, width: 1, height: 1)
+        sheet.popoverPresentationController?.permittedArrowDirections = []
+        top.present(sheet, animated: true)
     }
 }
 

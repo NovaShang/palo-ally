@@ -232,3 +232,45 @@ public struct PairingClient: Sendable {
                           hostLabel: ack.daemon_label ?? "", hostFingerprint: ack.host_fingerprint ?? "")
     }
 }
+
+/// `paloally:` links (a computer's pairing link, an Ally's invite) on their
+/// way into the app.
+public enum AppLink {
+    public static let scheme = "paloally"
+
+    /// A link for the app: `paloally:` or the scheme this build registered
+    /// instead (a test build's, e.g. `paloally-devtest`), given back as
+    /// `paloally:` for the parsers. nil for anything else.
+    public static func normalized(_ url: URL, ownScheme: String = scheme) -> URL? {
+        guard let s = url.scheme?.lowercased(), s == scheme || s == ownScheme.lowercased() else { return nil }
+        guard s != scheme, var c = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        c.scheme = scheme
+        return c.url
+    }
+
+    /// Inline Markdown with each bare `paloally://` link in angle brackets,
+    /// so it comes out as a link (Markdown links only bare web addresses).
+    /// Links already in `<…>`, `[…](…)` or a code span stay as they are.
+    public static func markingBareLinks(in markdown: String) -> String {
+        guard markdown.range(of: "paloally://", options: .caseInsensitive) != nil else { return markdown }
+        let ns = markdown as NSString
+        let out = NSMutableString(string: markdown)
+        for m in bareLink.matches(in: markdown, range: NSRange(location: 0, length: ns.length)).reversed() {
+            var range = m.range
+            // Sentence punctuation after a link isn't part of it.
+            while range.length > 0, ".,;:!?'*".contains(Character(ns.substring(with: NSRange(location: NSMaxRange(range) - 1, length: 1)))) {
+                range.length -= 1
+            }
+            if range.location > 0, "<([`".contains(Character(ns.substring(with: NSRange(location: range.location - 1, length: 1)))) { continue }
+            // Inside a code span: an odd number of backticks before it on its line.
+            let lineStart = ns.range(of: "\n", options: .backwards, range: NSRange(location: 0, length: range.location)).location
+            let from = lineStart == NSNotFound ? 0 : lineStart + 1
+            let before = ns.substring(with: NSRange(location: from, length: range.location - from))
+            if before.filter({ $0 == "`" }).count % 2 == 1 { continue }
+            out.replaceCharacters(in: range, with: "<\(ns.substring(with: range))>")
+        }
+        return out as String
+    }
+
+    private static let bareLink = try! NSRegularExpression(pattern: "paloally://[A-Za-z0-9._~:/?#@!$&*+,;=%-]+", options: .caseInsensitive)
+}

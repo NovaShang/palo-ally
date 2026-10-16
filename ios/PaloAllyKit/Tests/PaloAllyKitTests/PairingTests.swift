@@ -139,3 +139,33 @@ struct PairingTests {
         }
     }
 }
+
+@Suite("App links")
+struct AppLinkTests {
+    let pair = "paloally://pair?relay=https%3A%2F%2Frelay.example.com&daemon=d1&code=123456&hostkey=AAEC-_x"
+
+    @Test func ownSchemeComesInAsPaloally() throws {
+        let test = try #require(URL(string: "paloally-devtest://pair?daemon=d1&code=123456"))
+        #expect(AppLink.normalized(test, ownScheme: "paloally-devtest")?.absoluteString == "paloally://pair?daemon=d1&code=123456")
+        #expect(AppLink.normalized(try #require(URL(string: pair)), ownScheme: "paloally-devtest")?.absoluteString == pair)
+        #expect(AppLink.normalized(try #require(URL(string: pair)))?.absoluteString == pair)
+        // Another build's scheme, or the web, isn't ours.
+        #expect(AppLink.normalized(test) == nil)
+        #expect(AppLink.normalized(try #require(URL(string: "https://example.com")), ownScheme: "paloally-devtest") == nil)
+    }
+
+    @Test func bareLinksBecomeLinks() throws {
+        #expect(AppLink.markingBareLinks(in: "在 Mac 上点开：\(pair)") == "在 Mac 上点开：<\(pair)>")
+        #expect(AppLink.markingBareLinks(in: "\(pair)。5 分钟内有效") == "<\(pair)>。5 分钟内有效")
+        #expect(AppLink.markingBareLinks(in: "点开 \(pair).") == "点开 <\(pair)>.")
+        #expect(AppLink.markingBareLinks(in: "**\(pair)**") == "**<\(pair)>**")
+        // Already a link, or code: left alone.
+        for s in ["<\(pair)>", "[点这里](\(pair))", "`\(pair)`", "代码 `x \(pair)` 里", "没有链接", "https://example.com"] {
+            #expect(AppLink.markingBareLinks(in: s) == s)
+        }
+        // What Foundation's Markdown then makes of it.
+        let parsed = try AttributedString(markdown: AppLink.markingBareLinks(in: "点开：\(pair)"),
+                                          options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
+        #expect(parsed.runs.compactMap(\.link).map(\.absoluteString) == [pair])
+    }
+}

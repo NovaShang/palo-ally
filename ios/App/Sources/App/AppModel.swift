@@ -383,6 +383,18 @@ final class AppModel {
         showPairingSheet = true
     }
     var pendingPairingLink: String?
+    /// The pending link came from outside while this device already has an
+    /// assistant: the pairing screen asks 「添加这台电脑？」 before using it.
+    var confirmPairingLink = false
+    /// A pairing link for a computer this device is already paired with (the
+    /// assistant's pair_link tapped on the phone it was sent to): it's for
+    /// another device, so it's offered for passing on instead.
+    var linkForAnotherDevice: LinkForAnotherDevice?
+    struct LinkForAnotherDevice: Identifiable, Equatable {
+        let link: String
+        let hostID: String
+        var id: String { link }
+    }
     /// Task whose detail should open in management (large screens).
     var openTaskID: String?
     /// An approval the conversation should scroll to (notification tap).
@@ -839,8 +851,18 @@ final class AppModel {
 
     // MARK: system hooks
 
-    func handle(url: URL) {
-        guard url.scheme?.lowercased() == "paloally" else { return }
+    /// The scheme this build registered for its links (`paloally`; a test
+    /// build's own, so the installed app keeps `paloally:`).
+    static let urlScheme: String = {
+        let types = Bundle.main.infoDictionary?["CFBundleURLTypes"] as? [[String: Any]]
+        return (types?.first?["CFBundleURLSchemes"] as? [String])?.first ?? AppLink.scheme
+    }()
+
+    /// A `paloally:` link, from outside (a click in Safari, Notes, Messages,
+    /// Mail, the Camera) or tapped in a conversation: a computer's pairing
+    /// link goes straight to pairing, an Ally's invite to its confirm sheet.
+    func handle(url incoming: URL) {
+        guard let url = AppLink.normalized(incoming, ownScheme: Self.urlScheme) else { return }
         // Someone else's assistant (the system Camera opened their QR code):
         // confirmed in a sheet over the conversation, added on this computer.
         if AllyInviteLink.isAllyLink(url.absoluteString) {
@@ -851,11 +873,35 @@ final class AppModel {
         }
         appLog.info("pairing link received (mode \(String(describing: self.mode), privacy: .public))")
         debugLog("pairing link received (mode \(String(describing: self.mode)))")
-        pendingPairingLink = url.absoluteString
-        if mode != .unpaired {
-            // A link from outside: the screen asks whether to switch or add.
-            pairingIntent = .first
-            showPairingSheet = true
+        let link = url.absoluteString
+        // Nothing paired yet: the pairing screen is what's showing, and it
+        // pairs right away.
+        guard mode != .unpaired else {
+            pendingPairingLink = link
+            return
+        }
+        if mode == .paired, let id = (try? PairingLink.parse(link))?.daemonID, hostIDs.contains(id) {
+            closeSheetsThen { self.linkForAnotherDevice = LinkForAnotherDevice(link: link, hostID: id) }
+            return
+        }
+        // Another computer: the pairing screen opens on 「添加这台电脑？」.
+        pendingPairingLink = link
+        confirmPairingLink = true
+        pairingIntent = mode == .paired ? .add : .first
+        if !showPairingSheet { closeSheetsThen { self.showPairingSheet = true } }
+    }
+
+    /// A link clicked while a sheet is up: that one goes first, or the next
+    /// one can't be shown. (An open pairing screen takes a new link itself.)
+    private func closeSheetsThen(_ show: @escaping @MainActor () -> Void) {
+        guard showManagement || showAllyInvite || allyInvite != nil || showPairingSheet else { return show() }
+        showManagement = false
+        showAllyInvite = false
+        allyInvite = nil
+        showPairingSheet = false
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(600))
+            show()
         }
     }
 
