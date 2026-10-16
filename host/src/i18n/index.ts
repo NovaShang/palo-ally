@@ -73,3 +73,11 @@ function detectSystemLanguage(): Lang {
 export function isLang(v: unknown): v is Lang {
   return v === "zh" || v === "en";
 }
+
+// True when `s` is exactly one of the dictionary sentences (either language):
+// a message already worded for the owner, as opposed to a raw system error.
+let allMessages: Set<string> | null = null;
+export function isMessage(s: string): boolean {
+  allMessages ??= new Set([...Object.values(DICTIONARIES.zh), ...Object.values(DICTIONARIES.en)]);
+  return allMessages.has(s);
+}

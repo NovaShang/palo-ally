@@ -21,6 +21,7 @@ import {
   allyTurnMessage,
   allyUndeliveredText,
 } from "./copy.ts";
+import { isMessage, t } from "./i18n/index.ts";
 import { type Identity, b64, fingerprint, unb64 } from "./proto/e2e.ts";
 import { ALLY_LIMITS, type AllyHello, type AllyMessage, type AllyReceipt, type AllyWire, allyInviteLink, allyTrust, allowedRelay, parseAllyInvite, parseAllyWire, validSlots } from "./proto/ally.ts";
 import type { Router } from "./router.ts";
@@ -211,7 +212,7 @@ export class Allies {
 
   log(id: string, beforeTs?: unknown, limit?: unknown): AllyEntry[] {
     const a = this.get(id);
-    if (!a || a.pending) throw new Error("没有这个 Ally");
+    if (!a || a.pending) throw new Error(t("ally.err.none"));
     const before = typeof beforeTs === "number" ? beforeTs : Infinity;
     const n = Math.max(1, Math.min(typeof limit === "number" ? limit : 50, 200));
     return this.logOf(a.id)
@@ -298,7 +299,7 @@ export class Allies {
       const a: Ally = {
         id: newId("al_"),
         kind: "family",
-        ownerName: "对方", // until its hello
+        ownerName: t("ally.msg.defaultName"), // until its hello
         assistantName: "",
         daemonId: "",
         hostKey: key,
@@ -323,21 +324,21 @@ export class Allies {
   // return once both are done.
   async accept(link: string, kindIn: unknown, trustIn?: unknown): Promise<AllyInfo> {
     const relay = this.readyRelay();
-    if (kindIn !== "family" && kindIn !== "mine") throw new Error("标签只能是「家人朋友」或「我的」");
+    if (kindIn !== "family" && kindIn !== "mine") throw new Error(t("ally.err.kind"));
     const kind: AllyKind = kindIn;
     const trust = trustIn === undefined || trustIn === null ? "review" : allyTrust(trustIn);
-    if (!trust) throw new Error("档位只能是「能对话」或「每句要你看」");
+    if (!trust) throw new Error(t("ally.err.trust"));
     const inv = parseAllyInvite(link);
     const now = this.now();
-    if (inv.exp && inv.exp < now) throw new Error("这个邀请过期了，请对方重新打开二维码");
-    if (inv.daemonId === relay.daemonId) throw new Error("这是你自己的邀请");
-    if (this.active().some((a) => a.daemonId === inv.daemonId)) throw new Error("你们已经是 Ally 了");
-    if (this.back && now < this.back.until) throw new Error("正在加另一个 Ally，稍等一下再试");
+    if (inv.exp && inv.exp < now) throw new Error(t("ally.err.expired"));
+    if (inv.daemonId === relay.daemonId) throw new Error(t("ally.err.self"));
+    if (this.active().some((a) => a.daemonId === inv.daemonId)) throw new Error(t("ally.err.already"));
+    if (this.back && now < this.back.until) throw new Error(t("ally.err.busy"));
 
     const a: Ally = {
       id: newId("al_"),
       kind,
-      ownerName: inv.name || "对方",
+      ownerName: inv.name || t("ally.msg.defaultName"),
       assistantName: "",
       daemonId: inv.daemonId,
       hostKey: b64(inv.hostKey),
@@ -365,12 +366,12 @@ export class Allies {
       this.back = { code: opened.code, pub: a.hostKey, until: this.now() + opened.ttl * 1000, allyId: a.id, done: backDone };
       this.pairing.set(a.id, { hello: helloDone, fail });
       const ack = await this.pairFn(inv.relay, inv.daemonId, { code: inv.code, identity: relay.identity, label: RELAY_LABEL, kind: "ally" });
-      if (ack.host_fingerprint !== fingerprint(inv.hostKey)) throw new Error("对方主机的指纹对不上，没有加");
+      if (ack.host_fingerprint !== fingerprint(inv.hostKey)) throw new Error(t("ally.err.fingerprint"));
       a.myDeviceIdThere = ack.device_id;
       this.saveAllies();
       const hello = this.hello(a, { pairCode: opened.code, hostKey: b64(relay.identity.pub), daemonId: relay.daemonId, relay: relay.relayUrl });
       await this.connectOut(a.id, this.target(a), hello);
-      const timeout = new Promise<never>((_, rej) => (timer = setTimeout(() => rej(new Error("对方没回应，没加成")), allyTiming.acceptMs)));
+      const timeout = new Promise<never>((_, rej) => (timer = setTimeout(() => rej(new Error(t("ally.err.noReply"))), allyTiming.acceptMs)));
       await Promise.race([Promise.all([backP, helloP]), failP, timeout]);
     } catch (e) {
       if (this.back?.allyId === a.id) this.back = null;
@@ -447,7 +448,7 @@ export class Allies {
     for (const e of this.logOf(a.id)) {
       if (e.dir === "out" && (e.status === "draft" || e.status === "queued" || e.status === "sent")) {
         e.status = "rejected";
-        e.note = "已解除";
+        e.note = t("ally.note.removed");
         this.emitEntry(e);
       }
     }
@@ -473,15 +474,15 @@ export class Allies {
     const a = this.find(args.to);
     if (!a) {
       const names = this.active().map((x) => `${x.ownerName}（${x.id}）`).join("、");
-      return names ? `没有「${args.to}」这个 Ally。现在的 Ally：${names}` : "还没有 Ally。主人可以在 App 的「它」里加。";
+      return names ? t("ally.tool.unknown", { to: args.to, names }) : t("ally.tool.none");
     }
     const text = String(args.text ?? "").trim();
-    if (!text) return "没有要发的话";
-    if (Buffer.byteLength(text) > ALLY_LIMITS.textBytes) return "太长了：一条不能超过 4 KB（大约 1300 个汉字），精简一下再拟。";
+    if (!text) return t("ally.err.noText");
+    if (Buffer.byteLength(text) > ALLY_LIMITS.textBytes) return t("ally.tool.tooLong");
     let slots: AllySlot[] | undefined;
     if (Array.isArray(args.slots) && args.slots.length) {
       const v = validSlots(args.slots);
-      if (!v) return "时段格式不对：每个是 {start, end}，ISO 8601 带时区（如 2026-10-17T14:00:00+08:00），结束晚于开始，最多 5 个。";
+      if (!v) return t("ally.tool.badSlots");
       slots = v;
     }
     const replyTo = typeof args.replyTo === "string" && /^[\w-]{1,64}$/.test(args.replyTo) ? args.replyTo : undefined;
@@ -516,11 +517,11 @@ export class Allies {
   // no card, through the outbox like everything else.
   say(id: string, textIn: unknown): AllyEntry {
     const a = this.get(id);
-    if (!a || a.pending) throw new Error("没有这个 Ally");
-    if (a.removedAt) throw new Error("已经不是 Ally 了");
+    if (!a || a.pending) throw new Error(t("ally.err.none"));
+    if (a.removedAt) throw new Error(t("ally.err.removed"));
     const text = typeof textIn === "string" ? textIn.trim() : "";
-    if (!text) throw new Error("没有要发的话");
-    if (Buffer.byteLength(text) > ALLY_LIMITS.textBytes) throw new Error("太长了，一条不能超过 4 KB");
+    if (!text) throw new Error(t("ally.err.noText"));
+    if (Buffer.byteLength(text) > ALLY_LIMITS.textBytes) throw new Error(t("ally.err.tooLong"));
     const e: StoredEntry = { id: newId("ae_"), allyId: a.id, dir: "out", ts: this.now(), text, urgent: false, status: "queued", author: "owner" };
     this.addEntry(a, e);
     // In the assistant's conversation too, as the owner's words to them.
@@ -536,9 +537,9 @@ export class Allies {
   // (ally.trust). Their host hears it in our next hello, sent now if it can.
   setTrust(id: string, trustIn: unknown): AllyInfo {
     const a = this.get(id);
-    if (!a || a.pending || a.removedAt) throw new Error("没有这个 Ally");
+    if (!a || a.pending || a.removedAt) throw new Error(t("ally.err.none"));
     const trust = allyTrust(trustIn);
-    if (!trust) throw new Error("档位只能是「能对话」或「每句要你看」");
+    if (!trust) throw new Error(t("ally.err.trust"));
     if (a.trust !== trust) {
       a.trust = trust;
       this.saveAllies();
@@ -574,26 +575,26 @@ export class Allies {
   // decide is the owner on a draft card: 发送 / 改一下 / 不发.
   decide(id: string, action: unknown, textIn?: unknown): AllyEntry {
     const found = this.findEntry(id);
-    if (!found || found.e.dir !== "out") throw new Error("没有这条草稿");
+    if (!found || found.e.dir !== "out") throw new Error(t("ally.err.noDraft"));
     const { a, e } = found;
-    if (action !== "send" && action !== "edit" && action !== "discard") throw new Error("只能是发送、改一下或不发");
+    if (action !== "send" && action !== "edit" && action !== "discard") throw new Error(t("ally.err.badAction"));
     if (e.status !== "draft") {
       // A retried 发送: it already went (or is going).
       if (action === "send" && e.status !== "rejected") return publicEntry(e);
-      throw new Error("这条已经处理过了");
+      throw new Error(t("ally.err.handled"));
     }
     const text = typeof textIn === "string" ? textIn.trim() : undefined;
     if (text !== undefined && action !== "discard") {
-      if (!text) throw new Error("没有要发的话");
-      if (Buffer.byteLength(text) > ALLY_LIMITS.textBytes) throw new Error("太长了，一条不能超过 4 KB");
+      if (!text) throw new Error(t("ally.err.noText"));
+      if (Buffer.byteLength(text) > ALLY_LIMITS.textBytes) throw new Error(t("ally.err.tooLong"));
       e.text = text;
     }
-    if (action === "edit" && text === undefined) throw new Error("改一下要带上新的文字");
+    if (action === "edit" && text === undefined) throw new Error(t("ally.err.editText"));
     if (action === "discard") {
       e.status = "rejected";
-      e.note = "没发";
+      e.note = t("ally.note.discarded");
     } else if (action === "send") {
-      if (a.removedAt) throw new Error("已经不是 Ally 了");
+      if (a.removedAt) throw new Error(t("ally.err.removed"));
       e.status = "queued";
       this.queueMessage(a, e);
     }
@@ -779,7 +780,7 @@ export class Allies {
       let changed = false;
       if (r.state === "rejected" && RANK[e.status] < RANK.delivered) {
         e.status = "rejected";
-        e.note = "对方没收";
+        e.note = t("ally.note.refused");
         changed = true;
       } else if ((r.state === "delivered" || r.state === "seen") && e.status !== "rejected" && RANK[e.status] < RANK[r.state]) {
         e.status = r.state;
@@ -804,7 +805,7 @@ export class Allies {
 
   private onBye(a: Ally, link: Link): void {
     if (a.pending) {
-      this.pairing.get(a.id)?.fail(new Error("对方没加成功"));
+      this.pairing.get(a.id)?.fail(new Error(t("ally.err.notAdded")));
       if (link.dir === "in") this.discardPending(a);
       return;
     }
@@ -863,7 +864,7 @@ export class Allies {
         this.receipts.delete(id);
         w.done(null);
       }
-      this.pairing.get(link.allyId)?.fail(new Error("对方断开了，没加成"));
+      this.pairing.get(link.allyId)?.fail(new Error(t("ally.err.dropped")));
     }
     this.onlineChanged(link.allyId);
   }
@@ -983,7 +984,7 @@ export class Allies {
     const e = this.logOf(item.allyId).find((x) => x.id === item.key);
     if (!a || !e) return;
     e.status = "rejected";
-    e.note = "3 天没送到";
+    e.note = t("ally.note.undelivered");
     this.saveLog(a.id);
     this.emitEntry(e);
     const msg = this.d.chat.add({ role: "assistant", kind: "text", text: allyUndeliveredText(a.ownerName, excerpt(e.text)), channel: "system", proactive: true });
@@ -1018,7 +1019,7 @@ export class Allies {
         if (e.dir !== "out") continue;
         if (e.status === "draft" && now - e.ts >= allyTiming.draftMs) {
           e.status = "rejected";
-          e.note = "草稿过期了";
+          e.note = t("ally.note.draftExpired");
           changed = true;
           this.emitEntry(e);
         } else if (e.status === "delivered" && !e.nudgedAt && e.deliveredAt && now - e.deliveredAt >= allyTiming.notSeenMs && !quiet && !a.removedAt) {
@@ -1079,8 +1080,8 @@ export class Allies {
   }
 
   private readyRelay(): AllyRelay {
-    if (!this.relay) throw new Error("远程连接没开启，加不了 Ally");
-    if (this.relay.state !== "connected") throw new Error("还没连上中转服务器，稍后再试");
+    if (!this.relay) throw new Error(t("ally.err.noRelay"));
+    if (this.relay.state !== "connected") throw new Error(t("ally.err.relayDown"));
     return this.relay;
   }
 
@@ -1186,15 +1187,15 @@ function publicEntry(e: StoredEntry): AllyEntry {
 // Plain words for a failed accept.
 function acceptError(e: unknown): string {
   if (e instanceof PairError) {
-    if (e.status === 401) return "邀请码不对，或者已经用过了，请对方重新打开二维码";
-    if (e.status === 400) return "邀请已经失效了，请对方重新打开二维码";
-    if (e.status === 503) return "对方的电脑现在不在线";
-    if (e.status === 429) return "试得太多了，等一分钟再试";
-    if (e.status === 502) return "对方没接受，邀请可能已经用过了";
-    return "对方的电脑没回应，再试一次";
+    if (e.status === 401) return t("ally.pair.401");
+    if (e.status === 400) return t("ally.pair.400");
+    if (e.status === 503) return t("ally.pair.503");
+    if (e.status === 429) return t("ally.pair.429");
+    if (e.status === 502) return t("ally.pair.502");
+    return t("ally.pair.other");
   }
   const m = e instanceof Error ? e.message : String(e);
-  return /[一-鿿]/.test(m) ? m : "没加成，再试一次";
+  return /[一-鿿]/.test(m) || isMessage(m) ? m : t("ally.pair.generic");
 }
 
 let accountName: string | null = null;
