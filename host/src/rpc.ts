@@ -1,6 +1,7 @@
 import type { Hub } from "./hub.ts";
 import type { Attachment, Channel } from "./types.ts";
 import { readJson, writeJson } from "./util.ts";
+import { t } from "./i18n/index.ts";
 
 export interface RpcContext {
   clientId: string;
@@ -83,7 +84,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
           ? { messageId: r.messageId.slice(0, 100), excerpt: r.excerpt.trim().slice(0, 300) }
           : undefined;
       const msg = hub.userMessage(String(p.text ?? ""), ctx.channel, undefined, cid, attachments, replyTo);
-      if (!msg) throw new Error("空消息");
+      if (!msg) throw new Error(t("rpc.err.empty"));
       // Sent by tapping a 「试试」 chip: it's used up.
       if (typeof p.suggestionId === "string") hub.suggestions.use(p.suggestionId);
       return { id: msg.id, seq: msg.seq };
@@ -107,7 +108,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return hub.media.readChunk(String(p.id ?? ""), Number(p.offset ?? 0), Number(p.length ?? 256 * 1024));
     case "media.get": {
       const m = hub.media.read(String(p.id ?? ""));
-      if (!m) throw new Error("找不到这张图片");
+      if (!m) throw new Error(t("rpc.err.noImage"));
       return { mediaType: m.mediaType, data: m.data };
     }
     case "model.get":
@@ -136,7 +137,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     }
     case "task.get": {
       const task = hub.tasks.get(String(p.id));
-      if (!task) throw new Error("没有这个任务");
+      if (!task) throw new Error(t("rpc.err.noTask"));
       return { task, activity: hub.tasks.activity(task.id) };
     }
     case "task.stop": {
@@ -145,7 +146,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     }
     case "approval.answer": {
       const a = hub.approvals.answer(String(p.id), !!p.allow, ctx.channel, !!p.remember, ctx.deviceId);
-      if (!a) throw new Error("没有这个确认请求");
+      if (!a) throw new Error(t("rpc.err.noApproval"));
       // A Pal's card answered after it went to sleep: it's woken (§12).
       if (a.source?.kind === "pal") hub.pals.cardAnswered(a.source.id);
       return { status: a.status };
@@ -176,7 +177,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     case "memory.write":
       // Refuse to overwrite what the assistant changed while the editor was open.
       if (typeof p.baseUpdatedAt === "number" && hub.memory.mtime(String(p.path)) > p.baseUpdatedAt + 1)
-        throw new Error("这个文件刚被助理改过，请重新打开再改");
+        throw new Error(t("rpc.err.fileChanged"));
       hub.memory.write(String(p.path), String(p.content ?? ""));
       hub.audit.log("memory.write", { path: p.path, by: ctx.channel });
       return { ok: true, updatedAt: hub.memory.mtime(String(p.path)) };
@@ -201,7 +202,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return { ok: true };
     }
     case "device.unpair":
-      if (!ctx.deviceId) throw new Error("这个连接不是配对设备");
+      if (!ctx.deviceId) throw new Error(t("rpc.err.notDevice"));
       hub.audit.log("device.unpaired", { deviceId: ctx.deviceId });
       // after replying: removing the device closes this very connection
       setTimeout(() => hub.onUnpairDevice?.(ctx.deviceId!), 100);
@@ -292,7 +293,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     // A link that pairs one more of the owner's devices (5 minutes, one
     // device): for the owner's own apps and the local CLI, never an Ally.
     case "pair.invite":
-      ownerOnly(ctx, "只有主人自己的设备能添加新设备");
+      ownerOnly(ctx, t("rpc.err.ownerAdd"));
       return await hub.pairInvite(ctx.channel);
     case "host.update":
       // check: only look. Otherwise stage the newest release and switch to it as
@@ -306,7 +307,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
 
 // The owner's own paired devices and the local socket; an Ally's host never
 // reaches these methods, and anything else without a device is refused.
-function ownerOnly(ctx: RpcContext, why = "只有主人自己的设备能管理设备"): void {
+function ownerOnly(ctx: RpcContext, why = t("rpc.err.ownerManage")): void {
   if (!ctx.local && !ctx.deviceId) throw new Error(why);
 }
 
@@ -314,7 +315,7 @@ function ownerOnly(ctx: RpcContext, why = "只有主人自己的设备能管理�
 function attachmentsOf(hub: Hub, ids: unknown): Attachment[] {
   return (Array.isArray(ids) ? ids : []).slice(0, 10).map((id: unknown) => {
     const a = hub.media.attachment(String(id));
-    if (!a) throw new Error("附件没传上来，重发一次");
+    if (!a) throw new Error(t("rpc.err.attachment"));
     return a;
   });
 }

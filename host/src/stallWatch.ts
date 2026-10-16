@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, openSync, readSync, readdirSync, closeSync, fstatSync, statSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { t as tr } from "./i18n/index.ts";
 
 // The stall watchdog: a Claude Code process the host runs (the assistant's
 // own, every Pal) that froze mid-work is ended and resumed, without waiting
@@ -184,7 +185,7 @@ export class StallWatch {
       s.toldAt = now;
       this.d.audit("stall.gave_up", { session: t.key, name: t.name, quietMin: minutes, why, pid, restarts: s.restarts.length });
       this.d.log(`watchdog: ${t.name} stuck ${minutes} min (${why}); ${s.restarts.length} restarts this hour, leaving it`);
-      this.d.notify(`「${t.name}」又卡住了 ${minutes} 分钟。一小时里已经自动重启了 ${s.restarts.length} 次，这次先不重启，你看一下。`);
+      this.d.notify(tr("stall.gaveUp", { name: t.name, minutes, n: s.restarts.length }));
       return;
     }
     s.restarts.push(now);
@@ -195,12 +196,12 @@ export class StallWatch {
       const diag = pid && this.d.diagnose ? await this.d.diagnose(pid, t.name).catch(() => null) : null;
       const r = await t.recover();
       this.d.audit("stall.restarted", { session: t.key, name: t.name, quietMin: minutes, why, pid, ...r, ...(diag ? { diag } : {}) });
-      this.d.notify(`「${t.name}」卡住了 ${minutes} 分钟，已经自动重启并续上。`);
+      this.d.notify(tr("stall.restarted", { name: t.name, minutes }));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       this.d.audit("stall.restart_failed", { session: t.key, name: t.name, quietMin: minutes, why, pid, error: msg });
       this.d.log(`watchdog: restarting ${t.name} failed: ${msg}`);
-      this.d.notify(`「${t.name}」卡住了 ${minutes} 分钟，自动重启没成功：${msg}`);
+      this.d.notify(tr("stall.failed", { name: t.name, minutes, msg }));
     } finally {
       s.recovering = false;
       s.busySince = null;

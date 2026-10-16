@@ -23,7 +23,7 @@ import { SuggestionStore } from "./suggestions.ts";
 import { TaskTracker } from "./tasks.ts";
 import type { Attachment, Channel, ChatMessage, PairedDevice, Status, Task, Watch, ReplyTo } from "./types.ts";
 import { MediaStore } from "./media.ts";
-import { BRIEF_TITLE, ensureMorningBrief } from "./brief.ts";
+import { ensureMorningBrief, isBriefTitle } from "./brief.ts";
 import { HandoffTracker, claudeConfigDir, transcriptPath } from "./handoffs.ts";
 import { readRegistry } from "./ccSessions.ts";
 import { StallWatch, type StallWatchDeps, WATCHDOG_DEFAULTS, apiSockets, diagnoseInto, killHard } from "./stallWatch.ts";
@@ -32,7 +32,7 @@ import { Updater, type UpdaterDeps } from "./update.ts";
 import { type Usage, UsageLedger } from "./usage.ts";
 import { randomUUID } from "node:crypto";
 import { forkSession as sdkForkSession } from "@anthropic-ai/claude-agent-sdk";
-import { type ForkSession, REWIND_NOT_FOUND, beforeCompaction, chainTo, findEntry, forkedUuids, leafOf, matchOwnerEntry, readTranscript } from "./rewind.ts";
+import { type ForkSession, rewindNotFound, beforeCompaction, chainTo, findEntry, forkedUuids, leafOf, matchOwnerEntry, readTranscript } from "./rewind.ts";
 import { appendJsonl, readJson, writeJson } from "./util.ts";
 import { WatchStore } from "./watches.ts";
 import { Sessions, type SessionsDeps } from "./sessions.ts";
@@ -274,7 +274,7 @@ export class Hub {
         this.chat.add({
           role: "system",
           kind: "notice",
-          text: `${reason}：${due.map((w) => `「${w.title}」`).join("、")}今天先不查了。要多查一些，把 config.json 里的 budget.probeDailyUsd 调高。`,
+          text: t("hub.probePaused", { reason, titles: due.map((w) => t("ally.msg.quote", { text: w.title })).join(t("turn.listSep")) }),
           channel: "system",
         }),
     });
@@ -535,19 +535,19 @@ export class Hub {
    */
   async rewindChat(messageId: string, by: string): Promise<{ text: string }> {
     const msg = this.chat.get(String(messageId ?? ""));
-    if (!msg || msg.pal || msg.role !== "user" || msg.kind !== "text") throw new Error("这一条不能回到这里");
-    if (msg.rewound) throw new Error("这一条已经撤回了");
+    if (!msg || msg.pal || msg.role !== "user" || msg.kind !== "text") throw new Error(t("hub.err.rewindNo"));
+    if (msg.rewound) throw new Error(t("hub.err.rewound"));
     const busy = this.conversation.rewindBlocker();
     if (busy) throw new Error(busy);
     const { sessionId, pending } = this.conversation.rewindSource();
-    if (!sessionId) throw new Error(REWIND_NOT_FOUND);
+    if (!sessionId) throw new Error(rewindNotFound());
     const entries = readTranscript(transcriptPath(this.claudeDir, this.paths.home, sessionId));
     // The conversation as it stands (an earlier rewind not yet followed by a message: what it kept).
     const chain = chainTo(entries, pending ? pending.at : leafOf(entries));
     const used = new Set(this.chat.recent(2000).flatMap((m) => (m.uuid && m.id !== msg.id ? [m.uuid] : [])));
     // By its uuid; failing that (kept before it had one), by its words and time.
     const entry = (msg.uuid ? findEntry(chain, msg.uuid) : undefined) ?? matchOwnerEntry(chain, this.ownerBody(msg), msg.ts, used);
-    if (!entry) throw new Error(REWIND_NOT_FOUND);
+    if (!entry) throw new Error(rewindNotFound());
     const at = typeof entry.parentUuid === "string" ? entry.parentUuid : typeof entry.logicalParentUuid === "string" ? entry.logicalParentUuid : null;
     let to: string = randomUUID();
     // Before the last compaction: copied into a new session up to there
@@ -620,13 +620,13 @@ export class Hub {
     if (/^\/status$/i.test(t)) {
       return statusReply(this.conversation.busy, this.tasks.running().length, this.approvals.listPending().length);
     }
-    // Answering an approval in text needs its 4-character code ("同意 3f2a"), so
+    // Answering an approval in text needs its 4-character code ("同意 3f2a" or "approve 3f2a"), so
     // an ordinary "ok"/"yes" in conversation can never approve anything.
-    const m = /^(同意|批准|允许|拒绝|不同意)\s*([0-9a-f]{4})$/i.exec(t);
+    const m = /^(同意|批准|允许|拒绝|不同意|approve|allow|deny|reject)\s*([0-9a-f]{4})$/i.exec(t);
     if (m) {
       const target = this.approvals.listPending().find((a) => a.id.endsWith(m[2]!.toLowerCase()));
       if (target) {
-        const allow = /^(同意|批准|允许)$/.test(m[1]!);
+        const allow = /^(同意|批准|允许|approve|allow)$/i.test(m[1]!);
         this.approvals.answer(target.id, allow, channel);
         return approvalAnswerReply(allow);
       }
@@ -695,7 +695,7 @@ export class Hub {
    * and one device. Clicked on that device, the app opens and pairs.
    */
   async pairInvite(by: string): Promise<{ link: string; expiresAt: number }> {
-    if (!this.openPairing) throw new Error("这台电脑没开远程连接，没法给新设备配对");
+    if (!this.openPairing) throw new Error(t("hub.err.noRemote"));
     const r = await this.openPairing(PAIR_INVITE_TTL_SEC);
     this.audit.log("pair.invite", { by, ttl: r.ttl });
     return { link: r.link, expiresAt: Date.now() + r.ttl * 1000 };
@@ -727,11 +727,11 @@ export class Hub {
   // `null` goes back to the default.
   async setModel(patch: { model?: string | null; effort?: string | null }): Promise<Status> {
     const efforts = ["low", "medium", "high", "xhigh", "max"];
-    if (patch.effort != null && !efforts.includes(patch.effort)) throw new Error("思考深度不对");
+    if (patch.effort != null && !efforts.includes(patch.effort)) throw new Error(t("hub.err.effort"));
     if (patch.model != null) {
       const known = this.info.models();
       const ok = known.length ? known.some((m) => m.value === patch.model) : /^[\w.\-:[\]]{1,80}$/.test(patch.model);
-      if (!ok) throw new Error(`没有这个模型：${patch.model}`);
+      if (!ok) throw new Error(t("hub.err.model", { model: patch.model }));
     }
     if ("model" in patch) {
       this.config.model = patch.model || undefined;
@@ -833,10 +833,10 @@ export class Hub {
    * one leaves with device.unpair.
    */
   removeDevice(deviceId: string, by: { deviceId?: string; channel: string }): void {
-    if (!this.devices) throw new Error("这台电脑没开远程连接");
-    if (deviceId && deviceId === by.deviceId) throw new Error("这是你正在用的这台，要断开它请用「解除配对」");
+    if (!this.devices) throw new Error(t("hub.err.noRemote2"));
+    if (deviceId && deviceId === by.deviceId) throw new Error(t("hub.err.thisDevice"));
     const d = this.devices.list().find((x) => x.deviceId === deviceId);
-    if (!d) throw new Error("没有这台设备");
+    if (!d) throw new Error(t("hub.err.noDevice"));
     this.devices.remove(deviceId);
     const meta = readJson<Record<string, unknown>>(this.paths.deviceMeta, {});
     if (deviceId in meta) {
@@ -869,7 +869,7 @@ export class Hub {
 
   private onSchedule(w: Watch): void {
     // Right before the 晨报: compact first (clean break only), so the brief opens a lighter context.
-    if (w.title === BRIEF_TITLE) this.conversation.maybeCompact({ beforeBrief: true });
+    if (isBriefTitle(w.title)) this.conversation.maybeCompact({ beforeBrief: true });
     this.proactive.onSchedule(w);
   }
 

@@ -2,6 +2,7 @@ import type { Audit } from "./audit.ts";
 import type { Settings } from "./config.ts";
 import type { ChatMessage } from "./types.ts";
 import { inWindow, minuteOfDay, parseHHMM, truncate } from "./util.ts";
+import { t } from "./i18n/index.ts";
 
 export interface Pusher {
   readonly name: string;
@@ -63,14 +64,14 @@ export interface PushHealth {
 // assistant) can act on.
 export function pushFailureReason(errors: string[]): string {
   const all = errors.join(" ");
-  if (/unsupported/.test(all)) return "中转服务器暂不支持推送";
-  if (/NotConfigured/.test(all)) return "中转服务器还没配好推送密钥";
-  if (/relay not (connected|started)/.test(all)) return "这台电脑和中转服务器断开了";
-  if (/RateLimited/.test(all)) return "推送太频繁，被中转服务器限流了";
-  if (/NoPairedDevice/.test(all)) return "中转服务器上找不到配对的设备";
-  if (/BadDeviceToken|Unregistered|\b410\b/.test(all)) return "手机的推送登记失效了，打开一次 App 就会重新登记";
-  if (/timed out/.test(all)) return "推送服务没及时回应";
-  return `推送失败（${truncate(all, 80)}）`;
+  if (/unsupported/.test(all)) return t("push.err.unsupported");
+  if (/NotConfigured/.test(all)) return t("push.err.notConfigured");
+  if (/relay not (connected|started)/.test(all)) return t("push.err.relayDown");
+  if (/RateLimited/.test(all)) return t("push.err.rate");
+  if (/NoPairedDevice/.test(all)) return t("push.err.noDevice");
+  if (/BadDeviceToken|Unregistered|\b410\b/.test(all)) return t("push.err.token");
+  if (/timed out/.test(all)) return t("push.err.timeout");
+  return t("push.err.failed", { detail: truncate(all, 80) });
 }
 
 // Runaway guard for pushes the assistant starts on its own (schedule / probe
@@ -157,8 +158,8 @@ export class Router {
         this.audit.log("deliver.error", { via: p.name, error: String(e) });
       }
     }
-    const pushError = pushed ? undefined : errors.length ? pushFailureReason(errors) : "还没有设备开启推送";
-    if (tried || errors.length) this.health = { at: this.now(), ok: pushed, detail: pushed ? (devices ? `推到了 ${devices} 台设备` : "推送成功") : pushError! };
+    const pushError = pushed ? undefined : errors.length ? pushFailureReason(errors) : t("push.err.noneEnabled");
+    if (tried || errors.length) this.health = { at: this.now(), ok: pushed, detail: pushed ? (devices ? t("push.ok.devices", { n: devices }) : t("push.ok")) : pushError! };
 
     // WeChat as well as the push (and the fallback when the push failed).
     let wechat = false;
@@ -166,16 +167,16 @@ export class Router {
     if (opts.skipWechat) {
       // already sent there as part of the turn
     } else if (!this.wechat) {
-      wechatNote = "没开微信入口";
+      wechatNote = t("wechat.note.off");
     } else if (s.wechatProactive === "off") {
-      wechatNote = "设置里关了微信提醒";
+      wechatNote = t("wechat.note.muted");
     } else if (!this.wechat.available()) {
-      wechatNote = this.wechat.unavailableReason?.() ?? "微信现在发不过去";
+      wechatNote = this.wechat.unavailableReason?.() ?? t("wechat.note.cantSend");
     } else {
       // WeChat goes through Tencent's servers (not E2E): by default only a hint.
-      const text = s.wechatProactive === "full" ? msg.text : `PaloAlly 有一条新消息：${hintFor(msg)}。打开 App 查看。`;
+      const text = s.wechatProactive === "full" ? msg.text : t("wechat.hint", { hint: hintFor(msg) });
       wechat = await withTimeout(this.wechat.sendProactive(text), PUSH_TIMEOUT_MS).catch(() => false);
-      if (!wechat) wechatNote = "微信发送失败";
+      if (!wechat) wechatNote = t("wechat.note.failed");
     }
     this.audit.log("deliver", { msg: msg.id, pushed, wechat, ...(pushError ? { pushError } : {}), ...(wechatNote ? { wechatNote } : {}) });
     return { pushed, wechat, ...(devices !== undefined ? { devices } : {}), ...(pushError ? { pushError } : {}), ...(wechatNote ? { wechatNote } : {}) };
@@ -184,9 +185,9 @@ export class Router {
 
 // hintFor names the kind of message without its content.
 function hintFor(msg: ChatMessage): string {
-  if (msg.kind === "approval") return `有个操作等你确认（回复「同意 ${msg.approvalId?.slice(-4)}」或「拒绝 ${msg.approvalId?.slice(-4)}」，或在 App 里看详情）`;
-  if (msg.kind === "question") return "有个问题等你回答（在 App 里选一下就行）";
-  if (msg.kind === "task") return "有个任务有结果了";
-  if (msg.kind === "ally") return "有一条 Ally 传来的话";
-  return "我有事想跟你说";
+  if (msg.kind === "approval") return t("wechat.hint.approval", { code: msg.approvalId?.slice(-4) ?? "" });
+  if (msg.kind === "question") return t("wechat.hint.question");
+  if (msg.kind === "task") return t("wechat.hint.task");
+  if (msg.kind === "ally") return t("wechat.hint.ally");
+  return t("wechat.hint.other");
 }

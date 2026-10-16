@@ -1,3 +1,4 @@
+import { t } from "./i18n/index.ts";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { allyTurnTool, type AllyGateScope } from "./allyGate.ts";
@@ -13,7 +14,7 @@ import type { HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption,
 import { autoMemoryDir } from "./memory.ts";
 import type { Router } from "./router.ts";
 import type { RuntimeState } from "./runtime.ts";
-import { type PendingRewind, REWIND_BUSY } from "./rewind.ts";
+import { type PendingRewind, rewindBusy } from "./rewind.ts";
 import { type StallRecovery, type StallTarget, WATCHDOG_DEFAULTS, transcriptHas } from "./stallWatch.ts";
 import type { TaskTracker } from "./tasks.ts";
 import type { Channel, Task } from "./types.ts";
@@ -42,8 +43,8 @@ const SKIP = /^\s*\[skip\]\s*$/i;
 export const timing = { implicitQuietMs: 90_000 };
 
 // What the assistant is told after the watchdog restarted it mid-turn.
-export const STALL_CONTINUE = "（PaloAlly：你的进程刚才卡住了，已经重启并续上。请接着做上一轮没做完的事；已经做完的话，简单说一句就好。）";
-const STALL_CONTINUE_PROACTIVE = "（PaloAlly：你的进程刚才卡住了，已经重启并续上。请接着做上一轮没做完的事；没有要做的就只回 [skip]。）";
+export const stallContinue = (): string => t("stall.continue");
+const stallContinueProactive = (): string => t("stall.continueProactive");
 
 /** Where the stall watchdog finds the assistant's process and transcript (the hub knows). */
 export interface MainStallHooks {
@@ -292,7 +293,7 @@ export class Conversation {
         : { resumeSessionId: rt.sessionId }),
       priorCostUsd: rt.sessionId ? rt.sessionCostUsd : undefined,
       permissionMode: cfg.permissionMode,
-      appendSystemPrompt: behaviorPrompt(this.d.paths) + `\n\n主人所在时区：${cfg.settings.timezone}。`,
+      appendSystemPrompt: behaviorPrompt(this.d.paths) + `\n\n${t("conv.timezone", { tz: cfg.settings.timezone })}`,
       tools: this.d.tools(),
       // AskUserQuestion is a question for the owner, not a permission prompt.
       // In an Ally's turn the gate answers first (the hook already did; this
@@ -721,7 +722,7 @@ export class Conversation {
 
   /** Why the conversation can't be taken back now (a turn is on), or null. */
   rewindBlocker(): string | null {
-    if (this.current || this.pending.size || this.allyGate || this.held.length || this.d.tasks.live().length) return REWIND_BUSY;
+    if (this.current || this.pending.size || this.allyGate || this.held.length || this.d.tasks.live().length) return rewindBusy();
     return null;
   }
 
@@ -804,7 +805,7 @@ export class Conversation {
       untaken.length || gate || turn?.maintenance ? null : (turn ?? (taken.length ? { origin: taken[0]!.origin, proactive: false, wechat: taken[0]!.wechat } : null));
     if (resumeAs) {
       this.queue.unshift({
-        text: resumeAs.proactive ? STALL_CONTINUE_PROACTIVE : STALL_CONTINUE,
+        text: resumeAs.proactive ? stallContinueProactive() : stallContinue(),
         origin: resumeAs.origin,
         proactive: resumeAs.proactive,
         wechat: resumeAs.wechat,

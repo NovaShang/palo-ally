@@ -16,6 +16,7 @@ import type { Pals } from "./pals.ts";
 import { join, resolve } from "node:path";
 import { mimeOf } from "./artifacts.ts";
 import type { Attachment, Channel, Watch } from "./types.ts";
+import { t } from "./i18n/index.ts";
 
 /** How long notify_user waits for the delivery outcome (tests shorten it). */
 export const notifyWait = { ms: 7_000 };
@@ -68,15 +69,15 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
         try {
           const w = d.watches.update(id, patch);
           d.audit.log("watch.updated", { id: w.id, title: w.title });
-          return `ok: ${w.id}（${scheduleText(w)}）`;
+          return `ok: ${w.id}${t("tool.paren", { x: scheduleText(w) })}`;
         } catch (e) {
-          return `没改：${e instanceof Error ? e.message : e}`;
+          return t("tool.notChanged", { err: e instanceof Error ? e.message : String(e) });
         }
       }
       const w = d.watches.add({ title: title ?? "", instruction: instruction ?? "", intervalMinutes: interval_minutes, at, dayOfMonth: day_of_month, kind }, "agent");
       d.audit.log("watch.registered", { id: w.id, title });
       // A new check runs on the scheduler's next minute tick.
-      return `ok: ${w.id}（${scheduleText(w)}${w.kind === "check" ? " · 一分钟内先查第一次" : ""}）`;
+      return `ok: ${w.id}${t("tool.paren", { x: scheduleText(w) + (w.kind === "check" ? t("tool.firstCheck") : "") })}`;
     },
     list_watches: async () =>
       JSON.stringify(
@@ -98,9 +99,9 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
       try {
         const w = d.watches.progress(id, progress, { state, ratio, outcome });
         d.audit.log("goal.progress", { id, state: w.state });
-        return `ok: 「${w.title}」${w.state === "done" ? "已完成" : w.state === "waiting" ? "等主人" : w.state === "paused" ? "已暂停" : "进行中"} · ${w.progress ?? ""}`;
+        return `ok: 「${w.title}」${t(w.state === "done" ? "goal.done" : w.state === "waiting" ? "goal.waiting" : w.state === "paused" ? "goal.paused" : "goal.active")} · ${w.progress ?? ""}`;
       } catch (e) {
-        return `没更新：${e instanceof Error ? e.message : e}`;
+        return t("tool.notUpdated", { err: e instanceof Error ? e.message : String(e) });
       }
     },
     remove_watch: async ({ id }) => (d.watches.remove(id) ? "ok" : "not found"),
@@ -123,7 +124,7 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
           }
           sent.push(path);
         } catch (e) {
-          return `没发出去（${f}）：${e instanceof Error ? e.message : e}`;
+          return t("tool.notSent", { file: f, err: e instanceof Error ? e.message : String(e) });
         }
       }
       const proactive = status === "proactive";
@@ -141,7 +142,7 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
       if (target && d.wechat?.sendFile) {
         for (const p of sent) await d.wechat.sendFile(target, p).catch(() => false);
       }
-      return temporary ? "已发给主人" : "已发给主人，也存进了产出物库";
+      return temporary ? t("tool.sentTemp") : t("tool.sentSaved");
     },
     // Modelled on Claude Code's own Artifact publish: a page or document the
     // owner keeps and revisits; same path again = an update of the same one.
@@ -156,46 +157,46 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
           attachments: [{ id: a.id, kind: "artifact", mediaType: mimeOf(join(a.id, a.mainFile)), name: a.title, display: "render" }],
         });
         d.audit.log("artifact.published", { id: a.id, files: a.files.length });
-        return `已发布：${a.title}（${a.files.length} 个文件，在主人的产出物库里）`;
+        return t("tool.published", { title: a.title, n: a.files.length });
       } catch (e) {
-        return `没发布成功：${e instanceof Error ? e.message : e}`;
+        return t("tool.notPublished", { err: e instanceof Error ? e.message : String(e) });
       }
     },
     // The app copies a live clipboard message to the phone's pasteboard as it
     // arrives (and shows a card with a copy button either way). On WeChat the
     // text goes out on its own so it can be long-pressed and copied.
     copy_to_clipboard: async ({ text, label }) => {
-      if (!text) return "没有要复制的内容";
+      if (!text) return t("tool.nothingToCopy");
       const channel = d.ownerChannel();
       const l = label?.trim();
       d.chat.add({ role: "assistant", kind: "clipboard", text, channel, ...(l ? { label: l } : {}) });
       d.audit.log("clipboard", { chars: text.length, label: l });
       const target = channel === "wechat" ? d.wechat?.ownerTarget?.() : null;
       if (target && d.wechat) await d.wechat.reply(target, text).catch(() => {});
-      return "已放到主人的手机剪贴板（若主人当时不在 App 里，对话里有一键复制的卡片）";
+      return t("tool.copied");
     },
     // Allies: the list, and a draft for the owner to send. Nothing reaches
     // another assistant without the owner's tap on the card.
     ally_list: async () => d.allies?.toolList() ?? "[]",
-    ally_send: async (args) => d.allies?.toolSend(args) ?? "还没有 Ally。",
+    ally_send: async (args) => d.allies?.toolSend(args) ?? t("ally.tool.none"),
     // Pals: the assistant talks to them with SendMessage itself; it only
     // lists them here, and proposes a new one or taking over a conversation
     // that ended (either happens on the owner's tap).
     pals_list: async () => (d.pals ? await d.pals.toolList() : "{}"),
-    pal_propose: async (a) => d.pals?.propose(a) ?? "这台电脑上没开 Pal",
-    pal_send: async (a) => (d.pals ? await d.pals.toolSend(a) : "这台电脑上没开 Pal"),
+    pal_propose: async (a) => d.pals?.propose(a) ?? t("tool.noPals"),
+    pal_send: async (a) => (d.pals ? await d.pals.toolSend(a) : t("tool.noPals")),
     pals_recent: async (a) => (d.pals ? await d.pals.toolRecent(a) : "{}"),
-    pal_adopt: async (a) => (d.pals ? await d.pals.proposeAdopt(a) : "这台电脑上没开 Pal"),
+    pal_adopt: async (a) => (d.pals ? await d.pals.proposeAdopt(a) : t("tool.noPals")),
     // A new device of the owner's: the assistant hands the link over in the
     // conversation; clicked on that device, the app opens and pairs.
     pair_link: async () => {
-      if (!d.pairInvite) return "这台电脑没开远程连接，没法给新设备配对";
+      if (!d.pairInvite) return t("hub.err.noRemote");
       try {
         const { link, expiresAt } = await d.pairInvite();
         const minutes = Math.max(1, Math.round((expiresAt - Date.now()) / 60_000));
-        return `配对链接（${minutes} 分钟内有效，只能连一台设备）：\n${link}\n把链接原样单独放一行发给主人（不要改写成 Markdown 链接、不要放进代码块），App 里能直接点开。`;
+        return t("tool.pairLink", { minutes, link });
       } catch (e) {
-        return `没拿到配对链接：${e instanceof Error ? e.message : e}`;
+        return t("tool.pairFail", { err: e instanceof Error ? e.message : String(e) });
       }
     },
     notify_user: async ({ text, urgent }) => {
@@ -216,9 +217,9 @@ function checkHealth(w: Watch, tz: string, now = Date.now()): string {
     const p = zonedParts(ms, tz);
     return `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
   };
-  if (!w.enabled) return "已暂停";
-  const last = w.lastCheckedAt ? `上次 ${at(w.lastCheckedAt)}` : "还没查过";
-  const result = w.lastResult ? (w.lastResult.ok ? "正常" : `没查成：${w.lastResult.reason ?? "出错"}`) : "";
+  if (!w.enabled) return t("goal.paused");
+  const last = w.lastCheckedAt ? t("check.last", { at: at(w.lastCheckedAt) }) : t("check.never");
+  const result = w.lastResult ? (w.lastResult.ok ? t("check.ok") : t("check.failed", { reason: w.lastResult.reason ?? t("check.error") })) : "";
   const next = nextRunAt(w, now);
-  return [last, result, next ? `下次约 ${at(next)}` : ""].filter(Boolean).join(" · ");
+  return [last, result, next ? t("check.next", { at: at(next) }) : ""].filter(Boolean).join(" · ");
 }

@@ -4,6 +4,7 @@ import type { PermissionDecision, PermissionRequest } from "./harness/types.ts";
 import type { AskOptions } from "./approvals.ts";
 import type { Question, QuestionItem } from "./types.ts";
 import { newId, readJson, writeJson } from "./util.ts";
+import { t } from "./i18n/index.ts";
 
 // Claude Code's AskUserQuestion reaches us through canUseTool like a
 // permission prompt, but it is a question: the harness expects the owner's
@@ -42,7 +43,7 @@ export class QuestionManager {
     for (const q of this.questions)
       if (q.status === "pending") {
         q.status = "expired";
-        if (q.source?.kind === "session") q.note = "在电脑上等你";
+        if (q.source?.kind === "session") q.note = t("approval.atComputer");
       }
     this.persist();
   }
@@ -62,7 +63,7 @@ export class QuestionManager {
   // request is canUseTool for AskUserQuestion.
   request(req: PermissionRequest): Promise<PermissionDecision> {
     const asked = this.ask(req);
-    if (!asked) return Promise.resolve({ behavior: "deny", message: "问题格式不对，没法问主人" });
+    if (!asked) return Promise.resolve({ behavior: "deny", message: t("question.badFormat") });
     return asked.result;
   }
 
@@ -101,12 +102,12 @@ export class QuestionManager {
   answer(id: string, answers: Record<string, string>, by: string, device?: string): Question {
     const p = this.pending.get(id);
     const q = p?.question ?? this.get(id);
-    if (!q) throw new Error("没有这个问题");
+    if (!q) throw new Error(t("question.none"));
     if (!p) return q; // already answered / expired: first answer wins
     const clean: Record<string, string> = {};
     for (const item of q.items) {
       const a = String(answers[item.question] ?? "").trim();
-      if (!a) throw new Error("每个问题都要选一下");
+      if (!a) throw new Error(t("question.pickEach"));
       clean[item.question] = a.slice(0, 1000);
     }
     this.pending.delete(id);
@@ -147,7 +148,7 @@ export class QuestionManager {
     this.bus.emit("question.updated", p.question);
     p.resolve({
       behavior: "deny",
-      message: by === "timeout" ? "主人一直没回答。先按你的判断继续，或者以后再问。" : "主人没回答就停下了。",
+      message: by === "timeout" ? t("question.timeout") : t("question.stopped"),
     });
   }
 
@@ -178,16 +179,16 @@ export function parseItems(input: Record<string, unknown>): QuestionItem[] {
 export function questionText(q: Question): string {
   const many = q.items.length > 1;
   const parts = q.items.map((item, i) => {
-    const head = `${many ? `${i + 1}. ` : ""}${item.question}${item.multiSelect ? "（可多选）" : ""}`;
-    const opts = item.options.map((o, j) => `  ${j + 1}) ${o.label}${o.description ? `：${o.description}` : ""}`);
+    const head = `${many ? `${i + 1}. ` : ""}${item.question}${item.multiSelect ? t("question.multi") : ""}`;
+    const opts = item.options.map((o, j) => `  ${j + 1}) ${o.label}${o.description ? t("question.optDesc", { d: o.description }) : ""}`);
     return [head, ...opts].join("\n");
   });
   const how = many
-    ? `每行回一个问题，按顺序，比如：\n1\n2,3\n回数字选，也可以直接写你的想法。`
+    ? t("question.howMany")
     : q.items[0]!.multiSelect
-      ? "回数字选（多个用逗号隔开，比如 1,3），也可以直接写你的想法。"
-      : "回数字选，也可以直接写你的想法。";
-  return `想问你一下：\n${parts.join("\n\n")}\n\n${how}`;
+      ? t("question.howMulti")
+      : t("question.howOne");
+  return t("question.text", { body: parts.join("\n\n"), how });
 }
 
 // parseTextAnswer turns a text reply ("2", "1,3", or words) into answers, or

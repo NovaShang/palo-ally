@@ -4,6 +4,7 @@ import type { PermissionDecision, PermissionRequest } from "./harness/types.ts";
 import type { Approval, CardSource } from "./types.ts";
 import { describeInput, describeTool } from "./copy.ts";
 import { newId, readJson, writeJson } from "./util.ts";
+import { t } from "./i18n/index.ts";
 
 // Safety is the harness' job (PRD revision 2026-10-04: "全部依赖 harness").
 // Claude Code decides what runs, what is denied, and what needs the owner;
@@ -55,7 +56,7 @@ export class ApprovalManager {
     for (const a of this.approvals)
       if (a.status === "pending") {
         a.status = "expired";
-        if (a.source?.kind === "session") a.note = "在电脑上等你";
+        if (a.source?.kind === "session") a.note = t("approval.atComputer");
       }
     this.persist();
   }
@@ -161,7 +162,7 @@ export class ApprovalManager {
     });
     this.bus.emit("approval.updated", p.approval);
     if (status === "allowed") p.resolve({ behavior: "allow", updatedInput: p.input, updatedPermissions });
-    else p.resolve({ behavior: "deny", message: status === "expired" ? "没等到主人确认，已取消" : "主人拒绝了这个操作" });
+    else p.resolve({ behavior: "deny", message: status === "expired" ? t("approval.expired") : t("approval.denied") });
   }
 
   private persist(): void {
