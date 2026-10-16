@@ -66,7 +66,6 @@ struct FilePage: View {
             FileTextPreview(fileName: kind == .markdown ? FilePreviewRoute.markdownRenderName(target.name) : target.name,
                             text: text, raw: raw, imageSource: kind == .markdown ? images : nil)
                 .ignoresSafeArea(edges: .bottom)
-                .accessibilityIdentifier("file-preview-text")
         case .quickLook(let url):
             QuickLookView(url: url, revision: 0)
                 .ignoresSafeArea(edges: .bottom)

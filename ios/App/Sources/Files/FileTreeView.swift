@@ -305,8 +305,9 @@ struct FileTreeRow: View {
                 Button { tree.toggle(path) } label: { label.contentShape(.rect) }
                     .buttonStyle(.plain)
                     .contextMenu { Self.menu(path: path, actions: actions) }
+                    // On the label: on the group it would name every row inside too.
+                    .accessibilityIdentifier("file-row-\(path)")
             }
-            .accessibilityIdentifier("file-row-\(path)")
         } else {
             Button { actions.open(path) } label: { label.contentShape(.rect) }
                 .buttonStyle(.plain)

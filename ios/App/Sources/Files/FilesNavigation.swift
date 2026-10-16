@@ -179,23 +179,24 @@ struct OwnerFoldersSection: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("open-folder")
+            // On the row: a Section in a List doesn't present.
+            .sheet(isPresented: $picking) {
+                NavigationStack {
+                    FolderPicker { folder in
+                        picking = false
+                        if !folders.contains(where: { $0.id == folder.id }) { folders.append(folder) }
+                        model.openFolder(folder.id)
+                    }
+                }
+                .environment(store)
+                .presentationSizing(.form)
+            }
         } header: {
             Text("文件夹", tableName: "Files")
         } footer: {
             if let failure { Text(verbatim: failure) }
         }
         .task { await load() }
-        .sheet(isPresented: $picking) {
-            NavigationStack {
-                FolderPicker { folder in
-                    picking = false
-                    if !folders.contains(where: { $0.id == folder.id }) { folders.append(folder) }
-                    model.openFolder(folder.id)
-                }
-            }
-            .environment(store)
-            .presentationSizing(.form)
-        }
     }
 
     private func load() async {

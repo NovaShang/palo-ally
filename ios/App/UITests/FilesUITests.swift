@@ -20,13 +20,13 @@ final class FilesUITests: XCTestCase {
         XCTAssertFalse(app.buttons["file-row-node_modules"].exists, "node_modules shows before it's asked for")
         attach(app, "pal-files-tree")
         readme.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["file-preview-text"].waitForExistence(timeout: 10), "the Markdown file didn't open")
+        XCTAssertTrue(app.descendants(matching: .any)["file-page"].waitForExistence(timeout: 10), "the Markdown file didn't open")
         XCTAssertTrue(app.webViews.staticTexts["网站"].waitForExistence(timeout: 10), "the Markdown isn't rendered")
         attach(app, "pal-files-markdown")
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(readme.waitForExistence(timeout: 5), "back didn't return to the tree")
         // A folder opens in place; search finds a file deep down.
-        app.buttons["file-row-src"].tap()
+        app.buttons["file-row-src"].firstMatch.tap()
         XCTAssertTrue(app.buttons["file-row-src/app.ts"].waitForExistence(timeout: 5), "src didn't open")
         let search = app.searchFields.firstMatch
         search.tap()
@@ -39,7 +39,7 @@ final class FilesUITests: XCTestCase {
     func testALongPressInsertsTheRelativePathIntoThePalsComposer() throws {
         let app = launch(["-demoScreen", "pal", "-demoPal", "pal-site"])
         openPalFiles(app)
-        let src = app.buttons["file-row-src"]
+        let src = app.buttons["file-row-src"].firstMatch
         XCTAssertTrue(src.waitForExistence(timeout: 10), "no src in the tree")
         src.tap()
         let file = app.buttons["file-row-src/app.ts"]
@@ -63,11 +63,15 @@ final class FilesUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars.staticTexts["网站帮手"].waitForExistence(timeout: 15), "the Pal's page didn't open")
         let link = app.links["ListPage.tsx"].firstMatch
         XCTAssertTrue(link.waitForExistence(timeout: 15), "ListPage.tsx in the reply isn't a link")
+        // Out from under the bar.
+        app.swipeDown()
         // Not a file on the computer: stays plain text.
         XCTAssertFalse(app.links["updatedAt"].exists)
         attach(app, "reply-path-link")
         link.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["file-preview-text"].waitForExistence(timeout: 10), "the file didn't open")
+        XCTAssertTrue(app.descendants(matching: .any)["file-page"].waitForExistence(timeout: 10), "the file didn't open")
+        let code = app.webViews.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "useItems")).firstMatch
+        XCTAssertTrue(code.waitForExistence(timeout: 10), "the code isn't shown")
         attach(app, "reply-path-preview")
         app.buttons["关闭"].firstMatch.tap()
         XCTAssertTrue(link.waitForExistence(timeout: 5), "closing didn't return to the conversation")

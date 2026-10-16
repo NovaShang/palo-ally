@@ -107,7 +107,6 @@ struct ComputerFilePicker: View {
             }
             level.load("")
         }
-        .accessibilityIdentifier("computer-file-picker")
     }
 
     @ViewBuilder private var list: some View {
@@ -200,7 +199,6 @@ struct FolderPicker: View {
             }
         }
         .task { await start() }
-        .accessibilityIdentifier("folder-picker")
     }
 
     @ViewBuilder private var list: some View {
