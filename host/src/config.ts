@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
+import { t } from "./i18n/index.ts";
 import { isValidTimeZone, parseHHMM, readJson, writeJson } from "./util.ts";
 import { hostVersion } from "./version.ts";
 
@@ -76,6 +77,10 @@ export interface Settings {
   // The assistant's identity, chosen by the owner after the first pairing.
   // "" = not chosen yet (the app asks once). The name also lives in soul.md.
   assistantName: string;
+  // The owner's language: what the assistant says and writes. "" = not chosen
+  // yet: the first owner device that reports a locale sets it, else the
+  // computer's preferred language is used (i18n/index.ts).
+  language: "zh" | "en" | "";
   color: string; // the assistant's color = the app's theme color; one of COLORS, "" = not chosen yet
 }
 
@@ -175,6 +180,7 @@ export function defaultConfig(): Config {
       approvalTimeoutMinutes: 30,
       wechatProactive: "hint",
       assistantName: "",
+      language: "",
       color: "",
     },
   };
@@ -186,27 +192,28 @@ export function validateSettings(current: Settings, patch: Record<string, unknow
   const allowed = new Set(Object.keys(defaultConfig().settings));
   // Older apps still send the avatar form id they used to pick; there's one form now.
   const { avatar: _legacyAvatar, ...rest } = patch;
-  for (const k of Object.keys(rest)) if (!allowed.has(k)) throw new Error(`没有这个设置：${k}`);
+  for (const k of Object.keys(rest)) if (!allowed.has(k)) throw new Error(t("config.noSetting", { key: k }));
   const next = { ...current, ...rest } as Settings;
-  if (!isValidTimeZone(next.timezone)) throw new Error(`时区不认识：${String(next.timezone)}（例如 Asia/Shanghai、America/Los_Angeles）`);
+  if (!isValidTimeZone(next.timezone)) throw new Error(t("config.badTimezone", { tz: String(next.timezone) }));
   if (next.quietHours !== null) {
     const q = next.quietHours as any;
     if (!q || typeof q !== "object" || parseHHMM(String(q.start ?? "")) === null || parseHHMM(String(q.end ?? "")) === null)
-      throw new Error("免打扰时段要写成开始和结束两个时间，例如 23:00-08:00");
+      throw new Error(t("config.badQuiet"));
     next.quietHours = { start: String(q.start), end: String(q.end) };
   }
   const int = (v: unknown, min: number, max: number, name: string) => {
-    if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max) throw new Error(`${name}要在 ${min} 到 ${max} 之间`);
+    if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max) throw new Error(t("config.badRange", { name, min, max }));
     return Math.round(v);
   };
-  next.probeIntervalMinutes = int(next.probeIntervalMinutes, 1, 1440, "检查间隔（分钟）");
-  next.approvalTimeoutMinutes = int(next.approvalTimeoutMinutes, 1, 24 * 60, "确认等待时间（分钟）");
-  if (!["off", "hint", "full"].includes(next.wechatProactive)) throw new Error("微信主动消息只能是 off / hint / full");
-  if (typeof next.assistantName !== "string") throw new Error("名字要是一段文字");
+  next.probeIntervalMinutes = int(next.probeIntervalMinutes, 1, 1440, t("config.probeInterval"));
+  next.approvalTimeoutMinutes = int(next.approvalTimeoutMinutes, 1, 24 * 60, t("config.approvalTimeout"));
+  if (!["off", "hint", "full"].includes(next.wechatProactive)) throw new Error(t("config.badWechat"));
+  if (typeof next.assistantName !== "string") throw new Error(t("config.nameText"));
   next.assistantName = next.assistantName.replace(/[\r\n]+/g, " ").trim();
-  if ([...next.assistantName].length > 20) throw new Error("名字最多 20 个字");
+  if ([...next.assistantName].length > 20) throw new Error(t("config.nameLong"));
+  if (next.language !== "" && next.language !== "zh" && next.language !== "en") throw new Error(t("config.badLanguage"));
   if (typeof next.color !== "string") next.color = "";
-  if (next.color !== "" && !(COLORS as readonly string[]).includes(next.color)) throw new Error(`没有这个颜色：${String(next.color)}`);
+  if (next.color !== "" && !(COLORS as readonly string[]).includes(next.color)) throw new Error(t("config.badColor", { color: String(next.color) }));
   return next;
 }
 

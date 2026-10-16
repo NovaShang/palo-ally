@@ -10,7 +10,7 @@ import { join } from "node:path";
 import type { SDKSessionInfo } from "@anthropic-ai/claude-agent-sdk";
 import { AwayDetector } from "../src/away.ts";
 import { type RegistryEntry, readRegistry } from "../src/ccSessions.ts";
-import { BEHAVIOR } from "../src/home.ts";
+import { BEHAVIORS } from "../src/home.ts";
 import { folderMatch, isOwnFolder, palNameFor, palTitle, type RecentSource, recentTitle, shortName } from "../src/palRecent.ts";
 import { MAX_PALS, type PalsTiming } from "../src/pals.ts";
 import { handleRpc } from "../src/rpc.ts";
@@ -366,9 +366,12 @@ describe("the assistant brings one back (pals_recent, pal_adopt)", () => {
   });
 
   test("its instructions: look first, ask when there are several, then the card", () => {
-    expect(BEHAVIOR).toContain("mcp__paloally__pals_recent");
-    expect(BEHAVIOR).toContain("mcp__paloally__pal_adopt");
-    expect(BEHAVIOR).toMatch(/有好几个候选时，先用 AskUserQuestion 让主人选/);
+    for (const B of [BEHAVIORS.zh, BEHAVIORS.en]) {
+      expect(B).toContain("mcp__paloally__pals_recent");
+      expect(B).toContain("mcp__paloally__pal_adopt");
+    }
+    expect(BEHAVIORS.zh).toMatch(/有好几个候选时，先用 AskUserQuestion 让主人选/);
+    expect(BEHAVIORS.en).toMatch(/with several candidates, first use AskUserQuestion to let the owner choose/);
   });
 });
 

@@ -7,7 +7,7 @@ import type { Audit } from "./audit.ts";
 import type { WechatChannel, WechatReplyTarget } from "./channels/types.ts";
 import type { ChatLog } from "./chat.ts";
 import type { Config, Paths } from "./config.ts";
-import { ACTIVITY, ACTIVITY_BACKGROUND, allyToolDenied, budgetNotice, describeActivity, friendlyError } from "./copy.ts";
+import { ACTIVITY, activityBackground, allyToolDenied, budgetNotice, describeActivity, friendlyError } from "./copy.ts";
 import { behaviorPrompt } from "./home.ts";
 import type { HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption, SlashCommandInfo, ToolGate, ToolHandlers } from "./harness/types.ts";
 import { autoMemoryDir } from "./memory.ts";
@@ -398,7 +398,7 @@ export class Conversation {
       case "tool_use":
         if (!e.parentToolUseId) this.openTools.add(e.id);
         tasks.onToolUse(e.id, e.name, e.input, e.parentToolUseId);
-        if (e.parentToolUseId) this.setActivity(ACTIVITY_BACKGROUND);
+        if (e.parentToolUseId) this.setActivity(activityBackground());
         else this.setActivityFor(e.name);
         break;
       case "tool_result":

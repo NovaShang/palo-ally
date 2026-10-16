@@ -10,7 +10,7 @@ import { pagePalMessages, toPalMessages, transcriptLastLine, transcriptModel } f
 import { MAX_AWAKE, MAX_PALS, PALO_NAME, type PalsDeps, type PalsTiming } from "../src/pals.ts";
 import { type PalRecord, startError } from "../src/palSession.ts";
 import type { Paths } from "../src/config.ts";
-import { BEHAVIOR } from "../src/home.ts";
+import { BEHAVIORS } from "../src/home.ts";
 import { handleRpc } from "../src/rpc.ts";
 import type { FakeScript } from "./fakeDriver.ts";
 import { FakeClaudeDir, FakeCli, assistantEntry } from "./fakeClaude.ts";
@@ -769,8 +769,10 @@ describe("asleep and awake (§12)", () => {
     expect(t.driver.pals).toHaveLength(2);
     expect(await tools.pal_send({ name: "没有的", text: "在吗" })).toContain("没有叫「没有的」的 Pal");
     expect(await tools.pal_send({ name: "网站", text: " " })).toContain("空的");
-    expect(BEHAVIOR).toContain("mcp__paloally__pal_send");
-    expect(BEHAVIOR).toMatch(/醒着睡着都有效/);
+    expect(BEHAVIORS.zh).toContain("mcp__paloally__pal_send");
+    expect(BEHAVIORS.zh).toMatch(/醒着睡着都有效/);
+    expect(BEHAVIORS.en).toContain("mcp__paloally__pal_send");
+    expect(BEHAVIORS.en).toMatch(/whether the Pal is awake or asleep/);
     await t.hub.pals.stopAndWait();
   });
 

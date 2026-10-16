@@ -46,7 +46,9 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     case "hello":
       // Which app this device is (the list of devices shows it).
       if (ctx.deviceId) hub.noteDevice(ctx.deviceId, p.client);
-      return { hostName: hub.config.hostName, version: hub.status().version, status: hub.status() };
+      // The app's preferred language (BCP 47, e.g. "zh-Hans-CN"): the first one the host hears decides its language until the owner sets one.
+      if (ctx.channel === "app") hub.noteLocale(p.locale);
+      return { hostName: hub.config.hostName, version: hub.status().version, status: hub.status(), language: hub.language() };
     case "sync": {
       const since = typeof p.sinceSeq === "number" ? p.sinceSeq : undefined;
       // The app syncs when it comes to the foreground: an Ally's message

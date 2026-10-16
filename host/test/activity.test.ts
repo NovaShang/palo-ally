@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { ACTIVITY, describeActivity } from "../src/copy.ts";
 import { Paths } from "../src/config.ts";
-import { BEHAVIOR, behaviorPrompt } from "../src/home.ts";
+import { BEHAVIORS, behaviorPrompt } from "../src/home.ts";
 import { cleanup, makeHub, tick } from "./helpers.ts";
 
 describe("activity line: tool → plain Chinese", () => {
@@ -97,17 +97,32 @@ describe("activity line: lifecycle", () => {
 });
 
 describe("behavior: respond first, then act", () => {
-  test("a top-level rule for every channel, with varied natural acks and no plan", () => {
-    const rule = BEHAVIOR.indexOf("## 先回应，再动手");
+  test("a top-level rule for every channel, with varied natural acks and no plan (zh)", () => {
+    const B = BEHAVIORS.zh;
+    const rule = B.indexOf("## 先回应，再动手");
     expect(rule).toBeGreaterThan(0);
-    expect(rule).toBeLessThan(BEHAVIOR.indexOf("## 微信")); // before any channel-specific section
-    expect(BEHAVIOR).toContain("每一轮、每个渠道");
-    for (const ack of ["好的，我来办", "收到，马上看", "好，我查一下", "行，我去弄"]) expect(BEHAVIOR).toContain(ack);
-    expect(BEHAVIOR).toContain("不解释打算怎么做");
-    expect(BEHAVIOR).toContain("不要套固定模板");
+    expect(rule).toBeLessThan(B.indexOf("## 微信")); // before any channel-specific section
+    expect(B).toContain("每一轮、每个渠道");
+    for (const ack of ["好的，我来办", "收到，马上看", "好，我查一下", "行，我去弄"]) expect(B).toContain(ack);
+    expect(B).toContain("不解释打算怎么做");
+    expect(B).toContain("不要套固定模板");
     // the WeChat section no longer carries its own copy of the rule
-    const wechat = BEHAVIOR.slice(BEHAVIOR.indexOf("## 微信"), BEHAVIOR.indexOf("## 干活方式"));
+    const wechat = B.slice(B.indexOf("## 微信"), B.indexOf("## 干活方式"));
     expect(wechat).not.toContain("先回一句");
+  });
+
+  test("the same rule in English, with English acks only", () => {
+    const B = BEHAVIORS.en;
+    const rule = B.indexOf("## Respond first, then act");
+    expect(rule).toBeGreaterThan(0);
+    expect(rule).toBeLessThan(B.indexOf("## WeChat")); // before any channel-specific section
+    expect(B).toContain("every turn, every channel");
+    for (const ack of ["Sure, on it", "Got it, looking now", "OK, let me check"]) expect(B).toContain(ack);
+    expect(B).toContain("don't explain your plan");
+    expect(B).toContain("don't use a fixed template");
+    for (const ack of ["好的，我来办", "收到，马上看"]) expect(B).not.toContain(ack);
+    const wechat = B.slice(B.indexOf("## WeChat"), B.indexOf("## How to work"));
+    expect(wechat).not.toContain("one short line");
   });
 });
 
@@ -118,5 +133,9 @@ describe("behavior: where past conversation lives", () => {
     expect(prompt).not.toContain("{{chatLog}}");
     expect(prompt).toContain("只读，绝不修改");
     expect(prompt).toContain("先搜原文再回答");
+    const en = behaviorPrompt(new Paths("/Users/someone/.paloally"), "en");
+    expect(en).toContain("/Users/someone/.paloally/state/chat.jsonl");
+    expect(en).toContain("read-only, never modify it");
+    expect(en).toContain("search the original text before answering");
   });
 });

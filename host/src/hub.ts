@@ -7,7 +7,7 @@ import type { ClientConn, WechatChannel, WechatReplyTarget } from "./channels/ty
 import { ChatLog } from "./chat.ts";
 import { type Config, type Paths, type Settings, VERSION, patchConfig, validateSettings } from "./config.ts";
 import { Conversation } from "./conversation.ts";
-import { ACTIVITY_THINKING, approvalAnswerReply, questionLineHelp, statusReply, stopReply } from "./copy.ts";
+import { activityThinking, approvalAnswerReply, questionLineHelp, statusReply, stopReply } from "./copy.ts";
 import type { HarnessDriver, HarnessEvent, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
 import { HarnessInfo } from "./harnessInfo.ts";
 import { MemoryView, autoMemoryDir } from "./memory.ts";
@@ -16,7 +16,8 @@ import { QuestionManager, parseTextAnswer, questionText } from "./questions.ts";
 import { Proactive } from "./proactive.ts";
 import { Router, type Pusher } from "./router.ts";
 import { RuntimeState } from "./runtime.ts";
-import { setSoulName } from "./home.ts";
+import { localizeDefaultHome, setSoulName } from "./home.ts";
+import { isLang, parseLocale, setLang, t, systemLanguage, type Lang } from "./i18n/index.ts";
 import { makeShellTools } from "./shellTools.ts";
 import { SuggestionStore } from "./suggestions.ts";
 import { TaskTracker } from "./tasks.ts";
@@ -117,6 +118,7 @@ export class Hub {
     this.config = deps.config;
     this.wechat = deps.wechat ?? null;
     this.log = deps.log ?? ((s) => console.log(`[hub] ${s}`));
+    setLang(this.language());
     this.runtime = new RuntimeState(this.paths.runtime);
     this.ledger = new UsageLedger(this.paths.usage, () => this.config.settings.timezone);
 
@@ -359,7 +361,7 @@ export class Hub {
       config: () => ({ ...WATCHDOG_DEFAULTS, ...this.config.watchdog }),
       notify: (text) => {
         const msg = this.chat.add({ role: "assistant", kind: "notice", text, channel: "system", proactive: true });
-        void this.router.proactive(msg, { title: "自动重启" }).catch(() => {});
+        void this.router.proactive(msg, { title: t("stall.title") }).catch(() => {});
       },
       audit: (type, data) => this.audit.log(type, data),
       sockets: apiSockets,
@@ -445,7 +447,7 @@ export class Hub {
     return {
       online: true,
       busy,
-      activity: busy ? this.conversation.activity || ACTIVITY_THINKING : undefined,
+      activity: busy ? this.conversation.activity || activityThinking() : undefined,
       model: this.conversation.model || this.config.model || "",
       effort: this.config.effort,
       sessionId: this.runtime.data.sessionId,
@@ -603,7 +605,7 @@ export class Hub {
     const q = this.questions.listPending().find((x) => this.wechatQuestions.has(x.id));
     if (!q) return null;
     const answers = parseTextAnswer(q, t);
-    if (!answers) return questionLineHelp;
+    if (!answers) return questionLineHelp();
     this.wechatQuestions.delete(q.id);
     this.questions.answer(q.id, answers, "wechat");
     return "";
@@ -613,7 +615,7 @@ export class Hub {
   private tryCommand(t: string, channel: Channel): string | null {
     if (/^\/(stop|停)$/i.test(t)) {
       this.stopAll(channel);
-      return stopReply;
+      return stopReply();
     }
     if (/^\/status$/i.test(t)) {
       return statusReply(this.conversation.busy, this.tasks.running().length, this.approvals.listPending().length);
@@ -753,12 +755,39 @@ export class Hub {
   updateSettings(patch: Partial<Settings>): Settings {
     const next = validateSettings(this.config.settings, patch as Record<string, unknown>);
     const probeChanged = next.probeIntervalMinutes !== this.config.settings.probeIntervalMinutes;
-    if (next.assistantName && next.assistantName !== this.config.settings.assistantName) setSoulName(this.paths, next.assistantName);
+    if (next.assistantName && next.assistantName !== this.config.settings.assistantName) setSoulName(this.paths, next.assistantName, next.language || this.language());
+    const languageChanged = next.language !== this.config.settings.language;
     this.config.settings = next;
     patchConfig(this.paths, (c) => (c.settings = next));
+    if (languageChanged) this.applyLanguage();
     if (probeChanged) this.probe.start();
     this.bus.emit("settings.updated", next);
     return next;
+  }
+
+  // ---------------- the owner's language (docs/design.md, i18n) ----------------
+
+  /** The language the assistant speaks: the setting, else the computer's preferred one. */
+  language(): Lang {
+    const l = this.config.settings.language;
+    return isLang(l) ? l : systemLanguage();
+  }
+
+  /** Make the running host speak `language()`; core files still as scaffolded follow it. */
+  applyLanguage(): void {
+    const lang = this.language();
+    setLang(lang);
+    localizeDefaultHome(this.paths, lang);
+  }
+
+  /**
+   * An owner device reported its preferred language (hello's `locale`). While
+   * the setting is unset, the first one decides: zh* is zh, anything else en.
+   */
+  noteLocale(locale: unknown): void {
+    if (this.config.settings.language) return;
+    const lang = parseLocale(locale);
+    if (lang) this.updateSettings({ language: lang });
   }
 
   usage(): Usage {

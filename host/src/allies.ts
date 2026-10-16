@@ -1200,11 +1200,11 @@ function acceptError(e: unknown): string {
 let accountName: string | null = null;
 
 // ownerDisplayName is how the owner is called on the other side: the
-// 「称呼」/「名字」 line in user.md, else the computer account's full name,
+// 「称呼」/「名字」 (or "Name:" / "Call me:") line in user.md, else the computer account's full name,
 // else the computer's name.
 export function ownerDisplayName(userMd: string, fallback: string): string {
   try {
-    const m = /^[-*\s]*(?:称呼|名字|姓名)\s*[:：]\s*(.+?)\s*$/m.exec(readFileSync(userMd, "utf8"));
+    const m = /^[-*\s]*(?:称呼|名字|姓名|Name|Call me)[ \t]*[:：][ \t]*(\S.*?)[ \t]*$/im.exec(readFileSync(userMd, "utf8"));
     if (m?.[1]) return m[1].slice(0, 30);
   } catch {
     /* no user.md */

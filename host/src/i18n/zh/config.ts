@@ -1,0 +1,13 @@
+export const zhConfig = {
+  "config.noSetting": "没有这个设置：{key}",
+  "config.badTimezone": "时区不认识：{tz}（例如 Asia/Shanghai、America/Los_Angeles）",
+  "config.badQuiet": "免打扰时段要写成开始和结束两个时间，例如 23:00-08:00",
+  "config.badRange": "{name}要在 {min} 到 {max} 之间",
+  "config.probeInterval": "检查间隔（分钟）",
+  "config.approvalTimeout": "确认等待时间（分钟）",
+  "config.badWechat": "微信主动消息只能是 off / hint / full",
+  "config.nameText": "名字要是一段文字",
+  "config.nameLong": "名字最多 20 个字",
+  "config.badColor": "没有这个颜色：{color}",
+  "config.badLanguage": "语言只能是 zh 或 en",
+} as const;

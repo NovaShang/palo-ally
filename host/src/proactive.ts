@@ -3,9 +3,9 @@ import type { ChatLog } from "./chat.ts";
 import type { Settings } from "./config.ts";
 import type { Turn } from "./conversation.ts";
 import {
-  PUSH_TITLE_APPROVAL,
-  PUSH_TITLE_BACK,
-  PUSH_TITLE_QUESTION,
+  pushTitleApproval,
+  pushTitleBack,
+  pushTitleQuestion,
   runawayNotice,
   approvalCardText,
   questionCardText,
@@ -84,7 +84,7 @@ export class Proactive {
       taskId: a.taskId,
       proactive: true,
     });
-    void this.d.router.proactive(msg, { title: PUSH_TITLE_APPROVAL });
+    void this.d.router.proactive(msg, { title: pushTitleApproval() });
   }
 
   // A question (AskUserQuestion) becomes a choice card + push. When the owner
@@ -99,7 +99,7 @@ export class Proactive {
       taskId: q.taskId,
       proactive: true,
     });
-    void this.d.router.proactive(msg, { title: PUSH_TITLE_QUESTION, skipWechat: opts.sentToWechat });
+    void this.d.router.proactive(msg, { title: pushTitleQuestion(), skipWechat: opts.sentToWechat });
   }
 
   // The runaway guard held a push back: say so once per window, in the chat only.
@@ -107,7 +107,7 @@ export class Proactive {
   onRunaway(reason: "burst" | "duplicate"): void {
     if (reason !== "burst" || Date.now() - this.lastRunawayNote < 30 * 60_000) return;
     this.lastRunawayNote = Date.now();
-    this.d.chat.add({ role: "system", kind: "notice", text: runawayNotice, channel: "system" });
+    this.d.chat.add({ role: "system", kind: "notice", text: runawayNotice(), channel: "system" });
   }
 
   // ---- liveness ----
@@ -160,6 +160,6 @@ export class Proactive {
       proactive: true,
     });
     this.d.metric({ type: "offline", gapMs: gap });
-    void this.d.router.proactive(msg, { title: PUSH_TITLE_BACK });
+    void this.d.router.proactive(msg, { title: pushTitleBack() });
   }
 }
