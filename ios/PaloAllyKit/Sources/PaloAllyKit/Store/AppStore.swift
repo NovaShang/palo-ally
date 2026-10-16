@@ -635,6 +635,8 @@ public final class AppStore {
             return false
         }
         for m in r.messages { upsert(m) }
+        // Gone back before while we weren't listening (回到这里重来).
+        if let gone = r.rewound, !gone.isEmpty { dropRewound(ids: Set(gone)) }
         if let s = r.streaming { applyStreaming(s, eventsBefore: eventsBefore) }
         hasSynced = true
         afterSync(r)
@@ -739,7 +741,7 @@ public final class AppStore {
     public func apply(event name: String, data: JSONValue, index: Int? = nil, received: TimeInterval? = nil) {
         // A Pal's words go to that Pal's store (made only once its page is
         // opened: until then its page loads them when it opens).
-        if scope == .palo, name == RPCEventName.chatMessage || name == RPCEventName.chatDelta,
+        if scope == .palo, name == RPCEventName.chatMessage || name == RPCEventName.chatDelta || name == RPCEventName.chatRewound,
            let pal = data["pal"]?.stringValue, !pal.isEmpty {
             palStores[pal]?.apply(event: name, data: data, index: index, received: received)
             return
@@ -756,6 +758,9 @@ public final class AppStore {
             }
         case RPCEventName.chatDelta:
             if let d = try? data.decode(ChatDelta.self), !d.id.isEmpty { applyDelta(d, index: index, received: received) }
+        case RPCEventName.chatRewound:
+            // 回到这里重来, here or on another device: that message and what came after go.
+            if let r = try? data.decode(ChatRewound.self), !r.id.isEmpty { dropRewound(from: r.id, ids: r.ids) }
         case RPCEventName.taskUpdated:
             if let t = try? data.decode(AllyTask.self) { upsert(task: t) }
         case RPCEventName.approvalUpdated:
@@ -976,6 +981,23 @@ public final class AppStore {
         sortMessages()
     }
 
+    /// 回到这里重来: message `id` and every one after it leave the list, and
+    /// those in `ids` wherever they are (the host's list; `id` may not be
+    /// loaded). Through `animateRewind`, so they fade out.
+    func dropRewound(from id: String? = nil, ids: Set<String>) {
+        let start = id.flatMap { id in messages.firstIndex { $0.id == id } }
+        var leaving = Set<String>()
+        for (i, m) in messages.enumerated() where ids.contains(m.id) || (start.map { i >= $0 } ?? false) { leaving.insert(m.id) }
+        guard !leaving.isEmpty else { return }
+        let apply = {
+            for sid in leaving { self.endStream(sid) }
+            self.messages.removeAll { leaving.contains($0.id) }
+            if let t = self.rewindTarget, leaving.contains(t.id) { self.rewindTarget = nil }
+            self.awaitingReply = false
+        }
+        if let animateRewind { animateRewind(apply) } else { apply() }
+    }
+
     /// Finds the optimistic echo a broadcast user message corresponds to.
     private func echoIndex(for m: ChatMessage) -> Int? {
         if let cid = m.clientMsgId,
@@ -1152,6 +1174,13 @@ public final class AppStore {
     /// What the composer is replying to (set by 「回复」 / 「引用回复」 / 「聊聊」);
     /// sent with the next message, then cleared.
     public var replyDraft: ReplyTo?
+
+    /// 回到这里重来 (docs/rewind-prd.md): the owner's message the confirmation
+    /// is up for, in place of the composer (AppStore+Rewind.swift).
+    public var rewindTarget: ChatMessage?
+    /// Set by the app: runs the messages leaving the conversation after a
+    /// rewind inside its animation, so they fade out instead of vanishing.
+    @ObservationIgnored public var animateRewind: (@MainActor (_ apply: () -> Void) -> Void)?
 
     /// Starts a reply to (part of) a message: the composer shows the quote.
     public func quote(_ message: ChatMessage, excerpt: String? = nil) {
@@ -1434,7 +1463,9 @@ public final class AppStore {
     /// A Pal's store: its newest page (`pals.history`). The first time it
     /// stands for the whole conversation; after that it's merged in, so
     /// older pages read meanwhile stay.
-    public func reloadPalHistory() async {
+    /// `fresh`: the page replaces what's there (after a rewind, whose copy
+    /// of the conversation may have new ids).
+    public func reloadPalHistory(fresh: Bool = false) async {
         guard let palID, !syncing else { return }
         // The reply being written comes with the page (as `sync` gives it);
         // deltas that overtake the answer go back on after it (`syncJournal`).
@@ -1449,7 +1480,7 @@ public final class AppStore {
                                                      as: PalHistoryResult.self)
             let page = r.messages.filter { $0.pal == nil || $0.pal == palID }
             let top = page.map(\.seq).max() ?? 0
-            let first = !hasSynced
+            let first = !hasSynced || fresh
             atTheEnd {
                 applySync(SyncResult(seq: top, messages: page, streaming: r.streaming), since: first ? nil : lastSeq,
                           eventsBefore: mark)

@@ -49,6 +49,10 @@ public actor DemoHost {
     var waitingAdoptions: Set<String> = []
     /// Each Pal's reply being written (`pals.history`'s `streaming`).
     var palWriting: [String: SyncResult.Streaming] = [:]
+    /// 回到这里重来: what each rewind took out, under the seq it took (sync tells a client that missed it).
+    var rewoundLog: [(seq: Int64, ids: [String])] = []
+    /// A Pal's highest message number ever (its ids aren't used again after a rewind).
+    var palSeqFloor: [String: Int64] = [:]
     /// The computer's sessions looked at without taking them over (§14), and
     /// the live one that's still going (a line now and then).
     var viewedLogs: [String: [CCMessage]] = [:]
@@ -113,6 +117,13 @@ public actor DemoHost {
                 self.messages.append(ps.proposal)
                 self.seq = ps.proposal.seq
             }
+        }
+        // The owner's words in the assistant's conversation carry the uuid
+        // the host keeps them under (回到这里重来 is offered on them).
+        messages = messages.map { m in
+            var m = m
+            if m.role == .user, m.kind == .text, m.pal == nil, m.uuid == nil { m.uuid = "u-\(m.id)" }
+            return m
         }
         // Strong on purpose: the transport keeps its host alive (demo mode and
         // tests often only hold the store/transport).
@@ -595,10 +606,11 @@ public actor DemoHost {
             } else {
                 msgs = Array(messages.suffix(100))
             }
+            let rewound = since.map { s in rewoundLog.filter { $0.seq > s }.flatMap(\.ids) } ?? []
             return try .from(SyncResult(seq: seq, messages: msgs, tasks: tasks, approvals: approvals, questions: questions,
                                         watches: watches,
                                         artifacts: artifacts, settings: settings, status: status,
-                                        streaming: writing))
+                                        streaming: writing, rewound: rewound.isEmpty ? nil : rewound))
         case RPCMethod.chatSend:
             let text = p["text"]?.stringValue ?? ""
             let cid = p["clientMsgId"]?.stringValue
@@ -606,6 +618,7 @@ public actor DemoHost {
             var m = ChatMessage(seq: seq, id: "m\(seq)", role: .user, kind: .text, text: text, channel: .app,
                                 ts: Date().epochMillis, clientMsgId: cid)
             if let r = p["replyTo"], let reply = try? r.decode(ReplyTo.self) { m.replyTo = reply }
+            if !text.hasPrefix("/") { m.uuid = "u-\(m.id)" }
             messages.append(m)
             emit(RPCEventName.chatMessage, m)
             if let sid = p["suggestionId"]?.stringValue {
@@ -614,6 +627,22 @@ public actor DemoHost {
             }
             Task { await self.respond(to: text) }
             return ["id": .string(m.id), "seq": .number(Double(m.seq))]
+        case RPCMethod.chatRewind:
+            // As the host's (docs/rewind-prd.md): back to just before one of
+            // the owner's messages; it and what came after leave.
+            let mid = p["messageId"]?.stringValue ?? ""
+            guard let i = messages.firstIndex(where: { $0.id == mid }), messages[i].role == .user, messages[i].uuid != nil else {
+                throw DemoError(message: "这一条不能回到这里")
+            }
+            guard !status.busy else { throw DemoError(message: "它还在忙，先停下再重来") }
+            let text = messages[i].text
+            let gone = messages[i...].map(\.id)
+            messages.removeSubrange(i...)
+            seq += 1
+            rewoundLog.append((seq, gone))
+            await pause(0.3) // the host ends its process and forks the session
+            emit(RPCEventName.chatRewound, ChatRewound(id: mid, ids: gone))
+            return ["text": .string(text)]
         case RPCMethod.chatHistory:
             let before = Int64(p["beforeSeq"]?.doubleValue ?? Double(Int64.max))
             let limit = Int(p["limit"]?.doubleValue ?? 50)

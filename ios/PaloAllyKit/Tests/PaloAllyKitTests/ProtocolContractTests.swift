@@ -71,6 +71,7 @@ private let resultTypes: [String: Check] = [
     RPCMethod.chatHistory: strict(MessagesResult.self),
     RPCMethod.chatSearch: strict(ChatSearchResult.self),
     RPCMethod.chatAround: strict(MessagesResult.self),
+    RPCMethod.chatRewind: strict(ChatRewindResult.self),
     RPCMethod.commandsList: strict(CommandsResult.self),
     RPCMethod.modelGet: strict(ModelInfo.self),
     RPCMethod.modelSet: strict(StatusResult.self),
@@ -130,6 +131,11 @@ private let resultTypes: [String: Check] = [
     RPCMethod.palsRecent: strict(PalsRecentResult.self),
     RPCMethod.palsWake: strict(PalWakeResult.self),
     RPCMethod.palsRename: strict(PalRenameResult.self),
+    // Going back (its words and whether the files went too), or only asking
+    // whether the files can go back (`check`).
+    RPCMethod.palsRewind: { json in
+        json["canRestoreFiles"] != nil ? strictIssues(PalRewindCheck.self, json) : strictIssues(PalRewindResult.self, json)
+    },
 ]
 
 /// What this client already speaks that the host's fixture doesn't have
@@ -149,6 +155,7 @@ private let eventTypes: [String: Check] = [
         return issues
     },
     RPCEventName.chatDelta: strict(ChatDelta.self),
+    RPCEventName.chatRewound: strict(ChatRewound.self),
     RPCEventName.taskUpdated: strict(AllyTask.self),
     RPCEventName.approvalUpdated: strict(Approval.self),
     RPCEventName.questionUpdated: strict(Question.self),

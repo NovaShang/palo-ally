@@ -64,6 +64,29 @@ extension DemoHost {
             while taken.contains(name.lowercased()) { name = "\(want) \(n)"; n += 1 }
             setPal(id) { $0.name = name }
             return ["pal": try .from(pals.first { $0.id == id })]
+        case RPCMethod.palsRewind:
+            // As the host's (docs/rewind-prd.md): the owner's own words only;
+            // the files can go back for any but its first (from before
+            // checkpoints were kept); `-demoNoCheckpoints YES`: never.
+            let id = p["id"]?.stringValue ?? ""
+            let mid = p["messageId"]?.stringValue ?? ""
+            guard let pal = pals.first(where: { $0.id == id }), let log = palLogs[id] else { throw DemoError(message: "没有这个 Pal") }
+            guard let i = log.firstIndex(where: { $0.id == mid }) else { throw DemoError(message: "在对话记录里找不到这一条，没法回到这里") }
+            guard log[i].role == .user, (log[i].from ?? "").isEmpty else { throw DemoError(message: "这一条不是你说的，不能回到这里") }
+            let checkpoint = !UserDefaults.standard.bool(forKey: "demoNoCheckpoints")
+                && log[..<i].contains { $0.role == .user && ($0.from ?? "").isEmpty }
+            if p["check"]?.boolValue == true { return ["canRestoreFiles": .bool(checkpoint)] }
+            guard pal.status != .busy && pal.status != .waiting else { throw DemoError(message: "它还在忙，先停下再重来") }
+            let files = p["restoreFiles"]?.boolValue == true
+            guard !files || checkpoint else { throw DemoError(message: "这一步之前的代码没法恢复") }
+            await pause(files ? 1.2 : 0.6) // its process ends (the files go back), then it's forked
+            palTurns[id]?.cancel()
+            palTurns[id] = nil
+            palWriting[id] = nil
+            let gone = log[i...].map(\.id)
+            palLogs[id] = Array(log[..<i])
+            emit(RPCEventName.chatRewound, ChatRewound(id: mid, ids: gone, pal: id))
+            return ["text": .string(log[i].text), "filesRestored": .bool(files)]
         case RPCMethod.palsStop:
             let id = p["id"]?.stringValue ?? ""
             guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Pal") }
@@ -167,7 +190,8 @@ extension DemoHost {
 
     /// The next message in a Pal's conversation (its own numbering).
     func palMessage(_ id: String, role: ChatRole, text: String, channel: ChatChannel = .app, from: String? = nil) -> ChatMessage {
-        let n = (palLogs[id]?.last?.seq ?? 0) + 1
+        let n = max(palLogs[id]?.last?.seq ?? 0, palSeqFloor[id] ?? 0) + 1
+        palSeqFloor[id] = n
         var m = ChatMessage(seq: n, id: "\(id)-\(n)", role: role, kind: .text, text: text, channel: channel, ts: Date().epochMillis)
         m.pal = id
         m.from = from

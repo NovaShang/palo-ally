@@ -163,6 +163,10 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     /// In a Pal's conversation: who said a `user` turn when it wasn't the
     /// owner (the assistant's words reach a Pal as a turn of their own).
     public var from: String?
+    /// The owner's message in the assistant's conversation: what Claude Code
+    /// keeps it under. Only these can be gone back to (回到这里重来,
+    /// docs/rewind-prd.md); a Pal's own messages are their uuid already.
+    public var uuid: String?
 
     // Local-only state.
     public var isStreaming: Bool = false
@@ -170,7 +174,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case seq, id, role, kind, text, channel, ts, proactive, taskId, approvalId, questionId, clientMsgId, attachments, label, replyTo, card
-        case allyId, allyName, dir, entryId, author, proposal, pal, from
+        case allyId, allyName, dir, entryId, author, proposal, pal, from, uuid
     }
 
     public init(
@@ -213,6 +217,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         }
         pal = l.string("pal")
         from = l.string("from")
+        uuid = l.string("uuid")
     }
 
     /// As the host sends it: a `pal_adopt` card's proposal goes out as
@@ -247,6 +252,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         }
         try c.encodeIfPresent(pal, forKey: .pal)
         try c.encodeIfPresent(from, forKey: .from)
+        try c.encodeIfPresent(uuid, forKey: .uuid)
     }
 
     public var date: Date { ts.msDate }

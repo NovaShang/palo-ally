@@ -11,6 +11,8 @@ public enum RPCMethod {
     public static let chatSearch = "chat.search"
     /// A window of messages around a seq, for jumping to a search hit.
     public static let chatAround = "chat.around"
+    /// 回到这里重来: back to just before one of the owner's messages (docs/rewind-prd.md).
+    public static let chatRewind = "chat.rewind"
     public static let taskGet = "task.get"
     public static let taskStop = "task.stop"
     public static let approvalAnswer = "approval.answer"
@@ -93,9 +95,12 @@ public enum RPCMethod {
     public static let palsWake = "pals.wake"
     /// The owner names a Pal (§13): Claude Code's title for the session too.
     public static let palsRename = "pals.rename"
+    /// 回到这里重来 in a Pal, its files too if asked; `check` only asks
+    /// whether they can go back (docs/rewind-prd.md).
+    public static let palsRewind = "pals.rewind"
 
     public static let pals: [String] = [palsList, palsAdopt, palsRelease, palsRemove, palsHistory, palsSend, palsStop,
-                                        palsRecent, palsWake, palsRename]
+                                        palsRecent, palsWake, palsRename, palsRewind]
 
     /// A link that pairs one more of the owner's devices with this computer
     /// (5 minutes, one device): for a later 添加设备.
@@ -104,7 +109,7 @@ public enum RPCMethod {
     /// Every method the client knows. The contract test checks this equals
     /// the host's method set exactly.
     public static let all: [String] = [
-        hello, sync, chatSend, chatHistory, chatSearch, chatAround, commandsList, modelGet, modelSet, taskGet, taskStop,
+        hello, sync, chatSend, chatHistory, chatSearch, chatAround, chatRewind, commandsList, modelGet, modelSet, taskGet, taskStop,
         approvalAnswer, questionAnswer, watchAdd, watchUpdate, watchRemove, artifactList, artifactRead, artifactPin,
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
@@ -115,6 +120,8 @@ public enum RPCMethod {
 public enum RPCEventName {
     public static let chatMessage = "chat.message"
     public static let chatDelta = "chat.delta"
+    /// A message and everything after it left the conversation (回到这里重来).
+    public static let chatRewound = "chat.rewound"
     public static let taskUpdated = "task.updated"
     public static let approvalUpdated = "approval.updated"
     public static let questionUpdated = "question.updated"
@@ -140,7 +147,7 @@ public enum RPCEventName {
     public static let pals: [String] = [palsUpdated]
 
     public static let all: [String] = [
-        chatMessage, chatDelta, taskUpdated, approvalUpdated, questionUpdated, watchUpdated, artifactUpdated, settingsUpdated,
+        chatMessage, chatDelta, chatRewound, taskUpdated, approvalUpdated, questionUpdated, watchUpdated, artifactUpdated, settingsUpdated,
         status, commandsUpdated, suggestionsUpdated,
     ] + allies + sessions + pals
 }
@@ -193,6 +200,9 @@ public struct SyncResult: Codable, Sendable {
     /// 7d64847): its whole text so far. It replaces what the client holds
     /// for that id; the `chat.delta` events after it append to it.
     public var streaming: Streaming?
+    /// Messages gone back before (回到这里重来) since `sinceSeq`: the client
+    /// drops them (it may have missed `chat.rewound`).
+    public var rewound: [String]?
 
     /// `{id, text}` of a reply still being written.
     public struct Streaming: Codable, Sendable, Equatable {
@@ -209,11 +219,12 @@ public struct SyncResult: Codable, Sendable {
     public init(seq: Int64, messages: [ChatMessage], tasks: [AllyTask]? = nil, approvals: [Approval]? = nil,
                 questions: [Question]? = nil,
                 watches: [Watch]? = nil, artifacts: [Artifact]? = nil, settings: HostSettings? = nil,
-                status: HostStatus? = nil, streaming: Streaming? = nil) {
+                status: HostStatus? = nil, streaming: Streaming? = nil, rewound: [String]? = nil) {
         self.seq = seq; self.messages = messages; self.tasks = tasks; self.approvals = approvals
         self.questions = questions
         self.watches = watches; self.artifacts = artifacts; self.settings = settings; self.status = status
         self.streaming = streaming
+        self.rewound = rewound
     }
 
     public init(from decoder: Decoder) throws {
@@ -229,6 +240,7 @@ public struct SyncResult: Codable, Sendable {
         status = l.expect("status", l.decode(HostStatus.self, "status"))
         // Absent on older hosts and whenever nothing is being written.
         streaming = l.decode(Streaming.self, "streaming").flatMap { $0.id.isEmpty ? nil : $0 }
+        rewound = l.array(String.self, "rewound")
     }
 
     /// Max messages a `sync{sinceSeq}` returns per call (design.md §5.3).
