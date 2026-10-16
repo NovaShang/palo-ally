@@ -1,3 +1,4 @@
+import { t } from "./i18n/index.ts";
 import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -300,7 +301,7 @@ export class HandoffTracker {
     const send = this.pendingSends.get(toolUseId);
     if (!send) return;
     this.pendingSends.delete(toolUseId);
-    if (isError || /"success"\s*:\s*false/.test(content) || /^没送/.test(content)) return;
+    if (isError || /"success"\s*:\s*false/.test(content) || /^(没送|Not sent)/.test(content)) return;
     const peer = this.registry.resolve(send.to);
     if (!peer || this.isHome(peer)) return;
     const existing = this.open().find((h) => h.peer.sessionId === peer.sessionId);
@@ -309,7 +310,7 @@ export class HandoffTracker {
       existing.state = "working";
       existing.idleSince = undefined;
       existing.nextCheckAt = this.now() + CHECK_WORKING_MS;
-      this.d.tasks.updatePeer(existing.taskId, "running", existing.lastLine || "在办");
+      this.d.tasks.updatePeer(existing.taskId, "running", existing.lastLine || t("handoff.working"));
       this.save();
       return;
     }
@@ -320,26 +321,26 @@ export class HandoffTracker {
   // report_task(peer=…): the assistant links a row to a peer explicitly.
   link(taskId: string, to: string, request = ""): string {
     const peer = this.registry.resolve(to);
-    if (!peer) return `找不到叫 ${to} 的会话（只能跟进这台电脑上的 Claude Code 会话）`;
-    if (this.isHome(peer)) return "这是你自己，不用跟进";
+    if (!peer) return t("handoff.noPeer", { to });
+    if (this.isHome(peer)) return t("handoff.self");
     const h = this.forTask(taskId);
     if (h) {
       h.peer = peerRef(peer);
       this.save();
-      return `ok: 跟进 ${peer.name}`;
+      return t("handoff.following", { name: peer.name });
     }
     this.handoffs.push(this.newHandoff(taskId, peer, request));
     this.d.tasks.setPeer(taskId, peer.name);
     this.save();
     this.d.audit.log("handoff.linked", { taskId, peer: peer.name });
-    return `ok: 跟进 ${peer.name}`;
+    return t("handoff.following", { name: peer.name });
   }
 
   private start(peer: PeerSession, message: string): void {
     // The assistant names the row with report_task(peer, title); until then a
     // neutral title, never the first line of an (often English) peer message.
-    const title = `转交给 ${peer.name} 的事`;
-    const task = this.d.tasks.openPeer(title, "交出去了，等对方开工", peer.name);
+    const title = t("handoff.title", { name: peer.name });
+    const task = this.d.tasks.openPeer(title, t("handoff.waitStart"), peer.name);
     const h = this.newHandoff(task.id, peer, firstLine(message));
     this.handoffs.push(h);
     this.save();
@@ -412,8 +413,8 @@ export class HandoffTracker {
       (h.peer.pid ? sessions.find((s) => s.pid === h.peer.pid) : undefined);
     if (!peer) {
       // The session ended. With a reply in hand it finished; otherwise it just stopped.
-      if (h.lastReplyAt) this.d.tasks.settlePeer(h.taskId, "done", h.lastLine || "办好了");
-      else this.d.tasks.settlePeer(h.taskId, "stopped", "对方的会话结束了，没回话");
+      if (h.lastReplyAt) this.d.tasks.settlePeer(h.taskId, "done", h.lastLine || t("handoff.done"));
+      else this.d.tasks.settlePeer(h.taskId, "stopped", t("handoff.endedSilent"));
       return this.close(h, "session ended");
     }
     h.peer = peerRef(peer);
@@ -449,25 +450,25 @@ export class HandoffTracker {
       // Blocked on the owner: a Pal's card is on the phone already; any
       // other session asks in its own terminal.
       const pal = this.d.isPal?.(peer.sessionId) ?? false;
-      const what = tail.pendingQuestion?.text || peer.waitingFor || "需要你确认";
+      const what = tail.pendingQuestion?.text || peer.waitingFor || t("handoff.needConfirm");
       h.state = "waiting";
-      h.lastLine = `${pal ? "在 App 里等你" : "在电脑上等你"}：${what}`;
+      h.lastLine = t(pal ? "handoff.waitApp" : "handoff.waitComputer", { what });
       const key = tail.pendingQuestion?.id ?? String(peer.statusUpdatedAt ?? "");
       this.d.tasks.updatePeer(h.taskId, "needs_input", h.lastLine);
       if (pal) h.notifiedKey = key;
       if (h.notifiedKey !== key) {
         h.notifiedKey = key;
         this.d.audit.log("handoff.waiting", { taskId: h.taskId, peer: peer.name });
-        this.d.notify(h.taskId, "转交的事在等你回答", `「${task.title}」在 ${peer.name} 那边等你回答，去那台电脑上看一下。`);
+        this.d.notify(h.taskId, t("handoff.askTitle"), t("handoff.askBody", { title: task.title, peer: peer.name }));
       }
     } else if (reply && isQuestion(reply.text)) {
       // It asked the owner through the assistant; the assistant relays the choice.
       h.state = "asking";
-      h.lastLine = "在问你，助理会转告";
+      h.lastLine = t("handoff.asking");
       this.d.tasks.updatePeer(h.taskId, "needs_input", h.lastLine);
     } else if (reply && (peer.status === "idle" || peer.status === "shell")) {
       // It reported back and stopped: done.
-      h.lastLine = tail.apiError ? "没办成" : "办好了";
+      h.lastLine = tail.apiError ? t("handoff.failed") : t("handoff.done");
       this.d.tasks.settlePeer(h.taskId, tail.apiError ? "failed" : "done", h.lastLine);
       this.d.audit.log("handoff.done", { taskId: h.taskId, peer: peer.name });
       h.doneAt = now;
@@ -476,7 +477,7 @@ export class HandoffTracker {
     } else if (peer.status === "busy") {
       h.state = "working";
       h.idleSince = undefined;
-      h.lastLine = (reply ? "回话了，还在办" : tail.lastText) || h.lastLine || "在办";
+      h.lastLine = (reply ? t("handoff.repliedBusy") : tail.lastText) || h.lastLine || t("handoff.working");
       this.d.tasks.updatePeer(h.taskId, "running", h.lastLine);
     } else {
       // idle / shell with no reply yet
@@ -484,11 +485,11 @@ export class HandoffTracker {
       h.idleSince = since;
       const idleFor = now - since;
       if (idleFor >= IDLE_GIVE_UP_MS) {
-        this.d.tasks.settlePeer(h.taskId, "stopped", "对方很久没动静，不再跟进");
+        this.d.tasks.settlePeer(h.taskId, "stopped", t("handoff.gaveUp"));
         return this.close(h, "gave up");
       }
       h.state = idleFor >= IDLE_NOTE_MS ? "idle" : "working";
-      h.lastLine = idleFor >= IDLE_NOTE_MS ? "对方停下了，还没回话" : tail.lastText || h.lastLine || "在办";
+      h.lastLine = idleFor >= IDLE_NOTE_MS ? t("handoff.stopped") : tail.lastText || h.lastLine || t("handoff.working");
       this.d.tasks.updatePeer(h.taskId, "running", h.lastLine);
     }
     h.nextCheckAt = now + this.interval(h, now);
@@ -509,9 +510,9 @@ export class HandoffTracker {
       } else if (now >= h.relayDueAt) {
         h.relayDueAt = undefined;
         changed = true;
-        const title = this.d.tasks.get(h.taskId)?.title ?? `转交给 ${h.peer.name} 的事`;
+        const title = this.d.tasks.get(h.taskId)?.title ?? t("handoff.title", { name: h.peer.name });
         this.d.audit.log("handoff.relay_fallback", { taskId: h.taskId, peer: h.peer.name });
-        this.d.notify(h.taskId, "转交的事办完了", `转交的事办完了：${title}`);
+        this.d.notify(h.taskId, t("handoff.doneTitle"), t("handoff.doneBody", { title }));
       }
     }
     return changed;

@@ -1,3 +1,4 @@
+import { t } from "./i18n/index.ts";
 import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import { statSync } from "node:fs";
 import { resolve, sep } from "node:path";
@@ -26,8 +27,8 @@ import { newId, truncate } from "./util.ts";
 /** How long a session's card waits on the phone: a little under the hook's 300 s. */
 export const HOOK_WAIT_MS = 290_000;
 const PUSH_EVERY_MS = 10 * 60_000;
-const NOTE_AT_COMPUTER = "在电脑上等你";
-const NOTE_HANDLED = "已在电脑上处理";
+const noteAtComputer = (): string => t("sessions.atComputer");
+const noteHandled = (): string => t("sessions.handled");
 
 export interface SessionsDeps {
   paths: Paths;
@@ -168,7 +169,7 @@ export class Sessions {
     if (!sid || !cwd) {
       const key = String(id ?? "").trim();
       const ended = key ? await this.d.endedCwd?.(key).catch(() => undefined) : undefined;
-      if (!ended) throw new Error("没有这个会话");
+      if (!ended) throw new Error(t("pals.noSession"));
       sid = key;
       cwd = ended;
     }
@@ -232,7 +233,7 @@ export class Sessions {
 
   private nameOf(sid: string, cwd: string): string {
     const r = this.watch.get(sid);
-    return r?.name || (cwd ? cwd.split("/").filter(Boolean).at(-1) : "") || "会话";
+    return r?.name || (cwd ? cwd.split("/").filter(Boolean).at(-1) : "") || t("sessions.unnamed");
   }
 
   // A permission prompt or a question. At the computer: nothing (the terminal
@@ -255,7 +256,7 @@ export class Sessions {
     if (ctx.signal.aborted) return null; // the hook is already gone
     ctx.signal.addEventListener("abort", () => abort.abort());
     const card: OpenCard = { id: "", waitingFor: waitingWords(p), abort, sawWaiting: false };
-    const opts = { source, timeoutMs: this.d.hookWaitMs ?? HOOK_WAIT_MS, timeoutNote: NOTE_AT_COMPUTER, abortNote: NOTE_HANDLED, abortBy: "computer", notify: false };
+    const opts = { source, timeoutMs: this.d.hookWaitMs ?? HOOK_WAIT_MS, timeoutNote: noteAtComputer(), abortNote: noteHandled(), abortBy: "computer", notify: false };
     const req = { toolName: tool, input, signal: abort.signal };
 
     if (tool === "AskUserQuestion") {
@@ -264,7 +265,7 @@ export class Sessions {
       card.id = asked.question.id;
       this.open(sid, card);
       const first = asked.question.items[0]!.question;
-      this.pushWaiting(sid, name, `问你：${first}`, { questionId: asked.question.id, kind: "question" });
+      this.pushWaiting(sid, name, t("sessions.askYou", { q: first }), { questionId: asked.question.id, kind: "question" });
       const d = await asked.result;
       this.close(sid, card);
       if (asked.question.status !== "answered" || d.behavior !== "allow") return null;
@@ -276,14 +277,14 @@ export class Sessions {
     const asked = this.d.approvals.ask(req, { ...opts, title: describeTool(tool, input), detail });
     card.id = asked.approval.id;
     this.open(sid, card);
-    const what = tool === "Bash" && typeof input.command === "string" ? `想运行：${firstLine(input.command)}` : asked.approval.title;
+    const what = tool === "Bash" && typeof input.command === "string" ? t("sessions.wantRun", { cmd: firstLine(input.command) }) : asked.approval.title;
     this.pushWaiting(sid, name, what, { approvalId: asked.approval.id, kind: "approval" });
     await asked.result;
     this.close(sid, card);
     const a = asked.approval;
     if (a.status === "allowed") return { hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "allow" } } };
     if (a.status === "denied")
-      return { hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "deny", message: "主人在手机上拒绝了" } } };
+      return { hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "deny", message: t("sessions.deniedOnPhone") } } };
     return null;
   }
 
@@ -302,7 +303,7 @@ export class Sessions {
     // it's still asking in its terminal (the card timed out).
     const a = this.d.approvals.get(card.id);
     const q = this.d.questions.get(card.id);
-    if ((a ?? q)?.note !== NOTE_AT_COMPUTER) this.watch.carryOn(sid);
+    if ((a ?? q)?.note !== noteAtComputer()) this.watch.carryOn(sid);
     else this.watch.emitIfChanged();
   }
 
@@ -337,6 +338,6 @@ export class Sessions {
       ...(ids.approvalId ? { approvalId: ids.approvalId } : {}),
       ...(ids.questionId ? { questionId: ids.questionId } : {}),
     };
-    void this.d.router.proactive(msg, { title: `${name} 在等你` }).catch(() => {});
+    void this.d.router.proactive(msg, { title: t("sessions.waitingTitle", { name }) }).catch(() => {});
   }
 }

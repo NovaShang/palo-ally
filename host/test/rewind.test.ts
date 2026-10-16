@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { AwayDetector } from "../src/away.ts";
 import { transcriptPath } from "../src/handoffs.ts";
 import type { PalsTiming } from "../src/pals.ts";
-import { REWIND_BUSY, REWIND_NOT_FOUND, REWIND_NO_FILES, chainTo, findEntry, hasFileCheckpoint, matchOwnerEntry, ownerText, readTranscript } from "../src/rewind.ts";
+import { chainTo, findEntry, hasFileCheckpoint, matchOwnerEntry, ownerText, readTranscript, rewindBusy, rewindNoFiles, rewindNotFound } from "../src/rewind.ts";
 import { handleRpc } from "../src/rpc.ts";
 import type { ChatMessage } from "../src/types.ts";
 import type { FakeScript } from "./fakeDriver.ts";
@@ -260,7 +260,7 @@ describe("the assistant's conversation", () => {
     t.hub.userMessage("慢慢来", "app");
     await tick(5);
     t.transcript(sid, written([m1]));
-    await expect(t.call("chat.rewind", { messageId: m1.id })).rejects.toThrow(REWIND_BUSY);
+    await expect(t.call("chat.rewind", { messageId: m1.id })).rejects.toThrow(rewindBusy());
     expect(t.hub.status().sessionId).toBe(sid);
     // 停止 then 重来: one step for the owner
     await t.call("stop");
@@ -275,7 +275,7 @@ describe("the assistant's conversation", () => {
     const sid = t.hub.status().sessionId!;
     const answer = t.hub.chat.since(0).find((m) => m.role === "assistant")!;
     await expect(t.call("chat.rewind", { messageId: answer.id })).rejects.toThrow("这一条不能回到这里");
-    await expect(t.call("chat.rewind", { messageId: m1.id })).rejects.toThrow(REWIND_NOT_FOUND);
+    await expect(t.call("chat.rewind", { messageId: m1.id })).rejects.toThrow(rewindNotFound());
     t.transcript(sid, written([m1]));
     await t.call("chat.rewind", { messageId: m1.id });
     await expect(t.call("chat.rewind", { messageId: m1.id })).rejects.toThrow("已经撤回了");
@@ -455,11 +455,11 @@ describe("a Pal", () => {
     const t = palSetup();
     const { pal, sid } = await adopted(t);
     // no checkpoint for its first message
-    await expect(t.call("pals.rewind", { id: pal.id, messageId: "p1", restoreFiles: true })).rejects.toThrow(REWIND_NO_FILES);
+    await expect(t.call("pals.rewind", { id: pal.id, messageId: "p1", restoreFiles: true })).rejects.toThrow(rewindNoFiles());
     expect(t.driver.pals).toHaveLength(1);
     // Claude Code can't
     t.driver.filesRewound = () => ({ canRewind: false, error: "No file checkpoint found for this message." });
-    await expect(t.call("pals.rewind", { id: pal.id, messageId: "p2", restoreFiles: true })).rejects.toThrow(REWIND_NO_FILES);
+    await expect(t.call("pals.rewind", { id: pal.id, messageId: "p2", restoreFiles: true })).rejects.toThrow(rewindNoFiles());
     const now = t.hub.pals.list()[0]!;
     expect(now.sessionId).toBe(sid);
     await waitFor(() => t.hub.pals.list()[0]!.status === "idle");
@@ -479,10 +479,10 @@ describe("a Pal", () => {
     const { pal } = await adopted(t);
     await expect(t.call("pals.rewind", { id: pal.id, messageId: "peer" })).rejects.toThrow("不是你说的");
     await expect(t.call("pals.rewind", { id: pal.id, messageId: "r1" })).rejects.toThrow("不是你说的");
-    await expect(t.call("pals.rewind", { id: pal.id, messageId: "nope" })).rejects.toThrow(REWIND_NOT_FOUND);
+    await expect(t.call("pals.rewind", { id: pal.id, messageId: "nope" })).rejects.toThrow(rewindNotFound());
     void t.call("pals.send", { id: pal.id, text: "慢慢来" });
     await waitFor(() => t.hub.pals.list()[0]!.status === "busy");
-    await expect(t.call("pals.rewind", { id: pal.id, messageId: "p2" })).rejects.toThrow(REWIND_BUSY);
+    await expect(t.call("pals.rewind", { id: pal.id, messageId: "p2" })).rejects.toThrow(rewindBusy());
     await t.call("pals.stop", { id: pal.id });
     expect((await t.call("pals.rewind", { id: pal.id, messageId: "p2" })).text).toBe("改成 two");
     release();

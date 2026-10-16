@@ -1,3 +1,4 @@
+import { t } from "./i18n/index.ts";
 import { forkSession as sdkForkSession, getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -60,8 +61,7 @@ function tildePath(p: string): string {
 
 // What a Pal is told about where it runs, on top of Claude Code's own prompt.
 export const PAL_PROMPT = (paloName: string) =>
-  `你现在由 PaloAlly 托管：主人在手机上的 PaloAlly App 里看这段对话、在这里打字，你要的确认和选项提问也都送到主人手机上。` +
-  `名叫「${paloName}」的会话是主人的助理：它发来的消息按队友的请求对待；要回它，用 SendMessage 发给 ${paloName}。`;
+  t("pals.prompt", { paloName });
 
 interface PalFile {
   pals: PalRecord[];
@@ -375,7 +375,7 @@ export class Pals {
       const msg = e instanceof Error ? e.message : String(e);
       this.log(`couldn't bring back ${pal.rec.name}: ${msg}`);
       if (e instanceof HeldElsewhere) pal.stopFor("elsewhere", msg);
-      else pal.stopFor("failed", `没能接着跑：${msg}`);
+      else pal.stopFor("failed", t("pals.resumeFailed", { msg }));
     }
   }
 
@@ -576,7 +576,7 @@ export class Pals {
 
   private mustGet(id: string): PalSession {
     const p = this.pals.get(id) ?? this.get(id);
-    if (!p) throw new Error("没有这个 Pal");
+    if (!p) throw new Error(t("pals.noPal"));
     return p;
   }
 
@@ -627,7 +627,7 @@ export class Pals {
       const other = held.find((e) => e.pid !== own);
       if (!other) continue;
       this.d.audit.log("pal.elsewhere", { pal: pal.id, name: pal.rec.name, pid: other.pid });
-      pal.stopFor("elsewhere", "在别处打开了（终端或后台），这边先停下，免得两边一起写；那边退出后会自己接上");
+      pal.stopFor("elsewhere", t("pals.elsewhere"));
     }
   }
 
@@ -645,13 +645,13 @@ export class Pals {
 
   private room(): void {
     if (this.pals.size < MAX_PALS) return;
-    throw new Error(`已经有 ${MAX_PALS} 个 Pal 了，先移出一个（最久没用的是「${this.oldest().rec.name}」）`);
+    throw new Error(t("pals.tooManyErr", { max: MAX_PALS, oldest: this.oldest().rec.name }));
   }
 
   // What the assistant's tools say when there's no room.
   private full(): string | null {
     if (this.pals.size < MAX_PALS) return null;
-    return `已经有 ${MAX_PALS} 个 Pal 了（最多 ${MAX_PALS} 个）。先问主人要不要把最久没用的「${this.oldest().rec.name}」移出 Pals（主人在它的页面右上角点「移出 Pals」）。`;
+    return t("pals.tooManyTool", { max: MAX_PALS, oldest: this.oldest().rec.name });
   }
 
   // `except`: the Pal being renamed (its own name isn't taken).
@@ -723,9 +723,9 @@ export class Pals {
   async rename(id: string, name: string, by: string): Promise<Pal> {
     const pal = this.mustGet(id);
     const want = String(name ?? "").replace(/\s+/g, " ").trim();
-    if (!want) throw new Error("名字不能是空的");
-    if ([...want].length > 40) throw new Error("名字太长了（最多 40 个字）");
-    if (want.toLowerCase() === this.paloName().toLowerCase()) throw new Error(`「${want}」是助理自己的名字`);
+    if (!want) throw new Error(t("pals.nameEmpty"));
+    if ([...want].length > 40) throw new Error(t("pals.nameLong"));
+    if (want.toLowerCase() === this.paloName().toLowerCase()) throw new Error(t("pals.nameIsAssistant", { name: want }));
     const unique = this.uniqueName(want, [], pal);
     if (!(await pal.renameLive(unique))) {
       // No process: into its transcript, where Claude Code reads it (none yet: it starts under it).
@@ -768,7 +768,7 @@ export class Pals {
    */
   adopt(sessionId: string, by: string, o: { wait?: boolean } = {}): Promise<{ pal: Pal } | { waiting: "exit-in-terminal" }> {
     const sid = String(sessionId ?? "").trim();
-    if (!sid) return Promise.reject(new Error("没有这个会话"));
+    if (!sid) return Promise.reject(new Error(t("pals.noSession")));
     const have = this.get(sid);
     if (have && have.rec.sessionId === sid) return Promise.resolve({ pal: have.toWire() });
     if (this.waiting.has(sid)) return Promise.resolve({ waiting: "exit-in-terminal" });
@@ -792,17 +792,17 @@ export class Pals {
     const bg = holders.filter((h) => h.bg);
     if (bg.length) {
       const short = bg.find((h) => h.shortId)?.shortId ?? rec.shortId;
-      if (!short) throw new Error("它在后台跑着，但找不到它的编号，没法停下它");
+      if (!short) throw new Error(t("pals.noBgId"));
       await this.d.cli.stop(short);
       this.d.audit.log("pal.stopped_bg", { session: sid, short, by });
       // Stopped means its process is gone, not just its entry in the lists.
       const end = this.now() + this.timing.stopWaitMs;
       const stillBg = async () => (holders = await this.holders(sid)).some((h) => h.bg) || bg.some((h) => this.alive(h.pid));
       while ((await stillBg()) && this.now() < end) await new Promise((r) => setTimeout(r, 200));
-      if (await stillBg()) throw new Error("它停不下来，没有接管");
+      if (await stillBg()) throw new Error(t("pals.wontStop"));
     }
     if (holders.length) {
-      if (o.wait === false) throw new Error("它在终端里开着：先在终端里退出它（/exit），再接管");
+      if (o.wait === false) throw new Error(t("pals.inTerminal"));
       this.waitForExit(sid, holders, session, by);
       return { waiting: "exit-in-terminal" };
     }
@@ -816,7 +816,7 @@ export class Pals {
     const found = await this.recentList.find(sid);
     if (typeof found === "string") throw new Error(found);
     const holders = await this.holders(sid);
-    if (holders.length) throw new Error(`它刚在别处打开了（进程 ${holders.map((h) => h.pid).join("、")}），没有接管`);
+    if (holders.length) throw new Error(t("pals.heldJustNow", { pids: holders.map((h) => h.pid).join("、") }));
     return this.finishAdopt({ id: sid, name: palNameFor(found), cwd: found.cwd }, by, true);
   }
 
@@ -884,7 +884,7 @@ export class Pals {
         if (this.now() - w.since > this.timing.adoptWaitMs) {
           this.waiting.delete(sessionId);
           this.emitSoon();
-          this.notice(`等了 ${Math.round(this.timing.adoptWaitMs / 60_000)} 分钟，「${session.name}」还没在终端里退出，先不接管了。要接管，退出它以后再点一次「接管」。`);
+          this.notice(t("pals.adoptWaited", { min: Math.round(this.timing.adoptWaitMs / 60_000), name: session.name }));
           return;
         }
         w.timer = setTimeout(() => void tick(), this.timing.exitPollMs);
@@ -904,7 +904,7 @@ export class Pals {
       } catch (e) {
         const why = e instanceof Error ? e.message : String(e);
         this.d.audit.log("pal.adopt_failed", { session: sessionId, why });
-        this.notice(`接管「${session.name}」没成功：${why}`);
+        this.notice(t("pals.adoptFailed", { name: session.name, why }));
       }
       this.emitSoon();
     };
@@ -934,7 +934,7 @@ export class Pals {
     if (pending) {
       sid = pending.at
         ? (await this.forkSession(pending.from, { dir: pal.rec.cwd, upToMessageId: pending.at, title: pal.rec.name }).catch((e) => {
-            throw new Error(`没能交还：${e instanceof Error ? e.message : e}`);
+            throw new Error(t("pals.handBackFailed", { why: e instanceof Error ? e.message : String(e) }));
           })).sessionId
         : null;
     }
@@ -1058,7 +1058,7 @@ export class Pals {
       ...(ids.approvalId ? { approvalId: ids.approvalId } : {}),
       ...(ids.questionId ? { questionId: ids.questionId } : {}),
     };
-    void this.d.router.proactive(msg, { title: `${pal.rec.name} 在等你` }).catch(() => {});
+    void this.d.router.proactive(msg, { title: t("pals.waitingTitle", { name: pal.rec.name }) }).catch(() => {});
   }
 
   // ---------------- spending (Pals the assistant opened) ----------------
@@ -1078,16 +1078,16 @@ export class Pals {
     const spent = this.spentToday(pal);
     if (spent <= limit) return;
     pal.rec.budgetDay = this.today();
-    pal.stopFor("budget", `今天花了约 $${spent.toFixed(2)}，过了每天 $${limit} 的上限，明天接着跑；跟它说话也会让它接着跑`);
+    pal.stopFor("budget", t("pals.budgetReason", { spent: spent.toFixed(2), limit }));
     this.d.audit.log("pal.budget", { pal: pal.id, name: pal.rec.name, spentUsd: Number(spent.toFixed(2)), dailyUsd: limit });
     const msg = this.d.chat.add({
       role: "assistant",
       kind: "notice",
-      text: `「${pal.rec.name}」今天花了约 $${spent.toFixed(2)}，超过了每天 $${limit} 的上限，我先让它停下。明天它会接着跑；要它现在就接着做，在它的对话里跟它说一句就行。`,
+      text: t("pals.budgetNotice", { name: pal.rec.name, spent: spent.toFixed(2), limit }),
       channel: "system",
       proactive: true,
     });
-    void this.d.router.proactive(msg, { title: "Pal 停了" }).catch(() => {});
+    void this.d.router.proactive(msg, { title: t("pals.budgetPushTitle") }).catch(() => {});
   }
 
   // A new day: Pals stopped for spending come back.
@@ -1103,27 +1103,27 @@ export class Pals {
   // ---------------- the assistant opens a Pal (docs/pals-prd.md §6) ----------------
 
   private checkProposal(p: { name: string; cwd: string; duty: string; dailyUsd: number }): void {
-    if (!p.name.trim()) throw new Error("Pal 要有个名字");
-    if ([...p.name].length > 30) throw new Error("Pal 的名字太长了");
-    if (!p.duty.trim()) throw new Error("要写清楚它负责什么");
-    if (!(p.dailyUsd > 0) || p.dailyUsd > 1000) throw new Error("每天的花费上限要大于 0");
+    if (!p.name.trim()) throw new Error(t("pals.needName"));
+    if ([...p.name].length > 30) throw new Error(t("pals.palNameLong"));
+    if (!p.duty.trim()) throw new Error(t("pals.needDuty"));
+    if (!(p.dailyUsd > 0) || p.dailyUsd > 1000) throw new Error(t("pals.badBudget"));
     let dir = false;
     try {
       dir = statSync(p.cwd).isDirectory();
     } catch {
       dir = false;
     }
-    if (!dir) throw new Error(`找不到目录 ${p.cwd}`);
-    if (within(this.d.paths.root, p.cwd)) throw new Error("Pal 不能开在 PaloAlly 自己的目录里");
+    if (!dir) throw new Error(t("pals.dirNotFound", { cwd: p.cwd }));
+    if (within(this.d.paths.root, p.cwd)) throw new Error(t("pals.ownDir"));
     const same = this.get(p.name);
-    if (same && same.rec.name.toLowerCase() === p.name.trim().toLowerCase()) throw new Error(`已经有一个叫「${p.name}」的 Pal 了`);
-    if (p.name.trim().toLowerCase() === this.paloName().toLowerCase()) throw new Error(`「${p.name}」是助理自己的名字`);
+    if (same && same.rec.name.toLowerCase() === p.name.trim().toLowerCase()) throw new Error(t("pals.nameTaken", { name: p.name }));
+    if (p.name.trim().toLowerCase() === this.paloName().toLowerCase()) throw new Error(t("pals.nameIsAssistant", { name: p.name }));
   }
 
   /** pal_propose: a card in the conversation; the Pal starts on the owner's 开吧. */
   propose(a: { name: string; dir: string; duty: string; dailyUsd: number }): string {
     const dir = String(a.dir ?? "").trim();
-    if (!dir) return "没提：要给它一个项目目录";
+    if (!dir) return t("pals.noDir");
     let cwd = resolve(expandHome(dir));
     try {
       cwd = realpathSync(cwd); // as Claude Code records it (/tmp → /private/tmp)
@@ -1134,17 +1134,17 @@ export class Pals {
     try {
       this.checkProposal(p);
     } catch (e) {
-      return `没提：${e instanceof Error ? e.message : e}`;
+      return t("pals.notProposed", { why: e instanceof Error ? e.message : String(e) });
     }
     const full = this.full();
     if (full) return full;
     const proposal: HelperProposal = { id: newId("hp_"), ...p, status: "pending" };
     const where = tildePath(p.cwd);
-    const msg = this.d.chat.add({ role: "assistant", kind: "helper", text: `开一个 Pal「${p.name}」专门管 ${where}？`, channel: "system", proposal });
+    const msg = this.d.chat.add({ role: "assistant", kind: "helper", text: t("pals.proposalText", { name: p.name, where }), channel: "system", proposal });
     this.data.proposals = [...this.data.proposals, { ...proposal, createdAt: this.now(), messageId: msg.id }].slice(-50);
     this.save();
     this.d.audit.log("pal.proposed", { id: proposal.id, name: p.name, cwd: p.cwd, dailyUsd: p.dailyUsd });
-    return `已经给主人看了开 Pal 的卡片（${proposal.id}）。主人点「开吧」才会开，现在还没开，别说已经开了。`;
+    return t("pals.proposalShown", { id: proposal.id });
   }
 
   private settleProposal(id: string, patch: Partial<HelperProposal>): void {
@@ -1163,7 +1163,7 @@ export class Pals {
     const card = this.data.adoptions.find((x) => x.id === proposalId);
     if (card) return this.decideAdopt(card, action, by);
     const p = this.data.proposals.find((x) => x.id === proposalId);
-    if (!p) throw new Error("这个提议已经没有了");
+    if (!p) throw new Error(t("pals.proposalGone"));
     if (p.status !== "pending") {
       const pal = p.palId ? this.pals.get(p.palId) : undefined;
       return pal ? { pal: pal.toWire() } : {};
@@ -1173,7 +1173,7 @@ export class Pals {
       this.d.audit.log("pal.proposal_discarded", { id: p.id, by });
       return {};
     }
-    if (action !== "create") throw new Error("看不懂这个操作");
+    if (action !== "create") throw new Error(t("pals.unknownAction"));
     let pal: PalSession;
     try {
       this.room();
@@ -1228,25 +1228,25 @@ export class Pals {
   /** pal_adopt: a card 「接管『标题』（目录）」; the conversation is taken over on the owner's 接管. */
   async proposeAdopt(a: { sessionId: string }): Promise<string> {
     const key = String(a?.sessionId ?? "").trim();
-    if (!key) return "没提：要给出这个对话的 sessionId（用 pals_recent 查）";
+    if (!key) return t("pals.needSessionId");
     const sid = await this.recentList.fullId(key);
     const pal = this.get(sid);
-    if (pal && pal.rec.sessionId === sid) return `它已经是 Pal「${pal.rec.name}」了，不用再接管；给它派活用 pal_send 发给「${pal.rec.name}」。`;
+    if (pal && pal.rec.sessionId === sid) return t("pals.alreadyPal", { name: pal.rec.name });
     if (this.takenIds().has(sid))
-      return "没提：这个对话现在还开着（在终端里或后台），不是已经退出的。要接管它，请主人在 Pals 列表里对它点「接管」。";
+      return t("pals.stillOpen");
     const found = await this.recentList.find(sid);
-    if (typeof found === "string") return `没提：${found}`;
+    if (typeof found === "string") return t("pals.notProposed", { why: found });
     const open = this.data.adoptions.find((p) => p.sessionId === sid && p.status === "pending");
-    if (open) return `已经有一张接管它的卡片在等主人点了（${open.id}），不用再提。`;
+    if (open) return t("pals.cardWaiting", { id: open.id });
     const full = this.full();
     if (full) return full;
     const proposal: PalAdoptProposal = { id: newId("pa_"), sessionId: sid, cwd: found.cwd, title: found.title, status: "pending" };
     const where = tildePath(found.cwd);
-    const msg = this.d.chat.add({ role: "assistant", kind: "pal_adopt", text: `接管「${found.title}」（${where}）？`, channel: "system", proposal });
+    const msg = this.d.chat.add({ role: "assistant", kind: "pal_adopt", text: t("pals.adoptText", { title: found.title, where }), channel: "system", proposal });
     this.data.adoptions = [...this.data.adoptions, { ...proposal, createdAt: this.now(), messageId: msg.id }].slice(-50);
     this.save();
     this.d.audit.log("pal.adopt_proposed", { id: proposal.id, session: sid, cwd: found.cwd });
-    return `已经给主人看了接管的卡片（${proposal.id}）：接管「${found.title}」（${where}）。主人点「接管」才会接，现在还没接，别说已经接了。`;
+    return t("pals.adoptShown", { id: proposal.id, title: found.title, where });
   }
 
   private settleAdopt(id: string, patch: Partial<PalAdoptProposal>): void {
@@ -1273,10 +1273,10 @@ export class Pals {
       this.d.audit.log("pal.adopt_discarded", { id: card.id, session: card.sessionId, by });
       return {};
     }
-    if (action !== "create") throw new Error("看不懂这个操作");
+    if (action !== "create") throw new Error(t("pals.unknownAction"));
     try {
       const r = await this.adopt(card.sessionId, by, { wait: false });
-      if (!("pal" in r)) throw new Error("它在终端里开着：先在终端里退出它（/exit），再接管");
+      if (!("pal" in r)) throw new Error(t("pals.inTerminal"));
       this.settleAdopt(card.id, { status: "adopted", palId: r.pal.id, note: undefined });
       this.d.audit.log("pal.adopt_accepted", { id: card.id, pal: r.pal.id, session: card.sessionId, by });
       return { pal: r.pal };
@@ -1302,7 +1302,7 @@ export class Pals {
     return JSON.stringify({
       sessions: shown.map((e) => ({ sessionId: e.sessionId, dir: tildePath(e.cwd), title: e.title, lastActive: when(e.lastModified) })),
       ...(all.length > shown.length ? { more: all.length - shown.length } : {}),
-      ...(all.length ? {} : { note: a?.folder ? "这个目录里没有最近退出的对话" : "最近 30 天里没有退出了的对话" }),
+      ...(all.length ? {} : { note: a?.folder ? t("pals.noRecentHere") : t("pals.noRecent") }),
     });
   }
 
@@ -1315,20 +1315,20 @@ export class Pals {
   async toolSend(a: { name: string; text: string }): Promise<string> {
     const name = String(a?.name ?? "").trim();
     const text = String(a?.text ?? "").trim();
-    if (!name) return "没送：要给出 Pal 的名字（pals_list 里的 name）";
-    if (!text) return "没送：要说的话是空的";
+    if (!name) return t("pals.sendNeedName");
+    if (!text) return t("pals.sendNeedText");
     const pal = this.get(name);
-    if (!pal) return `没送：没有叫「${name}」的 Pal（用 pals_list 看名字）`;
+    if (!pal) return t("pals.sendNoPal", { name });
     const wasAsleep = this.wakingFor(pal, "assistant");
     try {
       await pal.send(text, { from: this.assistantName(), peer: this.paloName() });
     } catch (e) {
       this.waking.delete(pal.id);
-      return `没送到「${pal.rec.name}」：${e instanceof Error ? e.message : e}`;
+      return t("pals.sendFailed", { name: pal.rec.name, why: e instanceof Error ? e.message : String(e) });
     }
     this.balanceSoon();
     this.d.audit.log("pal.send", { pal: pal.id, name: pal.rec.name, chars: text.length, by: "assistant" });
-    return `已经送到「${pal.rec.name}」${wasAsleep ? "（它刚才睡着，已经叫醒）" : ""}。它回你的话会作为消息回到你这里。`;
+    return t("pals.sendOk", { name: pal.rec.name, woke: wasAsleep ? t("pals.sendWoke") : "" });
   }
 
   async toolList(): Promise<string> {
@@ -1341,9 +1341,9 @@ export class Pals {
         status: p.status,
         ...(p.lastLine ? { lastLine: p.lastLine } : {}),
         ...(p.note ? { note: p.note } : {}),
-        openedBy: p.createdBy === "palo" ? "你" : "主人",
+        openedBy: p.createdBy === "palo" ? t("pals.openedByPalo") : t("pals.openedByOwner"),
       })),
-      otherSessions: others.map((s) => ({ name: s.name, kind: s.kind === "terminal" ? "终端" : "后台", status: s.status, dir: s.cwd, ...(s.lastLine ? { lastLine: s.lastLine } : {}) })),
+      otherSessions: others.map((s) => ({ name: s.name, kind: s.kind === "terminal" ? t("pals.kindTerminal") : t("pals.kindBackground"), status: s.status, dir: s.cwd, ...(s.lastLine ? { lastLine: s.lastLine } : {}) })),
     });
   }
 }

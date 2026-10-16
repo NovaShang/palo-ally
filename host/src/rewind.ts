@@ -1,3 +1,4 @@
+import { t } from "./i18n/index.ts";
 import { existsSync, readFileSync } from "node:fs";
 
 // 回到这里重来 (docs/rewind-prd.md): what the host reads in a session's
@@ -14,9 +15,9 @@ export interface PendingRewind {
 }
 
 /** What the owner is told when a turn is running. */
-export const REWIND_BUSY = "它还在忙，先停下再重来";
-export const REWIND_NO_FILES = "这一步之前的代码没法恢复";
-export const REWIND_NOT_FOUND = "在对话记录里找不到这一条，没法回到这里";
+export const rewindBusy = (): string => t("rewind.busy");
+export const rewindNoFiles = (): string => t("rewind.noFiles");
+export const rewindNotFound = (): string => t("rewind.notFound");
 
 /**
  * The transcript's entries, in the order written. Only lines naming one of

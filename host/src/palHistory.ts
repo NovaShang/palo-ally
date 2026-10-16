@@ -1,3 +1,4 @@
+import { t as tr } from "./i18n/index.ts";
 import { closeSync, existsSync, fstatSync, openSync, readSync, watch, type FSWatcher } from "node:fs";
 import { type RawSessionMessage, firstLine, peerBody } from "./ccSessions.ts";
 import type { Attachment, ChatMessage } from "./types.ts";
@@ -39,7 +40,7 @@ function userText(content: unknown): string | null {
 /** Who sent a peer message, by name: the assistant's own session shows as the assistant. */
 export function peerName(origin: any, content: string, o: PalMapOptions): string {
   const name = typeof origin?.name === "string" && origin.name ? origin.name : /from-name="([^"]*)"/.exec(content)?.[1] ?? "";
-  return name === o.paloName ? o.assistantName : name || "另一个会话";
+  return name === o.paloName ? o.assistantName : name || tr("pals.otherSession");
 }
 
 /** One user entry as the app shows it, or null (tool results, Claude Code's own notices). */
@@ -53,7 +54,7 @@ export function userEntryMessage(m: RawSessionMessage, o: PalMapOptions): ChatMe
   const ts = Date.parse(m.timestamp ?? "") || 0;
   const base = { seq: ts, id: m.uuid, role: "user" as const, kind: "text" as const, ts, pal: o.pal };
   // Claude Code compacted the conversation: its summary isn't anyone's words.
-  if ((m as any).isCompactSummary) return { ...base, role: "system", kind: "notice", text: "前面的对话压缩过了", channel: "system" };
+  if ((m as any).isCompactSummary) return { ...base, role: "system", kind: "notice", text: tr("pals.compacted"), channel: "system" };
   const origin = m.origin;
   if (origin?.kind === "peer") return { ...base, text: peerBody(origin, text), channel: "system", from: peerName(origin, text, o) };
   // Only what the owner typed (or the host typed for them); Claude Code's own
@@ -70,7 +71,7 @@ export function userEntryMessage(m: RawSessionMessage, o: PalMapOptions): ChatMe
   // Sent from the app with images or files: as it was sent.
   const sent = o.recall?.(m.uuid);
   if (sent) return { ...base, text: sent.text, channel: "app", ...(sent.attachments.length ? { attachments: sent.attachments } : {}) };
-  if (!t && hasImage(content)) return { ...base, text: "（图片）", channel: "app" };
+  if (!t && hasImage(content)) return { ...base, text: tr("pals.image"), channel: "app" };
   if (!t || /^(<local-command-|<system-reminder>|<command-message>|Caveat: |<cross-session-message)/.test(t)) return null;
   return { ...base, text: t, channel: "app" };
 }

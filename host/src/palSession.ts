@@ -1,3 +1,4 @@
+import { t as tr } from "./i18n/index.ts";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import type { ApprovalManager } from "./approvals.ts";
@@ -9,7 +10,7 @@ import type { MediaStore } from "./media.ts";
 import { type PalLaunch, isHelperFailure, makeSpawner } from "./palLauncher.ts";
 import { type PalMapOptions, TranscriptFollower, toPalMessages, transcriptLastLine, transcriptModel, userEntryMessage } from "./palHistory.ts";
 import { ASK_TOOL, type QuestionManager } from "./questions.ts";
-import { type ForkSession, type PendingRewind, REWIND_BUSY, REWIND_NOT_FOUND, REWIND_NO_FILES, beforeCompaction, chainTo, hasFileCheckpoint, leafOf, ownerText, readTranscript } from "./rewind.ts";
+import { type ForkSession, type PendingRewind, beforeCompaction, chainTo, hasFileCheckpoint, leafOf, ownerText, readTranscript, rewindBusy, rewindNoFiles, rewindNotFound } from "./rewind.ts";
 import { type StallRecovery, type StallTarget, transcriptHas } from "./stallWatch.ts";
 import type { Attachment, CardSource, ChatMessage, Pal, PalStatus } from "./types.ts";
 import { newId, truncate } from "./util.ts";
@@ -102,7 +103,7 @@ const FAILURE_WINDOW_MS = 10 * 60_000;
 const STOP_SETTLE_MS = 250; // a stopped turn not ended by Claude Code by then is ended here
 
 /** What a Pal is told after the watchdog restarted it mid-turn. */
-export const STALL_CONTINUE = "（PaloAlly：你的进程刚才卡住了，已经重启并续上。请接着做上一轮没做完的事；已经做完的话，简单说一句就好。）";
+export const stallContinue = (): string => tr("stall.continue");
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -288,8 +289,8 @@ export class PalSession {
       await this.killPid(o.pid);
     }
     if (orphans.length) holders = await this.d.holders(rec.sessionId);
-    if (holders.length) throw new HeldElsewhere(`「${rec.name}」在别处开着（进程 ${holders.map((h) => h.pid).join("、")}），没有接着跑`);
-    if (this.closing) throw new Error("已经关了");
+    if (holders.length) throw new HeldElsewhere(tr("pals.heldElsewhere", { name: rec.name, pids: holders.map((h) => h.pid).join("、") }));
+    if (this.closing) throw new Error(tr("pals.closed"));
     // Renamed while it had no process (in a terminal, say): it starts under that name.
     await this.d.beforeStart?.(this).catch(() => {});
 
@@ -345,7 +346,7 @@ export class PalSession {
     try {
       await Promise.race([
         proc.ready(),
-        new Promise<never>((_, rej) => (timer = setTimeout(() => rej(new Error("Claude Code 没有按时起来")), this.d.timing.readyMs))),
+        new Promise<never>((_, rej) => (timer = setTimeout(() => rej(new Error(tr("pals.startTimeout"))), this.d.timing.readyMs))),
       ]);
     } catch (e) {
       clearTimeout(timer);
@@ -362,7 +363,7 @@ export class PalSession {
     clearTimeout(timer);
     if (this.closing || proc !== this.proc) {
       proc.close();
-      throw new Error("已经关了");
+      throw new Error(tr("pals.closed"));
     }
     this.up = true;
     this.upAt = this.d.now();
@@ -409,11 +410,11 @@ export class PalSession {
   private onExit(proc: MainSession, err?: string): void {
     if (proc !== this.proc || this.closing || !this.up) return;
     this.d.log(`pal ${this.rec.name}: its process ended (${err ?? "no error"})`);
-    this.down("它的进程意外退出了");
+    this.down(tr("pals.diedUnexpected"));
     const now = this.d.now();
     this.failures = [...this.failures.filter((t) => now - t < FAILURE_WINDOW_MS), now];
     if (this.failures.length > MAX_FAILURES) {
-      this.stopFor("failed", `接连 ${MAX_FAILURES} 次意外退出：${startError(err ?? this.stderrTail)}`);
+      this.stopFor("failed", tr("pals.failedRepeatedly", { n: MAX_FAILURES, why: startError(err ?? this.stderrTail) }));
       return;
     }
     const delays = this.d.timing.restartMs;
@@ -460,7 +461,7 @@ export class PalSession {
     this.windingDown = false;
     for (const w of this.turnEndWaiters.splice(0)) w();
     this.dropCards(why);
-    if (wasBusy && !this.closing) this.notice("刚才这一轮被打断了（它的进程意外退出）。我会自动把它接上，再跟它说一次就行。");
+    if (wasBusy && !this.closing) this.notice(tr("pals.interrupted"));
   }
 
   private dropCards(by: string): void {
@@ -526,7 +527,7 @@ export class PalSession {
     this.restartTimer = null;
     const starting = this.starting;
     const proc = this.proc;
-    this.down("关掉了");
+    this.down(tr("pals.shutDown"));
     proc?.close();
     if (starting) await starting.catch(() => {});
     await this.waitExit();
@@ -582,8 +583,8 @@ export class PalSession {
     this.d.log(`pal ${this.rec.name}: stalled; resuming it (${untaken.length} message(s) to send again)`);
     await this.start();
     const proc = this.proc;
-    if (!proc || !this.up) throw new Error(`「${this.rec.name}」没能重新起来`);
-    this.notice("刚才卡住了，PaloAlly 已经自动重启它并续上。");
+    if (!proc || !this.up) throw new Error(tr("pals.restartFailed", { name: this.rec.name }));
+    this.notice(tr("pals.stuckRestarted"));
     for (const [uuid, p] of untaken) {
       this.pendingUuids.add(uuid);
       this.pendingText.set(uuid, p);
@@ -591,7 +592,7 @@ export class PalSession {
     }
     let continued = false;
     if (!untaken.length && inTurn) {
-      await this.send(STALL_CONTINUE, { from: "PaloAlly" });
+      await this.send(stallContinue(), { from: "PaloAlly" });
       continued = true;
     }
     this.touch();
@@ -611,7 +612,7 @@ export class PalSession {
    */
   send(text: string, o: { clientMsgId?: string; from?: string; peer?: string; attachments?: Attachment[] } = {}): Promise<ChatMessage> {
     const t = text.trim();
-    if (!t && !o.attachments?.length) return Promise.reject(new Error("要说的话不能是空的"));
+    if (!t && !o.attachments?.length) return Promise.reject(new Error(tr("pals.emptyMessage")));
     this.queuedSends++;
     const run = this.sendChain.then(() => this.deliver(t, o)).finally(() => this.queuedSends--);
     this.sendChain = run.catch(() => {});
@@ -628,7 +629,7 @@ export class PalSession {
       throw e;
     }
     const proc = this.proc;
-    if (!proc || !this.up) throw new Error(`「${this.rec.name}」现在没在跑`);
+    if (!proc || !this.up) throw new Error(tr("pals.notRunning", { name: this.rec.name }));
     const uuid = randomUUID();
     const ts = this.d.now();
     const msg: ChatMessage = {
@@ -919,20 +920,20 @@ export class PalSession {
    */
   async rewind(uuid: string, restoreFiles: boolean): Promise<{ text: string; filesRestored: boolean; dropped: string[]; from: string; at: string | null; copied: boolean }> {
     // (A turn stopped but still winding down is no matter: its process ends here.)
-    if (this.busy || this.starting || this.sleeping || this.queuedSends || this.pendingCards() > 0) throw new Error(REWIND_BUSY);
+    if (this.busy || this.starting || this.sleeping || this.queuedSends || this.pendingCards() > 0) throw new Error(rewindBusy());
     const { sessionId, entries, chain } = this.conversationEntries();
     const i = chain.findIndex((e) => e.uuid === uuid);
-    if (i < 0) throw new Error(REWIND_NOT_FOUND);
+    if (i < 0) throw new Error(rewindNotFound());
     const entry = chain[i];
     // Sent from the app with images or files: its words as typed, without the files' paths.
     const sent = this.d.media?.recall(uuid);
     const text = sent ? sent.text : ownerText(entry);
     // The owner's own words only: not the assistant's (pal_send), not another session's.
     if (text === null || /^\s*<cross-session-message/.test(text) || (this.rec.duty && i === chain.findIndex((e) => ownerText(e) !== null) && text.trim() === this.rec.duty.trim()))
-      throw new Error("这一条不是你说的，不能回到这里");
-    if (restoreFiles && !hasFileCheckpoint(entries, uuid)) throw new Error(REWIND_NO_FILES);
+      throw new Error(tr("pals.notYourMessage"));
+    if (restoreFiles && !hasFileCheckpoint(entries, uuid)) throw new Error(rewindNoFiles());
     const held = await this.d.holders(sessionId, this.rec.pid);
-    if (held.length) throw new HeldElsewhere(`「${this.rec.name}」在别处开着（进程 ${held.map((h) => h.pid).join("、")}），先在那边退出`);
+    if (held.length) throw new HeldElsewhere(tr("pals.heldElsewhereRewind", { name: this.rec.name, pids: held.map((h) => h.pid).join("、") }));
     const awake = this.running || !!this.restartTimer || this.queued;
     await this.shutdown();
     if (restoreFiles) {
@@ -940,7 +941,7 @@ export class PalSession {
       if (!r.canRewind) {
         this.d.log(`pal ${this.rec.name}: files not restored (${r.error ?? "no reason"})`);
         if (awake) await this.start().catch((e) => this.d.log(`pal ${this.rec.name}: couldn't start again: ${e instanceof Error ? e.message : e}`));
-        throw new Error(REWIND_NO_FILES);
+        throw new Error(rewindNoFiles());
       }
     }
     const dropped = toPalMessages(chain.slice(i), { ...this.d.mapOptions(), pal: this.rec.id }).map((m) => m.id);
@@ -953,7 +954,7 @@ export class PalSession {
         this.rec.sessionId = (await this.d.forkSession(sessionId, { dir: this.rec.cwd, upToMessageId: at!, title: this.rec.name })).sessionId;
       } catch (e) {
         if (awake) await this.start().catch(() => {});
-        throw new Error(`没能回到这里：${e instanceof Error ? e.message : e}`);
+        throw new Error(tr("pals.rewindFailed", { why: e instanceof Error ? e.message : String(e) }));
       }
       delete this.rec.rewind;
     } else {
@@ -989,13 +990,13 @@ export class PalSession {
         return spawner(req);
       },
       baseEnv: launch.env,
-      canUseTool: async () => ({ behavior: "deny", message: "只是在恢复文件" }),
+      canUseTool: async () => ({ behavior: "deny", message: tr("pals.restoringFiles") }),
       onEvent: () => {},
     });
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      await Promise.race([proc.ready(), new Promise<never>((_, rej) => (timer = setTimeout(() => rej(new Error("Claude Code 没有按时起来")), this.d.timing.readyMs)))]);
-      if (!proc.rewindFiles) return { canRewind: false, error: "这个版本的 Claude Code 不能恢复文件" };
+      await Promise.race([proc.ready(), new Promise<never>((_, rej) => (timer = setTimeout(() => rej(new Error(tr("pals.startTimeout"))), this.d.timing.readyMs)))]);
+      if (!proc.rewindFiles) return { canRewind: false, error: tr("pals.noFileRestore") };
       return await proc.rewindFiles(uuid);
     } catch (e) {
       return { canRewind: false, error: e instanceof Error ? e.message : String(e) };
@@ -1013,9 +1014,9 @@ export class PalSession {
     const source = this.source();
     if (req.toolName === ASK_TOOL) {
       const asked = this.d.questions.ask(req, { source, notify: false });
-      if (!asked) return { behavior: "deny", message: "问题格式不对，没法问主人" };
+      if (!asked) return { behavior: "deny", message: tr("pals.badQuestion") };
       this.d.changed();
-      this.d.onWaiting(this, `问你：${asked.question.items[0]!.question}`, { questionId: asked.question.id });
+      this.d.onWaiting(this, tr("sessions.askYou", { q: asked.question.items[0]!.question }), { questionId: asked.question.id });
       const r = await asked.result;
       this.d.changed();
       return r;
@@ -1025,7 +1026,7 @@ export class PalSession {
     const detail = req.toolName === "Bash" && typeof input.command === "string" ? truncate(input.command, 100_000) : describeInput(req.toolName, input);
     const asked = this.d.approvals.ask(req, { source, notify: false, title: describeTool(req.toolName, input), detail });
     this.d.changed();
-    const what = req.toolName === "Bash" && typeof input.command === "string" ? `想运行：${firstLine(input.command)}` : asked.approval.title;
+    const what = req.toolName === "Bash" && typeof input.command === "string" ? tr("sessions.wantRun", { cmd: firstLine(input.command) }) : asked.approval.title;
     this.d.onWaiting(this, what, { approvalId: asked.approval.id });
     const r = await asked.result;
     this.d.changed();
@@ -1036,12 +1037,12 @@ export class PalSession {
 // Claude Code's reason, in a line the owner can read.
 export function startError(raw: string): string {
   const s = String(raw ?? "");
-  if (/running in the background|session_held_by_background/i.test(s)) return "它还在后台跑着，先停掉它";
-  if (/No conversation found|not found.*session|session.*not found/i.test(s)) return "找不到它的对话记录";
-  if (/not logged in|authentication|401/i.test(s)) return "Claude Code 没登录";
+  if (/running in the background|session_held_by_background/i.test(s)) return tr("pals.errBackground");
+  if (/No conversation found|not found.*session|session.*not found/i.test(s)) return tr("pals.noTranscript");
+  if (/not logged in|authentication|401/i.test(s)) return tr("pals.errNotLoggedIn");
   const line = s
     .split("\n")
     .map((l) => l.trim())
     .find((l) => l && !/^at /.test(l));
-  return truncate(line?.replace(/^Error:\s*/, "") ?? "没起来", 160);
+  return truncate(line?.replace(/^Error:\s*/, "") ?? tr("pals.errNoStart"), 160);
 }

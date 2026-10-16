@@ -1,3 +1,4 @@
+import { t } from "./i18n/index.ts";
 import { getSessionInfo, listSessions, renameSession, type SDKSessionInfo } from "@anthropic-ai/claude-agent-sdk";
 import { realpathSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -199,25 +200,25 @@ export class RecentSessions {
 
   /** One session as listed, or why it can't be taken over. */
   check(i: SDKSessionInfo): RecentEntry | string {
-    if (!i.cwd) return "找不到它的目录";
+    if (!i.cwd) return t("pals.noFolder");
     const cwd = resolve(i.cwd);
-    if (isOwnFolder(cwd, this.d.roots())) return "这是 PaloAlly 自己的会话，不能接管";
+    if (isOwnFolder(cwd, this.d.roots())) return t("pals.ownSession");
     let dir = false;
     try {
       dir = statSync(cwd).isDirectory();
     } catch {
       dir = false;
     }
-    if (!dir) return `它的目录 ${cwd} 已经不在了，没法接着跑`;
+    if (!dir) return t("pals.folderGone", { cwd });
     // Where a Pal resumes it from: elsewhere (a worktree's, a moved folder's)
     // it would start afresh instead.
     let size = 0;
     try {
       const st = statSync(transcriptPath(this.d.claudeDir, cwd, i.sessionId));
-      if (!st.isFile()) return "找不到它的对话记录";
+      if (!st.isFile()) return t("pals.noTranscript");
       size = st.size;
     } catch {
-      return "找不到它的对话记录";
+      return t("pals.noTranscript");
     }
     const custom = oneLine(i.customTitle);
     const summary = oneLine(i.summary);
@@ -242,7 +243,7 @@ export class RecentSessions {
     } catch (e) {
       this.d.log?.(`recent: getSessionInfo failed: ${e instanceof Error ? e.message : e}`);
     }
-    if (!info) return "没有这个会话";
+    if (!info) return t("pals.noSession");
     return this.check({ ...info, cwd: info.cwd || listed?.cwd });
   }
 

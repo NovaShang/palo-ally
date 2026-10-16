@@ -1,3 +1,4 @@
+import { t } from "./i18n/index.ts";
 import { existsSync, readdirSync, readFileSync, statSync, watch, type FSWatcher } from "node:fs";
 import { basename, join } from "node:path";
 import type { AgentEntry, ClaudeCli } from "./ccCli.ts";
@@ -397,7 +398,7 @@ export class SessionWatch {
     const updatedAt = Math.max(r.reg?.at ?? 0, r.hook?.at ?? 0, r.lastLineAt ?? 0, r.transcript?.mtime ?? 0, r.startedAt ?? 0) || this.now();
     return {
       id: r.sessionId,
-      name: r.name || basename(r.cwd || "") || "会话",
+      name: r.name || basename(r.cwd || "") || t("sessions.unnamed"),
       cwd: r.cwd || "",
       kind,
       status,
@@ -440,11 +441,11 @@ export function waitingWords(p: Record<string, any>): string {
   const input = p.tool_input && typeof p.tool_input === "object" ? p.tool_input : {};
   if (tool === "AskUserQuestion") {
     const q = Array.isArray(input.questions) ? input.questions[0]?.question : undefined;
-    return truncate(`问你：${typeof q === "string" ? q : "一个问题"}`, 80);
+    return truncate(t("sessions.askYou", { q: typeof q === "string" ? q : t("sessions.aQuestion") }), 80);
   }
-  if (tool === "Bash" && typeof input.command === "string") return truncate(`想运行 ${input.command.split("\n")[0]}`, 80);
-  if ((tool === "Write" || tool === "Edit") && typeof input.file_path === "string") return truncate(`想改 ${basename(input.file_path)}`, 80);
-  return truncate(`想用 ${tool || "一个工具"}`, 80);
+  if (tool === "Bash" && typeof input.command === "string") return truncate(t("sessions.wantRunShort", { cmd: input.command.split("\n")[0]! }), 80);
+  if ((tool === "Write" || tool === "Edit") && typeof input.file_path === "string") return truncate(t("sessions.wantEdit", { file: basename(input.file_path) }), 80);
+  return truncate(t("sessions.wantUse", { tool: tool || t("sessions.aTool") }), 80);
 }
 
 export interface TranscriptSummary {
