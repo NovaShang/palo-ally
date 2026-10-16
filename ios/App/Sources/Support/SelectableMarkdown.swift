@@ -20,11 +20,14 @@ struct SelectableMarkdown: UIViewRepresentable {
     var onQuote: ((String) -> Void)? = nil
     @Environment(\.appTheme) private var theme
     @Environment(\.wholeReply) private var wholeReply
+    /// Paths in the reply that are files on the computer become links (FileLinks).
+    @Environment(\.fileLinks) private var fileLinks
 
     func makeUIView(context: Context) -> MarkdownTextView {
         let view = MarkdownTextView.make()
         view.onQuote = onQuote
         view.wholeReply = wholeReply
+        view.fileLinks = fileLinks
         view.render(source: source, streaming: streaming, linkColor: theme.uiColor)
         return view
     }
@@ -32,6 +35,7 @@ struct SelectableMarkdown: UIViewRepresentable {
     func updateUIView(_ view: MarkdownTextView, context: Context) {
         view.onQuote = onQuote
         view.wholeReply = wholeReply
+        view.fileLinks = fileLinks
         view.render(source: source, streaming: streaming, linkColor: theme.uiColor)
     }
 
@@ -54,6 +58,8 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
     var onQuote: ((String) -> Void)?
     /// The whole answer's 拷贝 / 回复, in the same menu.
     var wholeReply: WholeReplyActions?
+    /// The conversation's files, for the paths in the text (FileLinks).
+    var fileLinks: FileLinkContext? { didSet { if fileLinks != oldValue { applyFileLinks() } } }
     private var lastSource: String?
     private var lastStreaming = false
     private var lastLinkColor: UIColor?
@@ -242,6 +248,7 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         if inset != textContainerInset { textContainerInset = inset }
         // Nothing to select mid-stream; links work once it's finished.
         if isSelectable == streaming { isSelectable = !streaming }
+        applyFileLinks()
         renderVersion += 1
         layoutWidthFor.removeAll()
         // New text, new height: have SwiftUI ask sizeThatFits again. Not for
@@ -482,6 +489,8 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
     /// a click on one elsewhere does, never through the system: on a Mac
     /// with two builds it could open the other one.
     func textView(_ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction) -> UIAction? {
+        // A path in the reply that is a file on the computer: its preview.
+        if case .link(let url) = textItem.content, let open = FileLinks.action(for: url) { return open }
         guard case .link(let url) = textItem.content, url.scheme?.lowercased() == AppLink.scheme,
               let open = InAppLinks.open else { return defaultAction }
         return UIAction { _ in open(url) }

@@ -41,6 +41,8 @@ struct ComposerView: View {
     @State private var showPhotos = false
     @State private var showFiles = false
     @State private var showCamera = false
+    /// 电脑上的文件: a file on the computer, by its path (docs/files-prd.md).
+    @State private var showComputerFiles = false
     /// 拍照 only where there is a camera (not on Mac).
     private static let cameraAvailable = !ProcessInfo.processInfo.isMacCatalystApp
         && UIImagePickerController.isSourceTypeAvailable(.camera)
@@ -257,6 +259,7 @@ struct ComposerView: View {
         }
         // Dropped on the conversation or pasted: staged as if picked.
         .modifier(IntakeHooks(intake: intake, staged: $staged, focused: focused, room: Self.maxStaged, addImages: addImages))
+        .modifier(ComputerFileSheet(shown: $showComputerFiles, draft: $draft))
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { image in
                 showCamera = false
@@ -333,6 +336,9 @@ struct ComposerView: View {
             }
             Button("照片", systemImage: "photo.on.rectangle") { showPhotos = true }
             Button("文件", systemImage: "doc") { showFiles = true }
+            Button { showComputerFiles = true } label: {
+                Label { Text("电脑上的文件", tableName: "Files") } icon: { Image(systemName: "desktopcomputer") }
+            }
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 18, weight: .medium))

@@ -96,6 +96,8 @@ struct LibraryView: View {
                     ForEach(store.recentArtifacts) { row($0) }
                 }
             }
+            // Folders on the computer, and 打开文件夹… (docs/files-prd.md).
+            OwnerFoldersSection()
     }
 
     // MARK: search

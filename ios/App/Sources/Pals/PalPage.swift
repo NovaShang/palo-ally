@@ -57,6 +57,7 @@ private struct PalConversation: View {
             .onChange(of: store.pal(id: palID), initial: true) { _, p in if let p { last = p } }
             .animation(.snappy, value: panel)
             .palRename($renaming)
+            .modifier(PalFilesSheet(palID: palID))
             #if DEBUG
             // `-demoPalPanel release | remove | released`: the page opens on it (snapshots).
             .task {
@@ -126,6 +127,9 @@ private struct PalConversation: View {
                 Button("停止这一轮", systemImage: "stop.circle") { Task { await stop() } }
             }
             Button("重命名", systemImage: "pencil") { renaming = pal }
+            Button { model.openPalFiles(palID) } label: {
+                Label { Text("文件", tableName: "Files") } icon: { Image(systemName: "folder") }
+            }
             Section {
                 Button("交还终端", systemImage: "apple.terminal") { panel = .release }
                 Button("移出 Pals", systemImage: "minus.circle", role: .destructive) { panel = .remove }

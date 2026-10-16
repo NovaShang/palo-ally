@@ -146,7 +146,7 @@ struct LocalizationTests {
     }
 
     @Test(arguments: ["App/Resources/Localizable.xcstrings", "PaloAllyKit/Sources/PaloAllyKit/Resources/Localizable.xcstrings",
-                      "App/Resources/InfoPlist.xcstrings"])
+                      "App/Resources/InfoPlist.xcstrings", "App/Resources/Files.xcstrings"])
     func everyKeyHasAnEnglishTranslationWithTheSameSlots(path: String) throws {
         let strings = try Self.catalog(path)["strings"] as! [String: [String: Any]]
         #expect(!strings.isEmpty)

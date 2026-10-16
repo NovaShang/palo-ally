@@ -283,6 +283,8 @@ private struct ConversationDetail: View {
                 }
             }
             .modifier(InContentNavigationBar())
+            // A folder's tree over 成果 (phones), and the files paths in replies link to.
+            .modifier(FilesInConversation(current: current))
             .navigationDestination(for: AppModel.Page.self) { page in
                 switch page {
                 case .manage: AssistantView()
@@ -346,6 +348,11 @@ private struct LibraryPanel: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
+        // A folder's tree in its place (docs/files-prd.md).
+        if let scope = model.filesPanel { FilesPanel(scope: scope) } else { library }
+    }
+
+    @ViewBuilder private var library: some View {
         @Bindable var model = model
         NavigationStack(path: $model.libraryPath) {
             LibraryView()

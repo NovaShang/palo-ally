@@ -196,11 +196,16 @@ final class AppModel {
     var inspectorShown = false {
         didSet {
             if inspectorShown != oldValue { debugLog("[layout] inspector \(inspectorShown)") }
-            if !inspectorShown && oldValue { libraryPath = [] }
+            if !inspectorShown && oldValue { libraryPath = []; filesPanel = nil }
         }
     }
     /// The inspector's own stack: artifact ids pushed over the list.
     var libraryPath: [String] = []
+    /// iPads and the Mac: a folder's tree in the inspector in place of 成果
+    /// (a Pal's ⋯ → 文件, or 打开文件夹… in 成果; docs/files-prd.md).
+    var filesPanel: FileScope?
+    /// Phones: a Pal's 文件 as a sheet.
+    var filesSheet: FileScope?
     /// ⌘F: the 成果 search field should take focus (consumed by LibraryView,
     /// which may only appear after the request).
     var librarySearchRequested = false
