@@ -1,4 +1,5 @@
 import type { Bus } from "./bus.ts";
+import { t } from "./i18n/index.ts";
 import type { ModelOption, SlashCommandInfo } from "./harness/types.ts";
 import { readJson, writeJson } from "./util.ts";
 
@@ -41,8 +42,8 @@ export class HarnessInfo {
   // a name clash) and drops the ones that only make sense in a terminal.
   commandList(): SlashCommandInfo[] {
     const own: SlashCommandInfo[] = [
-      { name: "stop", description: "停下手上的事" },
-      { name: "status", description: "看看我在忙什么" },
+      { name: "stop", description: t("cmd.stop") },
+      { name: "status", description: t("cmd.status") },
     ];
     const ownNames = new Set(own.map((c) => c.name));
     const harness = readJson<SlashCommandInfo[]>(this.commandsPath, []).filter(

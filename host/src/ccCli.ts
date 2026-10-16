@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { t } from "./i18n/index.ts";
 import { existsSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
@@ -168,11 +169,11 @@ export class RealClaudeCli implements ClaudeCli {
   private async exec(args: string[], cwd?: string, timeoutMs = 30_000): Promise<RunResult> {
     const env = await (this.o.env ?? loginEnv)();
     const bin = this.o.bin ?? findClaude(env);
-    if (!bin) throw new Error("这台电脑上找不到 claude 命令");
+    if (!bin) throw new Error(t("cc.noClaude"));
     const r = await run(bin, args, { cwd, env, timeoutMs });
     if (r.code !== 0) {
       const why = (r.stderr || r.stdout).trim().split("\n").slice(-3).join(" ").slice(0, 300);
-      throw new Error(`claude ${args[0]} 没成功${why ? `：${why}` : ""}`);
+      throw new Error(t("cc.failed", { cmd: args[0] ?? "", why: why ? t("cc.why", { why }) : "" }));
     }
     return r;
   }

@@ -3,6 +3,7 @@ import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { Paths } from "./config.ts";
+import { t } from "./i18n/index.ts";
 import { ensureDir } from "./util.ts";
 
 const LABEL = "com.novashang.paloally";
@@ -70,7 +71,7 @@ export function installService(paths: Paths): string {
     }
     writeFileSync(p, launchdPlist(paths));
     execFileSync("launchctl", ["load", "-w", p]);
-    return `已装成常驻服务（launchd：${p}）。崩溃会自动重启，开机自动运行。日志在 ${paths.logs}`;
+    return t("svc.installedLaunchd", { path: p, logs: paths.logs });
   }
   if (process.platform === "linux") {
     const p = unitPath();
@@ -78,22 +79,22 @@ export function installService(paths: Paths): string {
     writeFileSync(p, systemdUnit(paths));
     execFileSync("systemctl", ["--user", "daemon-reload"]);
     execFileSync("systemctl", ["--user", "enable", "--now", "paloally.service"]);
-    return `已装成常驻服务（systemd --user：${p}）。若要在未登录时也运行：sudo loginctl enable-linger $USER`;
+    return t("svc.installedSystemd", { path: p });
   }
-  throw new Error(`暂不支持 ${process.platform}`);
+  throw new Error(t("svc.unsupportedPlatform", { platform: process.platform }));
 }
 
 export function uninstallService(): string {
   if (process.platform === "darwin") {
     const p = plistPath();
-    if (!existsSync(p)) return "没有安装服务。";
+    if (!existsSync(p)) return t("svc.notInstalled");
     try {
       execFileSync("launchctl", ["unload", "-w", p], { stdio: "ignore" });
     } catch {
       /* ignore */
     }
     unlinkSync(p);
-    return "已卸载服务。";
+    return t("svc.removed");
   }
   if (process.platform === "linux") {
     try {
@@ -102,28 +103,28 @@ export function uninstallService(): string {
       /* ignore */
     }
     if (existsSync(unitPath())) unlinkSync(unitPath());
-    return "已卸载服务。";
+    return t("svc.removed");
   }
-  return "暂不支持此平台。";
+  return t("svc.unsupportedHere");
 }
 
 export function serviceStatus(): string {
   if (process.platform === "darwin") {
-    if (!existsSync(plistPath())) return "未安装服务（paloally service install）";
+    if (!existsSync(plistPath())) return t("svc.statusNotInstalled");
     try {
       const out = execFileSync("launchctl", ["list", LABEL], { encoding: "utf8" });
       const pid = /"PID"\s*=\s*(\d+)/.exec(out)?.[1];
-      return pid ? `服务运行中（pid ${pid}）` : "服务已安装但没在运行";
+      return pid ? t("svc.statusRunning", { pid }) : t("svc.statusStopped");
     } catch {
-      return "服务已安装但没加载";
+      return t("svc.statusNotLoaded");
     }
   }
   if (process.platform === "linux") {
     try {
       return execFileSync("systemctl", ["--user", "is-active", "paloally.service"], { encoding: "utf8" }).trim();
     } catch {
-      return "未运行";
+      return t("svc.statusDown");
     }
   }
-  return "暂不支持此平台。";
+  return t("svc.unsupportedHere");
 }

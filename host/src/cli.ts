@@ -1,4 +1,6 @@
 import { existsSync } from "node:fs";
+import { getLang, isLang, setLang, systemLanguage, t } from "./i18n/index.ts";
+import { dateLocale } from "./util.ts";
 import { createInterface } from "node:readline";
 import { LocalClient } from "./channels/local.ts";
 import { WechatILink } from "./channels/wechat.ts";
@@ -16,43 +18,30 @@ import type { ChatMessage, Task, Watch } from "./types.ts";
 const paths = new Paths(defaultRoot());
 const [cmd = "help", ...args] = process.argv.slice(2);
 
-const HELP = `PaloAlly ${VERSION} — 把 Claude Code 变成常驻、会主动找你、记得你的私人助理
+// This process is not the daemon: it picks its own language, the owner's
+// setting if there is one, else the computer's.
+function readLanguage(): "zh" | "en" {
+  try {
+    const l = loadConfig(paths).settings.language;
+    if (isLang(l)) return l;
+  } catch {
+    /* no readable config yet: the computer's language */
+  }
+  return systemLanguage();
+}
+setLang(readLanguage());
 
-用法：paloally <命令>
-
-  setup                  第一次使用：检查依赖、生成 home、配置、配对手机
-  start                  前台运行助理（daemon）
-  service install|uninstall|status   装成开机常驻服务（launchd / systemd）
-  chat [消息]            在终端里跟助理说话（不带消息则进入对话）
-  status                 助理现在在干嘛
-  tasks [id]             任务列表 / 某个任务的详情
-  approvals              待确认的操作
-  approve <id> [--remember] / deny <id>
-  watch [list|add|rm|on|off] 盯梢与定时
-  artifacts              产物资料库
-  memory [路径]          记忆文件
-  settings [key value]   打扰频率、免打扰时段等
-  sessions [hooks on|off]  Pals 和电脑上的其他 Claude Code 会话；hooks 开关：不在电脑前时把会话的确认送到手机
-  stop                   手上的事全部停下
-  restart [--now]        等手头的事办完再重启（--now 立刻重启，会打断正在办的事）
-  update [--check|--now] 更新到最新正式版（默认等手头的事办完；--check 只看看有没有新版本）
-  audit [n]              审计日志
-  metrics [天数]         Phase 0 验收数据（主动频率、任务、压缩、花费）
-  pair                   配对手机 App
-  devices [rm <id>]      已配对的设备
-  wechat login|logout|status   微信入口
-  doctor                 体检
-`;
+const helpText = (): string => t("cli.help", { version: VERSION });
 
 async function client(): Promise<LocalClient> {
   if (!existsSync(paths.socket)) {
-    console.error("助理没在运行。先 `paloally start`（或 `paloally service install`）。");
+    console.error(t("cli.notRunning"));
     process.exit(1);
   }
   try {
     return await LocalClient.connect(paths.socket);
   } catch {
-    console.error("连不上助理（socket 存在但没响应）。试试重启：paloally start");
+    console.error(t("cli.noResponse"));
     process.exit(1);
   }
 }
@@ -68,12 +57,12 @@ async function call<T = any>(method: string, params: unknown = {}): Promise<T> {
 
 function fmtTime(ms?: number): string {
   if (!ms) return "-";
-  return new Date(ms).toLocaleString("zh-CN", { hour12: false });
+  return new Date(ms).toLocaleString(dateLocale(), { hour12: false });
 }
 
 function printMessage(m: ChatMessage): void {
-  const who = m.role === "user" ? "你" : m.role === "assistant" ? "助理" : "·";
-  console.log(`${who}${m.proactive ? "（主动）" : ""}：${m.text}`);
+  const who = m.role === "user" ? t("cli.who.user") : m.role === "assistant" ? t("cli.who.assistant") : "·";
+  console.log(t("cli.msgLine", { who, proactive: m.proactive ? t("cli.proactive") : "", text: m.text }));
 }
 
 async function chat(): Promise<void> {
@@ -91,7 +80,7 @@ async function chat(): Promise<void> {
     if (event === "chat.delta") {
       if (streaming !== data.id) {
         streaming = data.id;
-        process.stdout.write("助理：");
+        process.stdout.write(t("cli.assistantPrefix"));
       }
       process.stdout.write(data.text);
     } else if (event === "chat.message") {
@@ -135,28 +124,28 @@ async function chat(): Promise<void> {
     process.exit(0);
   }
 
-  console.log(`已连上 ${hello.hostName}。直接打字说话；/tasks /approvals /y <id> /n <id> /stop /quit`);
+  console.log(t("cli.connected", { host: hello.hostName }));
   const sync = await c.call("sync", {});
   for (const m of (sync.messages as ChatMessage[]).slice(-10)) printMessage(m);
   const rl = createInterface({ input: process.stdin, output: process.stdout, prompt: "" });
   rl.on("line", async (line) => {
-    const t = line.trim();
-    if (!t) return;
+    const text = line.trim();
+    if (!text) return;
     try {
-      if (t === "/quit" || t === "/exit") {
+      if (text === "/quit" || text === "/exit") {
         rl.close();
         c.close();
         process.exit(0);
-      } else if (t === "/tasks") {
+      } else if (text === "/tasks") {
         printTasks((await c.call("sync", {})).tasks);
-      } else if (t === "/approvals") {
+      } else if (text === "/approvals") {
         printApprovals((await c.call("sync", {})).approvals);
-      } else if (/^\/(y|n)\s+\S+/.test(t)) {
-        const [, yn, id] = /^\/(y|n)\s+(\S+)/.exec(t)!;
+      } else if (/^\/(y|n)\s+\S+/.test(text)) {
+        const [, yn, id] = /^\/(y|n)\s+(\S+)/.exec(text)!;
         const r = await c.call("approval.answer", { id: await resolveApprovalId(c, id!), allow: yn === "y" });
         console.log(`· ${r.status}`);
       } else {
-        await c.call("chat.send", { text: t });
+        await c.call("chat.send", { text });
       }
     } catch (e) {
       console.error(`· ${(e as Error).message}`);
@@ -166,14 +155,14 @@ async function chat(): Promise<void> {
 }
 
 async function resolveApprovalId(c: LocalClient, short: string): Promise<string> {
-  if (!short.trim()) throw new Error("请带上编号：paloally approve <编号>（paloally approvals 可以看到编号）");
+  if (!short.trim()) throw new Error(t("cli.needApprovalId"));
   const sync = await c.call("sync", {});
   const hit = sync.approvals.find((a: any) => a.id === short || a.id.endsWith(short));
   return hit?.id ?? short;
 }
 
 function printTasks(tasks: Task[]): void {
-  if (!tasks.length) return console.log("还没有任务。");
+  if (!tasks.length) return console.log(t("cli.noTasks"));
   const icon: Record<string, string> = { running: "⏳", done: "✅", failed: "⚠️", needs_input: "🙋", stopped: "⏹" };
   for (const t of tasks.slice(0, 30)) {
     console.log(`${icon[t.status] ?? "·"} ${t.id}  ${t.title}${t.summary ? ` — ${t.summary}` : ""}  (${fmtTime(t.updatedAt)})`);
@@ -182,17 +171,17 @@ function printTasks(tasks: Task[]): void {
 
 function printApprovals(list: any[]): void {
   const pending = list.filter((a) => a.status === "pending");
-  if (!pending.length) return console.log("没有待确认的操作。");
+  if (!pending.length) return console.log(t("cli.noApprovals"));
   for (const a of pending) {
-    console.log(`🔐 ${a.id.slice(-4)}  ${a.title}${a.careful ? "（请仔细看）" : ""}\n    ${a.detail}`);
+    console.log(`🔐 ${a.id.slice(-4)}  ${a.title}${a.careful ? t("cli.careful") : ""}\n    ${a.detail}`);
   }
 }
 
 function printWatches(list: Watch[]): void {
-  if (!list.length) return console.log("还没有盯梢。");
+  if (!list.length) return console.log(t("cli.noWatches"));
   for (const w of list) {
     const when = scheduleText(w);
-    console.log(`${w.enabled ? "●" : "○"} ${w.id}  ${w.title}  [${when}]  ${w.createdBy === "agent" ? "（助理登记）" : ""}\n    ${w.instruction}`);
+    console.log(`${w.enabled ? "●" : "○"} ${w.id}  ${w.title}  [${when}]  ${w.createdBy === "agent" ? t("cli.byAssistant") : ""}\n    ${w.instruction}`);
   }
 }
 
@@ -205,7 +194,7 @@ async function main(): Promise<void> {
     case "help":
     case "--help":
     case "-h":
-      console.log(HELP);
+      console.log(helpText());
       return;
     case "--version":
     case "version":
@@ -229,7 +218,7 @@ async function main(): Promise<void> {
         try {
           const c = await LocalClient.connect(paths.socket);
           c.close();
-          console.error("助理已经在运行了。");
+          console.error(t("cli.alreadyRunning"));
           process.exit(1);
         } catch {
           /* stale socket */
@@ -242,7 +231,7 @@ async function main(): Promise<void> {
       const bootPaths = { update: paths.update, chat: paths.chat, audit: paths.audit };
       const boot = bootCheck(bootPaths);
       if (boot.rolledBack) {
-        console.error("新版本起不来，已退回上一版；重启中。");
+        console.error(t("cli.updateRolledBack"));
         process.exit(1);
       }
       cleanStaging(paths.updateStaging);
@@ -251,8 +240,8 @@ async function main(): Promise<void> {
         d = await startDaemon(paths);
       } catch (e) {
         if (boot.pending) {
-          rollbackSync(bootPaths, `新版本启动出错：${e instanceof Error ? e.message.split("\n")[0] : String(e)}`);
-          console.error("新版本启动出错，已退回上一版；重启中。");
+          rollbackSync(bootPaths, t("cli.updateBootError", { detail: e instanceof Error ? e.message.split("\n")[0]! : String(e) }));
+          console.error(t("cli.updateBootErrorRolledBack"));
           process.exit(1);
         }
         throw e;
@@ -266,8 +255,8 @@ async function main(): Promise<void> {
         }, HEALTHY_AFTER_MS);
         (t as any).unref?.();
       }
-      console.log(`PaloAlly ${VERSION} 在运行。home: ${paths.home}`);
-      if (d.relay) console.log(`远程 ID: ${d.relay.daemonId}（配对手机：paloally pair）`);
+      console.log(t("cli.running", { version: VERSION, home: paths.home }));
+      if (d.relay) console.log(t("cli.remoteId", { id: d.relay.daemonId }));
       const shutdown = () => {
         d.stop();
         process.exit(0);
@@ -291,15 +280,22 @@ async function main(): Promise<void> {
       const update = await c.call("update.status").catch(() => null);
       c.close();
       const s = hello.status;
-      console.log(`${hello.hostName} · ${s.busy ? "忙" : "空闲"} · 模型 ${s.model || "默认"}`);
-      if (update) console.log(`版本：${updateLine(update)}`);
-      console.log(`进行中任务 ${sync.tasks.filter((t: Task) => t.status === "running").length} · 待确认 ${sync.approvals.filter((a: any) => a.status === "pending").length} · 盯梢 ${sync.watches.length}`);
-      console.log(`远程：${relay.enabled ? `${relay.state}（${relay.streams} 个设备在线）${relay.lastError ? " " + relay.lastError : ""}` : "关闭"} · 微信：${wechat.status}`);
-      if (push) console.log(`推送：${pushLine(push)}`);
-      if (probe) console.log(`探针：${probeLine(probe)}`);
+      console.log(t("cli.statusHead", { host: hello.hostName, busy: s.busy ? t("cli.busy") : t("cli.idle"), model: s.model || t("cli.modelDefault") }));
+      if (update) console.log(t("cli.versionLine", { line: updateLine(update) }));
+      console.log(
+        t("cli.statusCounts", {
+          running: sync.tasks.filter((x: Task) => x.status === "running").length,
+          pending: sync.approvals.filter((a: any) => a.status === "pending").length,
+          watches: sync.watches.length,
+        }),
+      );
+      const remote = relay.enabled ? `${t("cli.remoteOn", { state: relay.state, streams: relay.streams })}${relay.lastError ? " " + relay.lastError : ""}` : t("cli.remoteOff");
+      console.log(t("cli.remoteLine", { remote, wechat: wechat.status }));
+      if (push) console.log(t("cli.pushLine", { line: pushLine(push) }));
+      if (probe) console.log(t("cli.probeLine", { line: probeLine(probe) }));
       const pl = power ? powerLine(power) : null;
-      if (pl) console.log(`电源：${pl}`);
-      console.log(`今日花费：主对话 $${usage.mainUsd.toFixed(3)} · 探针 $${usage.probeUsd.toFixed(4)}`);
+      if (pl) console.log(t("cli.powerLine", { line: pl }));
+      console.log(t("cli.todayCost", { main: `$${usage.mainUsd.toFixed(3)}`, probe: `$${usage.probeUsd.toFixed(4)}` }));
       return;
     }
     case "tasks": {
@@ -327,10 +323,10 @@ async function main(): Promise<void> {
     case "watch": {
       const sub = args[0] ?? "list";
       if (sub === "list") return printWatches((await call("sync", {})).watches);
-      if (sub === "rm") return console.log((await call("watch.remove", { id: args[1] })).ok ? "已删除" : "没找到");
+      if (sub === "rm") return console.log((await call("watch.remove", { id: args[1] })).ok ? t("cli.removed") : t("cli.notFound"));
       if (sub === "on" || sub === "off") {
         await call("watch.update", { id: args[1], patch: { enabled: sub === "on" } });
-        return console.log("好");
+        return console.log(t("cli.ok"));
       }
       if (sub === "add") {
         // paloally watch add "标题" "说明" [--every 60] [--at 08:30,22:30]
@@ -345,22 +341,22 @@ async function main(): Promise<void> {
           intervalMinutes: every >= 0 ? Number(args[every + 1]) : undefined,
           at: at >= 0 ? args[at + 1]!.split(",") : undefined,
         });
-        return console.log(`已添加 ${r.watch.id}`);
+        return console.log(t("cli.watchAdded", { id: r.watch.id }));
       }
-      console.log("用法：paloally watch [list|add <标题> <说明> [--every 分钟|--at HH:MM,...]|rm <id>|on <id>|off <id>]");
+      console.log(t("cli.watchUsage"));
       return;
     }
     case "artifacts": {
       const { artifacts } = await call("artifact.list");
-      if (!artifacts.length) return console.log("资料库是空的。");
+      if (!artifacts.length) return console.log(t("cli.noArtifacts"));
       for (const a of artifacts) console.log(`${a.pinned ? "📌" : "  "} ${a.id}  ${a.title}  (${a.type}, ${fmtTime(a.updatedAt)})  ${paths.artifacts}/${a.id}/${a.mainFile}`);
       return;
     }
     case "memory": {
       if (args[0]) return console.log((await call("memory.read", { path: args[0] })).content);
       const { files, coreSize } = await call("memory.list");
-      for (const f of files) console.log(`${f.scope === "core" ? "核心" : "记忆"}  ${f.path}  ${f.size}B  ${fmtTime(f.updatedAt)}`);
-      if (coreSize > CORE_SOFT_LIMIT) console.log(`⚠️ 核心文件共 ${coreSize} 字节，偏大（建议 < ${CORE_SOFT_LIMIT}），啰嗦的内容挪进记忆。`);
+      for (const f of files) console.log(`${f.scope === "core" ? t("cli.memCore") : t("cli.memNote")}  ${f.path}  ${f.size}B  ${fmtTime(f.updatedAt)}`);
+      if (coreSize > CORE_SOFT_LIMIT) console.log(t("cli.coreBig", { size: coreSize, limit: CORE_SOFT_LIMIT }));
       return;
     }
     case "settings": {
@@ -371,6 +367,10 @@ async function main(): Promise<void> {
         if (key === "quietHours") value = raw === "off" ? null : { start: raw.split("-")[0], end: raw.split("-")[1] };
         else if (/^\d+(\.\d+)?$/.test(raw)) value = Number(raw);
         const r = await call("settings.update", { patch: { [key!]: value } });
+        if (key === "language" && isLang(r.settings.language)) {
+          setLang(r.settings.language);
+          return console.log(t("cli.languageSet"));
+        }
         return console.log(JSON.stringify(r.settings, null, 2));
       }
       console.log(JSON.stringify((await call("sync", {})).settings, null, 2));
@@ -378,11 +378,11 @@ async function main(): Promise<void> {
     }
     case "restart": {
       const now = flag("--now");
-      if (!now) console.log("等手头的事办完再重启（最多等 30 分钟）…");
+      if (!now) console.log(t("cli.restartWait"));
       const c = await client();
       const r = await c.call("restart", { now }).catch(() => ({ status: "restarting" }));
       c.close();
-      console.log(r.status === "timeout" ? "等了 30 分钟还在忙，没重启。要强制重启：paloally restart --now" : "重启中。");
+      console.log(r.status === "timeout" ? t("cli.restartTimeout") : t("cli.restarting"));
       return;
     }
     case "sessions": {
@@ -390,25 +390,25 @@ async function main(): Promise<void> {
       if (args[0] === "hooks") {
         const enabled = args[1] === "on" ? true : args[1] === "off" ? false : undefined;
         const r = await call("sessions.hooks", enabled === undefined ? {} : { enabled });
-        console.log(r.enabled ? "全局钩子：开（会话的确认在你不在电脑前时送到手机）" : "全局钩子：关");
+        console.log(r.enabled ? t("cli.hooksOn") : t("cli.hooksOff"));
         return;
       }
       const r = await call("pals.list");
-      const kind: Record<string, string> = { terminal: "终端", background: "后台" };
-      const status: Record<string, string> = { busy: "在忙", idle: "空闲", waiting: "等你", stopped: "停了", starting: "在启动" };
-      if (r.pals.length) console.log(`Pals${r.helper ? "" : "（没装 PaloAlly Helper：由主机直接启动，macOS 权限跟主机一样）"}：`);
+      const kind: Record<string, string> = { terminal: t("cli.kind.terminal"), background: t("cli.kind.background") };
+      const status: Record<string, string> = { busy: t("cli.st.busy"), idle: t("cli.st.idle"), waiting: t("cli.st.waiting"), stopped: t("cli.st.stopped"), starting: t("cli.st.starting") };
+      if (r.pals.length) console.log(t("cli.palsHead", { note: r.helper ? "" : t("cli.palsNoHelper") }));
       for (const p of r.pals)
-        console.log(`${status[p.status] ?? p.status} ${p.name}  ${p.cwd}${p.pending ? `  ${p.pending} 件等你` : ""}${p.note ? `\n    ${p.note}` : ""}${p.lastLine ? `\n    ${p.lastLine}` : ""}`);
-      if (!r.others.length) console.log(r.pals.length ? "电脑上没有别的 Claude Code 会话。" : "电脑上没有 Claude Code 会话。");
-      else console.log("电脑上的其他会话：");
+        console.log(`${status[p.status] ?? p.status} ${p.name}  ${p.cwd}${p.pending ? t("cli.palWaiting", { n: p.pending }) : ""}${p.note ? `\n    ${p.note}` : ""}${p.lastLine ? `\n    ${p.lastLine}` : ""}`);
+      if (!r.others.length) console.log(r.pals.length ? t("cli.othersNoneMore") : t("cli.othersNone"));
+      else console.log(t("cli.othersHead"));
       for (const x of r.others)
-        console.log(`${status[x.status] ?? x.status} ${x.name}（${kind[x.kind] ?? x.kind}）  ${x.cwd}${x.waitingFor ? `\n    等：${x.waitingFor}` : ""}${x.lastLine ? `\n    ${x.lastLine}` : ""}`);
-      console.log(`全局钩子：${r.hooks ? "开" : "关"}（paloally sessions hooks on|off）`);
+        console.log(`${status[x.status] ?? x.status} ${x.name}（${kind[x.kind] ?? x.kind}）  ${x.cwd}${x.waitingFor ? `\n    ${t("cli.waitingFor", { what: x.waitingFor })}` : ""}${x.lastLine ? `\n    ${x.lastLine}` : ""}`);
+      console.log(t("cli.hooksState", { state: r.hooks ? t("cli.on") : t("cli.off") }));
       return;
     }
     case "stop":
       await call("stop");
-      console.log("已停下手上的事。");
+      console.log(t("cli.stopped"));
       return;
     case "audit": {
       const { entries } = await call("audit.tail", { limit: Number(args[0] ?? 30) });
@@ -422,17 +422,17 @@ async function main(): Promise<void> {
       const r = await call("pair.open", { ttl: 180 });
       const qrcode = (await import("qrcode-terminal")).default;
       qrcode.generate(r.link, { small: true });
-      console.log(`\n用 PaloAlly App 扫描上面的二维码（${Math.round(r.ttl / 60)} 分钟内有效，只能连一台设备）。`);
+      console.log(t("cli.pairScan", { min: Math.round(r.ttl / 60) }));
       // On its own line, so a terminal makes it clickable and it copies whole.
-      console.log(`没有摄像头的设备（比如 Mac）：在那台设备上点开这个链接，或者粘贴到 App 里：\n\n${r.link}\n`);
-      console.log(`配对码：${r.code}`);
+      console.log(t("cli.pairLink", { link: r.link }));
+      console.log(t("cli.pairCode", { code: r.code }));
       return;
     }
     case "devices": {
-      if (args[0] === "rm") return console.log((await call("devices.remove", { id: args[1] })).ok ? "已移除" : "没找到");
+      if (args[0] === "rm") return console.log((await call("devices.remove", { id: args[1] })).ok ? t("cli.deviceRemoved") : t("cli.notFound"));
       const { devices } = await call("devices.list");
-      if (!devices.length) return console.log("还没配对设备。paloally pair");
-      for (const d of devices) console.log(`${d.deviceId}  ${d.label}  配对于 ${fmtTime(d.pairedAt)}  最近 ${fmtTime(d.lastSeen)}`);
+      if (!devices.length) return console.log(t("cli.noDevices"));
+      for (const d of devices) console.log(t("cli.deviceLine", { id: d.deviceId, label: d.label, paired: fmtTime(d.pairedAt), seen: fmtTime(d.lastSeen) }));
       return;
     }
     case "wechat":
@@ -451,7 +451,7 @@ async function main(): Promise<void> {
     case "doctor":
       return doctor();
     default:
-      console.log(HELP);
+      console.log(helpText());
       process.exit(1);
   }
 }
@@ -464,7 +464,7 @@ async function updateCmd(): Promise<void> {
   if (existsSync(paths.socket)) {
     try {
       const c = await LocalClient.connect(paths.socket);
-      if (!check) console.log(now ? "更新中…" : "查新版本；有的话等手头的事办完就换上（最多等 30 分钟）…");
+      if (!check) console.log(now ? t("cli.updating") : t("cli.updateChecking"));
       const r = await c.call<any>("host.update", { check, now, wait: !now });
       c.close();
       return printUpdate(r);
@@ -484,15 +484,15 @@ async function updateCmd(): Promise<void> {
     exit: () => undefined,
   });
   const r = await u.updateNow({ check, now: true });
-  printUpdate(r.status === "updating" ? { ...r, detail: "文件已换成新版本。启动助理：paloally start（或 paloally service install）" } : r);
+  printUpdate(r.status === "updating" ? { ...r, detail: t("cli.updateFilesSwapped") } : r);
 }
 
 function printUpdate(r: { status: string; current: string; latest?: string; detail?: string }): void {
   const head =
-    r.status === "updating" ? `正在换成 ${r.latest ?? "新版本"}，助理会自动重启。`
-    : r.status === "latest" ? `已经是最新版（${r.current}）。`
-    : r.status === "available" ? `有新版本 ${r.latest}（现在 ${r.current}）。运行 paloally update 更新。`
-    : r.status === "dirty" ? "本地改过代码，没更新。"
+    r.status === "updating" ? t("cli.upd.updating", { latest: r.latest ?? t("cli.upd.newVersion") })
+    : r.status === "latest" ? t("cli.upd.latest", { current: r.current })
+    : r.status === "available" ? t("cli.upd.available", { latest: r.latest ?? "", current: r.current })
+    : r.status === "dirty" ? t("cli.upd.dirty")
     : `${r.detail ?? r.status}`;
   console.log(head);
   if (r.detail && !head.includes(r.detail) && r.status !== "available" && r.status !== "latest") console.log(r.detail);
@@ -506,35 +506,35 @@ async function wechatCmd(): Promise<void> {
   if (sub === "login") {
     const { qrcode, qrUrl } = await w.beginLogin();
     (await import("qrcode-terminal")).default.generate(qrUrl, { small: true });
-    console.log("用微信扫码，并在手机上确认。");
+    console.log(t("cli.wechatScan"));
     const ok = await w.waitLogin(qrcode, 5 * 60_000, (s) => console.log(`· ${s}`));
-    if (!ok) return console.log("没有登录成功（二维码过期或超时）。");
+    if (!ok) return console.log(t("cli.wechatFailed"));
     cfg.wechat.enabled = true;
     saveConfig(paths, cfg);
-    console.log("微信已连上。重启助理生效（paloally service install 会自动重启）。给 bot 发第一条消息后，它就认你做主人。");
+    console.log(t("cli.wechatConnected"));
     return;
   }
   if (sub === "logout") {
     w.logout();
     cfg.wechat.enabled = false;
     saveConfig(paths, cfg);
-    return console.log("已断开微信。");
+    return console.log(t("cli.wechatOut"));
   }
-  console.log(cfg.wechat.enabled ? (w.loggedIn ? "已登录" : "已启用但未登录（paloally wechat login）") : "未启用");
+  console.log(cfg.wechat.enabled ? (w.loggedIn ? t("cli.wechatLoggedIn") : t("cli.wechatNotLoggedIn")) : t("cli.wechatOff"));
 }
 
 function pushLine(p: { health: { at: number; ok: boolean; detail: string } | null; devices: number }): string {
-  const devices = p.devices ? `${p.devices} 台设备已登记` : "还没有设备登记推送";
-  if (!p.health) return `${devices} · 还没推送过`;
-  const when = new Date(p.health.at).toLocaleString("zh-CN", { hour12: false });
-  return `${devices} · 上次${p.health.ok ? "成功" : "失败"}（${when}）：${p.health.detail}`;
+  const devices = p.devices ? t("cli.push.devices", { n: p.devices }) : t("cli.push.noDevices");
+  if (!p.health) return t("cli.push.never", { devices });
+  const when = new Date(p.health.at).toLocaleString(dateLocale(), { hour12: false });
+  return t("cli.push.last", { devices, result: p.health.ok ? t("cli.push.ok") : t("cli.push.fail"), when, detail: p.health.detail });
 }
 
 function probeLine(p: { checks: number; lastRunAt?: number; failing: number; stale: number; reasons: string[]; budgetUsd: number; spentUsd: number }): string {
-  if (!p.checks) return "没有要定期检查的目标";
-  const ago = p.lastRunAt ? `最近一次 ${Math.max(0, Math.round((Date.now() - p.lastRunAt) / 60_000))} 分钟前` : "还没查过";
-  const trouble = p.failing ? ` · ${p.failing} 个没查成（${p.reasons.join("；")}）` : " · 0 个出错";
-  return `${p.checks} 个盯梢 · ${ago}${trouble} · 今日预算 $${p.spentUsd.toFixed(2)}/$${p.budgetUsd}`;
+  if (!p.checks) return t("cli.probe.none");
+  const ago = p.lastRunAt ? t("cli.probe.ago", { min: Math.max(0, Math.round((Date.now() - p.lastRunAt) / 60_000)) }) : t("cli.probe.never");
+  const trouble = p.failing ? t("cli.probe.trouble", { n: p.failing, reasons: p.reasons.join(getLang() === "zh" ? "；" : "; ") }) : t("cli.probe.noTrouble");
+  return t("cli.probe.line", { checks: p.checks, ago, trouble, spent: `$${p.spentUsd.toFixed(2)}`, budget: `$${p.budgetUsd}` });
 }
 
 async function doctor(): Promise<void> {

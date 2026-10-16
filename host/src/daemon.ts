@@ -1,4 +1,5 @@
 import { chmodSync } from "node:fs";
+import { t } from "./i18n/index.ts";
 import { ApnsPusher } from "./channels/apns.ts";
 import { LocalServer } from "./channels/local.ts";
 import { RelayChannel, loadHostIdentity } from "./channels/relay.ts";
@@ -97,7 +98,7 @@ export async function startDaemon(
   const admin: AdminHandler = async (method, p) => {
     switch (method) {
       case "pair.open":
-        if (!relay) throw new Error("远程连接没开启（config.relay.enabled=false）");
+        if (!relay) throw new Error(t("daemon.relayOff"));
         return relay.openPairing(Number(p.ttl ?? 120));
       case "devices.list":
         return { devices: relay?.devices() ?? [] };

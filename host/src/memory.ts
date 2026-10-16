@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { t } from "./i18n/index.ts";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import type { MemoryFile } from "./types.ts";
@@ -70,6 +71,6 @@ export class MemoryView {
       const full = resolve(this.autoDir, m[1]!);
       if (full.startsWith(resolve(this.autoDir) + sep)) return full;
     }
-    throw new Error("只能读写核心文件（user.md / soul.md）或 memory/ 下的 .md 记忆");
+    throw new Error(t("memory.onlyCore"));
   }
 }

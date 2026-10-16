@@ -1,4 +1,5 @@
 import crypto, { randomBytes } from "node:crypto";
+import { t } from "../i18n/index.ts";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { WechatChannel as WechatChannelIface, WechatReplyTarget } from "./types.ts";
@@ -95,12 +96,12 @@ export class WechatILink implements WechatChannelIface {
   }
 
   unavailableReason(): string | null {
-    if (!this.state.botToken) return "微信没登录";
-    if (this.expired) return "微信登录过期了，要重新扫码";
+    if (!this.state.botToken) return t("wechat.notLoggedIn");
+    if (this.expired) return t("wechat.expired");
     const c = this.state.context;
-    if (!this.state.ownerUserId || !c) return "主人还没在微信上发过消息";
-    if (this.now() - c.at >= CONTEXT_TTL_MS) return "主人超过 24 小时没在微信上发消息，微信这边暂时发不过去";
-    if (c.sentSinceUser >= MAX_PER_TURN) return "这一轮微信消息到上限了，要等主人再发一条";
+    if (!this.state.ownerUserId || !c) return t("wechat.noOwnerMsg");
+    if (this.now() - c.at >= CONTEXT_TTL_MS) return t("wechat.window");
+    if (c.sentSinceUser >= MAX_PER_TURN) return t("wechat.cap");
     return null;
   }
 
@@ -137,7 +138,7 @@ export class WechatILink implements WechatChannelIface {
   async beginLogin(): Promise<{ qrcode: string; qrUrl: string }> {
     const r = await this.fetchFn(`${this.defaultBase.replace(/\/$/, "")}/ilink/bot/get_bot_qrcode?bot_type=3`);
     const j: any = await r.json();
-    if (!j.qrcode) throw new Error(`获取二维码失败：${JSON.stringify(j).slice(0, 200)}`);
+    if (!j.qrcode) throw new Error(t("wechat.qrFailed", { detail: JSON.stringify(j).slice(0, 200) }));
     return { qrcode: j.qrcode, qrUrl: j.qrcode_img_content ?? j.qrcode };
   }
 

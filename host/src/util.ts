@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, appendFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { getLang, t } from "./i18n/index.ts";
 
 export function newId(prefix = ""): string {
   return prefix + randomBytes(6).toString("hex");
@@ -134,8 +135,11 @@ export function minuteOfDay(ms: number, timeZone: string): number {
 
 export function formatDuration(ms: number): string {
   const min = Math.round(ms / 60000);
-  if (min < 60) return `${min} 分钟`;
+  if (min < 60) return t("util.minutes", { n: min });
   const h = Math.floor(min / 60);
   const m = min % 60;
-  return m ? `${h} 小时 ${m} 分钟` : `${h} 小时`;
+  return m ? t("util.hoursMinutes", { h, m }) : t("util.hours", { h });
 }
+
+// The BCP-47 tag for date formatting in the owner's language.
+export const dateLocale = (): string => (getLang() === "zh" ? "zh-CN" : "en-US");

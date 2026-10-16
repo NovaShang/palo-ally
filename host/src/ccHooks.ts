@@ -1,4 +1,5 @@
 import { chmodSync, existsSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { t } from "./i18n/index.ts";
 import { dirname, join } from "node:path";
 import type { Paths } from "./config.ts";
 import { LineReader } from "./channels/local.ts";
@@ -265,9 +266,9 @@ export class HookInstaller {
     try {
       settings = JSON.parse(raw);
     } catch {
-      throw new Error(`${this.settingsPath} 不是合法的 JSON，没有动它`);
+      throw new Error(t("hooks.badJson", { path: this.settingsPath }));
     }
-    if (!settings || typeof settings !== "object" || Array.isArray(settings)) throw new Error(`${this.settingsPath} 的内容不对，没有动它`);
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) throw new Error(t("hooks.badContent", { path: this.settingsPath }));
     return { raw, settings: settings as Record<string, any> };
   }
 

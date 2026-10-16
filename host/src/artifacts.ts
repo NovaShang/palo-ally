@@ -1,4 +1,5 @@
 import { copyFileSync, existsSync, lstatSync, openSync, readSync, closeSync, readdirSync, statSync } from "node:fs";
+import { t } from "./i18n/index.ts";
 import { createHash } from "node:crypto";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import type { Bus } from "./bus.ts";
@@ -97,7 +98,7 @@ export class ArtifactLibrary {
    */
   publishFile(filePath: string, opts: { title?: string; files?: Record<string, string> } = {}): Artifact {
     const full = resolve(filePath);
-    if (!existsSync(full) || !statSync(full).isFile()) throw new Error(`找不到文件：${filePath}`);
+    if (!existsSync(full) || !statSync(full).isFile()) throw new Error(t("artifact.notFile", { path: filePath }));
     const name = basename(full);
     let slug: string;
     let main: string;
@@ -116,7 +117,7 @@ export class ArtifactLibrary {
     const folder = join(this.dir, slug);
     for (const [published, source] of Object.entries(opts.files ?? {})) {
       const dest = resolve(folder, published);
-      if (!dest.startsWith(folder + sep)) throw new Error(`文件路径不能跳出产物文件夹：${published}`);
+      if (!dest.startsWith(folder + sep)) throw new Error(t("artifact.outside", { path: published }));
       ensureDir(dirname(dest));
       copyFileSync(resolve(dirname(full), source), dest);
     }
@@ -126,7 +127,7 @@ export class ArtifactLibrary {
   }
 
   publish(slug: string, title: string, mainFile: string, type?: string, pinned?: boolean): Artifact {
-    if (!/^[\w一-龥][\w.\-一-龥]*$/.test(slug)) throw new Error("slug 只能是字母数字、中文、- _ .");
+    if (!/^[\w一-龥][\w.\-一-龥]*$/.test(slug)) throw new Error(t("artifact.badSlug"));
     const folder = join(this.dir, slug);
     ensureDir(folder);
     const prev = readJson<Meta>(join(folder, META), {});
@@ -147,7 +148,7 @@ export class ArtifactLibrary {
 
   pin(id: string, pinned: boolean): Artifact {
     const folder = this.folder(id);
-    if (!folder || !existsSync(folder)) throw new Error(`没有这个产物：${id}`);
+    if (!folder || !existsSync(folder)) throw new Error(t("artifact.none", { id }));
     const meta = readJson<Meta>(join(folder, META), {});
     writeJson(join(folder, META), { ...meta, pinned });
     const a = this.get(id)!;
@@ -157,12 +158,12 @@ export class ArtifactLibrary {
 
   read(id: string, path?: string, offset = 0, length = CHUNK): { data: string; size: number; mime: string; eof: boolean } {
     const a = this.get(id);
-    if (!a) throw new Error(`没有这个产物：${id}`);
+    if (!a) throw new Error(t("artifact.none", { id }));
     const rel = path ?? a.mainFile;
     const folder = this.folder(id)!;
     const full = resolve(folder, rel);
-    if (!full.startsWith(folder + sep)) throw new Error("这个文件不在产物文件夹里");
-    if (lstatSync(full).isSymbolicLink()) throw new Error("这个文件不在产物文件夹里");
+    if (!full.startsWith(folder + sep)) throw new Error(t("artifact.fileOutside"));
+    if (lstatSync(full).isSymbolicLink()) throw new Error(t("artifact.fileOutside"));
     const size = statSync(full).size;
     const len = Math.max(0, Math.min(length, CHUNK, size - offset));
     const buf = Buffer.alloc(len);

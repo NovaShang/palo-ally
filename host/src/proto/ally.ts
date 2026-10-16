@@ -1,3 +1,4 @@
+import { t } from "../i18n/index.ts";
 import type { AllyAuthor, AllyKind, AllySlot, AllyTrust } from "../types.ts";
 import { b64url, unb64, unb64url } from "./e2e.ts";
 
@@ -184,9 +185,9 @@ export function parseAllyInvite(link: string): AllyInvite {
   try {
     u = new URL(link.trim());
   } catch {
-    throw new Error("这不是 Ally 邀请");
+    throw new Error(t("ally.notInvite"));
   }
-  if (u.protocol !== "paloally:" || u.hostname !== "ally") throw new Error("这不是 Ally 邀请");
+  if (u.protocol !== "paloally:" || u.hostname !== "ally") throw new Error(t("ally.notInvite"));
   const q = u.searchParams;
   const relay = q.get("relay") ?? "";
   const daemonId = q.get("daemon") ?? "";
@@ -197,7 +198,7 @@ export function parseAllyInvite(link: string): AllyInvite {
   } catch {
     /* checked below */
   }
-  if (!allowedRelay(relay) || !DAEMON.test(daemonId) || !/^\d{6}$/.test(code) || hostKey.length !== 32) throw new Error("这个邀请不完整，请对方重新打开二维码");
+  if (!allowedRelay(relay) || !DAEMON.test(daemonId) || !/^\d{6}$/.test(code) || hostKey.length !== 32) throw new Error(t("ally.incomplete"));
   const exp = Number(q.get("exp") ?? 0);
   return { relay, daemonId, code, hostKey, name: (q.get("name") ?? "").trim().slice(0, 60), exp: Number.isFinite(exp) ? exp : 0 };
 }

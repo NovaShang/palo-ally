@@ -1,4 +1,5 @@
 import type { Bus } from "./bus.ts";
+import { t } from "./i18n/index.ts";
 import type { GoalState, Watch } from "./types.ts";
 import { newId, parseHHMM, readJson, writeJson } from "./util.ts";
 
@@ -61,7 +62,7 @@ export class WatchStore {
 
   update(id: string, patch: Partial<Watch>): Watch {
     const w = this.get(id);
-    if (!w) throw new Error(`没有这个目标：${id}`);
+    if (!w) throw new Error(t("watch.noGoal", { id }));
     const { id: _i, createdBy: _c, ...rest } = patch;
     // validate a copy first: a rejected patch must not half-apply
     const next = validate(syncState(w, { ...w, ...rest } as Watch, rest));
@@ -78,9 +79,9 @@ export class WatchStore {
    */
   progress(id: string, text: string, upd: GoalUpdate = {}): Watch {
     const w = this.get(id);
-    if (!w) throw new Error(`没有这个目标：${id}`);
+    if (!w) throw new Error(t("watch.noGoal", { id }));
     const line = oneLine(text);
-    if (upd.state && !GOAL_STATES.includes(upd.state)) throw new Error(`state 只能是 ${GOAL_STATES.join(" / ")}`);
+    if (upd.state && !GOAL_STATES.includes(upd.state)) throw new Error(t("watch.badState", { states: GOAL_STATES.join(" / ") }));
     const now = Date.now();
     if (line) {
       w.progress = line;
@@ -130,10 +131,10 @@ export function onScheduledDay(w: Pick<Watch, "dayOfMonth">, p: { year: number; 
 
 /** How a watch's timing reads to people: 「每月最后一天 20:00」「每天 08:30」「每 30 分钟检查」. */
 export function scheduleText(w: Pick<Watch, "kind" | "at" | "dayOfMonth" | "intervalMinutes">): string {
-  if (w.kind === "check") return `每 ${w.intervalMinutes} 分钟检查`;
-  if (!w.at?.length) return `每 ${w.intervalMinutes} 分钟`;
-  const day = !w.dayOfMonth ? "每天" : w.dayOfMonth === -1 ? "每月最后一天" : `每月 ${w.dayOfMonth} 号`;
-  return `${day} ${w.at.join("、")}`;
+  if (w.kind === "check") return t("watch.sched.check", { n: w.intervalMinutes ?? "" });
+  if (!w.at?.length) return t("watch.sched.every", { n: w.intervalMinutes ?? "" });
+  const day = !w.dayOfMonth ? t("watch.sched.daily") : w.dayOfMonth === -1 ? t("watch.sched.lastDay") : t("watch.sched.monthDay", { d: w.dayOfMonth });
+  return t("watch.sched.withTimes", { day, times: w.at.join(t("watch.timeSep")) });
 }
 
 // A progress line is one short line the owner reads at a glance.
@@ -146,7 +147,7 @@ export function oneLine(text: string): string {
 // Keep `enabled` (the mechanism) and `state` (what the owner sees) in step
 // when a patch changes only one of them.
 function syncState(before: Watch, next: Watch, patch: Partial<Watch>): Watch {
-  if (patch.state && !GOAL_STATES.includes(patch.state)) throw new Error(`state 只能是 ${GOAL_STATES.join(" / ")}`);
+  if (patch.state && !GOAL_STATES.includes(patch.state)) throw new Error(t("watch.badState", { states: GOAL_STATES.join(" / ") }));
   if (patch.state !== undefined && patch.enabled === undefined) {
     next.enabled = patch.state === "tracking" || patch.state === "waiting";
   } else if (patch.enabled !== undefined && patch.state === undefined && patch.enabled !== before.enabled) {
@@ -156,23 +157,23 @@ function syncState(before: Watch, next: Watch, patch: Partial<Watch>): Watch {
 }
 
 function validate(w: Watch): Watch {
-  if (!w.title?.trim()) throw new Error("watch 需要标题");
-  if (!w.instruction?.trim()) throw new Error("watch 需要说明盯什么、怎么查");
+  if (!w.title?.trim()) throw new Error(t("watch.needTitle"));
+  if (!w.instruction?.trim()) throw new Error(t("watch.needInstruction"));
   if (w.at) {
-    if (!Array.isArray(w.at) || w.at.some((t) => parseHHMM(t) === null)) throw new Error("at 必须是 HH:MM 列表");
+    if (!Array.isArray(w.at) || w.at.some((t) => parseHHMM(t) === null)) throw new Error(t("watch.badAt"));
     if (!w.at.length) w.at = undefined;
   }
   if (w.dayOfMonth === null || w.dayOfMonth === 0) w.dayOfMonth = undefined;
   if (w.dayOfMonth !== undefined) {
     const d = Number(w.dayOfMonth);
-    if (!Number.isInteger(d) || !(d === -1 || (d >= 1 && d <= 31))) throw new Error("day_of_month 是 1–31，-1 表示月底");
-    if (w.kind !== "schedule" || !w.at) throw new Error("每月定时需要 kind=schedule 和 at 时间");
+    if (!Number.isInteger(d) || !(d === -1 || (d >= 1 && d <= 31))) throw new Error(t("watch.badDay"));
+    if (w.kind !== "schedule" || !w.at) throw new Error(t("watch.monthlyNeeds"));
     w.dayOfMonth = d;
   }
   if (w.kind === "check") {
     w.intervalMinutes = Math.max(5, Math.round(w.intervalMinutes ?? 60));
   } else if (!w.at && !w.intervalMinutes) {
-    throw new Error("定时 watch 需要 at 或 intervalMinutes");
+    throw new Error(t("watch.needTiming"));
   } else if (w.intervalMinutes !== undefined && w.intervalMinutes !== null) {
     w.intervalMinutes = Math.max(5, Math.round(Number(w.intervalMinutes) || 5));
   }

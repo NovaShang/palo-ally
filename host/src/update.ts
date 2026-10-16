@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { Audit } from "./audit.ts";
 import { Bus } from "./bus.ts";
 import { ChatLog } from "./chat.ts";
+import { t } from "./i18n/index.ts";
 import { readJson, writeJson } from "./util.ts";
 import { APP_DIR, type HostVersion, compareSemver, parseSemver, readHostVersion } from "./version.ts";
 
@@ -90,11 +91,11 @@ function samePath(a: string, b: string): boolean {
 
 /** Public install (auto-updates) or managed by hand (dev checkout, copy). */
 export function detectInstall(dir: string, opts: { isGit: boolean; origin: string | null; home?: string; appDirEnv?: string }): InstallInfo {
-  if (!opts.isGit) return { kind: "manual", reason: "不是 git 安装（手动部署）" };
+  if (!opts.isGit) return { kind: "manual", reason: t("update.manual.notGit") };
   const home = opts.home ?? homedir();
   const installDir = opts.appDirEnv || join(home, ".paloally", "app");
-  if (!samePath(dir, installDir)) return { kind: "manual", reason: "开发目录" };
-  if (!opts.origin || !PUBLIC_REPO.test(opts.origin)) return { kind: "manual", reason: "不是从公开仓库装的" };
+  if (!samePath(dir, installDir)) return { kind: "manual", reason: t("update.manual.dev") };
+  if (!opts.origin || !PUBLIC_REPO.test(opts.origin)) return { kind: "manual", reason: t("update.manual.notPublic") };
   return { kind: "public", reason: "" };
 }
 
@@ -114,9 +115,9 @@ export function underService(): boolean {
 
 function ago(ms: number, now: number): string {
   const min = Math.max(0, Math.round((now - ms) / 60_000));
-  if (min < 60) return `${min} 分钟前`;
+  if (min < 60) return t("update.ago.min", { n: min });
   const h = Math.round(min / 60);
-  return h < 48 ? `${h} 小时前` : `${Math.round(h / 24)} 天前`;
+  return h < 48 ? t("update.ago.hours", { n: h }) : t("update.ago.days", { n: Math.round(h / 24) });
 }
 
 export interface UpdateStatus {
@@ -135,16 +136,16 @@ export interface UpdateStatus {
 /** The `paloally status` line: 「0.1.2（自动更新开 · 上次检查 3 小时前）」. */
 export function updateLine(s: UpdateStatus, now = Date.now()): string {
   if (s.install.kind === "manual" && !s.auto) {
-    return `${s.version}${s.commit ? ` · ${s.commit}` : ""}（手动管理：${s.install.reason}）`;
+    return t("update.line.manual", { version: s.version, commit: s.commit ? ` · ${s.commit}` : "", reason: s.install.reason });
   }
-  if (s.versionUnknown) return `${s.version}${s.commit ? ` · ${s.commit}` : ""}（版本未知，未自动更新）`;
-  const bits = [s.auto ? "自动更新开" : "自动更新关"];
-  bits.push(s.lastCheckAt ? `上次检查 ${ago(s.lastCheckAt, now)}` : "还没检查过");
-  if (s.staged) bits.push(`${s.staged.version} 已下好，空闲时换上`);
-  else if (s.latest && s.latest.version !== s.version) bits.push(`有新版本 ${s.latest.version}`);
-  if (s.last && !s.last.ok) bits.push(`上次更新到 ${s.last.to} 没成功`);
-  else if (s.lastError) bits.push(`上次检查出错：${s.lastError.detail}`);
-  return `${s.version}（${bits.join(" · ")}）`;
+  if (s.versionUnknown) return t("update.line.unknown", { version: s.version, commit: s.commit ? ` · ${s.commit}` : "" });
+  const bits = [s.auto ? t("update.line.autoOn") : t("update.line.autoOff")];
+  bits.push(s.lastCheckAt ? t("update.line.checked", { ago: ago(s.lastCheckAt, now) }) : t("update.line.neverChecked"));
+  if (s.staged) bits.push(t("update.line.staged", { version: s.staged.version }));
+  else if (s.latest && s.latest.version !== s.version) bits.push(t("update.line.newer", { version: s.latest.version }));
+  if (s.last && !s.last.ok) bits.push(t("update.line.lastFailed", { to: s.last.to }));
+  else if (s.lastError) bits.push(t("update.line.checkError", { detail: s.lastError.detail }));
+  return t("update.line.full", { version: s.version, bits: bits.join(" · ") });
 }
 
 // ---------------------------------------------------------------- boot side
@@ -175,7 +176,7 @@ export function rollbackSync(paths: BootPaths, reason: string, dir = APP_DIR): v
     gitSync(dir, ["checkout", "--force", "--detach", p.from.ref]);
     installSync(dir);
   } catch (e) {
-    reason += `（退回时也出错：${e instanceof Error ? e.message.split("\n")[0] : String(e)}）`;
+    reason += t("update.rollbackAlso", { detail: e instanceof Error ? e.message.split("\n")[0]! : String(e) });
   }
   st.pending = null;
   st.staged = null;
@@ -186,7 +187,7 @@ export function rollbackSync(paths: BootPaths, reason: string, dir = APP_DIR): v
   new ChatLog(paths.chat, new Bus()).add({
     role: "system",
     kind: "notice",
-    text: `电脑上的 PaloAlly 更新到 ${p.to.version} 没成功，已退回 ${p.from.version}：${reason}`,
+    text: t("update.rollbackNotice", { to: p.to.version, from: p.from.version, reason }),
     channel: "system",
   });
 }
@@ -198,7 +199,7 @@ export function bootCheck(paths: BootPaths, dir = APP_DIR): { pending: Pending |
   st.pending.attempts = (st.pending.attempts ?? 0) + 1;
   writeJson(paths.update, st);
   if (st.pending.attempts > MAX_BOOT_ATTEMPTS) {
-    rollbackSync(paths, `新版本连续 ${MAX_BOOT_ATTEMPTS} 次没能启动`, dir);
+    rollbackSync(paths, t("update.bootLoop", { n: MAX_BOOT_ATTEMPTS }), dir);
     return { pending: null, rolledBack: true };
   }
   return { pending: st.pending, rolledBack: false };
@@ -215,7 +216,7 @@ export function confirmUpdate(paths: BootPaths, deps: { note: (text: string) => 
   st.last = { from: p.from.version, to: p.to.version, ok: true, at: Date.now(), durationMs };
   writeJson(paths.update, st);
   deps.audit("host.update", { from: p.from.version, to: p.to.version, durationMs });
-  deps.note(`电脑上的 PaloAlly 已更新到 ${p.to.version}`);
+  deps.note(t("update.done", { to: p.to.version }));
 }
 
 // ---------------------------------------------------------------- the updater
@@ -400,9 +401,9 @@ export class Updater {
       await this.installDeps(join(dir, "host"));
       const cli = join(dir, "host", "src", "cli.ts");
       const got = await this.run(process.execPath, [cli, "--version"], { timeoutMs: 60_000 });
-      if (got.trim() !== version) throw new Error(`新版本报的版本号是「${got.trim()}」，不是 ${version}`);
+      if (got.trim() !== version) throw new Error(t("update.badVersion", { got: got.trim(), version }));
       const self = await this.run(process.execPath, [cli, "selftest"], { timeoutMs: 60_000 });
-      if (!/\bok\b/.test(self)) throw new Error(`新版本自检没通过：${self.slice(0, 200)}`);
+      if (!/\bok\b/.test(self)) throw new Error(t("update.selftest", { out: self.slice(0, 200) }));
     } finally {
       await this.git(["worktree", "remove", "--force", dir]).catch(() => undefined);
       rmSync(dir, { recursive: true, force: true });
@@ -419,7 +420,7 @@ export class Updater {
     const cur = this.current();
     const dirty = await this.git(["status", "--porcelain", "--untracked-files=no"]).catch(() => "?");
     if (dirty) {
-      this.save({ lastError: { at: this.now(), detail: "本地改过代码，没自动更新" } });
+      this.save({ lastError: { at: this.now(), detail: t("update.dirtyAuto") } });
       return "dirty";
     }
     const ref = await this.git(["rev-parse", "HEAD"]);
@@ -479,21 +480,21 @@ export class Updater {
   async updateNow(opts: { check?: boolean; now?: boolean; wait?: boolean } = {}): Promise<UpdateResult> {
     const install = await this.install();
     const cur = this.current();
-    if (!canUpdate(this.d.config(), install)) return { status: "manual", current: cur.version, detail: `这台电脑上的 PaloAlly 是手动管理的（${install.reason}），用 git 自己更新` };
+    if (!canUpdate(this.d.config(), install)) return { status: "manual", current: cur.version, detail: t("update.manualDetail", { reason: install.reason }) };
     let next: string | null;
     try {
       next = await this.check();
     } catch (e) {
-      return { status: "failed", current: cur.version, detail: `查不到新版本：${e instanceof Error ? e.message.split("\n")[0] : String(e)}` };
+      return { status: "failed", current: cur.version, detail: t("update.checkFailed", { detail: e instanceof Error ? e.message.split("\n")[0]! : String(e) }) };
     }
     const latest = this.state().latest?.version;
-    if (this.state().versionUnknown) return { status: "unknown", current: this.current().version, latest, detail: "看不出这台电脑上是哪个版本，没有自动更新" };
-    if (!next && !this.staged()) return { status: "latest", current: this.current().version, latest, detail: "已经是最新版" };
-    if (opts.check) return { status: "available", current: cur.version, latest: (next ?? this.staged()?.tag)?.slice(1), detail: "有新版本" };
+    if (this.state().versionUnknown) return { status: "unknown", current: this.current().version, latest, detail: t("update.unknownDetail") };
+    if (!next && !this.staged()) return { status: "latest", current: this.current().version, latest, detail: t("update.latestDetail") };
+    if (opts.check) return { status: "available", current: cur.version, latest: (next ?? this.staged()?.tag)?.slice(1), detail: t("update.availableDetail") };
     try {
       if (next && this.staged()?.tag !== next) await this.stage(next);
     } catch (e) {
-      return { status: "failed", current: cur.version, latest, detail: `新版本没准备好：${e instanceof Error ? e.message.split("\n")[0] : String(e)}` };
+      return { status: "failed", current: cur.version, latest, detail: t("update.stageFailed", { detail: e instanceof Error ? e.message.split("\n")[0]! : String(e) }) };
     }
     if (opts.now) return { status: await this.apply(), current: cur.version, latest };
     if (opts.wait) {
@@ -502,11 +503,11 @@ export class Updater {
         if (this.d.quiet()) return { status: await this.apply(), current: cur.version, latest };
         await new Promise((r) => setTimeout(r, 2000));
       }
-      return { status: "waiting", current: cur.version, latest, detail: "等了 30 分钟还在忙，空闲后会自动换上" };
+      return { status: "waiting", current: cur.version, latest, detail: t("update.waitingDetail") };
     }
     this.applySoon = true;
     void this.tick();
-    return { status: "staged", current: cur.version, latest, detail: "新版本已下好，手头的事一完就换上" };
+    return { status: "staged", current: cur.version, latest, detail: t("update.stagedDetail") };
   }
 }
 

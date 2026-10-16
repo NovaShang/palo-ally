@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { t } from "./i18n/index.ts";
 import type { Bus } from "./bus.ts";
 import { activityLabel } from "./copy.ts";
 import type { Task, TaskActivity, TaskStatus } from "./types.ts";
@@ -73,7 +74,7 @@ export class TaskTracker {
       return;
     }
     if (!SUBAGENT_TOOLS.has(name)) return;
-    const title = String(input.description ?? "") || truncate(String(input.prompt ?? "后台任务"), 40);
+    const title = String(input.description ?? "") || truncate(String(input.prompt ?? t("task.background")), 40);
     const now = Date.now();
     // The agent often reports first and dispatches right after: attach to that row.
     const reported = this.unlinkedReport();
@@ -245,7 +246,7 @@ export class TaskTracker {
 
   markStopped(id: string): Task | undefined {
     const task = this.get(id);
-    if (task && !TERMINAL.includes(task.status)) this.finish(task, "stopped", task.summary || "已停止");
+    if (task && !TERMINAL.includes(task.status)) this.finish(task, "stopped", task.summary || t("task.stopped"));
     return task;
   }
 
@@ -289,7 +290,7 @@ export class TaskTracker {
   // another session isn't: that session keeps going and the host keeps following it.
   orphanRunning(): Task[] {
     const orphaned = this.running().filter((t) => !t.peer);
-    for (const t of orphaned) this.finish(t, "stopped", t.summary || "助理重启，任务中断");
+    for (const o of orphaned) this.finish(o, "stopped", o.summary || t("task.interrupted"));
     return orphaned;
   }
 

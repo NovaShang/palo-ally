@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n/index.ts";
 import { b64url, clientHello, parseHandshake, sign, sshWirePubkey, type Identity, type Secure } from "../proto/e2e.ts";
 
 // The client role on another host's daemon (docs/allies-prd.md §7.1): pair
@@ -107,12 +108,12 @@ export const dialAlly: DialFn = (t, me, h) => {
       conn.close();
       reject(e);
     };
-    const timer = setTimeout(() => fail(new Error("连接对方超时")), 15_000);
+    const timer = setTimeout(() => fail(new Error(tr("link.timeout"))), 15_000);
     ws.onopen = () => ws.send(hello.unit);
-    ws.onerror = () => fail(new Error("连不上对方"));
+    ws.onerror = () => fail(new Error(tr("link.unreachable")));
     ws.onclose = () => {
       open = false;
-      if (!secure) return fail(new Error("连不上对方"));
+      if (!secure) return fail(new Error(tr("link.unreachable")));
       if (!notified) {
         notified = true;
         h.closed();

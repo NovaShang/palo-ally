@@ -1,4 +1,5 @@
 import { existsSync, unlinkSync, chmodSync } from "node:fs";
+import { t } from "../i18n/index.ts";
 import type { Socket } from "bun";
 import type { Hub } from "../hub.ts";
 import { serveRpc, type AdminHandler } from "../rpc.ts";
@@ -127,7 +128,7 @@ export class LocalClient {
         data: (_s, chunk) => c.onData(chunk),
         drain: () => c.writer?.flush(),
         close: () => {
-          for (const p of c.pending.values()) p.reject(new Error("连接断开"));
+          for (const p of c.pending.values()) p.reject(new Error(t("link.disconnected")));
           c.pending.clear();
         },
       },

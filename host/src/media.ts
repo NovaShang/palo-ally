@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { t } from "./i18n/index.ts";
 import { spawnSync } from "node:child_process";
 import { appendFileSync, closeSync, copyFileSync, existsSync, linkSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -59,14 +60,14 @@ export class MediaStore {
    */
   uploadChunk(c: UploadChunk): { uploadId: string } | Attachment {
     const name = basename(String(c.name ?? "").replace(/\\/g, "/")).trim();
-    if (!name || name === "." || name === "..") throw new Error("文件名不对");
+    if (!name || name === "." || name === "..") throw new Error(t("media.badName"));
     const data = Buffer.from(String(c.data ?? ""), "base64");
-    if (data.length > UPLOAD_CHUNK_MAX) throw new Error("一块最多 256KB");
+    if (data.length > UPLOAD_CHUNK_MAX) throw new Error(t("media.chunkMax"));
     let id = c.uploadId ? String(c.uploadId) : "";
     let up = id ? this.uploads.get(id) : undefined;
-    if (id && (!up || !/^up_[a-z0-9]+$/.test(id))) throw new Error("上传已失效，重新发送");
+    if (id && (!up || !/^up_[a-z0-9]+$/.test(id))) throw new Error(t("media.uploadStale"));
     if (!up) {
-      if (Number(c.offset ?? 0) !== 0) throw new Error("上传要从头开始");
+      if (Number(c.offset ?? 0) !== 0) throw new Error(t("media.uploadFromStart"));
       id = newId("up");
       up = { name, mediaType: String(c.mediaType || "") || mimeOf(name), received: 0 };
       this.uploads.set(id, up);
@@ -74,11 +75,11 @@ export class MediaStore {
       writeFileSync(join(this.dir, "uploads", id), Buffer.alloc(0));
     }
     const part = join(this.dir, "uploads", id);
-    if (Number(c.offset) !== up.received) throw new Error("文件块顺序不对，重新发送");
+    if (Number(c.offset) !== up.received) throw new Error(t("media.chunkOrder"));
     if (up.received + data.length > MAX_FILE_BYTES) {
       this.uploads.delete(id);
       rmSync(part, { force: true });
-      throw new Error("文件太大（最多 100MB）");
+      throw new Error(t("media.fileTooBig"));
     }
     appendFileSync(part, data);
     up.received += data.length;
@@ -86,7 +87,7 @@ export class MediaStore {
     this.uploads.delete(id);
     if (!up.received) {
       rmSync(part, { force: true });
-      throw new Error("文件是空的");
+      throw new Error(t("media.fileEmpty"));
     }
     const fid = newId("file");
     mkdirSync(join(this.dir, fid), { recursive: true });
@@ -105,10 +106,10 @@ export class MediaStore {
 
   save(mediaType: string, base64: string): Attachment {
     const ext = TYPES[mediaType];
-    if (!ext) throw new Error("只支持 JPEG、PNG、GIF、WebP 图片");
+    if (!ext) throw new Error(t("media.imageTypes"));
     const data = Buffer.from(base64, "base64");
-    if (!data.length) throw new Error("图片是空的");
-    if (data.length > MAX_IMAGE_BYTES) throw new Error("图片太大（最多 5MB）");
+    if (!data.length) throw new Error(t("media.imageEmpty"));
+    if (data.length > MAX_IMAGE_BYTES) throw new Error(t("media.imageTooBig"));
     mkdirSync(this.dir, { recursive: true });
     const id = newId("img");
     writeFileSync(join(this.dir, `${id}.${ext}`), data);
@@ -121,7 +122,7 @@ export class MediaStore {
    * file the app previews.
    */
   saveFile(path: string): Attachment {
-    if (!existsSync(path) || !statSync(path).isFile()) throw new Error(`找不到文件：${path}`);
+    if (!existsSync(path) || !statSync(path).isFile()) throw new Error(t("media.notFound", { path }));
     const size = statSync(path).size;
     const head = Buffer.alloc(Math.min(size, 16));
     const fd = openSync(path, "r");
@@ -136,7 +137,7 @@ export class MediaStore {
       const jpeg = toJpeg(path);
       if (jpeg) return this.save("image/jpeg", jpeg.toString("base64"));
     }
-    if (size > MAX_FILE_BYTES) throw new Error("文件太大（最多 100MB）");
+    if (size > MAX_FILE_BYTES) throw new Error(t("media.fileTooBig"));
     const id = newId("file");
     const name = basename(path);
     mkdirSync(join(this.dir, id), { recursive: true });
@@ -157,7 +158,7 @@ export class MediaStore {
   /** One chunk of a stored file (same shape as artifact.read). */
   readChunk(id: string, offset = 0, length = CHUNK): { data: string; size: number; mime: string; eof: boolean } {
     const full = this.filePath(id);
-    if (!full) throw new Error("找不到这个文件");
+    if (!full) throw new Error(t("media.noSuchFile"));
     const size = statSync(full).size;
     const len = Math.max(0, Math.min(length, CHUNK, size - offset));
     const buf = Buffer.alloc(len);

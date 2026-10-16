@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { t } from "./i18n/index.ts";
 import { readJson, writeJson } from "./util.ts";
 
 // The host Mac running on battery: when it dies the assistant goes offline,
@@ -136,7 +137,7 @@ export class PowerWatcher {
     if (r.onAC) {
       const hadAlerted = s.unplugged || s.low30 || s.low15;
       this.save({ onAC: true, unplugged: false, low30: false, low15: false });
-      if (hadAlerted && this.deps.enabled()) this.deps.note("已接上电源。");
+      if (hadAlerted && this.deps.enabled()) this.deps.note(t("power.plugged"));
       return;
     }
 
@@ -145,18 +146,18 @@ export class PowerWatcher {
     if (this.deps.enabled()) {
       if (!s.unplugged) {
         // One message for the unplug, worded for the charge it starts from.
-        if (p !== null && p < 15) this.deps.alert(`电脑拔电了，电量只剩 ${p}%，快没电了。`, true);
-        else if (p !== null && p < 30) this.deps.alert(`电脑拔电了，电量 ${p}%，记得插电。`, false);
-        else this.deps.alert(`电脑拔电了${p !== null ? `（剩 ${p}%）` : ""}。没电我就会掉线，记得插上。`, false);
+        if (p !== null && p < 15) this.deps.alert(t("power.unplugVeryLow", { p }), true);
+        else if (p !== null && p < 30) this.deps.alert(t("power.unplugLow", { p }), false);
+        else this.deps.alert(t("power.unplug", { left: p !== null ? t("power.unplugLeft", { p }) : "" }), false);
         next.unplugged = true;
         if (p !== null && p < 30) next.low30 = true;
         if (p !== null && p < 15) next.low15 = true;
       } else if (p !== null && p < 15 && !s.low15) {
-        this.deps.alert(`电量只剩 ${p}%，快没电了。`, true);
+        this.deps.alert(t("power.veryLow", { p }), true);
         next.low15 = true;
         next.low30 = true;
       } else if (p !== null && p < 30 && !s.low30) {
-        this.deps.alert(`电量 ${p}%，记得插电。`, false);
+        this.deps.alert(t("power.low", { p }), false);
         next.low30 = true;
       }
     }
@@ -174,6 +175,6 @@ export class PowerWatcher {
 export function powerLine(p: { hasBattery: boolean; onAC: boolean | null; percent: number | null; alerts: boolean }): string | null {
   if (!p.hasBattery || p.onAC === null) return null;
   const pct = p.percent !== null ? `${p.percent}%` : "";
-  const now = p.onAC ? `接着电${pct ? `（${pct}）` : ""}` : `电池 ${pct || "供电"}`;
-  return p.alerts ? now : `${now} · 拔电提醒已关闭`;
+  const now = p.onAC ? t("power.lineAC", { pct: pct ? t("power.pctParen", { pct }) : "" }) : t("power.lineBattery", { pct: pct || t("power.onBattery") });
+  return p.alerts ? now : t("power.lineAlertsOff", { now });
 }
