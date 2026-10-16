@@ -422,8 +422,9 @@ async function main(): Promise<void> {
       const r = await call("pair.open", { ttl: 180 });
       const qrcode = (await import("qrcode-terminal")).default;
       qrcode.generate(r.link, { small: true });
-      console.log(`\n用 PaloAlly App 扫描上面的二维码（${Math.round(r.ttl / 60)} 分钟内有效）。`);
-      console.log(`或在 App 里粘贴：${r.link}`);
+      console.log(`\n用 PaloAlly App 扫描上面的二维码（${Math.round(r.ttl / 60)} 分钟内有效，只能连一台设备）。`);
+      // On its own line, so a terminal makes it clickable and it copies whole.
+      console.log(`没有摄像头的设备（比如 Mac）：在那台设备上点开这个链接，或者粘贴到 App 里：\n\n${r.link}\n`);
       console.log(`配对码：${r.code}`);
       return;
     }
