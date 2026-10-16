@@ -100,6 +100,7 @@ private let resultTypes: [String: Check] = [
     RPCMethod.suggestionsList: strict(SuggestionsResult.self),
     RPCMethod.suggestionsDismiss: strict(OKResult.self),
     RPCMethod.hostUpdate: strict(HostUpdateResult.self),
+    RPCMethod.pairInvite: strict(PairInviteResult.self),
     RPCMethod.allyList: strict(AlliesResult.self),
     RPCMethod.allyInvite: strict(AllyInviteResult.self),
     RPCMethod.allyAccept: strict(AllyResult.self),

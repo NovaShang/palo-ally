@@ -138,6 +138,12 @@ extension AppStore {
         try await rpc.call(RPCMethod.allyInvite, params: EmptyParams(), timeout: 30)
     }
 
+    /// A link that pairs one more of the owner's own devices with this
+    /// computer (5 minutes, one device), to open on that device.
+    public func pairInvite() async throws -> PairInviteResult {
+        try await rpc.call(RPCMethod.pairInvite, params: EmptyParams(), timeout: 30)
+    }
+
     /// Hands someone's invite to this computer. Answers once both sides are
     /// paired: usually seconds; 30 at most (§7.6).
     @discardableResult

@@ -87,6 +87,7 @@ export async function startDaemon(
     relayRef = relay;
     const r = relay;
     hub.onUnpairDevice = (deviceId) => r.removeDevice(deviceId);
+    hub.openPairing = (ttlSec) => r.openPairing(ttlSec);
     // Allies pair, dial out and revoke through this connection.
     hub.allies.setRelay(relay);
     void relay.start();

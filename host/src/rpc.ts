@@ -27,6 +27,7 @@ export const RPC_METHODS = [
   "ally.list", "ally.invite", "ally.accept", "ally.remove", "ally.log", "ally.draft.decide", "ally.say", "ally.trust",
   "sessions.list", "sessions.history", "sessions.hooks", "helper.decide",
   "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop", "pals.recent", "pals.wake", "pals.rename",
+  "pair.invite",
 ] as const;
 
 export const RPC_EVENTS = [
@@ -269,6 +270,11 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     // The conversations that ended on the computer lately (§10); pals.adopt takes one over.
     case "pals.recent":
       return { sessions: await hub.pals.recent({ folder: typeof p.folder === "string" ? p.folder : undefined, limit: p.limit }) };
+    // A link that pairs one more of the owner's devices (5 minutes, one
+    // device): for the owner's own apps and the local CLI, never an Ally.
+    case "pair.invite":
+      if (!ctx.local && !ctx.deviceId) throw new Error("只有主人自己的设备能添加新设备");
+      return await hub.pairInvite(ctx.channel);
     case "host.update":
       // check: only look. Otherwise stage the newest release and switch to it as
       // soon as nothing is in flight (the app's 立即更新); `wait` is for the CLI.

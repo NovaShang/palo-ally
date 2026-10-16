@@ -97,6 +97,10 @@ public enum RPCMethod {
     public static let pals: [String] = [palsList, palsAdopt, palsRelease, palsRemove, palsHistory, palsSend, palsStop,
                                         palsRecent, palsWake, palsRename]
 
+    /// A link that pairs one more of the owner's devices with this computer
+    /// (5 minutes, one device): for a later 添加设备.
+    public static let pairInvite = "pair.invite"
+
     /// Every method the client knows. The contract test checks this equals
     /// the host's method set exactly.
     public static let all: [String] = [
@@ -104,7 +108,7 @@ public enum RPCMethod {
         approvalAnswer, questionAnswer, watchAdd, watchUpdate, watchRemove, artifactList, artifactRead, artifactPin,
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
-        suggestionsList, suggestionsDismiss, hostUpdate,
+        suggestionsList, suggestionsDismiss, hostUpdate, pairInvite,
     ] + allies + sessions + pals
 }
 
@@ -620,6 +624,19 @@ public struct AlliesResult: Decodable, Sendable {
 
 /// `ally.invite → {link, expiresAt}`: the app draws the link as a QR code.
 public struct AllyInviteResult: Decodable, Sendable, Equatable {
+    public var link: String
+    public var expiresAt: Int64
+    public init(link: String, expiresAt: Int64) { self.link = link; self.expiresAt = expiresAt }
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        link = l.string("link", or: "")
+        expiresAt = l.millis("expiresAt", or: 0)
+    }
+}
+
+/// `pair.invite`: a `paloally://pair` link for one more of the owner's
+/// devices, and when it stops working.
+public struct PairInviteResult: Decodable, Sendable, Equatable {
     public var link: String
     public var expiresAt: Int64
     public init(link: String, expiresAt: Int64) { self.link = link; self.expiresAt = expiresAt }

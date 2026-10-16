@@ -105,6 +105,8 @@ export interface ToolHandlers {
   // Conversations that ended on the computer, and taking one over (§10).
   pals_recent(args: { folder?: string }): Promise<string>;
   pal_adopt(args: { sessionId: string }): Promise<string>;
+  // A link that pairs one more of the owner's devices (5 minutes, one device).
+  pair_link(): Promise<string>;
 }
 
 export interface ImageInput {

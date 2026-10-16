@@ -839,6 +839,11 @@ public actor DemoHost {
                 }
             }
             return ["link": .string(DemoHost.inviteLink(expiresAt: exp)), "expiresAt": .number(Double(exp))]
+        case RPCMethod.pairInvite:
+            let exp = Date().epochMillis + 5 * 60_000
+            let link = PairingLink(relay: URL(string: "https://relay.example.com")!, daemonID: "demo-daemon", code: "482913",
+                                   hostKey: Data((0..<32).map { UInt8($0 * 7 % 256) }))
+            return ["link": .string(link.url.absoluteString), "expiresAt": .number(Double(exp))]
         case RPCMethod.allyAccept:
             guard let invite = AllyInviteLink.parse(p["link"]?.stringValue ?? "") else {
                 throw DemoError(message: "这个链接不完整，请对方重新生成二维码")

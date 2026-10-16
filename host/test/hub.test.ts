@@ -945,6 +945,45 @@ describe("Hub: copy_to_clipboard", () => {
   });
 });
 
+describe("Hub: a link for a new device (pair_link, pair.invite)", () => {
+  test("opens the pairing window for 5 minutes and gives back its link, for the assistant and the owner's own apps only", async () => {
+    let said = "";
+    const script: FakeScript = async (t, ctx) => {
+      if (t.includes("Mac")) said = await ctx.opts.tools.pair_link();
+      ctx.emit({ type: "assistant_text", text: "好的。", parentToolUseId: null });
+    };
+    const { hub, paths } = makeHub({ script });
+    // No relay (config.relay.enabled=false): no window to open.
+    expect(await hub.toolHandlers().pair_link()).toContain("没开远程连接");
+    const opened: number[] = [];
+    const link = "paloally://pair?relay=https%3A%2F%2Frelay.example.com&daemon=d-home&code=123456&hostkey=AAEC";
+    hub.openPairing = async (ttl) => (opened.push(ttl), { code: "123456", ttl, link });
+
+    hub.userMessage("帮我把公司的 Mac 连上", "app");
+    await hub.idle();
+    expect(opened).toEqual([300]);
+    expect(said).toContain(link);
+    expect(said).toContain("5 分钟");
+    expect(said).toContain("只能连一台");
+
+    const owner = { clientId: "app_1_dev-x", deviceId: "dev-x", channel: "app" as const, local: false };
+    const r = (await handleRpc(hub, { method: "pair.invite" }, owner)) as { link: string; expiresAt: number };
+    expect(r.link).toBe(link);
+    expect(r.expiresAt - Date.now()).toBeGreaterThan(299_000);
+    expect((await handleRpc(hub, { method: "pair.invite" }, { clientId: "cli", channel: "cli", local: true })) as any).toMatchObject({ link });
+    // A connection that isn't one of the owner's devices gets nothing.
+    await expect(handleRpc(hub, { method: "pair.invite" }, { clientId: "x", channel: "app", local: false })).rejects.toThrow("主人自己的设备");
+    expect(opened.length).toBe(3);
+    expect(hub.audit.tail(50).filter((e) => e.type === "pair.invite").map((e) => e.by)).toEqual(["assistant", "app", "cli"]);
+
+    hub.openPairing = async () => {
+      throw new Error("还没连上中转服务器");
+    };
+    expect(await hub.toolHandlers().pair_link()).toBe("没拿到配对链接：还没连上中转服务器");
+    cleanup(paths);
+  });
+});
+
 describe("Hub: 「试试」 suggestions", () => {
   test("generated from what it knows about the owner; used and dismissed ones never come back; refreshes when few are left", async () => {
     let n = 0;

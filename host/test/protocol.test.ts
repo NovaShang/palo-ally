@@ -66,6 +66,8 @@ describe("host ↔ app protocol", () => {
     }).ctx;
     const peer = net.add("家人B");
     hub.onUnpairDevice = () => {};
+    // The relay's pairing window, as `paloally pair` opens it.
+    hub.openPairing = async (ttl) => ({ code: "123456", ttl, link: "paloally://pair?relay=https%3A%2F%2Frelay.example.com&daemon=d-home&code=123456&hostkey=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8" });
     const ctx = { clientId: "app_1_dev-x", deviceId: "dev-x", channel: "app" as const, local: false };
     const call = async (method: string, params: unknown = {}) => {
       const r = await handleRpc(hub, { method, params }, ctx);
@@ -140,6 +142,10 @@ describe("host ↔ app protocol", () => {
     await run("suggestions.dismiss", { id: hub.suggestions.list()[0]!.id });
     await run("audit.tail", { limit: 3 });
     await run("host.update", { check: true }); // a dev checkout: managed by hand
+    // A link for one more of the owner's devices (5 minutes, one device).
+    const invite = await run("pair.invite");
+    expect(invite.link).toStartWith("paloally://pair?");
+    expect(invite.expiresAt - Date.now()).toBeGreaterThan(290_000);
     // Allies: an invite, then this host scans the other's, a message in, a
     // draft out (with times), the level changed to 能对话, the owner's own
     // words both ways, and unpairing at the end.

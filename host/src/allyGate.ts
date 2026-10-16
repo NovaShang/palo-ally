@@ -31,7 +31,8 @@ import { isAbsolute, join, resolve, sep } from "node:path";
 //      SendMessage to other sessions stays denied.
 // Denied, among everything else: Bash, Write, Edit, NotebookEdit, WebFetch,
 // WebSearch, Agent / Task (no subagents), SendMessage, the paloally tools
-// that act or reach anyone but the owner (SendUserFile, register_watch, …), mail
+// that act or reach anyone but the owner (SendUserFile, register_watch, …),
+// pair_link (it would let a new device into the owner's computer), mail
 // tools, and any calendar tool that writes.
 
 export interface AllyGateScope {

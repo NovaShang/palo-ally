@@ -38,6 +38,8 @@ export interface ShellToolDeps {
   cwd: string;
   /** The owner's time zone, for times in tool replies. */
   timezone?: () => string;
+  /** Opens a pairing window for one more of the owner's devices. */
+  pairInvite?: () => Promise<{ link: string; expiresAt: number }>;
 }
 
 // The tools the shell gives the main agent (the in-process `paloally` MCP
@@ -184,6 +186,18 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
     pal_send: async (a) => (d.pals ? await d.pals.toolSend(a) : "这台电脑上没开 Pal"),
     pals_recent: async (a) => (d.pals ? await d.pals.toolRecent(a) : "{}"),
     pal_adopt: async (a) => (d.pals ? await d.pals.proposeAdopt(a) : "这台电脑上没开 Pal"),
+    // A new device of the owner's: the assistant hands the link over in the
+    // conversation; clicked on that device, the app opens and pairs.
+    pair_link: async () => {
+      if (!d.pairInvite) return "这台电脑没开远程连接，没法给新设备配对";
+      try {
+        const { link, expiresAt } = await d.pairInvite();
+        const minutes = Math.max(1, Math.round((expiresAt - Date.now()) / 60_000));
+        return `配对链接（${minutes} 分钟内有效，只能连一台设备）：\n${link}\n把链接原样单独放一行发给主人（不要改写成 Markdown 链接、不要放进代码块），App 里能直接点开。`;
+      } catch (e) {
+        return `没拿到配对链接：${e instanceof Error ? e.message : e}`;
+      }
+    },
     notify_user: async ({ text, urgent }) => {
       const msg = d.chat.add({ role: "assistant", kind: "notice", text, channel: "system", proactive: true });
       // Wait for the real outcome (pushes give up after ~5 s), but never longer

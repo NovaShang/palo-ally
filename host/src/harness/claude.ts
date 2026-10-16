@@ -196,6 +196,12 @@ export function paloallyMcpServer(h: ToolHandlers) {
         async (a) => text(await h.pal_adopt(a)),
       ),
       tool(
+        "pair_link",
+        "给主人的一台新设备（另一台 Mac、iPad 或手机）拿一个配对链接：打开这台电脑的配对窗口（5 分钟内有效，只能连一台），返回 paloally://pair 链接。主人在新设备上点开它，PaloAlly App 会自己打开并连上这台电脑。只在主人要连新设备时用。",
+        {},
+        async () => text(await h.pair_link()),
+      ),
+      tool(
         "notify_user",
         "主动推送一条消息给主人（手机通知；推不出去会改发微信）。只在真正要紧时用。返回的是实际送达情况：没送到就别对主人说已推送。",
         { text: z.string(), urgent: z.boolean().optional() },

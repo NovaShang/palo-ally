@@ -37,6 +37,9 @@ import { PALO_NAME, Pals, type PalsDeps } from "./pals.ts";
 export type { ClientConn, WechatChannel, WechatReplyTarget } from "./channels/types.ts";
 export { timing } from "./conversation.ts";
 
+/** How long a pairing link from pair_link / pair.invite works (the relay's longest window). */
+export const PAIR_INVITE_TTL_SEC = 300;
+
 export interface HubDeps {
   paths: Paths;
   config: Config;
@@ -94,6 +97,9 @@ export class Hub {
   private wechatQuestions = new Set<string>();
   // set by the daemon: drops a paired device (its relay pairing)
   onUnpairDevice?: (deviceId: string) => void;
+  // set by the daemon: opens the relay's pairing window for one more of the
+  // owner's devices (what `paloally pair` opens) and gives back its link
+  openPairing?: (ttlSec: number) => Promise<{ code: string; ttl: number; link: string }>;
 
   constructor(deps: HubDeps) {
     this.paths = deps.paths;
@@ -573,7 +579,20 @@ export class Hub {
 
   toolHandlers(): ToolHandlers {
     return makeShellTools({ tasks: this.tasks, handoffs: this.handoffs, watches: this.watches, artifacts: this.artifacts, chat: this.chat, router: this.router, audit: this.audit, wechat: this.wechat, media: this.media, allies: this.allies, pals: this.pals,
-      ownerChannel: () => this.conversation.ownerChannel(), cwd: this.paths.home, timezone: () => this.config.settings.timezone });
+      ownerChannel: () => this.conversation.ownerChannel(), cwd: this.paths.home, timezone: () => this.config.settings.timezone,
+      pairInvite: () => this.pairInvite("assistant") });
+  }
+
+  /**
+   * A link that pairs one more of the owner's devices with this computer:
+   * the relay's pairing window, as `paloally pair` opens it, for 5 minutes
+   * and one device. Clicked on that device, the app opens and pairs.
+   */
+  async pairInvite(by: string): Promise<{ link: string; expiresAt: number }> {
+    if (!this.openPairing) throw new Error("这台电脑没开远程连接，没法给新设备配对");
+    const r = await this.openPairing(PAIR_INVITE_TTL_SEC);
+    this.audit.log("pair.invite", { by, ttl: r.ttl });
+    return { link: r.link, expiresAt: Date.now() + r.ttl * 1000 };
   }
 
   extraMcpServers(): Record<string, unknown> {
