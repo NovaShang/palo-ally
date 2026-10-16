@@ -47,7 +47,8 @@ struct RootView: View {
 /// windows: `-demoWindow 1440x900` sizes the Mac window, `-demoOrientation
 /// landscape` turns an iPad, `-demoAppearance dark` forces an appearance, and
 /// `-demoSnapshot <name>` writes the window to
-/// <app tmp>/<name>.png a few seconds after launch (the app is sandboxed).
+/// <app tmp>/<name>.png a few seconds after launch (the app is sandboxed),
+/// and on a Mac <name>-window.png with the titlebar's controls drawn over it.
 private struct DemoCapture: ViewModifier {
     let demo: Bool
 
@@ -84,6 +85,14 @@ private struct DemoCapture: ViewModifier {
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(name).png")
             try? image.pngData()?.write(to: url)
             print("[demo] snapshot \(url.path)")
+            #if targetEnvironment(macCatalyst)
+            // The window as AppKit draws it, with its titlebar and toolbar.
+            let full = FileManager.default.temporaryDirectory.appendingPathComponent("\(name)-window.png")
+            if let composite = AppKitBundle.addTitlebar(to: image) {
+                try? composite.pngData()?.write(to: full)
+                print("[demo] window snapshot \(full.path)")
+            }
+            #endif
         }
     }
 }

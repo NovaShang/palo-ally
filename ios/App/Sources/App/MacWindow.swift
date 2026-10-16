@@ -117,6 +117,22 @@ enum AppKitBundle {
     static func immerseWindows(toolbar id: String) {
         _ = object?.perform(NSSelectorFromString("immerseWindowsWithToolbar:"), with: id)
     }
+
+    #if DEBUG
+    /// The window's titlebar as AppKit draws it, over `content` (`-demoSnapshot`).
+    static func addTitlebar(to content: UIImage) -> UIImage? {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("titlebar.png").path
+        guard let object,
+              let frame = object.perform(NSSelectorFromString("snapshotTitlebarTo:"), with: path)?
+                .takeUnretainedValue() as? String,
+              let titlebar = UIImage(contentsOfFile: path) else { return nil }
+        let rect = NSCoder.cgRect(for: frame)
+        return UIGraphicsImageRenderer(size: content.size).image { _ in
+            content.draw(at: .zero)
+            titlebar.draw(in: rect)
+        }
+    }
+    #endif
 }
 
 private extension NSToolbarItem.Identifier {

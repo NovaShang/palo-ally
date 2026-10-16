@@ -49,4 +49,26 @@ final class ImmersiveWindows: NSObject {
         if window.titlebarSeparatorStyle != .none { window.titlebarSeparatorStyle = .none }
         return true
     }
+
+    #if DEBUG
+    /// The titlebar (traffic lights, toolbar items, and any band) as a PNG
+    /// at `path`, transparent where it draws nothing, and its frame in the
+    /// window: the app draws it over its own snapshot for the demo's
+    /// `-demoSnapshot`, when the screen can't be captured. Glass comes out flat.
+    @objc func snapshotTitlebar(to path: String) -> String? {
+        guard let id = Self.toolbarID,
+              let window = NSApplication.shared.windows.first(where: { $0.toolbar?.identifier == id }),
+              let titlebar = window.standardWindowButton(.closeButton)?.superview?.superview,
+              let frame = window.contentView?.superview,
+              let rep = titlebar.bitmapImageRepForCachingDisplay(in: titlebar.bounds) else { return nil }
+        titlebar.cacheDisplay(in: titlebar.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+        NSLog("[appkit] window %@ styleMask %lx transparent %d titlebar %@ contentLayoutRect %@",
+              NSStringFromRect(window.frame), window.styleMask.rawValue, window.titlebarAppearsTransparent ? 1 : 0,
+              NSStringFromRect(titlebar.frame), NSStringFromRect(window.contentLayoutRect))
+        // In the window's top-left coordinates, as UIKit has them.
+        let r = titlebar.convert(titlebar.bounds, to: nil)
+        return NSStringFromRect(NSRect(x: r.minX, y: frame.bounds.height - r.maxY, width: r.width, height: r.height))
+    }
+    #endif
 }
