@@ -67,6 +67,8 @@ struct FloatingTitleOrb: View {
     static let macScale: CGFloat = 0.62
     /// The Mac: the orb's top below the column's top edge.
     private static let macTopPad: CGFloat = 4
+    /// The Mac: the strip the resting orb hangs in, below the titlebar.
+    static var macRestHeight: CGFloat { macTopPad + OrbPresence.rest.body * macScale }
 
     var body: some View {
         @Bindable var model = model

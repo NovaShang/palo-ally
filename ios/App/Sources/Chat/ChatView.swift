@@ -9,8 +9,8 @@ import SwiftUI
 struct ChatView: View {
     /// The conversation never gets wider than this (large screens).
     static let readableWidth: CGFloat = 760
-    /// Mac: room above the first message for the small floating orb.
-    static let macTopMargin: CGFloat = 22
+    /// Mac: room between the floating orb's strip and the first message.
+    static let macTopMargin: CGFloat = 6
     /// Shown in place of the composer while it's there (a Pal's 交还终端 / 移出).
     var bottomPanel: AnyView? = nil
     @Environment(AppModel.self) private var model
@@ -52,8 +52,7 @@ struct ChatView: View {
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .defaultScrollAnchor(.bottom, for: .alignment)
         .defaultScrollAnchor(scroll.sticksToEnd ? .bottom : .top, for: .sizeChanges)
-        // The Mac: the orb floats over the top of the column, so the
-        // first message starts a little below it.
+        // The Mac: the first message starts a little below the orb.
         .contentMargins(.top, macOrb ? Self.macTopMargin : 0, for: .scrollContent)
         // No scroll targets (`scrollTargetLayout`): with them the scroll
         // view keeps "the view at the top" through every layout change, and
@@ -164,12 +163,12 @@ struct ChatView: View {
             // Scoped to the button: must not animate the list itself.
             .animation(.snappy(duration: 0.2), value: showJump)
         }
-        .modifier(TopStrip(ownFade: macOrb) {
+        .modifier(TopStrip(asBar: macOrb) {
             VStack(spacing: 0) {
                 StatusBanner()
                 // The Mac: the orb hangs small from the top middle of the
-                // column, over the messages (they start just below it and
-                // pass under it, fading) — no strip of its own.
+                // column, just below the window's titlebar; the messages
+                // pass under both, softly.
                 if macOrb { MacTopOrb() }
             }
             .frame(maxWidth: .infinity)
@@ -485,36 +484,20 @@ private struct ConversationChanges: ViewModifier {
 }
 
 /// What sits above the messages: the connection banner, and on the Mac the
-/// orb's strip. The Mac's scroll edge is a hard rule line, so there the strip
-/// draws its own fade instead: solid behind the toolbar and the orb, then
-/// dissolving into the messages scrolling under it. Phones keep a plain inset
-/// (their orb floats over the navigation bar, which already has the fade).
+/// orb's strip. Phones keep a plain inset (their orb floats over the
+/// navigation bar, which already has the fade).
 private struct TopStrip<Strip: View>: ViewModifier {
-    /// The Mac's orb strip: solid under the toolbar, then a fade.
-    var ownFade: Bool
+    /// The Mac: the strip is a bar (`safeAreaBar`) under the window's
+    /// transparent titlebar, and the conversation runs to the top of the
+    /// window under both, behind the system's soft scroll edge. (Under a
+    /// navigation bar the Mac's edge is a hard rule line; under a bar of
+    /// this kind it stays soft.)
+    var asBar: Bool
     @ViewBuilder let strip: () -> Strip
-    /// The Mac: a short fade under the toolbar, not a band.
-    private static var fade: CGFloat { 14 }
 
     func body(content: Content) -> some View {
-        if ownFade {
-            content
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    strip().background {
-                        // Solid behind the toolbar and the orb; the messages
-                        // fade in just below the strip.
-                        VStack(spacing: 0) {
-                            Color(.systemBackground)
-                            LinearGradient(colors: [Color(.systemBackground), Color(.systemBackground).opacity(0)],
-                                           startPoint: .top, endPoint: .bottom)
-                                .frame(height: Self.fade)
-                        }
-                        .padding(.bottom, -Self.fade)
-                        .ignoresSafeArea(edges: .top)
-                        .allowsHitTesting(false)
-                    }
-                }
-                .scrollEdgeEffectHidden(true, for: .top)
+        if asBar {
+            content.safeAreaBar(edge: .top, spacing: 0, content: strip)
         } else {
             content.safeAreaInset(edge: .top, spacing: 0, content: strip)
         }
@@ -591,15 +574,15 @@ private struct PhoneTitleOrb: View {
     }
 }
 
-/// The Mac: the orb hanging from the top middle of the conversation column.
-/// Zero height itself, so it takes no room; the orb overflows below it.
+/// The Mac: the orb hanging from the top middle of the conversation column,
+/// below the titlebar. As tall as the resting orb; bigger, it overflows.
 private struct MacTopOrb: View {
     @Environment(AppModel.self) private var model
     @State private var width: CGFloat = 0
 
     var body: some View {
         Color.clear
-            .frame(height: 0)
+            .frame(height: FloatingTitleOrb.macRestHeight)
             .frame(maxWidth: .infinity)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .overlay(alignment: .top) {
