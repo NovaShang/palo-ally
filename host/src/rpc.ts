@@ -18,7 +18,7 @@ export interface RpcRequest {
 // The app-facing protocol (docs/design.md §5.3). test/protocol.test.ts drives
 // every one of these and writes the samples the Swift client decodes strictly.
 export const RPC_METHODS = [
-  "hello", "sync", "chat.send", "chat.history", "chat.search", "chat.around", "commands.list", "model.get", "model.set",
+  "hello", "sync", "chat.send", "chat.history", "chat.search", "chat.around", "chat.rewind", "commands.list", "model.get", "model.set",
   "task.get", "task.stop", "approval.answer", "question.answer", "watch.add", "watch.update", "watch.remove",
   "artifact.list", "artifact.read", "artifact.pin", "memory.list", "memory.read", "memory.write",
   "settings.update", "stop", "push.register", "push.unregister", "device.unpair", "audit.tail",
@@ -26,12 +26,12 @@ export const RPC_METHODS = [
   "suggestions.list", "suggestions.dismiss", "host.update",
   "ally.list", "ally.invite", "ally.accept", "ally.remove", "ally.log", "ally.draft.decide", "ally.say", "ally.trust",
   "sessions.list", "sessions.history", "sessions.hooks", "helper.decide",
-  "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop", "pals.recent", "pals.wake", "pals.rename",
+  "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop", "pals.recent", "pals.wake", "pals.rename", "pals.rewind",
   "pair.invite",
 ] as const;
 
 export const RPC_EVENTS = [
-  "chat.message", "chat.delta", "task.updated", "approval.updated", "question.updated", "watch.updated",
+  "chat.message", "chat.delta", "chat.rewound", "task.updated", "approval.updated", "question.updated", "watch.updated",
   "artifact.updated", "settings.updated", "status", "commands.updated",
   "suggestions.updated", "ally.updated", "ally.entry", "sessions.updated", "pals.updated",
 ] as const;
@@ -63,6 +63,8 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
         // Mid-reply: the whole text so far, which replaces what the client
         // has for that id; later chat.delta events append to it.
         streaming: hub.conversation.streamingReply() ?? undefined,
+        // Gone back before (回到这里重来) since then: the client drops these.
+        ...(since !== undefined && hub.chat.rewoundSince(since).length ? { rewound: hub.chat.rewoundSince(since) } : {}),
       };
     }
     case "chat.send": {
@@ -126,6 +128,10 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       const before = typeof p.beforeSeq === "number" ? p.beforeSeq : Infinity;
       return { messages: hub.chat.search(String(p.query ?? ""), Math.max(1, Math.min(Number(p.limit ?? 50), 100)), before) };
     }
+    // 回到这里重来 (docs/rewind-prd.md): back to just before one of the
+    // owner's messages; its words come back for the composer.
+    case "chat.rewind":
+      return await hub.rewindChat(String(p.messageId ?? ""), ctx.channel);
     case "chat.around": {
       const clamp = (v: unknown, d: number) => Math.max(0, Math.min(Number(v ?? d), 100));
       return { messages: hub.chat.around(Number(p.seq ?? 0), clamp(p.before, 25), clamp(p.after, 25)) };
@@ -267,6 +273,11 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     // The owner names it (§13): Claude Code's own title for the session too.
     case "pals.rename":
       return { pal: await hub.pals.rename(String(p.id ?? ""), String(p.name ?? ""), ctx.channel) };
+    // 回到这里重来 in a Pal (docs/rewind-prd.md): its conversation, and its
+    // files if asked; `check` only says whether the files can go back.
+    case "pals.rewind":
+      if (p.check === true) return await hub.pals.canRestoreFiles(String(p.id ?? ""), String(p.messageId ?? ""));
+      return await hub.pals.rewind(String(p.id ?? ""), String(p.messageId ?? ""), { restoreFiles: p.restoreFiles === true, by: ctx.channel });
     // The conversations that ended on the computer lately (§10); pals.adopt takes one over.
     case "pals.recent":
       return { sessions: await hub.pals.recent({ folder: typeof p.folder === "string" ? p.folder : undefined, limit: p.limit }) };

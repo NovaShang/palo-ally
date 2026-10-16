@@ -1,4 +1,5 @@
 import type {
+  FilesRewound,
   HarnessDriver,
   HarnessEvent,
   ImageInput,
@@ -41,6 +42,7 @@ export class FakeMainSession implements MainSession {
   private queue: { text: string; uuid: string }[] = [];
   private busy = false;
   sent: string[] = [];
+  sentUuids: string[] = []; // what each message was sent under
   sentImages: ImageInput[] = [];
   private total: number;
   readonly sessionId: string;
@@ -53,8 +55,9 @@ export class FakeMainSession implements MainSession {
   constructor(readonly opts: MainSessionOptions, private script: FakeScript, private driver: FakeDriver, pal = false) {
     this.sessionId = opts.resumeSessionId ?? opts.sessionId ?? `sess-${++idCounter}`;
     this.pal = pal;
-    // Resumed, Claude Code goes on from the session's running total.
-    this.total = opts.resumeSessionId ? (driver.totals.get(opts.resumeSessionId) ?? 0) : 0;
+    // Resumed (or forked), Claude Code goes on from the session's running total.
+    const from = opts.resumeSessionId ?? opts.fork?.fromSessionId;
+    this.total = from ? (driver.totals.get(from) ?? 0) : 0;
     this.failStart = pal ? driver.failPalStart?.(opts) : undefined;
     if (this.failStart) {
       const why = this.failStart;
@@ -115,6 +118,7 @@ export class FakeMainSession implements MainSession {
   send(text: string, uuid: string, images: ImageInput[] = []): void {
     if (this.closed) throw new Error("closed");
     this.sent.push(text);
+    this.sentUuids.push(uuid);
     this.sentImages.push(...images);
     this.queue.push({ text, uuid });
     void this.drain();
@@ -216,6 +220,12 @@ export class FakeMainSession implements MainSession {
     this.driver.renames.push({ title, sessionId });
   }
 
+  // Files back as they were before the owner's message `uuid` (docs/rewind-prd.md §4.1).
+  async rewindFiles(uuid: string, dryRun = false): Promise<FilesRewound> {
+    this.driver.fileRewinds.push({ sessionId: this.sessionId, uuid, dryRun, checkpointing: !!this.opts.fileCheckpointing });
+    return this.driver.filesRewound?.(uuid) ?? { canRewind: true, filesChanged: [] };
+  }
+
   close(): void {
     this.closed = true;
     if (this.proc && this.proc.exitCode === null) this.proc.kill("SIGTERM");
@@ -241,7 +251,10 @@ export class FakeDriver implements HarnessDriver {
   ran: string[] = []; // tools that went through and ran, in order
   turnCost = 0.001;
   totals = new Map<string, number>();
-  renames: { title: string; sessionId?: string }[] = []; // Claude Code renames asked of running processes // each session's running total of cost, as a resume goes on from it
+  renames: { title: string; sessionId?: string }[] = [];
+  // rewindFiles asked of a process, and what Claude Code answers (default: done)
+  fileRewinds: { sessionId: string; uuid: string; dryRun: boolean; checkpointing: boolean }[] = [];
+  filesRewound?: (uuid: string) => FilesRewound; // Claude Code renames asked of running processes // each session's running total of cost, as a resume goes on from it
   contextTokens = 1000; // what each turn's result reports
   probeResponder: (req: ProbeRequest) => ProbeResult = () => ({ output: { results: [] }, costUsd: 0.0001 });
   // the permission mode a session reports running in (default: the one asked for)

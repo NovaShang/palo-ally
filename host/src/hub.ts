@@ -29,6 +29,9 @@ import { StallWatch, type StallWatchDeps, WATCHDOG_DEFAULTS, apiSockets, diagnos
 import { PowerWatcher, type PowerReading, readPower } from "./power.ts";
 import { Updater, type UpdaterDeps } from "./update.ts";
 import { type Usage, UsageLedger } from "./usage.ts";
+import { randomUUID } from "node:crypto";
+import { forkSession as sdkForkSession } from "@anthropic-ai/claude-agent-sdk";
+import { type ForkSession, REWIND_NOT_FOUND, beforeCompaction, chainTo, findEntry, forkedUuids, leafOf, matchOwnerEntry, readTranscript } from "./rewind.ts";
 import { appendJsonl } from "./util.ts";
 import { WatchStore } from "./watches.ts";
 import { Sessions, type SessionsDeps } from "./sessions.ts";
@@ -55,6 +58,7 @@ export interface HubDeps {
   sessions?: Partial<SessionsDeps>; // tests fake the claude CLI, the clock and whether the owner is away
   pals?: Partial<PalsDeps>; // tests fake how Pals start, the registry and the timing
   stallWatch?: Partial<StallWatchDeps>; // tests drive the watchdog's clock and checks
+  forkSession?: ForkSession; // tests copy sessions in their own Claude Code folder
 }
 
 // Hub assembles the assistant: the main conversation with the harness, the
@@ -91,6 +95,8 @@ export class Hub {
   private readonly runtime: RuntimeState;
   private readonly wechat: WechatChannel | null;
   private readonly log: (s: string) => void;
+  private readonly claudeDir: string;
+  private readonly forkSession: ForkSession;
   private clients = new Map<string, { conn: ClientConn; off: () => void }>();
   private suggestionTimer: ReturnType<typeof setInterval> | null = null;
   // questions sent to WeChat as text: the owner's next WeChat message answers them
@@ -149,6 +155,9 @@ export class Hub {
       () => void this.conversation.ensureSession(),
       () => this.conversation.scheduleIdleIfIdle(),
     );
+    const claudeDir = deps.sessions?.claudeDir ?? deps.claudeDir ?? claudeConfigDir();
+    this.claudeDir = claudeDir;
+    this.forkSession = deps.forkSession ?? ((sid, o) => sdkForkSession(sid, o));
     this.conversation = new Conversation({
       paths: this.paths,
       config: () => this.config,
@@ -172,6 +181,7 @@ export class Hub {
       // Pals reach the assistant (and it them) by this name with SendMessage.
       peerName: () => PALO_NAME,
       handoffsInFlight: () => this.handoffs.inFlight(),
+      transcriptOf: (sid) => transcriptPath(claudeDir, this.paths.home, sid),
       onGoalResult: (id, text) => {
         const w = this.watches.get(id);
         // The assistant may have set a better line itself during this run.
@@ -317,7 +327,6 @@ export class Hub {
       ...deps.pals,
     });
     // The stall watchdog: the assistant's own process and every Pal's.
-    const claudeDir = deps.sessions?.claudeDir ?? deps.claudeDir ?? claudeConfigDir();
     const mainTranscript = () => {
       const sid = this.runtime.data.sessionId;
       return sid ? transcriptPath(claudeDir, this.paths.home, sid) : undefined;
@@ -398,6 +407,12 @@ export class Hub {
       this.pals.start();
       // A session stuck mid-work is restarted and resumed, the owner told.
       this.stallWatch.start();
+      // The owner's earlier messages, matched in the transcript, so they can be gone back to.
+      const t = setTimeout(() => {
+        const n = this.backfillOwnerUuids();
+        if (n) this.log(`matched ${n} earlier owner message(s) in the transcript`);
+      }, 3_000);
+      (t as any).unref?.();
     }
     this.emitStatus();
   }
@@ -453,6 +468,10 @@ export class Hub {
     const t = text.trim();
     if (!t && !attachments.length) return null;
     const cmd = attachments.length ? null : this.tryCommand(t, channel);
+    const answered = cmd === null && channel === "wechat" && !attachments.length ? this.answerOnWechat(t) : null;
+    // What goes to the harness has the uuid it's kept under there, so the
+    // owner can go back to it later (not a slash command: docs/rewind-prd.md §3).
+    const uuid = cmd === null && answered === null && !t.startsWith("/") ? randomUUID() : undefined;
     const msg = this.chat.add({
       role: "user",
       kind: "text",
@@ -461,10 +480,10 @@ export class Hub {
       ...(clientMsgId ? { clientMsgId } : {}),
       ...(attachments.length ? { attachments } : {}),
       ...(replyTo ? { replyTo } : {}),
+      ...(uuid ? { uuid } : {}),
     });
     // The owner is here: an Ally's message shown before now has been seen.
     if (channel === "app" || channel === "cli") this.allies.ownerActive();
-    const answered = cmd === null && channel === "wechat" && !attachments.length ? this.answerOnWechat(t) : null;
     if (answered === "") return msg; // it answered an open question; the harness carries on
     if (answered !== null || cmd !== null) {
       const reply = (answered ?? cmd)!;
@@ -472,23 +491,102 @@ export class Hub {
       if (channel === "wechat" && wechat && this.wechat) void this.wechat.reply(wechat, reply).catch(() => {});
       return msg;
     }
-    // Slash commands must reach the harness verbatim, so they get no prefix.
-    const prefix = channel === "wechat" && !t.startsWith("/") ? "[来自微信] " : "";
     const images = attachments.flatMap((a) => {
       const m = a.kind === "image" ? this.media.read(a.id) : null;
       return m ? [{ mediaType: m.mediaType, data: m.data }] : [];
     });
+    this.conversation.sendOwner(this.ownerBody(msg), channel, wechat, images, uuid);
+    return msg;
+  }
+
+  // The words an owner message goes to the harness as.
+  private ownerBody(m: Pick<ChatMessage, "text" | "channel" | "attachments" | "replyTo">): string {
+    const t = m.text;
+    // Slash commands must reach the harness verbatim, so they get no prefix.
+    const prefix = m.channel === "wechat" && !t.startsWith("/") ? "[来自微信] " : "";
     // Files go in as paths the assistant can open, the way WeChat files do.
-    const files = attachments.flatMap((a) => {
+    const files = (m.attachments ?? []).flatMap((a) => {
       const path = a.kind === "file" ? this.media.filePath(a.id) : null;
       return path ? [`[文件] ${path}`] : [];
     });
     // A quoted part of an earlier message goes first, as a quote block, so the
     // assistant knows what 「这个」 refers to.
-    const quote = replyTo && !t.startsWith("/") ? replyTo.excerpt.split("\n").map((l) => `> ${l}`).join("\n") + "\n\n" : "";
-    const body = [prefix + quote + t, ...files].filter((x) => x.trim()).join("\n");
-    this.conversation.sendOwner(body, channel, wechat, images);
-    return msg;
+    const quote = m.replyTo && !t.startsWith("/") ? m.replyTo.excerpt.split("\n").map((l) => `> ${l}`).join("\n") + "\n\n" : "";
+    return [prefix + quote + t, ...files].filter((x) => x.trim()).join("\n");
+  }
+
+  // ---------------- 回到这里重来 (docs/rewind-prd.md) ----------------
+
+  /**
+   * chat.rewind: the conversation goes back to just before one of the
+   * owner's messages. Its process ends; the next one is a new session forked
+   * from the entry before that message (the old transcript keeps it all).
+   * That message and everything after it leave the conversation (kept in the
+   * log, marked rewound); its words come back for the composer. Refused while
+   * a turn is on. What was done meanwhile stays done.
+   */
+  async rewindChat(messageId: string, by: string): Promise<{ text: string }> {
+    const msg = this.chat.get(String(messageId ?? ""));
+    if (!msg || msg.pal || msg.role !== "user" || msg.kind !== "text") throw new Error("这一条不能回到这里");
+    if (msg.rewound) throw new Error("这一条已经撤回了");
+    const busy = this.conversation.rewindBlocker();
+    if (busy) throw new Error(busy);
+    const { sessionId, pending } = this.conversation.rewindSource();
+    if (!sessionId) throw new Error(REWIND_NOT_FOUND);
+    const entries = readTranscript(transcriptPath(this.claudeDir, this.paths.home, sessionId));
+    // The conversation as it stands (an earlier rewind not yet followed by a message: what it kept).
+    const chain = chainTo(entries, pending ? pending.at : leafOf(entries));
+    const used = new Set(this.chat.recent(2000).flatMap((m) => (m.uuid && m.id !== msg.id ? [m.uuid] : [])));
+    // By its uuid; failing that (kept before it had one), by its words and time.
+    const entry = (msg.uuid ? findEntry(chain, msg.uuid) : undefined) ?? matchOwnerEntry(chain, this.ownerBody(msg), msg.ts, used);
+    if (!entry) throw new Error(REWIND_NOT_FOUND);
+    const at = typeof entry.parentUuid === "string" ? entry.parentUuid : typeof entry.logicalParentUuid === "string" ? entry.logicalParentUuid : null;
+    let to: string = randomUUID();
+    // Before the last compaction: copied into a new session up to there
+    // (new uuids, which the log then keeps for the messages it kept).
+    const copy = beforeCompaction(chain, at);
+    if (copy) to = (await this.forkSession(sessionId, { dir: this.paths.home, upToMessageId: at!, title: PALO_NAME })).sessionId;
+    // (The conversation may have moved meanwhile.)
+    const late = this.conversation.rewindBlocker();
+    if (late) throw new Error(late);
+    this.conversation.rewindTo({ from: sessionId, at, cut: entry.uuid, to, written: copy });
+    const ids = this.chat.rewind(msg.seq);
+    if (copy) {
+      const moved = forkedUuids(readTranscript(transcriptPath(this.claudeDir, this.paths.home, to)));
+      this.chat.setUuids(new Map(this.chat.recent(5000).flatMap((m) => (m.uuid && moved.has(m.uuid) ? [[m.id, moved.get(m.uuid)!] as [string, string]] : []))));
+    }
+    this.bus.emit("chat.rewound", { id: msg.id, ids });
+    this.audit.log("chat.rewind", { messageId: msg.id, seq: msg.seq, uuid: entry.uuid, from: sessionId, to, at, dropped: ids.length, ...(copy ? { copied: true } : {}), by });
+    this.log(`went back to before message ${msg.id} (${ids.length} message(s) out; session ${sessionId} ${copy ? "copied" : "forked"} as ${to})`);
+    return { text: msg.text };
+  }
+
+  /**
+   * The owner's messages from before they carried a uuid, matched by their
+   * words and time in the current session's transcript (the newest 300), so
+   * they can be gone back to too. Returns how many it matched.
+   */
+  backfillOwnerUuids(): number {
+    const { sessionId, pending } = this.conversation.rewindSource();
+    if (!sessionId || pending) return 0;
+    const entries = readTranscript(transcriptPath(this.claudeDir, this.paths.home, sessionId), ['"type":"user"']);
+    if (!entries.length) return 0;
+    const recent = this.chat.recent(5000);
+    const used = new Set(recent.flatMap((m) => (m.uuid ? [m.uuid] : [])));
+    const first = Date.parse(entries[0]?.timestamp ?? "") || 0;
+    const todo = recent
+      .filter((m) => m.role === "user" && m.kind === "text" && !m.pal && !m.uuid && !m.text.startsWith("/") && m.ts >= first - 60_000 && ["app", "cli", "wechat"].includes(m.channel))
+      .reverse()
+      .slice(0, 300);
+    let n = 0;
+    for (const m of todo) {
+      const e = matchOwnerEntry(entries, this.ownerBody(m), m.ts, used);
+      if (!e) continue;
+      used.add(e.uuid);
+      this.chat.update(m.id, { uuid: e.uuid });
+      n++;
+    }
+    return n;
   }
 
   // A question sent to WeChat is answered by the owner's next WeChat message:

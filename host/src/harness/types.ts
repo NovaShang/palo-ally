@@ -135,6 +135,13 @@ export interface SessionOptions {
   effort?: string;
   resumeSessionId?: string;
   sessionId?: string; // a new session with this id (not with resumeSessionId)
+  // Rewound (docs/rewind-prd.md §4.1): `sessionId` is a new session forked
+  // from this one, its conversation cut after the entry `at` (the original
+  // is left as it is). Not with resumeSessionId.
+  fork?: { fromSessionId: string; at: string };
+  // Claude Code keeps a copy of each file before a turn changes it, so the
+  // files can go back to how they were before any of the owner's messages (a Pal).
+  fileCheckpointing?: boolean;
   priorCostUsd?: number; // the resumed session's running total, so per-turn cost stays a delta
   permissionMode: string;
   appendSystemPrompt?: string;
@@ -175,6 +182,9 @@ export interface MainSession {
   setEffort(effort?: string): Promise<void>;
   // Retitles the session in this process (Claude Code's own rename; a Pal, pals-prd §13).
   rename?(title: string, sessionId?: string): Promise<void>;
+  // Puts the files the session changed back as they were right before the
+  // owner's message `uuid` (file checkpointing must have been on then).
+  rewindFiles?(uuid: string, dryRun?: boolean): Promise<FilesRewound>;
   // Resolves once Claude Code is up (it answered the SDK's first request);
   // rejects with its reason when it refused to start.
   ready(): Promise<void>;
@@ -183,6 +193,13 @@ export interface MainSession {
   // When the process last said anything on its SDK stream (any message, ms):
   // the stall watchdog's sign of life.
   readonly lastActivity?: number;
+}
+
+/** What Claude Code says about putting files back (its RewindFilesResult). */
+export interface FilesRewound {
+  canRewind: boolean;
+  error?: string;
+  filesChanged?: string[];
 }
 
 export interface ProbeRequest {

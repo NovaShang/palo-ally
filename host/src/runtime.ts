@@ -1,3 +1,4 @@
+import type { PendingRewind } from "./rewind.ts";
 import { readJson, writeJson } from "./util.ts";
 
 // RuntimeState is the small file that survives restarts: which harness session
@@ -10,6 +11,9 @@ export interface Runtime {
   contextTokens?: number; // the main session's context size after its last turn
   lastTurnAt?: number; // when the main session last finished a turn
   lastCompactAt?: number;
+  // 回到这里重来 (docs/rewind-prd.md §4.1): sessionId is a fork of `from` that
+  // Claude Code hasn't written yet; each start forks it until it has.
+  rewind?: PendingRewind;
 }
 
 export class RuntimeState {

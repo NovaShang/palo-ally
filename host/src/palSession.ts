@@ -4,10 +4,11 @@ import type { ApprovalManager } from "./approvals.ts";
 import { firstLine } from "./ccSessions.ts";
 import { ACTIVITY, describeActivity, describeInput, describeTool, friendlyError } from "./copy.ts";
 import { readHead, readTail, transcriptPath } from "./handoffs.ts";
-import type { HarnessDriver, HarnessEvent, MainSession, PermissionDecision, PermissionRequest } from "./harness/types.ts";
+import type { FilesRewound, HarnessDriver, HarnessEvent, MainSession, PermissionDecision, PermissionRequest } from "./harness/types.ts";
 import { type PalLaunch, isHelperFailure, makeSpawner } from "./palLauncher.ts";
-import { type PalMapOptions, TranscriptFollower, transcriptLastLine, transcriptModel, userEntryMessage } from "./palHistory.ts";
+import { type PalMapOptions, TranscriptFollower, toPalMessages, transcriptLastLine, transcriptModel, userEntryMessage } from "./palHistory.ts";
 import { ASK_TOOL, type QuestionManager } from "./questions.ts";
+import { type ForkSession, type PendingRewind, REWIND_BUSY, REWIND_NOT_FOUND, REWIND_NO_FILES, beforeCompaction, chainTo, hasFileCheckpoint, leafOf, ownerText, readTranscript } from "./rewind.ts";
 import { type StallRecovery, type StallTarget, transcriptHas } from "./stallWatch.ts";
 import type { CardSource, ChatMessage, Pal, PalStatus } from "./types.ts";
 import { newId, truncate } from "./util.ts";
@@ -45,6 +46,10 @@ export interface PalRecord {
   formerNames?: string[]; // what it was called before (§13): the assistant may still say one
   lastWakeUsd?: number; // what the first turn after its last wake cost
   costTotalUsd?: number; // Claude Code's running total for the session, as its last result said
+  // 回到这里重来 (docs/rewind-prd.md §4.1): sessionId is a fork of `from` that
+  // Claude Code hasn't written yet; each start forks it until it has.
+  rewind?: PendingRewind;
+  formerSessions?: string[]; // the sessions it was forked from (theirs too: not listed among the ended ones)
 }
 
 /** Another process holding a session's transcript. */
@@ -82,6 +87,8 @@ export interface PalSessionDeps {
   onStopped: (pal: PalSession) => void;
   pidAlive: (pid: number) => boolean;
   kill: (pid: number, signal: NodeJS.Signals) => void;
+  /** Copies a session up to one entry as a new one (a rewind past a compaction). */
+  forkSession: ForkSession;
   timing: { readyMs: number; restartMs: number[]; exitWaitMs: number };
   now: () => number;
   log: (s: string) => void;
@@ -126,6 +133,8 @@ export class PalSession {
   private replyTexts = new Map<string, string>(); // a reply's text so far, by its id (several blocks join)
   private emitted = new Set<string>(); // ids already sent to the app
   private follower: TranscriptFollower | null = null;
+  // A fork's entries copied from the session it was forked from: history, not news.
+  private inherited: Set<string> | null = null;
   private sleeping: Promise<void> | null = null; // being put to sleep: its process is ending
   private upAt = 0;
   private bgTasks = new Set<string>(); // its background tasks still running (a subagent in the background)
@@ -300,10 +309,17 @@ export class PalSession {
       return spawner(req);
     };
     // A Pal the assistant opened has no transcript before its first message.
-    const resume = existsSync(this.transcript);
+    // One gone back to an earlier message is forked from its old session
+    // until Claude Code has written the new one (docs/rewind-prd.md §4.1).
+    const fork = this.pendingRewind();
+    const resume = !fork && existsSync(this.transcript);
+    this.inherited = fork ? new Set(chainTo(readTranscript(this.transcriptOf(fork.from)), fork.at).map((e) => e.uuid)) : null;
     const proc: MainSession = this.d.driver.startPal({
       cwd: rec.cwd,
       ...(resume ? { resumeSessionId: rec.sessionId } : { sessionId: rec.sessionId }),
+      ...(fork?.at ? { fork: { fromSessionId: fork.from, at: fork.at } } : {}),
+      // Its files can go back to how they were before any of the owner's messages from now on.
+      fileCheckpointing: true,
       model: rec.model,
       // so a turn's cost is its own, not the session's running total
       ...(typeof rec.costTotalUsd === "number" ? { priorCostUsd: rec.costTotalUsd } : {}),
@@ -359,7 +375,7 @@ export class PalSession {
     this.follower = new TranscriptFollower(this.transcript, (e) => this.onTranscript(e));
     this.follower.start();
     if (woke) this.d.onWoke?.(this);
-    this.d.log(`pal ${rec.name}: up (pid ${rec.pid ?? "?"}, ${launch.helper ? "through PaloAlly Helper" : "direct"}${resume ? ", resumed" : ""}${woke ? ", woken" : ""})`);
+    this.d.log(`pal ${rec.name}: up (pid ${rec.pid ?? "?"}, ${launch.helper ? "through PaloAlly Helper" : "direct"}${resume ? ", resumed" : fork ? ", forked" : ""}${woke ? ", woken" : ""})`);
   }
 
   private async waitExit(): Promise<void> {
@@ -820,6 +836,7 @@ export class PalSession {
   // SendMessage (the assistant's too), shown as said by that session.
   private onTranscript(e: any): void {
     if (e?.type !== "user" || e.isSidechain) return;
+    if (this.inherited?.has(String(e.uuid ?? ""))) return;
     const m = userEntryMessage(
       { type: "user", uuid: String(e.uuid ?? ""), message: e.message, timestamp: e.timestamp, origin: e.origin, parent_tool_use_id: null },
       { ...this.d.mapOptions(), pal: this.rec.id },
@@ -829,6 +846,138 @@ export class PalSession {
     if (this.emitted.size > 500) this.emitted.delete(this.emitted.values().next().value!);
     this.d.emit("chat.message", m);
     this.touch();
+  }
+
+  // ---------------- 回到这里重来 (docs/rewind-prd.md) ----------------
+
+  private transcriptOf(sessionId: string): string {
+    return transcriptPath(this.d.claudeDir, this.rec.cwd, sessionId);
+  }
+
+  /** A rewind whose fork Claude Code hasn't written yet (none once it has). */
+  pendingRewind(): PendingRewind | undefined {
+    const r = this.rec.rewind;
+    if (!r) return undefined;
+    if (existsSync(this.transcript)) {
+      delete this.rec.rewind;
+      this.d.save();
+      return undefined;
+    }
+    return r;
+  }
+
+  /**
+   * Its conversation as it stands, from the transcript: the session's own
+   * (the last entry's line of parents), or, gone back and not spoken to
+   * since, the old session's up to where it was cut. Oldest first.
+   */
+  conversationEntries(): { sessionId: string; entries: any[]; chain: any[]; pending?: PendingRewind } {
+    const pending = this.pendingRewind();
+    const sessionId = pending ? pending.from : this.rec.sessionId;
+    const entries = readTranscript(this.transcriptOf(sessionId));
+    return { sessionId, entries, chain: chainTo(entries, pending ? pending.at : leafOf(entries)), ...(pending ? { pending } : {}) };
+  }
+
+  /** Whether its files can go back to how they were before the owner's message `uuid`. */
+  canRestoreFiles(uuid: string): boolean {
+    return hasFileCheckpoint(this.conversationEntries().entries, uuid);
+  }
+
+  /**
+   * Goes back to just before the owner's message `uuid` (in its current
+   * conversation): its process ends, its files go back too if asked (Claude
+   * Code's own checkpoints, through a process on the old session that says
+   * nothing), and its next process is a new session forked from the entry
+   * before that message. One that was awake comes back at once; one asleep
+   * stays asleep. Refused while a turn is on. Returns the message's words and
+   * the ids of the messages that left the conversation.
+   */
+  async rewind(uuid: string, restoreFiles: boolean): Promise<{ text: string; filesRestored: boolean; dropped: string[]; from: string; at: string | null; copied: boolean }> {
+    // (A turn stopped but still winding down is no matter: its process ends here.)
+    if (this.busy || this.starting || this.sleeping || this.queuedSends || this.pendingCards() > 0) throw new Error(REWIND_BUSY);
+    const { sessionId, entries, chain } = this.conversationEntries();
+    const i = chain.findIndex((e) => e.uuid === uuid);
+    if (i < 0) throw new Error(REWIND_NOT_FOUND);
+    const entry = chain[i];
+    const text = ownerText(entry);
+    // The owner's own words only: not the assistant's (pal_send), not another session's.
+    if (text === null || /^\s*<cross-session-message/.test(text) || (this.rec.duty && i === chain.findIndex((e) => ownerText(e) !== null) && text.trim() === this.rec.duty.trim()))
+      throw new Error("这一条不是你说的，不能回到这里");
+    if (restoreFiles && !hasFileCheckpoint(entries, uuid)) throw new Error(REWIND_NO_FILES);
+    const held = await this.d.holders(sessionId, this.rec.pid);
+    if (held.length) throw new HeldElsewhere(`「${this.rec.name}」在别处开着（进程 ${held.map((h) => h.pid).join("、")}），先在那边退出`);
+    const awake = this.running || !!this.restartTimer || this.queued;
+    await this.shutdown();
+    if (restoreFiles) {
+      const r = await this.restoreFiles(sessionId, uuid);
+      if (!r.canRewind) {
+        this.d.log(`pal ${this.rec.name}: files not restored (${r.error ?? "no reason"})`);
+        if (awake) await this.start().catch((e) => this.d.log(`pal ${this.rec.name}: couldn't start again: ${e instanceof Error ? e.message : e}`));
+        throw new Error(REWIND_NO_FILES);
+      }
+    }
+    const dropped = toPalMessages(chain.slice(i), { ...this.d.mapOptions(), pal: this.rec.id }).map((m) => m.id);
+    const at = typeof entry.parentUuid === "string" ? entry.parentUuid : typeof entry.logicalParentUuid === "string" ? entry.logicalParentUuid : null;
+    // Before its last compaction: copied into a new session up to there now
+    // (new uuids); otherwise forked by its next process.
+    const copied = beforeCompaction(chain, at);
+    if (copied) {
+      try {
+        this.rec.sessionId = (await this.d.forkSession(sessionId, { dir: this.rec.cwd, upToMessageId: at!, title: this.rec.name })).sessionId;
+      } catch (e) {
+        if (awake) await this.start().catch(() => {});
+        throw new Error(`没能回到这里：${e instanceof Error ? e.message : e}`);
+      }
+      delete this.rec.rewind;
+    } else {
+      this.rec.rewind = { from: sessionId, at, cut: uuid };
+      this.rec.sessionId = randomUUID();
+    }
+    this.rec.formerSessions = [...(this.rec.formerSessions ?? []).filter((x) => x !== sessionId), sessionId].slice(-20);
+    this.lastLine = transcriptLastLine(chain.slice(0, i));
+    this.rec.lastUsedAt = this.d.now();
+    this.d.save();
+    this.touch();
+    if (awake) await this.start().catch((e) => this.d.log(`pal ${this.rec.name}: couldn't start again: ${e instanceof Error ? e.message : e}`));
+    return { text: text.trim(), filesRestored: restoreFiles, dropped, from: sessionId, at, copied };
+  }
+
+  // Claude Code puts the files back (rewindFiles) in a process of its own on
+  // the old session: it's only asked that, never spoken to.
+  private async restoreFiles(sessionId: string, uuid: string): Promise<FilesRewound> {
+    const launch = await this.d.launch();
+    let exitDone!: () => void;
+    const exited = new Promise<void>((r) => (exitDone = r));
+    let pid: number | undefined;
+    let spawned = false;
+    const spawner = makeSpawner(launch.helper, { onPid: (p) => (pid = p), onExit: () => exitDone(), stderr: () => {} });
+    const proc = this.d.driver.startPal({
+      cwd: this.rec.cwd,
+      resumeSessionId: sessionId,
+      model: this.rec.model,
+      permissionMode: this.rec.permissionMode,
+      fileCheckpointing: true,
+      spawn: (req) => {
+        spawned = true;
+        return spawner(req);
+      },
+      baseEnv: launch.env,
+      canUseTool: async () => ({ behavior: "deny", message: "只是在恢复文件" }),
+      onEvent: () => {},
+    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([proc.ready(), new Promise<never>((_, rej) => (timer = setTimeout(() => rej(new Error("Claude Code 没有按时起来")), this.d.timing.readyMs)))]);
+      if (!proc.rewindFiles) return { canRewind: false, error: "这个版本的 Claude Code 不能恢复文件" };
+      return await proc.rewindFiles(uuid);
+    } catch (e) {
+      return { canRewind: false, error: e instanceof Error ? e.message : String(e) };
+    } finally {
+      clearTimeout(timer);
+      proc.close();
+      if (spawned) await Promise.race([exited, sleep(this.d.timing.exitWaitMs)]);
+      if (pid && this.d.pidAlive(pid)) await this.killPid(pid);
+    }
   }
 
   // ---------------- its cards ----------------

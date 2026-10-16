@@ -37,7 +37,8 @@ export function peerName(origin: any, content: string, o: PalMapOptions): string
 
 /** One user entry as the app shows it, or null (tool results, Claude Code's own notices). */
 export function userEntryMessage(m: RawSessionMessage, o: PalMapOptions): ChatMessage | null {
-  if (m.type !== "user" || m.parent_tool_use_id) return null;
+  // (Claude Code's own lines it marks meta, as the transcript has them, aren't anyone's words.)
+  if (m.type !== "user" || m.parent_tool_use_id || (m as any).isMeta) return null;
   const text = userText(m.message?.content);
   if (text === null) return null;
   const ts = Date.parse(m.timestamp ?? "") || 0;

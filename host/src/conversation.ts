@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { allyTurnTool, type AllyGateScope } from "./allyGate.ts";
 import type { ApprovalManager } from "./approvals.ts";
 import { ASK_TOOL, type QuestionManager } from "./questions.ts";
@@ -12,6 +13,7 @@ import type { HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption,
 import { autoMemoryDir } from "./memory.ts";
 import type { Router } from "./router.ts";
 import type { RuntimeState } from "./runtime.ts";
+import { type PendingRewind, REWIND_BUSY } from "./rewind.ts";
 import { type StallRecovery, type StallTarget, WATCHDOG_DEFAULTS, transcriptHas } from "./stallWatch.ts";
 import type { TaskTracker } from "./tasks.ts";
 import type { Channel, Task } from "./types.ts";
@@ -32,7 +34,7 @@ export interface Turn {
 }
 
 type OwnerMessage = { origin: Channel; wechat?: WechatReplyTarget };
-type HeldMessage = { text: string; origin: Channel; wechat?: WechatReplyTarget; images?: ImageInput[] };
+type HeldMessage = { text: string; origin: Channel; wechat?: WechatReplyTarget; images?: ImageInput[]; uuid?: string };
 
 const SKIP = /^\s*\[skip\]\s*$/i;
 
@@ -94,6 +96,8 @@ export interface ConversationDeps {
   onGoalResult?: (watchId: string, text: string) => void;
   // work handed to another session the assistant is waiting on
   handoffsInFlight?: () => boolean;
+  // where Claude Code keeps a session's transcript (a rewound session: has the fork been written?)
+  transcriptOf?: (sessionId: string) => string | undefined;
   metric: (m: Record<string, unknown>) => void;
   log: (s: string) => void;
 }
@@ -183,13 +187,15 @@ export class Conversation {
   // Except during an Ally's turn: the owner's words wait for it to end, then
   // go as a turn of their own. Folded into it they'd lend the Ally's message
   // the owner's say, or be answered with the Ally turn's few tools.
-  sendOwner(text: string, origin: Channel, wechat?: WechatReplyTarget, images?: ImageInput[]): void {
+  //
+  // `uuid` is what Claude Code keeps the message under (the chat log has it
+  // too, so the owner can go back to it: docs/rewind-prd.md §4.2).
+  sendOwner(text: string, origin: Channel, wechat?: WechatReplyTarget, images?: ImageInput[], uuid: string = randomUUID()): void {
     if (this.allyGate) {
-      this.held.push({ text, origin, wechat, images });
+      this.held.push({ text, origin, wechat, images, uuid });
       this.d.audit.log("ally.turn.held", { allyId: this.allyGate.allyId, origin });
       return;
     }
-    const uuid = randomUUID();
     this.pending.set(uuid, { origin, wechat, sentAt: Date.now(), text, ...(images?.length ? { images } : {}) });
     if (!this.current) this.beginTurn({ text, origin, proactive: false, wechat, uuids: [uuid] });
     this.ensureSession().send(text, uuid, images);
@@ -274,11 +280,16 @@ export class Conversation {
     const cfg = this.d.config();
     const rt = this.d.runtime.data;
     this.modeChecked = false;
+    // Gone back to an earlier message (docs/rewind-prd.md §4.1): the new
+    // session is forked from the old one until Claude Code has written it.
+    const fork = this.pendingRewind();
     this.session = this.d.driver.startMain({
       cwd: this.d.paths.home,
       model: cfg.model,
       effort: cfg.effort,
-      resumeSessionId: rt.sessionId,
+      ...(fork
+        ? { sessionId: rt.sessionId, ...(fork.at ? { fork: { fromSessionId: fork.from, at: fork.at } } : {}) }
+        : { resumeSessionId: rt.sessionId }),
       priorCostUsd: rt.sessionId ? rt.sessionCostUsd : undefined,
       permissionMode: cfg.permissionMode,
       appendSystemPrompt: behaviorPrompt(this.d.paths) + `\n\n主人所在时区：${cfg.settings.timezone}。`,
@@ -502,7 +513,7 @@ export class Conversation {
     if (this.gateTimer) clearTimeout(this.gateTimer);
     this.gateTimer = null;
     this.d.audit.log("ally.turn.end", { allyId: g.allyId, why, held: this.held.length });
-    for (const h of this.held.splice(0)) this.sendOwner(h.text, h.origin, h.wechat, h.images);
+    for (const h of this.held.splice(0)) this.sendOwner(h.text, h.origin, h.wechat, h.images, h.uuid);
   }
 
   // Our turn ended but the harness hasn't said it consumed the Ally's message
@@ -694,6 +705,54 @@ export class Conversation {
     }
   }
 
+  // ---------------- 回到这里重来 (docs/rewind-prd.md) ----------------
+
+  /** A rewind whose fork Claude Code hasn't written yet (none once it has). */
+  private pendingRewind(): PendingRewind | undefined {
+    const rt = this.d.runtime.data;
+    if (!rt.rewind) return undefined;
+    const path = rt.sessionId ? this.d.transcriptOf?.(rt.sessionId) : undefined;
+    if (path && existsSync(path)) {
+      this.d.runtime.update({ rewind: undefined });
+      return undefined;
+    }
+    return rt.rewind;
+  }
+
+  /** Why the conversation can't be taken back now (a turn is on), or null. */
+  rewindBlocker(): string | null {
+    if (this.current || this.pending.size || this.allyGate || this.held.length || this.d.tasks.live().length) return REWIND_BUSY;
+    return null;
+  }
+
+  /**
+   * The session whose transcript has the conversation as it stands: the
+   * current one, or (a rewind not followed by a message yet) the one it
+   * will be forked from, with that rewind.
+   */
+  rewindSource(): { sessionId?: string; pending?: PendingRewind } {
+    const pending = this.pendingRewind();
+    return pending ? { sessionId: pending.from, pending } : { sessionId: this.d.runtime.data.sessionId };
+  }
+
+  /**
+   * Goes back to just before the owner's message `cut`: the process ends,
+   * and the next one is a new session (`to`) forked from `from` after the
+   * entry `at` (none: a fresh one). The context size is unknown until it
+   * has run a turn.
+   */
+  //
+  // `written`: the new session is already on disk (a copy made before a
+  // compaction, docs/rewind-prd.md §4.1): it's simply resumed.
+  rewindTo(r: PendingRewind & { to: string; written?: boolean }): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.session?.close();
+    this.session = null;
+    this.lastContextTokens = 0;
+    this.d.runtime.update({ sessionId: r.to, rewind: r.written ? undefined : { from: r.from, at: r.at, cut: r.cut }, contextTokens: 0 });
+    this.d.statusChanged();
+  }
+
   // ---------------- the stall watchdog ----------------
 
   /** What the stall watchdog watches (stallWatch.ts): the assistant's own process. */
@@ -769,7 +828,7 @@ export class Conversation {
       for (const [uuid, p] of untaken) this.ensureSession().send(p.text, uuid, p.images);
     }
     // The owner's words held for the Ally's turn go now, each as it would have.
-    for (const m of this.held.splice(0)) this.sendOwner(m.text, m.origin, m.wechat, m.images);
+    for (const m of this.held.splice(0)) this.sendOwner(m.text, m.origin, m.wechat, m.images, m.uuid);
     this.pump();
     this.d.statusChanged();
     return { resent: untaken.length, continued: !!resumeAs };

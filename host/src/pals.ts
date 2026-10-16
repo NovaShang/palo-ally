@@ -1,4 +1,4 @@
-import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
+import { forkSession as sdkForkSession, getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
@@ -13,6 +13,7 @@ import type { Paths, Settings } from "./config.ts";
 import type { HarnessDriver } from "./harness/types.ts";
 import { PalLauncher, type PalLaunch } from "./palLauncher.ts";
 import { pagePalMessages, toPalMessages } from "./palHistory.ts";
+import type { ForkSession } from "./rewind.ts";
 import { RECENT_MAX, type RecentEntry, RecentSessions, type RecentSource, folderMatch, ownRoots, palNameFor, palTitle, recentWire, sdkRename, sdkSource } from "./palRecent.ts";
 import { HeldElsewhere, type Holder, type PalRecord, PalSession } from "./palSession.ts";
 import type { QuestionManager } from "./questions.ts";
@@ -109,6 +110,8 @@ export interface PalsDeps {
   registry?: () => RegistryEntry[];
   pidAlive?: (pid: number) => boolean;
   kill?: (pid: number, signal: NodeJS.Signals) => void;
+  /** Copies a session up to one entry as a new one (default: the SDK's forkSession). */
+  forkSession?: ForkSession;
   timing?: Partial<PalsTiming>;
   now?: () => number;
   log?: (s: string) => void;
@@ -272,6 +275,7 @@ export class Pals {
       },
       pidAlive: (pid) => this.alive(pid),
       kill: this.d.kill ?? ((pid, sig) => process.kill(pid, sig)),
+      forkSession: this.d.forkSession ?? ((sid, o) => sdkForkSession(sid, o)),
       timing: this.timing,
       now: () => this.now(),
       log: (s) => this.log(s),
@@ -464,7 +468,7 @@ export class Pals {
   }
 
   isPal(sessionId: string): boolean {
-    return [...this.pals.values()].some((p) => p.rec.sessionId === sessionId);
+    return [...this.pals.values()].some((p) => p.rec.sessionId === sessionId || p.rec.formerSessions?.includes(sessionId));
   }
 
   /** pals.adopt is waiting for this session to quit in its terminal. */
@@ -513,7 +517,7 @@ export class Pals {
   // Sessions that aren't ended ones: the Pals, those being adopted, and the
   // computer's running (or stopped background) sessions.
   private takenIds(): Set<string> {
-    const ids = new Set<string>([...this.pals.values()].map((p) => p.rec.sessionId));
+    const ids = new Set<string>([...this.pals.values()].flatMap((p) => [p.rec.sessionId, ...(p.rec.formerSessions ?? [])]));
     for (const id of [...this.waiting.keys(), ...this.adopts.keys()]) ids.add(id);
     for (const s of this.d.sessions.list()) ids.add(s.id);
     try {
@@ -733,7 +737,9 @@ export class Pals {
     this.sent.delete(pal.id);
     this.lastPush.delete(pal.id);
     if (out) {
-      const { sessionId, cwd } = pal.rec;
+      // Gone back and not spoken to since: the old session is the one there is.
+      const sessionId = pal.pendingRewind()?.from ?? pal.rec.sessionId;
+      const { cwd } = pal.rec;
       this.data.former = [...this.data.former.filter((f) => f.sessionId !== sessionId), { sessionId, cwd, at: this.now() }].slice(-20);
       this.recentList.invalidate();
     }
@@ -905,7 +911,10 @@ export class Pals {
     this.drop(pal, true);
     this.d.audit.log("pal.released", { pal: pal.id, session: pal.rec.sessionId, name: pal.rec.name, by });
     this.emitNow();
-    return { resumeCommand: `cd ${shq(pal.rec.cwd)} && claude --resume ${pal.rec.sessionId}` };
+    // Gone back and not spoken to since, there's no new session yet: the old
+    // one (a terminal resumes it whole; only the SDK can resume part of one).
+    const sid = pal.pendingRewind()?.from ?? pal.rec.sessionId;
+    return { resumeCommand: `cd ${shq(pal.rec.cwd)} && claude --resume ${sid}` };
   }
 
   /** pals.remove: out of the Pals; its transcript stays where Claude Code keeps it. */
@@ -948,6 +957,30 @@ export class Pals {
     return out;
   }
 
+  // ---------------- 回到这里重来 (docs/rewind-prd.md) ----------------
+
+  /** pals.rewind {check}: whether its files can go back to how they were before that message. */
+  canRestoreFiles(id: string, messageId: string): { canRestoreFiles: boolean } {
+    return { canRestoreFiles: this.mustGet(id).canRestoreFiles(String(messageId ?? "")) };
+  }
+
+  /**
+   * pals.rewind: its conversation goes back to just before one of the
+   * owner's messages (a new session forked from the old one, which keeps
+   * everything), and its files too when asked. The app drops that message
+   * and the ones after it (`chat.rewound`) and gets its words back.
+   */
+  async rewind(id: string, messageId: string, o: { restoreFiles?: boolean; by: string }): Promise<{ text: string; filesRestored: boolean }> {
+    const pal = this.mustGet(id);
+    const r = await pal.rewind(String(messageId ?? ""), !!o.restoreFiles);
+    this.d.bus.emit("chat.rewound", { id: messageId, ids: r.dropped, pal: pal.id });
+    this.d.audit.log("pal.rewind", { pal: pal.id, name: pal.rec.name, messageId, from: r.from, to: pal.rec.sessionId, at: r.at, dropped: r.dropped.length, files: r.filesRestored, ...(r.copied ? { copied: true } : {}), by: o.by });
+    this.log(`${pal.rec.name} went back to before ${messageId} (${r.dropped.length} message(s) out${r.filesRestored ? ", files restored" : ""})`);
+    this.emitNow();
+    this.balanceSoon();
+    return { text: r.text, filesRestored: r.filesRestored };
+  }
+
   /** pals.stop: ends the current turn. */
   async stopTurn(id: string, by: string): Promise<void> {
     const pal = this.mustGet(id);
@@ -964,8 +997,11 @@ export class Pals {
     const pal = this.mustGet(id);
     const read = this.d.readMessages ?? ((sid: string, dir: string) => getSessionMessages(sid, { dir }) as Promise<RawSessionMessage[]>);
     let raw: RawSessionMessage[] = [];
+    // Gone back to an earlier message and not spoken to since: the old
+    // session's conversation up to where it was cut (docs/rewind-prd.md §4.3).
+    const pending = pal.pendingRewind();
     try {
-      raw = await read(pal.rec.sessionId, pal.rec.cwd);
+      raw = pending ? pal.conversationEntries().chain : await read(pal.rec.sessionId, pal.rec.cwd);
     } catch {
       raw = []; // a new Pal's transcript isn't there before its first message
     }

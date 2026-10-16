@@ -2,6 +2,7 @@ import { createSdkMcpServer, query, tool, type Options, type PreToolUseHookInput
 import { z } from "zod";
 import { VERSION } from "../config.ts";
 import type {
+  FilesRewound,
   HarnessDriver,
   HarnessEvent,
   ImageInput,
@@ -345,8 +346,12 @@ export function sessionOptions(opts: AnySessionOptions): Options {
     cwd: opts.cwd,
     model: opts.model,
     ...(opts.effort ? { effort: opts.effort as any } : {}),
-    resume: opts.resumeSessionId,
-    ...(opts.sessionId && !opts.resumeSessionId ? { sessionId: opts.sessionId } : {}),
+    // Rewound: a new session (its id given) forked from the old one, which
+    // keeps everything; the new one goes on from the entry `at`.
+    ...(opts.fork
+      ? { resume: opts.fork.fromSessionId, forkSession: true, resumeSessionAt: opts.fork.at, ...(opts.sessionId ? { sessionId: opts.sessionId } : {}) }
+      : { resume: opts.resumeSessionId, ...(opts.sessionId && !opts.resumeSessionId ? { sessionId: opts.sessionId } : {}) }),
+    ...(opts.fileCheckpointing ? { enableFileCheckpointing: true } : {}),
     permissionMode: opts.permissionMode as any,
     ...(opts.permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
     systemPrompt: { type: "preset", preset: "claude_code", ...(opts.appendSystemPrompt ? { append: opts.appendSystemPrompt } : {}) },
@@ -534,6 +539,11 @@ class ClaudeMainSession implements MainSession {
     const q = this.q as unknown as { renameSession?: (title: string, sessionId?: string) => Promise<void> };
     if (typeof q.renameSession !== "function") throw new Error("这个版本的 Claude Code 改不了名字");
     await q.renameSession(title, sessionId);
+  }
+
+  async rewindFiles(uuid: string, dryRun = false): Promise<FilesRewound> {
+    const r = await this.q.rewindFiles(uuid, { dryRun });
+    return { canRewind: !!r.canRewind, ...(r.error ? { error: r.error } : {}), ...(r.filesChanged ? { filesChanged: r.filesChanged } : {}) };
   }
 
   close(): void {

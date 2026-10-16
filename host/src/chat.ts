@@ -22,7 +22,8 @@ export class ChatLog {
       } else all[i] = m;
     }
     this.messages = all;
-    this.seq = this.messages.reduce((m, x) => Math.max(m, x.seq), 0);
+    // A rewind takes a seq of its own (rewoundSeq), with no message under it.
+    this.seq = this.messages.reduce((m, x) => Math.max(m, x.seq, x.rewoundSeq ?? 0), 0);
   }
 
   get lastSeq(): number {
@@ -59,6 +60,20 @@ export class ChatLog {
     return next;
   }
 
+  /**
+   * The uuids the harness has these messages under now (a session copied
+   * with new uuids): kept, not sent again (nothing a client shows changes).
+   */
+  setUuids(byId: Map<string, string>): void {
+    for (let i = 0; i < this.messages.length; i++) {
+      const m = this.messages[i]!;
+      const uuid = byId.get(m.id);
+      if (!uuid || uuid === m.uuid) continue;
+      this.messages[i] = { ...m, uuid };
+      appendJsonl(this.path, this.messages[i]);
+    }
+  }
+
   get(id: string): ChatMessage | undefined {
     for (let i = this.messages.length - 1; i >= 0; i--) if (this.messages[i]!.id === id) return this.messages[i];
     return undefined;
@@ -70,17 +85,49 @@ export class ChatLog {
     this.bus.emit("chat.delta", { id, text });
   }
 
+  // What clients see: everything but what was gone back before (回到这里重来).
+  private get shown(): ChatMessage[] {
+    return this.messages.filter((m) => !m.rewound);
+  }
+
   since(seq: number, limit = 500): ChatMessage[] {
-    return this.messages.filter((m) => m.seq > seq).slice(0, limit);
+    return this.messages.filter((m) => m.seq > seq && !m.rewound).slice(0, limit);
   }
 
   recent(limit: number): ChatMessage[] {
-    return this.messages.slice(-limit);
+    const out: ChatMessage[] = [];
+    for (let i = this.messages.length - 1; i >= 0 && out.length < limit; i--) if (!this.messages[i]!.rewound) out.push(this.messages[i]!);
+    return out.reverse();
   }
 
   before(seq: number, limit: number): ChatMessage[] {
-    const older = this.messages.filter((m) => m.seq < seq);
+    const older = this.messages.filter((m) => m.seq < seq && !m.rewound);
     return older.slice(-limit);
+  }
+
+  /**
+   * 回到这里重来 (docs/rewind-prd.md §4.3): the message at `fromSeq` and
+   * everything after it are marked rewound, kept in the log for the record
+   * and no longer shown. The rewind takes a seq of its own, so a client that
+   * missed it learns from `rewoundSince` on its next sync. Returns their ids.
+   */
+  rewind(fromSeq: number): string[] {
+    const at = ++this.seq;
+    const ids: string[] = [];
+    for (let i = 0; i < this.messages.length; i++) {
+      const m = this.messages[i]!;
+      if (m.seq < fromSeq || m.rewound) continue;
+      const next = { ...m, rewound: true, rewoundSeq: at };
+      this.messages[i] = next;
+      appendJsonl(this.path, next);
+      ids.push(m.id);
+    }
+    return ids;
+  }
+
+  /** The ids rewound after `seq` (a client syncing from there still has them). */
+  rewoundSince(seq: number, limit = 1000): string[] {
+    return this.messages.filter((m) => m.rewound && (m.rewoundSeq ?? 0) > seq).slice(-limit).map((m) => m.id);
   }
 
   /**
@@ -93,7 +140,7 @@ export class ChatLog {
     const hits: ChatSearchHit[] = [];
     for (let i = this.messages.length - 1; i >= 0 && hits.length < limit; i--) {
       const m = this.messages[i]!;
-      if (m.seq >= beforeSeq) continue;
+      if (m.seq >= beforeSeq || m.rewound) continue;
       const text = m.label ? `${m.label} ${m.text}` : m.text;
       const at = text.toLowerCase().indexOf(q);
       if (at < 0) continue;
@@ -104,9 +151,10 @@ export class ChatLog {
 
   /** A window of messages around `seq` (for jumping to a search hit). */
   around(seq: number, before = 25, after = 25): ChatMessage[] {
-    let i = this.messages.findIndex((m) => m.seq >= seq);
-    if (i < 0) i = this.messages.length;
-    return this.messages.slice(Math.max(0, i - before), i + after + 1);
+    const shown = this.shown;
+    let i = shown.findIndex((m) => m.seq >= seq);
+    if (i < 0) i = shown.length;
+    return shown.slice(Math.max(0, i - before), i + after + 1);
   }
 
   findByClientMsgId(cid: string): ChatMessage | undefined {

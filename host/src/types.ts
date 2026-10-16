@@ -42,6 +42,12 @@ export interface ChatMessage {
   // In a Pal's conversation, who said a user line that isn't the owner's:
   // the assistant's name for its words, or another session's name.
   from?: string;
+  // The owner's message in the assistant's conversation: the uuid Claude Code
+  // has it under. Only these can be gone back to (docs/rewind-prd.md §4.2).
+  uuid?: string;
+  // Gone back to before it (回到这里重来): kept in the log, never sent to clients.
+  rewound?: boolean;
+  rewoundSeq?: number; // the seq the rewind took (sync tells clients that missed it)
 }
 
 export interface ReplyTo {
