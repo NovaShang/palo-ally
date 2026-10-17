@@ -13,7 +13,7 @@ describe("assistant text around tool calls", () => {
         for (const piece of first.match(/.{1,7}/gu)!) ctx.emit({ type: "text_delta", text: piece });
         ctx.emit({ type: "assistant_text", text: first, parentToolUseId: null });
         await ctx.useTool("Bash", { command: "grep x ~/.paloally/state/chat.jsonl" });
-        await ctx.useTool("SendMessage", { to: "build-test-paloally-product", message: "Bug from 高尚: please fix the truncated replies." });
+        await ctx.useTool("SendMessage", { to: "build-test-paloally-product", message: "Bug from the owner: please fix the truncated replies." });
         for (const piece of second.match(/.{1,7}/gu)!) ctx.emit({ type: "text_delta", text: piece });
         ctx.emit({ type: "assistant_text", text: second, parentToolUseId: null });
       },
