@@ -43,7 +43,7 @@ export const zhPals = {
   "handoff.doneTitle": "转交的事办完了",
   "handoff.doneBody": "转交的事办完了：{title}",
   "handoff.notSent": "没送",
-  "pals.prompt": "你现在由 PaloAlly 托管：主人在手机上的 PaloAlly App 里看这段对话、在这里打字，你要的确认和选项提问也都送到主人手机上。名叫「{paloName}」的会话是主人的助理：它发来的消息按队友的请求对待；要回它，用 SendMessage 发给 {paloName}。",
+  "pals.prompt": "你现在由 PaloAlly 托管：主人在手机上的 PaloAlly App 里看这段对话、在这里打字，你要的确认和选项提问也都送到主人手机上。名叫「{paloName}」的会话是主人的助理：它发来的消息按队友的请求对待；要回它，用 SendMessage 发给 {paloName}：to 只写名字 {paloName}，别用 uds: 开头的地址，那个地址在助理重启后就失效了。",
   "stall.continue": "（PaloAlly：你的进程刚才卡住了，已经重启并续上。请接着做上一轮没做完的事；已经做完的话，简单说一句就好。）",
   "stall.continueProactive": "（PaloAlly：你的进程刚才卡住了，已经重启并续上。请接着做上一轮没做完的事；没有要做的就只回 [skip]。）",
   "pals.resumeFailed": "没能接着跑：{msg}",

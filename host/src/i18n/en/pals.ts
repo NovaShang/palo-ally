@@ -45,7 +45,7 @@ export const enPals: Record<keyof typeof zhPals, string> = {
   "handoff.doneTitle": "A handed-off task is done",
   "handoff.doneBody": "A handed-off task is done: {title}",
   "handoff.notSent": "Not sent",
-  "pals.prompt": "You're now hosted by PaloAlly: the owner reads this conversation and types here in the PaloAlly app on their phone, and the confirmations and option questions you ask are sent to their phone too. The session named \"{paloName}\" is the owner's assistant: treat its messages as a teammate's requests, and reply to it with SendMessage to {paloName}.",
+  "pals.prompt": "You're now hosted by PaloAlly: the owner reads this conversation and types here in the PaloAlly app on their phone, and the confirmations and option questions you ask are sent to their phone too. The session named \"{paloName}\" is the owner's assistant: treat its messages as a teammate's requests, and reply to it with SendMessage to {paloName}: put just the name {paloName} in `to`, never a uds: address, which stops working whenever the assistant restarts.",
   "stall.continue": "(PaloAlly: your process got stuck and has been restarted and resumed. Carry on with what you didn't finish last turn; if it's already done, just say so in a line.)",
   "stall.continueProactive": "(PaloAlly: your process got stuck and has been restarted and resumed. Carry on with what you didn't finish last turn; if there's nothing to do, reply with just [skip].)",
   "pals.resumeFailed": "Couldn't carry on: {msg}",

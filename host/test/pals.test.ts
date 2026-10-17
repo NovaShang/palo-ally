@@ -758,12 +758,16 @@ describe("asleep and awake (§12)", () => {
     expect(await tools.pal_send({ name: "网站", text: "把登录页的测试补上，做完告诉我" })).toBe("已经送到「网站」（它刚才睡着，已经叫醒）。它回你的话会作为消息回到你这里。");
     const woken = t.driver.pals[1]!;
     expect(woken.opts.resumeSessionId).toBe(sid);
-    const wrapped = `<cross-session-message from="paloally" from-name="${PALO_NAME}">\n把登录页的测试补上，做完告诉我\n</cross-session-message>`;
+    // from is the assistant's name, not a socket: a Pal that replies by copying it still reaches the assistant after a restart
+    const wrapped = `<cross-session-message from="${PALO_NAME}" from-name="${PALO_NAME}">\n把登录页的测试补上，做完告诉我\n</cross-session-message>`;
     expect(woken.sent).toEqual([wrapped]);
     expect(t.palEvents("chat.message").find((m) => m.role === "user")).toMatchObject({ text: "把登录页的测试补上，做完告诉我", from: "Palo", channel: "system", pal: pal.id });
     // read back from its transcript: the assistant's words, not the owner's
     t.raw.set(sid, [{ type: "user", uuid: "s1", timestamp: "2026-10-15T10:00:00Z", message: { role: "user", content: wrapped }, origin: { kind: "human" } }]);
     expect((await t.call("pals.history", { id: pal.id })).messages).toEqual([expect.objectContaining({ id: "s1", text: "把登录页的测试补上，做完告诉我", from: "Palo" })]);
+    // transcripts from before still read back as the assistant's
+    t.raw.set(sid, [{ type: "user", uuid: "s0", timestamp: "2026-10-15T09:00:00Z", message: { role: "user", content: wrapped.replace(`from="${PALO_NAME}"`, `from="paloally"`) }, origin: { kind: "human" } }]);
+    expect((await t.call("pals.history", { id: pal.id })).messages).toEqual([expect.objectContaining({ id: "s0", from: "Palo" })]);
     // awake: straight in; by any case of its name
     expect(await tools.pal_send({ name: "网站", text: "还有首页" })).toBe("已经送到「网站」。它回你的话会作为消息回到你这里。");
     expect(t.driver.pals).toHaveLength(2);

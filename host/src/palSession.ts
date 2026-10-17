@@ -107,9 +107,15 @@ export const stallContinue = (): string => tr("stall.continue");
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Words from another session (the assistant's pal_send), as Claude Code shows a SendMessage. */
+/**
+ * Words from another session (the assistant's pal_send), as Claude Code shows a
+ * SendMessage. `from` is the sender's name, not a socket: Claude Code tells a
+ * session to reply by copying `from`, and the assistant's socket changes every
+ * time the host restarts, so only its name keeps working.
+ */
 export function peerWrap(name: string, text: string): string {
-  return `<cross-session-message from="paloally" from-name="${name.replace(/"/g, "")}">\n${text}\n</cross-session-message>`;
+  const n = name.replace(/"/g, "");
+  return `<cross-session-message from="${n}" from-name="${n}">\n${text}\n</cross-session-message>`;
 }
 
 export class PalSession {
