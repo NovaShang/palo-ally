@@ -255,6 +255,17 @@
         }
       }
     },
+    "Mac 版有新版本 %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac app %@ is available"
+          }
+        }
+      }
+    },
     "PaloAlly 不再管它，它会停下。对话记录还在电脑上。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -372,6 +383,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Last wake-up cost about $%@"
+          }
+        }
+      }
+    },
+    "下载" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download"
           }
         }
       }
@@ -1795,6 +1817,17 @@
         }
       }
     },
+    "复制完整编号" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copies the full ID"
+          }
+        }
+      }
+    },
     "复制表格" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1802,6 +1835,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copy table"
+          }
+        }
+      }
+    },
+    "复制设备编号" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy device ID"
           }
         }
       }
@@ -2407,6 +2451,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Scan a code in person, and your assistant can pass messages and set up times with theirs."
+          }
+        }
+      }
+    },
+    "忽略这个版本" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dismiss this version"
           }
         }
       }
@@ -3254,6 +3309,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "New messages"
+          }
+        }
+      }
+    },
+    "有新版本 %@ · 下载" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New version %@ · Download"
           }
         }
       }

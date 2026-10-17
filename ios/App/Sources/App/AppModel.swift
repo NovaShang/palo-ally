@@ -13,6 +13,7 @@ let appLog = Logger(subsystem: "com.novashang.paloally", category: "app")
 ///                        identity | avatars | assistant (management, as the orb opens it)
 ///                        | file (DEBUG: the Markdown sheet a file card opens)
 ///                        | scrollLab (DEBUG: scroll experiments, `-labRun anchor|width|fling|sentinel`)
+///   -demoHostVersion <x.y.z>  the demo computer reports that version (a newer one shows the Mac app's update hint)
 ///   -demoTab <name>      management on watches (目标) | history (履历) | memory; old values tasks → history
 ///   -pairLink <url>      start pairing with this paloally:// link (automation; skips the open-URL prompt)
 ///   -demoHosts <n>       demo with n assistants (2 shows 切换助理 in management)
@@ -39,6 +40,9 @@ struct LaunchOptions {
     var demoState: String? = nil
     /// -demoLayout wide — on large screens, open the sidebar and the inspector.
     var demoLayout: String? = nil
+    /// -demoHostVersion 9.9.9 (or PALOALLY_DEMO_HOST_VERSION): the demo computer reports
+    /// that version, to show the Mac app's 「有新版本」 hint. Default: none.
+    var demoHostVersion: String? = nil
 
     static func current() -> LaunchOptions {
         let d = UserDefaults.standard
@@ -50,7 +54,8 @@ struct LaunchOptions {
             pairLink: d.string(forKey: "pairLink"),
             demoHosts: max(1, d.integer(forKey: "demoHosts")),
             demoState: d.string(forKey: "demoState"),
-            demoLayout: d.string(forKey: "demoLayout")
+            demoLayout: d.string(forKey: "demoLayout"),
+            demoHostVersion: d.string(forKey: "demoHostVersion") ?? env["PALOALLY_DEMO_HOST_VERSION"]
         )
     }
 }
@@ -717,7 +722,8 @@ final class AppModel {
             let who = i < identities.count ? identities[i] : ("Palo", "")
             let naming = launch.screen == "naming" && i == 0
             let host = DemoHost(speed: 1, hostName: i < names.count ? names[i] : "电脑 \(i + 1)",  // i18n-ok: demo data
-                                assistantName: naming ? "" : who.0, color: naming ? "" : who.1, pals: i == 0)
+                                assistantName: naming ? "" : who.0, color: naming ? "" : who.1, pals: i == 0,
+                                version: i == 0 ? launch.demoHostVersion : nil)
             demoHosts[id] = host
             let s = makeStore(host.transport, id: id)
             stores[id] = s

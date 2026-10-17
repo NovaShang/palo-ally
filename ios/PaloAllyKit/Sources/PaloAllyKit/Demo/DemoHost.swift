@@ -86,7 +86,7 @@ public actor DemoHost {
     /// asking a question), and the assistant proposes opening a Pal.
     public init(speed: Double = 1, seeded: Bool = true, autoConnect: Bool = true, hostName: String = "我的 MacBook",
                 assistantName: String = "Palo", color: String = "magenta", sessions withSessions: Bool = false,
-                pals withPals: Bool = false) {
+                pals withPals: Bool = false, version: String? = nil) {
         self.speed = speed
         self.hostName = hostName
         self.palsMode = withPals
@@ -94,6 +94,8 @@ public actor DemoHost {
         settings.assistantName = assistantName
         settings.color = color
         status.metAt = Date().epochMillis - 41 * 86_400_000
+        // A newer release than the app's, to show the Mac's update hint (`-demoHostVersion`).
+        if let version, !version.isEmpty { status.version = version }
         let t = InMemoryTransport(autoConnect: autoConnect)
         self.transport = t
         if seeded {

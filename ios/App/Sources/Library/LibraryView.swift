@@ -120,6 +120,8 @@ struct LibraryView: View {
         }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+        // A headerless first section still gets a section's gap above it: none, so the picker sits as the first row.
+        .listSectionMargins(.top, 0)
     }
 
     // MARK: 按时间

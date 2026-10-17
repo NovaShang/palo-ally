@@ -120,7 +120,7 @@ targets:
         SKIP_INSTALL: YES
   # DEBUG drills that need real touches (flings), on an iPhone simulator;
   # MacScrollWheelUITests (real scroll-wheel events) and MacLibraryUITests
-  # (成果 in the inspector), on Mac Catalyst.
+  # (成果 in the inspector) and MacUpdateUITests (the update hint), on Mac Catalyst.
   PaloAllyUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -139,7 +139,7 @@ targets:
         DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
         # On the Mac only the Mac's own tests (the others drive an iPhone).
         EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]: "*"
-        INCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]: "MacScrollWheelUITests.swift MacLibraryUITests.swift"
+        INCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]: "MacScrollWheelUITests.swift MacLibraryUITests.swift MacUpdateUITests.swift"
 schemes:
   PaloAlly:
     build:

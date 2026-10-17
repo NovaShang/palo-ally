@@ -6,6 +6,9 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
 
+    @Environment(\.openURL) private var openURL
+    /// 设备编号 was just copied (「已复制」 shows in its place for a moment).
+    @State private var copiedDeviceID = false
     @State private var quietOn = false
     @State private var quietStart = WatchEditor.date(hour: 23, minute: 0)
     @State private var quietEnd = WatchEditor.date(hour: 8, minute: 0)
@@ -73,7 +76,7 @@ struct SettingsView: View {
 
                 Section {
                     LabeledContent("版本", value: model.buildStamp)
-                    LabeledContent("设备编号", value: "\(VoiceInstallID.short)…")
+                    deviceIDRow
                     // From bento: what to send when something goes wrong — the
                     // logs of the last few launches and the system's hang and
                     // crash reports.
@@ -83,6 +86,13 @@ struct SettingsView: View {
                     .tint(.primary)
                     if !store.hostVersion.isEmpty {
                         LabeledContent("电脑上的版本", value: store.hostVersion)
+                        if let newer = MacUpdate.newerVersion(app: model.clientVersion, host: store.hostVersion) {
+                            Button { openURL(MacUpdate.downloadURL) } label: {
+                                Text("有新版本 \(newer) · 下载")
+                            }
+                            .tint(.primary)
+                            .accessibilityIdentifier("settings-mac-update")
+                        }
                         // The host follows releases by itself; this asks it now.
                         Button {
                             Task { await checkHostUpdate() }
@@ -126,6 +136,40 @@ struct SettingsView: View {
                 push(["quietHours": quietValue])
             }
         }
+    }
+
+    /// The short form on show; a tap (or 复制设备编号 in the menu) copies the whole
+    /// id, which is what raising a voice quota needs.
+    private var deviceIDRow: some View {
+        Button {
+            copyDeviceID()
+        } label: {
+            LabeledContent("设备编号") {
+                if copiedDeviceID {
+                    Text("已复制").foregroundStyle(.secondary)
+                } else {
+                    Text(verbatim: "\(VoiceInstallID.short)…")
+                }
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("复制设备编号", systemImage: "doc.on.doc") { copyDeviceID() }
+        }
+        .accessibilityIdentifier("settings-device-id")
+        .accessibilityHint("复制完整编号")
+        .sensoryFeedback(.success, trigger: copiedDeviceID) { _, now in now }
+        .task(id: copiedDeviceID) {
+            guard copiedDeviceID else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            copiedDeviceID = false
+        }
+    }
+
+    private func copyDeviceID() {
+        Clipboard.copy(VoiceInstallID.current)
+        copiedDeviceID = true
     }
 
     /// The current assistant's color (kept on its computer).

@@ -90,6 +90,8 @@ struct ConversationList: View {
         .navigationTitle(Platform.barInWindowToolbar ? "" : "PaloAlly")
         .toolbar(Platform.barInWindowToolbar ? .hidden : .automatic, for: .navigationBar)
         .modifier(MacSidebarToggle())
+        // The Mac app is behind the computer's: a quiet capsule at the foot (MacUpdateHint).
+        .safeAreaInset(edge: .bottom, spacing: 0) { MacUpdateHint() }
         .palRename($renaming)
         .animation(.snappy, value: store.pals)
         .animation(.snappy, value: store.otherSessions)
