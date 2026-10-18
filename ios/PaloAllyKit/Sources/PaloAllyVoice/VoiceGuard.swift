@@ -37,8 +37,10 @@ public enum VoiceGuard {
         })
     }
 
-    /// Where a final transcript lands. Words nobody heard live (they exist
-    /// only because the recognizer produced them after the release) wait in
-    /// the composer for the user to confirm; they are never sent.
-    public static func mustConfirm(heardLive: Bool) -> Bool { !heardLive }
+    /// Where a final transcript lands. Words that exist only because the
+    /// batch fallback produced them (realtime heard nothing, even after the
+    /// release) wait in the composer for the user to confirm. When realtime
+    /// itself delivers the final after the release, the user really spoke:
+    /// it sends as usual.
+    public static func mustConfirm(heardLive: Bool, fromBatch: Bool) -> Bool { !heardLive && fromBatch }
 }

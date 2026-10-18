@@ -34,9 +34,12 @@ struct VoiceGuardTests {
         #expect(!VoiceGuard.isMisTap(pcmBytes: 9376, sampleRate: 16000, heardLive: true))
     }
 
-    @Test func wordsNobodyHeardLiveMustBeConfirmed() {
-        #expect(VoiceGuard.mustConfirm(heardLive: false))
-        #expect(!VoiceGuard.mustConfirm(heardLive: true))
+    @Test func onlyBatchWordsNobodyHeardLiveMustBeConfirmed() {
+        #expect(VoiceGuard.mustConfirm(heardLive: false, fromBatch: true))
+        // Realtime's own final after the release: a real utterance, it sends.
+        #expect(!VoiceGuard.mustConfirm(heardLive: false, fromBatch: false))
+        #expect(!VoiceGuard.mustConfirm(heardLive: true, fromBatch: true))
+        #expect(!VoiceGuard.mustConfirm(heardLive: true, fromBatch: false))
     }
 
     @Test func aWholeCorpusLineIsAnEcho() {

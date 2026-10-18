@@ -427,7 +427,7 @@ struct StuckSendTests {
     /// sent again by itself, with the same client id.
     @Test func unansweredSendOnALiveLinkGoesOutAgain() async throws {
         let host = ManualHost()
-        let store = await online(host)
+        let store = await online(host, timeout: 1)
         await store.rpc.setReconnectOnTimeout(false)
         store.queuedRetryDelay = 0.05
         store.send("在路上")

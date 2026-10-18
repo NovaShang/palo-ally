@@ -663,10 +663,10 @@ struct ComposerView: View {
                 voice.leave(.unheard(edit: target == .edit), words: voice.dictation.errorMessage ?? String(localized: "没听清"))
                 return
             }
-            // Words that came only after the release (the batch fallback
-            // included) were never seen live: they wait in the field for the
-            // user to confirm, whatever zone the finger let go in.
-            land(VoiceGuard.mustConfirm(heardLive: false) ? .edit : target, final)
+            // Words the batch fallback made up after nothing was heard live
+            // wait in the field for the user to confirm; a final that realtime
+            // itself delivered after the release sends as usual.
+            land(VoiceGuard.mustConfirm(heardLive: false, fromBatch: voice.dictation.finalFromBatch) ? .edit : target, final)
             return
         }
         let cid = land(target, heard)

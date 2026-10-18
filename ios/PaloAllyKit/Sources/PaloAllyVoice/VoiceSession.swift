@@ -23,6 +23,10 @@ public final class VoiceSession {
     /// even for the OpenAI engine, whose final arrives via a callback).
     private var lastTranscript = ""
     public private(set) var isActive = false
+    /// The last `finish()` result came from the whole-clip batch request (the
+    /// realtime engine delivered nothing, or its socket failed), not from
+    /// realtime itself. See `VoiceGuard.mustConfirm`.
+    public private(set) var finalFromBatch = false
 
     /// Global mic arbiter: only one recording may own the audio input bus at a
     /// time. The hold-to-talk compass (host-owned) and the composer mic
@@ -193,6 +197,7 @@ public final class VoiceSession {
         // late callbacks from its teardown are dropped.
         defer { generation.invalidate() }
         isActive = false
+        finalFromBatch = false
         if Self.activeRecording === self { Self.activeRecording = nil }
         // Qwen's interims are a rolling window (they reset mid-utterance), NOT the
         // full running transcript, so a settled interim is not the final — force
@@ -257,6 +262,7 @@ public final class VoiceSession {
                 let better = await BatchTranscriptionService.shared.transcribe(
                     pcm: recordedPCM, sampleRate: activeSampleRate, language: language, corpus: activeCorpus)
                 if streamed.isEmpty, let better, VoiceGuard.echoesCorpus(better, corpus: activeCorpus) { return "" }
+                finalFromBatch = better != nil
                 return better ?? streamed
             }
             // Released mid-speech (or Qwen, always): commit the buffer and wait
@@ -289,6 +295,7 @@ public final class VoiceSession {
                 dlog("[voice] batch result is a line of the background corpus — dropped")
                 return ""
             }
+            finalFromBatch = better != nil
             return better ?? ""
         }
     }

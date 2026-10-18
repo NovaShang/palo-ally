@@ -83,6 +83,9 @@ final class SpeechDictation {
         )
     }
 
+    /// The last final text came from the batch fallback (see `VoiceGuard.mustConfirm`).
+    var finalFromBatch: Bool { session.finalFromBatch }
+
     /// Stops listening and returns the final text.
     func finish() async -> String {
         guard isRecording else { return transcript.trimmingCharacters(in: .whitespacesAndNewlines) }
