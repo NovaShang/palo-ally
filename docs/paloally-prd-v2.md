@@ -78,7 +78,7 @@
 2. **会话模型（吸收理念、原生落地）**：
    - 用 CC 原生 session + resume，不自造每请求上下文组装器。
    - 不让主会话无限长：重活下沉子 agent（§6.2）；压缩用 harness 原生的 `/compact`，同一会话、不换会话、不写交接文件、不自己做摘要。
-   - **外壳只决定什么时候压**（2026-10-06，取代 10-04 的「全部交给 harness」：1M 模型的自动压缩要到接近 1M 才触发，主会话会长到几十万 token，又慢又贵）。三个软触发：上下文超过 20 万 token（`session.compactAfterTokens`）、空闲超过几个小时（`session.idleCompactHours`，默认 3）、每天晨报之前（`session.compactBeforeBrief`）。都只在**干净的间隙**执行：这一轮结束、没有工具在跑、没有在等的后台任务或交出去的事、没人在等主人回答、主人几分钟没说话。永远不在干活中途切；忙着超过 20 万就继续忙，harness 自己的自动压缩是兜底。默认不给压缩指令。每次压缩记审计（触发原因、压缩前后 token）。
+   - **压缩分两路**（2026-10-18，取代 10-06 的三个外壳触发）。一，**按大小压交给 Claude Code**：主会话启动时用 flag settings 传 `autoCompactWindow`（配置 `session.compactWindowTokens`，默认 20 万，0 为用 Claude Code 自己的默认）和 `precomputeCompactionEnabled`，Claude Code 在约「窗口减 3.3 万」（20 万时是 16.7 万）原生自动压缩；flag settings 只对这个会话生效，压过主人的 settings 文件，也从不写进去；Pal 不传，用默认。外壳原来的「超过 20 万」触发删掉。二，**缓存过期前压**：Claude Code 2.1.299 的空闲压缩由服务端开关控制，只在终端里有，SDK 会话拿不到，所以外壳自己做一份：一轮结束后起一个定时器，空闲到 `session.idleCompactMinutes`（默认 54，约一小时 prompt cache 的 90%）且上下文至少 `session.idleCompactMinTokens`（默认 20 万）时，在**干净的间隙**入队原生 `/compact`，缓存冷掉后下一条消息就不用整段重读。每段空闲最多一次；其间有新的一轮就作废；不是干净间隙就每 5 分钟再看。干净的间隙：这一轮结束、没有工具在跑、没有在等的后台任务或交出去的事、没人在等主人回答、主人几分钟没说话。原来的「空闲 3 小时」和「晨报之前」两个触发删掉。等 Claude Code 的空闲压缩覆盖 SDK 会话，外壳这一路也可以删。默认不给压缩指令。每次压缩记审计 `session.compact`（外壳发起的 reason 是 idle，Claude Code 自己压的是 native，另有 trigger auto/manual、压缩前后 token）。
    - 外壳只在空闲时关掉 CLI 进程省资源，下条消息 resume 同一会话。
    - 连续感来自客户端始终一个对话 + 记忆，不来自一根不断长的线。
 3. 待核实（§7.6）：CC SDK 对每轮上下文的控制边界，决定我们能向 Muse 靠多近。

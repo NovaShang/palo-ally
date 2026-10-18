@@ -352,7 +352,7 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
 // only in one process and would silently die with it.
 const MAIN_DISALLOWED = ["CronCreate", "CronDelete", "CronList", "ScheduleWakeup"];
 
-type AnySessionOptions = SessionOptions & Partial<Pick<MainSessionOptions, "tools" | "sharedChrome">>;
+type AnySessionOptions = SessionOptions & Partial<Pick<MainSessionOptions, "tools" | "sharedChrome" | "compactWindowTokens">>;
 
 // sessionOptions is what a long-lived session asks the SDK for (exported so
 // tests can check it without starting Claude Code).
@@ -377,6 +377,12 @@ export function sessionOptions(opts: AnySessionOptions): Options {
     ...(opts.permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
     systemPrompt: { type: "preset", preset: "claude_code", ...(opts.appendSystemPrompt ? { append: opts.appendSystemPrompt } : {}) },
     settingSources: ["user", "project", "local"],
+    // Flag settings: they win over the owner's settings files for this session
+    // only and are never written to them. Claude Code then compacts natively near
+    // the window; the assistant's session only (a Pal keeps Claude Code's defaults).
+    ...(main && (opts.compactWindowTokens ?? 0) > 0
+      ? { settings: { autoCompactWindow: opts.compactWindowTokens, precomputeCompactionEnabled: true } }
+      : {}),
     includePartialMessages: true,
     forwardSubagentText: true,
     agentProgressSummaries: true, // live one-line progress for subagent tasks

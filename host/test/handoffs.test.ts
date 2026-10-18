@@ -7,7 +7,9 @@ import { Bus } from "../src/bus.ts";
 import { HandoffTracker, SessionRegistry, isQuestion, isRequest, summarizeTail, transcriptPath } from "../src/handoffs.ts";
 import { TaskTracker } from "../src/tasks.ts";
 import { readJsonl } from "../src/util.ts";
-import { makeHub, testConfig, tick } from "./helpers.ts";
+import { loadConfig } from "../src/config.ts";
+import { sessionOptions } from "../src/harness/claude.ts";
+import { makeHub, testConfig, tick, tmpPaths } from "./helpers.ts";
 
 const HOME = "/tmp/paloally-home-test";
 
@@ -288,27 +290,50 @@ describe("native compaction at clean breaks", () => {
   };
   const later = (min: number) => Date.now() + min * 60_000;
 
-  test("over 200k: compacts once the owner has gone quiet, never mid-exchange", async () => {
+  test("idle 54 minutes with 200k+ of context: compacts once, never mid-exchange", async () => {
     const { hub, driver } = makeHub({ script: compactScript });
     driver.contextTokens = 230_000;
     hub.userMessage("你好", "app");
     await hub.idle();
     expect(hub.conversation.contextTokens).toBe(230_000);
-    // the owner just spoke: not a clean break
-    expect(hub.conversation.maybeCompact()).toBeNull();
-    expect(hub.conversation.maybeCompact({}, later(6))).toBe("tokens");
+    // the owner just spoke and the cache is warm: nothing
+    expect(hub.conversation.maybeIdleCompact()).toBeNull();
+    expect(hub.conversation.maybeIdleCompact(undefined, later(53))).toBeNull();
+    expect(hub.conversation.maybeIdleCompact(undefined, later(54))).toBe("started");
     await hub.idle();
     expect(driver.last!.sent.at(-1)).toBe("/compact");
     const audit = hub.audit.tail(20);
-    expect(audit.find((e) => e.type === "session.compact")).toMatchObject({ reason: "tokens", preTokens: 230_000, postTokens: 18_000 });
+    expect(audit.find((e) => e.type === "session.compact")).toMatchObject({ reason: "idle", preTokens: 230_000, postTokens: 18_000 });
     expect(hub.conversation.contextTokens).toBe(18_000);
     // nothing shown or pushed for the housekeeping turn
     expect(hub.chat.recent(20).some((m) => m.text.includes("Compacted"))).toBe(false);
-    // and it doesn't repeat
-    expect(hub.conversation.maybeCompact({}, later(12))).toBeNull();
+    // and it doesn't repeat in the same idle stretch
+    expect(hub.conversation.maybeIdleCompact(undefined, later(120))).toBeNull();
   });
 
-  test("not while a turn runs, work is in flight, or under the thresholds", async () => {
+  test("the timer armed after a turn fires once, and a newer turn cancels it", async () => {
+    const cfg = testConfig((c) => (c.session.idleCompactMinutes = 0.0005)); // 30 ms
+    const { hub, driver } = makeHub({ script: compactScript, config: cfg });
+    driver.contextTokens = 230_000;
+    hub.userMessage("你好", "app");
+    await hub.idle();
+    // fake the owner having been quiet for a while: the real timer is only 30 ms
+    (hub.chat as any).lastUserActivity = () => 0;
+    await tick(120);
+    await hub.idle();
+    expect(driver.last!.sent.filter((t) => t === "/compact")).toHaveLength(1);
+    await tick(120);
+    expect(driver.last!.sent.filter((t) => t === "/compact")).toHaveLength(1);
+    // a turn in between: the new turn's own timer is what counts
+    driver.contextTokens = 230_000;
+    hub.userMessage("在吗", "app");
+    await hub.idle();
+    const stale = (hub.conversation as any).idleStamp - 1;
+    expect(hub.conversation.maybeIdleCompact(stale, later(90))).toBeNull();
+    hub.conversation.stopIdleCompact();
+  });
+
+  test("not below the token threshold, while a turn runs, or with work queued", async () => {
     let release!: () => void;
     const { hub, driver } = makeHub({
       script: async (text, ctx) => {
@@ -319,29 +344,73 @@ describe("native compaction at clean breaks", () => {
     driver.contextTokens = 230_000;
     hub.userMessage("慢", "app");
     await tick(10);
-    expect(hub.conversation.maybeCompact({}, later(10))).toBeNull(); // mid-turn
+    expect(hub.conversation.maybeIdleCompact(undefined, later(90))).toBeNull(); // no turn has ended yet
+    hub.userMessage("排队", "app");
     release();
     await hub.idle();
-    driver.contextTokens = 1000;
+    driver.contextTokens = 199_000;
     hub.userMessage("快", "app");
     await hub.idle();
-    expect(hub.conversation.maybeCompact({}, later(10))).toBeNull(); // small context
+    expect(hub.conversation.maybeIdleCompact(undefined, later(90))).toBeNull(); // below 200k
   });
 
-  test("idle for hours, or right before the 晨报, with some context built up", async () => {
-    const { hub, driver } = makeHub({ script: compactScript, config: testConfig() });
-    driver.contextTokens = 60_000;
+  test("something running or queued at fire time: no compaction yet, asked again later", async () => {
+    let release!: () => void;
+    const { hub, driver } = makeHub({
+      script: async (text, ctx) => {
+        if (text === "慢") await new Promise<void>((r) => (release = r));
+        ctx.emit({ type: "assistant_text", text: "ok", parentToolUseId: null });
+      },
+    });
+    driver.contextTokens = 230_000;
     hub.userMessage("你好", "app");
     await hub.idle();
-    expect(hub.conversation.maybeCompact({}, later(30))).toBeNull(); // quiet, but not for hours
-    expect(hub.conversation.maybeCompact({ beforeBrief: true }, later(30))).toBe("brief");
+    hub.userMessage("慢", "app");
+    await tick(10);
+    // a turn is running: not a clean break (its end starts a new idle stretch)
+    expect(hub.conversation.maybeIdleCompact(undefined, later(90))).toBe("later");
+    release();
     await hub.idle();
-    expect(hub.audit.tail(20).find((e) => e.type === "session.compact")).toMatchObject({ reason: "brief" });
-    // after compacting, idle needs new activity first
-    expect(hub.conversation.maybeCompact({}, later(4 * 60))).toBeNull();
-    hub.userMessage("在吗", "app");
+    expect(hub.conversation.maybeIdleCompact(undefined, later(90))).toBe("started");
     await hub.idle();
-    expect(hub.conversation.maybeCompact({}, later(4 * 60))).toBe("idle");
+  });
+
+  test("no compaction is enqueued before the 晨报", async () => {
+    const { hub, driver } = makeHub({ script: compactScript, config: testConfig() });
+    driver.contextTokens = 260_000;
+    hub.userMessage("你好", "app");
+    await hub.idle();
+    const brief = { id: "w1", title: "晨报", kind: "schedule", due: Date.now() } as any;
+    (hub as any).onSchedule(brief);
+    await tick(20);
+    expect(driver.last!.sent).not.toContain("/compact");
+    expect("maybeCompact" in hub.conversation).toBe(false);
+  });
+
+  test("the main session asks Claude Code to autocompact near the window; a Pal's does not", () => {
+    const base = { cwd: "/tmp", permissionMode: "auto", appendSystemPrompt: "", mcpServers: {}, canUseTool: async () => ({ behavior: "allow" }), onEvent: () => {} } as any;
+    const main: any = sessionOptions({ ...base, tools: {} as any, compactWindowTokens: 200_000 });
+    expect(main.settings).toEqual({ autoCompactWindow: 200_000, precomputeCompactionEnabled: true });
+    expect(main.settingSources).toEqual(["user", "project", "local"]);
+    expect(sessionOptions({ ...base, tools: {} as any, compactWindowTokens: 0 }).settings).toBeUndefined();
+    expect(sessionOptions({ ...base, compactWindowTokens: 200_000 }).settings).toBeUndefined(); // a Pal
+    expect(sessionOptions({ ...base }).settings).toBeUndefined();
+  });
+
+  test("the conversation hands the configured window to the main session", async () => {
+    const { hub, driver } = makeHub({ script: compactScript, config: testConfig((c) => (c.session.compactWindowTokens = 123_000)) });
+    hub.userMessage("你好", "app");
+    await hub.idle();
+    expect(driver.last!.opts.compactWindowTokens).toBe(123_000);
+  });
+
+  test("saved configs lose the old triggers and get the new defaults", () => {
+    const paths = tmpPaths();
+    writeFileSync(paths.config, JSON.stringify({ session: { compactAfterTokens: 300_000, idleCompactHours: 5, compactBeforeBrief: false } }));
+    const cfg = loadConfig(paths);
+    expect(cfg.session).toEqual({ compactWindowTokens: 200_000, idleCompactMinutes: 54, idleCompactMinTokens: 200_000 });
+    writeFileSync(paths.config, JSON.stringify({ session: { idleCompactMinutes: 30 } }));
+    expect(loadConfig(paths).session).toMatchObject({ idleCompactMinutes: 30, compactWindowTokens: 200_000 });
   });
 
   test("the harness' own auto-compaction is logged as such", async () => {
@@ -353,7 +422,7 @@ describe("native compaction at clean breaks", () => {
     });
     hub.userMessage("你好", "app");
     await hub.idle();
-    expect(hub.audit.tail(20).find((e) => e.type === "session.compact")).toMatchObject({ reason: "harness:auto", preTokens: 950_000 });
+    expect(hub.audit.tail(20).find((e) => e.type === "session.compact")).toMatchObject({ reason: "native", trigger: "auto", preTokens: 950_000 });
   });
 
   test("an open handoff holds compaction back", async () => {
@@ -363,9 +432,9 @@ describe("native compaction at clean breaks", () => {
     await hub.idle();
     const real = hub.handoffs.inFlight.bind(hub.handoffs);
     (hub.handoffs as any).inFlight = () => true;
-    expect(hub.conversation.maybeCompact({}, later(10))).toBeNull();
+    expect(hub.conversation.maybeIdleCompact(undefined, later(90))).toBe("later");
     (hub.handoffs as any).inFlight = real;
-    expect(hub.conversation.maybeCompact({}, later(10))).toBe("tokens");
+    expect(hub.conversation.maybeIdleCompact(undefined, later(90))).toBe("started");
     await hub.idle();
   });
 });

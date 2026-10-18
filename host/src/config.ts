@@ -100,9 +100,9 @@ export interface Config {
   session: {
     // When to compact earlier than the harness' own (~1M-token) default. All
     // soft: they fire only at a clean break, through the harness' native /compact.
-    compactAfterTokens: number; // context past this; 0 = off
-    idleCompactHours: number; // quiet this long (with some context built up); 0 = off
-    compactBeforeBrief: boolean; // right before the daily 晨报
+    compactWindowTokens: number; // Claude Code autocompacts near this (about 33k below it); 0 = its own default
+    idleCompactMinutes: number; // idle this long (just under the 1-hour prompt cache) with a big context: compact; 0 = off
+    idleCompactMinTokens: number; // ...if the context is at least this
   };
   budget: {
     probeDailyUsd: number; // probe stops for the day after this
@@ -156,7 +156,7 @@ export function defaultConfig(): Config {
     // Claude Code's own classifier approves safe calls and asks the owner only
     // when it can't tell. Safety is the harness' job (PRD §6.5).
     permissionMode: "auto",
-    session: { compactAfterTokens: 200_000, idleCompactHours: 3, compactBeforeBrief: true },
+    session: { compactWindowTokens: 200_000, idleCompactMinutes: 54, idleCompactMinTokens: 200_000 },
     // About 300 probe runs a day at ~$0.01 each: a few goals checked every
     // 5–15 minutes. ($1 ran out by early morning and the goals went quiet.)
     budget: { probeDailyUsd: 5, mainDailyUsd: 0 },
@@ -224,6 +224,9 @@ export function loadConfig(paths: Paths): Config {
   delete (cfg.settings as any).maxProactivePerDay; // removed 2026-10-04 (runaway guard instead)
   delete (cfg.settings as any).avatar; // removed 2026-10-05 (one avatar form; color is the choice)
   delete (cfg.session as any).rollAfterTokens; // 2026-10-06: native compaction instead of rolling sessions
+  delete (cfg.session as any).compactAfterTokens; // 2026-10-18: Claude Code compacts at session.compactWindowTokens
+  delete (cfg.session as any).idleCompactHours; // 2026-10-18: now idleCompactMinutes (before the prompt cache expires)
+  delete (cfg.session as any).compactBeforeBrief; // 2026-10-18: no compaction before the 晨报
   delete (cfg.session as any).idleCloseMinutes; // 2026-10-18: the assistant's process stays up (conversation.ts)
   // $1 was the default until 2026-10-06 and stopped every probe by morning;
   // a config still carrying exactly that old default gets the new one.

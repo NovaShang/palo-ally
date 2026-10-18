@@ -49,7 +49,7 @@ relay/       不新写：复用 github.com/NovaShang/bento 的 relay/（bento-re
 `paloally start` 前台跑 daemon（`paloally service install` 装成 launchd/systemd 常驻）。daemon 内：
 
 - **一个主会话**：Claude Agent SDK `query()`，streaming input（AsyncIterable），常驻；所有通道的用户消息排进同一个输入队列。session id 持久化，进程重启 `resume`。会话名固定为 `Palo`（`--name`），Pal 用 SendMessage 回它就发给这个名字。
-- **idle 处理**：空闲 `session.idleCloseMinutes` 后关掉 CLI 子进程（省资源），下条消息 `resume` 同一会话。上下文与压缩交给 harness；外壳只记录压缩事件（`compact_boundary`）用于 §12.3 评估。
+- **idle 处理**：主会话的进程不再因空闲关闭（其他会话要靠名字找到它）。压缩：按大小压交给 Claude Code（flag settings 的 `autoCompactWindow` = `session.compactWindowTokens`，默认 20 万，约 16.7 万时原生压缩；只对本会话生效，不写主人的 settings 文件）；外壳只在空闲 `session.idleCompactMinutes`（默认 54，缓存一小时的 90%）且上下文 ≥ `session.idleCompactMinTokens`（默认 20 万）时，于干净的间隙入队一次 `/compact`。原因：Claude Code 自己的空闲压缩由服务端开关控制且只在终端里有，SDK 会话没有；覆盖后这一路可删。外壳记录压缩事件（`compact_boundary`，audit `session.compact`，reason 为 idle 或 native）用于 §12.3 评估。
 - **探针**：独立短上下文 `query()`（便宜模型、`persistSession:false`、结构化输出），只在有 watch 到期时才跑；没到期的 tick 零调用。
 - **本地控制面**：`~/.paloally/run/host.sock`（unix socket，行分隔 JSON，同一套 RPC），CLI 子命令通过它和 daemon 说话。
 - **会话钩子**（docs/sessions-prd.md §6.3）：`~/.paloally/run/hooks.sock`。全局钩子跑 `~/.paloally/bin/cc-hook <事件名> # PaloAlly`（行尾的注释是 PaloAlly 条目的记号，卸载只删带它的）：主机没在跑（没有 socket）时直接退出；否则写一行 `{event, payload, env}`，主机立刻回 `{"ack":true}`，再回 `{"output": <钩子要打印的 JSON 或 null>}`。350 毫秒内没有 ack、连不上、出任何错，钩子都无输出退出。`PALOALLY_SESSION=1`（主机自己起的会话：主会话、探针、Pal）直接退出。

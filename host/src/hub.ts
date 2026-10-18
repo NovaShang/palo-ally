@@ -23,7 +23,7 @@ import { SuggestionStore } from "./suggestions.ts";
 import { TaskTracker } from "./tasks.ts";
 import type { Attachment, Channel, ChatMessage, PairedDevice, Status, Task, Watch, ReplyTo } from "./types.ts";
 import { MediaStore } from "./media.ts";
-import { ensureMorningBrief, isBriefTitle } from "./brief.ts";
+import { ensureMorningBrief } from "./brief.ts";
 import { HandoffTracker, claudeConfigDir, transcriptPath } from "./handoffs.ts";
 import { readRegistry } from "./ccSessions.ts";
 import { StallWatch, type StallWatchDeps, WATCHDOG_DEFAULTS, apiSockets, diagnoseInto, killHard } from "./stallWatch.ts";
@@ -92,7 +92,6 @@ export class Hub {
   /** Files on the computer, read-only (docs/files-prd.md). */
   readonly files: FileBrowser;
   readonly stallWatch: StallWatch;
-  private compactTimer: ReturnType<typeof setInterval> | null = null;
   private readonly info: HarnessInfo;
   private readonly proactive: Proactive;
   private readonly ledger: UsageLedger;
@@ -409,9 +408,6 @@ export class Hub {
     if (opts.probe !== false) {
       // Work handed to other sessions: the host follows it itself.
       this.handoffs.startTimer();
-      // Compact earlier than the harness' default, at clean breaks only.
-      this.compactTimer = setInterval(() => this.conversation.maybeCompact(), 60_000);
-      (this.compactTimer as any).unref?.();
       // The host laptop on battery: a heads-up before it dies and takes the assistant offline.
       this.power.start();
       // New official release: staged in the background, switched to at a clean break.
@@ -441,7 +437,7 @@ export class Hub {
     this.sessions.stop();
     this.pals.stop();
     this.stallWatch.stop();
-    if (this.compactTimer) clearInterval(this.compactTimer);
+    this.conversation.stopIdleCompact();
     if (this.suggestionTimer) clearInterval(this.suggestionTimer);
     this.artifacts.stop();
     this.conversation.close();
@@ -879,8 +875,6 @@ export class Hub {
   // ---------------- internals ----------------
 
   private onSchedule(w: Watch): void {
-    // Right before the 晨报: compact first (clean break only), so the brief opens a lighter context.
-    if (isBriefTitle(w.title)) this.conversation.maybeCompact({ beforeBrief: true });
     this.proactive.onSchedule(w);
   }
 

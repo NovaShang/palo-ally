@@ -169,6 +169,8 @@ export interface MainSessionOptions extends SessionOptions {
   tools: ToolHandlers;
   mcpServers: Record<string, unknown>;
   sharedChrome?: boolean; // enable Claude in Chrome on the owner's own browser
+  // Claude Code autocompacts at about this minus 33k tokens (its autoCompactWindow, for this session only); 0/absent: its default.
+  compactWindowTokens?: number;
 }
 
 // A long-lived main conversation. send() queues a user turn; turns run in

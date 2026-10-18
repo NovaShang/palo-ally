@@ -55,12 +55,13 @@ export interface MainStallHooks {
   kill: (pid: number | undefined) => Promise<void>;
 }
 
-// Compaction (PRD §6.1): the harness compacts natively; the host only picks an
-// earlier moment than its ~1M default. A clean break means nothing is running
-// or waiting and the owner has been quiet this long.
+// Compaction (PRD §6.1): Claude Code compacts natively when the context nears
+// session.compactWindowTokens (passed as its autoCompactWindow). The host adds
+// one trigger: compact before the prompt cache expires, at a clean break. A
+// clean break means nothing is running or waiting and the owner has been quiet this long.
 export const COMPACT_QUIET_MS = 5 * 60_000;
-// The idle and 晨报 triggers skip a session this small: nothing worth compacting.
-export const COMPACT_MIN_TOKENS = 40_000;
+// An idle compaction that found no clean break tries again this often while the session stays idle.
+export const COMPACT_RETRY_MS = 5 * 60_000;
 
 // stripSkip removes the "[skip]" marker a proactive turn uses to stay silent.
 export function stripSkip(text: string): string {
@@ -131,6 +132,9 @@ export class Conversation {
   private lastEventAt = 0;
   private budgetNoticeDay = "";
   private compactReason: string | null = null; // our /compact turn is queued or running
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private idleStamp = 0; // when the last turn ended: the idle stretch the timer belongs to
+  private idleFiredFor = 0; // the stretch an idle compaction was already started for
   // 「只说话不动手」(docs/allies-prd.md §11.1): an Ally's message is in the
   // harness and the turn answering it hasn't finished, i.e. from sending it
   // until a result says it consumed that message (however the harness
@@ -305,6 +309,7 @@ export class Conversation {
       toolGate: (req) => this.gateTool(req),
       mcpServers: this.d.mcpServers(),
       sharedChrome: cfg.browser.enabled && cfg.browser.mode === "shared",
+      compactWindowTokens: cfg.session.compactWindowTokens,
       env: cfg.env,
       ...(this.d.peerName ? { name: this.d.peerName() } : {}),
       onEvent: (e) => this.d.onEvent(e),
@@ -421,8 +426,8 @@ export class Conversation {
         tasks.onTaskNotification(e.taskId, e.toolUseId, e.status, e.summary);
         break;
       case "compact": {
-        // Ours (a soft trigger at a clean break) or the harness' own backstop.
-        const reason = this.current?.maintenance && this.compactReason ? this.compactReason : `harness:${e.trigger ?? "auto"}`;
+        // Ours (the idle trigger, in its own /compact turn) or Claude Code's native one.
+        const reason = this.current?.maintenance && this.compactReason ? this.compactReason : "native";
         this.d.metric({ type: "compact", trigger: e.trigger, reason, preTokens: e.preTokens, postTokens: e.postTokens });
         this.d.audit.log("session.compact", { reason, trigger: e.trigger, preTokens: e.preTokens, postTokens: e.postTokens });
         if (typeof e.postTokens === "number") this.lastContextTokens = e.postTokens;
@@ -604,6 +609,7 @@ export class Conversation {
     }
     this.lastContextTokens = contextTokens;
     this.d.runtime.update({ contextTokens, lastTurnAt: Date.now() });
+    this.armIdleCompact();
     this.d.tasks.finalizePending();
     if (turn) {
       this.d.metric({ type: "turn", origin: turn.origin, proactive: turn.proactive, costUsd, contextTokens, error });
@@ -655,27 +661,53 @@ export class Conversation {
     return now - this.d.chat.lastUserActivity() >= COMPACT_QUIET_MS;
   }
 
-  // maybeCompact asks the harness to compact (its native /compact, no
-  // instructions) when a soft trigger holds at a clean break. Returns the
-  // trigger it acted on, or null. The harness' own auto-compact stays the backstop.
-  maybeCompact(opts: { beforeBrief?: boolean } = {}, now = Date.now()): string | null {
-    const s = this.d.config().session;
-    const tokens = this.lastContextTokens;
-    const rt = this.d.runtime.data;
-    let reason: string | null = null;
-    if (s.compactAfterTokens > 0 && tokens >= s.compactAfterTokens) {
-      reason = "tokens";
-    } else if (opts.beforeBrief && s.compactBeforeBrief && tokens >= COMPACT_MIN_TOKENS && (rt.lastCompactAt ?? 0) < (rt.lastTurnAt ?? 0)) {
-      reason = "brief";
-    } else if (s.idleCompactHours > 0 && tokens >= COMPACT_MIN_TOKENS) {
-      const lastActive = Math.max(rt.lastTurnAt ?? 0, this.d.chat.lastUserActivity());
-      if (lastActive && now - lastActive >= s.idleCompactHours * 3600_000 && (rt.lastCompactAt ?? 0) < lastActive) reason = "idle";
+  // Idle compaction, mirroring Claude Code's own (2.1.299): once the session
+  // has been idle most of the prompt cache's one-hour life, a big context is
+  // compacted before the cache expires, so the next message doesn't re-read
+  // the whole thing at full price. Claude Code's version is server-gated and
+  // terminal-only; SDK sessions don't get it. The timer starts when a turn
+  // ends. (Size-based compaction is Claude Code's: session.compactWindowTokens.)
+  private armIdleCompact(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+    const minutes = this.d.config().session.idleCompactMinutes;
+    this.idleStamp = Date.now();
+    if (!(minutes > 0)) return;
+    const stamp = this.idleStamp;
+    this.idleTimer = setTimeout(() => this.idleCompactFire(stamp), minutes * 60_000);
+    (this.idleTimer as any).unref?.();
+  }
+
+  /** Cancel the idle timer (the host is shutting down). */
+  stopIdleCompact(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+  }
+
+  private idleCompactFire(stamp: number): void {
+    this.idleTimer = null;
+    if (this.maybeIdleCompact(stamp) === "later") {
+      this.idleTimer = setTimeout(() => this.idleCompactFire(stamp), COMPACT_RETRY_MS);
+      (this.idleTimer as any).unref?.();
     }
-    if (!reason || !this.cleanBreak(now)) return null;
-    this.compactReason = reason;
-    this.d.audit.log("session.compact.start", { reason, tokens });
+  }
+
+  // Compacts (the harness' native /compact, no instructions) if the idle
+  // stretch that began at `stamp` is still going, the context is big enough and
+  // this is a clean break. "later": still idle but not a clean break yet.
+  maybeIdleCompact(stamp = this.idleStamp, now = Date.now()): "started" | "later" | null {
+    const s = this.d.config().session;
+    if (!(s.idleCompactMinutes > 0) || !stamp || stamp !== this.idleStamp) return null; // a newer turn began
+    if (this.idleFiredFor === stamp) return null; // once per idle stretch
+    if (now - stamp < s.idleCompactMinutes * 60_000) return null;
+    const tokens = this.lastContextTokens;
+    if (tokens < s.idleCompactMinTokens) return null;
+    if (!this.cleanBreak(now)) return "later";
+    this.idleFiredFor = stamp;
+    this.compactReason = "idle";
+    this.d.audit.log("session.compact.start", { reason: "idle", tokens });
     this.enqueue({ text: "/compact", origin: "system", proactive: true, maintenance: true, label: "compact" });
-    return reason;
+    return "started";
   }
 
   // ---------------- the process stays up ----------------
