@@ -142,6 +142,7 @@ export async function startDaemon(
   const local = new LocalServer(hub, paths.socket, admin);
   local.start();
   hub.start({ probe: opts.probe });
+  hub.warmUp();
 
   return {
     hub,

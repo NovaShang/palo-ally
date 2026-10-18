@@ -97,7 +97,7 @@ describe("Hub: main conversation", () => {
   });
 
   test("session id is persisted and resumed after an idle close", async () => {
-    const { hub, driver, paths } = makeHub({ config: testConfig((c) => (c.session.idleCloseMinutes = 1)) });
+    const { hub, driver, paths } = makeHub();
     hub.userMessage("1", "app");
     await hub.idle();
     const sid = readJson<any>(paths.runtime, {}).sessionId;

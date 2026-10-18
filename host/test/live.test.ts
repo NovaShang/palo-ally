@@ -178,7 +178,7 @@ d(`live harness (${MODEL})`, () => {
   test(
     "continuity: after the CLI process is closed, resume remembers the conversation",
     async () => {
-      hub.onIdle(); // close the process (idleCloseMinutes path)
+      hub.onIdle(); // close the process, as a crash or restart would
       const msgs = await ask("我刚才让你算的那个和是多少？只回答数字。");
       expect(assistantText(msgs)).toContain("1275");
     },

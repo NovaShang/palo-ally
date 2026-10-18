@@ -120,7 +120,6 @@ export class Conversation {
   private wechatChain: Promise<void> = Promise.resolve();
   private deltaId: string | null = null;
   private deltaText = ""; // streamed text of the current delta id, to finalize if the turn dies
-  private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private implicitTimer: ReturnType<typeof setTimeout> | null = null;
   private lastContextTokens = 0;
   private turnWaiters: (() => void)[] = [];
@@ -243,7 +242,6 @@ export class Conversation {
   }
 
   private beginTurn(turn: Turn): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
     this.current = turn;
     this.turnTexts = [];
     this.wechatStreamed = 0;
@@ -600,7 +598,6 @@ export class Conversation {
         this.compactReason = null;
       }
       this.d.statusChanged();
-      this.scheduleIdle();
       if (this.pending.size === 0) this.pump();
       else this.flushWaitersIfIdle();
       return;
@@ -639,7 +636,6 @@ export class Conversation {
       this.wechatStreamed = 0;
     }
     this.d.statusChanged();
-    this.scheduleIdle();
     if (this.pending.size === 0) this.pump();
     else this.flushWaitersIfIdle();
   }
@@ -682,19 +678,12 @@ export class Conversation {
     return reason;
   }
 
-  // ---------------- idle close ----------------
-
-  scheduleIdle(): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    const min = this.d.config().session.idleCloseMinutes;
-    if (!min) return;
-    this.idleTimer = setTimeout(() => this.onIdle(), min * 60_000);
-  }
-
-  // After a lookup that started the process just to ask it something.
-  scheduleIdleIfIdle(): void {
-    if (!this.current) this.scheduleIdle();
-  }
+  // ---------------- the process stays up ----------------
+  // The assistant's process is never closed for being idle: other Claude Code
+  // sessions find it by name (SendMessage) only while it runs, and a session
+  // that was closed dropped out of their list until the next message woke it
+  // (pals-prd §16). An idle process costs memory, not tokens. onIdle() is what
+  // closing used to do, kept for the tests that resume a closed session.
 
   onIdle(): void {
     if (this.current || this.queue.length || this.allyGate || this.held.length || !this.session) return;
@@ -747,7 +736,6 @@ export class Conversation {
   // `written`: the new session is already on disk (a copy made before a
   // compaction, docs/rewind-prd.md §4.1): it's simply resumed.
   rewindTo(r: PendingRewind & { to: string; written?: boolean }): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
     this.session?.close();
     this.session = null;
     this.lastContextTokens = 0;
@@ -878,7 +866,6 @@ export class Conversation {
   }
 
   close(): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
     this.session?.close();
     this.session = null;
   }

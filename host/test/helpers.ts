@@ -50,7 +50,6 @@ export function testConfig(over: (c: Config) => void = () => {}): Config {
   c.settings.timezone = "UTC";
   c.settings.quietHours = null;
   c.relay.enabled = false;
-  c.session.idleCloseMinutes = 0;
   over(c);
   return c;
 }

@@ -98,7 +98,6 @@ export interface Config {
   probeInheritConnectors: boolean;
   permissionMode: "default" | "auto" | "acceptEdits" | "dontAsk";
   session: {
-    idleCloseMinutes: number; // close the CLI process after idle; resume on next message
     // When to compact earlier than the harness' own (~1M-token) default. All
     // soft: they fire only at a clean break, through the harness' native /compact.
     compactAfterTokens: number; // context past this; 0 = off
@@ -157,7 +156,7 @@ export function defaultConfig(): Config {
     // Claude Code's own classifier approves safe calls and asks the owner only
     // when it can't tell. Safety is the harness' job (PRD §6.5).
     permissionMode: "auto",
-    session: { idleCloseMinutes: 30, compactAfterTokens: 200_000, idleCompactHours: 3, compactBeforeBrief: true },
+    session: { compactAfterTokens: 200_000, idleCompactHours: 3, compactBeforeBrief: true },
     // About 300 probe runs a day at ~$0.01 each: a few goals checked every
     // 5–15 minutes. ($1 ran out by early morning and the goals went quiet.)
     budget: { probeDailyUsd: 5, mainDailyUsd: 0 },
@@ -225,6 +224,7 @@ export function loadConfig(paths: Paths): Config {
   delete (cfg.settings as any).maxProactivePerDay; // removed 2026-10-04 (runaway guard instead)
   delete (cfg.settings as any).avatar; // removed 2026-10-05 (one avatar form; color is the choice)
   delete (cfg.session as any).rollAfterTokens; // 2026-10-06: native compaction instead of rolling sessions
+  delete (cfg.session as any).idleCloseMinutes; // 2026-10-18: the assistant's process stays up (conversation.ts)
   // $1 was the default until 2026-10-06 and stopped every probe by morning;
   // a config still carrying exactly that old default gets the new one.
   if (cfg.budget.probeDailyUsd === 1) cfg.budget.probeDailyUsd = defaultConfig().budget.probeDailyUsd;

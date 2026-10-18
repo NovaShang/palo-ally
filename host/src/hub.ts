@@ -164,7 +164,7 @@ export class Hub {
       this.paths.state,
       this.bus,
       () => void this.conversation.ensureSession(),
-      () => this.conversation.scheduleIdleIfIdle(),
+      () => {}, // the process stays up once started (conversation.ts)
     );
     const claudeDir = deps.sessions?.claudeDir ?? deps.claudeDir ?? claudeConfigDir();
     this.claudeDir = claudeDir;
@@ -653,6 +653,11 @@ export class Hub {
 
   onIdle(): void {
     this.conversation.onIdle();
+  }
+
+  /** Starts the assistant's process without a turn, so other sessions can find it by name from the start. */
+  warmUp(): void {
+    if (this.runtime.data.sessionId) this.conversation.ensureSession();
   }
 
   stopAll(by: string): void {
