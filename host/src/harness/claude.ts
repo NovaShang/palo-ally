@@ -13,6 +13,7 @@ import type {
   SessionOptions,
   ToolHandlers,
 } from "./types.ts";
+import { PALO_SEND_TOOL } from "./types.ts";
 
 // AsyncQueue is the streaming-input prompt: messages pushed here become user
 // turns in the long-lived CLI process.
@@ -50,6 +51,25 @@ const text = (s: string) => ({ content: [{ type: "text" as const, text: s }] });
 // Pals) carries this, so PaloAlly's global hooks skip them: their prompts
 // already reach the owner through the host's own approvals.
 export const OWN_SESSION_ENV = { PALOALLY_SESSION: "1" } as const;
+
+// A Pal's whole MCP server: palo_send and nothing else (none of the
+// assistant's tools). Its words go to the assistant through the host, never
+// through Claude Code's peer registry, which a restart makes stale.
+export function paloSendMcpServer(send: (text: string) => Promise<string>) {
+  return createSdkMcpServer({
+    name: "paloally",
+    version: VERSION,
+    alwaysLoad: true,
+    tools: [
+      tool(
+        "palo_send",
+        "Send a message to the owner's assistant (the session that manages the Pals). Use this to reply to the assistant, report back, or ask it for something; it is delivered by PaloAlly directly and works even after the assistant restarts. Write it complete: the assistant can't see this conversation.",
+        { text: z.string().describe("What to tell the assistant") },
+        async (a) => text(await send(a.text)),
+      ),
+    ],
+  });
+}
 
 export function paloallyMcpServer(h: ToolHandlers) {
   return createSdkMcpServer({
@@ -178,9 +198,9 @@ export function paloallyMcpServer(h: ToolHandlers) {
         "提议开一个 Pal：一个专门负责某个长期项目的 Claude Code 会话，由 PaloAlly 托管，闲着时会睡下、有事时叫醒。只生成一张卡片，主人点「开吧」才会开；立即返回，别说已经开了。",
 
         {
-          name: z.string().describe("Pal 的名字，主人一看就懂，如「网站」；也是你以后 SendMessage 给它用的名字"),
+          name: z.string().describe("Pal 的名字，主人一看就懂，如「网站」；也是你以后 pal_send 给它用的名字"),
           dir: z.string().describe("项目目录（绝对路径或 ~/ 开头）"),
-          duty: z.string().describe("交接说明：Pal 的第一条消息。写完整——它看不到主对话：项目是什么、要做什么、做到什么程度、注意什么；需要你时用 SendMessage 发给你"),
+          duty: z.string().describe("交接说明：Pal 的第一条消息。写完整——它看不到主对话：项目是什么、要做什么、做到什么程度、注意什么；需要你时用 palo_send 工具发给你"),
           dailyUsd: z.number().positive().describe("每天花费上限（美元）；超过了主机会让它停到第二天并告诉主人"),
         },
         async (a) => text(await h.pal_propose(a)),
@@ -360,7 +380,9 @@ export function sessionOptions(opts: AnySessionOptions): Options {
     includePartialMessages: true,
     forwardSubagentText: true,
     agentProgressSummaries: true, // live one-line progress for subagent tasks
-    mcpServers: main ? { ...extra, paloally: paloallyMcpServer(opts.tools!) } : extra,
+    mcpServers: main ? { ...extra, paloally: paloallyMcpServer(opts.tools!) } : opts.paloSend ? { ...extra, paloally: paloSendMcpServer(opts.paloSend) } : extra,
+    // The Pal's one tool never asks the owner.
+    ...(!main && opts.paloSend ? { allowedTools: [PALO_SEND_TOOL] } : {}),
     canUseTool: async (toolName, input, o) =>
       opts.canUseTool({
         toolName,

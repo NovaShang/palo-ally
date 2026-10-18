@@ -1,6 +1,7 @@
 import { t as tr } from "./i18n/index.ts";
 import { closeSync, existsSync, fstatSync, openSync, readSync, watch, type FSWatcher } from "node:fs";
 import { type RawSessionMessage, firstLine, peerBody } from "./ccSessions.ts";
+import { PALO_SEND_TOOL } from "./harness/types.ts";
 import type { Attachment, ChatMessage } from "./types.ts";
 
 // A Pal's conversation as the app shows it (docs/pals-prd.md §4, §8): the
@@ -92,17 +93,28 @@ export function toPalMessages(raw: RawSessionMessage[], o: PalMapOptions): ChatM
         .map((b: any) => b.text)
         .join("\n\n")
         .trim();
-      if (!text) continue;
+      // Its words to the assistant (palo_send): said by it, in its own conversation.
+      const sentAt = Date.parse(m.timestamp ?? "") || 0;
+      const sends = content.filter((b: any) => b?.type === "tool_use" && b.name === PALO_SEND_TOOL && typeof b.id === "string" && typeof b.input?.text === "string" && b.input.text.trim());
+      const pushSends = () => {
+        for (const b of sends) out.push({ seq: sentAt, id: b.id, role: "assistant", kind: "text", text: String(b.input.text).trim(), channel: "app", ts: sentAt, pal: o.pal });
+      };
+      if (!text) {
+        pushSends();
+        continue;
+      }
       const id = typeof msg?.id === "string" && msg.id ? msg.id : m.uuid;
       const have = replies.get(id);
       if (have) {
         have.text = `${have.text}\n\n${text}`;
+        pushSends();
         continue;
       }
       const ts = Date.parse(m.timestamp ?? "") || 0;
       const reply: ChatMessage = { seq: ts, id, role: "assistant", kind: "text", text, channel: "app", ts, pal: o.pal };
       replies.set(id, reply);
       out.push(reply);
+      pushSends();
       continue;
     }
     const u = userEntryMessage(m, o);

@@ -149,6 +149,8 @@ export interface SessionOptions {
   canUseTool: (req: PermissionRequest) => Promise<PermissionDecision>;
   toolGate?: ToolGate; // the assistant's own session: 「只说话不动手」 in an Ally's turn
   mcpServers?: Record<string, unknown>;
+  // A Pal's one tool, palo_send (docs/pals-prd.md §16): its words to the assistant, routed by the host.
+  paloSend?: (text: string) => Promise<string>;
   env?: Record<string, string>; // extra environment for the harness only (e.g. third-party model endpoint)
   // The environment the process starts from (default: the host's own). A Pal
   // starts from the owner's login shell, as a terminal session would.
@@ -231,3 +233,6 @@ export interface HarnessDriver {
   startPal(opts: SessionOptions): MainSession;
   runProbe(req: ProbeRequest): Promise<ProbeResult>;
 }
+
+/** The Pal's tool for answering the assistant (docs/pals-prd.md §16), as Claude Code names it. */
+export const PALO_SEND_TOOL = "mcp__paloally__palo_send";

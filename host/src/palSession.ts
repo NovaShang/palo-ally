@@ -5,7 +5,7 @@ import type { ApprovalManager } from "./approvals.ts";
 import { firstLine } from "./ccSessions.ts";
 import { ACTIVITY, describeActivity, describeInput, describeTool, friendlyError } from "./copy.ts";
 import { readHead, readTail, transcriptPath } from "./handoffs.ts";
-import type { FilesRewound, HarnessDriver, HarnessEvent, ImageInput, MainSession, PermissionDecision, PermissionRequest } from "./harness/types.ts";
+import { PALO_SEND_TOOL, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
 import type { MediaStore } from "./media.ts";
 import { type PalLaunch, isHelperFailure, makeSpawner } from "./palLauncher.ts";
 import { type PalMapOptions, TranscriptFollower, toPalMessages, transcriptLastLine, transcriptModel, userEntryMessage } from "./palHistory.ts";
@@ -79,6 +79,8 @@ export interface PalSessionDeps {
   appendPrompt: () => string;
   /** A card of its waits on the owner (the push, at most once per Pal every 10 minutes). */
   onWaiting: (pal: PalSession, body: string, ids: { approvalId?: string; questionId?: string }) => void;
+  /** Its palo_send: the words go to the assistant's session (docs/pals-prd.md §16). The result is what the Pal is told. */
+  toPalo: (pal: PalSession, text: string) => Promise<string> | string;
   /** A turn ended (its spending is checked). */
   onTurnEnd: (pal: PalSession) => void;
   /** It was asleep and is up again. */
@@ -340,6 +342,7 @@ export class PalSession {
       baseEnv: launch.env,
       ownerOrigin: true,
       canUseTool: (req) => this.canUseTool(req),
+      paloSend: async (text) => this.d.toPalo(this, text),
       onEvent: (e) => {
         if (proc === this.proc) this.onEvent(e);
       },
@@ -811,6 +814,11 @@ export class PalSession {
         if (e.parentToolUseId) break;
         if (e.type === "tool_use") this.turnTools.add(e.id);
         this.beginTurn();
+        // Its words to the assistant show in its own conversation, as it said them.
+        if (e.type === "tool_use" && e.name === PALO_SEND_TOOL && typeof e.input?.text === "string" && e.input.text.trim()) {
+          this.emitted.add(e.id);
+          this.chat({ id: e.id, role: "assistant", kind: "text", text: e.input.text.trim() });
+        }
         this.setActivity(describeActivity(e.name));
         break;
       case "result": {
@@ -1018,6 +1026,8 @@ export class PalSession {
 
   private async canUseTool(req: PermissionRequest): Promise<PermissionDecision> {
     const source = this.source();
+    // Its one tool of ours: never a card (it is also allowed up front).
+    if (req.toolName === PALO_SEND_TOOL) return { behavior: "allow", updatedInput: req.input };
     if (req.toolName === ASK_TOOL) {
       const asked = this.d.questions.ask(req, { source, notify: false });
       if (!asked) return { behavior: "deny", message: tr("pals.badQuestion") };

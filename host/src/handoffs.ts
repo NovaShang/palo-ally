@@ -3,6 +3,7 @@ import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, 
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { Audit } from "./audit.ts";
+import { PALO_SEND_TOOL } from "./harness/types.ts";
 import type { TaskTracker } from "./tasks.ts";
 import { newId, readJson, truncate, writeJson } from "./util.ts";
 
@@ -150,6 +151,9 @@ export function readHead(path: string, maxBytes = 256 * 1024): any[] {
   }
 }
 
+// A Pal's palo_send has no `to`: it always means the assistant.
+const HOME_TO = "palo_send:assistant";
+
 export function summarizeTail(entries: any[]): TailSummary {
   const out: TailSummary = { replies: [] };
   const answered = new Set<string>();
@@ -165,6 +169,10 @@ export function summarizeTail(entries: any[]): TailSummary {
         if (b?.type === "tool_use" && b.name === "AskUserQuestion") {
           const q = Array.isArray(b.input?.questions) ? b.input.questions[0] : undefined;
           ask = { id: String(b.id), text: firstLine(String(q?.question ?? "")) };
+        }
+        // Its palo_send is a reply to the assistant (docs/pals-prd.md §16): `to` reads as "home".
+        if (b?.type === "tool_use" && b.name === PALO_SEND_TOOL && typeof b.input?.text === "string") {
+          out.replies.push({ to: HOME_TO, text: b.input.text, at: at ?? 0 });
         }
         if (b?.type === "tool_use" && b.name === "SendMessage" && typeof b.input?.to === "string") {
           out.replies.push({ to: b.input.to, text: String(b.input.message ?? ""), at: at ?? 0 });
@@ -547,6 +555,7 @@ export class HandoffTracker {
   // A peer's SendMessage `to` that means the assistant (its name changes with restarts).
   private isHomeTarget(to: string, sessions: PeerSession[]): boolean {
     const t = to.trim();
+    if (t === HOME_TO) return true;
     const uds = /^uds:.*\/(\d+)\.sock$/.exec(t);
     if (uds) return this.homePids.has(Number(uds[1]));
     const s = this.registry.resolve(t, sessions);

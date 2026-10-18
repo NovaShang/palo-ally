@@ -17,7 +17,7 @@ import { PalLauncher, type PalLaunch } from "./palLauncher.ts";
 import { pagePalMessages, toPalMessages } from "./palHistory.ts";
 import type { ForkSession } from "./rewind.ts";
 import { RECENT_MAX, type RecentEntry, RecentSessions, type RecentSource, folderMatch, ownRoots, palNameFor, palTitle, recentWire, sdkRename, sdkSource } from "./palRecent.ts";
-import { HeldElsewhere, type Holder, type PalRecord, PalSession } from "./palSession.ts";
+import { HeldElsewhere, type Holder, type PalRecord, PalSession, peerWrap } from "./palSession.ts";
 import type { QuestionManager } from "./questions.ts";
 import type { Router } from "./router.ts";
 import type { Sessions } from "./sessions.ts";
@@ -108,6 +108,8 @@ export interface PalsDeps {
   /** A Pal's model; default: what its transcript last ran on (a new one: the owner's default). */
   palModel?: () => string | undefined;
   paloName?: () => string;
+  /** A Pal's palo_send: the words (already wrapped as from that Pal) go into the assistant's session like any other inbound message (§16). */
+  toAssistant?: (from: string, wrapped: string) => void;
   registry?: () => RegistryEntry[];
   pidAlive?: (pid: number) => boolean;
   kill?: (pid: number, signal: NodeJS.Signals) => void;
@@ -265,6 +267,7 @@ export class Pals {
       mapOptions: () => this.mapOptions(rec),
       appendPrompt: () => PAL_PROMPT(this.paloName()),
       onWaiting: (pal, body, ids) => this.pushWaiting(pal, body, ids),
+      toPalo: (pal, text) => this.toolPaloSend(pal, text),
       onTurnEnd: (pal) => {
         this.checkBudget(pal);
         this.balanceSoon();
@@ -1329,6 +1332,26 @@ export class Pals {
     this.balanceSoon();
     this.d.audit.log("pal.send", { pal: pal.id, name: pal.rec.name, chars: text.length, by: "assistant" });
     return t("pals.sendOk", { name: pal.rec.name, woke: wasAsleep ? t("pals.sendWoke") : "" });
+  }
+
+  /**
+   * palo_send, a Pal's words to the assistant (§16): the host puts them into
+   * the assistant's session as a message from that Pal, the way a SendMessage
+   * reads, so it never depends on Claude Code's session registry (a restart
+   * leaves it stale). They queue like any inbound message: behind a running turn.
+   */
+  toolPaloSend(pal: PalSession, text: string): string {
+    const body = String(text ?? "").trim();
+    const to = this.assistantName();
+    if (!body) return t("pals.paloSendEmpty");
+    if (!this.d.toAssistant) return t("pals.paloSendFailed", { name: to, why: t("pals.paloSendNoLink") });
+    try {
+      this.d.toAssistant(pal.rec.name, peerWrap(pal.rec.name, body));
+    } catch (e) {
+      return t("pals.paloSendFailed", { name: to, why: e instanceof Error ? e.message : String(e) });
+    }
+    this.d.audit.log("pal.palo_send", { pal: pal.id, name: pal.rec.name, chars: body.length });
+    return t("pals.paloSendOk", { name: to });
   }
 
   async toolList(): Promise<string> {
