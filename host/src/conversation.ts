@@ -32,6 +32,7 @@ export interface Turn {
   watchId?: string; // a schedule run: its reply becomes the goal's progress line
   maintenance?: boolean; // housekeeping for the harness (native /compact): nothing shown, nothing pushed
   allyId?: string; // an Ally's message: more from the same Ally joins it while it waits
+  pal?: boolean; // a Pal's palo_send: answers work already asked for, so the proactive budget doesn't drop it
 }
 
 type OwnerMessage = { origin: Channel; wechat?: WechatReplyTarget };
@@ -214,7 +215,7 @@ export class Conversation {
       return;
     }
     const turn = this.queue.shift()!;
-    if (turn.proactive && !turn.maintenance && this.d.usage.over("mainUsd", this.d.config().budget.mainDailyUsd)) {
+    if (turn.proactive && !turn.maintenance && !turn.pal && this.d.usage.over("mainUsd", this.d.config().budget.mainDailyUsd)) {
       this.d.log(`proactive turn dropped: main budget used up (${turn.label ?? turn.origin})`);
       const day = this.d.usage.today().day;
       if (this.budgetNoticeDay !== day) {

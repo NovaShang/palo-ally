@@ -260,6 +260,18 @@ describe("Hub: proactive", () => {
     expect(driver.last!.sent).toEqual(["hi"]);
     cleanup(paths);
   });
+
+  test("a Pal's palo_send still reaches the assistant when the proactive budget is used up", async () => {
+    const { hub, driver, paths } = makeHub({ config: testConfig((c) => (c.budget.mainDailyUsd = 0.0005)) });
+    driver.turnCost = 0.001;
+    hub.userMessage("hi", "app");
+    await hub.idle();
+    (hub as any).conversation.enqueue({ text: "probe", origin: "system", proactive: true, label: "probe" });
+    (hub as any).conversation.enqueue({ text: "from pal", origin: "system", proactive: true, pal: true, label: "网站" });
+    await hub.idle();
+    expect(driver.last!.sent).toEqual(["hi", "from pal"]);
+    cleanup(paths);
+  });
 });
 
 describe("Hub: tasks via report_task", () => {
