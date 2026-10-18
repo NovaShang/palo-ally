@@ -12,7 +12,7 @@ final class ImagesUITests: XCTestCase {
     @MainActor
     func testAnHTMLLibraryPageShowsItsPublishedImage() throws {
         let app = launch(["-demoScreen", "artifact", "-demoArtifact", "ar2"])
-        let hotel = app.webViews.images["酒店外观"]
+        let hotel = picture(app, "酒店外观")
         XCTAssertTrue(hotel.waitForExistence(timeout: 20), "the page's image never showed")
         assertDrawn(hotel)
         // The one that isn't in the item is a stub; the page is still there.
@@ -25,7 +25,7 @@ final class ImagesUITests: XCTestCase {
     @MainActor
     func testAMarkdownLibraryPageShowsItsPublishedImage() throws {
         let app = launch(["-demoScreen", "artifact", "-demoArtifact", "ar1"])
-        let weather = app.webViews.images["天气图"]
+        let weather = picture(app, "天气图")
         XCTAssertTrue(weather.waitForExistence(timeout: 20), "the page's image never showed")
         assertDrawn(weather)
         shot(app, "markdown-library-image")
@@ -40,7 +40,7 @@ final class ImagesUITests: XCTestCase {
         let readme = app.buttons["file-row-README.md"]
         XCTAssertTrue(readme.waitForExistence(timeout: 10), "no README.md in the tree")
         readme.tap()
-        let image = app.webViews.images["首页示意"]
+        let image = picture(app, "首页示意")
         XCTAssertTrue(image.waitForExistence(timeout: 20), "the file's image never showed")
         assertDrawn(image)
         shot(app, "file-tree-markdown-image")
@@ -52,7 +52,7 @@ final class ImagesUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars.staticTexts["网站帮手"].waitForExistence(timeout: 15))
         app.buttons["pal-menu"].firstMatch.tap()
         app.buttons["文件"].firstMatch.tap()
-        let sketch = app.webViews.images["草图"]
+        let sketch = picture(app, "草图")
         XCTAssertTrue(sketch.waitForExistence(timeout: 20), "the note's sketch never showed")
         assertDrawn(sketch)
         XCTAssertTrue(app.webViews.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "缺图")).firstMatch
@@ -61,6 +61,12 @@ final class ImagesUITests: XCTestCase {
     }
 
     // MARK: helpers
+
+    /// The page's `<img>` by its alt text, however the web view exposes it (an SVG shows up as an Other).
+    @MainActor
+    private func picture(_ app: XCUIApplication, _ alt: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ AND elementType != %d", alt, XCUIElement.ElementType.staticText.rawValue)).firstMatch
+    }
 
     @MainActor
     private func assertDrawn(_ image: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
