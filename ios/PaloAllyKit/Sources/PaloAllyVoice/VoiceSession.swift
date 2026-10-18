@@ -248,9 +248,15 @@ public final class VoiceSession {
                 Task { await asr?.cancel() }
                 let streamed = lastTranscript
                 guard !recordedPCM.isEmpty else { return streamed }
+                if streamed.isEmpty,
+                   VoiceGuard.isMisTap(pcmBytes: recordedPCM.count, sampleRate: activeSampleRate, heardLive: false) {
+                    dlog("[voice] clip too short (\(recordedPCM.count) bytes) — dropped as a mis-tap")
+                    return ""
+                }
                 dlog("[voice] realtime failed mid-recording → batch the clip (\(recordedPCM.count) bytes)")
                 let better = await BatchTranscriptionService.shared.transcribe(
                     pcm: recordedPCM, sampleRate: activeSampleRate, language: language, corpus: activeCorpus)
+                if streamed.isEmpty, let better, VoiceGuard.echoesCorpus(better, corpus: activeCorpus) { return "" }
                 return better ?? streamed
             }
             // Released mid-speech (or Qwen, always): commit the buffer and wait
@@ -269,9 +275,20 @@ public final class VoiceSession {
             // Realtime delivered nothing (short clip): batch-transcribe the full
             // captured clip so the utterance is never lost.
             guard !recordedPCM.isEmpty else { return "" }
+            // PaloAlly: a mis-tap (under a second of audio, nothing heard) is
+            // dropped, not transcribed: the model fills near-silence with text
+            // from the background corpus.
+            if VoiceGuard.isMisTap(pcmBytes: recordedPCM.count, sampleRate: activeSampleRate, heardLive: false) {
+                dlog("[voice] clip too short (\(recordedPCM.count) bytes) — dropped as a mis-tap")
+                return ""
+            }
             dlog("[voice] realtime empty → batch fallback (\(recordedPCM.count) bytes)")
             let better = await BatchTranscriptionService.shared.transcribe(
                 pcm: recordedPCM, sampleRate: activeSampleRate, language: language, corpus: activeCorpus)
+            if let better, VoiceGuard.echoesCorpus(better, corpus: activeCorpus) {
+                dlog("[voice] batch result is a line of the background corpus — dropped")
+                return ""
+            }
             return better ?? ""
         }
     }

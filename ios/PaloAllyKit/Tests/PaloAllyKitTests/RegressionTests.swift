@@ -411,3 +411,71 @@ struct WordingRegressionTests {
         #expect(ProvisioningProfile.pushEnvironment(from: Data("garbage".utf8)) == nil)
     }
 }
+
+/// A send in flight when the link drops must never sit on the clock.
+@MainActor
+@Suite("Stuck sends")
+struct StuckSendTests {
+    func online(_ host: ManualHost, timeout: Double = 0.3) async -> AppStore {
+        let store = AppStore(transport: host.transport, rpcTimeout: timeout)
+        store.start()
+        _ = await until { store.connection == .online }
+        return store
+    }
+
+    /// No answer, and the link stays up (no reconnect to resend it): it is
+    /// sent again by itself, with the same client id.
+    @Test func unansweredSendOnALiveLinkGoesOutAgain() async throws {
+        let host = ManualHost()
+        let store = await online(host)
+        await store.rpc.setReconnectOnTimeout(false)
+        store.queuedRetryDelay = 0.05
+        store.send("在路上")
+        #expect(await until { host.requests.filter { $0.method == "chat.send" }.count >= 2 })
+        let sends = host.requests.filter { $0.method == "chat.send" }
+        #expect(sends[0].params["clientMsgId"] == sends[1].params["clientMsgId"])
+        // The second one is answered: it ends sent.
+        host.respond(sends[1].id, ["id": "m1", "seq": 1])
+        #expect(await until { store.messages.first?.delivery == .sent })
+    }
+
+    /// Never answered at all: a few tries, then failed (with a retry button),
+    /// not queued forever.
+    @Test func neverAnsweredEndsFailed() async throws {
+        let host = ManualHost()
+        let store = await online(host, timeout: 0.1)
+        await store.rpc.setReconnectOnTimeout(false)
+        store.queuedRetryDelay = 0.02
+        store.send("没人理")
+        #expect(await until(5) { store.messages.first?.delivery == .failed })
+        #expect(host.requests.filter { $0.method == "chat.send" }.count == 1 + AppStore.maxQueuedRetries)
+    }
+
+    /// Dropped while in flight, back online: resent once, same client id.
+    @Test func inFlightSendIsResentAfterReconnect() async throws {
+        let host = ManualHost()
+        let store = await online(host, timeout: 5)
+        store.send("掉线时发的")
+        #expect(await until { host.request("chat.send") != nil })
+        let first = try #require(host.request("chat.send"))
+        host.transport.simulateDisconnect()
+        #expect(await until { store.messages.first?.delivery == .queued })
+        await host.transport.simulateConnect()
+        #expect(await until { host.requests.filter { $0.method == "chat.send" }.count == 2 })
+        let again = try #require(host.request("chat.send"))
+        #expect(again.id != first.id && again.params["clientMsgId"] == first.params["clientMsgId"])
+    }
+
+    /// The RPC layer fails every pending call on a drop.
+    @Test func pendingCallsFailOnDisconnect() async throws {
+        let host = ManualHost()
+        let rpc = RPCClient(transport: host.transport)
+        await rpc.start()
+        _ = await until { await rpc.isConnected }
+        let call = Task { try await rpc.callRaw("task.get", params: IDParams(id: "x"), timeout: 30) }
+        _ = await until { host.request("task.get") != nil }
+        host.transport.simulateDisconnect()
+        await #expect(throws: RPCError.disconnected) { _ = try await call.value }
+        #expect(await rpc.pendingCount == 0)
+    }
+}

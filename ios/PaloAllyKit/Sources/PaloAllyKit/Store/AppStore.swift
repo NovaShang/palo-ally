@@ -348,6 +348,11 @@ public final class AppStore {
     private var backgroundedAt: Date?
     /// First retry delay when `hello` / `sync` fails on a live link.
     public var syncRetryBase: Double = 1
+    /// How long a send that failed while the link looks up waits before it
+    /// goes out again (see `deliver`), and how many times it does that.
+    public var queuedRetryDelay: Double = 2
+    static let maxQueuedRetries = 3
+    private var queuedRetries: [String: Int] = [:]
     /// After this many failed catch-up attempts, drop the link and reconnect.
     public var syncRetryLimit = 3
 
@@ -1288,6 +1293,7 @@ public final class AppStore {
                                                               suggestionId: suggestionForMessage[cid], replyTo: replyTo))
             }
             suggestionForMessage[cid] = nil
+            queuedRetries[cid] = nil
             guard let i = messages.firstIndex(where: { $0.clientMsgId == cid && $0.seq == 0 }) else { return }
             if !r.id.isEmpty, let dup = messages.firstIndex(where: { $0.id == r.id }), dup != i {
                 // The broadcast already landed under the server id.
@@ -1308,6 +1314,10 @@ public final class AppStore {
                 messages[i].delivery = offline ? .queued : .failed
             }
             awaitingReply = false
+            // The failure of a call in flight when the link dropped (or that
+            // got no answer) can arrive after the reconnect already resent
+            // what was queued, and nothing else would resend this one.
+            if offline, connection == .online { retryQueuedLater(cid) }
             // It didn't wake: the page says what the list says again.
             if palWaking, let palID, let p = pal(id: palID), p.status != .starting {
                 palWaking = false
@@ -1424,6 +1434,29 @@ public final class AppStore {
         if let r: MediaData = try? await rpc.call(RPCMethod.mediaGet, params: MediaGetParams(id: id)),
            let data = Data(base64Encoded: r.data) {
             images[id] = data
+        }
+    }
+
+    /// A queued send whose failure came in while the link is up: try it again
+    /// shortly (same clientMsgId, the host de-dupes). After a few tries it is
+    /// marked failed so it shows, with a retry, instead of waiting on the clock.
+    private func retryQueuedLater(_ cid: String) {
+        let tries = queuedRetries[cid, default: 0]
+        guard tries < Self.maxQueuedRetries else {
+            queuedRetries[cid] = nil
+            if let i = messages.firstIndex(where: { $0.clientMsgId == cid && $0.seq == 0 && $0.delivery == .queued }) {
+                messages[i].delivery = .failed
+            }
+            return
+        }
+        queuedRetries[cid] = tries + 1
+        let delay = queuedRetryDelay
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self, self.connection == .online,
+                  let m = self.messages.first(where: { $0.clientMsgId == cid && $0.seq == 0 && $0.delivery == .queued })
+            else { return }
+            self.retry(m)
         }
     }
 
