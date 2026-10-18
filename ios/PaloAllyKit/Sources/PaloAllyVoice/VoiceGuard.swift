@@ -21,6 +21,14 @@ public enum VoiceGuard {
         !heardLive && pcmBytes < minClipBytes(sampleRate: sampleRate)
     }
 
+    /// True when a result must be thrown away whichever path produced it
+    /// (realtime's final after the release, the batch fallback, a failed
+    /// socket): the press was under `minClipSeconds` and nothing was heard
+    /// live, so any words are made up. Words heard live always count.
+    public static func dropsResult(heardLive: Bool, pressSeconds: Double) -> Bool {
+        !heardLive && pressSeconds < minClipSeconds
+    }
+
     /// True when `text` is exactly a whole line or sentence of the background
     /// corpus: what a model returns when it has nothing to transcribe. Spaces
     /// and punctuation are ignored, so only an exact repeat counts.

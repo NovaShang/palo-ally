@@ -42,6 +42,16 @@ struct VoiceGuardTests {
         #expect(!VoiceGuard.mustConfirm(heardLive: true, fromBatch: false))
     }
 
+    @Test func shortPressDropsWhateverPathAnswered() {
+        // Realtime's own final after the release, 0.7 s press: made up.
+        #expect(VoiceGuard.dropsResult(heardLive: false, pressSeconds: 0.7))
+        // A full second or more: sent (or confirmed, for batch words).
+        #expect(!VoiceGuard.dropsResult(heardLive: false, pressSeconds: 1.0))
+        #expect(!VoiceGuard.dropsResult(heardLive: false, pressSeconds: 3))
+        // Words heard live on a short press still send.
+        #expect(!VoiceGuard.dropsResult(heardLive: true, pressSeconds: 0.7))
+    }
+
     @Test func aWholeCorpusLineIsAnEcho() {
         let corpus = "明天下午三点开会，别忘了带电脑。\n把报销单发给财务\nhello world"
         #expect(VoiceGuard.echoesCorpus("把报销单发给财务。", corpus: corpus))

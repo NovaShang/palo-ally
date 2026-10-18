@@ -656,10 +656,17 @@ struct ComposerView: View {
             return
         }
         guard !heard.isEmpty else {
+            // From touch-down to release, before anything is awaited.
+            let pressSeconds = ProcessInfo.processInfo.systemUptime - voiceTouchUptime
             voice.resolve()
             let (_, final) = await voice.end()
             debugLog("[voice] final: \(final.count) characters")
-            guard !final.isEmpty else {
+            // A mis-tap: whatever came back after nothing was heard live on
+            // a press under a second (realtime too, not only the batch
+            // fallback) was made up.
+            let madeUp = VoiceGuard.dropsResult(heardLive: false, pressSeconds: pressSeconds)
+            if madeUp && !final.isEmpty { debugLog("[voice] dropped \(final.count) characters after a \(Int(pressSeconds * 1000)) ms press") }
+            guard !final.isEmpty, !madeUp else {
                 voice.leave(.unheard(edit: target == .edit), words: voice.dictation.errorMessage ?? String(localized: "没听清"))
                 return
             }
