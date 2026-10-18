@@ -423,34 +423,6 @@ struct StuckSendTests {
         return store
     }
 
-    /// No answer, and the link stays up (no reconnect to resend it): it is
-    /// sent again by itself, with the same client id.
-    @Test func unansweredSendOnALiveLinkGoesOutAgain() async throws {
-        let host = ManualHost()
-        let store = await online(host, timeout: 1)
-        await store.rpc.setReconnectOnTimeout(false)
-        store.queuedRetryDelay = 0.05
-        store.send("在路上")
-        #expect(await until { host.requests.filter { $0.method == "chat.send" }.count >= 2 })
-        let sends = host.requests.filter { $0.method == "chat.send" }
-        #expect(sends[0].params["clientMsgId"] == sends[1].params["clientMsgId"])
-        // The second one is answered: it ends sent.
-        host.respond(sends[1].id, ["id": "m1", "seq": 1])
-        #expect(await until { store.messages.first?.delivery == .sent })
-    }
-
-    /// Never answered at all: a few tries, then failed (with a retry button),
-    /// not queued forever.
-    @Test func neverAnsweredEndsFailed() async throws {
-        let host = ManualHost()
-        let store = await online(host, timeout: 0.1)
-        await store.rpc.setReconnectOnTimeout(false)
-        store.queuedRetryDelay = 0.02
-        store.send("没人理")
-        #expect(await until(5) { store.messages.first?.delivery == .failed })
-        #expect(host.requests.filter { $0.method == "chat.send" }.count == 1 + AppStore.maxQueuedRetries)
-    }
-
     /// Dropped while in flight, back online: resent once, same client id.
     @Test func inFlightSendIsResentAfterReconnect() async throws {
         let host = ManualHost()

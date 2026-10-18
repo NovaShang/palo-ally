@@ -666,7 +666,11 @@ struct ComposerView: View {
             // Words the batch fallback made up after nothing was heard live
             // wait in the field for the user to confirm; a final that realtime
             // itself delivered after the release sends as usual.
-            land(VoiceGuard.mustConfirm(heardLive: false, fromBatch: voice.dictation.finalFromBatch) ? .edit : target, final)
+            let landed = VoiceGuard.mustConfirm(heardLive: false, fromBatch: voice.dictation.finalFromBatch) ? VoiceInputController.Target.edit : target
+            // Landing a message only stages it (shown, waiting): without the
+            // send below it sat on the clock for good.
+            if let cid = land(landed, final) { await sendLanded(cid, final) }
+            editedIn = nil
             return
         }
         let cid = land(target, heard)
@@ -674,18 +678,22 @@ struct ComposerView: View {
         debugLog("[voice] final: \(final.count) characters, \(final == heard || final.isEmpty ? "as heard" : "changed")")
         let words = final.isEmpty ? heard : final
         if let cid {
-            // Once the words have landed and the voice UI is down: changing
-            // the message under its flying copy (different final words, or
-            // the host's answer to sending it, which lays the message out
-            // again) cost a frame of 45–60 ms. At most a few tenths of a
-            // second later than the final words.
-            await voice.whenGone()
-            try? await Task.sleep(for: .milliseconds(34))
-            withAnimation(.smooth(duration: 0.3)) { store.sendStaged(cid, text: words) }
+            await sendLanded(cid, words)
         } else if let e = editedIn, words != e.words, draft == e.before + e.words {
             draft = e.before + words
         }
         editedIn = nil
+    }
+
+    /// Sends a spoken message `land` placed, with its final words. Once the
+    /// words have landed and the voice UI is down: changing the message under
+    /// its flying copy (different final words, or the host's answer to
+    /// sending it, which lays the message out again) cost a frame of 45–60 ms.
+    /// At most a few tenths of a second later than the final words.
+    private func sendLanded(_ cid: String, _ words: String) async {
+        await voice.whenGone()
+        try? await Task.sleep(for: .milliseconds(34))
+        withAnimation(.smooth(duration: 0.3)) { store.sendStaged(cid, text: words) }
     }
 
     /// The words start on their way: into a message placed where it stays
