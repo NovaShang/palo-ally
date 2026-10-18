@@ -87,6 +87,7 @@
 		A0550980F6891AA9B038F7B6 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 15DEAD73806EBE1C701B9FCB /* MarkdownUI */; };
 		A9F1785A4DCAA4FE1A838DB7 /* FilesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F2A68E3DD919B5284C96444 /* FilesUITests.swift */; };
 		AACC2B792ABD1AFC63ECC6B2 /* ScrollLabUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED42874198579F1FB37DC41 /* ScrollLabUITests.swift */; };
+		ABD1D1FABEFAA47D1C329919 /* ImagesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AC02B1EE268D6B6F8AA2F6C /* ImagesUITests.swift */; };
 		AE7BEEB6B7A928B07D753B3C /* FileLinks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BC7F6052D1575405F512987 /* FileLinks.swift */; };
 		AF358643F472D615D617552B /* SessionCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45CEF451F12A8A4C25B55191 /* SessionCopy.swift */; };
 		B2032FE442E03D4426BA7760 /* MacLibraryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10351FDBF285D30A12AA443 /* MacLibraryUITests.swift */; };
@@ -202,6 +203,7 @@
 		5F77880AF20692FCEA9CB9C8 /* PagePanels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PagePanels.swift; sourceTree = "<group>"; };
 		63DF4E96D0F73A16748CF819 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		64CF9F27B24B6002B42720BB /* ConversationList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationList.swift; sourceTree = "<group>"; };
+		6AC02B1EE268D6B6F8AA2F6C /* ImagesUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagesUITests.swift; sourceTree = "<group>"; };
 		711BC1712E3CB0B810C91022 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
 		7204F49936E047B0B9DD85FC /* NavigationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationUITests.swift; sourceTree = "<group>"; };
 		727BCDF8F4AA67625E0359C0 /* OrbInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbInput.swift; sourceTree = "<group>"; };
@@ -437,6 +439,7 @@
 				519EA8CCFA1176D5CDDF3D1F /* ChatScrollUITests.swift */,
 				CDC2E8C597F725F4794D716E /* DevicesUITests.swift */,
 				1F2A68E3DD919B5284C96444 /* FilesUITests.swift */,
+				6AC02B1EE268D6B6F8AA2F6C /* ImagesUITests.swift */,
 				32BABFABC9E5D0E0A33EB98E /* LibraryUITests.swift */,
 				24E36607C5409252B9B2D6FD /* LocalizationUITests.swift */,
 				A10351FDBF285D30A12AA443 /* MacLibraryUITests.swift */,
@@ -696,6 +699,7 @@
 				6A3F40F12C7DD391D2815F87 /* ChatScrollUITests.swift in Sources */,
 				41F18635FAB268564293325E /* DevicesUITests.swift in Sources */,
 				A9F1785A4DCAA4FE1A838DB7 /* FilesUITests.swift in Sources */,
+				ABD1D1FABEFAA47D1C329919 /* ImagesUITests.swift in Sources */,
 				0E77DE320655E3AF25D35E3C /* LibraryUITests.swift in Sources */,
 				2175FC6EEE394CD7DB490C5A /* LocalizationUITests.swift in Sources */,
 				B2032FE442E03D4426BA7760 /* MacLibraryUITests.swift in Sources */,

@@ -1453,6 +1453,7 @@ public actor DemoHost {
         case "csv": "text/csv"
         case "pdf": "application/pdf"
         case "png": "image/png"
+        case "svg": "image/svg+xml"
         case "jpg", "jpeg": "image/jpeg"
         case "txt": "text/plain"
         default: "application/octet-stream"
@@ -1589,6 +1590,8 @@ public actor DemoHost {
         下午有雨，*记得带伞*。
 
         > 今天也辛苦啦。
+
+        ![天气图](img/weather.svg)
         """
         let compare = """
         <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
@@ -1597,8 +1600,12 @@ public actor DemoHost {
         </head><body><h2>上海出行比价</h2><table><tr><th>航班</th><th>时间</th><th>价格</th></tr>
         <tr><td>东航 MU5100</td><td>周二 07:30</td><td>¥1,280</td></tr><tr><td>国航 CA1501</td><td>周二 09:00</td><td>¥1,460</td></tr>
         <tr><td>春秋 9C8888</td><td>周二 13:10</td><td>¥980（不含行李）</td></tr></table>
-        <h3>酒店</h3><p>静安全季酒店，两晚 ¥960，离会场步行 8 分钟。</p></body></html>
+        <h3>酒店</h3><p>静安全季酒店，两晚 ¥960，离会场步行 8 分钟。</p>
+        <img src="img/hotel.svg" alt="酒店外观" style="width:100%;border-radius:12px">
+        <img src="img/gone.jpg" alt="丢了的图"></body></html>
         """
+        let weatherSVG = DemoHost.demoSVG("下午有雨", "#4A6FA5")
+        let hotelSVG = DemoHost.demoSVG("静安全季酒店", "#C27C3E")
         let csv = "日期,类别,金额\n09-01,餐饮,86\n09-03,交通,32\n09-08,购物,459\n09-15,餐饮,128\n09-22,房租,4500\n"
         // More of what a household keeps, spread over days and folders (成果 按文件夹 / 按时间).
         let more: [(id: String, title: String, folder: String, hoursAgo: Int64, body: String)] = [
@@ -1611,9 +1618,11 @@ public actor DemoHost {
         ]
         let artifacts = [
             Artifact(id: "ar1", title: "每日晨报", type: "markdown", mainFile: "briefing.md", pinned: true, folder: "日常",
-                     updatedAt: now - 5 * hour, files: [ArtifactFile(path: "briefing.md", size: Int64(briefing.utf8.count))]),
+                     updatedAt: now - 5 * hour, files: [ArtifactFile(path: "briefing.md", size: Int64(briefing.utf8.count)),
+                             ArtifactFile(path: "img/weather.svg", size: Int64(weatherSVG.count))]),
             Artifact(id: "ar2", title: "上海出行比价", type: "html", mainFile: "index.html", pinned: false, folder: "旅行",
-                     updatedAt: now - 3 * hour, files: [ArtifactFile(path: "index.html", size: Int64(compare.utf8.count))]),
+                     updatedAt: now - 3 * hour, files: [ArtifactFile(path: "index.html", size: Int64(compare.utf8.count)),
+                             ArtifactFile(path: "img/hotel.svg", size: Int64(hotelSVG.count))]),
             Artifact(id: "ar3", title: "九月开销", type: "table", mainFile: "spending.csv", pinned: false, folder: "理财",
                      updatedAt: now - 26 * hour, files: [ArtifactFile(path: "spending.csv", size: Int64(csv.utf8.count))]),
         ] + more.map { m in
@@ -1622,7 +1631,9 @@ public actor DemoHost {
         }
         let files: [String: Data] = [
             "ar1/briefing.md": Data(briefing.utf8),
+            "ar1/img/weather.svg": weatherSVG,
             "ar2/index.html": Data(compare.utf8),
+            "ar2/img/hotel.svg": hotelSVG,
             "ar3/spending.csv": Data(csv.utf8),
         ].merging(Dictionary(uniqueKeysWithValues: more.map { ("\($0.id)/\($0.id).md", Data($0.body.utf8)) })) { a, _ in a }
         let memory: [String: (scope: MemoryScope, content: String, updatedAt: Int64)] = [

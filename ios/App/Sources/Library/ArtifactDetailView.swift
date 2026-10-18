@@ -182,7 +182,8 @@ struct ArtifactDetailView: View {
                     .frame(maxWidth: .infinity)
             }
         } else if ["html", "htm"].contains(ext) || (c.path == a.mainFile && a.previewStyle == .html) {
-            SandboxedHTMLView(html: String(decoding: c.data, as: UTF8.self), artifactID: a.id)
+            SandboxedHTMLView(html: String(decoding: c.data, as: UTF8.self), artifactID: a.id,
+                              images: store.markdownImages(artifactID: a.id, documentPath: c.path))
                 .ignoresSafeArea(edges: .bottom)
         } else {
             QuickLookView(url: c.fileURL, revision: c.revision)
@@ -246,6 +247,9 @@ struct ArtifactDetailView: View {
 struct SandboxedHTMLView: UIViewRepresentable {
     let html: String
     let artifactID: String
+    /// The pictures published beside the page, read from the item itself
+    /// (relative paths inside it only). Without one they show as stubs.
+    var images: FilePreviewWebView.ImageSource?
 
     /// Content rule lists don't support regex disjunctions: one rule per
     /// scheme, or the whole list fails to compile (and the page never loads).
@@ -270,6 +274,7 @@ struct SandboxedHTMLView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        context.coordinator.imageBridge.install(in: config)
         config.websiteDataStore = Self.dataStore
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
@@ -278,12 +283,13 @@ struct SandboxedHTMLView: UIViewRepresentable {
         view.isOpaque = false
         view.backgroundColor = .clear
         context.coordinator.webView = view
-        context.coordinator.load(html, baseURL: Self.origin(for: artifactID))
+        context.coordinator.imageBridge.attach(view)
+        context.coordinator.load(html, baseURL: Self.origin(for: artifactID), images: images)
         return view
     }
 
     func updateUIView(_ view: WKWebView, context: Context) {
-        context.coordinator.load(html, baseURL: Self.origin(for: artifactID))
+        context.coordinator.load(html, baseURL: Self.origin(for: artifactID), images: images)
     }
 
     @MainActor
@@ -291,10 +297,12 @@ struct SandboxedHTMLView: UIViewRepresentable {
         weak var webView: WKWebView?
         private var loaded: String?
         private var ruleList: WKContentRuleList?
+        let imageBridge = HTMLImageBridge()
 
-        func load(_ html: String, baseURL: URL?) {
+        func load(_ html: String, baseURL: URL?, images: FilePreviewWebView.ImageSource?) {
             guard html != loaded, let webView else { return }
             loaded = html
+            imageBridge.reset(source: images)
             Task {
                 if ruleList == nil {
                     ruleList = try? await WKContentRuleListStore.default()

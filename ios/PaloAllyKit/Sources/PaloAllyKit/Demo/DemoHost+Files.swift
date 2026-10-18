@@ -22,6 +22,15 @@ extension DemoHost {
     /// A 1×1 PNG (the README's picture).
     static let demoPNG = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==")!
 
+    /// A small made-up picture, an SVG (so it is crisp and visible in a shot).
+    static func demoSVG(_ label: String, _ color: String) -> Data {
+        Data("""
+        <svg xmlns="http://www.w3.org/2000/svg" width="320" height="160" viewBox="0 0 320 160">\
+        <rect width="320" height="160" rx="16" fill="\(color)"/>\
+        <text x="160" y="88" font-family="sans-serif" font-size="28" fill="white" text-anchor="middle">\(label)</text></svg>
+        """.utf8)
+    }
+
     /// A Pal's project (any Pal's: the demo has one kind).
     static let projectFiles: [String: DemoFile] = [
         "README.md": DemoFile("""
@@ -32,6 +41,8 @@ extension DemoHost {
         - 列表页：`src/pages/ListPage.tsx`
         - 数据：`src/hooks/useItems.ts`
         - 设计稿：`notes/设计/列表页.md`
+
+        ![首页示意](docs/preview.svg)
 
         ## 本地运行
 
@@ -72,7 +83,9 @@ extension DemoHost {
           return { items, sortByDate: () => items.reverse() };
         }
         """),
-        "notes/设计/列表页.md": DemoFile("# 列表页\n\n- 间距用 8 的倍数\n- 标题 17pt，日期 13pt 灰色\n"),
+        "notes/设计/列表页.md": DemoFile("# 列表页\n\n- 间距用 8 的倍数\n- 标题 17pt，日期 13pt 灰色\n\n![草图](sketch.svg)\n\n![缺图](gone.png)\n"),
+        "notes/设计/sketch.svg": DemoFile(data: DemoHost.demoSVG("列表页草图", "#5B7FE0")),
+        "docs/preview.svg": DemoFile(data: DemoHost.demoSVG("首页示意", "#3FA37A")),
         "docs/home.png": DemoFile(data: DemoHost.demoPNG),
         "docs/intro.mov": DemoFile(size: 48 * 1024 * 1024),
         ".git/HEAD": DemoFile("ref: refs/heads/main\n"),

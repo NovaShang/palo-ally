@@ -44,17 +44,10 @@ public final class FilePreviewWebView: WKWebView, WKNavigationDelegate {
     private var pending: Payload?
     private var imageSource: ImageSource?
     private var imageFillSeq = 0
-    private var imageQueue: [String] = []
-    private var imageFilling = false
-    private var imageBytesUsed = 0
+    private let filler = PreviewImageFiller()
 
-    /// A single image we're willing to inline. Bigger than this is a photo the
-    /// preview has no business holding in the DOM.
-    public static let imageMaxBytes = 8 * 1024 * 1024
-    /// Total across one document. Every fill stays resident as a base64 data:
-    /// URI (~4/3 of the file), so this — not a count of images — is what keeps
-    /// a photo-heavy document from evicting the app on iOS.
-    private static let imageByteBudget = 24 * 1024 * 1024
+    /// A single image we're willing to inline (the host's own file cap).
+    public static let imageMaxBytes = PreviewImageFiller.maxBytes
 
     public static func makePreview() -> FilePreviewWebView {
         let cfg = WKWebViewConfiguration()
@@ -66,6 +59,9 @@ public final class FilePreviewWebView: WKWebView, WKNavigationDelegate {
         cfg.userContentController.add(bridge, name: "bentoImages")
         let v = FilePreviewWebView(frame: .zero, configuration: cfg)
         bridge.owner = v
+        v.filler.deliver = { [weak v] src, uri in
+            if let uri { v?.callJS("bentoSetImage", src, uri) } else { v?.callJS("bentoFailImage", src) }
+        }
         v.navigationDelegate = v
         #if canImport(UIKit)
         // The page paints its own background; until it loads, show what's
@@ -91,6 +87,7 @@ public final class FilePreviewWebView: WKWebView, WKNavigationDelegate {
     public func render(fileName: String, text: String, raw: Bool, dark: Bool,
                        imageSource: ImageSource? = nil) {
         self.imageSource = imageSource
+        filler.source = imageSource
         let payload = Payload(name: fileName, text: text, raw: raw, dark: dark)
         guard templateReady else { pending = payload; return }
         send(payload)
@@ -126,8 +123,8 @@ public final class FilePreviewWebView: WKWebView, WKNavigationDelegate {
     /// and each request comes back through `enqueueImages`.
     private func startImageFill(raw: Bool) {
         imageFillSeq += 1
-        imageQueue.removeAll()
-        imageBytesUsed = 0
+        filler.source = imageSource
+        filler.reset()
         guard !raw else { return }
         guard imageSource != nil else {
             // Nothing can ever fill: say so instead of leaving blank boxes.
@@ -139,40 +136,7 @@ public final class FilePreviewWebView: WKWebView, WKNavigationDelegate {
 
     fileprivate func enqueueImages(_ srcs: [String], seq: Int) {
         guard seq == imageFillSeq, imageSource != nil else { return }
-        imageQueue.append(contentsOf: srcs)
-        pumpImageQueue()
-    }
-
-    /// One at a time: each image is its own round trip to the host.
-    private func pumpImageQueue() {
-        guard !imageFilling, !imageQueue.isEmpty, let source = imageSource else { return }
-        imageFilling = true
-        let seq = imageFillSeq
-        Task { @MainActor [weak self] in
-            while true {
-                guard let self, self.imageFillSeq == seq, !self.imageQueue.isEmpty else { break }
-                await self.fillOne(src: self.imageQueue.removeFirst(), source: source)
-            }
-            guard let self else { return }
-            self.imageFilling = false
-            // A render that landed mid-drain abandoned this queue; keep going
-            // with whatever the new document asked for since.
-            self.pumpImageQueue()
-        }
-    }
-
-    private func fillOne(src: String, source: ImageSource) async {
-        guard let path = FilePreviewPaths.resolve(src, documentDirectory: source.directory),
-              let mime = FilePreviewImageMIME.forPath(path),
-              let bytes = await source.load(path),
-              bytes.count <= Self.imageMaxBytes,
-              imageBytesUsed + bytes.count <= Self.imageByteBudget
-        else {
-            callJS("bentoFailImage", src)
-            return
-        }
-        imageBytesUsed += bytes.count
-        callJS("bentoSetImage", src, "data:\(mime);base64,\(bytes.base64EncodedString())")
+        filler.enqueue(srcs)
     }
 
     /// Evaluate `fn(args…)` with each argument JSON-encoded (safe embedding).
