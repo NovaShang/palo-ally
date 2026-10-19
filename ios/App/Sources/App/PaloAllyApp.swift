@@ -31,6 +31,11 @@ struct PaloAllyApp: App {
                 Button("新建工作区") { appDelegate.model.newWorkspace = [] }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
             }
+            // View → Show / Hide Sidebar (⌃⌘S), the system's. It also anchors
+            // PlaceCommands below (`before: .sidebar`); without it the menu
+            // build throws at launch. The collapsed state is saved from
+            // `columnVisibility` (RootView), so the system toggle is remembered.
+            SidebarCommands()
             PlaceCommands(model: appDelegate.model)
         }
     }
@@ -43,9 +48,6 @@ private struct PlaceCommands: Commands {
 
     var body: some Commands {
         CommandGroup(before: .sidebar) {
-            // The sidebar's own (the system's toggles the split view behind our back).
-            Button("显示或隐藏侧栏") { model.toggleSidebar() }
-                .keyboardShortcut("s", modifiers: [.command, .control])
             Button("管理助理") { model.toggleManagement() }
                 .keyboardShortcut("1", modifiers: .command)
             Button("右侧栏") { model.toggleLibrary() }
