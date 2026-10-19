@@ -129,6 +129,10 @@ struct ConversationList: View {
         .navigationTitle(Platform.barInWindowToolbar ? "" : "PaloAlly")
         .toolbar(Platform.barInWindowToolbar ? .hidden : .automatic, for: .navigationBar)
         .modifier(MacSidebarToggle())
+        // Selection is neutral gray, not the accent: nav chrome stays neutral and
+        // the Palo orb and the status dots are what stand out.
+        .tint(Color(uiColor: .systemGray))
+        .modifier(MacSidebarMetrics())
         // The foot: the Mac app is behind the computer's (a quiet capsule), then ＋ and 设置.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
@@ -240,6 +244,20 @@ private struct MacSidebarToggle: ViewModifier {
     }
 }
 
+/// The Mac: the system sidebar's own row metrics (compact), with none of the
+/// phone's extra row heights.
+private struct MacSidebarMetrics: ViewModifier {
+    func body(content: Content) -> some View {
+        if Platform.isMac {
+            content
+                .listStyle(.sidebar)
+                .environment(\.defaultMinListRowHeight, 0)
+        } else {
+            content
+        }
+    }
+}
+
 // MARK: - rows
 
 /// How many things wait on the owner in a conversation: an orange count on
@@ -281,17 +299,17 @@ private struct PaloItem: View {
 
     var body: some View {
         let line = store.agentStatusLine
-        HStack(spacing: 14) {
+        HStack(spacing: Platform.isMac ? 10 : 14) {
             AssistantAvatar(theme: model.currentTheme, hostID: model.activeHostID, bleed: 1.3)
-                .frame(width: 56, height: 56)
+                .frame(width: Platform.isMac ? 32 : 56, height: Platform.isMac ? 32 : 56)
                 .modifier(OrbHomeIfDocked())
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Platform.isMac ? 1 : 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     if model.hasSeveralHosts {
                         AssistantSwitcher(name: name)
                     } else {
                         Text(name)
-                            .font(.title3.weight(.semibold))
+                            .font(Platform.isMac ? .body.weight(.semibold) : .title3.weight(.semibold))
                             .lineLimit(1)
                     }
                     Spacer(minLength: 4)
@@ -304,15 +322,15 @@ private struct PaloItem: View {
                 }
                 HStack(spacing: 6) {
                     Text(secondLine(line))
-                        .font(.subheadline)
+                        .font(Platform.isMac ? .caption : .subheadline)
                         .foregroundStyle(line.kind == .offline ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
-                        .lineLimit(2)
+                        .lineLimit(Platform.isMac ? 1 : 2)
                     Spacer(minLength: 4)
                     WaitingBadge(count: waiting)
                 }
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, Platform.isMac ? 0 : 8)
         // Several computers: the switcher in it is a control of its own.
         .accessibilityElement(children: model.hasSeveralHosts ? .contain : .combine)
     }
@@ -358,7 +376,7 @@ private struct WorkspaceRow: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(expanded ? 90 : 0))
-                    .frame(width: 22, height: 28)
+                    .frame(width: 22, height: Platform.isMac ? 20 : 28)
                     .contentShape(.rect)
             }
             .buttonStyle(.borderless)
@@ -383,7 +401,7 @@ private struct WorkspaceRow: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Platform.isMac ? 0 : 2)
         .accessibilityElement(children: .combine)
         .accessibilityAction(named: toggleLabel, toggle)
     }
@@ -426,7 +444,7 @@ private struct PalListRow: View {
                     .lineLimit(1)
             }
         }
-        .padding(.vertical, model.layout == .phone ? 3 : 1)
+        .padding(.vertical, model.layout == .phone ? 3 : (Platform.isMac ? 0 : 1))
         .padding(.leading, inset ? 24 : 0)
         .accessibilityElement(children: .combine)
         .accessibilityValue(StatusDot.label(pal.dot))
@@ -479,12 +497,11 @@ private struct SidebarFooter: View {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .semibold))
                     .frame(width: 32, height: 32)
+                    .contentShape(.circle)
             }
-            .menuStyle(.button)
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-            .tint(.primary)
             .menuIndicator(.hidden)
+            .modifier(FooterMenuStyle())
+            .tint(.primary)
             .disabled(!store.connection.isOnline)
             .accessibilityLabel("新建")
             .accessibilityIdentifier("sidebar-add")
@@ -495,15 +512,34 @@ private struct SidebarFooter: View {
                 Image(systemName: "gearshape")
                     .font(.system(size: 15, weight: .semibold))
                     .frame(width: 32, height: 32)
+                    .contentShape(.circle)
             }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
+            .glassCircleButton()
             .tint(.primary)
             .accessibilityLabel("设置")
             .accessibilityIdentifier("sidebar-settings")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+}
+
+/// The footer's ＋ as a menu button. On the Mac a Menu with the glass button
+/// style neither draws nor opens; the borderless menu with glass outside it
+/// does (as the page strips' ⋯, MacStripMenu).
+private struct FooterMenuStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        if Platform.isMac {
+            content
+                .buttonStyle(.borderless)
+                .frame(width: 32, height: 32)
+                .glassEffect(.regular.interactive(), in: .circle)
+        } else {
+            content
+                .menuStyle(.button)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+        }
     }
 }
 
@@ -576,7 +612,7 @@ private struct DevicesListRow: View {
             Image(systemName: "desktopcomputer")
                 .font(.system(size: 17))
                 .foregroundStyle(.secondary)
-                .frame(width: 40)
+                .frame(width: Platform.isMac ? 22 : 40)
                 .accessibilityHidden(true)
             Text("电脑与设备")
                 .foregroundStyle(.secondary)

@@ -186,3 +186,25 @@ struct BarMenu<Item: View>: ViewModifier {
         }
     }
 }
+
+/// A floating round glass button. Catalyst draws `.buttonStyle(.glass)` as an
+/// opaque dark fill, so on the Mac the button is plain with the glass applied
+/// outside it, the way the page strips do it (MacStripButton); the system
+/// glass style stays everywhere else.
+struct GlassCircleButtonStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        if Platform.isMac {
+            content
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: .circle)
+        } else {
+            content
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+        }
+    }
+}
+
+extension View {
+    func glassCircleButton() -> some View { modifier(GlassCircleButtonStyle()) }
+}
