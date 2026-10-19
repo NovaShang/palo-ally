@@ -237,7 +237,7 @@ export function deliveryTools(h: DeliveryToolHandlers, forSession = false) {
       ),
     pals_list: tool(
       "pals_list",
-      "列出主人的 Pal（这台电脑上由 PaloAlly 托管的 Claude Code 会话：id、现在的名字、目录、状态、最后一句；status 为 asleep 的是睡着了，进程关着；名字会变，以这里为准），以及电脑上其他还开着的 Claude Code 会话。要给某个 Pal 派活或问它进展，用 pal_send 发给它的 id 或名字。",
+      "列出主人的 Pal（这台电脑上由 PaloAlly 托管的 Claude Code 会话：id、现在的名字、目录、状态、最后一句；status 为 asleep 的是睡着了，进程关着；名字会变，以这里为准），以及电脑上其他还开着的 Claude Code 会话。要给某个 Pal 派活或问它进展，" + (forSession ? "用 SendMessage 发给它的 id 或名字。" : "用 pal_send 发给它的 id 或名字。"),
       {},
       async () => text(await h.pals_list()),
       ),
