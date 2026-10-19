@@ -75,7 +75,11 @@ struct FloatingTitleOrb: View {
         let presence = model.orbPresence
         // In the bar, the size the state asks for; listening grows from the largest.
         let barSize = (presence == .voice ? OrbPresence.present : presence).body * (topAligned ? Self.macScale : 1)
-        let listen = listening
+        // With a resting place on screen (the sidebar's Palo item) the
+        // listening orb flies out from there (`FlyingPaloOrb`): this one
+        // stays where it is and gives way as the hold begins.
+        let flies = PaloOrbHome.shared.frame != nil
+        let listen = flies ? 0 : listening
         let big = OrbPresence.voiceDiameter(width: columnWidth)
         let d = barSize + (big - barSize) * listen
         let canvas = TitleOrbDrop.canvas(for: d)
@@ -111,6 +115,7 @@ struct FloatingTitleOrb: View {
             }
             .frame(width: max(Self.box.width, canvas), height: boxHeight)
             .offset(y: rest + (dropped - rest) * listen)
+            .opacity(flies ? 1 - Double(min(1, listening * 4)) : 1)
         }
         .buttonStyle(.plain)
         .allowsHitTesting(!voice.panelMounted)
@@ -155,6 +160,47 @@ struct FloatingTitleOrb: View {
         let top = DisplayCorners.topInset
         guard top > 0 else { return 0 }
         return max(0, top - 6 + d / 2 - barCenterY)
+    }
+}
+
+/// The listening orb of the Palo page when the orb has a resting place on
+/// screen (`PaloOrbHome`, docs/workbench-prd.md §11): it flies from there to
+/// its listening spot over the chat column, and back on release or cancel.
+/// The same orb view and the same springs as the one that drops out of a
+/// bar; only the start and end points differ. Lives in the page's overlay,
+/// so it sits over this column only.
+struct FlyingPaloOrb: View {
+    /// Where the phone bar's middle is (an iPad's page); the end point
+    /// follows the same rule as the words' (`VoiceWordsLayer`).
+    let placement: OrbPlacement
+    @Environment(VoiceInputController.self) private var voice
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        if let home = PaloOrbHome.shared.frame, voice.panelMounted {
+            let p = min(max(voice.presence, 0), 1)
+            let listen = reduceMotion ? (p > 0 ? 1 : 0) : p
+            GeometryReader { proxy in
+                let layer = proxy.frame(in: .global)
+                let big = OrbPresence.voiceDiameter(width: layer.width)
+                let bottom = FloatingTitleOrb.listeningBottom(
+                    barCenterY: placement.slot.width > 0 ? placement.slot.midY : nil,
+                    columnTop: layer.minY + proxy.safeAreaInsets.top, columnWidth: layer.width)
+                let end = CGPoint(x: layer.width / 2, y: bottom - big / 2 - layer.minY)
+                let start = CGPoint(x: home.midX - layer.minX, y: home.midY - layer.minY)
+                let startSize = min(max(min(home.width, home.height), 20), 44)
+                let d = startSize + (big - startSize) * listen
+                TitleOrbDrop(size: d)
+                    .background { ListeningGlow(size: big).opacity(Double(listen)) }
+                    .opacity(Double(min(1, listen * 4)))
+                    .position(x: start.x + (end.x - start.x) * listen, y: start.y + (end.y - start.y) * listen)
+                    .animation(reduceMotion ? .easeInOut(duration: 0.25) : .spring(response: 0.42, dampingFraction: 0.58),
+                               value: listen)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
     }
 }
 

@@ -756,6 +756,9 @@ private struct VoiceZone: View {
 struct LevelBars: View {
     let level: Float
     var bars = 5
+    /// The bars' width and tallest height (the title capsule's is smaller).
+    var barWidth: CGFloat = 3
+    var tallest: CGFloat = 16
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1 / 24)) { ctx in
@@ -764,7 +767,7 @@ struct LevelBars: View {
                 ForEach(0..<bars, id: \.self) { i in
                     let wobble = (sin(t * 10 + Double(i) * 1.1) + 1) / 2
                     let h = 0.22 + 0.78 * Double(level) * (0.4 + 0.6 * wobble)
-                    Capsule().frame(width: 3, height: max(3, 16 * h))
+                    Capsule().frame(width: barWidth, height: max(barWidth, tallest * h))
                 }
             }
             .foregroundStyle(.tint)

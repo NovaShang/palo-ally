@@ -125,6 +125,8 @@ struct TiledWorkspaceView<Content: View>: View {
                                    lineWidth: active ? 1.5 : 0.5)
             }
             .shadow(color: active ? Color.accentColor.opacity(0.28) : .clear, radius: 10)
+            // Spoken to: the border glows softly with the voice.
+            .overlay { TileVoiceGlow(owner: id, shape: shape) }
             .contentShape(shape)
             // Alongside whatever the page does with a touch, never instead.
             .simultaneousGesture(TapGesture().onEnded { onActivate(id) })
@@ -143,7 +145,7 @@ struct TiledWorkspaceView<Content: View>: View {
         let buttonsWidth: CGFloat = 76
         let capsuleMax = max(r.width - buttonsWidth - 28, 60)
         ZStack(alignment: .topLeading) {
-            header(i)
+            header(i, id: id)
                 .frame(maxWidth: min(capsuleMax, 320), alignment: .leading)
                 .offset(x: 8 + (dragging ? tileDrag?.translation.width ?? 0 : 0),
                         y: 6 + (dragging ? tileDrag?.translation.height ?? 0 : 0))
@@ -175,9 +177,9 @@ struct TiledWorkspaceView<Content: View>: View {
         // hit-testable, so the page below keeps the rest.
     }
 
-    private func header(_ i: TileInfo) -> some View {
+    private func header(_ i: TileInfo, id: String) -> some View {
         HStack(spacing: 8) {
-            StatusDot(i.dot, size: 8)
+            VoiceLevelDot(i.dot, owner: id)
             Text(i.name)
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)

@@ -56,7 +56,7 @@ struct ChatView: View {
     private var macPage: Bool { Platform.barInWindowToolbar && !isPalo && !inTile }
     /// The title capsule of a session's page.
     private var pageCapsule: some View {
-        TitleCapsule(name: title, dot: pageTop?.dot ?? .idle, subtitle: pageTop?.subtitle ?? "")
+        TitleCapsule(name: title, dot: pageTop?.dot ?? .idle, subtitle: pageTop?.subtitle ?? "", showsVoiceLevel: true)
     }
     private var title: String {
         isPalo ? store.assistantName
@@ -249,6 +249,11 @@ struct ChatView: View {
         .overlay(alignment: .topLeading) {
             if isPalo && !Platform.barInWindowToolbar { PhoneTitleOrb(placement: orbPlacement) }
         }
+        // Where the orb has a resting place on screen (the sidebar), the
+        // listening orb flies from there over this column.
+        .overlay {
+            if isPalo && !inTile { FlyingPaloOrb(placement: orbPlacement) }
+        }
         .modifier(OrbTracking(enabled: isPalo, scrolledUp: !scroll.following || store.viewingPast, scrolling: scroll.userScrolling))
         // 「试试」 timing: a reply finishing counts as activity.
         .onChange(of: store.isBusy) { _, busy in if !busy { SuggestionsGate.shared.touch() } }
@@ -274,6 +279,8 @@ struct ChatView: View {
         // to the workspace's page.)
         .modifier(PageNavigationBar(title: title, enabled: !inTile))
         .scrollEdgeEffectStyle(.soft, for: .top)
+        // Under the floating composer the same: a soft blur, not a bar.
+        .scrollEdgeEffectStyle(.soft, for: .bottom)
         // The Mac: the assistant's conversation leaves 成果 to the window
         // toolbar (MacToolbar) and floats its orb in the column.
         .toolbar(macOrb || macPage ? .hidden : .automatic, for: .navigationBar)

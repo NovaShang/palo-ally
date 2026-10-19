@@ -9,6 +9,9 @@ struct TitleCapsule: View {
     let name: String
     let dot: StatusDotKind
     let subtitle: String
+    /// A session's page: while the owner holds to talk to it, the dot
+    /// becomes the live level bar (Palo's page has its orb instead).
+    var showsVoiceLevel = false
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
 
@@ -17,7 +20,7 @@ struct TitleCapsule: View {
             model.detailShown.toggle()
         } label: {
             HStack(spacing: 8) {
-                StatusDot(dot, size: 8)
+                if showsVoiceLevel { VoiceLevelDot(dot, owner: nil) } else { StatusDot(dot, size: 8) }
                 VStack(alignment: .leading, spacing: 0) {
                     Text(name)
                         .font(.subheadline.weight(.semibold))
