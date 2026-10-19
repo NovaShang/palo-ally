@@ -177,6 +177,13 @@ struct FlyingPaloOrb: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let out = PaloOrbHome.shared.frame != nil && voice.panelMounted
+        flight
+            .onChange(of: out, initial: true) { _, now in PaloOrbHome.shared.flying = now }
+            .onDisappear { PaloOrbHome.shared.flying = false }
+    }
+
+    @ViewBuilder private var flight: some View {
         if let home = PaloOrbHome.shared.frame, voice.panelMounted {
             let p = min(max(voice.presence, 0), 1)
             let listen = reduceMotion ? (p > 0 ? 1 : 0) : p

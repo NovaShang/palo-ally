@@ -8,6 +8,8 @@ final class PaloOrbHome {
     static let shared = PaloOrbHome()
     /// In global coordinates; nil while nothing on screen holds it.
     var frame: CGRect?
+    /// True while the flying orb is out: the resting orb steps aside.
+    var flying = false
 }
 
 extension View {
@@ -18,5 +20,6 @@ extension View {
             PaloOrbHome.shared.frame = frame
         }
         .onDisappear { PaloOrbHome.shared.frame = nil }
+        .opacity(PaloOrbHome.shared.flying ? 0 : 1)
     }
 }
