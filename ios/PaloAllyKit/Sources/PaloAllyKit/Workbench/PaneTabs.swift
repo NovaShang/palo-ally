@@ -11,8 +11,10 @@ public enum PaneTabsKey {
     public static func session(_ id: String) -> String { "pal:" + id }
     public static func workspace(_ id: String) -> String { "ws:" + id }
 
-    /// The tab at the head that can't be closed: 成果 beside the assistant, the files elsewhere.
-    public static func pinnedKind(_ key: String) -> String { key == palo ? PaneTab.library : PaneTab.files }
+    /// The two tabs at the head that can't be closed, for every key: 成果, then 文件.
+    public static let pinnedKinds = [PaneTab.library, PaneTab.files]
+    /// How many tabs are pinned.
+    public static var pinnedCount: Int { pinnedKinds.count }
 }
 
 extension PaneTab {
@@ -26,26 +28,25 @@ extension PaneTab {
 }
 
 extension TabsState {
-    /// The first tab is the pinned one, there is at most one of its kind,
-    /// and `active` points at a tab.
+    /// The first two tabs are 成果 and 文件, one of each, and `active` points
+    /// at a tab. States written when only one tab was pinned are mended, and
+    /// `active` keeps pointing at the same tab.
     public func normalized(key: String) -> TabsState {
-        let pinned = PaneTabsKey.pinnedKind(key)
-        var list = tabs
-        let before = tabs.first
-        if before?.kind != pinned {
-            list.removeAll { $0.kind == pinned }
-            list.insert(PaneTab(kind: pinned), at: 0)
-        }
-        // Only one pinned tab.
-        var seenPinned = false
-        list = list.filter { t in
-            guard t.kind == pinned else { return true }
-            defer { seenPinned = true }
-            return !seenPinned
-        }
+        let pinned = PaneTabsKey.pinnedKinds
+        let rest = tabs.enumerated().filter { !pinned.contains($0.element.kind) }
+        var list = pinned.map { PaneTab(kind: $0) }
+        list += rest.map(\.element)
         var s = self
         s.tabs = list
-        s.active = min(max(0, active), list.count - 1)
+        if tabs.indices.contains(active) {
+            let kind = tabs[active].kind
+            if let p = pinned.firstIndex(of: kind) {
+                s.active = p
+            } else if let r = rest.firstIndex(where: { $0.offset == active }) {
+                s.active = pinned.count + r
+            }
+        }
+        s.active = min(max(0, s.active), list.count - 1)
         return s
     }
 
@@ -67,12 +68,12 @@ extension TabsState {
         return s.showing(s.tabs.count - 1)
     }
 
-    /// The files tab (the pinned one for a session or workspace).
+    /// The files tab (pinned).
     public func openingFiles(key: String) -> TabsState {
         opening(PaneTab(kind: PaneTab.files), key: key) { $0.kind == PaneTab.files }
     }
 
-    /// 成果 (the pinned one beside the assistant).
+    /// 成果 (pinned).
     public func openingLibrary(key: String) -> TabsState {
         opening(PaneTab(kind: PaneTab.library), key: key) { $0.kind == PaneTab.library }
     }
@@ -88,11 +89,11 @@ extension TabsState {
         return opening(.webTab(u), key: key) { $0.kind == PaneTab.web && $0.url == u }
     }
 
-    /// Closes a tab. The pinned one stays. The tab beside it takes over when
+    /// Closes a tab. The pinned ones stay. The tab beside it takes over when
     /// the active one goes.
     public func closing(at index: Int, key: String) -> TabsState {
         var s = normalized(key: key)
-        guard index > 0, s.tabs.indices.contains(index) else { return s }
+        guard index >= PaneTabsKey.pinnedCount, s.tabs.indices.contains(index) else { return s }
         s.tabs.remove(at: index)
         if index < s.active { s.active -= 1 }
         s.active = min(max(0, s.active), s.tabs.count - 1)
@@ -123,7 +124,7 @@ extension TabsState {
     /// Whether the tab at `index` has a close button.
     public func canClose(at index: Int, key: String) -> Bool {
         let s = normalized(key: key)
-        return index > 0 && s.tabs.indices.contains(index)
+        return index >= PaneTabsKey.pinnedCount && s.tabs.indices.contains(index)
     }
 
     /// What a pane edit changed, without the host's stamp.
@@ -234,5 +235,13 @@ public final class PaneTabsHub {
         } catch {
             // Offline or refused: the next edit or load puts it right.
         }
+    }
+}
+
+extension Array where Element == Artifact {
+    /// What one session made (`source` is its id); everything when `source` is nil.
+    public func made(by source: String?) -> [Artifact] {
+        guard let source else { return self }
+        return filter { $0.source == source }
     }
 }
