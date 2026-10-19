@@ -2,9 +2,9 @@ import PaloAllyKit
 import SwiftUI
 
 /// The one status dot every list, row and title uses (workbench-prd §3):
-/// cyan with a soft halo while it works, orange when it waits on the owner
-/// (the only loud one), green when it finished something not yet looked at,
-/// gray otherwise. Not the theme color.
+/// Bento's palette: blue with a soft halo while it works, amber when it waits
+/// on the owner (the only loud one), green when it finished something not yet
+/// looked at, gray otherwise. Not the theme color.
 struct StatusDot: View {
     let kind: StatusDotKind
     var size: CGFloat = 8
@@ -42,10 +42,10 @@ struct StatusDot: View {
 
     static func color(_ kind: StatusDotKind) -> Color {
         switch kind {
-        case .working: .cyan
-        case .waiting: .orange
-        case .done: .green
-        case .idle: Color(.systemGray3)
+        case .working: Color(rgb: 0x0A85FF)
+        case .waiting: Color(rgb: 0xFF9F0A)
+        case .done: Color(rgb: 0x30D158)
+        case .idle: Color(rgb: 0x8E8E93)
         }
     }
 
@@ -57,5 +57,13 @@ struct StatusDot: View {
         case .done: String(localized: "做完了")
         case .idle: String(localized: "闲着")
         }
+    }
+}
+
+extension Color {
+    /// 0xRRGGBB in sRGB.
+    init(rgb: UInt32) {
+        self.init(.sRGB, red: Double((rgb >> 16) & 0xFF) / 255, green: Double((rgb >> 8) & 0xFF) / 255,
+                  blue: Double(rgb & 0xFF) / 255, opacity: 1)
     }
 }
