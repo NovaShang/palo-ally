@@ -421,6 +421,16 @@ TabsState { tabs: [PaneTab], active: Int, open: Bool, updatedAt: Int64 }
 - `workbenchTabs: {[key]: TabsState}`（等同 `workbench.tabs.get` 不带参数）
 - `sessionOrder: string[]`（见 `workspaces.list`）
 
+`status`（`sync`、`hello` 和 `status` 事件里的那个）多三个可选键，给 Palo 自己的会话指示器和详情用，一轮跑完后才有：
+
+| 字段 | 类型 | 含义 |
+| --- | --- | --- |
+| `contextTokens` | `Int?` | Palo 当前上下文 token 数 |
+| `contextWindow` | `Int?` | 在跑的模型的窗口（模型 id 带 `[1m]` 为 1000000，否则 200000） |
+| `contextPct` | `Int?` | 已用百分比 0 到 100，和会话的 `contextPct` 同一口径 |
+
+Palo 没有 `compact` 方法，所以 app 对 Palo 只显示上下文，不给压缩。
+
 会话列表仍然不在 `sync` 里（沿用 `pals.list` 和 `pals.updated`）。`hello` 不变。
 
 ```json

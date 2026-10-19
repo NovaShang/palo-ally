@@ -8,9 +8,9 @@ import Foundation
 
 /// The one status dot every list, row and title shows (workbench-prd §3).
 public enum StatusDotKind: Sendable, Hashable {
-    /// Cyan, with a soft halo.
+    /// Blue (0x0A85FF, Bento's), with a soft halo.
     case working
-    /// Orange: it asked something and waits on the owner.
+    /// Amber (0xFF9F0A): it asked something and waits on the owner.
     case waiting
     /// Green: it finished something the owner hasn't looked at yet.
     case done
@@ -79,12 +79,38 @@ public struct Workspace: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
-/// `workspaces.list → {workspaces}`, and the `workspaces.updated` event.
+/// `workspaces.list → {workspaces, sessionOrder}`, and the `workspaces.updated`
+/// event. The array order is the owner's manual order; `sessionOrder` is that of
+/// the sessions in no workspace (nil from a host that doesn't keep one).
 public struct WorkspacesResult: Decodable, Sendable {
     public var workspaces: [Workspace]
-    public init(workspaces: [Workspace]) { self.workspaces = workspaces }
+    public var sessionOrder: [String]?
+    public init(workspaces: [Workspace], sessionOrder: [String]? = nil) {
+        self.workspaces = workspaces; self.sessionOrder = sessionOrder
+    }
     public init(from decoder: Decoder) throws {
-        workspaces = try Lenient(decoder).array(Workspace.self, "workspaces", or: [])
+        let l = try Lenient(decoder)
+        workspaces = try l.array(Workspace.self, "workspaces", or: [])
+        sessionOrder = l.decode([String].self, "sessionOrder")
+    }
+}
+
+/// `workbench.order.set`: the owner's drag in the sidebar. `kind` is
+/// "sessions" (those in no workspace) or "workspaces".
+public struct OrderSetParams: Codable, Sendable {
+    public var kind: String
+    public var ids: [String]
+    public init(kind: String, ids: [String]) { self.kind = kind; self.ids = ids }
+}
+
+/// `workbench.order.set → {sessionOrder, workspaceOrder}`.
+public struct OrderSetResult: Decodable, Sendable {
+    public var sessionOrder: [String]
+    public var workspaceOrder: [String]
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        sessionOrder = l.decode([String].self, "sessionOrder", or: [])
+        workspaceOrder = l.decode([String].self, "workspaceOrder", or: [])
     }
 }
 
@@ -109,14 +135,22 @@ public struct WorkspaceUpdateParams: Codable, Sendable {
     public var id: String
     public var name: String?
     public var layout: JSONValue?
-    public init(id: String, name: String? = nil, layout: JSONValue? = nil) { self.id = id; self.name = name; self.layout = layout }
+    /// Reorders the members (the set is unchanged).
+    public var memberIds: [String]?
+    public init(id: String, name: String? = nil, layout: JSONValue? = nil, memberIds: [String]? = nil) {
+        self.id = id; self.name = name; self.layout = layout; self.memberIds = memberIds
+    }
 }
 
 /// No `workspaceId`: out of its workspace, an ordinary session again.
 public struct WorkspaceMoveParams: Codable, Sendable {
     public var palId: String
     public var workspaceId: String?
-    public init(palId: String, workspaceId: String? = nil) { self.palId = palId; self.workspaceId = workspaceId }
+    /// Where it lands: in the workspace's members, or in the ordinary sessions when it leaves one.
+    public var index: Int?
+    public init(palId: String, workspaceId: String? = nil, index: Int? = nil) {
+        self.palId = palId; self.workspaceId = workspaceId; self.index = index
+    }
 }
 
 // MARK: - what the sidebar lists
@@ -135,9 +169,11 @@ public struct SidebarTree: Sendable, Equatable {
         public var id: String { workspace.id }
     }
 
-    /// Oldest first, so rows keep their places as layouts change.
+    /// In the owner's order (the host's array order); from a host that keeps
+    /// none, oldest first so rows keep their places as layouts change.
     public var workspaces: [WorkspaceNode]
-    /// Ordinary sessions (in no workspace, not folded), the latest activity first.
+    /// Ordinary sessions (in no workspace, not folded): the owner's order, one
+    /// the order doesn't know yet on top; without an order, the latest activity first.
     public var sessions: [Pal]
     /// Sessions put away for lack of use: 以前的 holds them.
     public var foldedCount: Int
@@ -148,11 +184,14 @@ public struct SidebarTree: Sendable, Equatable {
         self.workspaces = workspaces; self.sessions = sessions; self.foldedCount = foldedCount; self.waitingCount = waitingCount
     }
 
-    public static func build(pals: [Pal], workspaces: [Workspace]) -> SidebarTree {
+    public static func build(pals: [Pal], workspaces: [Workspace], sessionOrder: [String]? = nil) -> SidebarTree {
         let byID = Dictionary(pals.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         var inWorkspace = Set<String>()
         var nodes: [WorkspaceNode] = []
-        for w in workspaces.sorted(by: { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }) {
+        let listed = sessionOrder == nil
+            ? workspaces.sorted(by: { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) })
+            : workspaces
+        for w in listed {
             var ids = w.memberIds
             // A session that says it is in this workspace, listed or not.
             for p in pals where p.workspaceId == w.id && !ids.contains(p.id) { ids.append(p.id) }
@@ -166,16 +205,26 @@ public struct SidebarTree: Sendable, Equatable {
                                        waiting: members.filter { $0.attention == .waiting }.count))
         }
         let loose = pals.enumerated().filter { !inWorkspace.contains($0.element.id) }
-        let ordinary = loose.filter { !$0.element.folded }
+        var ordinary = loose.filter { !$0.element.folded }
             .sorted { a, b in
                 let (x, y) = (a.element.updatedAt ?? 0, b.element.updatedAt ?? 0)
                 return x != y ? x > y : a.offset < b.offset
             }
             .map(\.element)
+        if let sessionOrder {
+            // The owner's order; a session it doesn't list yet is new, so on top.
+            let rank = Dictionary(sessionOrder.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
+            let fresh = ordinary.filter { rank[$0.id] == nil }
+            let known = ordinary.filter { rank[$0.id] != nil }.sorted { rank[$0.id]! < rank[$1.id]! }
+            ordinary = fresh + known
+        }
         return SidebarTree(workspaces: nodes, sessions: ordinary,
                            foldedCount: loose.filter { $0.element.folded }.count,
                            waitingCount: pals.filter { $0.attention == .waiting }.count)
     }
+
+    /// The sidebar's order of ordinary sessions, ready to send back after a drag.
+    public var sessionIDs: [String] { sessions.map(\.id) }
 
     /// 以前的 N: what the earlier list holds when it has been read, else the
     /// sessions already folded.

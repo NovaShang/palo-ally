@@ -16,8 +16,8 @@ public enum QuickSwitch {
     /// In a workspace: its members in order. Otherwise Palo first, then the
     /// ordinary (unfolded) sessions in the sidebar's order. A current session
     /// the lists would leave out (folded) still gets its chip, last.
-    public static func members(current: Member, pals: [Pal], workspaces: [Workspace]) -> [Member] {
-        let tree = SidebarTree.build(pals: pals, workspaces: workspaces)
+    public static func members(current: Member, pals: [Pal], workspaces: [Workspace], sessionOrder: [String]? = nil) -> [Member] {
+        let tree = SidebarTree.build(pals: pals, workspaces: workspaces, sessionOrder: sessionOrder)
         var out: [Member]
         if case .session(let id) = current,
            let node = tree.workspaces.first(where: { $0.members.contains { $0.id == id } }) {

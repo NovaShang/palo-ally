@@ -34,6 +34,7 @@ import { type Usage, UsageLedger } from "./usage.ts";
 import { randomUUID } from "node:crypto";
 import { forkSession as sdkForkSession } from "@anthropic-ai/claude-agent-sdk";
 import { type ForkSession, rewindNotFound, beforeCompaction, chainTo, findEntry, forkedUuids, leafOf, matchOwnerEntry, readTranscript } from "./rewind.ts";
+import { contextWindowOf } from "./palSession.ts";
 import { appendJsonl, readJson, writeJson } from "./util.ts";
 import { WatchStore } from "./watches.ts";
 import { Sessions, type SessionsDeps } from "./sessions.ts";
@@ -497,17 +498,21 @@ export class Hub {
   status(): Status {
     const busy = this.conversation.busy;
     const auth = this.auth.status();
+    const model = this.conversation.model || this.config.model || "";
+    const tokens = this.conversation.contextTokens;
+    const window = contextWindowOf(model);
     return {
       online: true,
       busy,
       activity: busy ? this.conversation.activity || activityThinking() : undefined,
-      model: this.conversation.model || this.config.model || "",
+      model,
       effort: this.config.effort,
       sessionId: this.runtime.data.sessionId,
       wechat: this.wechat?.status() ?? "off",
       version: VERSION,
       metAt: this.chat.startedAt,
       ...(auth ? { auth } : {}),
+      ...(tokens > 0 ? { contextTokens: tokens, contextWindow: window, contextPct: Math.min(100, Math.round((tokens / window) * 100)) } : {}),
     };
   }
 

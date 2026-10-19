@@ -203,7 +203,19 @@ extension DemoHost {
     }
 
     func emitWorkspaces() {
-        emit(RPCEventName.workspacesUpdated, ["workspaces": (try? JSONValue.from(workspaces)) ?? .array([])] as JSONValue)
+        emit(RPCEventName.workspacesUpdated, workspacesPayload())
+    }
+
+    /// The sessions in no workspace in the owner's order, a new one on top.
+    func currentSessionOrder() -> [String] {
+        let loose = pals.filter { $0.workspaceId == nil }.map(\.id)
+        let known = manualSessionOrder.filter(loose.contains)
+        return loose.filter { !known.contains($0) } + known
+    }
+
+    func workspacesPayload() -> JSONValue {
+        ["workspaces": (try? JSONValue.from(workspaces)) ?? .array([]),
+         "sessionOrder": (try? JSONValue.from(currentSessionOrder())) ?? .array([])] as JSONValue
     }
 
     func setPal(_ id: String, _ change: (inout Pal) -> Void) {

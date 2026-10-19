@@ -50,6 +50,8 @@ final class AppStoreShared {
     var adoptProposalPals: [String: String] = [:]
 
     var workspaces: [Workspace] = []
+    /// The manual order of the sessions in no workspace; nil from a host that has none.
+    var sessionOrder: [String]?
     var workspacesSupported: Bool?
     var earlierItems: [EarlierItem]?
     var earlierSupported: Bool?

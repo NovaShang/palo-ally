@@ -126,11 +126,12 @@ public enum RPCMethod {
     public static let workspacesUpdate = "workspaces.update"
     public static let workspacesMove = "workspaces.move"
     public static let workspacesDelete = "workspaces.delete"
+    public static let workbenchOrderSet = "workbench.order.set"
     public static let workbenchTabsGet = "workbench.tabs.get"
     public static let workbenchTabsSet = "workbench.tabs.set"
 
     public static let workbench: [String] = [workspacesList, workspacesCreate, workspacesUpdate, workspacesMove,
-                                             workspacesDelete, workbenchTabsGet, workbenchTabsSet]
+                                             workspacesDelete, workbenchOrderSet, workbenchTabsGet, workbenchTabsSet]
 
     /// A link that pairs one more of the owner's devices with this computer
     /// (5 minutes, one device): for a later 添加设备.

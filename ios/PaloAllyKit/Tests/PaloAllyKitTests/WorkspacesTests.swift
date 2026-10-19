@@ -130,6 +130,16 @@ struct SidebarTreeTests {
         #expect(t.sessions.map(\.id) == ["c"] && t.waitingCount == 3)
     }
 
+    @Test func theOwnersOrderHoldsAndANewSessionIsOnTop() {
+        let pals = [pal("a", at: 10), pal("b", at: 30), pal("c", at: 20), pal("new", at: 1)]
+        let ws = [Workspace(id: "w2", createdAt: 20, updatedAt: 1), Workspace(id: "w1", createdAt: 10, updatedAt: 1)]
+        let t = SidebarTree.build(pals: pals, workspaces: ws, sessionOrder: ["c", "a", "b"])
+        #expect(t.sessions.map(\.id) == ["new", "c", "a", "b"])
+        // Workspaces keep the host's array order, not their age.
+        #expect(t.workspaces.map(\.id) == ["w2", "w1"])
+        #expect(SidebarTree.build(pals: pals, workspaces: ws).workspaces.map(\.id) == ["w1", "w2"])
+    }
+
     @Test func aSessionOnlyTheSessionKnowsItsWorkspaceStillShowsThere() {
         let pals = [pal("a", at: 1, ws: "w1"), pal("gone", at: 2, ws: "w1")]
         let w = Workspace(id: "w1", name: "W", memberIds: ["a", "missing"], createdAt: 1, updatedAt: 1)
@@ -240,6 +250,30 @@ struct WorkbenchStoreTests {
         let recent = try #require(store.earlierItems?.first { $0.kind == .recent })
         let adopted = try await store.resume(recent)
         #expect(adopted.sessionId == recent.sessionId && store.earlierItems?.contains { $0.key == recent.key } == false)
+    }
+
+    @Test func theOwnersDragsReorderShowAtOnceAndAreKeptOnTheHost() async throws {
+        let (store, host) = await demoStore()
+        let extra = try await store.createSession(cwd: "/Users/demo/code/new")
+        #expect(await until { store.sidebarTree.sessions.map(\.id).first == extra.id })
+        // Ordinary sessions: the new one is on top; drag it below 笔记整理.
+        try await store.reorderSessions(["pal-notes", extra.id])
+        #expect(store.sidebarTree.sessions.map(\.id) == ["pal-notes", extra.id])
+        #expect(await host.lastParams["workbench.order.set"] == ["kind": "sessions", "ids": ["pal-notes", .string(extra.id)]])
+        // Inside a workspace.
+        try await store.reorderMembers(workspaceId: "ws-site", ["pal-blog", "pal-site"])
+        #expect(store.workspace(id: "ws-site")?.memberIds == ["pal-blog", "pal-site"])
+        // Two sessions dragged together make a workspace, on top of the others.
+        let w = try await store.createWorkspace(memberIds: ["pal-notes", extra.id])
+        #expect(store.workspaces.first?.id == w.id && store.sidebarTree.sessions.isEmpty)
+        // Out of a workspace at a place; into another at a place.
+        try await store.moveSession(extra.id, to: nil, index: 0)
+        #expect(store.sidebarTree.sessions.map(\.id) == [extra.id] && store.workspace(id: w.id)?.memberIds == ["pal-notes"])
+        try await store.moveSession(extra.id, to: "ws-site", index: 1)
+        #expect(store.workspace(id: "ws-site")?.memberIds == ["pal-blog", extra.id, "pal-site"])
+        // Workspaces themselves.
+        try await store.reorderWorkspaces(["ws-site", w.id])
+        #expect(store.workspaces.map(\.id) == ["ws-site", w.id])
     }
 
     @Test func workspacesAreMadeMovedRenamedAndDeleted() async throws {

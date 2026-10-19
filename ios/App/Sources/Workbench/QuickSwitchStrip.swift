@@ -25,7 +25,8 @@ struct QuickSwitchStrip: View {
     @State private var ending: Pal?
 
     var body: some View {
-        let members = QuickSwitch.members(current: current, pals: store.pals, workspaces: store.workspaces)
+        let members = QuickSwitch.members(current: current, pals: store.pals, workspaces: store.workspaces,
+                                         sessionOrder: store.sessionOrder)
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 GlassEffectContainer(spacing: 8) {

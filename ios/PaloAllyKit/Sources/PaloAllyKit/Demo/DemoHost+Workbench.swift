@@ -142,7 +142,19 @@ extension DemoHost {
             return [:]
 
         case RPCMethod.workspacesList:
-            return ["workspaces": try .from(workspaces)]
+            return workspacesPayload()
+        case RPCMethod.workbenchOrderSet:
+            guard let kind = p["kind"]?.stringValue, kind == "sessions" || kind == "workspaces", let ids = p["ids"]?.arrayValue?.compactMap(\.stringValue) else {
+                throw DemoError(message: "排序的内容不对")
+            }
+            if kind == "sessions" {
+                manualSessionOrder = ids + currentSessionOrder().filter { !ids.contains($0) }
+            } else {
+                let named = ids.compactMap { id in workspaces.first { $0.id == id } }
+                workspaces = named + workspaces.filter { w in !named.contains { $0.id == w.id } }
+            }
+            emitWorkspaces()
+            return ["sessionOrder": try .from(currentSessionOrder()), "workspaceOrder": try .from(workspaces.map(\.id))]
         case RPCMethod.workspacesCreate:
             let ids = (p["memberIds"]?.arrayValue ?? []).compactMap(\.stringValue)
             guard !ids.isEmpty else { throw DemoError(message: "至少要有一个会话") }
@@ -152,7 +164,7 @@ extension DemoHost {
             for id in ids { if let old = pals.first(where: { $0.id == id })?.workspaceId { removeMember(id, from: old) } }
             let now = Date().epochMillis
             let w = Workspace(id: "ws-\(nextID("w"))", name: name, memberIds: ids, layout: nil, createdAt: now, updatedAt: now)
-            workspaces.append(w)
+            workspaces.insert(w, at: 0)
             for id in ids { setPalQuiet(id) { $0.workspaceId = w.id } }
             emitWorkspaces()
             emitPals()
@@ -165,6 +177,11 @@ extension DemoHost {
                 workspaces[i].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
             }
             if let layout = p["layout"] { workspaces[i].layout = layout == .null ? nil : layout }
+            if let ids = p["memberIds"]?.arrayValue?.compactMap(\.stringValue) {
+                let old = workspaces[i].memberIds
+                let named = ids.filter(old.contains)
+                workspaces[i].memberIds = named + old.filter { !named.contains($0) }
+            }
             workspaces[i].updatedAt = max(Date().epochMillis, workspaces[i].updatedAt + 1)
             emitWorkspaces()
             return ["workspace": try .from(workspaces[i])]
@@ -174,13 +191,24 @@ extension DemoHost {
             let target = p["workspaceId"]?.stringValue
             if let target, !workspaces.contains(where: { $0.id == target }) { throw DemoError(message: "找不到这个工作区") }
             var changed: [String] = []
+            let index = p["index"]?.doubleValue.map { Int($0) }
+            let looseBefore = currentSessionOrder()
             if let old = pal.workspaceId, old != target { removeMember(palID, from: old); changed.append(old) }
-            if let target, pal.workspaceId != target, let i = workspaces.firstIndex(where: { $0.id == target }) {
-                workspaces[i].memberIds.append(palID)
+            if let target, let i = workspaces.firstIndex(where: { $0.id == target }) {
+                if pal.workspaceId != target { workspaces[i].memberIds.append(palID) }
+                if let index {
+                    workspaces[i].memberIds.removeAll { $0 == palID }
+                    workspaces[i].memberIds.insert(palID, at: min(max(index, 0), workspaces[i].memberIds.count))
+                }
                 workspaces[i].updatedAt = Date().epochMillis
                 changed.append(target)
             }
             setPalQuiet(palID) { $0.workspaceId = target }
+            if target == nil {
+                var order = looseBefore.filter { $0 != palID }
+                order.insert(palID, at: min(max(index ?? 0, 0), order.count))
+                manualSessionOrder = order
+            }
             emitWorkspaces()
             emitPals()
             return ["workspaces": try .from(workspaces.filter { changed.contains($0.id) })]
