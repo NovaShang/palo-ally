@@ -153,7 +153,7 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
         if Self.isUnnamed(n) { return loc("新会话") }
         if !n.isEmpty { return n }
         let folder = (cwd as NSString).lastPathComponent
-        return folder.isEmpty || folder == "/" ? "Pal" : folder
+        return folder.isEmpty || folder == "/" ? loc("会话") : folder
     }
 
     /// The host's placeholder name for a session nobody has named or spoken in.
