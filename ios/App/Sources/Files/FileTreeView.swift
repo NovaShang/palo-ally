@@ -15,6 +15,8 @@ struct FileTreeScreen: View {
     var close: (() -> Void)? = nil
     /// After 插入到输入框 (the phone's sheet goes away to show the composer).
     var inserted: (() -> Void)? = nil
+    /// The right pane: a file opens as a tab of its own instead of a page pushed here.
+    var onOpenFile: ((FileTarget) -> Void)? = nil
 
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
@@ -36,6 +38,10 @@ struct FileTreeScreen: View {
     private var trimmed: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     /// The Mac's inspector shares the window toolbar: its search field sits in the column.
     private var fieldInColumn: Bool { asColumn && UIDevice.current.userInterfaceIdiom == .mac }
+
+    private func show(_ target: FileTarget) {
+        if let onOpenFile { onOpenFile(target) } else { opened = target }
+    }
 
     private var title: String {
         switch scope.kind {
@@ -116,7 +122,7 @@ struct FileTreeScreen: View {
     private var rowActions: FileTreeRow.Actions {
         let insertion: ((String) -> Void)? = scope.kind == .pal ? { insert($0) } : nil
         return FileTreeRow.Actions(
-            open: { opened = FileTarget(scope: scope, path: $0) },
+            open: { show(FileTarget(scope: scope, path: $0)) },
             insert: insertion,
             copy: { rel in Clipboard.copy(root.path.map { FilePaths.join($0, rel) } ?? rel) })
     }
@@ -135,7 +141,7 @@ struct FileTreeScreen: View {
         } else {
             ForEach(results) { m in
                 Button {
-                    if m.kind == .dir { reveal(m.path) } else { opened = FileTarget(scope: scope, path: m.path) }
+                    if m.kind == .dir { reveal(m.path) } else { show(FileTarget(scope: scope, path: m.path)) }
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: m.kind == .dir ? "folder" : FileTreeRow.symbol(m.name))

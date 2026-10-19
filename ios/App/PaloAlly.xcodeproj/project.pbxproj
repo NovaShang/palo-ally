@@ -22,6 +22,7 @@
 		12AEBFDF8D57FB231AAEC5EA /* PaloAllyFilePreview in Frameworks */ = {isa = PBXBuildFile; productRef = AABA5B7E56189876EB3B0314 /* PaloAllyFilePreview */; };
 		143FC17CF80E62FC97B6BD5A /* AgentDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA3B39D6F4CD69F2A46B42B9 /* AgentDetailView.swift */; };
 		14B345533E896BA15AF0E35A /* AssistantAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57B6C3C8A61AE25FA5811B53 /* AssistantAvatar.swift */; };
+		1713986D5045446A775CC5B0 /* WebTabPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00AB44A63728AF05CAFC283B /* WebTabPage.swift */; };
 		18D2CA8A4488ACABE53E79AC /* SessionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08BF2FEA6B01AE016C219995 /* SessionsUITests.swift */; };
 		1F13B32F1A120C451958B347 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D85821DAF90FE3998B520913 /* LibraryView.swift */; };
 		2175FC6EEE394CD7DB490C5A /* LocalizationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24E36607C5409252B9B2D6FD /* LocalizationUITests.swift */; };
@@ -34,6 +35,7 @@
 		33546F5F21AABF35DBF2E7A4 /* TwoDropsState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 521F61236554CDC6D42C5C48 /* TwoDropsState.swift */; };
 		35FFC7556E0F870EC7DEBA7B /* RewindPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 983D40336B75C10D27DE0A94 /* RewindPanel.swift */; };
 		3615E6CE5D1C09A3629F48B6 /* WatchesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9E4508DECE36B39CF27552D /* WatchesSection.swift */; };
+		3624007E05C01A2B860ED919 /* RightPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7A271DCE5966C29E9ED701 /* RightPane.swift */; };
 		3781DAA15A3A54E048E7DC38 /* VoiceExitUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0AB3E164ECDB40C83C785A /* VoiceExitUITests.swift */; };
 		3A1CC789034F8E7D767BCBD1 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 2702A873DF14736BD0666093 /* InfoPlist.xcstrings */; };
 		3B7B5B36F455E4A0C548FBAB /* NewSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D328993B8AC9542C3EBC19C /* NewSheets.swift */; };
@@ -164,12 +166,14 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		00AB44A63728AF05CAFC283B /* WebTabPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebTabPage.swift; sourceTree = "<group>"; };
 		02A414F23E433BB4EA6F9700 /* PairLinkUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairLinkUITests.swift; sourceTree = "<group>"; };
 		0420ADEBD7C7A5E9F8EB5142 /* PaloAllyAppKit.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PaloAllyAppKit.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
 		056B108C0177A1156F312E84 /* AssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantView.swift; sourceTree = "<group>"; };
 		07A26E3CEF36BC017C91F461 /* SelectableMarkdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectableMarkdown.swift; sourceTree = "<group>"; };
 		08BF2FEA6B01AE016C219995 /* SessionsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionsUITests.swift; sourceTree = "<group>"; };
 		0B2339DF9459035E591FCB19 /* PaloAlly.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PaloAlly.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0B7A271DCE5966C29E9ED701 /* RightPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RightPane.swift; sourceTree = "<group>"; };
 		0BC7F6052D1575405F512987 /* FileLinks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileLinks.swift; sourceTree = "<group>"; };
 		0CC0C56E78F856900F1C91A8 /* ApprovalCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalCard.swift; sourceTree = "<group>"; };
 		152387F3158810B91BB9A668 /* AllyCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllyCopy.swift; sourceTree = "<group>"; };
@@ -379,6 +383,15 @@
 			path = Pairing;
 			sourceTree = "<group>";
 		};
+		48D86212524CA5AD4080DAA9 /* RightPane */ = {
+			isa = PBXGroup;
+			children = (
+				0B7A271DCE5966C29E9ED701 /* RightPane.swift */,
+				00AB44A63728AF05CAFC283B /* WebTabPage.swift */,
+			);
+			path = RightPane;
+			sourceTree = "<group>";
+		};
 		569ED7234C516663DC09B1D3 /* Assistant */ = {
 			isa = PBXGroup;
 			children = (
@@ -548,6 +561,7 @@
 				105F3C7BD76CBDFF94E0FD0A /* Library */,
 				3C5D6BE55182B5E92B38D957 /* Pairing */,
 				F92D5316DD67BCF35575CB1F /* Pals */,
+				48D86212524CA5AD4080DAA9 /* RightPane */,
 				1EC5F6B53F6A534E99DB85DD /* Sessions */,
 				0758BA1260A489462D7C1B68 /* Settings */,
 				A5A39901D00EEDD568BA7FA7 /* Support */,
@@ -822,6 +836,7 @@
 				2D506F2643BDD7A799D90712 /* RenderTrace.swift in Sources */,
 				7BE1EBB1FD3930584F6FBB48 /* ReplyText.swift in Sources */,
 				35FFC7556E0F870EC7DEBA7B /* RewindPanel.swift in Sources */,
+				3624007E05C01A2B860ED919 /* RightPane.swift in Sources */,
 				F7BB5BDB265CB2F858DDF473 /* RootView.swift in Sources */,
 				0567FEE9B5F6C1B2C6A33AAC /* ScrollLab.swift in Sources */,
 				11BECFB67315E8AFAF47D91A /* SelectableMarkdown.swift in Sources */,
@@ -842,6 +857,7 @@
 				33546F5F21AABF35DBF2E7A4 /* TwoDropsState.swift in Sources */,
 				FC44EDAAB240F3EB2DFA924B /* VoiceInputOverlay.swift in Sources */,
 				3615E6CE5D1C09A3629F48B6 /* WatchesSection.swift in Sources */,
+				1713986D5045446A775CC5B0 /* WebTabPage.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
