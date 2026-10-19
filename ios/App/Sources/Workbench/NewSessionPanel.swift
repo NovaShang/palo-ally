@@ -154,8 +154,10 @@ struct NewSessionPanel: View {
         start(path, into: workspaceID)
     }
 
-    private func start(_ path: String, into workspaceID: String?) {
+    private func start(_ path: String, into requested: String?) {
         guard starting == nil else { return }
+        // 并排 → 新开 asks for a tile in its workspace.
+        let workspaceID = requested ?? model.newSessionIntoWorkspace
         starting = path
         failure = nil
         Task {
@@ -163,7 +165,12 @@ struct NewSessionPanel: View {
             do {
                 let pal = try await store.createSession(cwd: path, workspaceId: workspaceID)
                 dismiss()
-                model.openPal(pal.id)
+                if let workspaceID, model.selection == .workspace(workspaceID) {
+                    // A tile in the workspace that's open: it is the one to talk to.
+                    model.activate(tile: pal.id, in: workspaceID)
+                } else {
+                    model.openPal(pal.id)
+                }
             } catch {
                 failure = Copy.error(error)
                 browsing = false

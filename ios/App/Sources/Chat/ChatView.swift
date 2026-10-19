@@ -16,6 +16,10 @@ struct ChatView: View {
     /// The Mac: what a Pal's or a session's page shows in its strip at the
     /// top (no navigation bar there, MacPageStrip): the status line and the menu.
     var pageTop: PageTop? = nil
+    /// In a workspace's tile: no page chrome (the tile's header is the title),
+    /// no title orb, and the voice shows on this tile only while it is the one
+    /// being spoken to (`VoiceTileGate`).
+    var inTile = false
     struct PageTop {
         var subtitle = ""
         var dot: StatusDotKind? = nil
@@ -49,7 +53,7 @@ struct ChatView: View {
     private var macOrb: Bool { Platform.barInWindowToolbar && isPalo }
     /// The Mac: a Pal's or a session's page runs to the window's top too,
     /// its title and menu floating in a strip (MacPageStrip).
-    private var macPage: Bool { Platform.barInWindowToolbar && !isPalo }
+    private var macPage: Bool { Platform.barInWindowToolbar && !isPalo && !inTile }
     /// The title capsule of a session's page.
     private var pageCapsule: some View {
         TitleCapsule(name: title, dot: pageTop?.dot ?? .idle, subtitle: pageTop?.subtitle ?? "")
@@ -192,7 +196,7 @@ struct ChatView: View {
                     MacPageStrip(title: title, subtitle: pageTop?.subtitle ?? "", dot: pageTop?.dot, trailing: pageTop?.menu,
                                  capsule: pageTop?.capsule == true ? AnyView(pageCapsule) : nil)
                 }
-                StatusBanner()
+                if !inTile { StatusBanner() }
                 // The Mac: the orb hangs small from the top middle of the
                 // column, just below the window's titlebar; the messages
                 // pass under both, softly.
@@ -207,12 +211,12 @@ struct ChatView: View {
         .modifier(ComposerDropTarget(intake: intake, enabled: bottomPanel == nil && store.rewindTarget == nil))
         // While holding to talk, the screen's background covers the
         // conversation (same hold-driven motion as the orb and the zones).
-        .overlay { VoiceScrimLayer() }
+        .overlay { VoiceTileGate { VoiceScrimLayer() } }
         // 后台 N 个在跑, quietly above the composer; tapping it opens the details.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if store.palID != nil && bottomPanel == nil { BackgroundTasksLine() }
         }
-        .modifier(AgentDetailSheet())
+        .modifier(AgentDetailSheet(enabled: !inTile))
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // 回到这里重来: asked in place of the composer (docs/rewind-prd.md §3).
             if let target = store.rewindTarget {
@@ -239,7 +243,7 @@ struct ChatView: View {
         }
         // The live words, in the middle while holding to talk, and on their
         // way out after release: over the composer, under the orb.
-        .overlay { VoiceWordsLayer(orbPlacement: orbPlacement) }
+        .overlay { VoiceTileGate { VoiceWordsLayer(orbPlacement: orbPlacement) } }
         // The orb over the bar's middle: above the conversation, its edge
         // fade and the voice scrim, and free to be bigger than the bar.
         .overlay(alignment: .topLeading) {
@@ -262,14 +266,13 @@ struct ChatView: View {
                 }
             }
         }
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
         // Immersive, the iOS 26 look: the system bar stays but without its
         // material backdrop (iOS 27 gives the bar one by default); the
         // conversation runs under the floating pieces (the back button, the
         // orb, 成果) with only the soft scroll-edge fade, which keeps text
-        // from colliding with the clock and the orb.
-        .toolbarBackground(.hidden, for: .navigationBar)
+        // from colliding with the clock and the orb. (A tile leaves the bar
+        // to the workspace's page.)
+        .modifier(PageNavigationBar(title: title, enabled: !inTile))
         .scrollEdgeEffectStyle(.soft, for: .top)
         // The Mac: the assistant's conversation leaves 成果 to the window
         // toolbar (MacToolbar) and floats its orb in the column.
@@ -281,9 +284,9 @@ struct ChatView: View {
                 ToolbarItem(placement: .principal) { pageCapsule }
                     .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { model.openPalFiles(id) } label: { Image(systemName: "folder") }
+                    Button { model.togglePane() } label: { Image(systemName: "sidebar.trailing") }
                         .tint(.primary)
-                        .accessibilityLabel(Text("文件", tableName: "Files"))
+                        .accessibilityLabel("右侧栏")
                         .accessibilityIdentifier("page-files")
                 }
             }
@@ -307,6 +310,35 @@ struct ChatView: View {
         }
     }
 
+}
+
+/// The page's title and clear bar (a tile's page leaves the bar alone).
+private struct PageNavigationBar: ViewModifier {
+    let title: String
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.hidden, for: .navigationBar)
+        } else {
+            content
+        }
+    }
+}
+
+/// The voice's scrim and words are for the one conversation being spoken to:
+/// in a tiling, only the tile that holds the voice shows them.
+struct VoiceTileGate<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    @Environment(VoiceInputController.self) private var voice
+    @Environment(\.tile) private var tile
+
+    var body: some View {
+        if tile == nil || voice.owner == tile?.id { content() }
+    }
 }
 
 /// The orb's presence follows the assistant's conversation only (a Pal's

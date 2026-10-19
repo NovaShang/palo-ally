@@ -47,7 +47,7 @@ private struct PlaceCommands: Commands {
         CommandGroup(before: .sidebar) {
             Button("管理助理") { model.toggleManagement() }
                 .keyboardShortcut("1", modifiers: .command)
-            Button("成果") { model.toggleLibrary() }
+            Button("右侧栏") { model.toggleLibrary() }
                 .keyboardShortcut("2", modifiers: .command)
             // ⌘F searches 成果 and the conversation (nothing else here has
             // Find). It lives here: Catalyst ignores a replaced text-editing

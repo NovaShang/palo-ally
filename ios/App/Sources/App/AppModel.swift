@@ -139,13 +139,20 @@ final class AppModel {
             // Each conversation starts at its own root.
             detailPath = NavigationPath()
             detailShown = false
-            if selection != .palo { inspectorShown = false }
+            paneCover = false
+            filesPanel = nil
         }
     }
     /// The title capsule's details are open (workbench-prd §6).
     var detailShown = false
     /// 新建会话 asked (⌘N, the sidebar's ＋): in a workspace when it has one.
     var newSession = false
+    /// 并排 → 新开: the new session goes into this workspace as a tile.
+    var newSessionIntoWorkspace: String?
+    /// Each workspace's active tile (a session id), kept while the app is open.
+    var activeTiles: [String: String] = [:]
+    /// Phones (and short windows): the right pane as a full page.
+    var paneCover = false
     /// 新建工作区 asked (⌘⇧N, ＋, a session's 并排…): with these sessions chosen.
     var newWorkspace: [String]?
 
@@ -176,9 +183,7 @@ final class AppModel {
     private(set) var layout: Layout = .phone
     /// A short window (a big phone on its side): 成果 is pushed, not beside
     /// the conversation (there's no room for a column).
-    var shortWindow = false {
-        didSet { if shortWindow && inspectorShown { setLayout(.phone, converting: true) } }
-    }
+    var shortWindow = false
     /// 成果 opens beside the conversation (large screens) rather than pushed.
     var libraryBeside: Bool { layout == .split && !shortWindow }
 
@@ -186,17 +191,9 @@ final class AppModel {
         guard new != layout || converting else { return }
         if !converting { layout = new }
         if new == .phone {
-            // 成果 beside the conversation becomes 成果 pushed over it (a
-            // sheet, management, stays a sheet).
-            if inspectorShown {
-                let items = libraryPath
-                inspectorShown = false
-                var path = NavigationPath()
-                path.append(Page.library)
-                for id in items { path.append(Page.artifact(id)) }
-                if selection != .palo { selection = .palo }
-                detailPath = path
-            }
+            // The right pane beside the conversation becomes a full page,
+            // opened again from its button.
+            paneCover = false
         } else if selection == nil {
             // Back on the list (phones) is the assistant's conversation beside it.
             selection = .palo
@@ -207,20 +204,11 @@ final class AppModel {
     var showManagement = false {
         didSet { if !showManagement && oldValue { resetManagement() } }
     }
-    /// iPads and the Mac: 成果 beside the conversation.
-    var inspectorShown = false {
-        didSet {
-            if inspectorShown != oldValue { debugLog("[layout] inspector \(inspectorShown)") }
-            if !inspectorShown && oldValue { libraryPath = []; filesPanel = nil }
-        }
-    }
-    /// The inspector's own stack: artifact ids pushed over the list.
+    /// The pane's 成果 tab: artifact ids pushed over the list.
     var libraryPath: [String] = []
-    /// iPads and the Mac: a folder's tree in the inspector in place of 成果
-    /// (a Pal's ⋯ → 文件, or 打开文件夹… in 成果; docs/files-prd.md).
+    /// A folder's tree in the 成果 tab in place of its list (打开文件夹… in
+    /// 成果; docs/files-prd.md). A session's files are the pane's own tab.
     var filesPanel: FileScope?
-    /// Phones: a Pal's 文件 as a sheet.
-    var filesSheet: FileScope?
     /// ⌘F: the 成果 search field should take focus (consumed by LibraryView,
     /// which may only appear after the request).
     var librarySearchRequested = false
@@ -288,58 +276,26 @@ final class AppModel {
         if layout != .phone, showManagement { showManagement = false } else { openManagement() }
     }
 
-    /// 成果, from the toolbar of the assistant's conversation (phones:
-    /// pushed; large screens: the inspector, or put it away).
-    func toggleLibrary() {
-        guard !libraryBeside else {
-            if inspectorShown {
-                inspectorShown = false
-            } else {
-                libraryPath = []
-                inspectorShown = true
-            }
-            return
-        }
-        openPalo()
-        var path = NavigationPath()
-        path.append(Page.library)
-        detailPath = path
-    }
+    /// ⌘2 and the toolbar's button: the right pane of the page, or put it away.
+    func toggleLibrary() { togglePane() }
 
     /// ⌘F: 成果 with its search field focused.
     func focusLibrarySearch() {
         debugLog("[layout] search 成果")
-        if !libraryBeside {
-            toggleLibrary()
-        } else {
-            libraryPath = []
-            inspectorShown = true
-        }
+        openInPane { $0.openLibrary($1) }
         librarySearchRequested = true
     }
 
     /// From the conversation: just that artifact; one step back returns to it.
     func openArtifact(_ id: String) {
-        guard !libraryBeside else {
-            libraryPath = [id]
-            inspectorShown = true
-            return
-        }
-        detailPath.append(Page.artifact(id))
+        libraryPath = [id]
+        openInPane { $0.openLibrary($1) }
     }
 
     /// The way out of a single item to its whole collection.
     func showInLibrary(_ id: String? = nil) {
-        guard !libraryBeside else {
-            libraryPath = id.map { [$0] } ?? []
-            inspectorShown = true
-            return
-        }
-        openPalo()
-        var path = NavigationPath()
-        path.append(Page.library)
-        if let id { path.append(Page.artifact(id)) }
-        detailPath = path
+        libraryPath = id.map { [$0] } ?? []
+        openInPane { $0.openLibrary($1) }
     }
 
     /// From the conversation: one task's detail; one step back returns to it.
@@ -379,7 +335,7 @@ final class AppModel {
     func goBack() {
         if NavigationBack.dismissPresented() { return }
         if NavigationBack.popVisible() { return }
-        if libraryBeside, inspectorShown { inspectorShown = false }
+        if paneIsOpen { setPane(open: false) }
     }
 
     var assistantTab: AssistantTab = .watches // 目标 opens first

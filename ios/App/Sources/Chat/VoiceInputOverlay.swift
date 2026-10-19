@@ -25,6 +25,10 @@ final class VoiceInputController {
         case unheard(edit: Bool)
     }
 
+    /// In a workspace's tiling, the tile being spoken to (its session id);
+    /// nil elsewhere. The one controller serves them all, and only its owner
+    /// shows the voice (`ComposerView`, `VoiceTileGate`).
+    var owner: String?
     private(set) var isActive = false
     private(set) var target: Target = .send
     /// Static screenshot mode (`-demoScreen voice`): fixed text, no audio.

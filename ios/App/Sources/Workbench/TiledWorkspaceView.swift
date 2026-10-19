@@ -37,6 +37,9 @@ struct TiledWorkspaceView<Content: View>: View {
     var onActivate: (String) -> Void = { _ in }
     var onExpand: (String) -> Void = { _ in }
     var onClose: (String) -> Void = { _ in }
+    /// The tile whose details are open (its capsule opens them), and what they show.
+    var detailFor: Binding<String?> = .constant(nil)
+    var detail: (String) -> AnyView = { _ in AnyView(EmptyView()) }
     @ViewBuilder var content: (String) -> Content
 
     @State private var liveTree: LayoutTree.Node?
@@ -146,12 +149,22 @@ struct TiledWorkspaceView<Content: View>: View {
                         y: 6 + (dragging ? tileDrag?.translation.height ?? 0 : 0))
                 .scaleEffect(dragging ? 1.04 : 1, anchor: .topLeading)
                 .zIndex(dragging ? 2 : 0)
+                .onTapGesture {
+                    onActivate(id)
+                    detailFor.wrappedValue = detailFor.wrappedValue == id ? nil : id
+                }
                 .gesture(headerDrag(id, frames: frames, tree: tree), including: interactive ? .all : .subviews)
+                .popover(isPresented: Binding(get: { detailFor.wrappedValue == id },
+                                              set: { if !$0, detailFor.wrappedValue == id { detailFor.wrappedValue = nil } })) {
+                    detail(id)
+                        .frame(minWidth: 360, idealWidth: 380, minHeight: 420, idealHeight: 560)
+                        .presentationCompactAdaptation(.sheet)
+                }
                 .accessibilityIdentifier("tile-header-\(id)")
             GlassEffectContainer(spacing: 6) {
                 HStack(spacing: 6) {
-                    glassButton("arrow.up.left.and.arrow.down.right", label: "展开") { onExpand(id) }
-                    glassButton("xmark", label: "关闭") { onClose(id) }
+                    glassButton("arrow.up.left.and.arrow.down.right", label: String(localized: "展开")) { onExpand(id) }
+                    glassButton("xmark", label: String(localized: "关闭")) { onClose(id) }
                 }
             }
             .frame(width: r.width - 8, height: 32, alignment: .trailing)
@@ -174,6 +187,10 @@ struct TiledWorkspaceView<Content: View>: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -182,7 +199,7 @@ struct TiledWorkspaceView<Content: View>: View {
         .contentShape(.capsule)
     }
 
-    private func glassButton(_ symbol: String, label: LocalizedStringKey, action: @escaping () -> Void) -> some View {
+    private func glassButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 12, weight: .semibold))
@@ -192,7 +209,7 @@ struct TiledWorkspaceView<Content: View>: View {
         .buttonStyle(.plain)
         .tint(.primary)
         .glassEffect(.regular.interactive(), in: .circle)
-        .accessibilityLabel(Text(label))
+        .accessibilityLabel(label)
     }
 
     // MARK: - dragging a tile by its capsule

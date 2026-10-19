@@ -519,6 +519,11 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
     func textView(_ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction) -> UIAction? {
         // A path in the reply that is a file on the computer: its preview.
         if case .link(let url) = textItem.content, let open = FileLinks.action(for: url) { return open }
+        // A web page: a tab in the right pane.
+        if case .link(let url) = textItem.content, ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+           let web = PaneOpeners.web {
+            return UIAction { _ in web(url) }
+        }
         guard case .link(let url) = textItem.content, url.scheme?.lowercased() == AppLink.scheme,
               let open = InAppLinks.open else { return defaultAction }
         return UIAction { _ in open(url) }

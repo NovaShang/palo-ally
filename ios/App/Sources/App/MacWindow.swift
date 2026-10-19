@@ -185,7 +185,7 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         switch id {
         case .library:
-            return toggle(id, symbol: "books.vertical", label: String(localized: "成果"), tip: String(localized: "显示或隐藏成果 ⌘2"),
+            return toggle(id, symbol: "sidebar.trailing", label: String(localized: "右侧栏"), tip: String(localized: "显示或隐藏右侧栏 ⌘2"),
                           action: #selector(toggleLibrary))
         default:
             return nil

@@ -9,17 +9,20 @@ import SwiftUI
 /// a turn is the composer's stop button.
 struct PalPage: View {
     let palID: String
+    /// In a workspace's tile: the tile's own header replaces the page's chrome.
+    var inTile = false
     /// The assistant's store, which makes and feeds the Pal's.
     @Environment(AppStore.self) private var store
 
     var body: some View {
-        PalConversation(palID: palID)
+        PalConversation(palID: palID, inTile: inTile)
             .environment(store.palStore(palID))
     }
 }
 
 private struct PalConversation: View {
     let palID: String
+    let inTile: Bool
     @Environment(AppModel.self) private var model
     /// The Pal's own store.
     @Environment(AppStore.self) private var store
@@ -40,19 +43,25 @@ private struct PalConversation: View {
     private var waking: Bool { store.status?.busy == true && store.status?.activity == AppStore.wakingActivity }
 
     var body: some View {
-        ChatView(bottomPanel: bottom, pageTop: .init(subtitle: subtitle, dot: waking ? .working : pal?.dot, capsule: true))
-            .navigationSubtitle(subtitle)
+        ChatView(bottomPanel: bottom, pageTop: inTile ? nil : .init(subtitle: subtitle, dot: waking ? .working : pal?.dot, capsule: true),
+                 inTile: inTile)
+            .modifier(PageSubtitle(text: subtitle, enabled: !inTile))
             .onChange(of: store.pal(id: palID), initial: true) { _, p in if let p { last = p } }
             // Opened, or finished while it is open: seen, on every device.
             .onChange(of: store.pal(id: palID)?.attention, initial: true) { _, a in
                 if a == .done { store.markSeen(id: palID) }
             }
             .animation(.snappy, value: panel)
-            .modifier(PalFilesSheet(palID: palID))
             #if DEBUG
             .task {
                 // `-demoUnfold <message id>`: that long message opens unfolded.
                 if let id = UserDefaults.standard.string(forKey: "demoUnfold") { store.setUnfolded(id, true) }
+            }
+            // `-demoPalFiles YES`: the page opens with its 文件 (snapshots).
+            .task {
+                guard UserDefaults.standard.bool(forKey: "demoPalFiles") else { return }
+                try? await Task.sleep(for: .seconds(1))
+                model.openPalFiles(palID)
             }
             #endif
     }
@@ -84,6 +93,16 @@ private struct PalConversation: View {
                 .frame(maxWidth: ChatView.readableWidth)
                 .frame(maxWidth: .infinity)
                 .transition(.move(edge: .bottom).combined(with: .opacity)))
+    }
+}
+
+/// The page's subtitle in the navigation bar; not inside a tile (its header says it).
+private struct PageSubtitle: ViewModifier {
+    let text: String
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        if enabled { content.navigationSubtitle(text) } else { content }
     }
 }
 

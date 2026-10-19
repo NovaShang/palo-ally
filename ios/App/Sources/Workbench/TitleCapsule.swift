@@ -83,11 +83,13 @@ struct PaloTitleCapsule: View {
 
 /// iPhone (and Palo on an iPad): the details as a sheet with a half and a full height.
 struct AgentDetailSheet: ViewModifier {
+    /// false inside a tile: its header opens its own details.
+    var enabled = true
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
 
     func body(content: Content) -> some View {
-        content.sheet(isPresented: Binding(get: { model.detailShown && AgentDetailPlacement.usesSheet(model: model, store: store) },
+        content.sheet(isPresented: Binding(get: { enabled && model.detailShown && AgentDetailPlacement.usesSheet(model: model, store: store) },
                                            set: { model.detailShown = $0 })) {
             AgentDetailView()
                 .environment(model)

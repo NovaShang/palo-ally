@@ -9,6 +9,7 @@ import SwiftUI
 struct AgentDetailView: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
+    @Environment(\.tileDetail) private var tileDetail
 
     var body: some View {
         NavigationStack {
@@ -23,7 +24,7 @@ struct AgentDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if AgentDetailPlacement.usesSheet(model: model, store: store) {
-                    ToolbarItem(placement: .confirmationAction) { Button("完成") { model.detailShown = false }.tint(.primary) }
+                    ToolbarItem(placement: .confirmationAction) { Button("完成") { model.setDetail(false, tile: tileDetail) }.tint(.primary) }
                 }
             }
         }
@@ -35,6 +36,7 @@ struct AgentDetailView: View {
 
 private struct SessionDetailForm: View {
     let palID: String
+    @Environment(\.tileDetail) private var tileDetail
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var detail: PalDetail?
@@ -266,7 +268,7 @@ private struct SessionDetailForm: View {
             }
             HStack(spacing: 8) {
                 Button {
-                    model.detailShown = false
+                    model.setDetail(false, tile: tileDetail)
                     // The sheet comes up once this one is gone.
                     Task {
                         try? await Task.sleep(for: .milliseconds(400))
@@ -372,7 +374,7 @@ private struct SessionDetailForm: View {
     }
 
     private func openFiles() {
-        model.detailShown = false
+        model.setDetail(false, tile: tileDetail)
         let id = palID
         // On a phone the files come up as a sheet, once this one is gone.
         Task {
@@ -384,8 +386,9 @@ private struct SessionDetailForm: View {
     private func endSession() {
         run("end") {
             try await store.endSession(id: palID)
-            model.detailShown = false
-            model.showList()
+            model.setDetail(false, tile: tileDetail)
+            // On its own page it is gone; in a tile the workspace carries on.
+            if tileDetail == nil { model.showList() }
         }
     }
 }
@@ -393,6 +396,7 @@ private struct SessionDetailForm: View {
 // MARK: - Palo
 
 private struct PaloDetailForm: View {
+    @Environment(\.tileDetail) private var tileDetail
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var memoryCount: Int?
@@ -420,7 +424,7 @@ private struct PaloDetailForm: View {
             }
             Section {
                 Button("查看全部") {
-                    model.detailShown = false
+                    model.setDetail(false, tile: tileDetail)
                     model.openManagement()
                 }
                 .accessibilityIdentifier("detail-all")
@@ -464,6 +468,7 @@ private struct PaloDetailForm: View {
 /// 「后台 N 个在跑」: one quiet line above the composer while the session has
 /// background tasks or sub-agents running; tapping it opens the details.
 struct BackgroundTasksLine: View {
+    @Environment(\.tileDetail) private var tileDetail
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var count = 0
@@ -473,7 +478,7 @@ struct BackgroundTasksLine: View {
     var body: some View {
         Group {
             if count > 0 {
-                Button { model.detailShown = true } label: {
+                Button { model.setDetail(true, tile: tileDetail) } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "terminal").font(.caption2)
                         Text("后台 \(count) 个在跑").font(.caption)

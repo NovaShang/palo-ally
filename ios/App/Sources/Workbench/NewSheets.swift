@@ -87,8 +87,8 @@ private extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
-/// A workspace picked in the list. The tiled view comes in a later phase;
-/// for now its sessions, each one a tap away.
+/// A workspace picked in the list on a phone, which doesn't tile (workbench-prd
+/// §12): its sessions, each one a tap away. Elsewhere `WorkspaceTilesPage`.
 struct WorkspacePage: View {
     let workspaceID: String
     @Environment(AppModel.self) private var model
@@ -113,8 +113,6 @@ struct WorkspacePage: View {
                         }
                         .tint(.primary)
                     }
-                } footer: {
-                    Text("并排平铺会在之后的版本里加入。")
                 }
             }
         }

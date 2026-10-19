@@ -26,6 +26,8 @@ struct ComposerView: View {
     @Environment(AppModel.self) private var model
     @Environment(VoiceInputController.self) private var voice
     @Environment(\.scenePhase) private var scenePhase
+    /// Inside a workspace's tile: only the active one takes voice and focus.
+    @Environment(\.tile) private var tile
     @Binding var draft: String
     /// How a message goes out: typed (it rises to the top in an animation),
     /// or spoken (placed at once under the voice scrim, its words then fly
@@ -63,6 +65,10 @@ struct ComposerView: View {
     @State private var voiceStarted = false
     /// A finished hold is still resolving its final text: ignore new presses.
     @State private var finishingHold = false
+    /// Where this composer is, kept for the voice when its tile becomes the active one.
+    @State private var capsuleSize: CGSize = .zero
+    @State private var capsuleFrame: CGRect = .zero
+    @State private var fieldFrame: CGRect = .zero
     /// Words that flew into the field (`.edit`) before the final ones came:
     /// the draft as it was, and what was added. The final words replace
     /// them if the draft is still just that.
@@ -133,6 +139,12 @@ struct ComposerView: View {
         }
     }
 
+    /// Voice on screen is this composer's: always outside a tiling, else the tile being spoken to.
+    private var mine: Bool { tile == nil || voice.owner == tile?.id }
+    private var voicePresence: CGFloat { mine ? voice.presence : 0 }
+    /// This composer may place the voice's landing spots (the active tile, or no tiling).
+    private var placesVoice: Bool { tile?.isActive ?? true }
+
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !staged.isEmpty }
     /// Idle: not editing — the field reads 「按住说话，轻点打字」 and takes presses.
     private var idle: Bool { !focused && !dictating }
@@ -162,7 +174,7 @@ struct ComposerView: View {
                 QuoteBanner(reply: reply) { withAnimation(.snappy) { store.replyDraft = nil } }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            if let msg = voice.dictation.errorMessage, !voice.isActive, !voice.mounted, !dictating {
+            if mine, let msg = voice.dictation.errorMessage, !voice.isActive, !voice.mounted, !dictating {
                 Text(msg)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -188,7 +200,17 @@ struct ComposerView: View {
         .frame(maxWidth: .infinity)
         .animation(.snappy, value: slashQuery)
         .animation(.snappy, value: staged.count)
-        .onChange(of: focusToken) { focused = true }
+        .onChange(of: focusToken) { if tile?.isActive != false { focused = true } }
+        // A tile that is no longer the active one lets go of the keyboard.
+        .onChange(of: tile?.isActive) { _, active in
+            if active == false {
+                if focused { focused = false }
+            } else if active == true {
+                voice.capsuleSize = capsuleSize
+                voice.placeCapsule(capsuleFrame)
+                voice.placeField(fieldFrame)
+            }
+        }
         // Back from 回到这里重来 with the message's words: straight on to editing them.
         .onAppear {
             guard model.focusComposerOnAppear else { return }
@@ -290,15 +312,21 @@ struct ComposerView: View {
         // The capsule brightens as the recording UI grows out of it.
         .background {
             RoundedRectangle(cornerRadius: capsuleRadius, style: .continuous)
-                .fill(Color.accentColor.opacity(0.24 * Double(voice.presence)))
+                .fill(Color.accentColor.opacity(0.24 * Double(voicePresence)))
                 .allowsHitTesting(false)
         }
         .coordinateSpace(.named(Self.capsuleSpace))
-        .onGeometryChange(for: CGSize.self) { $0.size } action: { voice.capsuleSize = $0 }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: {
+            capsuleSize = $0
+            if placesVoice { voice.capsuleSize = $0 }
+        }
         // Where the voice words go and land (it changes only when the composer moves).
-        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { voice.placeCapsule($0) }
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+            capsuleFrame = $0
+            if placesVoice { voice.placeCapsule($0) }
+        }
         // Swells with the same hold-driven motion as everything else.
-        .scaleEffect(1 + 0.035 * voice.presence)
+        .scaleEffect(1 + 0.035 * voicePresence)
         .glassEffect(capsuleGlass, in: .rect(cornerRadius: capsuleRadius, style: .continuous))
         .animation(.snappy, value: voice.target)
         .animation(.snappy, value: dictating)
@@ -308,7 +336,7 @@ struct ComposerView: View {
         .overlay(alignment: .bottom) {
             // One view from arming through listening and back: it grows out
             // of the capsule with `presence` and folds back into it.
-            if voice.panelMounted {
+            if mine && voice.panelMounted {
                 VoiceInputPanel(voice: voice)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.bottom, voice.capsuleSize.height + 18)
@@ -389,10 +417,13 @@ struct ComposerView: View {
                 // field's own long-press / selection recognizers must not see it.
                 .allowsHitTesting(!idle)
                 // Where words spoken into 编辑 land.
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { voice.placeField($0) }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                    fieldFrame = $0
+                    if placesVoice { voice.placeField($0) }
+                }
                 .padding(.vertical, 11)
                 // Blank while those words fly in; it fades in as they land.
-                .opacity(dictating || voice.veilsField ? 0 : 1)
+                .opacity(dictating || (mine && voice.veilsField) ? 0 : 1)
             if dictating {
                 // Mic dictation: the live words, in the field where they'll land.
                 HStack(spacing: 8) {
@@ -420,10 +451,10 @@ struct ComposerView: View {
                         ZStack {
                             Text("按住说话，轻点打字")
                                 .foregroundStyle(pressing ? .secondary : .tertiary)
-                                .opacity(1 - Double(voice.presence))
+                                .opacity(1 - Double(voicePresence))
                             Text(releaseHint)
                                 .foregroundStyle(voice.target == .send ? Color.primary : .secondary)
-                                .opacity(Double(voice.presence))
+                                .opacity(Double(voicePresence))
                         }
                         .transition(.opacity)
                     }
@@ -533,7 +564,9 @@ struct ComposerView: View {
     /// touchesBegan). Feedback first, in this very frame; then recording,
     /// whose audio session / engine start runs off the main thread.
     private func pressBegan(touchTime: TimeInterval) -> Bool {
-        guard !finishingHold, idle else { return false }
+        // In a tiling only the active tile talks; a press elsewhere just activates it.
+        guard !finishingHold, idle, tile?.isActive != false else { return false }
+        claimVoice()
         VoiceTiming.begin("touch-down", touchTime: touchTime)
         pressing = true
         moved = false
@@ -552,6 +585,20 @@ struct ComposerView: View {
         }
         VoiceTiming.mark("recording requested (arm returned)")
         return true
+    }
+
+    /// The voice is this composer's for the hold: its place, and where it is told when the words are done.
+    private func claimVoice() {
+        voice.owner = tile?.id
+        if tile != nil {
+            voice.capsuleSize = capsuleSize
+            voice.placeCapsule(capsuleFrame)
+            voice.placeField(fieldFrame)
+        }
+        voice.onExitDone = { exit in
+            if exit == .edit || exit == .unheard(edit: true) { focusToken += 1 }
+            debugLog("[voice] down after \(VoiceInputController.name(exit)): the composer has \(draft.count) characters, the list is \(Int(ChatScroll.lastDistance)) pt from the end")
+        }
     }
 
     #if DEBUG

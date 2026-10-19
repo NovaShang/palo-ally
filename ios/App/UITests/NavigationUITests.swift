@@ -46,7 +46,7 @@ final class NavigationUITests: XCTestCase {
         XCTAssertTrue(pal.waitForExistence(timeout: 15))
         pal.tap()
         XCTAssertTrue(app.navigationBars.staticTexts["网站帮手"].waitForExistence(timeout: 5), "the Pal's page didn't open")
-        XCTAssertTrue(app.buttons["pal-menu"].exists)
+        XCTAssertTrue(app.buttons["title-capsule"].exists)
         XCTAssertFalse(app.buttons["title-orb"].exists, "a Pal's page has no orb")
         XCTAssertTrue(app.buttons["允许"].firstMatch.waitForExistence(timeout: 5), "its card isn't there")
         back(app)
@@ -88,8 +88,10 @@ final class NavigationUITests: XCTestCase {
         let library = app.buttons["成果"]
         XCTAssertTrue(library.waitForExistence(timeout: 15))
         library.tap()
-        XCTAssertTrue(app.navigationBars.staticTexts["成果"].waitForExistence(timeout: 5), "成果 didn't open")
-        back(app)
+        // The right pane as a full page, 成果 its first tab.
+        XCTAssertTrue(app.descendants(matching: .any)["right-pane"].firstMatch.waitForExistence(timeout: 5), "the pane didn't open")
+        XCTAssertTrue(app.staticTexts["成果"].firstMatch.exists, "成果 isn't the pane's first tab")
+        app.buttons["关闭侧栏"].firstMatch.tap()
         XCTAssertTrue(app.buttons["title-orb"].waitForExistence(timeout: 5))
     }
 
@@ -170,11 +172,11 @@ final class NavigationUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars.staticTexts["首页改成两栏布局"].waitForExistence(timeout: 10), "its page didn't open")
         XCTAssertTrue(text(app, "两栏改好了").waitForExistence(timeout: 10), "its conversation so far isn't there")
         XCTAssertTrue(text(app, "接管后可以在这里跟它说话").exists, "no 接管 bar")
-        XCTAssertFalse(app.buttons["pal-menu"].exists, "a Pal's page before it was taken over")
+        XCTAssertFalse(app.buttons["title-capsule"].exists, "a Pal's page before it was taken over")
         XCTAssertEqual(app.alerts.count, 0)
         XCTAssertEqual(app.sheets.count, 0)
         app.buttons["session-adopt"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["pal-menu"].waitForExistence(timeout: 15), "its Pal's page didn't open")
+        XCTAssertTrue(app.buttons["title-capsule"].waitForExistence(timeout: 15), "its Pal's page didn't open")
         XCTAssertTrue(app.navigationBars.staticTexts["首页改成两栏布局"].exists)
         XCTAssertTrue(text(app, "两栏改好了").waitForExistence(timeout: 10), "its conversation so far isn't there")
         back(app)
@@ -197,7 +199,7 @@ final class NavigationUITests: XCTestCase {
         attach(app, "recent-failed")
         app.buttons["好"].firstMatch.tap()
         XCTAssertTrue(adopt.waitForExistence(timeout: 5), "接管 didn't come back")
-        XCTAssertFalse(app.buttons["pal-menu"].exists, "it became a Pal after all")
+        XCTAssertFalse(app.buttons["title-capsule"].exists, "it became a Pal after all")
     }
 
     // MARK: -

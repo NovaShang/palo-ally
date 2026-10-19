@@ -88,14 +88,10 @@ struct RightPane: View {
     @ViewBuilder private func other(_ tab: PaneTab) -> some View {
         switch tab.kind {
         case PaneTab.library:
-            NavigationStack {
-                LibraryView()
-                    .modifier(InContentNavigationBar())
-                    .macPageTop(String(localized: "成果"))
-            }
+            LibraryTab()
         case PaneTab.files:
             NavigationStack {
-                FileTreeScreen(scope: scope, close: { hub.setOpen(key, false) },
+                FileTreeScreen(scope: scope, close: { if let onClose { onClose() } else { hub.setOpen(key, false) } },
                                onOpenFile: { hub.openPreview(key, path: $0.path) })
                     .modifier(InContentNavigationBar())
             }
@@ -109,6 +105,24 @@ struct RightPane: View {
             .id(tab)
         default:
             ContentUnavailableView(String(localized: "这个标签打不开", table: "Files"), systemImage: "questionmark.square.dashed")
+        }
+    }
+}
+
+/// 成果: the list with its items pushed over it, or a folder's tree in its place.
+private struct LibraryTab: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        @Bindable var model = model
+        if let scope = model.filesPanel {
+            FilesPanel(scope: scope)
+        } else {
+            NavigationStack(path: $model.libraryPath) {
+                LibraryView()
+                    .modifier(InContentNavigationBar())
+                    .macPageTop(String(localized: "成果"))
+            }
         }
     }
 }

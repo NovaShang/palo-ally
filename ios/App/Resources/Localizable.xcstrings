@@ -6687,17 +6687,6 @@
         }
       }
     },
-    "并排平铺会在之后的版本里加入。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Side-by-side tiling comes in a later version."
-          }
-        }
-      }
-    },
     "接着聊「%@」？" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7112,6 +7101,83 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Choose another folder…"
+          }
+        }
+      }
+    },
+    "%lld 个会话" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sessions"
+          }
+        }
+      }
+    },
+    "并排" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Side by side"
+          }
+        }
+      }
+    },
+    "已有的会话" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Existing sessions"
+          }
+        }
+      }
+    },
+    "新开一个会话…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New session…"
+          }
+        }
+      }
+    },
+    "这个工作区里没有会话了。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "There are no sessions in this workspace."
+          }
+        }
+      }
+    },
+    "右侧栏" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Right pane"
+          }
+        }
+      }
+    },
+    "显示或隐藏右侧栏 ⌘2" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show or hide the right pane ⌘2"
           }
         }
       }
