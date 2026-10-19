@@ -1,15 +1,19 @@
 import PaloAllyKit
 import SwiftUI
 
-/// What the title capsule opens (workbench-prd §6): for a session its name,
-/// state, folder, model and depth, context, background tasks, usage and
-/// workspace, and 结束; for Palo the same shell with its model and its
-/// 目标 / 履历 / 记忆 in short. Reads the store in the environment: a
-/// session's own (`palStore`) or the assistant's.
+/// What the title capsule opens (workbench-prd §6; the detail mock): a
+/// contact card on top (state, name, folder, what it is doing), a row of
+/// four big actions, then system grouped sections. Reads the store in the
+/// environment: a session's own (`palStore`) or the assistant's. Palo's is
+/// in `Detail/PaloDetailForm.swift`.
 struct AgentDetailView: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     @Environment(\.tileDetail) private var tileDetail
+    /// The list's content height, so a popover fits it (nil: not measured yet).
+    @State private var contentHeight: CGFloat?
+
+    private var asSheet: Bool { AgentDetailPlacement.usesSheet(model: model, store: store) }
 
     var body: some View {
         NavigationStack {
@@ -20,14 +24,18 @@ struct AgentDetailView: View {
                     SessionDetailForm(palID: id)
                 }
             }
-            .navigationTitle(store.scope == .palo ? store.assistantName : (store.palID.flatMap { store.pal(id: $0)?.displayName } ?? ""))
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, h in
+                contentHeight = h
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if AgentDetailPlacement.usesSheet(model: model, store: store) {
+                if asSheet {
                     ToolbarItem(placement: .confirmationAction) { Button("完成") { model.setDetail(false, tile: tileDetail) }.tint(.primary) }
                 }
             }
         }
+        // A popover takes its content's height (the navigation bar's 52 included), within reason.
+        .frame(height: asSheet ? nil : contentHeight.map { min(max($0 + 52, 240), 640) })
         .accessibilityIdentifier("agent-detail")
     }
 }
@@ -45,7 +53,6 @@ private struct SessionDetailForm: View {
     @State private var newName = ""
     @State private var working: String?
     @State private var confirmEnd = false
-    @FocusState private var nameFocused: Bool
 
     private var pal: Pal? { store.pal(id: palID) ?? detail?.pal }
     private var online: Bool { store.connection.isOnline }
@@ -56,63 +63,55 @@ private struct SessionDetailForm: View {
     }
 
     var body: some View {
-        Form {
+        List {
             if let failure {
                 Section { Text(Copy.spaced(failure)).foregroundStyle(.red).font(.footnote) }
             }
             if let pal {
-                header(pal)
-                folder(pal)
+                top(pal)
                 modelSection
-                context(pal)
+                DetailContextSection(percent: contextPercent(pal), tokens: detail?.contextTokens, window: detail?.contextWindow,
+                                     lastCompactAt: detail?.lastCompactAt,
+                                     compact: { compact() },
+                                     compacting: working == "compact",
+                                     canCompact: online && working == nil && pal.status != .busy)
                 tasks
-                usage
-                workspace(pal)
+                usageAndWorkspace(pal)
                 end(pal)
             }
         }
+        .navigationTitle("")
         .disabled(!online && detail == nil)
         .task(id: refreshKey) { await load() }
     }
 
-    // MARK: sections
+    // MARK: header and actions
 
-    private func header(_ pal: Pal) -> some View {
+    private func top(_ pal: Pal) -> some View {
         Section {
-            if editing {
-                HStack {
-                    TextField("名字", text: $newName)
-                        .focused($nameFocused)
-                        .submitLabel(.done)
-                        .onSubmit { Task { await rename() } }
-                        .accessibilityIdentifier("detail-name-field")
-                    Button("好") { Task { await rename() } }
-                        .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            } else {
-                HStack {
-                    Text(pal.displayName).font(.headline).lineLimit(2)
-                    Spacer(minLength: 8)
-                    Button {
-                        newName = pal.displayName
-                        editing = true
-                        nameFocused = true
-                    } label: {
-                        Image(systemName: "pencil")
-                    }
-                    .buttonStyle(.borderless)
-                    .tint(.secondary)
-                    .disabled(!online)
-                    .accessibilityLabel("重命名")
-                    .accessibilityIdentifier("detail-rename")
-                }
-            }
-            HStack(spacing: 8) {
-                StatusDot(pal.dot)
-                Text(statusLine(pal)).foregroundStyle(.secondary).lineLimit(2)
-            }
-            .font(.subheadline)
+            DetailHeader(indicator: AnyView(SessionIndicator(pal, size: 68)), name: pal.displayName,
+                         folder: CCSession.shortPath(pal.cwd), line: statusLine(pal),
+                         editing: $editing, draft: $newName, canRename: online,
+                         onRename: { Task { await rename() } },
+                         onBeginRename: { newName = pal.displayName; editing = true })
+                .detailBare()
+            DetailActionRow(actions: actions(pal)).detailBare()
         }
+        .listSectionSpacing(.compact)
+    }
+
+    private func actions(_ pal: Pal) -> [DetailAction] {
+        let idle = !online || working != nil
+        let third = beside
+            ? DetailAction(id: "terminal", title: Text("终端"), icon: "apple.terminal", enabled: !idle) { reveal("terminal") }
+            : DetailAction(id: "compact", title: Text("压缩"), icon: "arrow.down.right.and.arrow.up.left",
+                           enabled: !idle && pal.status != .busy) { compact() }
+        return [
+            DetailAction(id: "stop", title: Text("停止"), icon: "stop.fill", enabled: !idle && pal.status == .busy) { stopTurn() },
+            DetailAction(id: "files", title: Text("文件", tableName: "Files"), icon: "folder") { openFiles() },
+            third,
+            DetailAction(id: "tile", title: Text("并排"), icon: "rectangle.split.2x1", enabled: online) { tile(pal) },
+        ]
     }
 
     private func statusLine(_ pal: Pal) -> String {
@@ -121,40 +120,13 @@ private struct SessionDetailForm: View {
         return "\(status) · \(Copy.palStatus(pal.status))"
     }
 
-    private func folder(_ pal: Pal) -> some View {
-        Section("文件夹") {
-            Text(CCSession.shortPath(pal.cwd))
-                .font(.callout)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                Button {
-                    openFiles()
-                } label: {
-                    Label { Text("文件", tableName: "Files") } icon: { Image(systemName: "folder") }
-                        .frame(maxWidth: .infinity)
-                }
-                .accessibilityIdentifier("detail-files")
-                if beside {
-                    Button { reveal("finder") } label: { Label("访达", systemImage: "macwindow").frame(maxWidth: .infinity) }
-                        .disabled(!online || working != nil)
-                        .accessibilityIdentifier("detail-finder")
-                    Button { reveal("terminal") } label: { Label("终端", systemImage: "apple.terminal").frame(maxWidth: .infinity) }
-                        .disabled(!online || working != nil)
-                        .accessibilityIdentifier("detail-terminal")
-                }
-            }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .tint(.primary)
-            .controlSize(.regular)
-        }
-    }
+    // MARK: sections
 
     @ViewBuilder private var modelSection: some View {
         if let d = detail, !d.models.isEmpty {
             let current = d.models.first { $0.id == (d.model ?? pal?.model) }
             let efforts = current?.efforts ?? []
+            let effort = d.effort ?? pal?.effort
             Section {
                 Menu {
                     ForEach(d.models) { m in
@@ -169,46 +141,23 @@ private struct SessionDetailForm: View {
                 .disabled(!online || working != nil)
                 .accessibilityIdentifier("detail-model")
                 if !efforts.isEmpty {
-                    Menu {
-                        ForEach(efforts, id: \.self) { e in
-                            Button { Task { await set(effort: e) } } label: {
-                                if e == (d.effort ?? pal?.effort) { Label(EffortName.label(e), systemImage: "checkmark") } else { Text(EffortName.label(e)) }
-                            }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("思考深度").font(.callout)
+                        Picker("思考深度", selection: Binding(get: { effort ?? efforts.first ?? "" },
+                                                            set: { e in Task { await set(effort: e) } })) {
+                            ForEach(efforts, id: \.self) { Text(EffortName.label($0)).tag($0) }
                         }
-                    } label: {
-                        ModelRowLabel(title: Text("思考深度"), shown: EffortName.label(d.effort ?? pal?.effort))
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .disabled(!online || working != nil)
+                        .accessibilityIdentifier("detail-effort")
                     }
-                    .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6))
-                    .disabled(!online || working != nil)
-                    .accessibilityIdentifier("detail-effort")
+                    .padding(.vertical, 2)
                 }
+            } header: {
+                Text("模型")
             } footer: {
                 Text("改了从下一轮开始生效。")
-            }
-        }
-    }
-
-    @ViewBuilder private func context(_ pal: Pal) -> some View {
-        let pct = contextPercent(pal)
-        if let pct {
-            Section("上下文") {
-                HStack(spacing: 10) {
-                    ProgressView(value: Double(min(pct, 100)) / 100)
-                        .tint(pct >= 85 ? .orange : .secondary)
-                    Text("\(pct)%").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
-                }
-                HStack {
-                    if let at = detail?.lastCompactAt, at > 0 {
-                        Text("上次压缩 \(Copy.relative(at))").font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 8)
-                    Button(working == "compact" ? String(localized: "正在压缩…") : String(localized: "压缩")) { compact() }
-                        .buttonStyle(.bordered)
-                        .buttonBorderShape(.capsule)
-                        .tint(.primary)
-                        .disabled(!online || working != nil || pal.status == .busy)
-                        .accessibilityIdentifier("detail-compact")
-                }
             }
         }
     }
@@ -220,7 +169,7 @@ private struct SessionDetailForm: View {
 
     @ViewBuilder private var tasks: some View {
         if let list = detail?.tasks, !list.isEmpty {
-            Section("后台任务") {
+            Section("正在跑 · \(list.count)") {
                 ForEach(list) { t in
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: t.kind == .subagent ? "person.2" : "terminal")
@@ -229,18 +178,18 @@ private struct SessionDetailForm: View {
                             .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(t.title).lineLimit(2)
-                            Text(t.kind == .subagent ? String(localized: "子 agent") : String(localized: "后台任务"))
-                                .font(.caption).foregroundStyle(.secondary)
+                            HStack(spacing: 4) {
+                                Text(t.kind == .subagent ? String(localized: "子 agent") : String(localized: "后台任务"))
+                                if t.startedAt > 0 { Text("·"); Text(t.startedAt.msDate, style: .relative) }
+                            }
+                            .font(.caption).foregroundStyle(.secondary)
                             if let s = t.summary, !s.isEmpty {
                                 Text(s).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                             }
                         }
-                        Spacer(minLength: 8)
-                        Button("停") { stop(t) }
-                            .buttonStyle(.bordered)
-                            .buttonBorderShape(.capsule)
-                            .tint(.primary)
-                            .controlSize(.small)
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button("停", role: .destructive) { stop(t) }
                             .disabled(!online || working != nil)
                             .accessibilityIdentifier("detail-stop-\(t.id)")
                     }
@@ -249,52 +198,34 @@ private struct SessionDetailForm: View {
         }
     }
 
-    @ViewBuilder private var usage: some View {
-        if let d = detail {
-            Section("用量") {
-                LabeledContent("今天", value: Self.money(d.spentToday))
-                LabeledContent("累计", value: Self.money(d.costTotalUsd))
-            }
-        }
-    }
-
-    private static func money(_ usd: Double) -> String { String(format: "$%.2f", usd) }
-
-    private func workspace(_ pal: Pal) -> some View {
+    @ViewBuilder private func usageAndWorkspace(_ pal: Pal) -> some View {
         let current = pal.workspaceId.flatMap { store.workspace(id: $0) }
-        return Section("工作区") {
-            if let current {
-                LabeledContent("现在在", value: current.title(pals: store.pals))
+        let others = store.workspaces.filter { $0.id != pal.workspaceId }
+        Section("用量和工作区") {
+            if let d = detail {
+                LabeledContent("今天", value: DetailTokens.money(d.spentToday))
+                LabeledContent("累计", value: DetailTokens.money(d.costTotalUsd))
             }
-            HStack(spacing: 8) {
-                Button {
-                    model.setDetail(false, tile: tileDetail)
-                    // The sheet comes up once this one is gone.
-                    Task {
-                        try? await Task.sleep(for: .milliseconds(400))
-                        model.newWorkspace = [pal.id]
-                    }
-                } label: {
-                    Label("并排…", systemImage: "rectangle.split.2x1").frame(maxWidth: .infinity)
-                }
-                .disabled(!online)
-                .accessibilityIdentifier("detail-tile")
+            if current != nil || !others.isEmpty {
                 Menu {
-                    ForEach(store.workspaces.filter { $0.id != pal.workspaceId }) { w in
+                    ForEach(others) { w in
                         Button(w.title(pals: store.pals)) { move(to: w.id) }
                     }
                     if pal.workspaceId != nil {
                         Button("不放在工作区里") { move(to: nil) }
                     }
                 } label: {
-                    Label("移到…", systemImage: "arrow.right.square").frame(maxWidth: .infinity)
+                    HStack {
+                        Text("工作区").foregroundStyle(.primary)
+                        Spacer(minLength: 12)
+                        Text(current?.title(pals: store.pals) ?? String(localized: "无")).foregroundStyle(.secondary).lineLimit(1)
+                        Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
+                    }
+                    .contentShape(.rect)
                 }
-                .disabled(!online || (store.workspaces.filter { $0.id != pal.workspaceId }.isEmpty && pal.workspaceId == nil))
+                .disabled(!online)
                 .accessibilityIdentifier("detail-move")
             }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .tint(.primary)
         }
     }
 
@@ -307,6 +238,7 @@ private struct SessionDetailForm: View {
                              cancel: { confirmEnd = false }, confirm: { endSession() })
             } else {
                 Button("结束这个会话", role: .destructive) { confirmEnd = true }
+                    .frame(maxWidth: .infinity)
                     .disabled(!online)
                     .accessibilityIdentifier("detail-end")
             }
@@ -358,6 +290,10 @@ private struct SessionDetailForm: View {
         }
     }
 
+    private func stopTurn() {
+        run("stop") { try await store.stop() }
+    }
+
     private func stop(_ t: PalTask) {
         run("stop") {
             try await store.stopTask(id: palID, taskId: t.id)
@@ -371,6 +307,15 @@ private struct SessionDetailForm: View {
 
     private func move(to workspaceID: String?) {
         run("move") { try await store.moveSession(palID, to: workspaceID) }
+    }
+
+    private func tile(_ pal: Pal) {
+        model.setDetail(false, tile: tileDetail)
+        // The sheet comes up once this one is gone.
+        Task {
+            try? await Task.sleep(for: .milliseconds(400))
+            model.newWorkspace = [pal.id]
+        }
     }
 
     private func openFiles() {
@@ -393,75 +338,7 @@ private struct SessionDetailForm: View {
     }
 }
 
-// MARK: - Palo
-
-private struct PaloDetailForm: View {
-    @Environment(\.tileDetail) private var tileDetail
-    @Environment(AppModel.self) private var model
-    @Environment(AppStore.self) private var store
-    @State private var memoryCount: Int?
-
-    var body: some View {
-        @Bindable var model = model
-        Form {
-            Section {
-                HStack(spacing: 8) {
-                    StatusDot(store.assistantWorking ? .working : .idle)
-                    Text(store.assistantWorking ? (store.status?.activity ?? StatusDot.label(.working)) : StatusDot.label(.idle))
-                        .foregroundStyle(.secondary)
-                }
-                .font(.subheadline)
-            }
-            Section {
-                ModelRow { model.showModelPicker = true }
-                    .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6))
-            }
-            goals
-            history
-            Section("记忆") {
-                Text(memoryCount.map { $0 > 0 ? String(localized: "它记着 \($0) 条") : String(localized: "还没记下什么") } ?? "…")
-                    .foregroundStyle(.secondary)
-            }
-            Section {
-                Button("查看全部") {
-                    model.setDetail(false, tile: tileDetail)
-                    model.openManagement()
-                }
-                .accessibilityIdentifier("detail-all")
-            }
-        }
-        .sheet(isPresented: $model.showModelPicker) {
-            ModelPickerSheet().environment(model).environment(store)
-        }
-        .task(id: model.memoryRevision) {
-            memoryCount = (try? await store.memoryFiles())?.count
-        }
-    }
-
-    @ViewBuilder private var goals: some View {
-        let live = store.watches.filter { $0.state != .done }.prefix(3)
-        Section("目标") {
-            if live.isEmpty {
-                Text("还没有目标").foregroundStyle(.secondary)
-            }
-            ForEach(Array(live)) { w in
-                NavigationLink { GoalDetail(id: w.id) } label: { GoalRow(goal: w) }
-            }
-        }
-    }
-
-    @ViewBuilder private var history: some View {
-        let active = store.tasks.filter(\.isActive).sorted { $0.updatedAt > $1.updatedAt }.prefix(2)
-        let done = store.tasks.filter { !$0.isActive }.sorted { $0.updatedAt > $1.updatedAt }.prefix(3)
-        Section("履历") {
-            if active.isEmpty && done.isEmpty {
-                Text("还没有办过的事").foregroundStyle(.secondary)
-            }
-            ForEach(Array(active)) { RunningHistoryRow(task: $0) }
-            ForEach(Array(done)) { DoneHistoryRow(task: $0) }
-        }
-    }
-}
+// MARK: - in the chat
 
 // MARK: - in the chat
 
