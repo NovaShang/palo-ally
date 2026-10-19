@@ -294,7 +294,7 @@ describe("host ↔ app protocol", () => {
     expect(rewound.result).toEqual({ text: "再把表头固定住", filesRestored: true });
     methods["pals.rewind"] = [check, rewound];
     const project = realpathSync(mkdtempSync(`${tmpdir()}/site-`));
-    await hub.toolHandlers().pal_propose({ name: "文档", dir: project, duty: "你负责主人的文档：先把安装说明写完。", dailyUsd: 5 });
+    await hub.toolHandlers().pal_propose({ name: "文档", dir: project, duty: "你负责主人的文档：先把安装说明写完。" });
     const proposal = hub.chat.recent(1)[0]!.proposal!;
     const opened = (await run("helper.decide", { proposalId: proposal.id, action: "create" })).pal;
     // 网站 goes to sleep (§12); words wake it (what waking cost is kept), and

@@ -99,7 +99,7 @@ export interface ToolHandlers {
   ally_send(args: { to: string; text: string; urgent?: boolean; slots?: { start: string; end: string }[]; replyTo?: string }): Promise<string>;
   // Pals and the computer's other Claude Code sessions (docs/pals-prd.md §6).
   pals_list(): Promise<string>;
-  pal_propose(args: { name: string; dir: string; duty: string; dailyUsd: number }): Promise<string>;
+  pal_propose(args: { name: string; dir: string; duty: string }): Promise<string>;
   // Words to a Pal, asleep or awake (§12): it's woken first if need be.
   pal_send(args: { name: string; text: string }): Promise<string>;
   // Conversations that ended on the computer, and taking one over (§10).

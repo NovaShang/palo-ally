@@ -141,7 +141,7 @@ d("live: a Pal gets an image and a file from the app", () => {
   test(
     "it sees the image's colour and reads the file from its inbox without a card; its page shows the message as sent",
     async () => {
-      const pal = await (hub.pals as any).create({ name: "看图", cwd: project, duty: "你是测试用的 Pal。回答尽量短。", dailyUsd: 1 });
+      const pal = await (hub.pals as any).create({ name: "看图", cwd: project, duty: "你是测试用的 Pal。回答尽量短。" });
       palId = pal.id;
       sessionId = pal.rec.sessionId;
       await waitFor("the handover's turn", () => hub.pals.list().find((p) => p.id === palId)?.status === "idle");

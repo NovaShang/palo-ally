@@ -40,9 +40,7 @@ export interface PalRecord {
   permissionMode: string;
   model?: string; // what it last ran on (from its transcript, then from Claude Code)
   duty?: string; // one the assistant opened: its handover, the first message
-  dailyUsd?: number; // …and its daily spending limit
-  stoppedFor?: "budget" | "failed" | "elsewhere";
-  budgetDay?: string;
+  stoppedFor?: "failed" | "elsewhere";
   note?: string; // why it's stopped
   pid?: number; // Claude Code's pid while the host runs it (an orphan after the host died)
   status?: "asleep"; // put to sleep (§12): no process until it's woken; absent = awake
@@ -361,7 +359,7 @@ export class PalSession {
 
   /** The harness' own /compact, as a turn of its own that the owner doesn't see as their words. */
   async compact(): Promise<void> {
-    if (this.rec.stoppedFor === "budget" || this.rec.stoppedFor === "failed" || this.rec.stoppedFor === "elsewhere") throw new Error(tr("pals.stoppedNoCompact"));
+    if (this.rec.stoppedFor === "failed" || this.rec.stoppedFor === "elsewhere") throw new Error(tr("pals.stoppedNoCompact"));
     if (this.busy) throw new Error(tr("pals.busyNoCompact"));
     this.compacting = true;
     try {
@@ -632,7 +630,6 @@ export class PalSession {
   clearStop(): void {
     if (!this.rec.stoppedFor) return;
     this.rec.stoppedFor = undefined;
-    this.rec.budgetDay = undefined;
     this.rec.note = undefined;
     this.failures = [];
     this.d.save();

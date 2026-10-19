@@ -201,7 +201,6 @@ export function paloallyMcpServer(h: ToolHandlers) {
           name: z.string().describe("Pal 的名字，主人一看就懂，如「网站」；也是你以后 pal_send 给它用的名字"),
           dir: z.string().describe("项目目录（绝对路径或 ~/ 开头）"),
           duty: z.string().describe("交接说明：Pal 的第一条消息。写完整——它看不到主对话：项目是什么、要做什么、做到什么程度、注意什么；需要你时用 palo_send 工具发给你"),
-          dailyUsd: z.number().positive().describe("每天花费上限（美元）；超过了主机会让它停到第二天并告诉主人"),
         },
         async (a) => text(await h.pal_propose(a)),
       ),

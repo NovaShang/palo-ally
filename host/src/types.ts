@@ -389,7 +389,6 @@ export interface HelperProposal {
   name: string;
   cwd: string;
   duty: string; // what it's for; becomes the Pal's first message
-  dailyUsd: number;
   status: HelperProposalStatus;
   sessionId?: string; // once created
   palId?: string; // once created: the Pal it became

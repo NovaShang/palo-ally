@@ -135,7 +135,7 @@ d("live: going back to an earlier message in a Pal", () => {
   test(
     "two turns, the second changes a file; back to before the second with the files: the file is as the first left it, and the model doesn't know the second turn",
     async () => {
-      const pal = await (hub.pals as any).create({ name: "重来", cwd: project, duty: "你是测试用的 Pal。只按主人说的做，回答尽量短，一句话以内。", dailyUsd: 2 });
+      const pal = await (hub.pals as any).create({ name: "重来", cwd: project, duty: "你是测试用的 Pal。只按主人说的做，回答尽量短，一句话以内。" });
       palId = pal.id;
       await waitFor("the handover's turn", () => hub.pals.list().find((p) => p.id === palId)?.status === "idle");
       sessions.add(pal.rec.sessionId);

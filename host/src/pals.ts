@@ -269,7 +269,6 @@ export class Pals {
   private lastEmitted = "";
   private emitTimer: ReturnType<typeof setTimeout> | null = null;
   private guardTimer: ReturnType<typeof setInterval> | null = null;
-  private dayTimer: ReturnType<typeof setInterval> | null = null;
   private sleepTimer: ReturnType<typeof setInterval> | null = null;
   private foldTimer: ReturnType<typeof setInterval> | null = null;
   private balanceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -285,6 +284,16 @@ export class Pals {
     const saved = readJson<Partial<PalFile>>(d.paths.pals, {});
     const list = <T>(v: T[] | undefined): T[] => (Array.isArray(v) ? v : []);
     this.data = { pals: list(saved.pals), proposals: list(saved.proposals), adoptions: list(saved.adoptions), former: list(saved.former), ended: list(saved.ended) };
+    // Pals no longer have a daily spending limit (2026-10-19, the owner): an
+    // old record's limit goes, and one stopped for it carries on.
+    for (const rec of this.data.pals as (Omit<PalRecord, "stoppedFor"> & { dailyUsd?: number; budgetDay?: string; stoppedFor?: string })[]) {
+      delete rec.dailyUsd;
+      delete rec.budgetDay;
+      if (rec.stoppedFor === "budget") {
+        rec.stoppedFor = undefined;
+        rec.note = undefined;
+      }
+    }
     this.source = d.recentSource ?? sdkSource(d.claudeDir);
     this.recentList = new RecentSessions({
       claudeDir: d.claudeDir,
@@ -334,7 +343,6 @@ export class Pals {
       onWaiting: (pal, body, ids) => this.pushWaiting(pal, body, ids),
       toPalo: (pal, text) => this.toolPaloSend(pal, text),
       onTurnEnd: (pal) => {
-        this.checkBudget(pal);
         this.balanceSoon();
         void this.readTitle(pal);
       },
@@ -402,12 +410,10 @@ export class Pals {
     this.offBus = this.d.bus.on((event) => {
       if (event === "sessions.updated") this.emitSoon();
     });
-    // Those stopped for today's spending wait for tomorrow; the rest (even
-    // ones that couldn't start before) are tried again.
+    // Every one that was up comes back (even ones that couldn't start before).
     let i = 0;
-    const today = this.today();
     const back = [...this.pals.values()]
-      .filter((p) => p.rec.status !== "asleep" && !(p.rec.stoppedFor === "budget" && p.rec.budgetDay === today))
+      .filter((p) => p.rec.status !== "asleep")
       .sort((a, b) => b.rec.lastUsedAt - a.rec.lastUsedAt);
     const awakeMax = this.maxAwake();
     for (const pal of back.slice(awakeMax)) pal.markAsleep();
@@ -419,8 +425,6 @@ export class Pals {
     }
     this.guardTimer = setInterval(() => this.guard(), this.timing.guardMs);
     (this.guardTimer as any).unref?.();
-    this.dayTimer = setInterval(() => this.newDay(), 60_000);
-    (this.dayTimer as any).unref?.();
     this.sleepTimer = setInterval(() => this.balance(), this.timing.sleepCheckMs);
     (this.sleepTimer as any).unref?.();
     // A session crossing foldDays changes `folded` with nobody touching it: say so.
@@ -435,7 +439,6 @@ export class Pals {
     this.offBus?.();
     for (const t of this.startTimers.splice(0)) clearTimeout(t);
     if (this.guardTimer) clearInterval(this.guardTimer);
-    if (this.dayTimer) clearInterval(this.dayTimer);
     if (this.sleepTimer) clearInterval(this.sleepTimer);
     if (this.foldTimer) clearInterval(this.foldTimer);
     if (this.balanceTimer) clearTimeout(this.balanceTimer);
@@ -733,7 +736,6 @@ export class Pals {
 
   private onStopped(pal: PalSession): void {
     this.emitSoon();
-    if (pal.rec.stoppedFor === "budget") return; // said already
     this.d.audit.log("pal.stopped", { pal: pal.id, name: pal.rec.name, why: pal.rec.stoppedFor, note: pal.rec.note });
   }
 
@@ -1438,7 +1440,7 @@ export class Pals {
     void this.d.router.proactive(msg, { title: t("pals.waitingTitle", { name: this.shownName(pal) }) }).catch(() => {});
   }
 
-  // ---------------- spending (Pals the assistant opened) ----------------
+  // ---------------- spending (shown in a Pal's details; no limit) ----------------
 
   private today(): string {
     return zonedParts(this.now(), this.d.settings().timezone).dateKey;
@@ -1449,41 +1451,12 @@ export class Pals {
     return this.meter.spentOn(pal.rec.cwd, pal.rec.sessionId, this.today(), tz);
   }
 
-  private checkBudget(pal: PalSession): void {
-    const limit = pal.rec.dailyUsd;
-    if (!limit || pal.rec.stoppedFor) return;
-    const spent = this.spentToday(pal);
-    if (spent <= limit) return;
-    pal.rec.budgetDay = this.today();
-    pal.stopFor("budget", t("pals.budgetReason", { spent: spent.toFixed(2), limit }));
-    this.d.audit.log("pal.budget", { pal: pal.id, name: pal.rec.name, spentUsd: Number(spent.toFixed(2)), dailyUsd: limit });
-    const msg = this.d.chat.add({
-      role: "assistant",
-      kind: "notice",
-      text: t("pals.budgetNotice", { name: pal.rec.name, spent: spent.toFixed(2), limit }),
-      channel: "system",
-      proactive: true,
-    });
-    void this.d.router.proactive(msg, { title: t("pals.budgetPushTitle") }).catch(() => {});
-  }
-
-  // A new day: Pals stopped for spending come back.
-  private newDay(): void {
-    const day = this.today();
-    for (const pal of this.pals.values()) {
-      if (pal.rec.stoppedFor !== "budget" || pal.rec.budgetDay === day) continue;
-      pal.clearStop();
-      void this.bringBack(pal, "new day");
-    }
-  }
-
   // ---------------- the assistant opens a Pal (docs/pals-prd.md §6) ----------------
 
-  private checkProposal(p: { name: string; cwd: string; duty: string; dailyUsd: number }): void {
+  private checkProposal(p: { name: string; cwd: string; duty: string }): void {
     if (!p.name.trim()) throw new Error(t("pals.needName"));
     if ([...p.name].length > 30) throw new Error(t("pals.palNameLong"));
     if (!p.duty.trim()) throw new Error(t("pals.needDuty"));
-    if (!(p.dailyUsd > 0) || p.dailyUsd > 1000) throw new Error(t("pals.badBudget"));
     let dir = false;
     try {
       dir = statSync(p.cwd).isDirectory();
@@ -1498,7 +1471,7 @@ export class Pals {
   }
 
   /** pal_propose: a card in the conversation; the Pal starts on the owner's 开吧. */
-  propose(a: { name: string; dir: string; duty: string; dailyUsd: number }): string {
+  propose(a: { name: string; dir: string; duty: string }): string {
     const dir = String(a.dir ?? "").trim();
     if (!dir) return t("pals.noDir");
     let cwd = resolve(expandHome(dir));
@@ -1507,7 +1480,7 @@ export class Pals {
     } catch {
       /* checked below */
     }
-    const p = { name: String(a.name ?? "").trim(), cwd, duty: String(a.duty ?? "").trim(), dailyUsd: Number(a.dailyUsd) };
+    const p = { name: String(a.name ?? "").trim(), cwd, duty: String(a.duty ?? "").trim() };
     try {
       this.checkProposal(p);
     } catch (e) {
@@ -1520,7 +1493,7 @@ export class Pals {
     const msg = this.d.chat.add({ role: "assistant", kind: "helper", text: t("pals.proposalText", { name: p.name, where }), channel: "system", proposal });
     this.data.proposals = [...this.data.proposals, { ...proposal, createdAt: this.now(), messageId: msg.id }].slice(-50);
     this.save();
-    this.d.audit.log("pal.proposed", { id: proposal.id, name: p.name, cwd: p.cwd, dailyUsd: p.dailyUsd });
+    this.d.audit.log("pal.proposed", { id: proposal.id, name: p.name, cwd: p.cwd });
     return t("pals.proposalShown", { id: proposal.id });
   }
 
@@ -1555,7 +1528,7 @@ export class Pals {
     try {
       this.room();
       this.checkProposal(p);
-      pal = await this.create({ name: p.name, cwd: p.cwd, duty: p.duty, dailyUsd: p.dailyUsd });
+      pal = await this.create({ name: p.name, cwd: p.cwd, duty: p.duty });
     } catch (e) {
       // Still on offer; the card says why it didn't start.
       const why = e instanceof Error ? e.message : String(e);
@@ -1569,7 +1542,7 @@ export class Pals {
   }
 
   // A new session in its folder, the assistant's handover as its first message.
-  private async create(o: { name: string; cwd: string; duty: string; dailyUsd: number }): Promise<PalSession> {
+  private async create(o: { name: string; cwd: string; duty: string }): Promise<PalSession> {
     const now = this.now();
     const model = this.d.palModel?.();
     const rec: PalRecord = {
@@ -1582,7 +1555,6 @@ export class Pals {
       lastUsedAt: now,
       permissionMode: this.d.palMode?.() ?? ownerMode(this.d.claudeDir),
       duty: o.duty,
-      dailyUsd: o.dailyUsd,
       ...(model ? { model } : {}),
     };
     const pal = this.add(rec);

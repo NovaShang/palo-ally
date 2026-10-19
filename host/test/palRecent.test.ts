@@ -183,7 +183,7 @@ describe("the conversations that ended lately (pals.recent)", () => {
   test("a Pal the assistant opened (an SDK session from its start) is listed once the owner takes it out", async () => {
     const t = setup();
     const docs = t.folder("docs");
-    await t.hub.toolHandlers().pal_propose({ name: "文档", dir: docs, duty: "写安装说明", dailyUsd: 1 });
+    await t.hub.toolHandlers().pal_propose({ name: "文档", dir: docs, duty: "写安装说明" });
     const { pal } = await t.call("helper.decide", { proposalId: t.hub.chat.recent(1)[0]!.proposal!.id, action: "create" });
     // its transcript, as Claude Code wrote it
     t.claude.transcript(docs, pal.sessionId, [assistantEntry("安装说明写好了。")]);

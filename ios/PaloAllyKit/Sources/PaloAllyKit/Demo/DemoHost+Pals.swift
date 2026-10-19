@@ -612,7 +612,7 @@ extension DemoHost {
         var proposal = ChatMessage(seq: nextSeq, id: "m\(nextSeq)", role: .assistant, kind: .helper,
                                    text: "报销单每周都要理一遍，要不要开一个 Pal 专门管？", channel: .app, ts: now - 3 * min)
         proposal.proposal = HelperProposal(id: "hp1", name: "报销帮手", cwd: "/Users/demo/Documents/报销",
-                                           duty: "每周把下载文件夹里的发票整理进报销表，缺的告诉你。", dailyUsd: 3)
+                                           duty: "每周把下载文件夹里的发票整理进报销表，缺的告诉你。")
         let day = 24 * hour
         let recent = [
             RecentSession(sessionId: "7c1e9a52-3f0b-4d8e-9a61-0b5c2e7d4f10", cwd: "/Users/demo/code/site",

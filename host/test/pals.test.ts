@@ -234,7 +234,7 @@ describe("adopting a session", () => {
     await t.hub.idle();
     const more = bgSession(t, "第五十一个", "dddd0051-0000-4000-8000-000000000051");
     await expect(t.call("pals.adopt", { sessionId: more })).rejects.toThrow(`已经有 ${MAX_PALS} 个会话了，先结束一个（最久没用的是「项目2」）`);
-    expect(await t.hub.toolHandlers().pal_propose({ name: "新的", dir: t.project, duty: "做事", dailyUsd: 1 })).toContain(`已经有 ${MAX_PALS} 个会话了`);
+    expect(await t.hub.toolHandlers().pal_propose({ name: "新的", dir: t.project, duty: "做事" })).toContain(`已经有 ${MAX_PALS} 个会话了`);
     await t.call("pals.remove", { id: "pal_seed2" });
     await expect(t.call("pals.adopt", { sessionId: "nope" })).rejects.toThrow("没有这个会话");
     expect((await t.call("pals.adopt", { sessionId: more })).pal).toMatchObject({ name: "第五十一个", status: "idle" });
@@ -969,10 +969,10 @@ describe("back to the terminal", () => {
 describe("the assistant opens a Pal", () => {
   test("its proposal card; 开吧 starts a new session in the folder with the handover as its first message, shown as the assistant's; asking twice gives the same Pal", async () => {
     const t = setup();
-    const r = await t.hub.toolHandlers().pal_propose({ name: "网站", dir: t.project, duty: "你负责主人的网站：先做列表页。", dailyUsd: 5 });
+    const r = await t.hub.toolHandlers().pal_propose({ name: "网站", dir: t.project, duty: "你负责主人的网站：先做列表页。" });
     expect(r).toContain("主人点「开吧」才会开");
     const card = t.hub.chat.recent(1)[0]!;
-    expect(card).toMatchObject({ kind: "helper", text: expect.stringContaining("开一个会话「网站」"), proposal: { name: "网站", cwd: t.project, dailyUsd: 5, status: "pending" } });
+    expect(card).toMatchObject({ kind: "helper", text: expect.stringContaining("开一个会话「网站」"), proposal: { name: "网站", cwd: t.project, status: "pending" } });
     expect(t.driver.pals).toHaveLength(0);
     const out = await t.call("helper.decide", { proposalId: card.proposal!.id, action: "create" });
     expect(out.pal).toMatchObject({ name: "网站", cwd: t.project, createdBy: "palo" });
@@ -1002,14 +1002,14 @@ describe("the assistant opens a Pal", () => {
   test("不用 drops it; a folder that isn't there and a taken name are refused; one that didn't start stays on offer saying why", async () => {
     const t = setup();
     const tools = t.hub.toolHandlers();
-    await tools.pal_propose({ name: "一", dir: t.project, duty: "做事", dailyUsd: 1 });
+    await tools.pal_propose({ name: "一", dir: t.project, duty: "做事" });
     const p1 = t.hub.chat.recent(1)[0]!;
     expect(await t.call("helper.decide", { proposalId: p1.proposal!.id, action: "discard" })).toEqual({});
     expect(t.hub.chat.get(p1.id)!.proposal!.status).toBe("discarded");
-    expect(await tools.pal_propose({ name: "二", dir: "/no/such/folder", duty: "做事", dailyUsd: 1 })).toContain("找不到目录");
-    expect(await tools.pal_propose({ name: "Palo", dir: t.project, duty: "做事", dailyUsd: 1 })).toContain("助理自己的名字");
+    expect(await tools.pal_propose({ name: "二", dir: "/no/such/folder", duty: "做事" })).toContain("找不到目录");
+    expect(await tools.pal_propose({ name: "Palo", dir: t.project, duty: "做事" })).toContain("助理自己的名字");
     t.driver.failPalStart = () => "Error: not logged in";
-    await tools.pal_propose({ name: "三", dir: t.project, duty: "做事", dailyUsd: 1 });
+    await tools.pal_propose({ name: "三", dir: t.project, duty: "做事" });
     const p3 = t.hub.chat.recent(1)[0]!;
     await expect(t.call("helper.decide", { proposalId: p3.proposal!.id, action: "create" })).rejects.toThrow("Claude Code 没登录");
     expect(t.hub.chat.get(p3.id)!.proposal).toMatchObject({ status: "pending", note: "Claude Code 没登录" });
@@ -1018,27 +1018,37 @@ describe("the assistant opens a Pal", () => {
     await t.call("helper.decide", { proposalId: p3.proposal!.id, action: "create" });
     expect(t.hub.chat.get(p3.id)!.proposal!.status).toBe("created");
     expect(t.hub.chat.get(p3.id)!.proposal!.note).toBeUndefined();
-    expect(await tools.pal_propose({ name: "三", dir: t.project, duty: "做事", dailyUsd: 1 })).toContain("已经有一个叫「三」的会话");
+    expect(await tools.pal_propose({ name: "三", dir: t.project, duty: "做事" })).toContain("已经有一个叫「三」的会话");
     await t.hub.pals.stopAndWait();
   });
 
-  test("past its daily limit it stops and the owner hears it; the owner's words bring it back", async () => {
+  test("no daily spending limit: however much it spends it keeps going; an old record's limit, and a stop for it, are gone when the host loads it", async () => {
     const t = setup();
-    await t.hub.toolHandlers().pal_propose({ name: "网站", dir: t.project, duty: "做网站", dailyUsd: 0.04 });
+    await t.hub.toolHandlers().pal_propose({ name: "网站", dir: t.project, duty: "做网站" });
+    expect(t.hub.chat.recent(1)[0]!.proposal).not.toHaveProperty("dailyUsd");
     const { pal } = await t.call("helper.decide", { proposalId: t.hub.chat.recent(1)[0]!.proposal!.id, action: "create" });
     await waitFor(() => t.hub.pals.list()[0]!.status === "idle");
-    const u = { input_tokens: 10, output_tokens: 1000, cache_read_input_tokens: 100_000, cache_creation_input_tokens: 0 };
+    const u = { input_tokens: 10, output_tokens: 1000, cache_read_input_tokens: 10_000_000, cache_creation_input_tokens: 0 };
     t.claude.transcript(t.project, pal.sessionId, [assistantEntry("a", { id: "msg_1", model: "claude-sonnet-4-6", usage: u })]);
     await t.call("pals.send", { id: pal.id, text: "接着做" });
-    await waitFor(() => t.hub.pals.list()[0]!.status === "stopped");
-    expect(t.hub.pals.list()[0]!.note).toContain("过了每天 $0.04 的上限");
-    expect(t.hub.chat.recent(3).some((m) => m.text.includes("超过了每天 $0.04 的上限"))).toBe(true);
-    expect(t.pusher.pushes.at(-1)!.title).toBe("会话停了");
-    expect(t.hub.audit.tail(20).find((e) => e.type === "pal.budget")).toMatchObject({ pal: pal.id, dailyUsd: 0.04 });
-    const n = t.driver.pals.length;
-    await t.call("pals.send", { id: pal.id, text: "今天还是要做完" });
-    expect(t.driver.pals.length).toBe(n + 1);
+    await waitFor(() => t.hub.pals.list()[0]!.status === "idle");
+    await tick(50);
+    expect(t.hub.pals.list()[0]!.status).toBe("idle");
+    expect(t.hub.audit.tail(50).some((e) => e.type === "pal.budget")).toBe(false);
     await t.hub.pals.stopAndWait();
+    // a record from before: its limit was hit today and it was stopped for it
+    const recs = JSON.parse(readFileSync(t.paths.pals, "utf8"));
+    Object.assign(recs.pals[0], { dailyUsd: 15, stoppedFor: "budget", budgetDay: "2026-10-19", note: "今天花了约 $17.22，过了每天 $15 的上限" });
+    writeFileSync(t.paths.pals, JSON.stringify(recs));
+    const { Pals } = await import("../src/pals.ts");
+    const again = new Pals({ ...(t.hub.pals as any).d, timing: FAST });
+    again.start();
+    expect(again.list()[0]!.status).toBe("starting");
+    await again.stopAndWait();
+    const saved = JSON.parse(readFileSync(t.paths.pals, "utf8")).pals[0];
+    expect(saved.dailyUsd).toBeUndefined();
+    expect(saved.stoppedFor).toBeUndefined();
+    expect(saved.note).toBeUndefined();
   });
 });
 
@@ -1087,7 +1097,7 @@ describe("the owner's own sessions (workbench)", () => {
     await waitFor(() => find(t, pal.id).status === "idle" && find(t, pal.id).attention === "done");
     const r = rec(t, pal.id);
     expect(r.duty).toBeUndefined();
-    expect(r.dailyUsd).toBeUndefined();
+    expect((r as any).dailyUsd).toBeUndefined();
     expect(r.autoNamed).toBe(true);
     // a new session of its own, no resume; the words went in as the owner's (not the assistant's)
     const proc = t.driver.pals[0]!;
@@ -1117,9 +1127,8 @@ describe("the owner's own sessions (workbench)", () => {
     await expect(t.call("pals.create", { cwd: t.paths.root })).rejects.toThrow("不能开在 PaloAlly 自己的目录里");
     await expect(t.call("pals.create", { cwd: t.project, workspaceId: "ws_000000000000" })).rejects.toThrow("找不到这个工作区");
     await expect(t.call("pals.create", {})).rejects.toThrow("要给出一个文件夹");
-    // the assistant's proposal path is as it was: a duty and a limit are still needed
-    expect(await t.hub.toolHandlers().pal_propose({ name: "无任务", dir: t.project, duty: "", dailyUsd: 1 })).toContain("要写清楚它负责什么");
-    expect(await t.hub.toolHandlers().pal_propose({ name: "无上限", dir: t.project, duty: "做事", dailyUsd: 0 })).toContain("大于 0");
+    // the assistant's proposal path is as it was: a duty is still needed
+    expect(await t.hub.toolHandlers().pal_propose({ name: "无任务", dir: t.project, duty: "" })).toContain("要写清楚它负责什么");
     await t.hub.pals.stopAndWait();
   });
 

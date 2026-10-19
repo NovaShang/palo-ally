@@ -1380,7 +1380,7 @@ public actor DemoHost {
         var proposal = ChatMessage(seq: nextSeq, id: "m\(nextSeq)", role: .assistant, kind: .helper,
                                    text: "报销单每周都要理一遍，要不要开一个帮手专门管？", channel: .app, ts: now - 3 * min)
         proposal.proposal = HelperProposal(id: "hp1", name: "报销帮手", cwd: "/Users/demo/Documents/报销",
-                                           duty: "每周把下载文件夹里的发票整理进报销表，缺的告诉你。", dailyUsd: 3)
+                                           duty: "每周把下载文件夹里的发票整理进报销表，缺的告诉你。")
         return SessionSeed(sessions: sessions, logs: ["cc-site": site, "cc-notes": notes, "cc-login": login, "cc-data": data],
                            approvals: approvals, questions: questions, proposal: proposal)
     }
