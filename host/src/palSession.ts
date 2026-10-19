@@ -6,10 +6,10 @@ import { firstLine } from "./ccSessions.ts";
 import { ACTIVITY, describeActivity, describeInput, describeTool, friendlyError } from "./copy.ts";
 import { isAuthFailure } from "./auth.ts";
 import { readHead, readTail, transcriptPath } from "./handoffs.ts";
-import { PALO_SEND_TOOL, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
+import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type DeliveryToolHandlers, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
 import type { MediaStore } from "./media.ts";
 import { type PalLaunch, isHelperFailure, makeSpawner } from "./palLauncher.ts";
-import { type PalMapOptions, TranscriptFollower, toPalMessages, transcriptLastLine, transcriptModel, userEntryMessage } from "./palHistory.ts";
+import { CARD_TOOLS, type PalMapOptions, TranscriptFollower, cardKey, toPalMessages, transcriptLastLine, transcriptModel, userEntryMessage } from "./palHistory.ts";
 import { ASK_TOOL, type QuestionManager } from "./questions.ts";
 import { type ForkSession, type PendingRewind, beforeCompaction, chainTo, hasFileCheckpoint, leafOf, ownerText, readTranscript, rewindBusy, rewindNoFiles, rewindNotFound } from "./rewind.ts";
 import { type StallRecovery, type StallTarget, transcriptHas } from "./stallWatch.ts";
@@ -101,6 +101,8 @@ export interface PalSessionDeps {
   onWaiting: (pal: PalSession, body: string, ids: { approvalId?: string; questionId?: string }) => void;
   /** Its palo_send: the words go to the assistant's session (docs/pals-prd.md §16). The result is what the Pal is told. */
   toPalo: (pal: PalSession, text: string) => Promise<string> | string;
+  /** Its tools that reach the owner (Artifact, SendUserFile, …), scoped to it; none: it has only palo_send. */
+  tools?: (pal: PalSession) => DeliveryToolHandlers | undefined;
   /** A turn ended (its spending is checked). */
   onTurnEnd: (pal: PalSession) => void;
   /** A turn went through (true) or failed for want of Claude Code's login (false). */
@@ -168,6 +170,7 @@ export class PalSession {
   private streamText = "";
   private replyTexts = new Map<string, string>(); // a reply's text so far, by its id (several blocks join)
   private emitted = new Set<string>(); // ids already sent to the app
+  private calls: { name: string; id: string }[] = []; // its card tools' calls (tool_use ids) waiting for their handler
   private follower: TranscriptFollower | null = null;
   // A fork's entries copied from the session it was forked from: history, not news.
   private inherited: Set<string> | null = null;
@@ -470,6 +473,7 @@ export class PalSession {
       ownerOrigin: true,
       canUseTool: (req) => this.canUseTool(req),
       paloSend: async (text) => this.d.toPalo(this, text),
+      ...(this.d.tools?.(this) ? { sessionTools: this.d.tools(this)! } : {}),
       onEvent: (e) => {
         if (proc === this.proc) this.onEvent(e);
       },
@@ -844,6 +848,36 @@ export class PalSession {
     this.d.emit("chat.message", { seq: ts, ts, channel: "app", ...msg, pal: this.rec.id });
   }
 
+  /**
+   * What one of its own tools delivers (files, a published page, a clipboard
+   * text): a message in its conversation, shown now and kept in its history. It
+   * takes the id of the tool call that made it, so the live message and the
+   * history's are the same one.
+   */
+  card(m: Omit<ChatMessage, "seq" | "id" | "ts">, tool: string): ChatMessage {
+    const name = `mcp__paloally__${tool}`;
+    const i = this.calls.findIndex((c) => c.name === name);
+    const id = i >= 0 ? this.calls.splice(i, 1)[0]!.id : newId("m_");
+    const ts = this.d.now();
+    const msg: ChatMessage = { ...m, seq: ts, id, ts, channel: "app", pal: this.rec.id };
+    this.emitted.add(id);
+    this.d.media?.remember(cardKey(id), {
+      text: msg.text,
+      attachments: msg.attachments ?? [],
+      ...(msg.kind === "clipboard" ? { kind: "clipboard" as const } : {}),
+      ...(msg.label ? { label: msg.label } : {}),
+    });
+    this.d.emit("chat.message", msg);
+    this.touch();
+    return msg;
+  }
+
+  /** A message that only goes out as a push: it isn't in its conversation, and opens it. */
+  pushNotice(text: string): ChatMessage {
+    const ts = this.d.now();
+    return { seq: ts, id: newId("m_"), role: "assistant", kind: "notice", text, channel: "system", ts, pal: this.rec.id, proactive: true };
+  }
+
   private notice(text: string): void {
     this.chat({ id: newId("m_"), role: "system", kind: "notice", text, channel: "system" });
   }
@@ -983,6 +1017,8 @@ export class PalSession {
       case "tool_start":
       case "tool_use":
         if (e.type === "tool_use") this.openTools.set(e.id, e.name);
+        if (e.type === "tool_use" && CARD_TOOLS.has(e.name)) this.calls.push({ name: e.name, id: e.id });
+        if (this.calls.length > 20) this.calls.shift();
         if (e.parentToolUseId) break;
         if (e.type === "tool_use") this.turnTools.add(e.id);
         this.beginTurn();
@@ -1211,7 +1247,7 @@ export class PalSession {
   private async canUseTool(req: PermissionRequest): Promise<PermissionDecision> {
     const source = this.source();
     // Its one tool of ours: never a card (it is also allowed up front).
-    if (req.toolName === PALO_SEND_TOOL) return { behavior: "allow", updatedInput: req.input };
+    if (SESSION_ALLOWED_TOOLS.includes(req.toolName)) return { behavior: "allow", updatedInput: req.input };
     if (req.toolName === ASK_TOOL) {
       const asked = this.d.questions.ask(req, { source, notify: false });
       if (!asked) return { behavior: "deny", message: tr("pals.badQuestion") };

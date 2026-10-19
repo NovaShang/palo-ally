@@ -224,6 +224,8 @@ export interface Artifact {
   pinned: boolean;
   /** The group it is kept under in 成果, "" for none. */
   folder: string;
+  /** Who published it: "palo", or the id of the session. Absent for older ones. */
+  source?: string;
   updatedAt: number;
   files: { path: string; size: number }[];
 }

@@ -142,7 +142,7 @@ describe("host ↔ app protocol", () => {
     await run("watch.remove", { id: w.id });
     mkdirSync(join(paths.artifacts, "brief"), { recursive: true });
     writeFileSync(join(paths.artifacts, "brief", "brief.md"), "# 晨报\n- 一件事");
-    hub.artifacts.publish("brief", "晨报", "brief.md", "markdown", false, "日常");
+    hub.artifacts.publish("brief", "晨报", "brief.md", "markdown", false, "日常", "palo");
     await run("artifact.list");
     await run("artifact.read", { id: "brief" });
     await run("artifact.pin", { id: "brief", pinned: true });

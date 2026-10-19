@@ -16,6 +16,7 @@ interface Meta {
   pinned?: boolean;
   updatedAt?: number;
   folder?: string;
+  source?: string;
 }
 
 const MIME: Record<string, string> = {
@@ -92,6 +93,7 @@ export class ArtifactLibrary {
       mainFile,
       pinned: !!meta.pinned,
       folder: cleanFolder(meta.folder),
+      ...(meta.source ? { source: meta.source } : {}),
       updatedAt: Math.max(meta.updatedAt ?? 0, newest),
       files: files.map((f) => ({ path: f.path, size: f.size })),
     };
@@ -103,7 +105,7 @@ export class ArtifactLibrary {
    * source. Publishing the same path again updates the same artifact. A file
    * already inside artifacts/<slug>/ is published in place.
    */
-  publishFile(filePath: string, opts: { title?: string; files?: Record<string, string>; folder?: string } = {}): Artifact {
+  publishFile(filePath: string, opts: { title?: string; files?: Record<string, string>; folder?: string; source?: string } = {}): Artifact {
     const full = resolve(filePath);
     if (!existsSync(full) || !statSync(full).isFile()) throw new Error(t("artifact.notFile", { path: filePath }));
     const name = basename(full);
@@ -130,10 +132,10 @@ export class ArtifactLibrary {
     }
     // Keep an earlier title on re-publish (not the folder-name guess list() makes).
     const prevTitle = readJson<Meta>(join(folder, META), {}).title;
-    return this.publish(slug, opts.title?.trim() || prevTitle || name, main, undefined, undefined, opts.folder);
+    return this.publish(slug, opts.title?.trim() || prevTitle || name, main, undefined, undefined, opts.folder, opts.source);
   }
 
-  publish(slug: string, title: string, mainFile: string, type?: string, pinned?: boolean, group?: string): Artifact {
+  publish(slug: string, title: string, mainFile: string, type?: string, pinned?: boolean, group?: string, source?: string): Artifact {
     if (!/^[\w一-龥][\w.\-一-龥]*$/.test(slug)) throw new Error(t("artifact.badSlug"));
     const folder = join(this.dir, slug);
     ensureDir(folder);
@@ -146,6 +148,8 @@ export class ArtifactLibrary {
       pinned: pinned ?? prev.pinned ?? false,
       updatedAt: Date.now(),
     };
+    // Where it came from: "palo" or a session's id; the latest publisher wins.
+    if (source) meta.source = source;
     // Publishing again without a folder keeps the one it had; an empty one takes it out.
     if (group !== undefined) {
       const f = cleanFolder(group);

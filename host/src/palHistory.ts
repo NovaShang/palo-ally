@@ -13,6 +13,11 @@ import type { Attachment, ChatMessage } from "./types.ts";
 // disagree. `seq` is the time in ms: Pal messages don't take numbers from
 // the assistant's conversation.
 
+/** The cards a session's own tools put in its conversation (a tool call's id keys them). */
+export const CARD_TOOLS = new Set(["SendUserFile", "Artifact", "copy_to_clipboard"].map((n) => `mcp__paloally__${n}`));
+/** Media store keys are plain (letters, digits, dashes). */
+export const cardKey = (id: string): string => id.replace(/[^0-9a-zA-Z-]/g, "-");
+
 export interface PalMapOptions {
   pal: string; // the Pal's id
   assistantName: string; // how the assistant (Palo) is called; its words show as 「<name>」
@@ -20,7 +25,7 @@ export interface PalMapOptions {
   duty?: string; // a Pal the assistant opened: its first message is the assistant's handover
   // What the owner sent with images or files, by its uuid (MediaStore.recall):
   // the transcript has only the image bytes and the files' paths.
-  recall?: (uuid: string) => { text: string; attachments: Attachment[] } | undefined;
+  recall?: (uuid: string) => { text: string; attachments: Attachment[]; kind?: "clipboard"; label?: string } | undefined;
 }
 
 function hasImage(content: unknown): boolean {
@@ -96,8 +101,19 @@ export function toPalMessages(raw: RawSessionMessage[], o: PalMapOptions): ChatM
       // Its words to the assistant (palo_send): said by it, in its own conversation.
       const sentAt = Date.parse(m.timestamp ?? "") || 0;
       const sends = content.filter((b: any) => b?.type === "tool_use" && b.name === PALO_SEND_TOOL && typeof b.id === "string" && typeof b.input?.text === "string" && b.input.text.trim());
+      // What it delivered with its own tools (files, a published page, a clipboard text): cards in its conversation.
+      const cards = content.filter((b: any) => b?.type === "tool_use" && CARD_TOOLS.has(b.name) && typeof b.id === "string");
       const pushSends = () => {
         for (const b of sends) out.push({ seq: sentAt, id: b.id, role: "assistant", kind: "text", text: String(b.input.text).trim(), channel: "app", ts: sentAt, pal: o.pal });
+        for (const b of cards) {
+          const r = o.recall?.(cardKey(b.id));
+          if (!r) continue;
+          out.push({
+            seq: sentAt, id: b.id, role: "assistant", kind: r.kind ?? "text", text: r.text, channel: "app", ts: sentAt, pal: o.pal,
+            ...(r.label ? { label: r.label } : {}),
+            ...(r.attachments.length ? { attachments: r.attachments } : {}),
+          });
+        }
       };
       if (!text) {
         pushSends();

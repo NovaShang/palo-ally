@@ -12,8 +12,10 @@ import { type RawSessionMessage, type RegistryEntry, readRegistry } from "./ccSe
 import { SpendMeter } from "./ccSpend.ts";
 import type { ChatLog } from "./chat.ts";
 import type { Paths, Settings } from "./config.ts";
-import type { HarnessDriver, ModelOption } from "./harness/types.ts";
+import type { DeliveryToolHandlers, HarnessDriver, ModelOption } from "./harness/types.ts";
 import type { MediaStore } from "./media.ts";
+import type { ArtifactLibrary } from "./artifacts.ts";
+import { makeDeliveryTools } from "./shellTools.ts";
 import { PalLauncher, type PalLaunch } from "./palLauncher.ts";
 import { pagePalMessages, toPalMessages } from "./palHistory.ts";
 import type { ForkSession } from "./rewind.ts";
@@ -181,6 +183,8 @@ export interface PalsDeps {
   forkSession?: ForkSession;
   /** The owner's images and files (media.upload / uploadChunk), as Palo takes them. */
   media?: MediaStore;
+  /** The library its sessions publish into (Artifact, SendUserFile). */
+  artifacts?: ArtifactLibrary;
   timing?: Partial<PalsTiming>;
   now?: () => number;
   log?: (s: string) => void;
@@ -342,6 +346,7 @@ export class Pals {
       appendPrompt: () => PAL_PROMPT(this.paloName()),
       onWaiting: (pal, body, ids) => this.pushWaiting(pal, body, ids),
       toPalo: (pal, text) => this.toolPaloSend(pal, text),
+      tools: (pal) => this.sessionTools(pal),
       onTurnEnd: (pal) => {
         this.balanceSoon();
         void this.readTitle(pal);
@@ -373,6 +378,23 @@ export class Pals {
   /** What the owner calls it: 新会话 until it has a name of its own. */
   private shownName(pal: PalSession): string {
     return pal.rec.autoNamed ? t("pals.newSession") : pal.rec.name;
+  }
+
+  /** A session's tools that reach the owner: the assistant's handlers, scoped to it (its folder, its conversation, its name). */
+  private sessionTools(pal: PalSession): DeliveryToolHandlers | undefined {
+    const { media, artifacts } = this.d;
+    if (!media || !artifacts) return undefined;
+    return makeDeliveryTools({
+      artifacts,
+      chat: this.d.chat,
+      router: this.d.router,
+      audit: this.d.audit,
+      media,
+      pals: this,
+      ownerChannel: () => "app",
+      cwd: pal.rec.cwd,
+      session: { id: pal.id, name: () => this.shownName(pal), card: (m, tool) => pal.card(m, tool), notice: (text) => pal.pushNotice(text) },
+    });
   }
 
   private paloName(): string {

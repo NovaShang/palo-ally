@@ -13,7 +13,7 @@ import type {
   SessionOptions,
   ToolHandlers,
 } from "./types.ts";
-import { PALO_SEND_TOOL } from "./types.ts";
+import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, SESSION_DISALLOWED, type DeliveryToolHandlers } from "./types.ts";
 
 // AsyncQueue is the streaming-input prompt: messages pushed here become user
 // turns in the long-lived CLI process.
@@ -52,10 +52,12 @@ const text = (s: string) => ({ content: [{ type: "text" as const, text: s }] });
 // already reach the owner through the host's own approvals.
 export const OWN_SESSION_ENV = { PALOALLY_SESSION: "1" } as const;
 
-// A Pal's whole MCP server: palo_send and nothing else (none of the
-// assistant's tools). Its words go to the assistant through the host, never
-// through Claude Code's peer registry, which a restart makes stale.
-export function paloSendMcpServer(send: (text: string) => Promise<string>) {
+// A session's whole MCP server: palo_send, and the tools that reach the owner
+// (the same definitions the assistant has, handlers scoped to the session).
+// None of the assistant's manager tools. Its words to the assistant go through
+// the host, never through Claude Code's peer registry, which a restart makes stale.
+export function paloSendMcpServer(send: (text: string) => Promise<string>, delivery?: DeliveryToolHandlers) {
+  const shared = delivery ? deliveryTools(delivery, true) : null;
   return createSdkMcpServer({
     name: "paloally",
     version: VERSION,
@@ -67,11 +69,13 @@ export function paloSendMcpServer(send: (text: string) => Promise<string>) {
         { text: z.string().describe("What to tell the assistant") },
         async (a) => text(await send(a.text)),
       ),
+      ...(shared ? [shared.Artifact, shared.SendUserFile, shared.notify_user, shared.copy_to_clipboard, shared.pals_list] : []),
     ],
   });
 }
 
 export function paloallyMcpServer(h: ToolHandlers) {
+  const shared = deliveryTools(h);
   return createSdkMcpServer({
     name: "paloally",
     version: VERSION,
@@ -123,39 +127,9 @@ export function paloallyMcpServer(h: ToolHandlers) {
       // The next two mirror Claude Code's own SendUserFile and Artifact
       // tools (names, wording, parameters), so the model uses them the way
       // it already knows how.
-      tool(
-        "SendUserFile",
-        "Send files to the user. Use this for any file the user would want to see — a generated diagram, a report, a screenshot, a built artifact — and you want it surfaced, not just mentioned. Send deliverables as they are produced, not batched at the end of the task. Do NOT send routine working files — scratch files, debug output, partial fragments, or every incremental save; each call renders a file card in the conversation. Re-send a file only when it has meaningfully changed. Paths can be absolute or relative to the current working directory.\n\nAdd a `caption` when a one-liner of context helps. Set `status` on every call: `proactive` when you're initiating (it reaches the user's phone), `normal` when replying. `display`: 'render' to show the content inline (images, charts, PDFs, HTML), 'attach' for a file card only; omit to decide by file type.\n\nEvery file sent is also kept in the user's library (产出物库) so it can be found again — the conversation is one endless timeline. Set `temporary: true` only when you're sure it never needs to be found again (an image you grabbed off the web to show in passing, a throwaway screenshot).",
-        {
-          files: z.array(z.string()).min(1).describe("File paths (absolute or relative to cwd). Always pass an array."),
-          caption: z.string().optional().describe("Optional short caption for the file(s)."),
-          status: z.enum(["normal", "proactive"]),
-          display: z.enum(["render", "attach"]).optional(),
-          temporary: z.boolean().optional().describe("true = show it now, don't keep it in the library"),
-        },
-        async (a) => text(await h.SendUserFile(a)),
-      ),
-      tool(
-        "Artifact",
-        "Publish a page or document the user will keep and come back to — a report, a dashboard, a write-up (HTML, Markdown, PDF, or any file) — into the user's library (产出物库), with a card in the conversation. Publishing the same file_path again updates the same artifact (periodic ones like a morning brief: overwrite the file and publish again). A multi-file artifact passes its other files through `files`, mapping each published path (relative, as the main file references it) to a source file.",
-        {
-          file_path: z.string().describe("The main file to publish (absolute or relative to cwd)."),
-          title: z.string().optional().describe("A short name for it."),
-          description: z.string().optional().describe("One sentence about it, shown with the card."),
-          files: z.record(z.string(), z.string()).optional().describe("Supporting files: published path → source path."),
-          folder: z.string().optional().describe("The group it is kept under in the library: a short name in the owner's language (理财, 旅行, 家务), reused for related things. Omit to leave it where it is."),
-        },
-        async (a) => text(await h.Artifact(a)),
-      ),
-      tool(
-        "copy_to_clipboard",
-        "Put text on the user's phone clipboard so they can paste it elsewhere — an address, a code, a reply draft, a command. Use it when the user will clearly want to paste this; don't use it for ordinary answers. The conversation also shows a card with a copy button.",
-        {
-          text: z.string().describe("Exactly the text to copy, nothing around it."),
-          label: z.string().optional().describe("A few words saying what it is, e.g. 收货地址, 验证码."),
-        },
-        async (a) => text(await h.copy_to_clipboard(a)),
-      ),
+      shared.SendUserFile,
+      shared.Artifact,
+      shared.copy_to_clipboard,
       tool(
         "ally_list",
         "列出主人的 Ally（别人的助理，或主人自己另一台电脑上的助理）：id、对方主人的称呼、助理名、标签（家人朋友 / 我的）、现在是否在线，以及主人给的档位：「能对话」（你的回话直接发出）或「每句要你看」（你的回话先成草稿卡片）。",
@@ -177,13 +151,7 @@ export function paloallyMcpServer(h: ToolHandlers) {
         },
         async (a) => text(await h.ally_send(a)),
       ),
-      tool(
-        "pals_list",
-        "列出主人的 Pal（这台电脑上由 PaloAlly 托管的 Claude Code 会话：id、现在的名字、目录、状态、最后一句；status 为 asleep 的是睡着了，进程关着；名字会变，以这里为准），以及电脑上其他还开着的 Claude Code 会话。要给某个 Pal 派活或问它进展，用 pal_send 发给它的 id 或名字。",
-
-        {},
-        async () => text(await h.pals_list()),
-      ),
+      shared.pals_list,
       tool(
         "pal_send",
         "给一个 Pal 发话（派活、问进展、转告主人的话）。给 Pal 发话只用它，不用 SendMessage。醒着的和睡着的都行：睡着的主机先叫醒它（几秒），再把话送进去，它看到的是你发来的消息。它回你的话会作为消息回到你这里。",
@@ -222,14 +190,64 @@ export function paloallyMcpServer(h: ToolHandlers) {
         {},
         async () => text(await h.pair_link()),
       ),
-      tool(
-        "notify_user",
-        "主动推送一条消息给主人（手机通知；推不出去会改发微信）。只在真正要紧时用。返回的是实际送达情况：没送到就别对主人说已推送。",
-        { text: z.string(), urgent: z.boolean().optional() },
-        async (a) => text(await h.notify_user(a)),
-      ),
+      shared.notify_user,
     ],
   });
+}
+
+// The tools that reach the owner, defined once: the assistant's server and
+// every session's carry these same definitions (a session's handlers are
+// scoped to it). The two that mirror Claude Code's own SendUserFile and
+// Artifact keep its names, wording and parameters, so the model uses them
+// the way it already knows how.
+export function deliveryTools(h: DeliveryToolHandlers, forSession = false) {
+  return {
+    SendUserFile: tool(
+      "SendUserFile",
+      "Send files to the user. Use this for any file the user would want to see — a generated diagram, a report, a screenshot, a built artifact — and you want it surfaced, not just mentioned. Send deliverables as they are produced, not batched at the end of the task. Do NOT send routine working files — scratch files, debug output, partial fragments, or every incremental save; each call renders a file card in the conversation. Re-send a file only when it has meaningfully changed. Paths can be absolute or relative to the current working directory.\n\nAdd a `caption` when a one-liner of context helps. Set `status` on every call: `proactive` when you're initiating (it reaches the user's phone), `normal` when replying. `display`: 'render' to show the content inline (images, charts, PDFs, HTML), 'attach' for a file card only; omit to decide by file type.\n\nEvery file sent is also kept in the user's library (产出物库) so it can be found again — the conversation is one endless timeline. Set `temporary: true` only when you're sure it never needs to be found again (an image you grabbed off the web to show in passing, a throwaway screenshot).",
+      {
+        files: z.array(z.string()).min(1).describe("File paths (absolute or relative to cwd). Always pass an array."),
+        caption: z.string().optional().describe("Optional short caption for the file(s)."),
+        status: z.enum(["normal", "proactive"]),
+        display: z.enum(["render", "attach"]).optional(),
+        temporary: z.boolean().optional().describe("true = show it now, don't keep it in the library"),
+      },
+      async (a) => text(await h.SendUserFile(a)),
+      ),
+    Artifact: tool(
+      "Artifact",
+      "Publish a page or document the user will keep and come back to — a report, a dashboard, a write-up (HTML, Markdown, PDF, or any file) — into the user's library (产出物库), with a card in the conversation. Publishing the same file_path again updates the same artifact (periodic ones like a morning brief: overwrite the file and publish again). A multi-file artifact passes its other files through `files`, mapping each published path (relative, as the main file references it) to a source file.",
+      {
+        file_path: z.string().describe("The main file to publish (absolute or relative to cwd)."),
+        title: z.string().optional().describe("A short name for it."),
+        description: z.string().optional().describe("One sentence about it, shown with the card."),
+        files: z.record(z.string(), z.string()).optional().describe("Supporting files: published path → source path."),
+        folder: z.string().optional().describe("The group it is kept under in the library: a short name in the owner's language (理财, 旅行, 家务), reused for related things. Omit to leave it where it is."),
+      },
+      async (a) => text(await h.Artifact(a)),
+      ),
+    copy_to_clipboard: tool(
+      "copy_to_clipboard",
+      "Put text on the user's phone clipboard so they can paste it elsewhere — an address, a code, a reply draft, a command. Use it when the user will clearly want to paste this; don't use it for ordinary answers. The conversation also shows a card with a copy button.",
+      {
+        text: z.string().describe("Exactly the text to copy, nothing around it."),
+        label: z.string().optional().describe("A few words saying what it is, e.g. 收货地址, 验证码."),
+      },
+      async (a) => text(await h.copy_to_clipboard(a)),
+      ),
+    pals_list: tool(
+      "pals_list",
+      "列出主人的 Pal（这台电脑上由 PaloAlly 托管的 Claude Code 会话：id、现在的名字、目录、状态、最后一句；status 为 asleep 的是睡着了，进程关着；名字会变，以这里为准），以及电脑上其他还开着的 Claude Code 会话。要给某个 Pal 派活或问它进展，用 pal_send 发给它的 id 或名字。",
+      {},
+      async () => text(await h.pals_list()),
+      ),
+    notify_user: tool(
+      "notify_user",
+      "主动推送一条消息给主人（手机通知；推不出去会改发微信）。只在真正要紧时用。返回的是实际送达情况：没送到就别对主人说已推送。",
+      { text: z.string(), urgent: z.boolean().optional() },
+      async (a) => text(await h.notify_user(a)),
+      ),
+  };
 }
 
 function toolResultText(content: unknown): string {
@@ -385,9 +403,12 @@ export function sessionOptions(opts: AnySessionOptions): Options {
     includePartialMessages: true,
     forwardSubagentText: true,
     agentProgressSummaries: true, // live one-line progress for subagent tasks
-    mcpServers: main ? { ...extra, paloally: paloallyMcpServer(opts.tools!) } : opts.paloSend ? { ...extra, paloally: paloSendMcpServer(opts.paloSend) } : extra,
-    // The Pal's one tool never asks the owner.
-    ...(!main && opts.paloSend ? { allowedTools: [PALO_SEND_TOOL] } : {}),
+    mcpServers: main ? { ...extra, paloally: paloallyMcpServer(opts.tools!) } : opts.paloSend ? { ...extra, paloally: paloSendMcpServer(opts.paloSend, opts.sessionTools) } : extra,
+    // Its own tools never ask the owner; Claude Code's built-in Artifact and
+    // SendUserFile are off, so the model uses ours, which land in PaloAlly.
+    ...(!main && opts.paloSend
+      ? { allowedTools: opts.sessionTools ? SESSION_ALLOWED_TOOLS : [PALO_SEND_TOOL], ...(opts.sessionTools ? { disallowedTools: SESSION_DISALLOWED } : {}) }
+      : {}),
     canUseTool: async (toolName, input, o) =>
       opts.canUseTool({
         toolName,

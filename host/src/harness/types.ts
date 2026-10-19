@@ -77,6 +77,10 @@ export type PermissionDecision =
   | { behavior: "allow"; updatedInput?: Record<string, unknown>; updatedPermissions?: unknown[] }
   | { behavior: "deny"; message: string };
 
+/** The tools that reach the owner: the assistant has them, and so does every session (scoped to it). */
+export const DELIVERY_TOOLS = ["SendUserFile", "Artifact", "copy_to_clipboard", "notify_user", "pals_list"] as const;
+export type DeliveryToolHandlers = Pick<ToolHandlers, (typeof DELIVERY_TOOLS)[number]>;
+
 export interface ToolHandlers {
   report_task(args: { id: string; summary: string; status: string; title?: string; peer?: string }): Promise<string>;
   register_watch(args: {
@@ -151,6 +155,8 @@ export interface SessionOptions {
   mcpServers?: Record<string, unknown>;
   // A Pal's one tool, palo_send (docs/pals-prd.md §16): its words to the assistant, routed by the host.
   paloSend?: (text: string) => Promise<string>;
+  // ...and the tools that reach the owner, scoped to this session (Artifact, SendUserFile, notify_user, copy_to_clipboard, pals_list).
+  sessionTools?: DeliveryToolHandlers;
   env?: Record<string, string>; // extra environment for the harness only (e.g. third-party model endpoint)
   // The environment the process starts from (default: the host's own). A Pal
   // starts from the owner's login shell, as a terminal session would.
@@ -238,3 +244,9 @@ export interface HarnessDriver {
 
 /** The Pal's tool for answering the assistant (docs/pals-prd.md §16), as Claude Code names it. */
 export const PALO_SEND_TOOL = "mcp__paloally__palo_send";
+
+/** What a session's process may call without asking the owner: palo_send and the tools that reach the owner. */
+export const SESSION_ALLOWED_TOOLS = [PALO_SEND_TOOL, ...["Artifact", "SendUserFile", "notify_user", "copy_to_clipboard", "pals_list"].map((n) => `mcp__paloally__${n}`)];
+
+/** Claude Code's own versions of these deliver nowhere PaloAlly can see; the session uses ours. (SendMessage stays.) */
+export const SESSION_DISALLOWED = ["Artifact", "SendUserFile"];
