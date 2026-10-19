@@ -42,8 +42,10 @@ struct TiledWorkspaceView<Content: View>: View {
     var detail: (String) -> AnyView = { _ in AnyView(EmptyView()) }
     @ViewBuilder var content: (String) -> Content
 
-    @State private var liveTree: LayoutTree.Node?
-    @State private var dividerBase: LayoutTree.Node?
+    /// Where the dragged divider would land. Only a ghost line is drawn from it
+    /// while the pointer moves; the tiles keep their size until the release
+    /// (relaying out every chat on each frame was the lag).
+    @State private var ghostTree: LayoutTree.Node?
     @State private var hoveredDivider: String?
     @State private var draggingDivider: String?
     @State private var tileDrag: TileDrag?
@@ -61,7 +63,7 @@ struct TiledWorkspaceView<Content: View>: View {
             let narrow = LayoutTree.narrowPolicy(order: order, active: activeId, width: outer.size.width,
                                                  narrowBelow: TileMetrics.narrowBelow)
             let shown = narrow.isNarrow ? (LayoutTree.keeping(narrow.visible, in: normalized) ?? normalized) : normalized
-            let tree = narrow.isNarrow ? shown : (liveTree ?? shown)
+            let tree = shown
             let size = CGSize(width: outer.size.width,
                               height: outer.size.height - (narrow.isNarrow ? TileMetrics.switcherHeight : 0))
             VStack(spacing: 0) {
@@ -103,6 +105,7 @@ struct TiledWorkspaceView<Content: View>: View {
                 }
             }
             dropPreview(frames: frames, inset: inset)
+            if interactive { dividerGhost(size: size, tree: tree) }
         }
         .coordinateSpace(name: TileMetrics.canvas)
         .frame(width: size.width, height: size.height, alignment: .topLeading)
@@ -275,7 +278,7 @@ struct TiledWorkspaceView<Content: View>: View {
         let hotSize = CGSize(width: d.vertical ? TileMetrics.hot : length, height: d.vertical ? length : TileMetrics.hot)
         let lineSize = CGSize(width: d.vertical ? 3 : line, height: d.vertical ? line : 3)
         let mid = CGPoint(x: d.vertical ? center : from + length / 2, y: d.vertical ? from + length / 2 : center)
-        let tint: Color = draggingDivider == d.id ? Color.accentColor.opacity(0.8) : Color.primary.opacity(lit ? 0.35 : 0)
+        let tint: Color = draggingDivider == d.id ? Color.primary.opacity(0.12) : Color.primary.opacity(lit ? 0.35 : 0)
         return Capsule()
             .fill(tint)
             .frame(width: lineSize.width, height: lineSize.height)
@@ -293,18 +296,37 @@ struct TiledWorkspaceView<Content: View>: View {
     private func dividerDrag(_ d: LayoutTree.Divider, across: CGFloat, tree: LayoutTree.Node) -> some Gesture {
         DragGesture(minimumDistance: 1, coordinateSpace: .named(TileMetrics.canvas))
             .onChanged { v in
-                if dividerBase == nil { dividerBase = tree }
                 draggingDivider = d.id
-                let travel: CGFloat = d.vertical ? v.translation.width : v.translation.height
-                let delta = Double(travel / max(across, 1))
-                let next = LayoutTree.movingDivider(path: d.path, index: d.index, by: delta, in: dividerBase ?? tree)
-                liveTree = next
-                onLayoutChange(next, false)
+                ghostTree = Self.moved(d, translation: v.translation, across: across, in: tree)
             }
-            .onEnded { _ in
-                if let final = liveTree { onLayoutChange(final, true) }
-                liveTree = nil; dividerBase = nil; draggingDivider = nil
+            .onEnded { v in
+                let final = Self.moved(d, translation: v.translation, across: across, in: tree)
+                ghostTree = nil; draggingDivider = nil
+                onLayoutChange(final, true)
             }
+    }
+
+    private static func moved(_ d: LayoutTree.Divider, translation: CGSize, across: CGFloat, in tree: LayoutTree.Node) -> LayoutTree.Node {
+        let travel: CGFloat = d.vertical ? translation.width : translation.height
+        return LayoutTree.movingDivider(path: d.path, index: d.index, by: Double(travel / max(across, 1)), in: tree)
+    }
+
+    /// The line where the divider would land, drawn over the unchanged tiles.
+    @ViewBuilder
+    private func dividerGhost(size: CGSize, tree: LayoutTree.Node) -> some View {
+        if let id = draggingDivider, let ghost = ghostTree,
+           let g = LayoutTree.dividers(of: ghost).first(where: { $0.id == id }) {
+            let along: CGFloat = g.vertical ? size.height : size.width
+            let across: CGFloat = g.vertical ? size.width : size.height
+            let center = CGFloat(g.position) * across
+            let from = CGFloat(g.span.lowerBound) * along
+            let length = CGFloat(g.span.upperBound - g.span.lowerBound) * along
+            Capsule()
+                .fill(Color.accentColor.opacity(0.8))
+                .frame(width: g.vertical ? 3 : length, height: g.vertical ? length : 3)
+                .position(x: g.vertical ? center : from + length / 2, y: g.vertical ? from + length / 2 : center)
+                .allowsHitTesting(false)
+        }
     }
 
     // MARK: - the narrow switcher
