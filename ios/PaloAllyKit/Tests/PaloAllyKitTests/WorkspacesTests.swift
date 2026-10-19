@@ -205,6 +205,24 @@ struct WorkbenchStoreTests {
         #expect(folders.first?.path != nil && Set(folders.map(\.path)).count == folders.count)
     }
 
+    @Test func theDetailsAreAskedAndTheModelChangedForTheNextTurn() async throws {
+        let (store, host) = await demoStore()
+        let d = try await store.palDetail(id: "pal-site")
+        #expect(d.pal?.id == "pal-site" && d.contextWindow == 200_000 && d.models.count == 2 && d.tasks.isEmpty)
+        #expect(await host.lastParams["pals.detail"] == ["id": "pal-site"])
+        // Through the session's own store, as the capsule's details do.
+        let own = store.palStore("pal-site")
+        let p = try await own.setSessionModel(id: "pal-site", effort: "low")
+        #expect(p?.effort == "low" && store.pal(id: "pal-site")?.effort == "low")
+        #expect(await host.lastParams["pals.setModel"] == ["id": "pal-site", "effort": "low"])
+        try await own.compactSession(id: "pal-site")
+        try await own.revealSession(id: "pal-site", kind: "finder")
+        #expect(await host.lastParams["pals.reveal"] == ["id": "pal-site", "kind": "finder"])
+        // The demo has no such task: the host's word comes back.
+        await #expect(throws: (any Error).self) { try await own.stopTask(id: "pal-site", taskId: "t_1") }
+        await #expect(throws: (any Error).self) { _ = try await store.palDetail(id: "nope") }
+    }
+
     @Test func endingASessionMovesItToEarlierAndResumingBringsItBack() async throws {
         let (store, _) = await demoStore()
         try await store.refreshEarlier()

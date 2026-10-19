@@ -80,7 +80,7 @@ enum TaskKind {
 }
 
 /// A task in progress: its title and latest progress line.
-private struct RunningHistoryRow: View {
+struct RunningHistoryRow: View {
     let task: AllyTask
 
     var body: some View {
@@ -109,7 +109,7 @@ private struct RunningHistoryRow: View {
 
 /// A finished task: one outcome line with a type icon. Didn't-work-out and
 /// stopped ones stay quiet (gray).
-private struct DoneHistoryRow: View {
+struct DoneHistoryRow: View {
     let task: AllyTask
 
     private var succeeded: Bool { task.status == .done }

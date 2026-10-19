@@ -222,3 +222,44 @@ extension AppStore {
         try? await refreshPals()
     }
 }
+
+// MARK: - one session's details
+
+extension AppStore {
+    /// `pals.detail`: what the title capsule's details show; asked on opening
+    /// and again when the session changes.
+    public func palDetail(id: String) async throws -> PalDetail {
+        if let parent { return try await parent.palDetail(id: id) }
+        let d: PalDetail = try await rpc.call(RPCMethod.palsDetail, params: IDParams(id: id))
+        if let p = d.pal { upsert(pal: p) }
+        return d
+    }
+
+    /// `pals.setModel`: a model and/or thinking depth, for the next turn.
+    @discardableResult
+    public func setSessionModel(id: String, model: String? = nil, effort: String? = nil) async throws -> Pal? {
+        if let parent { return try await parent.setSessionModel(id: id, model: model, effort: effort) }
+        let r: PalWakeResult = try await rpc.call(RPCMethod.palsSetModel,
+                                                  params: PalSetModelParams(id: id, model: model, effort: effort))
+        if let p = r.pal { upsert(pal: p) }
+        return r.pal
+    }
+
+    /// `pals.compact`: the session summarizes its own context.
+    public func compactSession(id: String) async throws {
+        if let parent { return try await parent.compactSession(id: id) }
+        _ = try await rpc.call(RPCMethod.palsCompact, params: IDParams(id: id), as: EmptyResult.self, timeout: 30)
+    }
+
+    /// `pals.stopTask`: one background task or sub-agent.
+    public func stopTask(id: String, taskId: String) async throws {
+        if let parent { return try await parent.stopTask(id: id, taskId: taskId) }
+        _ = try await rpc.call(RPCMethod.palsStopTask, params: PalStopTaskParams(id: id, taskId: taskId), as: EmptyResult.self)
+    }
+
+    /// `pals.reveal`: its folder in Finder, or a plain shell there, on the computer.
+    public func revealSession(id: String, kind: String) async throws {
+        if let parent { return try await parent.revealSession(id: id, kind: kind) }
+        _ = try await rpc.call(RPCMethod.palsReveal, params: PalRevealParams(id: id, kind: kind), as: EmptyResult.self)
+    }
+}

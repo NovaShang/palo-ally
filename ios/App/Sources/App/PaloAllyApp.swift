@@ -26,6 +26,13 @@ struct PaloAllyApp: App {
         .commands {
             // View → Show / Hide Sidebar (⌃⌘S), the system's.
             SidebarCommands()
+            // File → 新建会话 (⌘N) and 新建工作区 (⌘⇧N), in place of the system's New.
+            CommandGroup(replacing: .newItem) {
+                Button("新建会话") { appDelegate.model.newSession = true }
+                    .keyboardShortcut("n", modifiers: .command)
+                Button("新建工作区") { appDelegate.model.newWorkspace = [] }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
+            }
             PlaceCommands(model: appDelegate.model)
         }
     }

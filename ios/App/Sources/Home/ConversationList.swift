@@ -23,8 +23,6 @@ struct ConversationList: View {
     @State private var deleting: Workspace?
     /// The workspaces opened in the list.
     @State private var expanded: Set<String> = []
-    @State private var showNewSession = false
-    @State private var newWorkspace: [String]?
     @State private var showAdopt = false
 
     var body: some View {
@@ -57,7 +55,7 @@ struct ConversationList: View {
                             Text("工作区").textCase(nil)
                             Spacer()
                             Button {
-                                newWorkspace = []
+                                model.newWorkspace = []
                             } label: {
                                 Image(systemName: "plus").font(.footnote.weight(.semibold))
                             }
@@ -135,7 +133,7 @@ struct ConversationList: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 MacUpdateHint()
-                SidebarFooter(newSession: { showNewSession = true }, newWorkspace: { newWorkspace = [] },
+                SidebarFooter(newSession: { model.newSession = true }, newWorkspace: { model.newWorkspace = [] },
                               adopt: { showAdopt = true })
             }
         }
@@ -164,11 +162,7 @@ struct ConversationList: View {
         } message: {
             Text("里面的会话不会结束，变回普通会话。")
         }
-        .sheet(isPresented: $showNewSession) { NewSessionSheet().environment(model).environment(store) }
         .sheet(isPresented: $showAdopt) { AdoptFlowSheet().environment(model).environment(store) }
-        .sheet(isPresented: Binding(get: { newWorkspace != nil }, set: { if !$0 { newWorkspace = nil } })) {
-            NewWorkspaceSheet(preselected: newWorkspace ?? []).environment(model).environment(store)
-        }
         // 以前的 N: read on opening, and again when the sessions put away change.
         .task(id: "\(store.connection.isOnline)-\(tree.foldedCount)") {
             guard store.connection.isOnline, store.palsSupported == true else { return }
@@ -202,7 +196,7 @@ struct ConversationList: View {
                 ForEach(store.workspaces.filter { $0.id != pal.workspaceId }) { w in
                     Button(w.title(pals: store.pals)) { Task { try? await store.moveSession(pal.id, to: w.id) } }
                 }
-                Button("新建工作区…") { newWorkspace = [pal.id] }
+                Button("新建工作区…") { model.newWorkspace = [pal.id] }
             }
             .disabled(!store.connection.isOnline)
             if pal.workspaceId != nil {

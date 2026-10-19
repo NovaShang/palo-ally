@@ -230,6 +230,11 @@ struct MainScreen: View {
                 .environment(store)
                 .environment(voice)
         }
+        // 新建会话 (⌘N, ＋) and 新建工作区 (⌘⇧N, ＋, a session's 并排…).
+        .sheet(isPresented: $model.newSession) { NewSessionPanel().environment(model).environment(store) }
+        .sheet(isPresented: Binding(get: { model.newWorkspace != nil }, set: { if !$0 { model.newWorkspace = nil } })) {
+            NewWorkspaceSheet(preselected: model.newWorkspace ?? []).environment(model).environment(store)
+        }
         .sheet(isPresented: Binding(get: { model.showPairingSheet }, set: { if !$0 { model.showPairingSheet = false } })) {
             PairingView(isSheet: true).environment(model).environment(store)
         }

@@ -138,9 +138,17 @@ final class AppModel {
             guard selection != oldValue else { return }
             // Each conversation starts at its own root.
             detailPath = NavigationPath()
+            detailShown = false
             if selection != .palo { inspectorShown = false }
         }
     }
+    /// The title capsule's details are open (workbench-prd §6).
+    var detailShown = false
+    /// 新建会话 asked (⌘N, the sidebar's ＋): in a workspace when it has one.
+    var newSession = false
+    /// 新建工作区 asked (⌘⇧N, ＋, a session's 并排…): with these sessions chosen.
+    var newWorkspace: [String]?
+
     /// Phones: the list or the conversation (the conversation at launch).
     var compactColumn: NavigationSplitViewColumn = .detail
     /// iPads and the Mac: the sidebar shown or put away (the system toggle).

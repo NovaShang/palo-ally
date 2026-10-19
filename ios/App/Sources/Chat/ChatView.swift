@@ -20,6 +20,8 @@ struct ChatView: View {
         var subtitle = ""
         var dot: StatusDotKind? = nil
         var menu: AnyView? = nil
+        /// A session's page: its title is the capsule that opens the details.
+        var capsule = false
     }
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
@@ -48,6 +50,10 @@ struct ChatView: View {
     /// The Mac: a Pal's or a session's page runs to the window's top too,
     /// its title and menu floating in a strip (MacPageStrip).
     private var macPage: Bool { Platform.barInWindowToolbar && !isPalo }
+    /// The title capsule of a session's page.
+    private var pageCapsule: some View {
+        TitleCapsule(name: title, dot: pageTop?.dot ?? .idle, subtitle: pageTop?.subtitle ?? "")
+    }
     private var title: String {
         isPalo ? store.assistantName
             : store.palID.flatMap { store.pal(id: $0)?.displayName } ?? store.viewedSessionID.flatMap { store.viewedSession($0)?.name } ?? ""
@@ -183,13 +189,17 @@ struct ChatView: View {
         .modifier(TopStrip(asBar: macOrb || macPage) {
             VStack(spacing: 0) {
                 if macPage {
-                    MacPageStrip(title: title, subtitle: pageTop?.subtitle ?? "", dot: pageTop?.dot, trailing: pageTop?.menu)
+                    MacPageStrip(title: title, subtitle: pageTop?.subtitle ?? "", dot: pageTop?.dot, trailing: pageTop?.menu,
+                                 capsule: pageTop?.capsule == true ? AnyView(pageCapsule) : nil)
                 }
                 StatusBanner()
                 // The Mac: the orb hangs small from the top middle of the
                 // column, just below the window's titlebar; the messages
                 // pass under both, softly.
-                if macOrb { MacTopOrb() }
+                if macOrb {
+                    MacTopOrb()
+                        .overlay(alignment: .topLeading) { PaloTitleCapsule().padding(.leading, 14) }
+                }
             }
             .frame(maxWidth: .infinity)
         })
@@ -198,6 +208,11 @@ struct ChatView: View {
         // While holding to talk, the screen's background covers the
         // conversation (same hold-driven motion as the orb and the zones).
         .overlay { VoiceScrimLayer() }
+        // 后台 N 个在跑, quietly above the composer; tapping it opens the details.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if store.palID != nil && bottomPanel == nil { BackgroundTasksLine() }
+        }
+        .modifier(AgentDetailSheet())
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // 回到这里重来: asked in place of the composer (docs/rewind-prd.md §3).
             if let target = store.rewindTarget {
@@ -260,11 +275,23 @@ struct ChatView: View {
         // toolbar (MacToolbar) and floats its orb in the column.
         .toolbar(macOrb || macPage ? .hidden : .automatic, for: .navigationBar)
         .toolbar {
+            // A session's page: the capsule is the title; its folder is the
+            // one button at the right (the right pane).
+            if pageTop?.capsule == true && !Platform.barInWindowToolbar, let id = store.palID {
+                ToolbarItem(placement: .principal) { pageCapsule }
+                    .sharedBackgroundVisibility(.hidden)
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { model.openPalFiles(id) } label: { Image(systemName: "folder") }
+                        .tint(.primary)
+                        .accessibilityLabel(Text("文件", tableName: "Files"))
+                        .accessibilityIdentifier("page-files")
+                }
+            }
             if isPalo && !Platform.barInWindowToolbar {
                 ToolbarItem(placement: .principal) {
                     TitleOrbSlot { frame in
                         if orbPlacement.slot != frame { orbPlacement.slot = frame }
-                    } action: { model.openManagement() }
+                    } action: { model.detailShown = true }
                 }
                 .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .topBarTrailing) {
@@ -619,7 +646,7 @@ private struct MacTopOrb: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .overlay(alignment: .top) {
                 FloatingTitleOrb(barCenterY: nil, columnWidth: width, topAligned: true) {
-                    model.openManagement()
+                    model.detailShown = true
                 }
                 .frame(height: 0, alignment: .top)
             }
