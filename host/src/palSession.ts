@@ -56,6 +56,23 @@ export interface PalRecord {
   seenAt?: number; // the owner last looked then (any device); the owner's own words count too
   autoNamed?: boolean; // still under the placeholder name it was created with: named from its first words after a turn
   workspaceId?: string; // the workspace it belongs to (workspaces: docs/workbench-rpc.md §3)
+  effort?: string; // chosen effort level; absent = the model's default (applies at the next start when it's asleep)
+  contextTokens?: number; // its context size after its last turn or compaction
+  lastCompactAt?: number; // when it last compacted
+}
+
+/** A background task or subagent of a session (pals.detail.tasks). */
+export interface PalTask {
+  id: string;
+  title: string;
+  kind: "subagent" | "bg";
+  startedAt: number;
+  summary?: string;
+}
+
+/** The context window of a model (its id carries "[1m]" when it's the long one). */
+export function contextWindowOf(model?: string): number {
+  return model && /\[1m\]/i.test(model) ? 1_000_000 : 200_000;
 }
 
 /** Another process holding a session's transcript. */
@@ -156,6 +173,8 @@ export class PalSession {
   private sleeping: Promise<void> | null = null; // being put to sleep: its process is ending
   private upAt = 0;
   private bgTasks = new Set<string>(); // its background tasks still running (a subagent in the background)
+  private tasks = new Map<string, PalTask & { toolUseId?: string; backgrounded: boolean }>(); // subagents and background tasks, by the harness' task id
+  private compacting = false; // our /compact is going: its own result says nothing about the context
   private sendChain: Promise<unknown> = Promise.resolve(); // words go in one after another, in order
   private queuedSends = 0; // words waiting to go in (it's being woken for them)
   private wakeCost = false; // woken: the next turn's cost is what waking cost
@@ -283,6 +302,8 @@ export class PalSession {
       ...(this.lastLine ? { lastLine: this.lastLine } : {}),
       pending: this.pendingCards(),
       ...(this.model ? { model: this.model } : {}),
+      ...(this.rec.effort ? { effort: this.rec.effort } : {}),
+      ...(this.contextPct() !== undefined ? { contextPct: this.contextPct() } : {}),
       ...(typeof this.rec.lastWakeUsd === "number" ? { lastWakeUsd: this.rec.lastWakeUsd } : {}),
       createdBy: this.rec.createdBy,
       updatedAt: Math.round(this.updatedAt),
@@ -292,6 +313,72 @@ export class PalSession {
       ...(this.rec.workspaceId ? { workspaceId: this.rec.workspaceId } : {}),
       folded: this.folded(),
     };
+  }
+
+  /** How full its context is, in whole percent (none until a turn has reported it). */
+  contextPct(): number | undefined {
+    const n = this.rec.contextTokens;
+    if (typeof n !== "number" || !(n >= 0)) return undefined;
+    return Math.min(100, Math.round((n / contextWindowOf(this.model ?? this.rec.model)) * 100));
+  }
+
+  /** What pals.detail shows besides the Pal itself. */
+  detailInfo(): { contextTokens?: number; contextWindow: number; model?: string; effort?: string; tasks: PalTask[]; lastCompactAt?: number; costTotalUsd: number } {
+    const model = this.model ?? this.rec.model;
+    return {
+      ...(typeof this.rec.contextTokens === "number" ? { contextTokens: this.rec.contextTokens } : {}),
+      contextWindow: contextWindowOf(model),
+      ...(model ? { model } : {}),
+      ...(this.rec.effort ? { effort: this.rec.effort } : {}),
+      tasks: [...this.tasks.values()].map(({ id, title, kind, startedAt, summary }) => ({ id, title, kind, startedAt, ...(summary ? { summary } : {}) })),
+      ...(typeof this.rec.lastCompactAt === "number" ? { lastCompactAt: this.rec.lastCompactAt } : {}),
+      costTotalUsd: this.rec.costTotalUsd ?? 0,
+    };
+  }
+
+  /**
+   * Model and/or effort for its next turns. Running: switched live (a turn in
+   * progress keeps its own). Asleep: only the record changes, it isn't woken;
+   * both apply when it next starts.
+   */
+  async setModel(o: { model?: string; effort?: string }): Promise<void> {
+    if (o.model !== undefined) {
+      this.rec.model = o.model;
+      this.model = o.model;
+    }
+    if (o.effort !== undefined) this.rec.effort = o.effort;
+    this.d.save();
+    const proc = this.proc;
+    if (proc && this.running) {
+      if (o.model !== undefined) await proc.setModel(o.model);
+      if (o.effort !== undefined) await proc.setEffort(o.effort);
+    }
+    this.touch();
+  }
+
+  /** The harness' own /compact, as a turn of its own that the owner doesn't see as their words. */
+  async compact(): Promise<void> {
+    if (this.rec.stoppedFor === "budget" || this.rec.stoppedFor === "failed" || this.rec.stoppedFor === "elsewhere") throw new Error(tr("pals.stoppedNoCompact"));
+    if (this.busy) throw new Error(tr("pals.busyNoCompact"));
+    this.compacting = true;
+    try {
+      await this.deliver("/compact", { silent: true });
+    } catch (e) {
+      this.compacting = false;
+      throw e;
+    }
+  }
+
+  /** Stops a subagent or background task. */
+  async stopTask(taskId: string): Promise<void> {
+    if (!this.tasks.has(taskId)) throw new Error(tr("pals.noTask"));
+    const proc = this.proc;
+    if (!proc || !this.running) throw new Error(tr("pals.cantStopTask"));
+    try {
+      await proc.stopTask(taskId);
+    } catch {
+      throw new Error(tr("pals.cantStopTask"));
+    }
   }
 
   private touch(): void {
@@ -371,6 +458,7 @@ export class PalSession {
       // Its files can go back to how they were before any of the owner's messages from now on.
       fileCheckpointing: true,
       model: rec.model,
+      ...(rec.effort ? { effort: rec.effort } : {}),
       // so a turn's cost is its own, not the session's running total
       ...(typeof rec.costTotalUsd === "number" ? { priorCostUsd: rec.costTotalUsd } : {}),
       permissionMode: rec.permissionMode,
@@ -503,6 +591,8 @@ export class PalSession {
     this.openTools.clear();
     this.turnTools.clear();
     this.bgTasks.clear();
+    this.tasks.clear();
+    this.compacting = false;
     this.wakeCost = false;
     this.activity = "";
     this.windingDown = false;
@@ -666,7 +756,7 @@ export class PalSession {
     return run;
   }
 
-  private async deliver(t: string, o: { clientMsgId?: string; from?: string; peer?: string; attachments?: Attachment[] }): Promise<ChatMessage> {
+  private async deliver(t: string, o: { clientMsgId?: string; from?: string; peer?: string; attachments?: Attachment[]; silent?: boolean }): Promise<ChatMessage> {
     if (this.rec.stoppedFor) this.clearStop();
     try {
       await this.start();
@@ -696,13 +786,13 @@ export class PalSession {
     // Its page reads the transcript, which has only the bytes and the paths: kept as sent.
     if (o.attachments?.length) this.d.media?.remember(uuid, { text: t, attachments: o.attachments });
     this.emitted.add(uuid);
-    this.d.emit("chat.message", msg);
+    if (!o.silent) this.d.emit("chat.message", msg);
     const content = o.peer ? peerWrap(o.peer, body) : body;
     this.pendingUuids.add(uuid);
     this.pendingText.set(uuid, { text: content, ...(o.from ? { from: o.from } : {}), ...(images.length ? { images } : {}) });
     this.rec.lastUsedAt = ts;
     // The owner's own words mean they're looking at it.
-    if (!o.from) this.rec.seenAt = ts;
+    if (!o.from && !o.silent) this.rec.seenAt = ts;
     this.d.save();
     proc.send(content, uuid, images);
     this.windingDown = false;
@@ -841,12 +931,54 @@ export class PalSession {
       case "tool_result":
         this.openTools.delete(e.toolUseId);
         this.turnTools.delete(e.toolUseId);
+        // a foreground subagent ends with its tool result
+        for (const [id, t] of this.tasks) if (t.toolUseId === e.toolUseId && !t.backgrounded) this.tasks.delete(id);
         break;
-      case "background_tasks":
+      case "background_tasks": {
         this.bgTasks = new Set(e.taskIds);
+        let gone = false;
+        for (const [id, t] of this.tasks) if (t.backgrounded && !this.bgTasks.has(id)) gone = this.tasks.delete(id) || gone;
+        if (gone) this.touch();
         break;
+      }
+      case "task_started": {
+        const agent = e.taskType ? /agent/i.test(e.taskType) : true;
+        this.tasks.set(e.taskId, {
+          id: e.taskId,
+          title: truncate(e.description || e.taskId, 80),
+          kind: agent ? "subagent" : "bg",
+          startedAt: this.d.now(),
+          ...(e.toolUseId ? { toolUseId: e.toolUseId } : {}),
+          backgrounded: !!e.background,
+        });
+        if (e.background) this.bgTasks.add(e.taskId);
+        this.touch();
+        break;
+      }
+      case "task_progress": {
+        const t = this.tasks.get(e.taskId);
+        if (t && e.summary && t.summary !== e.summary) {
+          t.summary = truncate(e.summary, 120);
+          this.touch();
+        }
+        break;
+      }
+      case "task_backgrounded": {
+        const t = this.tasks.get(e.taskId);
+        if (t) t.backgrounded = true;
+        this.bgTasks.add(e.taskId);
+        break;
+      }
       case "task_notification":
         this.bgTasks.delete(e.taskId);
+        if (this.tasks.delete(e.taskId)) this.touch();
+        break;
+      case "compact":
+        this.rec.lastCompactAt = this.d.now();
+        // after compacting, its size is what is left; unknown until the next turn says
+        this.rec.contextTokens = typeof e.postTokens === "number" ? e.postTokens : undefined;
+        this.d.save();
+        this.touch();
         break;
       case "tool_start":
       case "tool_use":
@@ -873,6 +1005,9 @@ export class PalSession {
         this.turnTools.clear();
         if (e.isError && !stopped && !e.startupFailure) this.notice(friendlyError(e.text, e.errorCategory));
         this.noteCost(e.costUsd, e.totalCostUsd);
+        // (our /compact turn's result says nothing about the context: the compact boundary did)
+        if (!this.compacting && !e.isError && Number.isFinite(e.contextTokens) && e.contextTokens > 0) this.rec.contextTokens = e.contextTokens;
+        this.compacting = false;
         this.rec.lastUsedAt = this.d.now();
         if (this.pendingUuids.size) {
           this.closeStream();

@@ -63,6 +63,8 @@ describe("host ↔ app protocol", () => {
         readMessages: async (sid) => histories.get(sid) ?? [],
       },
       pals: {
+        models: async () => [{ value: "opus", displayName: "Opus", description: "", efforts: ["low", "high", "max"] }],
+        reveal: async () => {}, // never opens a real window
         recentSource: { list: async () => ended, info: async (sid) => ended.find((i) => i.sessionId === sid) },
         // 交还终端 after going back copies the conversation as it stands (the SDK's forkSession).
         forkSession: async () => ({ sessionId: "9d4e2b60-0000-4000-8000-000000000004" }),
@@ -241,6 +243,7 @@ describe("host ↔ app protocol", () => {
     // adopted (its words, its streamed reply, its card, its history); the
     // assistant opens one; one goes back to the terminal, one out of the list.
     driver.palScript = async (text, c) => {
+      if (text === "起任务") c.emit({ type: "task_started", taskId: "t_9c1", description: "跑全部测试", background: true, taskType: "local_bash" });
       if (text === "要确认") {
         await c.useTool("Bash", { command: "npm run build" }, { ask: true });
         return;
@@ -362,6 +365,16 @@ describe("host ↔ app protocol", () => {
     ended.push({ sessionId: recentId, summary: "补一份更新日志", customTitle: "更新日志", firstPrompt: "补一份更新日志", lastModified: Date.now() - 60_000, cwd: project });
     const old = hub.pals.list().find((p) => p.sessionId === endedId)!;
     (hub.pals.get(old.id) as any).rec.lastUsedAt = Date.now() - 5 * 86_400_000;
+    // The details: after a turn, the model switched, compacted, and its folder handed to the opener.
+    const det = await run("pals.detail", { id: made.id });
+    expect(det).toMatchObject({ pal: { id: made.id }, contextWindow: 200_000, models: [{ id: "opus" }], tasks: [] });
+    expect((await run("pals.setModel", { id: made.id, effort: "high" })).pal.effort).toBe("high");
+    await run("pals.compact", { id: made.id });
+    await waitFor(() => hub.pals.list().find((p) => p.id === made.id)?.status === "idle", 3_000);
+    await call("pals.send", { id: made.id, text: "起任务" });
+    await waitFor(() => (hub.pals.get(made.id) as any).detailInfo().tasks.length === 1, 3_000);
+    await run("pals.stopTask", { id: made.id, taskId: "t_9c1" });
+    await run("pals.reveal", { id: made.id, kind: "finder" });
     const endedPal = (await run("pals.end", { id: made.id })).earlier;
     expect(endedPal).toMatchObject({ kind: "ended", key: `ended:${made.sessionId}`, sessionId: made.sessionId, cwd: project });
     const earlier = (await run("pals.earlier", { limit: 20 })).items as { kind: string; key: string }[];

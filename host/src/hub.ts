@@ -333,6 +333,7 @@ export class Hub {
       helperApp: () => this.config.pals?.helperApp,
       launchMode: () => this.config.pals?.launch ?? "auto",
       media: this.media,
+      models: () => this.info.loadModels(1500),
       // A Pal's palo_send joins the assistant's inbound queue (a turn of its own, behind a running one), as an Ally's message does.
       toAssistant: (from, wrapped) => this.conversation.enqueue({ text: wrapped, origin: "system", proactive: true, pal: true, label: from }),
       ...(deps.sessions?.readMessages ? { readMessages: deps.sessions.readMessages } : {}),

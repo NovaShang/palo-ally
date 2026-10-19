@@ -1479,6 +1479,162 @@ describe("the owner's own sessions (workbench)", () => {
   });
 });
 
+describe("session details (workbench)", () => {
+  const MODELS = [
+    { value: "opus", displayName: "Opus", description: "", efforts: ["low", "medium", "high", "max"] },
+    { value: "opus[1m]", displayName: "Opus 1M", description: "", efforts: ["low", "high"] },
+    { value: "haiku", displayName: "Haiku", description: "", efforts: [] },
+  ];
+  const script: FakeScript = async (text, ctx) => {
+    if (text === "/compact") {
+      ctx.emit({ type: "compact", trigger: "manual", preTokens: 150_000, postTokens: 20_000 });
+      return;
+    }
+    if (text === "start bg") {
+      ctx.emit({ type: "task_started", taskId: "t_1", description: "跑全部测试", background: true, taskType: "local_bash" });
+      ctx.emit({ type: "task_progress", taskId: "t_1", summary: "已跑 40 个" });
+      ctx.emit({ type: "task_started", taskId: "t_2", toolUseId: "toolu_agent", description: "查调用方", taskType: "local_agent" });
+    }
+    if (text === "end bg") ctx.emit({ type: "task_notification", taskId: "t_1", status: "completed", summary: "好了" });
+    return echo(text, ctx);
+  };
+  function det() {
+    const opened: [string, string][] = [];
+    const t = setup({ palScript: script, pals: { models: async () => MODELS as any, reveal: async (kind, cwd) => void opened.push([kind, cwd]) } });
+    return { ...t, opened };
+  }
+  const mk = async (t: ReturnType<typeof det>) => {
+    const { pal } = await t.call("pals.create", { cwd: t.project, text: "开工" });
+    await waitFor(() => t.hub.pals.list().find((p) => p.id === pal.id)?.status === "idle", 3_000);
+    return pal.id as string;
+  };
+  const sleepNow = (t: ReturnType<typeof det>, id: string) => (t.hub.pals as any).putToSleep(t.hub.pals.get(id)!, "test") as Promise<void>;
+  const recOf = (t: ReturnType<typeof det>, id: string) => (t.hub.pals.get(id) as any).rec as PalRecord;
+
+  test("setModel on a running session switches it live; effort is checked against the model; bad input is refused", async () => {
+    const t = det();
+    const id = await mk(t);
+    const r = await t.call("pals.setModel", { id, model: "opus[1m]", effort: "high" });
+    expect(r.pal).toMatchObject({ id, model: "opus[1m]", effort: "high" });
+    expect(t.driver.liveSwitches).toEqual(["model:opus[1m]", "effort:high"]);
+    expect(recOf(t, id)).toMatchObject({ model: "opus[1m]", effort: "high" });
+    await t.call("pals.setModel", { id, effort: "low" }); // the other one stays
+    expect(recOf(t, id).model).toBe("opus[1m]");
+    await expect(t.call("pals.setModel", { id, effort: "max" })).rejects.toThrow(); // not on this model
+    await expect(t.call("pals.setModel", { id, model: "haiku", effort: "low" })).rejects.toThrow();
+    await expect(t.call("pals.setModel", { id, model: "nope" })).rejects.toThrow();
+    await expect(t.call("pals.setModel", { id })).rejects.toThrow();
+    await expect(t.call("pals.setModel", { id, effort: "turbo" })).rejects.toThrow();
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("setModel on a sleeping session only changes its record: it isn't woken, and the next start runs on both (effort survives a host restart too)", async () => {
+    const t = det();
+    const id = await mk(t);
+    await sleepNow(t, id);
+    expect(t.hub.pals.list().find((p) => p.id === id)!.status).toBe("asleep");
+    const started = t.driver.pals.length;
+    const r = await t.call("pals.setModel", { id, model: "opus", effort: "max" });
+    expect(r.pal).toMatchObject({ status: "asleep", model: "opus", effort: "max" });
+    expect(t.driver.pals).toHaveLength(started);
+    expect(t.driver.liveSwitches).toEqual([]);
+    await t.call("pals.send", { id, text: "醒醒" });
+    await waitFor(() => t.driver.pals.length === started + 1);
+    expect(t.driver.pals.at(-1)!.opts).toMatchObject({ model: "opus", effort: "max" });
+    // the record on disk has it: a restarted host starts on it
+    await t.hub.pals.stopAndWait();
+    const saved = JSON.parse(readFileSync(t.paths.pals, "utf8")).pals.find((p: any) => p.id === id);
+    expect(saved).toMatchObject({ model: "opus", effort: "max" });
+  });
+
+  test("contextTokens come from each result and show as contextPct on the wire (200k window, 1M for a [1m] model); detail has the shape", async () => {
+    const t = det();
+    const id = await mk(t);
+    expect(t.hub.pals.list().find((p) => p.id === id)!.contextPct).toBe(1); // 1000 of 200000, rounded
+    t.driver.contextTokens = 100_000;
+    await t.call("pals.send", { id, text: "又一轮" });
+    await waitFor(() => t.hub.pals.list().find((p) => p.id === id)?.contextPct === 50, 3_000);
+    await waitFor(() => t.lastList()?.pals.find((p: any) => p.id === id)?.contextPct === 50);
+    await t.call("pals.setModel", { id, model: "opus[1m]" });
+    expect(t.hub.pals.list().find((p) => p.id === id)!.contextPct).toBe(10);
+    const d = await t.call("pals.detail", { id });
+    expect(d).toMatchObject({
+      pal: { id, contextPct: 10 },
+      contextTokens: 100_000,
+      contextWindow: 1_000_000,
+      costTotalUsd: expect.any(Number),
+      spentToday: expect.any(Number),
+      model: "opus[1m]",
+      models: [{ id: "opus", name: "Opus", efforts: ["low", "medium", "high", "max"] }, { id: "opus[1m]", name: "Opus 1M", efforts: ["low", "high"] }, { id: "haiku", name: "Haiku", efforts: [] }],
+      tasks: [],
+    });
+    expect(d.lastCompactAt).toBeUndefined();
+    await expect(t.call("pals.detail", { id: "pal_nope" })).rejects.toThrow();
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("pals.compact sends /compact without showing it as the owner's words; lastCompactAt is set and the context shrinks; refused while busy", async () => {
+    const t = det();
+    const id = await mk(t);
+    t.driver.contextTokens = 150_000;
+    await t.call("pals.send", { id, text: "大活" });
+    await waitFor(() => t.hub.pals.list().find((p) => p.id === id)?.contextPct === 75, 3_000);
+    const shown = t.palEvents("chat.message").length;
+    await t.call("pals.compact", { id });
+    await waitFor(() => (recOf(t, id).lastCompactAt ?? 0) > 0, 3_000);
+    await waitFor(() => t.hub.pals.list().find((p) => p.id === id)?.status === "idle", 3_000);
+    expect(t.driver.pals[0]!.sent.at(-1)).toBe("/compact");
+    expect(t.palEvents("chat.message").slice(shown).filter((m) => m.role === "user")).toEqual([]);
+    expect(t.hub.pals.list().find((p) => p.id === id)!.contextPct).toBe(10); // 20k of 200k, not the compact turn's own result
+    const d = await t.call("pals.detail", { id });
+    expect(d.contextTokens).toBe(20_000);
+    expect(d.lastCompactAt).toBe(recOf(t, id).lastCompactAt);
+    // busy: refused
+    t.driver.palScript = async (_t, ctx) => void (await new Promise<void>((r) => void ctx.interrupted.then(r)));
+    await t.call("pals.send", { id, text: "慢活" });
+    await waitFor(() => t.hub.pals.list().find((p) => p.id === id)?.status === "busy", 2_000);
+    await expect(t.call("pals.compact", { id })).rejects.toThrow();
+    await t.call("pals.stop", { id });
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("tasks: started, progress and notification are tracked; a foreground subagent ends with its tool result; stopTask reaches the driver", async () => {
+    const t = det();
+    const id = await mk(t);
+    await t.call("pals.send", { id, text: "start bg" });
+    await waitFor(() => t.hub.pals.list().find((p) => p.id === id)?.status === "idle", 3_000);
+    const d = await t.call("pals.detail", { id });
+    expect(d.tasks).toEqual([
+      { id: "t_1", title: "跑全部测试", kind: "bg", startedAt: expect.any(Number), summary: "已跑 40 个" },
+      { id: "t_2", title: "查调用方", kind: "subagent", startedAt: expect.any(Number) },
+    ]);
+    // a foreground subagent's own tool result ends it
+    (t.driver.pals[0]! as any).opts.onEvent({ type: "tool_result", toolUseId: "toolu_agent", content: "ok", isError: false, parentToolUseId: null });
+    expect((await t.call("pals.detail", { id })).tasks.map((x: any) => x.id)).toEqual(["t_1"]);
+    await t.call("pals.stopTask", { id, taskId: "t_1" });
+    expect(t.driver.stoppedTasks).toEqual(["t_1"]);
+    await expect(t.call("pals.stopTask", { id, taskId: "t_zzz" })).rejects.toThrow();
+    await t.call("pals.send", { id, text: "end bg" });
+    await waitFor(() => t.hub.pals.list().find((p) => p.id === id)?.status === "idle", 3_000);
+    await waitFor(() => (t.hub.pals.get(id) as any).detailInfo().tasks.length === 0, 3_000);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("pals.reveal hands the folder to the opener (finder / terminal) and nothing resumes the session; other kinds and a missing folder are refused", async () => {
+    const t = det();
+    const id = await mk(t);
+    const started = t.driver.pals.length;
+    await t.call("pals.reveal", { id, kind: "finder" });
+    await t.call("pals.reveal", { id, kind: "terminal" });
+    expect(t.opened).toEqual([["finder", t.project], ["terminal", t.project]]);
+    expect(t.driver.pals).toHaveLength(started);
+    await expect(t.call("pals.reveal", { id, kind: "vim" })).rejects.toThrow();
+    recOf(t, id).cwd = join(t.project, "gone");
+    await expect(t.call("pals.reveal", { id, kind: "finder" })).rejects.toThrow();
+    await t.hub.pals.stopAndWait();
+  });
+});
+
 describe("pieces", () => {
   test("history mapping: a Pal's transcript's model and last words; startup errors in plain words", () => {
     const entries = [assistantEntry("第一句\n第二句", { model: "claude-sonnet-4-6" }), { type: "assistant", message: { model: "<synthetic>", content: [{ type: "text", text: "No response requested." }] } }];

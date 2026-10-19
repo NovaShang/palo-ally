@@ -1,6 +1,7 @@
 import { t } from "./i18n/index.ts";
 import { forkSession as sdkForkSession, getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
 import type { ApprovalManager } from "./approvals.ts";
@@ -11,13 +12,13 @@ import { type RawSessionMessage, type RegistryEntry, readRegistry } from "./ccSe
 import { SpendMeter } from "./ccSpend.ts";
 import type { ChatLog } from "./chat.ts";
 import type { Paths, Settings } from "./config.ts";
-import type { HarnessDriver } from "./harness/types.ts";
+import type { HarnessDriver, ModelOption } from "./harness/types.ts";
 import type { MediaStore } from "./media.ts";
 import { PalLauncher, type PalLaunch } from "./palLauncher.ts";
 import { pagePalMessages, toPalMessages } from "./palHistory.ts";
 import type { ForkSession } from "./rewind.ts";
 import { RECENT_MAX, type RecentEntry, RecentSessions, type RecentSource, folderMatch, ownRoots, palNameFor, palTitle, recentWire, sdkRename, sdkSource, shortName } from "./palRecent.ts";
-import { HeldElsewhere, type Holder, type PalRecord, PalSession, peerWrap } from "./palSession.ts";
+import { HeldElsewhere, type Holder, type PalRecord, type PalTask, PalSession, peerWrap } from "./palSession.ts";
 import type { QuestionManager } from "./questions.ts";
 import type { Router } from "./router.ts";
 import type { Sessions } from "./sessions.ts";
@@ -98,6 +99,29 @@ interface EndedSession {
 const ENDED_MAX = 200;
 const FOLD_CHECK_MS = 60 * 60_000;
 
+/** pals.detail (docs/workbench-rpc.md §2). */
+export interface PalDetail {
+  pal: Pal;
+  contextTokens?: number;
+  contextWindow: number;
+  costTotalUsd: number;
+  spentToday: number;
+  model?: string;
+  effort?: string;
+  models: { id: string; name: string; efforts: string[] }[];
+  tasks: PalTask[];
+  lastCompactAt?: number;
+}
+
+class NoDesktop extends Error {}
+
+/** macOS: `open <folder>` is Finder; `open -a Terminal <folder>` is a new Terminal window cd'd there. */
+function defaultReveal(kind: "finder" | "terminal", cwd: string): Promise<void> {
+  if (process.platform !== "darwin") return Promise.reject(new NoDesktop());
+  const args = kind === "finder" ? [cwd] : ["-a", "Terminal", cwd];
+  return new Promise((ok, fail) => execFile("open", args, (err) => (err ? fail(err) : ok())));
+}
+
 /** A session to adopt: its id, the Pal's name and its folder. */
 interface Adoptee {
   id: string;
@@ -133,6 +157,10 @@ export interface PalsDeps {
   recentSource?: RecentSource;
   /** Retitles a session that has no process (the SDK's renameSession). */
   renameSession?: (sessionId: string, title: string, dir: string) => Promise<void>;
+  /** The models a session can run on (what Palo's model.get lists). */
+  models?: () => Promise<ModelOption[]>;
+  /** Opens a session's folder on this computer (default: macOS `open`). */
+  reveal?: (kind: "finder" | "terminal", cwd: string) => Promise<void>;
   /** A Pal's permission mode; default: the owner's own default for Claude Code. */
   palMode?: () => string;
   /** A Pal's model; default: what its transcript last ran on (a new one: the owner's default). */
@@ -1095,6 +1123,75 @@ export class Pals {
     const pal = this.mustGet(id);
     if (pal.markSeen(this.now())) this.emitNow();
     return pal.toWire();
+  }
+
+  /** pals.detail: what the capsule's details show. */
+  async detail(id: string): Promise<PalDetail> {
+    const pal = this.mustGet(id);
+    const models = ((await this.d.models?.().catch(() => [])) ?? []).map((m) => ({ id: m.value, name: m.displayName, efforts: m.efforts }));
+    const info = pal.detailInfo();
+    return { pal: pal.toWire(), ...info, spentToday: this.spentToday(pal), models };
+  }
+
+  /**
+   * pals.setModel: model and/or effort for its next turns. A running session
+   * switches live; a sleeping one only has its record changed (it isn't
+   * woken) and starts on them.
+   */
+  async setModel(id: string, o: { model?: unknown; effort?: unknown }): Promise<{ pal: Pal }> {
+    const pal = this.mustGet(id);
+    const model = typeof o.model === "string" && o.model ? o.model : undefined;
+    const effort = typeof o.effort === "string" && o.effort ? o.effort : undefined;
+    if (!model && !effort) throw new Error(t("pals.setModelNothing"));
+    if (pal.rec.stoppedFor) throw new Error(t("pals.stoppedNoModel"));
+    if (effort && !["low", "medium", "high", "xhigh", "max"].includes(effort)) throw new Error(t("pals.effortBad"));
+    const models = (await this.d.models?.().catch(() => [])) ?? [];
+    if (model && models.length && !models.some((m) => m.value === model)) throw new Error(t("pals.modelUnknown", { model }));
+    if (model && !models.length && !/^[\w.\-:[\]]{1,80}$/.test(model)) throw new Error(t("pals.modelUnknown", { model }));
+    if (effort) {
+      // the model it will run on: the one asked for, else the one it has (a full id matches its alias's entry by prefix)
+      const on = model ?? pal.rec.model;
+      const entry = models.find((m) => m.value === on);
+      if (entry && !entry.efforts.includes(effort)) throw new Error(t("pals.effortUnsupported"));
+    }
+    await pal.setModel({ ...(model ? { model } : {}), ...(effort ? { effort } : {}) });
+    this.d.audit.log("pal.model", { pal: pal.id, model: model ?? null, effort: effort ?? null });
+    this.emitNow();
+    return { pal: pal.toWire() };
+  }
+
+  /** pals.compact: the harness' /compact in the session (woken first if asleep). */
+  async compact(id: string): Promise<Record<string, never>> {
+    const pal = this.mustGet(id);
+    await pal.compact();
+    this.emitNow();
+    return {};
+  }
+
+  /** pals.stopTask: a subagent or background task. */
+  async stopTask(id: string, taskId: string): Promise<Record<string, never>> {
+    await this.mustGet(id).stopTask(String(taskId ?? ""));
+    this.emitNow();
+    return {};
+  }
+
+  /** pals.reveal: its folder in Finder, or a plain shell in Terminal there (never the session itself). */
+  async reveal(id: string, kind: unknown): Promise<Record<string, never>> {
+    const pal = this.mustGet(id);
+    if (kind !== "finder" && kind !== "terminal") throw new Error(t("pals.revealKind"));
+    let isDir = false;
+    try {
+      isDir = statSync(pal.rec.cwd).isDirectory();
+    } catch {
+      isDir = false;
+    }
+    if (!isDir) throw new Error(t("pals.folderGone", { cwd: pal.rec.cwd }));
+    try {
+      await (this.d.reveal ?? defaultReveal)(kind, pal.rec.cwd);
+    } catch (e) {
+      throw e instanceof NoDesktop ? new Error(t("pals.revealNoDesktop")) : new Error(t("pals.revealFailed", { msg: e instanceof Error ? e.message : String(e) }));
+    }
+    return {};
   }
 
   /** pals.end: its process ends and it leaves the list for 以前的, where it can be picked up again. */

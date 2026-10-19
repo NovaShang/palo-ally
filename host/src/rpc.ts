@@ -30,6 +30,7 @@ export const RPC_METHODS = [
   "sessions.list", "sessions.history", "sessions.hooks", "helper.decide",
   "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop", "pals.recent", "pals.wake", "pals.rename", "pals.rewind",
   "pals.create", "pals.folders", "pals.seen", "pals.end", "pals.earlier", "pals.resume",
+  "pals.detail", "pals.setModel", "pals.compact", "pals.stopTask", "pals.reveal",
   "pair.invite", "device.list", "device.remove",
   "files.list", "files.read", "files.search", "files.resolve", "files.folders.list", "files.folders.browse", "files.folders.add", "files.folders.remove",
 ] as const;
@@ -302,6 +303,16 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return { pal: hub.pals.seen(String(p.id ?? "")) };
     case "pals.end":
       return await hub.pals.end(String(p.id ?? ""), ctx.channel);
+    case "pals.detail":
+      return await hub.pals.detail(String(p.id ?? ""));
+    case "pals.setModel":
+      return await hub.pals.setModel(String(p.id ?? ""), { model: p.model, effort: p.effort });
+    case "pals.compact":
+      return await hub.pals.compact(String(p.id ?? ""));
+    case "pals.stopTask":
+      return await hub.pals.stopTask(String(p.id ?? ""), String(p.taskId ?? ""));
+    case "pals.reveal":
+      return await hub.pals.reveal(String(p.id ?? ""), p.kind);
     case "pals.earlier":
       return await hub.pals.earlier({ limit: p.limit, folder: typeof p.folder === "string" ? p.folder : undefined });
     case "pals.resume":

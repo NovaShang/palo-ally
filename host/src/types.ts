@@ -336,6 +336,8 @@ export interface Pal {
   finishedAt?: number; // when its last turn ended normally (a real turn only)
   seenAt?: number; // when the owner last looked, shared by every device
   workspaceId?: string; // the workspace it belongs to, at most one
+  contextPct?: number; // how full its context is, whole percent; absent until a turn has reported it
+  effort?: string; // chosen effort level; absent = the model's default
   folded: boolean; // not stored: outside any workspace and unused for longer than settings.foldDays
 }
 
