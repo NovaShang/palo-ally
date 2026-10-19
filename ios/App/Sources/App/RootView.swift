@@ -175,6 +175,8 @@ struct MainScreen: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.verticalSizeClass) private var heightClass
     @State private var voice = VoiceInputController()
+    /// Local to this computer: the sidebar away or not.
+    private static let sidebarCollapsedKey = "sidebarCollapsed"
 
     var body: some View {
         @Bindable var model = model
@@ -188,6 +190,8 @@ struct MainScreen: View {
         // The right pane beside the conversation: on the split view, not in its
         // detail column (see RightPaneHost).
         .modifier(RightPaneHost(model: model, store: store))
+        // The sidebar's capsule and its way back from the left edge.
+        .modifier(SidebarCollapse(model: model))
         // The pane's tabs come from the computer (once online, and again on reconnect).
         .task(id: store.connection.isOnline) {
             if store.connection.isOnline { await PaneTabsHub.shared(for: store).load() }
@@ -195,9 +199,17 @@ struct MainScreen: View {
         .onChange(of: sizeClass, initial: true) { _, c in
             model.shortWindow = heightClass == .compact
             model.setLayout(c == .compact ? .phone : .split)
+            // The sidebar stays as it was left on this computer (one setting, not per workspace).
+            if c != .compact, UserDefaults.standard.bool(forKey: Self.sidebarCollapsedKey) {
+                model.columnVisibility = .detailOnly
+            }
             model.applyLaunchScreen()
         }
         .onChange(of: heightClass) { _, h in model.shortWindow = h == .compact }
+        .onChange(of: model.columnVisibility) { _, v in
+            guard sizeClass == .regular else { return }
+            UserDefaults.standard.set(v == .detailOnly, forKey: Self.sidebarCollapsedKey)
+        }
         .environment(voice)
         // Voice input hears better with the conversation's names and terms.
         .task(id: ObjectIdentifier(store)) {
@@ -302,6 +314,7 @@ private struct ConversationDetail: View {
                 }
             }
             .modifier(InContentNavigationBar())
+            .modifier(HidesSystemSidebarToggle())
             // A folder's tree over 成果 (phones), and the files paths in replies link to.
             .modifier(FilesInConversation(current: current))
             .navigationDestination(for: AppModel.Page.self) { page in

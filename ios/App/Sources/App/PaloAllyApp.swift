@@ -24,8 +24,6 @@ struct PaloAllyApp: App {
                 }
         }
         .commands {
-            // View → Show / Hide Sidebar (⌃⌘S), the system's.
-            SidebarCommands()
             // File → 新建会话 (⌘N) and 新建工作区 (⌘⇧N), in place of the system's New.
             CommandGroup(replacing: .newItem) {
                 Button("新建会话") { appDelegate.model.newSession = true }
@@ -45,6 +43,9 @@ private struct PlaceCommands: Commands {
 
     var body: some Commands {
         CommandGroup(before: .sidebar) {
+            // The sidebar's own (the system's toggles the split view behind our back).
+            Button("显示或隐藏侧栏") { model.toggleSidebar() }
+                .keyboardShortcut("s", modifiers: [.command, .control])
             Button("管理助理") { model.toggleManagement() }
                 .keyboardShortcut("1", modifiers: .command)
             Button("右侧栏") { model.toggleLibrary() }

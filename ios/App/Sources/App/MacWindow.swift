@@ -112,6 +112,11 @@ enum AppKitBundle {
         return type.init()
     }()
 
+    /// A string-returning, argument-less call into the bundle (nil: not loaded).
+    static func call(_ name: String) -> String? {
+        object?.perform(NSSelectorFromString(name))?.takeUnretainedValue() as? String
+    }
+
     /// The window with this toolbar: its content runs under a transparent
     /// titlebar, the traffic lights and toolbar items floating over it.
     static func immerseWindows(toolbar id: String) {
@@ -139,8 +144,9 @@ private extension NSToolbarItem.Identifier {
     static let library = NSToolbarItem.Identifier("palo.library")
 }
 
-/// The window toolbar: the system sidebar toggle and 成果, nothing that can
-/// overflow at any width.
+/// The window toolbar: 成果 at the trailing edge, nothing that can overflow
+/// at any width. The sidebar's button is the capsule's (SidebarCollapse), so
+/// it never meets the traffic lights or the page strips.
 @MainActor
 final class MacToolbar: NSObject, NSToolbarDelegate {
     private static var installed: [ObjectIdentifier: MacToolbar] = [:]
@@ -168,11 +174,10 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
         toolbar.allowsUserCustomization = false
     }
 
-    /// The system sidebar toggle by the traffic lights (it toggles the split
-    /// view's list), the separator that follows the sidebar's edge, and 成果
-    /// at the trailing edge.
+    /// The separator that follows the sidebar's edge, and 成果 at the
+    /// trailing edge.
     private static let items: [NSToolbarItem.Identifier] = [
-        .toggleSidebar, .primarySidebarTrackingSeparatorItemIdentifier, .flexibleSpace, .library,
+        .primarySidebarTrackingSeparatorItemIdentifier, .flexibleSpace, .library,
     ]
 
     // MARK: NSToolbarDelegate

@@ -260,6 +260,16 @@ struct WaitingBadge: View {
     }
 }
 
+/// The big orb is the orb's resting place while the sidebar is docked (the
+/// floating copy leaves it to the capsule).
+private struct OrbHomeIfDocked: ViewModifier {
+    @Environment(\.inFloatingSidebar) private var floating
+
+    func body(content: Content) -> some View {
+        if floating { content } else { content.paloOrbHome() }
+    }
+}
+
 /// Palo: the orb and the name, big; under it what it did last, or how many
 /// sessions wait on the owner; what waits on the owner in its own
 /// conversation as the count.
@@ -274,6 +284,7 @@ private struct PaloItem: View {
         HStack(spacing: 14) {
             AssistantAvatar(theme: model.currentTheme, hostID: model.activeHostID, bleed: 1.3)
                 .frame(width: 56, height: 56)
+                .modifier(OrbHomeIfDocked())
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     if model.hasSeveralHosts {
