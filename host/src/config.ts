@@ -60,7 +60,6 @@ export class Paths {
   get ccHooks() { return join(this.state, "cc-hooks.json"); }
   get ccSettingsBackup() { return join(this.state, "cc-settings.backup.json"); }
   get pals() { return join(this.state, "pals.json"); }
-  get workbench() { return join(this.state, "workbench.json"); }
   get logs() { return join(this.root, "logs"); }
   get browserProfile() { return join(this.root, "browser-profile"); }
 }
@@ -83,10 +82,6 @@ export interface Settings {
   // computer's preferred language is used (i18n/index.ts).
   language: "zh" | "en" | "";
   color: string; // the assistant's color = the app's theme color; one of COLORS, "" = not chosen yet
-  // Sessions (docs/workbench-rpc.md): a session outside any workspace unused this many days is folded into 以前的 (0 = never).
-  foldDays: number;
-  // How many sessions may have a process at once; past it the least recently used idle one goes to sleep.
-  maxAwake: number;
 }
 
 // The assistant's colors = the app's theme presets (AppTheme in the iOS app;
@@ -186,8 +181,6 @@ export function defaultConfig(): Config {
       assistantName: "",
       language: "",
       color: "",
-      foldDays: 3,
-      maxAwake: 8,
     },
   };
 }
@@ -218,8 +211,6 @@ export function validateSettings(current: Settings, patch: Record<string, unknow
   next.assistantName = next.assistantName.replace(/[\r\n]+/g, " ").trim();
   if ([...next.assistantName].length > 20) throw new Error(t("config.nameLong"));
   if (next.language !== "" && next.language !== "zh" && next.language !== "en") throw new Error(t("config.badLanguage"));
-  next.foldDays = int(next.foldDays, 0, 365, t("config.foldDays"));
-  next.maxAwake = int(next.maxAwake, 1, 50, t("config.maxAwake"));
   if (typeof next.color !== "string") next.color = "";
   if (next.color !== "" && !(COLORS as readonly string[]).includes(next.color)) throw new Error(t("config.badColor", { color: String(next.color) }));
   return next;

@@ -167,10 +167,7 @@ struct ComputerFilePicker: View {
 /// 成果 → 打开文件夹…: walk the computer's folders from the home folder and
 /// open the one you're in. It's remembered, and its tree opens in place.
 struct FolderPicker: View {
-    var opened: (OwnerFolder) -> Void = { _ in }
-    /// Set: pick the folder and hand its path over, remembering nothing
-    /// (新建会话's 选择其他文件夹…).
-    var chosen: ((String) -> Void)?
+    let opened: (OwnerFolder) -> Void
 
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -286,7 +283,6 @@ struct FolderPicker: View {
 
     private func open() async {
         guard let path = nav.selectedPath else { return }
-        if let chosen { chosen(path); return }
         working = true
         defer { working = false }
         do {

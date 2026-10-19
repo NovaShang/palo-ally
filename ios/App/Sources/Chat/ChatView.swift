@@ -4,8 +4,8 @@ import SwiftUI
 /// A conversation: the assistant's, or one Pal's (pals-prd §4), whichever
 /// the store in the environment holds (`AppStore.scope`). The same rows,
 /// streaming, paced reveal, following and composer for both; only the
-/// assistant's has 成果, and a Pal's page puts its own panels in place of the
-/// composer (`bottomPanel`). Both titles are the same round indicator.
+/// assistant's has the orb in its title and 成果, and a Pal's page puts its
+/// own panels in place of the composer (`bottomPanel`).
 struct ChatView: View {
     /// The conversation never gets wider than this (large screens).
     static let readableWidth: CGFloat = 760
@@ -13,16 +13,13 @@ struct ChatView: View {
     static let macTopMargin: CGFloat = 6
     /// Shown in place of the composer while it's there (a Pal's 交还终端 / 移出).
     var bottomPanel: AnyView? = nil
-    /// A session's page: what its title indicator needs (the title bar shows
-    /// nothing else: no name, no status line).
+    /// The Mac: what a Pal's or a session's page shows in its strip at the
+    /// top (no navigation bar there, MacPageStrip): the status line and the menu.
     var pageTop: PageTop? = nil
-    /// In a workspace's tile: no page chrome (the tile's header is the title),
-    /// no title orb, and the voice shows on this tile only while it is the one
-    /// being spoken to (`VoiceTileGate`).
-    var inTile = false
     struct PageTop {
-        /// A session this app only reads: its state for the indicator.
-        var dot: StatusDotKind? = nil
+        var subtitle = ""
+        var dot: Color? = nil
+        var menu: AnyView? = nil
     }
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
@@ -45,21 +42,12 @@ struct ChatView: View {
 
     /// The assistant's own conversation (not a Pal's).
     private var isPalo: Bool { store.scope == .palo }
-    /// The Mac: Palo's page and a session's run to the window's top, their
-    /// indicator in the title bar row (MacTitlebarIndicator), no navigation bar.
-    private var macPage: Bool { Platform.barInWindowToolbar && !inTile }
-    /// The phone and iPad bar's title: the round indicator, and nothing else.
-    private var pageCapsule: some View {
-        TitleCapsule(size: 38, dot: pageTop?.dot) { frame in
-            if isPalo, orbPlacement.slot != frame { orbPlacement.slot = frame }
-        }
-    }
-    /// iPhone, Palo's page and a session's: who the strip above the composer marks as current.
-    private var quickSwitchCurrent: QuickSwitch.Member? {
-        guard model.layout == .phone, !inTile else { return nil }
-        if isPalo { return .palo }
-        return store.palID.map { .session($0) }
-    }
+    /// The Mac: the assistant's conversation keeps the window toolbar's
+    /// toggles and floats its orb in the column; a Pal's page has its bar.
+    private var macOrb: Bool { Platform.barInWindowToolbar && isPalo }
+    /// The Mac: a Pal's or a session's page runs to the window's top too,
+    /// its title and menu floating in a strip (MacPageStrip).
+    private var macPage: Bool { Platform.barInWindowToolbar && !isPalo }
     private var title: String {
         isPalo ? store.assistantName
             : store.palID.flatMap { store.pal(id: $0)?.displayName } ?? store.viewedSessionID.flatMap { store.viewedSession($0)?.name } ?? ""
@@ -82,7 +70,7 @@ struct ChatView: View {
         .defaultScrollAnchor(.bottom, for: .alignment)
         .defaultScrollAnchor(scroll.sticksToEnd ? .bottom : .top, for: .sizeChanges)
         // The Mac: the first message starts a little below the orb.
-        .contentMargins(.top, macPage ? Self.macTopMargin : 0, for: .scrollContent)
+        .contentMargins(.top, macOrb || macPage ? Self.macTopMargin : 0, for: .scrollContent)
         // No scroll targets (`scrollTargetLayout`): with them the scroll
         // view keeps "the view at the top" through every layout change, and
         // the lazy history re-estimating as a fling crosses it turned that
@@ -90,7 +78,7 @@ struct ChatView: View {
         // laid-out end begins.
         .task {
             scroll.attach(position: $position, store: store,
-                          contentTop: 12 + (macPage ? Self.macTopMargin : 0))
+                          contentTop: 12 + (macOrb || macPage ? Self.macTopMargin : 0))
         }
         #if DEBUG
         // `-demoDetach YES`: read from the middle of the history (for the resize test).
@@ -192,23 +180,24 @@ struct ChatView: View {
             // Scoped to the button: must not animate the list itself.
             .animation(.snappy(duration: 0.2), value: showJump)
         }
-        .modifier(TopStrip(asBar: macPage) {
+        .modifier(TopStrip(asBar: macOrb || macPage) {
             VStack(spacing: 0) {
-                if !inTile { StatusBanner() }
+                if macPage {
+                    MacPageStrip(title: title, subtitle: pageTop?.subtitle ?? "", dot: pageTop?.dot, trailing: pageTop?.menu)
+                }
+                StatusBanner()
+                // The Mac: the orb hangs small from the top middle of the
+                // column, just below the window's titlebar; the messages
+                // pass under both, softly.
+                if macOrb { MacTopOrb() }
             }
             .frame(maxWidth: .infinity)
         })
-        .modifier(MacTitlebarIndicator(enabled: macPage, dot: pageTop?.dot))
         // Images and files dropped anywhere on it go to the composer.
         .modifier(ComposerDropTarget(intake: intake, enabled: bottomPanel == nil && store.rewindTarget == nil))
         // While holding to talk, the screen's background covers the
         // conversation (same hold-driven motion as the orb and the zones).
-        .overlay { VoiceTileGate { VoiceScrimLayer() } }
-        // 后台 N 个在跑, quietly above the composer; tapping it opens the details.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if store.palID != nil && bottomPanel == nil { BackgroundTasksLine() }
-        }
-        .modifier(AgentDetailSheet(enabled: !inTile))
+        .overlay { VoiceScrimLayer() }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // 回到这里重来: asked in place of the composer (docs/rewind-prd.md §3).
             if let target = store.rewindTarget {
@@ -217,17 +206,6 @@ struct ChatView: View {
             } else if let bottomPanel {
                 bottomPanel
             } else {
-            VStack(spacing: 0) {
-            // iPhone: the chips that switch between Palo and the sessions, counted
-            // in this inset so the conversation's bottom edge clears them.
-            if let current = quickSwitchCurrent {
-                QuickSwitchStrip(current: current) { member in
-                    switch member {
-                    case .palo: model.openPalo()
-                    case .session(let id): model.openPal(id)
-                    }
-                }
-            }
             ComposerView(draft: draft, intake: intake) { text, images, files, how in
                 switch how {
                 case .typed:
@@ -243,16 +221,14 @@ struct ChatView: View {
                 }
             }
             }
-            }
         }
         // The live words, in the middle while holding to talk, and on their
         // way out after release: over the composer, under the orb.
-        .overlay { VoiceTileGate { VoiceWordsLayer(orbPlacement: orbPlacement) } }
-        // Where the orb has a resting place on screen (the sidebar, or the
-        // title indicator on a phone), the listening orb flies from there
-        // over this column.
-        .overlay {
-            if isPalo && !inTile { FlyingPaloOrb(placement: orbPlacement) }
+        .overlay { VoiceWordsLayer(orbPlacement: orbPlacement) }
+        // The orb over the bar's middle: above the conversation, its edge
+        // fade and the voice scrim, and free to be bigger than the bar.
+        .overlay(alignment: .topLeading) {
+            if isPalo && !Platform.barInWindowToolbar { PhoneTitleOrb(placement: orbPlacement) }
         }
         .modifier(OrbTracking(enabled: isPalo, scrolledUp: !scroll.following || store.viewingPast, scrolling: scroll.userScrolling))
         // 「试试」 timing: a reply finishing counts as activity.
@@ -271,67 +247,39 @@ struct ChatView: View {
                 }
             }
         }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
         // Immersive, the iOS 26 look: the system bar stays but without its
         // material backdrop (iOS 27 gives the bar one by default); the
         // conversation runs under the floating pieces (the back button, the
         // orb, 成果) with only the soft scroll-edge fade, which keeps text
-        // from colliding with the clock and the orb. (A tile leaves the bar
-        // to the workspace's page.)
-        .modifier(PageNavigationBar(title: title, enabled: !inTile))
+        // from colliding with the clock and the orb.
+        .toolbarBackground(.hidden, for: .navigationBar)
         .scrollEdgeEffectStyle(.soft, for: .top)
-        // Under the floating composer the same: a soft blur, not a bar.
-        .scrollEdgeEffectStyle(.soft, for: .bottom)
-        // The Mac: the window toolbar (MacToolbar) holds the right pane's
-        // button; the page has no navigation bar of its own.
-        .toolbar(macPage ? .hidden : .automatic, for: .navigationBar)
+        // The Mac: the assistant's conversation leaves 成果 to the window
+        // toolbar (MacToolbar) and floats its orb in the column.
+        .toolbar(macOrb || macPage ? .hidden : .automatic, for: .navigationBar)
         .toolbar {
-            // Palo's page and a session's alike: the indicator is the title and
-            // the right pane is the one button at the right (the Mac has its
-            // own in the window toolbar). A session this app only reads has no pane.
-            if !Platform.barInWindowToolbar && !inTile {
-                ToolbarItem(placement: .principal) { pageCapsule }
-                    .sharedBackgroundVisibility(.hidden)
-                if isPalo || store.palID != nil {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button { model.togglePane() } label: { Image(systemName: "sidebar.trailing") }
-                            .tint(.primary)
-                            .accessibilityLabel("右侧栏")
-                            .accessibilityIdentifier("page-files")
+            if isPalo && !Platform.barInWindowToolbar {
+                ToolbarItem(placement: .principal) {
+                    TitleOrbSlot { frame in
+                        if orbPlacement.slot != frame { orbPlacement.slot = frame }
+                    } action: { model.openManagement() }
+                }
+                .sharedBackgroundVisibility(.hidden)
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        model.toggleLibrary() // phones: pushed; large screens: the inspector
+                    } label: {
+                        Image(systemName: "books.vertical")
                     }
+                    .tint(.primary) // toolbar glyphs stay neutral; the theme color is for meaning
+                    .accessibilityLabel("成果")
                 }
             }
         }
     }
 
-}
-
-/// The page's title and clear bar (a tile's page leaves the bar alone).
-private struct PageNavigationBar: ViewModifier {
-    let title: String
-    let enabled: Bool
-
-    func body(content: Content) -> some View {
-        if enabled {
-            content
-                .navigationTitle(title)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(.hidden, for: .navigationBar)
-        } else {
-            content
-        }
-    }
-}
-
-/// The voice's scrim and words are for the one conversation being spoken to:
-/// in a tiling, only the tile that holds the voice shows them.
-struct VoiceTileGate<Content: View>: View {
-    @ViewBuilder let content: () -> Content
-    @Environment(VoiceInputController.self) private var voice
-    @Environment(\.tile) private var tile
-
-    var body: some View {
-        if tile == nil || voice.owner == tile?.id { content() }
-    }
 }
 
 /// The orb's presence follows the assistant's conversation only (a Pal's
@@ -636,12 +584,52 @@ private struct ClickToUnfocusComposer: ViewModifier {
     var slot: CGRect = .zero
 }
 
-/// Banner for connection trouble, and for Claude Code's login running out
-/// on the computer (everything waits until it's signed in again).
+/// Phones and iPads: the orb over the bar's middle, positioned from the bar's
+/// slot. Keeps its own idea of where the column is, for the same reason.
+private struct PhoneTitleOrb: View {
+    let placement: OrbPlacement
+    @Environment(AppModel.self) private var model
+    @State private var column: CGRect = .zero
+
+    var body: some View {
+        Color.clear
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { column = $0 }
+            .overlay(alignment: .topLeading) {
+                let slot = placement.slot
+                if slot.width > 0 {
+                    FloatingTitleOrb(barCenterY: slot.midY, columnWidth: column.width) {
+                        model.openManagement()
+                    }
+                    .position(x: slot.midX - column.minX, y: slot.midY - column.minY)
+                }
+            }
+    }
+}
+
+/// The Mac: the orb hanging from the top middle of the conversation column,
+/// below the titlebar. As tall as the resting orb; bigger, it overflows.
+private struct MacTopOrb: View {
+    @Environment(AppModel.self) private var model
+    @State private var width: CGFloat = 0
+
+    var body: some View {
+        Color.clear
+            .frame(height: FloatingTitleOrb.macRestHeight)
+            .frame(maxWidth: .infinity)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            .overlay(alignment: .top) {
+                FloatingTitleOrb(barCenterY: nil, columnWidth: width, topAligned: true) {
+                    model.openManagement()
+                }
+                .frame(height: 0, alignment: .top)
+            }
+    }
+}
+
+/// Banner for connection trouble.
 struct StatusBanner: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
-    @State private var signingIn = false
 
     var body: some View {
         Group {
@@ -658,23 +646,8 @@ struct StatusBanner: View {
                         .buttonStyle(.glass)
                         .tint(.primary)
                 }
-            } else if store.status?.auth?.isExpired == true {
-                banner(icon: "person.crop.circle.badge.exclamationmark", tint: .orange, text: String(localized: "Claude Code 登录过期了，事情都停下了")) {
-                    Button("重新登录") { signingIn = true }
-                        .buttonStyle(.glassProminent)
-                }
             }
         }
-        .sheet(isPresented: $signingIn) { ClaudeLoginSheet() }
-        #if DEBUG
-        // `-demoScreen claudeLogin` (with `-demoState authLogin`): the sign-in sheet, open.
-        .task {
-            if UserDefaults.standard.string(forKey: "demoScreen") == "claudeLogin" {
-                try? await Task.sleep(for: .seconds(1))
-                signingIn = true
-            }
-        }
-        #endif
     }
 
     private func banner(icon: String, tint: Color, text: String, @ViewBuilder action: () -> some View) -> some View {

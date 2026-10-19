@@ -17,7 +17,7 @@ import { handleRpc } from "../src/rpc.ts";
 import type { PalAdoptProposal } from "../src/types.ts";
 import type { FakeScript } from "./fakeDriver.ts";
 import { FakeClaudeDir, FakeCli, assistantEntry } from "./fakeClaude.ts";
-import { makeHub, testConfig, tick } from "./helpers.ts";
+import { makeHub, tick } from "./helpers.ts";
 import { waitFor } from "./relayClient.ts";
 
 const cleanups: (() => void)[] = [];
@@ -65,7 +65,6 @@ function setup(o: { spawn?: boolean; extraHolders?: () => RegistryEntry[] } = {}
   const readMessages = async (sid: string) => raw.get(sid) ?? [];
   const src = fakeSource();
   const ctx = makeHub({
-    config: testConfig((c) => (c.settings.maxAwake = 5)), // the test below counts to five awake
     sessions: { claudeDir: claude.dir, cli, away: new AwayDetector(() => null, Date.now, () => false), readMessages },
     pals: {
       readMessages,
@@ -183,7 +182,7 @@ describe("the conversations that ended lately (pals.recent)", () => {
   test("a Pal the assistant opened (an SDK session from its start) is listed once the owner takes it out", async () => {
     const t = setup();
     const docs = t.folder("docs");
-    await t.hub.toolHandlers().pal_propose({ name: "文档", dir: docs, duty: "写安装说明" });
+    await t.hub.toolHandlers().pal_propose({ name: "文档", dir: docs, duty: "写安装说明", dailyUsd: 1 });
     const { pal } = await t.call("helper.decide", { proposalId: t.hub.chat.recent(1)[0]!.proposal!.id, action: "create" });
     // its transcript, as Claude Code wrote it
     t.claude.transcript(docs, pal.sessionId, [assistantEntry("安装说明写好了。")]);
@@ -305,7 +304,7 @@ describe("the assistant brings one back (pals_recent, pal_adopt)", () => {
     expect((await t.call("helper.decide", { proposalId: card.proposal!.id, action: "create" })).pal.id).toBe(pal.id);
     expect(t.driver.pals).toHaveLength(1);
     // it's a Pal now, not a recent one
-    expect(await tools.pal_adopt({ sessionId: a })).toContain("已经是会话「首页改成两栏」");
+    expect(await tools.pal_adopt({ sessionId: a })).toContain("已经是 Pal「首页改成两栏」");
     expect(JSON.parse(await tools.pals_recent({})).sessions.map((s: any) => s.title)).toEqual(["旅行清单"]);
     expect(t.hub.audit.tail(20).map((e) => e.type)).toEqual(expect.arrayContaining(["pal.adopt_proposed", "pal.adopt_accepted"]));
     await t.hub.pals.stopAndWait();

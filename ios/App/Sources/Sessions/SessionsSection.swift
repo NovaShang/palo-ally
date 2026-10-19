@@ -43,17 +43,22 @@ struct SessionRow: View {
     }
 }
 
-/// The session's state as the one status dot (StatusDot).
+/// 在忙 green, 等你 orange, 空闲 gray, 已停 an empty ring. A symbol, so it
+/// sits on the text's baseline beside a name.
 struct SessionStatusDot: View {
     let status: CCSessionStatus
     var size: CGFloat = 9
 
     var body: some View {
-        StatusDot(StatusDotKind(status), size: size - 1)
+        let open = status == .stopped || status == .unknown
+        Image(systemName: open ? "circle" : "circle.fill")
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(open ? Color.secondary : Copy.sessionStatusColor(status))
+            .accessibilityHidden(true)
     }
 }
 
-/// Palo 开的 / 终端 / 后台: a small neutral tag.
+/// 帮手 / 终端 / 后台: a small neutral tag.
 struct SessionKindTag: View {
     let kind: CCSessionKind
 

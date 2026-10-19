@@ -2,8 +2,9 @@ import PaloAllyKit
 import SwiftUI
 
 // Files on the computer (docs/files-prd.md) only appear where they're used:
-// a session's 文件 and paths in replies (tabs of the right pane, see
-// PaneRouting), 打开文件夹… in 成果, and the composer's 电脑上的文件.
+// a Pal's ⋯ → 文件 (a sheet on phones; on iPads and the Mac the inspector,
+// where 成果 goes), 打开文件夹… in 成果, the composer's 电脑上的文件, and
+// paths in replies. No tab of their own.
 
 /// One file in a scope, to open.
 struct FileTarget: Hashable, Identifiable {
@@ -15,17 +16,34 @@ struct FileTarget: Hashable, Identifiable {
 }
 
 extension AppModel {
-    /// A folder opened from 成果: in place of 成果's list, in the pane (back returns to it).
+    /// A Pal's ⋯ → 文件: the inspector beside its conversation on large
+    /// screens, a sheet on phones.
+    func openPalFiles(_ palID: String) {
+        if libraryBeside {
+            libraryPath = []
+            filesPanel = .pal(palID)
+            inspectorShown = true
+        } else {
+            filesSheet = .pal(palID)
+        }
+    }
+
+    /// A folder opened from 成果: in place of 成果's list on large screens
+    /// (back returns to it), pushed over 成果 on phones.
     func openFolder(_ id: String) {
-        filesPanel = .folder(id)
+        if libraryBeside {
+            filesPanel = .folder(id)
+            inspectorShown = true
+        } else {
+            detailPath.append(FileScope.folder(id))
+        }
     }
 
     /// 「插入到输入框」: the words go at the end of that conversation's unsent text.
     func insertIntoDraft(_ words: String, for conversation: Conversation) {
-        let box = draftBox(conversation)
-        var draft = box.text
+        var draft = drafts[conversation] ?? ""
         if !draft.isEmpty, !draft.hasSuffix(" "), !draft.hasSuffix("\n") { draft += " " }
-        box.text = draft + words + " "
+        drafts[conversation] = draft + words + " "
     }
 }
 
@@ -53,7 +71,33 @@ struct FilesInConversation: ViewModifier {
     }
 }
 
-/// A folder's tree in the pane in place of 成果's list (back to 成果).
+/// Phones (and short windows): a Pal's 文件 as a sheet over its page.
+struct PalFilesSheet: ViewModifier {
+    let palID: String
+    @Environment(AppModel.self) private var model
+    @Environment(AppStore.self) private var store
+
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: Binding(get: { model.filesSheet == .pal(palID) }, set: { if !$0 { model.filesSheet = nil } })) {
+            NavigationStack {
+                FileTreeScreen(scope: .pal(palID), close: { model.filesSheet = nil }, inserted: { model.filesSheet = nil })
+            }
+            .environment(model)
+            .environment(store)
+        }
+        #if DEBUG
+        // `-demoPalFiles YES`: the page opens with its 文件 (snapshots).
+        .task {
+            guard UserDefaults.standard.bool(forKey: "demoPalFiles") else { return }
+            try? await Task.sleep(for: .seconds(1))
+            model.openPalFiles(palID)
+        }
+        #endif
+    }
+}
+
+/// Large screens: the inspector shows a tree in place of 成果 — a Pal's
+/// (closed with ✕) or a folder opened from 成果 (back to 成果).
 struct FilesPanel: View {
     let scope: FileScope
     @Environment(AppModel.self) private var model
@@ -62,12 +106,16 @@ struct FilesPanel: View {
         NavigationStack {
             FileTreeScreen(
                 scope: scope,
-                back: { model.filesPanel = nil },
-                close: { model.setPane(open: false) })
+                back: scope.kind == .folder ? { model.filesPanel = nil } : nil,
+                close: { model.inspectorShown = false })
                 .modifier(InContentNavigationBar())
         }
         .environment(\.placesAsColumns, true)
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        // A Pal's files belong beside its conversation only.
+        .onChange(of: model.selection) { _, now in
+            if scope.kind == .pal, let id = scope.id, now != .pal(id) { model.inspectorShown = false }
+        }
     }
 }
 

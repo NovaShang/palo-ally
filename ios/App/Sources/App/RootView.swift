@@ -126,7 +126,7 @@ private struct LayoutStressTest: ViewModifier {
                     default: break
                     }
                     try? await Task.sleep(for: .seconds(1.5))
-                    debugLog("[nav] after \(a): layout \(model.layout.rawValue) selection \(String(describing: model.selection)) management \(model.showManagement) pane \(model.paneIsOpen) settings \(model.showSettings)")
+                    debugLog("[nav] after \(a): layout \(model.layout.rawValue) selection \(String(describing: model.selection)) management \(model.showManagement) inspector \(model.inspectorShown) settings \(model.showSettings)")
                     try? await Task.sleep(for: .seconds(0.5))
                 }
             }
@@ -150,8 +150,8 @@ private struct LayoutStressTest: ViewModifier {
                     debugLog("[resize] sidebar toggle at \(Int(w))")
                     model.columnVisibility = model.columnVisibility == .detailOnly ? .all : .detailOnly
                     try? await Task.sleep(for: .seconds(1.2))
-                    debugLog("[resize] pane toggle at \(Int(w))")
-                    model.togglePane()
+                    debugLog("[resize] inspector toggle at \(Int(w))")
+                    model.inspectorShown.toggle()
                     try? await Task.sleep(for: .seconds(1.2))
                 }
             }
@@ -175,8 +175,6 @@ struct MainScreen: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.verticalSizeClass) private var heightClass
     @State private var voice = VoiceInputController()
-    /// Local to this computer: the sidebar away or not.
-    private static let sidebarCollapsedKey = "sidebarCollapsed"
 
     var body: some View {
         @Bindable var model = model
@@ -187,29 +185,15 @@ struct MainScreen: View {
         } detail: {
             ConversationDetail()
         }
-        // The right pane beside the conversation: on the split view, not in its
-        // detail column (see RightPaneHost).
-        .modifier(RightPaneHost(model: model, store: store))
-        // The sidebar's capsule and its way back from the left edge.
-        .modifier(SidebarCollapse(model: model))
-        // The pane's tabs come from the computer (once online, and again on reconnect).
-        .task(id: store.connection.isOnline) {
-            if store.connection.isOnline { await PaneTabsHub.shared(for: store).load() }
-        }
+        // 成果 beside the conversation: on the split view, not in its detail
+        // column (see LibraryInspector).
+        .modifier(LibraryInspector(model: model, store: store))
         .onChange(of: sizeClass, initial: true) { _, c in
             model.shortWindow = heightClass == .compact
             model.setLayout(c == .compact ? .phone : .split)
-            // The sidebar stays as it was left on this computer (one setting, not per workspace).
-            if c != .compact, UserDefaults.standard.bool(forKey: Self.sidebarCollapsedKey) {
-                model.columnVisibility = .detailOnly
-            }
             model.applyLaunchScreen()
         }
         .onChange(of: heightClass) { _, h in model.shortWindow = h == .compact }
-        .onChange(of: model.columnVisibility) { _, v in
-            guard sizeClass == .regular else { return }
-            UserDefaults.standard.set(v == .detailOnly, forKey: Self.sidebarCollapsedKey)
-        }
         .environment(voice)
         // Voice input hears better with the conversation's names and terms.
         .task(id: ObjectIdentifier(store)) {
@@ -223,8 +207,6 @@ struct MainScreen: View {
             }
         }
         .modifier(MacWindowChrome(model: model))
-        // 从历史记录继续…, from the ＋ menu: on the root store, whichever page is open.
-        .historyPicker()
         .onChange(of: scenePhase) { _, phase in
             if phase != .active && voice.previewText == nil { voice.abort() }
         }
@@ -238,7 +220,6 @@ struct MainScreen: View {
         .onAppear {
             if model.launch.screen == "voice" { voice.showPreview("你好，你好，你好，我正在说话" /* i18n-ok: demo preview text */) }
             model.markSeen()
-            model.installPaneOpeners()
         }
         // Everything on screen counts as seen (drives the other assistants' unread dots).
         .onChange(of: store.lastSeq) { model.markSeen() }
@@ -248,13 +229,6 @@ struct MainScreen: View {
                 .environment(model)
                 .environment(store)
                 .environment(voice)
-        }
-        // 新建会话 (⌘N, ＋) and 新建工作区 (⌘⇧N, ＋, a session's 并排…).
-        .sheet(isPresented: $model.newSession, onDismiss: { model.newSessionIntoWorkspace = nil }) {
-            NewSessionPanel().environment(model).environment(store)
-        }
-        .sheet(isPresented: Binding(get: { model.newWorkspace != nil }, set: { if !$0 { model.newWorkspace = nil } })) {
-            NewWorkspaceSheet(preselected: model.newWorkspace ?? []).environment(model).environment(store)
         }
         .sheet(isPresented: Binding(get: { model.showPairingSheet }, set: { if !$0 { model.showPairingSheet = false } })) {
             PairingView(isSheet: true).environment(model).environment(store)
@@ -300,15 +274,8 @@ private struct ConversationDetail: View {
                     PalPage(palID: id).id("pal-\(id)")
                 case .ally(let id):
                     AllyConversationView(allyID: id).id("ally-\(id)")
-                case .workspace(let id):
-                    // Phones don't tile (workbench-prd §12): the sessions, one tap each.
-                    if model.layout == .phone {
-                        WorkspacePage(workspaceID: id).id("workspace-\(id)")
-                    } else {
-                        WorkspaceTilesPage(workspaceID: id).id("workspace-\(id)")
-                    }
-                case .earlier:
-                    EarlierPage()
+                case .recent:
+                    RecentConversationsPage()
                 case .session(let id):
                     SessionPage(sessionID: id).id("session-\(id)")
                 case .devices:
@@ -316,7 +283,6 @@ private struct ConversationDetail: View {
                 }
             }
             .modifier(InContentNavigationBar())
-            .modifier(HidesSystemSidebarToggle())
             // A folder's tree over 成果 (phones), and the files paths in replies link to.
             .modifier(FilesInConversation(current: current))
             .navigationDestination(for: AppModel.Page.self) { page in
@@ -329,11 +295,11 @@ private struct ConversationDetail: View {
             }
         }
         // Each conversation keeps its own unsent words.
-        .environment(\.chatDraft, model.draftBinding(current))
+        .environment(\.chatDraft, Binding(get: { model.drafts[current] ?? "" }, set: { model.drafts[current] = $0 }))
         .background {
             // Esc puts 成果 away, like ⌘[.
-            if model.libraryBeside && model.paneKey == PaneTabsKey.palo && model.paneIsOpen {
-                Button("关闭成果") { model.setPane(open: false) }
+            if model.libraryBeside && model.inspectorShown {
+                Button("关闭成果") { model.inspectorShown = false }
                     .keyboardShortcut(.cancelAction)
                     .opacity(0)
                     .accessibilityHidden(true)
@@ -344,41 +310,67 @@ private struct ConversationDetail: View {
     }
 }
 
-/// The right pane (workbench-prd §7): large screens set it beside the
-/// conversation as the split view's inspector; phones (and short windows) show
-/// the same pane as a full page from the same button. Whose tabs it shows
-/// follows the open page (`AppModel.paneKey`). Phones don't get the inspector
-/// at all (one that isn't shown still lends its toolbar and search field to
-/// the conversation there).
+/// Large screens: 成果 in the inspector beside the conversation. Phones push
+/// it instead, and don't get the modifier at all (an inspector that isn't
+/// shown still lends its toolbar and search field to the conversation there).
 ///
 /// It goes on the split view itself. Inside the detail column, the
 /// inspector's own stack was taken for the column's: on the Mac a click on
 /// an item only highlighted its row, and opening one from the conversation
-/// crashed SwiftUI comparing paths (`AnyNavigationPath.Error.comparisonTypeMismatch`).
-private struct RightPaneHost: ViewModifier {
+/// (changing `libraryPath`) crashed SwiftUI comparing that path with the
+/// conversation's (`AnyNavigationPath.Error.comparisonTypeMismatch`).
+private struct LibraryInspector: ViewModifier {
     let model: AppModel
     let store: AppStore
 
     func body(content: Content) -> some View {
-        let key = model.paneKey ?? PaneTabsKey.palo
         if !model.libraryBeside {
-            content.rightPaneCover(
-                isPresented: Binding(get: { model.paneCover }, set: { model.paneCover = $0 }),
-                key: key, activeSessionID: model.paneSessionID)
+            content
         } else {
-            // Opened only on demand (its state is kept per page on the computer).
+            // Opened only on demand: the system may close it (too narrow) but
+            // its restored state from the last run doesn't reopen it.
             content.inspector(isPresented: Binding(
-                get: { model.paneKey != nil && model.paneIsOpen },
-                set: { if !$0 { model.setPane(open: false) } }
+                get: { model.inspectorShown },
+                set: { if !$0 { model.inspectorShown = false } }
             )) {
                 // Presented outside this hierarchy on some platforms: pass what it reads.
-                RightPane(key: key, activeSessionID: model.paneSessionID)
-                    .id(key)
+                LibraryPanel()
                     .environment(model)
                     .environment(store)
-                    .inspectorColumnWidth(min: 320, ideal: 400, max: 640)
+                    .inspectorColumnWidth(min: 320, ideal: 380, max: 520)
             }
         }
+    }
+}
+
+/// 成果 beside the conversation (large screens): the list, items pushed over it.
+private struct LibraryPanel: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        // A folder's tree in its place (docs/files-prd.md).
+        if let scope = model.filesPanel { FilesPanel(scope: scope) } else { library }
+    }
+
+    @ViewBuilder private var library: some View {
+        @Bindable var model = model
+        NavigationStack(path: $model.libraryPath) {
+            LibraryView()
+                .modifier(InContentNavigationBar())
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { model.inspectorShown = false } label: { Image(systemName: "xmark") }
+                            .tint(.primary)
+                            .accessibilityLabel("关闭成果")
+                    }
+                }
+                // The Mac: to the window's top, its title floating (MacPageStrip).
+                .macPageTop(String(localized: "成果"), trailing: AnyView(
+                    MacStripButton { model.inspectorShown = false } label: { Image(systemName: "xmark") }
+                        .accessibilityLabel("关闭成果")))
+        }
+        .environment(\.placesAsColumns, true)
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
     }
 }
 

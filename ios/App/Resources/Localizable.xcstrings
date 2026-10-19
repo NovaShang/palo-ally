@@ -122,6 +122,17 @@
         }
       }
     },
+    "%@已经不在 Pals 里了。对话记录还在电脑上。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is no longer in Pals. The conversation is still on your computer."
+          }
+        }
+      }
+    },
     "%@已经在你的 Allies 里了。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -199,17 +210,6 @@
         }
       }
     },
-    "%lld 个" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld"
-          }
-        }
-      }
-    },
     "%lld 件等你" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -244,39 +244,6 @@
         }
       }
     },
-    "%lld 条" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld notes"
-          }
-        }
-      }
-    },
-    "1. 授权" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1. Authorize"
-          }
-        }
-      }
-    },
-    "2. 代码" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "2. Code"
-          }
-        }
-      }
-    },
     "6 位配对码" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -284,17 +251,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "6-digit pairing code"
-          }
-        }
-      }
-    },
-    "Claude Code 登录过期了，事情都停下了" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Claude Code's login expired; everything has stopped"
           }
         }
       }
@@ -684,17 +640,6 @@
         }
       }
     },
-    "今天 %lld 件" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld today"
-          }
-        }
-      }
-    },
     "今天的语音额度用完了，明天再试" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -713,28 +658,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "From"
-          }
-        }
-      }
-    },
-    "从历史记录继续" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Continue from History"
-          }
-        }
-      }
-    },
-    "代码不对，请确认整段复制了。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "That code wasn't accepted. Make sure you copied all of it."
           }
         }
       }
@@ -1175,17 +1098,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Just started, no progress yet"
-          }
-        }
-      }
-    },
-    "刚结束的" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Just ended"
           }
         }
       }
@@ -1850,17 +1762,6 @@
         }
       }
     },
-    "在等你吩咐" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Waiting for you"
-          }
-        }
-      }
-    },
     "在线" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2059,6 +1960,17 @@
         }
       }
     },
+    "它会出现在 Pals 里，接着上次的地方聊。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It will appear in Pals, picking up where you left off."
+          }
+        }
+      }
+    },
     "它会定期替你查看或推进，有进展会更新在这里；需要你的时候会标出来。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2077,17 +1989,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "It will disconnect and need to pair again to reconnect."
-          }
-        }
-      }
-    },
-    "它在替你做的事" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "What it does for you"
           }
         }
       }
@@ -2477,6 +2378,17 @@
         }
       }
     },
+    "帮手" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Helper"
+          }
+        }
+      }
+    },
     "常用词" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2774,17 +2686,6 @@
         }
       }
     },
-    "打开授权页" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open authorization page"
-          }
-        }
-      }
-    },
     "扫一扫" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2825,6 +2726,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Can’t find this task"
+          }
+        }
+      }
+    },
+    "把%@移出 Pals？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove %@ from Pals?"
           }
         }
       }
@@ -3038,6 +2950,17 @@
         }
       }
     },
+    "接过来以后，它会出现在 Pals 里，在手机上接着聊。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once taken over, it shows up in Pals and you can keep chatting on your phone."
+          }
+        }
+      }
+    },
     "提示" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3137,17 +3060,6 @@
         }
       }
     },
-    "收起来的" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Put away"
-          }
-        }
-      }
-    },
     "改一下" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3155,17 +3067,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Edit"
-          }
-        }
-      }
-    },
-    "改名字" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rename"
           }
         }
       }
@@ -3221,17 +3122,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Type"
-          }
-        }
-      }
-    },
-    "无" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "None"
           }
         }
       }
@@ -3331,17 +3221,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Updated %@"
-          }
-        }
-      }
-    },
-    "更早的" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Earlier"
           }
         }
       }
@@ -3815,50 +3694,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Generating…"
-          }
-        }
-      }
-    },
-    "正在电脑上准备登录…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Getting the login ready on the computer…"
-          }
-        }
-      }
-    },
-    "正在登录…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Signing in…"
-          }
-        }
-      }
-    },
-    "正在跑" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Running"
-          }
-        }
-      }
-    },
-    "正在跑 · %lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Running · %lld"
           }
         }
       }
@@ -4463,17 +4298,6 @@
         }
       }
     },
-    "没登录成功：%@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't sign in: %@"
-          }
-        }
-      }
-    },
     "没移出：%@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4503,17 +4327,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No answer"
-          }
-        }
-      }
-    },
-    "没能开始登录：%@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't start the login: %@"
           }
         }
       }
@@ -4782,17 +4595,6 @@
         }
       }
     },
-    "电脑上的 Claude Code 登录过期了。在这里打开授权页，用你的 Claude 账号同意，再把页面上显示的代码粘贴回来。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Claude Code's login on the computer has expired. Open the authorization page here, approve with your Claude account, then paste back the code the page shows."
-          }
-        }
-      }
-    },
     "电脑上的 Claude Code 里也会是这个名字。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4855,28 +4657,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Computers & devices…"
-          }
-        }
-      }
-    },
-    "登录" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sign in"
-          }
-        }
-      }
-    },
-    "登录好了，停下的事会接着做。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Signed in. What stopped will carry on."
           }
         }
       }
@@ -5013,6 +4793,17 @@
         }
       }
     },
+    "移出 Pals" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove from Pals"
+          }
+        }
+      }
+    },
     "移除" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5134,17 +4925,6 @@
         }
       }
     },
-    "粘贴代码" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Paste code"
-          }
-        }
-      }
-    },
     "粘贴配对链接" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5174,17 +4954,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terminal"
-          }
-        }
-      }
-    },
-    "终端里正在跑的" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Running in the terminal"
           }
         }
       }
@@ -5829,17 +5598,6 @@
         }
       }
     },
-    "还没有可以继续的会话。电脑上开着的 Claude Code 也会出现在这里。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nothing to continue yet. Claude Code sessions open on your computer show up here too."
-          }
-        }
-      }
-    },
     "还没有对话。在下面打字，和在终端里一样。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6379,17 +6137,6 @@
         }
       }
     },
-    "重新登录" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sign in again"
-          }
-        }
-      }
-    },
     "重来" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6529,886 +6276,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Default"
-          }
-        }
-      }
-    },
-    "在干" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Working"
-          }
-        }
-      }
-    },
-    "做完了" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Done"
-          }
-        }
-      }
-    },
-    "闲着" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Idle"
-          }
-        }
-      }
-    },
-    "%lld 个会话在等你" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld sessions waiting on you"
-          }
-        }
-      }
-    },
-    "工作区" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Workspaces"
-          }
-        }
-      }
-    },
-    "新建工作区" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "New Workspace"
-          }
-        }
-      }
-    },
-    "重命名工作区" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rename Workspace"
-          }
-        }
-      }
-    },
-    "结束「%@」？" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "End “%@”?"
-          }
-        }
-      }
-    },
-    "结束会话" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "End Session"
-          }
-        }
-      }
-    },
-    "它会停下，进到「以前的」里，之后还能接着聊。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "It stops and moves to Earlier. You can pick it up again later."
-          }
-        }
-      }
-    },
-    "删除工作区「%@」？" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Delete the workspace “%@”?"
-          }
-        }
-      }
-    },
-    "删除工作区" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Delete Workspace"
-          }
-        }
-      }
-    },
-    "里面的会话不会结束，变回普通会话。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The sessions in it don't end; they become ordinary sessions."
-          }
-        }
-      }
-    },
-    "点左下角的 ＋ 新建一个会话，或者让 Palo 帮你开。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tap ＋ at the bottom left to start a session, or ask Palo to open one."
-          }
-        }
-      }
-    },
-    "%lld 等你" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld waiting"
-          }
-        }
-      }
-    },
-    "以前的" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Earlier"
-          }
-        }
-      }
-    },
-    "新建会话" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "New Session"
-          }
-        }
-      }
-    },
-    "从终端搬进来…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bring in from Terminal…"
-          }
-        }
-      }
-    },
-    "新建" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "New"
-          }
-        }
-      }
-    },
-    "移到工作区" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Move to Workspace"
-          }
-        }
-      }
-    },
-    "新建工作区…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "New Workspace…"
-          }
-        }
-      }
-    },
-    "移出工作区" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove from Workspace"
-          }
-        }
-      }
-    },
-    "从终端搬进来" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bring in from Terminal"
-          }
-        }
-      }
-    },
-    "还没有用过的文件夹。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No folders used yet."
-          }
-        }
-      }
-    },
-    "名字（可以不填）" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Name (optional)"
-          }
-        }
-      }
-    },
-    "放进去的会话" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sessions to include"
-          }
-        }
-      }
-    },
-    "先新建一个会话，再把它放进工作区。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start a session first, then add it to a workspace."
-          }
-        }
-      }
-    },
-    "创建" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Create"
-          }
-        }
-      }
-    },
-    "这个工作区已经不在了。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This workspace is gone."
-          }
-        }
-      }
-    },
-    "接着聊「%@」？" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Continue “%@”?"
-          }
-        }
-      }
-    },
-    "它会回到会话里，接着上次的地方聊。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "It comes back as a session, where you left off."
-          }
-        }
-      }
-    },
-    "接着聊" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Continue"
-          }
-        }
-      }
-    },
-    "没能接着聊：%@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't continue: %@"
-          }
-        }
-      }
-    },
-    "还没有以前的会话。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No earlier sessions yet."
-          }
-        }
-      }
-    },
-    "Palo 开的" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opened by Palo"
-          }
-        }
-      }
-    },
-    "%@已经不在会话列表里了。对话记录还在电脑上。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ is no longer in your sessions. The conversation is still on your computer."
-          }
-        }
-      }
-    },
-    "把%@移出会话？" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove %@ from sessions?"
-          }
-        }
-      }
-    },
-    "移出会话" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove from Sessions"
-          }
-        }
-      }
-    },
-    "接过来以后，它会出现在会话里，在手机上接着聊。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Once taken over, it shows up in Sessions and you can keep chatting on your phone."
-          }
-        }
-      }
-    },
-    "%@，%@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, %@"
-          }
-        }
-      }
-    },
-    "⌘↩ 加到工作区「%@」" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "⌘↩ adds it to the workspace “%@”"
-          }
-        }
-      }
-    },
-    "上下文" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Context"
-          }
-        }
-      }
-    },
-    "上次压缩 %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Last compacted %@"
-          }
-        }
-      }
-    },
-    "不放在工作区里" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not in a workspace"
-          }
-        }
-      }
-    },
-    "停" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stop"
-          }
-        }
-      }
-    },
-    "停止" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stop"
-          }
-        }
-      }
-    },
-    "加到工作区" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add to workspace"
-          }
-        }
-      }
-    },
-    "压缩" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Compact"
-          }
-        }
-      }
-    },
-    "后台 %lld 个在跑" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld running in the background"
-          }
-        }
-      }
-    },
-    "后台任务" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Background task"
-          }
-        }
-      }
-    },
-    "子 agent" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sub-agent"
-          }
-        }
-      }
-    },
-    "它记着 %lld 条" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "It remembers %lld"
-          }
-        }
-      }
-    },
-    "并排…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Side by side…"
-          }
-        }
-      }
-    },
-    "打开详情" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open details"
-          }
-        }
-      }
-    },
-    "搜索文件夹" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Search folders"
-          }
-        }
-      }
-    },
-    "改了从下一轮开始生效。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Changes take effect from the next turn."
-          }
-        }
-      }
-    },
-    "文件夹" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Folder"
-          }
-        }
-      }
-    },
-    "查看全部" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "See all"
-          }
-        }
-      }
-    },
-    "正在压缩…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Compacting…"
-          }
-        }
-      }
-    },
-    "没有匹配的文件夹。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No folder matches."
-          }
-        }
-      }
-    },
-    "现在在" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Now in"
-          }
-        }
-      }
-    },
-    "用量" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Usage"
-          }
-        }
-      }
-    },
-    "移到…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Move to…"
-          }
-        }
-      }
-    },
-    "累计" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Total"
-          }
-        }
-      }
-    },
-    "结束这个会话" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "End this session"
-          }
-        }
-      }
-    },
-    "访达" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Finder"
-          }
-        }
-      }
-    },
-    "选择其他文件夹…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose another folder…"
-          }
-        }
-      }
-    },
-    "%lld 个会话" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld sessions"
-          }
-        }
-      }
-    },
-    "并排" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Side by side"
-          }
-        }
-      }
-    },
-    "已有的会话" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Existing sessions"
-          }
-        }
-      }
-    },
-    "新开一个会话…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "New session…"
-          }
-        }
-      }
-    },
-    "这个工作区里没有会话了。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "There are no sessions in this workspace."
-          }
-        }
-      }
-    },
-    "右侧栏" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Right pane"
-          }
-        }
-      }
-    },
-    "显示或隐藏右侧栏 ⌘2" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show or hide the right pane ⌘2"
-          }
-        }
-      }
-    },
-    "显示侧栏" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show Sidebar"
-          }
-        }
-      }
-    },
-    "隐藏侧栏" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hide Sidebar"
-          }
-        }
-      }
-    },
-    "显示或隐藏侧栏 ⌃⌘S" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show or hide the sidebar ⌃⌘S"
-          }
-        }
-      }
-    },
-    "显示或隐藏侧栏" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show or Hide Sidebar"
-          }
-        }
-      }
-    },
-    "收起侧栏" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Put Sidebar Away"
-          }
-        }
-      }
-    },
-    "%lld 做完" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld done"
           }
         }
       }

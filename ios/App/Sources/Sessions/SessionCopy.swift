@@ -14,10 +14,21 @@ extension Copy {
         }
     }
 
-    /// Palo 开的 / 终端 / 后台.
+    /// The status dot's color: green while working, orange while it waits on
+    /// the owner, gray otherwise. Not the theme color (that's for actions).
+    static func sessionStatusColor(_ s: CCSessionStatus) -> Color {
+        switch s {
+        case .busy: .green
+        case .waiting: .orange
+        case .idle: Color(.systemGray3)
+        case .stopped, .unknown: .clear
+        }
+    }
+
+    /// 帮手 / 终端 / 后台.
     static func sessionKind(_ k: CCSessionKind) -> String {
         switch k {
-        case .helper: String(localized: "Palo 开的")
+        case .helper: String(localized: "帮手")
         case .terminal: String(localized: "终端")
         case .background: String(localized: "后台")
         case .unknown: String(localized: "会话")

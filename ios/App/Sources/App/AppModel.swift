@@ -121,11 +121,9 @@ final class AppModel {
         case palo
         case pal(String)
         case ally(String)
-        /// 工作区: sessions tiled together (workbench-prd §5.3).
-        case workspace(String)
-        /// 以前的 (workbench-prd §2): sessions that ended or were put away,
-        /// and the computer's conversations; one resumed opens as a session.
-        case earlier
+        /// 最近的对话 (pals-prd §10): conversations that ended on the
+        /// computer lately, to take over; one adopted opens as its Pal.
+        case recent
         /// One of the computer's sessions that isn't a Pal, read only (§14).
         case session(String)
         /// 电脑与设备 (docs/devices-prd.md): the paired computers, and the
@@ -138,24 +136,9 @@ final class AppModel {
             guard selection != oldValue else { return }
             // Each conversation starts at its own root.
             detailPath = NavigationPath()
-            detailShown = false
-            paneCover = false
-            filesPanel = nil
+            if selection != .palo { inspectorShown = false }
         }
     }
-    /// The title capsule's details are open (workbench-prd §6).
-    var detailShown = false
-    /// 新建会话 asked (⌘N, the sidebar's ＋): in a workspace when it has one.
-    var newSession = false
-    /// 并排 → 新开: the new session goes into this workspace as a tile.
-    var newSessionIntoWorkspace: String?
-    /// Each workspace's active tile (a session id), kept while the app is open.
-    var activeTiles: [String: String] = [:]
-    /// Phones (and short windows): the right pane as a full page.
-    var paneCover = false
-    /// 新建工作区 asked (⌘⇧N, ＋, a session's 并排…): with these sessions chosen.
-    var newWorkspace: [String]?
-
     /// Phones: the list or the conversation (the conversation at launch).
     var compactColumn: NavigationSplitViewColumn = .detail
     /// iPads and the Mac: the sidebar shown or put away (the system toggle).
@@ -183,7 +166,9 @@ final class AppModel {
     private(set) var layout: Layout = .phone
     /// A short window (a big phone on its side): 成果 is pushed, not beside
     /// the conversation (there's no room for a column).
-    var shortWindow = false
+    var shortWindow = false {
+        didSet { if shortWindow && inspectorShown { setLayout(.phone, converting: true) } }
+    }
     /// 成果 opens beside the conversation (large screens) rather than pushed.
     var libraryBeside: Bool { layout == .split && !shortWindow }
 
@@ -191,9 +176,17 @@ final class AppModel {
         guard new != layout || converting else { return }
         if !converting { layout = new }
         if new == .phone {
-            // The right pane beside the conversation becomes a full page,
-            // opened again from its button.
-            paneCover = false
+            // 成果 beside the conversation becomes 成果 pushed over it (a
+            // sheet, management, stays a sheet).
+            if inspectorShown {
+                let items = libraryPath
+                inspectorShown = false
+                var path = NavigationPath()
+                path.append(Page.library)
+                for id in items { path.append(Page.artifact(id)) }
+                if selection != .palo { selection = .palo }
+                detailPath = path
+            }
         } else if selection == nil {
             // Back on the list (phones) is the assistant's conversation beside it.
             selection = .palo
@@ -204,11 +197,20 @@ final class AppModel {
     var showManagement = false {
         didSet { if !showManagement && oldValue { resetManagement() } }
     }
-    /// The pane's 成果 tab: artifact ids pushed over the list.
+    /// iPads and the Mac: 成果 beside the conversation.
+    var inspectorShown = false {
+        didSet {
+            if inspectorShown != oldValue { debugLog("[layout] inspector \(inspectorShown)") }
+            if !inspectorShown && oldValue { libraryPath = []; filesPanel = nil }
+        }
+    }
+    /// The inspector's own stack: artifact ids pushed over the list.
     var libraryPath: [String] = []
-    /// A folder's tree in the 成果 tab in place of its list (打开文件夹… in
-    /// 成果; docs/files-prd.md). A session's files are the pane's own tab.
+    /// iPads and the Mac: a folder's tree in the inspector in place of 成果
+    /// (a Pal's ⋯ → 文件, or 打开文件夹… in 成果; docs/files-prd.md).
     var filesPanel: FileScope?
+    /// Phones: a Pal's 文件 as a sheet.
+    var filesSheet: FileScope?
     /// ⌘F: the 成果 search field should take focus (consumed by LibraryView,
     /// which may only appear after the request).
     var librarySearchRequested = false
@@ -224,20 +226,7 @@ final class AppModel {
     var focusComposerOnAppear = false
     /// Each conversation's unsent words, kept while the app is open (back to
     /// the list and in again, they're still there).
-    /// One small observable box per conversation, so typing in one composer
-    /// re-renders only that composer. (A single `[Conversation: String]` on the
-    /// model made every composer, in every tile, re-render on every keystroke.)
-    @ObservationIgnored private var draftBoxes: [Conversation: DraftBox] = [:]
-    func draftBox(_ c: Conversation) -> DraftBox {
-        if let b = draftBoxes[c] { return b }
-        let b = DraftBox()
-        draftBoxes[c] = b
-        return b
-    }
-    func draftBinding(_ c: Conversation) -> Binding<String> {
-        let b = draftBox(c)
-        return Binding(get: { b.text }, set: { if b.text != $0 { b.text = $0 } })
-    }
+    var drafts: [Conversation: String] = [:]
 
     /// A conversation from the list, a card, a notification.
     func open(_ c: Conversation) {
@@ -247,7 +236,6 @@ final class AppModel {
     func openPalo() { open(.palo) }
     func openPal(_ id: String) { open(.pal(id)) }
     func openSession(_ id: String) { open(.session(id)) }
-    func openWorkspace(_ id: String) { open(.workspace(id)) }
     func openAlly(_ id: String) { open(.ally(id)) }
 
     /// Phones: back to the list (a conversation that went away, the Ally just removed).
@@ -289,26 +277,58 @@ final class AppModel {
         if layout != .phone, showManagement { showManagement = false } else { openManagement() }
     }
 
-    /// ⌘2 and the toolbar's button: the right pane of the page, or put it away.
-    func toggleLibrary() { togglePane() }
+    /// 成果, from the toolbar of the assistant's conversation (phones:
+    /// pushed; large screens: the inspector, or put it away).
+    func toggleLibrary() {
+        guard !libraryBeside else {
+            if inspectorShown {
+                inspectorShown = false
+            } else {
+                libraryPath = []
+                inspectorShown = true
+            }
+            return
+        }
+        openPalo()
+        var path = NavigationPath()
+        path.append(Page.library)
+        detailPath = path
+    }
 
     /// ⌘F: 成果 with its search field focused.
     func focusLibrarySearch() {
         debugLog("[layout] search 成果")
-        openInPane { $0.openLibrary($1) }
+        if !libraryBeside {
+            toggleLibrary()
+        } else {
+            libraryPath = []
+            inspectorShown = true
+        }
         librarySearchRequested = true
     }
 
     /// From the conversation: just that artifact; one step back returns to it.
     func openArtifact(_ id: String) {
-        libraryPath = [id]
-        openInPane { $0.openLibrary($1) }
+        guard !libraryBeside else {
+            libraryPath = [id]
+            inspectorShown = true
+            return
+        }
+        detailPath.append(Page.artifact(id))
     }
 
     /// The way out of a single item to its whole collection.
     func showInLibrary(_ id: String? = nil) {
-        libraryPath = id.map { [$0] } ?? []
-        openInPane { $0.openLibrary($1) }
+        guard !libraryBeside else {
+            libraryPath = id.map { [$0] } ?? []
+            inspectorShown = true
+            return
+        }
+        openPalo()
+        var path = NavigationPath()
+        path.append(Page.library)
+        if let id { path.append(Page.artifact(id)) }
+        detailPath = path
     }
 
     /// From the conversation: one task's detail; one step back returns to it.
@@ -348,7 +368,7 @@ final class AppModel {
     func goBack() {
         if NavigationBack.dismissPresented() { return }
         if NavigationBack.popVisible() { return }
-        if paneIsOpen { setPane(open: false) }
+        if libraryBeside, inspectorShown { inspectorShown = false }
     }
 
     var assistantTab: AssistantTab = .watches // 目标 opens first
@@ -458,7 +478,7 @@ final class AppModel {
         case "pairing": if mode != .unpaired { startPairing(.replace) }
         case "identity": openManagement(); showIdentityEditor = true
         case "list", "allies", "sessions", "pals": showList()
-        case "recent", "earlier": open(.earlier)
+        case "recent": open(.recent)
         #if DEBUG
         case "file": Task { await openDemoFile() }
         case "ally":
@@ -1007,10 +1027,4 @@ enum PushEnv {
         }
         return nil
     }
-}
-
-/// One conversation's unsent words.
-@Observable
-final class DraftBox {
-    var text = ""
 }

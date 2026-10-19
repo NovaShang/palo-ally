@@ -54,7 +54,7 @@ describe("host ↔ app protocol", () => {
     const histories = new Map<string, any[]>();
     // The conversations that ended on the computer, as the SDK's listSessions gives them.
     const ended: SDKSessionInfo[] = [];
-    const { hub, paths, events, driver, logins } = net.add("家人A", {
+    const { hub, paths, events, driver } = net.add("家人A", {
       script,
       sessions: {
         claudeDir: claude.dir,
@@ -63,8 +63,6 @@ describe("host ↔ app protocol", () => {
         readMessages: async (sid) => histories.get(sid) ?? [],
       },
       pals: {
-        models: async () => [{ value: "opus", displayName: "Opus", description: "", efforts: ["low", "high", "max"] }],
-        reveal: async () => {}, // never opens a real window
         recentSource: { list: async () => ended, info: async (sid) => ended.find((i) => i.sessionId === sid) },
         // 交还终端 after going back copies the conversation as it stands (the SDK's forkSession).
         forkSession: async () => ({ sessionId: "9d4e2b60-0000-4000-8000-000000000004" }),
@@ -142,7 +140,7 @@ describe("host ↔ app protocol", () => {
     await run("watch.remove", { id: w.id });
     mkdirSync(join(paths.artifacts, "brief"), { recursive: true });
     writeFileSync(join(paths.artifacts, "brief", "brief.md"), "# 晨报\n- 一件事");
-    hub.artifacts.publish("brief", "晨报", "brief.md", "markdown", false, "日常", "palo");
+    hub.artifacts.publish("brief", "晨报", "brief.md", "markdown", false, "日常");
     await run("artifact.list");
     await run("artifact.read", { id: "brief" });
     await run("artifact.pin", { id: "brief", pinned: true });
@@ -243,7 +241,6 @@ describe("host ↔ app protocol", () => {
     // adopted (its words, its streamed reply, its card, its history); the
     // assistant opens one; one goes back to the terminal, one out of the list.
     driver.palScript = async (text, c) => {
-      if (text === "起任务") c.emit({ type: "task_started", taskId: "t_9c1", description: "跑全部测试", background: true, taskType: "local_bash" });
       if (text === "要确认") {
         await c.useTool("Bash", { command: "npm run build" }, { ask: true });
         return;
@@ -294,7 +291,7 @@ describe("host ↔ app protocol", () => {
     expect(rewound.result).toEqual({ text: "再把表头固定住", filesRestored: true });
     methods["pals.rewind"] = [check, rewound];
     const project = realpathSync(mkdtempSync(`${tmpdir()}/site-`));
-    await hub.toolHandlers().pal_propose({ name: "文档", dir: project, duty: "你负责主人的文档：先把安装说明写完。" });
+    await hub.toolHandlers().pal_propose({ name: "文档", dir: project, duty: "你负责主人的文档：先把安装说明写完。", dailyUsd: 5 });
     const proposal = hub.chat.recent(1)[0]!.proposal!;
     const opened = (await run("helper.decide", { proposalId: proposal.id, action: "create" })).pal;
     // 网站 goes to sleep (§12); words wake it (what waking cost is kept), and
@@ -348,84 +345,7 @@ describe("host ↔ app protocol", () => {
     const folder = (await run("files.folders.add", { path: project })).folder;
     await run("files.folders.list", {});
     await run("files.folders.remove", { id: folder.id });
-    // The workbench (docs/workbench-rpc.md §2): the owner's own session in any folder,
-    // its first turn done and then seen, ended, listed among the earlier ones and picked up again.
-    const made = (await run("pals.create", { cwd: project, text: "把安装说明写完" })).pal;
-    // (A clone: toMatchObject with a matcher would overwrite the sample's own field.)
-    expect(typeof made.name).toBe("string");
-    expect(structuredClone(made)).toMatchObject({ createdBy: "owner", name: expect.stringMatching(/^session-/), status: "starting", attention: "idle", folded: false });
-    expect(made.name).toMatch(/^session-/);
-    await waitFor(() => hub.pals.list().find((p) => p.id === made.id)?.attention === "done", 5_000);
-    const unseen = hub.pals.list().find((p) => p.id === made.id)!;
-    expect(unseen.finishedAt).toBeDefined();
-    const seenPal = (await run("pals.seen", { id: made.id })).pal;
-    expect([seenPal.attention, typeof seenPal.seenAt]).toEqual(["idle", "number"]);
-    const folders = (await run("pals.folders", {})).folders;
-    expect(folders[0]).toMatchObject({ path: project });
-    // a conversation that ended on the computer, and a session unused for days (folded)
-    const recentId = "8e4f1a22-0000-4000-8000-000000000005";
-    claude.transcript(project, recentId, [{ type: "user", uuid: "q1", timestamp: "2026-10-12T08:00:00Z", message: { role: "user", content: "补一份更新日志" }, origin: { kind: "human" } }]);
-    ended.push({ sessionId: recentId, summary: "补一份更新日志", customTitle: "更新日志", firstPrompt: "补一份更新日志", lastModified: Date.now() - 60_000, cwd: project });
-    const old = hub.pals.list().find((p) => p.sessionId === endedId)!;
-    (hub.pals.get(old.id) as any).rec.lastUsedAt = Date.now() - 5 * 86_400_000;
-    // The details: after a turn, the model switched, compacted, and its folder handed to the opener.
-    const det = await run("pals.detail", { id: made.id });
-    expect(det).toMatchObject({ pal: { id: made.id }, contextWindow: 200_000, models: [{ id: "opus" }], tasks: [] });
-    expect((await run("pals.setModel", { id: made.id, effort: "high" })).pal.effort).toBe("high");
-    await run("pals.compact", { id: made.id });
-    await waitFor(() => hub.pals.list().find((p) => p.id === made.id)?.status === "idle", 3_000);
-    await call("pals.send", { id: made.id, text: "起任务" });
-    await waitFor(() => (hub.pals.get(made.id) as any).detailInfo().tasks.length === 1, 3_000);
-    await run("pals.stopTask", { id: made.id, taskId: "t_9c1" });
-    await run("pals.reveal", { id: made.id, kind: "finder" });
-    const endedPal = (await run("pals.end", { id: made.id })).earlier;
-    expect(endedPal).toMatchObject({ kind: "ended", key: `ended:${made.sessionId}`, sessionId: made.sessionId, cwd: project });
-    const earlier = (await run("pals.earlier", { limit: 20 })).items as { kind: string; key: string }[];
-    expect(earlier.map((i) => i.kind).sort()).toEqual(["ended", "folded", "recent"]);
-    const folded = earlier.find((i) => i.kind === "folded")!;
-    const back = [
-      { params: { key: `ended:${made.sessionId}` }, result: await call("pals.resume", { key: `ended:${made.sessionId}` }) },
-      { params: { key: folded.key }, result: await call("pals.resume", { key: folded.key }) },
-    ];
-    expect(typeof back[0]!.result.pal.name).toBe("string");
-    expect(typeof back[1]!.result.pal.name).toBe("string");
-    expect(back[0]!.result.pal).toMatchObject({ name: made.name, cwd: project, sessionId: made.sessionId });
-    expect(back[1]!.result.pal).toMatchObject({ folded: false });
-    methods["pals.resume"] = back;
-    // Workspaces and the right pane's tabs (docs/workbench-rpc.md §3).
-    const [m1, m2] = [back[0]!.result.pal.id as string, back[1]!.result.pal.id as string];
-    const empty = (await call("workspaces.create", { name: "空的", memberIds: [] })).workspace;
-    expect(empty).toMatchObject({ name: "空的", memberIds: [], layout: null });
-    await call("workspaces.delete", { id: empty.id });
-    const ws = (await run("workspaces.create", { name: "官网", memberIds: [m1] })).workspace;
-    expect(ws).toMatchObject({ name: "官网", memberIds: [m1], layout: null });
-    const moved = (await run("workspaces.move", { palId: m2, workspaceId: ws.id })).workspaces[0];
-    expect(moved.memberIds).toEqual([m1, m2]);
-    const tiles = { type: "hsplit", w: 1, h: 1, x: 0, y: 0, children: [{ type: "leaf", session: m1, w: 0.5, h: 1, x: 0, y: 0 }, { type: "leaf", session: m2, w: 0.5, h: 1, x: 0.5, y: 0 }] };
-    expect((await run("workspaces.update", { id: ws.id, name: "官网改版", layout: tiles })).workspace).toMatchObject({ name: "官网改版", layout: tiles });
-    expect((await run("workspaces.list", {})).workspaces).toHaveLength(1);
-    expect((await run("workspaces.update", { id: ws.id, memberIds: [m2, m1] })).workspace.memberIds).toEqual([m2, m1]);
-    expect((await run("workspaces.move", { palId: m1, workspaceId: ws.id, index: 0 })).workspaces[0].memberIds).toEqual([m1, m2]);
-    expect((await run("workbench.order.set", { kind: "sessions", ids: [opened.id] })).sessionOrder).toContain(opened.id);
-    expect((await run("workbench.order.set", { kind: "workspaces", ids: [ws.id] })).workspaceOrder).toEqual([ws.id]);
-    const tabs = [{ kind: "files" }, { kind: "library" }, { kind: "preview", path: `${project}/README.md` }, { kind: "web", url: "https://example.com" }];
-    expect((await call("workbench.tabs.set", { key: `ws:${ws.id}`, tabs, active: 3, open: true })).state).toMatchObject({ tabs, active: 3, open: true });
-    expect((await call("workbench.tabs.get", {})).states[`ws:${ws.id}`]).toBeDefined();
-    await run("workbench.tabs.set", { key: "palo", tabs, active: 0, open: true });
-    // (keyed by "palo" so the sample's shape doesn't depend on a generated id)
-    expect((await run("workbench.tabs.get", { key: "palo" })).states.palo.tabs).toEqual(tabs);
-    expect((await call("sync", {})).workspaces).toHaveLength(1);
-    expect(Object.keys((await call("sync", {})).workbenchTabs)).toContain(`ws:${ws.id}`);
-    await run("workspaces.delete", { id: ws.id });
     await run("pals.remove", { id: opened.id });
-    // Claude Code's login ran out: signed in again from the phone.
-    hub.auth.failed({ kind: "probe" });
-    expect((await call("auth.login.start")).auth).toMatchObject({ state: "expired", login: { state: "starting" } });
-    logins[0]!.say("URL https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c250a&response_type=code");
-    methods["auth.login.start"] = { params: {}, result: await call("auth.login.start") };
-    expect((methods["auth.login.start"] as Sample).result).toMatchObject({ auth: { login: { state: "waiting", url: expect.stringContaining("oauth/authorize") } } });
-    expect((await run("auth.login.code", { code: "a1b2c3#d4e5" })).auth.login.state).toBe("checking");
-    expect((await run("auth.login.cancel")).auth).toMatchObject({ state: "expired" });
     hub.pals.stop();
     await run("stop");
     await run("device.unpair");
@@ -477,9 +397,6 @@ describe("host ↔ app protocol", () => {
     // the computer's sessions; the Pals (a list with both, a terminal session being adopted among the others)
     sampleEvents["sessions.updated"] = events.filter((e) => e.event === "sessions.updated" && e.data.sessions.length).at(-1)!.data;
     sampleEvents["pals.updated"] = events.filter((e) => e.event === "pals.updated" && e.data.pals.length === 2 && e.data.others.some((x: any) => x.adopting)).at(-1)!.data;
-    // the workspaces' list with one workspace laid out, and a tab state written
-    sampleEvents["workspaces.updated"] = events.filter((e) => e.event === "workspaces.updated" && e.data.workspaces[0]?.layout).at(-1)!.data;
-    sampleEvents["workbench.updated"] = events.filter((e) => e.event === "workbench.updated" && e.data.state).at(-1)!.data;
     // commands.updated fires when the harness reports its list
     expect(Object.keys(sampleEvents).sort()).toEqual([...RPC_EVENTS].sort());
 
@@ -492,5 +409,5 @@ describe("host ↔ app protocol", () => {
     cleanup(peer.ctx.paths);
     claude.cleanup();
     cli.close();
-  }, 20_000);
+  });
 });

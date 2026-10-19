@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>工作台设计稿</title>
+<style>
+:root{--bg:#f2f2f7;--card:#fff;--ink:#1c1c1e;--sub:#6e6e73;--line:#e5e5ea;--accent:#c94fa3}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#000;--card:#1c1c1e;--ink:#f2f2f7;--sub:#a1a1a6;--line:#2c2c2e;--accent:#e07cc2}}
+:root[data-theme="dark"]{--bg:#000;--card:#1c1c1e;--ink:#f2f2f7;--sub:#a1a1a6;--line:#2c2c2e;--accent:#e07cc2}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,"PingFang SC",system-ui,sans-serif;-webkit-text-size-adjust:100%}
+main{max-width:1000px;margin:0 auto;padding:24px 16px 72px}
+h1{font-size:26px;line-height:1.25;margin:8px 0 4px}
+h2{font-size:20px;margin:40px 0 6px}
+p{margin:6px 0}
+.sub{color:var(--sub)}
+.card{background:var(--card);border-radius:16px;padding:14px 16px;margin:12px 0}
+ul,ol{padding-left:20px;margin:6px 0}
+li{margin:4px 0}
+.n{display:inline-block;min-width:20px;height:20px;border-radius:10px;background:var(--accent);color:#fff;font-weight:600;font-size:12px;text-align:center;line-height:20px;margin-right:6px;vertical-align:1px}
+.hint{font-size:13px;color:var(--sub);margin:4px 0 0}
+.phones{display:flex;flex-wrap:wrap;gap:16px}
+.phones>div{flex:1 1 300px;max-width:390px}
+
+/* ---------- scaled mock frames ---------- */
+.frame{position:relative;width:100%;overflow:hidden;border-radius:14px;margin-top:10px;cursor:zoom-in}
+.frame.zoom{overflow:auto;cursor:zoom-out;-webkit-overflow-scrolling:touch}
+.frame>.mk{position:absolute;top:0;left:0;transform-origin:0 0}
+
+/* ---------- the mock world: always dark, iOS/macOS 27 Liquid Glass ---------- */
+.mk{--ink:#f5f5f7;--sub:rgba(235,235,245,.62);--faint:rgba(235,235,245,.32);--sep:rgba(255,255,255,.08);--acc:#e07cc2;
+  color:var(--ink);font:13px/1.45 -apple-system,"SF Pro Text","PingFang SC",system-ui,sans-serif;letter-spacing:-.005em}
+.mk svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.desk{width:100%;height:100%;padding:20px;
+  background:radial-gradient(60% 70% at 15% 15%,#5b2f7d 0,transparent 60%),radial-gradient(50% 60% at 85% 20%,#1d5a8a 0,transparent 60%),radial-gradient(60% 60% at 60% 100%,#8a2f62 0,transparent 60%),#0d0d14}
+.glass{background:rgba(64,64,72,.40);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%);
+  border:1px solid rgba(255,255,255,.14);box-shadow:inset 0 1px 0 rgba(255,255,255,.20),inset 0 -1px 0 rgba(0,0,0,.25),0 10px 30px rgba(0,0,0,.35)}
+.win{position:relative;width:100%;height:100%;border-radius:26px;overflow:hidden;
+  background:radial-gradient(40% 50% at 0% 0%,rgba(120,60,150,.55),transparent 70%),radial-gradient(30% 60% at 0% 100%,rgba(140,50,100,.45),transparent 70%),#151518;
+  box-shadow:0 30px 80px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.10)}
+
+/* sidebar */
+.sb{position:absolute;left:10px;top:10px;bottom:10px;width:248px;border-radius:20px;padding:12px 10px 10px;display:flex;flex-direction:column;z-index:4}
+.tl{display:flex;gap:8px;padding:4px 6px 12px}.tl i{width:12px;height:12px;border-radius:50%;background:#ff5f57}.tl i:nth-child(2){background:#febc2e}.tl i:nth-child(3){background:#28c840}
+.palo{display:flex;align-items:center;gap:12px;padding:12px;border-radius:15px}
+.sel{background:rgba(255,255,255,.13)}
+.orb{width:54px;height:54px;border-radius:50%;flex:none;position:relative;
+  background:radial-gradient(circle at 34% 28%,rgba(255,255,255,.95) 0,rgba(255,255,255,0) 20%),radial-gradient(circle at 60% 72%,#f29ad6 0,#b04e9c 45%,#4a1d5c 100%);
+  box-shadow:inset 0 -7px 14px rgba(0,0,0,.35),inset 0 2px 6px rgba(255,255,255,.45),0 6px 20px rgba(224,124,194,.40)}
+.orb.sm{width:40px;height:40px}
+.orb::after{content:"";position:absolute;inset:-5px;border-radius:50%;border:1.5px solid rgba(224,124,194,.35)}
+.palo b{font-size:17px;display:block;line-height:1.2}
+.palo span{font-size:11.5px;color:var(--sub);display:block;margin-top:2px}
+.sh{display:flex;align-items:center;justify-content:space-between;font-size:11px;font-weight:600;color:var(--sub);padding:14px 8px 4px}
+.sh svg{width:14px;height:14px}
+.row{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border-radius:8px;white-space:nowrap}
+.row.in{padding-left:30px}
+.row .meta{margin-left:auto;color:var(--faint);font-size:11px}
+.row svg{width:14px;height:14px;color:var(--sub)}
+.dot{width:7px;height:7px;border-radius:50%;flex:none}
+.d-work{background:#64d2ff;box-shadow:0 0 0 3px rgba(100,210,255,.20)}
+.d-wait{background:#ff9f0a;box-shadow:0 0 0 3px rgba(255,159,10,.20)}
+.d-done{background:#30d158}
+.d-idle{background:rgba(235,235,245,.30)}
+.badge{margin-left:auto;font-size:10.5px;padding:0 7px;line-height:17px;border-radius:9px;background:rgba(255,159,10,.20);color:#ffb340}
+.av{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:600;color:#fff;flex:none}
+.sbf{margin-top:auto;display:flex;gap:8px;padding:8px 4px 0}
+.rbtn{width:32px;height:32px;border-radius:16px;display:grid;place-items:center}
+
+/* main area */
+.main{position:absolute;left:266px;right:0;top:0;bottom:0}
+.main.wp{right:404px}
+.tb{position:absolute;top:12px;left:18px;right:14px;height:38px;display:flex;align-items:center;gap:8px;z-index:3}
+.tcap{height:44px;border-radius:22px;display:flex;align-items:center;gap:10px;padding:0 14px 0 16px}.tcap>svg{width:13px;height:13px;color:var(--sub)}
+.pop{position:absolute;border-radius:22px;padding:12px;z-index:8;background:rgba(46,46,54,.80)}
+.pop .ph1{display:flex;align-items:center;gap:8px;padding:2px 4px 10px}.pop .ph1 b{font-size:15px}
+.pg{border-radius:14px;background:rgba(255,255,255,.06);margin:6px 0;padding:2px 0}
+.pr{display:flex;align-items:center;gap:8px;min-height:36px;padding:0 12px;font-size:12.5px}.pr+.pr{border-top:1px solid var(--sep)}
+.pr .k{color:var(--sub);width:64px;flex:none}.pr .v{margin-left:auto;display:flex;gap:6px;align-items:center}
+.mini{border-radius:11px;padding:2px 9px;background:rgba(255,255,255,.10);font-size:11.5px}
+.seg{display:flex;border-radius:10px;background:rgba(0,0,0,.25);padding:2px}.seg span{padding:2px 9px;border-radius:8px;font-size:11.5px;color:var(--sub)}.seg span.on{background:rgba(255,255,255,.18);color:var(--ink)}
+.bar{height:6px;border-radius:3px;background:rgba(255,255,255,.12);flex:1;overflow:hidden}.bar i{display:block;height:100%;width:41%;background:#f5f5f7;border-radius:3px}
+.danger{color:#ff6961}
+.tree{padding:6px 10px;font-size:12px;line-height:1.9;color:var(--ink)}.tree div{display:flex;align-items:center;gap:6px;white-space:nowrap}.tree svg{width:12px;height:12px;color:var(--sub)}
+.tb .ttl{font-size:15px;font-weight:600;line-height:1.2}.tb .st{font-size:11px;color:var(--sub);display:flex;align-items:center;gap:5px}
+.sp{flex:1}
+.cap{height:36px;border-radius:18px;display:flex;align-items:center;gap:2px;padding:0 3px}
+.cap .b{width:30px;height:30px;border-radius:15px;display:grid;place-items:center}
+.cap .t{padding:0 10px;font-size:12px;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.edge,.edgeb{position:absolute;left:0;right:0;z-index:2;pointer-events:none;-webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px)}
+.edge{top:0;height:84px;background:linear-gradient(rgba(21,21,24,.62),rgba(21,21,24,0));-webkit-mask-image:linear-gradient(#000 35%,transparent);mask-image:linear-gradient(#000 35%,transparent)}
+.edgeb{bottom:0;height:110px;background:linear-gradient(rgba(21,21,24,0),rgba(21,21,24,.55));-webkit-mask-image:linear-gradient(transparent,#000 60%);mask-image:linear-gradient(transparent,#000 60%)}
+.chat{position:absolute;top:0;bottom:0;left:0;right:0;overflow:hidden;display:flex;justify-content:center}
+.col{width:640px;max-width:88%;padding-top:14px}
+.ma{margin:12px 0;font-size:14px;line-height:1.62}
+.mu{margin:14px 0 14px auto;width:fit-content;max-width:72%;background:#2c2c31;padding:8px 14px;border-radius:18px;font-size:14px}
+.cardm{border-radius:16px;background:rgba(255,255,255,.05);border:1px solid var(--sep);padding:10px 12px;margin:8px 0}
+.cardm .r{display:flex;align-items:center;gap:8px;padding:5px 0}
+.cardm .r+.r{border-top:1px solid var(--sep)}
+.cardm .r small{color:var(--sub);font-size:12px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--sub);background:rgba(255,255,255,.06);border-radius:10px;padding:3px 10px}
+.tool{display:flex;align-items:center;gap:8px;color:var(--sub);font-size:12.5px;padding:5px 10px;border-radius:10px;background:rgba(255,255,255,.045);width:fit-content;margin:6px 0}
+.tool svg{width:13px;height:13px}
+.add{color:#30d158}.del{color:#ff6961}
+.qcard{border-radius:16px;border:1px solid rgba(255,159,10,.35);background:rgba(255,159,10,.07);padding:10px 12px;margin:8px 0}
+.qcard .q{font-weight:600;margin-bottom:8px}
+.opts{display:flex;gap:8px;flex-wrap:wrap}
+.opt{border-radius:14px;padding:5px 12px;background:rgba(255,255,255,.08);font-size:12.5px}
+.opt.pri{background:var(--acc);color:#fff}
+.cmp{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);width:600px;max-width:86%;height:48px;border-radius:24px;display:flex;align-items:center;padding:0 6px;gap:6px;z-index:3}
+.cmp .ph{flex:1;color:var(--faint);font-size:14px;text-align:center}
+.cmp .rb{width:36px;height:36px;border-radius:18px;display:grid;place-items:center}
+.cmp .rb.stop{background:#f5f5f7;color:#111}
+.cmp .rb.stop svg{fill:#111;stroke:none;width:12px;height:12px}
+.ring{width:22px;height:22px}
+.ring circle{fill:none;stroke-width:3}
+
+/* tiles */
+.tiles{position:absolute;top:60px;left:6px;right:8px;bottom:8px;display:grid;gap:8px}
+.tile{position:relative;border-radius:18px;background:#1a1a1e;border:1px solid var(--sep);overflow:hidden}
+.tile.focus{border:1.5px solid var(--acc);box-shadow:0 0 0 3px rgba(224,124,194,.18)}
+.th{position:absolute;top:8px;left:8px;right:8px;height:30px;display:flex;align-items:center;justify-content:space-between;font-size:12.5px;white-space:nowrap;z-index:3}
+.thn{height:30px;border-radius:15px;display:flex;align-items:center;gap:7px;padding:0 12px 0 10px}
+.tile::before,.tile::after{content:"";position:absolute;left:0;right:0;z-index:2;pointer-events:none;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.tile::before{top:0;height:58px;background:linear-gradient(rgba(26,26,30,.7),rgba(26,26,30,0));-webkit-mask-image:linear-gradient(#000 40%,transparent);mask-image:linear-gradient(#000 40%,transparent)}
+.tile::after{bottom:0;height:72px;background:linear-gradient(rgba(26,26,30,0),rgba(26,26,30,.6));-webkit-mask-image:linear-gradient(transparent,#000 60%);mask-image:linear-gradient(transparent,#000 60%)}
+.th b{font-weight:600}.th small{color:var(--faint);font-size:11px}
+.th .ic{display:flex;gap:0;color:var(--sub);height:30px;border-radius:15px;align-items:center;padding:0 3px}.th .ic span{width:24px;height:24px;display:grid;place-items:center;border-radius:12px}
+.th .ic svg{width:13px;height:13px}
+.tcx{position:absolute;inset:0;padding:22px 14px 0;font-size:12.5px;line-height:1.55;overflow:hidden}
+.tcx .ma{font-size:12.5px;margin:8px 0}.tcx .mu{font-size:12.5px;padding:6px 12px}
+.tcx .tool{font-size:11.5px}
+.tcmp{position:absolute;z-index:3;bottom:10px;left:12px;right:12px;height:40px;border-radius:20px;display:flex;align-items:center;padding:0 5px;gap:4px}
+.tcmp .ph{flex:1;color:var(--faint);font-size:12.5px;text-align:center}
+.tcmp .rb{width:30px;height:30px;border-radius:15px;display:grid;place-items:center}
+.tcmp .rb.stop{background:#f5f5f7}.tcmp .rb.stop svg{fill:#111;stroke:none;width:10px;height:10px}
+
+/* right panel */
+.rp{position:absolute;top:10px;right:10px;bottom:10px;width:384px;border-radius:20px;overflow:hidden;z-index:4;display:flex;flex-direction:column}
+.tabs{display:flex;gap:6px;padding:10px 10px 6px;align-items:center}
+.tab{height:28px;border-radius:14px;padding:0 10px;font-size:11.5px;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.07);white-space:nowrap;color:var(--sub)}
+.tab.on{background:rgba(255,255,255,.18);color:var(--ink)}
+.tab svg{width:12px;height:12px}
+.addr{margin:2px 10px 8px;height:30px;border-radius:15px;background:rgba(0,0,0,.25);display:flex;align-items:center;gap:8px;padding:0 12px;font-size:11.5px;color:var(--sub)}
+.web{flex:1;margin:0 8px 8px;border-radius:14px;background:#f4f2f6;color:#1c1c1e;padding:16px;overflow:hidden}
+.web .wh{height:10px;width:40%;background:#c94fa3;border-radius:5px;margin-bottom:14px}
+.web .wl{height:8px;background:#d9d6dd;border-radius:4px;margin:7px 0}
+.web .wb{height:92px;border-radius:12px;background:linear-gradient(135deg,#e9d3e4,#d6e3f2);margin:14px 0}
+
+/* sheet */
+.dim{position:absolute;inset:0;background:rgba(0,0,0,.42);z-index:6;display:grid;place-items:center}
+.sheet{width:520px;border-radius:24px;padding:14px;background:rgba(44,44,50,.72)}
+.sf{height:38px;border-radius:19px;background:rgba(0,0,0,.28);display:flex;align-items:center;gap:8px;padding:0 14px;color:var(--faint);font-size:13.5px}
+.fl{margin-top:8px}
+.fr{display:flex;align-items:center;gap:10px;height:42px;padding:0 12px;border-radius:12px;font-size:13.5px}
+.fr svg{color:var(--sub)}
+.fr small{margin-left:auto;color:var(--faint);font-size:11.5px}
+.fr.on{background:rgba(224,124,194,.20)}
+.kb{display:flex;gap:14px;justify-content:flex-end;color:var(--faint);font-size:11.5px;padding:8px 6px 2px}
+.kb kbd{font:inherit;border:1px solid rgba(255,255,255,.18);border-radius:5px;padding:0 5px;margin-right:4px}
+
+/* pins */
+.pin{position:absolute;width:24px;height:24px;border-radius:12px;background:var(--acc);color:#fff;font:700 12.5px/24px -apple-system,system-ui;text-align:center;z-index:9;box-shadow:0 0 0 3px rgba(0,0,0,.35)}
+
+/* ipad / iphone */
+.pad{width:100%;height:100%;border-radius:34px;overflow:hidden;position:relative;background:#000;box-shadow:0 0 0 10px #1b1b1d,0 0 0 11px #3a3a3c}
+.padin{position:absolute;inset:0;background:radial-gradient(40% 50% at 0% 0%,rgba(120,60,150,.5),transparent 70%),#151518}
+.stb{position:absolute;top:0;left:0;right:0;height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 26px;font-size:13px;font-weight:600;z-index:8}
+.ph-wrap{width:100%;height:100%;border-radius:50px;background:#000;box-shadow:0 0 0 9px #1b1b1d,0 0 0 10px #3a3a3c;overflow:hidden;position:relative}
+.phin{position:absolute;inset:0;background:radial-gradient(60% 40% at 50% 0%,rgba(120,60,150,.45),transparent 70%),#0f0f12}
+.isl{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:120px;height:34px;border-radius:17px;background:#000;z-index:9}
+.pst{position:absolute;top:0;left:0;right:0;height:54px;display:flex;align-items:center;justify-content:space-between;padding:6px 34px 0;font-size:16px;font-weight:600;z-index:8}
+.pbar{position:absolute;top:58px;left:16px;right:16px;display:flex;align-items:center;gap:10px;z-index:5}
+.cb{width:44px;height:44px;border-radius:22px;display:grid;place-items:center}
+.cb svg{width:19px;height:19px}
+.pt{flex:1;text-align:center}.pt b{display:block;font-size:16px}.pt small{font-size:12px;color:var(--sub)}
+.plist{position:absolute;top:116px;left:0;right:0;bottom:0;padding:0 16px;overflow:hidden}
+.pgrp{background:#1c1c1f;border-radius:22px;padding:4px 0;margin:8px 0}
+.prow{display:flex;align-items:center;gap:12px;height:48px;padding:0 16px;font-size:15.5px;white-space:nowrap}
+.prow+.prow{border-top:1px solid var(--sep)}
+.prow.in{padding-left:40px;font-size:15px}
+.prow .meta{margin-left:auto;color:var(--faint);font-size:13px;display:flex;align-items:center;gap:6px}
+.prow svg{width:15px;height:15px;color:var(--faint)}
+.plab{font-size:13px;color:var(--sub);padding:12px 16px 0;font-weight:600}
+.ppalo{display:flex;align-items:center;gap:14px;padding:16px;border-radius:26px;background:#1c1c1f}
+.ppalo b{font-size:20px;display:block}.ppalo span{font-size:13px;color:var(--sub)}
+.pbot{position:absolute;bottom:30px;left:16px;right:16px;display:flex;gap:10px;z-index:5}
+.psearch{flex:1;height:50px;border-radius:25px;display:flex;align-items:center;gap:8px;padding:0 18px;color:var(--faint);font-size:15.5px}
+.pcmp{position:absolute;bottom:30px;left:12px;right:12px;height:56px;border-radius:28px;display:flex;align-items:center;gap:6px;padding:0 6px;z-index:5}
+.pcmp .ph{flex:1;text-align:center;color:var(--faint);font-size:15.5px}
+.pcmp .rb{width:44px;height:44px;border-radius:22px;display:grid;place-items:center}
+.pcmp svg{width:20px;height:20px}
+.pchat{position:absolute;top:0;padding-top:118px;left:18px;right:18px;bottom:0;overflow:hidden;font-size:16px;line-height:1.6}
+.pchat .mu{font-size:16px}.pchat .ma{font-size:16px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+ <defs>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+  <symbol id="i-cr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-cd" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></symbol>
+  <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="3"/><path d="M9 4.5v15"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="3"/><path d="M15 4.5v15"/></symbol>
+  <symbol id="i-split" viewBox="0 0 24 24"><rect x="3" y="4.5" width="7.5" height="15" rx="2"/><rect x="13.5" y="4.5" width="7.5" height="15" rx="2"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+  <symbol id="i-exp" viewBox="0 0 24 24"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18" cy="12" r="1.3"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="3"/><path d="M7.5 9.5l3 2.5-3 2.5M12.5 15h4"/></symbol>
+  <symbol id="i-tray" viewBox="0 0 24 24"><path d="M4 13.5l2.2-7.5h11.6l2.2 7.5v5H4zM4 13.5h5l1.2 2h3.6l1.2-2h5"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.6 2.6 14.4 0 17M12 3.5c-2.6 2.6-2.6 14.4 0 17"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M7 3.5h7l4 4v13H7z"/><path d="M14 3.5v4h4"/></symbol>
+  <symbol id="i-cmd" viewBox="0 0 24 24"><path d="M9 6.5V17.5M15 6.5V17.5M6.5 9h11M6.5 15h11"/></symbol>
+  <symbol id="i-people" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3"/><path d="M3.5 19c.8-3 3-4.5 5.5-4.5s4.7 1.5 5.5 4.5"/><circle cx="17" cy="9.5" r="2.4"/><path d="M15.5 14.6c2.3 0 4.2 1.2 5 4"/></symbol>
+ </defs>
+</svg>
+
+<main>
+<h1>工作台设计稿</h1>
+<p class="sub">按今天定下来的结构画的：Mac 的四种状态（包括侧栏收起）、新建会话、iPad 和 iPhone。界面按 iOS / macOS 27 的 Liquid Glass 来画：侧栏、工具栏、输入框、面板都是浮在内容上的玻璃，主题色只用在 Palo 的小球、当前那一格的边框和最主要的按钮上。</p>
+<p class="hint">图很宽，点一下放大，可以左右滑动；再点一下缩回。</p>
+
+<div class="card">
+<b>这次定下来的</b>
+<ul>
+<li>左边是一个标准的 Mac 侧栏，最上面是很大的一项 Palo，小球的动画在这里。</li>
+<li>会话默认是普通会话。需要并排看的时候，再建一个<b>工作区</b>，把几个会话放进去，在里面自由拼贴。</li>
+<li>工作区可以展开，点里面的一个会话，就只打开这一个会话。</li>
+<li>Allies 放在侧栏最下面。右边是浏览器面板，默认收起，打开链接、文件或成果时才弹出来。</li>
+<li>每一格都用现在 Palo 输入框的长按说话。关掉一格，这个会话就结束，进入历史会话。</li>
+<li><b>Palo 和会话的界面完全一样</b>：左上是标题胶囊，点开是详情（模型、思考深度、上下文、后台任务等都在里面）；右上只有一个按钮，打开右侧栏。</li>
+<li><b>右侧栏只放浏览器</b>：第一个标签固定。Palo 页是成果，会话和工作区是它们的文件树。</li>
+<li><b>沉浸感</b>：对话一直通到窗口最上和最下，工具栏、输入框、每一格的标题都是浮在对话上面的玻璃。滚动时内容从它们下面穿过，边缘只做轻微的模糊和变暗，不用实心的条挡住。</li>
+</ul>
+</div>
+
+<!-- ============ 1. Mac · Palo ============ -->
+<h2>1. Mac：选中 Palo</h2>
+<p class="sub">和现在差不多：右边是一整块沉浸式对话，一直通到窗口顶上。</p>
+<div class="frame" data-w="1240" data-h="800"><div class="mk" style="width:1240px;height:800px"><div class="desk"><div class="win">
+
+ <div class="sb glass">
+  <div class="tl"><i></i><i></i><i></i></div>
+  <div class="palo sel"><div class="orb"></div><div><b>Palo</b><span>刚把你的话转告了「修语音误触」</span></div></div>
+  <div class="sh">工作区<svg><use href="#i-plus"/></svg></div>
+  <div class="row"><svg><use href="#i-cd"/></svg><svg><use href="#i-grid"/></svg>PaloAlly<span class="badge">1 等你</span></div>
+  <div class="row in"><i class="dot d-work"></i>工作台设计</div>
+  <div class="row in"><i class="dot d-wait"></i>修语音误触</div>
+  <div class="row in"><i class="dot d-idle"></i>发版 0.1.17</div>
+  <div class="row"><svg><use href="#i-cr"/></svg><svg><use href="#i-grid"/></svg>Volt 接口<span class="meta">2</span></div>
+  <div class="sh">会话</div>
+  <div class="row"><i class="dot d-done"></i>整理 10 月账单<span class="meta">2 小时前</span></div>
+  <div class="row"><i class="dot d-idle"></i>smartsld 调研<span class="meta">昨天</span></div>
+  <div class="row"><svg><use href="#i-clock"/></svg><span style="color:var(--sub)">以前的</span><span class="meta">12</span></div>
+  <div class="sh" style="margin-top:auto">Allies</div>
+  <div class="row"><span class="av" style="background:#c46a3d">家</span>家人</div>
+  <div class="row"><span class="av" style="background:#3d7ac4">妈</span>妈妈</div>
+  <div class="sbf"><div class="rbtn glass"><svg><use href="#i-plus"/></svg></div><div class="sp"></div><div class="rbtn glass"><svg><use href="#i-gear"/></svg></div></div>
+ </div>
+
+ <div class="main">
+  <div class="edge"></div><div class="edgeb"></div>
+  <div class="tb"><div class="tcap glass"><div><div class="ttl">Palo</div><div class="st"><i class="dot d-idle"></i>在等你吩咐 · Opus 5.5</div></div><svg><use href="#i-cd"/></svg></div><div class="sp"></div>
+   <div class="cap glass"><span class="b"><svg><use href="#i-panel"/></svg></span></div>
+  </div>
+  <div class="chat"><div class="col">
+   <div class="ma" style="margin-top:2px">早上的晨报里说，今天 Volt 接口那边有两个会话会做完，做完了我提醒你看改动。PaloAlly 这边你昨晚留的发版也准备好了，等你一句话。</div>
+   <div class="mu">哪些会话在等我？</div>
+   <div class="ma">有两个：</div>
+   <div class="cardm">
+    <div class="r"><i class="dot d-wait"></i><b>修语音误触</b><small>问你：1 秒的门槛要不要做成设置</small></div>
+    <div class="r"><i class="dot d-done"></i><b>整理 10 月账单</b><small>做完了，表格在成果里</small></div>
+   </div>
+   <div class="ma">另外 PaloAlly 工作区里的「工作台设计」还在干，大概还要 10 分钟。</div>
+   <div class="mu">修语音那个就按默认 1 秒，不用做设置。</div>
+   <div class="ma">已经转告它了。</div>
+   <span class="chip"><svg style="width:12px;height:12px"><use href="#i-cr"/></svg>发给了「修语音误触」</span>
+   <div class="mu">账单那个表格，帮我把超过 500 的几笔标出来。</div>
+   <div class="ma">标好了，一共 4 笔，最大的一笔是 9 号的机票 1,286 美元。表格已经更新，在右边的成果里，要不要顺手按类别汇总一下？另外两笔订阅是重复扣费，我建议你去取消其中一个，链接我放在表格最后一列了。</div>
+  </div></div>
+  <div class="cmp glass"><span class="rb"><svg><use href="#i-plus"/></svg></span><span class="ph">按住说话，点按输入</span><span class="rb"><svg><use href="#i-mic"/></svg></span></div>
+ </div>
+
+ <span class="pin" style="left:-2px;top:100px">1</span>
+ <span class="pin" style="left:-2px;top:160px">2</span>
+ <span class="pin" style="left:-2px;top:334px">3</span>
+ <span class="pin" style="left:-2px;top:547px">4</span>
+ <span class="pin" style="left:-2px;top:731px">5</span>
+ <span class="pin" style="left:1116px;top:66px">6</span>
+ <span class="pin" style="left:580px;top:130px">7</span>
+</div></div></div></div>
+<div class="card">
+<ol style="list-style:none;padding:0">
+<li><span class="n">1</span><b>Palo 这一项特别大</b>，小球在这里。它在听、在想、做完了，小球都会动。下面一行写着它刚做了什么。</li>
+<li><span class="n">2</span><b>工作区</b>：展开能看到里面的会话。每个会话前面有一个状态点，工作区那一行汇总写着「1 等你」。</li>
+<li><span class="n">3</span><b>普通会话</b>：没放进任何工作区的会话。几天没动的会自动收进「以前的」。</li>
+<li><span class="n">4</span><b>Allies</b> 在最下面。他们是人，不是活，所以和上面分开放。</li>
+<li><span class="n">5</span>侧栏底部：<b>＋</b> 里是「新建会话」和「新建工作区」，右边是设置。</li>
+<li><span class="n">6</span><b>沉浸</b>：最上面那段和最下面那段，就是从工具栏和输入框下面穿过去的内容，只是被轻轻模糊了。右上角只有一个按钮：打开右侧面板。在 Palo 页里，面板里放的就是成果，Palo 发来的网页和文件也在这里打开。</li>
+<li><span class="n">7</span>Palo 能看到所有会话的状态，也能替你传话。传过去的话会标出发给了谁。</li>
+</ol>
+</div>
+
+<!-- ============ 2. Mac · Workspace ============ -->
+<h2>2. Mac：打开一个工作区</h2>
+<p class="sub">这一页最接近 Bento Term：工作区里的会话全部平铺出来，右边的浏览器面板这时是打开的。</p>
+<div class="frame" data-w="1240" data-h="800"><div class="mk" style="width:1240px;height:800px"><div class="desk"><div class="win">
+
+ <div class="sb glass">
+  <div class="tl"><i></i><i></i><i></i></div>
+  <div class="palo"><div class="orb sm"></div><div><b>Palo</b><span>在等你吩咐</span></div></div>
+  <div class="sh">工作区<svg><use href="#i-plus"/></svg></div>
+  <div class="row sel"><svg><use href="#i-cd"/></svg><svg><use href="#i-grid"/></svg>PaloAlly<span class="badge">1 等你</span></div>
+  <div class="row in"><i class="dot d-work"></i>工作台设计</div>
+  <div class="row in"><i class="dot d-wait"></i>修语音误触</div>
+  <div class="row in"><i class="dot d-idle"></i>发版 0.1.17</div>
+  <div class="row"><svg><use href="#i-cr"/></svg><svg><use href="#i-grid"/></svg>Volt 接口<span class="meta">2</span></div>
+  <div class="sh">会话</div>
+  <div class="row"><i class="dot d-done"></i>整理 10 月账单<span class="meta">2 小时前</span></div>
+  <div class="row"><i class="dot d-idle"></i>smartsld 调研<span class="meta">昨天</span></div>
+  <div class="row"><svg><use href="#i-clock"/></svg><span style="color:var(--sub)">以前的</span><span class="meta">12</span></div>
+  <div class="sh" style="margin-top:auto">Allies</div>
+  <div class="row"><span class="av" style="background:#c46a3d">家</span>家人</div>
+  <div class="row"><span class="av" style="background:#3d7ac4">妈</span>妈妈</div>
+  <div class="sbf"><div class="rbtn glass"><svg><use href="#i-plus"/></svg></div><div class="sp"></div><div class="rbtn glass"><svg><use href="#i-gear"/></svg></div></div>
+ </div>
+
+ <div class="main wp">
+  <div class="tb"><div><div class="ttl">PaloAlly</div><div class="st">3 个会话 · ~/code/palo-ally</div></div><div class="sp"></div>
+   <div class="cap glass"><span class="t"><svg><use href="#i-split"/></svg>并排</span></div>
+   <div class="cap glass"><span class="b"><svg><use href="#i-panel"/></svg></span></div>
+  </div>
+  <div class="tiles" style="grid-template-columns:1.15fr 1fr;grid-template-rows:1fr 1fr">
+   <div class="tile" style="grid-row:1/3">
+    <div class="th"><span class="thn glass"><i class="dot d-work"></i><b>工作台设计</b><small>在干</small></span><span class="ic glass"><span><svg><use href="#i-exp"/></svg></span><span><svg><use href="#i-x"/></svg></span></span></div>
+    <div class="tcx">
+     <div class="mu">把今天定的布局画成设计稿，按 Liquid Glass 来。</div>
+     <div class="tool"><svg><use href="#i-doc"/></svg>读了 6 个文件<svg><use href="#i-cr"/></svg></div>
+     <div class="ma">先把侧栏、工作区和单会话三种状态画出来，再做 iPad 和 iPhone。侧栏用浮动的玻璃面板，工具栏按钮不加底色。</div>
+     <div class="tool"><svg><use href="#i-term"/></svg>运行了 2 条命令<svg><use href="#i-cr"/></svg></div>
+     <div class="tool"><svg><use href="#i-doc"/></svg>改了 1 个文件 <span class="add">+412</span> <span class="del">−0</span><svg><use href="#i-cr"/></svg></div>
+     <div class="ma">工作区这一页在写，右边的预览已经能看了。</div>
+    </div>
+    <div class="tcmp glass"><span class="rb"><svg><use href="#i-plus"/></svg></span><span class="ph">按住说话，点按输入</span><span class="rb stop"><svg><use href="#i-stop"/></svg></span></div>
+   </div>
+   <div class="tile focus">
+    <div class="th"><span class="thn glass"><i class="dot d-wait"></i><b>修语音误触</b><small>等你</small></span><span class="ic glass"><span><svg><use href="#i-exp"/></svg></span><span><svg><use href="#i-x"/></svg></span></span></div>
+    <div class="tcx">
+     <div class="ma">误触规则已经改好：按住不到 1 秒、什么都没听到就丢掉。</div>
+     <div class="qcard"><div class="q">1 秒的门槛要不要做成设置？</div><div class="opts"><span class="opt pri">按默认 1 秒</span><span class="opt">做成设置</span></div></div>
+    </div>
+    <div class="tcmp glass"><span class="rb"><svg><use href="#i-plus"/></svg></span><span class="ph">按住说话，点按输入</span><span class="rb"><svg><use href="#i-mic"/></svg></span></div>
+   </div>
+   <div class="tile">
+    <div class="th"><span class="thn glass"><i class="dot d-idle"></i><b>发版 0.1.17</b><small>闲着</small></span><span class="ic glass"><span><svg><use href="#i-exp"/></svg></span><span><svg><use href="#i-x"/></svg></span></span></div>
+    <div class="tcx">
+     <div class="ma">DMG 已经公证好了，iOS 包也打好了。你说一声就发。</div>
+    </div>
+    <div class="tcmp glass"><span class="rb"><svg><use href="#i-plus"/></svg></span><span class="ph">按住说话，点按输入</span><span class="rb"><svg><use href="#i-mic"/></svg></span></div>
+   </div>
+  </div>
+ </div>
+
+ <div class="rp glass">
+  <div class="tabs"><span class="tab"><svg><use href="#i-folder"/></svg>文件</span><span class="tab on"><svg><use href="#i-globe"/></svg>localhost:5173</span><span class="tab"><svg><use href="#i-doc"/></svg>pals-prd.md</span><span class="tab"><svg><use href="#i-plus"/></svg></span><span class="sp"></span><span class="tab"><svg><use href="#i-x"/></svg></span></div>
+  <div class="addr"><svg style="width:12px;height:12px"><use href="#i-globe"/></svg>localhost:5173/workbench</div>
+  <div class="web"><div class="wh"></div><div class="wl" style="width:80%"></div><div class="wl" style="width:65%"></div><div class="wb"></div><div class="wl" style="width:90%"></div><div class="wl" style="width:72%"></div><div class="wl" style="width:84%"></div><div class="wb" style="height:70px"></div><div class="wl" style="width:60%"></div></div>
+ </div>
+
+ <span class="pin" style="left:-2px;top:170px">1</span>
+ <span class="pin" style="left:286px;top:110px">2</span>
+ <span class="pin" style="left:612px;top:94px">3</span>
+ <span class="pin" style="left:286px;top:690px">4</span>
+ <span class="pin" style="left:656px;top:28px">5</span>
+ <span class="pin" style="left:1180px;top:140px">6</span>
+</div></div></div></div>
+<div class="card">
+<ol style="list-style:none;padding:0">
+<li><span class="n">1</span>选中的是工作区这一行，右边就把里面的会话全部平铺出来。</li>
+<li><span class="n">2</span><b>每一格</b>：名字和状态是浮在左上角的玻璃胶囊，右上角是「放大成整页」和「关掉」，没有标题栏的底色。格子里的内容一直通到格子的上下边，从胶囊和输入框下面穿过。关掉就结束这个会话，进入历史。分隔线可以拖，标题栏可以拖到别的格上交换或停靠。</li>
+<li><span class="n">3</span><b>正在用的那一格</b>有一圈主题色的边框，你说的话进的就是这一格。在等你的那一格里，问题直接以卡片形式出现，一点就答。</li>
+<li><span class="n">4</span><b>每一格都有自己的输入框</b>，用的是现在 Palo 那套长按说话。在干的那一格，右边是停止键。</li>
+<li><span class="n">5</span><b>并排</b>：在工作区里点它，是再加一格，可以选已有的会话，也可以新开一个。</li>
+<li><span class="n">6</span><b>右侧栏</b>：第一个标签固定是「文件」，就是这个工作区所在文件夹的文件树；点一个文件，就在旁边开一个新标签预览。后面是开发中的网页和一份文档。每个工作区记住自己开过的标签。默认收起，打开链接或文件时才弹出来。</li>
+</ol>
+</div>
+
+<!-- ============ 3. Mac · sidebar collapsed ============ -->
+<h2>3. Mac：侧栏收起</h2>
+<p class="sub">⌃⌘S 或点左上角的侧栏按钮。格子占满整个窗口，「谁在等你」留在左上角。</p>
+<div class="frame" data-w="1240" data-h="800"><div class="mk" style="width:1240px;height:800px"><div class="desk"><div class="win">
+ <div class="tl" style="position:absolute;left:20px;top:24px;padding:0;z-index:5"><i></i><i></i><i></i></div>
+ <div class="cap glass" style="position:absolute;left:92px;top:12px;z-index:5;padding:0 4px 0 3px">
+  <span class="b"><svg><use href="#i-sidebar"/></svg></span>
+  <span class="b"><span class="orb" style="width:20px;height:20px;box-shadow:inset 0 -3px 5px rgba(0,0,0,.35),0 2px 8px rgba(224,124,194,.45)"></span></span>
+  <span class="t" style="padding:0 8px 0 4px"><span class="badge" style="margin:0;font-size:11.5px;line-height:20px;padding:0 9px">1 等你 · 1 做完</span></span>
+ </div>
+ <div class="glass" style="position:absolute;left:92px;top:56px;width:330px;border-radius:18px;padding:8px;z-index:7;background:rgba(48,48,56,.78)">
+  <div class="sh" style="padding:4px 8px">等你</div>
+  <div class="row" style="height:46px;align-items:center"><i class="dot d-wait"></i><div><b>修语音误触</b><div style="font-size:11.5px;color:var(--sub)">问你：1 秒的门槛要不要做成设置</div></div></div>
+  <div class="sh" style="padding:6px 8px 4px">做完了</div>
+  <div class="row" style="height:46px"><i class="dot d-done"></i><div><b>整理 10 月账单</b><div style="font-size:11.5px;color:var(--sub)">表格在成果里</div></div></div>
+ </div>
+ <div class="main" style="left:0">
+  <div class="tb" style="left:290px"><div><div class="ttl">PaloAlly</div><div class="st">3 个会话 · ~/code/palo-ally</div></div><div class="sp"></div>
+   <div class="cap glass"><span class="t"><svg><use href="#i-split"/></svg>并排</span></div>
+   <div class="cap glass"><span class="b"><svg><use href="#i-panel"/></svg></span></div>
+  </div>
+  <div class="tiles" style="left:10px;right:10px;bottom:10px;grid-template-columns:1fr 1fr 1fr">
+   <div class="tile">
+    <div class="th"><span class="thn glass"><i class="dot d-work"></i><b>工作台设计</b><small>在干</small></span><span class="ic glass"><span><svg><use href="#i-exp"/></svg></span><span><svg><use href="#i-x"/></svg></span></span></div>
+    <div class="tcx">
+     <div class="mu">把今天定的布局画成设计稿，按 Liquid Glass 来。</div>
+     <div class="tool"><svg><use href="#i-doc"/></svg>读了 6 个文件<svg><use href="#i-cr"/></svg></div>
+     <div class="ma">先把侧栏、工作区和单会话三种状态画出来，再做 iPad 和 iPhone。</div>
+     <div class="tool"><svg><use href="#i-doc"/></svg>改了 1 个文件 <span class="add">+412</span> <span class="del">−0</span><svg><use href="#i-cr"/></svg></div>
+    </div>
+    <div class="tcmp glass"><span class="rb"><svg><use href="#i-plus"/></svg></span><span class="ph">按住说话，点按输入</span><span class="rb stop"><svg><use href="#i-stop"/></svg></span></div>
+   </div>
+   <div class="tile focus">
+    <div class="th"><span class="thn glass"><i class="dot d-wait"></i><b>修语音误触</b><small>等你</small></span><span class="ic glass"><span><svg><use href="#i-exp"/></svg></span><span><svg><use href="#i-x"/></svg></span></span></div>
+    <div class="tcx">
+     <div class="ma">误触规则已经改好：按住不到 1 秒、什么都没听到就丢掉。</div>
+     <div class="qcard"><div class="q">1 秒的门槛要不要做成设置？</div><div class="opts"><span class="opt pri">按默认 1 秒</span><span class="opt">做成设置</span></div></div>
+    </div>
+    <div class="tcmp glass"><span class="rb"><svg><use href="#i-plus"/></svg></span><span class="ph">按住说话，点按输入</span><span class="rb"><svg><use href="#i-mic"/></svg></span></div>
+   </div>
+   <div class="tile">
+    <div class="th"><span class="thn glass"><i class="dot d-idle"></i><b>发版 0.1.17</b><small>闲着</small></span><span class="ic glass"><span><svg><use href="#i-exp"/></svg></span><span><svg><use href="#i-x"/></svg></span></span></div>
+    <div class="tcx"><div class="ma">DMG 已经公证好了，iOS 包也打好了。你说一声就发。</div></div>
+    <div class="tcmp glass"><span class="rb"><svg><use href="#i-plus"/></svg></span><span class="ph">按住说话，点按输入</span><span class="rb"><svg><use href="#i-mic"/></svg></span></div>
+   </div>
+  </div>
+ </div>
+ <span class="pin" style="left:66px;top:0px">1</span>
+ <span class="pin" style="left:402px;top:46px">2</span>
+ <span class="pin" style="left:-2px;top:400px">3</span>
+</div></div></div></div>
+<div class="card">
+<ol style="list-style:none;padding:0">
+<li><span class="n">1</span><b>左上角的小胶囊</b>：侧栏按钮、小号的 Palo 球、「1 等你 · 1 做完」。没有在等你的会话时，只剩侧栏按钮和球。</li>
+<li><span class="n">2</span>点「等你」那一块，弹出这个列表，点一项就跳到那个会话；它在当前工作区里，就把那一格设成当前格。</li>
+<li><span class="n">3</span><b>临时看一眼侧栏</b>：鼠标移到窗口最左边，侧栏从左边浮出来，盖在格子上面，不挤压格子；鼠标离开就缩回去。iPad 上就是从左边缘往右划。</li>
+</ol>
+<p class="hint">图里三格并排，因为侧栏让出了地方。侧栏收起还是展开是全局的，切换工作区时不会自己变。</p>
+</div>
+
+<!-- ============ 3. Mac · Single session ============ -->
+<h2>4. Mac：只打开一个会话，点开详情</h2>
+<p class="sub">在树里点工作区里的某个会话，或者点一个普通会话。这一页和 Palo 页一模一样，包括左上的标题胶囊和右上角唯一的按钮。会话的所有能力都在点标题弹出的详情里。</p>
+<div class="frame" data-w="1240" data-h="800"><div class="mk" style="width:1240px;height:800px"><div class="desk"><div class="win">
+
+ <div class="sb glass">
+  <div class="tl"><i></i><i></i><i></i></div>
+  <div class="palo"><div class="orb sm"></div><div><b>Palo</b><span>在等你吩咐</span></div></div>
+  <div class="sh">工作区<svg><use href="#i-plus"/></svg></div>
+  <div class="row"><svg><use href="#i-cd"/></svg><svg><use href="#i-grid"/></svg>PaloAlly<span class="meta">3</span></div>
+  <div class="row in"><i class="dot d-work"></i>工作台设计</div>
+  <div class="row in sel"><i class="dot d-work"></i>修语音误触</div>
+  <div class="row in"><i class="dot d-idle"></i>发版 0.1.17</div>
+  <div class="row"><svg><use href="#i-cr"/></svg><svg><use href="#i-grid"/></svg>Volt 接口<span class="meta">2</span></div>
+  <div class="sh">会话</div>
+  <div class="row"><i class="dot d-done"></i>整理 10 月账单<span class="meta">2 小时前</span></div>
+  <div class="row"><i class="dot d-idle"></i>smartsld 调研<span class="meta">昨天</span></div>
+  <div class="row"><svg><use href="#i-clock"/></svg><span style="color:var(--sub)">以前的</span><span class="meta">12</span></div>
+  <div class="sh" style="margin-top:auto">Allies</div>
+  <div class="row"><span class="av" style="background:#c46a3d">家</span>家人</div>
+  <div class="row"><span class="av" style="background:#3d7ac4">妈</span>妈妈</div>
+  <div class="sbf"><div class="rbtn glass"><svg><use href="#i-plus"/></svg></div><div class="sp"></div><div class="rbtn glass"><svg><use href="#i-gear"/></svg></div></div>
+ </div>
+
+ <div class="main">
+  <div class="edge"></div><div class="edgeb"></div>
+  <div class="tb"><div class="tcap glass"><div><div class="ttl">修语音误触</div><div class="st"><i class="dot d-work"></i>在干 · ~/code/palo-ally</div></div><svg><use href="#i-cd"/></svg></div><div class="sp"></div>
+   <div class="cap glass"><span class="b"><svg><use href="#i-panel"/></svg></span></div>
+  </div>
+  <div class="chat"><div class="col">
+   <div class="mu">修语音那个就按默认 1 秒，不用做设置。</div>
+   <div class="ma"><span class="chip" style="margin-bottom:6px"><svg style="width:12px;height:12px"><use href="#i-cr"/></svg>Palo 转来的</span><br>好，那就不加设置，直接收尾。</div>
+   <div class="tool"><svg><use href="#i-term"/></svg>运行了 swift test，354 个通过<svg><use href="#i-cr"/></svg></div>
+   <div class="tool"><svg><use href="#i-doc"/></svg>改了 2 个文件 <span class="add">+48</span> <span class="del">−12</span><svg><use href="#i-cr"/></svg></div>
+   <div class="ma">测试都过了。现在打一个真机包，装到你的 iPhone 上。</div>
+   <div class="tool"><svg><use href="#i-term"/></svg>正在运行 xcodebuild… 2 分钟<svg><use href="#i-cr"/></svg></div>
+   <div class="tool" style="background:rgba(100,210,255,.08);color:#9fdcff"><svg><use href="#i-grid"/></svg>后台 1 个任务在跑，子 agent 1 个<svg><use href="#i-cr"/></svg></div>
+   <div class="ma">装好以后请你试两下：快按一下就松开，应该只显示「没听清」；正常按住说一句，应该照常发出去。两项都对，这件事就结束了。我会在后台等安装完成，再告诉你结果。</div>
+   <div class="ma">另外我顺手检查了 Mac 版：同样的规则在 Mac 上也生效，不需要单独改。</div>
+  </div></div>
+  <div class="cmp glass"><span class="rb"><svg><use href="#i-plus"/></svg></span><span class="ph">按住说话，点按输入</span><span class="rb stop"><svg><use href="#i-stop"/></svg></span></div>
+ </div>
+
+ <div class="pop glass" style="left:284px;top:66px;width:372px">
+  <div class="ph1"><i class="dot d-work"></i><b>修语音误触</b><span style="color:var(--sub);font-size:12px">在干</span><span class="sp" style="flex:1"></span><span class="mini">改名</span></div>
+  <div class="pg">
+   <div class="pr"><span class="k">文件夹</span>~/code/palo-ally<span class="v"><span class="mini">文件</span><span class="mini">访达</span><span class="mini">终端</span></span></div>
+  </div>
+  <div class="pg">
+   <div class="pr"><span class="k">模型</span><span class="v"><span class="mini">Opus 5.5 ▾</span></span></div>
+   <div class="pr"><span class="k">思考深度</span><span class="v"><span class="seg"><span>低</span><span>中</span><span class="on">高</span><span>最高</span></span></span></div>
+   <div class="pr"><span class="k">上下文</span><span class="bar"><i></i></span><span style="color:var(--sub);font-size:11.5px">82k / 200k</span><span class="mini">压缩</span></div>
+  </div>
+  <div class="pg">
+   <div class="pr"><span class="k">后台</span>xcodebuild 真机包 · 2 分钟<span class="v"><span class="mini">停</span></span></div>
+   <div class="pr"><span class="k">子 agent</span>检查 Mac 版 · 在干<span class="v"><span class="mini">停</span></span></div>
+  </div>
+  <div class="pg">
+   <div class="pr"><span class="k">用量</span>本次 $3.20 · 1.2M tokens</div>
+   <div class="pr"><span class="k">工作区</span>PaloAlly<span class="v"><span class="mini">并排…</span><span class="mini">移到…</span></span></div>
+  </div>
+  <div class="pg"><div class="pr danger" style="justify-content:center">结束这个会话</div></div>
+ </div>
+
+ <span class="pin" style="left:-2px;top:226px">1</span>
+ <span class="pin" style="left:420px;top:4px">2</span>
+ <span class="pin" style="left:648px;top:96px">3</span>
+ <span class="pin" style="left:648px;top:236px">4</span>
+ <span class="pin" style="left:1146px;top:66px">5</span>
+ <span class="pin" style="left:700px;top:364px">6</span>
+ <span class="pin" style="left:1062px;top:724px">7</span>
+</div></div></div></div>
+<div class="card">
+<ol style="list-style:none;padding:0">
+<li><span class="n">1</span>树里选中的是工作区里的一个会话，右边就只显示它。点上面的工作区那一行，就回到平铺。</li>
+<li><span class="n">2</span><b>标题胶囊</b>：名字、状态、所在文件夹。点它弹出这个会话的详情。Palo 页的左上角也是同样的胶囊，两页长得一模一样。</li>
+<li><span class="n">3</span><b>详情</b>：文件夹（看文件、在访达或终端里打开）、模型、思考深度、上下文和「压缩」。相当于终端里的 /model、/effort、/context、/compact。</li>
+<li><span class="n">4</span>后台任务和子 agent，每一项都能单独停；本次用量；所在工作区（并排、移到别的工作区）；最下面是结束这个会话。Palo 的详情里还多「目标、履历、记忆」三块，也就是现在「它」那一页。</li>
+<li><span class="n">5</span><b>右上角只有一个按钮</b>，打开右侧栏，和 Palo 页一样。</li>
+<li><span class="n">6</span>工具步骤和代码改动默认收成一行，点开看每一步和 diff；有后台任务在跑时显示一条，点开就是详情里的那一块。</li>
+<li><span class="n">7</span><b>停止键</b>：它在干的时候，输入框右边的麦克风换成停止。这时你仍然可以说话或打字，会排在下一句发过去。</li>
+</ol>
+</div>
+
+<!-- ============ 4. New session ============ -->
+<h2>5. 新建会话</h2>
+<p class="sub">⌘N，或者侧栏底部的 ＋。弹出最近用过的文件夹，当前会话的文件夹排第一，回车就开。</p>
+<div class="frame" data-w="1240" data-h="560"><div class="mk" style="width:1240px;height:560px"><div class="desk"><div class="win" style="background:#151518">
+ <div class="dim">
+  <div class="sheet glass">
+   <div class="sf"><svg><use href="#i-search"/></svg>在哪个文件夹开新会话？</div>
+   <div class="fl">
+    <div class="fr on"><svg><use href="#i-folder"/></svg>~/code/palo-ally<small>当前</small></div>
+    <div class="fr"><svg><use href="#i-folder"/></svg>~/code/volt-reality-api-server<small>今天</small></div>
+    <div class="fr"><svg><use href="#i-folder"/></svg>~/code/smartsld<small>昨天</small></div>
+    <div class="fr"><svg><use href="#i-folder"/></svg>~/code/os-museum<small>3 天前</small></div>
+    <div class="fr"><svg><use href="#i-folder"/></svg><span style="color:var(--sub)">选择其他文件夹…</span></div>
+   </div>
+   <div class="kb"><span><kbd>↩</kbd>开始</span><span><kbd>⌘↩</kbd>开在当前工作区里</span><span><kbd>esc</kbd>取消</span></div>
+  </div>
+ </div>
+</div></div></div></div>
+<div class="card">
+<ul>
+<li>打几个字就能搜文件夹。顺序按最近用过排，不用自己整理。</li>
+<li>普通的回车开成一个普通会话；在工作区里按 ⌘↩，就直接作为新的一格加进当前工作区。</li>
+<li>新会话先不起名，按你说的第一句话自动起名，之后可以改。</li>
+</ul>
+</div>
+
+<!-- ============ 5. iPad ============ -->
+<h2>6. iPad：和 Mac 一样</h2>
+<p class="sub">同一个侧栏、同一种平铺。图里是 13 英寸横屏，工作区里两格并排。</p>
+<div class="frame" data-w="1240" data-h="880"><div class="mk" style="width:1240px;height:880px"><div class="desk" style="padding:30px"><div class="pad"><div class="padin">
+ <div class="stb"><span>9:41</span><span>100%</span></div>
+ <div class="sb glass" style="top:36px">
+  <div class="palo"><div class="orb sm"></div><div><b>Palo</b><span>在等你吩咐</span></div></div>
+  <div class="sh">工作区<svg><use href="#i-plus"/></svg></div>
+  <div class="row sel"><svg><use href="#i-cd"/></svg><svg><use href="#i-grid"/></svg>PaloAlly<span class="badge">1 等你</span></div>
+  <div class="row in"><i class="dot d-work"></i>工作台设计</div>
+  <div class="row in"><i class="dot d-wait"></i>修语音误触</div>
+  <div class="row"><svg><use href="#i-cr"/></svg><svg><use href="#i-grid"/></svg>Volt 接口<span class="meta">2</span></div>
+  <div class="sh">会话</div>
+  <div class="row"><i class="dot d-done"></i>整理 10 月账单<span class="meta">2 小时前</span></div>
+  <div class="row"><i class="dot d-idle"></i>smartsld 调研<span class="meta">昨天</span></div>
+  <div class="row"><svg><use href="#i-clock"/></svg><span style="color:var(--sub)">以前的</span><span class="meta">12</span></div>
+  <div class="sh" style="margin-top:auto">Allies</div>
+  <div class="row"><span class="av" style="background:#c46a3d">家</span>家人</div>
+  <div class="row"><span class="av" style="background:#3d7ac4">妈</span>妈妈</div>
+  <div class="sbf"><div class="rbtn glass"><svg><use href="#i-plus"/></svg></div><div class="sp"></div><div class="rbtn glass"><svg><use href="#i-gear"/></svg></div></div>
+ </div>
+ <div class="main" style="top:30px">
+  <div class="tb"><div><div class="ttl">PaloAlly</div><div class="st">2 个会话</div></div><div class="sp"></div>
+   <div class="cap glass"><span class="t"><svg><use href="#i-split"/></svg>并排</span></div>
+   <div class="cap glass"><span class="b"><svg><use href="#i-panel"/></svg></span></div>
+  </div>
+  <div class="tiles" style="grid-template-columns:1fr 1fr">
+   <div class="tile">
+    <div class="th"><span class="thn glass"><i class="dot d-work"></i><b>工作台设计</b><small>在干</small></span><span class="ic glass"><span><svg><use href="#i-exp"/></svg></span><span><svg><use href="#i-x"/></svg></span></span></div>
+    <div class="tcx"><div class="mu">把今天定的布局画成设计稿。</div><div class="tool"><svg><use href="#i-doc"/></svg>读了 6 个文件<svg><use href="#i-cr"/></svg></div><div class="ma">先画 Mac 的三种状态，再做 iPad 和 iPhone。</div></div>
+    <div class="tcmp glass"><span class="rb"><svg><use href="#i-plus"/></svg></span><span class="ph">按住说话，点按输入</span><span class="rb stop"><svg><use href="#i-stop"/></svg></span></div>
+   </div>
+   <div class="tile focus">
+    <div class="th"><span class="thn glass"><i class="dot d-wait"></i><b>修语音误触</b><small>等你</small></span><span class="ic glass"><span><svg><use href="#i-exp"/></svg></span><span><svg><use href="#i-x"/></svg></span></span></div>
+    <div class="tcx"><div class="qcard"><div class="q">1 秒的门槛要不要做成设置？</div><div class="opts"><span class="opt pri">按默认 1 秒</span><span class="opt">做成设置</span></div></div></div>
+    <div class="tcmp glass"><span class="rb"><svg><use href="#i-plus"/></svg></span><span class="ph">按住说话，点按输入</span><span class="rb"><svg><use href="#i-mic"/></svg></span></div>
+   </div>
+  </div>
+ </div>
+</div></div></div></div></div>
+<div class="card">
+<ul>
+<li>iPad 上的侧栏、工作区、右侧面板，都和 Mac 一样。</li>
+<li>拖分隔线、拖标题栏交换格子，用手指操作也一样。</li>
+<li>竖屏或者 11 英寸的屏幕放不下三格，需要你定怎么处理，见最后「还要你定的」。</li>
+</ul>
+</div>
+
+<!-- ============ 6. iPhone ============ -->
+<h2>7. iPhone：同一棵树，不平铺</h2>
+<p class="sub">手机上一次只看一个对话。首页就是侧栏那棵树，从上到下的顺序完全一样。</p>
+<div class="phones">
+<div>
+<div class="frame" data-w="420" data-h="880"><div class="mk" style="width:420px;height:880px"><div style="padding:18px;width:100%;height:100%;background:#0d0d14"><div class="ph-wrap"><div class="phin">
+ <div class="isl"></div><div class="pst"><span>9:41</span><span>100%</span></div>
+ <div class="pbar"><div class="cb glass"><svg><use href="#i-gear"/></svg></div><div class="sp"></div><div class="cb glass"><svg><use href="#i-plus"/></svg></div></div>
+ <div class="plist">
+  <div class="ppalo"><div class="orb"></div><div><b>Palo</b><span>2 个会话在等你</span></div></div>
+  <div class="plab">工作区</div>
+  <div class="pgrp">
+   <div class="prow"><svg><use href="#i-cd"/></svg>PaloAlly<span class="meta"><span class="badge">1 等你</span></span></div>
+   <div class="prow in"><i class="dot d-work"></i>工作台设计</div>
+   <div class="prow in"><i class="dot d-wait"></i>修语音误触</div>
+   <div class="prow in"><i class="dot d-idle"></i>发版 0.1.17</div>
+   <div class="prow"><svg><use href="#i-cr"/></svg>Volt 接口<span class="meta">2</span></div>
+  </div>
+  <div class="plab">会话</div>
+  <div class="pgrp">
+   <div class="prow"><i class="dot d-done"></i>整理 10 月账单<span class="meta">2 小时前</span></div>
+   <div class="prow"><i class="dot d-idle"></i>smartsld 调研<span class="meta">昨天</span></div>
+   <div class="prow"><svg><use href="#i-clock"/></svg>以前的<span class="meta">12<svg><use href="#i-cr"/></svg></span></div>
+  </div>
+  <div class="plab">Allies</div>
+  <div class="pgrp">
+   <div class="prow"><span class="av" style="background:#c46a3d;width:28px;height:28px;font-size:12px">家</span>家人</div>
+  </div>
+ </div>
+</div></div></div></div></div>
+</div>
+<div>
+<div class="frame" data-w="420" data-h="880"><div class="mk" style="width:420px;height:880px"><div style="padding:18px;width:100%;height:100%;background:#0d0d14"><div class="ph-wrap"><div class="phin">
+ <div class="isl"></div><div class="pst"><span>9:41</span><span>100%</span></div>
+ <div class="pbar"><div class="cb glass"><svg><use href="#i-back"/></svg></div><div class="pt"><b>修语音误触</b><small>在干 · palo-ally</small></div><div class="cb glass"><svg><use href="#i-panel"/></svg></div></div>
+ <div class="pchat">
+  <div class="mu">按默认 1 秒，不用做设置。</div>
+  <div class="ma">好，那就不加设置，直接收尾。</div>
+  <div class="tool"><svg><use href="#i-term"/></svg>运行了 swift test，354 个通过<svg><use href="#i-cr"/></svg></div>
+  <div class="tool"><svg><use href="#i-doc"/></svg>改了 2 个文件 <span class="add">+48</span> <span class="del">−12</span><svg><use href="#i-cr"/></svg></div>
+  <div class="ma">测试都过了，正在打真机包。</div>
+ </div>
+ <div class="pcmp glass"><span class="rb"><svg><use href="#i-plus"/></svg></span><span class="ph">按住说话，点按输入</span><span class="rb" style="background:#f5f5f7"><svg style="fill:#111;stroke:none;width:14px;height:14px"><use href="#i-stop"/></svg></span></div>
+</div></div></div></div></div>
+</div>
+<div>
+<div class="frame" data-w="420" data-h="880"><div class="mk" style="width:420px;height:880px"><div style="padding:18px;width:100%;height:100%;background:#0d0d14"><div class="ph-wrap"><div class="phin">
+ <div class="isl"></div><div class="pst"><span>9:41</span><span>100%</span></div>
+ <div class="pbar"><div class="cb glass"><svg><use href="#i-back"/></svg></div><div class="pt"><b>修语音误触</b><small>在干 · palo-ally</small></div><div class="cb glass"><svg><use href="#i-panel"/></svg></div></div>
+ <div class="pchat" style="opacity:.5"><div class="mu">按默认 1 秒，不用做设置。</div><div class="ma">好，那就不加设置，直接收尾。</div></div>
+ <div class="pop glass" style="left:8px;right:8px;bottom:8px;top:250px;border-radius:40px;padding:10px 14px">
+  <div style="width:40px;height:5px;border-radius:3px;background:rgba(255,255,255,.3);margin:0 auto 12px"></div>
+  <div class="ph1"><i class="dot d-work"></i><b>修语音误触</b><span style="color:var(--sub);font-size:12px">在干</span><span style="flex:1"></span><span class="mini">改名</span></div>
+  <div class="pg"><div class="pr"><span class="k">文件夹</span>palo-ally<span class="v"><span class="mini">文件</span></span></div></div>
+  <div class="pg">
+   <div class="pr"><span class="k">模型</span><span class="v"><span class="mini">Opus 5.5 ▾</span></span></div>
+   <div class="pr"><span class="k">思考深度</span><span class="v"><span class="seg"><span>低</span><span>中</span><span class="on">高</span><span>最高</span></span></span></div>
+   <div class="pr"><span class="k">上下文</span><span class="bar"><i></i></span><span class="mini">压缩</span></div>
+  </div>
+  <div class="pg">
+   <div class="pr"><span class="k">后台</span>xcodebuild · 2 分钟<span class="v"><span class="mini">停</span></span></div>
+   <div class="pr"><span class="k">子 agent</span>检查 Mac 版<span class="v"><span class="mini">停</span></span></div>
+  </div>
+  <div class="pg"><div class="pr"><span class="k">用量</span>$3.20 · 1.2M tokens</div><div class="pr"><span class="k">工作区</span>PaloAlly<span class="v"><span class="mini">移到…</span></span></div></div>
+  <div class="pg"><div class="pr danger" style="justify-content:center">结束这个会话</div></div>
+ </div>
+</div></div></div></div></div>
+</div>
+</div>
+<div class="card">
+<ul>
+<li><b>首页</b>：Palo 在最上面，写着「几个会话在等你」，点进去就是和 Palo 的对话。下面是工作区（可以展开）、普通会话、Allies，和 Mac 侧栏的顺序一样。</li>
+<li>左上是设置，右上 ＋ 是新建会话。手机上新建会话也是弹出最近的文件夹。</li>
+<li><b>会话页</b>和 Palo 对话一模一样。点中间的标题，从下面升起详情（第三张图），内容和 Mac 上的详情相同。右上角的按钮在手机上打开文件和成果，是一整页，因为手机没有右侧栏。</li>
+<li>它在干的时候，输入框右边是停止键。</li>
+</ul>
+</div>
+
+<!-- ============ states ============ -->
+<h2>状态点：四种，到处都一样</h2>
+<div class="card">
+<ul style="list-style:none;padding:0">
+<li><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#64d2ff;margin-right:8px"></span><b>在干</b>：在跑，不用管它。</li>
+<li><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff9f0a;margin-right:8px"></span><b>等你</b>：问了你问题，或者在等你批准。工作区那一行、Palo 那一项、手机通知都会提醒。</li>
+<li><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#30d158;margin-right:8px"></span><b>做完了</b>：做完一件事，你还没看。点开看过就变成闲着。</li>
+<li><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#8e8e93;margin-right:8px"></span><b>闲着</b>：没事。</li>
+</ul>
+<p class="hint">只有「等你」用橙色这种醒目的颜色，因为只有它需要你动手。</p>
+</div>
+
+<h2>还要你定的</h2>
+<div class="card">
+<ol>
+<li><b>iPad 放不下的时候：</b>11 英寸或竖屏放不下三格。我倾向最多并排两格，其余的格子收在标题栏的切换里。</li>
+<li><b>工作区的右侧面板，</b>和这个工作区里单开一个会话时的右侧面板，是不是同一组标签？我倾向是同一组，同一个工作区里看到的网页不应该因为换了视图就不见了。</li>
+<li><b>「做完了」什么时候变回「闲着」：</b>我倾向在 Mac 或手机上任意一处点开看过就算，两边同步。</li>
+</ol>
+</div>
+
+<p class="sub" style="margin-top:28px">看完回我就行：哪张不对，或者「还要你定的」那三条选什么。</p>
+</main>
+
+<script>
+(function(){
+  function fit(){
+    document.querySelectorAll('.frame').forEach(function(f){
+      var w=+f.dataset.w,h=+f.dataset.h,inner=f.firstElementChild;
+      if(f.classList.contains('zoom')){inner.style.transform='none';f.style.height=Math.min(h,Math.round(window.innerHeight*0.82))+'px';return;}
+      var s=f.clientWidth/w;inner.style.transform='scale('+s+')';f.style.height=Math.round(h*s)+'px';
+    });
+  }
+  document.querySelectorAll('.frame').forEach(function(f){
+    f.addEventListener('click',function(){f.classList.toggle('zoom');fit();if(!f.classList.contains('zoom'))f.scrollLeft=0;});
+  });
+  window.addEventListener('resize',fit);fit();
+})();
+</script>
+</body>
+</html>

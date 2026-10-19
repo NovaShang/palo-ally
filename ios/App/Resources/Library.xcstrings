@@ -1,24 +1,35 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
-    "今天": {
+    "按时间": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Today"
+            "value": "By Time"
           }
         }
       }
     },
-    "全部": {
+    "按文件夹": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "All"
+            "value": "By Folder"
+          }
+        }
+      }
+    },
+    "整理方式": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrange by"
           }
         }
       }
@@ -30,6 +41,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Other"
+          }
+        }
+      }
+    },
+    "今天": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Today"
+          }
+        }
+      }
+    },
+    "昨天": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yesterday"
           }
         }
       }
@@ -52,72 +85,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Collapsed"
-          }
-        }
-      }
-    },
-    "按文件夹": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "By Folder"
-          }
-        }
-      }
-    },
-    "按时间": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "By Time"
-          }
-        }
-      }
-    },
-    "整理方式": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Arrange by"
-          }
-        }
-      }
-    },
-    "昨天": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Yesterday"
-          }
-        }
-      }
-    },
-    "范围": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scope"
-          }
-        }
-      }
-    },
-    "这个会话": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This Session"
           }
         }
       }

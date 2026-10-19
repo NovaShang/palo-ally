@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>会话指示器设计稿</title>
+<style>
+:root{--bg:#f2f2f7;--card:#fff;--ink:#1c1c1e;--sub:#6e6e73;--line:#e5e5ea}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#000;--card:#1c1c1e;--ink:#f2f2f7;--sub:#a1a1a6;--line:#2c2c2e}}
+:root[data-theme="dark"]{--bg:#000;--card:#1c1c1e;--ink:#f2f2f7;--sub:#a1a1a6;--line:#2c2c2e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,"PingFang SC",system-ui,sans-serif;-webkit-text-size-adjust:100%}
+main{max-width:860px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:26px;margin:8px 0 4px}h2{font-size:19px;margin:32px 0 8px}
+p{margin:6px 0}.sub{color:var(--sub)}
+.card{background:var(--card);border-radius:16px;padding:14px 16px;margin:10px 0}
+.dark{background:#0f0f12;color:#f5f5f7;border-radius:18px;padding:18px;margin:10px 0}
+.grid{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end}
+.cell{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px;color:rgba(235,235,245,.6);min-width:76px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:13px}
+.legend b{font-weight:700}
+ul{padding-left:20px;margin:6px 0}li{margin:4px 0}
+/* placements */
+.bar{display:flex;align-items:center;gap:10px;height:56px;padding:0 10px;border-radius:28px;background:rgba(255,255,255,.04)}
+.glass{background:rgba(64,64,72,.45);border:1px solid rgba(255,255,255,.14);box-shadow:inset 0 1px 0 rgba(255,255,255,.2)}
+.cbtn{width:44px;height:44px;border-radius:22px;display:grid;place-items:center;color:#f5f5f7;font-size:18px}
+.name{font-weight:600;font-size:16px}
+.chip{display:inline-flex;align-items:center;gap:6px;height:34px;border-radius:17px;padding:0 12px 0 5px;font-size:13.5px;margin-right:6px}
+.chip.on{background:rgba(255,255,255,.22)}
+.row{display:flex;align-items:center;gap:8px;height:30px;font-size:13px}
+.tilehead_old{display:flex;align-items:center;gap:6px;height:30px;border-radius:15px;padding:0 12px 0 3px;font-size:12.5px;width:fit-content}
+</style></head><body><main>
+<h1>会话指示器设计稿</h1>
+<p class="sub">把标题胶囊换成一个圆形的复合指示器，参考 iPhone 状态图标的样式。中间是状态图标，用 Bento Term 的图标和配色；外圈大半个圆弧是上下文用量；下方缺口里的小字是思考深度，字的颜色代表模型。</p>
+
+<h2>1. 拆开看</h2>
+<div class="dark"><div class="grid" style="justify-content:center;gap:40px;align-items:center">
+ <div id="big"></div>
+ <div style="font-size:14px;line-height:2;color:rgba(235,235,245,.85)">
+  <div>① <b>中间</b>：状态图标。在干是蓝色的播放，等你是橙色的问号，做完了是绿色的对勾，闲着是灰色的空心圆。</div>
+  <div>② <b>外圈</b>：上下文用了多少。平时是白色；超过 80% 变橙，提醒你快该压缩了；超过 95% 变红。</div>
+  <div>③ <b>缺口里的小字</b>：思考深度 low / med / hi / xhi / max，用圆体（SF Pro Rounded）。</div>
+  <div>中间的图标和外圈的圆弧同一个圆心。</div>
+  <div>④ <b>小字的颜色</b>：代表模型，见下面第 4 节。</div>
+  <div>在干的时候，中间的图标会轻轻呼吸，外圈不动。</div>
+ </div>
+</div></div>
+
+<h2>2. 四种状态（中间的图标）</h2>
+<div class="dark"><div class="grid" id="states"></div></div>
+<p class="sub">配色照搬 Bento Term：在干是蓝色 #0A85FF，等你是橙色 #FF9F0A，做完了是绿色 #30D158，闲着是灰色 #8E8E93。侧栏和标签条里的状态点也一起换成这一套。</p>
+
+<h2>3. 上下文用量（外圈）</h2>
+<div class="dark"><div class="grid" id="ctx"></div></div>
+
+<h2>4. 思考深度和模型（缺口里的小字）</h2>
+<div class="dark"><div class="grid" id="effort"></div>
+<div class="legend" style="margin-top:14px" id="models"></div></div>
+<p class="sub">已定：冷到暖的阶梯，模型越强越暖。Haiku 冰蓝 #8FD5E8 → Sonnet 长春花蓝 #A6B6F7 → Opus 兰紫 #D6A6EE → Fable 珊瑚 #F4A7A0；其他模型灰白 #C7C7CC。都是低饱和的浅色，和中间的四种状态色分得开。</p>
+
+<h2>4b. 模型配色</h2>
+<div class="dark" id="palettes"></div>
+<h2>5. 放在哪里</h2>
+<h3 style="font-size:15px;margin:14px 0 4px">手机：会话页顶栏</h3>
+<div class="dark">
+ <div class="bar"><div class="cbtn glass">‹</div><div style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px"><span class="glass" style="width:48px;height:48px;border-radius:24px;display:grid;place-items:center"><span id="ph" style="display:block;line-height:0"></span></span></div><div class="cbtn glass">▤</div></div>
+ <p style="font-size:13px;color:rgba(235,235,245,.6);margin:10px 4px 0">中间只有一颗圆形的 Liquid Glass，里面是指示器，不写会话名（会话名在侧栏、底部标签条和详情里）。点它打开详情。Palo 页一样：小球换成 Palo 的指示器，外圈是它的上下文。</p>
+</div>
+<h3 style="font-size:15px;margin:14px 0 4px">Mac：页面左上角</h3>
+<div class="dark">
+ <div style="display:flex;align-items:center;gap:10px"><span class="glass" style="width:40px;height:40px;border-radius:20px;display:grid;place-items:center"><span id="mac" style="display:block;line-height:0"></span></span><span style="flex:1"></span><span class="cbtn glass" style="width:36px;height:36px">▤</span></div>
+ <p style="font-size:13px;color:rgba(235,235,245,.6);margin:10px 4px 0">指示器放在一颗圆形的 Liquid Glass 上，不写名字，和红绿灯、右上角按钮的中线对齐。</p>
+</div>
+<h3 style="font-size:15px;margin:14px 0 4px">工作区里每一格的左上角</h3>
+<div class="dark"><div class="glass" style="width:34px;height:34px;border-radius:17px;display:grid;place-items:center"><span id="tile" style="display:block;line-height:0"></span></div></div>
+<h3 style="font-size:15px;margin:14px 0 4px">手机底部的快速切换标签条</h3>
+<div class="dark" id="strip"></div>
+<p class="sub">标签里不放图标，玻璃本身带上状态色：在干是蓝色玻璃，等你是橙色玻璃，做完了是绿色玻璃，闲着是普通的灰玻璃。当前这一个用白色描边、字加粗。</p>
+<h3 style="font-size:15px;margin:14px 0 4px">侧栏的每一行</h3>
+<div class="dark" id="side"></div>
+<p class="sub">在侧栏里尺寸太小，外圈和小字看不清，所以侧栏只用中间的状态图标；外圈和小字只在 26 点以上出现。</p>
+
+<h2>和现在比</h2>
+<div class="card"><ul>
+<li>现在的胶囊是「状态点 + 名字 + 状态 · 文件夹」两行字，手机上还和导航栏的副标题重复了一遍。新的只有一个圆形图标加一行名字。</li>
+<li>以前要点开详情才能看到的上下文用量、模型和思考深度，现在一眼就能看到。</li>
+<li>同一个图标从侧栏、标签条、格子一直用到页面顶上，大小不同，意思一样。</li>
+</ul></div>
+<p class="sub" style="margin-top:20px">看完回我：哪里要改，比如模型的颜色、外圈的提醒阈值。</p>
+</main>
+<script>
+const ST={working:{c:'#0A85FF',g:'play'},waiting:{c:'#FF9F0A',g:'q'},done:{c:'#30D158',g:'check'},idle:{c:'#8E8E93',g:'ring'}};
+const MODEL={Haiku:'#8FD5E8',Sonnet:'#A6B6F7',Opus:'#D6A6EE',Fable:'#F4A7A0',其他:'#C7C7CC'};
+function glyph(st,cx,cy,r){const s=ST[st];
+ if(s.g==='ring')return `<circle cx="${cx}" cy="${cy}" r="${r*0.8}" fill="none" stroke="${s.c}" stroke-width="${r*0.22}"/>`;
+ let inner='';
+ if(s.g==='play')inner=`<path d="M${cx-r*0.28} ${cy-r*0.42} L${cx+r*0.48} ${cy} L${cx-r*0.28} ${cy+r*0.42}Z" fill="#fff"/>`;
+ if(s.g==='check')inner=`<path d="M${cx-r*0.42} ${cy+r*0.02} L${cx-r*0.1} ${cy+r*0.34} L${cx+r*0.46} ${cy-r*0.32}" fill="none" stroke="#fff" stroke-width="${r*0.2}" stroke-linecap="round" stroke-linejoin="round"/>`;
+ if(s.g==='q')inner=`<text x="${cx}" y="${cy+r*0.36}" text-anchor="middle" font-size="${r*1.15}" font-weight="800" fill="#fff" font-family="ui-rounded,'SF Pro Rounded',-apple-system,system-ui">?</text>`;
+ return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${s.c}"/>`+inner;}
+function ind(o){const size=o.size||44,st=o.state||'working',p=o.ctx??0.41,eff=o.effort||'hi',model=o.model||'Opus';
+ const showRing=size>=26;const R=40,C=2*Math.PI*R;
+ let ringCol='rgba(255,255,255,.9)';if(p>=.95)ringCol='#FF453A';else if(p>=.8)ringCol='#FF9F0A';
+ let svg=`<svg width="${size}" height="${size}" viewBox="0 0 100 100" style="display:block">`;
+ if(showRing){svg+=`<circle cx="50" cy="50" r="${R}" fill="none" stroke="rgba(255,255,255,.16)" stroke-width="7" stroke-linecap="round" stroke-dasharray="${.75*C} ${C}" transform="rotate(135 50 50)"/>`;
+  svg+=`<circle cx="50" cy="50" r="${R}" fill="none" stroke="${ringCol}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${Math.max(.001,p)*.75*C} ${C}" transform="rotate(135 50 50)"/>`;
+  svg+=glyph(st,50,50,19);
+  svg+=`<text x="50" y="94" text-anchor="middle" font-size="17" font-weight="700" fill="${MODEL[model]}" font-family="ui-rounded,'SF Pro Rounded','Nunito',-apple-system,system-ui" letter-spacing=".2">${eff}</text>`;}
+ else svg+=glyph(st,50,50,40);
+ return svg+'</svg>';}
+const $=id=>document.getElementById(id);
+$('big').innerHTML=ind({size:150,state:'working',ctx:.41,effort:'hi',model:'Opus'});
+$('states').innerHTML=[['working','在干'],['waiting','等你'],['done','做完了'],['idle','闲着']].map(([s,l])=>`<div class="cell">${ind({size:64,state:s})}${l}</div>`).join('');
+$('ctx').innerHTML=[[.12,'12%'],[.41,'41%'],[.83,'83% 变橙'],[.97,'97% 变红']].map(([p,l])=>`<div class="cell">${ind({size:64,state:'idle',ctx:p})}${l}</div>`).join('');
+$('effort').innerHTML=[['low','Haiku'],['med','Sonnet'],['hi','Opus'],['xhi','Fable'],['max','其他']].map(([e,m])=>`<div class="cell">${ind({size:64,state:'idle',effort:e,model:m})}${e} · ${m}</div>`).join('');
+$('models').innerHTML=Object.entries(MODEL).map(([m,c])=>`<span><b style="color:${c}">●</b> ${m}</span>`).join('');
+
+const PALS={'已定：冷到暖':{Haiku:'#8FD5E8',Sonnet:'#A6B6F7',Opus:'#D6A6EE',Fable:'#F4A7A0',其他:'#C7C7CC'}};
+$('palettes').innerHTML=Object.entries(PALS).map(([name,pal])=>{Object.assign(MODEL,pal);
+ const cells=[['low','Haiku'],['med','Sonnet'],['hi','Opus'],['xhi','Fable'],['max','其他']].map(([e,m])=>`<div class="cell">${ind({size:58,state:'idle',effort:e,model:m})}${m}</div>`).join('');
+ return `<div style="font-size:14px;font-weight:600;margin:6px 0 8px">${name}</div><div class="grid" style="margin-bottom:16px">${cells}</div>`;}).join('');
+Object.assign(MODEL,{Haiku:'#8FD5E8',Sonnet:'#A6B6F7',Opus:'#D6A6EE',Fable:'#F4A7A0',其他:'#C7C7CC'});
+$('ph').innerHTML=ind({size:38,state:'working',ctx:.41});
+$('mac').innerHTML=ind({size:32,state:'waiting',ctx:.62,effort:'xhi',model:'Fable'});
+$('tile').innerHTML=ind({size:26,state:'waiting',ctx:.55});
+$('strip').innerHTML=[['Palo','idle',0],['修语音误触','working',1],['工作台设计','waiting',0],['账单','done',0],['smartsld','idle',0]].map(([n,st,on])=>{const c=ST[st].c;const tint=st==='idle'?'rgba(64,64,72,.45)':c+(on?'66':'40');return `<span class="chip" style="padding:0 14px;background:${tint};border:1px solid ${on?'rgba(255,255,255,.55)':'rgba(255,255,255,.14)'};box-shadow:inset 0 1px 0 rgba(255,255,255,.22)${on?',0 0 0 2px rgba(255,255,255,.18)':''};font-weight:${on?600:400}">${n}</span>`}).join('');
+$('side').innerHTML=[['修语音误触','working'],['工作台设计','waiting'],['整理 10 月账单','done'],['smartsld 调研','idle']].map(([n,s])=>`<div class="row">${ind({size:16,state:s})}${n}</div>`).join('');
+</script></body></html>

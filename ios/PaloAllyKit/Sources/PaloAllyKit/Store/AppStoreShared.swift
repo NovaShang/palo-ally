@@ -48,13 +48,6 @@ final class AppStoreShared {
     var recentSupported: Bool?
     var adoptDecisions: [String: PalAdoptProposalStatus] = [:]
     var adoptProposalPals: [String: String] = [:]
-
-    var workspaces: [Workspace] = []
-    /// The manual order of the sessions in no workspace; nil from a host that has none.
-    var sessionOrder: [String]?
-    var workspacesSupported: Bool?
-    var earlierItems: [EarlierItem]?
-    var earlierSupported: Bool?
 }
 
 /// A session on its way to becoming a Pal (`pals.adopt`).

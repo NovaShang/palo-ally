@@ -1,4 +1,3 @@
-import PaloAllyKit
 import SwiftUI
 
 /// The Mac: a page's top the way the assistant's conversation has it (its
@@ -7,19 +6,17 @@ import SwiftUI
 /// window's top and its title, a small status line and its menu float in a
 /// strip just below the titlebar, the content passing softly beneath (a
 /// `safeAreaBar`, so the system's soft scroll edge). Phones and iPads keep
-/// their system navigation bars. (Palo's page and a session's have no strip:
-/// their indicator sits in the title bar row, MacTitlebarIndicator.)
+/// their system navigation bars.
 struct MacPageStrip: View {
     let title: String
     var subtitle: String = ""
-    /// A dot before the status line (a session's state, as on its row).
-    var dot: StatusDotKind? = nil
+    /// A dot before the status line (a Pal's state, as on its row).
+    var dot: Color? = nil
     /// A page pushed in a column: back to the one before.
     var back: (() -> Void)? = nil
     var trailing: AnyView? = nil
-    var body: some View { centered }
 
-    private var centered: some View {
+    var body: some View {
         ZStack {
             VStack(spacing: 1) {
                 Text(title)
@@ -30,7 +27,7 @@ struct MacPageStrip: View {
                 if !subtitle.isEmpty {
                     HStack(spacing: 5) {
                         if let dot {
-                            StatusDot(dot, size: 6)
+                            Circle().fill(dot).frame(width: 6, height: 6)
                         }
                         Text(subtitle)
                             .lineLimit(1)
@@ -126,7 +123,7 @@ struct MacPageTop: ViewModifier {
 
 extension View {
     /// The Mac's floating strip in place of this page's navigation bar (MacPageStrip).
-    func macPageTop(_ title: String, subtitle: String = "", dot: StatusDotKind? = nil, back: (() -> Void)? = nil,
+    func macPageTop(_ title: String, subtitle: String = "", dot: Color? = nil, back: (() -> Void)? = nil,
                     trailing: AnyView? = nil) -> some View {
         modifier(MacPageTop(strip: MacPageStrip(title: title, subtitle: subtitle, dot: dot, back: back, trailing: trailing)))
     }
@@ -163,26 +160,4 @@ struct BarMenu<Item: View>: ViewModifier {
             content.toolbar { ToolbarItem(placement: .topBarTrailing, content: item) }
         }
     }
-}
-
-/// A floating round glass button. Catalyst draws `.buttonStyle(.glass)` as an
-/// opaque dark fill, so on the Mac the button is plain with the glass applied
-/// outside it, the way the page strips do it (MacStripButton); the system
-/// glass style stays everywhere else.
-struct GlassCircleButtonStyle: ViewModifier {
-    func body(content: Content) -> some View {
-        if Platform.isMac {
-            content
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .circle)
-        } else {
-            content
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-        }
-    }
-}
-
-extension View {
-    func glassCircleButton() -> some View { modifier(GlassCircleButtonStyle()) }
 }

@@ -32,14 +32,6 @@ function sniff(b: Buffer): string | null {
 const newId = (p: string) => `${p}_${Date.now().toString(36)}${randomBytes(4).toString("hex")}`;
 
 const UPLOAD_CHUNK_MAX = 256 * 1024;
-/** What a message carried when it was sent; a session's own card (clipboard) says what kind. */
-export interface SentMessage {
-  text: string;
-  attachments: Attachment[];
-  kind?: "clipboard";
-  label?: string;
-}
-
 const SAFE_UUID = /^[0-9a-zA-Z-]{8,64}$/;
 
 /** One chunk of a file the owner sends from the app (media.uploadChunk). */
@@ -57,7 +49,7 @@ export class MediaStore {
   private uploads = new Map<string, { name: string; mediaType: string; received: number }>();
 
   /** remember / recall, by message uuid (null: looked, nothing there). */
-  private sent = new Map<string, SentMessage | null>();
+  private sent = new Map<string, { text: string; attachments: Attachment[] } | null>();
 
   constructor(private dir: string) {}
 
@@ -214,7 +206,7 @@ export class MediaStore {
    * is only its bytes and a file only a path; this gives the page back the
    * message as sent.
    */
-  remember(uuid: string, sent: SentMessage): void {
+  remember(uuid: string, sent: { text: string; attachments: Attachment[] }): void {
     if (!SAFE_UUID.test(uuid)) return;
     this.sent.set(uuid, sent);
     try {
@@ -225,12 +217,12 @@ export class MediaStore {
     }
   }
 
-  recall(uuid: string): SentMessage | undefined {
+  recall(uuid: string): { text: string; attachments: Attachment[] } | undefined {
     if (!SAFE_UUID.test(uuid)) return undefined;
     const have = this.sent.get(uuid);
     if (have !== undefined) return have ?? undefined;
     const path = join(this.dir, "sent", `${uuid}.json`);
-    let got: SentMessage | null = null;
+    let got: { text: string; attachments: Attachment[] } | null = null;
     if (existsSync(path)) {
       try {
         const v = JSON.parse(readFileSync(path, "utf8"));

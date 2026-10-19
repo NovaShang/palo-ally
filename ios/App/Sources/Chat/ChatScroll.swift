@@ -96,9 +96,9 @@ struct JumpToLatestButton: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.primary)
                 .frame(width: 26, height: 26)
-                .contentShape(.circle)
         }
-        .glassCircleButton()
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
         .tint(.primary) // the glass style draws its label in the tint
         .overlay(alignment: .topTrailing) {
             if hasNew {

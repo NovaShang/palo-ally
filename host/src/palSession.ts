@@ -4,16 +4,15 @@ import { existsSync } from "node:fs";
 import type { ApprovalManager } from "./approvals.ts";
 import { firstLine } from "./ccSessions.ts";
 import { ACTIVITY, describeActivity, describeInput, describeTool, friendlyError } from "./copy.ts";
-import { isAuthFailure } from "./auth.ts";
 import { readHead, readTail, transcriptPath } from "./handoffs.ts";
-import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type DeliveryToolHandlers, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
+import { PALO_SEND_TOOL, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
 import type { MediaStore } from "./media.ts";
 import { type PalLaunch, isHelperFailure, makeSpawner } from "./palLauncher.ts";
-import { CARD_TOOLS, type PalMapOptions, TranscriptFollower, cardKey, toPalMessages, transcriptLastLine, transcriptModel, userEntryMessage } from "./palHistory.ts";
+import { type PalMapOptions, TranscriptFollower, toPalMessages, transcriptLastLine, transcriptModel, userEntryMessage } from "./palHistory.ts";
 import { ASK_TOOL, type QuestionManager } from "./questions.ts";
 import { type ForkSession, type PendingRewind, beforeCompaction, chainTo, hasFileCheckpoint, leafOf, ownerText, readTranscript, rewindBusy, rewindNoFiles, rewindNotFound } from "./rewind.ts";
 import { type StallRecovery, type StallTarget, transcriptHas } from "./stallWatch.ts";
-import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
+import type { Attachment, CardSource, ChatMessage, Pal, PalStatus } from "./types.ts";
 import { newId, truncate } from "./util.ts";
 
 // One Pal (docs/pals-prd.md §4, §7): one of the owner's Claude Code
@@ -40,7 +39,9 @@ export interface PalRecord {
   permissionMode: string;
   model?: string; // what it last ran on (from its transcript, then from Claude Code)
   duty?: string; // one the assistant opened: its handover, the first message
-  stoppedFor?: "failed" | "elsewhere";
+  dailyUsd?: number; // …and its daily spending limit
+  stoppedFor?: "budget" | "failed" | "elsewhere";
+  budgetDay?: string;
   note?: string; // why it's stopped
   pid?: number; // Claude Code's pid while the host runs it (an orphan after the host died)
   status?: "asleep"; // put to sleep (§12): no process until it's woken; absent = awake
@@ -51,27 +52,6 @@ export interface PalRecord {
   // Claude Code hasn't written yet; each start forks it until it has.
   rewind?: PendingRewind;
   formerSessions?: string[]; // the sessions it was forked from (theirs too: not listed among the ended ones)
-  finishedAt?: number; // its last turn ended normally then (a real turn; the host's restart doesn't write it)
-  seenAt?: number; // the owner last looked then (any device); the owner's own words count too
-  autoNamed?: boolean; // still under the placeholder name it was created with: named from its first words after a turn
-  workspaceId?: string; // the workspace it belongs to (workspaces: docs/workbench-rpc.md §3)
-  effort?: string; // chosen effort level; absent = the model's default (applies at the next start when it's asleep)
-  contextTokens?: number; // its context size after its last turn or compaction
-  lastCompactAt?: number; // when it last compacted
-}
-
-/** A background task or subagent of a session (pals.detail.tasks). */
-export interface PalTask {
-  id: string;
-  title: string;
-  kind: "subagent" | "bg";
-  startedAt: number;
-  summary?: string;
-}
-
-/** The context window of a model (its id carries "[1m]" when it's the long one). */
-export function contextWindowOf(model?: string): number {
-  return model && /\[1m\]/i.test(model) ? 1_000_000 : 200_000;
 }
 
 /** Another process holding a session's transcript. */
@@ -101,12 +81,8 @@ export interface PalSessionDeps {
   onWaiting: (pal: PalSession, body: string, ids: { approvalId?: string; questionId?: string }) => void;
   /** Its palo_send: the words go to the assistant's session (docs/pals-prd.md §16). The result is what the Pal is told. */
   toPalo: (pal: PalSession, text: string) => Promise<string> | string;
-  /** Its tools that reach the owner (Artifact, SendUserFile, …), scoped to it; none: it has only palo_send. */
-  tools?: (pal: PalSession) => DeliveryToolHandlers | undefined;
   /** A turn ended (its spending is checked). */
   onTurnEnd: (pal: PalSession) => void;
-  /** A turn went through (true) or failed for want of Claude Code's login (false). */
-  onAuth?: (pal: PalSession, ok: boolean) => void;
   /** It was asleep and is up again. */
   onWoke?: (pal: PalSession) => void;
   /** Right before its process starts: its name is read back from Claude Code's title (§13). */
@@ -120,8 +96,6 @@ export interface PalSessionDeps {
   /** What the owner attaches: images as Palo gets them, files put where the Pal reads them. */
   media?: Pick<MediaStore, "read" | "inbox" | "remember" | "recall">;
   timing: { readyMs: number; restartMs: number[]; exitWaitMs: number };
-  /** settings.foldDays: unused this many days outside a workspace, it's folded into 以前的 (0 = never). */
-  foldDays: () => number;
   now: () => number;
   log: (s: string) => void;
 }
@@ -170,15 +144,12 @@ export class PalSession {
   private streamText = "";
   private replyTexts = new Map<string, string>(); // a reply's text so far, by its id (several blocks join)
   private emitted = new Set<string>(); // ids already sent to the app
-  private calls: { name: string; id: string }[] = []; // its card tools' calls (tool_use ids) waiting for their handler
   private follower: TranscriptFollower | null = null;
   // A fork's entries copied from the session it was forked from: history, not news.
   private inherited: Set<string> | null = null;
   private sleeping: Promise<void> | null = null; // being put to sleep: its process is ending
   private upAt = 0;
   private bgTasks = new Set<string>(); // its background tasks still running (a subagent in the background)
-  private tasks = new Map<string, PalTask & { toolUseId?: string; backgrounded: boolean }>(); // subagents and background tasks, by the harness' task id
-  private compacting = false; // our /compact is going: its own result says nothing about the context
   private sendChain: Promise<unknown> = Promise.resolve(); // words go in one after another, in order
   private queuedSends = 0; // words waiting to go in (it's being woken for them)
   private wakeCost = false; // woken: the next turn's cost is what waking cost
@@ -266,33 +237,6 @@ export class PalSession {
     return this.busy ? "busy" : "idle";
   }
 
-  /** What the owner should look at: a card waits (first), it works, it finished and they haven't looked, else nothing. */
-  attention(status = this.status()): PalAttention {
-    if (status === "waiting") return "waiting";
-    if (status === "busy") return "working";
-    const { finishedAt, seenAt } = this.rec;
-    if ((status === "idle" || status === "asleep") && finishedAt !== undefined && finishedAt > (seenAt ?? 0)) return "done";
-    return "idle";
-  }
-
-  /** Outside any workspace and unused for longer than settings.foldDays. */
-  folded(): boolean {
-    const days = this.d.foldDays();
-    return !this.rec.workspaceId && days > 0 && this.d.now() - this.rec.lastUsedAt > days * 86_400_000;
-  }
-
-  /**
-   * The owner looked (pals.seen). False: nothing to mark, because no turn
-   * has finished since they last looked.
-   */
-  markSeen(at: number): boolean {
-    const { finishedAt, seenAt } = this.rec;
-    if (finishedAt === undefined || (seenAt ?? 0) >= finishedAt) return false;
-    this.rec.seenAt = Math.max(at, finishedAt);
-    this.d.save();
-    return true;
-  }
-
   toWire(): Pal {
     const status = this.status();
     return {
@@ -306,83 +250,10 @@ export class PalSession {
       ...(this.lastLine ? { lastLine: this.lastLine } : {}),
       pending: this.pendingCards(),
       ...(this.model ? { model: this.model } : {}),
-      ...(this.rec.effort ? { effort: this.rec.effort } : {}),
-      ...(this.contextPct() !== undefined ? { contextPct: this.contextPct() } : {}),
       ...(typeof this.rec.lastWakeUsd === "number" ? { lastWakeUsd: this.rec.lastWakeUsd } : {}),
       createdBy: this.rec.createdBy,
       updatedAt: Math.round(this.updatedAt),
-      attention: this.attention(status),
-      ...(this.rec.finishedAt !== undefined ? { finishedAt: Math.round(this.rec.finishedAt) } : {}),
-      ...(this.rec.seenAt !== undefined ? { seenAt: Math.round(this.rec.seenAt) } : {}),
-      ...(this.rec.workspaceId ? { workspaceId: this.rec.workspaceId } : {}),
-      folded: this.folded(),
     };
-  }
-
-  /** How full its context is, in whole percent (none until a turn has reported it). */
-  contextPct(): number | undefined {
-    const n = this.rec.contextTokens;
-    if (typeof n !== "number" || !(n >= 0)) return undefined;
-    return Math.min(100, Math.round((n / contextWindowOf(this.model ?? this.rec.model)) * 100));
-  }
-
-  /** What pals.detail shows besides the Pal itself. */
-  detailInfo(): { contextTokens?: number; contextWindow: number; model?: string; effort?: string; tasks: PalTask[]; lastCompactAt?: number; costTotalUsd: number } {
-    const model = this.model ?? this.rec.model;
-    return {
-      ...(typeof this.rec.contextTokens === "number" ? { contextTokens: this.rec.contextTokens } : {}),
-      contextWindow: contextWindowOf(model),
-      ...(model ? { model } : {}),
-      ...(this.rec.effort ? { effort: this.rec.effort } : {}),
-      tasks: [...this.tasks.values()].map(({ id, title, kind, startedAt, summary }) => ({ id, title, kind, startedAt, ...(summary ? { summary } : {}) })),
-      ...(typeof this.rec.lastCompactAt === "number" ? { lastCompactAt: this.rec.lastCompactAt } : {}),
-      costTotalUsd: this.rec.costTotalUsd ?? 0,
-    };
-  }
-
-  /**
-   * Model and/or effort for its next turns. Running: switched live (a turn in
-   * progress keeps its own). Asleep: only the record changes, it isn't woken;
-   * both apply when it next starts.
-   */
-  async setModel(o: { model?: string; effort?: string }): Promise<void> {
-    if (o.model !== undefined) {
-      this.rec.model = o.model;
-      this.model = o.model;
-    }
-    if (o.effort !== undefined) this.rec.effort = o.effort;
-    this.d.save();
-    const proc = this.proc;
-    if (proc && this.running) {
-      if (o.model !== undefined) await proc.setModel(o.model);
-      if (o.effort !== undefined) await proc.setEffort(o.effort);
-    }
-    this.touch();
-  }
-
-  /** The harness' own /compact, as a turn of its own that the owner doesn't see as their words. */
-  async compact(): Promise<void> {
-    if (this.rec.stoppedFor === "failed" || this.rec.stoppedFor === "elsewhere") throw new Error(tr("pals.stoppedNoCompact"));
-    if (this.busy) throw new Error(tr("pals.busyNoCompact"));
-    this.compacting = true;
-    try {
-      await this.deliver("/compact", { silent: true });
-    } catch (e) {
-      this.compacting = false;
-      throw e;
-    }
-  }
-
-  /** Stops a subagent or background task. */
-  async stopTask(taskId: string): Promise<void> {
-    if (!this.tasks.has(taskId)) throw new Error(tr("pals.noTask"));
-    const proc = this.proc;
-    if (!proc || !this.running) throw new Error(tr("pals.cantStopTask"));
-    try {
-      await proc.stopTask(taskId);
-    } catch {
-      throw new Error(tr("pals.cantStopTask"));
-    }
   }
 
   private touch(): void {
@@ -462,7 +333,6 @@ export class PalSession {
       // Its files can go back to how they were before any of the owner's messages from now on.
       fileCheckpointing: true,
       model: rec.model,
-      ...(rec.effort ? { effort: rec.effort } : {}),
       // so a turn's cost is its own, not the session's running total
       ...(typeof rec.costTotalUsd === "number" ? { priorCostUsd: rec.costTotalUsd } : {}),
       permissionMode: rec.permissionMode,
@@ -473,7 +343,6 @@ export class PalSession {
       ownerOrigin: true,
       canUseTool: (req) => this.canUseTool(req),
       paloSend: async (text) => this.d.toPalo(this, text),
-      ...(this.d.tools?.(this) ? { sessionTools: this.d.tools(this)! } : {}),
       onEvent: (e) => {
         if (proc === this.proc) this.onEvent(e);
       },
@@ -596,8 +465,6 @@ export class PalSession {
     this.openTools.clear();
     this.turnTools.clear();
     this.bgTasks.clear();
-    this.tasks.clear();
-    this.compacting = false;
     this.wakeCost = false;
     this.activity = "";
     this.windingDown = false;
@@ -634,6 +501,7 @@ export class PalSession {
   clearStop(): void {
     if (!this.rec.stoppedFor) return;
     this.rec.stoppedFor = undefined;
+    this.rec.budgetDay = undefined;
     this.rec.note = undefined;
     this.failures = [];
     this.d.save();
@@ -760,7 +628,7 @@ export class PalSession {
     return run;
   }
 
-  private async deliver(t: string, o: { clientMsgId?: string; from?: string; peer?: string; attachments?: Attachment[]; silent?: boolean }): Promise<ChatMessage> {
+  private async deliver(t: string, o: { clientMsgId?: string; from?: string; peer?: string; attachments?: Attachment[] }): Promise<ChatMessage> {
     if (this.rec.stoppedFor) this.clearStop();
     try {
       await this.start();
@@ -790,13 +658,11 @@ export class PalSession {
     // Its page reads the transcript, which has only the bytes and the paths: kept as sent.
     if (o.attachments?.length) this.d.media?.remember(uuid, { text: t, attachments: o.attachments });
     this.emitted.add(uuid);
-    if (!o.silent) this.d.emit("chat.message", msg);
+    this.d.emit("chat.message", msg);
     const content = o.peer ? peerWrap(o.peer, body) : body;
     this.pendingUuids.add(uuid);
     this.pendingText.set(uuid, { text: content, ...(o.from ? { from: o.from } : {}), ...(images.length ? { images } : {}) });
     this.rec.lastUsedAt = ts;
-    // The owner's own words mean they're looking at it.
-    if (!o.from && !o.silent) this.rec.seenAt = ts;
     this.d.save();
     proc.send(content, uuid, images);
     this.windingDown = false;
@@ -846,36 +712,6 @@ export class PalSession {
   private chat(msg: Omit<ChatMessage, "seq" | "ts" | "pal" | "channel"> & { channel?: ChatMessage["channel"] }): void {
     const ts = this.d.now();
     this.d.emit("chat.message", { seq: ts, ts, channel: "app", ...msg, pal: this.rec.id });
-  }
-
-  /**
-   * What one of its own tools delivers (files, a published page, a clipboard
-   * text): a message in its conversation, shown now and kept in its history. It
-   * takes the id of the tool call that made it, so the live message and the
-   * history's are the same one.
-   */
-  card(m: Omit<ChatMessage, "seq" | "id" | "ts">, tool: string): ChatMessage {
-    const name = `mcp__paloally__${tool}`;
-    const i = this.calls.findIndex((c) => c.name === name);
-    const id = i >= 0 ? this.calls.splice(i, 1)[0]!.id : newId("m_");
-    const ts = this.d.now();
-    const msg: ChatMessage = { ...m, seq: ts, id, ts, channel: "app", pal: this.rec.id };
-    this.emitted.add(id);
-    this.d.media?.remember(cardKey(id), {
-      text: msg.text,
-      attachments: msg.attachments ?? [],
-      ...(msg.kind === "clipboard" ? { kind: "clipboard" as const } : {}),
-      ...(msg.label ? { label: msg.label } : {}),
-    });
-    this.d.emit("chat.message", msg);
-    this.touch();
-    return msg;
-  }
-
-  /** A message that only goes out as a push: it isn't in its conversation, and opens it. */
-  pushNotice(text: string): ChatMessage {
-    const ts = this.d.now();
-    return { seq: ts, id: newId("m_"), role: "assistant", kind: "notice", text, channel: "system", ts, pal: this.rec.id, proactive: true };
   }
 
   private notice(text: string): void {
@@ -965,60 +801,16 @@ export class PalSession {
       case "tool_result":
         this.openTools.delete(e.toolUseId);
         this.turnTools.delete(e.toolUseId);
-        // a foreground subagent ends with its tool result
-        for (const [id, t] of this.tasks) if (t.toolUseId === e.toolUseId && !t.backgrounded) this.tasks.delete(id);
         break;
-      case "background_tasks": {
+      case "background_tasks":
         this.bgTasks = new Set(e.taskIds);
-        let gone = false;
-        for (const [id, t] of this.tasks) if (t.backgrounded && !this.bgTasks.has(id)) gone = this.tasks.delete(id) || gone;
-        if (gone) this.touch();
         break;
-      }
-      case "task_started": {
-        const agent = e.taskType ? /agent/i.test(e.taskType) : true;
-        this.tasks.set(e.taskId, {
-          id: e.taskId,
-          title: truncate(e.description || e.taskId, 80),
-          kind: agent ? "subagent" : "bg",
-          startedAt: this.d.now(),
-          ...(e.toolUseId ? { toolUseId: e.toolUseId } : {}),
-          backgrounded: !!e.background,
-        });
-        if (e.background) this.bgTasks.add(e.taskId);
-        this.touch();
-        break;
-      }
-      case "task_progress": {
-        const t = this.tasks.get(e.taskId);
-        if (t && e.summary && t.summary !== e.summary) {
-          t.summary = truncate(e.summary, 120);
-          this.touch();
-        }
-        break;
-      }
-      case "task_backgrounded": {
-        const t = this.tasks.get(e.taskId);
-        if (t) t.backgrounded = true;
-        this.bgTasks.add(e.taskId);
-        break;
-      }
       case "task_notification":
         this.bgTasks.delete(e.taskId);
-        if (this.tasks.delete(e.taskId)) this.touch();
-        break;
-      case "compact":
-        this.rec.lastCompactAt = this.d.now();
-        // after compacting, its size is what is left; unknown until the next turn says
-        this.rec.contextTokens = typeof e.postTokens === "number" ? e.postTokens : undefined;
-        this.d.save();
-        this.touch();
         break;
       case "tool_start":
       case "tool_use":
         if (e.type === "tool_use") this.openTools.set(e.id, e.name);
-        if (e.type === "tool_use" && CARD_TOOLS.has(e.name)) this.calls.push({ name: e.name, id: e.id });
-        if (this.calls.length > 20) this.calls.shift();
         if (e.parentToolUseId) break;
         if (e.type === "tool_use") this.turnTools.add(e.id);
         this.beginTurn();
@@ -1040,25 +832,13 @@ export class PalSession {
         for (const id of this.turnTools) this.openTools.delete(id);
         this.turnTools.clear();
         if (e.isError && !stopped && !e.startupFailure) this.notice(friendlyError(e.text, e.errorCategory));
-        if (!e.isError) this.d.onAuth?.(this, true);
-        else if (!stopped && isAuthFailure(e.text, e.errorCategory)) this.d.onAuth?.(this, false);
         this.noteCost(e.costUsd, e.totalCostUsd);
-        // (our /compact turn's result says nothing about the context: the compact boundary did)
-        if (!this.compacting && !e.isError && Number.isFinite(e.contextTokens) && e.contextTokens > 0) this.rec.contextTokens = e.contextTokens;
-        this.compacting = false;
         this.rec.lastUsedAt = this.d.now();
         if (this.pendingUuids.size) {
           this.closeStream();
           this.turnOpen = false;
           this.touch();
-        } else {
-          // A turn that really ended (not stopped, not failed): the owner has something to look at.
-          if (!stopped && !e.isError) {
-            this.rec.finishedAt = this.d.now();
-            this.d.save();
-          }
-          this.endTurn();
-        }
+        } else this.endTurn();
         this.follower?.poke();
         this.d.onTurnEnd(this);
         break;
@@ -1247,7 +1027,7 @@ export class PalSession {
   private async canUseTool(req: PermissionRequest): Promise<PermissionDecision> {
     const source = this.source();
     // Its one tool of ours: never a card (it is also allowed up front).
-    if (SESSION_ALLOWED_TOOLS.includes(req.toolName)) return { behavior: "allow", updatedInput: req.input };
+    if (req.toolName === PALO_SEND_TOOL) return { behavior: "allow", updatedInput: req.input };
     if (req.toolName === ASK_TOOL) {
       const asked = this.d.questions.ask(req, { source, notify: false });
       if (!asked) return { behavior: "deny", message: tr("pals.badQuestion") };

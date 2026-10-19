@@ -26,8 +26,6 @@ struct ComposerView: View {
     @Environment(AppModel.self) private var model
     @Environment(VoiceInputController.self) private var voice
     @Environment(\.scenePhase) private var scenePhase
-    /// Inside a workspace's tile: only the active one takes voice and focus.
-    @Environment(\.tile) private var tile
     @Binding var draft: String
     /// How a message goes out: typed (it rises to the top in an animation),
     /// or spoken (placed at once under the voice scrim, its words then fly
@@ -65,10 +63,6 @@ struct ComposerView: View {
     @State private var voiceStarted = false
     /// A finished hold is still resolving its final text: ignore new presses.
     @State private var finishingHold = false
-    /// Where this composer is, kept for the voice when its tile becomes the active one.
-    @State private var capsuleSize: CGSize = .zero
-    @State private var capsuleFrame: CGRect = .zero
-    @State private var fieldFrame: CGRect = .zero
     /// Words that flew into the field (`.edit`) before the final ones came:
     /// the draft as it was, and what was added. The final words replace
     /// them if the draft is still just that.
@@ -99,14 +93,11 @@ struct ComposerView: View {
     private var concentric: Bool { docked && spansDisplay && displayRadius > 0 }
     private var sideInset: CGFloat {
         // Beside a sidebar or inspector: the same even margins as the conversation.
-        guard concentric else { return spansDisplay ? Self.minInset : (tile != nil ? 10 : 20) }
+        guard concentric else { return spansDisplay ? Self.minInset : 20 }
         return max(Self.minInset, displayRadius - Self.dockedRadius)
     }
     private var capsuleRadius: CGFloat { docked ? Self.dockedRadius : Self.editingRadius }
-    private var rowHeight: CGFloat { Platform.isMac ? unit : (docked ? Self.dockedHeight : Self.editingHeight) }
-    /// The height of the buttons and a one-line field: 44 pt on a touch
-    /// screen, compact with a pointer (the Mac), more so inside a tile.
-    private var unit: CGFloat { !Platform.isMac ? 44 : (tile != nil ? 32 : 38) }
+    private var rowHeight: CGFloat { docked ? Self.dockedHeight : Self.editingHeight }
     /// The composer sits above the home-indicator inset; docked, the capsule
     /// goes `sideInset` from the screen's bottom edge — into that inset when
     /// the inset is the larger of the two.
@@ -142,12 +133,6 @@ struct ComposerView: View {
         }
     }
 
-    /// Voice on screen is this composer's: always outside a tiling, else the tile being spoken to.
-    private var mine: Bool { tile == nil || voice.owner == tile?.id }
-    private var voicePresence: CGFloat { mine ? voice.presence : 0 }
-    /// This composer may place the voice's landing spots (the active tile, or no tiling).
-    private var placesVoice: Bool { tile?.isActive ?? true }
-
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !staged.isEmpty }
     /// Idle: not editing — the field reads 「按住说话，轻点打字」 and takes presses.
     private var idle: Bool { !focused && !dictating }
@@ -177,7 +162,7 @@ struct ComposerView: View {
                 QuoteBanner(reply: reply) { withAnimation(.snappy) { store.replyDraft = nil } }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            if mine, let msg = voice.dictation.errorMessage, !voice.isActive, !voice.mounted, !dictating {
+            if let msg = voice.dictation.errorMessage, !voice.isActive, !voice.mounted, !dictating {
                 Text(msg)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -203,17 +188,7 @@ struct ComposerView: View {
         .frame(maxWidth: .infinity)
         .animation(.snappy, value: slashQuery)
         .animation(.snappy, value: staged.count)
-        .onChange(of: focusToken) { if tile?.isActive != false { focused = true } }
-        // A tile that is no longer the active one lets go of the keyboard.
-        .onChange(of: tile?.isActive) { _, active in
-            if active == false {
-                if focused { focused = false }
-            } else if active == true {
-                voice.capsuleSize = capsuleSize
-                voice.placeCapsule(capsuleFrame)
-                voice.placeField(fieldFrame)
-            }
-        }
+        .onChange(of: focusToken) { focused = true }
         // Back from 回到这里重来 with the message's words: straight on to editing them.
         .onAppear {
             guard model.focusComposerOnAppear else { return }
@@ -315,21 +290,15 @@ struct ComposerView: View {
         // The capsule brightens as the recording UI grows out of it.
         .background {
             RoundedRectangle(cornerRadius: capsuleRadius, style: .continuous)
-                .fill(Color.accentColor.opacity(0.24 * Double(voicePresence)))
+                .fill(Color.accentColor.opacity(0.24 * Double(voice.presence)))
                 .allowsHitTesting(false)
         }
         .coordinateSpace(.named(Self.capsuleSpace))
-        .onGeometryChange(for: CGSize.self) { $0.size } action: {
-            capsuleSize = $0
-            if placesVoice { voice.capsuleSize = $0 }
-        }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { voice.capsuleSize = $0 }
         // Where the voice words go and land (it changes only when the composer moves).
-        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
-            capsuleFrame = $0
-            if placesVoice { voice.placeCapsule($0) }
-        }
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { voice.placeCapsule($0) }
         // Swells with the same hold-driven motion as everything else.
-        .scaleEffect(1 + 0.035 * voicePresence)
+        .scaleEffect(1 + 0.035 * voice.presence)
         .glassEffect(capsuleGlass, in: .rect(cornerRadius: capsuleRadius, style: .continuous))
         .animation(.snappy, value: voice.target)
         .animation(.snappy, value: dictating)
@@ -339,7 +308,7 @@ struct ComposerView: View {
         .overlay(alignment: .bottom) {
             // One view from arming through listening and back: it grows out
             // of the capsule with `presence` and folds back into it.
-            if mine && voice.panelMounted {
+            if voice.panelMounted {
                 VoiceInputPanel(voice: voice)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.bottom, voice.capsuleSize.height + 18)
@@ -349,7 +318,7 @@ struct ComposerView: View {
 
     /// Keeps the 44 pt buttons centred on a one-line docked capsule (they
     /// stay at the bottom as the field grows to more lines).
-    private var buttonLift: CGFloat { Platform.isMac ? 0 : (rowHeight - 44) / 2 }
+    private var buttonLift: CGFloat { (rowHeight - 44) / 2 }
 
     /// Follows the keyboard: docked when it's down (or only the hardware
     /// keyboard's shortcut bar is showing), a plain capsule above it otherwise.
@@ -385,14 +354,14 @@ struct ComposerView: View {
             Image(systemName: "plus")
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(.secondary)
-                .frame(width: 40, height: unit)
+                .frame(width: 40, height: 44)
                 .contentShape(.rect)
         }
         .tint(.secondary) // Menu tints its label with the accent; match the mic
         // The Mac draws a menu as a bordered pop-up with a chevron; keep the bare +.
         .buttonStyle(.borderless)
         .menuIndicator(.hidden)
-        .frame(width: 40, height: unit) // the Mac sizes a borderless menu to its glyph
+        .frame(width: 40, height: 44) // the Mac sizes a borderless menu to its glyph
         .padding(.leading, 4)
         .disabled(staged.count >= Self.maxStaged || dictating)
         .accessibilityLabel("添加照片或文件")
@@ -406,7 +375,7 @@ struct ComposerView: View {
             // keyboard / Mac, Return sends (see hardwareReturn) and
             // Shift/Option/⌘+Return is a newline.
             TextField("", text: $draft, prompt: Text(focused ? prompt : ""), axis: .vertical)
-                .lineLimit(Platform.isMac ? 1...200 : 1...6)
+                .lineLimit(1...6)
                 .focused($focused)
                 .accessibilityIdentifier("composerField")
                 // The Mac: Esc leaves the field (the text stays); with an
@@ -416,19 +385,14 @@ struct ComposerView: View {
                     focused = false
                     return .handled
                 }
-                // The Mac: the field grows to a few lines, then scrolls with the wheel.
-                .modifier(MacFieldScroll(maxHeight: unit - 22 + 22 * CGFloat(tile != nil ? 4 : 6)))
                 // While idle the press layer owns every touch: the text
                 // field's own long-press / selection recognizers must not see it.
                 .allowsHitTesting(!idle)
                 // Where words spoken into 编辑 land.
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
-                    fieldFrame = $0
-                    if placesVoice { voice.placeField($0) }
-                }
-                .padding(.vertical, max(4, (unit - 22) / 2))
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { voice.placeField($0) }
+                .padding(.vertical, 11)
                 // Blank while those words fly in; it fades in as they land.
-                .opacity(dictating || (mine && voice.veilsField) ? 0 : 1)
+                .opacity(dictating || voice.veilsField ? 0 : 1)
             if dictating {
                 // Mic dictation: the live words, in the field where they'll land.
                 HStack(spacing: 8) {
@@ -456,10 +420,10 @@ struct ComposerView: View {
                         ZStack {
                             Text("按住说话，轻点打字")
                                 .foregroundStyle(pressing ? .secondary : .tertiary)
-                                .opacity(1 - Double(voicePresence))
+                                .opacity(1 - Double(voice.presence))
                             Text(releaseHint)
                                 .foregroundStyle(voice.target == .send ? Color.primary : .secondary)
-                                .opacity(Double(voicePresence))
+                                .opacity(Double(voice.presence))
                         }
                         .transition(.opacity)
                     }
@@ -501,16 +465,14 @@ struct ComposerView: View {
     /// send, the send button to its right.
     private var trailingButton: some View {
         HStack(spacing: 0) {
-            // While the agent works the mic is a stop button; typing, or
-            // holding to talk, still queues the next message.
-            if store.isBusy && !dictating { stopButton } else { micButton }
+            micButton
             if canSend && !dictating {
                 Button(action: send) {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 30))
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.tint)
-                        .frame(width: 40, height: unit)
+                        .frame(width: 40, height: 44)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("发送")
@@ -518,24 +480,6 @@ struct ComposerView: View {
             }
         }
         .padding(.trailing, 2)
-    }
-
-    private var stopButton: some View {
-        Button {
-            Task { try? await store.stop() }
-        } label: {
-            Image(systemName: "stop.fill")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.primary)
-                .frame(width: min(34, unit - 2), height: min(34, unit - 2))
-                .glassEffect(.regular.interactive(), in: .circle)
-                .frame(width: 44, height: unit)
-                .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .disabled(!store.connection.isOnline)
-        .accessibilityLabel("停止")
-        .accessibilityIdentifier("composer-stop")
     }
 
     private var micButton: some View {
@@ -546,7 +490,7 @@ struct ComposerView: View {
                     Image(systemName: "stop.fill")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: min(34, unit - 2), height: min(34, unit - 2))
+                        .frame(width: 34, height: 34)
                         .glassEffect(.regular.tint(Color.accentColor.opacity(0.9)).interactive(), in: .circle)
                         .symbolEffect(.pulse, isActive: !finishingDictation)
                 } else {
@@ -555,7 +499,7 @@ struct ComposerView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(width: 44, height: unit)
+            .frame(width: 44, height: 44)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -569,9 +513,7 @@ struct ComposerView: View {
     /// touchesBegan). Feedback first, in this very frame; then recording,
     /// whose audio session / engine start runs off the main thread.
     private func pressBegan(touchTime: TimeInterval) -> Bool {
-        // In a tiling only the active tile talks; a press elsewhere just activates it.
-        guard !finishingHold, idle, tile?.isActive != false else { return false }
-        claimVoice()
+        guard !finishingHold, idle else { return false }
         VoiceTiming.begin("touch-down", touchTime: touchTime)
         pressing = true
         moved = false
@@ -590,20 +532,6 @@ struct ComposerView: View {
         }
         VoiceTiming.mark("recording requested (arm returned)")
         return true
-    }
-
-    /// The voice is this composer's for the hold: its place, and where it is told when the words are done.
-    private func claimVoice() {
-        voice.owner = tile?.id
-        if tile != nil {
-            voice.capsuleSize = capsuleSize
-            voice.placeCapsule(capsuleFrame)
-            voice.placeField(fieldFrame)
-        }
-        voice.onExitDone = { exit in
-            if exit == .edit || exit == .unheard(edit: true) { focusToken += 1 }
-            debugLog("[voice] down after \(VoiceInputController.name(exit)): the composer has \(draft.count) characters, the list is \(Int(ChatScroll.lastDistance)) pt from the end")
-        }
     }
 
     #if DEBUG
@@ -1091,27 +1019,5 @@ private struct QuoteBanner: View {
         .padding(.vertical, 6)
         .background(Color(.secondarySystemFill), in: .rect(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .contain)
-    }
-}
-
-/// The Mac: a long multi-line field in a scroll view of its own. The text
-/// field's inner scrolling does not take the mouse wheel on Catalyst, so the
-/// field is as tall as its text up to `maxHeight` and scrolls past that.
-private struct MacFieldScroll: ViewModifier {
-    let maxHeight: CGFloat
-    @State private var contentHeight: CGFloat = 0
-
-    func body(content: Content) -> some View {
-        if Platform.isMac {
-            ScrollView {
-                content
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
-            }
-            .scrollBounceBehavior(.basedOnSize)
-            .defaultScrollAnchor(.bottom, for: .sizeChanges)
-            .frame(height: contentHeight > 0 ? min(contentHeight, maxHeight) : nil)
-        } else {
-            content
-        }
     }
 }

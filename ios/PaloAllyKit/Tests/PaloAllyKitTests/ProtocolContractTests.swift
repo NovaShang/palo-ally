@@ -104,9 +104,6 @@ private let resultTypes: [String: Check] = [
     RPCMethod.pairInvite: strict(PairInviteResult.self),
     RPCMethod.deviceList: strict(DevicesResult.self),
     RPCMethod.deviceRemove: strict(OKResult.self),
-    RPCMethod.authLoginStart: strict(AuthResult.self),
-    RPCMethod.authLoginCode: strict(AuthResult.self),
-    RPCMethod.authLoginCancel: strict(AuthResult.self),
     RPCMethod.filesList: strict(FilesListResult.self),
     RPCMethod.filesRead: strict(FileChunk.self),
     RPCMethod.filesSearch: strict(FilesSearchResult.self),
@@ -144,25 +141,6 @@ private let resultTypes: [String: Check] = [
     RPCMethod.palsRecent: strict(PalsRecentResult.self),
     RPCMethod.palsWake: strict(PalWakeResult.self),
     RPCMethod.palsRename: strict(PalRenameResult.self),
-    RPCMethod.palsCreate: strict(PalWakeResult.self),
-    RPCMethod.palsFolders: strict(FoldersResult.self),
-    RPCMethod.palsDetail: strict(PalDetail.self),
-    RPCMethod.palsSetModel: strict(PalWakeResult.self),
-    RPCMethod.palsCompact: strict(EmptyResult.self),
-    RPCMethod.palsStopTask: strict(EmptyResult.self),
-    RPCMethod.palsSeen: strict(PalWakeResult.self),
-    RPCMethod.palsEnd: strict(PalEndResult.self),
-    RPCMethod.palsReveal: strict(EmptyResult.self),
-    RPCMethod.palsEarlier: strict(EarlierResult.self),
-    RPCMethod.palsResume: strict(PalWakeResult.self),
-    RPCMethod.workspacesList: strict(WorkspacesResult.self),
-    RPCMethod.workspacesCreate: strict(WorkspaceResult.self),
-    RPCMethod.workspacesUpdate: strict(WorkspaceResult.self),
-    RPCMethod.workspacesMove: strict(WorkspacesResult.self),
-    RPCMethod.workspacesDelete: strict(OKResult.self),
-    RPCMethod.workbenchOrderSet: strict(OrderSetResult.self),
-    RPCMethod.workbenchTabsGet: strict(TabsGetResult.self),
-    RPCMethod.workbenchTabsSet: strict(TabsSetResult.self),
     // Going back (its words and whether the files went too), or only asking
     // whether the files can go back (`check`).
     RPCMethod.palsRewind: { json in
@@ -230,11 +208,6 @@ private let eventTypes: [String: Check] = [
         case .removed: return []
         case .refetch: return ["PalsUpdate did not recognise the payload"]
         }
-    },
-    RPCEventName.workspacesUpdated: strict(WorkspacesResult.self),
-    RPCEventName.workbenchUpdated: { json in
-        guard let u = WorkbenchTabsUpdate(json: json) else { return ["WorkbenchTabsUpdate did not recognise the payload"] }
-        return u.state == nil ? [] : strictIssues(TabsState.self, json["state"] ?? .null)
     },
     RPCEventName.sessionsUpdated: { json in
         switch SessionsUpdate(json: json) {
