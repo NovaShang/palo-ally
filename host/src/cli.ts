@@ -376,6 +376,12 @@ async function main(): Promise<void> {
       console.log(JSON.stringify((await call("sync", {})).settings, null, 2));
       return;
     }
+    // `auth expire`: acts as if Claude Code's login ran out (to try signing in again from the phone).
+    case "auth": {
+      if (args[0] !== "expire") throw new Error("usage: paloally auth expire");
+      console.log(JSON.stringify(await call("auth.expire", {})));
+      return;
+    }
     case "restart": {
       const now = flag("--now");
       if (!now) console.log(t("cli.restartWait"));

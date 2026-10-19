@@ -1858,6 +1858,33 @@ public final class AppStore {
         if let s = r.status { applyStatus(s) }
     }
 
+    // MARK: Claude Code's login
+
+    /// Starts signing Claude Code in again on the computer; the status then
+    /// carries the authorization link.
+    public func startLogin() async throws {
+        let r: AuthResult = try await rpc.call(RPCMethod.authLoginStart, params: EmptyParams())
+        applyAuth(r.auth)
+    }
+
+    /// The code the authorization page showed. Goes to the login process on
+    /// the computer and nowhere else.
+    public func submitLoginCode(_ code: String) async throws {
+        let r: AuthResult = try await rpc.call(RPCMethod.authLoginCode, params: AuthCodeParams(code: code))
+        applyAuth(r.auth)
+    }
+
+    public func cancelLogin() async throws {
+        let r: AuthResult = try await rpc.call(RPCMethod.authLoginCancel, params: EmptyParams())
+        applyAuth(r.auth)
+    }
+
+    private func applyAuth(_ auth: AuthStatus?) {
+        guard var s = status else { return }
+        s.auth = auth
+        status = s
+    }
+
     // MARK: unpair
 
     /// Best-effort goodbye before forgetting this host: drop our push token

@@ -33,6 +33,7 @@ export const RPC_METHODS = [
   "pals.detail", "pals.setModel", "pals.compact", "pals.stopTask", "pals.reveal",
   "workspaces.list", "workspaces.create", "workspaces.update", "workspaces.move", "workspaces.delete", "workbench.tabs.get", "workbench.tabs.set",
   "pair.invite", "device.list", "device.remove",
+  "auth.login.start", "auth.login.code", "auth.login.cancel",
   "files.list", "files.read", "files.search", "files.resolve", "files.folders.list", "files.folders.browse", "files.folders.add", "files.folders.remove",
 ] as const;
 
@@ -159,6 +160,14 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       if (a.source?.kind === "pal") hub.pals.cardAnswered(a.source.id);
       return { status: a.status };
     }
+    // Signing Claude Code in again from the phone (auth.ts). The code goes to
+    // the login process only: not to the audit, not to a log.
+    case "auth.login.start":
+      return { auth: (await hub.auth.startLogin(ctx.deviceId ?? ctx.channel)) ?? null };
+    case "auth.login.code":
+      return { auth: hub.auth.submitCode(String(p.code ?? "")) ?? null };
+    case "auth.login.cancel":
+      return { auth: hub.auth.cancelLogin() ?? null };
     case "question.answer": {
       const raw = p.answers && typeof p.answers === "object" ? (p.answers as Record<string, unknown>) : {};
       const answers = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, String(v ?? "")]));

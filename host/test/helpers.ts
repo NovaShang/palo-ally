@@ -1,3 +1,4 @@
+import type { AuthDeps, LoginProcess } from "../src/auth.ts";
 import { afterAll } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -64,6 +65,7 @@ export function makeHub(
     sessions?: Partial<SessionsDeps>;
     pals?: Partial<PalsDeps>;
     harness?: HarnessDriver; // a real one (live tests); `driver` is then unused
+    auth?: Partial<AuthDeps>;
   } = {},
 ) {
   const paths = opts.paths ?? tmpPaths();
@@ -75,10 +77,39 @@ export function makeHub(
   const sessions: Partial<SessionsDeps> = { claudeDir, cli: new FakeCli(), ...opts.sessions };
   // Pals start directly (no PaloAlly Helper) from a plain environment.
   const pals: Partial<PalsDeps> = { launch: async () => ({ helper: null, env: { PATH: process.env.PATH ?? "/usr/bin:/bin" } }), usesHelper: () => false, ...opts.pals };
-  const hub = new Hub({ paths, config: opts.config ?? testConfig(), driver: opts.harness ?? driver, pushers: [pusher], wechat: opts.wechat, log: () => {}, allies: opts.allies, sessions, pals });
+  // Never this computer's login: no keychain, no `claude auth`, a pretend login process.
+  const logins: FakeLogin[] = [];
+  const auth: Partial<AuthDeps> = { stamp: async () => null, loggedIn: async () => true, spawnLogin: () => (logins.push(new FakeLogin()), logins.at(-1)!), ...opts.auth };
+  const hub = new Hub({ paths, config: opts.config ?? testConfig(), driver: opts.harness ?? driver, pushers: [pusher], wechat: opts.wechat, log: () => {}, allies: opts.allies, sessions, pals, auth });
   const events: { event: string; data: any }[] = [];
   hub.bus.on((event, data) => events.push({ event, data }));
-  return { hub, driver, pusher, paths, events };
+  return { hub, driver, pusher, paths, events, logins };
+}
+
+/** `claude auth login` as AuthWatch sees it: lines it says, codes typed in, how it ends. */
+export class FakeLogin implements LoginProcess {
+  private lines: ((l: string) => void)[] = [];
+  private exits: ((c: number) => void)[] = [];
+  written: string[] = [];
+  killed = false;
+  onLine(f: (l: string) => void): void {
+    this.lines.push(f);
+  }
+  onExit(f: (c: number) => void): void {
+    this.exits.push(f);
+  }
+  write(line: string): void {
+    this.written.push(line);
+  }
+  kill(): void {
+    this.killed = true;
+  }
+  say(line: string): void {
+    for (const f of this.lines) f(line);
+  }
+  exit(code: number): void {
+    for (const f of this.exits) f(code);
+  }
 }
 
 export const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));

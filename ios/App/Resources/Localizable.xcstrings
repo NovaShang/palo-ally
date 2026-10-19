@@ -233,6 +233,28 @@
         }
       }
     },
+    "1. 授权" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1. Authorize"
+          }
+        }
+      }
+    },
+    "2. 代码" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2. Code"
+          }
+        }
+      }
+    },
     "6 位配对码" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -240,6 +262,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "6-digit pairing code"
+          }
+        }
+      }
+    },
+    "Claude Code 登录过期了，事情都停下了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code's login expired; everything has stopped"
           }
         }
       }
@@ -647,6 +680,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "From"
+          }
+        }
+      }
+    },
+    "代码不对，请确认整段复制了。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That code wasn't accepted. Make sure you copied all of it."
           }
         }
       }
@@ -2653,6 +2697,17 @@
         }
       }
     },
+    "打开授权页" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open authorization page"
+          }
+        }
+      }
+    },
     "扫一扫" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3643,6 +3698,28 @@
         }
       }
     },
+    "正在电脑上准备登录…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Getting the login ready on the computer…"
+          }
+        }
+      }
+    },
+    "正在登录…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signing in…"
+          }
+        }
+      }
+    },
     "正在连接…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4243,6 +4320,17 @@
         }
       }
     },
+    "没登录成功：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't sign in: %@"
+          }
+        }
+      }
+    },
     "没移出：%@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4272,6 +4360,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No answer"
+          }
+        }
+      }
+    },
+    "没能开始登录：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't start the login: %@"
           }
         }
       }
@@ -4540,6 +4639,17 @@
         }
       }
     },
+    "电脑上的 Claude Code 登录过期了。在这里打开授权页，用你的 Claude 账号同意，再把页面上显示的代码粘贴回来。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code's login on the computer has expired. Open the authorization page here, approve with your Claude account, then paste back the code the page shows."
+          }
+        }
+      }
+    },
     "电脑上的 Claude Code 里也会是这个名字。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4602,6 +4712,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Computers & devices…"
+          }
+        }
+      }
+    },
+    "登录" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in"
+          }
+        }
+      }
+    },
+    "登录好了，停下的事会接着做。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signed in. What stopped will carry on."
           }
         }
       }
@@ -4855,6 +4987,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Manage it: goals, history, memory and settings"
+          }
+        }
+      }
+    },
+    "粘贴代码" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paste code"
           }
         }
       }
@@ -6067,6 +6210,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reopen"
+          }
+        }
+      }
+    },
+    "重新登录" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in again"
           }
         }
       }

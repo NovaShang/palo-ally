@@ -194,6 +194,8 @@ public actor DemoHost {
         emit(RPCEventName.approvalUpdated, a)
     }
 
+    static let demoLoginURL = "https://claude.com/cai/oauth/authorize?code=true&client_id=demo"
+
     /// Screenshot states for the title capsule (`-demoState idle | busy | tasks | fresh | answered | tables`):
     /// nothing waiting on the owner, then the main turn working, or several
     /// background tasks running.
@@ -302,6 +304,11 @@ public actor DemoHost {
                 post("找到了，是 \(CCSession.shortPath(found.cwd)) 里那个。")
                 proposeAdopting(found)
             }
+        case "authExpired", "authLogin":
+            // `-demoState authExpired`: Claude Code's login ran out on the
+            // computer; `authLogin`: being signed in again, the link out.
+            s.auth = AuthStatus(state: .expired, since: now - 40 * 60_000,
+                                login: name == "authLogin" ? LoginStatus(state: .waiting, startedAt: now, url: Self.demoLoginURL) : nil)
         case "longQuote":
             // `-demoState longQuote`: a reply, then the owner's words quoting a long
             // stretch of it (folds to two lines) and, below, a short quote (doesn't).
@@ -842,6 +849,28 @@ public actor DemoHost {
             settings = try obj.decode(HostSettings.self)
             emit(RPCEventName.settingsUpdated, settings)
             return ["settings": try .from(settings)]
+        case RPCMethod.authLoginStart:
+            // The link comes back at once; the demo's login goes through with any code but "bad".
+            status.auth = AuthStatus(state: status.auth?.state ?? .ok, since: status.auth?.since,
+                                     login: LoginStatus(state: .waiting, startedAt: Date().epochMillis, url: Self.demoLoginURL))
+            emit(RPCEventName.status, status)
+            return ["auth": try .from(status.auth)]
+        case RPCMethod.authLoginCode:
+            guard let login = status.auth?.login, login.state == .waiting || login.state == .invalid else {
+                throw DemoError(message: "no login waiting for a code")
+            }
+            if p["code"]?.stringValue?.trimmingCharacters(in: .whitespaces) == "bad" {
+                status.auth?.login?.state = .invalid
+            } else {
+                status.auth = nil
+            }
+            emit(RPCEventName.status, status)
+            return ["auth": try status.auth.map { try JSONValue.from($0) } ?? .null]
+        case RPCMethod.authLoginCancel:
+            status.auth?.login = nil
+            if status.auth?.state == .ok { status.auth = nil }
+            emit(RPCEventName.status, status)
+            return ["auth": try status.auth.map { try JSONValue.from($0) } ?? .null]
         case RPCMethod.stop:
             status.busy = false
             status.activity = nil

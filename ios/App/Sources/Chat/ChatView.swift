@@ -653,10 +653,12 @@ private struct MacTopOrb: View {
     }
 }
 
-/// Banner for connection trouble.
+/// Banner for connection trouble, and for Claude Code's login running out
+/// on the computer (everything waits until it's signed in again).
 struct StatusBanner: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
+    @State private var signingIn = false
 
     var body: some View {
         Group {
@@ -673,8 +675,23 @@ struct StatusBanner: View {
                         .buttonStyle(.glass)
                         .tint(.primary)
                 }
+            } else if store.status?.auth?.isExpired == true {
+                banner(icon: "person.crop.circle.badge.exclamationmark", tint: .orange, text: String(localized: "Claude Code 登录过期了，事情都停下了")) {
+                    Button("重新登录") { signingIn = true }
+                        .buttonStyle(.glassProminent)
+                }
             }
         }
+        .sheet(isPresented: $signingIn) { ClaudeLoginSheet() }
+        #if DEBUG
+        // `-demoScreen claudeLogin` (with `-demoState authLogin`): the sign-in sheet, open.
+        .task {
+            if UserDefaults.standard.string(forKey: "demoScreen") == "claudeLogin" {
+                try? await Task.sleep(for: .seconds(1))
+                signingIn = true
+            }
+        }
+        #endif
     }
 
     private func banner(icon: String, tint: Color, text: String, @ViewBuilder action: () -> some View) -> some View {

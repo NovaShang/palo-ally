@@ -609,8 +609,9 @@ export class ClaudeCodeDriver implements HarnessDriver {
           cost = m.total_cost_usd ?? 0;
           usage = m.modelUsage;
           denied = (m.permission_denials ?? []).map((d: any) => String(d.tool_name));
-          if (m.subtype === "success") output = m.structured_output ?? m.result;
-          else error = m.errors?.join("; ") || m.subtype;
+          // A failed call (no login, say) can still end as "success", flagged is_error.
+          if (m.subtype === "success" && !m.is_error) output = m.structured_output ?? m.result;
+          else error = m.errors?.join("; ") || (typeof m.result === "string" && m.result) || m.subtype;
         }
       }
     } catch (e) {

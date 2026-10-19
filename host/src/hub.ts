@@ -1,4 +1,5 @@
 import { Allies, type AlliesDeps } from "./allies.ts";
+import { AuthWatch, type AuthDeps, type Missed, claudeLoggedIn, credentialsStamp } from "./auth.ts";
 import { ApprovalManager } from "./approvals.ts";
 import { ArtifactLibrary } from "./artifacts.ts";
 import { Audit } from "./audit.ts";
@@ -62,6 +63,7 @@ export interface HubDeps {
   pals?: Partial<PalsDeps>; // tests fake how Pals start, the registry and the timing
   stallWatch?: Partial<StallWatchDeps>; // tests drive the watchdog's clock and checks
   forkSession?: ForkSession; // tests copy sessions in their own Claude Code folder
+  auth?: Partial<AuthDeps>; // tests fake the login process and Claude Code's answers
 }
 
 // Hub assembles the assistant: the main conversation with the harness, the
@@ -95,6 +97,8 @@ export class Hub {
   /** Files on the computer, read-only (docs/files-prd.md). */
   readonly files: FileBrowser;
   readonly stallWatch: StallWatch;
+  /** Claude Code's login: noticed when it runs out, signed in again from the phone (auth.ts). */
+  readonly auth: AuthWatch;
   private readonly info: HarnessInfo;
   private readonly proactive: Proactive;
   private readonly ledger: UsageLedger;
@@ -144,6 +148,27 @@ export class Hub {
       () => this.chat.lastUserActivity(),
     );
     this.router.onRunaway = (reason) => this.proactive?.onRunaway(reason);
+    let expiredNotice: ChatMessage | null = null;
+    this.auth = new AuthWatch({
+      path: `${this.paths.state}/auth.json`,
+      scriptDir: this.paths.state,
+      // Said once in the chat; pushed (and to WeChat) unless quiet hours hold it, then again after.
+      notify: async () => {
+        expiredNotice ??= this.chat.add({ role: "assistant", kind: "notice", text: t("auth.expired"), channel: "system", proactive: true });
+        const r = await this.router.proactive(expiredNotice, { title: t("auth.expiredTitle") });
+        return !r.suppressed;
+      },
+      recovered: (missed, how, since) => {
+        expiredNotice = null;
+        void this.resumeAfterLogin(missed, how, since).catch((e) => this.log(`resume after login failed: ${e}`));
+      },
+      changed: () => this.emitStatus(),
+      audit: (type, data) => this.audit.log(type, data),
+      log: (s) => this.log(s),
+      stamp: credentialsStamp,
+      loggedIn: claudeLoggedIn,
+      ...deps.auth,
+    });
     this.approvals = new ApprovalManager(this.paths.approvals, this.bus, this.audit, {
       taskForToolUse: (id) => (id ? this.tasks.taskIdForToolUse(id) : undefined),
       onCreated: (a) => this.proactive.onApprovalCreated(a),
@@ -202,6 +227,7 @@ export class Hub {
         this.watches.progress(id, text);
       },
       metric: (m) => this.metric(m),
+      onAuth: (failed) => (failed ? this.auth.failed({ kind: "palo", ...failed }) : this.auth.worked()),
       log: this.log,
     });
     this.handoffs = new HandoffTracker({
@@ -276,6 +302,8 @@ export class Hub {
       log: (s) => this.log(`probe: ${s}`),
       audit: (type, data) => this.audit.log(type, data),
       budgetUsd: () => this.config.budget.probeDailyUsd,
+      held: () => this.auth.expired,
+      onAuth: (ok) => (ok ? this.auth.worked() : this.auth.failed({ kind: "probe" })),
       onPaused: (reason, due) =>
         this.chat.add({
           role: "system",
@@ -339,6 +367,7 @@ export class Hub {
       models: () => this.info.loadModels(1500),
       // A Pal's palo_send joins the assistant's inbound queue (a turn of its own, behind a running one), as an Ally's message does.
       toAssistant: (from, wrapped) => this.conversation.enqueue({ text: wrapped, origin: "system", proactive: true, pal: true, label: from }),
+      onAuth: (pal, ok) => (ok ? this.auth.worked() : this.auth.failed({ kind: "pal", ...pal })),
       ...(deps.sessions?.readMessages ? { readMessages: deps.sessions.readMessages } : {}),
       workspaceExists: (id) => this.workbench?.exists(id) ?? false,
       shownIds: () => this.workbench?.shownIds() ?? new Set<string>(),
@@ -422,6 +451,7 @@ export class Hub {
     }
     if (opts.watchArtifacts !== false) this.artifacts.watch();
     this.allies.start();
+    this.auth.start();
     if (opts.probe !== false) {
       // Work handed to other sessions: the host follows it itself.
       this.handoffs.startTimer();
@@ -454,6 +484,7 @@ export class Hub {
     this.sessions.stop();
     this.pals.stop();
     this.stallWatch.stop();
+    this.auth.stop();
     this.conversation.stopIdleCompact();
     if (this.suggestionTimer) clearInterval(this.suggestionTimer);
     this.artifacts.stop();
@@ -463,6 +494,7 @@ export class Hub {
 
   status(): Status {
     const busy = this.conversation.busy;
+    const auth = this.auth.status();
     return {
       online: true,
       busy,
@@ -473,6 +505,7 @@ export class Hub {
       wechat: this.wechat?.status() ?? "off",
       version: VERSION,
       metAt: this.chat.startedAt,
+      ...(auth ? { auth } : {}),
     };
   }
 
@@ -892,7 +925,44 @@ export class Hub {
   // ---------------- internals ----------------
 
   private onSchedule(w: Watch): void {
+    // No login: it would fail. Held, and run once the login is back.
+    if (this.auth.expired) return this.auth.hold(w.id);
     this.proactive.onSchedule(w);
+  }
+
+  /**
+   * Claude Code's login is back: idle processes start afresh (so they sign
+   * in again), held schedules and checks run, Pals whose turn failed are
+   * told to go on, and the assistant gets what it didn't finish, telling the
+   * owner what came back. With nothing of its own to finish, a note says it.
+   */
+  private async resumeAfterLogin(m: Missed, how: string, since: number): Promise<void> {
+    const mins = Math.max(1, Math.round((Date.now() - since) / 60_000));
+    this.conversation.restartIdle();
+    const palIds = Object.keys(m.pals);
+    await this.pals.restartIdle(palIds);
+    const told: string[] = [];
+    for (const id of palIds) {
+      if (!this.pals.get(id)) continue;
+      await this.pals.toolSend({ name: id, text: t("auth.palResume") });
+      told.push(m.pals[id]!);
+    }
+    const rerun: string[] = [];
+    for (const id of m.schedules) {
+      const w = this.watches.get(id);
+      if (!w?.enabled) continue;
+      this.proactive.onSchedule(w);
+      rerun.push(w.title);
+    }
+    void this.probe.tick();
+    const quote = (xs: string[]) => xs.map((x) => t("ally.msg.quote", { text: x })).join(t("turn.listSep"));
+    const done = [rerun.length ? t("auth.rerun", { list: quote(rerun) }) : "", told.length ? t("auth.palsTold", { list: quote(told) }) : ""].filter(Boolean).join(" ");
+    this.log(`after login (${how}, ${mins} min): ${m.palo.length} turn(s) to finish, ${rerun.length} schedule(s), ${told.length} Pal(s)`);
+    if (m.palo.length) {
+      const list = m.palo.map((x) => `- ${x.text.replace(/\s+/g, " ").slice(0, 200)}`).join("\n");
+      // pal: work already asked for, so the proactive budget doesn't drop it.
+      this.conversation.enqueue({ text: t("auth.resumeTurn", { mins, list, done: done ? t("auth.hostDid", { done }) : "" }), origin: "system", proactive: true, pal: true, label: t("auth.resumeLabel") });
+    } else this.chat.add({ role: "system", kind: "notice", text: t("auth.back", { mins, done }), channel: "system" });
   }
 
   private onProbeTriggers(t: ProbeTrigger[]): void {

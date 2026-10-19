@@ -54,7 +54,7 @@ describe("host ↔ app protocol", () => {
     const histories = new Map<string, any[]>();
     // The conversations that ended on the computer, as the SDK's listSessions gives them.
     const ended: SDKSessionInfo[] = [];
-    const { hub, paths, events, driver } = net.add("家人A", {
+    const { hub, paths, events, driver, logins } = net.add("家人A", {
       script,
       sessions: {
         claudeDir: claude.dir,
@@ -414,6 +414,14 @@ describe("host ↔ app protocol", () => {
     expect(Object.keys((await call("sync", {})).workbenchTabs)).toContain(`ws:${ws.id}`);
     await run("workspaces.delete", { id: ws.id });
     await run("pals.remove", { id: opened.id });
+    // Claude Code's login ran out: signed in again from the phone.
+    hub.auth.failed({ kind: "probe" });
+    expect((await call("auth.login.start")).auth).toMatchObject({ state: "expired", login: { state: "starting" } });
+    logins[0]!.say("URL https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c250a&response_type=code");
+    methods["auth.login.start"] = { params: {}, result: await call("auth.login.start") };
+    expect((methods["auth.login.start"] as Sample).result).toMatchObject({ auth: { login: { state: "waiting", url: expect.stringContaining("oauth/authorize") } } });
+    expect((await run("auth.login.code", { code: "a1b2c3#d4e5" })).auth.login.state).toBe("checking");
+    expect((await run("auth.login.cancel")).auth).toMatchObject({ state: "expired" });
     hub.pals.stop();
     await run("stop");
     await run("device.unpair");

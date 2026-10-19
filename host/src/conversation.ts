@@ -9,6 +9,7 @@ import type { WechatChannel, WechatReplyTarget } from "./channels/types.ts";
 import type { ChatLog } from "./chat.ts";
 import type { Config, Paths } from "./config.ts";
 import { ACTIVITY, activityBackground, allyToolDenied, budgetNotice, describeActivity, friendlyError } from "./copy.ts";
+import { isAuthFailure } from "./auth.ts";
 import { behaviorPrompt } from "./home.ts";
 import type { HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption, SlashCommandInfo, ToolGate, ToolHandlers } from "./harness/types.ts";
 import { autoMemoryDir } from "./memory.ts";
@@ -102,6 +103,8 @@ export interface ConversationDeps {
   // where Claude Code keeps a session's transcript (a rewound session: has the fork been written?)
   transcriptOf?: (sessionId: string) => string | undefined;
   metric: (m: Record<string, unknown>) => void;
+  /** A turn went through (null) or failed for want of Claude Code's login (what it was for). */
+  onAuth?: (failed: { text: string; watchId?: string } | null) => void;
   log: (s: string) => void;
 }
 
@@ -579,7 +582,7 @@ export class Conversation {
     return answered;
   }
 
-  private endTurn(costUsd: number, contextTokens: number, error?: string, answered: OwnerMessage[] = [], errorCategory?: string): void {
+  private endTurn(costUsd: number, contextTokens: number, error?: string, answered: (OwnerMessage & { text?: string })[] = [], errorCategory?: string): void {
     const { chat, router, wechat, audit } = this.d;
     const turn = this.current;
     this.current = null;
@@ -613,7 +616,13 @@ export class Conversation {
     this.d.tasks.finalizePending();
     if (turn) {
       this.d.metric({ type: "turn", origin: turn.origin, proactive: turn.proactive, costUsd, contextTokens, error });
-      if (error) chat.add({ role: "system", kind: "notice", text: friendlyError(error, errorCategory), channel: "system" });
+      // The login ran out: said once for everything (auth.ts), not after each turn.
+      const noLogin = !!error && isAuthFailure(error, errorCategory);
+      if (error && !noLogin) chat.add({ role: "system", kind: "notice", text: friendlyError(error, errorCategory), channel: "system" });
+      if (noLogin) {
+        const owner = answered.flatMap((m) => (m.text ? [m.text] : []));
+        this.d.onAuth?.({ text: owner.length ? owner.join("\n") : turn.label ? `${turn.label}: ${turn.text}` : turn.text, ...(turn.watchId ? { watchId: turn.watchId } : {}) });
+      } else if (!error) this.d.onAuth?.(null);
       const shown = stripSkip(this.turnTexts.join("\n\n").trim());
       if (turn.watchId && shown && !error) this.d.onGoalResult?.(turn.watchId, shown);
       // The owner spoke while this proactive turn ran and it answered them too:
@@ -773,6 +782,18 @@ export class Conversation {
     this.lastContextTokens = 0;
     this.d.runtime.update({ sessionId: r.to, rewind: r.written ? undefined : { from: r.from, at: r.at, cut: r.cut }, contextTokens: 0 });
     this.d.statusChanged();
+  }
+
+  /**
+   * Claude Code's login is back: an idle process ends and a new one starts
+   * on the same session, so it signs in afresh. False while a turn is on.
+   */
+  restartIdle(): boolean {
+    if (!this.session || this.current || this.pending.size || this.allyGate) return false;
+    this.session.close();
+    this.session = null;
+    this.ensureSession();
+    return true;
   }
 
   // ---------------- the stall watchdog ----------------

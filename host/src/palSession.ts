@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import type { ApprovalManager } from "./approvals.ts";
 import { firstLine } from "./ccSessions.ts";
 import { ACTIVITY, describeActivity, describeInput, describeTool, friendlyError } from "./copy.ts";
+import { isAuthFailure } from "./auth.ts";
 import { readHead, readTail, transcriptPath } from "./handoffs.ts";
 import { PALO_SEND_TOOL, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
 import type { MediaStore } from "./media.ts";
@@ -104,6 +105,8 @@ export interface PalSessionDeps {
   toPalo: (pal: PalSession, text: string) => Promise<string> | string;
   /** A turn ended (its spending is checked). */
   onTurnEnd: (pal: PalSession) => void;
+  /** A turn went through (true) or failed for want of Claude Code's login (false). */
+  onAuth?: (pal: PalSession, ok: boolean) => void;
   /** It was asleep and is up again. */
   onWoke?: (pal: PalSession) => void;
   /** Right before its process starts: its name is read back from Claude Code's title (§13). */
@@ -1004,6 +1007,8 @@ export class PalSession {
         for (const id of this.turnTools) this.openTools.delete(id);
         this.turnTools.clear();
         if (e.isError && !stopped && !e.startupFailure) this.notice(friendlyError(e.text, e.errorCategory));
+        if (!e.isError) this.d.onAuth?.(this, true);
+        else if (!stopped && isAuthFailure(e.text, e.errorCategory)) this.d.onAuth?.(this, false);
         this.noteCost(e.costUsd, e.totalCostUsd);
         // (our /compact turn's result says nothing about the context: the compact boundary did)
         if (!this.compacting && !e.isError && Number.isFinite(e.contextTokens) && e.contextTokens > 0) this.rec.contextTokens = e.contextTokens;

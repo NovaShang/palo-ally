@@ -80,6 +80,7 @@
 		81795DC9AB339FAD84FFE4ED /* StatusDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD22C89C59DEA146D7FD8890 /* StatusDot.swift */; };
 		81A11C9A7F625540126701DA /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5458CC8523AA61D0A0852ABA /* ChatView.swift */; };
 		84867E65DB374AF122C9DD05 /* AllyAcceptSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3564B78F37E2CB3375A1AE1F /* AllyAcceptSheet.swift */; };
+		853D23C69E39D50C2C5E9E82 /* ClaudeLoginSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F3CAA08C08409C2C6E2D5B7 /* ClaudeLoginSheet.swift */; };
 		85E73C0BADE3777933C88212 /* AllyChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = B81417C9AB023AED7ACC4AC2 /* AllyChat.swift */; };
 		8781C04CFC02A3A8620CA135 /* StallWatchdog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C7EC5D880932CD6C79433E3 /* StallWatchdog.swift */; };
 		8850FBC4AA7695D4260E332B /* DiagnosticsCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3C390EEBB6E830AE2684F1C /* DiagnosticsCollector.swift */; };
@@ -219,6 +220,7 @@
 		63DF4E96D0F73A16748CF819 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		64CF9F27B24B6002B42720BB /* ConversationList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationList.swift; sourceTree = "<group>"; };
 		6AC02B1EE268D6B6F8AA2F6C /* ImagesUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagesUITests.swift; sourceTree = "<group>"; };
+		6F3CAA08C08409C2C6E2D5B7 /* ClaudeLoginSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeLoginSheet.swift; sourceTree = "<group>"; };
 		711BC1712E3CB0B810C91022 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
 		7204F49936E047B0B9DD85FC /* NavigationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationUITests.swift; sourceTree = "<group>"; };
 		727BCDF8F4AA67625E0359C0 /* OrbInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbInput.swift; sourceTree = "<group>"; };
@@ -436,6 +438,7 @@
 				4FBD3843044FE94D50902206 /* ChatScroll.swift */,
 				C3C69EFBC6FE3651296709B5 /* ChatScrollCoordinator.swift */,
 				5458CC8523AA61D0A0852ABA /* ChatView.swift */,
+				6F3CAA08C08409C2C6E2D5B7 /* ClaudeLoginSheet.swift */,
 				C0309622DA447C8E1B5069A2 /* ClipboardCard.swift */,
 				F6913CFC059408D7033A0C3E /* ComposerIntake.swift */,
 				1C8CC906F00EAFD38D91A3CD /* ComposerPressGesture.swift */,
@@ -782,6 +785,7 @@
 				DB5D7D92603C6BB878F3C047 /* ChatScroll.swift in Sources */,
 				C589F261644574530AF4FF46 /* ChatScrollCoordinator.swift in Sources */,
 				81A11C9A7F625540126701DA /* ChatView.swift in Sources */,
+				853D23C69E39D50C2C5E9E82 /* ClaudeLoginSheet.swift in Sources */,
 				EF4C57CF1068151AD36D302D /* ClipboardCard.swift in Sources */,
 				44FDFDE5AC5121A21873B8D2 /* CommitWatch.swift in Sources */,
 				58010BF040ECA3EE20E7D206 /* ComposerIntake.swift in Sources */,

@@ -2,7 +2,7 @@
 // Ally turns). {name} = placeholder.
 export const zhCopy = {
   "err.busy": "模型那边太忙了，这一步没做完。稍后再跟我说一次就好。",
-  "err.auth": "我连不上模型了（登录失效）。请在电脑上运行 claude 重新登录，或者检查 API 密钥。",
+  "err.auth": "我连不上模型了（Claude Code 登录过期）。在 App 首页点「重新登录」就能在手机上登录，或者在电脑上运行 claude 再输入 /login。",
   "err.billing": "模型额度用完了或账号受限，等额度恢复或者换个模型再试。",
   "err.billingText": "模型额度用完了，等额度恢复或者换个模型再试。",
   "err.model": "现在选的模型用不了，去「模型与思考」里换一个。",

@@ -114,6 +114,10 @@ export async function startDaemon(
         return { status: wechat?.status() ?? "off", enabled: !!wechat };
       case "probe.tick":
         return hub.probe.tick();
+      // For trying the phone's sign-in for real without logging the computer out.
+      case "auth.expire":
+        hub.auth.failed({ kind: "probe" });
+        return { auth: hub.auth.status() };
       case "probe.status":
         return {
           ...probeHealth(hub.watches.list()),

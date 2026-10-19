@@ -144,6 +144,21 @@ export interface QuestionItem {
 
 export type QuestionStatus = "pending" | "answered" | "expired";
 
+/** Claude Code's login, while it's out or being signed in again (auth.ts). */
+export interface AuthStatus {
+  state: "expired" | "ok"; // ok: a sign-in started while it still worked
+  since?: number; // when it was found expired
+  login?: LoginStatus;
+}
+
+/** A sign-in from the phone: starting → waiting (the link is out) → checking → gone; invalid: try the code again. */
+export interface LoginStatus {
+  state: "starting" | "waiting" | "invalid" | "checking" | "failed";
+  startedAt: number;
+  url?: string; // the authorization page
+  error?: string;
+}
+
 export interface Question {
   id: string;
   items: QuestionItem[];
@@ -238,6 +253,7 @@ export interface Status {
   wechat: "off" | "connected" | "expired";
   version: string;
   metAt?: number; // when the owner first talked to it (first chat message), for 「认识你 N 天」
+  auth?: AuthStatus; // Claude Code's login, only while it's out or being signed in again
 }
 
 // ---- Allies (docs/allies-prd.md §6–7) ----

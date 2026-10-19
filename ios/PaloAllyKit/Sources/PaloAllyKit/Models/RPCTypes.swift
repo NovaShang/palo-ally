@@ -140,6 +140,14 @@ public enum RPCMethod {
     public static let deviceList = "device.list"
     public static let deviceRemove = "device.remove"
 
+    /// Claude Code's login on the computer, signed in again from here: start
+    /// it (the authorization link comes back), type the code the page shows,
+    /// or give up.
+    public static let authLoginStart = "auth.login.start"
+    public static let authLoginCode = "auth.login.code"
+    public static let authLoginCancel = "auth.login.cancel"
+    public static let auth: [String] = [authLoginStart, authLoginCode, authLoginCancel]
+
     /// Files on the computer, read-only (docs/files-prd.md): a folder's
     /// children, a file in chunks, names, the paths in a reply, and the
     /// folders the owner opened from the preview pane.
@@ -163,7 +171,7 @@ public enum RPCMethod {
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
         suggestionsList, suggestionsDismiss, hostUpdate, pairInvite, deviceList, deviceRemove,
-    ] + allies + sessions + pals + workbench + files
+    ] + allies + sessions + pals + workbench + files + auth
 }
 
 public enum RPCEventName {
@@ -632,6 +640,19 @@ public struct SettingsResult: Decodable, Sendable {
 }
 
 /// `stop` / `model.set` return `{status}`.
+public struct AuthCodeParams: Codable, Sendable {
+    public var code: String
+    public init(code: String) { self.code = code }
+}
+
+/// auth.login.*: the login's state after the call (null: it works and no sign-in is under way).
+public struct AuthResult: Decodable, Sendable {
+    public var auth: AuthStatus?
+    public init(from decoder: Decoder) throws {
+        auth = try Lenient(decoder).decode(AuthStatus.self, "auth")
+    }
+}
+
 public struct StatusResult: Decodable, Sendable {
     public var status: HostStatus?
     public init(from decoder: Decoder) throws {

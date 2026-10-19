@@ -2,7 +2,7 @@ import type { zhCopy } from "../zh/copy.ts";
 
 export const enCopy: Record<keyof typeof zhCopy, string> = {
   "err.busy": "The model is too busy right now, so that step didn't finish. Just ask me again in a bit.",
-  "err.auth": "I can't reach the model (signed out). Run claude on your computer to sign in again, or check the API key.",
+  "err.auth": "I can't reach the model (Claude Code's login has expired). Tap \"Sign in again\" on the app's home screen to sign in from your phone, or run claude on the computer and type /login.",
   "err.billing": "The model's quota ran out or the account is restricted. Wait for it to reset or try another model.",
   "err.billingText": "The model's quota ran out. Wait for it to reset or try another model.",
   "err.model": "The model you picked isn't available. Choose another one under Model & Thinking.",

@@ -205,6 +205,21 @@ struct AppStoreTests {
         #expect(store3.question(id: "q1")?.skipped?.count == 2)
     }
 
+    @Test func signingClaudeCodeInAgainFromThePhone() async throws {
+        let (store, host) = await demoStore()
+        await host.applyScenario("authExpired")
+        #expect(await until { store.status?.auth?.isExpired == true })
+        try await store.startLogin()
+        #expect(store.status?.auth?.login?.state == .waiting)
+        #expect(store.status?.auth?.login?.url?.contains("oauth/authorize") == true)
+        try await store.submitLoginCode("bad")
+        #expect(store.status?.auth?.login?.state == .invalid)
+        try await store.submitLoginCode("a1b2#c3")
+        #expect(store.status?.auth == nil)
+        let sent = await host.lastParams["auth.login.code"]
+        #expect(sent?["code"]?.stringValue == "a1b2#c3")
+    }
+
     @Test func emptySendIgnored() async {
         let (store, _) = await demoStore()
         store.send("   \n ")

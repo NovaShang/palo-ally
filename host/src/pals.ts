@@ -130,6 +130,8 @@ interface Adoptee {
 }
 
 export interface PalsDeps {
+  /** A Pal's turn went through (true) or failed for want of Claude Code's login (false). */
+  onAuth?: (pal: { id: string; name: string }, ok: boolean) => void;
   paths: Paths;
   claudeDir: string;
   bus: Bus;
@@ -336,6 +338,7 @@ export class Pals {
         this.balanceSoon();
         void this.readTitle(pal);
       },
+      onAuth: (pal, ok) => this.d.onAuth?.({ id: pal.id, name: pal.rec.name }, ok),
       beforeStart: (pal) => this.readTitle(pal),
       onStopped: (pal) => this.onStopped(pal),
       onWoke: (pal) => {
@@ -551,6 +554,18 @@ export class Pals {
     this.d.audit.log("pal.woke", { pal: pal.id, name: pal.rec.name, why });
     this.log(`waking ${pal.rec.name} (${why})`);
     return true;
+  }
+
+  /**
+   * Claude Code's login is back: each of these, awake and between turns, ends
+   * its process (asleep), so the next word starts one that signs in afresh.
+   */
+  async restartIdle(ids: string[]): Promise<void> {
+    for (const id of ids) {
+      const pal = this.pals.get(id);
+      if (!pal?.awake || pal.busy) continue;
+      await this.putToSleep(pal, "login came back");
+    }
   }
 
   /** A card of a Pal's was answered: one asleep is woken (in the background). */

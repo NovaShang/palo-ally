@@ -829,11 +829,13 @@ public struct HostStatus: Codable, Sendable, Hashable {
     public var wechat: WechatState
     public var version: String
 
-    enum CodingKeys: String, CodingKey { case online, busy, activity, model, effort, sessionId, wechat, version, metAt }
+    enum CodingKeys: String, CodingKey { case online, busy, activity, model, effort, sessionId, wechat, version, metAt, auth }
 
     public var effort: String?
     /// When the owner first talked to it (ms), for 「认识你 N 天」.
     public var metAt: Int64?
+    /// Claude Code's login, only while it's out or being signed in again.
+    public var auth: AuthStatus?
 
     public init(online: Bool = true, busy: Bool = false, model: String = "",
                 sessionId: String? = nil, wechat: WechatState = .off, version: String = "") {
@@ -852,6 +854,64 @@ public struct HostStatus: Codable, Sendable, Hashable {
         wechat = l.decode(WechatState.self, "wechat", or: .off)
         version = l.string("version", or: "")
         metAt = l.millis("metAt")
+        auth = l.decode(AuthStatus.self, "auth")
+    }
+}
+
+// MARK: - Claude Code's login
+
+public enum AuthState: String, TolerantStringEnum {
+    case expired, ok, unknown
+    public static let fallback = AuthState.unknown
+}
+
+/// Claude Code's login on the computer, while it's out (everything waits)
+/// or being signed in again from here (`login`).
+public struct AuthStatus: Codable, Sendable, Hashable {
+    public var state: AuthState
+    /// When it was found expired (ms).
+    public var since: Int64?
+    public var login: LoginStatus?
+
+    public var isExpired: Bool { state == .expired }
+
+    public init(state: AuthState, since: Int64? = nil, login: LoginStatus? = nil) {
+        self.state = state; self.since = since; self.login = login
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        state = l.decode(AuthState.self, "state", or: .unknown)
+        since = l.millis("since")
+        login = l.decode(LoginStatus.self, "login")
+    }
+}
+
+public enum LoginState: String, TolerantStringEnum {
+    /// starting → waiting (the link is out) → checking (a code went in) → gone; invalid: the code wasn't taken.
+    case starting, waiting, invalid, checking, failed, unknown
+    public static let fallback = LoginState.unknown
+}
+
+/// A sign-in from the phone: Claude Code's own login on the computer, its
+/// authorization page opened here and the code it shows typed back.
+public struct LoginStatus: Codable, Sendable, Hashable {
+    public var state: LoginState
+    public var startedAt: Int64
+    /// The authorization page.
+    public var url: String?
+    public var error: String?
+
+    public init(state: LoginState, startedAt: Int64, url: String? = nil, error: String? = nil) {
+        self.state = state; self.startedAt = startedAt; self.url = url; self.error = error
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        state = l.decode(LoginState.self, "state", or: .unknown)
+        startedAt = l.millis("startedAt", or: 0)
+        url = l.string("url")
+        error = l.string("error")
     }
 }
 
