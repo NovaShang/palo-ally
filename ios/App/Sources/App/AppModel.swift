@@ -224,7 +224,20 @@ final class AppModel {
     var focusComposerOnAppear = false
     /// Each conversation's unsent words, kept while the app is open (back to
     /// the list and in again, they're still there).
-    var drafts: [Conversation: String] = [:]
+    /// One small observable box per conversation, so typing in one composer
+    /// re-renders only that composer. (A single `[Conversation: String]` on the
+    /// model made every composer, in every tile, re-render on every keystroke.)
+    @ObservationIgnored private var draftBoxes: [Conversation: DraftBox] = [:]
+    func draftBox(_ c: Conversation) -> DraftBox {
+        if let b = draftBoxes[c] { return b }
+        let b = DraftBox()
+        draftBoxes[c] = b
+        return b
+    }
+    func draftBinding(_ c: Conversation) -> Binding<String> {
+        let b = draftBox(c)
+        return Binding(get: { b.text }, set: { if b.text != $0 { b.text = $0 } })
+    }
 
     /// A conversation from the list, a card, a notification.
     func open(_ c: Conversation) {
@@ -994,4 +1007,10 @@ enum PushEnv {
         }
         return nil
     }
+}
+
+/// One conversation's unsent words.
+@Observable
+final class DraftBox {
+    var text = ""
 }

@@ -327,7 +327,7 @@ private struct ConversationDetail: View {
             }
         }
         // Each conversation keeps its own unsent words.
-        .environment(\.chatDraft, Binding(get: { model.drafts[current] ?? "" }, set: { model.drafts[current] = $0 }))
+        .environment(\.chatDraft, model.draftBinding(current))
         .background {
             // Esc puts 成果 away, like ⌘[.
             if model.libraryBeside && model.paneKey == PaneTabsKey.palo && model.paneIsOpen {
