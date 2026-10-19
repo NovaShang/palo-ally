@@ -141,6 +141,24 @@ private let resultTypes: [String: Check] = [
     RPCMethod.palsRecent: strict(PalsRecentResult.self),
     RPCMethod.palsWake: strict(PalWakeResult.self),
     RPCMethod.palsRename: strict(PalRenameResult.self),
+    RPCMethod.palsCreate: strict(PalWakeResult.self),
+    RPCMethod.palsFolders: strict(FoldersResult.self),
+    RPCMethod.palsDetail: strict(PalDetail.self),
+    RPCMethod.palsSetModel: strict(PalWakeResult.self),
+    RPCMethod.palsCompact: strict(EmptyResult.self),
+    RPCMethod.palsStopTask: strict(EmptyResult.self),
+    RPCMethod.palsSeen: strict(PalWakeResult.self),
+    RPCMethod.palsEnd: strict(PalEndResult.self),
+    RPCMethod.palsReveal: strict(EmptyResult.self),
+    RPCMethod.palsEarlier: strict(EarlierResult.self),
+    RPCMethod.palsResume: strict(PalWakeResult.self),
+    RPCMethod.workspacesList: strict(WorkspacesResult.self),
+    RPCMethod.workspacesCreate: strict(WorkspaceResult.self),
+    RPCMethod.workspacesUpdate: strict(WorkspaceResult.self),
+    RPCMethod.workspacesMove: strict(WorkspacesResult.self),
+    RPCMethod.workspacesDelete: strict(OKResult.self),
+    RPCMethod.workbenchTabsGet: strict(TabsGetResult.self),
+    RPCMethod.workbenchTabsSet: strict(TabsSetResult.self),
     // Going back (its words and whether the files went too), or only asking
     // whether the files can go back (`check`).
     RPCMethod.palsRewind: { json in
@@ -152,7 +170,11 @@ private let resultTypes: [String: Check] = [
 /// yet (built against a PRD while the host builds it). Each is left out of
 /// the set comparison only while the fixture lacks it; once the host writes
 /// its sample, it's checked strictly like the rest. Nothing waits now.
-private let awaitingHost: Set<String> = []
+private let awaitingHost: Set<String> = Set(RPCMethod.workbench + [
+    RPCMethod.palsCreate, RPCMethod.palsFolders, RPCMethod.palsDetail, RPCMethod.palsSetModel, RPCMethod.palsCompact,
+    RPCMethod.palsStopTask, RPCMethod.palsSeen, RPCMethod.palsEnd, RPCMethod.palsReveal, RPCMethod.palsEarlier,
+    RPCMethod.palsResume,
+] + RPCEventName.workbench)
 
 /// Event → how AppStore.apply(event:) reads the payload.
 private let eventTypes: [String: Check] = [
@@ -208,6 +230,11 @@ private let eventTypes: [String: Check] = [
         case .removed: return []
         case .refetch: return ["PalsUpdate did not recognise the payload"]
         }
+    },
+    RPCEventName.workspacesUpdated: strict(WorkspacesResult.self),
+    RPCEventName.workbenchUpdated: { json in
+        guard let u = WorkbenchTabsUpdate(json: json) else { return ["WorkbenchTabsUpdate did not recognise the payload"] }
+        return u.state == nil ? [] : strictIssues(TabsState.self, json["state"] ?? .null)
     },
     RPCEventName.sessionsUpdated: { json in
         switch SessionsUpdate(json: json) {

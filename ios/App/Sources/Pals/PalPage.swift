@@ -6,7 +6,7 @@ import SwiftUI
 /// streaming, the paced reveal, following the end, cards, the composer and
 /// voice, all the same; what the owner types goes in as typed. ⋯ has
 /// 停止这一轮, 重命名 (the system's alert), 交还终端 (the line that resumes it
-/// in a terminal, to copy) and 移出 Pals, these two asked in the page in
+/// in a terminal, to copy) and 移出会话, these two asked in the page in
 /// place of the composer.
 struct PalPage: View {
     let palID: String
@@ -50,11 +50,15 @@ private struct PalConversation: View {
     private var waking: Bool { store.status?.busy == true && store.status?.activity == AppStore.wakingActivity }
 
     var body: some View {
-        ChatView(bottomPanel: bottom, pageTop: .init(subtitle: subtitle, dot: waking ? .green : pal.flatMap { Copy.palStatusColor($0.status) },
+        ChatView(bottomPanel: bottom, pageTop: .init(subtitle: subtitle, dot: waking ? .working : pal?.dot,
                                                      menu: AnyView(menu)))
             .navigationSubtitle(subtitle)
             .modifier(BarMenu { menu })
             .onChange(of: store.pal(id: palID), initial: true) { _, p in if let p { last = p } }
+            // Opened, or finished while it is open: seen, on every device.
+            .onChange(of: store.pal(id: palID)?.attention, initial: true) { _, a in
+                if a == .done { store.markSeen(id: palID) }
+            }
             .animation(.snappy, value: panel)
             .palRename($renaming)
             .modifier(PalFilesSheet(palID: palID))
@@ -86,7 +90,7 @@ private struct PalConversation: View {
         case .none:
             guard gone else { return nil }
             content = AnyView(
-                NoticePanel(text: Copy.spaced(String(localized: "\(name)已经不在 Pals 里了。对话记录还在电脑上。")), action: String(localized: "回到列表")) {
+                NoticePanel(text: Copy.spaced(String(localized: "\(name)已经不在会话列表里了。对话记录还在电脑上。")), action: String(localized: "回到列表")) {
                     model.showList()
                 })
         case .release:
@@ -102,7 +106,7 @@ private struct PalConversation: View {
                              command: command) { model.showList() })
         case .remove:
             content = AnyView(
-                ConfirmPanel(title: Copy.spaced(String(localized: "把\(name)移出 Pals？")),
+                ConfirmPanel(title: Copy.spaced(String(localized: "把\(name)移出会话？")),
                              text: String(localized: "PaloAlly 不再管它，它会停下。对话记录还在电脑上。"),
                              action: String(localized: "移出"), working: working,
                              cancel: { panel = .none }, confirm: { Task { await remove() } }))
@@ -132,7 +136,7 @@ private struct PalConversation: View {
             }
             Section {
                 Button("交还终端", systemImage: "apple.terminal") { panel = .release }
-                Button("移出 Pals", systemImage: "minus.circle", role: .destructive) { panel = .remove }
+                Button("移出会话", systemImage: "minus.circle", role: .destructive) { panel = .remove }
             }
         }
         .disabled(working || gone || !store.connection.isOnline)

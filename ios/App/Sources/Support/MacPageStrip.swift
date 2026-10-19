@@ -1,3 +1,4 @@
+import PaloAllyKit
 import SwiftUI
 
 /// The Mac: a page's top the way the assistant's conversation has it (its
@@ -10,8 +11,8 @@ import SwiftUI
 struct MacPageStrip: View {
     let title: String
     var subtitle: String = ""
-    /// A dot before the status line (a Pal's state, as on its row).
-    var dot: Color? = nil
+    /// A dot before the status line (a session's state, as on its row).
+    var dot: StatusDotKind? = nil
     /// A page pushed in a column: back to the one before.
     var back: (() -> Void)? = nil
     var trailing: AnyView? = nil
@@ -27,7 +28,7 @@ struct MacPageStrip: View {
                 if !subtitle.isEmpty {
                     HStack(spacing: 5) {
                         if let dot {
-                            Circle().fill(dot).frame(width: 6, height: 6)
+                            StatusDot(dot, size: 6)
                         }
                         Text(subtitle)
                             .lineLimit(1)
@@ -123,7 +124,7 @@ struct MacPageTop: ViewModifier {
 
 extension View {
     /// The Mac's floating strip in place of this page's navigation bar (MacPageStrip).
-    func macPageTop(_ title: String, subtitle: String = "", dot: Color? = nil, back: (() -> Void)? = nil,
+    func macPageTop(_ title: String, subtitle: String = "", dot: StatusDotKind? = nil, back: (() -> Void)? = nil,
                     trailing: AnyView? = nil) -> some View {
         modifier(MacPageTop(strip: MacPageStrip(title: title, subtitle: subtitle, dot: dot, back: back, trailing: trailing)))
     }

@@ -1,52 +1,93 @@
 import PaloAllyKit
 import SwiftUI
 
-/// The list (pals-prd §3): the assistant on top; Pals (the ones PaloAlly
-/// hosts, then the computer's other live Claude Code sessions, dimmer, with
-/// 接管, then 最近的对话 for the ones that ended); Allies, with 添加; and
-/// last, quietly, 电脑与设备 (docs/devices-prd.md). Each row says on its
-/// right how many things wait on the owner there. With several computers
-/// paired, the assistant's name on the first row switches between them.
+/// The list (workbench-prd §4): Palo on top, big, with what it did last or
+/// how many sessions wait on the owner; 工作区, each opening to its sessions
+/// ("N 等你" on the row), with a ＋; 会话, the ordinary ones by latest
+/// activity, ending in 以前的 N; Allies, with 添加; and, quietly, 电脑与设备.
+/// At the foot: ＋ (新建会话, 新建工作区, 从终端搬进来…) and 设置. Every row's
+/// dot is the one StatusDot. With several computers paired, the assistant's
+/// name on the first row switches between them.
 /// Phones: one step back from a conversation, like Messages; iPads and the
 /// Mac: the sidebar.
 struct ConversationList: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
-    /// 重命名 asked from a Pal's row (pals-prd §13).
+    /// 重命名 asked from a session's row (pals-prd §13).
     @State private var renaming: Pal?
+    /// 重命名 asked from a workspace's row.
+    @State private var renamingWorkspace: Workspace?
+    @State private var workspaceName = ""
+    /// 结束 asked, and 删除工作区.
+    @State private var ending: Pal?
+    @State private var deleting: Workspace?
+    /// The workspaces opened in the list.
+    @State private var expanded: Set<String> = []
+    @State private var showNewSession = false
+    @State private var newWorkspace: [String]?
+    @State private var showAdopt = false
 
     var body: some View {
         @Bindable var model = model
+        let tree = store.sidebarTree
         List(selection: $model.selection) {
-            PaloRow()
+            PaloItem(waitingSessions: tree.waitingCount)
                 .tag(AppModel.Conversation.palo)
                 .accessibilityIdentifier("row-palo")
 
             if store.palsSupported == true {
+                if !tree.workspaces.isEmpty {
+                    Section {
+                        ForEach(tree.workspaces) { node in
+                            WorkspaceRow(node: node, expanded: isExpanded(node)) { toggle(node) }
+                                .tag(AppModel.Conversation.workspace(node.id))
+                                .accessibilityIdentifier("row-workspace-\(node.id)")
+                                .contextMenu { workspaceMenu(node.workspace) }
+                            if isExpanded(node) {
+                                ForEach(node.members) { pal in
+                                    PalListRow(pal: pal, inset: true)
+                                        .tag(AppModel.Conversation.pal(pal.id))
+                                        .accessibilityIdentifier("row-pal-\(pal.id)")
+                                        .contextMenu { sessionMenu(pal) }
+                                }
+                            }
+                        }
+                    } header: {
+                        HStack {
+                            Text("工作区").textCase(nil)
+                            Spacer()
+                            Button {
+                                newWorkspace = []
+                            } label: {
+                                Image(systemName: "plus").font(.footnote.weight(.semibold))
+                            }
+                            .buttonStyle(.borderless)
+                            .tint(.secondary)
+                            .disabled(!store.connection.isOnline)
+                            .accessibilityLabel("新建工作区")
+                            .accessibilityIdentifier("workspace-add")
+                        }
+                    }
+                }
+
                 Section {
-                    // Awake ones first, then those asleep; a long list just scrolls.
-                    ForEach(store.listedPals) { pal in
-                        PalRow(pal: pal)
+                    ForEach(tree.sessions) { pal in
+                        PalListRow(pal: pal)
                             .tag(AppModel.Conversation.pal(pal.id))
                             .accessibilityIdentifier("row-pal-\(pal.id)")
-                            .contextMenu {
-                                Button("重命名", systemImage: "pencil") { renaming = pal }
-                                    .disabled(!store.connection.isOnline)
-                            }
+                            .contextMenu { sessionMenu(pal) }
                     }
-                    // Tapped: its conversation, read only, with 接管 there (§14).
-                    ForEach(store.otherSessions) { session in
-                        OtherSessionRow(session: session)
-                            .tag(AppModel.Conversation.session(session.id))
+                    let earlier = tree.earlierCount(loaded: store.earlierItems)
+                    if earlier > 0 || store.earlierItems != nil && store.earlierSupported != false {
+                        EarlierRow(count: earlier)
+                            .tag(AppModel.Conversation.earlier)
+                            .accessibilityIdentifier("row-earlier")
                     }
-                    RecentListRow()
-                        .tag(AppModel.Conversation.recent)
-                        .accessibilityIdentifier("row-recent")
                 } header: {
-                    Text("Pals").textCase(nil)
+                    Text("会话").textCase(nil)
                 } footer: {
-                    if store.pals.isEmpty && store.otherSessions.isEmpty {
-                        Text("电脑上开着的 Claude Code 会出现在这里。接管以后，在手机上接着跟它说。")
+                    if store.pals.isEmpty {
+                        Text("点左下角的 ＋ 新建一个会话，或者让 Palo 帮你开。")
                     }
                 }
             }
@@ -90,12 +131,106 @@ struct ConversationList: View {
         .navigationTitle(Platform.barInWindowToolbar ? "" : "PaloAlly")
         .toolbar(Platform.barInWindowToolbar ? .hidden : .automatic, for: .navigationBar)
         .modifier(MacSidebarToggle())
-        // The Mac app is behind the computer's: a quiet capsule at the foot (MacUpdateHint).
-        .safeAreaInset(edge: .bottom, spacing: 0) { MacUpdateHint() }
+        // The foot: the Mac app is behind the computer's (a quiet capsule), then ＋ and 设置.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                MacUpdateHint()
+                SidebarFooter(newSession: { showNewSession = true }, newWorkspace: { newWorkspace = [] },
+                              adopt: { showAdopt = true })
+            }
+        }
         .palRename($renaming)
+        .alert("重命名工作区", isPresented: Binding(get: { renamingWorkspace != nil }, set: { if !$0 { renamingWorkspace = nil } })) {
+            TextField("名字", text: $workspaceName)
+            Button("取消", role: .cancel) {}
+            Button("好") {
+                if let w = renamingWorkspace { Task { _ = try? await store.updateWorkspace(id: w.id, name: workspaceName) } }
+            }
+        }
+        .confirmationDialog(Copy.spaced(String(localized: "结束「\(ending?.displayName ?? "")」？")), isPresented: Binding(get: { ending != nil }, set: { if !$0 { ending = nil } }),
+                            titleVisibility: .visible) {
+            Button("结束会话", role: .destructive) {
+                if let p = ending { Task { await end(p) } }
+            }
+        } message: {
+            Text("它会停下，进到「以前的」里，之后还能接着聊。")
+        }
+        .confirmationDialog(Copy.spaced(String(localized: "删除工作区「\(deleting?.title(pals: store.pals) ?? "")」？")),
+                            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible) {
+            Button("删除工作区", role: .destructive) {
+                if let w = deleting { Task { try? await store.deleteWorkspace(id: w.id) } }
+            }
+        } message: {
+            Text("里面的会话不会结束，变回普通会话。")
+        }
+        .sheet(isPresented: $showNewSession) { NewSessionSheet().environment(model).environment(store) }
+        .sheet(isPresented: $showAdopt) { AdoptFlowSheet().environment(model).environment(store) }
+        .sheet(isPresented: Binding(get: { newWorkspace != nil }, set: { if !$0 { newWorkspace = nil } })) {
+            NewWorkspaceSheet(preselected: newWorkspace ?? []).environment(model).environment(store)
+        }
+        // 以前的 N: read on opening, and again when the sessions put away change.
+        .task(id: "\(store.connection.isOnline)-\(tree.foldedCount)") {
+            guard store.connection.isOnline, store.palsSupported == true else { return }
+            try? await store.refreshEarlier()
+        }
+        // The workspace holding the session picked is opened.
+        .onChange(of: model.selection, initial: true) { _, c in
+            guard case .pal(let id)? = c, let ws = store.pal(id: id)?.workspaceId else { return }
+            expanded.insert(ws)
+        }
         .animation(.snappy, value: store.pals)
-        .animation(.snappy, value: store.otherSessions)
-        .animation(.snappy, value: store.adoptions)
+        .animation(.snappy, value: store.workspaces)
+        .animation(.snappy, value: expanded)
+    }
+
+    // MARK: workspaces
+
+    private func isExpanded(_ node: SidebarTree.WorkspaceNode) -> Bool { expanded.contains(node.id) }
+
+    private func toggle(_ node: SidebarTree.WorkspaceNode) {
+        if expanded.contains(node.id) { expanded.remove(node.id) } else { expanded.insert(node.id) }
+    }
+
+    // MARK: menus
+
+    @ViewBuilder private func sessionMenu(_ pal: Pal) -> some View {
+        Button("重命名", systemImage: "pencil") { renaming = pal }
+            .disabled(!store.connection.isOnline)
+        if store.workspacesSupported == true {
+            Menu("移到工作区", systemImage: "square.grid.2x2") {
+                ForEach(store.workspaces.filter { $0.id != pal.workspaceId }) { w in
+                    Button(w.title(pals: store.pals)) { Task { try? await store.moveSession(pal.id, to: w.id) } }
+                }
+                Button("新建工作区…") { newWorkspace = [pal.id] }
+            }
+            .disabled(!store.connection.isOnline)
+            if pal.workspaceId != nil {
+                Button("移出工作区", systemImage: "rectangle.portrait.and.arrow.right") {
+                    Task { try? await store.moveSession(pal.id, to: nil) }
+                }
+                .disabled(!store.connection.isOnline)
+            }
+        }
+        Divider()
+        Button("结束会话", systemImage: "stop.circle", role: .destructive) { ending = pal }
+            .disabled(!store.connection.isOnline)
+    }
+
+    @ViewBuilder private func workspaceMenu(_ w: Workspace) -> some View {
+        Button("重命名", systemImage: "pencil") {
+            workspaceName = w.name
+            renamingWorkspace = w
+        }
+        .disabled(!store.connection.isOnline)
+        Button("删除工作区", systemImage: "trash", role: .destructive) { deleting = w }
+            .disabled(!store.connection.isOnline)
+    }
+
+    private func end(_ p: Pal) async {
+        _ = try? await store.endSession(id: p.id)
+        // Its page has nothing to show now.
+        if model.selection == .pal(p.id) { model.showList() }
     }
 }
 
@@ -131,24 +266,27 @@ struct WaitingBadge: View {
     }
 }
 
-/// The assistant: its avatar and name; what it's doing when it isn't idle,
-/// else what was said last; what waits on the owner.
-private struct PaloRow: View {
+/// Palo: the orb and the name, big; under it what it did last, or how many
+/// sessions wait on the owner; what waits on the owner in its own
+/// conversation as the count.
+private struct PaloItem: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
+    /// Sessions (anywhere) waiting on the owner.
+    let waitingSessions: Int
 
     var body: some View {
         let line = store.agentStatusLine
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             AssistantAvatar(theme: model.currentTheme, hostID: model.activeHostID, bleed: 1.3)
-                .frame(width: 44, height: 44)
-            VStack(alignment: .leading, spacing: 3) {
+                .frame(width: 56, height: 56)
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     if model.hasSeveralHosts {
                         AssistantSwitcher(name: name)
                     } else {
                         Text(name)
-                            .font(.body.weight(.semibold))
+                            .font(.title3.weight(.semibold))
                             .lineLimit(1)
                     }
                     Spacer(minLength: 4)
@@ -163,13 +301,13 @@ private struct PaloRow: View {
                     Text(secondLine(line))
                         .font(.subheadline)
                         .foregroundStyle(line.kind == .offline ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
-                        .lineLimit(1)
+                        .lineLimit(2)
                     Spacer(minLength: 4)
                     WaitingBadge(count: waiting)
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
         // Several computers: the switcher in it is a control of its own.
         .accessibilityElement(children: model.hasSeveralHosts ? .contain : .combine)
     }
@@ -181,9 +319,11 @@ private struct PaloRow: View {
     }
 
     /// Working or offline: the state, as the orb's caption says it.
-    /// Otherwise what was said last (what waits on the owner is the count).
+    /// Sessions waiting on the owner: how many. Otherwise what it did last.
     private func secondLine(_ line: AgentStatusLine) -> String {
-        guard line.kind != .working, line.kind != .offline, let m = lastMessage else {
+        if line.kind == .working || line.kind == .offline { return line.text }
+        if waitingSessions > 0 { return String(localized: "\(waitingSessions) 个会话在等你") }
+        guard let m = lastMessage else {
             return line.kind == .needsYou ? String(localized: "等你") : line.text
         }
         let text = m.text.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
@@ -196,6 +336,169 @@ private struct PaloRow: View {
     private var waiting: Int {
         store.pendingApprovals.count + store.pendingQuestions.count + store.pendingAllyDrafts.count
             + store.pendingProposalCount + store.tasks.filter { $0.status == .needsInput }.count
+    }
+}
+
+/// A workspace: a chevron that opens it, its icon and name; on the right how
+/// many of its sessions wait on the owner, else how many it holds.
+private struct WorkspaceRow: View {
+    let node: SidebarTree.WorkspaceNode
+    let expanded: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: toggle) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
+                    .frame(width: 22, height: 28)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(toggleLabel)
+            Image(systemName: "square.grid.2x2")
+                .font(.system(size: 15))
+                .foregroundStyle(.secondary)
+                .frame(width: 22)
+                .accessibilityHidden(true)
+            Text(node.title.isEmpty ? String(localized: "工作区") : node.title)
+                .font(.body.weight(.medium))
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            if node.waiting > 0 {
+                Text("\(node.waiting) 等你")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .lineLimit(1)
+            } else {
+                Text("\(node.members.count)")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityAction(named: toggleLabel, toggle)
+    }
+
+    private var toggleLabel: String { expanded ? String(localized: "收起") : String(localized: "展开") }
+}
+
+/// A session: its dot and name; on the right what waits on the owner, else
+/// when it was last busy. Phones add its last words under the name.
+private struct PalListRow: View {
+    @Environment(AppModel.self) private var model
+    @Environment(AppStore.self) private var store
+    let pal: Pal
+    /// Listed under its workspace.
+    var inset = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            StatusDot(pal, size: 9)
+                .frame(width: 14)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(pal.displayName)
+                    .font(.body)
+                    .lineLimit(1)
+                if model.layout == .phone {
+                    Text(Copy.palLine(pal))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 4)
+            let waiting = store.palPendingCount(pal.id)
+            if waiting > 0 {
+                WaitingBadge(count: waiting)
+            } else if let at = pal.updatedAt, at > 0 {
+                Text(Copy.relative(at))
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.vertical, model.layout == .phone ? 3 : 1)
+        .padding(.leading, inset ? 24 : 0)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(StatusDot.label(pal.dot))
+    }
+}
+
+/// 以前的 N: the sessions that ended or were put away; quiet, neutral.
+private struct EarlierRow: View {
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+                .frame(width: 14)
+                .accessibilityHidden(true)
+            Text("以前的")
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 4)
+            if count > 0 {
+                Text("\(count)")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The sidebar's foot: ＋ with its menu on the left, 设置 on the right.
+/// Neutral glass; the theme color isn't used.
+private struct SidebarFooter: View {
+    @Environment(AppModel.self) private var model
+    @Environment(AppStore.self) private var store
+    let newSession: () -> Void
+    let newWorkspace: () -> Void
+    let adopt: () -> Void
+
+    var body: some View {
+        HStack {
+            Menu {
+                Button("新建会话", systemImage: "square.and.pencil", action: newSession)
+                Button("新建工作区", systemImage: "square.grid.2x2", action: newWorkspace)
+                if store.palsSupported == true {
+                    Divider()
+                    Button("从终端搬进来…", systemImage: "terminal", action: adopt)
+                }
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 32, height: 32)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .tint(.primary)
+            .menuIndicator(.hidden)
+            .disabled(!store.connection.isOnline)
+            .accessibilityLabel("新建")
+            .accessibilityIdentifier("sidebar-add")
+            Spacer()
+            Button {
+                model.openSettings()
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .tint(.primary)
+            .accessibilityLabel("设置")
+            .accessibilityIdentifier("sidebar-settings")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
 }
 
@@ -274,204 +577,6 @@ private struct DevicesListRow: View {
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// 最近的对话 (pals-prd §10): the conversations that ended on the computer
-/// lately, to take over. A plain row, neutral like 添加; its glyph and words
-/// line up with the Pals' tiles and names above.
-private struct RecentListRow: View {
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 19))
-                .foregroundStyle(.secondary)
-                .frame(width: 40)
-                .accessibilityHidden(true)
-            Text("最近的对话")
-                .foregroundStyle(Color.primary)
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// The round tile on a Pal's or a session's row: a terminal glyph, its
-/// state as a dot; asleep, a quiet moon in its place.
-struct PalTile: View {
-    let dot: Color?
-    var asleep = false
-    var size: CGFloat = 40
-
-    var body: some View {
-        Image(systemName: "apple.terminal")
-            .font(.system(size: size * 0.42, weight: .regular))
-            .foregroundStyle(.secondary)
-            .frame(width: size, height: size)
-            .background(.fill.tertiary, in: .circle)
-            .overlay(alignment: .bottomTrailing) {
-                if asleep {
-                    Image(systemName: "moon.zzz")
-                        .font(.system(size: size * 0.24, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: size * 0.42, height: size * 0.42)
-                        .background(Color(.secondarySystemGroupedBackground), in: .circle)
-                        .offset(x: size * 0.08, y: size * 0.08)
-                } else if let dot {
-                    Circle()
-                        .fill(dot)
-                        .frame(width: size * 0.28, height: size * 0.28)
-                        .overlay(Circle().strokeBorder(Color(.secondarySystemGroupedBackground), lineWidth: max(1.5, size * 0.05)))
-                        .offset(x: size * 0.02, y: size * 0.02)
-                }
-            }
-            .accessibilityHidden(true)
-    }
-}
-
-/// A Pal: its name and folder, its state and last words, what waits on the owner.
-private struct PalRow: View {
-    @Environment(AppStore.self) private var store
-    let pal: Pal
-
-    var body: some View {
-        HStack(spacing: 12) {
-            PalTile(dot: Copy.palStatusColor(pal.status), asleep: pal.isAsleep)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(pal.displayName)
-                        .font(.body.weight(.medium))
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    Text(pal.shortCwd)
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                }
-                HStack(spacing: 6) {
-                    Text(Copy.palLine(pal))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    WaitingBadge(count: store.palPendingCount(pal.id))
-                }
-            }
-        }
-        .padding(.vertical, 3)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// One of the computer's other live sessions: dimmer, with its state, and
-/// 接管. Adopting it happens in place: a moment's wait, or (a terminal
-/// session) the line asking the owner to quit it there, with 取消.
-private struct OtherSessionRow: View {
-    @Environment(AppModel.self) private var model
-    @Environment(AppStore.self) private var store
-    let session: CCSession
-
-    var body: some View {
-        let adoption = store.adoptions[session.id]
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                PalTile(dot: Copy.sessionStatusColor(session.status) == .clear ? nil : Copy.sessionStatusColor(session.status))
-                    .opacity(0.7)
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(session.displayName)
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        SessionKindTag(kind: session.kind)
-                    }
-                    Text(secondLine(adoption))
-                        .font(.subheadline)
-                        .foregroundStyle(failed(adoption) ? AnyShapeStyle(Color.red) : AnyShapeStyle(.tertiary))
-                        .lineLimit(failed(adoption) ? 3 : 1)
-                }
-                Spacer(minLength: 4)
-                trailing(adoption)
-            }
-            if store.waitsForExit(session) {
-                waitingForExit
-            }
-        }
-        .padding(.vertical, 3)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("row-session-\(session.id)")
-    }
-
-    private func failed(_ a: PalAdoption?) -> Bool { if case .failed? = a { return true } else { return false } }
-
-    private func secondLine(_ a: PalAdoption?) -> String {
-        switch a {
-        case .working?: return String(localized: "正在接管…")
-        case .failed(let why)?: return why
-        default:
-            let line = Copy.sessionLine(session)
-            let status = Copy.sessionStatus(session.status)
-            return line.isEmpty ? status : "\(status) · \(line)"
-        }
-    }
-
-    @ViewBuilder
-    private func trailing(_ a: PalAdoption?) -> some View {
-        switch a {
-        case .working?:
-            ProgressView()
-        case .waitingForExit?:
-            EmptyView()
-        case nil where store.waitsForExit(session):
-            EmptyView()
-        case .failed?:
-            Button("好") { store.clearAdoption(sessionId: session.id) }
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
-                .controlSize(.small)
-                .tint(.secondary)
-        case nil:
-            Button("接管") { adopt() }
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
-                .controlSize(.small)
-                .tint(.primary)
-                .disabled(!store.connection.isOnline)
-                .accessibilityIdentifier("adopt-\(session.id)")
-                .accessibilityHint("让 PaloAlly 接着跑它，在手机上跟它说话")
-        }
-    }
-
-    /// A terminal session: quit it there first; PaloAlly carries on by itself.
-    private var waitingForExit: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Image(systemName: "terminal")
-                .foregroundStyle(.secondary)
-            Text("请在终端里输入 /exit 退出它，退出后自动接管")
-                .font(.subheadline)
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 4)
-            // The host stops waiting too: quitting it later adopts nothing.
-            Button("取消") { Task { await store.cancelAdoption(sessionId: session.id) } }
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
-                .controlSize(.small)
-                .tint(.secondary)
-                .accessibilityIdentifier("adopt-cancel-\(session.id)")
-        }
-        .padding(12)
-        .background(.fill.quaternary, in: .rect(cornerRadius: 14, style: .continuous))
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("adopt-waiting-\(session.id)")
-    }
-
-    private func adopt() {
-        Task {
-            if case .adopted(let pal)? = try? await store.adopt(sessionId: session.id) {
-                model.openPal(pal.id)
-            }
-        }
     }
 }
 

@@ -18,7 +18,7 @@ struct ChatView: View {
     var pageTop: PageTop? = nil
     struct PageTop {
         var subtitle = ""
-        var dot: Color? = nil
+        var dot: StatusDotKind? = nil
         var menu: AnyView? = nil
     }
     @Environment(AppModel.self) private var model

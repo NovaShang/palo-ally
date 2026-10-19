@@ -274,8 +274,10 @@ private struct ConversationDetail: View {
                     PalPage(palID: id).id("pal-\(id)")
                 case .ally(let id):
                     AllyConversationView(allyID: id).id("ally-\(id)")
-                case .recent:
-                    RecentConversationsPage()
+                case .workspace(let id):
+                    WorkspacePage(workspaceID: id).id("workspace-\(id)")
+                case .earlier:
+                    EarlierPage()
                 case .session(let id):
                     SessionPage(sessionID: id).id("session-\(id)")
                 case .devices:

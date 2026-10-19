@@ -41,7 +41,7 @@ private struct SessionConversation: View {
 
     var body: some View {
         ChatView(bottomPanel: AnyView(bar), pageTop: .init(subtitle: subtitle,
-                                                          dot: shown?.live.flatMap { s in Copy.sessionStatusColor(s.status) == .clear ? nil : Copy.sessionStatusColor(s.status) }))
+                                                          dot: shown?.live.map { StatusDotKind($0.status) }))
             .navigationSubtitle(subtitle)
             .animation(.snappy, value: step)
             // What it says while the page is open.

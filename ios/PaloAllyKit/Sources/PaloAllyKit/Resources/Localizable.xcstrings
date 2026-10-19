@@ -250,17 +250,6 @@
         }
       }
     },
-    "停帮手" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "stop a helper"
-          }
-        }
-      }
-    },
     "写文件" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -290,17 +279,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Something went wrong. Try again in a bit."
-          }
-        }
-      }
-    },
-    "分派小帮手" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "hand work to a helper"
           }
         }
       }
@@ -1119,17 +1097,6 @@
         }
       }
     },
-    "重启帮手" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "restart a helper"
-          }
-        }
-      }
-    },
     "默认" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1137,6 +1104,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Default"
+          }
+        }
+      }
+    },
+    "新会话" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New session"
+          }
+        }
+      }
+    },
+    "停会话" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "stop a session"
+          }
+        }
+      }
+    },
+    "重启会话" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "restart a session"
+          }
+        }
+      }
+    },
+    "分派子任务" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "hand work to a sub-agent"
           }
         }
       }

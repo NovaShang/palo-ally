@@ -121,9 +121,11 @@ final class AppModel {
         case palo
         case pal(String)
         case ally(String)
-        /// 最近的对话 (pals-prd §10): conversations that ended on the
-        /// computer lately, to take over; one adopted opens as its Pal.
-        case recent
+        /// 工作区: sessions tiled together (workbench-prd §5.3).
+        case workspace(String)
+        /// 以前的 (workbench-prd §2): sessions that ended or were put away,
+        /// and the computer's conversations; one resumed opens as a session.
+        case earlier
         /// One of the computer's sessions that isn't a Pal, read only (§14).
         case session(String)
         /// 电脑与设备 (docs/devices-prd.md): the paired computers, and the
@@ -236,6 +238,7 @@ final class AppModel {
     func openPalo() { open(.palo) }
     func openPal(_ id: String) { open(.pal(id)) }
     func openSession(_ id: String) { open(.session(id)) }
+    func openWorkspace(_ id: String) { open(.workspace(id)) }
     func openAlly(_ id: String) { open(.ally(id)) }
 
     /// Phones: back to the list (a conversation that went away, the Ally just removed).
@@ -478,7 +481,7 @@ final class AppModel {
         case "pairing": if mode != .unpaired { startPairing(.replace) }
         case "identity": openManagement(); showIdentityEditor = true
         case "list", "allies", "sessions", "pals": showList()
-        case "recent": open(.recent)
+        case "recent", "earlier": open(.earlier)
         #if DEBUG
         case "file": Task { await openDemoFile() }
         case "ally":

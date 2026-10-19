@@ -10,7 +10,7 @@ public enum Friendly {
     /// "read", and "credit" never matches "edit").
     static let toolRules: [([String], String)] = [
         // The assistant asking to stop or restart a helper (sessions-prd §6.6).
-        (["helper", "stop"], loc("停帮手")), (["helper", "restart"], loc("重启帮手")),
+        (["helper", "stop"], loc("停会话")), (["helper", "restart"], loc("重启会话")),
         (["send", "email"], loc("发邮件")), (["send", "mail"], loc("发邮件")), (["send", "message"], loc("发消息")),
         (["wechat"], loc("微信")), (["weixin"], loc("微信")),
         (["email"], loc("邮件")), (["gmail"], loc("邮件")), (["mail"], loc("邮件")),
@@ -22,7 +22,7 @@ public enum Friendly {
         (["grep"], loc("找文件")), (["glob"], loc("找文件")), (["ls"], loc("看文件夹")),
         (["navigate"], loc("打开网页")), (["browser"], loc("操作浏览器")), (["chrome"], loc("操作浏览器")),
         (["playwright"], loc("操作浏览器")), (["click"], loc("点网页")), (["screenshot"], loc("截图")),
-        (["task"], loc("分派小帮手")), (["agent"], loc("分派小帮手")), (["todowrite"], loc("记待办")),
+        (["task"], loc("分派子任务")), (["agent"], loc("分派子任务")), (["todowrite"], loc("记待办")),
         (["notify"], loc("提醒你")), (["remind"], loc("提醒你")),
         (["pay"], loc("付款")), (["payment"], loc("付款")), (["purchase"], loc("付款")),
         (["delete"], loc("删除")), (["remove"], loc("删除")), (["trash"], loc("删除")),

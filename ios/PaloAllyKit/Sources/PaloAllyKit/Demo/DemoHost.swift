@@ -43,6 +43,11 @@ public actor DemoHost {
     public internal(set) var otherSessions: [CCSession] = []
     /// Conversations that ended lately (pals-prd §10), to adopt.
     public internal(set) var recentSessions: [RecentSession] = []
+    /// Workspaces (workbench-rpc §3), the sessions that ended (for 以前的), and
+    /// the browser pane's tabs by key.
+    public internal(set) var workspaces: [Workspace] = []
+    var endedItems: [EarlierItem] = []
+    var paneTabs: [String: TabsState] = [:]
     /// A Pal's turn being written, to stop (`pals.stop`).
     var palTurns: [String: Task<Void, Never>] = [:]
     /// Sessions asked to be adopted that wait to be quit in their terminal.
@@ -124,6 +129,7 @@ public actor DemoHost {
                 self.palLogs = ps.logs
                 self.otherSessions = ps.others
                 self.recentSessions = ps.recent
+                self.workspaces = ps.workspaces
                 self.approvals += ps.approvals
                 self.questions += ps.questions
                 self.messages.append(ps.proposal)
@@ -1056,6 +1062,7 @@ public actor DemoHost {
             if let r = try dispatchMedia(method, p) { return r }
             if let r = try dispatchDevices(method, p) { return r }
             if let r = try dispatchFiles(method, p) { return r }
+            if !sessionsMode, let r = try await dispatchWorkbench(method, p) { return r }
             if !sessionsMode, let r = try await dispatchPals(method, p) { return r }
             throw DemoError(message: "unknown method \(method)")
         }

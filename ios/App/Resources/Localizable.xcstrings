@@ -122,17 +122,6 @@
         }
       }
     },
-    "%@已经不在 Pals 里了。对话记录还在电脑上。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ is no longer in Pals. The conversation is still on your computer."
-          }
-        }
-      }
-    },
     "%@已经在你的 Allies 里了。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1960,17 +1949,6 @@
         }
       }
     },
-    "它会出现在 Pals 里，接着上次的地方聊。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "It will appear in Pals, picking up where you left off."
-          }
-        }
-      }
-    },
     "它会定期替你查看或推进，有进展会更新在这里；需要你的时候会标出来。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2378,17 +2356,6 @@
         }
       }
     },
-    "帮手" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Helper"
-          }
-        }
-      }
-    },
     "常用词" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2730,17 +2697,6 @@
         }
       }
     },
-    "把%@移出 Pals？" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove %@ from Pals?"
-          }
-        }
-      }
-    },
     "把这句话发给助理" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2946,17 +2902,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "After you take over, you can talk to it here"
-          }
-        }
-      }
-    },
-    "接过来以后，它会出现在 Pals 里，在手机上接着聊。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Once taken over, it shows up in Pals and you can keep chatting on your phone."
           }
         }
       }
@@ -4793,17 +4738,6 @@
         }
       }
     },
-    "移出 Pals" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove from Pals"
-          }
-        }
-      }
-    },
     "移除" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6276,6 +6210,446 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Default"
+          }
+        }
+      }
+    },
+    "在干" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Working"
+          }
+        }
+      }
+    },
+    "做完了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        }
+      }
+    },
+    "闲着" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idle"
+          }
+        }
+      }
+    },
+    "%lld 个会话在等你" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sessions waiting on you"
+          }
+        }
+      }
+    },
+    "工作区" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Workspaces"
+          }
+        }
+      }
+    },
+    "新建工作区" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Workspace"
+          }
+        }
+      }
+    },
+    "重命名工作区" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename Workspace"
+          }
+        }
+      }
+    },
+    "结束「%@」？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End “%@”?"
+          }
+        }
+      }
+    },
+    "结束会话" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End Session"
+          }
+        }
+      }
+    },
+    "它会停下，进到「以前的」里，之后还能接着聊。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It stops and moves to Earlier. You can pick it up again later."
+          }
+        }
+      }
+    },
+    "删除工作区「%@」？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete the workspace “%@”?"
+          }
+        }
+      }
+    },
+    "删除工作区" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete Workspace"
+          }
+        }
+      }
+    },
+    "里面的会话不会结束，变回普通会话。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The sessions in it don't end; they become ordinary sessions."
+          }
+        }
+      }
+    },
+    "点左下角的 ＋ 新建一个会话，或者让 Palo 帮你开。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap ＋ at the bottom left to start a session, or ask Palo to open one."
+          }
+        }
+      }
+    },
+    "%lld 等你" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld waiting"
+          }
+        }
+      }
+    },
+    "以前的" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Earlier"
+          }
+        }
+      }
+    },
+    "新建会话" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Session"
+          }
+        }
+      }
+    },
+    "从终端搬进来…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bring in from Terminal…"
+          }
+        }
+      }
+    },
+    "新建" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New"
+          }
+        }
+      }
+    },
+    "移到工作区" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move to Workspace"
+          }
+        }
+      }
+    },
+    "新建工作区…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Workspace…"
+          }
+        }
+      }
+    },
+    "移出工作区" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove from Workspace"
+          }
+        }
+      }
+    },
+    "从终端搬进来" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bring in from Terminal"
+          }
+        }
+      }
+    },
+    "还没有用过的文件夹。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No folders used yet."
+          }
+        }
+      }
+    },
+    "名字（可以不填）" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name (optional)"
+          }
+        }
+      }
+    },
+    "放进去的会话" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sessions to include"
+          }
+        }
+      }
+    },
+    "先新建一个会话，再把它放进工作区。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start a session first, then add it to a workspace."
+          }
+        }
+      }
+    },
+    "创建" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create"
+          }
+        }
+      }
+    },
+    "这个工作区已经不在了。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This workspace is gone."
+          }
+        }
+      }
+    },
+    "并排平铺会在之后的版本里加入。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Side-by-side tiling comes in a later version."
+          }
+        }
+      }
+    },
+    "接着聊「%@」？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue “%@”?"
+          }
+        }
+      }
+    },
+    "它会回到会话里，接着上次的地方聊。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It comes back as a session, where you left off."
+          }
+        }
+      }
+    },
+    "接着聊" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue"
+          }
+        }
+      }
+    },
+    "没能接着聊：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't continue: %@"
+          }
+        }
+      }
+    },
+    "还没有以前的会话。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No earlier sessions yet."
+          }
+        }
+      }
+    },
+    "Palo 开的" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opened by Palo"
+          }
+        }
+      }
+    },
+    "%@已经不在会话列表里了。对话记录还在电脑上。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is no longer in your sessions. The conversation is still on your computer."
+          }
+        }
+      }
+    },
+    "把%@移出会话？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove %@ from sessions?"
+          }
+        }
+      }
+    },
+    "移出会话" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove from Sessions"
+          }
+        }
+      }
+    },
+    "接过来以后，它会出现在会话里，在手机上接着聊。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once taken over, it shows up in Sessions and you can keep chatting on your phone."
           }
         }
       }

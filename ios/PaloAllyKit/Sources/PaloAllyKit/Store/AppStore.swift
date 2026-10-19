@@ -789,6 +789,8 @@ public final class AppStore {
             apply(sessionsUpdate: SessionsUpdate(json: data))
         case RPCEventName.palsUpdated:
             apply(palsUpdate: PalsUpdate(json: data))
+        case RPCEventName.workspacesUpdated:
+            apply(workspacesUpdate: data)
         case RPCEventName.status:
             // The assistant's own state; a Pal's comes with the Pals list.
             guard scope == .palo else { return }

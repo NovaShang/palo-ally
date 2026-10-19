@@ -18,6 +18,7 @@ extension DemoHost {
     func dispatchPals(_ method: String, _ p: JSONValue) async throws -> JSONValue? {
         switch method {
         case RPCMethod.palsList:
+            normalizePals()
             return ["pals": try .from(pals), "others": try .from(otherSessions), "hooks": .bool(hooksEnabled)]
         case RPCMethod.palsHistory:
             let id = p["id"]?.stringValue ?? ""
@@ -40,6 +41,11 @@ extension DemoHost {
             // Images and files go with the words, as Palo takes them (pals-prd §15).
             let atts = try attachments(p["attachments"])
             guard !text.isEmpty || atts != nil else { throw DemoError(message: "要说的话不能是空的") }
+            // The first words name a session nobody has named.
+            if Pal.isUnnamed(pal.name), !text.isEmpty {
+                let first = text.replacingOccurrences(of: "\n", with: " ")
+                setPal(id) { $0.name = String(first.prefix(16)) }
+            }
             // Asleep: its session resumes first; the words go in once it's up.
             if pal.isAsleep || pal.status == .starting { await wakePal(id) }
             var m = palMessage(id, role: .user, text: text, channel: .app)
@@ -179,9 +185,25 @@ extension DemoHost {
 
     /// The whole list, as `pals.list` gives it.
     func emitPals() {
+        normalizePals()
         emit(RPCEventName.palsUpdated, ["pals": (try? JSONValue.from(pals)) ?? .array([]),
                                         "others": (try? JSONValue.from(otherSessions)) ?? .array([]),
                                         "hooks": .bool(hooksEnabled)] as JSONValue)
+    }
+
+    /// What the host works out: the dot's state, and who has been left alone
+    /// long enough to be put away (no workspace, untouched for 3 days).
+    func normalizePals() {
+        let now = Date().epochMillis
+        for i in pals.indices {
+            pals[i].attention = Pal.derivedAttention(status: pals[i].status, pending: pals[i].pending,
+                                              finishedAt: pals[i].finishedAt, seenAt: pals[i].seenAt)
+            pals[i].folded = pals[i].workspaceId == nil && now - (pals[i].updatedAt ?? now) > 3 * 24 * 3_600_000
+        }
+    }
+
+    func emitWorkspaces() {
+        emit(RPCEventName.workspacesUpdated, ["workspaces": (try? JSONValue.from(workspaces)) ?? .array([])] as JSONValue)
     }
 
     func setPal(_ id: String, _ change: (inout Pal) -> Void) {
@@ -446,7 +468,7 @@ extension DemoHost {
         var m = ChatMessage(seq: n, id: rid, role: .assistant, kind: .text, text: acc, channel: .app, ts: Date().epochMillis)
         m.pal = id
         appendPal(m)
-        setPal(id) { $0.status = .idle; $0.lastLine = acc }
+        setPal(id) { $0.status = .idle; $0.lastLine = acc; $0.finishedAt = Date().epochMillis; $0.updatedAt = Date().epochMillis }
         palTurns[id] = nil
     }
 
@@ -462,6 +484,8 @@ extension DemoHost {
         var proposal: ChatMessage
         /// Conversations that ended lately, in three folders.
         var recent: [RecentSession]
+        /// One workspace of two sessions.
+        var workspaces: [Workspace]
     }
 
     /// What the recent conversations said, by session (their records once adopted).
@@ -626,7 +650,19 @@ extension DemoHost {
                                lastLine: "第 \(i) 个项目的事办完了。", createdBy: .owner, updatedAt: now - Int64(7 + i) * 24 * hour))
             logs[id] = log(id, [(.assistant, "第 \(i) 个项目的事办完了。", Int64(7 + i) * 24 * hour, .app, nil)])
         }
+        // 网站帮手 and 博客改版 are tiled together; 笔记整理 finished something that is still unseen.
+        for i in allPals.indices {
+            switch allPals[i].id {
+            case "pal-site": allPals[i].workspaceId = "ws-site"; allPals[i].updatedAt = now - min
+            case "pal-blog": allPals[i].workspaceId = "ws-site"
+            case "pal-notes": allPals[i].finishedAt = now - 40 * min; allPals[i].updatedAt = now - 40 * min
+            default: break
+            }
+        }
+        let workspaces = [Workspace(id: "ws-site", name: "官网改版", memberIds: ["pal-site", "pal-blog"], layout: nil,
+                                    createdAt: now - 3 * 24 * hour, updatedAt: now - 2 * hour)]
         return PalSeed(pals: allPals, logs: logs,
-                       others: others, approvals: approvals, questions: questions, proposal: proposal, recent: recent)
+                       others: others, approvals: approvals, questions: questions, proposal: proposal, recent: recent,
+                       workspaces: workspaces)
     }
 }

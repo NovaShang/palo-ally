@@ -16,6 +16,15 @@ public enum PalStatus: String, TolerantStringEnum {
     public static let fallback = PalStatus.unknown
 }
 
+/// What the owner should know about a session at a glance (workbench-rpc §1),
+/// the host's reading of its state: `waiting` = a card waits on the owner;
+/// `working` = in a turn; `done` = a turn ended that the owner hasn't looked
+/// at; `idle` = anything else (asleep, starting and stopped too).
+public enum PalAttention: String, TolerantStringEnum {
+    case working, waiting, done, idle, unknown
+    public static let fallback = PalAttention.unknown
+}
+
 /// Who made it a Pal: the owner adopted it, or the assistant opened it.
 public enum PalCreator: String, TolerantStringEnum {
     case owner, palo, unknown
@@ -46,17 +55,48 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
     /// Stopped: why (its spending limit, it couldn't start, it's open elsewhere).
     public var note: String?
     public var updatedAt: Int64?
+    /// What the owner should see in the dot (workbench-rpc §1). A host from
+    /// before the workbench doesn't say: it's worked out from `status`.
+    public var attention: PalAttention
+    /// When its last turn ended normally, and when the owner last looked
+    /// (every device shares it).
+    public var finishedAt: Int64?
+    public var seenAt: Int64?
+    /// Context used, 0 to 100.
+    public var contextPct: Int?
+    /// The workspace it belongs to, if any (at most one).
+    public var workspaceId: String?
+    /// Thinking depth; nil follows the default.
+    public var effort: String?
+    /// Not touched for a few days and in no workspace: it's listed under
+    /// 以前的, not among the sessions.
+    public var folded: Bool
 
     enum CodingKeys: String, CodingKey {
         case id, name, cwd, sessionId, status, lastLine, pending, model, lastWakeUsd, createdBy, activity, note, updatedAt
+        case attention, finishedAt, seenAt, contextPct, workspaceId, effort, folded
     }
 
     public init(id: String, name: String, cwd: String, sessionId: String, status: PalStatus, lastLine: String? = nil,
                 pending: Int = 0, model: String? = nil, createdBy: PalCreator = .owner, activity: String? = nil,
-                note: String? = nil, updatedAt: Int64? = nil, lastWakeUsd: Double? = nil) {
+                note: String? = nil, updatedAt: Int64? = nil, lastWakeUsd: Double? = nil,
+                attention: PalAttention? = nil, finishedAt: Int64? = nil, seenAt: Int64? = nil, contextPct: Int? = nil,
+                workspaceId: String? = nil, effort: String? = nil, folded: Bool = false) {
         self.id = id; self.name = name; self.cwd = cwd; self.sessionId = sessionId; self.status = status
         self.lastLine = lastLine; self.pending = pending; self.model = model; self.createdBy = createdBy
         self.activity = activity; self.note = note; self.updatedAt = updatedAt; self.lastWakeUsd = lastWakeUsd
+        self.attention = attention ?? Self.derivedAttention(status: status, pending: pending, finishedAt: finishedAt, seenAt: seenAt)
+        self.finishedAt = finishedAt; self.seenAt = seenAt; self.contextPct = contextPct
+        self.workspaceId = workspaceId; self.effort = effort; self.folded = folded
+    }
+
+    /// The host's rule (workbench-rpc §1): a card waiting wins; then a turn
+    /// running; then a finished turn the owner hasn't looked at; else idle.
+    public static func derivedAttention(status: PalStatus, pending: Int, finishedAt: Int64?, seenAt: Int64?) -> PalAttention {
+        if pending > 0 || status == .waiting { return .waiting }
+        if status == .busy { return .working }
+        if status != .stopped, let f = finishedAt, f > (seenAt ?? 0) { return .done }
+        return .idle
     }
 
     public init(from decoder: Decoder) throws {
@@ -74,6 +114,18 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
         activity = l.string("activity")
         note = l.string("note")
         updatedAt = l.millis("updatedAt")
+        finishedAt = l.millis("finishedAt")
+        seenAt = l.millis("seenAt")
+        contextPct = l.int("contextPct")
+        workspaceId = l.string("workspaceId")
+        effort = l.string("effort")
+        folded = l.bool("folded") ?? false
+        // New fields a host from before the workbench lacks: worked out, not reported as missing.
+        if let a = l.decode(PalAttention.self, "attention"), a != .unknown {
+            attention = a
+        } else {
+            attention = Self.derivedAttention(status: status, pending: pending, finishedAt: finishedAt, seenAt: seenAt)
+        }
     }
 
     /// In a turn: working, or stopped in it on a card the owner must answer.
@@ -97,9 +149,16 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
     /// What it's called: its name, else its folder's.
     public var displayName: String {
         let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Not named yet: the host's `session-<short id>` shows as 新会话.
+        if Self.isUnnamed(n) { return loc("新会话") }
         if !n.isEmpty { return n }
         let folder = (cwd as NSString).lastPathComponent
         return folder.isEmpty || folder == "/" ? "Pal" : folder
+    }
+
+    /// The host's placeholder name for a session nobody has named or spoken in.
+    public static func isUnnamed(_ name: String) -> Bool {
+        name.range(of: #"^session-[0-9a-f]{4,}$"#, options: .regularExpression) != nil
     }
 
     /// The folder for people: the home folder as 「~」.
