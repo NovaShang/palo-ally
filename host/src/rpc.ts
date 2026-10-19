@@ -31,7 +31,7 @@ export const RPC_METHODS = [
   "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop", "pals.recent", "pals.wake", "pals.rename", "pals.rewind",
   "pals.create", "pals.folders", "pals.seen", "pals.end", "pals.earlier", "pals.resume",
   "pals.detail", "pals.setModel", "pals.compact", "pals.stopTask", "pals.reveal",
-  "workspaces.list", "workspaces.create", "workspaces.update", "workspaces.move", "workspaces.delete", "workbench.tabs.get", "workbench.tabs.set",
+  "workspaces.list", "workspaces.create", "workspaces.update", "workspaces.move", "workspaces.delete", "workbench.order.set", "workbench.tabs.get", "workbench.tabs.set",
   "pair.invite", "device.list", "device.remove",
   "auth.login.start", "auth.login.code", "auth.login.cancel",
   "files.list", "files.read", "files.search", "files.resolve", "files.folders.list", "files.folders.browse", "files.folders.add", "files.folders.remove",
@@ -73,6 +73,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
         settings: hub.config.settings,
         status: hub.status(),
         workspaces: hub.workbench.list(),
+        sessionOrder: hub.workbench.sessionOrder(),
         workbenchTabs: hub.workbench.allTabs(),
         // Mid-reply: the whole text so far, which replaces what the client
         // has for that id; later chat.delta events append to it.
@@ -329,7 +330,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     case "pals.earlier":
       return await hub.pals.earlier({ limit: p.limit, folder: typeof p.folder === "string" ? p.folder : undefined });
     case "workspaces.list":
-      return { workspaces: hub.workbench.list() };
+      return { workspaces: hub.workbench.list(), sessionOrder: hub.workbench.sessionOrder() };
     case "workspaces.create":
       return hub.workbench.create(p);
     case "workspaces.update":
@@ -338,6 +339,8 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return hub.workbench.move(p);
     case "workspaces.delete":
       return hub.workbench.delete(p);
+    case "workbench.order.set":
+      return hub.workbench.orderSet(p);
     case "workbench.tabs.get":
       return hub.workbench.tabsGet(p);
     case "workbench.tabs.set":

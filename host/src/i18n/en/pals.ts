@@ -126,6 +126,7 @@ export const enPals: Record<keyof typeof zhPals, string> = {
   "wb.layoutNotMember": "The layout has a session that isn't in this workspace.",
   "wb.badTabsKey": "Can't tell where those tabs belong.",
   "wb.noTabsOwner": "The session or workspace those tabs belong to doesn't exist.",
+  "wb.badOrder": "The order isn't valid.",
   "wb.badTabs": "The tabs aren't valid.",
   "pals.earlierGone": "That one is gone; it may have been taken over or expired.",
   "pals.badEarlierKey": "Couldn't make sense of that item.",

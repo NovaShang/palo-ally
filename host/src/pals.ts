@@ -161,6 +161,8 @@ export interface PalsDeps {
   workspaceJoin?: (workspaceId: string, palId: string) => void;
   /** A session is gone (ended, removed, handed back): out of its workspace. */
   palGone?: (palId: string) => void;
+  /** A new session (not in a workspace): it goes on top of the owner's order. */
+  palAdded?: (palId: string) => void;
   /** The computer's ended conversations (the SDK's listSessions / getSessionInfo); also each Pal's title (§13). */
   recentSource?: RecentSource;
   /** Retitles a session that has no process (the SDK's renameSession). */
@@ -882,6 +884,7 @@ export class Pals {
     this.save();
     const pal = this.session(rec);
     this.pals.set(rec.id, pal);
+    if (!rec.workspaceId) this.d.palAdded?.(rec.id);
     return pal;
   }
 

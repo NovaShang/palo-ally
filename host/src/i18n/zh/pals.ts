@@ -124,6 +124,7 @@ export const zhPals = {
   "wb.layoutNotMember": "布局里有不属于这个工作区的会话",
   "wb.badTabsKey": "看不懂这个标签位置",
   "wb.noTabsOwner": "这个标签位置对应的会话或工作区不存在",
+  "wb.badOrder": "顺序格式不对",
   "wb.badTabs": "标签格式不对",
   "pals.earlierGone": "这一项已经不在了，可能已经被接管或记录过期",
   "pals.badEarlierKey": "看不懂这一项",

@@ -404,6 +404,10 @@ describe("host ↔ app protocol", () => {
     const tiles = { type: "hsplit", w: 1, h: 1, x: 0, y: 0, children: [{ type: "leaf", session: m1, w: 0.5, h: 1, x: 0, y: 0 }, { type: "leaf", session: m2, w: 0.5, h: 1, x: 0.5, y: 0 }] };
     expect((await run("workspaces.update", { id: ws.id, name: "官网改版", layout: tiles })).workspace).toMatchObject({ name: "官网改版", layout: tiles });
     expect((await run("workspaces.list", {})).workspaces).toHaveLength(1);
+    expect((await run("workspaces.update", { id: ws.id, memberIds: [m2, m1] })).workspace.memberIds).toEqual([m2, m1]);
+    expect((await run("workspaces.move", { palId: m1, workspaceId: ws.id, index: 0 })).workspaces[0].memberIds).toEqual([m1, m2]);
+    expect((await run("workbench.order.set", { kind: "sessions", ids: [opened.id] })).sessionOrder).toContain(opened.id);
+    expect((await run("workbench.order.set", { kind: "workspaces", ids: [ws.id] })).workspaceOrder).toEqual([ws.id]);
     const tabs = [{ kind: "files" }, { kind: "library" }, { kind: "preview", path: `${project}/README.md` }, { kind: "web", url: "https://example.com" }];
     expect((await call("workbench.tabs.set", { key: `ws:${ws.id}`, tabs, active: 3, open: true })).state).toMatchObject({ tabs, active: 3, open: true });
     expect((await call("workbench.tabs.get", {})).states[`ws:${ws.id}`]).toBeDefined();
