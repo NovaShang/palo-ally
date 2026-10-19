@@ -26,7 +26,7 @@ struct ModelRowLabel: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(title)
+            title
             Spacer(minLength: 12)
             Text(shown).foregroundStyle(.secondary).lineLimit(1)
             Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
