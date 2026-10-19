@@ -16,18 +16,6 @@ extension Copy {
         }
     }
 
-    /// The state's dot: green while working, orange while it waits on the
-    /// owner, gray otherwise; none when it's stopped or asleep (asleep has
-    /// its moon). Not the theme color.
-    static func palStatusColor(_ s: PalStatus) -> Color? {
-        switch s {
-        case .busy, .starting: .green
-        case .waiting: .orange
-        case .idle: Color(.systemGray3)
-        case .stopped, .asleep, .unknown: nil
-        }
-    }
-
     /// The row's second line: 「等你 · 列表页做完了…」, 「已停 · 今天的花费到上限了」,
     /// or just its last words.
     static func palLine(_ p: Pal) -> String {

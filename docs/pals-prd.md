@@ -62,7 +62,7 @@ App 用标准 iOS 导航：一个列表，最上面是你的助理 Palo，下面
 
 ## 6. Palo 开 Pal
 
-Palo 提议，你点头，主机新开一个会话，第一条消息是 Palo 写的交接说明。沿用 `sessions-prd.md` 帮手的提议卡片和花费上限，但会话由主机 host，不再用 `claude --bg`。
+Palo 提议，你点头，主机新开一个会话，第一条消息是 Palo 写的交接说明。沿用 `sessions-prd.md` 帮手的提议卡片，但会话由主机 host，不再用 `claude --bg`。
 
 ## 7. 主机
 
@@ -124,7 +124,7 @@ Palo 提议，你点头，主机新开一个会话，第一条消息是 Palo 写
   - `helper`：Pal 是不是经 PaloAlly 小助手启动。false 时 Pal 的 macOS 权限跟主机一样，App 如实说明。
   - 列表或任何一个 Pal 的状态变了，就发整张。Pal 按最近活动排在前面。
   - 发得及时：一轮结束、`pals.stop`、出现或答完一张卡片、起停，300 毫秒内发出。`pals.stop` 后 Claude Code 迟迟不结束这一轮时（工具一时停不下来），主机 250 毫秒后自己把它算作结束，这一轮剩下的输出不再让它显示「在忙」。
-- `Pal` 另有三个字段：`activity?`（busy 时在干嘛，同 `Status.activity`）、`note?`（stopped 时为什么：花费过了上限 / 接连启动不起来 / 在别处打开了）、`updatedAt`。`id` 是 `pal_…`，不是 `sessionId`；除了 `pals.adopt`，各方法都用 `id`。
+- `Pal` 另有三个字段：`activity?`（busy 时在干嘛，同 `Status.activity`）、`note?`（stopped 时为什么：接连启动不起来 / 在别处打开了）、`updatedAt`。`id` 是 `pal_…`，不是 `sessionId`；除了 `pals.adopt`，各方法都用 `id`。
 - `pals.adopt`：
   - 已经是 Pal 的，返回原来那个。
   - 终端会话返回 `{waiting: "exit-in-terminal"}`。主机每 0.5 秒看一次原进程，它退出后自动接管，新的 Pal 出现在 `pals.updated` 里。等 30 分钟还没退出就不等了，Palo 的对话里说一声。
@@ -136,7 +136,7 @@ Palo 提议，你点头，主机新开一个会话，第一条消息是 Palo 写
   - 不进 Palo 的对话。`seq` 就是毫秒时间，只用来排序，不要算进 Palo 的 sync 序号。
   - 回复的 `id` 是 API 消息的 id：流式、收尾和历史里都一样。主人打的字，`id` 就是记录里那条的 uuid。
   - 别的会话发进来的话是 `role: "user"`，带 `from`：Palo 的话 `from` 是助理的名字，别的会话的话 `from` 是那个会话的名字。Palo 开的 Pal 的第一条（交接说明）也算 Palo 的话。
-- `pals.send`：同一个 `clientMsgId` 重发只送一次。停着的 Pal（花费上限、接连起不来）会先接着跑；在别处开着时报错。
+- `pals.send`：同一个 `clientMsgId` 重发只送一次。停着的 Pal（接连起不来）会先接着跑；在别处开着时报错。
 - `pals.stop`：结束当前这一轮，这个 Pal 还开着的卡片按「拒绝」处理。
 - 卡片：带 `source: {kind: "pal", id, name}`，不进 Palo 的聊天记录（App 放在 Pal 对话的末尾）。Pal 的卡片有「以后都允许」（`suggestedScope`，规则存在 Claude Code 自己那里），等待时长同主人设的确认等待时间。「X 在等你」的推送 data 带 `pal`。
 - `helper.decide` 的 create 现在返回 `{pal?}`（原来是 `{session?}`）。`HelperProposal` 开好以后带 `palId`。

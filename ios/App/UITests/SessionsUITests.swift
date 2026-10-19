@@ -87,23 +87,26 @@ final class SessionsUITests: XCTestCase {
         attach(app, "list-after-wake")
     }
 
-    /// 重命名 (pals-prd §13): from the page's ⋯ and from the row's menu on
-    /// the list, the system's alert with the name filled in.
+    /// 重命名 (pals-prd §13): from the page's details (the capsule opens them)
+    /// with the name filled in, and from the row's menu on the list, the
+    /// system's alert.
     @MainActor
     func testRenamingAPalFromItsPageAndFromTheList() throws {
         let app = launch(["-demoScreen", "pal", "-demoPal", "pal-notes"])
-        let more = app.buttons["pal-menu"].firstMatch
-        XCTAssertTrue(more.waitForExistence(timeout: 15), "no ⋯ on a Pal's page")
-        more.tap()
-        app.buttons["重命名"].firstMatch.tap()
-        let field = app.alerts.textFields.firstMatch
+        let capsule = app.buttons["title-capsule"].firstMatch
+        XCTAssertTrue(capsule.waitForExistence(timeout: 15), "no title capsule on a Pal's page")
+        capsule.tap()
+        app.buttons["detail-rename"].firstMatch.tap()
+        let field = app.textFields["detail-name-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5), "no name field")
         XCTAssertEqual(field.value as? String, "笔记整理", "not filled in")
-        attach(app, "rename-alert")
+        attach(app, "rename-field")
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 12))
         field.typeText("读书笔记")
-        app.alerts.buttons["好"].tap()
-        XCTAssertTrue(app.navigationBars.staticTexts["读书笔记"].waitForExistence(timeout: 5), "the page's title didn't change")
+        app.buttons["好"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["读书笔记"].firstMatch.waitForExistence(timeout: 5), "the page's title didn't change")
+        let done = app.buttons["完成"].firstMatch
+        if done.exists { done.tap() }
         // From the list: the row's menu.
         app.navigationBars.buttons.firstMatch.tap()
         let row = app.descendants(matching: .any)["row-pal-pal-site"]
@@ -172,43 +175,9 @@ final class SessionsUITests: XCTestCase {
         app.buttons["session-adopt"].firstMatch.tap()
         XCTAssertTrue(text(app, "请在终端里输入 /exit").waitForExistence(timeout: 10), "not asked to quit it in the terminal")
         attach(app, "session-waiting")
-        XCTAssertTrue(app.buttons["pal-menu"].waitForExistence(timeout: 20), "its page didn't become the Pal's")
+        XCTAssertTrue(app.buttons["title-capsule"].waitForExistence(timeout: 20), "its page didn't become the Pal's")
         XCTAssertTrue(app.navigationBars.staticTexts["修登录跳转"].exists)
         XCTAssertTrue(app.buttons["按住说话，轻点打字"].firstMatch.exists, "no composer once it's a Pal")
-    }
-
-    @MainActor
-    func testHandingBackShowsTheLineAndRemovingAsksInThePage() throws {
-        let app = launch(["-demoScreen", "pal", "-demoPal", "pal-notes"])
-        let more = app.buttons["pal-menu"].firstMatch
-        XCTAssertTrue(more.waitForExistence(timeout: 15), "no ⋯ on a Pal's page")
-        more.tap()
-        app.buttons["交还终端"].firstMatch.tap()
-        // Asked in the page, not a dialog.
-        XCTAssertTrue(app.buttons["算了"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.alerts.count, 0)
-        XCTAssertEqual(app.sheets.count, 0)
-        app.buttons["交还"].firstMatch.tap()
-        let line = app.staticTexts["resume-command"]
-        XCTAssertTrue(line.waitForExistence(timeout: 10), "no line to resume it in a terminal")
-        XCTAssertTrue(line.label.contains("claude --resume "), line.label)
-        XCTAssertTrue(app.buttons["复制这一行"].exists)
-        // Closing it goes back to the list, without that Pal.
-        app.buttons["关上"].tap()
-        XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 10))
-        XCTAssertFalse(app.descendants(matching: .any)["row-pal-pal-notes"].exists)
-
-        // 移出 Pals, on the other one.
-        app.descendants(matching: .any)["row-pal-pal-site"].tap()
-        let menu = app.buttons["pal-menu"].firstMatch
-        XCTAssertTrue(menu.waitForExistence(timeout: 10))
-        menu.tap()
-        app.buttons["移出 Pals"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["算了"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.alerts.count, 0)
-        app.buttons["移出"].firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 10))
-        XCTAssertFalse(app.descendants(matching: .any)["row-pal-pal-site"].exists)
     }
 
     @MainActor

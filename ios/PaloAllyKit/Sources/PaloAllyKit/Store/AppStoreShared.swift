@@ -48,6 +48,11 @@ final class AppStoreShared {
     var recentSupported: Bool?
     var adoptDecisions: [String: PalAdoptProposalStatus] = [:]
     var adoptProposalPals: [String: String] = [:]
+
+    var workspaces: [Workspace] = []
+    var workspacesSupported: Bool?
+    var earlierItems: [EarlierItem]?
+    var earlierSupported: Bool?
 }
 
 /// A session on its way to becoming a Pal (`pals.adopt`).

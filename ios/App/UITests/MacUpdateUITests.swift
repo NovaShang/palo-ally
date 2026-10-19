@@ -39,7 +39,7 @@ final class MacUpdateUITests: XCTestCase {
     func testThePlainDemoShowsNoHint() throws {
         let app = launch([])
         defer { app.terminate() }
-        XCTAssertTrue(app.buttons["成果"].firstMatch.waitForExistence(timeout: 30))
+        XCTAssertTrue(app.buttons["右侧栏"].firstMatch.waitForExistence(timeout: 30))
         XCTAssertFalse(app.descendants(matching: .any)["mac-update-hint"].exists)
     }
 }

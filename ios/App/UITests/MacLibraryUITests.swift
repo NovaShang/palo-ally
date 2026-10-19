@@ -21,8 +21,8 @@ final class MacLibraryUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
 
-        let library = app.buttons["成果"].firstMatch
-        XCTAssertTrue(library.waitForExistence(timeout: 30), "no 成果 in the toolbar")
+        let library = app.buttons["右侧栏"].firstMatch
+        XCTAssertTrue(library.waitForExistence(timeout: 30), "no right-pane button in the toolbar")
         library.click()
 
         let title = NSPredicate(format: "label CONTAINS %@", "每日晨报")

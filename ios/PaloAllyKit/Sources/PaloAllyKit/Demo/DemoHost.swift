@@ -43,6 +43,11 @@ public actor DemoHost {
     public internal(set) var otherSessions: [CCSession] = []
     /// Conversations that ended lately (pals-prd §10), to adopt.
     public internal(set) var recentSessions: [RecentSession] = []
+    /// Workspaces (workbench-rpc §3), the sessions that ended (for 以前的), and
+    /// the browser pane's tabs by key.
+    public internal(set) var workspaces: [Workspace] = []
+    var endedItems: [EarlierItem] = []
+    var paneTabs: [String: TabsState] = [:]
     /// A Pal's turn being written, to stop (`pals.stop`).
     var palTurns: [String: Task<Void, Never>] = [:]
     /// Sessions asked to be adopted that wait to be quit in their terminal.
@@ -124,6 +129,7 @@ public actor DemoHost {
                 self.palLogs = ps.logs
                 self.otherSessions = ps.others
                 self.recentSessions = ps.recent
+                self.workspaces = ps.workspaces
                 self.approvals += ps.approvals
                 self.questions += ps.questions
                 self.messages.append(ps.proposal)
@@ -187,6 +193,8 @@ public actor DemoHost {
         approvals.append(a)
         emit(RPCEventName.approvalUpdated, a)
     }
+
+    static let demoLoginURL = "https://claude.com/cai/oauth/authorize?code=true&client_id=demo"
 
     /// Screenshot states for the title capsule (`-demoState idle | busy | tasks | fresh | answered | tables`):
     /// nothing waiting on the owner, then the main turn working, or several
@@ -296,6 +304,11 @@ public actor DemoHost {
                 post("找到了，是 \(CCSession.shortPath(found.cwd)) 里那个。")
                 proposeAdopting(found)
             }
+        case "authExpired", "authLogin":
+            // `-demoState authExpired`: Claude Code's login ran out on the
+            // computer; `authLogin`: being signed in again, the link out.
+            s.auth = AuthStatus(state: .expired, since: now - 40 * 60_000,
+                                login: name == "authLogin" ? LoginStatus(state: .waiting, startedAt: now, url: Self.demoLoginURL) : nil)
         case "longQuote":
             // `-demoState longQuote`: a reply, then the owner's words quoting a long
             // stretch of it (folds to two lines) and, below, a short quote (doesn't).
@@ -836,6 +849,28 @@ public actor DemoHost {
             settings = try obj.decode(HostSettings.self)
             emit(RPCEventName.settingsUpdated, settings)
             return ["settings": try .from(settings)]
+        case RPCMethod.authLoginStart:
+            // The link comes back at once; the demo's login goes through with any code but "bad".
+            status.auth = AuthStatus(state: status.auth?.state ?? .ok, since: status.auth?.since,
+                                     login: LoginStatus(state: .waiting, startedAt: Date().epochMillis, url: Self.demoLoginURL))
+            emit(RPCEventName.status, status)
+            return ["auth": try .from(status.auth)]
+        case RPCMethod.authLoginCode:
+            guard let login = status.auth?.login, login.state == .waiting || login.state == .invalid else {
+                throw DemoError(message: "no login waiting for a code")
+            }
+            if p["code"]?.stringValue?.trimmingCharacters(in: .whitespaces) == "bad" {
+                status.auth?.login?.state = .invalid
+            } else {
+                status.auth = nil
+            }
+            emit(RPCEventName.status, status)
+            return ["auth": try status.auth.map { try JSONValue.from($0) } ?? .null]
+        case RPCMethod.authLoginCancel:
+            status.auth?.login = nil
+            if status.auth?.state == .ok { status.auth = nil }
+            emit(RPCEventName.status, status)
+            return ["auth": try status.auth.map { try JSONValue.from($0) } ?? .null]
         case RPCMethod.stop:
             status.busy = false
             status.activity = nil
@@ -1056,6 +1091,7 @@ public actor DemoHost {
             if let r = try dispatchMedia(method, p) { return r }
             if let r = try dispatchDevices(method, p) { return r }
             if let r = try dispatchFiles(method, p) { return r }
+            if !sessionsMode, let r = try await dispatchWorkbench(method, p) { return r }
             if !sessionsMode, let r = try await dispatchPals(method, p) { return r }
             throw DemoError(message: "unknown method \(method)")
         }
@@ -1344,7 +1380,7 @@ public actor DemoHost {
         var proposal = ChatMessage(seq: nextSeq, id: "m\(nextSeq)", role: .assistant, kind: .helper,
                                    text: "报销单每周都要理一遍，要不要开一个帮手专门管？", channel: .app, ts: now - 3 * min)
         proposal.proposal = HelperProposal(id: "hp1", name: "报销帮手", cwd: "/Users/demo/Documents/报销",
-                                           duty: "每周把下载文件夹里的发票整理进报销表，缺的告诉你。", dailyUsd: 3)
+                                           duty: "每周把下载文件夹里的发票整理进报销表，缺的告诉你。")
         return SessionSeed(sessions: sessions, logs: ["cc-site": site, "cc-notes": notes, "cc-login": login, "cc-data": data],
                            approvals: approvals, questions: questions, proposal: proposal)
     }

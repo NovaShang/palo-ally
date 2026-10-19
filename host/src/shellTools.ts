@@ -1,7 +1,7 @@
 import type { ArtifactLibrary } from "./artifacts.ts";
 import type { Audit } from "./audit.ts";
 import type { ChatLog } from "./chat.ts";
-import type { ToolHandlers } from "./harness/types.ts";
+import type { DeliveryToolHandlers, ToolHandlers } from "./harness/types.ts";
 import type { Router } from "./router.ts";
 import { notifyResultText } from "./copy.ts";
 import type { TaskTracker } from "./tasks.ts";
@@ -15,7 +15,7 @@ import type { Allies } from "./allies.ts";
 import type { Pals } from "./pals.ts";
 import { join, resolve } from "node:path";
 import { mimeOf } from "./artifacts.ts";
-import type { Attachment, Channel, Watch } from "./types.ts";
+import type { Attachment, Channel, ChatMessage, Watch } from "./types.ts";
 import { t } from "./i18n/index.ts";
 
 /** How long notify_user waits for the delivery outcome (tests shorten it). */
@@ -105,6 +105,70 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
       }
     },
     remove_watch: async ({ id }) => (d.watches.remove(id) ? "ok" : "not found"),
+    ...makeDeliveryTools(d),
+    // Allies: the list, and a draft for the owner to send. Nothing reaches
+    // another assistant without the owner's tap on the card.
+    ally_list: async () => d.allies?.toolList() ?? "[]",
+    ally_send: async (args) => d.allies?.toolSend(args) ?? t("ally.tool.none"),
+    // Pals: the assistant talks to them with SendMessage itself; it only
+    // lists them here, and proposes a new one or taking over a conversation
+    // that ended (either happens on the owner's tap).
+    pal_propose: async (a) => d.pals?.propose(a) ?? t("tool.noPals"),
+    pal_send: async (a) => (d.pals ? await d.pals.toolSend(a) : t("tool.noPals")),
+    pals_recent: async (a) => (d.pals ? await d.pals.toolRecent(a) : "{}"),
+    pal_adopt: async (a) => (d.pals ? await d.pals.proposeAdopt(a) : t("tool.noPals")),
+    // A new device of the owner's: the assistant hands the link over in the
+    // conversation; clicked on that device, the app opens and pairs.
+    pair_link: async () => {
+      if (!d.pairInvite) return t("hub.err.noRemote");
+      try {
+        const { link, expiresAt } = await d.pairInvite();
+        const minutes = Math.max(1, Math.round((expiresAt - Date.now()) / 60_000));
+        return t("tool.pairLink", { minutes, link });
+      } catch (e) {
+        return t("tool.pairFail", { err: e instanceof Error ? e.message : String(e) });
+      }
+    },
+  };
+}
+
+// One line on how a check watch is doing: when it last ran, how that went,
+// and when it runs next. Skips and errors show here instead of going quiet.
+function checkHealth(w: Watch, tz: string, now = Date.now()): string {
+  const at = (ms: number) => {
+    const p = zonedParts(ms, tz);
+    return `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
+  };
+  if (!w.enabled) return t("goal.paused");
+  const last = w.lastCheckedAt ? t("check.last", { at: at(w.lastCheckedAt) }) : t("check.never");
+  const result = w.lastResult ? (w.lastResult.ok ? t("check.ok") : t("check.failed", { reason: w.lastResult.reason ?? t("check.error") })) : "";
+  const next = nextRunAt(w, now);
+  return [last, result, next ? t("check.next", { at: at(next) }) : ""].filter(Boolean).join(" · ");
+}
+
+/** Where a session's own tools put what they deliver: its conversation, not the assistant's. */
+export interface SessionSink {
+  /** The session's id: the `source` of what it publishes. */
+  id: string;
+  /** What the owner calls it, the title of its pushes. */
+  name: () => string;
+  /** A message into the session's own conversation (shown live, kept in its history). */
+  card: (msg: Omit<ChatMessage, "seq" | "id" | "ts">, tool: string) => ChatMessage;
+  /** A message only to push: it isn't put in the conversation. */
+  notice: (text: string) => ChatMessage;
+}
+
+export type DeliveryDeps = Pick<ShellToolDeps, "artifacts" | "chat" | "router" | "audit" | "wechat" | "media" | "pals" | "ownerChannel" | "cwd"> & {
+  /** Set for a session's tools; absent for the assistant's. */
+  session?: SessionSink;
+};
+
+export function makeDeliveryTools(d: DeliveryDeps): DeliveryToolHandlers {
+  const session = d.session;
+  const source = session?.id ?? "palo";
+  const pushTitle = () => (session ? { title: session.name() } : {});
+  const post = (tool: string, m: Omit<ChatMessage, "seq" | "id" | "ts">): ChatMessage => (session ? session.card(m, tool) : d.chat.add(m));
+  return {
     // Modelled on Claude Code's own SendUserFile (same parameters, plus
     // `temporary`): each file is kept in the library unless the assistant is
     // sure it's throwaway, shown in the conversation as a card, pushed when
@@ -118,7 +182,7 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
           if (temporary) {
             atts.push({ ...d.media.saveFile(path), ...(display ? { display } : {}) });
           } else {
-            const a = d.artifacts.publishFile(path);
+            const a = d.artifacts.publishFile(path, { source });
             const size = a.files.find((x) => x.path === a.mainFile)?.size;
             atts.push({ id: a.id, kind: "artifact", mediaType: mimeOf(path), name: a.title, ...(size != null ? { size } : {}), ...(display ? { display } : {}) });
           }
@@ -128,7 +192,7 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
         }
       }
       const proactive = status === "proactive";
-      const msg = d.chat.add({
+      const msg = post("SendUserFile", {
         role: "assistant",
         kind: "text",
         text: caption?.trim() ?? "",
@@ -137,7 +201,7 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
         ...(proactive ? { proactive: true } : {}),
       });
       d.audit.log("file.sent", { files: sent, temporary: !!temporary, proactive });
-      if (proactive) void d.router.proactive(msg);
+      if (proactive) void d.router.proactive(msg, pushTitle());
       const target = d.ownerChannel() === "wechat" ? d.wechat?.ownerTarget?.() : null;
       if (target && d.wechat?.sendFile) {
         for (const p of sent) await d.wechat.sendFile(target, p).catch(() => false);
@@ -148,8 +212,8 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
     // owner keeps and revisits; same path again = an update of the same one.
     Artifact: async ({ file_path, title, description, files, folder }) => {
       try {
-        const a = d.artifacts.publishFile(resolve(d.cwd, file_path), { title, files, folder });
-        d.chat.add({
+        const a = d.artifacts.publishFile(resolve(d.cwd, file_path), { title, files, folder, source });
+        post("Artifact", {
           role: "assistant",
           kind: "text",
           text: description?.trim() ?? "",
@@ -169,57 +233,21 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
       if (!text) return t("tool.nothingToCopy");
       const channel = d.ownerChannel();
       const l = label?.trim();
-      d.chat.add({ role: "assistant", kind: "clipboard", text, channel, ...(l ? { label: l } : {}) });
+      post("copy_to_clipboard", { role: "assistant", kind: "clipboard", text, channel, ...(l ? { label: l } : {}) });
       d.audit.log("clipboard", { chars: text.length, label: l });
       const target = channel === "wechat" ? d.wechat?.ownerTarget?.() : null;
       if (target && d.wechat) await d.wechat.reply(target, text).catch(() => {});
       return t("tool.copied");
     },
-    // Allies: the list, and a draft for the owner to send. Nothing reaches
-    // another assistant without the owner's tap on the card.
-    ally_list: async () => d.allies?.toolList() ?? "[]",
-    ally_send: async (args) => d.allies?.toolSend(args) ?? t("ally.tool.none"),
-    // Pals: the assistant talks to them with SendMessage itself; it only
-    // lists them here, and proposes a new one or taking over a conversation
-    // that ended (either happens on the owner's tap).
     pals_list: async () => (d.pals ? await d.pals.toolList() : "{}"),
-    pal_propose: async (a) => d.pals?.propose(a) ?? t("tool.noPals"),
-    pal_send: async (a) => (d.pals ? await d.pals.toolSend(a) : t("tool.noPals")),
-    pals_recent: async (a) => (d.pals ? await d.pals.toolRecent(a) : "{}"),
-    pal_adopt: async (a) => (d.pals ? await d.pals.proposeAdopt(a) : t("tool.noPals")),
-    // A new device of the owner's: the assistant hands the link over in the
-    // conversation; clicked on that device, the app opens and pairs.
-    pair_link: async () => {
-      if (!d.pairInvite) return t("hub.err.noRemote");
-      try {
-        const { link, expiresAt } = await d.pairInvite();
-        const minutes = Math.max(1, Math.round((expiresAt - Date.now()) / 60_000));
-        return t("tool.pairLink", { minutes, link });
-      } catch (e) {
-        return t("tool.pairFail", { err: e instanceof Error ? e.message : String(e) });
-      }
-    },
     notify_user: async ({ text, urgent }) => {
-      const msg = d.chat.add({ role: "assistant", kind: "notice", text, channel: "system", proactive: true });
+      // A session's push isn't a message in anyone's conversation: it opens the session.
+      const msg = session ? session.notice(text) : d.chat.add({ role: "assistant", kind: "notice", text, channel: "system", proactive: true });
       // Wait for the real outcome (pushes give up after ~5 s), but never longer
       // than notifyWait: a hung pusher must not stall the turn.
-      const delivery = d.router.proactive(msg, { urgent });
+      const delivery = d.router.proactive(msg, { urgent, ...pushTitle() });
       const r = await Promise.race([delivery, new Promise<null>((res) => setTimeout(() => res(null), notifyWait.ms))]);
       return notifyResultText(r);
     },
   };
-}
-
-// One line on how a check watch is doing: when it last ran, how that went,
-// and when it runs next. Skips and errors show here instead of going quiet.
-function checkHealth(w: Watch, tz: string, now = Date.now()): string {
-  const at = (ms: number) => {
-    const p = zonedParts(ms, tz);
-    return `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
-  };
-  if (!w.enabled) return t("goal.paused");
-  const last = w.lastCheckedAt ? t("check.last", { at: at(w.lastCheckedAt) }) : t("check.never");
-  const result = w.lastResult ? (w.lastResult.ok ? t("check.ok") : t("check.failed", { reason: w.lastResult.reason ?? t("check.error") })) : "";
-  const next = nextRunAt(w, now);
-  return [last, result, next ? t("check.next", { at: at(next) }) : ""].filter(Boolean).join(" · ");
 }

@@ -1,7 +1,7 @@
 // Owner-facing sentences from the CLI, setup/doctor, updater, service, power,
 // metrics and the small error messages elsewhere. {name} = placeholder.
 export const zhCli = {
-  "cli.help": "PaloAlly {version} — 把 Claude Code 变成常驻、会主动找你、记得你的私人助理\n\n用法：paloally <命令>\n\n  setup                  第一次使用：检查依赖、生成 home、配置、配对手机\n  start                  前台运行助理（daemon）\n  service install|uninstall|status   装成开机常驻服务（launchd / systemd）\n  chat [消息]            在终端里跟助理说话（不带消息则进入对话）\n  status                 助理现在在干嘛\n  tasks [id]             任务列表 / 某个任务的详情\n  approvals              待确认的操作\n  approve <id> [--remember] / deny <id>\n  watch [list|add|rm|on|off] 盯梢与定时\n  artifacts              产物资料库\n  memory [路径]          记忆文件\n  settings [key value]   打扰频率、免打扰时段等；语言：settings language en|zh\n  sessions [hooks on|off]  Pals 和电脑上的其他 Claude Code 会话；hooks 开关：不在电脑前时把会话的确认送到手机\n  stop                   手上的事全部停下\n  restart [--now]        等手头的事办完再重启（--now 立刻重启，会打断正在办的事）\n  update [--check|--now] 更新到最新正式版（默认等手头的事办完；--check 只看看有没有新版本）\n  audit [n]              审计日志\n  metrics [天数]         Phase 0 验收数据（主动频率、任务、压缩、花费）\n  pair                   配对手机 App\n  devices [rm <id>]      已配对的设备\n  wechat login|logout|status   微信入口\n  doctor                 体检\n",
+  "cli.help": "PaloAlly {version} — 把 Claude Code 变成常驻、会主动找你、记得你的私人助理\n\n用法：paloally <命令>\n\n  setup                  第一次使用：检查依赖、生成 home、配置、配对手机\n  start                  前台运行助理（daemon）\n  service install|uninstall|status   装成开机常驻服务（launchd / systemd）\n  chat [消息]            在终端里跟助理说话（不带消息则进入对话）\n  status                 助理现在在干嘛\n  tasks [id]             任务列表 / 某个任务的详情\n  approvals              待确认的操作\n  approve <id> [--remember] / deny <id>\n  watch [list|add|rm|on|off] 盯梢与定时\n  artifacts              产物资料库\n  memory [路径]          记忆文件\n  settings [key value]   打扰频率、免打扰时段等；语言：settings language en|zh\n  sessions [hooks on|off]  托管的会话和电脑上的其他 Claude Code 会话；hooks 开关：不在电脑前时把会话的确认送到手机\n  stop                   手上的事全部停下\n  restart [--now]        等手头的事办完再重启（--now 立刻重启，会打断正在办的事）\n  update [--check|--now] 更新到最新正式版（默认等手头的事办完；--check 只看看有没有新版本）\n  audit [n]              审计日志\n  metrics [天数]         Phase 0 验收数据（主动频率、任务、压缩、花费）\n  pair                   配对手机 App\n  devices [rm <id>]      已配对的设备\n  wechat login|logout|status   微信入口\n  doctor                 体检\n",
   "cli.notRunning": "助理没在运行。先 `paloally start`（或 `paloally service install`）。",
   "cli.noResponse": "连不上助理（socket 存在但没响应）。试试重启：paloally start",
   "cli.who.user": "你",
@@ -57,7 +57,7 @@ export const zhCli = {
   "cli.st.waiting": "等你",
   "cli.st.stopped": "停了",
   "cli.st.starting": "在启动",
-  "cli.palsHead": "Pals{note}：",
+  "cli.palsHead": "会话{note}：",
   "cli.palsNoHelper": "（没装 PaloAlly Helper：由主机直接启动，macOS 权限跟主机一样）",
   "cli.palWaiting": "  {n} 件等你",
   "cli.othersNoneMore": "电脑上没有别的 Claude Code 会话。",

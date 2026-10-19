@@ -99,8 +99,38 @@ public enum RPCMethod {
     /// whether they can go back (docs/rewind-prd.md).
     public static let palsRewind = "pals.rewind"
 
+    /// The workbench (docs/workbench-rpc.md §2): a session started in any
+    /// folder, its details, model, compaction and background tasks, marking
+    /// it seen, ending it, opening its folder on the computer, folders to
+    /// start in, and 以前的 with resuming from it.
+    public static let palsCreate = "pals.create"
+    public static let palsFolders = "pals.folders"
+    public static let palsDetail = "pals.detail"
+    public static let palsSetModel = "pals.setModel"
+    public static let palsCompact = "pals.compact"
+    public static let palsStopTask = "pals.stopTask"
+    public static let palsSeen = "pals.seen"
+    public static let palsEnd = "pals.end"
+    public static let palsReveal = "pals.reveal"
+    public static let palsEarlier = "pals.earlier"
+    public static let palsResume = "pals.resume"
+
     public static let pals: [String] = [palsList, palsAdopt, palsRelease, palsRemove, palsHistory, palsSend, palsStop,
-                                        palsRecent, palsWake, palsRename, palsRewind]
+                                        palsRecent, palsWake, palsRename, palsRewind,
+                                        palsCreate, palsFolders, palsDetail, palsSetModel, palsCompact, palsStopTask,
+                                        palsSeen, palsEnd, palsReveal, palsEarlier, palsResume]
+
+    /// Workspaces (workbench-rpc §3) and the browser pane's tabs.
+    public static let workspacesList = "workspaces.list"
+    public static let workspacesCreate = "workspaces.create"
+    public static let workspacesUpdate = "workspaces.update"
+    public static let workspacesMove = "workspaces.move"
+    public static let workspacesDelete = "workspaces.delete"
+    public static let workbenchTabsGet = "workbench.tabs.get"
+    public static let workbenchTabsSet = "workbench.tabs.set"
+
+    public static let workbench: [String] = [workspacesList, workspacesCreate, workspacesUpdate, workspacesMove,
+                                             workspacesDelete, workbenchTabsGet, workbenchTabsSet]
 
     /// A link that pairs one more of the owner's devices with this computer
     /// (5 minutes, one device): for a later 添加设备.
@@ -109,6 +139,14 @@ public enum RPCMethod {
     /// (docs/devices-prd.md); the owner's own apps only.
     public static let deviceList = "device.list"
     public static let deviceRemove = "device.remove"
+
+    /// Claude Code's login on the computer, signed in again from here: start
+    /// it (the authorization link comes back), type the code the page shows,
+    /// or give up.
+    public static let authLoginStart = "auth.login.start"
+    public static let authLoginCode = "auth.login.code"
+    public static let authLoginCancel = "auth.login.cancel"
+    public static let auth: [String] = [authLoginStart, authLoginCode, authLoginCancel]
 
     /// Files on the computer, read-only (docs/files-prd.md): a folder's
     /// children, a file in chunks, names, the paths in a reply, and the
@@ -133,7 +171,7 @@ public enum RPCMethod {
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
         suggestionsList, suggestionsDismiss, hostUpdate, pairInvite, deviceList, deviceRemove,
-    ] + allies + sessions + pals + files
+    ] + allies + sessions + pals + workbench + files + auth
 }
 
 public enum RPCEventName {
@@ -164,11 +202,16 @@ public enum RPCEventName {
     public static let palsUpdated = "pals.updated"
 
     public static let pals: [String] = [palsUpdated]
+    /// The workspaces changed (the whole table), or a pane's tabs did.
+    public static let workspacesUpdated = "workspaces.updated"
+    public static let workbenchUpdated = "workbench.updated"
+
+    public static let workbench: [String] = [workspacesUpdated, workbenchUpdated]
 
     public static let all: [String] = [
         chatMessage, chatDelta, chatRewound, taskUpdated, approvalUpdated, questionUpdated, watchUpdated, artifactUpdated, settingsUpdated,
         status, commandsUpdated, suggestionsUpdated,
-    ] + allies + sessions + pals
+    ] + allies + sessions + pals + workbench
 }
 
 public struct EmptyParams: Codable, Sendable { public init() {} }
@@ -597,6 +640,19 @@ public struct SettingsResult: Decodable, Sendable {
 }
 
 /// `stop` / `model.set` return `{status}`.
+public struct AuthCodeParams: Codable, Sendable {
+    public var code: String
+    public init(code: String) { self.code = code }
+}
+
+/// auth.login.*: the login's state after the call (null: it works and no sign-in is under way).
+public struct AuthResult: Decodable, Sendable {
+    public var auth: AuthStatus?
+    public init(from decoder: Decoder) throws {
+        auth = try Lenient(decoder).decode(AuthStatus.self, "auth")
+    }
+}
+
 public struct StatusResult: Decodable, Sendable {
     public var status: HostStatus?
     public init(from decoder: Decoder) throws {

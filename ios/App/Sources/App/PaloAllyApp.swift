@@ -24,7 +24,17 @@ struct PaloAllyApp: App {
                 }
         }
         .commands {
-            // View → Show / Hide Sidebar (⌃⌘S), the system's.
+            // File → 新建会话 (⌘N) and 新建工作区 (⌘⇧N), in place of the system's New.
+            CommandGroup(replacing: .newItem) {
+                Button("新建会话") { appDelegate.model.newSession = true }
+                    .keyboardShortcut("n", modifiers: .command)
+                Button("新建工作区") { appDelegate.model.newWorkspace = [] }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
+            }
+            // View → Show / Hide Sidebar (⌃⌘S), the system's. It also anchors
+            // PlaceCommands below (`before: .sidebar`); without it the menu
+            // build throws at launch. The collapsed state is saved from
+            // `columnVisibility` (RootView), so the system toggle is remembered.
             SidebarCommands()
             PlaceCommands(model: appDelegate.model)
         }
@@ -40,7 +50,7 @@ private struct PlaceCommands: Commands {
         CommandGroup(before: .sidebar) {
             Button("管理助理") { model.toggleManagement() }
                 .keyboardShortcut("1", modifiers: .command)
-            Button("成果") { model.toggleLibrary() }
+            Button("右侧栏") { model.toggleLibrary() }
                 .keyboardShortcut("2", modifiers: .command)
             // ⌘F searches 成果 and the conversation (nothing else here has
             // Find). It lives here: Catalyst ignores a replaced text-editing

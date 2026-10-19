@@ -1,6 +1,6 @@
 # 工作台：需求和主人的原话
 
-2026-10-19。工作台第一版的实现已撤回（代码保留在 `workbench` 分支），这里只记需求和主人的原话，不写实现。完整的产品需求见 `workbench-prd.md`，当时的分期计划见 `workbench-plan.md`，设计稿在 `workbench-design/`（`workbench.html` 总体布局，`details.html` 详情页，`indicator.html` 会话指示器）。
+2026-10-19。代码回到主人提这一轮意见之前的版本（209ec01，即正式版 0.1.17：工作台第一版，加上会话能自己发成果）。按这些意见做的改动已撤回，代码保留在 `workbench` 分支。这里只记需求和主人的原话，不写实现。完整的产品需求见 `workbench-prd.md`，当时的分期计划见 `workbench-plan.md`，设计稿在 `workbench-design/`（`workbench.html` 总体布局，`details.html` 详情页，`indicator.html` 会话指示器）。
 
 ## 方向
 

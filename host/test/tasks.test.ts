@@ -65,7 +65,7 @@ describe("TaskTracker", () => {
     const act = t.activity(id);
     expect(act.map((a) => a.kind)).toEqual(["tool_use", "tool_result", "text", "tool_use", "tool_use"]);
     expect(act[4]!.text).toBe("/a");
-    expect(act.map((a) => a.label)).toEqual(["搜索", undefined, undefined, "安排帮手", "看文件"]);
+    expect(act.map((a) => a.label)).toEqual(["搜索", undefined, undefined, "安排子任务", "看文件"]);
     expect(t.get(id)!.activityCount).toBe(5);
     expect(t.list()).toHaveLength(1); // nested agent doesn't create a second row
     cleanup(paths);

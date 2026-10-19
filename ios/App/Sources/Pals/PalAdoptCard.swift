@@ -40,7 +40,7 @@ struct PalAdoptCard: View {
                         .foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    Text("接过来以后，它会出现在 Pals 里，在手机上接着聊。")
+                    Text("接过来以后，它会出现在会话里，在手机上接着聊。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

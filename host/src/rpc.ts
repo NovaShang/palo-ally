@@ -29,7 +29,11 @@ export const RPC_METHODS = [
   "ally.list", "ally.invite", "ally.accept", "ally.remove", "ally.log", "ally.draft.decide", "ally.say", "ally.trust",
   "sessions.list", "sessions.history", "sessions.hooks", "helper.decide",
   "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop", "pals.recent", "pals.wake", "pals.rename", "pals.rewind",
+  "pals.create", "pals.folders", "pals.seen", "pals.end", "pals.earlier", "pals.resume",
+  "pals.detail", "pals.setModel", "pals.compact", "pals.stopTask", "pals.reveal",
+  "workspaces.list", "workspaces.create", "workspaces.update", "workspaces.move", "workspaces.delete", "workbench.tabs.get", "workbench.tabs.set",
   "pair.invite", "device.list", "device.remove",
+  "auth.login.start", "auth.login.code", "auth.login.cancel",
   "files.list", "files.read", "files.search", "files.resolve", "files.folders.list", "files.folders.browse", "files.folders.add", "files.folders.remove",
 ] as const;
 
@@ -37,6 +41,7 @@ export const RPC_EVENTS = [
   "chat.message", "chat.delta", "chat.rewound", "task.updated", "approval.updated", "question.updated", "watch.updated",
   "artifact.updated", "settings.updated", "status", "commands.updated",
   "suggestions.updated", "ally.updated", "ally.entry", "sessions.updated", "pals.updated",
+  "workspaces.updated", "workbench.updated",
 ] as const;
 
 // Admin methods are reachable only on the local unix socket (the owner's own
@@ -67,6 +72,8 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
         artifacts: hub.artifacts.list(),
         settings: hub.config.settings,
         status: hub.status(),
+        workspaces: hub.workbench.list(),
+        workbenchTabs: hub.workbench.allTabs(),
         // Mid-reply: the whole text so far, which replaces what the client
         // has for that id; later chat.delta events append to it.
         streaming: hub.conversation.streamingReply() ?? undefined,
@@ -153,6 +160,14 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       if (a.source?.kind === "pal") hub.pals.cardAnswered(a.source.id);
       return { status: a.status };
     }
+    // Signing Claude Code in again from the phone (auth.ts). The code goes to
+    // the login process only: not to the audit, not to a log.
+    case "auth.login.start":
+      return { auth: (await hub.auth.startLogin(ctx.deviceId ?? ctx.channel)) ?? null };
+    case "auth.login.code":
+      return { auth: hub.auth.submitCode(String(p.code ?? "")) ?? null };
+    case "auth.login.cancel":
+      return { auth: hub.auth.cancelLogin() ?? null };
     case "question.answer": {
       const raw = p.answers && typeof p.answers === "object" ? (p.answers as Record<string, unknown>) : {};
       const answers = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, String(v ?? "")]));
@@ -292,6 +307,43 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     // The conversations that ended on the computer lately (§10); pals.adopt takes one over.
     case "pals.recent":
       return { sessions: await hub.pals.recent({ folder: typeof p.folder === "string" ? p.folder : undefined, limit: p.limit }) };
+    // The workbench (docs/workbench-rpc.md §2): the owner's own sessions, in any folder.
+    case "pals.create":
+      return { pal: hub.pals.createSession({ cwd: String(p.cwd ?? ""), name: typeof p.name === "string" ? p.name : undefined, text: typeof p.text === "string" ? p.text : undefined, workspaceId: typeof p.workspaceId === "string" ? p.workspaceId : undefined }, ctx.channel) };
+    case "pals.folders":
+      return await hub.pals.folders({ limit: p.limit });
+    case "pals.seen":
+      return { pal: hub.pals.seen(String(p.id ?? "")) };
+    case "pals.end":
+      return await hub.pals.end(String(p.id ?? ""), ctx.channel);
+    case "pals.detail":
+      return await hub.pals.detail(String(p.id ?? ""));
+    case "pals.setModel":
+      return await hub.pals.setModel(String(p.id ?? ""), { model: p.model, effort: p.effort });
+    case "pals.compact":
+      return await hub.pals.compact(String(p.id ?? ""));
+    case "pals.stopTask":
+      return await hub.pals.stopTask(String(p.id ?? ""), String(p.taskId ?? ""));
+    case "pals.reveal":
+      return await hub.pals.reveal(String(p.id ?? ""), p.kind);
+    case "pals.earlier":
+      return await hub.pals.earlier({ limit: p.limit, folder: typeof p.folder === "string" ? p.folder : undefined });
+    case "workspaces.list":
+      return { workspaces: hub.workbench.list() };
+    case "workspaces.create":
+      return hub.workbench.create(p);
+    case "workspaces.update":
+      return hub.workbench.update(p);
+    case "workspaces.move":
+      return hub.workbench.move(p);
+    case "workspaces.delete":
+      return hub.workbench.delete(p);
+    case "workbench.tabs.get":
+      return hub.workbench.tabsGet(p);
+    case "workbench.tabs.set":
+      return hub.workbench.tabsSet(p);
+    case "pals.resume":
+      return await hub.pals.resume({ key: typeof p.key === "string" ? p.key : undefined, kind: typeof p.kind === "string" ? p.kind : undefined, sessionId: typeof p.sessionId === "string" ? p.sessionId : undefined }, ctx.channel);
     // A link that pairs one more of the owner's devices (5 minutes, one
     // device): for the owner's own apps and the local CLI, never an Ally.
     case "pair.invite":

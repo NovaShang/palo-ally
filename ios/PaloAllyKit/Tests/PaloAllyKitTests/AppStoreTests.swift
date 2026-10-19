@@ -87,12 +87,13 @@ struct AppStoreTests {
         #expect(store.recentArtifacts.map(\.id) == ["ar2", "ar4", "ar3", "ar5", "ar6", "ar7", "ar8", "ar9"])
         #expect(store.settings?.probeIntervalMinutes == 10)
         #expect(store.status?.model == "glm-4.6")
-        // hello + sync first; 「试试」 suggestions, the Allies (list, then each one's log) and the Pals (with
-        // the computer's other sessions: no sessions.list as well) load right after
+        // hello + sync first; 「试试」 suggestions, the Allies (list, then each one's log), the Pals (with
+        // the computer's other sessions: no sessions.list as well) and the workspaces load right after.
+        // (The right pane's tabs are asked by the pane when the app shows it, not by the store.)
         #expect(await until {
             let log = await host.requestLog
-            return Array(log.prefix(2)) == ["hello", "sync"] && log.count == 7
-                && Set(log.dropFirst(2)) == ["suggestions.list", "ally.list", "ally.log", "pals.list"]
+            return Array(log.prefix(2)) == ["hello", "sync"] && log.count == 8
+                && Set(log.dropFirst(2)) == ["suggestions.list", "ally.list", "ally.log", "pals.list", "workspaces.list"]
         })
         try await Task.sleep(for: .milliseconds(100))
         #expect(await !host.requestLog.contains("sessions.list"))
@@ -203,6 +204,21 @@ struct AppStoreTests {
         try await store3.answer(try #require(store3.question(id: "q1")), answers: [:])
         #expect(store3.question(id: "q1")?.answers == [:])
         #expect(store3.question(id: "q1")?.skipped?.count == 2)
+    }
+
+    @Test func signingClaudeCodeInAgainFromThePhone() async throws {
+        let (store, host) = await demoStore()
+        await host.applyScenario("authExpired")
+        #expect(await until { store.status?.auth?.isExpired == true })
+        try await store.startLogin()
+        #expect(store.status?.auth?.login?.state == .waiting)
+        #expect(store.status?.auth?.login?.url?.contains("oauth/authorize") == true)
+        try await store.submitLoginCode("bad")
+        #expect(store.status?.auth?.login?.state == .invalid)
+        try await store.submitLoginCode("a1b2#c3")
+        #expect(store.status?.auth == nil)
+        let sent = await host.lastParams["auth.login.code"]
+        #expect(sent?["code"]?.stringValue == "a1b2#c3")
     }
 
     @Test func emptySendIgnored() async {

@@ -182,6 +182,8 @@ struct FilePage: View {
 @MainActor
 enum FilePagePresenter {
     static func present(_ target: FileTarget, store: AppStore) {
+        // A pane's preview tab when the page has one.
+        if PaneOpeners.file?(target) == true { return }
         guard let top = QuickLookPresenter.topController() else { return }
         weak var presented: UIViewController?
         let page = NavigationStack {

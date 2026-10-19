@@ -1,3 +1,4 @@
+import { isAuthFailure } from "./auth.ts";
 import { t } from "./i18n/index.ts";
 import type { HarnessDriver } from "./harness/types.ts";
 import type { Watch } from "./types.ts";
@@ -39,6 +40,10 @@ export interface ProbeHost {
   // Check watches are due but won't run today (the budget is used up). Called
   // once per day, so the owner hears about it instead of the goals going quiet.
   onPaused?(reason: string, watches: Watch[]): void;
+  // Claude Code's login is out: checks wait (auth.ts), and resume after.
+  held?(): boolean;
+  // A run went through (true) or failed for want of the login (false).
+  onAuth?(ok: boolean): void;
 }
 
 export const probeSchema = () => ({
@@ -131,7 +136,7 @@ export class ProbeScheduler {
     const due = this.host.watches
       .list()
       .filter((w) => w.enabled && w.kind === "check" && now - (w.lastCheckedAt ?? 0) >= (w.intervalMinutes ?? 60) * 60_000);
-    if (!due.length) return { checked: 0, triggered: 0 };
+    if (!due.length || this.host.held?.()) return { checked: 0, triggered: 0 };
     if (this.host.budgetLeftUsd() <= 0) {
       const budget = this.host.budgetUsd?.();
       const reason = t("probe.budgetUsed", { budget: budget !== undefined ? t("probe.budgetAmount", { n: budget }) : "" });
@@ -179,6 +184,13 @@ export class ProbeScheduler {
     // A refused tool doesn't fail the run (the probe answers "nothing new"), so say it here.
     const denied = res.denied?.length ? { denied: [...new Set(res.denied)] } : {};
     if (denied.denied) this.host.log(`probe tools refused: ${denied.denied.join(", ")}`);
+    // No login: the checks stay due, to run once it's back.
+    if (res.error && isAuthFailure(res.error)) {
+      this.host.log(`probe: no login (${truncate(res.error, 120)})`);
+      this.host.onAuth?.(false);
+      return { checked: 0, triggered: 0 };
+    }
+    if (!res.error) this.host.onAuth?.(true);
     if (res.error) {
       const reason = truncate(res.error, 300);
       this.host.log(`probe error: ${reason}`);

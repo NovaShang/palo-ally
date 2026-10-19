@@ -144,6 +144,21 @@ export interface QuestionItem {
 
 export type QuestionStatus = "pending" | "answered" | "expired";
 
+/** Claude Code's login, while it's out or being signed in again (auth.ts). */
+export interface AuthStatus {
+  state: "expired" | "ok"; // ok: a sign-in started while it still worked
+  since?: number; // when it was found expired
+  login?: LoginStatus;
+}
+
+/** A sign-in from the phone: starting → waiting (the link is out) → checking → gone; invalid: try the code again. */
+export interface LoginStatus {
+  state: "starting" | "waiting" | "invalid" | "checking" | "failed";
+  startedAt: number;
+  url?: string; // the authorization page
+  error?: string;
+}
+
 export interface Question {
   id: string;
   items: QuestionItem[];
@@ -209,6 +224,8 @@ export interface Artifact {
   pinned: boolean;
   /** The group it is kept under in 成果, "" for none. */
   folder: string;
+  /** Who published it: "palo", or the id of the session. Absent for older ones. */
+  source?: string;
   updatedAt: number;
   files: { path: string; size: number }[];
 }
@@ -238,6 +255,7 @@ export interface Status {
   wechat: "off" | "connected" | "expired";
   version: string;
   metAt?: number; // when the owner first talked to it (first chat message), for 「认识你 N 天」
+  auth?: AuthStatus; // Claude Code's login, only while it's out or being signed in again
 }
 
 // ---- Allies (docs/allies-prd.md §6–7) ----
@@ -331,6 +349,28 @@ export interface Pal {
   lastWakeUsd?: number; // what the first turn after its last wake cost (USD)
   createdBy: "owner" | "palo";
   updatedAt: number;
+  // The workbench (docs/workbench-rpc.md §1).
+  attention: PalAttention; // working / waiting / done / idle, worked out from status and finishedAt/seenAt; status itself is unchanged
+  finishedAt?: number; // when its last turn ended normally (a real turn only)
+  seenAt?: number; // when the owner last looked, shared by every device
+  workspaceId?: string; // the workspace it belongs to, at most one
+  contextPct?: number; // how full its context is, whole percent; absent until a turn has reported it
+  effort?: string; // chosen effort level; absent = the model's default
+  folded: boolean; // not stored: outside any workspace and unused for longer than settings.foldDays
+}
+
+export type PalAttention = "working" | "waiting" | "done" | "idle";
+
+/** One line of 以前的 (pals.earlier). */
+export interface EarlierItem {
+  kind: "ended" | "folded" | "recent";
+  key: string; // "ended:<sessionId>" | "folded:<palId>" | "recent:<sessionId>"
+  id?: string; // folded: the session's id
+  sessionId: string;
+  name: string;
+  cwd: string;
+  at: number;
+  workspaceId?: string; // ended: the workspace it was in
 }
 
 // One line of a session's conversation. "palo": it came through PaloAlly —
@@ -351,7 +391,6 @@ export interface HelperProposal {
   name: string;
   cwd: string;
   duty: string; // what it's for; becomes the Pal's first message
-  dailyUsd: number;
   status: HelperProposalStatus;
   sessionId?: string; // once created
   palId?: string; // once created: the Pal it became
@@ -394,4 +433,30 @@ export interface AuditEntry {
   ts: number;
   type: string;
   [k: string]: unknown;
+}
+
+// ---- Workspaces and the right pane's tabs (docs/workbench-rpc.md §3) ----
+
+/** A tiling layout: ratio rectangles on the unit canvas; the host stores it and checks only the leaves. */
+export type LayoutNode =
+  | { type: "leaf"; session: string; w: number; h: number; x: number; y: number }
+  | { type: "hsplit" | "vsplit"; w: number; h: number; x: number; y: number; children: LayoutNode[] };
+
+export interface Workspace {
+  id: string;
+  name: string; // "" = not named yet
+  memberIds: string[];
+  layout: LayoutNode | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** A right-pane tab. Kinds the host doesn't know (a newer app wrote them) are kept as they are. */
+export type PaneTab = { kind: "files" } | { kind: "library" } | { kind: "preview"; path: string } | { kind: "web"; url: string } | { kind: string; [k: string]: unknown };
+
+export interface TabsState {
+  tabs: PaneTab[];
+  active: number;
+  open: boolean;
+  updatedAt: number;
 }

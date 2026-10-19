@@ -1,74 +1,67 @@
 import PaloAllyKit
 import SwiftUI
 
-/// A Pal's page (pals-prd §4): a remote Claude Code. Its conversation is the
+/// A session's page (pals-prd §4): a remote Claude Code. Its conversation is the
 /// assistant's conversation view on the Pal's scoped store (`palStore`):
 /// streaming, the paced reveal, following the end, cards, the composer and
-/// voice, all the same; what the owner types goes in as typed. ⋯ has
-/// 停止这一轮, 重命名 (the system's alert), 交还终端 (the line that resumes it
-/// in a terminal, to copy) and 移出 Pals, these two asked in the page in
-/// place of the composer.
+/// voice, all the same; what the owner types goes in as typed. Its title is
+/// the capsule that opens the details (rename, files, model, 结束…); stopping
+/// a turn is the composer's stop button.
 struct PalPage: View {
     let palID: String
+    /// In a workspace's tile: the tile's own header replaces the page's chrome.
+    var inTile = false
     /// The assistant's store, which makes and feeds the Pal's.
     @Environment(AppStore.self) private var store
 
     var body: some View {
-        PalConversation(palID: palID)
+        PalConversation(palID: palID, inTile: inTile)
             .environment(store.palStore(palID))
     }
 }
 
 private struct PalConversation: View {
     let palID: String
+    let inTile: Bool
     @Environment(AppModel.self) private var model
     /// The Pal's own store.
     @Environment(AppStore.self) private var store
 
     enum Panel: Equatable {
         case none
-        /// 交还终端, asked first.
-        case release
-        /// Handed back: the line that picks it up in a terminal.
-        case released(String)
-        /// 移出 Pals, asked first.
-        case remove
         /// Something didn't work: why.
         case notice(String)
     }
     @State private var panel = Panel.none
-    @State private var working = false
-    /// 重命名 asked.
-    @State private var renaming: Pal?
-    /// The Pal as last seen: it leaves the list once handed back or removed.
+    /// The Pal as last seen: it leaves the list once ended or gone.
     @State private var last: Pal?
 
     private var pal: Pal? { store.pal(id: palID) ?? last }
-    /// No longer on the list (handed back, removed, or gone at the computer).
+    /// No longer on the list (ended here or elsewhere, or gone at the computer).
     private var gone: Bool { store.pal(id: palID) == nil && store.palsSupported == true }
     /// Words sent to it asleep: it's being woken (§12).
     private var waking: Bool { store.status?.busy == true && store.status?.activity == AppStore.wakingActivity }
 
     var body: some View {
-        ChatView(bottomPanel: bottom, pageTop: .init(subtitle: subtitle, dot: waking ? .green : pal.flatMap { Copy.palStatusColor($0.status) },
-                                                     menu: AnyView(menu)))
-            .navigationSubtitle(subtitle)
-            .modifier(BarMenu { menu })
+        ChatView(bottomPanel: bottom, pageTop: inTile ? nil : .init(subtitle: subtitle, dot: waking ? .working : pal?.dot, capsule: true),
+                 inTile: inTile)
+            .modifier(PageSubtitle(text: subtitle, enabled: !inTile))
             .onChange(of: store.pal(id: palID), initial: true) { _, p in if let p { last = p } }
+            // Opened, or finished while it is open: seen, on every device.
+            .onChange(of: store.pal(id: palID)?.attention, initial: true) { _, a in
+                if a == .done { store.markSeen(id: palID) }
+            }
             .animation(.snappy, value: panel)
-            .palRename($renaming)
-            .modifier(PalFilesSheet(palID: palID))
             #if DEBUG
-            // `-demoPalPanel release | remove | released`: the page opens on it (snapshots).
             .task {
-                switch UserDefaults.standard.string(forKey: "demoPalPanel") {
-                case "release": panel = .release
-                case "remove": panel = .remove
-                case "released": panel = .released(pal?.resumeCommand ?? "claude --resume")
-                default: break
-                }
                 // `-demoUnfold <message id>`: that long message opens unfolded.
                 if let id = UserDefaults.standard.string(forKey: "demoUnfold") { store.setUnfolded(id, true) }
+            }
+            // `-demoPalFiles YES`: the page opens with its 文件 (snapshots).
+            .task {
+                guard UserDefaults.standard.bool(forKey: "demoPalFiles") else { return }
+                try? await Task.sleep(for: .seconds(1))
+                model.openPalFiles(palID)
             }
             #endif
     }
@@ -86,26 +79,9 @@ private struct PalConversation: View {
         case .none:
             guard gone else { return nil }
             content = AnyView(
-                NoticePanel(text: Copy.spaced(String(localized: "\(name)已经不在 Pals 里了。对话记录还在电脑上。")), action: String(localized: "回到列表")) {
+                NoticePanel(text: Copy.spaced(String(localized: "\(name)已经不在会话列表里了。对话记录还在电脑上。")), action: String(localized: "回到列表")) {
                     model.showList()
                 })
-        case .release:
-            content = AnyView(
-                ConfirmPanel(title: String(localized: "交还终端？"),
-                             text: String(localized: "PaloAlly 会关掉它。你在电脑的终端里运行一行命令，就从刚才的地方接着用，对话一字不丢。"),
-                             action: String(localized: "交还"), working: working, destructive: false,
-                             cancel: { panel = .none }, confirm: { Task { await release() } }))
-        case .released(let command):
-            content = AnyView(
-                CommandPanel(title: String(localized: "在终端里接着用"),
-                             text: String(localized: "在电脑的终端里运行这一行，就从刚才的地方接着跟它说。"),
-                             command: command) { model.showList() })
-        case .remove:
-            content = AnyView(
-                ConfirmPanel(title: Copy.spaced(String(localized: "把\(name)移出 Pals？")),
-                             text: String(localized: "PaloAlly 不再管它，它会停下。对话记录还在电脑上。"),
-                             action: String(localized: "移出"), working: working,
-                             cancel: { panel = .none }, confirm: { Task { await remove() } }))
         case .notice(let why):
             content = AnyView(NoticePanel(text: why, action: String(localized: "好")) { panel = .none })
         }
@@ -118,58 +94,15 @@ private struct PalConversation: View {
                 .frame(maxWidth: .infinity)
                 .transition(.move(edge: .bottom).combined(with: .opacity)))
     }
+}
 
-    // MARK: menu
+/// The page's subtitle in the navigation bar; not inside a tile (its header says it).
+private struct PageSubtitle: ViewModifier {
+    let text: String
+    let enabled: Bool
 
-    private var menu: some View {
-        PageMenu(label: String(localized: "更多")) {
-            if pal?.inTurn == true || store.isBusy {
-                Button("停止这一轮", systemImage: "stop.circle") { Task { await stop() } }
-            }
-            Button("重命名", systemImage: "pencil") { renaming = pal }
-            Button { model.openPalFiles(palID) } label: {
-                Label { Text("文件", tableName: "Files") } icon: { Image(systemName: "folder") }
-            }
-            Section {
-                Button("交还终端", systemImage: "apple.terminal") { panel = .release }
-                Button("移出 Pals", systemImage: "minus.circle", role: .destructive) { panel = .remove }
-            }
-        }
-        .disabled(working || gone || !store.connection.isOnline)
-        .accessibilityIdentifier("pal-menu")
-    }
-
-    // MARK: actions
-
-    private func stop() async {
-        do {
-            try await store.stop()
-        } catch {
-            panel = .notice(String(localized: "没停下：\(Copy.error(error))"))
-        }
-    }
-
-    private func release() async {
-        working = true
-        defer { working = false }
-        do {
-            let command = try await store.releasePal(id: palID)
-            panel = .released(command)
-        } catch {
-            panel = .notice(String(localized: "没交还成：\(Copy.error(error))"))
-        }
-    }
-
-    private func remove() async {
-        working = true
-        defer { working = false }
-        do {
-            try await store.removePal(id: palID)
-            panel = .none
-            model.showList()
-        } catch {
-            panel = .notice(String(localized: "没移出：\(Copy.error(error))"))
-        }
+    func body(content: Content) -> some View {
+        if enabled { content.navigationSubtitle(text) } else { content }
     }
 }
 

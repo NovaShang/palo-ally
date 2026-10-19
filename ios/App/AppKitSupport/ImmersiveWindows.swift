@@ -50,6 +50,19 @@ final class ImmersiveWindows: NSObject {
         return true
     }
 
+    /// Where the traffic lights end, and the middle of their line, in the
+    /// window's top-left coordinates as "x,y"; x is 0 in full screen (they
+    /// are gone there), y 26 when there is no button to measure.
+    @objc func leadingChrome() -> String? {
+        guard let id = Self.toolbarID,
+              let window = NSApplication.shared.windows.first(where: { $0.toolbar?.identifier == id }),
+              let frame = window.contentView?.superview else { return nil }
+        if window.styleMask.contains(.fullScreen) { return "0,26" }
+        guard let zoom = window.standardWindowButton(.zoomButton) else { return "80,26" }
+        let r = zoom.convert(zoom.bounds, to: nil)
+        return "\(r.maxX),\(frame.bounds.height - r.midY)"
+    }
+
     #if DEBUG
     /// The titlebar (traffic lights, toolbar items, and any band) as a PNG
     /// at `path`, transparent where it draws nothing, and its frame in the

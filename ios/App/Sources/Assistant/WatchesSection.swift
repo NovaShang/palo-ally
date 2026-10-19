@@ -132,7 +132,7 @@ private struct AskForGoal: View {
     }
 }
 
-private struct GoalRow: View {
+struct GoalRow: View {
     let goal: Watch
 
     var body: some View {

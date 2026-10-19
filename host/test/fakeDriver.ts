@@ -184,10 +184,12 @@ export class FakeMainSession implements MainSession {
       if (this.closed) break;
       this.total += this.driver.turnCost;
       this.driver.totals.set(this.sessionId, this.total);
+      const failed = this.driver.resultError;
       this.opts.onEvent({
         type: "result",
-        isError: false,
-        text: "",
+        isError: !!failed,
+        text: failed?.text ?? "",
+        ...(failed?.category ? { errorCategory: failed.category } : {}),
         costUsd: this.driver.turnCost,
         totalCostUsd: this.total,
         contextTokens: this.driver.contextTokens,
@@ -250,6 +252,8 @@ export class FakeDriver implements HarnessDriver {
   gateDenials: { tool: string; message: string }[] = []; // calls the host's gate (the PreToolUse hook) refused
   ran: string[] = []; // tools that went through and ran, in order
   turnCost = 0.001;
+  // set: every turn ends failed with this (an expired login, say)
+  resultError?: { text: string; category?: string };
   totals = new Map<string, number>();
   renames: { title: string; sessionId?: string }[] = [];
   // rewindFiles asked of a process, and what Claude Code answers (default: done)

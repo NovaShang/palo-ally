@@ -1,6 +1,7 @@
 import { t } from "./i18n/index.ts";
 import { forkSession as sdkForkSession, getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
 import type { ApprovalManager } from "./approvals.ts";
@@ -11,18 +12,20 @@ import { type RawSessionMessage, type RegistryEntry, readRegistry } from "./ccSe
 import { SpendMeter } from "./ccSpend.ts";
 import type { ChatLog } from "./chat.ts";
 import type { Paths, Settings } from "./config.ts";
-import type { HarnessDriver } from "./harness/types.ts";
+import type { DeliveryToolHandlers, HarnessDriver, ModelOption } from "./harness/types.ts";
 import type { MediaStore } from "./media.ts";
+import type { ArtifactLibrary } from "./artifacts.ts";
+import { makeDeliveryTools } from "./shellTools.ts";
 import { PalLauncher, type PalLaunch } from "./palLauncher.ts";
 import { pagePalMessages, toPalMessages } from "./palHistory.ts";
 import type { ForkSession } from "./rewind.ts";
-import { RECENT_MAX, type RecentEntry, RecentSessions, type RecentSource, folderMatch, ownRoots, palNameFor, palTitle, recentWire, sdkRename, sdkSource } from "./palRecent.ts";
-import { HeldElsewhere, type Holder, type PalRecord, PalSession, peerWrap } from "./palSession.ts";
+import { RECENT_MAX, type RecentEntry, RecentSessions, type RecentSource, folderMatch, ownRoots, palNameFor, palTitle, recentWire, sdkRename, sdkSource, shortName } from "./palRecent.ts";
+import { HeldElsewhere, type Holder, type PalRecord, type PalTask, PalSession, peerWrap } from "./palSession.ts";
 import type { QuestionManager } from "./questions.ts";
 import type { Router } from "./router.ts";
 import type { Sessions } from "./sessions.ts";
 import type { StallTarget } from "./stallWatch.ts";
-import type { Attachment, ChatMessage, HelperProposal, Pal, PalAdoptProposal, RecentSession } from "./types.ts";
+import type { Attachment, ChatMessage, EarlierItem, HelperProposal, Pal, PalAdoptProposal, RecentSession } from "./types.ts";
 import { newId, readJson, writeJson, zonedParts } from "./util.ts";
 
 // Pals (docs/pals-prd.md): Claude Code sessions the host runs itself. The
@@ -33,10 +36,10 @@ import { newId, readJson, writeJson, zonedParts } from "./util.ts";
 // crash or a restart of the Mac, and goes back to the terminal on 交还终端.
 // One transcript is never written by two processes.
 // No practical limit on how many (§12; 50, against mistakes), but at most
-// five awake: one idle 20 minutes is put to sleep (its process ends, its
-// record stays), and past five awake the least recently used idle one goes
-// first. Busy or waiting ones are never put to sleep (past five for a while,
-// then). The owner's words, 叫醒, a card of its answered or the assistant's
+// settings.maxAwake awake (8): one idle 20 minutes is put to sleep (its
+// process ends, its record stays), and past that many awake the least
+// recently used idle one goes first. Busy or waiting ones are never put to
+// sleep (past the limit for a while, then). The owner's words, 叫醒, a card of its answered or the assistant's
 // pal_send wake it: the same session resumes and the words go in, in order.
 // Its name follows Claude Code's title for the session (§13): read back
 // after each turn and before each start, and pals.rename retitles it there.
@@ -47,16 +50,29 @@ import { newId, readJson, writeJson, zonedParts } from "./util.ts";
 
 /** How many Pals at most (a safety limit, §12). */
 export const MAX_PALS = 50;
-/** How many awake (with a process) at once, before idle ones are put to sleep. */
-export const MAX_AWAKE = 5;
+/** How many awake (with a process) at once, before idle ones are put to sleep: settings.maxAwake, this by default. */
+export const DEFAULT_MAX_AWAKE = 8;
 /** The assistant's own session name: Pals see its SendMessages as from it, and answer it there. */
 export const PALO_NAME = "Palo";
 const PUSH_EVERY_MS = 10 * 60_000;
+
+// A session's auto-name: Claude Code's summary of it when that isn't just its first words, else those.
+function autoTitle(info: { summary?: string; firstPrompt?: string } | undefined): string {
+  const one = (s?: string) => String(s ?? "").replace(/\s+/g, " ").trim();
+  const first = one(info?.firstPrompt);
+  const summary = one(info?.summary);
+  const raw = summary && summary !== first ? summary : first;
+  return raw ? shortName(raw) : "";
+}
 
 /** A folder as the owner says it: ~/… under the home folder. */
 function tildePath(p: string): string {
   const home = homedir();
   return p === home ? "~" : p.startsWith(home + sep) ? `~/${p.slice(home.length + 1)}` : p;
+}
+
+function endedItem(e: EndedSession): EarlierItem {
+  return { kind: "ended", key: `ended:${e.sessionId}`, sessionId: e.sessionId, name: e.name, cwd: e.cwd, at: e.at, ...(e.workspaceId ? { workspaceId: e.workspaceId } : {}) };
 }
 
 // What a Pal is told about where it runs, on top of Claude Code's own prompt.
@@ -70,6 +86,42 @@ interface PalFile {
   adoptions: (PalAdoptProposal & { createdAt: number; messageId?: string })[];
   // Pals the owner took out of the list (交还终端 / 移出): listed again among the recent ones
   former: { sessionId: string; cwd: string; at: number }[];
+  // Sessions the owner ended (pals.end): 以前的, resumable; the newest 200
+  ended: EndedSession[];
+}
+
+interface EndedSession {
+  sessionId: string;
+  name: string;
+  cwd: string;
+  at: number;
+  workspaceId?: string;
+}
+
+const ENDED_MAX = 200;
+const FOLD_CHECK_MS = 60 * 60_000;
+
+/** pals.detail (docs/workbench-rpc.md §2). */
+export interface PalDetail {
+  pal: Pal;
+  contextTokens?: number;
+  contextWindow: number;
+  costTotalUsd: number;
+  spentToday: number;
+  model?: string;
+  effort?: string;
+  models: { id: string; name: string; efforts: string[] }[];
+  tasks: PalTask[];
+  lastCompactAt?: number;
+}
+
+class NoDesktop extends Error {}
+
+/** macOS: `open <folder>` is Finder; `open -a Terminal <folder>` is a new Terminal window cd'd there. */
+function defaultReveal(kind: "finder" | "terminal", cwd: string): Promise<void> {
+  if (process.platform !== "darwin") return Promise.reject(new NoDesktop());
+  const args = kind === "finder" ? [cwd] : ["-a", "Terminal", cwd];
+  return new Promise((ok, fail) => execFile("open", args, (err) => (err ? fail(err) : ok())));
 }
 
 /** A session to adopt: its id, the Pal's name and its folder. */
@@ -80,6 +132,8 @@ interface Adoptee {
 }
 
 export interface PalsDeps {
+  /** A Pal's turn went through (true) or failed for want of Claude Code's login (false). */
+  onAuth?: (pal: { id: string; name: string }, ok: boolean) => void;
   paths: Paths;
   claudeDir: string;
   bus: Bus;
@@ -99,10 +153,22 @@ export interface PalsDeps {
   helperApp?: () => string | undefined;
   launchMode?: () => "auto" | "helper" | "direct";
   readMessages?: (sessionId: string, dir: string) => Promise<RawSessionMessage[]>;
+  /** A workspace exists (pals.create's workspaceId); without it no workspace does. */
+  workspaceExists?: (id: string) => boolean;
+  /** Sessions shown in a workspace's tiles: never the ones put to sleep to make room. */
+  shownIds?: () => Set<string>;
+  /** A new or resumed session joins a workspace (with a tile of its own). */
+  workspaceJoin?: (workspaceId: string, palId: string) => void;
+  /** A session is gone (ended, removed, handed back): out of its workspace. */
+  palGone?: (palId: string) => void;
   /** The computer's ended conversations (the SDK's listSessions / getSessionInfo); also each Pal's title (§13). */
   recentSource?: RecentSource;
   /** Retitles a session that has no process (the SDK's renameSession). */
   renameSession?: (sessionId: string, title: string, dir: string) => Promise<void>;
+  /** The models a session can run on (what Palo's model.get lists). */
+  models?: () => Promise<ModelOption[]>;
+  /** Opens a session's folder on this computer (default: macOS `open`). */
+  reveal?: (kind: "finder" | "terminal", cwd: string) => Promise<void>;
   /** A Pal's permission mode; default: the owner's own default for Claude Code. */
   palMode?: () => string;
   /** A Pal's model; default: what its transcript last ran on (a new one: the owner's default). */
@@ -117,6 +183,8 @@ export interface PalsDeps {
   forkSession?: ForkSession;
   /** The owner's images and files (media.upload / uploadChunk), as Palo takes them. */
   media?: MediaStore;
+  /** The library its sessions publish into (Artifact, SendUserFile). */
+  artifacts?: ArtifactLibrary;
   timing?: Partial<PalsTiming>;
   now?: () => number;
   log?: (s: string) => void;
@@ -205,8 +273,8 @@ export class Pals {
   private lastEmitted = "";
   private emitTimer: ReturnType<typeof setTimeout> | null = null;
   private guardTimer: ReturnType<typeof setInterval> | null = null;
-  private dayTimer: ReturnType<typeof setInterval> | null = null;
   private sleepTimer: ReturnType<typeof setInterval> | null = null;
+  private foldTimer: ReturnType<typeof setInterval> | null = null;
   private balanceTimer: ReturnType<typeof setTimeout> | null = null;
   private waking = new Set<string>(); // asleep Pals being woken (said once)
   private startTimers: ReturnType<typeof setTimeout>[] = [];
@@ -219,12 +287,22 @@ export class Pals {
     this.launcher = new PalLauncher({ root: d.paths.root, helperApp: d.helperApp, mode: d.launchMode, log: (s) => this.log(s) });
     const saved = readJson<Partial<PalFile>>(d.paths.pals, {});
     const list = <T>(v: T[] | undefined): T[] => (Array.isArray(v) ? v : []);
-    this.data = { pals: list(saved.pals), proposals: list(saved.proposals), adoptions: list(saved.adoptions), former: list(saved.former) };
+    this.data = { pals: list(saved.pals), proposals: list(saved.proposals), adoptions: list(saved.adoptions), former: list(saved.former), ended: list(saved.ended) };
+    // Pals no longer have a daily spending limit (2026-10-19, the owner): an
+    // old record's limit goes, and one stopped for it carries on.
+    for (const rec of this.data.pals as (Omit<PalRecord, "stoppedFor"> & { dailyUsd?: number; budgetDay?: string; stoppedFor?: string })[]) {
+      delete rec.dailyUsd;
+      delete rec.budgetDay;
+      if (rec.stoppedFor === "budget") {
+        rec.stoppedFor = undefined;
+        rec.note = undefined;
+      }
+    }
     this.source = d.recentSource ?? sdkSource(d.claudeDir);
     this.recentList = new RecentSessions({
       claudeDir: d.claudeDir,
       roots: () => ownRoots(d.paths.root),
-      formerPals: () => this.data.former,
+      formerPals: () => [...this.data.former, ...this.data.ended],
       source: this.source,
       now: () => this.now(),
       log: (s) => this.log(s),
@@ -268,11 +346,12 @@ export class Pals {
       appendPrompt: () => PAL_PROMPT(this.paloName()),
       onWaiting: (pal, body, ids) => this.pushWaiting(pal, body, ids),
       toPalo: (pal, text) => this.toolPaloSend(pal, text),
+      tools: (pal) => this.sessionTools(pal),
       onTurnEnd: (pal) => {
-        this.checkBudget(pal);
         this.balanceSoon();
         void this.readTitle(pal);
       },
+      onAuth: (pal, ok) => this.d.onAuth?.({ id: pal.id, name: pal.rec.name }, ok),
       beforeStart: (pal) => this.readTitle(pal),
       onStopped: (pal) => this.onStopped(pal),
       onWoke: (pal) => {
@@ -284,8 +363,37 @@ export class Pals {
       forkSession: this.forkSession,
       ...(this.d.media ? { media: this.d.media } : {}),
       timing: this.timing,
+      foldDays: () => this.d.settings().foldDays,
       now: () => this.now(),
       log: (s) => this.log(s),
+    });
+  }
+
+  /** settings.maxAwake. */
+  private maxAwake(): number {
+    const n = this.d.settings().maxAwake;
+    return Number.isFinite(n) && n >= 1 ? Math.floor(n) : DEFAULT_MAX_AWAKE;
+  }
+
+  /** What the owner calls it: 新会话 until it has a name of its own. */
+  private shownName(pal: PalSession): string {
+    return pal.rec.autoNamed ? t("pals.newSession") : pal.rec.name;
+  }
+
+  /** A session's tools that reach the owner: the assistant's handlers, scoped to it (its folder, its conversation, its name). */
+  private sessionTools(pal: PalSession): DeliveryToolHandlers | undefined {
+    const { media, artifacts } = this.d;
+    if (!media || !artifacts) return undefined;
+    return makeDeliveryTools({
+      artifacts,
+      chat: this.d.chat,
+      router: this.d.router,
+      audit: this.d.audit,
+      media,
+      pals: this,
+      ownerChannel: () => "app",
+      cwd: pal.rec.cwd,
+      session: { id: pal.id, name: () => this.shownName(pal), card: (m, tool) => pal.card(m, tool), notice: (text) => pal.pushNotice(text) },
     });
   }
 
@@ -324,15 +432,14 @@ export class Pals {
     this.offBus = this.d.bus.on((event) => {
       if (event === "sessions.updated") this.emitSoon();
     });
-    // Those stopped for today's spending wait for tomorrow; the rest (even
-    // ones that couldn't start before) are tried again.
+    // Every one that was up comes back (even ones that couldn't start before).
     let i = 0;
-    const today = this.today();
     const back = [...this.pals.values()]
-      .filter((p) => p.rec.status !== "asleep" && !(p.rec.stoppedFor === "budget" && p.rec.budgetDay === today))
+      .filter((p) => p.rec.status !== "asleep")
       .sort((a, b) => b.rec.lastUsedAt - a.rec.lastUsedAt);
-    for (const pal of back.slice(MAX_AWAKE)) pal.markAsleep();
-    for (const pal of back.slice(0, MAX_AWAKE)) {
+    const awakeMax = this.maxAwake();
+    for (const pal of back.slice(awakeMax)) pal.markAsleep();
+    for (const pal of back.slice(0, awakeMax)) {
       pal.clearStop();
       pal.queueStart();
       const t = setTimeout(() => void this.bringBack(pal, "start"), i++ * this.timing.startStaggerMs);
@@ -340,10 +447,11 @@ export class Pals {
     }
     this.guardTimer = setInterval(() => this.guard(), this.timing.guardMs);
     (this.guardTimer as any).unref?.();
-    this.dayTimer = setInterval(() => this.newDay(), 60_000);
-    (this.dayTimer as any).unref?.();
     this.sleepTimer = setInterval(() => this.balance(), this.timing.sleepCheckMs);
     (this.sleepTimer as any).unref?.();
+    // A session crossing foldDays changes `folded` with nobody touching it: say so.
+    this.foldTimer = setInterval(() => this.emitSoon(), FOLD_CHECK_MS);
+    (this.foldTimer as any).unref?.();
     this.emitSoon();
   }
 
@@ -353,8 +461,8 @@ export class Pals {
     this.offBus?.();
     for (const t of this.startTimers.splice(0)) clearTimeout(t);
     if (this.guardTimer) clearInterval(this.guardTimer);
-    if (this.dayTimer) clearInterval(this.dayTimer);
     if (this.sleepTimer) clearInterval(this.sleepTimer);
+    if (this.foldTimer) clearInterval(this.foldTimer);
     if (this.balanceTimer) clearTimeout(this.balanceTimer);
     this.balanceTimer = null;
     if (this.emitTimer) clearTimeout(this.emitTimer);
@@ -407,8 +515,9 @@ export class Pals {
   }
 
   /**
-   * Awake ones idle 20 minutes go to sleep; past five awake, the least
-   * recently used idle ones too. Busy or waiting ones never: past five for a
+   * Awake ones idle 20 minutes go to sleep; past settings.maxAwake awake,
+   * the least recently used idle ones too, except those shown in a
+   * workspace's tiles. Busy or waiting ones never: past the limit for a
    * while, then, until one of them is done.
    */
   private balance(): void {
@@ -420,12 +529,13 @@ export class Pals {
       if (since !== null && now - since >= this.timing.sleepIdleMs) void this.putToSleep(p, "idle");
     }
     const awake = [...this.pals.values()].filter((p) => p.awake);
-    let over = awake.length - MAX_AWAKE;
+    let over = awake.length - this.maxAwake();
     if (over <= 0) return;
-    const idle = awake.filter((p) => p.idleSince() !== null).sort((a, b) => a.rec.lastUsedAt - b.rec.lastUsedAt);
+    const shown = this.d.shownIds?.() ?? new Set<string>();
+    const idle = awake.filter((p) => p.idleSince() !== null && !shown.has(p.id)).sort((a, b) => a.rec.lastUsedAt - b.rec.lastUsedAt);
     for (const p of idle) {
       if (over-- <= 0) break;
-      void this.putToSleep(p, "more than five awake");
+      void this.putToSleep(p, "more awake than allowed");
     }
   }
 
@@ -469,6 +579,18 @@ export class Pals {
     this.d.audit.log("pal.woke", { pal: pal.id, name: pal.rec.name, why });
     this.log(`waking ${pal.rec.name} (${why})`);
     return true;
+  }
+
+  /**
+   * Claude Code's login is back: each of these, awake and between turns, ends
+   * its process (asleep), so the next word starts one that signs in afresh.
+   */
+  async restartIdle(ids: string[]): Promise<void> {
+    for (const id of ids) {
+      const pal = this.pals.get(id);
+      if (!pal?.awake || pal.busy) continue;
+      await this.putToSleep(pal, "login came back");
+    }
   }
 
   /** A card of a Pal's was answered: one asleep is woken (in the background). */
@@ -636,7 +758,6 @@ export class Pals {
 
   private onStopped(pal: PalSession): void {
     this.emitSoon();
-    if (pal.rec.stoppedFor === "budget") return; // said already
     this.d.audit.log("pal.stopped", { pal: pal.id, name: pal.rec.name, why: pal.rec.stoppedFor, note: pal.rec.note });
   }
 
@@ -694,6 +815,21 @@ export class Pals {
       return;
     }
     if (!this.pals.has(pal.id)) return;
+    // Still under its placeholder name: named from what Claude Code made of its first words, once there are any.
+    if (pal.rec.autoNamed) {
+      const custom = String(info?.customTitle ?? "").trim();
+      if (!custom || custom === pal.rec.name) {
+        const auto = autoTitle(info);
+        if (!auto) return;
+        const unique = this.uniqueName(auto, [], pal);
+        // Claude Code's own title follows, so a terminal and /resume say the same (and the next start doesn't read the placeholder back).
+        if (!(await pal.renameLive(unique)) && existsSync(pal.transcript)) {
+          await (this.d.renameSession ?? sdkRename(this.d.claudeDir))(pal.rec.sessionId, unique, pal.rec.cwd).catch((e) => this.log(`couldn't retitle ${pal.rec.name}: ${e instanceof Error ? e.message : e}`));
+        }
+        if (this.pals.has(pal.id)) this.setName(pal, unique, "auto");
+        return;
+      }
+    }
     let want = info?.customTitle?.trim() ? palTitle(info, pal.rec.cwd) : "";
     if (!want && pal.running && pal.pid) {
       // Renamed in the process (/rename): its entry in Claude Code's registry says so.
@@ -709,6 +845,7 @@ export class Pals {
     if (name === from) return false;
     pal.rec.formerNames = [...(pal.rec.formerNames ?? []).filter((n) => n !== name && n !== from), from].slice(-5);
     pal.rec.name = name;
+    delete pal.rec.autoNamed;
     this.save();
     this.d.audit.log("pal.renamed", { pal: pal.id, from, to: name, by });
     this.log(`${from} is called ${name} now (${by})`);
@@ -729,6 +866,7 @@ export class Pals {
     if (!want) throw new Error(t("pals.nameEmpty"));
     if ([...want].length > 40) throw new Error(t("pals.nameLong"));
     if (want.toLowerCase() === this.paloName().toLowerCase()) throw new Error(t("pals.nameIsAssistant", { name: want }));
+    delete pal.rec.autoNamed;
     const unique = this.uniqueName(want, [], pal);
     if (!(await pal.renameLive(unique))) {
       // No process: into its transcript, where Claude Code reads it (none yet: it starts under it).
@@ -760,6 +898,16 @@ export class Pals {
       this.data.former = [...this.data.former.filter((f) => f.sessionId !== sessionId), { sessionId, cwd, at: this.now() }].slice(-20);
       this.recentList.invalidate();
     }
+    this.save();
+    this.d.palGone?.(pal.id);
+  }
+
+  /** The workbench says which workspace a session is in (written on its record; nothing is emitted). */
+  setWorkspace(id: string, workspaceId: string | undefined): void {
+    const pal = this.pals.get(id);
+    if (!pal || pal.rec.workspaceId === workspaceId) return;
+    if (workspaceId) pal.rec.workspaceId = workspaceId;
+    else delete pal.rec.workspaceId;
     this.save();
   }
 
@@ -959,6 +1107,256 @@ export class Pals {
     this.emitNow();
   }
 
+  // ---------------- the owner's sessions: new, seen, ended, earlier ----------------
+
+  /**
+   * pals.create: a new session in any folder, the owner's own. It needs no
+   * duty and has no daily limit (as in a terminal). Without a name it is
+   * called session-<short id> inside and 新会话 to the owner, and is named
+   * from its first words after its first turn. `text` is its first message;
+   * it comes back at once, the process still starting.
+   */
+  createSession(o: { cwd: string; name?: string; text?: string; workspaceId?: string }, by: string): Pal {
+    const dir = String(o?.cwd ?? "").trim();
+    if (!dir) throw new Error(t("pals.newFolderNeeded"));
+    let cwd = resolve(expandHome(dir));
+    try {
+      cwd = realpathSync(cwd); // as Claude Code records it (/tmp → /private/tmp)
+    } catch {
+      /* checked next */
+    }
+    let isDir = false;
+    try {
+      isDir = statSync(cwd).isDirectory();
+    } catch {
+      isDir = false;
+    }
+    if (!isDir) throw new Error(t("pals.dirNotFound", { cwd }));
+    if (ownRoots(this.d.paths.root).some((r) => within(r, cwd))) throw new Error(t("pals.ownDir"));
+    const given = String(o.name ?? "").replace(/\s+/g, " ").trim();
+    if (given && [...given].length > 40) throw new Error(t("pals.nameLong"));
+    if (given && given.toLowerCase() === this.paloName().toLowerCase()) throw new Error(t("pals.nameIsAssistant", { name: given }));
+    const workspaceId = typeof o.workspaceId === "string" && o.workspaceId ? o.workspaceId : undefined;
+    if (workspaceId && !this.d.workspaceExists?.(workspaceId)) throw new Error(t("pals.noWorkspace"));
+    this.room();
+    const now = this.now();
+    const model = this.d.palModel?.();
+    const id = newId("pal_");
+    const rec: PalRecord = {
+      id,
+      sessionId: crypto.randomUUID(),
+      name: given ? this.uniqueName(given) : `session-${id.slice(4, 10)}`,
+      cwd,
+      createdBy: "owner",
+      createdAt: now,
+      lastUsedAt: now,
+      permissionMode: this.d.palMode?.() ?? ownerMode(this.d.claudeDir),
+      ...(given ? {} : { autoNamed: true }),
+      ...(workspaceId ? { workspaceId } : {}),
+      ...(model ? { model } : {}),
+    };
+    const pal = this.add(rec);
+    if (workspaceId) this.d.workspaceJoin?.(workspaceId, id);
+    const text = String(o.text ?? "").trim();
+    const failed = (e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.log(`couldn't start ${rec.name}: ${msg}`);
+      pal.stopFor("failed", t("pals.resumeFailed", { msg }));
+    };
+    // (Starting is under way when this returns: it shows as starting.)
+    const up = pal.start();
+    if (text) void pal.send(text).then(() => this.balanceSoon(), failed);
+    else void up.then(() => this.balanceSoon(), failed);
+    this.d.audit.log("pal.created", { pal: rec.id, session: rec.sessionId, name: rec.name, cwd, by, owner: true });
+    this.emitNow();
+    return pal.toWire();
+  }
+
+  /** pals.seen: the owner looked. Idempotent; the other devices hear it in pals.updated. */
+  seen(id: string): Pal {
+    const pal = this.mustGet(id);
+    if (pal.markSeen(this.now())) this.emitNow();
+    return pal.toWire();
+  }
+
+  /** pals.detail: what the capsule's details show. */
+  async detail(id: string): Promise<PalDetail> {
+    const pal = this.mustGet(id);
+    const models = ((await this.d.models?.().catch(() => [])) ?? []).map((m) => ({ id: m.value, name: m.displayName, efforts: m.efforts }));
+    const info = pal.detailInfo();
+    return { pal: pal.toWire(), ...info, spentToday: this.spentToday(pal), models };
+  }
+
+  /**
+   * pals.setModel: model and/or effort for its next turns. A running session
+   * switches live; a sleeping one only has its record changed (it isn't
+   * woken) and starts on them.
+   */
+  async setModel(id: string, o: { model?: unknown; effort?: unknown }): Promise<{ pal: Pal }> {
+    const pal = this.mustGet(id);
+    const model = typeof o.model === "string" && o.model ? o.model : undefined;
+    const effort = typeof o.effort === "string" && o.effort ? o.effort : undefined;
+    if (!model && !effort) throw new Error(t("pals.setModelNothing"));
+    if (pal.rec.stoppedFor) throw new Error(t("pals.stoppedNoModel"));
+    if (effort && !["low", "medium", "high", "xhigh", "max"].includes(effort)) throw new Error(t("pals.effortBad"));
+    const models = (await this.d.models?.().catch(() => [])) ?? [];
+    if (model && models.length && !models.some((m) => m.value === model)) throw new Error(t("pals.modelUnknown", { model }));
+    if (model && !models.length && !/^[\w.\-:[\]]{1,80}$/.test(model)) throw new Error(t("pals.modelUnknown", { model }));
+    if (effort) {
+      // the model it will run on: the one asked for, else the one it has (a full id matches its alias's entry by prefix)
+      const on = model ?? pal.rec.model;
+      const entry = models.find((m) => m.value === on);
+      if (entry && !entry.efforts.includes(effort)) throw new Error(t("pals.effortUnsupported"));
+    }
+    await pal.setModel({ ...(model ? { model } : {}), ...(effort ? { effort } : {}) });
+    this.d.audit.log("pal.model", { pal: pal.id, model: model ?? null, effort: effort ?? null });
+    this.emitNow();
+    return { pal: pal.toWire() };
+  }
+
+  /** pals.compact: the harness' /compact in the session (woken first if asleep). */
+  async compact(id: string): Promise<Record<string, never>> {
+    const pal = this.mustGet(id);
+    await pal.compact();
+    this.emitNow();
+    return {};
+  }
+
+  /** pals.stopTask: a subagent or background task. */
+  async stopTask(id: string, taskId: string): Promise<Record<string, never>> {
+    await this.mustGet(id).stopTask(String(taskId ?? ""));
+    this.emitNow();
+    return {};
+  }
+
+  /** pals.reveal: its folder in Finder, or a plain shell in Terminal there (never the session itself). */
+  async reveal(id: string, kind: unknown): Promise<Record<string, never>> {
+    const pal = this.mustGet(id);
+    if (kind !== "finder" && kind !== "terminal") throw new Error(t("pals.revealKind"));
+    let isDir = false;
+    try {
+      isDir = statSync(pal.rec.cwd).isDirectory();
+    } catch {
+      isDir = false;
+    }
+    if (!isDir) throw new Error(t("pals.folderGone", { cwd: pal.rec.cwd }));
+    try {
+      await (this.d.reveal ?? defaultReveal)(kind, pal.rec.cwd);
+    } catch (e) {
+      throw e instanceof NoDesktop ? new Error(t("pals.revealNoDesktop")) : new Error(t("pals.revealFailed", { msg: e instanceof Error ? e.message : String(e) }));
+    }
+    return {};
+  }
+
+  /** pals.end: its process ends and it leaves the list for 以前的, where it can be picked up again. */
+  async end(id: string, by: string): Promise<{ earlier: EarlierItem }> {
+    const pal = this.mustGet(id);
+    await pal.shutdown();
+    // Gone back and not spoken to since: the old session is the one there is.
+    const sessionId = pal.pendingRewind()?.from ?? pal.rec.sessionId;
+    const item: EndedSession = { sessionId, name: pal.rec.name, cwd: pal.rec.cwd, at: this.now(), ...(pal.rec.workspaceId ? { workspaceId: pal.rec.workspaceId } : {}) };
+    this.drop(pal);
+    this.data.ended = [...this.data.ended.filter((e) => e.sessionId !== sessionId), item].slice(-ENDED_MAX);
+    this.save();
+    this.recentList.invalidate();
+    this.d.audit.log("pal.ended", { pal: pal.id, session: sessionId, name: pal.rec.name, by });
+    this.emitNow();
+    return { earlier: endedItem(item) };
+  }
+
+  /**
+   * pals.earlier: 以前的. The sessions the owner ended, those folded for lack
+   * of use, and the conversations that ended on the computer lately, newest
+   * first, one line per session (folded over ended over recent).
+   */
+  async earlier(o: { limit?: number; folder?: string } = {}): Promise<{ items: EarlierItem[] }> {
+    const limit = Math.max(1, Math.min(Math.floor(Number(o.limit)) || 50, 200));
+    const match = folderMatch(o.folder);
+    const items: EarlierItem[] = [];
+    const seen = new Set<string>();
+    const push = (i: EarlierItem) => {
+      if (seen.has(i.sessionId) || !match(i.cwd)) return;
+      seen.add(i.sessionId);
+      items.push(i);
+    };
+    for (const p of this.pals.values()) {
+      if (!p.folded()) continue;
+      push({ kind: "folded", key: `folded:${p.id}`, id: p.id, sessionId: p.rec.sessionId, name: p.rec.name, cwd: p.rec.cwd, at: p.rec.lastUsedAt });
+    }
+    for (const e of this.data.ended) if (!this.isPal(e.sessionId)) push(endedItem(e));
+    for (const e of await this.recentEntries({ limit: RECENT_MAX }).catch(() => [])) push({ kind: "recent", key: `recent:${e.sessionId}`, sessionId: e.sessionId, name: e.title, cwd: e.cwd, at: e.lastModified });
+    return { items: items.sort((a, b) => b.at - a.at).slice(0, limit) };
+  }
+
+  /**
+   * pals.resume: picks up an item of 以前的: a folded session wakes (it is
+   * still a session), an ended or recent one is resumed as a new session of
+   * the same name and folder.
+   */
+  async resume(o: { key?: string; kind?: string; sessionId?: string }, by: string): Promise<{ pal: Pal }> {
+    let key = String(o?.key ?? "").trim();
+    if (!key && o?.kind && o?.sessionId) key = `${o.kind}:${o.sessionId}`;
+    const i = key.indexOf(":");
+    const kind = i < 0 ? "" : key.slice(0, i);
+    const ref = i < 0 ? "" : key.slice(i + 1);
+    if (!ref || !["folded", "ended", "recent"].includes(kind)) throw new Error(t("pals.badEarlierKey"));
+    if (kind === "folded") {
+      if (!this.pals.has(ref)) throw new Error(t("pals.earlierGone"));
+      return { pal: await this.wake(ref, by) };
+    }
+    const have = this.get(ref);
+    if (have && have.rec.sessionId === ref) return { pal: have.toWire() };
+    if (kind === "recent") {
+      const r = await this.adopt(ref, by, { wait: false });
+      if (!("pal" in r)) throw new Error(t("pals.inTerminal"));
+      this.forgetEnded(ref);
+      return { pal: r.pal };
+    }
+    const e = this.data.ended.find((x) => x.sessionId === ref);
+    if (!e) throw new Error(t("pals.earlierGone"));
+    this.room();
+    const holders = await this.holders(ref);
+    if (holders.length) throw new Error(t("pals.heldJustNow", { pids: holders.map((h) => h.pid).join("、") }));
+    let isDir = false;
+    try {
+      isDir = statSync(e.cwd).isDirectory();
+    } catch {
+      isDir = false;
+    }
+    if (!isDir) throw new Error(t("pals.folderGone", { cwd: e.cwd }));
+    const pal = await this.finishAdopt({ id: ref, name: e.name, cwd: e.cwd }, by, true);
+    // Back in the workspace it was ended from, if that is still there.
+    if (e.workspaceId && this.d.workspaceExists?.(e.workspaceId)) {
+      this.d.workspaceJoin?.(e.workspaceId, pal.id);
+      this.emitNow();
+    }
+    this.forgetEnded(ref);
+    return { pal: pal.toWire() };
+  }
+
+  private forgetEnded(sessionId: string): void {
+    if (!this.data.ended.some((e) => e.sessionId === sessionId)) return;
+    this.data.ended = this.data.ended.filter((e) => e.sessionId !== sessionId);
+    this.save();
+    this.emitSoon();
+  }
+
+  /** pals.folders: where a new session can start, the most recently used first (not PaloAlly's own). */
+  async folders(o: { limit?: number } = {}): Promise<{ folders: { path: string; name: string; lastUsedAt: number }[] }> {
+    const limit = Math.max(1, Math.min(Math.floor(Number(o.limit)) || 20, 50));
+    const own = ownRoots(this.d.paths.root);
+    const best = new Map<string, number>();
+    const note = (path: string, at: number) => {
+      if (!path || own.some((r) => within(r, path))) return;
+      if (at > (best.get(path) ?? -1)) best.set(path, at);
+    };
+    for (const p of this.pals.values()) note(p.rec.cwd, p.rec.lastUsedAt);
+    for (const e of this.data.ended) note(e.cwd, e.at);
+    for (const e of await this.recentList.all().catch(() => [])) note(e.cwd, e.lastModified);
+    const folders = [...best].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([path, lastUsedAt]) => ({ path, name: basename(path) || path, lastUsedAt }));
+    return { folders };
+  }
+
   // ---------------- talking to a Pal ----------------
 
   /**
@@ -1061,10 +1459,10 @@ export class Pals {
       ...(ids.approvalId ? { approvalId: ids.approvalId } : {}),
       ...(ids.questionId ? { questionId: ids.questionId } : {}),
     };
-    void this.d.router.proactive(msg, { title: t("pals.waitingTitle", { name: pal.rec.name }) }).catch(() => {});
+    void this.d.router.proactive(msg, { title: t("pals.waitingTitle", { name: this.shownName(pal) }) }).catch(() => {});
   }
 
-  // ---------------- spending (Pals the assistant opened) ----------------
+  // ---------------- spending (shown in a Pal's details; no limit) ----------------
 
   private today(): string {
     return zonedParts(this.now(), this.d.settings().timezone).dateKey;
@@ -1075,41 +1473,12 @@ export class Pals {
     return this.meter.spentOn(pal.rec.cwd, pal.rec.sessionId, this.today(), tz);
   }
 
-  private checkBudget(pal: PalSession): void {
-    const limit = pal.rec.dailyUsd;
-    if (!limit || pal.rec.stoppedFor) return;
-    const spent = this.spentToday(pal);
-    if (spent <= limit) return;
-    pal.rec.budgetDay = this.today();
-    pal.stopFor("budget", t("pals.budgetReason", { spent: spent.toFixed(2), limit }));
-    this.d.audit.log("pal.budget", { pal: pal.id, name: pal.rec.name, spentUsd: Number(spent.toFixed(2)), dailyUsd: limit });
-    const msg = this.d.chat.add({
-      role: "assistant",
-      kind: "notice",
-      text: t("pals.budgetNotice", { name: pal.rec.name, spent: spent.toFixed(2), limit }),
-      channel: "system",
-      proactive: true,
-    });
-    void this.d.router.proactive(msg, { title: t("pals.budgetPushTitle") }).catch(() => {});
-  }
-
-  // A new day: Pals stopped for spending come back.
-  private newDay(): void {
-    const day = this.today();
-    for (const pal of this.pals.values()) {
-      if (pal.rec.stoppedFor !== "budget" || pal.rec.budgetDay === day) continue;
-      pal.clearStop();
-      void this.bringBack(pal, "new day");
-    }
-  }
-
   // ---------------- the assistant opens a Pal (docs/pals-prd.md §6) ----------------
 
-  private checkProposal(p: { name: string; cwd: string; duty: string; dailyUsd: number }): void {
+  private checkProposal(p: { name: string; cwd: string; duty: string }): void {
     if (!p.name.trim()) throw new Error(t("pals.needName"));
     if ([...p.name].length > 30) throw new Error(t("pals.palNameLong"));
     if (!p.duty.trim()) throw new Error(t("pals.needDuty"));
-    if (!(p.dailyUsd > 0) || p.dailyUsd > 1000) throw new Error(t("pals.badBudget"));
     let dir = false;
     try {
       dir = statSync(p.cwd).isDirectory();
@@ -1124,7 +1493,7 @@ export class Pals {
   }
 
   /** pal_propose: a card in the conversation; the Pal starts on the owner's 开吧. */
-  propose(a: { name: string; dir: string; duty: string; dailyUsd: number }): string {
+  propose(a: { name: string; dir: string; duty: string }): string {
     const dir = String(a.dir ?? "").trim();
     if (!dir) return t("pals.noDir");
     let cwd = resolve(expandHome(dir));
@@ -1133,7 +1502,7 @@ export class Pals {
     } catch {
       /* checked below */
     }
-    const p = { name: String(a.name ?? "").trim(), cwd, duty: String(a.duty ?? "").trim(), dailyUsd: Number(a.dailyUsd) };
+    const p = { name: String(a.name ?? "").trim(), cwd, duty: String(a.duty ?? "").trim() };
     try {
       this.checkProposal(p);
     } catch (e) {
@@ -1146,7 +1515,7 @@ export class Pals {
     const msg = this.d.chat.add({ role: "assistant", kind: "helper", text: t("pals.proposalText", { name: p.name, where }), channel: "system", proposal });
     this.data.proposals = [...this.data.proposals, { ...proposal, createdAt: this.now(), messageId: msg.id }].slice(-50);
     this.save();
-    this.d.audit.log("pal.proposed", { id: proposal.id, name: p.name, cwd: p.cwd, dailyUsd: p.dailyUsd });
+    this.d.audit.log("pal.proposed", { id: proposal.id, name: p.name, cwd: p.cwd });
     return t("pals.proposalShown", { id: proposal.id });
   }
 
@@ -1181,7 +1550,7 @@ export class Pals {
     try {
       this.room();
       this.checkProposal(p);
-      pal = await this.create({ name: p.name, cwd: p.cwd, duty: p.duty, dailyUsd: p.dailyUsd });
+      pal = await this.create({ name: p.name, cwd: p.cwd, duty: p.duty });
     } catch (e) {
       // Still on offer; the card says why it didn't start.
       const why = e instanceof Error ? e.message : String(e);
@@ -1195,7 +1564,7 @@ export class Pals {
   }
 
   // A new session in its folder, the assistant's handover as its first message.
-  private async create(o: { name: string; cwd: string; duty: string; dailyUsd: number }): Promise<PalSession> {
+  private async create(o: { name: string; cwd: string; duty: string }): Promise<PalSession> {
     const now = this.now();
     const model = this.d.palModel?.();
     const rec: PalRecord = {
@@ -1208,7 +1577,6 @@ export class Pals {
       lastUsedAt: now,
       permissionMode: this.d.palMode?.() ?? ownerMode(this.d.claudeDir),
       duty: o.duty,
-      dailyUsd: o.dailyUsd,
       ...(model ? { model } : {}),
     };
     const pal = this.add(rec);

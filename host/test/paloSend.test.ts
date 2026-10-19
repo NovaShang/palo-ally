@@ -1,11 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readdirSync, realpathSync } from "node:fs";
+import { mkdtempSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AwayDetector } from "../src/away.ts";
 import { allyTurnTool } from "../src/allyGate.ts";
 import { sessionOptions } from "../src/harness/claude.ts";
-import { PALO_SEND_TOOL, type MainSessionOptions } from "../src/harness/types.ts";
+import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type MainSessionOptions } from "../src/harness/types.ts";
 import { summarizeTail } from "../src/handoffs.ts";
 import { toPalMessages } from "../src/palHistory.ts";
 import type { PalsTiming } from "../src/pals.ts";
@@ -51,7 +51,7 @@ const wrapped = (name: string, text: string) => `<cross-session-message from="${
 const palOpts = (t: ReturnType<typeof setup>) => t.driver.pals.at(-1)!.opts;
 
 describe("palo_send: a Pal answers the assistant through the host", () => {
-  test("the Pal's process gets exactly one tool, pre-approved, and none of the assistant's", async () => {
+  test("the Pal's process gets exactly palo_send and the owner-facing tools, pre-approved, and none of the manager tools", async () => {
     const t = setup();
     await adopt(t);
     const opts = palOpts(t);
@@ -60,8 +60,8 @@ describe("palo_send: a Pal answers the assistant through the host", () => {
     const sdk = sessionOptions(opts as MainSessionOptions);
     expect(Object.keys(sdk.mcpServers!)).toEqual(["paloally"]);
     const server: any = (sdk.mcpServers as any).paloally.instance;
-    expect(Object.keys(server._registeredTools)).toEqual(["palo_send"]);
-    expect(sdk.allowedTools).toEqual([PALO_SEND_TOOL]);
+    expect(Object.keys(server._registeredTools)).toEqual(["palo_send", "Artifact", "SendUserFile", "notify_user", "copy_to_clipboard", "pals_list"]);
+    expect(sdk.allowedTools).toEqual(SESSION_ALLOWED_TOOLS);
     // the assistant's own session has the full set and no such tool
     const main: any = sessionOptions({ ...(opts as any), tools: {} as any, paloSend: undefined });
     expect(Object.keys(main.mcpServers.paloally.instance._registeredTools)).not.toContain("palo_send");
@@ -167,5 +167,114 @@ describe("palo_send: a Pal answers the assistant through the host", () => {
     expect(tr("pals.prompt", { paloName: "Palo" })).toContain("palo_send");
     expect(BEHAVIORS.zh).toMatch(/from-name.*pal_send/s);
     expect(BEHAVIORS.en).toMatch(/from-name.*pal_send/s);
+  });
+});
+
+describe("a session's tools that reach the owner", () => {
+  const MANAGER = ["pal_propose", "pal_adopt", "pals_recent", "pal_send", "register_watch", "list_watches", "remove_watch", "update_goal", "report_task", "ally_list", "ally_send", "pair_link"];
+
+  test("exactly the intended tools, pre-approved; the built-in Artifact and SendUserFile are off, SendMessage stays; Palo's list is unchanged", async () => {
+    const t = setup();
+    await adopt(t);
+    const sdk: any = sessionOptions(palOpts(t) as MainSessionOptions);
+    const names = Object.keys(sdk.mcpServers.paloally.instance._registeredTools);
+    expect(names.sort()).toEqual(["Artifact", "SendUserFile", "copy_to_clipboard", "notify_user", "palo_send", "pals_list"]);
+    for (const m of MANAGER) expect(names).not.toContain(m);
+    expect(sdk.allowedTools.sort()).toEqual(names.map((n) => `mcp__paloally__${n}`).sort());
+    expect(sdk.disallowedTools).toEqual(["Artifact", "SendUserFile"]);
+    expect(sdk.disallowedTools).not.toContain("SendMessage");
+    expect(sdk.allowedTools).not.toContain("SendMessage");
+    for (const n of names) {
+      expect(await palOpts(t).canUseTool({ toolName: `mcp__paloally__${n}`, input: {}, toolUseId: "t1", signal: new AbortController().signal } as any)).toMatchObject({ behavior: "allow" });
+    }
+    const main: any = sessionOptions({ ...(palOpts(t) as any), tools: {} as any, paloSend: undefined, sessionTools: undefined });
+    expect(Object.keys(main.mcpServers.paloally.instance._registeredTools)).toEqual([
+      "report_task", "register_watch", "list_watches", "remove_watch", "update_goal", "SendUserFile", "Artifact", "copy_to_clipboard",
+      "ally_list", "ally_send", "pals_list", "pal_send", "pal_propose", "pals_recent", "pal_adopt", "pair_link", "notify_user",
+    ]);
+    expect(main.disallowedTools).toEqual(["CronCreate", "CronDelete", "CronList", "ScheduleWakeup"]);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("Artifact records the session as its source, reads paths from its folder, and shows it on the wire", async () => {
+    const t = setup();
+    const pal = await adopt(t);
+    writeFileSync(join(t.project, "report.md"), "# 报告");
+    const out = await palOpts(t).sessionTools!.Artifact({ file_path: "report.md", title: "报告", description: "做好了", folder: "测试" });
+    expect(out).toContain("报告");
+    const listed = (await t.call("artifact.list")).artifacts.find((a: any) => a.title === "报告");
+    expect(listed).toMatchObject({ source: pal.id, folder: "测试", mainFile: "report.md" });
+    // the assistant's own say "palo"
+    writeFileSync(join(t.hub.paths.home, "mine.md"), "# 我的");
+    await t.hub.toolHandlers().Artifact({ file_path: "mine.md" });
+    expect(t.hub.artifacts.list().find((a) => a.mainFile === "mine.md")!.source).toBe("palo");
+    // the card is in the session's conversation, not the assistant's
+    const card = t.events.find((e) => e.event === "chat.message" && e.data.attachments?.[0]?.id === listed.id);
+    expect(card!.data).toMatchObject({ pal: pal.id, role: "assistant", attachments: [{ kind: "artifact", display: "render" }] });
+    expect(t.hub.chat.recent(20).some((m) => m.attachments?.some((a) => a.id === listed.id))).toBe(false);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("SendUserFile lands in the session's conversation, live and read back, never in the assistant's", async () => {
+    const script: FakeScript = async (_text, ctx) => {
+      await ctx.useTool("mcp__paloally__SendUserFile", { files: ["chart.txt"], status: "normal" }, { id: "toolu_f1" });
+    };
+    const t = setup();
+    t.driver.palScript = script;
+    const pal = await adopt(t);
+    writeFileSync(join(t.project, "chart.txt"), "数据");
+    const before = t.hub.chat.recent(50).length;
+    await palOpts(t).sessionTools!.SendUserFile({ files: ["chart.txt"], caption: "图表", status: "normal" });
+    const live = t.events.find((e) => e.event === "chat.message" && e.data.pal === pal.id && e.data.attachments?.length);
+    expect(live!.data).toMatchObject({ role: "assistant", text: "图表", attachments: [{ kind: "artifact", name: "chart.txt" }] });
+    expect(t.hub.chat.recent(50).length).toBe(before);
+    expect(t.hub.artifacts.list().find((a) => a.mainFile === "chart.txt")!.source).toBe(pal.id);
+    // read back from its transcript: the tool call carries the same id the live message had
+    const entries = [{ type: "assistant", uuid: "a1", timestamp: "2026-10-19T10:00:00Z", message: { id: "msg_1", model: "m", content: [{ type: "tool_use", id: live!.data.id, name: "mcp__paloally__SendUserFile", input: { files: ["chart.txt"], status: "normal" } }] } }];
+    const msgs = toPalMessages(entries as any, { pal: pal.id, assistantName: "Palo", paloName: "Palo", recall: (u) => t.hub.media.recall(u) });
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toMatchObject({ id: live!.data.id, text: "图表", pal: pal.id, attachments: [{ name: "chart.txt" }] });
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("a clipboard text is a card in the session's conversation too", async () => {
+    const t = setup();
+    const pal = await adopt(t);
+    await palOpts(t).sessionTools!.copy_to_clipboard({ text: "123456", label: "验证码" });
+    expect(t.events.find((e) => e.event === "chat.message" && e.data.pal === pal.id && e.data.kind === "clipboard")!.data).toMatchObject({ text: "123456", label: "验证码" });
+    expect(t.hub.chat.recent(20).some((m) => m.kind === "clipboard")).toBe(false);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("notify_user is titled with the session's name and keeps to the proactive budget", async () => {
+    const t = setup();
+    const pal = await adopt(t);
+    const r = await palOpts(t).sessionTools!.notify_user({ text: "要你看一下" });
+    expect(r).toContain("已推送");
+    expect(t.pusher.pushes.at(-1)).toMatchObject({ title: "网站", body: "要你看一下", data: { pal: pal.id } });
+    expect(t.hub.chat.recent(20).some((m) => m.text === "要你看一下")).toBe(false); // nothing in the assistant's conversation
+    // quiet hours hold it back, as they do the assistant's, unless it's urgent
+    t.hub.config.settings.quietHours = { start: "00:00", end: "23:59" };
+    (t.hub as any).router.lastOwnerActivity = () => 0;
+    const n = t.pusher.pushes.length;
+    expect(await palOpts(t).sessionTools!.notify_user({ text: "不急的事" })).not.toContain("已推送");
+    expect(t.pusher.pushes.length).toBe(n);
+    expect(await palOpts(t).sessionTools!.notify_user({ text: "急事", urgent: true })).toContain("已推送");
+    expect(t.pusher.pushes.at(-1)).toMatchObject({ title: "网站", body: "急事" });
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("pals_list is read only and the prompt names the tools", async () => {
+    const t = setup();
+    const pal = await adopt(t);
+    expect(JSON.parse(await palOpts(t).sessionTools!.pals_list()).pals.map((p: any) => p.id)).toContain(pal.id);
+    expect(tr("pals.prompt", { paloName: "Palo" })).toMatch(/Artifact.*SendUserFile.*notify_user/s);
+    setLang("en");
+    try {
+      expect(tr("pals.prompt", { paloName: "Palo" })).toMatch(/Artifact.*SendUserFile.*notify_user/s);
+    } finally {
+      setLang("zh");
+    }
+    await t.hub.pals.stopAndWait();
   });
 });

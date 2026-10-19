@@ -34,6 +34,28 @@
         }
       }
     },
+    "关闭侧栏" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close pane"
+          }
+        }
+      }
+    },
+    "关闭标签" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close tab"
+          }
+        }
+      }
+    },
     "再试一次" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -52,6 +74,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Refresh"
+          }
+        }
+      }
+    },
+    "前进" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forward"
+          }
+        }
+      }
+    },
+    "后退" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back"
           }
         }
       }
@@ -199,6 +243,28 @@
         }
       }
     },
+    "新标签" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New tab"
+          }
+        }
+      }
+    },
+    "新网页" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New page"
+          }
+        }
+      }
+    },
     "显示隐藏的文件" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -287,6 +353,28 @@
         }
       }
     },
+    "网页" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web page"
+          }
+        }
+      }
+    },
+    "输入网址或搜索" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter an address or search"
+          }
+        }
+      }
+    },
     "这个文件夹是空的" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -305,6 +393,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This file is %@. Files over 5 MB don't open here; look at it on the computer."
+          }
+        }
+      }
+    },
+    "这个标签打不开" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This tab can't be opened"
           }
         }
       }

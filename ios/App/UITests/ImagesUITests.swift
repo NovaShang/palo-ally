@@ -35,8 +35,8 @@ final class ImagesUITests: XCTestCase {
     func testAMarkdownFileOnTheComputerShowsItsImage() throws {
         let app = launch(["-demoScreen", "pal", "-demoPal", "pal-site"])
         XCTAssertTrue(app.navigationBars.staticTexts["网站帮手"].waitForExistence(timeout: 15))
-        app.buttons["pal-menu"].firstMatch.tap()
-        app.buttons["文件"].firstMatch.tap()
+        app.buttons["title-capsule"].firstMatch.tap()
+        app.buttons["detail-files"].firstMatch.tap()
         let readme = app.buttons["file-row-README.md"]
         XCTAssertTrue(readme.waitForExistence(timeout: 10), "no README.md in the tree")
         readme.tap()
@@ -50,8 +50,8 @@ final class ImagesUITests: XCTestCase {
     func testAMissingImageInAComputerFileIsAStub() throws {
         let app = launch(["-demoScreen", "pal", "-demoPal", "pal-site", "-demoFilePath", "notes/设计/列表页.md"])
         XCTAssertTrue(app.navigationBars.staticTexts["网站帮手"].waitForExistence(timeout: 15))
-        app.buttons["pal-menu"].firstMatch.tap()
-        app.buttons["文件"].firstMatch.tap()
+        app.buttons["title-capsule"].firstMatch.tap()
+        app.buttons["detail-files"].firstMatch.tap()
         let sketch = picture(app, "草图")
         XCTAssertTrue(sketch.waitForExistence(timeout: 20), "the note's sketch never showed")
         assertDrawn(sketch)
