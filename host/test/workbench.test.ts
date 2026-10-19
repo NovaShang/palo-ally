@@ -288,7 +288,7 @@ describe("workspaces and sessions", () => {
     const ws = (await t.call("workspaces.create", { memberIds: [ids[0]!] })).workspace;
     expect(t.hub.workbench.shownIds().size).toBe(0);
     await t.call("workspaces.update", { id: ws.id, layout: leaf(ids[0]!, 0, 1) });
-    expect([...t.hub.workbench.shownIds()]).toEqual([ids[0]]);
+    expect([...t.hub.workbench.shownIds()]).toEqual([ids[0]!]);
     await up("丙");
     await waitFor(() => t.pal(ids[1]!).status === "asleep", 2_000);
     await tick(150);

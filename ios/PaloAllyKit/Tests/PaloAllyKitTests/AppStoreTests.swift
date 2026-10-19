@@ -87,12 +87,13 @@ struct AppStoreTests {
         #expect(store.recentArtifacts.map(\.id) == ["ar2", "ar4", "ar3", "ar5", "ar6", "ar7", "ar8", "ar9"])
         #expect(store.settings?.probeIntervalMinutes == 10)
         #expect(store.status?.model == "glm-4.6")
-        // hello + sync first; 「试试」 suggestions, the Allies (list, then each one's log) and the Pals (with
-        // the computer's other sessions: no sessions.list as well) load right after
+        // hello + sync first; 「试试」 suggestions, the Allies (list, then each one's log), the Pals (with
+        // the computer's other sessions: no sessions.list as well) and the workspaces load right after.
+        // (The right pane's tabs are asked by the pane when the app shows it, not by the store.)
         #expect(await until {
             let log = await host.requestLog
-            return Array(log.prefix(2)) == ["hello", "sync"] && log.count == 7
-                && Set(log.dropFirst(2)) == ["suggestions.list", "ally.list", "ally.log", "pals.list"]
+            return Array(log.prefix(2)) == ["hello", "sync"] && log.count == 8
+                && Set(log.dropFirst(2)) == ["suggestions.list", "ally.list", "ally.log", "pals.list", "workspaces.list"]
         })
         try await Task.sleep(for: .milliseconds(100))
         #expect(await !host.requestLog.contains("sessions.list"))
