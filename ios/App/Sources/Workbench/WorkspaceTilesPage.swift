@@ -82,7 +82,7 @@ struct WorkspaceTilesPage: View {
             .environment(\.tile, TileContext(id: id, isActive: model.activeTile(in: workspaceID) == id))
             .environment(\.tileDetail, detailBinding(id))
             // Each session keeps its own unsent words, here and on its own page.
-            .environment(\.chatDraft, Binding(get: { model.drafts[.pal(id)] ?? "" }, set: { model.drafts[.pal(id)] = $0 }))
+            .environment(\.chatDraft, model.draftBinding(.pal(id)))
             .environment(\.fileLinks, FileLinkContext(scope: .pal(id), resolver: .shared(for: store)))
             .environment(\.placesAsColumns, false)
     }
@@ -172,12 +172,62 @@ private struct WorkspaceBar: ViewModifier {
 
     func body(content: Content) -> some View {
         if Platform.barInWindowToolbar {
-            content.macPageTop(title, subtitle: subtitle, trailing: AnyView(TileMenu(workspaceID: workspaceID, glass: true)))
+            content
+                .toolbar(.hidden, for: .navigationBar)
+                .modifier(WorkspaceTitlebarRow(title: title, subtitle: subtitle,
+                                               trailing: AnyView(TileMenu(workspaceID: workspaceID, glass: true))))
         } else {
             content.toolbar {
                 ToolbarItem(placement: .topBarTrailing) { TileMenu(workspaceID: workspaceID, glass: false) }
                 ToolbarItem(placement: .topBarTrailing) { PaneButton() }
             }
+        }
+    }
+}
+
+/// The Mac: the workspace's name, session count and 并排 sit in the window's
+/// title bar row itself (beside the traffic lights and the right pane's
+/// button), so the page has one compact row of chrome instead of two. The
+/// tiles start right under it.
+private struct WorkspaceTitlebarRow: ViewModifier {
+    let title: String
+    let subtitle: String
+    let trailing: AnyView
+    @Environment(AppModel.self) private var model
+
+    private static let minimum: CGFloat = 38
+
+    func body(content: Content) -> some View {
+        GeometryReader { outer in
+            let height = max(outer.safeAreaInsets.top, Self.minimum)
+            content
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    Color.clear.frame(height: max(Self.minimum - outer.safeAreaInsets.top, 0))
+                }
+                .overlay(alignment: .top) {
+                    HStack(spacing: 8) {
+                        Text(title)
+                            .font(.headline)
+                            .lineLimit(1)
+                            .accessibilityAddTraits(.isHeader)
+                            .accessibilityIdentifier("page-title")
+                        Text(subtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .accessibilityIdentifier("page-status")
+                        Spacer(minLength: 0)
+                        trailing
+                    }
+                    .tint(.primary)
+                    // Clear the sidebar's capsule (while the sidebar is away) and
+                    // the window toolbar's right pane button.
+                    .padding(.leading, model.sidebarCollapsed ? 280 : 14)
+                    .padding(.trailing, 60)
+                    .frame(height: height)
+                    .frame(maxWidth: .infinity)
+                    .ignoresSafeArea(edges: .top)
+                }
         }
     }
 }
