@@ -99,11 +99,14 @@ struct ComposerView: View {
     private var concentric: Bool { docked && spansDisplay && displayRadius > 0 }
     private var sideInset: CGFloat {
         // Beside a sidebar or inspector: the same even margins as the conversation.
-        guard concentric else { return spansDisplay ? Self.minInset : 20 }
+        guard concentric else { return spansDisplay ? Self.minInset : (tile != nil ? 10 : 20) }
         return max(Self.minInset, displayRadius - Self.dockedRadius)
     }
     private var capsuleRadius: CGFloat { docked ? Self.dockedRadius : Self.editingRadius }
-    private var rowHeight: CGFloat { docked ? Self.dockedHeight : Self.editingHeight }
+    private var rowHeight: CGFloat { Platform.isMac ? unit : (docked ? Self.dockedHeight : Self.editingHeight) }
+    /// The height of the buttons and a one-line field: 44 pt on a touch
+    /// screen, compact with a pointer (the Mac), more so inside a tile.
+    private var unit: CGFloat { !Platform.isMac ? 44 : (tile != nil ? 32 : 38) }
     /// The composer sits above the home-indicator inset; docked, the capsule
     /// goes `sideInset` from the screen's bottom edge — into that inset when
     /// the inset is the larger of the two.
@@ -346,7 +349,7 @@ struct ComposerView: View {
 
     /// Keeps the 44 pt buttons centred on a one-line docked capsule (they
     /// stay at the bottom as the field grows to more lines).
-    private var buttonLift: CGFloat { (rowHeight - 44) / 2 }
+    private var buttonLift: CGFloat { Platform.isMac ? 0 : (rowHeight - 44) / 2 }
 
     /// Follows the keyboard: docked when it's down (or only the hardware
     /// keyboard's shortcut bar is showing), a plain capsule above it otherwise.
@@ -382,14 +385,14 @@ struct ComposerView: View {
             Image(systemName: "plus")
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(.secondary)
-                .frame(width: 40, height: 44)
+                .frame(width: 40, height: unit)
                 .contentShape(.rect)
         }
         .tint(.secondary) // Menu tints its label with the accent; match the mic
         // The Mac draws a menu as a bordered pop-up with a chevron; keep the bare +.
         .buttonStyle(.borderless)
         .menuIndicator(.hidden)
-        .frame(width: 40, height: 44) // the Mac sizes a borderless menu to its glyph
+        .frame(width: 40, height: unit) // the Mac sizes a borderless menu to its glyph
         .padding(.leading, 4)
         .disabled(staged.count >= Self.maxStaged || dictating)
         .accessibilityLabel("添加照片或文件")
@@ -403,7 +406,7 @@ struct ComposerView: View {
             // keyboard / Mac, Return sends (see hardwareReturn) and
             // Shift/Option/⌘+Return is a newline.
             TextField("", text: $draft, prompt: Text(focused ? prompt : ""), axis: .vertical)
-                .lineLimit(1...6)
+                .lineLimit(Platform.isMac ? 1...200 : 1...6)
                 .focused($focused)
                 .accessibilityIdentifier("composerField")
                 // The Mac: Esc leaves the field (the text stays); with an
@@ -413,6 +416,8 @@ struct ComposerView: View {
                     focused = false
                     return .handled
                 }
+                // The Mac: the field grows to a few lines, then scrolls with the wheel.
+                .modifier(MacFieldScroll(maxHeight: unit - 22 + 22 * CGFloat(tile != nil ? 4 : 6)))
                 // While idle the press layer owns every touch: the text
                 // field's own long-press / selection recognizers must not see it.
                 .allowsHitTesting(!idle)
@@ -421,7 +426,7 @@ struct ComposerView: View {
                     fieldFrame = $0
                     if placesVoice { voice.placeField($0) }
                 }
-                .padding(.vertical, 11)
+                .padding(.vertical, max(4, (unit - 22) / 2))
                 // Blank while those words fly in; it fades in as they land.
                 .opacity(dictating || (mine && voice.veilsField) ? 0 : 1)
             if dictating {
@@ -505,7 +510,7 @@ struct ComposerView: View {
                         .font(.system(size: 30))
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.tint)
-                        .frame(width: 40, height: 44)
+                        .frame(width: 40, height: unit)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("发送")
@@ -522,9 +527,9 @@ struct ComposerView: View {
             Image(systemName: "stop.fill")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(.primary)
-                .frame(width: 34, height: 34)
+                .frame(width: min(34, unit - 2), height: min(34, unit - 2))
                 .glassEffect(.regular.interactive(), in: .circle)
-                .frame(width: 44, height: 44)
+                .frame(width: 44, height: unit)
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -541,7 +546,7 @@ struct ComposerView: View {
                     Image(systemName: "stop.fill")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: 34, height: 34)
+                        .frame(width: min(34, unit - 2), height: min(34, unit - 2))
                         .glassEffect(.regular.tint(Color.accentColor.opacity(0.9)).interactive(), in: .circle)
                         .symbolEffect(.pulse, isActive: !finishingDictation)
                 } else {
@@ -550,7 +555,7 @@ struct ComposerView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(width: 44, height: 44)
+            .frame(width: 44, height: unit)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -1086,5 +1091,27 @@ private struct QuoteBanner: View {
         .padding(.vertical, 6)
         .background(Color(.secondarySystemFill), in: .rect(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// The Mac: a long multi-line field in a scroll view of its own. The text
+/// field's inner scrolling does not take the mouse wheel on Catalyst, so the
+/// field is as tall as its text up to `maxHeight` and scrolls past that.
+private struct MacFieldScroll: ViewModifier {
+    let maxHeight: CGFloat
+    @State private var contentHeight: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        if Platform.isMac {
+            ScrollView {
+                content
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .defaultScrollAnchor(.bottom, for: .sizeChanges)
+            .frame(height: contentHeight > 0 ? min(contentHeight, maxHeight) : nil)
+        } else {
+            content
+        }
     }
 }
