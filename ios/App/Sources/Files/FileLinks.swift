@@ -132,7 +132,7 @@ extension MarkdownTextView {
     /// once the computer has answered about paths it hadn't seen.
     func applyFileLinks() {
         // Nothing while a reply is being written: links work once it's finished.
-        guard let ctx = fileLinks, isSelectable else { return }
+        guard let ctx = fileLinks, !isWriting else { return }
         let storage = textStorage
         guard storage.length > 0, storage.length < 200_000 else { return }
         let candidates = PathDetector.candidates(in: storage.string)

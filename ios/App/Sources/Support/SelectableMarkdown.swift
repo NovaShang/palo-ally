@@ -62,6 +62,30 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
     var fileLinks: FileLinkContext? { didSet { if fileLinks != oldValue { applyFileLinks() } } }
     private var lastSource: String?
     private var lastStreaming = false
+    /// Whether the reply is still being written, as the last render saw it.
+    /// What the rest of the view asks, instead of `isSelectable`, which
+    /// trails it by a turn of the main queue.
+    var isWriting: Bool { lastStreaming }
+    private var selectableQueued = false
+
+    /// Makes `isSelectable` match the reply (selectable once finished), outside
+    /// SwiftUI's update. Safe to ask often: one pending turn at a time, and it
+    /// reads the state when it runs, so a stale ask does nothing.
+    private func settleSelectable() {
+        guard isSelectable == lastStreaming, !selectableQueued else { return }
+        selectableQueued = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            selectableQueued = false
+            applySelectable()
+        }
+    }
+
+    /// The deferred part of `settleSelectable`; idempotent.
+    func applySelectable() {
+        let want = !lastStreaming
+        if isSelectable != want { isSelectable = want }
+    }
     private var lastLinkColor: UIColor?
     var currentLinkColor: UIColor? { lastLinkColor }
     /// The text version a too-short frame was already reported for (see
@@ -246,8 +270,12 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         }
         let inset = UIEdgeInsets(top: pad(0), left: 0, bottom: storage.length > 0 ? pad(storage.length - 1) : 0, right: 0)
         if inset != textContainerInset { textContainerInset = inset }
-        // Nothing to select mid-stream; links work once it's finished.
-        if isSelectable == streaming { isSelectable = !streaming }
+        // Nothing to select mid-stream; links work once it's finished. Not
+        // flipped here: render runs inside SwiftUI's update, and UIKit
+        // installing the selection gestures there makes the Mac re-hit-test
+        // the hosting view it is in the middle of updating (a hang, and once a
+        // crash). It follows on the next turn of the main queue.
+        settleSelectable()
         applyFileLinks()
         renderVersion += 1
         layoutWidthFor.removeAll()
@@ -362,7 +390,7 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
     private var openBlockTop: (char: Int, y: CGFloat)?
 
     private func noteOpenBlockTop() {
-        guard !isSelectable, frozenLength < textStorage.length else { openBlockTop = nil; return }
+        guard isWriting, frozenLength < textStorage.length else { openBlockTop = nil; return }
         let glyph = layoutManager.glyphIndexForCharacter(at: frozenLength)
         openBlockTop = (frozenLength, layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil).minY)
     }
@@ -372,7 +400,7 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
     /// again (UIKit's own invalidation redraws every tile: the whole reply
     /// on every tick). False to leave it to UIKit.
     func redrawChanged(from chars: Int) -> Bool {
-        guard !isSelectable, let top = openBlockTop, chars >= top.char, let canvas = textCanvas,
+        guard isWriting, let top = openBlockTop, chars >= top.char, let canvas = textCanvas,
               let tiles = canvas.layer.sublayers, !tiles.isEmpty else { return false }
         let y = canvas.convert(CGPoint(x: 0, y: top.y + textContainerInset.top - 4), from: self).y
         for t in tiles where t.frame.maxY > y { t.setNeedsDisplay() }

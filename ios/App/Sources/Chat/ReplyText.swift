@@ -210,7 +210,7 @@ final class LiveTextHost: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let writing = !text.isSelectable
+        let writing = text.isWriting
         let height = writing ? max(bounds.height, (bounds.height / Self.step).rounded(.up) * Self.step) : bounds.height
         let frame = CGRect(x: 0, y: 0, width: bounds.width, height: height)
         if text.frame != frame { text.frame = frame }
