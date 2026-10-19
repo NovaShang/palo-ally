@@ -418,7 +418,7 @@ public struct QuestionItem: Codable, Sendable, Hashable {
 
 /// The assistant asking the owner to choose (Claude Code's AskUserQuestion).
 /// Answers map each question's text to the chosen label(s) — several joined
-/// by ", " — or to the owner's own words.
+/// by ", " — or to the owner's own words; a question left out was skipped.
 public struct Question: Codable, Sendable, Hashable, Identifiable {
     public var id: String
     public var items: [QuestionItem]
@@ -426,6 +426,8 @@ public struct Question: Codable, Sendable, Hashable, Identifiable {
     public var status: QuestionStatus
     public var createdAt: Int64
     public var answers: [String: String]?
+    /// Question texts the owner skipped (no entry in `answers`).
+    public var skipped: [String]?
     public var answeredAt: Int64?
     public var answeredBy: String?
     /// Asked by one of the computer's sessions, not the assistant itself.
@@ -434,10 +436,10 @@ public struct Question: Codable, Sendable, Hashable, Identifiable {
     public var note: String?
 
     public init(id: String, items: [QuestionItem], taskId: String? = nil, status: QuestionStatus = .pending,
-                createdAt: Int64, answers: [String: String]? = nil, answeredAt: Int64? = nil, answeredBy: String? = nil,
-                source: CardSource? = nil, note: String? = nil) {
+                createdAt: Int64, answers: [String: String]? = nil, skipped: [String]? = nil, answeredAt: Int64? = nil,
+                answeredBy: String? = nil, source: CardSource? = nil, note: String? = nil) {
         self.id = id; self.items = items; self.taskId = taskId; self.status = status; self.createdAt = createdAt
-        self.answers = answers; self.answeredAt = answeredAt; self.answeredBy = answeredBy
+        self.answers = answers; self.skipped = skipped; self.answeredAt = answeredAt; self.answeredBy = answeredBy
         self.source = source; self.note = note
     }
 
@@ -449,6 +451,7 @@ public struct Question: Codable, Sendable, Hashable, Identifiable {
         status = l.decode(QuestionStatus.self, "status", or: .unknown)
         createdAt = l.millis("createdAt", or: 0)
         answers = l.decode([String: String].self, "answers")
+        skipped = l.decode([String].self, "skipped")
         answeredAt = l.millis("answeredAt")
         answeredBy = l.string("answeredBy")
         source = l.decode(CardSource.self, "source")

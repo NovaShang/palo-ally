@@ -57,8 +57,6 @@ describe("QuestionManager", () => {
     expect(q.items.map((i) => i.question)).toEqual(["要把面签加进 Outlook 吗？", "提前多久提醒？"]);
     expect(q.items[0]!.options[2]).toEqual({ label: "加到家庭日历" }); // empty description dropped
     expect(q.items[1]!.multiSelect).toBe(true);
-    // every question needs an answer
-    expect(() => m.answer(q.id, { "要把面签加进 Outlook 吗？": "加进去" }, "app")).toThrow("每个问题都要选一下");
     m.answer(q.id, { "要把面签加进 Outlook 吗？": "加进去", "提前多久提醒？": "前一天, 当天早上" }, "app");
     m.answer(q.id, { "要把面签加进 Outlook 吗？": "先不加", "提前多久提醒？": "前一天" }, "wechat"); // late: ignored
     const d = await p;
@@ -67,6 +65,41 @@ describe("QuestionManager", () => {
       updatedInput: { ...ask, answers: { "要把面签加进 Outlook 吗？": "加进去", "提前多久提醒？": "前一天, 当天早上" } },
     });
     expect(m.get(q.id)).toMatchObject({ status: "answered", answeredBy: "app" });
+    cleanup(paths);
+  });
+
+  test("a skipped question goes back as no answer in words, never as a choice; skipping all is allowed", async () => {
+    const { m, paths } = mk();
+    const p = m.request(req(ask));
+    const q = m.listPending()[0]!;
+    m.answer(q.id, { "要把面签加进 Outlook 吗？": "加进去" }, "app");
+    const d = await p;
+    expect(d.behavior === "allow" && d.updatedInput!.answers).toEqual({
+      "要把面签加进 Outlook 吗？": "加进去",
+      "提前多久提醒？": "（没有回答：主人跳过了这题，别当成他的选择）",
+    });
+    expect(m.get(q.id)).toMatchObject({ status: "answered", answers: { "要把面签加进 Outlook 吗？": "加进去" }, skipped: ["提前多久提醒？"] });
+
+    const p2 = m.request(req(ask));
+    const q2 = m.listPending()[0]!;
+    m.answer(q2.id, {}, "app");
+    const d2 = await p2;
+    expect(d2.behavior === "allow" && Object.values(d2.updatedInput!.answers as Record<string, string>)).toEqual([
+      "（没有回答：主人跳过了这题，别当成他的选择）",
+      "（没有回答：主人跳过了这题，别当成他的选择）",
+    ]);
+    expect(m.get(q2.id)).toMatchObject({ status: "answered", answers: {}, skipped: ["要把面签加进 Outlook 吗？", "提前多久提醒？"] });
+    cleanup(paths);
+  });
+
+  test("own words that are only numbers are passed on as such, not as option 1", async () => {
+    const { m, paths } = mk();
+    const p = m.request(req(ask));
+    m.answer(m.listPending()[0]!.id, { "要把面签加进 Outlook 吗？": "1", "提前多久提醒？": "11" }, "app");
+    const d = await p;
+    const told = d.behavior === "allow" ? (d.updatedInput!.answers as Record<string, string>) : {};
+    expect(told["要把面签加进 Outlook 吗？"]).toBe("「1」（主人在「其他」里只写了数字，没有点选项，不能当成选了第几项）");
+    expect(told["提前多久提醒？"]).toStartWith("「11」");
     cleanup(paths);
   });
 
@@ -155,5 +188,11 @@ describe("questions on a text channel (WeChat)", () => {
     expect(parseTextAnswer(q(), "1；随便")).toEqual({ "要把面签加进 Outlook 吗？": "加进去", "提前多久提醒？": "随便" });
     // several questions, one line: can't tell which is which
     expect(parseTextAnswer(q(), "1")).toBeNull();
+  });
+
+  test("「跳过」 skips all, or one question on its own line", () => {
+    expect(parseTextAnswer(q(), "跳过")).toEqual({});
+    expect(parseTextAnswer(q([ask.questions[0]!]), "skip")).toEqual({});
+    expect(parseTextAnswer(q(), "1\n跳过")).toEqual({ "要把面签加进 Outlook 吗？": "加进去" });
   });
 });

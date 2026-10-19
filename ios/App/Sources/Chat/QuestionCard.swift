@@ -3,8 +3,10 @@ import SwiftUI
 
 /// The assistant asks the owner to choose (Claude Code's AskUserQuestion):
 /// each question with its options, single or multi select, plus 「其他…」 for
-/// the owner's own words. Plain in-content controls; only 发送 carries the
-/// theme color. Once answered it folds into a short summary.
+/// the owner's own words. Any question can be left out, and 跳过 skips the
+/// card: the asker is told in words that those went unanswered. Plain
+/// in-content controls; only 发送 carries the theme color. Once answered it
+/// folds into a short summary.
 struct QuestionCard: View {
     @Environment(AppStore.self) private var store
     let question: Question
@@ -44,7 +46,8 @@ struct QuestionCard: View {
                         .font(.headline)
                     Spacer(minLength: 0)
                     if !question.isPending {
-                        Text(question.status == .answered ? String(localized: "已回答") : String(localized: "没等到回答"))
+                        Text(question.status != .answered ? String(localized: "没等到回答")
+                             : (question.answers ?? [:]).isEmpty ? String(localized: "跳过了") : String(localized: "已回答"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -56,15 +59,25 @@ struct QuestionCard: View {
                     itemPicker(i, item)
                 }
                 if question.source?.isSession != true { meta }
-                Button {
-                    send()
-                } label: {
-                    Text(working ? String(localized: "发送中…") : String(localized: "发送")).frame(maxWidth: .infinity)
+                HStack(spacing: 10) {
+                    Button {
+                        send(skippingAll: true)
+                    } label: {
+                        Text(question.items.count > 1 ? String(localized: "全部跳过") : String(localized: "跳过"))
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.secondary)
+                    Button {
+                        send()
+                    } label: {
+                        Text(sendTitle).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(answeredCount == 0)
                 }
-                .buttonStyle(.borderedProminent)
                 .buttonBorderShape(.capsule)
                 .controlSize(.large)
-                .disabled(!complete || working)
+                .disabled(working)
                 if let error {
                     Text(error).font(.caption).foregroundStyle(.red)
                 }
@@ -210,6 +223,8 @@ struct QuestionCard: View {
                         .foregroundStyle(.secondary)
                     if let a = question.answers?[item.question], !a.isEmpty {
                         Text(a).font(.callout)
+                    } else if question.skipped?.contains(item.question) == true {
+                        Text("跳过了").font(.callout).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -250,15 +265,25 @@ struct QuestionCard: View {
         return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }
 
-    private var complete: Bool {
-        question.items.enumerated().allSatisfy { answer($0.offset, $0.element) != nil }
+    private var answeredCount: Int {
+        question.items.enumerated().filter { answer($0.offset, $0.element) != nil }.count
     }
 
-    private func send() {
+    /// 发送, or what it leaves out when some questions are unanswered.
+    private var sendTitle: String {
+        if working { return String(localized: "发送中…") }
+        let left = question.items.count - answeredCount
+        return answeredCount > 0 && left > 0 ? String(localized: "发送，跳过 \(left) 题") : String(localized: "发送")
+    }
+
+    /// Unanswered questions are left out, which the host passes on as skipped.
+    private func send(skippingAll: Bool = false) {
         var answers: [String: String] = [:]
-        for (i, item) in question.items.enumerated() {
-            guard let a = answer(i, item) else { return }
-            answers[item.question] = a
+        if !skippingAll {
+            for (i, item) in question.items.enumerated() {
+                if let a = answer(i, item) { answers[item.question] = a }
+            }
+            guard !answers.isEmpty else { return }
         }
         working = true
         error = nil

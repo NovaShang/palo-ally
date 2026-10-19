@@ -152,6 +152,7 @@ export interface Question {
   createdAt: number;
   // question text → the chosen label(s) (multi-select: "A, B") or the owner's own words
   answers?: Record<string, string>;
+  skipped?: string[]; // question texts the owner skipped (no entry in answers)
   answeredAt?: number;
   answeredBy?: string;
   source?: CardSource; // asked by a session on the computer

@@ -725,11 +725,11 @@ public actor DemoHost {
             guard questions[i].isPending else { return ["question": try .from(questions[i])] }
             var answers: [String: String] = [:]
             if case .object(let o)? = p["answers"] { for (k, v) in o { answers[k] = v.stringValue ?? "" } }
-            guard questions[i].items.allSatisfy({ !(answers[$0.question] ?? "").isEmpty }) else {
-                throw DemoError(message: "每个问题都要选一下")
-            }
+            answers = answers.filter { !$0.value.isEmpty }
+            let skipped = questions[i].items.map(\.question).filter { answers[$0] == nil }
             questions[i].status = .answered
             questions[i].answers = answers
+            questions[i].skipped = skipped.isEmpty ? nil : skipped
             questions[i].answeredAt = Date().epochMillis
             questions[i].answeredBy = "app"
             emit(RPCEventName.questionUpdated, questions[i])

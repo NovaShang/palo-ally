@@ -926,6 +926,17 @@
         }
       }
     },
+    "全部跳过" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip all"
+          }
+        }
+      }
+    },
     "共享" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1362,6 +1373,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sending…"
+          }
+        }
+      }
+    },
+    "发送，跳过 %lld 题" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send, skip %lld"
           }
         }
       }
@@ -5428,6 +5450,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Message %@"
+          }
+        }
+      }
+    },
+    "跳过" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip"
+          }
+        }
+      }
+    },
+    "跳过了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skipped"
           }
         }
       }

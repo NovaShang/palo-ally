@@ -97,7 +97,8 @@ export class QuestionManager {
   }
 
   // answer: `answers` maps each question's text to the chosen label(s) or the
-  // owner's own words. Every question needs an answer. `device`: the paired
+  // owner's own words. A question left out was skipped: the harness hears so
+  // in words, never something that reads like a choice. `device`: the paired
   // device that answered, for the audit trail.
   answer(id: string, answers: Record<string, string>, by: string, device?: string): Question {
     const p = this.pending.get(id);
@@ -105,21 +106,29 @@ export class QuestionManager {
     if (!q) throw new Error(t("question.none"));
     if (!p) return q; // already answered / expired: first answer wins
     const clean: Record<string, string> = {};
+    const skipped: string[] = [];
+    const told: Record<string, string> = {};
     for (const item of q.items) {
-      const a = String(answers[item.question] ?? "").trim();
-      if (!a) throw new Error(t("question.pickEach"));
-      clean[item.question] = a.slice(0, 1000);
+      const a = String(answers[item.question] ?? "").trim().slice(0, 1000);
+      if (!a) {
+        skipped.push(item.question);
+        told[item.question] = t("question.skipped");
+        continue;
+      }
+      clean[item.question] = a;
+      told[item.question] = onlyNumbers(item, a) ? t("question.onlyNumbers", { a }) : a;
     }
     this.pending.delete(id);
     clearTimeout(p.timer);
     q.status = "answered";
     q.answers = clean;
+    if (skipped.length) q.skipped = skipped;
     q.answeredAt = Date.now();
     q.answeredBy = by;
     this.persist();
-    this.audit.log("question.answered", { id, by, ...(device ? { device } : {}), ...(q.source ? { session: q.source.id, sessionName: q.source.name } : {}) });
+    this.audit.log("question.answered", { id, by, ...(skipped.length ? { skipped: skipped.length } : {}), ...(device ? { device } : {}), ...(q.source ? { session: q.source.id, sessionName: q.source.name } : {}) });
     this.bus.emit("question.updated", q);
-    p.resolve({ behavior: "allow", updatedInput: { ...p.input, answers: clean } });
+    p.resolve({ behavior: "allow", updatedInput: { ...p.input, answers: told } });
     return q;
   }
 
@@ -173,6 +182,12 @@ export function parseItems(input: Record<string, unknown>): QuestionItem[] {
   });
 }
 
+// onlyNumbers: own words that are just digits ("1", "11") are not a pick of
+// option 1; the asker is told so instead of guessing.
+function onlyNumbers(item: QuestionItem, a: string): boolean {
+  return /^[\d\s,，、.。]+$/.test(a) && !item.options.some((o) => o.label === a);
+}
+
 // ---------------- text channels (WeChat) ----------------
 
 // questionText renders the questions as numbered options for a text channel.
@@ -193,18 +208,21 @@ export function questionText(q: Question): string {
 
 // parseTextAnswer turns a text reply ("2", "1,3", or words) into answers, or
 // null when it can't be matched to the questions (several questions, wrong
-// number of lines).
+// number of lines). 「跳过」 skips them all, or one question on its own line.
 export function parseTextAnswer(q: Question, text: string): Record<string, string> | null {
   const t = text.trim();
   if (!t) return null;
+  if (SKIP.test(t)) return {};
   const parts = q.items.length === 1 ? [t] : t.split(/\n+|[;；]/).map((s) => s.trim()).filter(Boolean);
   if (parts.length !== q.items.length) return null;
   const out: Record<string, string> = {};
   q.items.forEach((item, i) => {
-    out[item.question] = answerFor(item, parts[i]!);
+    if (!SKIP.test(parts[i]!)) out[item.question] = answerFor(item, parts[i]!);
   });
   return out;
 }
+
+const SKIP = /^(跳过|skip)$/i;
 
 function answerFor(item: QuestionItem, part: string): string {
   // Only digits and separators: option numbers.

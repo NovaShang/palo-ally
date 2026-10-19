@@ -1686,12 +1686,15 @@ public final class AppStore {
     // MARK: questions
 
     /// Sends the owner's choices for a question card. `answers`: question
-    /// text → chosen label(s) joined by ", ", or the owner's own words.
+    /// text → chosen label(s) joined by ", ", or the owner's own words; a
+    /// question left out is skipped (empty: the whole card).
     public func answer(_ question: Question, answers: [String: String]) async throws {
         let before = questions.first { $0.id == question.id }
         if var q = before {
             q.status = .answered
             q.answers = answers
+            let skipped = q.items.map(\.question).filter { answers[$0] == nil }
+            q.skipped = skipped.isEmpty ? nil : skipped
             q.answeredAt = Date().epochMillis
             upsert(question: q)
         }

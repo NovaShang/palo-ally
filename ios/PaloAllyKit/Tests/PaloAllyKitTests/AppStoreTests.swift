@@ -192,11 +192,17 @@ struct AppStoreTests {
         #expect(store.pendingQuestions.isEmpty)
         let sent = await host.lastParams["question.answer"]
         #expect(sent?["answers"]?["想吃什么？"]?.stringValue == "日料, 西餐")
-        // every question needs an answer: the host refuses and the card rolls back
+        // a question left out is skipped, and the card says so
         let (store2, _) = await demoStore()
         let q2 = try #require(store2.question(id: "q1"))
-        await #expect(throws: (any Error).self) { try await store2.answer(q2, answers: ["周五晚上几个人？": "两个人"]) }
-        #expect(store2.question(id: "q1")?.status == .pending)
+        try await store2.answer(q2, answers: ["周五晚上几个人？": "两个人"])
+        #expect(store2.question(id: "q1")?.status == .answered)
+        #expect(store2.question(id: "q1")?.skipped == ["想吃什么？"])
+        // 跳过 on the whole card
+        let (store3, _) = await demoStore()
+        try await store3.answer(try #require(store3.question(id: "q1")), answers: [:])
+        #expect(store3.question(id: "q1")?.answers == [:])
+        #expect(store3.question(id: "q1")?.skipped?.count == 2)
     }
 
     @Test func emptySendIgnored() async {
