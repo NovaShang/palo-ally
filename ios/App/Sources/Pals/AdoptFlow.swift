@@ -56,6 +56,10 @@ struct OtherSessionRow: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     let session: CCSession
+    /// Show its folder under the name (the history list).
+    var showsFolder = false
+    /// Called once adopting opened the session (the history list closes).
+    var onAdopted: (() -> Void)?
 
     var body: some View {
         let adoption = store.adoptions[session.id]
@@ -98,7 +102,8 @@ struct OtherSessionRow: View {
         default:
             let line = Copy.sessionLine(session)
             let status = Copy.sessionStatus(session.status)
-            return line.isEmpty ? status : "\(status) · \(line)"
+            let base = line.isEmpty ? status : "\(status) · \(line)"
+            return showsFolder ? "\(CCSession.shortPath(session.cwd)) · \(base)" : base
         }
     }
 
@@ -156,6 +161,7 @@ struct OtherSessionRow: View {
     private func adopt() {
         Task {
             if case .adopted(let pal)? = try? await store.adopt(sessionId: session.id) {
+                onAdopted?()
                 model.openPal(pal.id)
             }
         }
