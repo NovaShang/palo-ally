@@ -1,304 +1,396 @@
-# 工作台 PRD 实施计划
+# PaloAlly 工作台 PRD 实施计划
 
-说明：下面的路径和标识符都在仓库里查过。三处没有读完：设计稿 HTML、`AssistantView` 各标签页的内容、`TiledPaneHost_macOS.swift` 的具体实现（只读了文件头）。凡是从代码里推断出来、需要实现时再确认的，我标了「待确认」。
+说明:以下结论来自我读过的代码。没读过的地方我标了「未核实」。
+
+改动类别标记:
+- **R** = 原样复用
+- **R+** = 复用并做小改
+- **B** = 从 Bento 拷贝
+- **N** = 真正新写
 
 ## 0. 先说结论
 
-1. **host 缺的是「能力」，不是「管道」。** Pal 已经是 SDK 常驻会话，有历史、流式输出、审批卡片、重命名、停止、回退、睡眠和唤醒、花费统计。以下几项是真空白：
-   - 主人直接在任意文件夹新建会话；
-   - 每个 Pal 的模型和思考深度；
-   - 上下文用量和压缩；
-   - 后台任务和子 agent 的列表与单独停止；
-   - 工作区；
-   - 「做完了」状态和已读同步；
-   - 自动收起；
-   - 结束会话。
-2. **app 最大的新东西有三块。**
-   - 平铺工作区：把 Bento 的 `LayoutTree` 纯模型原样搬进 PaloAllyKit，视图用 SwiftUI 重写。
-   - 右侧栏浏览器：现在是 `.inspector` 加 `LibraryPanel`/`FilesPanel`，要换成按 agent 记忆标签的容器。
-   - 浮动玻璃侧栏：现在的 `NavigationSplitView` 做不到「盖在内容上」，Mac 和 iPad 要换成自己的容器，iPhone 保留。
-3. **已有的好底子。**
-   - `AppStore.palStore(id)` 是每个 Pal 一个作用域 store，多格并排可以直接复用。
-   - `FileScope.pal(id)` 和 `files.list` 已支持 Pal 文件夹的文件树。
-   - `ChatView` 已有 `pageTop`/`MacPageStrip`/`safeAreaBar` 这套浮动标题。
-4. **并行方式。** 先冻结一份 RPC 契约（Phase 0），之后 host agent 只碰 `host/`，app agent 只碰 `ios/`。app 先用 `PaloAllyKit/Sources/PaloAllyKit/Demo` 的 DemoHost 做假数据，不等 host。
+1. 复用约束基本可以满足。`PalPage` 已经通过 `store.palStore(id)` 给每个 Pal 一个独立的 `AppStore`,所以一格的内容就是 `ChatView` 加这个 store,不用重写。
+2. 主要的新东西有五块:
+   - host 侧的「会话生命周期」:新建、状态、seen、自动收起、结束。
+   - host 侧的工作区持久化。
+   - 平铺布局宿主(SwiftUI)。
+   - 标题胶囊和详情浮层。
+   - 侧栏收起后的玻璃胶囊和悬浮侧栏。
+3. PRD 里有几处和现有代码冲突,见第 4 节。最大的一处是:host 目前最多同时醒着 5 个 Pal(`MAX_AWAKE`),20 分钟不动就睡(`sleepIdleMs`),而平铺可能同时开 6 格以上。
 
-## 1. PRD 各节对照：已有与缺失
+## 1. PRD 逐节对照
 
-### 1.1 会话（§2、§3、§6 详情）
+### 1.1 §2、§3 概念和状态
 
-| 项 | 现状（路径） | 缺口 |
+| 项 | 现状(已核实) | 缺什么 | 类别 |
+| --- | --- | --- | --- |
+| 会话 = Pal | `host/src/pals.ts` 的 `Pals`、`palSession.ts` 的 `PalSession`;app 侧是 `Pal` 模型(`ios/PaloAllyKit/Sources/PaloAllyKit/Models/Pals.swift`) | 界面文案里不再出现「Pals」「帮手」(`ConversationList` 的节标题 `Text("Pals")`、`PalPage` 菜单里的「移出 Pals」、`PalCopy.swift`、`SessionCopy.swift`) | R+(只改文案) |
+| 状态 | `PalStatus` 只有 `busy/idle/waiting/starting/stopped/asleep/unknown`。`PalSession.status()` 的判定:`pendingCards()>0` 为 waiting,`busy` 为 busy | 没有「做完了」,也没有 seen。Palo 的未读只有 `AppModel.markSeen()` 的 per-host `lastSeen`,没有 per-会话的 seen | N(host 加 `state` 和 `seen`) |
+| 「等你」推送 | 已有 `Pals.pushWaiting` 通过 `router.proactive` 推送 | 无 | R |
+| 工作区、自动收起 | 没有 | host 持久化 | N |
+
+### 1.2 §4、§12 侧栏和 iPhone 首页
+
+- 现状:`MainScreen` 里是 `NavigationSplitView`。侧栏 `ConversationList` 是 `List(selection: $model.selection)`,按顺序排:
+  - `PaloRow`
+  - `Section("Pals")`:`PalRow`、`OtherSessionRow`、`RecentListRow`
+  - Allies
+  - 设备
+- 选中值是 `AppModel.Conversation`:`.palo/.pal/.ally/.recent/.session/.devices`。
+- 缺:
+  - Palo 大卡片。
+  - 工作区节(可展开)。
+  - 普通会话,按最近活动排,最后一行「以前的 N」。
+  - ＋菜单、状态点统一。
+  - `Conversation` 要加 `.workspace(id)`。
+- 做法:
+  - **R+** 保留 `NavigationSplitView` 和 `List(selection:)`,改 `ConversationList` 的 sections。
+  - **R+** 复用 `PalTile`、`PalRow` 的圆点颜色逻辑(`Copy.palStatusColor`)。
+  - **R+** iPhone 首页就是同一个 `ConversationList`(`compactColumn` 已经支持),只改内容。
+  - `OtherSessionRow` 是「电脑上别的 Claude Code 会话,要接管」。PRD 没提它。建议收进「以前的」页,或者放进新建菜单的「接管电脑上的会话」,待确认(见第 5 节)。
+
+### 1.3 §5 主区域和平铺
+
+- 现状:`ConversationDetail` 按 `selection` 切换 `ChatView()`(Palo)和 `PalPage(palID:)`(会话)。
+- `.workspace(id)` 是新 case。
+- 平铺宿主:
+  - **B** `LayoutTree.swift`:纯数据,树结构加 Codable。只依赖 `BentoFoundation`/`BentoUI`,需要在拷贝时去掉这两个 import。我没核实它具体用了这两个包里的什么,拷贝时要看。
+  - **B** `PaneDropZone.swift`:只 import CoreGraphics,可以原样拷。
+  - **B(需改)** `WorkspaceViewModel.swift`(864 行):取它的布局和焦点逻辑,砍掉终端、daemon 同步部分。
+  - **B(SwiftUI 重写 AppKit 部分)** `TiledPaneHost_macOS.swift`(1167 行)、`DividerOverlay_macOS.swift`。AppKit 引用很少(`NSView/NSEvent/NSCursor/NSPanel` 只有约 6 处),所以多数是 SwiftUI 逻辑,翻译成本可控。
+  - 分隔线拖动:用 SwiftUI `DragGesture`。标题胶囊拖放:用 `.draggable` 加 `.dropDestination`,或 UIKit 的 `UIDragInteraction`。
+  - 一格 = 现有 `PalPage` 的内容,不重写。**R+**:`ChatView` 现在读环境里的单个 `VoiceInputController`,每格需要自己的实例或用「活动格」路由。
+  - 每格需要 `.environment(store.palStore(id))`,和 `PalPage` 一样。
+
+### 1.4 §6 标题胶囊和详情
+
+逐项对照:
+
+| 详情项 | host | app | 类别 |
+| --- | --- | --- | --- |
+| 名字可改 | `pals.rename` 已有(`Pals.rename`,会同步 Claude Code 标题) | `palRename` 的 alert 已有 | R |
+| 状态 | 见 1.1 | 圆点已有 | R+ |
+| 文件(右栏打开树) | `files.list` 的 scope 已支持 `pal`(`FileBrowser.root`),`FileScope.pal(id)` | `FilesPanel`、`model.filesPanel`、`FileTreeView` 已有 | R |
+| 在访达/终端打开 | 无 RPC | Mac 上由 app 通过 host 执行 | N(host 新 `pals.reveal {id, how:"finder"|"terminal"}`,约 20 行) |
+| 模型、思考深度 | 只有 Palo 的 `model.set` / `Hub.setModel`;`MainSession.setModel/setEffort` 在 `harness/types.ts` 里有,但 `PalSession` 没暴露(用 `rec.model` 启动时传入) | `ModelPicker.swift`、`ModelRow.swift` 可复用,但它们读 Palo 的 store | host N(`pals.setModel`),app R+(ModelPicker 参数化) |
+| 上下文用量 + 压缩 | Palo 有 `contextTokens`(`Conversation.lastContextTokens`),且 `/compact` 通过 `enqueue` 发送。`PalSession` 收到 `result` 但没记 `contextTokens`,也没处理 `compact` 事件 | 无 | host N(记录并下发),压缩可直接 `pals.send "/compact"`(未核实 Pal 的 `send` 是否放行 slash,需要用 fake driver 测) |
+| 后台任务和子 agent,可单独停 | `PalSession.bgTasks` 只存 `taskIds`,没有标题/描述;`task_started` 在 `palSession.ts` 里没处理。Palo 侧 `tasks.ts` 有完整的 `Task` 和 `task.stop`、`Hub.stopTask`;`MainSession.stopTask(taskId)` 可用 | `TasksSection.swift`、`TaskDetailView` 读 Palo 的 tasks | host N(PalSession 记录 `task_started` 的描述、暴露 `pals.tasks` 和 `pals.stopTask`),app R+(`TasksSection` 参数化) |
+| 本次用量 | `rec.costTotalUsd`、`SpendMeter.spentOn(cwd, sessionId, day, tz)`、`lastWakeUsd` 都有,但没发给 app | 无 | host R+(把 `costTotalUsd` 和今日花费加进 detail 载荷) |
+| 所在工作区:并排…、移到… | 无 | 无 | N |
+| 结束会话 | `pals.remove`(抛出 Pals,transcript 保留,进 `data.former`,最多 20 条)和 `pals.release`(交还终端) | 现有的 `PalPage` 的 ConfirmPanel | R+(「结束」语义用 `remove`,文案改) |
+| Palo 的目标/履历/记忆 | `AssistantView` 的 `AssistantTab`(`watches` 为目标,`memory`,`tasks`)和 `MemorySection`、`WatchesSection`、`TasksSection`、`IdentityEditor`。目前是 `ManagementSheet`/`.manage` 页 | 放进详情浮层里 | R+(这些 section 视图原样放进浮层) |
+| 浮层样式 | `MacPageStrip` 已经是浮在内容上的玻璃条 | 点开的玻璃浮层 | N(`.popover` + glass,iPhone 用 `.presentationDetents([.medium])`) |
+
+### 1.5 §6 其他
+
+| 项 | 现状 | 类别 |
 | --- | --- | --- |
-| 在任意文件夹直接新建 | **不能。** `Pals.create()`（`pals.ts` 约 1190 行）是私有方法，只被 `decide()`（Palo 提议后主人点「开吧」）调用。主人自己只能 `pals.adopt` 已有 Claude Code 会话（`rpc.ts`）。`checkProposal` 强制要求 name、duty、dailyUsd，并拒绝 PaloAlly 自己的目录。 | 新增 `pals.create`，name、duty、预算都可选。先不起名，随第一句话自动起名；`readTitle`/`PalRecord.name` 已跟着 Claude Code 标题走，要补「首句生成标题」。文件夹选择可以用 `files.folders.browse`，以及 `DirectoryPickerPath.swift`/`FilePickers.swift`。 |
-| 重命名 | 有：`pals.rename`、`Pals.rename`、app 的 `PalRenameAlert`。 | 只需改入口：胶囊详情里内联编辑。 |
-| 模型和思考深度 | Palo 有（`model.get`/`model.set` → `hub.setModel` → `conversation.applyModel/applyEffort`）。harness 的 `MainSession.setModel/setEffort` 对 Pal 也可用（`SessionOptions` 有 `model`/`effort`）。**Pal 没有**：`PalSession` 只在 `init` 事件里记录 `rec.model`，没有 setter，没有 effort 字段，`PalRecord` 里也没有 effort。 | 新增 `pals.model.set`（model、effort）。`PalRecord` 加 `effort?`，`mapOptions`/启动参数带上。可选模型列表复用 harness 的 `models` 事件和 `hub.modelInfo`。app 端可复用 `ModelPicker.swift`/`ModelRow.swift`。 |
-| 上下文用量与压缩 | Palo 有：`conversation.contextTokens`、runtime 里的 `contextTokens`、自动 `/compact`（`conversation.ts` 约 709 行）。**Pal 没有**：`result.contextTokens` 到了 `PalSession` 没存，`compact` 事件也没处理。 | `PalSession` 记录 `contextTokens`、`contextWindow`（取自模型）、`lastCompactAt`。新增 `pals.compact`，可直接 `send("/compact")`，要确认 `ownerOrigin` 下不当成用户消息显示（待确认）。 |
-| 后台任务和子 agent | Palo 有：`tasks.ts`、`task.get`、`task.stop`、`hub.stopTask` → `conversation.stopTask` → `session.stopTask(sdkTaskId)`。Pal 只有 `bgTasks: Set<string>`（只用于判断是否空闲），**没有 `task_started` 和 `task_progress`** 的处理，所以没有标题，也没有活动。 | `PalSession` 维护 `Map<taskId, {title, kind(subagent/bg), startedAt, summary}>`。新增 `pals.tasks` 和 `pals.task.stop`，并随 `pals.updated` 一起推送。`harness/types.ts` 已有 `stopTask`。 |
-| 每个 Pal 的用量 | 有：`PalRecord.costTotalUsd`、`lastWakeUsd`，`spentToday()`，`SpendMeter`（`ccSpend.ts`）。只是没有给 app。 | 把 `costTotalUsd`、`spentToday`、`contextTokens` 放进详情 payload。 |
-| 结束会话与「以前的」 | 有两个近似的：`pals.release`（交还终端，返回 `resumeCommand`）和 `pals.remove`（移出，写入 `data.former`，最多 20 条，之后出现在 `pals.recent`）。`pals.recent` 是 SDK `listSessions`，30 天内、最多 50 条，`pals.adopt` 可接管。 | 新增 `pals.end` = remove + 记入 `ended`（保留名字、文件夹、结束时间、所属工作区）。「以前的」= 已结束 ∪ 自动收起 ∪ `pals.recent`。`former` 只留 20 条，不够用，要放宽或另存。 |
-| 状态 | `PalSession.status()`：`stopped/starting/asleep/waiting/busy/idle`。Swift 的 `PalStatus` 是 `busy/idle/waiting/starting/stopped/asleep/unknown`。 | 没有「做完了（未看）」。新增 `Pal.attention: "working"\|"waiting"\|"done"\|"idle"`，由 host 算：`done` 当且仅当上一轮正常结束（`onTurnEnd`）且 `finishedAt > seenAt`。`PalRecord` 加 `finishedAt`、`seenAt`。新增 `pals.seen {id}`，并在 `pals.updated` 里广播以同步各设备。`asleep`/`starting`/`stopped` 在 UI 上并入「闲着」，`stopped` 另有提示。 |
-| Palo 自己的状态 | `hub.status()` 有 busy、activity。 | Palo 的「N 个会话在等你」由 app 从 `pals.pending`/`attention` 汇总，不需要 host 改。 |
-| 手机通知 | 有：`pushWaiting`（`pals.ts`，经 `router.proactive`），标题用 `pals.waitingTitle`。 | 只改文案：去掉「帮手/Pals」说法。「做完了」是否也要推送，PRD 没说，默认不推。 |
-| Palo 转来的话 | `peerWrap`（`palSession.ts`），`toolSend`/`toolPaloSend`。 | 历史里是否带标记（`CCMessage.role: "peer"/"palo"`）要查 `palHistory.ts`（待确认），app 端 `MessageRow` 要加标签。 |
+| 停止键替换麦克风 | `store.stop()` 和 `pals.stop`(`stopTurn`)已有。Composer 里是否有停止键、忙时发的话是否排队:我没读 `ComposerView`(1023 行),未核实 | R+(待查) |
+| 工具步骤收成一行 | 未核实 `MessageRow` 是否已折叠 | 待查 |
+| 后台任务一条 | 无 | N(小) |
+| 「Palo 转来的」标注 | `peerWrap`(`palSession.ts`)已包装转来的话,`CCMessage` 有 `peer` 角色 | R+(`MessageRow` 加一个标签) |
 
-### 1.2 工作区、自动收起、已读（§2、§14）
+### 1.6 §7 右侧栏
 
-整套都是新建。没有 `workspaces.ts`，`config.ts` 的 `Paths` 也没有对应文件。
-- 持久化：新增 `paths.workspaces`（JSON，用 `readJson/writeJson`，同 `paths.pals`）。
-- 自动收起（默认 3 天）：**算出来，不改记录**。`folded = !workspaceId && now - lastUsedAt > N 天`，N 来自 `settings.foldDays`。这样不用定时任务，也不会误删。
-- 与现有睡眠机制无关：睡眠 20 分钟，只管进程；收起 3 天，只管列表。两者各自独立。
+- 现状:
+  - `.inspector` 里的 `LibraryPanel` 里放 `FilesPanel` 或 `LibraryView`,由 `model.filesPanel` 决定。
+  - 打开链接:`FileLinks.swift`、`FilesNavigation.swift`。
+  - 预览:`PaloAllyFilePreview` 包。
+- 缺:
+  - 标签条(浏览器标签)。
+  - 网页标签不重载:**B** `PreviewDock_macOS.swift`(333 行)。它依赖 `BentoFilePreviewKit` 和 `BentoVoiceKit`,需要去依赖,改成 PaloAlly 的 `PaloAllyFilePreview`。
+  - 每个工作区、会话、Palo 页各记一份标签和开关,由 host 保存。
+- 第一个标签:Palo 页是成果,会话页是文件。
+- 做法:**R** `LibraryView` 和 `FilesPanel` 原样作为第一个标签的内容;新的只有标签栏和 per-上下文的状态(N)。
 
-### 1.3 侧栏、分栏、选中（§4、§5、§8）
+### 1.7 §8 侧栏收起
 
-| 现有 | 缺口 |
-| --- | --- |
-| `RootView.swift` 的 `MainScreen`：`NavigationSplitView` + `ConversationList`（`List(selection: $model.selection)`）；`ConversationDetail` 用 `NavigationStack`；`AppModel.Conversation` 枚举只有 `palo/pal/ally/recent/session/devices`；`AppModel.columnVisibility`、`compactColumn`。 | 新增 `.workspace(id)`；`.recent` 改成内嵌区块；`.session`（电脑上其他活跃会话）去向待定（见开放问题）。侧栏分区改为 Palo、工作区、会话、Allies（`ConversationList` 重写）。 |
-| `MacWindowChrome`/`MacToolbarInstaller`（`MacWindow.swift`）：系统侧栏按钮在红绿灯旁。 | 收起后的玻璃小胶囊、悬停浮出：见 §3 风险。 |
-| `Pal` 行：`PalRow`、`PalTile`、`Copy.palStatusColor`。 | 换成统一的 `StatusDot`（青、橙、绿、灰），全 app 共用。 |
+- 现状:`model.columnVisibility`、`MacWindowChrome` 里系统侧栏按钮。
+- 缺:
+  - 红绿灯旁的玻璃胶囊:N。
+  - 鼠标靠左边缘浮出侧栏:N,Catalyst 可用 `.onContinuousHover` 加左边缘 8pt 的透明热区。
+  - iPad 边缘滑动:`UIScreenEdgePanGestureRecognizer`。
+- 玻璃浮层可以用已有的 `glassEffect`(`MacPageStrip` 里已经在用)。
 
-### 1.4 右侧栏与文件（§7）
+### 1.8 §9 新建
 
-| 现有 | 缺口 |
-| --- | --- |
-| `LibraryInspector`（`.inspector`）+ `LibraryPanel`（`LibraryView`，`NavigationStack(path: libraryPath)`）或 `FilesPanel(scope:)`（`model.filesPanel`）。`model.inspectorShown` 是全局的。`FileTreeView.swift`、`FilePage.swift`、`ArtifactDetailView.swift`、`PaloAllyFilePreview` 包（`FilePreviewWebView`、`QuickLookRouting`）。 | 缺：网页标签、标签栏、每个 agent 一组标签和开关、切换不重新加载。新增 `RightPane` 容器，标签模型 `[PaneTab]`（`.files(scope)`、`.library`、`.preview(path)`、`.web(url)`）。预览内容复用现有视图。标签状态由 host 保存（PRD §14）。 |
-| 「在访达里打开」「在终端里打开」 | **host 没有这类 RPC。** 新增 `pals.reveal {id, kind: "finder"\|"terminal"}`。终端见 §3 冲突。 |
+- 现状:没有「在任意文件夹新建会话」。
+  - `Pals.create` 是 private,只能由 Palo 的 `pal_propose` 提案,owner 点「开吧」(`decide`)触发。
+  - 它要求 name、duty、dailyUsd>0 都有(`checkProposal`),并且拒绝 PaloAlly 自己的目录。
+  - 文件夹选择已有:`files.folders.browse`/`add`、`FilePickers.swift`、`DirectoryPickerPath.swift`、`LazyDirectoryTreeStore`。
+  - 最近用过的文件夹列表:没有。可以从 `Pals.recent` 的 cwd 加 pals 的 cwd 推出来(host 新方法 `pals.folders`)。
+- 缺:
+  - N:host 的 `pals.create {cwd, name?, workspaceId?}`。需要放宽 `checkProposal`:没有 duty 和 dailyUsd 也能建,`createdBy:"owner"`,名字为空先给占位名,第一轮结束后自动命名。已有 `readTitle` 在每轮结束后读回 Claude Code 的标题,可以复用它做自动命名。
+  - N:app 的新建面板(最近文件夹加搜索,⌘N 加 ⌘↩)。用 `NewPaneDirectoryPanel_macOS.swift`(207 行)做**B**参考,但它是 `NSOpenSavePanel` 加 NSView accessory,需要用 SwiftUI 重写,只拷逻辑。
 
-### 1.5 沉浸感与语音（§10、§11）
+### 1.9 §10 沉浸感
 
-| 现有 | 缺口 |
-| --- | --- |
-| `ChatView` 用 `safeAreaInset(edge: .bottom)` 放输入框，`MacPageStrip` 用 `safeAreaBar` 浮动标题；`ChatScroll.Metrics` 读 `contentInsets.bottom/top`。`glassEffect` 已在 `MacPageStrip` 里用。 | 做成更彻底的「内容通到顶和底」，见 §3 风险。 |
-| 语音：`VoiceInputController` 是全局环境对象（`MainScreen` 创建）；`VoiceInputOverlay.swift`（843 行）；`FloatingTitleOrb`/`OrbPresence`（`TitleOrb.swift`、`OrbPresence.swift`）；`ComposerPressGesture`。 | 目前一个窗口一个控制器、一个球位。PRD 要「按住所在格接收」和「对 Palo 说话球才出现」：控制器要带 `target`（`.palo` / `.pane(id)`），Overlay 拆成「球层」和「格内层」。球的起点和终点要读侧栏 Palo 行的 frame（现在用 `TitleOrbSlot.frame`，同机制）。 |
+- 现状:
+  - `MacPageStrip` 已经用 `safeAreaBar` 做浮在内容上的标题条。
+  - `ChatView` 的输入框是 `.safeAreaInset(edge: .bottom)`(`ChatView.swift` 201 行)。
+  - `ChatScroll.Metrics` 从 `ScrollGeometry.contentInsets` 读 `insetTop`、`bottomInset`,所以对内容穿过玻璃条这件事,坐标器已经在用 inset 处理。
+  - 所以 Mac 上顶部其实已经是沉浸的。
+- 缺:
+  - iPhone 和 iPad 目前用系统导航栏。改成同样的浮动胶囊要动 `ChatView` 的 `pageTop`。
+  - 「滚动到边缘只做轻微模糊,不用实心条」靠系统的 scroll edge effect(`safeAreaBar` 本来就有)。
+- 风险点:每格是 `ChatView` 嵌在一个更小的容器里。坐标器依赖窗口坐标(`FloatingTitleOrb` 用了 `.global`),格内需要改成局部坐标。
 
-### 1.6 「它」页（Palo 详情，§6）
+### 1.10 §11 语音
 
-`AssistantView.swift` 里有 `AssistantTab`（`watches` 目标优先）、`WatchesSection`、`MemorySection`、`TasksSection`、`ModelPicker`、`IdentityEditor`。RPC 已有：`watch.*`、`memory.list/read/write`、`task.*`、`model.*`。「履历」大概对应 tasks 或 `chat.search`（待确认）。所以只是把这些 section 搬进 Palo 的胶囊详情，**不需要新 RPC**。
+- 现状:`VoiceInputController` 单实例放在 `MainScreen` 的 environment 里。`ChatView` 里有 `VoiceScrimLayer`、`VoiceWordsLayer(orbPlacement:)`,`FloatingTitleOrb`、`OrbPresence`、`VoiceInputOverlay.swift`(843 行)。
+- 缺:
+  - 球只在对 Palo 说话时出现,球从侧栏的 Palo 项飞出来。
+  - 对会话说话时:不出现球,标题胶囊上的状态点变音量条,边框发亮。
+- 做法:
+  - **R** 麦克风、听写、三个松手区域整套原样用。
+  - **R+** `ChatView` 加参数 `voiceStyle: .orb | .tile`:
+    - `.tile` 隐藏 `FloatingTitleOrb`,在胶囊上显示音量。
+    - 只对 `.orb` 保留现有行为。
+  - 球从侧栏飞出:N,小工作量,用 `matchedGeometryEffect` 或 `onGeometryChange` 取侧栏 Palo 项的 frame。
+  - 现有 `PalPage` 的语音已经走同一个 controller,所以会话页上「不出现球」可能需要改,待核实 `FloatingTitleOrb` 在 `PalPage` 里是否显示。
+  - 平铺时:多个 `ChatView`,一个 `VoiceInputController`。要用「活动格」路由:只有活动格的 composer 挂载 voice。
 
-## 2. 阶段计划
+## 2. host 侧新增数据与 RPC(契约)
 
-每阶段 3–8 AI 小时。H 是 host，A 是 app。同一行上的 H 和 A 可并行，且文件互不重叠。
+### 2.1 持久化
 
-### Phase 0（0.5–1h）：契约先行
+新文件放在现有 `Paths` 里(`host/src/config.ts`,具体字段名未核实)。`writeJson/readJson` 是现有模式,沿用 `Pals.save()` 的做法。
 
-输出一份 `docs/workbench-rpc.md`，写明下面各阶段的方法名、参数、返回、事件和 JSON 示例。两边都以它为准。app 的 DemoHost 按它造假数据。
+```
+workbench.json
+{
+  workspaces: [{ id, name, members: [palId], layout: <LayoutTree JSON>, activePal, createdAt }],
+  tabs: { [contextKey]: { open: bool, active: tabId, tabs: [{id,kind,url|path|artifactId,title}] } },
+    // contextKey = "palo" | "pal:<id>" | "ws:<id>"
+  seen: { [palId]: lastDoneAt },
+  foldDays: 3
+}
+```
 
-### Phase 1-H：会话能力（host，约 6h）
+PalRecord 加字段(在 `palSession.ts` 的 `PalRecord`):
+- `workspaceId?`
+- `doneAt?`
+- `seenAt?`
+- `endedAt?`
+- `autoNamed?`
 
-**文件**：
-- 改：`host/src/pals.ts`、`palSession.ts`、`types.ts`（`Pal` 加字段）、`rpc.ts`（`RPC_METHODS` 与分发）、`config.ts`（`settings.foldDays`）、`hub.ts`、`i18n/{zh,en}`。
-- 新增：无。
+### 2.2 Pal 线上载荷(`Pal` 类型加字段,app 的 `Pals.swift` 同步)
 
-**RPC**：
+- `state`: `"working" | "waiting" | "done" | "idle"`。这是由 `status`、`pending`、`doneAt/seenAt` 推导出来的,不改原有 `status`,老客户端不受影响。
+- `workspaceId?`、`folded?`、`effort?`、`ctx?: {used, window?}`、`costUsd?`、`todayUsd?`。
+
+### 2.3 新增 RPC
+
+在 `rpc.ts` 的 `RPC_METHODS` 加,并要在 `test/protocol.test.ts` 里逐个驱动(现有约定:每个方法和事件都必须在那里触发,并写出 Swift 解码用的样本)。
+
 | 方法 | 参数 | 返回 |
 | --- | --- | --- |
-| `pals.create` | `{cwd, name?, text?, workspaceId?}` | `{pal}` |
-| `pals.detail` | `{id}` | `{pal, contextTokens, contextWindow, costTotalUsd, spentToday, model, effort, models[], tasks[{id,title,kind,startedAt,summary?}], lastCompactAt?}` |
-| `pals.model.set` | `{id, model?, effort?}` | `{pal}` |
+| `pals.create` | `{cwd, name?, workspaceId?, text?}` | `{pal}` |
+| `pals.folders` | `{}` | `{folders:[{path,name,lastUsedAt}]}` |
+| `pals.seen` | `{id}` | `{pal}`(清除「做完了」) |
+| `pals.end` | `{id}` | `{}`(等价 `remove`,记 `endedAt`,进 earlier) |
+| `pals.earlier` | `{limit?, before?}` | `{sessions:[…]}`,合并「结束的 + 超过 foldDays 的普通会话 + `Pals.recent`」 |
+| `pals.setModel` | `{id, model?, effort?}` | `{pal}` |
+| `pals.detail` | `{id}` | `{ctx, models, tasks:[{id,title,kind,status}], costUsd, todayUsd}` |
 | `pals.compact` | `{id}` | `{}` |
-| `pals.task.stop` | `{id, taskId}` | `{}` |
-| `pals.seen` | `{id}` | `{pal}` |
-| `pals.end` | `{id}` | `{earlier: EarlierItem}` |
-| `pals.reveal` | `{id, kind}` | `{}` |
+| `pals.stopTask` | `{id, taskId}` | `{}` |
+| `pals.reveal` | `{id, how}` | `{}` |
+| `workspaces.list/create/update/delete` | 名字、成员、布局 | 完整的工作区 |
+| `workspaces.move` | `{palId, workspaceId?}` | |
+| `workbench.tabs.get/set` | `{key}` / `{key, state}` | |
 
-`Pal` 新增字段：`attention`、`finishedAt`、`seenAt`、`contextPct`、`workspaceId`、`effort`。
+新增事件:`workspaces.updated`、`workbench.updated`(`RPC_EVENTS` 里加,同样要被测试触发)。`pals.updated` 现有通道继续用,载荷多几个字段。
 
-**持久化**：`PalRecord` 加 `effort?`、`finishedAt?`、`seenAt?`、`workspaceId?`。`PalFile` 加 `ended: {sessionId, cwd, name, endedAt, workspaceId?}[]`，上限 200。
+自动收起不用定时器:`list()` 里按 `lastUsedAt` 和 `foldDays` 计算 `folded`,在 `Pals.start()` 已有的定时检查里顺手触发 `emitSoon()`。
 
-**新建会话的细节**：不传 duty 时不 `send`，等第一句话。名字先空，显示「新会话」，首句进来后用现有 `readTitle` 取标题，取不到就用首句前若干字。
+## 3. 分阶段计划
 
-**测试**：在 `host/test/pals.test.ts` 加：
-- 新建后 `rec.cwd` 正确，不要求 name；
-- `setModel` 调用了 fake 的 `setModel/setEffort` 且持久化；
-- `result` 事件更新 `contextTokens`；
-- `compact` 事件更新 `lastCompactAt`；
-- `task_started` 到 `task_notification` 的生命周期，`stopTask` 被调用；
-- `attention` 状态机：busy → done → seen → idle，waiting 优先；
-- `end` 之后进入 `ended`，`pals.recent` 不重复列出。
+原则:host 阶段(TS,`bun test`,不需要 Xcode)和 app 阶段文件互不重叠,可并行。契约在 H1 结束时冻结,app 先用 fixtures。
 
-`host/test/fakeDriver.ts` 要补 `setModel/setEffort/stopTask` 与 `task_started` 事件（待确认它是否已有）。`host/test/protocol.test.ts` 要覆盖每个新方法，样本写入 Swift 的 `Tests/PaloAllyKitTests/Fixtures`。`bun test` 即可，无需 Xcode。
+### 总览
 
-**真机检查**：用真 Claude Code 跑一遍 `pals.live.test.ts` 同类的 live 测试：切模型是否生效、`/compact` 是否真压缩、子 agent 能否停。
+| 阶段 | 负责 | 内容 | 预估 |
+| --- | --- | --- | --- |
+| H1 | host | 状态、seen、earlier、end、create | 5–6h |
+| H2 | host | 会话详情(模型、上下文、任务、用量、reveal) | 5–6h |
+| H3 | host | 工作区、标签持久化 | 4–5h |
+| A1 | app | 模型层、侧栏树、状态点、以前的页 | 6h |
+| A2 | app | 新建面板、标题胶囊、详情浮层 | 7h |
+| A3 | app | 工作区平铺 | 8h |
+| A4 | app | 右侧栏标签 | 6h |
+| A5 | app | 侧栏收起、浮出、胶囊 | 5h |
+| A6 | app | 语音(格内、球飞出)、沉浸、iPhone | 6h |
 
-### Phase 1-A：数据层与状态点（app，约 5h，与 1-H 并行）
+并行关系:H1 完成后 A1 开工;H2 对应 A2;H3 对应 A3 和 A4。A5 和 A6 只依赖 app 自身,可以在 H3 期间做。
 
-**文件**：
-- 改：`PaloAllyKit/.../Models/Pals.swift`（`Pal` 加字段，`TolerantStringEnum` 容错）、`RPCTypes.swift`（`RPCMethod`、`RPCMethod.pals` 列表）、`Store/AppStore+Pals.swift`、`Demo/*`。
-- 新增：`Models/PalDetail.swift`、`Store/AppStore+PalDetail.swift`。
-- 新增 app：`ios/App/Sources/Support/StatusDot.swift`。
+### H1(host):生命周期和状态
 
-**行为**：
-- `AttentionState` 枚举，含 `Copy.attentionColor`；
-- 全 app 把原来用 `Copy.palStatusColor` 的地方换成 `StatusDot`；
-- 乐观标记已看：点开会话时 `seen`，并在 `AppModel.markSeen` 旁加挂钩。
+- 改:
+  - `host/src/pals.ts`(`create` 放宽并公开、`end`、`earlier`、`folders`、`seen`)
+  - `host/src/palSession.ts`(`doneAt/seenAt`、`toWire` 的 `state`;在 `result` 里 `endTurn()` 之后设 `doneAt`;owner 说话或 `pals.seen` 清除)
+  - `host/src/types.ts`(`Pal` 加字段)
+  - `host/src/rpc.ts`(方法和列表)
+  - 文案在 `host/src/i18n/zh`、`en`
+- 自动命名:`create` 不传 name 时用占位名,在 `onTurnEnd → readTitle` 里把 `autoNamed` 的会话改成 Claude Code 标题。这条路径已经有(`readTitle`)。
+- 测试:
+  - `test/pals.test.ts`:create 无 duty;done→seen 的状态流转;seen 跨两个 channel 一致(发 `pals.updated`);foldDays 计算(注入 `now`,`PalsDeps` 已有 `now`);end 后出现在 earlier,adopt 可恢复。
+  - `test/protocol.test.ts`:新方法。
+  - `test/fakeDriver.ts`:已有,用它。
+- 真机验证:无;建议用 `pals.live.test.ts` 手跑一次 create 真 Claude Code。
 
-**测试**：`ModelDecodingTests`、`PalsTests`、`ProtocolContractTests` 加新样本；`AttentionState` 的映射表。
+### H2(host):详情
 
-**真机检查**：Demo 模式下，列表圆点四种颜色和「带一圈淡光」的青色。
+- 改:`palSession.ts`:
+  - 记录 `result.contextTokens`、`compact` 事件、`task_started/task_progress/task_notification` 描述,保存成 `bgTasks` 的 Map。
+  - 加 `setModel/setEffort/stopTask`,代理到 `proc`(`MainSession` 已有这些方法)。
+  - 不在运行的(睡着的)Pal 改 `rec.model`/`rec.effort`,下次启动生效。`PalRecord` 加 `effort`,`mapOptions`/启动处传入(`palSession.ts` 335 行附近的 `model: rec.model` 是传入点)。
+- 改 `pals.ts`、`rpc.ts`:`detail/setModel/compact/stopTask/reveal`。
+  - `reveal` 在 macOS 上用 `open` 和 `osascript`/`open -a Terminal`,需要走已有的 `shellTools` 或 `util`,未核实。
+  - 用量:`SpendMeter.spentOn` 和 `rec.costTotalUsd`。
+- 测试:fakeDriver 需要能发 `task_started`、`compact`、带 `contextTokens` 的 `result`(看 `fakeDriver.ts` 是否已支持,未核实)。覆盖:睡着时 setModel 不唤醒;stopTask 调到 driver;compact 后 ctx 变小。
+- 真机验证:用真 Claude Code 切模型,看下一轮确实换了(`init` 事件的 `model`)。
 
-### Phase 2-H：工作区存储（host，约 4h）
+### H3(host):工作区和标签
 
-**新增**：`host/src/workspaces.ts`、`host/test/workspaces.test.ts`。**改**：`config.ts`（`Paths.workspaces`）、`hub.ts`（构造并持有）、`rpc.ts`、`pals.ts`（`end/remove` 时从工作区摘掉）。
+- 新文件 `host/src/workbench.ts`:`Workbench` 类,构造方式照 `Pals`(deps 注入、`save()`、`emitSoon()`)。
+- 改 `hub.ts`(接线,像 `this.pals = new Pals(...)` 那段),`rpc.ts`,`types.ts`。
+- 规则:
+  - 一个会话最多属于一个工作区。
+  - 工作区里的会话不自动收起。
+  - 在工作区里关一格 = `pals.end`,同时从布局里移除。
+  - 布局树当不透明 JSON 存,host 只校验成员集合和布局叶子一致,不理解几何。
+- 容量:工作区成员的 `lastUsedAt` 参与 `balance()`,避免被睡掉后用户看到「闲着」却回复慢。见风险 1。
+- 测试:`test/workbench.test.ts`(CRUD、成员唯一、重启后恢复、pal 结束后成员清理);protocol 样本。
+- 真机验证:无。
 
-**数据**：
-```
-Workspace { id, name, memberIds: string[], layout: LayoutTreeJSON | null,
-            tabs: PaneTab[], rightOpen: boolean, createdAt, updatedAt }
-```
-另有每个 Palo/会话的 `rightPane: {tabs, open}`，存 `paneState[agentId]`，同在这个文件里。
+### A1(app):模型层和侧栏
 
-**RPC**：`workspaces.list`、`workspaces.create {name?, memberIds[]}`、`workspaces.update {id, name?, layout?, tabs?, rightOpen?}`、`workspaces.members {id, add?[], remove?[]}`（保证一个会话只属于一个工作区，服务端强制）、`workspaces.delete`、`pane.state.set {agentId, tabs, open}`、`pane.state.get`。事件：`workspaces.updated`。`sync` 的返回里顺带 `workspaces` 与 `paneStates`。
+- 改:
+  - `PaloAllyKit/.../Models/Pals.swift`(新字段,**R+**)
+  - 新 `Models/Workspaces.swift`
+  - `Store/AppStore+Pals.swift` 加 `workspaces`、`seen`;新 `Store/AppStore+Workbench.swift`
+  - `RPCTypes.swift`(方法名)
+  - `AppModel.swift` 的 `Conversation` 加 `.workspace`
+  - `Home/ConversationList.swift`:Palo 大卡片、工作区节、会话节、以前的 N、Allies、底部 ＋/设置
+  - `RecentConversationsPage.swift` 改为「以前的」,**R+**
+- 复用:`PalTile`、`PalRow` 圆点颜色、`WaitingBadge`、`palRename`。
+- 测试:`PaloAllyKitTests/PalsTests.swift`、`ProtocolContractTests.swift`(读 H1 导出的样本)、新 `WorkspacesTests.swift`;`LocalizationTests`(新增字符串都要进本地化表,这个测试存在,具体规则未核实)。
+- 真机验证:Mac 窗口、iPad、iPhone 各看一次侧栏;状态点四种颜色;其他设备点开后本机点变灰(需要两端)。
 
-**自动收起**：`pals.list` 的返回加 `folded: boolean`，并新增 `pals.earlier {limit}` = ended ∪ folded ∪ recent，每项带 `{kind: "ended"\|"folded"\|"recent", id/sessionId, name, cwd, at}`；继续聊用 `pals.wake`（folded）或 `pals.adopt`（ended/recent）。
+### A2(app):新建、胶囊、详情
 
-**测试**：创建、成员迁移互斥、删除后成员变回普通会话、`LayoutTree` JSON 往返、结束会话后工作区成员自动摘除、3 天折叠的边界（用 `now` 注入）。
+- 新:`App/Sources/Workbench/TitleCapsule.swift`、`AgentDetailView.swift`(复用 `ModelPicker`、`TasksSection`、`MemorySection`、`WatchesSection`,参数化 store)、`NewSessionPanel.swift`。
+- 改:`PalPage.swift`(把 `MacPageStrip` 换成胶囊;`⋯` 菜单里的功能移到详情;**R+** 保留 ConfirmPanel 流程)、`ChatView.swift`(`pageTop` 已是注入点,尽量不动)、`AssistantView.swift`(Palo 的详情复用其 section)。
+- 测试:AppStoreTests 里 `createPal`、`setModel` 的 RPC 调用;UI 测试用现有 `accessibilityIdentifier` 风格。
+- 真机验证:Mac 浮层位置、iPhone 半屏面板;长文件夹路径换行;离线时按钮禁用。
 
-### Phase 2-A：侧栏树与 iPhone 首页（约 6h，与 2-H 并行，用假数据）
+### A3(app):平铺
 
-**重写**：`Home/ConversationList.swift`（拆成 `SidebarTree`，Palo 大项、工作区可展开、会话、「以前的 N」、Allies、底部 ＋/设置）。**改**：`AppModel.swift`（`Conversation` 加 `.workspace`、`.earlier`）、`RootView.swift`（`ConversationDetail` 的分支）、`Pals/PalCopy.swift`、所有「Pals/帮手」文案（`Localizable` 与 `LocalizationTests`）。
+- 新:`Workbench/LayoutTree.swift`(**B**)、`PaneDropZone.swift`(**B**)、`WorkspaceLayoutModel.swift`(**B** 取自 `WorkspaceViewModel`)、`TiledWorkspaceView.swift`(**N**,SwiftUI,参照 `TiledPaneHost_macOS`)、`WorkspaceToolbar.swift`(参照 `WorkspaceToolbar_macOS.swift`,674 行,取核心)。
+- 改:`RootView.swift` 的 `ConversationDetail` 增加 `.workspace` 分支;`ChatView` 加 `voiceStyle`、局部坐标参数(**R+**,最小)。
+- 测试:布局树的拷贝测试跟 Bento 的 `LayoutTree` 测试一起搬(Bento 里有 Tests 目录,未核实内容);焦点、分割、交换、关闭的纯逻辑测试放 `PaloAllyKitTests`(要把 LayoutTree 放进 Kit 才能测)。
+- 真机验证:Catalyst 的拖放(两种:分隔线、标题胶囊拖到另一格);iPad 11 寸最多 2 格;窗口缩放;每格 composer 的键盘焦点。
 
-**同时**：保留 `RecentConversationsPage` 改为「以前的」展开页；iPhone 首页用同一棵树。
+### A4(app):右侧栏标签
 
-**测试**：`PaloAllyKitTests` 里加 `SidebarModel`（纯函数：从 pals + workspaces + folded 算出分区），覆盖排序、汇总「N 等你」。
+- 新:`Workbench/BrowserTabs.swift`、`WebTabHost.swift`(**B** 取自 `PreviewDock_macOS`:保持 `WKWebView` 存活,切换只隐藏)。
+- 改:`RootView.swift` 的 `LibraryInspector`/`LibraryPanel`,**R+**:第一个标签放现有内容;`FileLinks.swift`/`FilesNavigation.swift` 的打开动作改成往标签栏加一个标签并展开侧栏。
+- 测试:标签状态编码/解码、host 往返。
+- 真机验证:网页标签切换不重载;每个上下文各记各的;iPhone 整页版。
 
-**真机检查**：Mac、iPad、iPhone 三种窗口宽度；展开箭头；右键菜单；多选；VoiceOver。
+### A5(app):侧栏收起
 
-### Phase 3-A：标题胶囊与详情（约 6h）
+- 新:`Workbench/CollapsedSidebarCapsule.swift`、`EdgeRevealSidebar.swift`。
+- 改:`MainScreen` 的 `NavigationSplitView`,**R+**:收起时用 overlay 模式,不再依赖系统挤压。
+- 真机验证:Catalyst 鼠标悬停热区;ESC/点外面收回;⌃⌘S。
 
-**新增**：`ios/App/Sources/Agent/AgentCapsule.swift`、`AgentDetailView.swift`（内容按 §6 列出的分块）、`ModelEffortPicker`（复用 `ModelPicker`）。**改**：`PalPage.swift`（删 `PageMenu` 里的「交还终端/移出 Pals」，换成详情）、`ChatView.swift`（`pageTop`）、`MacPageStrip.swift`（支持胶囊）、`AssistantView`（Palo 的目标、履历、记忆三块并入详情）。
+### A6(app):语音、沉浸、iPhone 收尾
 
-**呈现**：Mac/iPad 用 `.popover`（Catalyst 上是原生 popover，再套 `glassEffect`；待在 Catalyst 实测）；iPhone 用 `.sheet` + `presentationDetents([.medium])`。
+- 改:`ChatView`、`VoiceInputOverlay`、`TitleOrb`(球飞出;`.tile` 模式音量条)。
+- iPhone:会话页右上的按钮打开整页(复用 `FilesPanel`/`LibraryView` 的 push 路径,`libraryBeside` 已经区分 phone)。
+- 真机验证:iPhone 真机(按住说话);Mac 上玻璃效果 macOS 27 才有,低版本回退要看(`glassEffect` 现在已在用,说明目标版本满足,未核实最低版本)。
 
-**输入框**：`ComposerView` 在忙时麦克风换成停止键（`store.isBusy`/`pal.inTurn`），此时说话或输入进入排队；先确认 `pals.send` 在忙时是排队还是并入当前轮（`PalSession.send` 的 `pendingUuids`、`answering` 处理说明是排队，已支持）。
+## 4. 与现有行为的冲突
 
-**工具步骤收起**：`MessageRow.swift` 现状待确认，若已有折叠则只调默认值。
+| 冲突 | 说明 | 建议 |
+| --- | --- | --- |
+| 5 个醒着上限 | `MAX_AWAKE = 5`,`sleepIdleMs = 20min`,`balance()` 会让最久未用的空闲会话睡眠。平铺 6 格以上,或者「做完了」后 20 分钟,会话会睡下去。状态里 `asleep` 会被显示成「闲着」,但回复要先唤醒 | 工作区成员和当前可见的格不参与睡眠挑选;`MAX_AWAKE` 调到 8 左右并配置化。需要用户确认 |
+| 创建门槛 | `checkProposal` 要求 duty 和 `dailyUsd>0`,名字必填且唯一 | `pals.create` 走另一条路径,不改提案路径 |
+| 「结束」语义 | `remove` 会把会话放进 `former` 并只保留 20 条;PRD 的「以前的」是长期列表 | `earlier` 直接读 SDK 的 `listSessions`(`Pals.recent` 已经这样做,30 天、50 条上限),另加 `endedAt` 做排序,别依赖 `former` |
+| 「Pals」「帮手」用词 | `PalCopy.swift`、`ConversationList`、`PalPage` 菜单、host 的 i18n 里都有 | 统一文案清理放在 A1/A2 里 |
+| `交还终端` | PRD 不再提它,详情里只有「在终端里打开」 | 保留 `pals.release` 作为详情里的次要项,待确认 |
+| 「它」页 | PRD 把它并进 Palo 详情,但 `AssistantView` 是整页,有导航栈 | 保留页面作为「查看全部」的后备,详情里放精简版 |
+| Palo 的 seen | 现在没有 per-会话 seen,`AppModel.markSeen()` 是 per-host 的 `lastSeen` | 新机制只管 Pal,Palo 保持不变 |
+| 一个窗口一个 Palo 球 | 现在球在标题里(`FloatingTitleOrb`),PRD 要球在侧栏 | A6 才动,改动集中在 `ChatView` 头部 |
 
-**后台任务一条**：对话里插入「后台任务」行，点开进入详情的那一块。
+## 5. 风险与待确认
 
-### Phase 4-A：新建会话与新建工作区（约 5h）
+### 风险
 
-**新增**：`NewSessionSheet.swift`（最近文件夹、搜索、当前会话文件夹排第一、⌘↩ 作为新一格；候选来自 `pals` 的 `cwd` 去重加 `pals.recent`，选「其他文件夹」时用 `files.folders.browse`）、`NewWorkspaceSheet.swift`（勾选）、`WorkspaceMenus`（五个入口，含「并排…」「移到…」「右键」「⌘⇧N」「拖到另一会话上」）。**键盘**：`HardwareKeyboard.swift` 里先查现有快捷键有无 ⌘N、⌘⇧N、⌃⌘S 冲突（待确认）。
+1. **Catalyst 的限制**:
+   - 悬停:`onContinuousHover` 在 Catalyst 可用,但窗口最左边缘 1–2pt 常被系统窗口缩放热区吃掉,热区要至少 6–8pt,需要在真机上验证。
+   - 浮动侧栏:系统 `NavigationSplitView` 在 Catalyst 里不支持 overlay 样式,收起模式要自己做 overlay。`MacWindowChrome` 现在装了 `NSToolbar`(见 `MacToolbarInstaller`),要检查它和自绘的胶囊不冲突。
+   - Glass:`glassEffect` 在 Catalyst 已经被 `MacPageStrip` 使用,可行。多个 glass 叠加会有性能问题,每格 2–3 个已经不少,需要在 6 格情况下真机看帧率。
+   - 拖放:SwiftUI `.draggable`/`.dropDestination` 在 Catalyst 可用,但跨 `WKWebView`、跨 `ScrollView` 的命中有坑。分隔线拖动不用 DnD,用 `DragGesture`;标题胶囊拖到别的格用 `UIDragInteraction`/`UIDropInteraction` 作备选。
+2. **沉浸式聊天与 `ChatScroll` 坐标器**:`ChatScrollCoordinator.swift`(1163 行)读 `ScrollGeometry.contentInsets`,Mac 上已经是 `safeAreaBar`(顶)加 `safeAreaInset`(底),这个模式可以直接推广到 iPhone/iPad。风险是:
+   - 一个窗口内有多个坐标器实例(多格),`ChatScroll.lastDistance`、`debugDistance`、`uiScrollView` 是 `static` 单例,只用于日志和 DEBUG,不影响功能,但日志会混。
+   - `FloatingTitleOrb` 用 `.global` 坐标,格内会错位,所以格内必须关掉它(`voiceStyle: .tile`)。
+   - 不要改坐标器本身,只通过 inset 与参数影响它。
+3. **每格一个 `AppStore`**:`palStore(id)` 做了缓存,6 格没问题。但 `reloadPalHistory` 会在创建时拉历史,同时开多格会并发多次 `pals.history`,可接受。
+4. **语音多格**:`VoiceInputController` 是单实例,多格要路由到活动格(见 1.10)。
+5. **iPad 两格上限**:要在 A3 中把「放不下」判断做成纯函数,可测试。
+6. **推送**:PRD 要求任何会话变成「等你」都推送,`pushWaiting` 已有,但需确认已走 `router.proactive`,且对 owner 创建的会话也触发(未核实是否只针对 palo 创建的)。
+7. **Bento 拷贝的许可和依赖**:`LayoutTree` 等 import 了 `BentoFoundation/BentoUI`,拷贝时必须逐个去依赖,先 `grep` 实际用了什么。
 
-### Phase 5-A：平铺工作区（约 8h，是最大风险项）
+### 待确认的问题
 
-1. **纯模型进 PaloAllyKit（可单测，无 UI）**：把 Bento 的 `LayoutTree.swift`（567 行，依赖 `BentoFoundation/BentoUI` 只是 import，要去掉）、`PaneDropZone.swift`、`WorkspaceViewModel.swift` 里与布局相关的部分搬到 `PaloAllyKit/.../Workbench/`。重命名 Pane 为 Tile；`id: Int` 改成会话 id 的映射表，因为 host 存的是 JSON。
-2. **视图**：`ios/App/Sources/Workbench/TiledWorkspaceView.swift`，用 `GeometryReader` 递归渲染 `Node`；分隔线是 `DragGesture` 的细条；每格是一个 `ChatView` 实例，环境里注入对应的 `palStore(id)`。
-3. **拖动交换和停靠**：`.draggable` + `.dropDestination`，落点用 `PaneDropZone` 的区域计算。
-4. **活动格**：边框用主题色，`model.activeTile`；语音和输入都进它。
-5. **iPad 窄屏**：最多两格，其余收进标题栏切换（`columns <= 2` 的策略放在纯模型里，可测）。
+1. `MAX_AWAKE` 提到多少?工作区成员是否永不睡眠?
+2. 电脑上别的 Claude Code 会话(`OtherSessionRow`、`pals.adopt`)放哪里?
+3. 「交还终端」保留吗?
+4. 新会话没有 duty 和每日上限,要不要给 owner 创建的会话一个默认的花费上限?
+5. 自动收起的「几天没动」按 `lastUsedAt` 还是按 transcript 最后修改时间?我建议 `lastUsedAt`。
 
-**测试**：把 Bento 的 `LayoutTree` 测试一并搬来（`find ~/code/bento -name "*LayoutTree*Tests*"`，待确认存在）。拆分、关闭、交换、停靠、持久化往返、最小占比。
+## 6. 「真正新写」的清单(尽量短)
 
-**真机检查**：Catalyst 下拖分隔线的光标（见风险）；拖标题胶囊换位；四格和六格的性能（每格一个 `ChatScrollCoordinator`）；格内输入框焦点；缩放窗口。
+1. host:`pals.create`(放宽的创建)、`state/seen/doneAt`、`earlier/end`。
+2. host:Pal 的 `setModel/effort`、上下文、后台任务描述和 `stopTask`、`reveal`。
+3. host:`workbench.ts`(工作区加标签持久化)。
+4. app:`TiledWorkspaceView`(SwiftUI 宿主,逻辑取自 Bento)。
+5. app:`TitleCapsule` 和 `AgentDetailView` 的外壳(内容全部复用)。
+6. app:`NewSessionPanel`(最近文件夹加搜索)。
+7. app:右侧栏标签栏(`WKWebView` 保活逻辑取自 Bento)。
+8. app:收起后的玻璃胶囊和边缘悬浮侧栏。
 
-### Phase 6-A：右侧栏浏览器（约 6h）
-
-**新增**：`ios/App/Sources/RightPane/RightPane.swift`、`PaneTabBar.swift`、`WebTab.swift`（`WKWebView` 放进 `ZStack` 保活，切标签只是 `opacity/allowsHitTesting`，对应 Bento 的 `PreviewDock_macOS`）。**改**：`RootView.swift` 去掉 `LibraryInspector`，换成自己的右栏；`AppModel` 的 `inspectorShown/libraryPath/filesPanel` 并入新的按 agent 记忆的状态；`FileLinks.swift`/`FilesNavigation.swift`（点链接、点文件自动弹出右栏并开预览标签）。同步到 host：`pane.state.set`，节流 500ms。
-
-**iPhone**：右上角按钮打开整页，复用同一个 `RightPane` 视图。
-
-### Phase 7-A：侧栏收起、悬停浮出、顶部胶囊（约 5h）
-
-**新增**：`FloatingSidebar.swift`、`SidebarCapsule.swift`（侧栏按钮、小 Palo 球、「N 等你 · N 做完」，点开弹列表）。**改**：Mac/iPad 的 `MainScreen` 用自己的 `ZStack` 容器代替 `NavigationSplitView`（iPhone 仍用它）；`MacWindow.swift`（⌃⌘S、隐藏系统侧栏按钮）。
-
-**行为**：窗口最左 4–6pt 的透明热区 `onContinuousHover`，进入后 150ms 延迟浮出，离开 300ms 收回。iPad 用 `UIScreenEdgePanGestureRecognizer`（UIKit 包装）。侧栏开关存 `UserDefaults`（本机，PRD §14）。
-
-### Phase 8-A：沉浸式对话与语音改造（约 6–8h，建议最后做）
-
-- 内容通到最上和最下，工具栏、胶囊、输入框都用 `glassEffect`，去掉实心背景；
-- `VoiceInputController` 加 `target`，拆 `VoiceInputOverlay` 成「球层」和「格内层」；
-- 对 Palo 说话时球从侧栏的 Palo 行（收起时从胶囊）飞出；
-- 在某格或会话页说话：这一格变暗，胶囊上的圆点变音量条，边框随声音发光；
-- 需要 `ComposerPressGesture` 与多格并存时的手势隔离。
-
-### Phase 9：收尾（约 3h）
-
-iPad 两格策略复查；iPhone 详情半屏面板；通知点击跳转到对应会话或工作区格（`AppModel.handleNotification/openCard`）；英文 `Localizable` 对齐；删旧入口。
-
-### 并行排布
-
-```
-时间 →   P0   | P1-H ────────── | P2-H ──────────── |           | 各阶段的 live 复核
-              | P1-A ────────── | P2-A ──── | P3-A ──── | P4-A ── | P5-A ───── | P6-A ──── | P7-A ── | P8-A ──
-```
-P1-H 与 P1-A、P2-H 与 P2-A 各自并行；P3 起只有 app，host 只做小修。文件冲突热点只有两处：`rpc.ts`（host agent 独占）和 `RPCTypes.swift`（app agent 独占），中间靠 P0 的契约文档对齐。
-
-## 3. 风险与开放问题
-
-### 3.1 Catalyst 限制
-
-| 项 | 判断 |
-| --- | --- |
-| 悬停 | `onContinuousHover`、`.onHover` 在 Catalyst 可用。但窗口最左边缘落在窗口 resize 区域，热区要往里缩几 pt，实测。 |
-| 浮动侧栏 | `NavigationSplitView` 做不到覆盖式。要自己做容器，但会丢掉系统侧栏的切换动画和 `compactColumn` 逻辑，`AppModel.compactColumn`/`columnVisibility`、`MacToolbarInstaller` 都要重接。 |
-| 红绿灯旁放控件 | 现在 `MacToolbarInstaller` 用 AppKit bridging 装 `NSToolbar`。要把标题栏做成透明并且内容延伸进去（`MacPageStrip` 已经是这个思路），胶囊要避开红绿灯，位置用常量，要在全屏下复查。 |
-| Liquid Glass | `glassEffect` 已在用，但「玻璃里再放玻璃」和 `GlassEffectContainer` 的合并行为要实测。 |
-| 分隔线光标 | `.pointerStyle` 在 Catalyst 上不一定可用，保险做法是 `UIPointerInteraction` 的 UIViewRepresentable。 |
-| 拖放 | SwiftUI `.draggable/.dropDestination` 在 Catalyst 可用，但会话行同时要 `List` 选择、多选、拖动，手势可能互相抢。「拖会话到另一会话上」PRD 已标为熟练用户的快捷方式，放最后。 |
-| 多选 | `List(selection: Set)` 在 Catalyst 的 ⌘ 点击可用，右键菜单作用在选中集上，要实测。 |
-| Bento 的 AppKit | `TiledPaneHost_macOS` 用了 `NSView`/`NSHostingView`/`NSCursor`，不能搬，只搬算法和交互。`NewPaneDirectoryPanel_macOS` 的 `NSOpenSavePanel` 在 Catalyst 里换成 `UIDocumentPickerViewController`，或者沿用 host 的 `files.folders.browse`（更好：iPhone 也能用，不需要本机路径）。 |
-
-### 3.2 沉浸式全幅对话与 ChatScroll
-
-- `ChatScroll.Metrics` 靠 `ScrollGeometry.contentInsets.bottom/top` 算「离底部多远」，`ChatScrollCoordinator`（1163 行）围绕它跟随、脱离、跳转。**只要浮层仍通过 `safeAreaInset`/`safeAreaBar` 提供，inset 就继续被系统计入**。把输入框改成 `overlay`（不占位）会使 `bottomInset` 为 0，跟随判断会错。所以保持 `safeAreaInset`，只改它的背景。
-- 多格同时存在：每格一个 `ChatView`，coordinator 是否有全局单例或静态变量要查：`ChatScroll.lastDistance`、`debugDistance`、`uiScrollView` 都是 `static` 变量，**多实例会互相覆盖**，只是日志用途，但要确认没有逻辑依赖。
-- `ChatView` 里读了 `AppModel` 的 `focusMessageSeq`、`composerUnfocusRequests`、`orbPresence`、`drafts[current]`，这些都是单会话假设，平铺时要按格路由。
-- 宽度变化：`Reading` 有 `width`，窄格里换行会变，已有 `ChatScrollMachineTests`，要加窄宽度用例。
-- 每个 `palStore` 一直在内存里，6 格同时流式输出的渲染压力要测。
-
-### 3.3 PRD 与现有行为的冲突
-
-1. **「在终端里打开」vs「同一份记录不能被两个进程写」。** `PalSession` 的 guard（`pals.guard`、`HeldElsewhere`）不允许终端和 host 同时持有一个会话。必须先做 `release`/`sleep` 再开终端，等于结束托管。方案：「在终端里打开」先让该 Pal 进入睡眠，终端 `claude --resume` 后 host 看到 holder 就保持 asleep；回到 app 说话时再唤醒（会遇到 `HeldElsewhere`，要给提示）。需要产品确认。
-2. **「结束这个会话」vs 现有两个动作。** PRD 详情里只有「结束」，没有「交还终端」。我建议：结束 = `pals.end`（等同 remove，进「以前的」，可继续聊）；交还终端并入「在终端里打开」。
-3. **「做完了」vs 现有 `idle`。** 现有没有未读概念，要新增 `finishedAt/seenAt`。多设备同步靠 `pals.seen` 和 `pals.updated`。注意：host 重启后不应把所有 Pal 重新变成「做完了」，所以 `finishedAt` 只在真实一轮正常结束时写。
-4. **自动收起 3 天 vs `MAX_AWAKE=5`/睡眠 20 分钟。** 没有冲突，但「工作区里的会话不会自动收起」意味着工作区成员可能很多（上限 `MAX_PALS=50`），打开一个工作区会逐个唤醒；要限制：只有被显示的格才唤醒，且 5 个醒着的上限仍然有效，第 6 格显示的是睡眠态，说话时才唤醒并让另一个睡去。
-5. **电脑上的其他活跃会话（`otherSessions`/`OtherSessionRow`/`SessionPage`、`pals.adopt` 的「等终端退出」流程）。** PRD 没提。我的默认：折进「以前的」之上的一个「电脑上的」小节，只在非空时出现。需要确认。
-6. **「界面上不再出现帮手、Pals」。** 影响面很大：`Localizable` 字符串、host `i18n`（`pals.*` 键）、推送标题、`PalCopy.swift`、`RecentConversationsPage`。Palo 的系统提示与工具名（`pal_send`、`pal_propose`）是给模型看的，可保留，但 Palo 对主人说话时的措辞来自提示词，也要改（`PAL_PROMPT`、`conversation.ts` 的系统提示）。
-7. **新会话「先不起名」。** `PalRecord.name` 现在是必填且全局唯一，`SendMessage` 靠名字找到它（`pals.get(key)`）。空名字要给一个内部稳定名（如 `session-<短id>`），显示层再用「新会话」；首句自动起名后走 `rename` 的重名加数字逻辑。
-8. **右侧栏「不放详情」vs 现在的 `ManagementSheet`。** Palo 的管理页从 sheet 改成胶囊详情，iPhone 现在是 push 的 `AssistantView`，要改成半屏面板。
-9. **工作区持久化「由主机保存」，但布局树是纯 UI 数据。** 多设备同时拖分隔线会频繁写；约定节流，且以「最后写入者为准」，不做合并。
-10. **「每个会话最多一个工作区」** 要在 host 端强制，app 只是乐观更新。
-
-### 3.4 其他开放问题（按 PRD 默认先做）
-
-- 「做完了」是否推送手机：默认不推。
-- 「N 等你」的 Palo 一项：现有 `WaitingBadge` 的计数是否复用 `palPendingCount`（待确认）。
-- 「履历」对应哪份数据：默认任务历史加对话搜索。
-- 会话列表的活动排序用 `updatedAt`，而 `touch()` 在每个 `assistant_text` 都更新，工具运行期间不会动，符合预期。
-- Allies 的区块不动。
-- 多主机（`hasSeveralHosts`）：工作区和标签状态按 host 存，切换助理时整套换，`AppModel.stores` 已按 host 分。
-
-## 4. 测试与验证总表
-
-| 层 | 办法 |
-| --- | --- |
-| host 单元 | `bun test host/test/pals.test.ts workspaces.test.ts protocol.test.ts`，无需 Xcode |
-| host 真实 | `*.live.test.ts` 同类：切模型、`/compact`、停子 agent、三轮睡眠唤醒 |
-| 协议契约 | `protocol.test.ts` 写样本到 Swift Fixtures，`ProtocolContractTests` 严格解码；`RPC_METHODS` 与 `RPCMethod` 两份列表要同步（已有契约测试保证） |
-| app 纯逻辑 | PaloAllyKit 的 `swift test`：`LayoutTree`、`SidebarModel`、`AttentionState`、标签状态 |
-| app 屏幕 | DEBUG 的 `-demoWindow WxH`、`-demoSnapshot`、`-demoActions`（`RootView.swift` 里已有）出截图；要扩 `-demoActions` 加 `workspace`、`rightpane`、`capsule`。必须看真窗口：Mac 全屏与窗口、iPad 横竖屏、iPhone；深浅色；Liquid Glass 叠层；拖放；悬停浮出；语音按住 |
-
-## 5. 建议的施工顺序
-
-P0 → P1-H‖P1-A → P2-H‖P2-A → P3-A → P4-A → P5-A → P6-A → P7-A → P8-A → P9。最先交付的有价值版本是 P1+P2+P3（统一状态点、新建会话、胶囊详情、工作区列表），此时尚无平铺，但已满足「不写代码的用户」和 iPhone 的大部分需求。平铺（P5）风险最高，放在这之后，失败也不影响前面的发布。
+其余全部是 **R** 或 **R+**。
 
 ### Critical Files for Implementation
 - /Users/nova/code/palo-ally/host/src/pals.ts
 - /Users/nova/code/palo-ally/host/src/palSession.ts
 - /Users/nova/code/palo-ally/host/src/rpc.ts
 - /Users/nova/code/palo-ally/ios/App/Sources/App/RootView.swift
-- /Users/nova/code/palo-ally/ios/App/Sources/Chat/ChatView.swift
+- /Users/nova/code/palo-ally/ios/App/Sources/Home/ConversationList.swift
 
-## 6. 产品决定（2026-10-18，对 §3.3 冲突的裁定）
+## 7. 产品决定（2026-10-18，裁定第 4、5 节的冲突和待确认问题）
 
-1. **「在终端里打开」只开一个普通 shell，cd 到这个文件夹，不 resume 这个会话。** 它是「普通 shell 的出口」，不是把会话交回终端，所以和单写者保护没有冲突。会话照常由主机托管。
-2. **界面上只留「结束这个会话」。** 结束 = `pals.end`（进「以前的」，可以接着聊）。「交还终端」从界面去掉，RPC 保留，不删。
-3. **电脑上其他正在跑的 Claude Code 会话**（`otherSessions`、`adopt`）：侧栏不单独占一节。侧栏 ＋ 菜单里加第三项「从终端搬进来…」，点开就是现在的接管流程。这是一次性的搬家入口。
-4. **工作区唤醒**：只有显示出来的格才唤醒，醒着的会话上限仍是 5 个。超出的格显示睡眠态，对它说话时才唤醒，同时让最久没动的那个睡去。
-5. **「做完了」不推送手机**，只有「等你」推送。
-6. **新会话的内部名**用 `session-<短id>`，界面显示「新会话」，第一句话之后自动起名（重名加数字）。
-7. **改叫法**：界面文案、推送、host 给主人看的提示里，「帮手」「Pals」统一改成「会话」。给模型看的工具名（`pal_send`、`pal_propose` 等）不改。
-8. **布局树和标签状态由主机保存**，按最后写入为准，客户端写入节流 500ms。
+1. **「在终端里打开」只开一个普通 shell**，cd 到这个文件夹，不 resume 会话；会话照常由主机托管。和单写者保护没有冲突。
+2. **界面上只留「结束这个会话」**（= `pals.end`，进「以前的」，可以接着聊）。「交还终端」从界面上去掉；`pals.release` 这个 RPC 保留，不删。
+3. **电脑上别的 Claude Code 会话**（`OtherSessionRow`、`pals.adopt`）不在侧栏单独占一节。侧栏 ＋ 菜单加第三项「从终端搬进来…」，进入现在的接管流程，用来一次性搬家。
+4. **醒着的上限**：`MAX_AWAKE` 调到 8，并做成配置项。工作区里正在显示的格不参与睡眠挑选。其余仍按 20 分钟空闲就睡。
+5. **主人自己新建的会话不设每日花费上限**，和在终端里用一样。Palo 提议开的会话，仍然沿用现有的预算。
+6. **自动收起按 `lastUsedAt` 计算**，默认 3 天。
+7. **「做完了」不推送**，只有「等你」推送。推送对主人新建的会话也要生效，要核实。
+8. **新会话的内部名**用 `session-<短id>`，界面显示「新会话」；第一轮结束后，用 `readTitle` 自动起名，重名加数字。
+9. **「它」页**：完整页面保留，作为「查看全部」的入口；Palo 的详情里放三块的精简版。
+10. **改叫法**：界面文案、推送、host 给主人看的提示里，「帮手」「Pals」统一改成「会话」。给模型看的工具名（`pal_send`、`pal_propose` 等）不改。
+11. **布局树和标签状态由主机保存**，以最后一次写入为准，客户端写入节流 500ms。
 
-## 7. 总原则（主人要求）
+## 8. 总原则（主人要求）
 
-复用或复制现有的东西。已经布局好、反复打磨过的部分不要重写：`ChatView`/`MessageRow`/`ReplyText`/`SelectableMarkdown`、`ChatScroll` 一整套、`ComposerView` 和长按说话、提问和批准卡片、文件预览和文件树、成果、`AppStore` 和 RPC 层。新布局只是外壳，里面放现有视图；只在 PRD 真的需要新行为的地方改旧代码，而且改动尽量小。Bento 里有的直接复制。
+复用或复制现有的东西。已经布局好、反复打磨过的部分不要重写：
+- 对话：`ChatView`、`MessageRow`、`ReplyText`、`SelectableMarkdown`，以及 `ChatScroll` 一整套；
+- 输入：`ComposerView` 和长按说话、提问和批准卡片；
+- 文件和成果：文件预览、文件树、成果；
+- 数据：`AppStore` 和 RPC 层。
+
+新布局只是外壳，里面放现有视图。只在 PRD 真的需要新行为的地方改旧代码，而且改动尽量小。Bento 里有的直接复制。
