@@ -365,11 +365,11 @@ PalRecord 加字段(在 `palSession.ts` 的 `PalRecord`):
 其余全部是 **R** 或 **R+**。
 
 ### Critical Files for Implementation
-- /Users/nova/code/palo-ally/host/src/pals.ts
-- /Users/nova/code/palo-ally/host/src/palSession.ts
-- /Users/nova/code/palo-ally/host/src/rpc.ts
-- /Users/nova/code/palo-ally/ios/App/Sources/App/RootView.swift
-- /Users/nova/code/palo-ally/ios/App/Sources/Home/ConversationList.swift
+- host/src/pals.ts
+- host/src/palSession.ts
+- host/src/rpc.ts
+- ios/App/Sources/App/RootView.swift
+- ios/App/Sources/Home/ConversationList.swift
 
 ## 7. 产品决定（2026-10-18，裁定第 4、5 节的冲突和待确认问题）
 
