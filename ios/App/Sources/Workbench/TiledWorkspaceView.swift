@@ -6,6 +6,10 @@ struct TileInfo: Equatable {
     var name: String
     var status: String = ""
     var dot: StatusDotKind = .idle
+    /// What the header's indicator draws around its state.
+    var contextPct: Int? = nil
+    var effort: String? = nil
+    var model: String? = nil
 }
 
 /// The tiling's measures (outside the generic view, which can't hold statics).
@@ -180,28 +184,16 @@ struct TiledWorkspaceView<Content: View>: View {
         // hit-testable, so the page below keeps the rest.
     }
 
+    /// The tile's header: only the round indicator on its glass circle (the
+    /// name is in the sidebar and the quick-switch strip). Tapping opens the details.
     private func header(_ i: TileInfo, id: String) -> some View {
-        HStack(spacing: 8) {
-            VoiceLevelDot(i.dot, owner: id)
-            Text(i.name)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-            if !i.status.isEmpty {
-                Text(i.status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Image(systemName: "chevron.down")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .frame(height: 32)
-        .glassEffect(.regular, in: .capsule)
-        .contentShape(.capsule)
+        SessionIndicator(state: i.dot, contextPct: i.contextPct, effort: i.effort, model: i.model, size: 26, glass: false)
+            .padding(SessionIndicator.glassPadding(size: 26))
+            .glassEffect(.regular, in: .circle)
+            .contentShape(.circle)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(i.status.isEmpty ? i.name : "\(i.name)，\(i.status)"))
+            .accessibilityAddTraits(.isButton)
     }
 
     private func glassButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {

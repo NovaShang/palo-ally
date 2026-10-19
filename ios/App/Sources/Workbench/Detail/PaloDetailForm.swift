@@ -3,8 +3,9 @@ import SwiftUI
 
 /// Palo's details: the session skeleton (header, big actions, model) plus
 /// 它在替你做的事 (目标 / 履历 / 记忆, each pushing the existing section).
-/// No end row: Palo can't be ended. The store has no context numbers for the
-/// assistant, so there is no 上下文 group here.
+/// No end row: Palo can't be ended. 上下文 shows how full its context is (the
+/// host's status carries it); there is no 压缩 because the host has no compact
+/// method for the assistant, only its own idle compaction.
 struct PaloDetailForm: View {
     @Environment(\.tileDetail) private var tileDetail
     @Environment(AppModel.self) private var model
@@ -27,7 +28,7 @@ struct PaloDetailForm: View {
                 Section { Text(Copy.spaced(failure)).foregroundStyle(.red).font(.footnote) }
             }
             Section {
-                DetailHeader(indicator: AnyView(SessionIndicator(palo: store.status, contextPct: nil, size: 68)),
+                DetailHeader(indicator: AnyView(SessionIndicator(palo: store.status, contextPct: store.status?.contextPct, size: 68)),
                              name: store.assistantName,
                              folder: nil,
                              line: headerLine,
@@ -45,6 +46,9 @@ struct PaloDetailForm: View {
             } header: {
                 Text("模型")
             }
+
+            DetailContextSection(percent: store.status?.contextPct, tokens: store.status?.contextTokens,
+                                 window: store.status?.contextWindow)
 
             Section("它在替你做的事") {
                 NavigationLink { page(.watches) } label: {

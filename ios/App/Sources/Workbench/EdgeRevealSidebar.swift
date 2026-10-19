@@ -15,6 +15,9 @@ final class SidebarChrome {
     /// An iPad in landscape with the sidebar away: the capsule is up, so the
     /// detail's own system sidebar button goes.
     var capsuleOnPad = false
+    /// The Mac: the traffic lights' center line below the window's top, which
+    /// the title bar's controls line up with (the capsule, the page's indicator).
+    var midY: CGFloat = 26
 }
 
 /// The sidebar's collapse (workbench-prd §8), around the split view:
@@ -96,6 +99,7 @@ struct SidebarCollapse: ViewModifier {
                 if let c = AppKitBundle.leadingChrome() {
                     inset = c.x + 10
                     midY = c.y
+                    SidebarChrome.shared.midY = c.y
                 }
             }
         }

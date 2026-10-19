@@ -40,9 +40,7 @@ private struct SessionConversation: View {
     private var shown: (name: String, cwd: String, live: CCSession?)? { store.viewedSession(sessionID) }
 
     var body: some View {
-        ChatView(bottomPanel: AnyView(bar), pageTop: .init(subtitle: subtitle,
-                                                          dot: shown?.live.map { StatusDotKind($0.status) }))
-            .navigationSubtitle(subtitle)
+        ChatView(bottomPanel: AnyView(bar), pageTop: .init(dot: shown?.live.map { StatusDotKind($0.status) }))
             .animation(.snappy, value: step)
             // What it says while the page is open.
             .task(id: store.connection.isOnline) {
@@ -62,13 +60,6 @@ private struct SessionConversation: View {
                 // Cancelled on another device, or the host gave up waiting.
                 if waits == false, step == .waiting { step = .idle }
             }
-    }
-
-    private var subtitle: String {
-        guard let s = shown else { return "" }
-        let folder = CCSession.shortPath(s.cwd)
-        if let live = s.live { return "\(Copy.sessionStatus(live.status)) · \(folder)" }
-        return String(localized: "已退出 · \(folder)")
     }
 
     // MARK: the bar

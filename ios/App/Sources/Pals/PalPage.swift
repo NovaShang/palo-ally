@@ -43,9 +43,7 @@ private struct PalConversation: View {
     private var waking: Bool { store.status?.busy == true && store.status?.activity == AppStore.wakingActivity }
 
     var body: some View {
-        ChatView(bottomPanel: bottom, pageTop: inTile ? nil : .init(subtitle: subtitle, dot: waking ? .working : pal?.dot, capsule: true),
-                 inTile: inTile)
-            .modifier(PageSubtitle(text: subtitle, enabled: !inTile))
+        ChatView(bottomPanel: bottom, pageTop: inTile ? nil : .init(dot: waking ? .working : pal?.dot), inTile: inTile)
             .onChange(of: store.pal(id: palID), initial: true) { _, p in if let p { last = p } }
             // Opened, or finished while it is open: seen, on every device.
             .onChange(of: store.pal(id: palID)?.attention, initial: true) { _, a in
@@ -65,9 +63,6 @@ private struct PalConversation: View {
             }
             #endif
     }
-
-    /// Its state and folder (在忙 / 空闲 / 睡着 / 等你), under its name.
-    private var subtitle: String { pal.map { Copy.palSubtitle($0, waking: waking) } ?? "" }
 
     // MARK: bottom
 
@@ -93,16 +88,6 @@ private struct PalConversation: View {
                 .frame(maxWidth: ChatView.readableWidth)
                 .frame(maxWidth: .infinity)
                 .transition(.move(edge: .bottom).combined(with: .opacity)))
-    }
-}
-
-/// The page's subtitle in the navigation bar; not inside a tile (its header says it).
-private struct PageSubtitle: ViewModifier {
-    let text: String
-    let enabled: Bool
-
-    func body(content: Content) -> some View {
-        if enabled { content.navigationSubtitle(text) } else { content }
     }
 }
 

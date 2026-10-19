@@ -7,7 +7,8 @@ import SwiftUI
 /// window's top and its title, a small status line and its menu float in a
 /// strip just below the titlebar, the content passing softly beneath (a
 /// `safeAreaBar`, so the system's soft scroll edge). Phones and iPads keep
-/// their system navigation bars.
+/// their system navigation bars. (Palo's page and a session's have no strip:
+/// their indicator sits in the title bar row, MacTitlebarIndicator.)
 struct MacPageStrip: View {
     let title: String
     var subtitle: String = ""
@@ -16,30 +17,7 @@ struct MacPageStrip: View {
     /// A page pushed in a column: back to the one before.
     var back: (() -> Void)? = nil
     var trailing: AnyView? = nil
-    /// The title as the glass capsule at the left (a session's and Palo's
-    /// page, TitleCapsule), in place of the centered title.
-    var capsule: AnyView? = nil
-
-    var body: some View {
-        if let capsule {
-            HStack(spacing: 8) {
-                if let back {
-                    MacStripButton(action: back) { Image(systemName: "chevron.backward") }
-                        .keyboardShortcut("[", modifiers: .command)
-                        .accessibilityLabel("返回")
-                }
-                capsule
-                Spacer(minLength: 0)
-                if let trailing { trailing }
-            }
-            .tint(.primary)
-            .padding(.horizontal, 14)
-            .padding(.bottom, 4)
-            .frame(maxWidth: .infinity, minHeight: 34)
-        } else {
-            centered
-        }
-    }
+    var body: some View { centered }
 
     private var centered: some View {
         ZStack {
