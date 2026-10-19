@@ -29,8 +29,14 @@ final class NavigationUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Allies"].exists, "no Allies section")
         XCTAssertTrue(row(app, "row-palo").exists, "no row for the assistant")
         XCTAssertTrue(row(app, "row-pal-pal-site").exists && row(app, "row-pal-pal-notes").exists)
-        // The terminal sessions to adopt moved into the ＋ menu's 从终端搬进来…; 以前的 N ends the sessions.
-        XCTAssertTrue(row(app, "row-earlier").exists, "no 以前的 under 会话")
+        // 以前的 and the terminal sessions are one list now, 从历史记录继续… in the ＋ menu.
+        XCTAssertFalse(row(app, "row-earlier").exists, "the sidebar's 以前的 row should be gone")
+        app.buttons["sidebar-add"].tap()
+        XCTAssertTrue(app.buttons["从历史记录继续…"].waitForExistence(timeout: 5), "no 从历史记录继续… in the ＋ menu")
+        XCTAssertFalse(app.buttons["从终端搬进来…"].exists)
+        app.buttons["从历史记录继续…"].tap()
+        XCTAssertTrue(app.otherElements["history-picker"].waitForExistence(timeout: 5), "the history list didn't open")
+        app.buttons["完成"].tap()
         // The list runs past the screen: Allies' last row is further down.
         XCTAssertTrue(scrolledTo(app, app.buttons["添加"]), "no 添加 under Allies")
         // And in again.

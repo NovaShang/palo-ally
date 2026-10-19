@@ -223,6 +223,8 @@ struct MainScreen: View {
             }
         }
         .modifier(MacWindowChrome(model: model))
+        // 从历史记录继续…, from the ＋ menu: on the root store, whichever page is open.
+        .historyPicker()
         .onChange(of: scenePhase) { _, phase in
             if phase != .active && voice.previewText == nil { voice.abort() }
         }

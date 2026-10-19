@@ -4,8 +4,12 @@ import SwiftUI
 /// The list (workbench-prd §4): Palo on top, big, with what it did last or
 /// how many sessions wait on the owner; 工作区, each opening to its sessions
 /// ("N 等你" on the row), with a ＋; 会话, the ordinary ones by latest
-/// activity, ending in 以前的 N; Allies, with 添加; and, quietly, 电脑与设备.
-/// At the foot: ＋ (新建会话, 新建工作区, 从终端搬进来…) and 设置. Every row's
+/// activity; Allies, with 添加; and, quietly, 电脑与设备. Workspaces and
+/// sessions are in the owner's own order, which a drag changes (and is the
+/// same on every device, kept on the computer): reorder, drop one session on
+/// another to make a workspace, drag in and out of a workspace
+/// (`SidebarDragDrop`). At the foot: ＋ (新建会话, 从历史记录继续…,
+/// 新建工作区) and 设置. Every row's
 /// dot is the one StatusDot. With several computers paired, the assistant's
 /// name on the first row switches between them.
 /// Phones: one step back from a conversation, like Messages; iPads and the
@@ -23,11 +27,15 @@ struct ConversationList: View {
     @State private var deleting: Workspace?
     /// The workspaces opened in the list.
     @State private var expanded: Set<String> = []
-    @State private var showAdopt = false
+    /// The drag in the air, and what a drop failed with.
+    @State private var drag = SidebarDragState()
+    @State private var dropFailure: String?
 
     var body: some View {
         @Bindable var model = model
         let tree = store.sidebarTree
+        let order = store.sessionOrder
+        let drop = { (move: SidebarDrop.Move) in run(move) }
         List(selection: $model.selection) {
             PaloItem(waitingSessions: tree.waitingCount)
                 .tag(AppModel.Conversation.palo)
@@ -41,12 +49,16 @@ struct ConversationList: View {
                                 .tag(AppModel.Conversation.workspace(node.id))
                                 .accessibilityIdentifier("row-workspace-\(node.id)")
                                 .contextMenu { workspaceMenu(node.workspace) }
+                                .sidebarDragDrop(drags: .workspace(node.id), target: .workspace(node.id), state: drag, tree: tree,
+                                                 sessionOrder: order, perform: drop)
                             if isExpanded(node) {
                                 ForEach(node.members) { pal in
                                     PalListRow(pal: pal, inset: true)
                                         .tag(AppModel.Conversation.pal(pal.id))
                                         .accessibilityIdentifier("row-pal-\(pal.id)")
                                         .contextMenu { sessionMenu(pal) }
+                                        .sidebarDragDrop(drags: .session(pal.id), target: .member(pal.id, workspace: node.id), state: drag,
+                                                         tree: tree, sessionOrder: order, perform: drop)
                                 }
                             }
                         }
@@ -74,15 +86,14 @@ struct ConversationList: View {
                             .tag(AppModel.Conversation.pal(pal.id))
                             .accessibilityIdentifier("row-pal-\(pal.id)")
                             .contextMenu { sessionMenu(pal) }
-                    }
-                    let earlier = tree.earlierCount(loaded: store.earlierItems)
-                    if earlier > 0 || store.earlierItems != nil && store.earlierSupported != false {
-                        EarlierRow(count: earlier)
-                            .tag(AppModel.Conversation.earlier)
-                            .accessibilityIdentifier("row-earlier")
+                            .sidebarDragDrop(drags: .session(pal.id), target: .session(pal.id), state: drag, tree: tree,
+                                             sessionOrder: order, perform: drop)
                     }
                 } header: {
+                    // Also where a session dragged out of a workspace can land: the top.
                     Text("会话").textCase(nil)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .sidebarDragDrop(drags: nil, target: .sessionsTop, state: drag, tree: tree, sessionOrder: order, perform: drop)
                 } footer: {
                     if store.pals.isEmpty {
                         Text("点左下角的 ＋ 新建一个会话，或者让 Palo 帮你开。")
@@ -138,7 +149,7 @@ struct ConversationList: View {
             VStack(spacing: 0) {
                 MacUpdateHint()
                 SidebarFooter(newSession: { model.newSession = true }, newWorkspace: { model.newWorkspace = [] },
-                              adopt: { showAdopt = true })
+                              history: { store.historyPickerPresented = true })
             }
         }
         .palRename($renaming)
@@ -166,11 +177,8 @@ struct ConversationList: View {
         } message: {
             Text("里面的会话不会结束，变回普通会话。")
         }
-        .sheet(isPresented: $showAdopt) { AdoptFlowSheet().environment(model).environment(store) }
-        // 以前的 N: read on opening, and again when the sessions put away change.
-        .task(id: "\(store.connection.isOnline)-\(tree.foldedCount)") {
-            guard store.connection.isOnline, store.palsSupported == true else { return }
-            try? await store.refreshEarlier()
+        .alert(dropFailure ?? "", isPresented: Binding(get: { dropFailure != nil }, set: { if !$0 { dropFailure = nil } })) {
+            Button("好", role: .cancel) { dropFailure = nil }
         }
         // The workspace holding the session picked is opened.
         .onChange(of: model.selection, initial: true) { _, c in
@@ -180,6 +188,29 @@ struct ConversationList: View {
         .animation(.snappy, value: store.pals)
         .animation(.snappy, value: store.workspaces)
         .animation(.snappy, value: expanded)
+    }
+
+    // MARK: dropping
+
+    /// A drag let go: shown at once by the store, kept on the computer.
+    private func run(_ move: SidebarDrop.Move) {
+        Task {
+            do {
+                switch move {
+                case .reorderSessions(let ids): try await store.reorderSessions(ids)
+                case .reorderWorkspaces(let ids): try await store.reorderWorkspaces(ids)
+                case .reorderMembers(let ws, let ids): try await store.reorderMembers(workspaceId: ws, ids)
+                case .moveSession(let id, let ws, let index):
+                    if let ws { expanded.insert(ws) }
+                    try await store.moveSession(id, to: ws, index: index)
+                case .group(let target, let dragged):
+                    let w = try await store.createWorkspace(memberIds: [target, dragged])
+                    expanded.insert(w.id)
+                }
+            } catch {
+                dropFailure = Copy.error(error)
+            }
+        }
     }
 
     // MARK: workspaces
@@ -451,30 +482,6 @@ private struct PalListRow: View {
     }
 }
 
-/// 以前的 N: the sessions that ended or were put away; quiet, neutral.
-private struct EarlierRow: View {
-    let count: Int
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 14))
-                .foregroundStyle(.secondary)
-                .frame(width: 14)
-                .accessibilityHidden(true)
-            Text("以前的")
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 4)
-            if count > 0 {
-                Text("\(count)")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
-
 /// The sidebar's foot: ＋ with its menu on the left, 设置 on the right.
 /// Neutral glass; the theme color isn't used.
 private struct SidebarFooter: View {
@@ -482,17 +489,16 @@ private struct SidebarFooter: View {
     @Environment(AppStore.self) private var store
     let newSession: () -> Void
     let newWorkspace: () -> Void
-    let adopt: () -> Void
+    let history: () -> Void
 
     var body: some View {
         HStack {
             Menu {
                 Button("新建会话", systemImage: "square.and.pencil", action: newSession)
-                Button("新建工作区", systemImage: "square.grid.2x2", action: newWorkspace)
                 if store.palsSupported == true {
-                    Divider()
-                    Button("从终端搬进来…", systemImage: "terminal", action: adopt)
+                    Button("从历史记录继续…", systemImage: "clock.arrow.circlepath", action: history)
                 }
+                Button("新建工作区", systemImage: "square.grid.2x2", action: newWorkspace)
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .semibold))

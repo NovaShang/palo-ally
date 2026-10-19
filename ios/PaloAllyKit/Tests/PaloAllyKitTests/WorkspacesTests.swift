@@ -320,3 +320,61 @@ struct WorkbenchStoreTests {
         #expect(store.workspaces.isEmpty)
     }
 }
+
+@Suite("Sidebar drops")
+struct SidebarDropTests {
+    private func pal(_ id: String, ws: String? = nil) -> Pal {
+        Pal(id: id, name: id, cwd: "/\(id)", sessionId: "s-\(id)", status: .idle, updatedAt: 1, workspaceId: ws)
+    }
+    private func tree() -> SidebarTree {
+        let pals = [pal("a"), pal("b"), pal("c"), pal("m1", ws: "w1"), pal("m2", ws: "w1"), pal("n1", ws: "w2")]
+        let ws = [Workspace(id: "w1", memberIds: ["m1", "m2"]), Workspace(id: "w2", memberIds: ["n1"])]
+        return SidebarTree.build(pals: pals, workspaces: ws, sessionOrder: ["a", "b", "c"])
+    }
+    private func plan(_ i: SidebarDrop.Item, _ t: SidebarDrop.Target, _ z: SidebarDrop.Zone) -> SidebarDrop.Move? {
+        SidebarDrop.plan(i, on: t, zone: z, tree: tree(), sessionOrder: ["a", "b", "c"])
+    }
+
+    @Test func zonesSplitARow() {
+        #expect(SidebarDrop.zone(y: 2, height: 30, allowsOnto: true) == .before)
+        #expect(SidebarDrop.zone(y: 15, height: 30, allowsOnto: true) == .onto)
+        #expect(SidebarDrop.zone(y: 28, height: 30, allowsOnto: true) == .after)
+        #expect(SidebarDrop.zone(y: 14, height: 30, allowsOnto: false) == .before)
+        #expect(SidebarDrop.zone(y: 16, height: 30, allowsOnto: false) == .after)
+    }
+
+    @Test func ordinarySessionsReorderAndTwoMakeAWorkspace() {
+        #expect(plan(.session("c"), .session("a"), .before) == .reorderSessions(["c", "a", "b"]))
+        #expect(plan(.session("a"), .session("c"), .after) == .reorderSessions(["b", "c", "a"]))
+        #expect(plan(.session("a"), .session("b"), .onto) == .group(target: "b", dragged: "a"))
+        #expect(plan(.session("a"), .session("a"), .onto) == nil)
+        #expect(plan(.session("b"), .sessionsTop, .before) == .reorderSessions(["b", "a", "c"]))
+        #expect(plan(.session("a"), .sessionsTop, .before) == nil)
+    }
+
+    @Test func intoAndOutOfWorkspaces() {
+        // In at the end, or at a place among the members.
+        #expect(plan(.session("a"), .workspace("w1"), .onto) == .moveSession("a", to: "w1", index: nil))
+        #expect(plan(.session("a"), .member("m2", workspace: "w1"), .before) == .moveSession("a", to: "w1", index: 1))
+        #expect(plan(.session("n1"), .member("m1", workspace: "w1"), .after) == .moveSession("n1", to: "w1", index: 1))
+        #expect(plan(.session("m1"), .workspace("w1"), .onto) == nil)
+        // Reordering inside one.
+        #expect(plan(.session("m2"), .member("m1", workspace: "w1"), .before) == .reorderMembers(workspace: "w1", ids: ["m2", "m1"]))
+        // Out, to a place among the ordinary sessions, or to their top.
+        #expect(plan(.session("m1"), .session("b"), .after) == .moveSession("m1", to: nil, index: 2))
+        #expect(plan(.session("m1"), .sessionsTop, .before) == .moveSession("m1", to: nil, index: 0))
+    }
+
+    @Test func workspacesReorderOnlyAmongThemselves() {
+        #expect(plan(.workspace("w2"), .workspace("w1"), .before) == .reorderWorkspaces(["w2", "w1"]))
+        #expect(plan(.workspace("w1"), .workspace("w2"), .before) == nil)
+        #expect(plan(.workspace("w1"), .session("a"), .before) == nil)
+        #expect(plan(.workspace("w1"), .member("n1", workspace: "w2"), .after) == nil)
+    }
+
+    @Test func aDragCarriesItsKindAsText() {
+        #expect(SidebarDrop.Item(token: SidebarDrop.Item.session("pal_1").token) == .session("pal_1"))
+        #expect(SidebarDrop.Item(token: SidebarDrop.Item.workspace("ws_1").token) == .workspace("ws_1"))
+        #expect(SidebarDrop.Item(token: "hello") == nil)
+    }
+}
