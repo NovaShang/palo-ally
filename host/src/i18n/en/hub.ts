@@ -74,7 +74,7 @@ export const enHub: Record<keyof typeof zhHub, string> = {
   "tool.notPublished": "Not published: {err}",
   "tool.nothingToCopy": "Nothing to copy",
   "tool.copied": "Put on the owner's phone clipboard (if the owner wasn't in the app, there is a one-tap copy card in the chat)",
-  "tool.noPals": "Pals aren't turned on on this computer",
+  "tool.noPals": "Sessions aren't turned on on this computer",
   "tool.pairLink": "Pairing link (valid for {minutes} minutes, connects one device only):\n{link}\nSend the link to the owner exactly as is on a line of its own (don't turn it into a Markdown link or put it in a code block); it can be tapped directly in the app.",
   "tool.pairFail": "Couldn't get a pairing link: {err}",
   "check.last": "Last {at}",

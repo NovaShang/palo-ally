@@ -331,6 +331,26 @@ export interface Pal {
   lastWakeUsd?: number; // what the first turn after its last wake cost (USD)
   createdBy: "owner" | "palo";
   updatedAt: number;
+  // The workbench (docs/workbench-rpc.md §1).
+  attention: PalAttention; // working / waiting / done / idle, worked out from status and finishedAt/seenAt; status itself is unchanged
+  finishedAt?: number; // when its last turn ended normally (a real turn only)
+  seenAt?: number; // when the owner last looked, shared by every device
+  workspaceId?: string; // the workspace it belongs to, at most one
+  folded: boolean; // not stored: outside any workspace and unused for longer than settings.foldDays
+}
+
+export type PalAttention = "working" | "waiting" | "done" | "idle";
+
+/** One line of 以前的 (pals.earlier). */
+export interface EarlierItem {
+  kind: "ended" | "folded" | "recent";
+  key: string; // "ended:<sessionId>" | "folded:<palId>" | "recent:<sessionId>"
+  id?: string; // folded: the session's id
+  sessionId: string;
+  name: string;
+  cwd: string;
+  at: number;
+  workspaceId?: string; // ended: the workspace it was in
 }
 
 // One line of a session's conversation. "palo": it came through PaloAlly —

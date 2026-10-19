@@ -98,7 +98,7 @@ export const zhCopy = {
   "label.bash": "跑命令",
   "label.search": "搜索",
   "label.fetch": "看网页",
-  "label.agent": "安排帮手",
+  "label.agent": "安排子任务",
   "label.browser": "用浏览器",
   "label.paloally": "整理",
   "label.mcp": "用连接的服务",

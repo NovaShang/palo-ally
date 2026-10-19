@@ -24,7 +24,7 @@
         "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
       },
       "result": {
-        "id": "img_mvbjo4zc02966912",
+        "id": "img_mvewf5x71c3794e4",
         "kind": "image",
         "mediaType": "image/png"
       }
@@ -38,7 +38,7 @@
         "done": true
       },
       "result": {
-        "id": "file_mvbjo4zc21d00b89",
+        "id": "file_mvewf5x8fd692620",
         "kind": "file",
         "mediaType": "text/plain",
         "name": "说明.txt",
@@ -50,8 +50,8 @@
         "text": "你好",
         "clientMsgId": "c-1",
         "attachments": [
-          "img_mvbjo4zc02966912",
-          "file_mvbjo4zc21d00b89"
+          "img_mvewf5x71c3794e4",
+          "file_mvewf5x8fd692620"
         ],
         "replyTo": {
           "messageId": "m_earlier",
@@ -59,13 +59,13 @@
         }
       },
       "result": {
-        "id": "m_f292e675a865",
+        "id": "m_1fb04bef5d84",
         "seq": 1
       }
     },
     "media.get": {
       "params": {
-        "id": "img_mvbjo4zc02966912"
+        "id": "img_mvewf5x71c3794e4"
       },
       "result": {
         "mediaType": "image/png",
@@ -74,7 +74,7 @@
     },
     "media.read": {
       "params": {
-        "id": "file_mvbjo4zie19e38dc",
+        "id": "file_mvewf5zq12fa25ec",
         "offset": 0
       },
       "result": {
@@ -98,12 +98,12 @@
               "clientMsgId": "c-1",
               "attachments": [
                 {
-                  "id": "img_mvbjo4zc02966912",
+                  "id": "img_mvewf5x71c3794e4",
                   "kind": "image",
                   "mediaType": "image/png"
                 },
                 {
-                  "id": "file_mvbjo4zc21d00b89",
+                  "id": "file_mvewf5x8fd692620",
                   "kind": "file",
                   "mediaType": "text/plain",
                   "name": "说明.txt",
@@ -114,18 +114,18 @@
                 "messageId": "m_earlier",
                 "excerpt": "两封邮件需要你回"
               },
-              "uuid": "447cf2aa-8780-4eb7-9251-30b44de6fbef",
-              "id": "m_f292e675a865",
-              "ts": 1792190029369,
+              "uuid": "9c99cdbf-6c5d-4d51-af22-9f4b4cf32cb3",
+              "id": "m_1fb04bef5d84",
+              "ts": 1792392844221,
               "seq": 1
             },
             {
-              "id": "m_mvbjo4zerca6",
+              "id": "m_mvewf5zetz1d",
               "role": "assistant",
               "kind": "text",
               "text": "你好，我在。",
               "channel": "app",
-              "ts": 1792190029370,
+              "ts": 1792392844299,
               "seq": 2
             },
             {
@@ -135,15 +135,15 @@
               "channel": "app",
               "attachments": [
                 {
-                  "id": "file_mvbjo4zie19e38dc",
+                  "id": "file_mvewf5zq12fa25ec",
                   "kind": "file",
                   "mediaType": "text/plain",
                   "name": "note.txt",
                   "size": 5
                 }
               ],
-              "id": "m_a0dcb45a0055",
-              "ts": 1792190029374,
+              "id": "m_094ba82a3331",
+              "ts": 1792392844311,
               "seq": 3
             },
             {
@@ -152,8 +152,8 @@
               "text": "123456",
               "channel": "app",
               "label": "验证码",
-              "id": "m_3798f6a1cbb7",
-              "ts": 1792190029375,
+              "id": "m_32188bc26d87",
+              "ts": 1792392844312,
               "seq": 4
             },
             {
@@ -164,10 +164,10 @@
               "proactive": true,
               "card": {
                 "title": "晨报",
-                "goalId": "w_b49fb73c89b1"
+                "goalId": "w_4f56824d0d42"
               },
-              "id": "m_074a7fc8c7ae",
-              "ts": 1792190029377,
+              "id": "m_dca6860967bb",
+              "ts": 1792392844416,
               "seq": 5
             }
           ],
@@ -176,7 +176,7 @@
           "questions": [],
           "watches": [
             {
-              "id": "w_b49fb73c89b1",
+              "id": "w_4f56824d0d42",
               "title": "晨报",
               "instruction": "写晨报",
               "kind": "schedule",
@@ -185,13 +185,13 @@
               ],
               "enabled": true,
               "createdBy": "user",
-              "createdAt": 1792190029375,
+              "createdAt": 1792392844312,
               "state": "tracking",
               "progress": "你好，我在。",
-              "progressAt": 1792190029377,
+              "progressAt": 1792392844415,
               "history": [
                 {
-                  "at": 1792190029377,
+                  "at": 1792392844415,
                   "text": "你好，我在。"
                 }
               ]
@@ -206,7 +206,9 @@
             "wechatProactive": "hint",
             "assistantName": "家人A的Palo",
             "language": "",
-            "color": ""
+            "color": "",
+            "foldDays": 3,
+            "maxAwake": 8
           },
           "status": {
             "online": true,
@@ -215,7 +217,7 @@
             "sessionId": "sess-1",
             "wechat": "off",
             "version": "0.1.0",
-            "metAt": 1792190029369
+            "metAt": 1792392844221
           }
         }
       },
@@ -231,7 +233,7 @@
           "questions": [],
           "watches": [
             {
-              "id": "w_b49fb73c89b1",
+              "id": "w_4f56824d0d42",
               "title": "晨报",
               "instruction": "写晨报",
               "kind": "schedule",
@@ -240,13 +242,13 @@
               ],
               "enabled": true,
               "createdBy": "user",
-              "createdAt": 1792190029375,
+              "createdAt": 1792392844312,
               "state": "tracking",
               "progress": "你好，我在。",
-              "progressAt": 1792190029377,
+              "progressAt": 1792392844415,
               "history": [
                 {
-                  "at": 1792190029377,
+                  "at": 1792392844415,
                   "text": "你好，我在。"
                 }
               ]
@@ -261,27 +263,29 @@
             "wechatProactive": "hint",
             "assistantName": "家人A的Palo",
             "language": "",
-            "color": ""
+            "color": "",
+            "foldDays": 3,
+            "maxAwake": 8
           },
           "status": {
             "online": true,
             "busy": false,
             "model": "fake-model",
-            "sessionId": "78b7eab0-71d9-4386-9a44-4aec753eaaad",
+            "sessionId": "c408fd64-8898-40af-ace0-f2eaa9b97bf1",
             "wechat": "off",
             "version": "0.1.0",
-            "metAt": 1792190029369
+            "metAt": 1792392844221
           },
           "rewound": [
-            "m_36df3ee323d2",
-            "m_mvbjo4zmn2o8"
+            "m_3263a6961dca",
+            "m_mvewf62rl068"
           ]
         }
       }
     ],
     "chat.rewind": {
       "params": {
-        "messageId": "m_36df3ee323d2"
+        "messageId": "m_3263a6961dca"
       },
       "result": {
         "text": "帮我订周六中午的餐厅"
@@ -302,12 +306,12 @@
             "clientMsgId": "c-1",
             "attachments": [
               {
-                "id": "img_mvbjo4zc02966912",
+                "id": "img_mvewf5x71c3794e4",
                 "kind": "image",
                 "mediaType": "image/png"
               },
               {
-                "id": "file_mvbjo4zc21d00b89",
+                "id": "file_mvewf5x8fd692620",
                 "kind": "file",
                 "mediaType": "text/plain",
                 "name": "说明.txt",
@@ -318,18 +322,18 @@
               "messageId": "m_earlier",
               "excerpt": "两封邮件需要你回"
             },
-            "uuid": "447cf2aa-8780-4eb7-9251-30b44de6fbef",
-            "id": "m_f292e675a865",
-            "ts": 1792190029369,
+            "uuid": "9c99cdbf-6c5d-4d51-af22-9f4b4cf32cb3",
+            "id": "m_1fb04bef5d84",
+            "ts": 1792392844221,
             "seq": 1
           },
           {
-            "id": "m_mvbjo4zerca6",
+            "id": "m_mvewf5zetz1d",
             "role": "assistant",
             "kind": "text",
             "text": "你好，我在。",
             "channel": "app",
-            "ts": 1792190029370,
+            "ts": 1792392844299,
             "seq": 2
           },
           {
@@ -339,15 +343,15 @@
             "channel": "app",
             "attachments": [
               {
-                "id": "file_mvbjo4zie19e38dc",
+                "id": "file_mvewf5zq12fa25ec",
                 "kind": "file",
                 "mediaType": "text/plain",
                 "name": "note.txt",
                 "size": 5
               }
             ],
-            "id": "m_a0dcb45a0055",
-            "ts": 1792190029374,
+            "id": "m_094ba82a3331",
+            "ts": 1792392844311,
             "seq": 3
           },
           {
@@ -356,8 +360,8 @@
             "text": "123456",
             "channel": "app",
             "label": "验证码",
-            "id": "m_3798f6a1cbb7",
-            "ts": 1792190029375,
+            "id": "m_32188bc26d87",
+            "ts": 1792392844312,
             "seq": 4
           },
           {
@@ -368,10 +372,10 @@
             "proactive": true,
             "card": {
               "title": "晨报",
-              "goalId": "w_b49fb73c89b1"
+              "goalId": "w_4f56824d0d42"
             },
-            "id": "m_074a7fc8c7ae",
-            "ts": 1792190029377,
+            "id": "m_dca6860967bb",
+            "ts": 1792392844416,
             "seq": 5
           }
         ]
@@ -386,25 +390,25 @@
         "messages": [
           {
             "seq": 5,
-            "id": "m_074a7fc8c7ae",
+            "id": "m_dca6860967bb",
             "role": "assistant",
-            "ts": 1792190029377,
+            "ts": 1792392844416,
             "channel": "schedule",
             "snippet": "你好，我在。"
           },
           {
             "seq": 2,
-            "id": "m_mvbjo4zerca6",
+            "id": "m_mvewf5zetz1d",
             "role": "assistant",
-            "ts": 1792190029370,
+            "ts": 1792392844299,
             "channel": "app",
             "snippet": "你好，我在。"
           },
           {
             "seq": 1,
-            "id": "m_f292e675a865",
+            "id": "m_1fb04bef5d84",
             "role": "user",
-            "ts": 1792190029369,
+            "ts": 1792392844221,
             "channel": "app",
             "snippet": "你好"
           }
@@ -426,15 +430,15 @@
             "channel": "app",
             "attachments": [
               {
-                "id": "file_mvbjo4zie19e38dc",
+                "id": "file_mvewf5zq12fa25ec",
                 "kind": "file",
                 "mediaType": "text/plain",
                 "name": "note.txt",
                 "size": 5
               }
             ],
-            "id": "m_a0dcb45a0055",
-            "ts": 1792190029374,
+            "id": "m_094ba82a3331",
+            "ts": 1792392844311,
             "seq": 3
           },
           {
@@ -443,8 +447,8 @@
             "text": "123456",
             "channel": "app",
             "label": "验证码",
-            "id": "m_3798f6a1cbb7",
-            "ts": 1792190029375,
+            "id": "m_32188bc26d87",
+            "ts": 1792392844312,
             "seq": 4
           },
           {
@@ -455,10 +459,10 @@
             "proactive": true,
             "card": {
               "title": "晨报",
-              "goalId": "w_b49fb73c89b1"
+              "goalId": "w_4f56824d0d42"
             },
-            "id": "m_074a7fc8c7ae",
-            "ts": 1792190029377,
+            "id": "m_dca6860967bb",
+            "ts": 1792392844416,
             "seq": 5
           }
         ]
@@ -527,32 +531,32 @@
           "busy": false,
           "model": "default",
           "effort": "medium",
-          "sessionId": "78b7eab0-71d9-4386-9a44-4aec753eaaad",
+          "sessionId": "c408fd64-8898-40af-ace0-f2eaa9b97bf1",
           "wechat": "off",
           "version": "0.1.0",
-          "metAt": 1792190029369
+          "metAt": 1792392844221
         }
       }
     },
     "task.get": {
       "params": {
-        "id": "t_70f27fb10e41"
+        "id": "t_02a87aee7f2d"
       },
       "result": {
         "task": {
-          "id": "t_70f27fb10e41",
+          "id": "t_02a87aee7f2d",
           "title": "查资料",
           "summary": "在查",
           "status": "running",
           "source": "report",
-          "createdAt": 1792190029384,
-          "updatedAt": 1792190029386,
+          "createdAt": 1792392844667,
+          "updatedAt": 1792392844689,
           "activityCount": 1,
           "toolUseId": "ag1"
         },
         "activity": [
           {
-            "ts": 1792190029386,
+            "ts": 1792392844689,
             "kind": "tool_use",
             "tool": "WebSearch",
             "label": "搜索",
@@ -563,7 +567,7 @@
     },
     "task.stop": {
       "params": {
-        "id": "t_70f27fb10e41"
+        "id": "t_02a87aee7f2d"
       },
       "result": {
         "ok": true
@@ -571,7 +575,7 @@
     },
     "approval.answer": {
       "params": {
-        "id": "a_eb9fab73c5d4",
+        "id": "a_348ae4fb62dd",
         "allow": true,
         "remember": true
       },
@@ -581,7 +585,7 @@
     },
     "question.answer": {
       "params": {
-        "id": "q_16fb22084828",
+        "id": "q_50f9500307d4",
         "answers": {
           "约哪天？": "周日",
           "谁一起去？": "太太, 孩子"
@@ -589,7 +593,7 @@
       },
       "result": {
         "question": {
-          "id": "q_16fb22084828",
+          "id": "q_50f9500307d4",
           "items": [
             {
               "question": "约哪天？",
@@ -621,12 +625,12 @@
             }
           ],
           "status": "answered",
-          "createdAt": 1792190029404,
+          "createdAt": 1792392844722,
           "answers": {
             "约哪天？": "周日",
             "谁一起去？": "太太, 孩子"
           },
-          "answeredAt": 1792190029414,
+          "answeredAt": 1792392844756,
           "answeredBy": "app"
         }
       }
@@ -641,7 +645,7 @@
       },
       "result": {
         "watch": {
-          "id": "w_d7275e0c8f10",
+          "id": "w_5549951d0d08",
           "title": "晨报",
           "instruction": "整理日程",
           "kind": "schedule",
@@ -650,14 +654,14 @@
           ],
           "enabled": true,
           "createdBy": "user",
-          "createdAt": 1792190029416,
+          "createdAt": 1792392844767,
           "state": "tracking"
         }
       }
     },
     "watch.update": {
       "params": {
-        "id": "w_d7275e0c8f10",
+        "id": "w_5549951d0d08",
         "patch": {
           "enabled": false,
           "dayOfMonth": -1
@@ -665,7 +669,7 @@
       },
       "result": {
         "watch": {
-          "id": "w_d7275e0c8f10",
+          "id": "w_5549951d0d08",
           "title": "晨报",
           "instruction": "整理日程",
           "kind": "schedule",
@@ -675,13 +679,13 @@
           "dayOfMonth": -1,
           "enabled": false,
           "createdBy": "user",
-          "createdAt": 1792190029416,
+          "createdAt": 1792392844767,
           "state": "paused",
           "progress": "已整理 3 条日程",
-          "progressAt": 1792190029416,
+          "progressAt": 1792392844767,
           "history": [
             {
-              "at": 1792190029416,
+              "at": 1792392844767,
               "text": "已整理 3 条日程"
             }
           ],
@@ -692,7 +696,7 @@
     },
     "watch.remove": {
       "params": {
-        "id": "w_d7275e0c8f10"
+        "id": "w_5549951d0d08"
       },
       "result": {
         "ok": true
@@ -709,7 +713,7 @@
             "mainFile": "brief.md",
             "pinned": false,
             "folder": "日常",
-            "updatedAt": 1792190029417,
+            "updatedAt": 1792392844775,
             "files": [
               {
                 "path": "brief.md",
@@ -744,7 +748,7 @@
           "mainFile": "brief.md",
           "pinned": true,
           "folder": "日常",
-          "updatedAt": 1792190029417,
+          "updatedAt": 1792392844775,
           "files": [
             {
               "path": "brief.md",
@@ -762,13 +766,13 @@
             "path": "user.md",
             "scope": "core",
             "size": 35,
-            "updatedAt": 1792190029335
+            "updatedAt": 1792392843786
           },
           {
             "path": "soul.md",
             "scope": "core",
             "size": 325,
-            "updatedAt": 1792190029331
+            "updatedAt": 1792392843780
           }
         ],
         "coreSize": 360
@@ -780,18 +784,18 @@
       },
       "result": {
         "content": "# 关于主人\n\n- 称呼：家人A\n",
-        "updatedAt": 1792190029335
+        "updatedAt": 1792392843786
       }
     },
     "memory.write": {
       "params": {
         "path": "user.md",
         "content": "# 关于主人\n\n- 称呼：家人A\n",
-        "baseUpdatedAt": 1792190029335
+        "baseUpdatedAt": 1792392843786
       },
       "result": {
         "ok": true,
-        "updatedAt": 1792190029419
+        "updatedAt": 1792392845104
       }
     },
     "settings.update": {
@@ -811,7 +815,9 @@
           "wechatProactive": "hint",
           "assistantName": "帕帕",
           "language": "",
-          "color": "teal"
+          "color": "teal",
+          "foldDays": 3,
+          "maxAwake": 8
         }
       }
     },
@@ -837,24 +843,24 @@
       "result": {
         "suggestions": [
           {
-            "id": "sg_b30cc82e98",
+            "id": "sg_a3455ba0bf",
             "chip": "找出没在用的订阅",
             "prompt": "帮我把信用卡账单里的订阅都找出来，标出最近三个月没用过的",
             "category": "省钱",
-            "createdAt": 1792190029425
+            "createdAt": 1792392845294
           },
           {
-            "id": "sg_11ef9f8ad4",
+            "id": "sg_de3a0ae79a",
             "chip": "每周日给我做周报",
             "prompt": "以后每周日晚上把我这一周做的事整理成周报",
-            "createdAt": 1792190029425
+            "createdAt": 1792392845294
           }
         ]
       }
     },
     "suggestions.dismiss": {
       "params": {
-        "id": "sg_b30cc82e98"
+        "id": "sg_a3455ba0bf"
       },
       "result": {
         "ok": true
@@ -867,22 +873,22 @@
       "result": {
         "entries": [
           {
-            "ts": 1792190029404,
+            "ts": 1792392844732,
             "type": "deliver",
-            "msg": "m_b580932a2b72",
+            "msg": "m_c09f919b7380",
             "pushed": true,
             "wechat": false,
             "wechatNote": "没开微信入口"
           },
           {
-            "ts": 1792190029415,
+            "ts": 1792392844757,
             "type": "question.answered",
-            "id": "q_16fb22084828",
+            "id": "q_50f9500307d4",
             "by": "app",
             "device": "dev-x"
           },
           {
-            "ts": 1792190029419,
+            "ts": 1792392845104,
             "type": "memory.write",
             "path": "user.md",
             "by": "app"
@@ -904,7 +910,7 @@
       "params": {},
       "result": {
         "link": "paloally://pair?relay=https%3A%2F%2Frelay.example.com&daemon=d-home&code=123456&hostkey=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
-        "expiresAt": 1792190329452
+        "expiresAt": 1792393145524
       }
     },
     "device.list": {
@@ -916,7 +922,7 @@
             "label": "iPhone",
             "platform": "ios",
             "pairedAt": 1790845200000,
-            "lastSeen": 1792190029452,
+            "lastSeen": 1792392845524,
             "online": false,
             "current": true
           },
@@ -942,24 +948,24 @@
     "ally.invite": {
       "params": {},
       "result": {
-        "link": "paloally://ally?relay=https%3A%2F%2Frelay.test&daemon=pa-test-1&code=119827&hostkey=dFbAw0XAT08bELi3ULTmUzNFN2m_yN-AOqA45vJ6Dq0&name=%E5%AE%B6%E4%BA%BAA&exp=1792190629453",
-        "expiresAt": 1792190629453
+        "link": "paloally://ally?relay=https%3A%2F%2Frelay.test&daemon=pa-test-1&code=920145&hostkey=C2mVDeW9geficEwN3DJ27gbtih6ZZR6M0jc5UDZ5kRU&name=%E5%AE%B6%E4%BA%BAA&exp=1792393445526",
+        "expiresAt": 1792393445526
       }
     },
     "ally.accept": {
       "params": {
-        "link": "paloally://ally?relay=https%3A%2F%2Frelay.test&daemon=pa-test-2&code=059064&hostkey=P3WSLlXGTHSFw4Z5gtfmLf-ygcdi-PkZqLlw3pFMBS8&name=%E5%AE%B6%E4%BA%BAB&exp=1792190629453",
+        "link": "paloally://ally?relay=https%3A%2F%2Frelay.test&daemon=pa-test-2&code=620005&hostkey=dRScvJClkyRM3cDJP_9De9-66vBJXMbMbODxC6cnQsA&name=%E5%AE%B6%E4%BA%BAB&exp=1792393445527",
         "kind": "family",
         "trust": "review"
       },
       "result": {
         "ally": {
-          "id": "al_31ec896508e6",
+          "id": "al_9affd9f3c0be",
           "kind": "family",
           "ownerName": "家人B",
           "assistantName": "家人B的Palo",
           "online": true,
-          "lastSeen": 1792190029460,
+          "lastSeen": 1792392845577,
           "trust": "review",
           "theirTrust": "review"
         }
@@ -967,16 +973,16 @@
     },
     "ally.draft.decide": {
       "params": {
-        "id": "ae_3bf471b27cac",
+        "id": "ae_39f93922b90d",
         "action": "send",
         "text": "周六下午两点带孩子去公园？"
       },
       "result": {
         "entry": {
-          "id": "ae_3bf471b27cac",
-          "allyId": "al_31ec896508e6",
+          "id": "ae_39f93922b90d",
+          "allyId": "al_9affd9f3c0be",
           "dir": "out",
-          "ts": 1792190029487,
+          "ts": 1792392845690,
           "text": "周六下午两点带孩子去公园？",
           "urgent": false,
           "slots": [
@@ -985,7 +991,7 @@
               "end": "2026-10-17T17:00:00+08:00"
             }
           ],
-          "replyTo": "ae_334345929f8e",
+          "replyTo": "ae_bf1f4ef7b054",
           "status": "queued",
           "author": "assistant"
         }
@@ -993,22 +999,22 @@
     },
     "ally.trust": {
       "params": {
-        "id": "al_31ec896508e6",
+        "id": "al_9affd9f3c0be",
         "trust": "converse"
       },
       "result": {
         "ally": {
-          "id": "al_31ec896508e6",
+          "id": "al_9affd9f3c0be",
           "kind": "family",
           "ownerName": "家人B",
           "assistantName": "家人B的Palo",
           "online": true,
-          "lastSeen": 1792190029460,
+          "lastSeen": 1792392845577,
           "lastEntry": {
-            "id": "ae_3bf471b27cac",
-            "allyId": "al_31ec896508e6",
+            "id": "ae_39f93922b90d",
+            "allyId": "al_9affd9f3c0be",
             "dir": "out",
-            "ts": 1792190029487,
+            "ts": 1792392845690,
             "text": "周六下午两点带孩子去公园？",
             "urgent": false,
             "slots": [
@@ -1017,7 +1023,7 @@
                 "end": "2026-10-17T17:00:00+08:00"
               }
             ],
-            "replyTo": "ae_334345929f8e",
+            "replyTo": "ae_bf1f4ef7b054",
             "status": "delivered",
             "author": "assistant"
           },
@@ -1028,15 +1034,15 @@
     },
     "ally.say": {
       "params": {
-        "id": "al_31ec896508e6",
+        "id": "al_9affd9f3c0be",
         "text": "我七点到"
       },
       "result": {
         "entry": {
-          "id": "ae_0a7288bf21e7",
-          "allyId": "al_31ec896508e6",
+          "id": "ae_0254486cf190",
+          "allyId": "al_9affd9f3c0be",
           "dir": "out",
-          "ts": 1792190029514,
+          "ts": 1792392845722,
           "text": "我七点到",
           "urgent": false,
           "status": "queued",
@@ -1049,17 +1055,17 @@
       "result": {
         "allies": [
           {
-            "id": "al_31ec896508e6",
+            "id": "al_9affd9f3c0be",
             "kind": "family",
             "ownerName": "家人B",
             "assistantName": "家人B的Palo",
             "online": true,
-            "lastSeen": 1792190029460,
+            "lastSeen": 1792392845577,
             "lastEntry": {
-              "id": "ae_e789b36314b5",
-              "allyId": "al_31ec896508e6",
+              "id": "ae_7924a1af47b2",
+              "allyId": "al_9affd9f3c0be",
               "dir": "in",
-              "ts": 1792190029549,
+              "ts": 1792392845869,
               "text": "好，门口见",
               "urgent": false,
               "status": "delivered",
@@ -1073,26 +1079,26 @@
     },
     "ally.log": {
       "params": {
-        "id": "al_31ec896508e6",
+        "id": "al_9affd9f3c0be",
         "limit": 10
       },
       "result": {
         "entries": [
           {
-            "id": "ae_334345929f8e",
-            "allyId": "al_31ec896508e6",
+            "id": "ae_bf1f4ef7b054",
+            "allyId": "al_9affd9f3c0be",
             "dir": "in",
-            "ts": 1792190029464,
+            "ts": 1792392845611,
             "text": "今晚我晚点回，大概九点",
             "urgent": true,
             "status": "seen",
             "author": "assistant"
           },
           {
-            "id": "ae_3bf471b27cac",
-            "allyId": "al_31ec896508e6",
+            "id": "ae_39f93922b90d",
+            "allyId": "al_9affd9f3c0be",
             "dir": "out",
-            "ts": 1792190029487,
+            "ts": 1792392845690,
             "text": "周六下午两点带孩子去公园？",
             "urgent": false,
             "slots": [
@@ -1101,25 +1107,25 @@
                 "end": "2026-10-17T17:00:00+08:00"
               }
             ],
-            "replyTo": "ae_334345929f8e",
+            "replyTo": "ae_bf1f4ef7b054",
             "status": "delivered",
             "author": "assistant"
           },
           {
-            "id": "ae_0a7288bf21e7",
-            "allyId": "al_31ec896508e6",
+            "id": "ae_0254486cf190",
+            "allyId": "al_9affd9f3c0be",
             "dir": "out",
-            "ts": 1792190029514,
+            "ts": 1792392845722,
             "text": "我七点到",
             "urgent": false,
             "status": "delivered",
             "author": "owner"
           },
           {
-            "id": "ae_e789b36314b5",
-            "allyId": "al_31ec896508e6",
+            "id": "ae_7924a1af47b2",
+            "allyId": "al_9affd9f3c0be",
             "dir": "in",
-            "ts": 1792190029549,
+            "ts": 1792392845869,
             "text": "好，门口见",
             "urgent": false,
             "status": "delivered",
@@ -1130,7 +1136,7 @@
     },
     "ally.remove": {
       "params": {
-        "id": "al_31ec896508e6"
+        "id": "al_9affd9f3c0be"
       },
       "result": {
         "ok": true
@@ -1148,7 +1154,7 @@
             "status": "busy",
             "lastLine": "在跑登录相关的测试。",
             "contextTokens": 32010,
-            "updatedAt": 1792190029577
+            "updatedAt": 1792392846055
           }
         ],
         "hooks": false
@@ -1211,7 +1217,7 @@
             "status": "idle",
             "lastLine": "列表页的样式好了。",
             "contextTokens": 32010,
-            "updatedAt": 1792190029608
+            "updatedAt": 1792392846201
           },
           {
             "id": "5d821f3c-0000-4000-8000-000000000001",
@@ -1222,7 +1228,7 @@
             "waitingFor": "想运行 npm test",
             "lastLine": "在跑登录相关的测试。",
             "contextTokens": 32010,
-            "updatedAt": 1792190029595,
+            "updatedAt": 1792392846093,
             "adopting": true
           }
         ],
@@ -1237,7 +1243,7 @@
         },
         "result": {
           "pal": {
-            "id": "pal_3c80c3d7f255",
+            "id": "pal_6d731a32d095",
             "name": "网站",
             "cwd": "/Users/someone/code/site",
             "sessionId": "7a3e9c10-0000-4000-8000-000000000002",
@@ -1246,7 +1252,9 @@
             "pending": 0,
             "model": "claude-sonnet-4-6",
             "createdBy": "owner",
-            "updatedAt": 1792190029814
+            "updatedAt": 1792392846411,
+            "attention": "idle",
+            "folded": false
           }
         }
       },
@@ -1263,34 +1271,34 @@
     "pals.send": [
       {
         "params": {
-          "id": "pal_3c80c3d7f255",
+          "id": "pal_6d731a32d095",
           "text": "把列表页做完",
           "clientMsgId": "c-pal-1"
         },
         "result": {
-          "id": "df25e8cc-877d-4bcf-8b53-b87da23529ed",
-          "seq": 1792190029818
+          "id": "637eee8b-1b05-4ca3-bae9-9c65c75f8374",
+          "seq": 1792392846421
         }
       },
       {
         "params": {
-          "id": "pal_3c80c3d7f255",
+          "id": "pal_6d731a32d095",
           "text": "照这张图和这份说明改",
           "clientMsgId": "c-pal-2",
           "attachments": [
-            "img_mvbjo5bva40f13b8",
-            "file_mvbjo5bw8d2964a8"
+            "img_mvewf7mg7f267083",
+            "file_mvewf7mg765b0543"
           ]
         },
         "result": {
-          "id": "9cd0d32b-e762-4321-aa76-66c1c47aa272",
-          "seq": 1792190029820
+          "id": "c1bca862-b751-4ad1-bd38-3fa07f82d974",
+          "seq": 1792392846425
         }
       }
     ],
     "pals.history": {
       "params": {
-        "id": "pal_3c80c3d7f255",
+        "id": "pal_6d731a32d095",
         "limit": 50
       },
       "result": {
@@ -1301,7 +1309,7 @@
             "role": "user",
             "kind": "text",
             "ts": 1791802800000,
-            "pal": "pal_3c80c3d7f255",
+            "pal": "pal_6d731a32d095",
             "text": "列表要能按日期排序",
             "channel": "app"
           },
@@ -1313,7 +1321,7 @@
             "text": "加上了。",
             "channel": "app",
             "ts": 1791802805000,
-            "pal": "pal_3c80c3d7f255"
+            "pal": "pal_6d731a32d095"
           },
           {
             "seq": 1791802860000,
@@ -1321,7 +1329,7 @@
             "role": "user",
             "kind": "text",
             "ts": 1791802860000,
-            "pal": "pal_3c80c3d7f255",
+            "pal": "pal_6d731a32d095",
             "text": "主人说今晚不用部署",
             "channel": "system",
             "from": "帕帕"
@@ -1331,7 +1339,7 @@
     },
     "pals.stop": {
       "params": {
-        "id": "pal_3c80c3d7f255"
+        "id": "pal_6d731a32d095"
       },
       "result": {
         "ok": true
@@ -1340,7 +1348,7 @@
     "pals.rewind": [
       {
         "params": {
-          "id": "pal_3c80c3d7f255",
+          "id": "pal_6d731a32d095",
           "messageId": "p4",
           "check": true
         },
@@ -1350,7 +1358,7 @@
       },
       {
         "params": {
-          "id": "pal_3c80c3d7f255",
+          "id": "pal_6d731a32d095",
           "messageId": "p4",
           "restoreFiles": true
         },
@@ -1362,41 +1370,48 @@
     ],
     "helper.decide": {
       "params": {
-        "proposalId": "hp_6945031b4cd2",
+        "proposalId": "hp_610e6ad6a193",
         "action": "create"
       },
       "result": {
         "pal": {
-          "id": "pal_10dd603283fe",
+          "id": "pal_9e1f07993bca",
           "name": "文档",
           "cwd": "/Users/someone/code/site",
-          "sessionId": "6a2630ea-28fa-4b0f-9e5d-befa75904d20",
+          "sessionId": "09c51c61-2a04-4df8-9679-dc843595e9d3",
           "status": "idle",
           "lastLine": "好，列表页这就做。",
           "pending": 0,
           "model": "fake-model",
           "createdBy": "palo",
-          "updatedAt": 1792190029887
+          "updatedAt": 1792392846497,
+          "attention": "done",
+          "finishedAt": 1792392846497,
+          "folded": false
         }
       }
     },
     "pals.wake": {
       "params": {
-        "id": "pal_3c80c3d7f255"
+        "id": "pal_6d731a32d095"
       },
       "result": {
         "pal": {
-          "id": "pal_3c80c3d7f255",
+          "id": "pal_6d731a32d095",
           "name": "网站",
           "cwd": "/Users/someone/code/site",
-          "sessionId": "107fdc53-ce78-4d73-b370-acc9f3cd18f3",
+          "sessionId": "ed7dd7bf-6c8a-42bb-b6e6-d194558ac80d",
           "status": "idle",
           "lastLine": "好，列表页这就做。",
           "pending": 0,
           "model": "claude-sonnet-4-6",
           "lastWakeUsd": 0.001,
           "createdBy": "owner",
-          "updatedAt": 1792190029891
+          "updatedAt": 1792392846505,
+          "attention": "done",
+          "finishedAt": 1792392846504,
+          "seenAt": 1792392846503,
+          "folded": false
         }
       }
     },
@@ -1416,28 +1431,32 @@
     },
     "pals.rename": {
       "params": {
-        "id": "pal_3c80c3d7f255",
+        "id": "pal_6d731a32d095",
         "name": "网站改版"
       },
       "result": {
         "pal": {
-          "id": "pal_3c80c3d7f255",
+          "id": "pal_6d731a32d095",
           "name": "网站改版",
           "cwd": "/Users/someone/code/site",
-          "sessionId": "107fdc53-ce78-4d73-b370-acc9f3cd18f3",
+          "sessionId": "ed7dd7bf-6c8a-42bb-b6e6-d194558ac80d",
           "status": "asleep",
           "lastLine": "好，列表页这就做。",
           "pending": 0,
           "model": "claude-sonnet-4-6",
           "lastWakeUsd": 0.001,
           "createdBy": "owner",
-          "updatedAt": 1792190029891
+          "updatedAt": 1792392846505,
+          "attention": "done",
+          "finishedAt": 1792392846504,
+          "seenAt": 1792392846503,
+          "folded": false
         }
       }
     },
     "pals.release": {
       "params": {
-        "id": "pal_3c80c3d7f255"
+        "id": "pal_6d731a32d095"
       },
       "result": {
         "resumeCommand": "cd /Users/someone/code/site && claude --resume 9d4e2b60-0000-4000-8000-000000000004"
@@ -1447,7 +1466,7 @@
       "params": {
         "scope": {
           "kind": "pal",
-          "id": "pal_10dd603283fe"
+          "id": "pal_9e1f07993bca"
         },
         "path": ""
       },
@@ -1459,19 +1478,19 @@
             "name": "src",
             "kind": "dir",
             "size": 0,
-            "mtime": 1792190029930
+            "mtime": 1792392846571
           },
           {
             "name": "README.md",
             "kind": "file",
             "size": 36,
-            "mtime": 1792190029930
+            "mtime": 1792392846571
           },
           {
             "name": "video.mov",
             "kind": "file",
             "size": 5242881,
-            "mtime": 1792190029931
+            "mtime": 1792392846573
           }
         ],
         "truncated": false
@@ -1482,7 +1501,7 @@
         "params": {
           "scope": {
             "kind": "pal",
-            "id": "pal_10dd603283fe"
+            "id": "pal_9e1f07993bca"
           },
           "path": "README.md"
         },
@@ -1497,7 +1516,7 @@
         "params": {
           "scope": {
             "kind": "pal",
-            "id": "pal_10dd603283fe"
+            "id": "pal_9e1f07993bca"
           },
           "path": "video.mov"
         },
@@ -1514,7 +1533,7 @@
       "params": {
         "scope": {
           "kind": "pal",
-          "id": "pal_10dd603283fe"
+          "id": "pal_9e1f07993bca"
         },
         "query": "app",
         "limit": 20
@@ -1533,7 +1552,7 @@
       "params": {
         "scope": {
           "kind": "pal",
-          "id": "pal_10dd603283fe"
+          "id": "pal_9e1f07993bca"
         },
         "paths": [
           "src/app.ts",
@@ -1568,7 +1587,7 @@
             "name": "src",
             "kind": "dir",
             "size": 0,
-            "mtime": 1792190029930
+            "mtime": 1792392846571
           }
         ],
         "truncated": false
@@ -1580,10 +1599,10 @@
       },
       "result": {
         "folder": {
-          "id": "fld_dcdc626deab1",
+          "id": "fld_7e7a265fe738",
           "path": "/Users/someone/code/site",
-          "name": "site-q7l6W8",
-          "addedAt": 1792190029935
+          "name": "site-yJhcTW",
+          "addedAt": 1792392846579
         }
       }
     },
@@ -1592,25 +1611,171 @@
       "result": {
         "folders": [
           {
-            "id": "fld_dcdc626deab1",
+            "id": "fld_7e7a265fe738",
             "path": "/Users/someone/code/site",
-            "name": "site-q7l6W8",
-            "addedAt": 1792190029935
+            "name": "site-yJhcTW",
+            "addedAt": 1792392846579
           }
         ]
       }
     },
     "files.folders.remove": {
       "params": {
-        "id": "fld_dcdc626deab1"
+        "id": "fld_7e7a265fe738"
       },
       "result": {
         "ok": true
       }
     },
+    "pals.create": {
+      "params": {
+        "cwd": "/Users/someone/code/site",
+        "text": "把安装说明写完"
+      },
+      "result": {
+        "pal": {
+          "id": "pal_99c3ce720ceb",
+          "name": {},
+          "cwd": "/Users/someone/code/site",
+          "sessionId": "21047616-98ff-4bcb-9eb6-9485143ea6e5",
+          "status": "starting",
+          "pending": 0,
+          "createdBy": "owner",
+          "updatedAt": 1792392846580,
+          "attention": "idle",
+          "folded": false
+        }
+      }
+    },
+    "pals.seen": {
+      "params": {
+        "id": "pal_99c3ce720ceb"
+      },
+      "result": {
+        "pal": {
+          "id": "pal_99c3ce720ceb",
+          "name": "session-99c3ce",
+          "cwd": "/Users/someone/code/site",
+          "sessionId": "21047616-98ff-4bcb-9eb6-9485143ea6e5",
+          "status": "idle",
+          "lastLine": "好，列表页这就做。",
+          "pending": 0,
+          "model": "fake-model",
+          "createdBy": "owner",
+          "updatedAt": 1792392846584,
+          "attention": "idle",
+          "finishedAt": 1792392846583,
+          "seenAt": 1792392846609,
+          "folded": false
+        }
+      }
+    },
+    "pals.folders": {
+      "params": {},
+      "result": {
+        "folders": [
+          {
+            "path": "/Users/someone/code/site",
+            "name": "site-yJhcTW",
+            "lastUsedAt": 1792392846583
+          }
+        ]
+      }
+    },
+    "pals.end": {
+      "params": {
+        "id": "pal_99c3ce720ceb"
+      },
+      "result": {
+        "earlier": {
+          "kind": "ended",
+          "key": "ended:21047616-98ff-4bcb-9eb6-9485143ea6e5",
+          "sessionId": "21047616-98ff-4bcb-9eb6-9485143ea6e5",
+          "name": "session-99c3ce",
+          "cwd": "/Users/someone/code/site",
+          "at": 1792392846613
+        }
+      }
+    },
+    "pals.earlier": {
+      "params": {
+        "limit": 20
+      },
+      "result": {
+        "items": [
+          {
+            "kind": "ended",
+            "key": "ended:21047616-98ff-4bcb-9eb6-9485143ea6e5",
+            "sessionId": "21047616-98ff-4bcb-9eb6-9485143ea6e5",
+            "name": "session-99c3ce",
+            "cwd": "/Users/someone/code/site",
+            "at": 1792392846613
+          },
+          {
+            "kind": "recent",
+            "key": "recent:8e4f1a22-0000-4000-8000-000000000005",
+            "sessionId": "8e4f1a22-0000-4000-8000-000000000005",
+            "name": "更新日志",
+            "cwd": "/Users/someone/code/site",
+            "at": 1792392786612
+          },
+          {
+            "kind": "folded",
+            "key": "folded:pal_2c03cd7dc207",
+            "id": "pal_2c03cd7dc207",
+            "sessionId": "3c9d2e71-0000-4000-8000-000000000003",
+            "name": "首页改成两栏",
+            "cwd": "/Users/someone/code/site",
+            "at": 1791960846612
+          }
+        ]
+      }
+    },
+    "pals.resume": [
+      {
+        "params": {
+          "key": "ended:21047616-98ff-4bcb-9eb6-9485143ea6e5"
+        },
+        "result": {
+          "pal": {
+            "id": "pal_aa3573d7e8ca",
+            "name": {},
+            "cwd": "/Users/someone/code/site",
+            "sessionId": "21047616-98ff-4bcb-9eb6-9485143ea6e5",
+            "status": "idle",
+            "pending": 0,
+            "createdBy": "owner",
+            "updatedAt": 1792392846616,
+            "attention": "idle",
+            "folded": false
+          }
+        }
+      },
+      {
+        "params": {
+          "key": "folded:pal_2c03cd7dc207"
+        },
+        "result": {
+          "pal": {
+            "id": "pal_2c03cd7dc207",
+            "name": "首页改成两栏",
+            "cwd": "/Users/someone/code/site",
+            "sessionId": "3c9d2e71-0000-4000-8000-000000000003",
+            "status": "idle",
+            "lastLine": "两栏的样式好了。",
+            "pending": 0,
+            "model": "claude-sonnet-4-6",
+            "createdBy": "owner",
+            "updatedAt": 1792392846564,
+            "attention": "idle",
+            "folded": false
+          }
+        }
+      }
+    ],
     "pals.remove": {
       "params": {
-        "id": "pal_10dd603283fe"
+        "id": "pal_9e1f07993bca"
       },
       "result": {
         "ok": true
@@ -1624,10 +1789,10 @@
           "busy": false,
           "model": "default",
           "effort": "medium",
-          "sessionId": "78b7eab0-71d9-4386-9a44-4aec753eaaad",
+          "sessionId": "c408fd64-8898-40af-ace0-f2eaa9b97bf1",
           "wechat": "off",
           "version": "0.1.0",
-          "metAt": 1792190029369
+          "metAt": 1792392844221
         }
       }
     },
@@ -1648,12 +1813,12 @@
         "clientMsgId": "c-1",
         "attachments": [
           {
-            "id": "img_mvbjo4zc02966912",
+            "id": "img_mvewf5x71c3794e4",
             "kind": "image",
             "mediaType": "image/png"
           },
           {
-            "id": "file_mvbjo4zc21d00b89",
+            "id": "file_mvewf5x8fd692620",
             "kind": "file",
             "mediaType": "text/plain",
             "name": "说明.txt",
@@ -1664,9 +1829,9 @@
           "messageId": "m_earlier",
           "excerpt": "两封邮件需要你回"
         },
-        "uuid": "447cf2aa-8780-4eb7-9251-30b44de6fbef",
-        "id": "m_f292e675a865",
-        "ts": 1792190029369,
+        "uuid": "9c99cdbf-6c5d-4d51-af22-9f4b4cf32cb3",
+        "id": "m_1fb04bef5d84",
+        "ts": 1792392844221,
         "seq": 1
       },
       {
@@ -1674,14 +1839,14 @@
         "kind": "ally",
         "text": "今晚我晚点回，大概九点",
         "channel": "system",
-        "allyId": "al_31ec896508e6",
+        "allyId": "al_9affd9f3c0be",
         "allyName": "家人B",
         "dir": "in",
-        "entryId": "ae_334345929f8e",
+        "entryId": "ae_bf1f4ef7b054",
         "author": "assistant",
         "proactive": true,
-        "id": "m_dbf3576fb250",
-        "ts": 1792190029465,
+        "id": "m_54ea70c5c0b1",
+        "ts": 1792392845612,
         "seq": 16
       },
       {
@@ -1689,13 +1854,13 @@
         "kind": "ally",
         "text": "周六下午带孩子去公园？",
         "channel": "system",
-        "allyId": "al_31ec896508e6",
+        "allyId": "al_9affd9f3c0be",
         "allyName": "家人B",
         "dir": "out",
-        "entryId": "ae_3bf471b27cac",
+        "entryId": "ae_39f93922b90d",
         "author": "assistant",
-        "id": "m_ef0bbfbaf2bc",
-        "ts": 1792190029487,
+        "id": "m_770df3234697",
+        "ts": 1792392845691,
         "seq": 18
       },
       {
@@ -1703,14 +1868,14 @@
         "kind": "ally",
         "text": "好，门口见",
         "channel": "system",
-        "allyId": "al_31ec896508e6",
+        "allyId": "al_9affd9f3c0be",
         "allyName": "家人B",
         "dir": "in",
-        "entryId": "ae_e789b36314b5",
+        "entryId": "ae_7924a1af47b2",
         "author": "owner",
         "proactive": true,
-        "id": "m_75f4544b114f",
-        "ts": 1792190029551,
+        "id": "m_05e6f13c1e4b",
+        "ts": 1792392845869,
         "seq": 20
       },
       {
@@ -1718,49 +1883,49 @@
         "kind": "ally",
         "text": "我七点到",
         "channel": "system",
-        "allyId": "al_31ec896508e6",
+        "allyId": "al_9affd9f3c0be",
         "allyName": "家人B",
         "dir": "out",
-        "entryId": "ae_0a7288bf21e7",
+        "entryId": "ae_0254486cf190",
         "author": "owner",
-        "id": "m_9de4127a75d8",
-        "ts": 1792190029514,
+        "id": "m_da278f130847",
+        "ts": 1792392845722,
         "seq": 19
       },
       {
         "role": "assistant",
         "kind": "helper",
-        "text": "开一个 Pal「文档」专门管 /Users/someone/code/site？",
+        "text": "开一个会话「文档」专门管 /Users/someone/code/site？",
         "channel": "system",
         "proposal": {
-          "id": "hp_6945031b4cd2",
+          "id": "hp_610e6ad6a193",
           "name": "文档",
           "cwd": "/Users/someone/code/site",
           "duty": "你负责主人的文档：先把安装说明写完。",
           "dailyUsd": 5,
           "status": "pending"
         },
-        "id": "m_4934c4622068",
-        "ts": 1792190029885,
+        "id": "m_4a7c08098cd9",
+        "ts": 1792392846493,
         "seq": 22
       },
       {
         "role": "assistant",
         "kind": "helper",
-        "text": "开一个 Pal「文档」专门管 /Users/someone/code/site？",
+        "text": "开一个会话「文档」专门管 /Users/someone/code/site？",
         "channel": "system",
         "proposal": {
-          "id": "hp_6945031b4cd2",
+          "id": "hp_610e6ad6a193",
           "name": "文档",
           "cwd": "/Users/someone/code/site",
           "duty": "你负责主人的文档：先把安装说明写完。",
           "dailyUsd": 5,
           "status": "created",
-          "sessionId": "6a2630ea-28fa-4b0f-9e5d-befa75904d20",
-          "palId": "pal_10dd603283fe"
+          "sessionId": "09c51c61-2a04-4df8-9679-dc843595e9d3",
+          "palId": "pal_9e1f07993bca"
         },
-        "id": "m_4934c4622068",
-        "ts": 1792190029885,
+        "id": "m_4a7c08098cd9",
+        "ts": 1792392846493,
         "seq": 22
       },
       {
@@ -1769,14 +1934,14 @@
         "text": "接管「首页改成两栏」（/Users/someone/code/site）？",
         "channel": "system",
         "proposal": {
-          "id": "pa_5883a9bf0278",
+          "id": "pa_a7ce4adff189",
           "sessionId": "3c9d2e71-0000-4000-8000-000000000003",
           "cwd": "/Users/someone/code/site",
           "title": "首页改成两栏",
           "status": "pending"
         },
-        "id": "m_14a717c6dcc0",
-        "ts": 1792190029922,
+        "id": "m_8c8229ffc668",
+        "ts": 1792392846562,
         "seq": 23
       },
       {
@@ -1785,47 +1950,47 @@
         "text": "接管「首页改成两栏」（/Users/someone/code/site）？",
         "channel": "system",
         "proposal": {
-          "id": "pa_5883a9bf0278",
+          "id": "pa_a7ce4adff189",
           "sessionId": "3c9d2e71-0000-4000-8000-000000000003",
           "cwd": "/Users/someone/code/site",
           "title": "首页改成两栏",
           "status": "adopted",
-          "palId": "pal_391db2d4e79f"
+          "palId": "pal_2c03cd7dc207"
         },
-        "id": "m_14a717c6dcc0",
-        "ts": 1792190029922,
+        "id": "m_8c8229ffc668",
+        "ts": 1792392846562,
         "seq": 23
       },
       {
-        "seq": 1792190029818,
-        "id": "df25e8cc-877d-4bcf-8b53-b87da23529ed",
+        "seq": 1792392846421,
+        "id": "637eee8b-1b05-4ca3-bae9-9c65c75f8374",
         "role": "user",
         "kind": "text",
         "text": "把列表页做完",
         "channel": "app",
-        "ts": 1792190029818,
-        "pal": "pal_3c80c3d7f255",
+        "ts": 1792392846421,
+        "pal": "pal_6d731a32d095",
         "clientMsgId": "c-pal-1"
       },
       {
-        "seq": 1792190029819,
-        "ts": 1792190029819,
+        "seq": 1792392846422,
+        "ts": 1792392846422,
         "channel": "app",
         "id": "msg_06",
         "role": "assistant",
         "kind": "text",
         "text": "好，列表页这就做。",
-        "pal": "pal_3c80c3d7f255"
+        "pal": "pal_6d731a32d095"
       },
       {
-        "seq": 1792190029886,
-        "id": "87166434-7755-4925-ad67-6705a418810d",
+        "seq": 1792392846495,
+        "id": "3eb50ae7-68fb-4ab5-8256-bbe5a6ff521b",
         "role": "user",
         "kind": "text",
         "text": "你负责主人的文档：先把安装说明写完。",
         "channel": "system",
-        "ts": 1792190029886,
-        "pal": "pal_10dd603283fe",
+        "ts": 1792392846495,
+        "pal": "pal_9e1f07993bca",
         "from": "帕帕"
       }
     ],
@@ -1836,17 +2001,17 @@
       "model": "",
       "wechat": "off",
       "version": "0.1.0",
-      "metAt": 1792190029369
+      "metAt": 1792392844221
     },
     "chat.delta": [
       {
-        "id": "m_mvbjo4zerca6",
+        "id": "m_mvewf5zetz1d",
         "text": "你好"
       },
       {
         "id": "msg_06",
         "text": "好，",
-        "pal": "pal_3c80c3d7f255"
+        "pal": "pal_6d731a32d095"
       }
     ],
     "commands.updated": {
@@ -1872,7 +2037,7 @@
     },
     "watch.updated": {
       "watch": {
-        "id": "w_b49fb73c89b1",
+        "id": "w_4f56824d0d42",
         "title": "晨报",
         "instruction": "写晨报",
         "kind": "schedule",
@@ -1881,13 +2046,13 @@
         ],
         "enabled": true,
         "createdBy": "user",
-        "createdAt": 1792190029375,
+        "createdAt": 1792392844312,
         "state": "tracking",
         "progress": "你好，我在。",
-        "progressAt": 1792190029377,
+        "progressAt": 1792392844415,
         "history": [
           {
-            "at": 1792190029377,
+            "at": 1792392844415,
             "text": "你好，我在。"
           }
         ]
@@ -1895,10 +2060,10 @@
     },
     "chat.rewound": [
       {
-        "id": "m_36df3ee323d2",
+        "id": "m_3263a6961dca",
         "ids": [
-          "m_36df3ee323d2",
-          "m_mvbjo4zmn2o8"
+          "m_3263a6961dca",
+          "m_mvewf62rl068"
         ]
       },
       {
@@ -1907,42 +2072,42 @@
           "p4",
           "msg_02"
         ],
-        "pal": "pal_3c80c3d7f255"
+        "pal": "pal_6d731a32d095"
       }
     ],
     "task.updated": {
-      "id": "t_70f27fb10e41",
+      "id": "t_02a87aee7f2d",
       "title": "查资料",
       "summary": "在查",
       "status": "stopped",
       "source": "report",
-      "createdAt": 1792190029384,
-      "updatedAt": 1792190029388,
+      "createdAt": 1792392844667,
+      "updatedAt": 1792392844697,
       "activityCount": 1,
       "toolUseId": "ag1"
     },
     "approval.updated": [
       {
-        "id": "a_eb9fab73c5d4",
+        "id": "a_348ae4fb62dd",
         "tool": "Bash",
         "title": "在电脑上运行一条命令",
         "detail": "npm test",
         "careful": false,
         "status": "allowed",
-        "createdAt": 1792190029388,
+        "createdAt": 1792392844702,
         "suggestedScope": "cmd:npm test",
         "reason": "要运行命令",
-        "decidedAt": 1792190029401,
+        "decidedAt": 1792392844715,
         "decidedBy": "app"
       },
       {
-        "id": "a_09c6e59b5075",
+        "id": "a_3e25ef96d0f7",
         "tool": "Bash",
         "title": "在电脑上运行一条命令",
         "detail": "npm run build",
         "careful": false,
         "status": "pending",
-        "createdAt": 1792190029580,
+        "createdAt": 1792392846064,
         "source": {
           "kind": "session",
           "id": "5d821f3c-0000-4000-8000-000000000001",
@@ -1950,40 +2115,40 @@
         }
       },
       {
-        "id": "a_809db2f9269f",
+        "id": "a_3b2e81549767",
         "tool": "Bash",
         "title": "在电脑上运行一条命令",
         "detail": "npm test",
         "careful": false,
         "status": "expired",
-        "createdAt": 1792190029595,
+        "createdAt": 1792392846093,
         "source": {
           "kind": "session",
           "id": "5d821f3c-0000-4000-8000-000000000001",
           "name": "修登录跳转"
         },
-        "decidedAt": 1792190029601,
+        "decidedAt": 1792392846105,
         "decidedBy": "timeout",
         "note": "在电脑上等你"
       },
       {
-        "id": "a_420a2964ac24",
+        "id": "a_ffa89357a758",
         "tool": "Bash",
         "title": "在电脑上运行一条命令",
         "detail": "npm run build",
         "careful": false,
         "status": "pending",
-        "createdAt": 1792190029823,
+        "createdAt": 1792392846429,
         "source": {
           "kind": "pal",
-          "id": "pal_3c80c3d7f255",
+          "id": "pal_6d731a32d095",
           "name": "网站"
         }
       }
     ],
     "question.updated": [
       {
-        "id": "q_16fb22084828",
+        "id": "q_50f9500307d4",
         "items": [
           {
             "question": "约哪天？",
@@ -2015,16 +2180,16 @@
           }
         ],
         "status": "answered",
-        "createdAt": 1792190029404,
+        "createdAt": 1792392844722,
         "answers": {
           "约哪天？": "周日",
           "谁一起去？": "太太, 孩子"
         },
-        "answeredAt": 1792190029414,
+        "answeredAt": 1792392844756,
         "answeredBy": "app"
       },
       {
-        "id": "q_7c935a7f64d5",
+        "id": "q_9f77905eca77",
         "items": [
           {
             "question": "方案选哪个？",
@@ -2043,7 +2208,7 @@
           }
         ],
         "status": "pending",
-        "createdAt": 1792190029588,
+        "createdAt": 1792392846085,
         "source": {
           "kind": "session",
           "id": "5d821f3c-0000-4000-8000-000000000001",
@@ -2058,7 +2223,7 @@
       "mainFile": "brief.md",
       "pinned": false,
       "folder": "日常",
-      "updatedAt": 1792190029417,
+      "updatedAt": 1792392844775,
       "files": [
         {
           "path": "brief.md",
@@ -2074,39 +2239,41 @@
       "wechatProactive": "hint",
       "assistantName": "帕帕",
       "language": "",
-      "color": "teal"
+      "color": "teal",
+      "foldDays": 3,
+      "maxAwake": 8
     },
     "suggestions.updated": {
       "suggestions": [
         {
-          "id": "sg_b30cc82e98",
+          "id": "sg_a3455ba0bf",
           "chip": "找出没在用的订阅",
           "prompt": "帮我把信用卡账单里的订阅都找出来，标出最近三个月没用过的",
           "category": "省钱",
-          "createdAt": 1792190029425
+          "createdAt": 1792392845294
         },
         {
-          "id": "sg_11ef9f8ad4",
+          "id": "sg_de3a0ae79a",
           "chip": "每周日给我做周报",
           "prompt": "以后每周日晚上把我这一周做的事整理成周报",
-          "createdAt": 1792190029425
+          "createdAt": 1792392845294
         }
       ]
     },
     "ally.updated": {
       "allies": [
         {
-          "id": "al_31ec896508e6",
+          "id": "al_9affd9f3c0be",
           "kind": "family",
           "ownerName": "家人B",
           "assistantName": "家人B的Palo",
           "online": true,
-          "lastSeen": 1792190029460,
+          "lastSeen": 1792392845577,
           "lastEntry": {
-            "id": "ae_e789b36314b5",
-            "allyId": "al_31ec896508e6",
+            "id": "ae_7924a1af47b2",
+            "allyId": "al_9affd9f3c0be",
             "dir": "in",
-            "ts": 1792190029549,
+            "ts": 1792392845869,
             "text": "好，门口见",
             "urgent": false,
             "status": "delivered",
@@ -2119,10 +2286,10 @@
     },
     "ally.entry": {
       "entry": {
-        "id": "ae_334345929f8e",
-        "allyId": "al_31ec896508e6",
+        "id": "ae_bf1f4ef7b054",
+        "allyId": "al_9affd9f3c0be",
         "dir": "in",
-        "ts": 1792190029464,
+        "ts": 1792392845611,
         "text": "今晚我晚点回，大概九点",
         "urgent": true,
         "status": "delivered",
@@ -2140,7 +2307,7 @@
           "waitingFor": "想运行 npm test",
           "lastLine": "在跑登录相关的测试。",
           "contextTokens": 32010,
-          "updatedAt": 1792190029595,
+          "updatedAt": 1792392846093,
           "adopting": true
         }
       ]
@@ -2148,29 +2315,36 @@
     "pals.updated": {
       "pals": [
         {
-          "id": "pal_3c80c3d7f255",
+          "id": "pal_6d731a32d095",
           "name": "网站",
           "cwd": "/Users/someone/code/site",
-          "sessionId": "107fdc53-ce78-4d73-b370-acc9f3cd18f3",
+          "sessionId": "ed7dd7bf-6c8a-42bb-b6e6-d194558ac80d",
           "status": "asleep",
           "lastLine": "好，列表页这就做。",
           "pending": 0,
           "model": "claude-sonnet-4-6",
           "lastWakeUsd": 0.001,
           "createdBy": "owner",
-          "updatedAt": 1792190029891
+          "updatedAt": 1792392846505,
+          "attention": "done",
+          "finishedAt": 1792392846504,
+          "seenAt": 1792392846503,
+          "folded": false
         },
         {
-          "id": "pal_10dd603283fe",
+          "id": "pal_9e1f07993bca",
           "name": "文档",
           "cwd": "/Users/someone/code/site",
-          "sessionId": "6a2630ea-28fa-4b0f-9e5d-befa75904d20",
+          "sessionId": "09c51c61-2a04-4df8-9679-dc843595e9d3",
           "status": "idle",
           "lastLine": "好，列表页这就做。",
           "pending": 0,
           "model": "fake-model",
           "createdBy": "palo",
-          "updatedAt": 1792190029887
+          "updatedAt": 1792392846497,
+          "attention": "done",
+          "finishedAt": 1792392846497,
+          "folded": false
         }
       ],
       "others": [
@@ -2183,7 +2357,7 @@
           "waitingFor": "想运行 npm test",
           "lastLine": "在跑登录相关的测试。",
           "contextTokens": 32010,
-          "updatedAt": 1792190029595,
+          "updatedAt": 1792392846093,
           "adopting": true
         }
       ],

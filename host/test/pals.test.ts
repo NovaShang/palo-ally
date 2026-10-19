@@ -7,16 +7,17 @@ import { AwayDetector } from "../src/away.ts";
 import { transcriptPath } from "../src/handoffs.ts";
 import { findHelper, makeSpawner } from "../src/palLauncher.ts";
 import { pagePalMessages, toPalMessages, transcriptLastLine, transcriptModel } from "../src/palHistory.ts";
-import { MAX_AWAKE, MAX_PALS, PALO_NAME, type PalsDeps, type PalsTiming } from "../src/pals.ts";
+import { MAX_PALS, PALO_NAME, type PalsDeps, type PalsTiming } from "../src/pals.ts";
 import { type PalRecord, startError } from "../src/palSession.ts";
 import type { Paths } from "../src/config.ts";
 import { BEHAVIORS } from "../src/home.ts";
 import { handleRpc } from "../src/rpc.ts";
 import type { FakeScript } from "./fakeDriver.ts";
 import { FakeClaudeDir, FakeCli, assistantEntry } from "./fakeClaude.ts";
-import { makeHub, tick, tmpPaths } from "./helpers.ts";
+import { makeHub, testConfig, tick, tmpPaths } from "./helpers.ts";
 import { waitFor } from "./relayClient.ts";
 
+const MAX_AWAKE = 5; // these tests set settings.maxAwake to it
 const dirs: FakeClaudeDir[] = [];
 const clis: FakeCli[] = [];
 const procs: ChildProcess[] = [];
@@ -48,7 +49,7 @@ const echo: FakeScript = async (text, ctx) => {
   ctx.emit({ type: "assistant_text", text: reply, parentToolUseId: null, messageId: id });
 };
 
-function setup(o: { spawn?: boolean; timing?: Partial<PalsTiming>; palScript?: FakeScript; settings?: string; pals?: Partial<PalsDeps>; seed?: (paths: Paths, claudeDir: string) => void } = {}) {
+function setup(o: { maxAwake?: number; foldDays?: number; spawn?: boolean; timing?: Partial<PalsTiming>; palScript?: FakeScript; settings?: string; pals?: Partial<PalsDeps>; seed?: (paths: Paths, claudeDir: string) => void } = {}) {
   const claude = new FakeClaudeDir();
   dirs.push(claude);
   const cli = new FakeCli(claude);
@@ -58,8 +59,13 @@ function setup(o: { spawn?: boolean; timing?: Partial<PalsTiming>; palScript?: F
   if (o.settings) writeFileSync(join(claude.dir, "settings.json"), o.settings);
   const paths = tmpPaths();
   o.seed?.(paths, claude.dir);
+  const config = testConfig((c) => {
+    if (o.maxAwake !== undefined) c.settings.maxAwake = o.maxAwake;
+    if (o.foldDays !== undefined) c.settings.foldDays = o.foldDays;
+  });
   const ctx = makeHub({
     paths,
+    config,
     sessions: { claudeDir: claude.dir, cli, away: new AwayDetector(() => null, Date.now, () => false), readMessages },
     pals: { readMessages, timing: { ...FAST, ...o.timing }, ...o.pals },
   });
@@ -227,8 +233,8 @@ describe("adopting a session", () => {
     await t.call("pals.send", { id: "pal_seed1", text: "接着做" });
     await t.hub.idle();
     const more = bgSession(t, "第五十一个", "dddd0051-0000-4000-8000-000000000051");
-    await expect(t.call("pals.adopt", { sessionId: more })).rejects.toThrow(`已经有 ${MAX_PALS} 个 Pal 了，先移出一个（最久没用的是「项目2」）`);
-    expect(await t.hub.toolHandlers().pal_propose({ name: "新的", dir: t.project, duty: "做事", dailyUsd: 1 })).toContain(`已经有 ${MAX_PALS} 个 Pal 了`);
+    await expect(t.call("pals.adopt", { sessionId: more })).rejects.toThrow(`已经有 ${MAX_PALS} 个会话了，先结束一个（最久没用的是「项目2」）`);
+    expect(await t.hub.toolHandlers().pal_propose({ name: "新的", dir: t.project, duty: "做事", dailyUsd: 1 })).toContain(`已经有 ${MAX_PALS} 个会话了`);
     await t.call("pals.remove", { id: "pal_seed2" });
     await expect(t.call("pals.adopt", { sessionId: "nope" })).rejects.toThrow("没有这个会话");
     expect((await t.call("pals.adopt", { sessionId: more })).pal).toMatchObject({ name: "第五十一个", status: "idle" });
@@ -486,7 +492,7 @@ describe("talking to a Pal", () => {
     expect((await t.call("pals.history", { id: pal.id })).streaming).toEqual({ id: "msg_live", text: "正在" });
     expect((await t.call("pals.history", { id: pal.id, before: "u3" })).streaming).toBeUndefined();
     await t.call("pals.stop", { id: pal.id });
-    await expect(t.call("pals.history", { id: "pal_nope" })).rejects.toThrow("没有这个 Pal");
+    await expect(t.call("pals.history", { id: "pal_nope" })).rejects.toThrow("找不到这个会话");
     await t.hub.pals.stopAndWait();
   });
 
@@ -639,6 +645,7 @@ describe("asleep and awake (§12)", () => {
 
   test(`past ${MAX_AWAKE} awake the least recently used idle one goes to sleep; busy ones never, so six busy stay six until one is done`, async () => {
     const t = setup({
+      maxAwake: MAX_AWAKE,
       timing: { sleepCheckMs: 30 },
       palScript: async (text, ctx) => {
         if (text !== "长活") return echo(text, ctx);
@@ -659,7 +666,7 @@ describe("asleep and awake (§12)", () => {
     const sixth = (await t.call("pals.adopt", { sessionId: bgSession(t, "第六个", "dddd0006-0000-4000-8000-000000000006") })).pal.id;
     await waitFor(() => t.hub.pals.list().some((p) => p.status === "asleep"), 2_000);
     expect(t.hub.pals.list().filter((p) => p.status === "asleep").map((p) => p.name)).toEqual(["项目2"]);
-    expect(t.hub.audit.tail(30).find((e) => e.type === "pal.slept")).toMatchObject({ name: "项目2", why: "more than five awake" });
+    expect(t.hub.audit.tail(30).find((e) => e.type === "pal.slept")).toMatchObject({ name: "项目2", why: "more awake than allowed" });
     // all five awake busy, then the asleep one woken for work: six busy, none put to sleep
     for (const id of [ids[0]!, ...ids.slice(2), sixth]) await t.call("pals.send", { id, text: "长活" });
     await t.call("pals.send", { id: ids[1], text: "长活" });
@@ -725,7 +732,7 @@ describe("asleep and awake (§12)", () => {
     await sleepNow(t, pal.id);
     expect((await t.call("pals.wake", { id: pal.id })).pal).toMatchObject({ id: pal.id, status: "idle", lastWakeUsd: 0.0123 });
     expect(t.driver.pals).toHaveLength(3);
-    await expect(t.call("pals.wake", { id: "pal_nope" })).rejects.toThrow("没有这个 Pal");
+    await expect(t.call("pals.wake", { id: "pal_nope" })).rejects.toThrow("找不到这个会话");
     await t.hub.pals.stopAndWait();
   });
 
@@ -771,7 +778,7 @@ describe("asleep and awake (§12)", () => {
     // awake: straight in; by any case of its name
     expect(await tools.pal_send({ name: "网站", text: "还有首页" })).toBe("已经送到「网站」。它回你的话会作为消息回到你这里。");
     expect(t.driver.pals).toHaveLength(2);
-    expect(await tools.pal_send({ name: "没有的", text: "在吗" })).toContain("没有叫「没有的」的 Pal");
+    expect(await tools.pal_send({ name: "没有的", text: "在吗" })).toContain("没有叫「没有的」的会话");
     expect(await tools.pal_send({ name: "网站", text: " " })).toContain("空的");
     expect(BEHAVIORS.zh).toContain("mcp__paloally__pal_send");
     expect(BEHAVIORS.zh).toMatch(/醒着睡着都有效/);
@@ -781,7 +788,7 @@ describe("asleep and awake (§12)", () => {
   });
 
   test("after the host restarts only the Pals that were awake come back; those asleep stay asleep (pals.json says which), at most five awake", async () => {
-    const t = setup({ spawn: true });
+    const t = setup({ spawn: true, maxAwake: MAX_AWAKE });
     const a = (await t.call("pals.adopt", { sessionId: bgSession(t, "甲", "aaaa0001-0000-4000-8000-000000000001") })).pal;
     const b = (await t.call("pals.adopt", { sessionId: bgSession(t, "乙", "aaaa0002-0000-4000-8000-000000000002") })).pal;
     await sleepNow(t, a.id);
@@ -918,7 +925,7 @@ describe("its name follows Claude Code's title (§13)", () => {
     await t.call("pals.wake", { id: pal.id });
     expect(t.driver.pals.at(-1)!.opts.name).toBe("官网");
     expect(t.hub.pals.get(pal.id)!.rec.name).toBe("官网");
-    await expect(t.call("pals.rename", { id: "pal_nope", name: "x" })).rejects.toThrow("没有这个 Pal");
+    await expect(t.call("pals.rename", { id: "pal_nope", name: "x" })).rejects.toThrow("找不到这个会话");
     await t.hub.pals.stopAndWait();
   });
 
@@ -954,7 +961,7 @@ describe("back to the terminal", () => {
     const second = (await t.call("pals.adopt", { sessionId: "eeee5555-0000-4000-8000-000000000005" })).pal;
     expect(await t.call("pals.remove", { id: second.id })).toEqual({ ok: true });
     expect(t.hub.pals.list()).toEqual([]);
-    await expect(t.call("pals.remove", { id: second.id })).rejects.toThrow("没有这个 Pal");
+    await expect(t.call("pals.remove", { id: second.id })).rejects.toThrow("找不到这个会话");
     expect(JSON.parse(readFileSync(t.paths.pals, "utf8")).pals).toEqual([]);
   });
 });
@@ -965,7 +972,7 @@ describe("the assistant opens a Pal", () => {
     const r = await t.hub.toolHandlers().pal_propose({ name: "网站", dir: t.project, duty: "你负责主人的网站：先做列表页。", dailyUsd: 5 });
     expect(r).toContain("主人点「开吧」才会开");
     const card = t.hub.chat.recent(1)[0]!;
-    expect(card).toMatchObject({ kind: "helper", text: expect.stringContaining("开一个 Pal「网站」"), proposal: { name: "网站", cwd: t.project, dailyUsd: 5, status: "pending" } });
+    expect(card).toMatchObject({ kind: "helper", text: expect.stringContaining("开一个会话「网站」"), proposal: { name: "网站", cwd: t.project, dailyUsd: 5, status: "pending" } });
     expect(t.driver.pals).toHaveLength(0);
     const out = await t.call("helper.decide", { proposalId: card.proposal!.id, action: "create" });
     expect(out.pal).toMatchObject({ name: "网站", cwd: t.project, createdBy: "palo" });
@@ -1011,7 +1018,7 @@ describe("the assistant opens a Pal", () => {
     await t.call("helper.decide", { proposalId: p3.proposal!.id, action: "create" });
     expect(t.hub.chat.get(p3.id)!.proposal!.status).toBe("created");
     expect(t.hub.chat.get(p3.id)!.proposal!.note).toBeUndefined();
-    expect(await tools.pal_propose({ name: "三", dir: t.project, duty: "做事", dailyUsd: 1 })).toContain("已经有一个叫「三」的 Pal");
+    expect(await tools.pal_propose({ name: "三", dir: t.project, duty: "做事", dailyUsd: 1 })).toContain("已经有一个叫「三」的会话");
     await t.hub.pals.stopAndWait();
   });
 
@@ -1026,7 +1033,7 @@ describe("the assistant opens a Pal", () => {
     await waitFor(() => t.hub.pals.list()[0]!.status === "stopped");
     expect(t.hub.pals.list()[0]!.note).toContain("过了每天 $0.04 的上限");
     expect(t.hub.chat.recent(3).some((m) => m.text.includes("超过了每天 $0.04 的上限"))).toBe(true);
-    expect(t.pusher.pushes.at(-1)!.title).toBe("Pal 停了");
+    expect(t.pusher.pushes.at(-1)!.title).toBe("会话停了");
     expect(t.hub.audit.tail(20).find((e) => e.type === "pal.budget")).toMatchObject({ pal: pal.id, dailyUsd: 0.04 });
     const n = t.driver.pals.length;
     await t.call("pals.send", { id: pal.id, text: "今天还是要做完" });
@@ -1041,6 +1048,434 @@ describe("the assistant and its Pals", () => {
     t.hub.userMessage("你好", "app");
     await t.hub.idle();
     expect(t.driver.sessions[0]!.opts.name).toBe(PALO_NAME);
+  });
+});
+
+describe("the owner's own sessions (workbench)", () => {
+  /** Claude Code's title for each session, as getSessionInfo reads it, and the renames made. */
+  function titled(o: Parameters<typeof setup>[0] = {}) {
+    const titles = new Map<string, { customTitle?: string; summary?: string; firstPrompt?: string }>();
+    const renamed: { sid: string; title: string }[] = [];
+    const t = setup({
+      ...o,
+      pals: {
+        ...o.pals,
+        recentSource: {
+          list: async () => [],
+          info: async (sid) => {
+            const x = titles.get(sid);
+            return x ? ({ sessionId: sid, lastModified: Date.now(), summary: x.summary ?? x.customTitle ?? "", ...x } as any) : undefined;
+          },
+        },
+        renameSession: async (sid, title) => {
+          renamed.push({ sid, title });
+          titles.set(sid, { ...titles.get(sid), customTitle: title });
+        },
+      },
+    });
+    return { ...t, titles, renamed };
+  }
+  const find = (t: ReturnType<typeof setup>, id: string) => t.hub.pals.list().find((p) => p.id === id)!;
+  const rec = (t: ReturnType<typeof setup>, id: string) => (t.hub.pals.get(id) as any).rec as PalRecord;
+
+  test("pals.create: any folder, no duty and no daily limit; it is called session-<id> inside, starts at once, and its first words go in as the owner's", async () => {
+    const t = setup();
+    const { pal } = await t.call("pals.create", { cwd: t.project, text: "写个计划" });
+    expect(pal).toMatchObject({ cwd: t.project, createdBy: "owner", status: "starting", attention: "idle", folded: false, pending: 0 });
+    expect(pal.id).toMatch(/^pal_/);
+    expect(pal.name).toBe(`session-${pal.id.slice(4, 10)}`);
+    await waitFor(() => find(t, pal.id).status === "idle" && find(t, pal.id).attention === "done");
+    const r = rec(t, pal.id);
+    expect(r.duty).toBeUndefined();
+    expect(r.dailyUsd).toBeUndefined();
+    expect(r.autoNamed).toBe(true);
+    // a new session of its own, no resume; the words went in as the owner's (not the assistant's)
+    const proc = t.driver.pals[0]!;
+    expect(proc.opts.sessionId).toBe(pal.sessionId);
+    expect(proc.opts.resumeSessionId).toBeUndefined();
+    expect(proc.sent).toEqual(["写个计划"]);
+    const said = t.palEvents("chat.message").find((m) => m.role === "user")!;
+    expect(said).toMatchObject({ text: "写个计划", pal: pal.id });
+    expect(said.from).toBeUndefined();
+    expect(t.hub.audit.tail(20).find((e) => e.type === "pal.created")).toMatchObject({ pal: pal.id, owner: true });
+    // no spending limit: heavy spending never stops it
+    expect(t.hub.pals.list()[0]!.status).toBe("idle");
+    // without text it just starts and waits for the first word
+    const quiet = (await t.call("pals.create", { cwd: t.project })).pal;
+    await waitFor(() => find(t, quiet.id).status === "idle");
+    expect(t.driver.pals[1]!.sent).toEqual([]);
+    expect(find(t, quiet.id).attention).toBe("idle");
+    // a name of its own: used as given, a number on a clash, never the assistant's
+    const named = (await t.call("pals.create", { cwd: t.project, name: "官网" })).pal;
+    const twin = (await t.call("pals.create", { cwd: t.project, name: "官网" })).pal;
+    expect([named.name, twin.name]).toEqual(["官网", "官网 2"]);
+    expect(rec(t, named.id).autoNamed).toBeUndefined();
+    await expect(t.call("pals.create", { cwd: t.project, name: "Palo" })).rejects.toThrow("助理自己的名字");
+    await expect(t.call("pals.create", { cwd: t.project, name: "长".repeat(41) })).rejects.toThrow("太长");
+    // its folder: anywhere that exists, but not PaloAlly's own; a workspace has to exist
+    await expect(t.call("pals.create", { cwd: "/no/such/folder" })).rejects.toThrow("找不到目录");
+    await expect(t.call("pals.create", { cwd: t.paths.root })).rejects.toThrow("不能开在 PaloAlly 自己的目录里");
+    await expect(t.call("pals.create", { cwd: t.project, workspaceId: "ws_000000000000" })).rejects.toThrow("找不到这个工作区");
+    await expect(t.call("pals.create", {})).rejects.toThrow("要给出一个文件夹");
+    // the assistant's proposal path is as it was: a duty and a limit are still needed
+    expect(await t.hub.toolHandlers().pal_propose({ name: "无任务", dir: t.project, duty: "", dailyUsd: 1 })).toContain("要写清楚它负责什么");
+    expect(await t.hub.toolHandlers().pal_propose({ name: "无上限", dir: t.project, duty: "做事", dailyUsd: 0 })).toContain("大于 0");
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("a session that fails to start stays in the list stopped, with the reason", async () => {
+    const t = setup();
+    t.driver.failPalStart = () => "Error: not logged in";
+    const { pal } = await t.call("pals.create", { cwd: t.project, text: "开始" });
+    await waitFor(() => find(t, pal.id).status === "stopped");
+    expect(find(t, pal.id).note).toContain("Claude Code 没登录");
+    expect(find(t, pal.id).attention).toBe("idle");
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("attention: working while busy, waiting (first) while a card waits, done when a real turn ends unseen, idle once seen; status itself is unchanged", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const t = setup({
+      palScript: async (text, ctx) => {
+        if (text === "要确认") {
+          await ctx.useTool("Bash", { command: "npm test" }, { ask: true });
+          return echo(text, ctx);
+        }
+        if (text === "等") {
+          ctx.emit({ type: "tool_use", id: "t-gate", name: "Bash", input: { command: "sleep 1" }, parentToolUseId: null });
+          await Promise.race([gate, ctx.interrupted]);
+        }
+        return echo(text, ctx);
+      },
+    });
+    const { pal } = await t.call("pals.create", { cwd: t.project });
+    await waitFor(() => find(t, pal.id).status === "idle");
+    expect(find(t, pal.id)).toMatchObject({ status: "idle", attention: "idle" });
+    expect(find(t, pal.id).finishedAt).toBeUndefined();
+    // busy → working
+    await t.call("pals.send", { id: pal.id, text: "等" });
+    await waitFor(() => find(t, pal.id).status === "busy");
+    expect(find(t, pal.id).attention).toBe("working");
+    release();
+    // the real end of the turn → done, with the time
+    await waitFor(() => find(t, pal.id).attention === "done");
+    const done = find(t, pal.id);
+    expect(done.status).toBe("idle");
+    expect(done.finishedAt).toBeGreaterThan(0);
+    expect(done.seenAt).toBeLessThan(done.finishedAt!); // the owner's words were before the end
+    await waitFor(() => t.lastList()?.pals[0]?.attention === "done");
+    expect(t.lastList().pals[0]).toMatchObject({ attention: "done", finishedAt: done.finishedAt });
+    // seen → idle, and again does nothing
+    const events = t.events.filter((e) => e.event === "pals.updated").length;
+    await tick(60);
+    const seen = (await t.call("pals.seen", { id: pal.id })).pal;
+    expect(seen).toMatchObject({ attention: "idle", finishedAt: done.finishedAt });
+    expect(seen.seenAt).toBeGreaterThanOrEqual(done.finishedAt!);
+    await waitFor(() => t.events.filter((e) => e.event === "pals.updated").length > events);
+    const after = t.events.filter((e) => e.event === "pals.updated").length;
+    expect((await t.call("pals.seen", { id: pal.id })).pal.seenAt).toBe(seen.seenAt);
+    await tick(80);
+    expect(t.events.filter((e) => e.event === "pals.updated").length).toBe(after);
+    // a card waits: waiting takes priority over everything, status says waiting too
+    await t.call("pals.send", { id: pal.id, text: "要确认" });
+    await waitFor(() => find(t, pal.id).status === "waiting");
+    expect(find(t, pal.id).attention).toBe("waiting");
+    await t.call("approval.answer", { id: t.hub.approvals.listPending()[0]!.id, allow: true });
+    await waitFor(() => find(t, pal.id).attention === "done");
+    // stopped (停止) is not a normal end: nothing new to look at
+    await t.call("pals.seen", { id: pal.id });
+    const finished = find(t, pal.id).finishedAt;
+    t.driver.palScript = async (text, ctx) => {
+      ctx.emit({ type: "tool_use", id: "t-stop", name: "Bash", input: { command: "sleep 100" }, parentToolUseId: null });
+      await ctx.interrupted;
+    };
+    await t.call("pals.send", { id: pal.id, text: "长活" });
+    await waitFor(() => find(t, pal.id).attention === "working");
+    await t.call("pals.stop", { id: pal.id });
+    await waitFor(() => find(t, pal.id).status === "idle");
+    expect(find(t, pal.id)).toMatchObject({ attention: "idle", finishedAt: finished });
+    // the host's restart doesn't write finishedAt: it is read back as it was saved
+    const saved = JSON.parse(readFileSync(t.paths.pals, "utf8")).pals.find((r: PalRecord) => r.id === pal.id);
+    expect(saved).toMatchObject({ finishedAt: finished });
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("done stays done while it sleeps, and the owner's own words count as having looked", async () => {
+    const t = setup();
+    const { pal } = await t.call("pals.create", { cwd: t.project, text: "做完它" });
+    await waitFor(() => find(t, pal.id).attention === "done");
+    await (t.hub.pals as any).putToSleep(t.hub.pals.get(pal.id)!, "test");
+    expect(find(t, pal.id)).toMatchObject({ status: "asleep", attention: "done" });
+    await tick(5);
+    // speaking to it wakes it and clears done; its next end is done again
+    await t.call("pals.send", { id: pal.id, text: "再来" });
+    await waitFor(() => find(t, pal.id).attention === "done");
+    expect(find(t, pal.id).seenAt!).toBeLessThan(find(t, pal.id).finishedAt!);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("seen is shared: any device marks it, pals.updated carries it to the others", async () => {
+    const t = setup();
+    const { pal } = await t.call("pals.create", { cwd: t.project, text: "好" });
+    await waitFor(() => find(t, pal.id).attention === "done");
+    const other = { clientId: "app_2", deviceId: "dev-two", channel: "app" as const, local: false };
+    const before = t.events.length;
+    const r = JSON.parse(JSON.stringify(await handleRpc(t.hub, { method: "pals.seen", params: { id: pal.id } }, other)));
+    expect(r.pal.attention).toBe("idle");
+    const update = t.events.slice(before).find((e) => e.event === "pals.updated" && e.data.pals[0]?.seenAt);
+    expect(update?.data.pals[0]).toMatchObject({ id: pal.id, attention: "idle", seenAt: r.pal.seenAt });
+    // either device reads the same from the list
+    expect((await t.call("pals.list")).pals[0]).toMatchObject({ attention: "idle", seenAt: r.pal.seenAt });
+    await expect(t.call("pals.seen", { id: "pal_nope" })).rejects.toThrow("找不到这个会话");
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("folded: outside any workspace and unused for more than foldDays (not a day earlier), computed from the injected clock; 0 never folds; a workspace's members never fold", async () => {
+    const DAY = 86_400_000;
+    let clock = Date.now();
+    const t = setup({ foldDays: 3, pals: { now: () => clock } });
+    const { pal } = await t.call("pals.adopt", { sessionId: bgSession(t) });
+    const t0 = rec(t, pal.id).lastUsedAt;
+    expect(t0).toBe(clock);
+    clock = t0 + 3 * DAY;
+    expect(find(t, pal.id).folded).toBe(false); // exactly three days: not yet
+    clock = t0 + 3 * DAY + 1;
+    expect(find(t, pal.id).folded).toBe(true);
+    // the list says so when asked again (the host checks hourly)
+    (t.hub.pals as any).emitNow();
+    expect(t.lastList().pals[0].folded).toBe(true);
+    expect((await t.call("pals.earlier")).items).toEqual([{ kind: "folded", key: `folded:${pal.id}`, id: pal.id, sessionId: pal.sessionId, name: "网站", cwd: t.project, at: t0 }]);
+    // in a workspace it stays out of 以前的
+    rec(t, pal.id).workspaceId = "ws_a1b2c3d4e5f6";
+    expect(find(t, pal.id)).toMatchObject({ folded: false, workspaceId: "ws_a1b2c3d4e5f6" });
+    expect((await t.call("pals.earlier")).items).toEqual([]);
+    delete rec(t, pal.id).workspaceId;
+    // foldDays 0: never
+    t.hub.updateSettings({ foldDays: 0 });
+    expect(find(t, pal.id).folded).toBe(false);
+    t.hub.updateSettings({ foldDays: 3 });
+    expect(find(t, pal.id).folded).toBe(true);
+    // resuming a folded one wakes it: used just now, so no longer folded
+    const resumed = (await t.call("pals.resume", { key: `folded:${pal.id}` })).pal;
+    expect(resumed).toMatchObject({ id: pal.id, folded: false });
+    expect(rec(t, pal.id).lastUsedAt).toBe(clock);
+    expect((await t.call("pals.earlier")).items).toEqual([]);
+    await expect(t.call("pals.resume", { key: "folded:pal_gone" })).rejects.toThrow("已经不在了");
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("settings: foldDays 3 and maxAwake 8 by default, changed with settings.update and checked", async () => {
+    const t = setup();
+    expect(t.hub.config.settings).toMatchObject({ foldDays: 3, maxAwake: 8 });
+    expect((await t.call("sync", {})).settings).toMatchObject({ foldDays: 3, maxAwake: 8 });
+    expect((await t.call("settings.update", { patch: { foldDays: 0, maxAwake: 4 } })).settings).toMatchObject({ foldDays: 0, maxAwake: 4 });
+    await expect(t.call("settings.update", { patch: { maxAwake: 0 } })).rejects.toThrow();
+    await expect(t.call("settings.update", { patch: { foldDays: -1 } })).rejects.toThrow();
+  });
+
+  test("end → earlier → resume: it leaves the list and its process ends, is listed once (ended over recent), and comes back under its name with the same session", async () => {
+    const recentId = { v: "" };
+    // (a folder PaloAlly's tests would not call its own)
+    const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), "wb-")));
+    const t = setup({
+      pals: {
+        recentSource: {
+          list: async () => (recentId.v ? [{ sessionId: recentId.v, summary: "旧", customTitle: "旧对话", firstPrompt: "旧", lastModified: Date.now() - 5_000, cwd: elsewhere } as any] : []),
+          info: async (sid) => (sid === recentId.v ? ({ sessionId: sid, summary: "旧", customTitle: "旧对话", lastModified: Date.now(), cwd: elsewhere } as any) : undefined),
+        },
+      },
+    });
+    const { pal } = await t.call("pals.create", { cwd: t.project, name: "官网", text: "做首页" });
+    await waitFor(() => find(t, pal.id).attention === "done");
+    expect((await t.call("pals.earlier")).items).toEqual([]);
+    const gone = await t.call("pals.end", { id: pal.id });
+    expect(gone.earlier).toMatchObject({ kind: "ended", key: `ended:${pal.sessionId}`, sessionId: pal.sessionId, name: "官网", cwd: t.project });
+    expect(gone.earlier.at).toBeGreaterThan(0);
+    expect(t.driver.pals[0]!.closed).toBe(true);
+    expect(t.hub.pals.list()).toEqual([]);
+    expect(t.lastList().pals).toEqual([]);
+    expect(JSON.parse(readFileSync(t.paths.pals, "utf8")).ended).toHaveLength(1);
+    // a transcript of it on the computer too: still one line
+    t.claude.transcript(t.project, pal.sessionId, [assistantEntry("首页做好了")]);
+    recentId.v = "11111111-0000-4000-8000-00000000000a";
+    t.claude.transcript(elsewhere, recentId.v, [assistantEntry("旧的")]);
+    const items = (await t.call("pals.earlier")).items;
+    expect(items.map((i: any) => [i.kind, i.name])).toEqual([["recent", "旧对话"], ["ended", "官网"]].sort((a, b) => (items[0].kind === a[0] ? -1 : 1)));
+    expect(items.filter((i: any) => i.sessionId === pal.sessionId)).toHaveLength(1);
+    // newest first; a folder narrows
+    expect(items[0].at).toBeGreaterThanOrEqual(items[1].at);
+    expect((await t.call("pals.earlier", { folder: "/no/where" })).items).toEqual([]);
+    expect((await t.call("pals.earlier", { limit: 1 })).items).toHaveLength(1);
+    // resume the ended one: same name, folder and session, back in the list, no longer earlier
+    const back = (await t.call("pals.resume", { key: `ended:${pal.sessionId}` })).pal;
+    expect(back).toMatchObject({ name: "官网", cwd: t.project, sessionId: pal.sessionId, createdBy: "owner" });
+    expect(back.id).not.toBe(pal.id);
+    expect(t.driver.pals[1]!.opts.resumeSessionId ?? t.driver.pals[1]!.opts.sessionId).toBe(pal.sessionId);
+    expect((await t.call("pals.earlier")).items.map((i: any) => i.kind)).toEqual(["recent"]);
+    // the kind + sessionId form works too, a recent one is adopted
+    const adopted = (await t.call("pals.resume", { kind: "recent", sessionId: recentId.v })).pal;
+    expect(adopted).toMatchObject({ sessionId: recentId.v, name: "旧对话" });
+    expect((await t.call("pals.earlier")).items).toEqual([]);
+    // what isn't there, and what makes no sense
+    await expect(t.call("pals.resume", { key: "ended:22222222-0000-4000-8000-000000000000" })).rejects.toThrow("已经不在了");
+    await expect(t.call("pals.resume", { key: "nonsense" })).rejects.toThrow("看不懂");
+    await expect(t.call("pals.end", { id: "pal_nope" })).rejects.toThrow("找不到这个会话");
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("ended keeps the newest 200 and one line per session; a session open in a terminal can't be resumed", async () => {
+    const t = setup();
+    const data = (t.hub.pals as any).data;
+    for (let i = 0; i < 205; i++) data.ended.push({ sessionId: `s-${i}`, name: `旧${i}`, cwd: t.project, at: 1000 + i });
+    const { pal } = await t.call("pals.create", { cwd: t.project, name: "新" });
+    await waitFor(() => find(t, pal.id).status === "idle");
+    await t.call("pals.end", { id: pal.id });
+    expect(data.ended).toHaveLength(200);
+    expect((await t.call("pals.earlier", { limit: 500 })).items).toHaveLength(200);
+    expect((await t.call("pals.earlier", { limit: 500 })).items[0]).toMatchObject({ name: "新" });
+    // the terminal has it open now
+    const term = liveProcess();
+    t.claude.register({ sessionId: pal.sessionId, name: "新", cwd: t.project, pid: term.pid });
+    await expect(t.call("pals.resume", { key: `ended:${pal.sessionId}` })).rejects.toThrow("刚在别处打开了");
+    expect(t.hub.pals.list()).toEqual([]);
+    term.kill("SIGTERM");
+    await exited(term);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("pals.folders: the folders sessions are in, ended in or ended on the computer, most recent first, once each, never PaloAlly's own", async () => {
+    const t = setup();
+    const second = realpathSync(mkdtempSync(join(tmpdir(), "paloally-pal-")));
+    const a = (await t.call("pals.create", { cwd: t.project, name: "甲" })).pal;
+    await tick(5);
+    const b = (await t.call("pals.create", { cwd: second, name: "乙" })).pal;
+    await waitFor(() => find(t, b.id).status === "idle");
+    await t.call("pals.create", { cwd: t.project, name: "丙" });
+    await tick(5);
+    await t.call("pals.end", { id: b.id });
+    const { folders } = await t.call("pals.folders", {});
+    expect(folders.map((f: any) => f.path)).toEqual([second, t.project]);
+    expect(folders[0].name).toBe(second.split("/").at(-1));
+    expect(typeof folders[0].lastUsedAt).toBe("number");
+    expect(folders[0].lastUsedAt).toBeGreaterThanOrEqual(folders[1].lastUsedAt);
+    expect((await t.call("pals.folders", { limit: 1 })).folders).toHaveLength(1);
+    expect(a.id).toBeTruthy();
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("auto-naming: after its first turn it takes Claude Code's title (the first words if there is none yet), Claude Code is renamed too, a clash gets a number, and an owner's name sticks", async () => {
+    const t = titled();
+    const one = (await t.call("pals.create", { cwd: t.project })).pal;
+    expect(one.name).toMatch(/^session-/);
+    // Claude Code has made its custom title of the placeholder (it started under it) and a summary
+    t.titles.set(one.sessionId, { customTitle: one.name, summary: "修登录页", firstPrompt: "修一下登录页" });
+    await t.call("pals.send", { id: one.id, text: "修一下登录页" });
+    await waitFor(() => find(t, one.id).name === "修登录页");
+    expect(t.driver.renames.at(-1)).toEqual({ title: "修登录页", sessionId: one.sessionId }); // in its running process, as /rename
+    expect(rec(t, one.id).autoNamed).toBeUndefined();
+    await waitFor(() => t.lastList()?.pals.some((p: any) => p.id === one.id && p.name === "修登录页"), 1_000);
+    expect(t.hub.audit.tail(30).find((e) => e.type === "pal.renamed")).toMatchObject({ pal: one.id, from: one.name, to: "修登录页", by: "auto" });
+    // a second one gets the same title: a number
+    const two = (await t.call("pals.create", { cwd: t.project })).pal;
+    t.titles.set(two.sessionId, { customTitle: two.name, summary: "修登录页" });
+    await t.call("pals.send", { id: two.id, text: "也修登录页" });
+    await waitFor(() => find(t, two.id).name === "修登录页 2");
+    // no title yet (nothing read): the placeholder stays until there is one; only the first words make a name
+    const three = (await t.call("pals.create", { cwd: t.project })).pal;
+    await t.call("pals.send", { id: three.id, text: "你好" });
+    await t.hub.idle();
+    await tick(40);
+    expect(find(t, three.id).name).toBe(three.name);
+    expect(rec(t, three.id).autoNamed).toBe(true);
+    t.titles.set(three.sessionId, { customTitle: three.name, summary: "整理日志 整理日志", firstPrompt: "整理日志 整理日志" });
+    await t.call("pals.send", { id: three.id, text: "接着" });
+    await waitFor(() => find(t, three.id).name === "整理日志 整理日志");
+    // an owner's rename ends it for good: later turns never rename it
+    await t.call("pals.rename", { id: one.id, name: "登录" });
+    t.titles.set(one.sessionId, { customTitle: "登录", summary: "别的标题" });
+    await t.call("pals.send", { id: one.id, text: "再来" });
+    await t.hub.idle();
+    await tick(40);
+    expect(find(t, one.id).name).toBe("登录");
+    // renamed in Claude Code before any title was read: that is the name
+    const four = (await t.call("pals.create", { cwd: t.project })).pal;
+    t.titles.set(four.sessionId, { customTitle: "我起的名字", summary: "别的" });
+    await t.call("pals.send", { id: four.id, text: "嗯" });
+    await waitFor(() => find(t, four.id).name === "我起的名字");
+    expect(rec(t, four.id).autoNamed).toBeUndefined();
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("the waiting push also fires for the owner's own sessions (called 新会话 until named); done does not push; a second wait within 10 minutes is quiet", async () => {
+    const t = setup({
+      palScript: async (text, ctx) => {
+        if (text === "要确认") await ctx.useTool("Bash", { command: "npm test" }, { ask: true });
+        return echo(text, ctx);
+      },
+    });
+    const { pal } = await t.call("pals.create", { cwd: t.project, text: "先打个招呼" });
+    await waitFor(() => find(t, pal.id).attention === "done");
+    expect(t.pusher.pushes).toEqual([]); // done is not pushed
+    await t.call("pals.send", { id: pal.id, text: "要确认" });
+    await waitFor(() => t.hub.approvals.listPending().length === 1);
+    expect(t.pusher.pushes).toEqual([expect.objectContaining({ title: "新会话 在等你", body: "想运行：npm test", data: expect.objectContaining({ pal: pal.id }) })]);
+    await t.call("approval.answer", { id: t.hub.approvals.listPending()[0]!.id, allow: true });
+    await waitFor(() => find(t, pal.id).attention === "done");
+    expect(t.pusher.pushes).toHaveLength(1);
+    // named, the push says its name
+    await t.call("pals.rename", { id: pal.id, name: "官网" });
+    (t.hub.pals as any).lastPush.clear();
+    await t.call("pals.send", { id: pal.id, text: "要确认" });
+    await waitFor(() => t.hub.approvals.listPending().length === 1);
+    expect(t.pusher.pushes.at(-1)!.title).toBe("官网 在等你");
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("maxAwake: past it the least recently used idle session sleeps, one shown in a workspace tile is passed over, busy ones never; all shown means all stay awake", async () => {
+    const shown = new Set<string>();
+    const t = setup({
+      maxAwake: 2,
+      timing: { sleepCheckMs: 30 },
+      pals: { shownIds: () => shown },
+      palScript: async (text, ctx) => {
+        if (text !== "长活") return echo(text, ctx);
+        ctx.emit({ type: "tool_use", id: `t-${Math.random()}`, name: "Bash", input: { command: "sleep 100" }, parentToolUseId: null });
+        await ctx.interrupted;
+      },
+    });
+    const ids: string[] = [];
+    for (const name of ["甲", "乙"]) {
+      const { pal } = await t.call("pals.create", { cwd: t.project, name });
+      ids.push(pal.id);
+      await waitFor(() => find(t, pal.id).status === "idle");
+      await tick(4);
+    }
+    await tick(100);
+    expect(t.hub.pals.list().filter((p) => p.status === "asleep")).toEqual([]);
+    // a third: 甲 is the one used least lately
+    const third = (await t.call("pals.create", { cwd: t.project, name: "丙" })).pal;
+    await waitFor(() => find(t, ids[0]!).status === "asleep", 2_000);
+    expect(t.hub.pals.list().filter((p) => p.status === "asleep").map((p) => p.name)).toEqual(["甲"]);
+    // wake 甲 with 乙 shown in a tile: 丙 is the next out, not 乙, though 乙 was used less lately
+    shown.add(ids[1]!);
+    await t.call("pals.wake", { id: ids[0]! });
+    await waitFor(() => find(t, third.id).status === "asleep", 2_000);
+    expect(find(t, ids[1]!).status).toBe("idle");
+    // all three shown: all stay awake
+    await t.call("pals.wake", { id: third.id });
+    shown.add(ids[0]!);
+    shown.add(third.id);
+    await tick(200);
+    expect(t.hub.pals.list().filter((p) => p.status === "asleep")).toEqual([]);
+    // busy ones are never put to sleep
+    shown.clear();
+    for (const id of ids) await t.call("pals.send", { id, text: "长活" });
+    await t.call("pals.send", { id: third.id, text: "长活" });
+    await waitFor(() => t.hub.pals.list().filter((p) => p.status === "busy").length === 3, 2_000);
+    await tick(200);
+    expect(t.hub.pals.list().filter((p) => p.status === "busy")).toHaveLength(3);
+    await t.hub.pals.stopAndWait();
   });
 });
 

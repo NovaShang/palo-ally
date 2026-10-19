@@ -48,7 +48,8 @@
   - 不传 `name` 时内部名为 `session-<短id>`，界面显示「新会话」。第一句话之后 host 自动起名，重名加数字，并广播 `pals.updated`。
   - 不传 `text` 时不发消息，等主人说第一句。传了就作为第一句发出。
   - `workspaceId` 有就直接加入该工作区。
-  - 返回时进程可能还在 `starting`。
+  - 返回时进程可能还在 `starting`，此时 `attention` 为 `idle`（`starting` 按规则算 `idle`），第一句话开始处理后才变 `working`。
+  - 自动起名：第一轮结束后，`readTitle` 用 Claude Code 对它的标题（还没有就用第一句话的前几个字）起名，同时改 Claude Code 里的标题；重名加数字。主人自己改过名或 Claude Code 里改过名则不再自动起名。推送里在起名前显示「新会话」。
   - 主人自己新建的会话不设每日花费上限，和在终端里用一样（plan §7.5）；Palo 提议开的仍用 `dailyUsd`。
   - 醒着的上限 `MAX_AWAKE` 为 8，可配置（`settings.maxAwake`）。新会话和 `pals.resume`、`pals.wake` 超出时让最久没动的睡去，但**工作区里正显示的格**不参与挑选（plan §7.4）。「正在显示」由 host 从工作区布局推断：出现在任一 `Workspace.layout` 叶子里的会话都算，不需要 app 另外上报。若全是叶子的会话多于上限，则都保持醒着，不强行睡。
 - 错误：找不到文件夹；文件夹在 PaloAlly 自己的目录里；名字过长（40 字）、和助理同名；会话数达上限（`MAX_PALS`）；`workspaceId` 不存在。
@@ -56,7 +57,7 @@
 
 ```json
 {"id":"r1","method":"pals.create","params":{"cwd":"/Users/demo/code/site","text":"把登录页做完","workspaceId":"ws_a1b2c3d4e5f6"}}
-{"id":"r1","result":{"pal":{"id":"pal_3f9a1c0b2d4e","name":"session-3f9a1c","cwd":"/Users/demo/code/site","sessionId":"7b0c1e5a-1d2f-4a56-9c3e-0a1b2c3d4e5f","status":"starting","pending":0,"createdBy":"owner","updatedAt":1792310400000,"attention":"working","workspaceId":"ws_a1b2c3d4e5f6","folded":false}}}
+{"id":"r1","result":{"pal":{"id":"pal_3f9a1c0b2d4e","name":"session-3f9a1c","cwd":"/Users/demo/code/site","sessionId":"7b0c1e5a-1d2f-4a56-9c3e-0a1b2c3d4e5f","status":"starting","pending":0,"createdBy":"owner","updatedAt":1792310400000,"attention":"idle","workspaceId":"ws_a1b2c3d4e5f6","folded":false}}}
 ```
 
 ### `pals.detail`

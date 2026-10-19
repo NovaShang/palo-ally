@@ -12,7 +12,7 @@ import { type PalMapOptions, TranscriptFollower, toPalMessages, transcriptLastLi
 import { ASK_TOOL, type QuestionManager } from "./questions.ts";
 import { type ForkSession, type PendingRewind, beforeCompaction, chainTo, hasFileCheckpoint, leafOf, ownerText, readTranscript, rewindBusy, rewindNoFiles, rewindNotFound } from "./rewind.ts";
 import { type StallRecovery, type StallTarget, transcriptHas } from "./stallWatch.ts";
-import type { Attachment, CardSource, ChatMessage, Pal, PalStatus } from "./types.ts";
+import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
 import { newId, truncate } from "./util.ts";
 
 // One Pal (docs/pals-prd.md §4, §7): one of the owner's Claude Code
@@ -52,6 +52,10 @@ export interface PalRecord {
   // Claude Code hasn't written yet; each start forks it until it has.
   rewind?: PendingRewind;
   formerSessions?: string[]; // the sessions it was forked from (theirs too: not listed among the ended ones)
+  finishedAt?: number; // its last turn ended normally then (a real turn; the host's restart doesn't write it)
+  seenAt?: number; // the owner last looked then (any device); the owner's own words count too
+  autoNamed?: boolean; // still under the placeholder name it was created with: named from its first words after a turn
+  workspaceId?: string; // the workspace it belongs to (workspaces: docs/workbench-rpc.md §3)
 }
 
 /** Another process holding a session's transcript. */
@@ -96,6 +100,8 @@ export interface PalSessionDeps {
   /** What the owner attaches: images as Palo gets them, files put where the Pal reads them. */
   media?: Pick<MediaStore, "read" | "inbox" | "remember" | "recall">;
   timing: { readyMs: number; restartMs: number[]; exitWaitMs: number };
+  /** settings.foldDays: unused this many days outside a workspace, it's folded into 以前的 (0 = never). */
+  foldDays: () => number;
   now: () => number;
   log: (s: string) => void;
 }
@@ -237,6 +243,33 @@ export class PalSession {
     return this.busy ? "busy" : "idle";
   }
 
+  /** What the owner should look at: a card waits (first), it works, it finished and they haven't looked, else nothing. */
+  attention(status = this.status()): PalAttention {
+    if (status === "waiting") return "waiting";
+    if (status === "busy") return "working";
+    const { finishedAt, seenAt } = this.rec;
+    if ((status === "idle" || status === "asleep") && finishedAt !== undefined && finishedAt > (seenAt ?? 0)) return "done";
+    return "idle";
+  }
+
+  /** Outside any workspace and unused for longer than settings.foldDays. */
+  folded(): boolean {
+    const days = this.d.foldDays();
+    return !this.rec.workspaceId && days > 0 && this.d.now() - this.rec.lastUsedAt > days * 86_400_000;
+  }
+
+  /**
+   * The owner looked (pals.seen). False: nothing to mark, because no turn
+   * has finished since they last looked.
+   */
+  markSeen(at: number): boolean {
+    const { finishedAt, seenAt } = this.rec;
+    if (finishedAt === undefined || (seenAt ?? 0) >= finishedAt) return false;
+    this.rec.seenAt = Math.max(at, finishedAt);
+    this.d.save();
+    return true;
+  }
+
   toWire(): Pal {
     const status = this.status();
     return {
@@ -253,6 +286,11 @@ export class PalSession {
       ...(typeof this.rec.lastWakeUsd === "number" ? { lastWakeUsd: this.rec.lastWakeUsd } : {}),
       createdBy: this.rec.createdBy,
       updatedAt: Math.round(this.updatedAt),
+      attention: this.attention(status),
+      ...(this.rec.finishedAt !== undefined ? { finishedAt: Math.round(this.rec.finishedAt) } : {}),
+      ...(this.rec.seenAt !== undefined ? { seenAt: Math.round(this.rec.seenAt) } : {}),
+      ...(this.rec.workspaceId ? { workspaceId: this.rec.workspaceId } : {}),
+      folded: this.folded(),
     };
   }
 
@@ -663,6 +701,8 @@ export class PalSession {
     this.pendingUuids.add(uuid);
     this.pendingText.set(uuid, { text: content, ...(o.from ? { from: o.from } : {}), ...(images.length ? { images } : {}) });
     this.rec.lastUsedAt = ts;
+    // The owner's own words mean they're looking at it.
+    if (!o.from) this.rec.seenAt = ts;
     this.d.save();
     proc.send(content, uuid, images);
     this.windingDown = false;
@@ -838,7 +878,14 @@ export class PalSession {
           this.closeStream();
           this.turnOpen = false;
           this.touch();
-        } else this.endTurn();
+        } else {
+          // A turn that really ended (not stopped, not failed): the owner has something to look at.
+          if (!stopped && !e.isError) {
+            this.rec.finishedAt = this.d.now();
+            this.d.save();
+          }
+          this.endTurn();
+        }
         this.follower?.poke();
         this.d.onTurnEnd(this);
         break;

@@ -72,7 +72,7 @@ export const zhHub = {
   "tool.notPublished": "没发布成功：{err}",
   "tool.nothingToCopy": "没有要复制的内容",
   "tool.copied": "已放到主人的手机剪贴板（若主人当时不在 App 里，对话里有一键复制的卡片）",
-  "tool.noPals": "这台电脑上没开 Pal",
+  "tool.noPals": "这台电脑上没开会话",
   "tool.pairLink": "配对链接（{minutes} 分钟内有效，只能连一台设备）：\n{link}\n把链接原样单独放一行发给主人（不要改写成 Markdown 链接、不要放进代码块），App 里能直接点开。",
   "tool.pairFail": "没拿到配对链接：{err}",
   "check.last": "上次 {at}",

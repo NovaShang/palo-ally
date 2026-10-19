@@ -29,6 +29,7 @@ export const RPC_METHODS = [
   "ally.list", "ally.invite", "ally.accept", "ally.remove", "ally.log", "ally.draft.decide", "ally.say", "ally.trust",
   "sessions.list", "sessions.history", "sessions.hooks", "helper.decide",
   "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop", "pals.recent", "pals.wake", "pals.rename", "pals.rewind",
+  "pals.create", "pals.folders", "pals.seen", "pals.end", "pals.earlier", "pals.resume",
   "pair.invite", "device.list", "device.remove",
   "files.list", "files.read", "files.search", "files.resolve", "files.folders.list", "files.folders.browse", "files.folders.add", "files.folders.remove",
 ] as const;
@@ -292,6 +293,19 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     // The conversations that ended on the computer lately (§10); pals.adopt takes one over.
     case "pals.recent":
       return { sessions: await hub.pals.recent({ folder: typeof p.folder === "string" ? p.folder : undefined, limit: p.limit }) };
+    // The workbench (docs/workbench-rpc.md §2): the owner's own sessions, in any folder.
+    case "pals.create":
+      return { pal: hub.pals.createSession({ cwd: String(p.cwd ?? ""), name: typeof p.name === "string" ? p.name : undefined, text: typeof p.text === "string" ? p.text : undefined, workspaceId: typeof p.workspaceId === "string" ? p.workspaceId : undefined }, ctx.channel) };
+    case "pals.folders":
+      return await hub.pals.folders({ limit: p.limit });
+    case "pals.seen":
+      return { pal: hub.pals.seen(String(p.id ?? "")) };
+    case "pals.end":
+      return await hub.pals.end(String(p.id ?? ""), ctx.channel);
+    case "pals.earlier":
+      return await hub.pals.earlier({ limit: p.limit, folder: typeof p.folder === "string" ? p.folder : undefined });
+    case "pals.resume":
+      return await hub.pals.resume({ key: typeof p.key === "string" ? p.key : undefined, kind: typeof p.kind === "string" ? p.kind : undefined, sessionId: typeof p.sessionId === "string" ? p.sessionId : undefined }, ctx.channel);
     // A link that pairs one more of the owner's devices (5 minutes, one
     // device): for the owner's own apps and the local CLI, never an Ally.
     case "pair.invite":

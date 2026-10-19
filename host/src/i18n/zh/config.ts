@@ -5,6 +5,8 @@ export const zhConfig = {
   "config.badRange": "{name}要在 {min} 到 {max} 之间",
   "config.probeInterval": "检查间隔（分钟）",
   "config.approvalTimeout": "确认等待时间（分钟）",
+  "config.foldDays": "自动收起天数",
+  "config.maxAwake": "同时醒着的会话数",
   "config.badWechat": "微信主动消息只能是 off / hint / full",
   "config.nameText": "名字要是一段文字",
   "config.nameLong": "名字最多 20 个字",

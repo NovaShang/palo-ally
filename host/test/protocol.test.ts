@@ -345,6 +345,35 @@ describe("host ↔ app protocol", () => {
     const folder = (await run("files.folders.add", { path: project })).folder;
     await run("files.folders.list", {});
     await run("files.folders.remove", { id: folder.id });
+    // The workbench (docs/workbench-rpc.md §2): the owner's own session in any folder,
+    // its first turn done and then seen, ended, listed among the earlier ones and picked up again.
+    const made = (await run("pals.create", { cwd: project, text: "把安装说明写完" })).pal;
+    expect(made).toMatchObject({ createdBy: "owner", name: expect.stringMatching(/^session-/), status: "starting", attention: "idle", folded: false });
+    await waitFor(() => hub.pals.list().find((p) => p.id === made.id)?.attention === "done", 5_000);
+    const unseen = hub.pals.list().find((p) => p.id === made.id)!;
+    expect(unseen.finishedAt).toBeDefined();
+    const seenPal = (await run("pals.seen", { id: made.id })).pal;
+    expect([seenPal.attention, typeof seenPal.seenAt]).toEqual(["idle", "number"]);
+    const folders = (await run("pals.folders", {})).folders;
+    expect(folders[0]).toMatchObject({ path: project });
+    // a conversation that ended on the computer, and a session unused for days (folded)
+    const recentId = "8e4f1a22-0000-4000-8000-000000000005";
+    claude.transcript(project, recentId, [{ type: "user", uuid: "q1", timestamp: "2026-10-12T08:00:00Z", message: { role: "user", content: "补一份更新日志" }, origin: { kind: "human" } }]);
+    ended.push({ sessionId: recentId, summary: "补一份更新日志", customTitle: "更新日志", firstPrompt: "补一份更新日志", lastModified: Date.now() - 60_000, cwd: project });
+    const old = hub.pals.list().find((p) => p.sessionId === endedId)!;
+    (hub.pals.get(old.id) as any).rec.lastUsedAt = Date.now() - 5 * 86_400_000;
+    const endedPal = (await run("pals.end", { id: made.id })).earlier;
+    expect(endedPal).toMatchObject({ kind: "ended", key: `ended:${made.sessionId}`, sessionId: made.sessionId, cwd: project });
+    const earlier = (await run("pals.earlier", { limit: 20 })).items as { kind: string; key: string }[];
+    expect(earlier.map((i) => i.kind).sort()).toEqual(["ended", "folded", "recent"]);
+    const folded = earlier.find((i) => i.kind === "folded")!;
+    const back = [
+      { params: { key: `ended:${made.sessionId}` }, result: await call("pals.resume", { key: `ended:${made.sessionId}` }) },
+      { params: { key: folded.key }, result: await call("pals.resume", { key: folded.key }) },
+    ];
+    expect(back[0]!.result.pal).toMatchObject({ name: made.name, cwd: project, sessionId: made.sessionId });
+    expect(back[1]!.result.pal).toMatchObject({ folded: false });
+    methods["pals.resume"] = back;
     await run("pals.remove", { id: opened.id });
     hub.pals.stop();
     await run("stop");
@@ -409,5 +438,5 @@ describe("host ↔ app protocol", () => {
     cleanup(peer.ctx.paths);
     claude.cleanup();
     cli.close();
-  });
+  }, 20_000);
 });
