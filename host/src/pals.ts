@@ -153,6 +153,10 @@ export interface PalsDeps {
   workspaceExists?: (id: string) => boolean;
   /** Sessions shown in a workspace's tiles: never the ones put to sleep to make room. */
   shownIds?: () => Set<string>;
+  /** A new or resumed session joins a workspace (with a tile of its own). */
+  workspaceJoin?: (workspaceId: string, palId: string) => void;
+  /** A session is gone (ended, removed, handed back): out of its workspace. */
+  palGone?: (palId: string) => void;
   /** The computer's ended conversations (the SDK's listSessions / getSessionInfo); also each Pal's title (§13). */
   recentSource?: RecentSource;
   /** Retitles a session that has no process (the SDK's renameSession). */
@@ -856,6 +860,16 @@ export class Pals {
       this.recentList.invalidate();
     }
     this.save();
+    this.d.palGone?.(pal.id);
+  }
+
+  /** The workbench says which workspace a session is in (written on its record; nothing is emitted). */
+  setWorkspace(id: string, workspaceId: string | undefined): void {
+    const pal = this.pals.get(id);
+    if (!pal || pal.rec.workspaceId === workspaceId) return;
+    if (workspaceId) pal.rec.workspaceId = workspaceId;
+    else delete pal.rec.workspaceId;
+    this.save();
   }
 
   /**
@@ -1103,6 +1117,7 @@ export class Pals {
       ...(model ? { model } : {}),
     };
     const pal = this.add(rec);
+    if (workspaceId) this.d.workspaceJoin?.(workspaceId, id);
     const text = String(o.text ?? "").trim();
     const failed = (e: unknown) => {
       const msg = e instanceof Error ? e.message : String(e);
@@ -1271,6 +1286,11 @@ export class Pals {
     }
     if (!isDir) throw new Error(t("pals.folderGone", { cwd: e.cwd }));
     const pal = await this.finishAdopt({ id: ref, name: e.name, cwd: e.cwd }, by, true);
+    // Back in the workspace it was ended from, if that is still there.
+    if (e.workspaceId && this.d.workspaceExists?.(e.workspaceId)) {
+      this.d.workspaceJoin?.(e.workspaceId, pal.id);
+      this.emitNow();
+    }
     this.forgetEnded(ref);
     return { pal: pal.toWire() };
   }

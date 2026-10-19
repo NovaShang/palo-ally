@@ -31,6 +31,7 @@ export const RPC_METHODS = [
   "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop", "pals.recent", "pals.wake", "pals.rename", "pals.rewind",
   "pals.create", "pals.folders", "pals.seen", "pals.end", "pals.earlier", "pals.resume",
   "pals.detail", "pals.setModel", "pals.compact", "pals.stopTask", "pals.reveal",
+  "workspaces.list", "workspaces.create", "workspaces.update", "workspaces.move", "workspaces.delete", "workbench.tabs.get", "workbench.tabs.set",
   "pair.invite", "device.list", "device.remove",
   "files.list", "files.read", "files.search", "files.resolve", "files.folders.list", "files.folders.browse", "files.folders.add", "files.folders.remove",
 ] as const;
@@ -39,6 +40,7 @@ export const RPC_EVENTS = [
   "chat.message", "chat.delta", "chat.rewound", "task.updated", "approval.updated", "question.updated", "watch.updated",
   "artifact.updated", "settings.updated", "status", "commands.updated",
   "suggestions.updated", "ally.updated", "ally.entry", "sessions.updated", "pals.updated",
+  "workspaces.updated", "workbench.updated",
 ] as const;
 
 // Admin methods are reachable only on the local unix socket (the owner's own
@@ -69,6 +71,8 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
         artifacts: hub.artifacts.list(),
         settings: hub.config.settings,
         status: hub.status(),
+        workspaces: hub.workbench.list(),
+        workbenchTabs: hub.workbench.allTabs(),
         // Mid-reply: the whole text so far, which replaces what the client
         // has for that id; later chat.delta events append to it.
         streaming: hub.conversation.streamingReply() ?? undefined,
@@ -315,6 +319,20 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return await hub.pals.reveal(String(p.id ?? ""), p.kind);
     case "pals.earlier":
       return await hub.pals.earlier({ limit: p.limit, folder: typeof p.folder === "string" ? p.folder : undefined });
+    case "workspaces.list":
+      return { workspaces: hub.workbench.list() };
+    case "workspaces.create":
+      return hub.workbench.create(p);
+    case "workspaces.update":
+      return hub.workbench.update(p);
+    case "workspaces.move":
+      return hub.workbench.move(p);
+    case "workspaces.delete":
+      return hub.workbench.delete(p);
+    case "workbench.tabs.get":
+      return hub.workbench.tabsGet(p);
+    case "workbench.tabs.set":
+      return hub.workbench.tabsSet(p);
     case "pals.resume":
       return await hub.pals.resume({ key: typeof p.key === "string" ? p.key : undefined, kind: typeof p.kind === "string" ? p.kind : undefined, sessionId: typeof p.sessionId === "string" ? p.sessionId : undefined }, ctx.channel);
     // A link that pairs one more of the owner's devices (5 minutes, one

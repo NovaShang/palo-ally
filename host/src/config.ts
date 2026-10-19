@@ -60,6 +60,7 @@ export class Paths {
   get ccHooks() { return join(this.state, "cc-hooks.json"); }
   get ccSettingsBackup() { return join(this.state, "cc-settings.backup.json"); }
   get pals() { return join(this.state, "pals.json"); }
+  get workbench() { return join(this.state, "workbench.json"); }
   get logs() { return join(this.root, "logs"); }
   get browserProfile() { return join(this.root, "browser-profile"); }
 }

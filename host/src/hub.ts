@@ -37,6 +37,7 @@ import { appendJsonl, readJson, writeJson } from "./util.ts";
 import { WatchStore } from "./watches.ts";
 import { Sessions, type SessionsDeps } from "./sessions.ts";
 import { PALO_NAME, Pals, type PalsDeps } from "./pals.ts";
+import { Workbench } from "./workbench.ts";
 import { FileBrowser } from "./files.ts";
 
 export type { ClientConn, WechatChannel, WechatReplyTarget } from "./channels/types.ts";
@@ -89,6 +90,8 @@ export class Hub {
   readonly allies: Allies;
   readonly sessions: Sessions;
   readonly pals: Pals;
+  /** Workspaces and the right pane's tabs (docs/workbench-rpc.md §3). */
+  readonly workbench: Workbench;
   /** Files on the computer, read-only (docs/files-prd.md). */
   readonly files: FileBrowser;
   readonly stallWatch: StallWatch;
@@ -337,8 +340,21 @@ export class Hub {
       // A Pal's palo_send joins the assistant's inbound queue (a turn of its own, behind a running one), as an Ally's message does.
       toAssistant: (from, wrapped) => this.conversation.enqueue({ text: wrapped, origin: "system", proactive: true, pal: true, label: from }),
       ...(deps.sessions?.readMessages ? { readMessages: deps.sessions.readMessages } : {}),
+      workspaceExists: (id) => this.workbench?.exists(id) ?? false,
+      shownIds: () => this.workbench?.shownIds() ?? new Set<string>(),
+      workspaceJoin: (workspaceId, palId) => this.workbench?.join(workspaceId, palId),
+      palGone: (palId) => this.workbench?.gone(palId),
       log: this.log,
       ...deps.pals,
+    });
+    this.workbench = new Workbench({
+      paths: this.paths,
+      bus: this.bus,
+      resolvePal: (id) => this.pals.get(id)?.id,
+      palList: () => this.pals.list(),
+      setPalWorkspace: (palId, workspaceId) => this.pals.setWorkspace(palId, workspaceId),
+      palsChanged: () => this.pals.emitNow(),
+      log: this.log,
     });
     // The stall watchdog: the assistant's own process and every Pal's.
     const mainTranscript = () => {

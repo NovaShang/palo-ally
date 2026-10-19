@@ -267,6 +267,8 @@ LayoutNode =
 - host 只做轻校验和存储：解析失败、`session` 重复、不在成员里则拒绝；比例是否铺满不校验，客户端用 `LayoutTree` 的 renormalize 修正。
 - 成员被摘掉（`workspaces.move`、`pals.end`、`pals.remove`）时，host 把对应叶子从树里删掉，兄弟节点顶上，不做比例重算（app 重算）；树空了则 `layout` 变 `null`。
 - 以最后写入者为准，不合并（plan §6.8）。
+- 叶子只要求是成员的子集：成员可以比叶子多（刚 `workspaces.move` 进来、app 还没排的）。split 至少一个子节点即可，不强求两个。
+- `pals.create` 带 `workspaceId`、或 `pals.resume` 把会话放回工作区时，若该工作区已有 `layout`，host 在根上包一层 `hsplit`：旧树按宽度挤到左边 `k/(k+1)`，新叶子占右边 `1/(k+1)`，app 照常 renormalize；`layout` 为 `null` 则不动。
 
 ```json
 {"type":"hsplit","w":1,"h":1,"x":0,"y":0,"children":[
@@ -303,10 +305,10 @@ PaneTab =
 
 ### `workspaces.create`
 
-- 参数：`{name?: string, memberIds: string[]}`。`memberIds` 至少一个。
+- 参数：`{name?: string, memberIds?: string[]}`。`memberIds` 可以为空或不给：建一个空工作区，之后用 `workspaces.move` 加人（PRD 允许）。
 - 返回：`{workspace: Workspace}`
-- 行为：成员已在别的工作区的，先从旧的摘出来（迁移），旧工作区变空则一并删除。`layout` 初始为 `null`。
-- 错误：`memberIds` 为空；有成员不存在；名字过长（40 字）。
+- 行为：成员已在别的工作区的，先从旧的摘出来（迁移）；旧工作区变空也保留，只有 `workspaces.delete` 才删工作区。`layout` 初始为 `null`。
+- 错误：有成员不存在；名字过长（40 字）。
 - 广播：`workspaces.updated`；成员的 `workspaceId` 变了，所以也发 `pals.updated`。
 
 ```json
@@ -333,8 +335,8 @@ PaneTab =
 把一个会话移进、移出或移到另一个工作区。成员的增删都走这一个方法；多选就逐个调用。
 
 - 参数：`{palId: string, workspaceId?: string}`。不给 `workspaceId` 表示移出，变回普通会话。
-- 返回：`{workspaces: Workspace[]}`，所有被改动的工作区（旧的和新的，旧的变空则已删除，不在里面）。
-- 行为：互斥由 host 强制，会话在别的工作区时先从那边摘出来。摘出成员时按布局树规则删叶子。旧工作区因迁移变空会被删。新成员加在 `memberIds` 末尾，不改 `layout`（app 自己把它放进树里再 `workspaces.update`）。
+- 返回：`{workspaces: Workspace[]}`，所有被改动的工作区（旧的和新的；旧的变空也在里面，不删）。
+- 行为：互斥由 host 强制，会话在别的工作区时先从那边摘出来。摘出成员时按布局树规则删叶子。旧工作区因迁移变空也保留。新成员加在 `memberIds` 末尾，不改 `layout`（app 自己把它放进树里再 `workspaces.update`）。
 - 错误：会话不存在；`workspaceId` 不存在。
 - 广播：`workspaces.updated` 和 `pals.updated`。
 

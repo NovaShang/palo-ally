@@ -170,11 +170,7 @@ private let resultTypes: [String: Check] = [
 /// yet (built against a PRD while the host builds it). Each is left out of
 /// the set comparison only while the fixture lacks it; once the host writes
 /// its sample, it's checked strictly like the rest. Nothing waits now.
-private let awaitingHost: Set<String> = Set(RPCMethod.workbench + [
-    RPCMethod.palsCreate, RPCMethod.palsFolders, RPCMethod.palsDetail, RPCMethod.palsSetModel, RPCMethod.palsCompact,
-    RPCMethod.palsStopTask, RPCMethod.palsSeen, RPCMethod.palsEnd, RPCMethod.palsReveal, RPCMethod.palsEarlier,
-    RPCMethod.palsResume,
-] + RPCEventName.workbench)
+private let awaitingHost: Set<String> = []
 
 /// Event → how AppStore.apply(event:) reads the payload.
 private let eventTypes: [String: Check] = [

@@ -417,3 +417,29 @@ export interface AuditEntry {
   type: string;
   [k: string]: unknown;
 }
+
+// ---- Workspaces and the right pane's tabs (docs/workbench-rpc.md §3) ----
+
+/** A tiling layout: ratio rectangles on the unit canvas; the host stores it and checks only the leaves. */
+export type LayoutNode =
+  | { type: "leaf"; session: string; w: number; h: number; x: number; y: number }
+  | { type: "hsplit" | "vsplit"; w: number; h: number; x: number; y: number; children: LayoutNode[] };
+
+export interface Workspace {
+  id: string;
+  name: string; // "" = not named yet
+  memberIds: string[];
+  layout: LayoutNode | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** A right-pane tab. Kinds the host doesn't know (a newer app wrote them) are kept as they are. */
+export type PaneTab = { kind: "files" } | { kind: "library" } | { kind: "preview"; path: string } | { kind: "web"; url: string } | { kind: string; [k: string]: unknown };
+
+export interface TabsState {
+  tabs: PaneTab[];
+  active: number;
+  open: boolean;
+  updatedAt: number;
+}

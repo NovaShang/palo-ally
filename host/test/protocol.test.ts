@@ -351,7 +351,10 @@ describe("host ↔ app protocol", () => {
     // The workbench (docs/workbench-rpc.md §2): the owner's own session in any folder,
     // its first turn done and then seen, ended, listed among the earlier ones and picked up again.
     const made = (await run("pals.create", { cwd: project, text: "把安装说明写完" })).pal;
-    expect(made).toMatchObject({ createdBy: "owner", name: expect.stringMatching(/^session-/), status: "starting", attention: "idle", folded: false });
+    // (A clone: toMatchObject with a matcher would overwrite the sample's own field.)
+    expect(typeof made.name).toBe("string");
+    expect(structuredClone(made)).toMatchObject({ createdBy: "owner", name: expect.stringMatching(/^session-/), status: "starting", attention: "idle", folded: false });
+    expect(made.name).toMatch(/^session-/);
     await waitFor(() => hub.pals.list().find((p) => p.id === made.id)?.attention === "done", 5_000);
     const unseen = hub.pals.list().find((p) => p.id === made.id)!;
     expect(unseen.finishedAt).toBeDefined();
@@ -384,9 +387,32 @@ describe("host ↔ app protocol", () => {
       { params: { key: `ended:${made.sessionId}` }, result: await call("pals.resume", { key: `ended:${made.sessionId}` }) },
       { params: { key: folded.key }, result: await call("pals.resume", { key: folded.key }) },
     ];
+    expect(typeof back[0]!.result.pal.name).toBe("string");
+    expect(typeof back[1]!.result.pal.name).toBe("string");
     expect(back[0]!.result.pal).toMatchObject({ name: made.name, cwd: project, sessionId: made.sessionId });
     expect(back[1]!.result.pal).toMatchObject({ folded: false });
     methods["pals.resume"] = back;
+    // Workspaces and the right pane's tabs (docs/workbench-rpc.md §3).
+    const [m1, m2] = [back[0]!.result.pal.id as string, back[1]!.result.pal.id as string];
+    const empty = (await call("workspaces.create", { name: "空的", memberIds: [] })).workspace;
+    expect(empty).toMatchObject({ name: "空的", memberIds: [], layout: null });
+    await call("workspaces.delete", { id: empty.id });
+    const ws = (await run("workspaces.create", { name: "官网", memberIds: [m1] })).workspace;
+    expect(ws).toMatchObject({ name: "官网", memberIds: [m1], layout: null });
+    const moved = (await run("workspaces.move", { palId: m2, workspaceId: ws.id })).workspaces[0];
+    expect(moved.memberIds).toEqual([m1, m2]);
+    const tiles = { type: "hsplit", w: 1, h: 1, x: 0, y: 0, children: [{ type: "leaf", session: m1, w: 0.5, h: 1, x: 0, y: 0 }, { type: "leaf", session: m2, w: 0.5, h: 1, x: 0.5, y: 0 }] };
+    expect((await run("workspaces.update", { id: ws.id, name: "官网改版", layout: tiles })).workspace).toMatchObject({ name: "官网改版", layout: tiles });
+    expect((await run("workspaces.list", {})).workspaces).toHaveLength(1);
+    const tabs = [{ kind: "files" }, { kind: "library" }, { kind: "preview", path: `${project}/README.md` }, { kind: "web", url: "https://example.com" }];
+    expect((await call("workbench.tabs.set", { key: `ws:${ws.id}`, tabs, active: 3, open: true })).state).toMatchObject({ tabs, active: 3, open: true });
+    expect((await call("workbench.tabs.get", {})).states[`ws:${ws.id}`]).toBeDefined();
+    await run("workbench.tabs.set", { key: "palo", tabs, active: 0, open: true });
+    // (keyed by "palo" so the sample's shape doesn't depend on a generated id)
+    expect((await run("workbench.tabs.get", { key: "palo" })).states.palo.tabs).toEqual(tabs);
+    expect((await call("sync", {})).workspaces).toHaveLength(1);
+    expect(Object.keys((await call("sync", {})).workbenchTabs)).toContain(`ws:${ws.id}`);
+    await run("workspaces.delete", { id: ws.id });
     await run("pals.remove", { id: opened.id });
     hub.pals.stop();
     await run("stop");
@@ -439,6 +465,9 @@ describe("host ↔ app protocol", () => {
     // the computer's sessions; the Pals (a list with both, a terminal session being adopted among the others)
     sampleEvents["sessions.updated"] = events.filter((e) => e.event === "sessions.updated" && e.data.sessions.length).at(-1)!.data;
     sampleEvents["pals.updated"] = events.filter((e) => e.event === "pals.updated" && e.data.pals.length === 2 && e.data.others.some((x: any) => x.adopting)).at(-1)!.data;
+    // the workspaces' list with one workspace laid out, and a tab state written
+    sampleEvents["workspaces.updated"] = events.filter((e) => e.event === "workspaces.updated" && e.data.workspaces[0]?.layout).at(-1)!.data;
+    sampleEvents["workbench.updated"] = events.filter((e) => e.event === "workbench.updated" && e.data.state).at(-1)!.data;
     // commands.updated fires when the harness reports its list
     expect(Object.keys(sampleEvents).sort()).toEqual([...RPC_EVENTS].sort());
 
