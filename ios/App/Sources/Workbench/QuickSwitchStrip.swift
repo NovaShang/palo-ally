@@ -21,8 +21,10 @@ struct QuickSwitchStrip: View {
 
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
-    @State private var renaming: Pal?
-    @State private var ending: Pal?
+    /// Asked from a chip's menu, answered by the bar: the strip goes away
+    /// while the keyboard is up, and the rename alert's field brings it up.
+    @Binding var renaming: Pal?
+    @Binding var ending: Pal?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -43,16 +45,6 @@ struct QuickSwitchStrip: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("quick-switch")
-        .palRename($renaming)
-        .confirmationDialog(Copy.spaced(String(localized: "结束「\(ending?.displayName ?? "")」？")),
-                            isPresented: Binding(get: { ending != nil }, set: { if !$0 { ending = nil } }),
-                            titleVisibility: .visible) {
-            Button("结束会话", role: .destructive) {
-                if let p = ending { Task { await end(p) } }
-            }
-        } message: {
-            Text("它会停下，之后还能从历史记录里接着聊。")
-        }
     }
 
     // MARK: chips
@@ -120,13 +112,6 @@ struct QuickSwitchStrip: View {
             .disabled(!store.connection.isOnline)
     }
 
-    private func end(_ p: Pal) async {
-        let next = QuickSwitch.landing(after: p.id, in: members)
-        _ = try? await store.endSession(id: p.id)
-        // Ending the page being shown: go to its neighbor, else the list.
-        guard p.id == current else { return }
-        if let next { go(to: next) } else { model.showList() }
-    }
 }
 
 /// On the container of the conversation pages (phones): the strip at the
@@ -139,13 +124,19 @@ struct QuickSwitchBar: ViewModifier {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var keyboardUp = false
+    @State private var renaming: Pal?
+    @State private var ending: Pal?
+
+    private var members: [String] {
+        guard case .pal(let id) = current else { return [] }
+        return QuickSwitch.members(current: id, pals: store.pals, workspaces: store.workspaces)
+    }
 
     func body(content: Content) -> some View {
         content
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if model.layout == .phone, !keyboardUp, case .pal(let id) = current {
-                    let members = QuickSwitch.members(current: id, pals: store.pals, workspaces: store.workspaces)
-                    if !members.isEmpty { QuickSwitchStrip(current: id, members: members) }
+                if model.layout == .phone, !keyboardUp, case .pal(let id) = current, !members.isEmpty {
+                    QuickSwitchStrip(current: id, members: members, renaming: $renaming, ending: $ending)
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
@@ -154,5 +145,30 @@ struct QuickSwitchBar: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
                 keyboardUp = false
             }
+            .palRename($renaming)
+            .confirmationDialog(Copy.spaced(String(localized: "结束「\(ending?.displayName ?? "")」？")),
+                                isPresented: Binding(get: { ending != nil }, set: { if !$0 { ending = nil } }),
+                                titleVisibility: .visible) {
+                Button("结束会话", role: .destructive) {
+                    if let p = ending { Task { await end(p) } }
+                }
+            } message: {
+                Text("它会停下，之后还能从历史记录里接着聊。")
+            }
+    }
+
+    private func end(_ p: Pal) async {
+        let list = members
+        let next = QuickSwitch.landing(after: p.id, in: list)
+        _ = try? await store.endSession(id: p.id)
+        // Ending the page being shown: go to its neighbor, else the list.
+        guard case .pal(p.id) = current else { return }
+        if let next {
+            let from = list.firstIndex(of: p.id) ?? 0, to = list.firstIndex(of: next) ?? 0
+            model.quickSwitchForward = to >= from
+            withAnimation(.snappy(duration: 0.32)) { model.openPal(next) }
+        } else {
+            model.showList()
+        }
     }
 }
