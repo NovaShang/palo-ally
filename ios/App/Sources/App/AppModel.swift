@@ -327,9 +327,18 @@ final class AppModel {
     /// 设置 (⌘, on the Mac): management with its settings page open.
     func openSettings() {
         openTaskID = nil
+        // Phones: a sheet of its own, over the list. Through Palo's
+        // management it landed on Palo's conversation instead (the list's
+        // selection settling after the push cleared the pushed pages).
+        if layout == .phone {
+            showSettingsSheet = true
+            return
+        }
         openManagement()
         showSettings = true
     }
+    /// Phones: 设置 from the list, as a sheet.
+    var showSettingsSheet = false
 
     /// ⌘[ (and the in-page back buttons): one level back. A sheet or
     /// preview closes; then a pushed page pops; then 成果 beside the

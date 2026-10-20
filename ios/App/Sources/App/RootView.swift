@@ -249,6 +249,20 @@ struct MainScreen: View {
                 .environment(store)
                 .environment(voice)
         }
+        // Phones: 设置 from the list.
+        .sheet(isPresented: $model.showSettingsSheet) {
+            NavigationStack {
+                SettingsView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("完成") { model.showSettingsSheet = false }.tint(.primary)
+                        }
+                    }
+            }
+            .environment(model)
+            .environment(store)
+            .environment(voice)
+        }
         // 新建会话 (⌘N, ＋) and 新建工作区 (⌘⇧N, ＋, a session's 并排…).
         .sheet(isPresented: $model.newSession, onDismiss: { model.newSessionIntoWorkspace = nil }) {
             NewSessionPanel().environment(model).environment(store)
