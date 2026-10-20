@@ -8,18 +8,39 @@ final class PaloOrbHome {
     static let shared = PaloOrbHome()
     /// In global coordinates; nil while nothing on screen holds it.
     var frame: CGRect?
+    /// Whoever set `frame` last, so a place that goes away only clears its own.
+    var owner: UUID?
     /// True while the flying orb is out: the resting orb steps aside.
     var flying = false
 }
 
 extension View {
     /// Marks this view as the orb's resting place. Only one is on screen at
-    /// a time: the sidebar's Palo item, or the collapsed capsule.
-    func paloOrbHome() -> some View {
-        onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
-            PaloOrbHome.shared.frame = frame
-        }
-        .onDisappear { PaloOrbHome.shared.frame = nil }
-        .opacity(PaloOrbHome.shared.flying ? 0 : 1)
+    /// a time: the sidebar's Palo item, the collapsed capsule, or (phones) the
+    /// title bar's indicator. `owner` tells them apart when one comes up as
+    /// another goes (a page push).
+    func paloOrbHome(owner: UUID = UUID()) -> some View {
+        modifier(PaloOrbHomeMark(owner: owner))
+    }
+}
+
+private struct PaloOrbHomeMark: ViewModifier {
+    @State var owner: UUID
+
+    init(owner: UUID) { _owner = State(initialValue: owner) }
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                PaloOrbHome.shared.frame = frame
+                PaloOrbHome.shared.owner = owner
+            }
+            .onDisappear {
+                if PaloOrbHome.shared.owner == owner {
+                    PaloOrbHome.shared.frame = nil
+                    PaloOrbHome.shared.owner = nil
+                }
+            }
+            .opacity(PaloOrbHome.shared.flying ? 0 : 1)
     }
 }

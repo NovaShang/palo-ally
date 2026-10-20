@@ -256,6 +256,9 @@ export interface Status {
   version: string;
   metAt?: number; // when the owner first talked to it (first chat message), for 「认识你 N 天」
   auth?: AuthStatus; // Claude Code's login, only while it's out or being signed in again
+  contextTokens?: number; // the assistant's context size after its last turn (absent until a turn has reported it)
+  contextWindow?: number; // the running model's window, in tokens
+  contextPct?: number; // how full its context is, whole percent 0 to 100
 }
 
 // ---- Allies (docs/allies-prd.md §6–7) ----

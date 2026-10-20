@@ -25,6 +25,9 @@ ul{padding-left:20px;margin:6px 0}li{margin:4px 0}
 .chip{display:inline-flex;align-items:center;gap:6px;height:34px;border-radius:17px;padding:0 12px 0 5px;font-size:13.5px;margin-right:6px}
 .chip.on{background:rgba(255,255,255,.22)}
 .row{display:flex;align-items:center;gap:8px;height:30px;font-size:13px}
+.light{background:#f2f2f7;color:#1c1c1e;border-radius:18px;padding:18px;margin:10px 0;border:1px solid #e5e5ea}
+.light .cell{color:rgba(60,60,67,.6)}
+.lglass{background:rgba(255,255,255,.7);border:1px solid rgba(0,0,0,.08);box-shadow:0 1px 3px rgba(0,0,0,.08),inset 0 1px 0 #fff}
 .tilehead_old{display:flex;align-items:center;gap:6px;height:30px;border-radius:15px;padding:0 12px 0 3px;font-size:12.5px;width:fit-content}
 </style></head><body><main>
 <h1>会话指示器设计稿</h1>
@@ -77,6 +80,26 @@ ul{padding-left:20px;margin:6px 0}li{margin:4px 0}
 <div class="dark" id="side"></div>
 <p class="sub">在侧栏里尺寸太小，外圈和小字看不清，所以侧栏只用中间的状态图标；外圈和小字只在 26 点以上出现。</p>
 
+<h2>6. 亮色模式</h2>
+<p class="sub">同一个指示器放在浅色背景上。外圈在深色里是白色，在亮色里换成近黑；小字的模型颜色保持冷到暖的顺序，但换成加深的版本，白底上也看得清；中间的状态图标本来就是实心的彩色圆，两边用同一套颜色。</p>
+<div class="light"><div class="grid" style="justify-content:center;gap:40px;align-items:center">
+ <div id="lbig"></div>
+ <div style="font-size:14px;line-height:2">
+  <div>外圈：近黑 #1C1C1E，底轨 12% 黑。超过 80% 变橙 #FF9500，超过 95% 变红 #FF3B30。</div>
+  <div>小字：Haiku #2A97B5 → Sonnet #5468D9 → Opus #9A55C4 → Fable #D45F57；其他模型灰 #8E8E93。</div>
+ </div>
+</div></div>
+<div class="light"><div class="grid" id="lstates"></div></div>
+<div class="light"><div class="grid" id="lctx"></div></div>
+<div class="light"><div class="grid" id="leffort"></div></div>
+<h3 style="font-size:15px;margin:14px 0 4px">亮色：手机会话页顶栏</h3>
+<div class="light">
+ <div class="bar" style="background:rgba(0,0,0,.03)"><div class="cbtn lglass" style="color:#1c1c1e">‹</div><div style="flex:1;display:flex;align-items:center;justify-content:center"><span class="lglass" style="width:48px;height:48px;border-radius:24px;display:grid;place-items:center"><span id="lph" style="display:block;line-height:0"></span></span></div><div class="cbtn lglass" style="color:#1c1c1e">▤</div></div>
+</div>
+<h3 style="font-size:15px;margin:14px 0 4px">亮色：底部快速切换标签条</h3>
+<div class="light" id="lstrip"></div>
+<p class="sub">亮色里玻璃的状态色调淡一些，字保持黑色；当前这一个用深色描边、字加粗。</p>
+
 <h2>和现在比</h2>
 <div class="card"><ul>
 <li>现在的胶囊是「状态点 + 名字 + 状态 · 文件夹」两行字，手机上还和导航栏的副标题重复了一遍。新的只有一个圆形图标加一行名字。</li>
@@ -95,14 +118,15 @@ function glyph(st,cx,cy,r){const s=ST[st];
  if(s.g==='check')inner=`<path d="M${cx-r*0.42} ${cy+r*0.02} L${cx-r*0.1} ${cy+r*0.34} L${cx+r*0.46} ${cy-r*0.32}" fill="none" stroke="#fff" stroke-width="${r*0.2}" stroke-linecap="round" stroke-linejoin="round"/>`;
  if(s.g==='q')inner=`<text x="${cx}" y="${cy+r*0.36}" text-anchor="middle" font-size="${r*1.15}" font-weight="800" fill="#fff" font-family="ui-rounded,'SF Pro Rounded',-apple-system,system-ui">?</text>`;
  return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${s.c}"/>`+inner;}
-function ind(o){const size=o.size||44,st=o.state||'working',p=o.ctx??0.41,eff=o.effort||'hi',model=o.model||'Opus';
+const LMODEL={Haiku:'#2A97B5',Sonnet:'#5468D9',Opus:'#9A55C4',Fable:'#D45F57',其他:'#8E8E93'};
+function ind(o){const size=o.size||44,st=o.state||'working',p=o.ctx??0.41,eff=o.effort||'hi',model=o.model||'Opus',L=!!o.light;
  const showRing=size>=26;const R=40,C=2*Math.PI*R;
- let ringCol='rgba(255,255,255,.9)';if(p>=.95)ringCol='#FF453A';else if(p>=.8)ringCol='#FF9F0A';
+ let ringCol=L?'#1C1C1E':'rgba(255,255,255,.9)';if(p>=.95)ringCol=L?'#FF3B30':'#FF453A';else if(p>=.8)ringCol=L?'#FF9500':'#FF9F0A';
  let svg=`<svg width="${size}" height="${size}" viewBox="0 0 100 100" style="display:block">`;
- if(showRing){svg+=`<circle cx="50" cy="50" r="${R}" fill="none" stroke="rgba(255,255,255,.16)" stroke-width="7" stroke-linecap="round" stroke-dasharray="${.75*C} ${C}" transform="rotate(135 50 50)"/>`;
+ if(showRing){svg+=`<circle cx="50" cy="50" r="${R}" fill="none" stroke="${L?'rgba(0,0,0,.12)':'rgba(255,255,255,.16)'}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${.75*C} ${C}" transform="rotate(135 50 50)"/>`;
   svg+=`<circle cx="50" cy="50" r="${R}" fill="none" stroke="${ringCol}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${Math.max(.001,p)*.75*C} ${C}" transform="rotate(135 50 50)"/>`;
   svg+=glyph(st,50,50,19);
-  svg+=`<text x="50" y="94" text-anchor="middle" font-size="17" font-weight="700" fill="${MODEL[model]}" font-family="ui-rounded,'SF Pro Rounded','Nunito',-apple-system,system-ui" letter-spacing=".2">${eff}</text>`;}
+  svg+=`<text x="50" y="94" text-anchor="middle" font-size="17" font-weight="700" fill="${(L?LMODEL:MODEL)[model]}" font-family="ui-rounded,'SF Pro Rounded','Nunito',-apple-system,system-ui" letter-spacing=".2">${eff}</text>`;}
  else svg+=glyph(st,50,50,40);
  return svg+'</svg>';}
 const $=id=>document.getElementById(id);
@@ -121,5 +145,11 @@ $('ph').innerHTML=ind({size:38,state:'working',ctx:.41});
 $('mac').innerHTML=ind({size:32,state:'waiting',ctx:.62,effort:'xhi',model:'Fable'});
 $('tile').innerHTML=ind({size:26,state:'waiting',ctx:.55});
 $('strip').innerHTML=[['Palo','idle',0],['修语音误触','working',1],['工作台设计','waiting',0],['账单','done',0],['smartsld','idle',0]].map(([n,st,on])=>{const c=ST[st].c;const tint=st==='idle'?'rgba(64,64,72,.45)':c+(on?'66':'40');return `<span class="chip" style="padding:0 14px;background:${tint};border:1px solid ${on?'rgba(255,255,255,.55)':'rgba(255,255,255,.14)'};box-shadow:inset 0 1px 0 rgba(255,255,255,.22)${on?',0 0 0 2px rgba(255,255,255,.18)':''};font-weight:${on?600:400}">${n}</span>`}).join('');
+$('lbig').innerHTML=ind({size:150,state:'working',ctx:.41,effort:'hi',model:'Opus',light:1});
+$('lstates').innerHTML=[['working','在干'],['waiting','等你'],['done','做完了'],['idle','闲着']].map(([s,l])=>`<div class="cell">${ind({size:64,state:s,light:1})}${l}</div>`).join('');
+$('lctx').innerHTML=[[.12,'12%'],[.41,'41%'],[.83,'83% 变橙'],[.97,'97% 变红']].map(([p,l])=>`<div class="cell">${ind({size:64,state:'idle',ctx:p,light:1})}${l}</div>`).join('');
+$('leffort').innerHTML=[['low','Haiku'],['med','Sonnet'],['hi','Opus'],['xhi','Fable'],['max','其他']].map(([e,m])=>`<div class="cell">${ind({size:64,state:'idle',effort:e,model:m,light:1})}${e} · ${m}</div>`).join('');
+$('lph').innerHTML=ind({size:38,state:'working',ctx:.41,light:1});
+$('lstrip').innerHTML=[['Palo','idle',0],['修语音误触','working',1],['工作台设计','waiting',0],['账单','done',0],['smartsld','idle',0]].map(([n,st,on])=>{const c=ST[st].c;const tint=st==='idle'?'rgba(255,255,255,.75)':c+(on?'40':'26');return `<span class="chip" style="padding:0 14px;color:#1c1c1e;background:${tint};border:1px solid ${on?'rgba(0,0,0,.45)':'rgba(0,0,0,.08)'};box-shadow:0 1px 2px rgba(0,0,0,.06),inset 0 1px 0 rgba(255,255,255,.8);font-weight:${on?600:400}">${n}</span>`}).join('');
 $('side').innerHTML=[['修语音误触','working'],['工作台设计','waiting'],['整理 10 月账单','done'],['smartsld 调研','idle']].map(([n,s])=>`<div class="row">${ind({size:16,state:s})}${n}</div>`).join('');
 </script></body></html>

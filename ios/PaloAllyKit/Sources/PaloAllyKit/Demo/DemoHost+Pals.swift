@@ -518,9 +518,10 @@ extension DemoHost {
         let pals = [
             Pal(id: "pal-site", name: "网站帮手", cwd: "/Users/demo/code/site", sessionId: "5d821f3c-7a1e-4c55-9b0e-2f6d81a4c901",
                 status: .waiting, lastLine: "列表页做完了，跑一下构建看看有没有报错。", pending: 1, model: "claude-opus-5-5",
-                createdBy: .palo),
+                createdBy: .palo, contextPct: 62, effort: "high"),
             Pal(id: "pal-notes", name: "笔记整理", cwd: "/Users/demo/Documents/notes", sessionId: "9a40c2e7-1b3d-4e8f-a6c5-77d0e3b2f418",
-                status: .idle, lastLine: "这周的 12 篇笔记都归好类了，标签也补上了。", model: "claude-sonnet-4-5", createdBy: .owner),
+                status: .idle, lastLine: "这周的 12 篇笔记都归好类了，标签也补上了。", model: "claude-sonnet-4-5", createdBy: .owner,
+                contextPct: 23, effort: "medium"),
             // Idle a while, put to sleep (§12).
             Pal(id: "pal-blog", name: "博客改版", cwd: "/Users/demo/code/blog", sessionId: "3e7b9d21-6c4a-4f8e-b2d0-8a1c5e9f7b34",
                 status: .asleep, lastLine: "评论区的样式改好了，等你有空看看。", model: "claude-sonnet-4-5", createdBy: .owner,

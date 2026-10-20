@@ -244,13 +244,9 @@ struct ChatView: View {
         // The live words, in the middle while holding to talk, and on their
         // way out after release: over the composer, under the orb.
         .overlay { VoiceTileGate { VoiceWordsLayer(orbPlacement: orbPlacement) } }
-        // The orb over the bar's middle: above the conversation, its edge
-        // fade and the voice scrim, and free to be bigger than the bar.
-        .overlay(alignment: .topLeading) {
-            if isPalo && !Platform.barInWindowToolbar { PhoneTitleOrb(placement: orbPlacement) }
-        }
-        // Where the orb has a resting place on screen (the sidebar), the
-        // listening orb flies from there over this column.
+        // Where the orb has a resting place on screen (the sidebar, or the
+        // title's indicator on a phone), the listening orb flies from there
+        // over this column.
         .overlay {
             if isPalo && !inTile { FlyingPaloOrb(placement: orbPlacement) }
         }
@@ -285,33 +281,21 @@ struct ChatView: View {
         // toolbar (MacToolbar) and floats its orb in the column.
         .toolbar(macOrb || macPage ? .hidden : .automatic, for: .navigationBar)
         .toolbar {
-            // A session's page: the capsule is the title; its folder is the
-            // one button at the right (the right pane).
-            if pageTop?.capsule == true && !Platform.barInWindowToolbar, let id = store.palID {
-                ToolbarItem(placement: .principal) { pageCapsule }
-                    .sharedBackgroundVisibility(.hidden)
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { model.togglePane() } label: { Image(systemName: "sidebar.trailing") }
-                        .tint(.primary)
-                        .accessibilityLabel("右侧栏")
-                        .accessibilityIdentifier("page-files")
-                }
-            }
-            if isPalo && !Platform.barInWindowToolbar {
+            // Palo's page and a session's alike (phones and iPads): the round
+            // indicator is the title, and the right pane is the one button at
+            // the right. The Mac has its own strip and window toolbar.
+            if !Platform.barInWindowToolbar && (isPalo || pageTop?.capsule == true && store.palID != nil) {
                 ToolbarItem(placement: .principal) {
-                    TitleOrbSlot { frame in
-                        if orbPlacement.slot != frame { orbPlacement.slot = frame }
-                    } action: { model.detailShown = true }
+                    PageIndicator(dot: isPalo ? nil : pageTop?.dot) { frame in
+                        if isPalo, orbPlacement.slot != frame { orbPlacement.slot = frame }
+                    }
                 }
                 .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        model.toggleLibrary() // phones: pushed; large screens: the inspector
-                    } label: {
-                        Image(systemName: "books.vertical")
-                    }
-                    .tint(.primary) // toolbar glyphs stay neutral; the theme color is for meaning
-                    .accessibilityLabel("成果")
+                    Button { model.togglePane() } label: { Image(systemName: "sidebar.trailing") }
+                        .tint(.primary) // toolbar glyphs stay neutral; the theme color is for meaning
+                        .accessibilityLabel("右侧栏")
+                        .accessibilityIdentifier("page-files")
                 }
             }
         }
@@ -648,28 +632,6 @@ private struct ClickToUnfocusComposer: ViewModifier {
 /// resize moving the bar doesn't re-render the conversation.
 @Observable final class OrbPlacement {
     var slot: CGRect = .zero
-}
-
-/// Phones and iPads: the orb over the bar's middle, positioned from the bar's
-/// slot. Keeps its own idea of where the column is, for the same reason.
-private struct PhoneTitleOrb: View {
-    let placement: OrbPlacement
-    @Environment(AppModel.self) private var model
-    @State private var column: CGRect = .zero
-
-    var body: some View {
-        Color.clear
-            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { column = $0 }
-            .overlay(alignment: .topLeading) {
-                let slot = placement.slot
-                if slot.width > 0 {
-                    FloatingTitleOrb(barCenterY: slot.midY, columnWidth: column.width) {
-                        model.openManagement()
-                    }
-                    .position(x: slot.midX - column.minX, y: slot.midY - column.minY)
-                }
-            }
-    }
 }
 
 /// The Mac: the orb hanging from the top middle of the conversation column,

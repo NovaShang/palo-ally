@@ -832,13 +832,17 @@ public struct HostStatus: Codable, Sendable, Hashable {
     public var wechat: WechatState
     public var version: String
 
-    enum CodingKeys: String, CodingKey { case online, busy, activity, model, effort, sessionId, wechat, version, metAt, auth }
+    enum CodingKeys: String, CodingKey { case online, busy, activity, model, effort, sessionId, wechat, version, metAt, auth, contextTokens, contextWindow, contextPct }
 
     public var effort: String?
     /// When the owner first talked to it (ms), for 「认识你 N 天」.
     public var metAt: Int64?
     /// Claude Code's login, only while it's out or being signed in again.
     public var auth: AuthStatus?
+    /// Palo's own context after its last turn: tokens, the model's window and the percent used.
+    public var contextTokens: Int?
+    public var contextWindow: Int?
+    public var contextPct: Int?
 
     public init(online: Bool = true, busy: Bool = false, model: String = "",
                 sessionId: String? = nil, wechat: WechatState = .off, version: String = "") {
@@ -858,6 +862,9 @@ public struct HostStatus: Codable, Sendable, Hashable {
         version = l.string("version", or: "")
         metAt = l.millis("metAt")
         auth = l.decode(AuthStatus.self, "auth")
+        contextTokens = l.int("contextTokens")
+        contextWindow = l.int("contextWindow")
+        contextPct = l.int("contextPct")
     }
 }
 

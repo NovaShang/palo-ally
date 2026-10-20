@@ -11,6 +11,7 @@
 		030B52AAEED423A6E7E8C177 /* PairLinkUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02A414F23E433BB4EA6F9700 /* PairLinkUITests.swift */; };
 		0419A6F417D1D13C482C58F7 /* MacUpdateUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBD405BBFB463F533F93B77C /* MacUpdateUITests.swift */; };
 		04349A876C131982F60AE09F /* OrbPresence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89680F4F2AB77C09AE302E26 /* OrbPresence.swift */; };
+		04B16F032A15E0AB7CCCFEF2 /* PhoneSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA8B112E588EA0C9D8AF500 /* PhoneSmokeUITests.swift */; };
 		0567FEE9B5F6C1B2C6A33AAC /* ScrollLab.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1B780A4AAD93BEE438E5D12 /* ScrollLab.swift */; };
 		08BF7949F94B89DDD05C3319 /* AssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056B108C0177A1156F312E84 /* AssistantView.swift */; };
 		098271F0DB79A7EC10E8782F /* PalPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DB5E3F3B5ED735CB237E3A6 /* PalPage.swift */; };
@@ -93,6 +94,7 @@
 		8E8B98B7834D42E37464E1E3 /* PaloAllyAppKit.bundle in Embed Dependencies */ = {isa = PBXBuildFile; fileRef = 0420ADEBD7C7A5E9F8EB5142 /* PaloAllyAppKit.bundle */; platformFilter = maccatalyst; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		90CE987F9EA4BB408FB5F7FE /* DisplayCorners.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF9B71414B8BB238CEE54BC1 /* DisplayCorners.swift */; };
 		915E679855ECCC711E941595 /* HelperProposalCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94A3E8B6B87E2BA510008492 /* HelperProposalCard.swift */; };
+		917B77D0096842A7CCEC0A52 /* SessionIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 768D3CED5A15E91166C30829 /* SessionIndicator.swift */; };
 		96F66305E9AF6718FC0FFFDC /* PalCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B4899D65015CCAB78463CEA /* PalCopy.swift */; };
 		9B34F0015CBA0682AF1B48BC /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32922EB865184F7F70CAB365 /* AppTheme.swift */; };
 		9E8BAB6F1769D57EC0C617C0 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97B4D23870E594B624074F8D /* ComposerView.swift */; };
@@ -231,12 +233,14 @@
 		63DF4E96D0F73A16748CF819 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		64CF9F27B24B6002B42720BB /* ConversationList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationList.swift; sourceTree = "<group>"; };
 		6AC02B1EE268D6B6F8AA2F6C /* ImagesUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagesUITests.swift; sourceTree = "<group>"; };
+		6DA8B112E588EA0C9D8AF500 /* PhoneSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneSmokeUITests.swift; sourceTree = "<group>"; };
 		6F3CAA08C08409C2C6E2D5B7 /* ClaudeLoginSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeLoginSheet.swift; sourceTree = "<group>"; };
 		711BC1712E3CB0B810C91022 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
 		7204F49936E047B0B9DD85FC /* NavigationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationUITests.swift; sourceTree = "<group>"; };
 		727BCDF8F4AA67625E0359C0 /* OrbInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbInput.swift; sourceTree = "<group>"; };
 		72A66C5AE1AA5DDDCF08506D /* ModelRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelRow.swift; sourceTree = "<group>"; };
 		74530C1E36CA8A834978230F /* TwoDrops.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = TwoDrops.metal; sourceTree = "<group>"; };
+		768D3CED5A15E91166C30829 /* SessionIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionIndicator.swift; sourceTree = "<group>"; };
 		76CCDDF52E61A55777BF897F /* SuggestionsGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionsGate.swift; sourceTree = "<group>"; };
 		7769E0FBCB029211A3B7B532 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		79CD58E84DE9E5FA0BD784A8 /* SessionPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPage.swift; sourceTree = "<group>"; };
@@ -431,6 +435,7 @@
 				174B1237C41938382CBE6448 /* NewSessionPanel.swift */,
 				1D328993B8AC9542C3EBC19C /* NewSheets.swift */,
 				B78956D8B13F56A965CAE20F /* PaneRouting.swift */,
+				768D3CED5A15E91166C30829 /* SessionIndicator.swift */,
 				5AD9E84DB57CB45FD7684BAE /* TiledWorkspaceView.swift */,
 				8056C83DB70ECB079AF7E495 /* TitleCapsule.swift */,
 				A68C41028593D13A5543B4B3 /* VoiceLevelDot.swift */,
@@ -509,6 +514,7 @@
 				DBD405BBFB463F533F93B77C /* MacUpdateUITests.swift */,
 				7204F49936E047B0B9DD85FC /* NavigationUITests.swift */,
 				02A414F23E433BB4EA6F9700 /* PairLinkUITests.swift */,
+				6DA8B112E588EA0C9D8AF500 /* PhoneSmokeUITests.swift */,
 				34C10B9EDE3ED2D4FEA147D9 /* ReadAloudUITests.swift */,
 				B3146575C02DF141A38B38FE /* RewindUITests.swift */,
 				7ED42874198579F1FB37DC41 /* ScrollLabUITests.swift */,
@@ -775,6 +781,7 @@
 				0419A6F417D1D13C482C58F7 /* MacUpdateUITests.swift in Sources */,
 				6FAF60052DD6375026A2F352 /* NavigationUITests.swift in Sources */,
 				030B52AAEED423A6E7E8C177 /* PairLinkUITests.swift in Sources */,
+				04B16F032A15E0AB7CCCFEF2 /* PhoneSmokeUITests.swift in Sources */,
 				4259D082243B528785415FC5 /* ReadAloudUITests.swift in Sources */,
 				219EDCBDB7F58129C13FC514 /* RewindUITests.swift in Sources */,
 				AACC2B792ABD1AFC63ECC6B2 /* ScrollLabUITests.swift in Sources */,
@@ -871,6 +878,7 @@
 				0567FEE9B5F6C1B2C6A33AAC /* ScrollLab.swift in Sources */,
 				11BECFB67315E8AFAF47D91A /* SelectableMarkdown.swift in Sources */,
 				AF358643F472D615D617552B /* SessionCopy.swift in Sources */,
+				917B77D0096842A7CCEC0A52 /* SessionIndicator.swift in Sources */,
 				7BD8D9724ED4EFF78AB71306 /* SessionPage.swift in Sources */,
 				6BCAF3C12F7DC362181184FE /* SessionsSection.swift in Sources */,
 				58FA01FB519DE507B656FDAE /* SettingsView.swift in Sources */,

@@ -18,8 +18,15 @@ public actor DemoHost {
     public private(set) var memory: [String: (scope: MemoryScope, content: String, updatedAt: Int64)] = [:]
     public private(set) var settings = HostSettings(timezone: "Asia/Shanghai", quietHours: QuietHours(start: "23:00", end: "08:00"),
                                                     probeIntervalMinutes: 10, approvalTimeoutMinutes: 30)
-    public private(set) var status = HostStatus(online: true, busy: false, model: "glm-4.6",
-                                                sessionId: "demo", wechat: .connected, version: "0.1.0-demo")
+    public private(set) var status: HostStatus = {
+        var s = HostStatus(online: true, busy: false, model: "glm-4.6", sessionId: "demo", wechat: .connected, version: "0.1.0-demo")
+        // Palo's own depth and context, for its indicator.
+        s.effort = "high"
+        s.contextTokens = 68_000
+        s.contextWindow = 200_000
+        s.contextPct = 34
+        return s
+    }()
     public private(set) var pushTokens: [String] = []
     public private(set) var requestLog: [String] = []
     /// Params of the most recent request per method.
