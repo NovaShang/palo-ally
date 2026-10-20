@@ -201,7 +201,6 @@ struct ChatView: View {
                 // pass under both, softly.
                 if macOrb {
                     MacTopOrb()
-                        .overlay(alignment: .topLeading) { PaloTitleCapsule().padding(.leading, 14) }
                 }
             }
             .frame(maxWidth: .infinity)
@@ -677,6 +676,7 @@ private struct PhoneTitleOrb: View {
 /// below the titlebar. As tall as the resting orb; bigger, it overflows.
 private struct MacTopOrb: View {
     @Environment(AppModel.self) private var model
+    @Environment(AppStore.self) private var store
     @State private var width: CGFloat = 0
 
     var body: some View {
@@ -689,6 +689,14 @@ private struct MacTopOrb: View {
                     model.detailShown = true
                 }
                 .frame(height: 0, alignment: .top)
+                // Palo's details hang from its orb (no name capsule on the Mac).
+                .popover(isPresented: Binding(get: { model.detailShown && !AgentDetailPlacement.usesSheet(model: model, store: store) },
+                                              set: { model.detailShown = $0 }), arrowEdge: .top) {
+                    AgentDetailView()
+                        .environment(model)
+                        .environment(store)
+                        .frame(minWidth: 360, idealWidth: 380, minHeight: 420, idealHeight: 560)
+                }
             }
     }
 }
