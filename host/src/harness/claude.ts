@@ -1,4 +1,4 @@
-import { createSdkMcpServer, query, tool, type Options, type PreToolUseHookInput, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, query, tool, type Options, type PermissionMode, type PreToolUseHookInput, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { VERSION } from "../config.ts";
 import type {
@@ -298,6 +298,7 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
           // the effort it actually runs at (a chosen one, or the model's default from Claude Code's settings)
           ...(typeof m.effort === "string" ? { effort: m.effort } : {}),
         });
+      else if (m.subtype === "status" && typeof m.permissionMode === "string") out.push({ type: "mode", mode: m.permissionMode });
       else if (m.subtype === "commands_changed") out.push({ type: "commands", commands: toCommands(m.commands) });
       else if (m.subtype === "local_command_output" && m.content)
         out.push({ type: "assistant_text", text: String(m.content), parentToolUseId: null });
@@ -403,9 +404,11 @@ export function sessionOptions(opts: AnySessionOptions): Options {
   // A hook's input says the effort the turn runs at (after any downgrade for
   // the model): the main thread's is reported, nothing is decided.
   const effortHook = async (input: unknown) => {
-    const i = input as { agent_id?: string; effort?: { level?: unknown } };
+    const i = input as { agent_id?: string; effort?: { level?: unknown }; permission_mode?: unknown };
     const level = i.effort?.level;
     if (!i.agent_id && typeof level === "string" && level) opts.onEvent({ type: "effort", level });
+    // and the permission mode it ran in (plan mode ends when its plan is approved)
+    if (!i.agent_id && typeof i.permission_mode === "string" && i.permission_mode) opts.onEvent({ type: "mode", mode: i.permission_mode });
     return {};
   };
   return {
@@ -611,6 +614,10 @@ class ClaudeMainSession implements MainSession {
 
   async setEffort(effort?: string): Promise<void> {
     await this.q.applyFlagSettings({ effortLevel: (effort ?? null) as any });
+  }
+
+  async setPermissionMode(mode: string): Promise<void> {
+    await this.q.setPermissionMode(mode as PermissionMode);
   }
 
   // Claude Code's rename_session control request, as the SDK's Query sends

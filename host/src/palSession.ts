@@ -81,6 +81,15 @@ export interface PastPalTask extends PalTask {
 
 const PAST_TASKS = 30;
 
+/**
+ * The permission modes the owner can switch a session to (pals.setMode).
+ * Not bypassPermissions (it skips every check, and a process not started with
+ * it can't be switched into it) nor dontAsk (it refuses what isn't
+ * pre-approved, with no prompt to the phone); a session already in one of
+ * those still shows it.
+ */
+export const PAL_MODES = ["default", "auto", "acceptEdits", "plan"] as const;
+
 /** The context window of a model (its id carries "[1m]" when it's the long one). */
 export function contextWindowOf(model?: string): number {
   return model && /\[1m\]/i.test(model) ? 1_000_000 : 200_000;
@@ -212,6 +221,7 @@ export class PalSession {
   /** The name its process started under: other sessions' SendMessage reaches it by that until it starts again. */
   spawnedAs?: string;
   model?: string;
+  private reportedMode?: string; // the permission mode its process says it runs in (none until it has said)
 
   constructor(
     readonly rec: PalRecord,
@@ -330,6 +340,7 @@ export class PalSession {
       pending: this.pendingCards(),
       ...(this.model ? { model: this.model } : {}),
       ...(this.effort() ? { effort: this.effort() } : {}),
+      ...(this.mode() ? { permissionMode: this.mode() } : {}),
       ...(this.contextPct() !== undefined ? { contextPct: this.contextPct() } : {}),
       ...(this.runningTasks().length ? { tasksRunning: this.runningTasks().length } : {}),
       ...(typeof this.rec.lastWakeUsd === "number" ? { lastWakeUsd: this.rec.lastWakeUsd } : {}),
@@ -359,6 +370,11 @@ export class PalSession {
     return this.rec.effort ?? this.rec.appliedEffort;
   }
 
+  /** The permission mode it runs in: what its process last said while it runs, else the one it starts in. */
+  private mode(): string {
+    return (this.running && this.reportedMode) || this.rec.permissionMode;
+  }
+
   /** What pals.detail shows besides the Pal itself. */
   /**
    * Its tasks as the owner sees them: subagents, and shell commands running
@@ -382,13 +398,33 @@ export class PalSession {
     return true;
   }
 
-  detailInfo(): { contextTokens?: number; contextWindow: number; model?: string; effort?: string; tasks: PalTask[]; pastTasks: PastPalTask[]; lastCompactAt?: number; costTotalUsd: number } {
+  detailInfo(): {
+    contextTokens?: number;
+    contextWindow: number;
+    model?: string;
+    effort?: string;
+    permissionMode: string;
+    runningMode?: string;
+    permissionModes: string[];
+    tasks: PalTask[];
+    pastTasks: PastPalTask[];
+    lastCompactAt?: number;
+    costTotalUsd: number;
+  } {
     const model = this.model ?? this.rec.model;
+    const chosen = this.rec.permissionMode;
+    const running = this.running ? this.reportedMode : undefined;
+    // the ones offered, then one it is in that isn't (bypassPermissions…), so it shows
+    const modes: string[] = [...PAL_MODES];
+    for (const m of [chosen, running]) if (m && !modes.includes(m)) modes.push(m);
     return {
       ...(typeof this.rec.contextTokens === "number" ? { contextTokens: this.rec.contextTokens } : {}),
       contextWindow: this.contextWindow(),
       ...(model ? { model } : {}),
       ...(this.effort() ? { effort: this.effort() } : {}),
+      permissionMode: chosen,
+      ...(running ? { runningMode: running } : {}),
+      permissionModes: modes,
       tasks: this.runningTasks().map(({ id, title, kind, startedAt, summary }) => ({ id, title, kind, startedAt, ...(summary ? { summary } : {}) })),
       pastTasks: this.rec.pastTasks ?? [],
       ...(typeof this.rec.lastCompactAt === "number" ? { lastCompactAt: this.rec.lastCompactAt } : {}),
@@ -412,6 +448,22 @@ export class PalSession {
     if (proc && this.running) {
       if (o.model !== undefined) await proc.setModel(o.model);
       if (o.effort !== undefined) await proc.setEffort(o.effort);
+    }
+    this.touch();
+  }
+
+  /**
+   * Its permission mode. Running: switched live (Claude Code's own
+   * set_permission_mode, the phone's Shift+Tab; a turn in progress goes on in
+   * the new one). Asleep: only the record changes; it wakes in it.
+   */
+  async setMode(mode: string): Promise<void> {
+    this.rec.permissionMode = mode;
+    this.d.save();
+    const proc = this.proc;
+    if (proc && this.running) {
+      await proc.setPermissionMode(mode);
+      this.reportedMode = mode;
     }
     this.touch();
   }
@@ -545,6 +597,7 @@ export class PalSession {
     });
     this.proc = proc;
     this.up = false;
+    this.reportedMode = undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
@@ -649,6 +702,7 @@ export class PalSession {
   private down(why: string): void {
     this.up = false;
     this.proc = null;
+    this.reportedMode = undefined;
     this.follower?.stop();
     this.follower = null;
     this.closeStream();
@@ -974,6 +1028,20 @@ export class PalSession {
     this.streamText = "";
   }
 
+  // The mode its process says it runs in. Claude Code may run in another than
+  // the one asked for (auto needs a model that has it), and leaves plan mode
+  // when its plan is approved: then that's the one it wakes in next time too.
+  private noteMode(mode: string): void {
+    if (mode === this.reportedMode) return;
+    const leftPlan = this.reportedMode === "plan" && this.rec.permissionMode === "plan";
+    this.reportedMode = mode;
+    if (leftPlan) {
+      this.rec.permissionMode = mode;
+      this.d.save();
+    }
+    this.d.changed();
+  }
+
   private setActivity(a: string | null): void {
     if (a === null || a === this.activity || this.windingDown) return;
     this.activity = a;
@@ -990,6 +1058,9 @@ export class PalSession {
           this.d.changed();
         }
         break;
+      case "mode":
+        this.noteMode(e.mode);
+        break;
       case "init":
         if (e.model && e.model !== this.model) {
           this.model = e.model;
@@ -1000,6 +1071,7 @@ export class PalSession {
           this.rec.appliedEffort = e.effort;
           this.d.save();
         }
+        if (e.permissionMode) this.noteMode(e.permissionMode);
         this.windingDown = false; // a new turn
         this.beginTurn();
         // A turn it started by itself is often another session's message: show it.

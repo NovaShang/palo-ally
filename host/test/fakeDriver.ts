@@ -129,7 +129,8 @@ export class FakeMainSession implements MainSession {
     this.busy = true;
     while (this.queue.length && !this.closed) {
       const { text, uuid } = this.queue.shift()!;
-      if (this.pal) this.opts.onEvent({ type: "init", sessionId: this.sessionId, model: this.opts.model ?? "fake-model", tools: [] });
+      const mode = this.driver.permissionModeFor?.(this.opts.permissionMode);
+      if (this.pal) this.opts.onEvent({ type: "init", sessionId: this.sessionId, model: this.opts.model ?? "fake-model", tools: [], ...(mode ? { permissionMode: mode } : {}) });
       const ctx: FakeCtx = {
         opts: this.opts,
         session: this,
@@ -214,6 +215,10 @@ export class FakeMainSession implements MainSession {
 
   async setEffort(effort?: string): Promise<void> {
     this.driver.liveSwitches.push(`effort:${effort}`);
+  }
+
+  async setPermissionMode(mode: string): Promise<void> {
+    this.driver.liveSwitches.push(`mode:${mode}`);
   }
 
   async stopTask(_taskId: string): Promise<void> {

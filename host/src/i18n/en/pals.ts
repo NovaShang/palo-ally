@@ -140,6 +140,7 @@ export const enPals: Record<keyof typeof zhPals, string> = {
   "pals.effortBad": "Unknown effort level.",
   "pals.setModelNothing": "Give a model or an effort.",
   "pals.stoppedNoModel": "It is stopped; wake it first.",
+  "pals.modeBad": "No such permission mode.",
   "pals.revealKind": "Reveal as finder or terminal.",
   "pals.revealNoDesktop": "This computer cannot open windows.",
   "pals.revealFailed": "Couldn't open it: {msg}",

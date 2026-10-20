@@ -360,6 +360,7 @@ export interface Pal {
   contextPct?: number; // how full its context is, whole percent; absent until a turn has reported it
   tasksRunning?: number; // its subagents and background tasks running now; absent when none
   effort?: string; // chosen effort level; absent = the model's default
+  permissionMode?: string; // the permission mode it runs in: what Claude Code reports while it runs, else the one it starts in
   folded: boolean; // not stored: outside any workspace and unused for longer than settings.foldDays
 }
 

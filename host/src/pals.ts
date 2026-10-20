@@ -20,7 +20,7 @@ import { PalLauncher, type PalLaunch } from "./palLauncher.ts";
 import { pagePalMessages, toPalMessages } from "./palHistory.ts";
 import type { ForkSession } from "./rewind.ts";
 import { RECENT_MAX, type RecentEntry, RecentSessions, type RecentSource, folderMatch, ownRoots, palNameFor, palTitle, recentWire, sdkRename, sdkSource, shortName } from "./palRecent.ts";
-import { HeldElsewhere, type Holder, type PalRecord, type PalTask, type PastPalTask, PalSession, peerWrap } from "./palSession.ts";
+import { HeldElsewhere, type Holder, PAL_MODES, type PalRecord, type PalTask, type PastPalTask, PalSession, peerWrap } from "./palSession.ts";
 import type { QuestionManager } from "./questions.ts";
 import type { Router } from "./router.ts";
 import type { Sessions } from "./sessions.ts";
@@ -113,6 +113,9 @@ export interface PalDetail {
   models: { id: string; name: string; efforts: string[] }[];
   modelOption?: string; // which of `models` it runs on (its model is often the full id an alias stands for)
   efforts: string[]; // the depths its model takes: its option's, else the same model's without the window suffix
+  permissionMode: string; // the permission mode chosen for it (it starts in this one)
+  runningMode?: string; // the one Claude Code says it runs in now (only while it runs; may differ: auto needs a model that has it)
+  permissionModes: string[]; // what pals.setMode takes, plus the one it is in when that's none of them
   tasks: PalTask[];
   pastTasks: PastPalTask[];
   lastCompactAt?: number;
@@ -1240,6 +1243,21 @@ export class Pals {
     }
     await pal.setModel({ ...(model ? { model } : {}), ...(effort ? { effort } : {}) });
     this.d.audit.log("pal.model", { pal: pal.id, model: model ?? null, effort: effort ?? null });
+    this.emitNow();
+    return { pal: pal.toWire() };
+  }
+
+  /**
+   * pals.setMode: its permission mode. A running session switches live; a
+   * sleeping one only has its record changed (it isn't woken) and wakes in it.
+   */
+  async setMode(id: string, mode: unknown): Promise<{ pal: Pal }> {
+    const pal = this.mustGet(id);
+    const m = typeof mode === "string" ? mode : "";
+    if (!(PAL_MODES as readonly string[]).includes(m)) throw new Error(t("pals.modeBad"));
+    if (pal.rec.stoppedFor) throw new Error(t("pals.stoppedNoModel"));
+    await pal.setMode(m);
+    this.d.audit.log("pal.mode", { pal: pal.id, mode: m });
     this.emitNow();
     return { pal: pal.toWire() };
   }

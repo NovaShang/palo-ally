@@ -138,6 +138,7 @@ export const zhPals = {
   "pals.effortBad": "不认识这个深度",
   "pals.setModelNothing": "要给出模型或深度",
   "pals.stoppedNoModel": "它停着，先叫醒它",
+  "pals.modeBad": "没有这种权限模式",
   "pals.revealKind": "只能在访达或终端里打开",
   "pals.revealNoDesktop": "这台电脑没法打开窗口",
   "pals.revealFailed": "打不开：{msg}",
