@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>手机快速切换条</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#e9e9ee;color:#1c1c1e;font:15px/1.5 -apple-system,"PingFang SC",system-ui,sans-serif}
+main{max-width:1150px;margin:0 auto;padding:20px 14px 70px}
+h1{font-size:24px;margin:6px 0}h2{font-size:18px;margin:30px 0 6px}
+.sub{color:#6e6e73;font-size:14px;max-width:860px}
+.shots{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start;margin-top:12px}
+.cap{font-size:13px;color:#6e6e73;margin-top:6px;max-width:330px}
+.phone{width:330px;height:700px;border-radius:46px;position:relative;overflow:hidden;box-shadow:0 0 0 9px #111,0 10px 30px rgba(0,0,0,.25);background:#f2f2f7}
+.phone.d{background:#000;color:#f5f5f7}
+.status{position:absolute;top:0;left:0;right:0;height:44px;display:flex;justify-content:space-between;align-items:flex-end;padding:0 26px 4px;font-size:14px;font-weight:600;z-index:3}
+.glass{background:rgba(255,255,255,.55);backdrop-filter:blur(18px) saturate(1.8);-webkit-backdrop-filter:blur(18px) saturate(1.8);box-shadow:0 2px 12px rgba(0,0,0,.12),inset 0 1px 0 rgba(255,255,255,.9),inset 0 0 0 .5px rgba(0,0,0,.06)}
+.d .glass{background:rgba(60,60,64,.5);box-shadow:0 2px 12px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 .5px rgba(255,255,255,.08)}
+.top{position:absolute;top:50px;left:12px;right:12px;display:flex;align-items:center;justify-content:space-between;z-index:3}
+.circ{width:44px;height:44px;border-radius:22px;display:grid;place-items:center;font-size:16px}
+.ind{width:44px;height:44px;border-radius:22px;display:grid;place-items:center}
+.chat{position:absolute;top:104px;left:0;right:0;bottom:150px;padding:0 16px;display:flex;flex-direction:column;justify-content:flex-end;gap:10px;font-size:14px}
+.me{align-self:flex-end;background:rgba(118,118,128,.16);border-radius:18px;padding:8px 13px;max-width:78%}
+.d .me{background:rgba(255,255,255,.14)}
+.ai{max-width:92%;line-height:1.55}
+.fade-bot{position:absolute;bottom:0;left:0;right:0;height:170px;background:linear-gradient(rgba(242,242,247,0),#f2f2f7 45%);z-index:2}
+.d .fade-bot{background:linear-gradient(rgba(0,0,0,0),#000 45%)}
+.dock{position:absolute;left:0;right:0;bottom:24px;z-index:3}
+.strip{display:flex;gap:8px;padding:0 16px;overflow:hidden;white-space:nowrap;
+ -webkit-mask-image:linear-gradient(90deg,transparent,#000 16px,#000 calc(100% - 16px),transparent)}
+.chip{flex:none;height:32px;border-radius:16px;padding:0 14px;display:flex;align-items:center;font-size:14px}
+.chip.cur{font-weight:600;box-shadow:0 2px 12px rgba(0,0,0,.12),inset 0 0 0 1.5px rgba(255,255,255,.95),0 0 0 .5px rgba(0,0,0,.18)}
+.d .chip.cur{box-shadow:0 2px 12px rgba(0,0,0,.5),inset 0 0 0 1.5px rgba(255,255,255,.7)}
+.w{background:rgba(10,133,255,.24)}.d .w{background:rgba(10,133,255,.32)}
+.wa{background:rgba(255,159,10,.26)}.d .wa{background:rgba(255,159,10,.32)}
+.dn{background:rgba(48,209,88,.24)}.d .dn{background:rgba(48,209,88,.30)}
+.cur.w{background:rgba(10,133,255,.38)}.cur.wa{background:rgba(255,159,10,.40)}.cur.dn{background:rgba(48,209,88,.38)}
+.composer{margin:10px 14px 0;height:50px;border-radius:25px;display:flex;align-items:center;padding:0 8px 0 18px;color:#8e8e93;font-size:15px;gap:8px}
+.composer .mic{margin-left:auto;width:36px;height:36px;border-radius:18px;display:grid;place-items:center;color:#1c1c1e;font-size:15px}
+.d .composer .mic{color:#fff}
+.kb{position:absolute;left:0;right:0;bottom:0;height:270px;background:#d1d3d9;z-index:2}
+.d .kb{background:#2c2c2e}
+.menu{position:absolute;width:210px;border-radius:18px;z-index:5;overflow:hidden;font-size:15px}
+.menu div{padding:11px 16px;display:flex;gap:10px}
+.menu div+div{border-top:.5px solid rgba(127,127,127,.25)}
+.dim{position:absolute;inset:0;background:rgba(0,0,0,.18);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);z-index:4}
+.lift{position:absolute;z-index:5}
+.arrow{position:absolute;z-index:6;font-size:13px;font-weight:600;color:#0A85FF;background:rgba(255,255,255,.85);border-radius:10px;padding:2px 8px}
+.notes{background:#fff;border-radius:16px;padding:12px 16px;margin-top:14px;max-width:900px}
+.notes li{margin:5px 0}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:#6e6e73;margin-top:8px}
+.legend span{display:flex;align-items:center;gap:6px}
+.sw{width:26px;height:16px;border-radius:8px;display:inline-block}
+</style></head><body><main>
+<h1>手机快速切换条</h1>
+<p class="sub"><b>主人定了：只在工作区里出现（第 1 部分作废，只作对照）。</b>输入框上面一排玻璃小胶囊，一个胶囊一个会话。不放图标，玻璃的颜色就是状态：蓝色在干，橙色等你，绿色做完了，没颜色是闲着（颜色和状态指示器一样）。当前这个描一圈白边、字加粗。点一下切过去；在条上左右滑，切到上一个、下一个。</p>
+<div class="legend"><span><i class="sw" style="background:rgba(10,133,255,.3)"></i>在干</span><span><i class="sw" style="background:rgba(255,159,10,.32)"></i>等你</span><span><i class="sw" style="background:rgba(48,209,88,.3)"></i>做完了</span><span><i class="sw" style="background:rgba(255,255,255,.8);box-shadow:inset 0 0 0 .5px rgba(0,0,0,.15)"></i>闲着</span></div>
+<h2>1. （不做）平时：Palo 加没收进工作区的会话</h2><div class="shots" id="a"></div>
+<h2>2. 在工作区里：只列这个工作区的会话</h2><div class="shots" id="b"></div>
+<h2>3. 打字时、长按</h2><div class="shots" id="c"></div>
+<div class="notes"><b>要点</b><ul>
+<li>放在输入框正上方，和输入框一起浮在对话上面，对话从玻璃下面滚过去。只在手机上有；iPad 和 Mac 有侧栏，不放。</li>
+<li>列哪些：只在这个会话属于某个工作区时出现，列这个工作区的会话（按工作区里的顺序）。Palo 的页、普通会话的页没有这条；工作区里只有一个会话时也不出现。</li>
+<li>手势：只在条上左右滑才切换，对话区域不加任何手势，不会和滚动、返回手势打架。条自己不能手动滚，永远把当前这个摆在中间；看不到的那几个，往那边滑就过去了。</li>
+<li>打字时（键盘弹起）条先收起来，给对话多留一行；收键盘后回来。</li>
+<li>长按一个胶囊：重命名、移到工作区（或移出）、结束会话（结束前再问一次）。结束的是当前这个，就跳到它左边那个；工作区里没别的了就回列表。</li>
+<li>旧版代码在 workbench 分支，这次照这份稿子在它上面改：颜色换成指示器的那套，加打字时收起。</li>
+</ul></div>
+</main>
+<script>
+const ring=(c)=>`<svg width="34" height="34" viewBox="0 0 34 34"><circle cx="17" cy="17" r="14" fill="none" stroke="rgba(127,127,127,.25)" stroke-width="3"/><circle cx="17" cy="17" r="14" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="40 88" transform="rotate(-90 17 17)" stroke-linecap="round"/><circle cx="17" cy="17" r="8" fill="${c}"/><path d="M15 13.5 L20.5 17 L15 20.5Z" fill="#fff"/></svg>`;
+const chat=`<div class="me">把语音误触的修复再测一遍</div><div class="ai">好，我在模拟器上重跑了按住说话的 12 个用例，现在全部通过。还剩一个边角情况：在 0.2 秒内松手会被当成轻点，这是对的，我加了一条测试把它固定下来。</div><div class="me">很好，提交吧</div><div class="ai">已提交 3 个文件。</div>`;
+function strip(chips){return `<div class="strip">${chips.map(([t,s,cur])=>`<div class="chip glass ${s||''} ${cur?'cur':''}">${t}</div>`).join('')}</div>`}
+const normal=[['Palo','wa'],['语音修复','w',1],['笔记整理','dn'],['上海行程'],['发票报销','w'],['周报']];
+const ws=[['前端','w'],['后端','w',1],['测试']];
+function phone(o){
+ const top=`<div class="top"><div class="circ glass">‹</div><div class="ind glass" style="color:${o.dark?'#A6B6F7':'#5468D9'}">${ring('#0A85FF')}</div><div class="circ glass">▤</div></div>`;
+ const kb=o.kb?'<div class="kb"></div>':'';
+ const dock=`<div class="dock" style="bottom:${o.kb?278:24}px">${o.kb?'':strip(o.chips)}<div class="composer glass">${o.kb?'<span style="color:inherit;opacity:.9">再跑一遍|</span>':'按住说话，轻点打字'}<span class="mic glass">🎙</span></div></div>`;
+ return `<div class="phone${o.dark?' d':''}"><div class="status"><span>9:41</span><span>● ● ▮</span></div><div class="chat" style="bottom:${o.kb?340:150}px">${chat}</div><div class="fade-bot"></div>${top}${kb}${dock}${o.extra||''}</div>`;}
+document.getElementById('a').innerHTML=phone({chips:normal})+phone({chips:normal,dark:1})
+ +`<div class="cap">当前是「语音修复」（蓝色在干，白边加粗）。Palo 在等你所以是橙色，「笔记整理」做完了是绿色，「上海行程」闲着没颜色。右边看不全的往左滑就过去，两头渐隐。右：深色。</div>`;
+const swipe=phone({chips:[['Palo','wa'],['语音修复','w'],['笔记整理','dn',1],['上海行程'],['发票报销','w'],['周报']],extra:`<div class="arrow" style="bottom:116px;left:110px">← 在条上往左滑</div>`});
+document.getElementById('b').innerHTML=phone({chips:ws})+swipe
+ +`<div class="cap">左：「后端」在工作区「网站改版」里，条上只有这个工作区的 3 个会话，没有 Palo。右：在条上往左滑一下，从「语音修复」到了下一个「笔记整理」，它挪到中间。</div>`;
+const press=phone({chips:normal,extra:`<div class="dim"></div><div class="lift" style="left:118px;bottom:70px"><div class="chip glass cur w" style="transform:scale(1.08)">语音修复</div></div><div class="menu glass" style="left:60px;bottom:112px"><div>✎ 重命名</div><div>▦ 移到工作区 ›</div><div style="color:#FF3B30">◉ 结束会话</div></div>`});
+document.getElementById('c').innerHTML=phone({chips:normal,kb:1})+press
+ +`<div class="cap">左：打字时条收起来，只剩输入框跟着键盘。右：长按一个胶囊，弹出系统菜单：重命名、移到工作区、结束会话。</div>`;
+// The strip keeps the current chip in the middle, but never scrolls past either end (as a scroll view's scrollTo does).
+document.querySelectorAll('.strip').forEach(st=>{const c=st.querySelector('.cur');if(!c)return;
+ const mid=st.clientWidth/2, at=c.offsetLeft+c.offsetWidth/2-st.offsetLeft;
+ const last=st.lastElementChild, end=last.offsetLeft+last.offsetWidth-st.offsetLeft+16;
+ const off=Math.min(0,Math.max(mid-at, st.clientWidth-end));
+ st.firstElementChild.style.marginLeft=off+'px';});
+</script></body></html>

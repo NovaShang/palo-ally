@@ -13,6 +13,21 @@ final class PhoneSmokeUITests: XCTestCase {
     @MainActor func testBasicsDark() throws { try walk("dark") }
     @MainActor func testBasicsLight() throws { try walk("light") }
 
+    /// The mask behind holding to talk, alone, over a session's page: the
+    /// page must show through it, frosted.
+    @MainActor func testVoiceScrim() throws {
+        for look in ["light", "dark"] {
+            let app = XCUIApplication()
+            app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "-demo", "YES",
+                                    "-demoAppearance", look, "-demoScrim", "YES"]
+            app.launch()
+            XCTAssertTrue(app.buttons["title-orb"].waitForExistence(timeout: 20))
+            sleep(2)
+            shot(app, "\(look)-scrim")
+            app.terminate()
+        }
+    }
+
     @MainActor
     private func walk(_ look: String) throws {
         let app = XCUIApplication()
@@ -127,6 +142,46 @@ final class PhoneSmokeUITests: XCTestCase {
         deep.tap()
         sleep(1)
         app.buttons["完成"].firstMatch.tap()
+        // An ordinary session has no quick-switch strip.
+        XCTAssertFalse(app.descendants(matching: .any)["quick-switch"].exists, "a session outside a workspace has the strip")
+
+        // A session in a workspace: the strip of its sessions above the composer.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        // The phone opens a workspace as the list of its sessions.
+        let wsRow = app.descendants(matching: .any)["row-workspace-ws-site"].firstMatch
+        XCTAssertTrue(wsRow.waitForExistence(timeout: 5), "no workspace in the list")
+        wsRow.tap()
+        let siteRow = app.descendants(matching: .any)["workspace-member-pal-site"].firstMatch
+        XCTAssertTrue(siteRow.waitForExistence(timeout: 5), "the workspace's page doesn't list its sessions")
+        siteRow.tap()
+        let strip = app.descendants(matching: .any)["quick-switch"].firstMatch
+        XCTAssertTrue(strip.waitForExistence(timeout: 5), "a session in a workspace has no quick-switch strip")
+        sleep(1)
+        shot(app, "\(look)-8-quick-switch")
+        // A swipe on the strip goes to the next session.
+        strip.swipeLeft()
+        let blog = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'quick-switch-pal-blog' AND selected == true")).firstMatch
+        XCTAssertTrue(blog.waitForExistence(timeout: 5), "swiping the strip didn't go to the next session")
+        sleep(1)
+        shot(app, "\(look)-8b-quick-switch-swiped")
+        // A tap goes back.
+        app.descendants(matching: .any)["quick-switch-pal-site"].firstMatch.tap()
+        let site2 = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'quick-switch-pal-site' AND selected == true")).firstMatch
+        XCTAssertTrue(site2.waitForExistence(timeout: 5), "tapping a chip didn't switch")
+        // Long press: its menu.
+        app.descendants(matching: .any)["quick-switch-pal-blog"].firstMatch.press(forDuration: 1.0)
+        XCTAssertTrue(app.buttons["结束会话"].firstMatch.waitForExistence(timeout: 3), "long press on a chip has no menu")
+        shot(app, "\(look)-8c-quick-switch-menu")
+        app.descendants(matching: .any)["quick-switch"].firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: -8)).tap()
+        sleep(1)
+        // Typing puts it away.
+        type(app, "测试")
+        XCTAssertFalse(app.descendants(matching: .any)["quick-switch"].exists, "the strip stays while typing")
+        shot(app, "\(look)-8d-quick-switch-typing")
+        dismissKeyboard(app)
+        XCTAssertTrue(strip.waitForExistence(timeout: 5), "the strip didn't come back after typing")
 
         // Back to the list and into Palo again.
         app.navigationBars.buttons.element(boundBy: 0).tap()

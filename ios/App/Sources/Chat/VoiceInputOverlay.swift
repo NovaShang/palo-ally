@@ -460,15 +460,18 @@ struct VoiceInputPanel: View {
     }
 }
 
-/// The whole screen behind the recording UI, evenly: the listening orb
-/// covers the top of the conversation anyway, and an even scrim is what lets
-/// the message be placed under it unseen at release (its words then fly into
-/// it). The screen's own background, so it follows light / dark mode.
+/// The whole screen behind the recording UI, evenly: the screen's own
+/// background, partly see-through, so the page stays readable underneath
+/// (the owner's ask: a mask, not a blank screen; no blur, which smears the
+/// words below) while the words in the middle stand out over it. Follows
+/// light / dark mode.
 struct VoiceScrim: View {
+    /// How much of the background the mask lays over the page when fully in.
+    static let strength = 0.78
     let opacity: CGFloat
 
     var body: some View {
-        Color(.systemBackground)
+        Color(.systemBackground).opacity(Self.strength)
             .ignoresSafeArea()
             .opacity(Double(opacity))
             .allowsHitTesting(false)

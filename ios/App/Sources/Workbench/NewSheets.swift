@@ -112,6 +112,7 @@ struct WorkspacePage: View {
                             .contentShape(.rect)
                         }
                         .tint(.primary)
+                        .accessibilityIdentifier("workspace-member-\(pal.id)")
                     }
                 }
             }

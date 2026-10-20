@@ -105,6 +105,7 @@
 		9EFDA851328EB4700879F945 /* QuestionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEB06BF1C700F1FEE8FBA962 /* QuestionCard.swift */; };
 		9F471EF33EB831461DD0E4A0 /* AlliesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B37F21F4341F2E8ECB3BEB1 /* AlliesUITests.swift */; };
 		A0550980F6891AA9B038F7B6 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 15DEAD73806EBE1C701B9FCB /* MarkdownUI */; };
+		A498E9FA9947221B2C5C1F92 /* QuickSwitchStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CCC5095BCDA9B3E16677D1D /* QuickSwitchStrip.swift */; };
 		A6EF56C0F7B83F82E94767C3 /* PaneRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78956D8B13F56A965CAE20F /* PaneRouting.swift */; };
 		A9F1785A4DCAA4FE1A838DB7 /* FilesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F2A68E3DD919B5284C96444 /* FilesUITests.swift */; };
 		AACC2B792ABD1AFC63ECC6B2 /* ScrollLabUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED42874198579F1FB37DC41 /* ScrollLabUITests.swift */; };
@@ -222,6 +223,7 @@
 		45CEF451F12A8A4C25B55191 /* SessionCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCopy.swift; sourceTree = "<group>"; };
 		463C63915ABE2E57917083B2 /* FilePickers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePickers.swift; sourceTree = "<group>"; };
 		4B87BB3BCA4EF713FD6F4888 /* PaloAllyKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PaloAllyKit; path = ../PaloAllyKit; sourceTree = SOURCE_ROOT; };
+		4CCC5095BCDA9B3E16677D1D /* QuickSwitchStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickSwitchStrip.swift; sourceTree = "<group>"; };
 		4CF4E72084123562EA03B5E6 /* DetailParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailParts.swift; sourceTree = "<group>"; };
 		4FBD3843044FE94D50902206 /* ChatScroll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScroll.swift; sourceTree = "<group>"; };
 		50C0D86FFE5D13BEF644D76F /* PaloAllyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaloAllyApp.swift; sourceTree = "<group>"; };
@@ -454,6 +456,7 @@
 				174B1237C41938382CBE6448 /* NewSessionPanel.swift */,
 				1D328993B8AC9542C3EBC19C /* NewSheets.swift */,
 				B78956D8B13F56A965CAE20F /* PaneRouting.swift */,
+				4CCC5095BCDA9B3E16677D1D /* QuickSwitchStrip.swift */,
 				768D3CED5A15E91166C30829 /* SessionIndicator.swift */,
 				5AD9E84DB57CB45FD7684BAE /* TiledWorkspaceView.swift */,
 				8056C83DB70ECB079AF7E495 /* TitleCapsule.swift */,
@@ -893,6 +896,7 @@
 				B7DF0900ABDDFACC50FFF6B2 /* QRScannerView.swift in Sources */,
 				9EFDA851328EB4700879F945 /* QuestionCard.swift in Sources */,
 				D844BFFB6A6F7E72355AF873 /* QuickLook.swift in Sources */,
+				A498E9FA9947221B2C5C1F92 /* QuickSwitchStrip.swift in Sources */,
 				3EBE9726AEDB5E37A9B30E8B /* ReadAloud.swift in Sources */,
 				2D506F2643BDD7A799D90712 /* RenderTrace.swift in Sources */,
 				7BE1EBB1FD3930584F6FBB48 /* ReplyText.swift in Sources */,
