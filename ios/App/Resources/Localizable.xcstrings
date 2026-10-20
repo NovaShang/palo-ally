@@ -7599,6 +7599,39 @@
           }
         }
       }
+    },
+    "轻点打字，按住说话" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap to type, hold to talk"
+          }
+        }
+      }
+    },
+    "轻点打字" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap to type"
+          }
+        }
+      }
+    },
+    "按住说话" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold to talk"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
