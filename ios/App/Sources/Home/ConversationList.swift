@@ -433,7 +433,9 @@ private struct PalListRow: View {
                 WaitingBadge(count: waiting)
             }
         }
-        .padding(.vertical, model.layout == .phone ? 3 : (Platform.isMac ? 0 : 1))
+        // The Mac: a two-line sidebar row's room (Mail's, Notes'), not the
+        // one-line 28 pt the list's minimum is for.
+        .padding(.vertical, model.layout == .phone ? 3 : (Platform.isMac ? 6 : 1))
         .padding(.leading, inset ? 24 : 0)
         .sidebarRowText()
         .accessibilityElement(children: .combine)
