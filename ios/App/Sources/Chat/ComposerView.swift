@@ -90,24 +90,42 @@ struct ComposerView: View {
     private static let editingRadius: CGFloat = 22
     private static let editingHeight: CGFloat = 44
     private static let minInset: CGFloat = 12
+    /// A tile of a split workspace on the Mac: a one-line capsule this tall,
+    /// smaller buttons, tighter margins (the tiles need the room).
+    private static let compactHeight: CGFloat = 36
+    private static let compactButtonHeight: CGFloat = 36
 
     private var docked: Bool { !keyboardUp }
+    /// The compact composer (a tile on the Mac).
+    private var compact: Bool { tile != nil && Platform.isMac }
     /// Concentric only when the composer actually spans the display's bottom
     /// corners (the phone layout); beside a sidebar or inspector it's a
     /// regular floating capsule with even margins.
     private var spansDisplay: Bool { model.layout == .phone }
     private var concentric: Bool { docked && spansDisplay && displayRadius > 0 }
     private var sideInset: CGFloat {
+        if compact { return 12 }
         // Beside a sidebar or inspector: the same even margins as the conversation.
         guard concentric else { return spansDisplay ? Self.minInset : 20 }
         return max(Self.minInset, displayRadius - Self.dockedRadius)
     }
-    private var capsuleRadius: CGFloat { docked ? Self.dockedRadius : Self.editingRadius }
-    private var rowHeight: CGFloat { docked ? Self.dockedHeight : Self.editingHeight }
+    private var capsuleRadius: CGFloat {
+        if compact { return Self.compactHeight / 2 }
+        return docked ? Self.dockedRadius : Self.editingRadius
+    }
+    private var rowHeight: CGFloat {
+        if compact { return Self.compactHeight }
+        return docked ? Self.dockedHeight : Self.editingHeight
+    }
+    /// The +, mic and send buttons' height (their tap area).
+    private var buttonHeight: CGFloat { compact ? Self.compactButtonHeight : 44 }
     /// The composer sits above the home-indicator inset; docked, the capsule
     /// goes `sideInset` from the screen's bottom edge — into that inset when
     /// the inset is the larger of the two.
-    private var bottomPadding: CGFloat { concentric || (docked && spansDisplay) ? max(0, sideInset - homeInset) : 8 }
+    private var bottomPadding: CGFloat {
+        if compact { return 6 }
+        return concentric || (docked && spansDisplay) ? max(0, sideInset - homeInset) : 8
+    }
     private var bottomOffset: CGFloat { concentric || (docked && spansDisplay) ? max(0, homeInset - sideInset) : 0 }
 
     /// From touch-down to "listening". Recording runs the whole time; this
@@ -195,7 +213,7 @@ struct ComposerView: View {
         }
         .onAppear { HardwareKeyboard.startWatching() }
         .padding(.horizontal, sideInset)
-        .padding(.top, 6)
+        .padding(.top, compact ? 4 : 6)
         .padding(.bottom, bottomPadding)
         .offset(y: bottomOffset)
         // Large screens: same line length as the conversation, centred.
@@ -347,9 +365,9 @@ struct ComposerView: View {
         }
     }
 
-    /// Keeps the 44 pt buttons centred on a one-line docked capsule (they
-    /// stay at the bottom as the field grows to more lines).
-    private var buttonLift: CGFloat { (rowHeight - 44) / 2 }
+    /// Keeps the buttons centred on a one-line docked capsule (they stay at
+    /// the bottom as the field grows to more lines).
+    private var buttonLift: CGFloat { (rowHeight - buttonHeight) / 2 }
 
     /// Follows the keyboard: docked when it's down (or only the hardware
     /// keyboard's shortcut bar is showing), a plain capsule above it otherwise.
@@ -383,17 +401,17 @@ struct ComposerView: View {
             }
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 18, weight: .medium))
+                .font(.system(size: compact ? 15 : 18, weight: .medium))
                 .foregroundStyle(.secondary)
-                .frame(width: 40, height: 44)
+                .frame(width: compact ? 32 : 40, height: buttonHeight)
                 .contentShape(.rect)
         }
         .tint(.secondary) // Menu tints its label with the accent; match the mic
         // The Mac draws a menu as a bordered pop-up with a chevron; keep the bare +.
         .buttonStyle(.borderless)
         .menuIndicator(.hidden)
-        .frame(width: 40, height: 44) // the Mac sizes a borderless menu to its glyph
-        .padding(.leading, 4)
+        .frame(width: compact ? 32 : 40, height: buttonHeight) // the Mac sizes a borderless menu to its glyph
+        .padding(.leading, compact ? 2 : 4)
         .disabled(staged.count >= Self.maxStaged || dictating)
         .accessibilityLabel("添加照片或文件")
     }
@@ -424,7 +442,7 @@ struct ComposerView: View {
                     fieldFrame = $0
                     if placesVoice { voice.placeField($0) }
                 }
-                .padding(.vertical, 11)
+                .padding(.vertical, compact ? 8 : 11)
                 // Blank while those words fly in; it fades in as they land.
                 .opacity(dictating || (mine && voice.veilsField) ? 0 : 1)
             if dictating {
@@ -505,10 +523,10 @@ struct ComposerView: View {
             if canSend && !dictating {
                 Button(action: send) {
                     Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 30))
+                        .font(.system(size: compact ? 24 : 30))
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.tint)
-                        .frame(width: 40, height: 44)
+                        .frame(width: compact ? 32 : 40, height: buttonHeight)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("发送")
@@ -524,18 +542,18 @@ struct ComposerView: View {
                 if dictating {
                     // Listening: a tinted glass stop button — tap again to finish.
                     Image(systemName: "stop.fill")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: compact ? 11 : 13, weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: 34, height: 34)
+                        .frame(width: compact ? 28 : 34, height: compact ? 28 : 34)
                         .glassEffect(.regular.tint(Color.accentColor.opacity(0.9)).interactive(), in: .circle)
                         .symbolEffect(.pulse, isActive: !finishingDictation)
                 } else {
                     Image(systemName: "mic")
-                        .font(.system(size: 18, weight: .medium))
+                        .font(.system(size: compact ? 15 : 18, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(width: 44, height: 44)
+            .frame(width: compact ? 34 : 44, height: buttonHeight)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
