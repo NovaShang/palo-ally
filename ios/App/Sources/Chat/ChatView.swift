@@ -437,7 +437,8 @@ private struct ConversationRows: View {
                 }
 
                 if showsBusyIndicator {
-                    ThinkingIndicator(activity: busyActivity, justSent: store.awaitingReply && store.status?.busy != true)
+                    ThinkingIndicator(activity: busyActivity, justSent: store.awaitingReply && store.status?.busy != true,
+                                      stop: store.status?.busy == true ? { Task { try? await store.stop() } } : nil)
                         .id("thinking")
                 }
 
@@ -716,7 +717,10 @@ struct StatusBanner: View {
 struct ThinkingIndicator: View {
     var activity: String?
     var justSent = false
+    /// While it works: 停止 at the end of the conversation (the composer keeps its mic).
+    var stop: (() -> Void)? = nil
     @State private var slow = false
+    @State private var stopping = false
 
     private var text: String {
         if let activity { return activity }
@@ -731,6 +735,25 @@ struct ThinkingIndicator: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .contentTransition(.opacity)
+            Spacer(minLength: 8)
+            if let stop {
+                Button {
+                    stopping = true
+                    stop()
+                } label: {
+                    Label(stopping ? String(localized: "正在停…") : String(localized: "停止"), systemImage: "stop.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.primary)
+                .glassEffect(.regular.interactive(), in: .capsule)
+                .disabled(stopping)
+                .accessibilityIdentifier("chat-stop")
+                .transition(.opacity)
+            }
         }
         // In-content: just the spinner and words, no container.
         .padding(.vertical, 4)

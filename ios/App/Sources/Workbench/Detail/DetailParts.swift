@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The pieces the details page shares between a session and Palo
 /// (docs/workbench-design/details-v2.html): the header, the model and depth
-/// pickers, the context line, 停止, and the tasks group.
+/// pickers, the context line, and the tasks group.
 
 // MARK: - header
 
@@ -172,25 +172,6 @@ struct DetailContextRow: View {
             }
         }
         .accessibilityElement(children: .contain)
-    }
-}
-
-/// 停止, under the context while it works: the turn stops (what is queued
-/// still goes after). The composer keeps its mic.
-struct DetailStopRow: View {
-    var working = false
-    let stop: () -> Void
-
-    var body: some View {
-        Button(role: .destructive, action: stop) {
-            Label(working ? String(localized: "正在停…") : String(localized: "停止"), systemImage: "stop.fill")
-                .fontWeight(.semibold)
-                .foregroundStyle(.red)
-                .frame(maxWidth: .infinity)
-        }
-        .tint(.red)
-        .disabled(working)
-        .accessibilityIdentifier("detail-stop")
     }
 }
 

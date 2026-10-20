@@ -65,7 +65,7 @@ h1{font-size:24px;margin:6px 0}h2{font-size:18px;margin:30px 0 6px}
 <p class="sub"><b>和右边界面的分工</b>：详情只管「它」本身（状态、模型、上下文、在跑的任务、用量、工作区、结束）；右边只管「它的东西」（成果、文件、网页），入口只有标题栏右上角那一个。</p>
 <p class="sub"><b>选择器</b>：模型和思考深度都是系统默认的选择器，一行左边是名字，右边是当前值和上下小箭头，点开弹出系统选单。思考深度的选项用完整的名字：浅、中、深、很深、最深（英文 Low、Medium、High、Extra high、Max），不用指示器上的简写。</p>
 <p class="sub"><b>任务</b>：Palo 和会话都直接列出正在进行的任务（子 agent、后台任务），每个一行，往左滑出「停」；下面一行是「历史任务」，点进去回看以前的。Palo 额外有「目标」「记忆」两行（原来的「履历」并进了「历史任务」）。</p>
-<p class="sub"><b>没有按钮那一排</b>：文件和成果在右上角；「停止」放在上下文那一组的最下面，只在它在干的时候出现。输入框右边永远是麦克风，不再被停止键换掉。</p>
+<p class="sub"><b>没有按钮那一排</b>：文件和成果在右上角；「停止」在对话末尾「正在想…」那一行的右边，只在它在干的时候出现。输入框右边永远是麦克风，不再被停止键换掉。</p>
 <h2>1. 会话，半屏（点标题上的指示器打开）</h2>
 <div class="shots" id="s1"></div>
 
@@ -80,7 +80,7 @@ h1{font-size:24px;margin:6px 0}h2{font-size:18px;margin:30px 0 6px}
 
 <div class="notes"><b>和现在那版比</b><ul>
 <li>头部从竖排（大图标、名字、文件夹、状态各占一行）改成横排，半屏能多看到模型、思考深度和上下文三行。</li>
-<li>去掉了那一排白色大按钮：文件和成果在右上角，并排、终端、访达不要了。「停止」在上下文那一组最下面，输入框右边一直是麦克风。「压缩」只放在上下文那一行。</li>
+<li>去掉了那一排白色大按钮：文件和成果在右上角，并排、终端、访达不要了。「停止」在对话末尾，输入框右边一直是麦克风。「压缩」只放在上下文那一行。</li>
 <li>模型和思考深度都是系统选择器，选项用完整的名字。</li>
 <li>Palo 和会话都直接列出正在进行的任务，下面是「历史任务」。</li>
 <li>思考深度不再弹菜单，直接在分段控件里点；模型点一下弹出系统菜单。不再有粉色的字。</li>
@@ -124,7 +124,7 @@ function session(o){const L=o.light,t=o.en?T.en:T.zh;
  const acts=[[IC.stop,'停止',o.state!=='working'],[IC.split,'并排',false]].concat(o.mac?[[IC.term,'终端',false],[IC.finder,'访达',false]]:[]);
  let h=`<div class="top">${o.mac?'':`<span class="done">${t.done}</span>`}</div>
  <div class="head">${ind(o.state,o.pct,o.effLabel,o.model,58,L)}<div class="txt"><div class="name">${o.name}<span class="pen">✎</span></div><div class="meta">${o.folder}</div><div class="doing"><span class="dot" style="background:${COL[o.state]}"></span>${o.doing}</div></div></div>
- <div class="grp">${picker(t.model,o.modelName)}${picker(t.effort,o.eff)}${ctx(o.pct,o.used,o.win,L,true,t)}${o.state==='working'?stopRow(t):''}</div>`;
+ <div class="grp">${picker(t.model,o.modelName)}${picker(t.effort,o.eff)}${ctx(o.pct,o.used,o.win,L,true,t)}</div>`;
  if(o.full){
   h+=tasks(t,o.state==='working'?(o.en?[['Build device app','2 min',COL.working],['Subagent · check Mac app','working',COL.working]]:[['xcodebuild 真机包','2 分钟',COL.working],['子 agent · 检查 Mac 版','在干',COL.working]]):[],L);
   h+=`<div class="grp"><div class="cell">${t.today}<span class="v">$3.20</span></div><div class="cell">${t.total}<span class="v">$18.40</span></div><div class="cell">${t.ws}<span class="v">PaloAlly ›</span></div></div>
@@ -140,7 +140,7 @@ function palo(o){const L=o.light;
  return h;}
 function phone(inner,light,top){return `<div><div class="phone ${light?'l':'d'}"><div class="chat">好的，我先把现有的分类看一遍。<br><br>收到，按这五条来。先从分类开始。<br><br>这周的 12 篇笔记都归好类了，标签也补上了。</div><div class="sheet" style="top:${top}px">${inner}</div></div></div>`;}
 const S={name:'修语音误触',folder:'~/code/palo-ally',state:'working',doing:'正在跑 swift test',pct:.41,used:'82k',win:'200k',eff:'深',effLabel:'hi',model:'opus',modelName:'Opus 5.5'};
-document.getElementById('s1').innerHTML=phone(session({...S,light:1}),1,300)+phone(session({...S,en:1,eff:'High',name:'Fix voice mis-taps',doing:'Running swift test'}),0,300)+`<div class="cap">半屏：头部、模型、思考深度、上下文，在干的时候上下文下面是红字「停止」，一屏看完。右边那张是英文、深色。</div>`;
+document.getElementById('s1').innerHTML=phone(session({...S,light:1}),1,300)+phone(session({...S,en:1,eff:'High',name:'Fix voice mis-taps',doing:'Running swift test'}),0,300)+`<div class="cap">半屏：头部、模型、思考深度、上下文，一屏看完。右边那张是英文、深色。</div>`;
 document.getElementById('s2').innerHTML=phone(session({...S,light:1,full:1}),1,44)+phone(session({...S,state:'idle',doing:'闲着',pct:.86,used:'172k',full:1,light:0}),0,44)+`<div class="cap">往上拉：正在进行的任务（往左滑出「停」）和「历史任务」、用量和工作区、最下面单独一行红字「结束这个会话」。右边是闲着的会话：没有在跑的任务，这一组的标题是「任务」，里面只有「历史任务」；上下文 86% 变橙。</div>`;
 document.getElementById('s3').innerHTML=phone(palo({light:1}),1,330)+phone(palo({light:1,full:1}),1,44)+`<div class="cap">和会话同一个骨架。头部第三行是「几个会话在等你」，点一下跳过去。没有按钮；「设置」是最下面一行。往上拉是正在进行的任务和「历史任务」，再下面是「目标」「记忆」，点进去就是现在「它」那一页里对应的部分。没有「结束」。Palo 没有手动压缩，所以上下文那行没有「压缩」。</div>`;
 document.getElementById('s4').innerHTML=`<div class="mac l">${session({...S,light:1,full:1,mac:1})}</div><div class="mac d">${session({...S,full:1,mac:1})}</div><div class="cap">内容和手机全屏一样，没有「完成」，点外面就收起。</div>`;

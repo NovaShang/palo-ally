@@ -4,7 +4,7 @@ import SwiftUI
 /// What the title's indicator opens (docs/workbench-design/details-v2.html):
 /// a card that answers who it is and what it is doing at a glance (the
 /// indicator, its name, folder and line), then its model, depth and
-/// context, 停止 while it works, its tasks (what runs now, then 历史任务),
+/// context, its tasks (what runs now, then 历史任务),
 /// and for a session its usage, workspace and 结束. Files and 成果 are the
 /// title bar's right button, not here. Reads the store in the environment:
 /// a session's own (`palStore`) or the assistant's (Detail/PaloDetailForm).
@@ -83,10 +83,6 @@ private struct SessionDetailForm: View {
                     DetailContextRow(percent: contextPercent(pal), tokens: detail?.contextTokens, window: detail?.contextWindow,
                                      compact: { compact() }, compacting: working == "compact",
                                      canCompact: online && working == nil && pal.status != .busy)
-                    if pal.status == .busy {
-                        DetailStopRow(working: working == "stop") { stopTurn() }
-                            .disabled(!online)
-                    }
                 }
                 tasks
                 usageAndWorkspace(pal)
@@ -252,10 +248,6 @@ private struct SessionDetailForm: View {
             try await store.compactSession(id: palID)
             detail = try? await store.palDetail(id: palID)
         }
-    }
-
-    private func stopTurn() {
-        run("stop") { try await store.stop() }
     }
 
     private func stop(_ t: PalTask) {

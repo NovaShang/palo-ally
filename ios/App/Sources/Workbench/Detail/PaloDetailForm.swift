@@ -2,7 +2,7 @@ import PaloAllyKit
 import SwiftUI
 
 /// Palo's details: the session's skeleton (header, model and depth, context,
-/// 停止 while it works, its tasks then 历史任务) plus 目标, 记忆 and 设置.
+/// its tasks then 历史任务) plus 目标, 记忆 and 设置.
 /// No end row: Palo can't be ended. No 压缩: the host has no compact method
 /// for the assistant, only its own idle compaction.
 struct PaloDetailForm: View {
@@ -13,7 +13,6 @@ struct PaloDetailForm: View {
     @State private var failure: String?
     @State private var showSettings = false
     @State private var showIdentity = false
-    @State private var stopping = false
     @State private var noRename = false
     @State private var unused = ""
 
@@ -44,10 +43,6 @@ struct PaloDetailForm: View {
                 pickers
                 DetailContextRow(percent: store.status?.contextPct, tokens: store.status?.contextTokens,
                                  window: store.status?.contextWindow)
-                if store.assistantWorking {
-                    DetailStopRow(working: stopping) { stop() }
-                        .disabled(!online)
-                }
             }
 
             let running = store.tasks.filter(\.isActive).sorted { $0.updatedAt > $1.updatedAt }
@@ -153,14 +148,6 @@ struct PaloDetailForm: View {
         failure = nil
         Task {
             do { try await store.setModel(model, effort: effort) } catch { failure = Copy.error(error) }
-        }
-    }
-
-    private func stop() {
-        stopping = true
-        Task {
-            do { try await store.stop() } catch { failure = Copy.error(error) }
-            stopping = false
         }
     }
 

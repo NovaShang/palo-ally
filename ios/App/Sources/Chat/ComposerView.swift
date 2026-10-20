@@ -496,7 +496,7 @@ struct ComposerView: View {
     /// send, the send button to its right.
     private var trailingButton: some View {
         HStack(spacing: 0) {
-            // The mic stays while the agent works (停止 is in its details);
+            // The mic stays while the agent works (停止 is at the conversation's end);
             // typing, or holding to talk, queues the next message.
             micButton
             if canSend && !dictating {
