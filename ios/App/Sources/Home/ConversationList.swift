@@ -435,7 +435,7 @@ private struct PalListRow: View {
         }
         // The Mac: a two-line sidebar row's room (Mail's, Notes'), not the
         // one-line 28 pt the list's minimum is for.
-        .padding(.vertical, model.layout == .phone ? 3 : (Platform.isMac ? 6 : 1))
+        .padding(.vertical, model.layout == .phone ? 3 : (Platform.isMac ? 8 : 1))
         .padding(.leading, inset ? 24 : 0)
         .sidebarRowText()
         .accessibilityElement(children: .combine)

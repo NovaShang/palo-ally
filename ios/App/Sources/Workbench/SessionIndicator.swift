@@ -2,7 +2,8 @@ import PaloAllyKit
 import SwiftUI
 
 /// The round session indicator (docs/workbench-design/indicator.html):
-/// Bento's state glyph in the middle (working breathes), a 270 degree context
+/// the session's liquid-glass drop in the middle (SessionDrop) with the state's
+/// white mark on it (the lists keep Bento's flat glyph), a 270 degree context
 /// arc around it (the label color, orange from 80%, red from 95%, on a faint
 /// track), and the effort label in the gap at the bottom, colored by model,
 /// cool to warm (deeper on a light background). Glyph, arc and the glass
@@ -33,9 +34,6 @@ struct SessionIndicator: View {
     var voiceOwner: String?? = nil
     /// In place of the state glyph (the session-drop prototype).
     var center: AnyView? = nil
-    /// The session's drop in the middle, a little bigger than the glyph's
-    /// disc, with the glyph's white mark on it (the drop is the disc).
-    var dropMiddle = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
@@ -93,10 +91,17 @@ struct SessionIndicator: View {
             let glyph = glyph(radius: showsRing ? 21 * s : 40 * s)
                 .scaleEffect(state == .working && breathing ? 0.86 : 1)
                 .opacity(state == .working && breathing ? 0.8 : 1)
-            if dropMiddle {
+            if showsRing && center == nil {
+                // The session's liquid-glass drop fills the arc, its white
+                // mark (or the task count) on it; holding to talk to it,
+                // live level bars in place of the mark.
                 ZStack {
                     SessionDrop(state: state, voiceLevel: nil).frame(width: 72 * s, height: 72 * s)
-                    mark(radius: 21 * s)
+                    if let owner = voiceOwner {
+                        IndicatorVoiceCenter(owner: owner, side: 38 * s) { mark(radius: 21 * s) }
+                    } else {
+                        mark(radius: 21 * s)
+                    }
                 }
             } else if let center {
                 center.frame(width: 44 * s, height: 44 * s)

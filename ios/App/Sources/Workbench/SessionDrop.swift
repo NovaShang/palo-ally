@@ -7,7 +7,8 @@ import SwiftUI
 /// color. Its motion is its state: calm when idle, churning while it works,
 /// leaning out while it waits, trembling with the owner's voice.
 ///
-/// A prototype for now (SessionDropPreview), to decide where it goes.
+/// In the middle of the session indicator (SessionIndicator); the debug
+/// builds' Settings keep the prototype page it was chosen from.
 struct SessionDrop: View {
     var state: StatusDotKind
     /// 0…1 while the owner speaks to it; nil: not listening.
@@ -22,7 +23,7 @@ struct SessionDrop: View {
     @State private var engine = SoloEngine()
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: false)) { ctx in
+        TimelineView(.animation(minimumInterval: voiceLevel != nil || state == .working || state == .waiting ? 1.0 / 30 : 1.0 / 10, paused: false)) { ctx in
             let u = engine.frame(now: ctx.date.timeIntervalSinceReferenceDate, state: state, neutral: neutral, voiceLevel: voiceLevel,
                                  reduceMotion: reduceMotion, dark: scheme == .dark, scale: Float(displayScale))
             GeometryReader { geo in
@@ -115,11 +116,7 @@ struct SessionDropPreview: View {
         .padding(.vertical, 8)
     }
 
-    private func dropMiddle(_ i: SessionIndicator) -> SessionIndicator {
-        var copy = i
-        copy.dropMiddle = true
-        return copy
-    }
+    private func dropMiddle(_ i: SessionIndicator) -> SessionIndicator { i }
 
     private let states: [(StatusDotKind, String)] = [(.working, "在干"), (.waiting, "等你"), (.done, "做完了"), (.idle, "闲着")]
 

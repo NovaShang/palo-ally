@@ -54,10 +54,6 @@ struct ChatView: View {
     /// The Mac: a Pal's or a session's page runs to the window's top too,
     /// its title and menu floating in a strip (MacPageStrip).
     private var macPage: Bool { Platform.barInWindowToolbar && !isPalo && !inTile }
-    /// The title capsule of a session's page.
-    private var pageCapsule: some View {
-        TitleCapsule(name: title, dot: pageTop?.dot ?? .idle, subtitle: pageTop?.subtitle ?? "", showsVoiceLevel: true)
-    }
     private var title: String {
         isPalo ? store.assistantName
             : store.palID.flatMap { store.pal(id: $0)?.displayName } ?? store.viewedSessionID.flatMap { store.viewedSession($0)?.name } ?? ""
@@ -194,7 +190,10 @@ struct ChatView: View {
             VStack(spacing: 0) {
                 if macPage {
                     MacPageStrip(title: title, subtitle: pageTop?.subtitle ?? "", dot: pageTop?.dot, trailing: pageTop?.menu,
-                                 capsule: pageTop?.capsule == true ? AnyView(pageCapsule) : nil)
+                                 capsule: pageTop?.capsule == true
+                                    // The session's indicator at the page's top left, as on
+                                    // the phone (no name capsule: the sidebar names it).
+                                    ? AnyView(PageIndicator(size: 30, dot: pageTop?.dot)) : nil)
                 }
                 if !inTile { StatusBanner() }
                 // The Mac: the orb hangs small from the top middle of the
