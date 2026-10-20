@@ -569,6 +569,23 @@ describe("Hub: restarts", () => {
     void _d;
   });
 
+  test("a result carries the main model's context window; init carries the effort it runs at", async () => {
+    const { mapMessage } = await import("../src/harness/claude.ts");
+    const state = { lastCost: 0, contextTokens: 0 };
+    const [r] = mapMessage({
+      type: "result", subtype: "success", total_cost_usd: 0, session_id: "s", result: "",
+      modelUsage: {
+        "claude-haiku-4-5": { inputTokens: 900, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, contextWindow: 200_000 },
+        "claude-opus-5-5": { inputTokens: 10, cacheReadInputTokens: 300_000, cacheCreationInputTokens: 500, contextWindow: 1_000_000 },
+      },
+    } as any, state);
+    expect((r as any).contextWindow).toBe(1_000_000);
+    const [old] = mapMessage({ type: "result", subtype: "success", total_cost_usd: 0, session_id: "s", result: "" } as any, state);
+    expect((old as any).contextWindow).toBeUndefined();
+    const [i] = mapMessage({ type: "system", subtype: "init", session_id: "s", model: "claude-opus-5-5", tools: [], effort: "high" } as any, state);
+    expect(i).toMatchObject({ type: "init", effort: "high" });
+  });
+
   test("a reply's text carries its API message id, streamed and final; a refused start says why", async () => {
     const { mapMessage } = await import("../src/harness/claude.ts");
     const state = { lastCost: 0, contextTokens: 0 };

@@ -9,6 +9,7 @@ export interface Runtime {
   lastHeartbeat?: number;
   briefCreated?: boolean; // the default 晨报 goal was set up once (deleting it keeps it gone)
   contextTokens?: number; // the main session's context size after its last turn
+  contextWindow?: number; // its model's context window, as Claude Code last reported it
   lastTurnAt?: number; // when the main session last finished a turn
   lastCompactAt?: number;
   // 回到这里重来 (docs/rewind-prd.md §4.1): sessionId is a fork of `from` that

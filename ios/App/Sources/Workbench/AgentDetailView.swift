@@ -214,7 +214,7 @@ private struct SessionDetailForm: View {
     }
 
     private func contextPercent(_ pal: Pal) -> Int? {
-        if let t = detail?.contextTokens, let w = detail?.contextWindow, w > 0 { return Int((Double(t) / Double(w) * 100).rounded()) }
+        if let t = detail?.contextTokens, let w = detail?.contextWindow, w > 0 { return min(100, Int((Double(t) / Double(w) * 100).rounded())) }
         return pal.contextPct
     }
 

@@ -34,7 +34,7 @@ import { type Usage, UsageLedger } from "./usage.ts";
 import { randomUUID } from "node:crypto";
 import { forkSession as sdkForkSession } from "@anthropic-ai/claude-agent-sdk";
 import { type ForkSession, rewindNotFound, beforeCompaction, chainTo, findEntry, forkedUuids, leafOf, matchOwnerEntry, readTranscript } from "./rewind.ts";
-import { contextWindowOf } from "./palSession.ts";
+import { contextWindowFor } from "./palSession.ts";
 import { appendJsonl, readJson, writeJson } from "./util.ts";
 import { WatchStore } from "./watches.ts";
 import { Sessions, type SessionsDeps } from "./sessions.ts";
@@ -499,7 +499,7 @@ export class Hub {
     const auth = this.auth.status();
     const model = this.conversation.model || this.config.model || "";
     const tokens = this.conversation.contextTokens;
-    const window = contextWindowOf(model);
+    const window = contextWindowFor(model, tokens, this.runtime.data.contextWindow);
     return {
       online: true,
       busy,

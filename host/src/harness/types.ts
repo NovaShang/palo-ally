@@ -5,7 +5,7 @@
 export type HarnessEvent =
   // permissionMode: the mode it actually runs in, which may not be the one
   // asked for (Claude Code quietly drops auto for a model without it)
-  | { type: "init"; sessionId: string; model: string; tools: string[]; terminalCommands?: string[]; permissionMode?: string }
+  | { type: "init"; sessionId: string; model: string; tools: string[]; terminalCommands?: string[]; permissionMode?: string; effort?: string }
   // the harness' slash commands (built-ins, skills, plugins…); replaces any earlier list
   | { type: "commands"; commands: SlashCommandInfo[] }
   | { type: "models"; models: ModelOption[] }
@@ -32,6 +32,7 @@ export type HarnessEvent =
       costUsd: number; // this turn only
       totalCostUsd: number; // running total for the session
       contextTokens: number;
+      contextWindow?: number; // the main model's context window as Claude Code reports it (absent on older CLIs)
       sessionId: string;
       errorCategory?: string; // the SDK's own error kind (rate_limit, billing_error, …) when the turn failed
       consumedUuids?: string[]; // user messages this turn answered (absent on older CLIs)

@@ -1582,6 +1582,36 @@ describe("session details (workbench)", () => {
     await t.hub.pals.stopAndWait();
   });
 
+  test("the window Claude Code reports measures the context; without one, a context past the 200k guess means the 1M window", async () => {
+    const t = det();
+    const id = await mk(t);
+    // an id without [1m] that has gone past 200k: it runs on the long window
+    t.driver.contextTokens = 465_000;
+    await t.call("pals.send", { id, text: "大活" });
+    await waitFor(() => t.hub.pals.list().find((p) => p.id === id)?.contextPct === 47, 3_000);
+    expect((await t.call("pals.detail", { id })).contextWindow).toBe(1_000_000);
+    // the reported window wins over any guess
+    t.driver.contextTokens = 100_000;
+    t.driver.contextWindow = 400_000;
+    await t.call("pals.send", { id, text: "又一轮" });
+    await waitFor(() => t.hub.pals.list().find((p) => p.id === id)?.contextPct === 25, 3_000);
+    expect((await t.call("pals.detail", { id })).contextWindow).toBe(400_000);
+    expect(recOf(t, id).contextWindow).toBe(400_000);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("with no effort chosen, the effort Claude Code starts at is shown; a chosen one wins", async () => {
+    const t = det();
+    t.driver.appliedEffort = "high";
+    const id = await mk(t);
+    await waitFor(() => t.hub.pals.list().find((p) => p.id === id)?.effort === "high", 3_000);
+    expect(recOf(t, id).effort).toBeUndefined();
+    expect((await t.call("pals.detail", { id })).effort).toBe("high");
+    await t.call("pals.setModel", { id, effort: "low" });
+    expect(t.hub.pals.list().find((p) => p.id === id)!.effort).toBe("low");
+    await t.hub.pals.stopAndWait();
+  });
+
   test("pals.compact sends /compact without showing it as the owner's words; lastCompactAt is set and the context shrinks; refused while busy", async () => {
     const t = det();
     const id = await mk(t);

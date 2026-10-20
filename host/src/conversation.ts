@@ -443,7 +443,7 @@ export class Conversation {
         // The Ally's turn is over once a result consumed its message (an
         // older CLI that doesn't list them: once our turn for it ends).
         const gateDone = !!gate && (e.consumedUuids ? e.consumedUuids.includes(gate.uuid) : !!this.current?.uuids?.includes(gate.uuid));
-        this.d.runtime.update({ sessionCostUsd: e.totalCostUsd });
+        this.d.runtime.update({ sessionCostUsd: e.totalCostUsd, ...(e.contextWindow ? { contextWindow: e.contextWindow } : {}) });
         // The owner's held words go before anything queued behind this turn.
         if (gateDone) this.endAllyGate("done");
         this.endTurn(e.costUsd, e.contextTokens, e.isError ? e.text : undefined, this.consume(e.consumedUuids), e.errorCategory);

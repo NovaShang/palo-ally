@@ -265,6 +265,22 @@ function toCommands(list: any[] | undefined) {
 }
 
 // mapMessage turns one SDK message into zero or more harness events.
+/**
+ * The main model's context window from a result's per-model usage: the model
+ * that read the most input (subagents and titles run on others, smaller).
+ */
+export function mainContextWindow(modelUsage: unknown): number | undefined {
+  if (!modelUsage || typeof modelUsage !== "object") return undefined;
+  let best: { read: number; window: number } | undefined;
+  for (const u of Object.values(modelUsage as Record<string, any>)) {
+    const window = Number(u?.contextWindow);
+    if (!(window > 0)) continue;
+    const read = (Number(u.inputTokens) || 0) + (Number(u.cacheReadInputTokens) || 0) + (Number(u.cacheCreationInputTokens) || 0);
+    if (!best || read > best.read) best = { read, window };
+  }
+  return best?.window;
+}
+
 export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTokens: number; lastError?: string; messageId?: string }): HarnessEvent[] {
   // total_cost_usd is cumulative for the session (including what a resume replays)
   const out: HarnessEvent[] = [];
@@ -279,6 +295,8 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
           tools: m.tools ?? [],
           terminalCommands: m.terminal_slash_commands,
           ...(typeof m.permissionMode === "string" ? { permissionMode: m.permissionMode } : {}),
+          // the effort it actually runs at (a chosen one, or the model's default from Claude Code's settings)
+          ...(typeof m.effort === "string" ? { effort: m.effort } : {}),
         });
       else if (m.subtype === "commands_changed") out.push({ type: "commands", commands: toCommands(m.commands) });
       else if (m.subtype === "local_command_output" && m.content)
@@ -347,6 +365,7 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
       state.lastError = undefined; // each turn reports its own
       const cost = Math.max(0, total - state.lastCost);
       state.lastCost = total;
+      const contextWindow = mainContextWindow(m.modelUsage);
       out.push({
         type: "result",
         isError: !!m.is_error,
@@ -354,6 +373,7 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
         costUsd: cost,
         totalCostUsd: total,
         contextTokens: state.contextTokens,
+        ...(contextWindow ? { contextWindow } : {}),
         sessionId: m.session_id,
         errorCategory,
         consumedUuids: Array.isArray(m.user_message_uuids) ? m.user_message_uuids : undefined,

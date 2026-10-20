@@ -56,7 +56,9 @@ export interface PalRecord {
   autoNamed?: boolean; // still under the placeholder name it was created with: named from its first words after a turn
   workspaceId?: string; // the workspace it belongs to (workspaces: docs/workbench-rpc.md §3)
   effort?: string; // chosen effort level; absent = the model's default (applies at the next start when it's asleep)
+  appliedEffort?: string; // the effort Claude Code said it runs at when it last started (the default when none is chosen)
   contextTokens?: number; // its context size after its last turn or compaction
+  contextWindow?: number; // its model's context window, as Claude Code last reported it
   lastCompactAt?: number; // when it last compacted
 }
 
@@ -72,6 +74,17 @@ export interface PalTask {
 /** The context window of a model (its id carries "[1m]" when it's the long one). */
 export function contextWindowOf(model?: string): number {
   return model && /\[1m\]/i.test(model) ? 1_000_000 : 200_000;
+}
+
+/**
+ * The window to measure a context against: what Claude Code reported, else
+ * the guess from the model's id; a context already past the guess means the
+ * long window (a model whose id doesn't say so).
+ */
+export function contextWindowFor(model: string | undefined, tokens: number | undefined, reported?: number): number {
+  if (reported && reported > 0) return reported;
+  const guess = contextWindowOf(model);
+  return (tokens ?? 0) > guess ? 1_000_000 : guess;
 }
 
 /** Another process holding a session's transcript. */
@@ -306,7 +319,7 @@ export class PalSession {
       ...(this.lastLine ? { lastLine: this.lastLine } : {}),
       pending: this.pendingCards(),
       ...(this.model ? { model: this.model } : {}),
-      ...(this.rec.effort ? { effort: this.rec.effort } : {}),
+      ...(this.effort() ? { effort: this.effort() } : {}),
       ...(this.contextPct() !== undefined ? { contextPct: this.contextPct() } : {}),
       ...(typeof this.rec.lastWakeUsd === "number" ? { lastWakeUsd: this.rec.lastWakeUsd } : {}),
       createdBy: this.rec.createdBy,
@@ -323,7 +336,16 @@ export class PalSession {
   contextPct(): number | undefined {
     const n = this.rec.contextTokens;
     if (typeof n !== "number" || !(n >= 0)) return undefined;
-    return Math.min(100, Math.round((n / contextWindowOf(this.model ?? this.rec.model)) * 100));
+    return Math.min(100, Math.round((n / this.contextWindow()) * 100));
+  }
+
+  private contextWindow(): number {
+    return contextWindowFor(this.model ?? this.rec.model, this.rec.contextTokens, this.rec.contextWindow);
+  }
+
+  /** The effort it runs at: the one chosen, else what Claude Code said it started with. */
+  private effort(): string | undefined {
+    return this.rec.effort ?? this.rec.appliedEffort;
   }
 
   /** What pals.detail shows besides the Pal itself. */
@@ -331,9 +353,9 @@ export class PalSession {
     const model = this.model ?? this.rec.model;
     return {
       ...(typeof this.rec.contextTokens === "number" ? { contextTokens: this.rec.contextTokens } : {}),
-      contextWindow: contextWindowOf(model),
+      contextWindow: this.contextWindow(),
       ...(model ? { model } : {}),
-      ...(this.rec.effort ? { effort: this.rec.effort } : {}),
+      ...(this.effort() ? { effort: this.effort() } : {}),
       tasks: [...this.tasks.values()].map(({ id, title, kind, startedAt, summary }) => ({ id, title, kind, startedAt, ...(summary ? { summary } : {}) })),
       ...(typeof this.rec.lastCompactAt === "number" ? { lastCompactAt: this.rec.lastCompactAt } : {}),
       costTotalUsd: this.rec.costTotalUsd ?? 0,
@@ -925,6 +947,10 @@ export class PalSession {
           this.rec.model = e.model;
           this.d.save();
         }
+        if (e.effort && e.effort !== this.rec.appliedEffort) {
+          this.rec.appliedEffort = e.effort;
+          this.d.save();
+        }
         this.windingDown = false; // a new turn
         this.beginTurn();
         // A turn it started by itself is often another session's message: show it.
@@ -1045,6 +1071,7 @@ export class PalSession {
         this.noteCost(e.costUsd, e.totalCostUsd);
         // (our /compact turn's result says nothing about the context: the compact boundary did)
         if (!this.compacting && !e.isError && Number.isFinite(e.contextTokens) && e.contextTokens > 0) this.rec.contextTokens = e.contextTokens;
+        if (e.contextWindow) this.rec.contextWindow = e.contextWindow;
         this.compacting = false;
         this.rec.lastUsedAt = this.d.now();
         if (this.pendingUuids.size) {

@@ -297,7 +297,8 @@ describe("native compaction at clean breaks", () => {
     await hub.idle();
     expect(hub.conversation.contextTokens).toBe(230_000);
     // the app's status carries it as a percent of the model's window
-    expect(hub.status()).toMatchObject({ contextTokens: 230_000, contextWindow: 200_000, contextPct: 100 });
+    // (past a 200k model's window: it runs on the long one)
+    expect(hub.status()).toMatchObject({ contextTokens: 230_000, contextWindow: 1_000_000, contextPct: 23 });
     // the owner just spoke and the cache is warm: nothing
     expect(hub.conversation.maybeIdleCompact()).toBeNull();
     expect(hub.conversation.maybeIdleCompact(undefined, later(53))).toBeNull();
