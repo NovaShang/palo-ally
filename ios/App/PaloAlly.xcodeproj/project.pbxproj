@@ -138,6 +138,7 @@
 		D80A5BF2362E7F6BCC59FB6B /* IdentityEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F3499A2506B5792871441F /* IdentityEditor.swift */; };
 		D844BFFB6A6F7E72355AF873 /* QuickLook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FFD6E49BA1DD7665E79691E /* QuickLook.swift */; };
 		DB5D7D92603C6BB878F3C047 /* ChatScroll.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FBD3843044FE94D50902206 /* ChatScroll.swift */; };
+		DB9CD89E857931C3A963A16F /* ComposerFoldUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 396F9527B5DFEB3697AFE6A5 /* ComposerFoldUITests.swift */; };
 		DCA8A63C55C45480F50AFD5A /* ImagePrep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36184756C7B818CDFB8CB839 /* ImagePrep.swift */; };
 		E0748A27FBA8E1FD9DDEA652 /* MemorySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A047E4D10313D33DC6FA1B11 /* MemorySection.swift */; };
 		E5E19652341F8D47F5ED0578 /* ConversationList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64CF9F27B24B6002B42720BB /* ConversationList.swift */; };
@@ -225,6 +226,7 @@
 		36184756C7B818CDFB8CB839 /* ImagePrep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePrep.swift; sourceTree = "<group>"; };
 		362F66DA10216A79F79CBB11 /* Copy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Copy.swift; sourceTree = "<group>"; };
 		3685BC2B956E15CA736C2606 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		396F9527B5DFEB3697AFE6A5 /* ComposerFoldUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerFoldUITests.swift; sourceTree = "<group>"; };
 		3C8BBDD7B0248070C25E81AB /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		3CEEB31655EFAEC6828526DF /* AllyInviteSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllyInviteSheet.swift; sourceTree = "<group>"; };
 		45C629F71CF477E2F94ADCC2 /* MacPageStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPageStrip.swift; sourceTree = "<group>"; };
@@ -541,6 +543,7 @@
 				1B37F21F4341F2E8ECB3BEB1 /* AlliesUITests.swift */,
 				3027F62ADAB6BF3E4CFADE4C /* AppLog.swift */,
 				519EA8CCFA1176D5CDDF3D1F /* ChatScrollUITests.swift */,
+				396F9527B5DFEB3697AFE6A5 /* ComposerFoldUITests.swift */,
 				CDC2E8C597F725F4794D716E /* DevicesUITests.swift */,
 				1F2A68E3DD919B5284C96444 /* FilesUITests.swift */,
 				6AC02B1EE268D6B6F8AA2F6C /* ImagesUITests.swift */,
@@ -811,6 +814,7 @@
 				9F471EF33EB831461DD0E4A0 /* AlliesUITests.swift in Sources */,
 				576B3D9CF39D64A7CE5A0582 /* AppLog.swift in Sources */,
 				6A3F40F12C7DD391D2815F87 /* ChatScrollUITests.swift in Sources */,
+				DB9CD89E857931C3A963A16F /* ComposerFoldUITests.swift in Sources */,
 				41F18635FAB268564293325E /* DevicesUITests.swift in Sources */,
 				A9F1785A4DCAA4FE1A838DB7 /* FilesUITests.swift in Sources */,
 				ABD1D1FABEFAA47D1C329919 /* ImagesUITests.swift in Sources */,
