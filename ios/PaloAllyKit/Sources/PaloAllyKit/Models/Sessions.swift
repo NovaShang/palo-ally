@@ -232,13 +232,17 @@ public struct HelperProposal: Codable, Sendable, Hashable, Identifiable {
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        id = l.expect("id", l.string("id") ?? l.string("proposalId")) ?? UUID().uuidString
+        let wireID = l.expect("id", l.string("id") ?? l.string("proposalId"))
+        id = wireID ?? UUID().uuidString
         name = l.string("name", or: "")
         cwd = l.expect("cwd", l.string("cwd") ?? l.string("dir")) ?? ""
         duty = l.string("duty", or: "")
         dailyUsd = l.double("dailyUsd") ?? l.double("dailyLimitUsd")
         // A proposal that doesn't say is still on offer.
         status = l.decode(HelperProposalStatus.self, "status") ?? .pending
+        // One that can't be answered (no id to answer, no name or folder to
+        // open) doesn't wait on the owner.
+        if status == .pending, wireID?.isEmpty != false || name.isEmpty || cwd.isEmpty { status = .unknown }
         sessionId = l.string("sessionId")
         palId = l.string("palId")
         note = l.string("note")

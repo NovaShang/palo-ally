@@ -23,7 +23,7 @@ struct HelperProposalCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ProposalHeader(symbol: "person.badge.plus", title: proposal.name.isEmpty ? String(localized: "会话") : proposal.name,
-                           dimmed: proposal.status == .discarded, state: state)
+                           dimmed: proposal.status == .discarded || proposal.status == .expired, state: state)
 
             VStack(alignment: .leading, spacing: 6) {
                 if !proposal.cwd.isEmpty {

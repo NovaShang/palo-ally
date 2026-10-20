@@ -320,6 +320,23 @@ extension AppStore {
     /// conversation's 接管).
     public var pendingProposalCount: Int { pendingHelperProposals.count + pendingAdoptProposals.count }
 
+    /// Where the orange 「等你…」 line leads: the card waiting on the owner
+    /// in this conversation. An approval or a question first (they hold a
+    /// turn up), else the oldest proposal card or Ally draft (a message).
+    public var firstWaiting: WaitingItem? {
+        if let a = pendingApprovals.min(by: { $0.createdAt < $1.createdAt }) { return .approval(a.id) }
+        if let q = pendingQuestions.min(by: { $0.createdAt < $1.createdAt }) { return .question(q.id) }
+        let drafts = Set(pendingAllyDrafts.map(\.id))
+        let m = messages.first { m in
+            guard m.seq > 0 else { return false }
+            if m.kind == .helper { return helperProposal(in: m)?.isPending == true }
+            if m.kind == .palAdopt { return adoptProposal(in: m)?.isPending == true }
+            if m.kind == .ally, let e = m.entryId { return drafts.contains(e) }
+            return false
+        }
+        return m.map { .message(seq: $0.seq) }
+    }
+
     /// 接管 / 不用 on a card (`helper.decide`), shown at once and put back if
     /// the computer didn't take it. 接管 returns the Pal it became.
     @discardableResult

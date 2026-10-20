@@ -25,7 +25,7 @@ struct PalAdoptCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ProposalHeader(symbol: "clock.arrow.circlepath", title: Copy.spaced(String(localized: "接管「\(proposal.displayTitle)」")),
-                           dimmed: proposal.status == .discarded, state: state)
+                           dimmed: proposal.status == .discarded || proposal.status == .expired, state: state)
 
             if !proposal.cwd.isEmpty {
                 ProposalFact(name: String(localized: "目录"), value: proposal.shortCwd)
@@ -54,7 +54,7 @@ struct PalAdoptCard: View {
                 if let pal = adoptedPal {
                     OpenPalButton { model.openPal(pal.id) }
                 }
-            case .discarded, .unknown:
+            case .discarded, .expired, .unknown:
                 // Why it wasn't adopted, when the computer says.
                 if let note = proposal.note, !note.isEmpty {
                     ProposalNote(text: note)
@@ -75,6 +75,7 @@ struct PalAdoptCard: View {
         case .pending, .failed, .unknown: nil
         case .adopted: String(localized: "已经接过来了")
         case .discarded: String(localized: "没接")
+        case .expired: String(localized: "过期了")
         }
     }
 

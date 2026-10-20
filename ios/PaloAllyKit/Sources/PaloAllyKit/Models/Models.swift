@@ -167,6 +167,10 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     /// keeps it under. Only these can be gone back to (回到这里重来,
     /// docs/rewind-prd.md); a Pal's own messages are their uuid already.
     public var uuid: String?
+    /// Sent again with a change (a proposal card's status): the seq that
+    /// change took. `sync{sinceSeq}` gives such a message again to a client
+    /// that missed the change; its place stays `seq`.
+    public var updatedSeq: Int64?
 
     // Local-only state.
     public var isStreaming: Bool = false
@@ -174,7 +178,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case seq, id, role, kind, text, channel, ts, proactive, taskId, approvalId, questionId, clientMsgId, attachments, label, replyTo, card
-        case allyId, allyName, dir, entryId, author, proposal, pal, from, uuid
+        case allyId, allyName, dir, entryId, author, proposal, pal, from, uuid, updatedSeq
     }
 
     public init(
@@ -218,6 +222,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         pal = l.string("pal")
         from = l.string("from")
         uuid = l.string("uuid")
+        updatedSeq = l.int64("updatedSeq")
     }
 
     /// As the host sends it: a `pal_adopt` card's proposal goes out as
@@ -253,6 +258,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         try c.encodeIfPresent(pal, forKey: .pal)
         try c.encodeIfPresent(from, forKey: .from)
         try c.encodeIfPresent(uuid, forKey: .uuid)
+        try c.encodeIfPresent(updatedSeq, forKey: .updatedSeq)
     }
 
     public var date: Date { ts.msDate }

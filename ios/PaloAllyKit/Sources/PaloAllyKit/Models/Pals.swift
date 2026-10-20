@@ -423,6 +423,8 @@ public enum PalAdoptProposalStatus: String, TolerantStringEnum {
     case discarded
     /// 接管 didn't work: `note` says why. Still on offer: 接管 can be tapped again.
     case failed
+    /// No longer on offer: nobody answered for a day, or the host lost it.
+    case expired
     case unknown
     public static let fallback = PalAdoptProposalStatus.unknown
 }
@@ -452,11 +454,15 @@ public struct PalAdoptProposal: Codable, Sendable, Hashable, Identifiable {
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
-        id = l.string("id", or: UUID().uuidString)
+        let wireID = l.string("id")
+        id = wireID ?? UUID().uuidString
         sessionId = l.string("sessionId", or: "")
         cwd = l.string("cwd", or: "")
         title = l.string("title", or: "")
         status = l.decode(PalAdoptProposalStatus.self, "status", or: .pending)
+        // One that can't be answered (no id to answer, no conversation to
+        // take over) doesn't wait on the owner.
+        if status == .pending, wireID?.isEmpty != false || sessionId.isEmpty { status = .unknown }
         palId = l.string("palId")
         note = l.string("note")
     }
@@ -470,4 +476,13 @@ public struct PalAdoptProposal: Codable, Sendable, Hashable, Identifiable {
 
     /// The folder for people: the home folder as 「~」.
     public var shortCwd: String { CCSession.shortPath(cwd) }
+}
+
+/// Something in a conversation waiting on the owner, to bring into view
+/// (`AppStore.firstWaiting`).
+public enum WaitingItem: Equatable, Sendable {
+    /// A proposal card or an Ally draft: the message at `seq`.
+    case message(seq: Int64)
+    case approval(String)
+    case question(String)
 }

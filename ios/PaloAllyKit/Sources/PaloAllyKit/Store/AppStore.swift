@@ -638,7 +638,9 @@ public final class AppStore {
             onSynced?(lastSeq)
             return false
         }
-        for m in r.messages { upsert(m) }
+        // An older message changed since (a card's status, `updatedSeq`):
+        // replaced if we hold it; one we don't comes with its own page.
+        for m in r.messages where !isChangeToUnheld(m) { upsert(m) }
         // Gone back before while we weren't listening (回到这里重来).
         if let gone = r.rewound, !gone.isEmpty { dropRewound(ids: Set(gone)) }
         if let s = r.streaming { applyStreaming(s, eventsBefore: eventsBefore) }
@@ -808,8 +810,23 @@ public final class AppStore {
         }
     }
 
+    /// An older message sent again with a change that isn't in the list.
+    private func isChangeToUnheld(_ m: ChatMessage) -> Bool {
+        guard let u = m.updatedSeq, u > m.seq, m.seq > 0, m.seq <= lastSeq else { return false }
+        return !messages.contains { $0.id == m.id }
+    }
+
     /// A finished `chat.message`.
     func receive(_ m: ChatMessage) {
+        // An older message sent again with a change (`updatedSeq`): replaced
+        // where we hold it, not spliced in where we don't; the change took a
+        // seq of its own, so the count carries on from it.
+        if let u = m.updatedSeq, u > m.seq {
+            if !isChangeToUnheld(m) { upsert(m) }
+            guard scope == .palo else { return }
+            if u == lastSeq + 1 { lastSeq = u } else if u > lastSeq + 1 { requestResync() }
+            return
+        }
         if m.role != .user { awaitingReply = false }
         // Looking at an older stretch: don't splice the live end onto it (it
         // would hide the gap in between); it's loaded on the way back.
