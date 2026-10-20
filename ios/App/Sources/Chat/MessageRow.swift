@@ -171,7 +171,7 @@ private struct BubbleText: View {
     /// Quiet, not the theme color.
     private func toggle(_ title: String, folding: Bool) -> some View {
         Button(title) {
-            let animates = resizing?(message.id, folding) ?? true
+            let animates = resizing?.resizing(message.id, folding: folding) ?? true
             if animates {
                 withAnimation(.snappy) { store.setUnfolded(message.id, !folding) }
             } else {
@@ -574,6 +574,22 @@ struct WholeReplyActions {
     var isReading: () -> Bool = { false }
 }
 
+/// What a conversation's rows ask of its scrolling (ChatView sets it). A
+/// value, equal for as long as the conversation is the same: a closure here
+/// is new on every pass of the list and counts as changed, so every bubble
+/// in every tile re-rendered whenever the list did (a split workspace
+/// re-rendered all its bubbles on each status tick and divider move).
+struct ChatRowActions: Equatable {
+    let scroll: ChatScrollCoordinator
+
+    /// Brings a message into view.
+    @MainActor func scrollTo(_ id: String) { scroll.reveal(id) }
+    /// A message is about to fold or unfold: true when the change may animate.
+    @MainActor func resizing(_ id: String, folding: Bool) -> Bool { scroll.resizing(id, folding: folding) }
+
+    static func == (a: ChatRowActions, b: ChatRowActions) -> Bool { a.scroll === b.scroll }
+}
+
 /// What the owner quoted, above their bubble: one or two quiet lines. Tap →
 /// scroll to the quoted message if it's loaded.
 private struct QuoteLine: View {
@@ -588,11 +604,14 @@ private struct QuoteLine: View {
     private var open: Bool { store.unfolded.contains(key) }
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("QuoteLine")
+        #endif
         HStack(alignment: .top, spacing: 6) {
             Capsule().fill(.tertiary).frame(width: 2.5)
             VStack(alignment: .leading, spacing: 2) {
                 Button {
-                    scrollTo?(reply.messageId)
+                    scrollTo?.scrollTo(reply.messageId)
                 } label: {
                     Text(reply.excerpt)
                         .font(.footnote)
@@ -605,7 +624,7 @@ private struct QuoteLine: View {
                 if foldable {
                     Button(open ? String(localized: "收起") : String(localized: "展开")) {
                         let folding = open
-                        if resizing?(messageId, folding) ?? true {
+                        if resizing?.resizing(messageId, folding: folding) ?? true {
                             withAnimation(.snappy) { store.setUnfolded(key, !folding) }
                         } else {
                             store.setUnfolded(key, !folding)
@@ -681,10 +700,10 @@ private struct GoalCard: View {
 
 extension EnvironmentValues {
     /// Scrolls the conversation to a message id (set by ChatView).
-    @Entry var chatScrollTo: ((String) -> Void)? = nil
+    @Entry var chatScrollTo: ChatRowActions? = nil
     /// A message is about to fold or unfold (set by ChatView): true when
     /// the change may animate.
-    @Entry var chatRowResizing: ((_ id: String, _ folding: Bool) -> Bool)? = nil
+    @Entry var chatRowResizing: ChatRowActions? = nil
     /// The conversation's side margin, so tables can scroll edge to edge.
     @Entry var messageGutter: CGFloat = 16
     /// The answer a reply's text belongs to: 拷贝 / 回复 in its menu.
