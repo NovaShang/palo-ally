@@ -225,8 +225,23 @@ final class AppModel {
     /// 回到这里重来, with the message's words in it).
     var focusComposerOnAppear = false
     /// Each conversation's unsent words, kept while the app is open (back to
-    /// the list and in again, they're still there).
-    var drafts: [Conversation: String] = [:]
+    /// the list and in again, they're still there). One box per
+    /// conversation, observed on its own: a keystroke in one tile redraws
+    /// that tile's composer, not every tile's (one shared dictionary did).
+    @ObservationIgnored private var draftBoxes: [Conversation: DraftBox] = [:]
+
+    func draftBox(_ c: Conversation) -> DraftBox {
+        if let box = draftBoxes[c] { return box }
+        let box = DraftBox()
+        draftBoxes[c] = box
+        return box
+    }
+
+    /// A binding to one conversation's unsent words.
+    func draftBinding(_ c: Conversation) -> Binding<String> {
+        let box = draftBox(c)
+        return Binding(get: { box.text }, set: { box.text = $0 })
+    }
 
     /// A conversation from the list, a card, a notification.
     func open(_ c: Conversation) {
@@ -1005,4 +1020,10 @@ enum PushEnv {
         }
         return nil
     }
+}
+
+/// One conversation's unsent words (AppModel.draftBox).
+@MainActor @Observable
+final class DraftBox {
+    var text = ""
 }

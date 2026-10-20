@@ -82,7 +82,7 @@ struct WorkspaceTilesPage: View {
             .environment(\.tile, TileContext(id: id, isActive: model.activeTile(in: workspaceID) == id))
             .environment(\.tileDetail, detailBinding(id))
             // Each session keeps its own unsent words, here and on its own page.
-            .environment(\.chatDraft, Binding(get: { model.drafts[.pal(id)] ?? "" }, set: { model.drafts[.pal(id)] = $0 }))
+            .environment(\.chatDraft, model.draftBinding(.pal(id)))
             .environment(\.fileLinks, FileLinkContext(scope: .pal(id), resolver: .shared(for: store)))
             .environment(\.placesAsColumns, false)
     }

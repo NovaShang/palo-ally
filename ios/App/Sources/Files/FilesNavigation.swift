@@ -22,9 +22,10 @@ extension AppModel {
 
     /// 「插入到输入框」: the words go at the end of that conversation's unsent text.
     func insertIntoDraft(_ words: String, for conversation: Conversation) {
-        var draft = drafts[conversation] ?? ""
+        let box = draftBox(conversation)
+        var draft = box.text
         if !draft.isEmpty, !draft.hasSuffix(" "), !draft.hasSuffix("\n") { draft += " " }
-        drafts[conversation] = draft + words + " "
+        box.text = draft + words + " "
     }
 }
 

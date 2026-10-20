@@ -61,11 +61,16 @@ struct TiledWorkspaceView<Content: View>: View {
             let narrow = LayoutTree.narrowPolicy(order: order, active: activeId, width: outer.size.width,
                                                  narrowBelow: TileMetrics.narrowBelow)
             let shown = narrow.isNarrow ? (LayoutTree.keeping(narrow.visible, in: normalized) ?? normalized) : normalized
-            let tree = narrow.isNarrow ? shown : (liveTree ?? shown)
+            // While a divider moves the tiles keep their places: only the
+            // divider and an outline of where the tiles will go follow the
+            // pointer (relaying out every chat per frame made it crawl);
+            // the new layout lands once, on release.
+            let tree = shown
+            let ghost = narrow.isNarrow ? nil : liveTree
             let size = CGSize(width: outer.size.width,
                               height: outer.size.height - (narrow.isNarrow ? TileMetrics.switcherHeight : 0))
             VStack(spacing: 0) {
-                canvas(tree: tree, size: size, interactive: !narrow.isNarrow)
+                canvas(tree: tree, ghost: ghost, size: size, interactive: !narrow.isNarrow)
                     .frame(width: size.width, height: size.height)
                 if narrow.isNarrow {
                     switcher(narrow.switcher)
@@ -81,7 +86,7 @@ struct TiledWorkspaceView<Content: View>: View {
         CGRect(x: f.x * size.width, y: f.y * size.height, width: f.w * size.width, height: f.h * size.height)
     }
 
-    private func canvas(tree: LayoutTree.Node, size: CGSize, interactive: Bool) -> some View {
+    private func canvas(tree: LayoutTree.Node, ghost: LayoutTree.Node?, size: CGSize, interactive: Bool) -> some View {
         let fractions = LayoutTree.fractions(of: tree)
         let order = LayoutTree.leafOrder(of: tree)
         let frames: [String: CGRect] = fractions.mapValues { rect(of: $0, in: size) }
@@ -92,8 +97,23 @@ struct TiledWorkspaceView<Content: View>: View {
                     tile(id, in: r)
                 }
             }
+            if let ghost {
+                // Where the tiles will go: outlines only.
+                let ghostFrames = LayoutTree.fractions(of: ghost).mapValues { rect(of: $0, in: size) }
+                ForEach(LayoutTree.leafOrder(of: ghost), id: \.self) { id in
+                    if let r = ghostFrames[id]?.insetBy(dx: inset, dy: inset) {
+                        RoundedRectangle(cornerRadius: TileMetrics.corner, style: .continuous)
+                            .fill(Color.primary.opacity(0.04))
+                            .strokeBorder(Color.accentColor.opacity(0.7), lineWidth: 1.5)
+                            .frame(width: max(r.width, 1), height: max(r.height, 1))
+                            .position(x: r.midX, y: r.midY)
+                            .allowsHitTesting(false)
+                    }
+                }
+            }
             if interactive {
-                ForEach(LayoutTree.dividers(of: tree)) { d in
+                // The dividers follow the outline while one moves.
+                ForEach(LayoutTree.dividers(of: ghost ?? tree)) { d in
                     divider(d, size: size, tree: tree)
                 }
             }
