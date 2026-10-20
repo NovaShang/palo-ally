@@ -319,7 +319,7 @@ private struct ConversationDetail: View {
                     DevicesPage()
                 }
             }
-            .modifier(QuickSwitchOverlay(current: current))
+            .modifier(QuickSwitchBar(current: current))
             .modifier(InContentNavigationBar())
             .modifier(HidesSystemSidebarToggle())
             // A folder's tree over 成果 (phones), and the files paths in replies link to.

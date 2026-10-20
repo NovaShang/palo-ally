@@ -158,11 +158,11 @@ final class PhoneSmokeUITests: XCTestCase {
         XCTAssertTrue(strip.waitForExistence(timeout: 5), "a session in a workspace has no quick-switch strip")
         sleep(1)
         shot(app, "\(look)-8-quick-switch")
-        // A swipe on the strip goes to the next session.
-        strip.swipeLeft()
+        // A tap on a chip goes to its session.
+        app.descendants(matching: .any)["quick-switch-pal-blog"].firstMatch.tap()
         let blog = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'quick-switch-pal-blog' AND selected == true")).firstMatch
-        XCTAssertTrue(blog.waitForExistence(timeout: 5), "swiping the strip didn't go to the next session")
+        XCTAssertTrue(blog.waitForExistence(timeout: 5), "tapping a chip didn't go to its session")
         sleep(1)
         shot(app, "\(look)-8b-quick-switch-swiped")
         // A tap goes back.

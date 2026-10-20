@@ -1,19 +1,19 @@
 import PaloAllyKit
 import SwiftUI
 
-/// The phone's quick-switch strip, above the composer of a session that is
-/// in a workspace (docs/workbench-design/quick-switch.html): one glass chip
-/// per session of the workspace, no icons. The glass is tinted by state, in
-/// the indicator's colors (blue 在干, amber 等你, green 做完了, plain 闲着);
-/// the current chip's glass is strongly tinted (gray when 闲着) and its words
-/// are in full, the others faint and dimmed; every chip keeps one size.
+/// The phone's quick-switch strip for a session in a workspace, copied from
+/// Bento Term's Focus-mode window tab bar (`WindowTabBar`): a row of glass
+/// chips at the very bottom of the screen, under the composer, one per
+/// session of the workspace, no icons. It scrolls sideways by hand like any
+/// scroll view; a tap switches; the current one is kept in view. The
+/// keyboard covers it (it steps aside while typing).
 ///
-/// Gestures: tap selects. A horizontal swipe ON THE STRIP goes to the
-/// previous or next chip. To keep the two from fighting, the strip does not
-/// scroll by hand: it is moved by selection only, keeping the current chip
-/// in the middle. So a swipe never competes with a scroll view's pan, and a
-/// chip off screen is reached by swiping towards it. Nothing is added to the
-/// conversation.
+/// Chips as Bento's `WindowTab` + `BarItemGlass`: the name capped at 140 pt,
+/// the glass tinted by state in the indicator's colors (blue 在干, amber 等你,
+/// green 做完了): the current chip wears the full color with white words,
+/// the others half the color (闲着: plain glass) with dim words. Bento's
+/// current idle chip wears the theme color; here it is the idle gray, the
+/// theme color being kept for the main actions.
 struct QuickSwitchStrip: View {
     let current: String
     /// The workspace's sessions (`QuickSwitch.members`), two or more.
@@ -27,29 +27,20 @@ struct QuickSwitchStrip: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                // Spacing 0: chips never melt into each other, even the
-                // current one, which is drawn a little bigger.
-                GlassEffectContainer(spacing: 0) {
-                    HStack(spacing: 10) {
-                        ForEach(members, id: \.self) { id in
-                            chip(id).id(id)
-                        }
+                HStack(spacing: 8) {
+                    ForEach(members, id: \.self) { id in
+                        chip(id).id(id)
                     }
-                    .padding(.horizontal, 20)
                 }
-                .padding(.vertical, (QuickSwitchSlot.height - 32) / 2)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
             }
-            .scrollDisabled(true)
             .onAppear { proxy.scrollTo(current, anchor: .center) }
             .onChange(of: current) { _, c in
-                withAnimation(.snappy) { proxy.scrollTo(c, anchor: .center) }
-            }
-            .onChange(of: members) { _, _ in
-                withAnimation(.snappy) { proxy.scrollTo(current, anchor: .center) }
+                // Keep the current tab in view.
+                withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(c, anchor: .center) }
             }
         }
-        .mask(edgeFade)
-        .simultaneousGesture(swipe)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("quick-switch")
         .palRename($renaming)
@@ -70,47 +61,30 @@ struct QuickSwitchStrip: View {
         let pal = store.pal(id: id)
         let state = pal?.dot ?? .idle
         let isCurrent = id == current
-        return Button { if !isCurrent { go(to: id) } } label: {
-            // One weight for every chip, so a chip keeps its width (and the
-            // strip its spacing) whichever one is current.
-            Text(pal?.displayName ?? "…")
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(isCurrent ? .primary : .secondary)
-                .lineLimit(1)
-                .padding(.horizontal, 14)
-                .frame(minHeight: 32)
-        }
-        .buttonStyle(.plain)
-        .glassEffect(Self.glass(state, current: isCurrent), in: .capsule)
-        .animation(.snappy, value: isCurrent)
-        .contextMenu { if let pal { menu(pal) } }
-        .accessibilityLabel(Text(verbatim: "\(pal?.displayName ?? ""), \(StatusDot.label(state))"))
-        .accessibilityAddTraits(isCurrent ? [.isButton, .isSelected] : .isButton)
-        .accessibilityIdentifier("quick-switch-\(id)")
+        return Text(pal?.displayName ?? "…")
+            .font(.footnote)
+            .foregroundStyle(isCurrent ? Color.white : Color.secondary)
+            .lineLimit(1)
+            .frame(maxWidth: 140)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .glassEffect(Self.glass(state, current: isCurrent), in: .capsule)
+            .contentShape(Capsule())
+            .onTapGesture { if !isCurrent { go(to: id) } }
+            .contextMenu { if let pal { menu(pal) } }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: "\(pal?.displayName ?? ""), \(StatusDot.label(state))"))
+            .accessibilityAddTraits(isCurrent ? [.isButton, .isSelected] : .isButton)
+            .accessibilityIdentifier("quick-switch-\(id)")
     }
 
-    /// The current chip: its state's color, strong (闲着: a gray), its words
-    /// in full. The others: the color faint (闲着: plain glass), their
-    /// words dimmed. Same size either way.
+    /// Bento's `BarItemGlass`: the state color full on the current chip, half
+    /// on the others; idle: gray on the current one, plain glass otherwise.
     static func glass(_ state: StatusDotKind, current: Bool) -> Glass {
-        if current { return .regular.tint(StatusDot.color(state).opacity(state == .idle ? 0.35 : 0.6)) }
-        guard state != .idle else { return .regular }
-        return .regular.tint(StatusDot.color(state).opacity(0.18))
-    }
-
-    // MARK: swipe
-
-    /// Left swipe: next. Right swipe: previous. Mostly horizontal only, so
-    /// a vertical drag that starts on the strip does nothing.
-    private var swipe: some Gesture {
-        DragGesture(minimumDistance: 16)
-            .onEnded { v in
-                let dx = v.translation.width, dy = v.translation.height
-                guard abs(dx) > 40, abs(dx) > abs(dy) * 1.5 else { return }
-                if let next = QuickSwitch.neighbor(of: current, step: dx < 0 ? 1 : -1, in: members) {
-                    go(to: next)
-                }
-            }
+        let base = StatusDot.color(state)
+        if current { return .regular.tint(base).interactive() }
+        guard state != .idle else { return .regular.interactive() }
+        return .regular.tint(base.opacity(0.5)).interactive()
     }
 
     /// Switches with the pages sliding: the next one in from the right, the
@@ -119,14 +93,6 @@ struct QuickSwitchStrip: View {
         let from = members.firstIndex(of: current) ?? 0, to = members.firstIndex(of: id) ?? 0
         model.quickSwitchForward = to >= from
         withAnimation(.snappy(duration: 0.32)) { model.openPal(id) }
-    }
-
-    private var edgeFade: some View {
-        HStack(spacing: 0) {
-            LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: 16)
-            Rectangle()
-            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 16)
-        }
     }
 
     // MARK: long press
@@ -163,52 +129,30 @@ struct QuickSwitchStrip: View {
     }
 }
 
-/// Where the strip goes on a session's page: an empty slot above the
-/// composer, its place passed up to the container that draws the strip.
-struct QuickSwitchSlot: View {
-    static let height: CGFloat = 44
-
-    var body: some View {
-        Color.clear
-            .frame(height: Self.height)
-            .anchorPreference(key: QuickSwitchSlotKey.self, value: .bounds) { $0 }
-    }
-}
-
-struct QuickSwitchSlotKey: PreferenceKey {
-    static let defaultValue: Anchor<CGRect>? = nil
-    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
-        value = nextValue() ?? value
-    }
-}
-
-/// On the container of the conversation pages (phones): draws the strip in
-/// the slot the session's page left for it. One strip for all the
-/// workspace's pages, so it stays put and its chips change color smoothly
-/// while the pages slide under it.
-struct QuickSwitchOverlay: ViewModifier {
+/// On the container of the conversation pages (phones): the strip at the
+/// bottom of the screen, under the page's composer, for a session in a
+/// workspace. One strip for all the workspace's pages, so it stays put while
+/// they slide past above it. Hidden while the keyboard is up (in Bento the
+/// keyboard slides over it).
+struct QuickSwitchBar: ViewModifier {
     let current: AppModel.Conversation
+    @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
+    @State private var keyboardUp = false
 
     func body(content: Content) -> some View {
-        content.overlayPreferenceValue(QuickSwitchSlotKey.self) { anchor in
-            GeometryReader { proxy in
-                if let anchor, case .pal(let id) = current {
+        content
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if model.layout == .phone, !keyboardUp, case .pal(let id) = current {
                     let members = QuickSwitch.members(current: id, pals: store.pals, workspaces: store.workspaces)
-                    if !members.isEmpty {
-                        let r = proxy[anchor]
-                        QuickSwitchStrip(current: id, members: members)
-                            .frame(width: r.width, height: r.height)
-                            .offset(x: r.minX, y: r.minY)
-                            // Never moves in an animation: while the pages
-                            // slide, the incoming one reports its slot from
-                            // where its layout starts (below), and the strip
-                            // rose from there. Its chips still change color
-                            // in their own animation.
-                            .animation(nil, value: r)
-                    }
+                    if !members.isEmpty { QuickSwitchStrip(current: id, members: members) }
                 }
             }
-        }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                keyboardUp = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                keyboardUp = false
+            }
     }
 }

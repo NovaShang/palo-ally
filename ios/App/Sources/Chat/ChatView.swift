@@ -44,8 +44,6 @@ struct ChatView: View {
     @State private var orbPlacement = OrbPlacement()
     /// Images and files dropped on the conversation or pasted, for the composer.
     @State private var intake = ComposerIntake()
-    /// The keyboard is up (iPhone): the quick-switch strip steps aside.
-    @State private var keyboardUp = false
     @Environment(\.scenePhase) private var scenePhase
 
     /// The assistant's own conversation (not a Pal's).
@@ -59,11 +57,6 @@ struct ChatView: View {
     /// The title capsule of a session's page.
     private var pageCapsule: some View {
         TitleCapsule(name: title, dot: pageTop?.dot ?? .idle, subtitle: pageTop?.subtitle ?? "", showsVoiceLevel: true)
-    }
-    /// iPhone, a session's page (not in a tile): the session the quick-switch strip marks as current.
-    private var quickSwitchCurrent: String? {
-        guard model.layout == .phone, !Platform.barInWindowToolbar, !inTile, !isPalo else { return nil }
-        return store.palID
     }
     private var title: String {
         isPalo ? store.assistantName
@@ -228,16 +221,6 @@ struct ChatView: View {
             } else if let bottomPanel {
                 bottomPanel
             } else {
-            VStack(spacing: 6) {
-            // iPhone, a session in a workspace: room for the chips that switch
-            // between its sessions, counted in this inset so the conversation
-            // clears them. The strip itself is drawn by the page's container
-            // (QuickSwitchOverlay), so it stays put while the sessions change
-            // under it. Put away while typing, to leave the conversation room.
-            if let current = quickSwitchCurrent, !keyboardUp,
-               !QuickSwitch.members(current: current, pals: store.pals, workspaces: store.workspaces).isEmpty {
-                QuickSwitchSlot()
-            }
             ComposerView(draft: draft, intake: intake) { text, images, files, how in
                 switch how {
                 case .typed:
@@ -253,14 +236,6 @@ struct ChatView: View {
                 }
             }
             }
-            .animation(.snappy(duration: 0.2), value: keyboardUp)
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-            if quickSwitchCurrent != nil { keyboardUp = true }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-            keyboardUp = false
         }
         // The live words, in the middle while holding to talk, and on their
         // way out after release: over the composer, under the orb.
