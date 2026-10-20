@@ -125,8 +125,8 @@ function ind(o){const size=o.size||44,st=o.state||'working',p=o.ctx??0.41,eff=o.
  let svg=`<svg width="${size}" height="${size}" viewBox="0 0 100 100" style="display:block">`;
  if(showRing){svg+=`<circle cx="50" cy="50" r="${R}" fill="none" stroke="${L?'rgba(0,0,0,.12)':'rgba(255,255,255,.16)'}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${.75*C} ${C}" transform="rotate(135 50 50)"/>`;
   svg+=`<circle cx="50" cy="50" r="${R}" fill="none" stroke="${ringCol}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${Math.max(.001,p)*.75*C} ${C}" transform="rotate(135 50 50)"/>`;
-  svg+=glyph(st,50,50,19);
-  svg+=`<text x="50" y="94" text-anchor="middle" font-size="17" font-weight="700" fill="${(L?LMODEL:MODEL)[model]}" font-family="ui-rounded,'SF Pro Rounded','Nunito',-apple-system,system-ui" letter-spacing=".2">${eff}</text>`;}
+  svg+=glyph(st,50,50,21);
+  svg+=`<text x="50" y="96" text-anchor="middle" font-size="21" font-weight="700" fill="${(L?LMODEL:MODEL)[model]}" font-family="ui-rounded,'SF Pro Rounded','Nunito',-apple-system,system-ui" letter-spacing=".2">${eff}</text>`;}
  else svg+=glyph(st,50,50,40);
  return svg+'</svg>';}
 const $=id=>document.getElementById(id);

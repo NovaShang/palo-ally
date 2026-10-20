@@ -194,7 +194,7 @@ private struct SessionDetailForm: View {
             Section("上下文") {
                 HStack(spacing: 10) {
                     ProgressView(value: Double(min(pct, 100)) / 100)
-                        .tint(pct >= 85 ? .orange : .secondary)
+                        .tint(Self.arcTint(pct))
                     Text("\(pct)%").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
                 }
                 HStack {
@@ -210,6 +210,15 @@ private struct SessionDetailForm: View {
                         .accessibilityIdentifier("detail-compact")
                 }
             }
+        }
+    }
+
+    /// The indicator's arc colors: orange from 80%, red from 95%.
+    private static func arcTint(_ pct: Int) -> Color {
+        switch IndicatorRules.arcTone(fraction: Double(pct) / 100) {
+        case .normal: .secondary
+        case .warn: Color(rgb: 0xFF9F0A)
+        case .danger: Color(rgb: 0xFF453A)
         }
     }
 

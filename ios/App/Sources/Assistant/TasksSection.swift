@@ -95,7 +95,7 @@ struct RunningHistoryRow: View {
                         .lineLimit(2)
                     Text(task.summary.isEmpty ? (task.status == .needsInput ? String(localized: "需要你") : String(localized: "刚开始")) : task.summary)
                         .font(.subheadline)
-                        .foregroundStyle(task.status == .needsInput ? Color.orange : .secondary)
+                        .foregroundStyle(task.status == .needsInput ? StatusDot.color(.waiting) : .secondary)
                         .lineLimit(2)
                     Text("\(Copy.taskStatus(task.status)) · \(Copy.relative(task.updatedAt))")
                         .font(.caption)

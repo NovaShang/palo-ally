@@ -38,9 +38,10 @@ enum Copy {
 
     static func taskSymbol(_ s: TaskStatus) -> (String, Color) {
         switch s {
-        case .running: ("circle.dotted.circle", .accentColor)
-        case .needsInput: ("hand.raised.fill", .orange)
-        case .done: ("checkmark.circle.fill", .green)
+        // The session indicator's colors: working, waiting on the owner, done.
+        case .running: ("circle.dotted.circle", StatusDot.color(.working))
+        case .needsInput: ("hand.raised.fill", StatusDot.color(.waiting))
+        case .done: ("checkmark.circle.fill", StatusDot.color(.done))
         case .failed: ("exclamationmark.circle.fill", .red)
         case .stopped: ("stop.circle", .secondary)
         case .unknown: ("circle", .secondary)

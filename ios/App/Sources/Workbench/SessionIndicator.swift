@@ -71,7 +71,7 @@ struct SessionIndicator: View {
         let s = size / 100
         ZStack {
             if showsRing { ring(s) }
-            let glyph = glyph(radius: showsRing ? 19 * s : 40 * s)
+            let glyph = glyph(radius: showsRing ? 21 * s : 40 * s)
                 .scaleEffect(state == .working && breathing ? 0.86 : 1)
                 .opacity(state == .working && breathing ? 0.8 : 1)
             if let owner = voiceOwner {
@@ -81,13 +81,13 @@ struct SessionIndicator: View {
             }
             if showsRing, let label = IndicatorRules.effortLabel(effort) {
                 Text(label)
-                    .font(.system(size: 17 * s, weight: .bold))
+                    .font(.system(size: 21 * s, weight: .bold))
                     .fontDesign(.rounded)
                     .foregroundStyle(Color(rgb: light ? IndicatorModelClass(modelId: model).lightRGB
                                                       : IndicatorModelClass(modelId: model).rgb))
                     .lineLimit(1)
                     .fixedSize()
-                    // Centered on the label's own height, 8 units above the box edge: the mock's baseline at y 94.
+                    // Centered on the label's own height, low in the arc's gap: the mock's baseline at y 96.
                     .position(x: size / 2, y: 86 * s)
             }
         }

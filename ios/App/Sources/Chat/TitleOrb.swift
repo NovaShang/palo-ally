@@ -265,7 +265,7 @@ struct TitleOrbCaption: View {
     var body: some View {
         Text(text)
             .font(.caption2.weight(.medium))
-            .foregroundStyle(kind == .needsYou ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.primary))
+            .foregroundStyle(kind == .needsYou ? AnyShapeStyle(StatusDot.color(.waiting)) : AnyShapeStyle(.primary))
             .lineLimit(1)
             .truncationMode(.tail)
             .contentTransition(.opacity)

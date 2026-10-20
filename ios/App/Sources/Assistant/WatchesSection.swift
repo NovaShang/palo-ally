@@ -145,7 +145,7 @@ struct GoalRow: View {
                     .lineLimit(2)
                 Text(goalLine)
                     .font(.subheadline)
-                    .foregroundStyle(goal.needsOwner ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(goal.needsOwner ? AnyShapeStyle(StatusDot.color(.waiting)) : AnyShapeStyle(.secondary))
                     .lineLimit(2)
                 if let r = goal.ratio, goal.state != .done {
                     ProgressView(value: r)
@@ -183,9 +183,9 @@ struct GoalStateIcon: View {
     var body: some View {
         switch state {
         case .waiting:
-            Image(systemName: "hand.raised.fill").foregroundStyle(.orange)
+            Image(systemName: "hand.raised.fill").foregroundStyle(StatusDot.color(.waiting))
         case .done:
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(StatusDot.color(.done))
         case .paused:
             Image(systemName: "pause.circle").foregroundStyle(.tertiary)
         case .tracking, .unknown:
@@ -212,7 +212,7 @@ struct GoalDetail: View {
                     Section {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             GoalStateIcon(state: g.state)
-                            Text(Copy.goalState(g.state)).foregroundStyle(g.needsOwner ? .orange : .secondary)
+                            Text(Copy.goalState(g.state)).foregroundStyle(g.needsOwner ? StatusDot.color(.waiting) : .secondary)
                         }
                         .font(.subheadline)
                         if let p = g.state == .done ? (g.outcome ?? g.progress) : g.progress {

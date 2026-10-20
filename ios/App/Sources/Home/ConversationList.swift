@@ -280,7 +280,7 @@ struct WaitingBadge: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 7)
                 .frame(minWidth: 22, minHeight: 22)
-                .background(.orange, in: .capsule)
+                .background(StatusDot.color(.waiting), in: .capsule)
                 .accessibilityLabel("\(count) 件等你")
         }
     }
@@ -402,7 +402,7 @@ private struct WorkspaceRow: View {
             if node.waiting > 0 {
                 Text("\(node.waiting) 等你")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(StatusDot.color(.waiting))
                     .lineLimit(1)
             } else {
                 Text("\(node.members.count)")
@@ -430,8 +430,10 @@ private struct PalListRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            StatusDot(pal, size: 9)
-                .frame(width: 14)
+            // The session's round indicator (as on its page): whole on a
+            // phone's two-line row; the state glyph alone in a sidebar's.
+            SessionIndicator(pal, size: model.layout == .phone ? 30 : 16, glass: false)
+                .frame(width: model.layout == .phone ? 30 : 18)
             VStack(alignment: .leading, spacing: 2) {
                 Text(pal.displayName)
                     .font(.body)
@@ -611,7 +613,7 @@ private struct AssistantSwitcher: View {
             .accessibilityLabel("\(name)，切换助理")
             // Something new or waiting on another assistant.
             if model.othersNeedAttention {
-                Circle().fill(.orange).frame(width: 6, height: 6).accessibilityHidden(true)
+                Circle().fill(StatusDot.color(.waiting)).frame(width: 6, height: 6).accessibilityHidden(true)
             }
         }
     }
