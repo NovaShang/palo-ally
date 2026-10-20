@@ -4,11 +4,12 @@ import PaloAllyKit
 import SwiftUI
 import UIKit
 
-/// One window's state: the conversation it shows, what's pushed over it,
-/// its sheets, its sidebar and its right pane. iPads and the Mac can have
-/// several windows, each with its own; phones have one. What every window
-/// shares (the computers, their connections, unsent words) is the
-/// `AppModel` it reads through.
+/// One window's state: the computer it shows, the conversation, what's
+/// pushed over it, its sheets, its sidebar and its right pane. iPads and the
+/// Mac can have several windows, each with its own (one on the company Mac,
+/// another on the home one); phones have one. What every window shares (the
+/// computers, their connections, unsent words) is the `AppModel` it reads
+/// through.
 @MainActor
 @Observable
 final class WindowModel {
@@ -21,8 +22,56 @@ final class WindowModel {
     /// This window's scene (set once its view is in a window).
     @ObservationIgnored weak var scene: UIWindowScene?
 
-    init(app: AppModel) {
+    init(app: AppModel, hostID: String? = nil) {
         self.app = app
+        self.hostID = hostID
+    }
+
+    // MARK: the computer this window shows
+
+    /// The computer this window shows (its assistant, conversations, color).
+    /// Set when the window comes up (the one it was opened from, or the one
+    /// used last) and by the switcher; nil only while nothing is paired.
+    var hostID: String?
+
+    /// `hostID` while it's still paired, else the one used last.
+    var activeHostID: String? {
+        if let id = hostID, app.stores[id] != nil { return id }
+        return app.lastHostID
+    }
+    /// This window's assistant's store (nil when nothing is paired).
+    var store: AppStore? { activeHostID.flatMap { app.stores[$0] } }
+    var pairedHost: PairedHost? { activeHostID.flatMap { app.hosts[$0] } }
+    /// The window takes its assistant's color.
+    var currentTheme: AppTheme { activeHostID.map(app.theme(for:)) ?? .default }
+
+    /// Replies and notices on another assistant (this window's own: none, it's on screen).
+    func unreadCount(_ id: String) -> Int { id == activeHostID ? 0 : app.unreadCount(id) }
+
+    /// Something is waiting on another assistant than this window's (the dot on the title).
+    var othersNeedAttention: Bool {
+        app.hostIDs.contains { $0 != activeHostID && (unreadCount($0) > 0 || pendingCount($0) > 0) }
+    }
+
+    /// Everything on this window's assistant counts as seen.
+    func markSeen() {
+        if let id = activeHostID { app.markSeen(id) }
+    }
+
+    /// Another assistant in this window (other windows keep theirs): it
+    /// opens on its conversation (what it showed belonged to the one before).
+    func switchTo(_ id: String) {
+        guard app.hostIDs.contains(id) else { return }
+        let changed = id != activeHostID
+        if changed { markSeen() }
+        hostID = id
+        app.use(id)
+        if changed { showAssistantConversation() }
+    }
+
+    /// Unpairs this window's assistant.
+    func unpair() async {
+        if let id = activeHostID { await app.unpair(id) }
     }
 
     // MARK: shared, through the app
@@ -32,9 +81,6 @@ final class WindowModel {
     var hostIDs: [String] { app.hostIDs }
     var hosts: [String: PairedHost] { app.hosts }
     var stores: [String: AppStore] { app.stores }
-    var activeHostID: String? { app.activeHostID }
-    var store: AppStore? { app.store }
-    var pairedHost: PairedHost? { app.pairedHost }
     var launch: LaunchOptions { app.launch }
     var secrets: SecretStore { app.secrets }
     var memoryRevision: Int {
@@ -49,24 +95,19 @@ final class WindowModel {
     var clientVersion: String { app.clientVersion }
     var buildStamp: String { app.buildStamp }
     var hasSeveralHosts: Bool { app.hasSeveralHosts }
-    var currentTheme: AppTheme { app.currentTheme }
     var iconTheme: AppTheme { app.iconTheme }
-    var othersNeedAttention: Bool { app.othersNeedAttention }
-    func draftBox(_ c: Conversation) -> DraftBox { app.draftBox(c) }
-    func draftBinding(_ c: Conversation) -> Binding<String> { app.draftBinding(c) }
+    /// A conversation's unsent words, on this window's computer.
+    func draftBox(_ c: Conversation) -> DraftBox { app.draftBox(host: activeHostID, c) }
+    func draftBinding(_ c: Conversation) -> Binding<String> { app.draftBinding(host: activeHostID, c) }
     func assistantLabel(_ id: String) -> String { app.assistantLabel(id) }
     func isOnline(_ id: String) -> Bool { app.isOnline(id) }
     func displayName(_ id: String) -> String { app.displayName(id) }
     func rename(_ id: String, to name: String) { app.rename(id, to: name) }
     func theme(for id: String) -> AppTheme { app.theme(for: id) }
     func setTheme(_ theme: AppTheme, for id: String) async throws { try await app.setTheme(theme, for: id) }
-    func unreadCount(_ id: String) -> Int { app.unreadCount(id) }
     func pendingCount(_ id: String) -> Int { app.pendingCount(id) }
-    func markSeen() { app.markSeen() }
-    func switchTo(_ id: String) { app.switchTo(id) }
     func startDemo() { app.startDemo() }
     func exitDemo() { app.exitDemo() }
-    func unpair() async { await app.unpair() }
     func unpair(_ id: String) async { await app.unpair(id) }
     static func deviceLabel() async -> String { await AppModel.deviceLabel() }
     static var urlScheme: String { AppModel.urlScheme }
@@ -342,9 +383,9 @@ final class WindowModel {
         showPairingSheet = true
     }
 
-    /// Pairs another computer (or re-pairs one), and switches to it.
+    /// Pairs another computer (or re-pairs one), and this window switches to it.
     func pair(with link: PairingLink) async throws {
-        try await app.pair(with: link, replacing: pairingIntent == .replace ? activeHostID : nil)
+        try await app.pair(with: link, replacing: pairingIntent == .replace ? activeHostID : nil, in: self)
         pairingIntent = .first
         showPairingSheet = false
     }

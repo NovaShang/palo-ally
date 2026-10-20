@@ -53,7 +53,8 @@ private struct WindowCommands: Commands {
                 .keyboardShortcut("n", modifiers: [.command, .shift])
             if UIApplication.shared.supportsMultipleScenes {
                 Divider()
-                Button("新建窗口") { openWindow(value: WindowTarget(.palo)) }
+                // On the computer of the window in front.
+                Button("新建窗口") { openWindow(value: WindowTarget(.palo, host: app.frontWindow?.activeHostID)) }
                     .keyboardShortcut("n", modifiers: [.command, .option])
             }
         }

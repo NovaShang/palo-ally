@@ -86,17 +86,16 @@ enum AssistantTab: String, CaseIterable, Hashable {
 
 /// What the whole app shares, whatever window it's in: which mode we're in
 /// (unpaired / paired / demo), the computers this device is paired with,
-/// one connection (store) per computer, which one the owner is looking at,
-/// the unsent words of every conversation, and the open windows.
+/// one connection (store) per computer, the one used last, the unsent words
+/// of every conversation, and the open windows.
 ///
 /// Each paired computer is an independent assistant (its own conversation,
 /// memory, tasks). All of them stay connected while the app is in the
-/// foreground so the switcher can show unread replies and pending approvals;
-/// the screen shows the current one.
+/// foreground so the switcher can show unread replies and pending approvals.
 ///
-/// What one window shows (the conversation picked, its sheets, the sidebar
-/// and the pane) is that window's own: `WindowModel`. iPads and the Mac can
-/// have several windows; phones have one.
+/// What one window shows (the computer, the conversation picked, its sheets,
+/// the sidebar and the pane) is that window's own: `WindowModel`. iPads and
+/// the Mac can have several windows, each on its own computer; phones have one.
 @MainActor
 @Observable
 final class AppModel {
@@ -108,13 +107,11 @@ final class AppModel {
     private(set) var hosts: [String: PairedHost] = [:]
     private(set) var stores: [String: AppStore] = [:]
     private var demoHosts: [String: DemoHost] = [:]
-    private(set) var activeHostID: String?
+    /// The computer used last (the one in the window in front): a new
+    /// window and the next launch open on it; phones show it.
+    private(set) var lastHostID: String?
     /// Owner-chosen names / colors and what they've seen, per assistant.
     private var meta = HostMeta()
-
-    /// The current assistant's store (nil when nothing is paired).
-    var store: AppStore? { activeHostID.flatMap { stores[$0] } }
-    var pairedHost: PairedHost? { activeHostID.flatMap { hosts[$0] } }
 
     /// Bumped when a memory file is saved, so the memory list reloads its
     /// sizes and times.
@@ -124,22 +121,28 @@ final class AppModel {
 
     /// Each conversation's unsent words, kept while the app is open (back to
     /// the list and in again, they're still there), the same in every
-    /// window. One box per conversation, observed on its own: a keystroke in
-    /// one tile redraws that tile's composer, not every tile's (one shared
+    /// window. One box per computer and conversation (two windows on two
+    /// computers each have their own Palo), observed on its own: a keystroke
+    /// in one tile redraws that tile's composer, not every tile's (one shared
     /// dictionary did).
-    @ObservationIgnored private var draftBoxes: [WindowModel.Conversation: DraftBox] = [:]
+    private struct DraftKey: Hashable {
+        let host: String
+        let conversation: WindowModel.Conversation
+    }
+    @ObservationIgnored private var draftBoxes: [DraftKey: DraftBox] = [:]
 
-    func draftBox(_ c: WindowModel.Conversation) -> DraftBox {
-        if let box = draftBoxes[c] { return box }
+    func draftBox(host: String?, _ c: WindowModel.Conversation) -> DraftBox {
+        let key = DraftKey(host: host ?? "", conversation: c)
+        if let box = draftBoxes[key] { return box }
         let box = DraftBox()
-        draftBoxes[c] = box
+        draftBoxes[key] = box
         return box
     }
 
     /// A binding to one conversation's unsent words; the same one every
     /// time, so handing it down again (each update of a split workspace's
     /// page) doesn't count as a change and redraw every tile's chat.
-    func draftBinding(_ c: WindowModel.Conversation) -> Binding<String> { draftBox(c).binding }
+    func draftBinding(host: String?, _ c: WindowModel.Conversation) -> Binding<String> { draftBox(host: host, c).binding }
 
     let secrets: SecretStore = KeychainSecretStore()
     let launch: LaunchOptions
@@ -205,8 +208,10 @@ final class AppModel {
     func register(_ window: WindowModel) {
         windowRefs.removeAll { $0.model == nil || $0.model === window }
         windowRefs.append(WeakWindow(model: window))
-        // A window that just opened is the one in front.
+        // A window that just opened is the one in front (and its computer the one used last).
+        settleWindows()
         lastActive = window
+        if let id = window.activeHostID { use(id) }
         let pending = waiting
         waiting = []
         for deliver in pending { deliver(window) }
@@ -218,13 +223,46 @@ final class AppModel {
     }
 
     func windowBecameActive(_ window: WindowModel) {
-        guard lastActive !== window else { return }
         lastActive = window
+        if let id = window.activeHostID, id != lastHostID { use(id) }
     }
 
     /// Runs `body` on the front window, or on the first one to come up.
     func inFrontWindow(_ body: @escaping (WindowModel) -> Void) {
         if let w = frontWindow { body(w) } else { waiting.append(body) }
+    }
+
+    /// Something that belongs to one computer (a notification tap): a window
+    /// already showing it (the front one if it does), else the front window,
+    /// which switches to that computer.
+    func inWindow(showing id: String?, _ body: @escaping (WindowModel) -> Void) {
+        guard let id, hostIDs.contains(id) else { return inFrontWindow(body) }
+        if let w = window(showing: id) { return body(w) }
+        inFrontWindow { w in
+            w.switchTo(id)
+            body(w)
+        }
+    }
+
+    /// A window showing this computer: the front one if it does, else the
+    /// one opened last of them.
+    func window(showing id: String) -> WindowModel? {
+        if let front = frontWindow, front.activeHostID == id { return front }
+        return windows.last { $0.activeHostID == id }
+    }
+
+    /// The computers some window shows.
+    var hostsOnScreen: Set<String> { Set(windows.compactMap(\.activeHostID)) }
+
+    /// Every window shows a computer that's still there: one whose computer
+    /// went (unpaired, or the demo left) shows the one used last, on its
+    /// assistant's conversation.
+    private func settleWindows() {
+        for w in windows where w.hostID.map({ stores[$0] == nil }) ?? true {
+            let had = w.hostID != nil
+            w.hostID = lastHostID
+            if had { w.showAssistantConversation() }
+        }
     }
 
     // MARK: assistants
@@ -260,9 +298,6 @@ final class AppModel {
     func theme(for id: String) -> AppTheme {
         meta.themes[id].flatMap(AppTheme.init(rawValue:)) ?? .default
     }
-
-    /// The whole app takes the current assistant's color.
-    var currentTheme: AppTheme { activeHostID.map(theme(for:)) ?? .default }
 
     /// The owner picked a color: it shows right away and is saved on the
     /// computer. If the computer can't take it, the color it has comes back.
@@ -304,9 +339,9 @@ final class AppModel {
         meta.themes[id] = (order.first { !used.contains($0.rawValue) } ?? .magenta).rawValue
     }
 
-    /// Replies and notices on an assistant the owner isn't looking at.
+    /// Replies and notices on an assistant since the owner last had it on screen.
     func unreadCount(_ id: String) -> Int {
-        guard id != activeHostID, let s = stores[id], let seen = meta.lastSeen[id] else { return 0 }
+        guard let s = stores[id], let seen = meta.lastSeen[id] else { return 0 }
         return s.unreadCount(after: seen)
     }
 
@@ -316,34 +351,25 @@ final class AppModel {
             + s.pals.reduce(0) { $0 + s.palPendingCount($1.id) }
     }
 
-    /// Something is waiting on another assistant (the dot on the title).
-    var othersNeedAttention: Bool {
-        hostIDs.contains { $0 != activeHostID && (unreadCount($0) > 0 || pendingCount($0) > 0) }
-    }
-
-    /// The owner has seen everything on the current assistant up to now.
-    func markSeen() {
-        guard let id = activeHostID, let s = stores[id], s.hasSynced, meta.lastSeen[id] != s.lastSeq else { return }
+    /// The owner has seen everything on this assistant up to now (a window shows it).
+    func markSeen(_ id: String) {
+        guard let s = stores[id], s.hasSynced, meta.lastSeen[id] != s.lastSeq else { return }
         meta.lastSeen[id] = s.lastSeq
         saveMeta()
     }
 
-    /// Another assistant on screen: every window opens on its conversation
-    /// (what they showed belonged to the one before).
-    func switchTo(_ id: String) {
-        guard hostIDs.contains(id), id != activeHostID else { return }
-        markSeen()
-        activate(id)
-        for w in windows { w.showAssistantConversation() }
-    }
-
-    private func activate(_ id: String) {
-        activeHostID = id
-        meta.active = id
-        saveMeta()
-        // Only the assistant on screen may write the clipboard.
+    /// The owner is using this computer now (its window is in front, or
+    /// switched to it): a new window and the next launch open on it.
+    func use(_ id: String) {
+        guard stores[id] != nil else { return }
+        if lastHostID != id {
+            lastHostID = id
+            meta.active = id
+            saveMeta()
+        }
+        // Only the assistant in front may write the clipboard.
         for (k, s) in stores { s.clipboardWriter = k == id ? AppStore.systemClipboardWriter : nil }
-        markSeen()
+        markSeen(id)
     }
 
     private func makeStore(_ transport: any HostTransport, id: String) -> AppStore {
@@ -362,17 +388,17 @@ final class AppModel {
             pal.finishingReply = { apply in ChatMotion.with(ChatMotion.follow, apply) }
             pal.animateRewind = { apply in withAnimation(RewindPanel.leaving, apply) }
         }
-        // A terminal session quit there is a Pal now: its page opens (in the window used last).
+        // A terminal session quit there is a Pal now: its page opens in a
+        // window showing that computer (the front one if it does).
         s.onAdopted = { [weak self] pal in
-            guard let self, self.activeHostID == id else { return }
-            self.frontWindow?.openPal(pal.id)
+            self?.window(showing: id)?.openPal(pal.id)
         }
         return s
     }
 
     private func didSync(_ id: String, seq: Int64) {
-        if id == activeHostID {
-            markSeen()
+        if hostsOnScreen.contains(id) {
+            markSeen(id)
         } else if meta.lastSeen[id] == nil {
             // First contact with an assistant in the background: what's there now isn't "new".
             meta.lastSeen[id] = seq
@@ -410,7 +436,8 @@ final class AppModel {
             }
         }
         mode = .demo
-        activate(meta.active.flatMap { hostIDs.contains($0) ? $0 : nil } ?? hostIDs[0])
+        use(meta.active.flatMap { hostIDs.contains($0) ? $0 : nil } ?? hostIDs[0])
+        settleWindows()
     }
 
     private func openPaired(_ list: [PairedHost]) {
@@ -424,7 +451,8 @@ final class AppModel {
             open(host)
         }
         mode = .paired
-        activate(meta.active.flatMap { hosts[$0] != nil ? $0 : nil } ?? hostIDs[0])
+        use(meta.active.flatMap { hosts[$0] != nil ? $0 : nil } ?? hostIDs[0])
+        settleWindows()
         AppDelegate.requestPushPermission()
     }
 
@@ -442,9 +470,9 @@ final class AppModel {
         }
     }
 
-    /// Pairs another computer (or re-pairs one), and switches to it.
+    /// Pairs another computer (or re-pairs one); `window` switches to it.
     /// `replacing`: 「换一台电脑配对」, the computer that goes once the new one is in.
-    func pair(with link: PairingLink, replacing: String?) async throws {
+    func pair(with link: PairingLink, replacing: String?, in window: WindowModel?) async throws {
         let identity = try DeviceIdentity.loadOrCreate(store: secrets)
         let label = await Self.deviceLabel()
         let host = try await PairingClient().pair(link: link, identity: identity, deviceLabel: label)
@@ -466,8 +494,8 @@ final class AppModel {
             saveMeta()
             open(host)
         }
-        markSeen()
-        activate(host.daemonID)
+        use(host.daemonID)
+        window?.switchTo(host.daemonID)
         // 「换一台电脑配对」: the old computer goes once the new one is in.
         if let old = replacing, old != host.daemonID { await unpair(old) }
     }
@@ -485,11 +513,6 @@ final class AppModel {
         #endif
     }
 
-    /// Unpairs the current assistant.
-    func unpair() async {
-        if let id = activeHostID { await unpair(id) }
-    }
-
     /// Tells that computer to drop this device (best-effort), then forgets it.
     func unpair(_ id: String) async {
         guard mode == .paired, hostIDs.contains(id) else { return }
@@ -502,9 +525,10 @@ final class AppModel {
         saveMeta()
         if hostIDs.isEmpty {
             resetToUnpaired()
-        } else if activeHostID == id {
-            activate(hostIDs[0])
-            for w in windows { w.selection = .palo }
+        } else {
+            // The windows that showed it move to the one used last (or the first).
+            if lastHostID.map({ stores[$0] == nil }) ?? true { use(hostIDs[0]) }
+            settleWindows()
         }
     }
 
@@ -514,7 +538,7 @@ final class AppModel {
         demoHosts = [:]
         hosts = [:]
         hostIDs = []
-        activeHostID = nil
+        lastHostID = nil
     }
 
     private func resetToUnpaired() {
@@ -564,7 +588,7 @@ final class AppModel {
     }
 
     func didEnterBackground() {
-        markSeen()
+        for id in hostsOnScreen { markSeen(id) }
         for s in stores.values { s.didEnterBackground() }
     }
 
@@ -574,15 +598,15 @@ final class AppModel {
     }
 
     /// Notification tap: payload carries hostId / seq / id / taskId / approvalId / questionId / pal.
-    /// Switches to the assistant it came from first (falls back to the current
-    /// one), then the window used last navigates by id — on cold launch too,
-    /// before anything synced.
+    /// A window already showing the assistant it came from comes forward and
+    /// navigates by id; if none does, the window in front switches to it
+    /// (no hostId: the front window as it is) — on cold launch too, before
+    /// anything synced.
     func handleNotification(userInfo: [AnyHashable: Any]) {
-        if let hostId = userInfo["hostId"] as? String, hostIDs.contains(hostId) { switchTo(hostId) }
         let info = userInfo.reduce(into: [String: String]()) { acc, kv in
             if let k = kv.key as? String { acc[k] = "\(kv.value)" }
         }
-        inFrontWindow { $0.openFromNotification(info) }
+        inWindow(showing: info["hostId"]) { $0.openFromNotification(info) }
     }
 }
 

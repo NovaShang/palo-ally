@@ -145,7 +145,13 @@ private struct LayoutStressTest: ViewModifier {
                         }
                     // `window:pal:pal-site`: 在新窗口中打开; `open:workspace:ws-site`: the list's row.
                     case _ where a.hasPrefix("window:"):
-                        if let c = WindowModel.Conversation(storageKey: String(a.dropFirst(7))) { openWindow(value: WindowTarget(c)) }
+                        if let c = WindowModel.Conversation(storageKey: String(a.dropFirst(7))) { openWindow(value: WindowTarget(c, host: w.activeHostID)) }
+                    // `w2.host:demo-2`: that window switches to that computer (the sidebar's switcher).
+                    case _ where a.hasPrefix("host:"):
+                        w.switchTo(String(a.dropFirst(5)))
+                    // `notify:demo-2`: a message notification from that computer tapped.
+                    case _ where a.hasPrefix("notify:"):
+                        model.app.handleNotification(userInfo: ["hostId": String(a.dropFirst(7))])
                     case _ where a.hasPrefix("open:"):
                         if let c = WindowModel.Conversation(storageKey: String(a.dropFirst(5))) { w.open(c) }
                     // `snap:<name>`: this window to <app tmp>/<name>.png.
@@ -174,7 +180,7 @@ private struct LayoutStressTest: ViewModifier {
                     }
                     try? await Task.sleep(for: .seconds(1.5))
                     for (i, w) in model.app.windows.enumerated() {
-                        debugLog("[nav] after \(step): window \(i + 1)\(w === model.app.frontWindow ? " (front)" : "") layout \(w.layout.rawValue) selection \(String(describing: w.selection)) management \(w.showManagement) pane \(w.paneIsOpen) settings \(w.showSettings)")
+                        debugLog("[nav] after \(step): window \(i + 1)\(w === model.app.frontWindow ? " (front)" : "") host \(w.activeHostID ?? "-") (\(w.store?.assistantName ?? "")) last \(model.app.lastHostID ?? "-") layout \(w.layout.rawValue) selection \(String(describing: w.selection)) management \(w.showManagement) pane \(w.paneIsOpen) settings \(w.showSettings)")
                     }
                     try? await Task.sleep(for: .seconds(0.5))
                 }
