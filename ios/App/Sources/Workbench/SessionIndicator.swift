@@ -34,14 +34,19 @@ struct SessionIndicator: View {
     var voiceOwner: String?? = nil
     /// In place of the state glyph (the session-drop prototype).
     var center: AnyView? = nil
+    /// Only the inner part (a split workspace's pane header): the drop with
+    /// its white mark (or the task count) filling `size`, on a glass circle
+    /// of that size; no context arc, no effort label (the details have them).
+    var innerOnly = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
 
     init(state: StatusDotKind, contextPct: Int? = nil, effort: String? = nil, model: String? = nil,
-         size: CGFloat = 38, glass: Bool = true, running: Int = 0, voiceOwner: String?? = nil) {
+         size: CGFloat = 38, glass: Bool = true, running: Int = 0, voiceOwner: String?? = nil, innerOnly: Bool = false) {
         self.state = state; self.contextPct = contextPct; self.effort = effort; self.model = model
         self.size = size; self.glass = glass; self.running = running; self.voiceOwner = voiceOwner
+        self.innerOnly = innerOnly
     }
 
     /// A session.
@@ -61,9 +66,11 @@ struct SessionIndicator: View {
     static func outerSize(size: CGFloat, glass: Bool) -> CGFloat { glass ? size + 2 * glassPadding(size: size) : size }
 
     var body: some View {
-        indicator
+        Group {
+            if innerOnly { inner } else { indicator }
+        }
             .frame(width: size, height: size)
-            .padding(glass ? Self.glassPadding(size: size) : 0)
+            .padding(glass && !innerOnly ? Self.glassPadding(size: size) : 0)
             .glassEffect(glass ? .regular : .identity, in: .circle)
             .animation(.snappy, value: state)
             .accessibilityElement()
@@ -76,6 +83,24 @@ struct SessionIndicator: View {
         if state == .working, running > 0 { parts.append(String(localized: "\(running) 个任务在跑")) }
         if let contextPct { parts.append(String(localized: "上下文 \("\(contextPct)%")")) }
         return parts.joined(separator: "，")
+    }
+
+    /// The drop and its mark, filling the glass circle (`innerOnly`).
+    private var inner: some View {
+        let r = size * 0.27
+        return ZStack {
+            // The drop fills most of the glass (its drawing has room around
+            // it); its motion stays inside.
+            SessionDrop(state: state, voiceLevel: nil).frame(width: size * 1.3, height: size * 1.3)
+                .frame(width: size, height: size)
+                .clipShape(.circle)
+            if let owner = voiceOwner {
+                IndicatorVoiceCenter(owner: owner, side: size * 0.6) { mark(radius: r) }
+            } else {
+                mark(radius: r)
+            }
+        }
+        .frame(width: size, height: size)
     }
 
     private var showsRing: Bool { !glyphOnly && IndicatorRules.showsRing(size: Double(size)) }
