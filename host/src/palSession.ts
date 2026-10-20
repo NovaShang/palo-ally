@@ -1,3 +1,4 @@
+import { settingsEffort } from "./ccEffort.ts";
 import { t as tr } from "./i18n/index.ts";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -343,9 +344,12 @@ export class PalSession {
     return contextWindowFor(this.model ?? this.rec.model, this.rec.contextTokens, this.rec.contextWindow);
   }
 
-  /** The effort it runs at: the one chosen, else what Claude Code said it started with. */
+  /**
+   * The effort it runs at: the one chosen, else what Claude Code said it
+   * started with, else what Claude Code's settings give it.
+   */
   private effort(): string | undefined {
-    return this.rec.effort ?? this.rec.appliedEffort;
+    return this.rec.effort ?? this.rec.appliedEffort ?? settingsEffort(this.model ?? this.rec.model, this.rec.cwd, this.d.claudeDir);
   }
 
   /** What pals.detail shows besides the Pal itself. */
