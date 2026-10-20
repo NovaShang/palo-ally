@@ -22,6 +22,8 @@ struct SessionIndicator: View {
     var model: String?
     var size: CGFloat = 38
     var glass = true
+    /// Only the state glyph, at any size (the lists): no arc, no label.
+    var glyphOnly = false
     /// Subagents and background tasks running: while it works, their count
     /// stands in the blue circle in place of the play glyph.
     var running = 0
@@ -41,9 +43,10 @@ struct SessionIndicator: View {
     }
 
     /// A session.
-    init(_ pal: Pal, size: CGFloat = 38, glass: Bool = true) {
+    init(_ pal: Pal, size: CGFloat = 38, glass: Bool = true, glyphOnly: Bool = false) {
         self.init(state: pal.dot, contextPct: pal.contextPct, effort: pal.effort, model: pal.model, size: size, glass: glass,
                   running: pal.tasksRunning)
+        self.glyphOnly = glyphOnly
     }
 
     /// Palo: busy or not from the host's status, with its own context.
@@ -75,7 +78,7 @@ struct SessionIndicator: View {
         return parts.joined(separator: "，")
     }
 
-    private var showsRing: Bool { IndicatorRules.showsRing(size: Double(size)) }
+    private var showsRing: Bool { !glyphOnly && IndicatorRules.showsRing(size: Double(size)) }
     private var light: Bool { colorScheme == .light }
 
     @ViewBuilder private var indicator: some View {

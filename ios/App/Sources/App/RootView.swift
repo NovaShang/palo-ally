@@ -241,6 +241,8 @@ struct MainScreen: View {
         // Everything on screen counts as seen (drives the other assistants' unread dots).
         .onChange(of: store.lastSeq) { model.markSeen() }
         // Large screens: the assistant's management over everything.
+        // ＋ → 从历史记录继续…
+        .historyPicker()
         .sheet(isPresented: $model.showManagement) {
             ManagementSheet()
                 .environment(model)

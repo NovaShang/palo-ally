@@ -3,14 +3,13 @@ import PaloAllyKit
 import SwiftUI
 
 /// The pane at the right of a session, a workspace or Palo (workbench-prd §7):
-/// a row of tabs on glass, and the tab's page under it. The first tab is
-/// pinned (成果 beside Palo, 文件 elsewhere); 文件, files, and web pages open
-/// as tabs after it. Which tabs are open, which shows, and whether the pane is
+/// a row of tabs on glass, and the tab's page under it. The first two tabs
+/// are pinned, 成果 and 文件; files and web pages open as tabs after them. Which tabs are open, which shows, and whether the pane is
 /// open is kept on the computer per `key` (`PaneTabsKey`), so every device
 /// shows the same one.
 ///
-/// Wide screens set it beside the content (A4b hooks that); on a phone use
-/// `.rightPaneCover(...)` to show the same view full screen.
+/// Wide screens set it beside the content; on a phone `.rightPaneCover(...)`
+/// shows `PhonePane` instead (no tabs, modal previews).
 struct RightPane: View {
     /// `PaneTabsKey.palo`, `.session(id)` or `.workspace(id)`.
     let key: String
@@ -28,16 +27,7 @@ struct RightPane: View {
     private var state: TabsState { hub.state(for: key) }
 
     /// Where the files tab and previews read from.
-    private var scope: FileScope {
-        if key == PaneTabsKey.palo { return .palo }
-        if key.hasPrefix("pal:") { return .pal(String(key.dropFirst(4))) }
-        if key.hasPrefix("ws:") {
-            let wsID = String(key.dropFirst(3))
-            let members = store.workspace(id: wsID)?.memberIds ?? []
-            if let id = activeSessionID ?? members.first { return .pal(id) }
-        }
-        return .palo
-    }
+    private var scope: FileScope { RightPaneScope.resolve(key: key, activeSessionID: activeSessionID, store: store) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,8 +35,6 @@ struct RightPane: View {
                 tabs: state.tabs, active: state.active, key: key, pages: pageByTab,
                 select: { hub.activate(key, at: $0) },
                 close: { hub.close(key, at: $0) },
-                addFiles: { hub.openFiles(key) },
-                addLibrary: { hub.openLibrary(key) },
                 addWeb: { hub.openWeb(key, url: "") },
                 closePane: { if let onClose { onClose() } else { hub.setOpen(key, false) } })
             content
@@ -88,7 +76,7 @@ struct RightPane: View {
     @ViewBuilder private func other(_ tab: PaneTab) -> some View {
         switch tab.kind {
         case PaneTab.library:
-            LibraryTab()
+            LibraryTab().environment(\.libraryPalID, RightPaneScope.palID(of: scope))
         case PaneTab.files:
             NavigationStack {
                 FileTreeScreen(scope: scope, close: { if let onClose { onClose() } else { hub.setOpen(key, false) } },
@@ -109,8 +97,27 @@ struct RightPane: View {
     }
 }
 
+/// Where a pane's files are: Palo's computer files, a session's folder, or
+/// (a workspace) the active tile's session's.
+enum RightPaneScope {
+    @MainActor
+    static func resolve(key: String, activeSessionID: String?, store: AppStore) -> FileScope {
+        if key == PaneTabsKey.palo { return .palo }
+        if key.hasPrefix("pal:") { return .pal(String(key.dropFirst(4))) }
+        if key.hasPrefix("ws:") {
+            let wsID = String(key.dropFirst(3))
+            let members = store.workspace(id: wsID)?.memberIds ?? []
+            if let id = activeSessionID ?? members.first { return .pal(id) }
+        }
+        return .palo
+    }
+
+    /// The session whose 成果 lead; nil for Palo.
+    static func palID(of scope: FileScope) -> String? { scope.kind == .pal ? scope.id : nil }
+}
+
 /// 成果: the list with its items pushed over it, or a folder's tree in its place.
-private struct LibraryTab: View {
+struct LibraryTab: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
@@ -140,8 +147,6 @@ private struct RightPaneTabBar: View {
     let pages: [Int: WebTabPage]
     let select: (Int) -> Void
     let close: (Int) -> Void
-    let addFiles: () -> Void
-    let addLibrary: () -> Void
     let addWeb: () -> Void
     let closePane: () -> Void
 
@@ -157,21 +162,12 @@ private struct RightPaneTabBar: View {
                     .padding(4)
                 }
                 .glassEffect(.regular, in: .capsule)
-                Menu {
-                    if !tabs.contains(where: { $0.kind == PaneTab.files }) {
-                        Button(action: addFiles) { Label(String(localized: "文件", table: "Files"), systemImage: "folder") }
-                    }
-                    if !tabs.contains(where: { $0.kind == PaneTab.library }) {
-                        Button(action: addLibrary) { Label(String(localized: "成果"), systemImage: "square.grid.2x2") }
-                    }
-                    Button(action: addWeb) { Label(String(localized: "网页", table: "Files"), systemImage: "globe") }
-                } label: {
+                Button(action: addWeb) {
                     Image(systemName: "plus").frame(width: 32, height: 32).contentShape(.circle)
                 }
-                .menuIndicator(.hidden)
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .circle)
-                .accessibilityLabel(String(localized: "新标签", table: "Files"))
+                .accessibilityLabel(String(localized: "新网页", table: "Files"))
                 Button(action: closePane) {
                     Image(systemName: "xmark").frame(width: 32, height: 32).contentShape(.circle)
                 }
@@ -197,12 +193,12 @@ private struct RightPaneTabBar: View {
                         .lineLimit(1)
                 }
                 .padding(.leading, 10)
-                .padding(.trailing, i == 0 ? 10 : 4)
+                .padding(.trailing, i < PaneTabsKey.pinnedCount ? 10 : 4)
                 .frame(height: 28)
                 .contentShape(.capsule)
             }
             .buttonStyle(.plain)
-            if i > 0 {
+            if i >= PaneTabsKey.pinnedCount {
                 Button { close(i) } label: {
                     Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
                         .frame(width: 22, height: 28).contentShape(.rect)
@@ -311,7 +307,7 @@ private struct RightPaneCover: ViewModifier {
 
     func body(content: Content) -> some View {
         content.fullScreenCover(isPresented: $isPresented) {
-            RightPane(key: key, activeSessionID: activeSessionID, onClose: { isPresented = false })
+            PhonePane(key: key, activeSessionID: activeSessionID, onClose: { isPresented = false })
                 .environment(model)
                 .environment(store)
         }

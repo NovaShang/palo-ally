@@ -15,8 +15,21 @@ struct LibraryView: View {
     /// Folders folded shut in 按文件夹 (open by default).
     @State private var folded: Set<String> = []
     @Environment(\.placesAsColumns) private var asColumn
+    /// In a session's pane: the session whose items lead, and the 这个会话 / 全部 choice.
+    @Environment(\.libraryPalID) private var palID
+    @Environment(\.libraryOpensModal) private var opensModal
+    @State private var onlyThisSession = true
+    /// The phone's pane page: its glass bars hold the search, 这个会话 / 全部
+    /// and 按时间 / 按文件夹, so the list shows none of its own.
+    @Environment(\.paneChrome) private var chrome
 
-    private var trimmed: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var onlyThis: Bool { chrome?.onlyThisSession ?? onlyThisSession }
+    /// The session the list is narrowed to, if any.
+    private var narrowedTo: String? { onlyThis ? palID : nil }
+    private var pinned: [Artifact] { store.pinnedArtifacts.made(by: narrowedTo) }
+    private var recent: [Artifact] { store.recentArtifacts.made(by: narrowedTo) }
+
+    private var trimmed: String { (chrome?.query ?? query).trimmingCharacters(in: .whitespacesAndNewlines) }
 
     /// The Mac's window toolbar is shared by the conversation and the
     /// inspector, and the system search drawer stretches across both — so in
@@ -32,6 +45,8 @@ struct LibraryView: View {
             }
         })
         .navigationTitle("成果")
+        // The phone's pane page has its own glass bars.
+        .toolbar(chrome != nil ? .hidden : .automatic, for: .navigationBar)
         // ⌘F
         .onChange(of: model.librarySearchRequested, initial: true) { _, requested in
             guard requested else { return }
@@ -54,7 +69,9 @@ struct LibraryView: View {
     }
 
     @ViewBuilder private func searchable(_ list: some View) -> some View {
-        if fieldInColumn {
+        if chrome != nil {
+            list
+        } else if fieldInColumn {
             list.safeAreaInset(edge: .top, spacing: 0) {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -84,17 +101,33 @@ struct LibraryView: View {
     // MARK: list
 
     @ViewBuilder private var artifactList: some View {
+        if palID != nil && chrome == nil { sessionPicker }
         if store.artifacts.isEmpty {
             ContentUnavailableView("这里还空着",
                                    systemImage: "books.vertical",
                                    description: Text("助理整理出来的东西——晨报、比价、表格、文档——都会放在这里。"))
                 .listRowBackground(Color.clear)
-        } else {
+        } else if pinned.isEmpty && recent.isEmpty && narrowedTo != nil {
+            // This session hasn't made any: one tap to everything.
+            Section {
+                Text("这个会话还没发过成果。", tableName: "Library").foregroundStyle(.secondary)
+                Button { if let chrome { chrome.onlyThisSession = false } else { onlyThisSession = false } } label: {
+                    HStack {
+                        Text("看全部成果", tableName: "Library").foregroundStyle(.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                    }
+                    .contentShape(.rect)
+                }
+                .tint(.primary)
+                .accessibilityIdentifier("library-show-all")
+            }
+        } else if chrome == nil {
             groupingPicker
         }
-        if !store.pinnedArtifacts.isEmpty {
+        if !pinned.isEmpty {
             Section("置顶") {
-                ForEach(store.pinnedArtifacts) { row($0) }
+                ForEach(pinned) { row($0) }
             }
         }
         switch grouping {
@@ -103,6 +136,24 @@ struct LibraryView: View {
         }
         // Folders on the computer, and 打开文件夹… (docs/files-prd.md).
         OwnerFoldersSection()
+    }
+
+    /// 这个会话 / 全部, above the list in a session's pane.
+    private var sessionPicker: some View {
+        Section {
+            Picker(selection: $onlyThisSession) {
+                Text("这个会话", tableName: "Library").tag(true)
+                Text("全部", tableName: "Library").tag(false)
+            } label: {
+                Text("范围", tableName: "Library")
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityIdentifier("library-source")
+        }
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+        .listSectionMargins(.top, 0)
     }
 
     /// One segmented control, in the page's own first row; it scrolls away with the list.
@@ -127,7 +178,7 @@ struct LibraryView: View {
     // MARK: 按时间
 
     @ViewBuilder private var timeline: some View {
-        ForEach(ArtifactGroups.days(store.recentArtifacts)) { day in
+        ForEach(ArtifactGroups.days(recent)) { day in
             Section {
                 ForEach(day.items) { row($0, detail: .time) }
             } header: {
@@ -150,7 +201,7 @@ struct LibraryView: View {
     // MARK: 按文件夹
 
     @ViewBuilder private var folderGroups: some View {
-        ForEach(ArtifactGroups.folders(store.recentArtifacts)) { group in
+        ForEach(ArtifactGroups.folders(recent)) { group in
             let name = group.isUngrouped ? String(localized: "其他", table: "Library") : group.name
             let open = !folded.contains(group.id)
             Section {
@@ -191,7 +242,7 @@ struct LibraryView: View {
 
     private var matchingArtifacts: [Artifact] {
         let q = trimmed.lowercased()
-        return (store.pinnedArtifacts + store.recentArtifacts).filter { a in
+        return (pinned + recent).filter { a in
             a.title.lowercased().contains(q) || a.mainFile.lowercased().contains(q) || a.folder.lowercased().contains(q)
                 || a.files.contains { $0.path.lowercased().contains(q) }
         }
@@ -278,8 +329,17 @@ struct LibraryView: View {
         }
     }
 
+    @ViewBuilder private func link<Label: View>(_ a: Artifact, @ViewBuilder label: () -> Label) -> some View {
+        if opensModal {
+            Button { PaneModal.artifact(a.id, model: model, store: store) } label: { label().contentShape(.rect) }
+                .buttonStyle(.plain)
+        } else {
+            NavigationLink(value: a.id, label: label)
+        }
+    }
+
     private func row(_ a: Artifact, detail: Detail = .updated) -> some View {
-        NavigationLink(value: a.id) {
+        link(a) {
             HStack(spacing: 12) {
                 Image(systemName: a.symbol)
                     .font(.title3)

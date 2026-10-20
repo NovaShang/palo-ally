@@ -212,10 +212,6 @@ struct ChatView: View {
         // While holding to talk, the screen's background covers the
         // conversation (same hold-driven motion as the orb and the zones).
         .overlay { VoiceTileGate { VoiceScrimLayer() } }
-        // 后台 N 个在跑, quietly above the composer; tapping it opens the details.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if store.palID != nil && bottomPanel == nil { BackgroundTasksLine() }
-        }
         .modifier(AgentDetailSheet(enabled: !inTile))
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // 回到这里重来: asked in place of the composer (docs/rewind-prd.md §3).
@@ -440,6 +436,10 @@ private struct ConversationRows: View {
                     ThinkingIndicator(activity: busyActivity, justSent: store.awaitingReply && store.status?.busy != true,
                                       stop: store.status?.busy == true ? { Task { try? await store.stop() } } : nil)
                         .id("thinking")
+                } else if backgroundRunning > 0 && store.connection.isOnline {
+                    // Its turn is over but tasks still run: say so, or it looks stuck.
+                    BackgroundWorkLine(count: backgroundRunning)
+                        .id("background-work")
                 }
 
                 // 「试试」: part of the conversation's end, so scrolling up
@@ -511,6 +511,12 @@ private struct ConversationRows: View {
         // A Pal stopped on a card: the card is the news, not a spinner.
         if let id = store.palID, store.pal(id: id)?.status == .waiting, !store.awaitingReply { return false }
         return store.connection.isOnline && (store.awaitingReply || (store.status?.busy == true && !store.replyEndedSinceStatus))
+    }
+
+    /// Subagents and background tasks still running (the session's, or Palo's own).
+    private var backgroundRunning: Int {
+        if let id = store.palID { return store.pal(id: id)?.tasksRunning ?? 0 }
+        return store.scope == .palo ? store.paloTasksRunning : 0
     }
 
     private var busyActivity: String? {
@@ -761,6 +767,32 @@ struct ThinkingIndicator: View {
             try? await Task.sleep(for: .seconds(2))
             withAnimation { slow = true }
         }
+    }
+}
+
+/// 后台 N 个任务在跑: the end of the conversation while its turn is over but
+/// subagents or background tasks still run, like the working line; tapping
+/// it opens the details, which list them.
+struct BackgroundWorkLine: View {
+    let count: Int
+    @Environment(\.tileDetail) private var tileDetail
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Button { model.setDetail(true, tile: tileDetail) } label: {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("后台 \(count) 个任务在跑")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(.tertiary)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 4)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("background-tasks")
     }
 }
 

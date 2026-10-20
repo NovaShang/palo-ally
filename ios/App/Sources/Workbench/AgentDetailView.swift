@@ -193,7 +193,7 @@ private struct SessionDetailForm: View {
         Section {
             if confirmEnd {
                 ConfirmPanel(title: Copy.spaced(String(localized: "结束「\(pal.displayName)」？")),
-                             text: String(localized: "它会停下，进到「以前的」里，之后还能接着聊。"),
+                             text: String(localized: "它会停下，之后还能从历史记录里接着聊。"),
                              action: String(localized: "结束会话"), working: working == "end", glass: false,
                              cancel: { confirmEnd = false }, confirm: { endSession() })
             } else {
@@ -324,42 +324,3 @@ private struct SessionPastTasks: View {
     }
 }
 
-// MARK: - in the chat
-
-/// 「后台 N 个在跑」: one quiet line above the composer while the session has
-/// background tasks or sub-agents running; tapping it opens the details.
-struct BackgroundTasksLine: View {
-    @Environment(\.tileDetail) private var tileDetail
-    @Environment(AppModel.self) private var model
-    @Environment(AppStore.self) private var store
-    @State private var count = 0
-
-    private var pal: Pal? { store.palID.flatMap { store.pal(id: $0) } }
-
-    var body: some View {
-        Group {
-            if count > 0 {
-                Button { model.setDetail(true, tile: tileDetail) } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "terminal").font(.caption2)
-                        Text("后台 \(count) 个在跑").font(.caption)
-                        Image(systemName: "chevron.up").font(.system(size: 8, weight: .bold))
-                    }
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 6)
-                    .frame(maxWidth: .infinity)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .transition(.opacity)
-                .accessibilityIdentifier("background-tasks")
-            }
-        }
-        .animation(.snappy, value: count)
-        // The host says when tasks change (`pals.updated`); asked then.
-        .task(id: "\(store.connection.isOnline)|\(pal?.updatedAt ?? 0)|\(pal?.attention.rawValue ?? "")") {
-            guard let id = store.palID, store.connection.isOnline else { return }
-            count = (try? await store.palDetail(id: id).tasks.count) ?? count
-        }
-    }
-}

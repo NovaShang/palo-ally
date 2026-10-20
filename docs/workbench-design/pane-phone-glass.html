@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>手机右边界面：Liquid Glass 版</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#e9e9ee;color:#1c1c1e;font:15px/1.5 -apple-system,"PingFang SC",system-ui,sans-serif}
+main{max-width:1150px;margin:0 auto;padding:20px 14px 70px}
+h1{font-size:24px;margin:6px 0}h2{font-size:18px;margin:30px 0 6px}
+.sub{color:#6e6e73;font-size:14px;max-width:860px}
+.shots{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start;margin-top:12px}
+.cap{font-size:13px;color:#6e6e73;margin-top:6px;max-width:330px}
+.phone{width:330px;height:700px;border-radius:46px;position:relative;overflow:hidden;box-shadow:0 0 0 9px #111,0 10px 30px rgba(0,0,0,.25);background:#f2f2f7}
+.phone.d{background:#000;color:#f5f5f7}
+.scroll{position:absolute;inset:0;padding:100px 0 110px;overflow:hidden}
+.status{position:absolute;top:0;left:0;right:0;height:44px;display:flex;justify-content:space-between;align-items:flex-end;padding:0 26px 4px;font-size:14px;font-weight:600;z-index:3}
+.glass{background:rgba(255,255,255,.55);backdrop-filter:blur(18px) saturate(1.8);-webkit-backdrop-filter:blur(18px) saturate(1.8);box-shadow:0 2px 12px rgba(0,0,0,.12),inset 0 1px 0 rgba(255,255,255,.9),inset 0 0 0 .5px rgba(0,0,0,.06)}
+.d .glass{background:rgba(60,60,64,.5);box-shadow:0 2px 12px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 .5px rgba(255,255,255,.08)}
+.top{position:absolute;top:50px;left:12px;right:12px;display:flex;align-items:center;justify-content:space-between;z-index:3}
+.circ{width:44px;height:44px;border-radius:22px;display:grid;place-items:center;font-size:16px}
+.cap2{height:40px;border-radius:20px;padding:0 16px;display:flex;align-items:center;gap:6px;font-size:15px;font-weight:600}
+.fade-top{position:absolute;top:0;left:0;right:0;height:110px;background:linear-gradient(#f2f2f7 30%,rgba(242,242,247,0));z-index:2}
+.d .fade-top{background:linear-gradient(#000 30%,rgba(0,0,0,0))}
+.fade-bot{position:absolute;bottom:0;left:0;right:0;height:120px;background:linear-gradient(rgba(242,242,247,0),#f2f2f7 70%);z-index:2}
+.d .fade-bot{background:linear-gradient(rgba(0,0,0,0),#000 70%)}
+.bottom{position:absolute;bottom:26px;left:14px;right:14px;display:flex;gap:10px;align-items:center;z-index:3}
+.tabbar{flex:1;height:62px;border-radius:31px;display:flex;padding:5px}
+.tab{flex:1;border-radius:26px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;gap:1px;color:#6e6e73}
+.d .tab{color:#a1a1a6}
+.tab .i{font-size:20px;line-height:1}
+.tab.on{background:rgba(118,118,128,.16);color:#1c1c1e;font-weight:600}
+.d .tab.on{background:rgba(255,255,255,.14);color:#fff}
+.searchc{width:62px;height:62px;border-radius:31px;display:grid;place-items:center;font-size:20px}
+.searchbar{flex:1;height:52px;border-radius:26px;display:flex;align-items:center;padding:0 16px;gap:8px;color:#8e8e93;font-size:15px}
+.ghd{font-size:12.5px;color:#6e6e73;margin:12px 26px 5px}
+.grp{background:#fff;border-radius:20px;margin:0 14px 10px;overflow:hidden}
+.d .grp{background:#1c1c1e}
+.cell{display:flex;align-items:center;gap:10px;min-height:54px;padding:6px 14px}
+.cell+.cell{border-top:.5px solid rgba(127,127,127,.22)}
+.ic{width:30px;height:30px;border-radius:8px;background:rgba(118,118,128,.14);display:grid;place-items:center;font-size:14px;flex:none}
+.t{font-size:15px}.s{font-size:12px;color:#8e8e93}
+.chev{margin-left:auto;color:#c7c7cc}
+.menu{position:absolute;top:98px;left:50%;transform:translateX(-50%);width:200px;border-radius:18px;z-index:4;overflow:hidden;font-size:15px}
+.menu div{padding:11px 16px;display:flex;gap:8px}
+.menu div+div{border-top:.5px solid rgba(127,127,127,.25)}
+.kb{position:absolute;left:0;right:0;bottom:0;height:250px;background:#d1d3d9;z-index:2}
+.notes{background:#fff;border-radius:16px;padding:12px 16px;margin-top:14px;max-width:900px}
+.notes li{margin:5px 0}
+</style></head><body><main>
+<h1>手机右边界面：Liquid Glass 版</h1>
+<p class="sub">顶上只留一层；「成果 / 文件」挪到底部，做成浮着的玻璃标签栏（像照片、音乐 App 那样），旁边一个玻璃圆是搜索。内容一直铺到上下边缘，滚动时从玻璃下面穿过去。</p>
+<h2>1. 会话里</h2><div class="shots" id="a"></div>
+<h2>2. Palo 里，和深色</h2><div class="shots" id="b"></div>
+<h2>3. 点顶上的胶囊、点搜索</h2><div class="shots" id="c"></div>
+<div class="notes"><b>要点</b><ul>
+<li>顶上一层：左边玻璃 ✕ 关掉这一页；中间一个玻璃胶囊管「看哪些」：会话的成果是「这个会话 ⌄」（点开切到「全部」），Palo 的成果是「按时间 ⌄」（切到「按文件夹」），文件页写文件夹名（点开可以往上一级跳）。</li>
+<li>底部：玻璃标签栏「成果」「文件」，当前那个有一块浅色的玻璃底；右边单独一个玻璃圆是搜索，点了在底部展开搜索框，键盘弹上来，拇指够得着。</li>
+<li>没有实心的条：上下只有很轻的渐隐，内容从玻璃下面滚过去。</li>
+<li>打开的东西照旧全屏弹出，网页用 Safari，这部分不变。</li>
+</ul></div>
+</main>
+<script>
+const rows=(r)=>`<div class="grp">${r.map(([i,t,s])=>`<div class="cell"><div class="ic">${i}</div><div><div class="t">${t}</div><div class="s">${s}</div></div><span class="chev">›</span></div>`).join('')}</div>`;
+function phone(o){
+ const top=`<div class="top"><div class="circ glass">✕</div><div class="cap2 glass">${o.cap} <span style="font-size:11px;opacity:.6">⌄</span></div><div style="width:44px"></div></div>`;
+ const bottom=o.search?`<div class="bottom" style="bottom:${o.kb?262:26}px"><div class="searchbar glass">🔍 <span>${o.search}</span></div><div class="circ glass" style="width:52px;height:52px;border-radius:26px">✕</div></div>`
+  :`<div class="bottom"><div class="tabbar glass"><div class="tab ${o.tab==='成果'?'on':''}"><span class="i">▤</span>成果</div><div class="tab ${o.tab==='文件'?'on':''}"><span class="i">📁</span>文件</div></div><div class="searchc glass">🔍</div></div>`;
+ return `<div class="phone${o.dark?' d':''}"><div class="status"><span>9:41</span><span>● ● ▮</span></div><div class="scroll">${o.body}</div><div class="fade-top"></div><div class="fade-bot"></div>${top}${o.menu||''}${o.kb?'<div class="kb"></div>':''}${bottom}</div>`;}
+const sessLib=rows([['📄','语音误触修复说明','今天 15:08'],['🖼','按住手势时序图','今天 11:20'],['📄','测试记录','昨天'],['🌐','手势冲突调研','星期六']]);
+const paloLib=`<div class="ghd">今天</div>`+rows([['🌐','上海出行比价','15:08 · 旅行'],['📄','上海行程','10:08 · 旅行']])+`<div class="ghd">昨天</div>`+rows([['📊','九月开销','16:08 · 理财'],['📄','水电燃气账单','12:08 · 理财']])+`<div class="ghd">星期六</div>`+rows([['📄','每日晨报','08:00']]);
+const files=rows([['📁','host','12 项'],['📁','ios','9 项'],['📁','docs','14 项'],['📄','README.md','4 KB'],['📄','package.json','1 KB'],['📄','CLAUDE.md','2 KB']]);
+document.getElementById('a').innerHTML=phone({cap:'这个会话',tab:'成果',body:sessLib})+phone({cap:'palo-ally',tab:'文件',body:files})+`<div class="cap">左：会话的成果，默认只看这个会话发的。右：会话的文件，顶上胶囊写文件夹名。</div>`;
+document.getElementById('b').innerHTML=phone({cap:'按时间',tab:'成果',body:paloLib})+phone({cap:'这个会话',tab:'成果',body:sessLib,dark:1})+`<div class="cap">左：Palo 的成果，看全部，胶囊里切「按时间 / 按文件夹」。右：深色。</div>`;
+document.getElementById('c').innerHTML=phone({cap:'这个会话',tab:'成果',body:sessLib,menu:`<div class="menu glass"><div>✓ 这个会话</div><div style="padding-left:38px">全部</div></div>`})+phone({cap:'这个会话',tab:'成果',body:sessLib,search:'搜索成果',kb:1})+`<div class="cap">左：点顶上的胶囊，弹出玻璃小菜单。右：点搜索，底部的标签栏变成搜索框，跟着键盘上来；右边的 ✕ 收起搜索。</div>`;
+</script></body></html>

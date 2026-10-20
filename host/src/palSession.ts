@@ -331,7 +331,7 @@ export class PalSession {
       ...(this.model ? { model: this.model } : {}),
       ...(this.effort() ? { effort: this.effort() } : {}),
       ...(this.contextPct() !== undefined ? { contextPct: this.contextPct() } : {}),
-      ...(this.tasks.size ? { tasksRunning: this.tasks.size } : {}),
+      ...(this.runningTasks().length ? { tasksRunning: this.runningTasks().length } : {}),
       ...(typeof this.rec.lastWakeUsd === "number" ? { lastWakeUsd: this.rec.lastWakeUsd } : {}),
       createdBy: this.rec.createdBy,
       updatedAt: Math.round(this.updatedAt),
@@ -360,11 +360,21 @@ export class PalSession {
   }
 
   /** What pals.detail shows besides the Pal itself. */
+  /**
+   * Its tasks as the owner sees them: subagents, and shell commands running
+   * in the background. A foreground command is a step of the turn, not a task
+   * (Claude Code reports every Bash call as one), until it is backgrounded.
+   */
+  private runningTasks() {
+    return [...this.tasks.values()].filter((t) => t.kind === "subagent" || t.backgrounded);
+  }
+
   /** A task is over: it leaves the running ones and goes on top of its history. False: not one of them. */
   private endTask(id: string, status: PastPalTask["status"], summary?: string): boolean {
     const t = this.tasks.get(id);
     if (!t) return false;
     this.tasks.delete(id);
+    if (t.kind !== "subagent" && !t.backgrounded) return false; // a foreground command: no history
     const words = (summary && truncate(summary, 200)) || t.summary;
     const past: PastPalTask = { id: t.id, title: t.title, kind: t.kind, startedAt: t.startedAt, endedAt: this.d.now(), status, ...(words ? { summary: words } : {}) };
     this.rec.pastTasks = [past, ...(this.rec.pastTasks ?? []).filter((p) => p.id !== id)].slice(0, PAST_TASKS);
@@ -379,7 +389,7 @@ export class PalSession {
       contextWindow: this.contextWindow(),
       ...(model ? { model } : {}),
       ...(this.effort() ? { effort: this.effort() } : {}),
-      tasks: [...this.tasks.values()].map(({ id, title, kind, startedAt, summary }) => ({ id, title, kind, startedAt, ...(summary ? { summary } : {}) })),
+      tasks: this.runningTasks().map(({ id, title, kind, startedAt, summary }) => ({ id, title, kind, startedAt, ...(summary ? { summary } : {}) })),
       pastTasks: this.rec.pastTasks ?? [],
       ...(typeof this.rec.lastCompactAt === "number" ? { lastCompactAt: this.rec.lastCompactAt } : {}),
       costTotalUsd: this.rec.costTotalUsd ?? 0,
@@ -1064,7 +1074,10 @@ export class PalSession {
       }
       case "task_backgrounded": {
         const t = this.tasks.get(e.taskId);
-        if (t) t.backgrounded = true;
+        if (t && !t.backgrounded) {
+          t.backgrounded = true;
+          this.touch(); // a command sent to the background is a task now
+        }
         this.bgTasks.add(e.taskId);
         break;
       }

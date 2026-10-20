@@ -35,7 +35,9 @@ struct FileTreeScreen: View {
         var path: String?
     }
 
-    private var trimmed: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+    /// The phone's pane page holds the search in its glass bar.
+    @Environment(\.paneChrome) private var chrome
+    private var trimmed: String { (chrome?.query ?? query).trimmingCharacters(in: .whitespacesAndNewlines) }
     /// The Mac's inspector shares the window toolbar: its search field sits in the column.
     private var fieldInColumn: Bool { asColumn && UIDevice.current.userInterfaceIdiom == .mac }
 
@@ -169,7 +171,9 @@ struct FileTreeScreen: View {
     }
 
     @ViewBuilder private func searchable(_ list: some View) -> some View {
-        if fieldInColumn {
+        if chrome != nil {
+            list
+        } else if fieldInColumn {
             list.safeAreaInset(edge: .top, spacing: 0) {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)

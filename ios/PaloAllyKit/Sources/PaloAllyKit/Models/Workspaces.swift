@@ -37,7 +37,12 @@ public enum StatusDotKind: Sendable, Hashable {
 }
 
 extension Pal {
-    public var dot: StatusDotKind { StatusDotKind(attention) }
+    /// Its state for the dot and the indicator: idle with background tasks or
+    /// subagents still running counts as working.
+    public var dot: StatusDotKind {
+        let d = StatusDotKind(attention)
+        return d == .idle && tasksRunning > 0 ? .working : d
+    }
 }
 
 // MARK: - workspaces

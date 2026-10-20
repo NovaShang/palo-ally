@@ -133,7 +133,7 @@ struct WorkspaceTilesPage: View {
     @ViewBuilder private var closeConfirm: some View {
         if let id = closing, let pal = store.pal(id: id) {
             ConfirmPanel(title: Copy.spaced(String(localized: "结束「\(pal.displayName)」？")),
-                         text: String(localized: "它会停下，进到「以前的」里，之后还能接着聊。"),
+                         text: String(localized: "它会停下，之后还能从历史记录里接着聊。"),
                          action: String(localized: "结束会话"), working: ending,
                          cancel: { closing = nil }, confirm: { end(id) })
                 .padding(16)

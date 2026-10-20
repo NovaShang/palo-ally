@@ -1505,6 +1505,14 @@ describe("session details (workbench)", () => {
       ctx.emit({ type: "task_started", taskId: "t_2", toolUseId: "toolu_agent", description: "查调用方", taskType: "local_agent" });
     }
     if (text === "end bg") ctx.emit({ type: "task_notification", taskId: "t_1", status: "completed", summary: "好了" });
+    if (text === "fg") {
+      // Claude Code reports every Bash call as a task; this one runs in the foreground
+      ctx.emit({ type: "task_started", taskId: "t_fg", toolUseId: "toolu_fg", description: "ls", background: false, taskType: "local_bash" });
+      ctx.emit({ type: "tool_result", toolUseId: "toolu_fg", content: "ok", isError: false, parentToolUseId: null });
+      // and this one is sent to the background halfway
+      ctx.emit({ type: "task_started", taskId: "t_later", toolUseId: "toolu_later", description: "跑测试", background: false, taskType: "local_bash" });
+      ctx.emit({ type: "task_backgrounded", taskId: "t_later" });
+    }
     return echo(text, ctx);
   };
   function det() {
@@ -1723,6 +1731,18 @@ describe("session details (workbench)", () => {
       ["t_1", "stopped"],
     ]);
     expect(recOf(t, id).pastTasks!.length).toBe(2); // the same ids, not doubled
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("a foreground command is a step of the turn, not a task, until it is sent to the background", async () => {
+    const t = det();
+    const id = await mk(t);
+    await t.call("pals.send", { id, text: "fg" });
+    await waitFor(() => t.hub.pals.list().find((p) => p.id === id)?.status === "idle", 3_000);
+    const d = await t.call("pals.detail", { id });
+    expect(d.tasks.map((x: any) => x.id)).toEqual(["t_later"]);
+    expect(t.hub.pals.list().find((p) => p.id === id)!.tasksRunning).toBe(1);
+    expect(d.pastTasks).toEqual([]); // the foreground one left no history
     await t.hub.pals.stopAndWait();
   });
 

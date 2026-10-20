@@ -80,6 +80,9 @@ public final class AppStore {
     }
     /// How long a drop stays silent.
     public var troubleGrace: Double = 8
+
+    /// 从历史记录继续… is open: the ＋ menu sets it, `.historyPicker()` shows the sheet.
+    public var historyPickerPresented = false
     /// When the current stretch without a link began (or the app became active).
     private var troubleSince: Date?
     private var troubleTimer: Task<Void, Never>?

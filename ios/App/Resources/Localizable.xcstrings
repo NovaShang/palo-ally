@@ -199,6 +199,17 @@
         }
       }
     },
+    "%lld 个" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld"
+          }
+        }
+      }
+    },
     "%lld 件等你" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -229,6 +240,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Day %lld"
+          }
+        }
+      }
+    },
+    "%lld 条" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld"
           }
         }
       }
@@ -662,6 +684,17 @@
         }
       }
     },
+    "今天 %lld 件" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld today"
+          }
+        }
+      }
+    },
     "今天的语音额度用完了，明天再试" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -680,6 +713,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "From"
+          }
+        }
+      }
+    },
+    "从历史记录继续" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue from History"
           }
         }
       }
@@ -1131,6 +1175,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Just started, no progress yet"
+          }
+        }
+      }
+    },
+    "刚结束的" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Just ended"
           }
         }
       }
@@ -1795,6 +1850,17 @@
         }
       }
     },
+    "在等你吩咐" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ready when you are"
+          }
+        }
+      }
+    },
     "在线" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2011,6 +2077,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "It will disconnect and need to pair again to reconnect."
+          }
+        }
+      }
+    },
+    "它在替你做的事" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What it does for you"
           }
         }
       }
@@ -3060,6 +3137,17 @@
         }
       }
     },
+    "收起来的" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Put away"
+          }
+        }
+      }
+    },
     "改一下" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3067,6 +3155,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Edit"
+          }
+        }
+      }
+    },
+    "改名字" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename"
           }
         }
       }
@@ -3122,6 +3221,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Type"
+          }
+        }
+      }
+    },
+    "无" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None"
           }
         }
       }
@@ -3221,6 +3331,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Updated %@"
+          }
+        }
+      }
+    },
+    "更早的" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Earlier"
           }
         }
       }
@@ -3716,6 +3837,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Signing in…"
+          }
+        }
+      }
+    },
+    "正在跑" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Running"
+          }
+        }
+      }
+    },
+    "正在跑 · %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Running · %lld"
           }
         }
       }
@@ -5035,6 +5178,17 @@
         }
       }
     },
+    "终端里正在跑的" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Running in the terminal"
+          }
+        }
+      }
+    },
     "结束语音输入" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5671,6 +5825,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nothing done yet"
+          }
+        }
+      }
+    },
+    "还没有可以继续的会话。电脑上开着的 Claude Code 也会出现在这里。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing to continue yet. Claude Code sessions open on your computer show up here too."
           }
         }
       }
@@ -7248,28 +7413,6 @@
         }
       }
     },
-    "%lld 个" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld"
-          }
-        }
-      }
-    },
-    "%lld 条" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld"
-          }
-        }
-      }
-    },
     "你的助理" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7303,17 +7446,6 @@
         }
       }
     },
-    "在等你吩咐" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ready when you are"
-          }
-        }
-      }
-    },
     "它开的子 agent 和后台任务做完后会记在这里。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7321,28 +7453,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Its sub-agents and background tasks show up here once they end."
-          }
-        }
-      }
-    },
-    "改名字" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rename"
-          }
-        }
-      }
-    },
-    "无" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "None"
           }
         }
       }
@@ -7409,6 +7519,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld tasks running"
+          }
+        }
+      }
+    },
+    "它会停下，之后还能从历史记录里接着聊。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It stops; you can pick it up again from history later."
+          }
+        }
+      }
+    },
+    "后台 %lld 个任务在跑" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld background tasks running"
           }
         }
       }

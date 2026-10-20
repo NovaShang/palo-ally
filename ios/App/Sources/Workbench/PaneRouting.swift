@@ -4,8 +4,9 @@ import SwiftUI
 // Where the right pane (workbench-prd §7) is opened from: its button, a path
 // or a link tapped in a reply, a 成果 item, a session's 文件. Each goes to
 // the pane's tabs of the page that is open (`PaneTabsHub`, kept on the
-// computer), and shows the pane: beside the page on wide windows, a full
-// page on phones.
+// computer), and shows the pane: beside the page on wide windows. On phones
+// there are no tabs: the pane is one page (PhonePane), and what is opened
+// is a full-screen modal (PaneModal).
 
 extension AppModel {
     /// Whose tabs the open page uses: `palo`, `pal:<id>`, `ws:<id>`; nil on
@@ -59,11 +60,22 @@ extension AppModel {
     }
 
     /// Something to show in the pane of the open page (Palo's when the page has none).
+    /// Phones: no tabs, so an artifact asked for through `libraryPath` is a modal
+    /// and anything else is 成果 in the pane page.
     func openInPane(_ edit: (PaneTabsHub, String) -> Void) {
         if paneKey == nil { openPalo() }
         guard let key = paneKey, let hub = paneHub else { return }
-        edit(hub, key)
-        if !libraryBeside { paneCover = true }
+        if libraryBeside {
+            edit(hub, key)
+            return
+        }
+        if libraryPath.count == 1, let id = libraryPath.first, let store {
+            libraryPath = []
+            PaneModal.artifact(id, model: self, store: store)
+            return
+        }
+        PhonePaneState.shared.segment = .library
+        paneCover = true
     }
 
     /// The key a session's files and pages go to: its workspace's when that
@@ -80,13 +92,23 @@ extension AppModel {
     /// A session's 文件.
     func openPalFiles(_ palID: String) {
         let key = paneKey(forSession: palID)
-        paneHub?.openFiles(key)
-        if !libraryBeside { paneCover = true }
+        if libraryBeside {
+            paneHub?.openFiles(key)
+        } else {
+            PhonePaneState.shared.segment = .files
+            paneCover = true
+        }
     }
 
-    /// A file tapped in a reply: a preview tab. false: not one the pane shows.
+    /// A file tapped in a reply: a preview tab (phones: a full-screen modal).
+    /// false: not one the pane shows.
     func openFileInPane(_ target: FileTarget) -> Bool {
         guard let hub = paneHub else { return false }
+        if !libraryBeside {
+            guard let store, target.scope.kind == .pal || target.scope.kind == .palo else { return false }
+            PaneModal.file(target, model: self, store: store)
+            return true
+        }
         let key: String
         switch target.scope.kind {
         case .pal:
@@ -99,12 +121,15 @@ extension AppModel {
             return false
         }
         hub.openPreview(key, path: target.path)
-        if !libraryBeside { paneCover = true }
         return true
     }
 
-    /// A web link tapped in a reply: a page tab.
+    /// A web link tapped in a reply: a page tab (phones: the system's browser view).
     func openWebInPane(_ url: URL) {
+        if !libraryBeside {
+            if !PaneModal.web(url) { UIApplication.shared.open(url) }
+            return
+        }
         openInPane { $0.openWeb($1, url: url.absoluteString) }
     }
 

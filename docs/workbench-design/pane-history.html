@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>右边界面与历史记录设计稿</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#e9e9ee;color:#1c1c1e;font:15px/1.5 -apple-system,"PingFang SC",system-ui,sans-serif}
+main{max-width:1150px;margin:0 auto;padding:20px 14px 70px}
+h1{font-size:24px;margin:6px 0}h2{font-size:18px;margin:32px 0 6px}
+.sub{color:#6e6e73;font-size:14px;max-width:860px}
+.shots{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start;margin-top:12px}
+.cap{font-size:13px;color:#6e6e73;margin-top:6px;max-width:330px}
+.phone{width:330px;height:700px;border-radius:46px;position:relative;overflow:hidden;box-shadow:0 0 0 9px #111,0 10px 30px rgba(0,0,0,.25);background:#f2f2f7}
+.phone.d{background:#000;color:#f5f5f7}
+.status{height:44px;display:flex;justify-content:space-between;align-items:flex-end;padding:0 26px 4px;font-size:14px;font-weight:600}
+.nav{display:flex;align-items:center;gap:8px;padding:6px 12px 8px}
+.gbtn{width:38px;height:38px;border-radius:19px;display:grid;place-items:center;font-size:15px;background:rgba(255,255,255,.8);box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.d .gbtn{background:rgba(255,255,255,.12)}
+.seg{display:flex;border-radius:10px;padding:2px;gap:2px;background:rgba(118,118,128,.12);flex:1}
+.d .seg{background:rgba(118,118,128,.24)}
+.seg span{flex:1;text-align:center;font-size:13px;padding:5px 0;border-radius:8px}
+.seg .on{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12);font-weight:600}
+.d .seg .on{background:#636366}
+.search{margin:4px 14px 8px;height:36px;border-radius:12px;background:rgba(118,118,128,.12);display:flex;align-items:center;padding:0 10px;color:#8e8e93;font-size:14px}
+.ghd{font-size:12.5px;color:#6e6e73;margin:10px 26px 5px}
+.grp{background:#fff;border-radius:20px;margin:0 14px 10px;overflow:hidden}
+.d .grp{background:#1c1c1e}
+.cell{display:flex;align-items:center;gap:10px;min-height:52px;padding:6px 14px}
+.cell+.cell{border-top:.5px solid rgba(127,127,127,.22)}
+.ic{width:30px;height:30px;border-radius:8px;background:rgba(118,118,128,.14);display:grid;place-items:center;font-size:14px;flex:none}
+.t{font-size:15px}.s{font-size:12px;color:#8e8e93}
+.chev{margin-left:auto;color:#c7c7cc}
+.tag{font-size:11px;padding:1px 7px;border-radius:7px;background:rgba(118,118,128,.14);color:#6e6e73;margin-left:6px;white-space:nowrap}
+.mac{width:1080px;height:520px;border-radius:14px;overflow:hidden;display:flex;box-shadow:0 12px 40px rgba(0,0,0,.25);background:#f6f6f8}
+.side{width:230px;background:#ececf0;padding:40px 10px;font-size:13px}
+.side div{padding:5px 8px;border-radius:7px}.side .sel{background:#dcdce0}
+.chatcol{flex:1;padding:50px 30px;font-size:14px;color:#8e8e93}
+.pane{width:380px;background:#f2f2f7;border-left:.5px solid #d1d1d6;display:flex;flex-direction:column}
+.tabs{display:flex;gap:6px;padding:10px 10px 8px;align-items:center}
+.tabc{display:flex;align-items:center;gap:5px;height:28px;padding:0 10px;border-radius:14px;font-size:12.5px;background:rgba(255,255,255,.7);box-shadow:inset 0 0 0 .5px rgba(0,0,0,.08);white-space:nowrap}
+.tabc.on{background:#fff;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.tabc .x{color:#aeaeb2;font-size:11px}
+.pin{color:#8e8e93;font-size:11px}
+.modal{position:absolute;inset:44px 0 0;background:#fff;border-radius:14px 14px 0 0;box-shadow:0 -6px 20px rgba(0,0,0,.12)}
+.safari .bar{position:absolute;left:10px;right:10px;bottom:22px;height:46px;border-radius:23px;background:rgba(242,242,247,.95);box-shadow:0 2px 10px rgba(0,0,0,.15);display:flex;align-items:center;justify-content:center;font-size:14px;gap:6px}
+.notes{background:#fff;border-radius:16px;padding:12px 16px;margin-top:14px;max-width:900px}
+.notes li{margin:5px 0}
+.menu{position:absolute;left:14px;bottom:70px;width:230px;border-radius:16px;background:rgba(250,250,252,.97);box-shadow:0 10px 30px rgba(0,0,0,.25);overflow:hidden;font-size:15px}
+.menu div{padding:11px 14px;display:flex;justify-content:space-between}
+.menu div+div{border-top:.5px solid rgba(127,127,127,.25)}
+.dim{position:absolute;inset:0;background:rgba(0,0,0,.18)}
+</style></head><body><main>
+<h1>右边界面与历史记录设计稿</h1>
+<p class="sub">这一批四件事：右边界面固定两个标签「成果」「文件」；手机上不再有多标签的浏览器，打开的东西都是全屏弹出；会话里的成果默认只看这个会话的；＋ 菜单里加「从历史记录继续」。</p>
+
+<h2>1. Mac 和 iPad：右边界面</h2>
+<div class="shots"><div class="mac">
+ <div class="side"><div style="font-weight:600">Palo</div><div style="color:#8e8e93;margin-top:10px">会话</div><div class="sel">● 修语音误触</div><div>● 笔记整理</div></div>
+ <div class="chatcol">（会话的对话）</div>
+ <div class="pane">
+  <div class="tabs"><span class="tabc on">成果</span><span class="tabc">文件</span><span class="tabc">README.md <span class="x">✕</span></span><span class="tabc">example.com <span class="x">✕</span></span><span style="margin-left:auto;color:#8e8e93">＋ &nbsp;✕</span></div>
+  <div class="nav" style="padding:0 12px 6px"><div class="seg"><span class="on">这个会话</span><span>全部</span></div></div>
+  <div class="search" style="margin:4px 12px 8px">🔍 搜索成果</div>
+  <div class="grp" style="margin:0 12px 10px"><div class="cell"><div class="ic">📄</div><div><div class="t">语音误触修复说明</div><div class="s">今天 15:08</div></div><span class="chev">›</span></div><div class="cell"><div class="ic">🖼</div><div><div class="t">按住手势时序图</div><div class="s">今天 11:20</div></div><span class="chev">›</span></div></div>
+ </div>
+</div></div>
+<p class="cap" style="max-width:900px">标签条最前面固定两个：「成果」「文件」，关不掉；后面是打开的文件、成果和网页，可以关。会话里的「成果」顶上是「这个会话 / 全部」，默认「这个会话」；Palo 的「成果」是全部，顶上还是现在的「按时间 / 按文件夹」。「文件」：会话是它的文件夹，Palo 是「电脑上的文件」。</p>
+
+<h2>2. 手机：右上角打开的一整页</h2>
+<p class="sub"><b>已改：</b>这一节换成 pane-phone-glass.html 那版（顶上一层玻璃，「成果 / 文件」挪到底部的玻璃标签栏）。下面是旧的两层版本，只作对照。</p>
+<div class="shots" id="p2"></div>
+
+<h2>3. 手机：打开的东西都是全屏弹出</h2>
+<div class="shots" id="p3"></div>
+
+<h2>4. ＋ 菜单和「从历史记录继续」</h2>
+<div class="shots" id="p4"></div>
+
+<div class="notes"><b>要点</b><ul>
+<li>Mac 和 iPad：「成果」「文件」两个固定标签，其他标签照旧。每个会话、工作区、Palo 各记各的标签。</li>
+<li>手机：右上角打开一整页，顶上分段切换「成果 / 文件」，右上角 ✕ 关掉。手机上不记标签。</li>
+<li>手机上点开文件、成果是全屏的预览（右上角 ✕ 和分享）；点网页链接（包括对话里的链接）用系统的 Safari 浏览页，看完点「完成」回来。</li>
+<li>会话里的成果默认只看这个会话发的，可以切到「全部」；这个会话还没发过成果时，列表下面直接给一行「看全部成果」。</li>
+<li>＋ 菜单：新建会话、从历史记录继续…、新建工作区。原来的「从终端搬进来」和侧栏里的「以前的」都并进「从历史记录继续」。</li>
+<li>「从历史记录继续」是一张列表：刚结束的、收起来的、终端里开着的，按时间排在一起，每行标出是哪一种；可以搜索；点一下就接着聊（终端里开着的会先问一句「搬到 PaloAlly 里来？」）。</li>
+</ul></div>
+</main>
+<script>
+const ST=(d)=>`<div class="status"><span>9:41</span><span>● ● ▮</span></div>`;
+function phone(inner,dark=false){return `<div class="phone${dark?' d':''}">${ST()}${inner}</div>`}
+const libRows=(rows)=>`<div class="grp">${rows.map(([i,t,s])=>`<div class="cell"><div class="ic">${i}</div><div><div class="t">${t}</div><div class="s">${s}</div></div><span class="chev">›</span></div>`).join('')}</div>`;
+const navSeg=(on)=>`<div class="nav"><div class="seg" style="max-width:200px;margin:0 auto"><span class="${on==='成果'?'on':''}">成果</span><span class="${on==='文件'?'on':''}">文件</span></div><div class="gbtn">✕</div></div>`;
+document.getElementById('p2').innerHTML=
+ phone(navSeg('成果')+`<div class="nav" style="padding:0 14px 4px"><div class="seg"><span class="on">这个会话</span><span>全部</span></div></div><div class="search">🔍 搜索成果</div>`+libRows([['📄','语音误触修复说明','今天 15:08'],['🖼','按住手势时序图','今天 11:20']])+`<div class="grp"><div class="cell" style="justify-content:center;color:#6e6e73">看全部成果 ›</div></div>`)
+ +phone(navSeg('成果')+`<div class="nav" style="padding:0 14px 4px"><div class="seg"><span class="on">按时间</span><span>按文件夹</span></div></div><div class="search">🔍 搜索成果和对话</div><div class="ghd">今天</div>`+libRows([['🌐','上海出行比价','15:08 · 旅行'],['📄','上海行程','10:08 · 旅行']])+`<div class="ghd">昨天</div>`+libRows([['📊','九月开销','16:08 · 理财']]))
+ +phone(navSeg('文件')+`<div class="search">🔍 搜索文件</div><div class="ghd">~/code/palo-ally</div>`+libRows([['📁','host','12 项'],['📁','ios','9 项'],['📄','README.md','4 KB'],['📄','package.json','1 KB']]))
+ +`<div class="cap">左：会话的「成果」，默认「这个会话」，下面一行「看全部成果」。中：Palo 的「成果」，和现在一样是全部，按时间或按文件夹。右：会话的「文件」，是它的文件夹；Palo 的是「电脑上的文件」。</div>`;
+document.getElementById('p3').innerHTML=
+ phone(`<div class="chat" style="padding:10px 18px;color:#8e8e93">（「文件」页）</div><div class="modal"><div class="nav"><div class="gbtn">✕</div><div style="flex:1;text-align:center;font-weight:600">README.md</div><div class="gbtn">⇪</div></div><div style="padding:6px 20px;font-size:14px;line-height:1.7"><b style="font-size:20px">PaloAlly</b><br>一个助理，加上一组 Claude Code 会话……<br><br>## 开始<br>…</div></div>`)
+ +phone(`<div class="safari"><div style="padding:10px 18px;font-size:14px;line-height:1.7"><b style="font-size:20px">example.com</b><br>（网页内容）</div><div class="bar">完成 &nbsp;&nbsp; 🔒 example.com &nbsp;&nbsp; ⇪</div></div>`)
+ +`<div class="cap">左：点开的文件或成果，全屏弹出，右上角分享，左上角 ✕ 回到原来那一页。右：网页用系统的 Safari 浏览页，对话里的链接也一样；看完点「完成」回到对话。</div>`;
+document.getElementById('p4').innerHTML=
+ phone(`<div style="padding:4px 20px 6px;font-size:30px;font-weight:800">PaloAlly</div>`+libRows([['🔮','Palo','1 个会话在等你']])+`<div class="ghd">会话</div>`+libRows([['◉','笔记整理','这周的笔记都归好类了']])+`<div class="dim"></div><div class="menu"><div>新建会话 <span>✎</span></div><div>从历史记录继续… <span>🕘</span></div><div>新建工作区 <span>▦</span></div></div><div class="gbtn" style="position:absolute;left:14px;bottom:20px">＋</div>`)
+ +phone(`<div class="nav"><div class="gbtn">✕</div><div style="flex:1;text-align:center;font-weight:600">从历史记录继续</div><div style="width:38px"></div></div><div class="search">🔍 搜索名字或文件夹</div>`+`<div class="grp">${[['修登录跳转','~/code/app · 10 分钟前','终端里开着'],['周报','~/docs · 昨天','收起来的'],['博客改版','~/code/blog · 2 天前','已结束'],['问卷数据清洗','~/code/survey · 3 天前','已结束']].map(([n,s,t])=>`<div class="cell"><div><div class="t">${n}<span class="tag">${t}</span></div><div class="s">${s}</div></div><span class="chev">›</span></div>`).join('')}</div>`)
+ +`<div class="cap">左：列表页左下角的 ＋（Mac 侧栏左下角同一个菜单）。右：「从历史记录继续」：一张列表按时间排，每行标出是哪一种；点一下接着聊，终端里开着的会先问要不要搬过来。</div>`;
+</script></body></html>

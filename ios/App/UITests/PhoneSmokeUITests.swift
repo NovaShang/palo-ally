@@ -46,6 +46,27 @@ final class PhoneSmokeUITests: XCTestCase {
         app.buttons["page-files"].tap()
         sleep(2)
         shot(app, "\(look)-4-palo-pane")
+        // 文件 in its glass tab bar, then the search that takes the bar's place.
+        let filesTab = app.descendants(matching: .any)["pane-tab-files"].firstMatch
+        if !filesTab.exists {
+            let tree = XCTAttachment(string: app.debugDescription)
+            tree.name = "\(look)-pane-tree"
+            tree.lifetime = .keepAlways
+            add(tree)
+        }
+        XCTAssertTrue(filesTab.exists, "the pane has no 文件 tab")
+        filesTab.tap()
+        sleep(2)
+        shot(app, "\(look)-4b-palo-files")
+        app.descendants(matching: .any)["pane-tab-library"].firstMatch.tap()
+        let search = app.descendants(matching: .any)["pane-search"].firstMatch
+        XCTAssertTrue(search.exists, "the pane has no search button")
+        search.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["pane-search-field"].firstMatch.waitForExistence(timeout: 3), "no search field")
+        app.typeText("上海")
+        sleep(1)
+        shot(app, "\(look)-4c-palo-search")
+        app.buttons["取消搜索"].firstMatch.tap()
         let close = app.buttons["关闭侧栏"].firstMatch
         XCTAssertTrue(close.exists, "the pane has no close button")
         close.tap()
@@ -56,12 +77,29 @@ final class PhoneSmokeUITests: XCTestCase {
         let site = app.descendants(matching: .any)["row-pal-pal-notes"].firstMatch
         XCTAssertTrue(site.waitForExistence(timeout: 5), "no 笔记整理 in the list")
         shot(app, "\(look)-5-list")
+        // ＋ → 从历史记录继续…
+        app.buttons["sidebar-add"].firstMatch.tap()
+        let history = app.buttons["从历史记录继续…"].firstMatch
+        XCTAssertTrue(history.waitForExistence(timeout: 3), "no 从历史记录继续… in the ＋ menu")
+        shot(app, "\(look)-5b-add-menu")
+        history.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["history-picker"].firstMatch.waitForExistence(timeout: 5), "the history list didn't open")
+        sleep(2)
+        shot(app, "\(look)-5c-history")
+        app.buttons["完成"].firstMatch.tap()
+        sleep(1)
         site.tap()
         let session = app.buttons["title-capsule"]
         XCTAssertTrue(session.waitForExistence(timeout: 5), "the session's page has no indicator")
         XCTAssertTrue(app.buttons["page-files"].exists, "the session's page has no right-pane button")
         sleep(1)
         shot(app, "\(look)-6-session")
+        // Its pane: 成果, this session's.
+        app.buttons["page-files"].tap()
+        sleep(2)
+        shot(app, "\(look)-6b-session-pane")
+        app.buttons["关闭侧栏"].firstMatch.tap()
+        XCTAssertTrue(session.waitForExistence(timeout: 5), "closing the session's pane didn't return to it")
         session.tap()
         XCTAssertTrue(app.descendants(matching: .any)["agent-detail"].waitForExistence(timeout: 5), "the session's details didn't open")
         sleep(1)

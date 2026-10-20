@@ -4,8 +4,8 @@ import SwiftUI
 /// The list (workbench-prd §4): Palo on top, big, with what it did last or
 /// how many sessions wait on the owner; 工作区, each opening to its sessions
 /// ("N 等你" on the row), with a ＋; 会话, the ordinary ones by latest
-/// activity, ending in 以前的 N; Allies, with 添加; and, quietly, 电脑与设备.
-/// At the foot: ＋ (新建会话, 新建工作区, 从终端搬进来…) and 设置. Every row's
+/// activity; Allies, with 添加; and, quietly, 电脑与设备.
+/// At the foot: ＋ (新建会话, 从历史记录继续…, 新建工作区) and 设置. Every row's
 /// dot is the one StatusDot. With several computers paired, the assistant's
 /// name on the first row switches between them.
 /// Phones: one step back from a conversation, like Messages; iPads and the
@@ -23,7 +23,6 @@ struct ConversationList: View {
     @State private var deleting: Workspace?
     /// The workspaces opened in the list.
     @State private var expanded: Set<String> = []
-    @State private var showAdopt = false
 
     var body: some View {
         @Bindable var model = model
@@ -74,12 +73,6 @@ struct ConversationList: View {
                             .tag(AppModel.Conversation.pal(pal.id))
                             .accessibilityIdentifier("row-pal-\(pal.id)")
                             .contextMenu { sessionMenu(pal) }
-                    }
-                    let earlier = tree.earlierCount(loaded: store.earlierItems)
-                    if earlier > 0 || store.earlierItems != nil && store.earlierSupported != false {
-                        EarlierRow(count: earlier)
-                            .tag(AppModel.Conversation.earlier)
-                            .accessibilityIdentifier("row-earlier")
                     }
                 } header: {
                     Text("会话").textCase(nil)
@@ -135,7 +128,7 @@ struct ConversationList: View {
             VStack(spacing: 0) {
                 MacUpdateHint()
                 SidebarFooter(newSession: { model.newSession = true }, newWorkspace: { model.newWorkspace = [] },
-                              adopt: { showAdopt = true })
+                              history: { store.historyPickerPresented = true })
             }
         }
         .palRename($renaming)
@@ -152,7 +145,7 @@ struct ConversationList: View {
                 if let p = ending { Task { await end(p) } }
             }
         } message: {
-            Text("它会停下，进到「以前的」里，之后还能接着聊。")
+            Text("它会停下，之后还能从历史记录里接着聊。")
         }
         .confirmationDialog(Copy.spaced(String(localized: "删除工作区「\(deleting?.title(pals: store.pals) ?? "")」？")),
                             isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
@@ -162,12 +155,6 @@ struct ConversationList: View {
             }
         } message: {
             Text("里面的会话不会结束，变回普通会话。")
-        }
-        .sheet(isPresented: $showAdopt) { AdoptFlowSheet().environment(model).environment(store) }
-        // 以前的 N: read on opening, and again when the sessions put away change.
-        .task(id: "\(store.connection.isOnline)-\(tree.foldedCount)") {
-            guard store.connection.isOnline, store.palsSupported == true else { return }
-            try? await store.refreshEarlier()
         }
         // The workspace holding the session picked is opened.
         .onChange(of: model.selection, initial: true) { _, c in
@@ -425,8 +412,8 @@ private struct PalListRow: View {
     var body: some View {
         HStack(spacing: 10) {
             // The state glyph of the session's indicator, alone (no arc, no label).
-            SessionIndicator(pal, size: 22, glass: false)
-                .frame(width: 24)
+            SessionIndicator(pal, size: 28, glass: false, glyphOnly: true)
+                .frame(width: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(pal.displayName)
                     .font(.body)
@@ -450,31 +437,6 @@ private struct PalListRow: View {
     }
 }
 
-/// 以前的 N: the sessions that ended or were put away; quiet, neutral.
-private struct EarlierRow: View {
-    let count: Int
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 14))
-                .foregroundStyle(.secondary)
-                .frame(width: 14)
-                .accessibilityHidden(true)
-            Text("以前的")
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 4)
-            if count > 0 {
-                Text("\(count)")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .sidebarRowText()
-        .accessibilityElement(children: .combine)
-    }
-}
-
 /// The sidebar's foot: ＋ with its menu on the left, 设置 on the right.
 /// Neutral glass; the theme color isn't used.
 private struct SidebarFooter: View {
@@ -482,17 +444,17 @@ private struct SidebarFooter: View {
     @Environment(AppStore.self) private var store
     let newSession: () -> Void
     let newWorkspace: () -> Void
-    let adopt: () -> Void
+    let history: () -> Void
 
     var body: some View {
         HStack {
             Menu {
                 Button("新建会话", systemImage: "square.and.pencil", action: newSession)
-                Button("新建工作区", systemImage: "square.grid.2x2", action: newWorkspace)
                 if store.palsSupported == true {
-                    Divider()
-                    Button("从终端搬进来…", systemImage: "terminal", action: adopt)
+                    Button("从历史记录继续…", systemImage: "clock.arrow.circlepath", action: history)
+                        .accessibilityIdentifier("history-continue")
                 }
+                Button("新建工作区", systemImage: "square.grid.2x2", action: newWorkspace)
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .semibold))
