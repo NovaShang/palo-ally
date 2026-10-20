@@ -104,6 +104,67 @@ const md = window.markdownit({
     return "";
   },
 });
+// A bare address ends where address characters end. linkify runs one on
+// through letters and punctuation of any script, so in Chinese, where nothing
+// separates it from the sentence, `装：https://a.b/ota/，然后打开` linked
+// `https://a.b/ota/，然后打开`. An address is ASCII only (RFC 3986), less
+// sentence punctuation at its end; what follows becomes text again (and may
+// hold the next address). Same rules as BareLinks in PaloAllyKit.
+const URL_CHAR = /[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]/;
+function asciiLinkEnd(s) {
+  let end = 0;
+  while (end < s.length && URL_CHAR.test(s[end])) { end++; }
+  const count = (str, c) => str.split(c).length - 1;
+  while (end > 0) {
+    const last = s[end - 1];
+    if ("?!.,:*_~'\"".includes(last)) {
+      end--;
+    } else if (last === ")" || last === "]") {
+      const seg = s.slice(0, end);
+      if (count(seg, last) > count(seg, last === ")" ? "(" : "[")) { end--; } else { break; }
+    } else if (last === ";") {
+      const m = /&[A-Za-z0-9]+;$/.exec(s.slice(0, end));
+      end -= m ? m[0].length : 1;
+    } else {
+      break;
+    }
+  }
+  return end;
+}
+// linkify-it's matches, each cut there. markdown-it asks `match` (bare
+// addresses in text) and `matchAtStart` (an address the inline parser reached).
+function cutMatch(m) {
+  if (!m || !/[^\x00-\x7f]/.test(m.raw)) { return m; }
+  const end = asciiLinkEnd(m.raw);
+  const shown = m.raw.slice(0, end);
+  if (!/[A-Za-z0-9]/.test(shown.replace(/^[a-z][a-z0-9+.-]*:\/*/i, ""))) { return null; }
+  m.url = m.url.slice(0, m.url.length - m.raw.length) + shown;
+  m.raw = shown; m.text = shown; m.lastIndex = m.index + end;
+  return m;
+}
+const linkifyMatch = md.linkify.match.bind(md.linkify);
+const linkifyMatchAtStart = md.linkify.matchAtStart.bind(md.linkify);
+md.linkify.match = function (text) {
+  const out = [];
+  let from = 0;
+  while (from < text.length) {
+    const found = linkifyMatch(text.slice(from));
+    if (!found) { break; }
+    let next = text.length;
+    for (const m of found) {
+      const cut = m.raw.length;
+      m.index += from; m.lastIndex += from;
+      const kept = cutMatch(m);
+      if (kept) { out.push(kept); }
+      // Cut short (or dropped): what followed is looked at again.
+      if (!kept || kept.raw.length < cut) { next = kept ? kept.lastIndex : m.index + 1; break; }
+    }
+    from = next;
+  }
+  return out;
+};
+md.linkify.matchAtStart = function (text) { return cutMatch(linkifyMatchAtStart(text)); };
+
 // Images: the page never touches the network, so http(s) sources show a quiet
 // stub. File-relative sources (the normal markdown case — resolved against the
 // FILE's own directory, not any root) become placeholders the native side
