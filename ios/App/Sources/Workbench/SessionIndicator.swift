@@ -33,6 +33,9 @@ struct SessionIndicator: View {
     var voiceOwner: String?? = nil
     /// In place of the state glyph (the session-drop prototype).
     var center: AnyView? = nil
+    /// The session's drop in the middle, a little bigger than the glyph's
+    /// disc, with the glyph's white mark on it (the drop is the disc).
+    var dropMiddle = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
@@ -90,7 +93,12 @@ struct SessionIndicator: View {
             let glyph = glyph(radius: showsRing ? 21 * s : 40 * s)
                 .scaleEffect(state == .working && breathing ? 0.86 : 1)
                 .opacity(state == .working && breathing ? 0.8 : 1)
-            if let center {
+            if dropMiddle {
+                ZStack {
+                    SessionDrop(state: state, voiceLevel: nil).frame(width: 56 * s, height: 56 * s)
+                    mark(radius: 21 * s)
+                }
+            } else if let center {
                 center.frame(width: 44 * s, height: 44 * s)
             } else if let owner = voiceOwner {
                 IndicatorVoiceCenter(owner: owner, side: 38 * s) { glyph }
@@ -175,6 +183,44 @@ struct SessionIndicator: View {
                 .frame(width: r * 2, height: r * 2)
             }
         }
+        .frame(width: r * 2, height: r * 2)
+    }
+
+    /// The glyph's white mark alone, for a drop to carry: play, the count,
+    /// ?, the tick, or (idle) a small dot.
+    private func mark(radius r: CGFloat) -> some View {
+        ZStack {
+            switch state {
+            case .idle:
+                Circle().fill(.white).frame(width: r * 0.7, height: r * 0.7)
+            case .working where running > 0:
+                Text(running > 99 ? "99+" : "\(running)")
+                    .font(.system(size: r * (running > 9 ? 0.95 : 1.15), weight: .heavy))
+                    .fontDesign(.rounded)
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.5)
+                    .frame(width: r * 1.7)
+            case .working:
+                Path { p in
+                    p.move(to: CGPoint(x: r * 0.72, y: r * 0.58))
+                    p.addLine(to: CGPoint(x: r * 1.48, y: r))
+                    p.addLine(to: CGPoint(x: r * 0.72, y: r * 1.42))
+                    p.closeSubpath()
+                }
+                .fill(.white)
+            case .waiting:
+                Text("?").font(.system(size: r * 1.15, weight: .heavy)).fontDesign(.rounded).offset(y: r * 0.02)
+            case .done:
+                Path { p in
+                    p.move(to: CGPoint(x: r * 0.58, y: r * 1.02))
+                    p.addLine(to: CGPoint(x: r * 0.9, y: r * 1.34))
+                    p.addLine(to: CGPoint(x: r * 1.46, y: r * 0.68))
+                }
+                .stroke(.white, style: StrokeStyle(lineWidth: r * 0.2, lineCap: .round, lineJoin: .round))
+            }
+        }
+        .foregroundStyle(.white)
+        .shadow(color: .black.opacity(0.25), radius: r * 0.12)
         .frame(width: r * 2, height: r * 2)
     }
 
