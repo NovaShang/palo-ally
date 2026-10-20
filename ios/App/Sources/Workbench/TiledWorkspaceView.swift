@@ -6,6 +6,10 @@ struct TileInfo: Equatable {
     var name: String
     var status: String = ""
     var dot: StatusDotKind = .idle
+    var contextPct: Int? = nil
+    var effort: String? = nil
+    var model: String? = nil
+    var running = 0
 }
 
 /// The tiling's measures (outside the generic view, which can't hold statics).
@@ -162,11 +166,8 @@ struct TiledWorkspaceView<Content: View>: View {
     private func chrome(_ id: String, in r: CGRect, interactive: Bool, frames: [String: CGRect], tree: LayoutTree.Node) -> some View {
         let i = info(id)
         let dragging = tileDrag?.id == id
-        let buttonsWidth: CGFloat = 76
-        let capsuleMax = max(r.width - buttonsWidth - 28, 60)
         ZStack(alignment: .topLeading) {
             header(i, id: id)
-                .frame(maxWidth: min(capsuleMax, 320), alignment: .leading)
                 .offset(x: 8 + (dragging ? tileDrag?.translation.width ?? 0 : 0),
                         y: 6 + (dragging ? tileDrag?.translation.height ?? 0 : 0))
                 .scaleEffect(dragging ? 1.04 : 1, anchor: .topLeading)
@@ -197,28 +198,14 @@ struct TiledWorkspaceView<Content: View>: View {
         // hit-testable, so the page below keeps the rest.
     }
 
+    /// The tile's title: the session's round indicator on its glass circle,
+    /// as a session's page has it (no name capsule: the sidebar names it);
+    /// holding to talk to the tile, the level in its middle.
     private func header(_ i: TileInfo, id: String) -> some View {
-        HStack(spacing: 8) {
-            VoiceLevelDot(i.dot, owner: id)
-            Text(i.name)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-            if !i.status.isEmpty {
-                Text(i.status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Image(systemName: "chevron.down")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .frame(height: 32)
-        .glassEffect(.regular, in: .capsule)
-        .contentShape(.capsule)
+        SessionIndicator(state: i.dot, contextPct: i.contextPct, effort: i.effort, model: i.model,
+                         size: 26, glass: true, running: i.running, voiceOwner: .some(id))
+            .contentShape(.circle)
+            .accessibilityLabel(Text(verbatim: "\(i.name)，\(StatusDot.label(i.dot))"))
     }
 
     private func glassButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {

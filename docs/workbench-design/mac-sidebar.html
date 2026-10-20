@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mac 侧栏：统一的行</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#e9e9ee;color:#1c1c1e;font:13px/1.45 -apple-system,"PingFang SC",system-ui,sans-serif}
+main{max-width:1150px;margin:0 auto;padding:20px 14px 70px}
+h1{font-size:22px;margin:6px 0}h2{font-size:16px;margin:26px 0 6px}
+.sub{color:#6e6e73;font-size:14px;max-width:860px}
+.shots{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start;margin-top:12px}
+.win{width:300px;height:640px;border-radius:14px;position:relative;overflow:hidden;box-shadow:0 0 0 .5px rgba(0,0,0,.2),0 12px 30px rgba(0,0,0,.18);background:#f3f2f7}
+.win.d{background:#29282d;color:#f5f5f7}
+.lights{position:absolute;top:16px;left:16px;display:flex;gap:8px}
+.lights i{width:12px;height:12px;border-radius:6px;display:block}
+.lights i:nth-child(1){background:#ff5f57}.lights i:nth-child(2){background:#febc2e}.lights i:nth-child(3){background:#28c840}
+.list{position:absolute;top:44px;left:0;right:0;bottom:56px;padding:0 10px;overflow:hidden}
+.hd{font-size:11px;font-weight:600;color:#86868b;margin:14px 8px 3px}
+.d .hd{color:#98989d}
+.row{display:flex;align-items:center;gap:10px;height:46px;padding:0 8px;border-radius:8px}
+.row.sel{background:rgba(0,0,0,.08)}.d .row.sel{background:rgba(255,255,255,.1)}
+.row.in{padding-left:30px}
+.ic{width:28px;height:28px;flex:none;display:grid;place-items:center;font-size:13px}
+.t{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.s{font-size:11.5px;color:#86868b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tx{min-width:0;flex:1}
+.badge{font-size:10.5px;font-weight:700;color:#fff;background:#FF9F0A;border-radius:9px;padding:1px 6px}
+.chev{width:14px;color:#86868b;font-size:10px;margin-left:-4px}
+.g{border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:11px}
+.orb{width:26px;height:26px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffd1ec,#e25aa8 55%,#9a3a8a);box-shadow:0 2px 6px rgba(226,90,168,.4)}
+.foot{position:absolute;left:0;right:0;bottom:0;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 14px}
+.btn{width:32px;height:32px;border-radius:16px;display:grid;place-items:center;font-size:15px;background:rgba(255,255,255,.7);box-shadow:0 1px 4px rgba(0,0,0,.12),inset 0 0 0 .5px rgba(0,0,0,.08)}
+.d .btn{background:rgba(70,70,74,.7);box-shadow:0 1px 4px rgba(0,0,0,.4),inset 0 0 0 .5px rgba(255,255,255,.1)}
+.menu{position:absolute;left:14px;bottom:52px;width:200px;border-radius:10px;padding:5px;background:rgba(246,246,248,.96);box-shadow:0 8px 24px rgba(0,0,0,.2),inset 0 0 0 .5px rgba(0,0,0,.1);font-size:13px}
+.d .menu{background:rgba(50,50,54,.96)}
+.menu div{padding:4px 10px;border-radius:5px;display:flex;gap:8px}
+.menu div.hl{background:#0A84FF;color:#fff}
+.menu hr{border:0;border-top:.5px solid rgba(127,127,127,.3);margin:4px 6px}
+.notes{background:#fff;border-radius:16px;padding:12px 16px;margin-top:14px;max-width:900px;font-size:14px}
+.notes li{margin:5px 0}
+.cap{font-size:13px;color:#6e6e73;margin-top:6px;max-width:300px}
+</style></head><body><main>
+<h1>Mac 侧栏：统一的行</h1>
+<p class="sub">每一行都是同一个样子：左边 28pt 的图标列，右边两行字（名字，下面一行灰字），行高一样。小标题只是灰色小字，不带按钮。「添加」只有一个入口：左下角的 ＋。</p>
+<div class="shots" id="a"></div>
+<div class="notes"><b>要点</b><ul>
+<li>行的样子统一：Palo、工作区、会话、Ally、电脑与设备，都是「图标 + 名字 + 一行灰字」，同样的行高。图标列：Palo 是它的球，工作区是格子图标，会话是状态图标，Ally 是头像，电脑是电脑图标。</li>
+<li>第二行灰字：Palo 写「N 个会话在等你」或它在干什么；工作区写「N 个会话」；会话写它最后一句；Ally 写最后一句；电脑与设备写当前电脑名。</li>
+<li>工作区左边多一个小箭头，点开后它的会话缩进列在下面，样子和普通会话一样。</li>
+<li>右边只放一样东西：等你的数量（橙色小标）。</li>
+<li>添加只在左下角 ＋：新建会话、从历史记录继续…、新建工作区、添加 Ally。工作区小标题上的 ＋ 和 Allies 下面的「添加」行都去掉。</li>
+<li>Palo 不再是大号的一块，和其他行一样高，只是放在最上面、没有小标题。</li>
+</ul></div>
+</main>
+<script>
+const R=(ic,t,s,o={})=>`<div class="row ${o.sel?'sel':''} ${o.in?'in':''}">${o.chev?`<span class="chev">${o.chev}</span>`:''}<div class="ic">${ic}</div><div class="tx"><div class="t">${t}</div><div class="s">${s}</div></div>${o.badge?`<span class="badge">${o.badge}</span>`:''}</div>`;
+const dot=(c,g)=>`<div class="g" style="width:20px;height:20px;background:${c}">${g}</div>`;
+const idle=`<div style="width:18px;height:18px;border-radius:9px;border:2px solid #8e8e93;display:grid;place-items:center"><i style="width:6px;height:6px;border-radius:3px;background:#8e8e93;display:block"></i></div>`;
+function win(dark,menu){
+ const body=R('<div class="orb"></div>','Palo','2 个会话在等你',{badge:2})
+ +`<div class="hd">工作区</div>`
+ +R('<span style="font-size:15px;color:#86868b">▦</span>','网站改版','3 个会话',{chev:'⌄',badge:1})
+ +R(dot('#FF9F0A','?'),'网站帮手','要不要把旧页面删掉？',{in:1})
+ +R(dot('#0A85FF','▶'),'博客改版','在改评论区样式',{in:1,sel:1})
+ +R(idle,'测试','都通过了',{in:1})
+ +`<div class="hd">会话</div>`
+ +R(dot('#0A85FF','2'),'语音修复','跑完 12 个用例')
+ +R(dot('#30D158','✓'),'笔记整理','整理好了，放在 notes/')
+ +R(idle,'上海行程','订好了周五的票')
+ +`<div class="hd">Allies</div>`
+ +R('<div class="g" style="width:26px;height:26px;background:#5468D9;font-size:12px">王</div>','小王','明天 3 点可以')
+ +`<div style="height:10px"></div>`
+ +R('<span style="font-size:15px;color:#86868b">⌂</span>','电脑与设备','这台 MacBook Air');
+ const m=menu?`<div class="menu"><div class="hl">新建会话</div><div>从历史记录继续…</div><hr><div>新建工作区</div><div>添加 Ally…</div></div>`:'';
+ return `<div class="win${dark?' d':''}"><div class="lights"><i></i><i></i><i></i></div><div class="list">${body}</div>${m}<div class="foot"><div class="btn">＋</div><div class="btn">⚙</div></div></div>`;
+}
+document.getElementById('a').innerHTML=win(0,0)+win(0,1)+win(1,0)+`<div class="cap">左：平时。中：点左下角 ＋ 的菜单。右：深色。</div>`;
+</script></body></html>

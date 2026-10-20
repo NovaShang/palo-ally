@@ -70,7 +70,8 @@ struct WorkspaceTilesPage: View {
 
     private func info(_ id: String) -> TileInfo {
         guard let pal = store.pal(id: id) else { return TileInfo(name: "") }
-        return TileInfo(name: pal.displayName, status: Copy.palSubtitle(pal, waking: false), dot: pal.dot)
+        return TileInfo(name: pal.displayName, status: Copy.palSubtitle(pal, waking: false), dot: pal.dot,
+                        contextPct: pal.contextPct, effort: pal.effort, model: pal.model, running: pal.tasksRunning)
     }
 
     private func detailBinding(_ id: String) -> Binding<Bool> {
