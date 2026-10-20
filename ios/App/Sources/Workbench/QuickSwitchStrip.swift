@@ -5,7 +5,8 @@ import SwiftUI
 /// in a workspace (docs/workbench-design/quick-switch.html): one glass chip
 /// per session of the workspace, no icons. The glass is tinted by state, in
 /// the indicator's colors (blue 在干, amber 等你, green 做完了, plain 闲着);
-/// the current chip is a little bigger and floats higher, its text semibold.
+/// the current chip's glass is strongly tinted (gray when 闲着) and its words
+/// are in full, the others faint and dimmed; every chip keeps one size.
 ///
 /// Gestures: tap selects. A horizontal swipe ON THE STRIP goes to the
 /// previous or next chip. To keep the two from fighting, the strip does not
@@ -22,7 +23,6 @@ struct QuickSwitchStrip: View {
     @Environment(AppStore.self) private var store
     @State private var renaming: Pal?
     @State private var ending: Pal?
-    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -71,19 +71,17 @@ struct QuickSwitchStrip: View {
         let state = pal?.dot ?? .idle
         let isCurrent = id == current
         return Button { if !isCurrent { model.openPal(id) } } label: {
+            // One weight for every chip, so a chip keeps its width (and the
+            // strip its spacing) whichever one is current.
             Text(pal?.displayName ?? "…")
-                .font(.subheadline.weight(isCurrent ? .semibold : .regular))
-                .foregroundStyle(.primary)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(isCurrent ? .primary : .secondary)
                 .lineLimit(1)
                 .padding(.horizontal, 14)
                 .frame(minHeight: 32)
         }
         .buttonStyle(.plain)
         .glassEffect(Self.glass(state, current: isCurrent), in: .capsule)
-        // The current one stands out by the glass alone: a little bigger,
-        // floating higher (a deeper shadow), its words semibold. No outline.
-        .shadow(color: .black.opacity(isCurrent ? (scheme == .dark ? 0.5 : 0.18) : 0), radius: 8, y: 3)
-        .scaleEffect(isCurrent ? 1.08 : 1)
         .animation(.snappy, value: isCurrent)
         .contextMenu { if let pal { menu(pal) } }
         .accessibilityLabel(Text(verbatim: "\(pal?.displayName ?? ""), \(StatusDot.label(state))"))
@@ -91,10 +89,13 @@ struct QuickSwitchStrip: View {
         .accessibilityIdentifier("quick-switch-\(id)")
     }
 
-    /// Plain glass for 闲着; tinted glass otherwise, a little stronger on the current chip.
+    /// The current chip: its state's color, strong (闲着: a gray), its words
+    /// in full. The others: the color faint (闲着: plain glass), their
+    /// words dimmed. Same size either way.
     static func glass(_ state: StatusDotKind, current: Bool) -> Glass {
+        if current { return .regular.tint(StatusDot.color(state).opacity(state == .idle ? 0.35 : 0.6)) }
         guard state != .idle else { return .regular }
-        return .regular.tint(StatusDot.color(state).opacity(current ? 0.4 : 0.25))
+        return .regular.tint(StatusDot.color(state).opacity(0.18))
     }
 
     // MARK: swipe
