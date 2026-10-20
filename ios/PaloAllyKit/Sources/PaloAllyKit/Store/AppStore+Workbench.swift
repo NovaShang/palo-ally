@@ -245,6 +245,15 @@ extension AppStore {
         return r.pal
     }
 
+    /// `pals.setMode`: its permission mode (live while it runs; it wakes in it).
+    @discardableResult
+    public func setSessionMode(id: String, mode: String) async throws -> Pal? {
+        if let parent { return try await parent.setSessionMode(id: id, mode: mode) }
+        let r: PalWakeResult = try await rpc.call(RPCMethod.palsSetMode, params: PalSetModeParams(id: id, mode: mode))
+        if let p = r.pal { upsert(pal: p) }
+        return r.pal
+    }
+
     /// `pals.compact`: the session summarizes its own context.
     public func compactSession(id: String) async throws {
         if let parent { return try await parent.compactSession(id: id) }

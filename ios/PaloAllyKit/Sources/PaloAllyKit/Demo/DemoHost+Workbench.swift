@@ -141,7 +141,17 @@ extension DemoHost {
                                ["id": "claude-sonnet-4-5", "name": "Sonnet 4.5", "efforts": ["low", "medium", "high"]]],
                     "modelOption": .string(pal.model ?? "claude-opus-5-5"),
                     "efforts": pal.model == "claude-sonnet-4-5" ? ["low", "medium", "high"] : ["low", "medium", "high", "xhigh", "max"],
+                    "permissionMode": .string(pal.permissionMode ?? "auto"),
+                    "permissionModes": ["default", "auto", "acceptEdits", "plan"],
                     "tasks": running, "pastTasks": past]
+        case RPCMethod.palsSetMode:
+            let id = p["id"]?.stringValue ?? ""
+            guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "找不到这个会话") }
+            guard let mode = p["mode"]?.stringValue, ["default", "auto", "acceptEdits", "plan"].contains(mode) else {
+                throw DemoError(message: "没有这种权限模式")
+            }
+            setPal(id) { $0.permissionMode = mode }
+            return ["pal": try .from(pals.first { $0.id == id })]
         case RPCMethod.palsSetModel:
             let id = p["id"]?.stringValue ?? ""
             guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "找不到这个会话") }

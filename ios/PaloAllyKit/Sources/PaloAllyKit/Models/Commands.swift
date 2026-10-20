@@ -93,6 +93,22 @@ public enum EffortName {
     }
 }
 
+/// Plain-language names for Claude Code's permission modes.
+public enum PermissionModeName {
+    public static func label(_ m: String?) -> String {
+        switch m {
+        case "default": loc("普通")
+        case "auto": loc("自动")
+        case "acceptEdits": loc("自动接受编辑")
+        case "plan": loc("只做计划")
+        case "bypassPermissions": loc("跳过所有确认")
+        case "dontAsk": loc("不问就拒绝")
+        case let m?: m
+        default: loc("普通")
+        }
+    }
+}
+
 /// A short display name for a model id ("claude-opus-5-5[1m]" → "Opus 5.5").
 public enum ModelName {
     public static func short(_ id: String) -> String {

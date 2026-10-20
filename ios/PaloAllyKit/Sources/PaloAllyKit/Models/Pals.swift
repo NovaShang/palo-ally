@@ -70,13 +70,15 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
     public var workspaceId: String?
     /// Thinking depth; nil follows the default.
     public var effort: String?
+    /// The permission mode it runs in (what Claude Code reports while it runs); nil: an older host.
+    public var permissionMode: String?
     /// Not touched for a few days and in no workspace: it's listed under
     /// 以前的, not among the sessions.
     public var folded: Bool
 
     enum CodingKeys: String, CodingKey {
         case id, name, cwd, sessionId, status, lastLine, pending, model, lastWakeUsd, createdBy, activity, note, updatedAt
-        case attention, finishedAt, seenAt, contextPct, workspaceId, effort, folded, tasksRunning
+        case attention, finishedAt, seenAt, contextPct, workspaceId, effort, permissionMode, folded, tasksRunning
     }
 
     public init(id: String, name: String, cwd: String, sessionId: String, status: PalStatus, lastLine: String? = nil,
@@ -122,6 +124,7 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
         tasksRunning = l.int("tasksRunning") ?? 0
         workspaceId = l.string("workspaceId")
         effort = l.string("effort")
+        permissionMode = l.string("permissionMode")
         folded = l.bool("folded") ?? false
         // New fields a host from before the workbench lacks: worked out, not reported as missing.
         if let a = l.decode(PalAttention.self, "attention"), a != .unknown {
