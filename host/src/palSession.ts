@@ -1,3 +1,4 @@
+import { settingsEffort } from "./ccEffort.ts";
 import { t as tr } from "./i18n/index.ts";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -56,7 +57,7 @@ export interface PalRecord {
   autoNamed?: boolean; // still under the placeholder name it was created with: named from its first words after a turn
   workspaceId?: string; // the workspace it belongs to (workspaces: docs/workbench-rpc.md §3)
   effort?: string; // chosen effort level; absent = the model's default (applies at the next start when it's asleep)
-  appliedEffort?: string; // the effort Claude Code last said its turns run at (its hooks' input): the default when none is chosen
+  appliedEffort?: string; // with none chosen: the effort it was started at (from Claude Code's settings), then what its Stop hook says turns ran at
   contextTokens?: number; // its context size after its last turn or compaction
   contextWindow?: number; // its model's context window, as Claude Code last reported it
   lastCompactAt?: number; // when it last compacted
@@ -343,7 +344,7 @@ export class PalSession {
     return contextWindowFor(this.model ?? this.rec.model, this.rec.contextTokens, this.rec.contextWindow);
   }
 
-  /** The effort it runs at: the one chosen, else the one Claude Code last said its turns run at. */
+  /** The effort it runs at: the one chosen, else the one it was started at or Claude Code last said its turns ran at. */
   private effort(): string | undefined {
     return this.rec.effort ?? this.rec.appliedEffort;
   }
@@ -476,6 +477,13 @@ export class PalSession {
     // until Claude Code has written the new one (docs/rewind-prd.md §4.1).
     const fork = this.pendingRewind();
     const resume = !fork && existsSync(this.transcript);
+    // The effort it starts at: the one chosen in PaloAlly, else what Claude
+    // Code's settings give it, passed explicitly so what's shown is what runs.
+    const effort = rec.effort ?? settingsEffort(rec.model, rec.cwd, this.d.claudeDir);
+    if (!rec.effort && effort && effort !== rec.appliedEffort) {
+      rec.appliedEffort = effort;
+      this.d.save();
+    }
     this.inherited = fork ? new Set(chainTo(readTranscript(this.transcriptOf(fork.from)), fork.at).map((e) => e.uuid)) : null;
     const proc: MainSession = this.d.driver.startPal({
       cwd: rec.cwd,
@@ -484,7 +492,7 @@ export class PalSession {
       // Its files can go back to how they were before any of the owner's messages from now on.
       fileCheckpointing: true,
       model: rec.model,
-      ...(rec.effort ? { effort: rec.effort } : {}),
+      ...(effort ? { effort } : {}),
       // so a turn's cost is its own, not the session's running total
       ...(typeof rec.costTotalUsd === "number" ? { priorCostUsd: rec.costTotalUsd } : {}),
       permissionMode: rec.permissionMode,

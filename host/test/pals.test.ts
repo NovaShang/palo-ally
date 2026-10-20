@@ -1600,6 +1600,16 @@ describe("session details (workbench)", () => {
     await t.hub.pals.stopAndWait();
   });
 
+  test("with no effort chosen, it starts at the one Claude Code's settings give it, passed explicitly and shown", async () => {
+    const t = det();
+    writeFileSync(join((t.hub as any).claudeDir, "settings.json"), JSON.stringify({ effortLevel: "xhigh" }));
+    const id = await mk(t);
+    expect(t.driver.pals[0]!.opts.effort).toBe("xhigh");
+    expect(t.hub.pals.list().find((p) => p.id === id)!.effort).toBe("xhigh");
+    expect(recOf(t, id).effort).toBeUndefined(); // still the settings' to change
+    await t.hub.pals.stopAndWait();
+  });
+
   test("with no effort chosen, the effort Claude Code's hooks say its turns run at is shown; a chosen one wins", async () => {
     const t = det();
     t.driver.appliedEffort = "high";
