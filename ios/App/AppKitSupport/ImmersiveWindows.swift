@@ -47,6 +47,11 @@ final class ImmersiveWindows: NSObject {
         if !window.styleMask.contains(.fullSizeContentView) { window.styleMask.insert(.fullSizeContentView) }
         if !window.titlebarAppearsTransparent { window.titlebarAppearsTransparent = true }
         if window.titlebarSeparatorStyle != .none { window.titlebarSeparatorStyle = .none }
+        // Full screen: AppKit takes the toolbar out of the content into a band
+        // of its own above it (the owner saw it as a separate title bar).
+        // Hide it there; the page keeps its own controls. Back on leaving.
+        let full = window.styleMask.contains(.fullScreen)
+        if let bar = window.toolbar, bar.isVisible == full { bar.isVisible = !full }
         return true
     }
 
