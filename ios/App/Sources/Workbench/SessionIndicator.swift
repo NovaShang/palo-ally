@@ -31,6 +31,8 @@ struct SessionIndicator: View {
     /// else a tile's session id): while they do, live level bars replace the
     /// glyph. Not set: never.
     var voiceOwner: String?? = nil
+    /// In place of the state glyph (the session-drop prototype).
+    var center: AnyView? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
@@ -88,7 +90,9 @@ struct SessionIndicator: View {
             let glyph = glyph(radius: showsRing ? 21 * s : 40 * s)
                 .scaleEffect(state == .working && breathing ? 0.86 : 1)
                 .opacity(state == .working && breathing ? 0.8 : 1)
-            if let owner = voiceOwner {
+            if let center {
+                center.frame(width: 44 * s, height: 44 * s)
+            } else if let owner = voiceOwner {
                 IndicatorVoiceCenter(owner: owner, side: 38 * s) { glyph }
             } else {
                 glyph

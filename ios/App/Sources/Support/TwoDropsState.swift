@@ -45,6 +45,10 @@ public final class TwoDropsState {
     public static let uniformCount = 60
 
     public var inputs = Inputs()
+    /// One drop, not two (a session's, not the assistant's pair): the small
+    /// one stays inside the big one and only bulges out of it, so the shape
+    /// moves while the pair never separates.
+    public var solo = false
     /// Static poses only: no noise, no events, springs land at once.
     public var reduceMotion = false
     public private(set) var primary: SIMD3<Float>
@@ -169,6 +173,22 @@ public final class TwoDropsState {
             set(.frost, 1); set(.sat, 0.06); set(.bright, 0.8); set(.k, 0.18); set(.zoom, 1.02); set(.comY, 0)
         }
         if m != .typing && m != .speaking && m != .approval && m != .offline { set(.anchor, 0) }
+        if solo {
+            switch m {
+            case .thinking, .streaming, .background:
+                // Working: the inner drop runs round inside, pushing the
+                // surface out as it goes; the glass churns.
+                set(.sep, 0.26 + 0.08 * b); set(.ratio, 0.6); set(.k, 0.34)
+                set(.wobA, 0.6); set(.wobSpeed, 1.4); set(.flow, 0.6); set(.flowSpeed, 1.6)
+            case .approval:
+                // Waiting: leaning out to one side, still.
+                set(.sep, 0.42); set(.ratio, 0.55); set(.reach, 0.12); set(.k, 0.3)
+            case .speaking:
+                set(.sep, 0.16 + 0.3 * L); set(.ratio, 0.6)
+            default:
+                set(.sep, 0.06); set(.ratio, 0.55); set(.azVel, 0.08)
+            }
+        }
         return t
     }
 

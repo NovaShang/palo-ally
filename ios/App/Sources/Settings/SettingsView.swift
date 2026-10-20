@@ -24,6 +24,11 @@ struct SettingsView: View {
     var body: some View {
         ScrollViewReader { proxy in
             Form {
+                #if DEBUG
+                Section {
+                    NavigationLink("会话水滴（试验）") { SessionDropPreview() }
+                }
+                #endif
                 Section {
                     ThemeSwatches(selection: themeBinding)
                 } header: {
