@@ -20,9 +20,29 @@ struct GlassDropsView: View {
 
     @Namespace private var glassSpace
 
+    /// The system Liquid Glass under the shader. Off (the owner's call,
+    /// 2026-10-20): it was about half of every frame's CPU (~10 points of a
+    /// core per animating drop on the Mac); the shader alone draws the whole
+    /// drop on the GPU, without refracting what's behind it.
+    static let systemGlass = false
+
     var body: some View {
+        if Self.systemGlass { glassAndOverlay } else { shaderOnly }
+    }
+
+    /// The drops drawn entirely by TwoDrops.metal (its full mode).
+    private var shaderOnly: some View {
+        Rectangle()
+            .fill(.black)
+            .colorEffect(ShaderLibrary.twoDrops(.float2(CGSize(width: canvas, height: canvas)),
+                                                .floatArray(uniforms)))
+            .allowsHitTesting(false)
+            .frame(width: canvas, height: canvas)
+    }
+
+    private var glassAndOverlay: some View {
         let layout = DropLayout(uniforms, canvas: canvas)
-        ZStack {
+        return ZStack {
             GlassEffectContainer(spacing: layout.spacing) {
                 ZStack(alignment: .topLeading) {
                     ForEach(layout.blobs) { blob in
