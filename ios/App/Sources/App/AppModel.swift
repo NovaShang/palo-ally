@@ -237,11 +237,10 @@ final class AppModel {
         return box
     }
 
-    /// A binding to one conversation's unsent words.
-    func draftBinding(_ c: Conversation) -> Binding<String> {
-        let box = draftBox(c)
-        return Binding(get: { box.text }, set: { box.text = $0 })
-    }
+    /// A binding to one conversation's unsent words; the same one every
+    /// time, so handing it down again (each update of a split workspace's
+    /// page) doesn't count as a change and redraw every tile's chat.
+    func draftBinding(_ c: Conversation) -> Binding<String> { draftBox(c).binding }
 
     /// A conversation from the list, a card, a notification.
     func open(_ c: Conversation) {
@@ -1026,4 +1025,6 @@ enum PushEnv {
 @MainActor @Observable
 final class DraftBox {
     var text = ""
+    @ObservationIgnored lazy var binding = Binding<String>(get: { [unowned self] in self.text },
+                                                           set: { [unowned self] in self.text = $0 })
 }

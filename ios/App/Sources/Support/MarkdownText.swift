@@ -104,9 +104,27 @@ enum MarkdownBlock: Equatable {
     }
 
     static func attributed(_ s: String) -> AttributedString {
-        (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+        // Parsed once per text: a bubble's body runs again with every update
+        // around it (in a split workspace, many times a second), and parsing
+        // Markdown each time showed up in the profile.
+        let key = s as NSString
+        if let hit = attributedCache.object(forKey: key) { return hit.value }
+        let value = (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(s)
+        attributedCache.setObject(Parsed(value), forKey: key)
+        return value
     }
+
+    private final class Parsed {
+        let value: AttributedString
+        init(_ value: AttributedString) { self.value = value }
+    }
+
+    nonisolated(unsafe) private static let attributedCache: NSCache<NSString, Parsed> = {
+        let c = NSCache<NSString, Parsed>()
+        c.countLimit = 2000
+        return c
+    }()
 
     static func parse(_ source: String) -> [MarkdownBlock] {
         var blocks: [MarkdownBlock] = []
