@@ -107,6 +107,7 @@ public enum RPCMethod {
     public static let palsFolders = "pals.folders"
     public static let palsDetail = "pals.detail"
     public static let palsSetModel = "pals.setModel"
+    public static let palsSetMode = "pals.setMode"
     public static let palsCompact = "pals.compact"
     public static let palsStopTask = "pals.stopTask"
     public static let palsSeen = "pals.seen"
@@ -117,7 +118,7 @@ public enum RPCMethod {
 
     public static let pals: [String] = [palsList, palsAdopt, palsRelease, palsRemove, palsHistory, palsSend, palsStop,
                                         palsRecent, palsWake, palsRename, palsRewind,
-                                        palsCreate, palsFolders, palsDetail, palsSetModel, palsCompact, palsStopTask,
+                                        palsCreate, palsFolders, palsDetail, palsSetModel, palsSetMode, palsCompact, palsStopTask,
                                         palsSeen, palsEnd, palsReveal, palsEarlier, palsResume]
 
     /// Workspaces (workbench-rpc §3) and the browser pane's tabs.

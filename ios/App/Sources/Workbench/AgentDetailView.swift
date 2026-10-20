@@ -60,7 +60,7 @@ private struct SessionDetailForm: View {
     private var online: Bool { store.connection.isOnline }
     /// Asked again when the host says the session changed (`pals.updated`).
     private var refreshKey: String {
-        "\(online)|\(pal?.updatedAt ?? 0)|\(pal?.attention.rawValue ?? "")|\(pal?.contextPct ?? -1)|\(pal?.model ?? "")|\(pal?.effort ?? "")"
+        "\(online)|\(pal?.updatedAt ?? 0)|\(pal?.attention.rawValue ?? "")|\(pal?.contextPct ?? -1)|\(pal?.model ?? "")|\(pal?.effort ?? "")|\(pal?.permissionMode ?? "")"
     }
 
     var body: some View {
@@ -101,7 +101,7 @@ private struct SessionDetailForm: View {
 
     // MARK: sections
 
-    /// 模型 and 思考深度: the system's pickers (a menu each).
+    /// 模型, 思考深度 and 权限模式: the system's pickers (a menu each).
     @ViewBuilder private var pickers: some View {
         let models = detail?.models ?? []
         let currentID = detail?.modelOption ?? detail?.model ?? pal?.model
@@ -126,6 +126,22 @@ private struct SessionDetailForm: View {
             .detailNeutral()
             .disabled(!online || working != nil)
             .accessibilityIdentifier("detail-effort")
+        }
+        // 权限模式: a host that can't switch it sends none (the row hides).
+        if let mode = detail?.permissionMode, let modes = detail?.permissionModes, !modes.isEmpty {
+            Picker(selection: Binding(get: { mode }, set: { m in Task { await set(mode: m, from: mode) } })) {
+                ForEach(modes, id: \.self) { Text(PermissionModeName.label($0)).tag($0) }
+            } label: {
+                Text("权限模式")
+                // Claude Code may run in another (auto needs a model that has it).
+                if let running = detail?.runningMode, running != mode {
+                    Text("现在实际是「\(PermissionModeName.label(running))」")
+                }
+            }
+            .pickerStyle(.menu)
+            .detailNeutral()
+            .disabled(!online || working != nil)
+            .accessibilityIdentifier("detail-permission-mode")
         }
     }
 
@@ -237,6 +253,19 @@ private struct SessionDetailForm: View {
         defer { working = nil }
         do {
             try await store.setSessionModel(id: palID, model: model, effort: effort)
+            detail = try await store.palDetail(id: palID)
+        } catch {
+            failure = Copy.error(error)
+        }
+    }
+
+    /// Its permission mode; the one it's in already (one not offered, say) does nothing.
+    private func set(mode: String, from current: String) async {
+        guard mode != current else { return }
+        working = "mode"
+        defer { working = nil }
+        do {
+            try await store.setSessionMode(id: palID, mode: mode)
             detail = try await store.palDetail(id: palID)
         } catch {
             failure = Copy.error(error)

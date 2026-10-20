@@ -148,6 +148,7 @@ private let resultTypes: [String: Check] = [
     RPCMethod.palsFolders: strict(FoldersResult.self),
     RPCMethod.palsDetail: strict(PalDetail.self),
     RPCMethod.palsSetModel: strict(PalWakeResult.self),
+    RPCMethod.palsSetMode: strict(PalWakeResult.self),
     RPCMethod.palsCompact: strict(EmptyResult.self),
     RPCMethod.palsStopTask: strict(EmptyResult.self),
     RPCMethod.palsSeen: strict(PalWakeResult.self),

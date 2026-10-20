@@ -372,6 +372,7 @@ describe("host ↔ app protocol", () => {
     const det = await run("pals.detail", { id: made.id });
     expect(det).toMatchObject({ pal: { id: made.id }, contextWindow: 200_000, models: [{ id: "opus" }], tasks: [] });
     expect((await run("pals.setModel", { id: made.id, effort: "high" })).pal.effort).toBe("high");
+    expect((await run("pals.setMode", { id: made.id, mode: "acceptEdits" })).pal.permissionMode).toBe("acceptEdits");
     await run("pals.compact", { id: made.id });
     await waitFor(() => hub.pals.list().find((p) => p.id === made.id)?.status === "idle", 3_000);
     await call("pals.send", { id: made.id, text: "起任务" });

@@ -1566,6 +1566,8 @@ describe("session details (workbench)", () => {
       ctx.emit({ type: "task_started", taskId: "t_2", toolUseId: "toolu_agent", description: "查调用方", taskType: "local_agent" });
     }
     if (text === "end bg") ctx.emit({ type: "task_notification", taskId: "t_1", status: "completed", summary: "好了" });
+    // its plan approved: Claude Code leaves plan mode (the turn's Stop hook says the mode)
+    if (text === "plan approved") ctx.emit({ type: "mode", mode: "acceptEdits" });
     if (text === "fg") {
       // Claude Code reports every Bash call as a task; this one runs in the foreground
       ctx.emit({ type: "task_started", taskId: "t_fg", toolUseId: "toolu_fg", description: "ls", background: false, taskType: "local_bash" });
@@ -1623,6 +1625,61 @@ describe("session details (workbench)", () => {
     await t.hub.pals.stopAndWait();
     const saved = JSON.parse(readFileSync(t.paths.pals, "utf8")).pals.find((p: any) => p.id === id);
     expect(saved).toMatchObject({ model: "opus", effort: "max" });
+  });
+
+  test("setMode on a running session switches it live and is kept; detail says the chosen, the running and the offered modes; bad input is refused", async () => {
+    const t = det();
+    const id = await mk(t);
+    expect(t.hub.pals.list().find((p) => p.id === id)!.permissionMode).toBe(recOf(t, id).permissionMode);
+    const r = await t.call("pals.setMode", { id, mode: "plan" });
+    expect(r.pal).toMatchObject({ id, permissionMode: "plan" });
+    expect(t.driver.liveSwitches).toEqual(["mode:plan"]);
+    expect(recOf(t, id).permissionMode).toBe("plan");
+    const d = await t.call("pals.detail", { id });
+    expect(d).toMatchObject({ permissionMode: "plan", runningMode: "plan", permissionModes: ["default", "auto", "acceptEdits", "plan"] });
+    // its plan approved, it goes on (and later wakes) in the mode Claude Code moved to
+    await t.call("pals.send", { id, text: "plan approved" });
+    await waitFor(() => recOf(t, id).permissionMode === "acceptEdits", 3_000);
+    expect(t.hub.pals.list().find((p) => p.id === id)!.permissionMode).toBe("acceptEdits");
+    await expect(t.call("pals.setMode", { id, mode: "bypassPermissions" })).rejects.toThrow();
+    await expect(t.call("pals.setMode", { id, mode: "nope" })).rejects.toThrow();
+    await expect(t.call("pals.setMode", { id })).rejects.toThrow();
+    expect(t.driver.liveSwitches).toEqual(["mode:plan"]);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("setMode on a sleeping session only changes its record: it isn't woken and wakes in it (kept across a host restart)", async () => {
+    const t = det();
+    const id = await mk(t);
+    await sleepNow(t, id);
+    const started = t.driver.pals.length;
+    const r = await t.call("pals.setMode", { id, mode: "auto" });
+    expect(r.pal).toMatchObject({ status: "asleep", permissionMode: "auto" });
+    expect(t.driver.pals).toHaveLength(started);
+    expect(t.driver.liveSwitches).toEqual([]);
+    expect((await t.call("pals.detail", { id })).runningMode).toBeUndefined();
+    await t.call("pals.send", { id, text: "醒醒" });
+    await waitFor(() => t.driver.pals.length === started + 1);
+    expect(t.driver.pals.at(-1)!.opts.permissionMode).toBe("auto");
+    await t.hub.pals.stopAndWait();
+    const saved = JSON.parse(readFileSync(t.paths.pals, "utf8")).pals.find((p: any) => p.id === id);
+    expect(saved.permissionMode).toBe("auto");
+  });
+
+  test("the mode Claude Code says it runs in is reported, even when it isn't the chosen one; a mode not offered still shows", async () => {
+    const t = det();
+    t.driver.permissionModeFor = (asked) => (asked === "auto" ? "default" : asked); // this model has no auto mode
+    const id = await mk(t);
+    await t.call("pals.setMode", { id, mode: "auto" });
+    await t.call("pals.send", { id, text: "再来" });
+    await waitFor(() => t.hub.pals.list().find((p) => p.id === id)?.permissionMode === "default", 3_000);
+    const d = await t.call("pals.detail", { id });
+    expect(d).toMatchObject({ permissionMode: "auto", runningMode: "default" });
+    expect(recOf(t, id).permissionMode).toBe("auto"); // the choice stays: another model may have it
+    // started in a mode it isn't offered (the owner's default, say): listed so it shows
+    recOf(t, id).permissionMode = "bypassPermissions";
+    expect((await t.call("pals.detail", { id })).permissionModes).toEqual(["default", "auto", "acceptEdits", "plan", "bypassPermissions"]);
+    await t.hub.pals.stopAndWait();
   });
 
   test("contextTokens come from each result and show as contextPct on the wire (200k window, 1M for a [1m] model); detail has the shape", async () => {

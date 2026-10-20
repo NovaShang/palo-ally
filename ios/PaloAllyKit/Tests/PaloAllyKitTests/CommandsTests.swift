@@ -24,6 +24,8 @@ struct CommandsTests {
         #expect(ModelName.short("") == "默认")
         #expect(EffortName.label("xhigh") == "很深")
         #expect(EffortName.label(nil) == "默认")
+        #expect(PermissionModeName.label("acceptEdits") == "自动接受编辑" && PermissionModeName.label("plan") == "只做计划")
+        #expect(PermissionModeName.label("someNewMode") == "someNewMode")
     }
 
     @Test func decodesTolerantly() throws {

@@ -24,6 +24,7 @@
 | `contextPct` | `Int?` | 上下文已用百分比 0 到 100。还没有用量数据时缺省。 |
 | `workspaceId` | `String?` | 所属工作区，最多一个。 |
 | `effort` | `"low" \| "medium" \| "high" \| "xhigh" \| "max"?` | 思考深度。缺省表示跟随默认。`model` 字段已存在。 |
+| `permissionMode` | `String?` | 它运行时的权限模式：运行中是 Claude Code 自己报的，否则是它启动时会用的那个。旧 host 不发。 |
 | `folded` | `Bool` | 必有。算出来的，不存储：`!workspaceId && now - lastUsedAt > foldDays`。app 的会话区不显示 `folded` 的，它们出现在「以前的」。 |
 
 `pals.updated` 的 `data` 不变：`{pals: Pal[], others, hooks, helper}`，整表替换。`folded` 会随时间变化，host 在跨过边界时也要发一次（每小时检查一次即可）。
@@ -77,6 +78,9 @@
   model: String?,
   effort: String?,
   models: [{id: String, name: String, efforts: [String]}],  // 可选模型，efforts 是该模型支持的深度，空表示不支持
+  permissionMode: String,     // 给它选的权限模式（它启动、醒来时用这个）
+  runningMode: String?,       // 运行中 Claude Code 报的实际模式；可能和选的不同（auto 要模型支持，不支持时它悄悄用 default）
+  permissionModes: [String],  // pals.setMode 接受的：default、auto、acceptEdits、plan；它正处在别的模式（如 bypassPermissions）时也列在后面，好显示出来
   tasks: [{id: String, title: String, kind: "subagent" | "bg", startedAt: Int64, summary?: String}],
   pastTasks: [{id, title, kind, startedAt, summary?, endedAt: Int64, status: "done" | "failed" | "stopped"}],  // 结束了的任务，新的在前，最多 30 条
   lastCompactAt: Int64?
@@ -102,6 +106,19 @@
 ```json
 {"id":"r3","method":"pals.setModel","params":{"id":"pal_3f9a1c0b2d4e","effort":"max"}}
 {"id":"r3","result":{"pal":{"id":"pal_3f9a1c0b2d4e","name":"登录页","cwd":"/Users/demo/code/site","sessionId":"7b0c1e5a-1d2f-4a56-9c3e-0a1b2c3d4e5f","status":"idle","pending":0,"createdBy":"owner","updatedAt":1792310400000,"attention":"idle","effort":"max","folded":false}}}
+```
+
+### `pals.setMode`
+
+- 参数：`{id: string, mode: "default" | "auto" | "acceptEdits" | "plan"}`。不收 `bypassPermissions`（跳过所有确认，而且没带这个开关启动的进程切不进去）和 `dontAsk`（没预先允许的一律拒绝，手机上也不会问）。
+- 返回：`{pal: Pal}`
+- 错误：不是这四种之一；会话 `stopped`。
+- 行为：运行中用 SDK 的 `setPermissionMode` 当场切换（等于电脑上的 Shift+Tab，之后的工具调用按新模式）。睡着的不叫醒，只改记录，醒来时用它。持久化进记录。计划被批准、Claude Code 自己离开 plan 时，记录跟着改成它离开后的模式。
+- 广播：`pals.updated`。
+
+```json
+{"id":"r4","method":"pals.setMode","params":{"id":"pal_3f9a1c0b2d4e","mode":"auto"}}
+{"id":"r4","result":{"pal":{"id":"pal_3f9a1c0b2d4e","name":"登录页","cwd":"/Users/demo/code/site","sessionId":"7b0c1e5a-1d2f-4a56-9c3e-0a1b2c3d4e5f","status":"idle","pending":0,"createdBy":"owner","updatedAt":1792310400000,"attention":"idle","permissionMode":"auto","folded":false}}}
 ```
 
 ### `pals.compact`
@@ -416,7 +433,7 @@ TabsState { tabs: [PaneTab], active: Int, open: Bool, updatedAt: Int64 }
 
 ## 5. 汇总
 
-新增方法（进 `RPC_METHODS` 和 `RPCMethod.all`）：`pals.create`、`pals.folders`、`pals.detail`、`pals.setModel`、`pals.compact`、`pals.stopTask`、`pals.seen`、`pals.end`、`pals.reveal`、`pals.earlier`、`pals.resume`、`workspaces.list`、`workspaces.create`、`workspaces.update`、`workspaces.move`、`workspaces.delete`、`workbench.tabs.get`、`workbench.tabs.set`。
+新增方法（进 `RPC_METHODS` 和 `RPCMethod.all`）：`pals.create`、`pals.folders`、`pals.detail`、`pals.setModel`、`pals.setMode`、`pals.compact`、`pals.stopTask`、`pals.seen`、`pals.end`、`pals.reveal`、`pals.earlier`、`pals.resume`、`workspaces.list`、`workspaces.create`、`workspaces.update`、`workspaces.move`、`workspaces.delete`、`workbench.tabs.get`、`workbench.tabs.set`。
 
 新增事件：`workspaces.updated`、`workbench.updated`。`pals.updated` 形状不变。
 

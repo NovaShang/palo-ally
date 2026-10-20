@@ -30,7 +30,7 @@ export const RPC_METHODS = [
   "sessions.list", "sessions.history", "sessions.hooks", "helper.decide",
   "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop", "pals.recent", "pals.wake", "pals.rename", "pals.rewind",
   "pals.create", "pals.folders", "pals.seen", "pals.end", "pals.earlier", "pals.resume",
-  "pals.detail", "pals.setModel", "pals.compact", "pals.stopTask", "pals.reveal",
+  "pals.detail", "pals.setModel", "pals.setMode", "pals.compact", "pals.stopTask", "pals.reveal",
   "workspaces.list", "workspaces.create", "workspaces.update", "workspaces.move", "workspaces.delete", "workbench.tabs.get", "workbench.tabs.set",
   "pair.invite", "device.list", "device.remove",
   "auth.login.start", "auth.login.code", "auth.login.cancel",
@@ -320,6 +320,8 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return await hub.pals.detail(String(p.id ?? ""));
     case "pals.setModel":
       return await hub.pals.setModel(String(p.id ?? ""), { model: p.model, effort: p.effort });
+    case "pals.setMode":
+      return await hub.pals.setMode(String(p.id ?? ""), p.mode);
     case "pals.compact":
       return await hub.pals.compact(String(p.id ?? ""));
     case "pals.stopTask":

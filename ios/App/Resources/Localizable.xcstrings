@@ -7577,6 +7577,28 @@
           }
         }
       }
+    },
+    "权限模式" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permission mode"
+          }
+        }
+      }
+    },
+    "现在实际是「%@」" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Running as %@"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

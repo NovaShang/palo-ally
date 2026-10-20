@@ -40,7 +40,9 @@ export type HarnessEvent =
     }
   | { type: "error"; message: string }
   // the effort the turn runs at, as Claude Code's hooks report it
-  | { type: "effort"; level: string };
+  | { type: "effort"; level: string }
+  // the permission mode it says it runs in now (a turn's end, or its status after a switch)
+  | { type: "mode"; mode: string };
 
 export interface ModelOption {
   value: string; // what to pass as model
@@ -194,6 +196,7 @@ export interface MainSession {
   // live switches; take effect from the next model call
   setModel(model?: string): Promise<void>;
   setEffort(effort?: string): Promise<void>;
+  setPermissionMode(mode: string): Promise<void>;
   // Retitles the session in this process (Claude Code's own rename; a Pal, pals-prd §13).
   rename?(title: string, sessionId?: string): Promise<void>;
   // Puts the files the session changed back as they were right before the

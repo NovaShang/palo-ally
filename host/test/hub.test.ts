@@ -586,6 +586,20 @@ describe("Hub: restarts", () => {
     expect(i).toMatchObject({ type: "init", effort: "high" });
   });
 
+  test("the permission mode a session runs in is reported: its status after a switch, and each turn's Stop hook (the main thread's)", async () => {
+    const { mapMessage, sessionOptions } = await import("../src/harness/claude.ts");
+    const state = { lastCost: 0, contextTokens: 0 };
+    expect(mapMessage({ type: "system", subtype: "status", status: null, permissionMode: "plan", session_id: "s" } as any, state)).toEqual([{ type: "mode", mode: "plan" }]);
+    expect(mapMessage({ type: "system", subtype: "status", status: "compacting", session_id: "s" } as any, state)).toEqual([]);
+    const events: any[] = [];
+    const opts = sessionOptions({ cwd: "/tmp", permissionMode: "default", canUseTool: async () => ({ behavior: "deny", message: "" }), onEvent: (e: any) => events.push(e) } as any);
+    const stop = opts.hooks!.Stop![0]!.hooks[0]!;
+    const signal = new AbortController().signal;
+    await stop({ hook_event_name: "Stop", permission_mode: "acceptEdits" } as any, undefined, { signal });
+    await stop({ hook_event_name: "Stop", permission_mode: "plan", agent_id: "a-1" } as any, undefined, { signal });
+    expect(events).toEqual([{ type: "mode", mode: "acceptEdits" }]);
+  });
+
   test("a reply's text carries its API message id, streamed and final; a refused start says why", async () => {
     const { mapMessage } = await import("../src/harness/claude.ts");
     const state = { lastCost: 0, contextTokens: 0 };

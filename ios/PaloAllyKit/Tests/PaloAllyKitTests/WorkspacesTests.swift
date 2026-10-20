@@ -80,6 +80,8 @@ struct WorkbenchDecodingTests {
         {"pal":{"id":"pal_3f9a1c0b2d4e","name":"登录页","cwd":"/Users/demo/code/site","sessionId":"7b0c","status":"busy","activity":"在改 Login.tsx","pending":0,"createdBy":"owner","updatedAt":1,"attention":"working","contextPct":42,"effort":"high","folded":false},"contextTokens":84000,"contextWindow":200000,"costTotalUsd":3.82,"spentToday":1.2,"model":"claude-opus-4-5","effort":"high","models":[{"id":"claude-opus-4-5","name":"Opus 4.5","efforts":["low","medium","high"]}],"tasks":[{"id":"t_9c1","title":"跑全部测试","kind":"bg","startedAt":1792310300000}],"lastCompactAt":1792300000000}
         """)
         #expect(dIssues.isEmpty && d.tasks.first?.kind == .bg && d.models.first?.efforts.count == 3 && d.costTotalUsd == 3.82)
+        // a host from before 权限模式: no picker
+        #expect(d.permissionMode == nil && d.permissionModes.isEmpty && d.pal?.permissionMode == nil)
         let (t, tIssues) = try decode(TabsSetResult.self, #"{"state":{"tabs":[{"kind":"library"},{"kind":"web","url":"https://example.com"}],"active":1,"open":true,"updatedAt":1792310400000}}"#)
         #expect(tIssues.isEmpty && t.state?.tabs.count == 2 && t.state?.open == true)
     }
@@ -216,6 +218,13 @@ struct WorkbenchStoreTests {
         let p = try await own.setSessionModel(id: "pal-site", effort: "low")
         #expect(p?.effort == "low" && store.pal(id: "pal-site")?.effort == "low")
         #expect(await host.lastParams["pals.setModel"] == ["id": "pal-site", "effort": "low"])
+        // 权限模式: offered in the details, switched through the session's store
+        #expect(d.permissionMode == "auto" && d.permissionModes == ["default", "auto", "acceptEdits", "plan"])
+        let planned = try await own.setSessionMode(id: "pal-site", mode: "plan")
+        #expect(planned?.permissionMode == "plan" && store.pal(id: "pal-site")?.permissionMode == "plan")
+        #expect(await host.lastParams["pals.setMode"] == ["id": "pal-site", "mode": "plan"])
+        #expect(try await store.palDetail(id: "pal-site").permissionMode == "plan")
+        await #expect(throws: (any Error).self) { try await own.setSessionMode(id: "pal-site", mode: "bypassPermissions") }
         try await own.compactSession(id: "pal-site")
         try await own.revealSession(id: "pal-site", kind: "finder")
         #expect(await host.lastParams["pals.reveal"] == ["id": "pal-site", "kind": "finder"])

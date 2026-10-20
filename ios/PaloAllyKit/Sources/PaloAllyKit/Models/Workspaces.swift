@@ -407,6 +407,14 @@ public struct PalDetail: Decodable, Sendable {
     public var modelOption: String?
     /// The depths its model takes.
     public var efforts: [String]
+    /// The permission mode chosen for it (it starts and wakes in it); nil: a
+    /// host that can't switch it (the picker hides).
+    public var permissionMode: String?
+    /// The one Claude Code says it runs in now, while it runs (auto needs a
+    /// model that has it: it may be another).
+    public var runningMode: String?
+    /// What `pals.setMode` takes, plus the one it is in when that's none of them.
+    public var permissionModes: [String]
     public var tasks: [PalTask]
     /// Its tasks that ended, newest first.
     public var pastTasks: [PalTask]
@@ -426,6 +434,10 @@ public struct PalDetail: Decodable, Sendable {
         // older hosts: the option whose id is its model
         let options = models, current = model
         efforts = l.array(String.self, "efforts") ?? options.first { $0.id == current }?.efforts ?? []
+        // older hosts send none of these: no picker
+        permissionMode = l.string("permissionMode")
+        runningMode = l.string("runningMode")
+        permissionModes = l.array(String.self, "permissionModes") ?? []
         tasks = l.array(PalTask.self, "tasks", or: [])
         pastTasks = l.array(PalTask.self, "pastTasks") ?? [] // older hosts don't keep them
         lastCompactAt = l.millis("lastCompactAt")
@@ -437,6 +449,12 @@ public struct PalSetModelParams: Codable, Sendable {
     public var model: String?
     public var effort: String?
     public init(id: String, model: String? = nil, effort: String? = nil) { self.id = id; self.model = model; self.effort = effort }
+}
+
+public struct PalSetModeParams: Codable, Sendable {
+    public var id: String
+    public var mode: String
+    public init(id: String, mode: String) { self.id = id; self.mode = mode }
 }
 
 public struct PalStopTaskParams: Codable, Sendable {
