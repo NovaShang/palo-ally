@@ -243,6 +243,10 @@ struct ChatView: View {
         // Where the orb has a resting place on screen (the sidebar, or the
         // title's indicator on a phone), the listening orb flies from there
         // over this column.
+        // Phones and iPads: Palo's orb over the bar's middle.
+        .overlay(alignment: .topLeading) {
+            if isPalo && !inTile && !Platform.barInWindowToolbar { PhoneTitleOrb(placement: orbPlacement) }
+        }
         .overlay {
             if isPalo && !inTile { FlyingPaloOrb(placement: orbPlacement) }
         }
@@ -282,8 +286,15 @@ struct ChatView: View {
             // the right. The Mac has its own strip and window toolbar.
             if !Platform.barInWindowToolbar && (isPalo || pageTop?.capsule == true && store.palID != nil) {
                 ToolbarItem(placement: .principal) {
-                    PageIndicator(dot: isPalo ? nil : pageTop?.dot) { frame in
-                        if isPalo, orbPlacement.slot != frame { orbPlacement.slot = frame }
+                    if isPalo {
+                        // Palo: its live orb, as in 0.1.17: the bar holds a
+                        // slot and the orb floats over it (PhoneTitleOrb),
+                        // its size and caption following what it does.
+                        TitleOrbSlot { frame in
+                            if orbPlacement.slot != frame { orbPlacement.slot = frame }
+                        } action: { model.detailShown = true }
+                    } else {
+                        PageIndicator(dot: pageTop?.dot)
                     }
                 }
                 .sharedBackgroundVisibility(.hidden)
@@ -639,6 +650,28 @@ private struct ClickToUnfocusComposer: ViewModifier {
 /// resize moving the bar doesn't re-render the conversation.
 @Observable final class OrbPlacement {
     var slot: CGRect = .zero
+}
+
+/// Phones and iPads: the orb over the bar's middle, positioned from the bar's
+/// slot. Keeps its own idea of where the column is, for the same reason.
+private struct PhoneTitleOrb: View {
+    let placement: OrbPlacement
+    @Environment(AppModel.self) private var model
+    @State private var column: CGRect = .zero
+
+    var body: some View {
+        Color.clear
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { column = $0 }
+            .overlay(alignment: .topLeading) {
+                let slot = placement.slot
+                if slot.width > 0 {
+                    FloatingTitleOrb(barCenterY: slot.midY, columnWidth: column.width) {
+                        model.detailShown = true
+                    }
+                    .position(x: slot.midX - column.minX, y: slot.midY - column.minY)
+                }
+            }
+    }
 }
 
 /// The Mac: the orb hanging from the top middle of the conversation column,

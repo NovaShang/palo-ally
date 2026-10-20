@@ -277,9 +277,13 @@ struct WaitingBadge: View {
 /// floating copy leaves it to the capsule).
 private struct OrbHomeIfDocked: ViewModifier {
     @Environment(\.inFloatingSidebar) private var floating
+    @Environment(AppModel.self) private var model
 
     func body(content: Content) -> some View {
-        if floating { content } else { content.paloOrbHome() }
+        // Phones: never. The list stays alive under Palo's page, so it would
+        // keep claiming the place off screen, and the orb would fly in from
+        // there, or from nowhere; Palo's page drops it from its own bar.
+        if floating || model.layout == .phone { content } else { content.paloOrbHome() }
     }
 }
 
