@@ -108,25 +108,74 @@ private struct DemoCapture: ViewModifier {
 /// on screen after each.
 private struct LayoutStressTest: ViewModifier {
     let model: WindowModel
+    @Environment(\.openWindow) private var openWindow
 
     func body(content: Content) -> some View {
         content.task {
             let d = UserDefaults.standard
+            // The first window runs them; `wN.` steps act on the N-th window.
             if let actions = d.string(forKey: "demoActions") {
                 try? await Task.sleep(for: .seconds(d.double(forKey: "demoActionsDelay") > 0 ? d.double(forKey: "demoActionsDelay") : 4))
-                for a in actions.split(separator: ",").map(String.init) {
+                guard model.app.windows.first === model else { return }
+                for step in actions.split(separator: ",").map(String.init) {
                     guard model.store != nil else { break }
+                    var w = model
+                    var a = step
+                    if step.hasPrefix("w"), let dot = step.firstIndex(of: "."), let n = Int(step[step.index(after: step.startIndex)..<dot]) {
+                        let all = model.app.windows
+                        guard n >= 1, n <= all.count else { debugLog("[nav] no window \(n)"); continue }
+                        w = all[n - 1]
+                        a = String(step[step.index(after: dot)...])
+                    } else if step.hasPrefix("front."), let front = model.app.frontWindow {
+                        // As a menu command does: the window used last.
+                        w = front
+                        a = String(step.dropFirst(6))
+                    }
                     switch a {
-                    case "back": model.goBack()
-                    case "assistant": model.toggleManagement()
-                    case "library": model.toggleLibrary()
-                    case "settings": model.openSettings()
-                    case "sidebar": model.columnVisibility = model.columnVisibility == .detailOnly ? .all : .detailOnly
-                    case "list": model.showList()
+                    case "back": w.goBack()
+                    case "assistant": w.toggleManagement()
+                    case "library": w.toggleLibrary()
+                    case "settings": w.openSettings()
+                    case "sidebar": w.columnVisibility = w.columnVisibility == .detailOnly ? .all : .detailOnly
+                    case "list": w.showList()
+                    // `w2.key`: that window becomes the key window, as a click in it does.
+                    case "key":
+                        if let scene = w.scene {
+                            UIApplication.shared.activateSceneSession(for: UISceneSessionActivationRequest(session: scene.session))
+                        }
+                    // `window:pal:pal-site`: 在新窗口中打开; `open:workspace:ws-site`: the list's row.
+                    case _ where a.hasPrefix("window:"):
+                        if let c = WindowModel.Conversation(storageKey: String(a.dropFirst(7))) { openWindow(value: WindowTarget(c)) }
+                    case _ where a.hasPrefix("open:"):
+                        if let c = WindowModel.Conversation(storageKey: String(a.dropFirst(5))) { w.open(c) }
+                    // `snap:<name>`: this window to <app tmp>/<name>.png.
+                    case _ where a.hasPrefix("snap:"):
+                        if let window = w.scene?.windows.first {
+                            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                                _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                            }
+                            let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(a.dropFirst(5)).png")
+                            try? image.pngData()?.write(to: url)
+                            debugLog("[nav] snapshot \(url.path)")
+                        }
+                    #if targetEnvironment(macCatalyst)
+                    // `quit`: as ⌘Q (the windows are saved, to come back on the next launch).
+                    case "quit":
+                        if let app = (NSClassFromString("NSApplication") as? NSObject.Type)?.value(forKey: "sharedApplication") as? NSObject {
+                            app.perform(NSSelectorFromString("terminate:"), with: nil)
+                        }
+                    // `activate`: the app comes to the front (key windows only change in front).
+                    case "activate":
+                        if let app = (NSClassFromString("NSApplication") as? NSObject.Type)?.value(forKey: "sharedApplication") as? NSObject {
+                            app.perform(NSSelectorFromString("activateIgnoringOtherApps:"), with: true)
+                        }
+                    #endif
                     default: break
                     }
                     try? await Task.sleep(for: .seconds(1.5))
-                    debugLog("[nav] after \(a): layout \(model.layout.rawValue) selection \(String(describing: model.selection)) management \(model.showManagement) pane \(model.paneIsOpen) settings \(model.showSettings)")
+                    for (i, w) in model.app.windows.enumerated() {
+                        debugLog("[nav] after \(step): window \(i + 1)\(w === model.app.frontWindow ? " (front)" : "") layout \(w.layout.rawValue) selection \(String(describing: w.selection)) management \(w.showManagement) pane \(w.paneIsOpen) settings \(w.showSettings)")
+                    }
                     try? await Task.sleep(for: .seconds(0.5))
                 }
             }
