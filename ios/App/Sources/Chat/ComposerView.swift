@@ -337,12 +337,16 @@ struct ComposerView: View {
                 .allowsHitTesting(false)
         }
         .coordinateSpace(.named(Self.capsuleSpace))
+        // Not laid out yet (a window coming up, a tile with no room): a NaN
+        // never equals itself, and kept it would come back as a change forever.
         .onGeometryChange(for: CGSize.self) { $0.size } action: {
+            guard $0.width.isFinite, $0.height.isFinite else { return }
             capsuleSize = $0
             if placesVoice { voice.capsuleSize = $0 }
         }
         // Where the voice words go and land (it changes only when the composer moves).
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+            guard $0.isFiniteRect else { return }
             capsuleFrame = $0
             if placesVoice { voice.placeCapsule($0) }
         }
@@ -439,6 +443,7 @@ struct ComposerView: View {
                 .allowsHitTesting(!idle)
                 // Where words spoken into 编辑 land.
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                    guard $0.isFiniteRect else { return }
                     fieldFrame = $0
                     if placesVoice { voice.placeField($0) }
                 }
@@ -1102,4 +1107,9 @@ private struct QuoteBanner: View {
         .background(Color(.secondarySystemFill), in: .rect(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .contain)
     }
+}
+
+extension CGRect {
+    /// Laid out: no NaN or infinity anywhere (a null rect has infinite origins).
+    var isFiniteRect: Bool { origin.x.isFinite && origin.y.isFinite && size.width.isFinite && size.height.isFinite }
 }

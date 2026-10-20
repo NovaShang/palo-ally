@@ -16,6 +16,14 @@ struct TileInfo: Equatable {
 private enum TileMetrics {
     static let canvas = "tiled-canvas"
     static let gap: CGFloat = 6
+
+    /// A tile's rect inside its slot; a slot with no room yet (a window just
+    /// coming up) gives an empty rect at its middle, not a null one (whose
+    /// infinite origin makes every frame inside NaN).
+    static func inset(_ slot: CGRect, by d: CGFloat) -> CGRect {
+        let r = slot.insetBy(dx: d, dy: d)
+        return r.isNull ? CGRect(x: slot.midX, y: slot.midY, width: 0, height: 0) : r
+    }
     static let hot: CGFloat = 14
     static let corner: CGFloat = 18
     static let headerHeight: CGFloat = 44
@@ -65,8 +73,10 @@ struct TiledWorkspaceView<Content: View>: View {
             // divider and an outline of where the tiles will go follow the
             // pointer (relaying out every chat per frame made it crawl);
             // the new layout lands once, on release.
-            let size = CGSize(width: outer.size.width,
-                              height: outer.size.height - (narrow.isNarrow ? TileMetrics.switcherHeight : 0))
+            // A window just coming up has no size yet: no negative heights
+            // (or tiles inset into null rects, whose frames are NaN).
+            let size = CGSize(width: max(0, outer.size.width),
+                              height: max(0, outer.size.height - (narrow.isNarrow ? TileMetrics.switcherHeight : 0)))
             VStack(spacing: 0) {
                 canvas(tree: shown, size: size, interactive: !narrow.isNarrow)
                     .frame(width: size.width, height: size.height)
@@ -89,7 +99,7 @@ struct TiledWorkspaceView<Content: View>: View {
         let inset = TileMetrics.gap / 2
         return ZStack(alignment: .topLeading) {
             ForEach(order, id: \.self) { id in
-                if let r = frames[id]?.insetBy(dx: inset, dy: inset) {
+                if let r = frames[id].map({ TileMetrics.inset($0, by: inset) }) {
                     tile(id, in: r)
                 }
             }
@@ -100,7 +110,7 @@ struct TiledWorkspaceView<Content: View>: View {
                 TileDividerLayer(pointer: pointer, tree: tree, size: size, onLayoutChange: onLayoutChange)
             }
             ForEach(order, id: \.self) { id in
-                if let r = frames[id]?.insetBy(dx: inset, dy: inset) {
+                if let r = frames[id].map({ TileMetrics.inset($0, by: inset) }) {
                     TileChrome(id: id, rect: r, interactive: interactive, frames: frames, tree: tree, pointer: pointer,
                                info: info, onLayoutChange: onLayoutChange, onActivate: onActivate, onExpand: onExpand,
                                onClose: onClose, detailFor: detailFor, detail: detail)
@@ -242,7 +252,7 @@ private struct TileGhostLayer: View {
             let inset = TileMetrics.gap / 2
             let ghostFrames = TileCanvasPointer.frames(of: ghost, in: size)
             ForEach(LayoutTree.leafOrder(of: ghost), id: \.self) { id in
-                if let r = ghostFrames[id]?.insetBy(dx: inset, dy: inset) {
+                if let r = ghostFrames[id].map({ TileMetrics.inset($0, by: inset) }) {
                     RoundedRectangle(cornerRadius: TileMetrics.corner, style: .continuous)
                         .fill(Color.primary.opacity(0.04))
                         .strokeBorder(Color.accentColor.opacity(0.7), lineWidth: 1.5)
@@ -415,7 +425,7 @@ private struct TileDropPreview: View {
     var body: some View {
         let inset = TileMetrics.gap / 2
         if let d = pointer.tileDrag, let (target, zone) = TileCanvasPointer.dropTarget(at: d.location, dragging: d.id, frames: frames),
-           let frame = frames[target]?.insetBy(dx: inset, dy: inset) {
+           let frame = frames[target].map({ TileMetrics.inset($0, by: inset) }) {
             let r = zone.highlightRect(in: frame)
             RoundedRectangle(cornerRadius: TileMetrics.corner, style: .continuous)
                 .fill(Color.accentColor.opacity(0.16))
