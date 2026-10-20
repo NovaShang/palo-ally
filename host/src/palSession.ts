@@ -331,6 +331,7 @@ export class PalSession {
       ...(this.model ? { model: this.model } : {}),
       ...(this.effort() ? { effort: this.effort() } : {}),
       ...(this.contextPct() !== undefined ? { contextPct: this.contextPct() } : {}),
+      ...(this.tasks.size ? { tasksRunning: this.tasks.size } : {}),
       ...(typeof this.rec.lastWakeUsd === "number" ? { lastWakeUsd: this.rec.lastWakeUsd } : {}),
       createdBy: this.rec.createdBy,
       updatedAt: Math.round(this.updatedAt),

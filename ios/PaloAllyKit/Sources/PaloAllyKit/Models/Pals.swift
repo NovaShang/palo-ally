@@ -64,6 +64,8 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
     public var seenAt: Int64?
     /// Context used, 0 to 100.
     public var contextPct: Int?
+    /// Its subagents and background tasks running now (0: none).
+    public var tasksRunning: Int = 0
     /// The workspace it belongs to, if any (at most one).
     public var workspaceId: String?
     /// Thinking depth; nil follows the default.
@@ -74,7 +76,7 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, cwd, sessionId, status, lastLine, pending, model, lastWakeUsd, createdBy, activity, note, updatedAt
-        case attention, finishedAt, seenAt, contextPct, workspaceId, effort, folded
+        case attention, finishedAt, seenAt, contextPct, workspaceId, effort, folded, tasksRunning
     }
 
     public init(id: String, name: String, cwd: String, sessionId: String, status: PalStatus, lastLine: String? = nil,
@@ -117,6 +119,7 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
         finishedAt = l.millis("finishedAt")
         seenAt = l.millis("seenAt")
         contextPct = l.int("contextPct")
+        tasksRunning = l.int("tasksRunning") ?? 0
         workspaceId = l.string("workspaceId")
         effort = l.string("effort")
         folded = l.bool("folded") ?? false

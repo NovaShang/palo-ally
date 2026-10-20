@@ -108,11 +108,11 @@ struct PageIndicator: View {
     @ViewBuilder private var indicator: some View {
         if isPalo {
             SessionIndicator(state: store.paloDot, contextPct: store.status?.contextPct, effort: store.status?.effort,
-                             model: store.status?.model, size: size, glass: false)
+                             model: store.status?.model, size: size, glass: false, running: store.paloTasksRunning)
         } else if let pal = store.palID.flatMap({ store.pal(id: $0) }) {
             // Holding to talk to it: the level in its middle.
             SessionIndicator(state: dot ?? pal.dot, contextPct: pal.contextPct, effort: pal.effort, model: pal.model,
-                             size: size, glass: false, voiceOwner: .some(nil))
+                             size: size, glass: false, running: pal.tasksRunning, voiceOwner: .some(nil))
         } else {
             SessionIndicator(state: dot ?? .idle, size: size, glass: false)
         }
@@ -135,11 +135,15 @@ struct PageIndicator: View {
 }
 
 extension AppStore {
+    /// Palo's subagents running now, for its indicator.
+    var paloTasksRunning: Int { tasks.filter { $0.status == .running }.count }
+
     /// Palo's state for its indicator: waiting on the owner, working, or idle.
     var paloDot: StatusDotKind {
         switch agentStatusLine.kind {
         case .needsYou: .waiting
-        case .working: .working
+        // Its subagents still running after its turn: still at work.
+        case .working, .tasks: .working
         default: assistantWorking ? .working : .idle
         }
     }

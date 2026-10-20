@@ -1689,6 +1689,8 @@ describe("session details (workbench)", () => {
     const id = await mk(t);
     await t.call("pals.send", { id, text: "start bg" });
     await waitFor(() => t.hub.pals.list().find((p) => p.id === id)?.status === "idle", 3_000);
+    // the list says how many run, for the indicator
+    expect(t.hub.pals.list().find((p) => p.id === id)!.tasksRunning).toBe(2);
     const d = await t.call("pals.detail", { id });
     expect(d.tasks).toEqual([
       { id: "t_1", title: "跑全部测试", kind: "bg", startedAt: expect.any(Number), summary: "已跑 40 个" },
@@ -1703,6 +1705,7 @@ describe("session details (workbench)", () => {
     await t.call("pals.send", { id, text: "end bg" });
     await waitFor(() => t.hub.pals.list().find((p) => p.id === id)?.status === "idle", 3_000);
     await waitFor(() => (t.hub.pals.get(id) as any).detailInfo().tasks.length === 0, 3_000);
+    expect(t.hub.pals.list().find((p) => p.id === id)!.tasksRunning).toBeUndefined();
     // both are in its history, newest first, with how they ended; it survives a restart of the record
     const past = (await t.call("pals.detail", { id })).pastTasks;
     expect(past.map((x: any) => [x.id, x.status, x.summary])).toEqual([

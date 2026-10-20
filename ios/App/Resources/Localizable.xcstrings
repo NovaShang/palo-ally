@@ -7401,6 +7401,17 @@
           }
         }
       }
+    },
+    "%lld 个任务在跑" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld tasks running"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

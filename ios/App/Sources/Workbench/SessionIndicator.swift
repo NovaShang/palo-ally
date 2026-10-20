@@ -22,6 +22,9 @@ struct SessionIndicator: View {
     var model: String?
     var size: CGFloat = 38
     var glass = true
+    /// Subagents and background tasks running: while it works, their count
+    /// stands in the blue circle in place of the play glyph.
+    var running = 0
     /// The conversation the owner may hold to talk to (nil: a single page,
     /// else a tile's session id): while they do, live level bars replace the
     /// glyph. Not set: never.
@@ -32,14 +35,15 @@ struct SessionIndicator: View {
     @State private var breathing = false
 
     init(state: StatusDotKind, contextPct: Int? = nil, effort: String? = nil, model: String? = nil,
-         size: CGFloat = 38, glass: Bool = true, voiceOwner: String?? = nil) {
+         size: CGFloat = 38, glass: Bool = true, running: Int = 0, voiceOwner: String?? = nil) {
         self.state = state; self.contextPct = contextPct; self.effort = effort; self.model = model
-        self.size = size; self.glass = glass; self.voiceOwner = voiceOwner
+        self.size = size; self.glass = glass; self.running = running; self.voiceOwner = voiceOwner
     }
 
     /// A session.
     init(_ pal: Pal, size: CGFloat = 38, glass: Bool = true) {
-        self.init(state: pal.dot, contextPct: pal.contextPct, effort: pal.effort, model: pal.model, size: size, glass: glass)
+        self.init(state: pal.dot, contextPct: pal.contextPct, effort: pal.effort, model: pal.model, size: size, glass: glass,
+                  running: pal.tasksRunning)
     }
 
     /// Palo: busy or not from the host's status, with its own context.
@@ -61,7 +65,14 @@ struct SessionIndicator: View {
             .onChange(of: state) { startBreathing() }
             .accessibilityElement()
             .accessibilityLabel(StatusDot.label(state))
-            .accessibilityValue(contextPct.map { String(localized: "上下文 \("\($0)%")") } ?? "")
+            .accessibilityValue(accessibilityValue)
+    }
+
+    private var accessibilityValue: String {
+        var parts: [String] = []
+        if state == .working, running > 0 { parts.append(String(localized: "\(running) 个任务在跑")) }
+        if let contextPct { parts.append(String(localized: "上下文 \("\(contextPct)%")")) }
+        return parts.joined(separator: "，")
     }
 
     private var showsRing: Bool { IndicatorRules.showsRing(size: Double(size)) }
@@ -122,6 +133,16 @@ struct SessionIndicator: View {
                 // Nothing going on: a gray ring with a dot in it, quiet.
                 Circle().strokeBorder(color, lineWidth: r * 0.2).frame(width: r * 2, height: r * 2)
                 Circle().fill(color).frame(width: r * 0.8, height: r * 0.8)
+            case .working where running > 0:
+                // How many subagents and background tasks run, in place of the play glyph.
+                Circle().fill(color).frame(width: r * 2, height: r * 2)
+                Text(running > 99 ? "99+" : "\(running)")
+                    .font(.system(size: r * (running > 9 ? 0.95 : 1.15), weight: .heavy))
+                    .fontDesign(.rounded)
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .minimumScaleFactor(0.5)
+                    .frame(width: r * 1.7)
             case .working:
                 Circle().fill(color).frame(width: r * 2, height: r * 2)
                 Path { p in
