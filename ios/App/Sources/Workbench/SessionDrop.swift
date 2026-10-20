@@ -38,7 +38,8 @@ struct SessionDrop: View {
 }
 
 /// SessionDrop's drawing: 30 frames a second while it works, waits or
-/// listens, 10 at rest (never paused: a pause froze a color change halfway).
+/// listens; at rest 10, then still once its color change is over (pausing
+/// at once froze a change halfway).
 struct SessionDropCanvas: View {
     var state: StatusDotKind
     /// 0…1 while the owner speaks to it; nil: not listening.
@@ -51,9 +52,25 @@ struct SessionDropCanvas: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.displayScale) private var displayScale
     @State private var engine = SoloEngine()
+    /// Idle or done for a while (its color change long over): it holds still.
+    @State private var resting = false
+    @Environment(\.scenePhase) private var scenePhase
+
+    /// Moving now: working, waiting, or listening to the owner.
+    private var lively: Bool { voiceLevel != nil || state == .working || state == .waiting }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: voiceLevel != nil || state == .working || state == .waiting ? 1.0 / 30 : 1.0 / 10)) { ctx in
+        // Each frame costs about a fifth of a core whatever its size (the
+        // system glass half of it), so it only ticks when it has to: never
+        // once settled at rest, never while no window shows it; a calmer
+        // rate while another app is in front (as Palo's orb does).
+        var paused = (resting && !lively) || scenePhase == .background
+        var interval = lively ? 1.0 / 30 : 1.0 / 10
+        #if targetEnvironment(macCatalyst)
+        if !MacAppActivity.shared.visible { paused = true }
+        if !MacAppActivity.shared.frontmost { interval = 1.0 / 10 }
+        #endif
+        return TimelineView(.animation(minimumInterval: interval, paused: paused)) { ctx in
             let u = engine.frame(now: ctx.date.timeIntervalSinceReferenceDate, state: state, neutral: neutral, voiceLevel: voiceLevel,
                                  reduceMotion: reduceMotion, dark: scheme == .dark, scale: Float(displayScale))
             GeometryReader { geo in
@@ -62,6 +79,13 @@ struct SessionDropCanvas: View {
                 GlassDropsView(uniforms: u, canvas: side / 0.75)
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
             }
+        }
+        // At rest: a few seconds to finish any color change and settle, then still.
+        .task(id: "\(state)-\(voiceLevel == nil)") {
+            resting = false
+            guard !lively else { return }
+            try? await Task.sleep(for: .seconds(3))
+            if !Task.isCancelled { resting = true }
         }
     }
 }
