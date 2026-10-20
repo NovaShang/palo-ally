@@ -35,9 +35,12 @@ struct QuickSwitchStrip: View {
                         chip(id).id(id)
                     }
                 }
+                // Each chip at its own width (a name, up to 140 pt), never
+                // stretched by the room around them...
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                // As wide as the screen at least: a few chips sit in the middle.
+                // ...and a few of them in the middle of the screen.
                 .frame(minWidth: width)
             }
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
