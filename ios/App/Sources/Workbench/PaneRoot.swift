@@ -173,8 +173,7 @@ private struct PaneStatusButton: View {
         Button {
             details.tile = details.tile == id ? nil : id
         } label: {
-            SessionIndicator(state: dot, size: PaneMetrics.button, glass: true, running: pal?.tasksRunning ?? 0,
-                             voiceOwner: .some(id), innerOnly: true)
+            icon(dot: dot, running: pal?.tasksRunning ?? 0)
                 .contentShape(.circle)
         }
         .buttonStyle(.plain)
@@ -185,6 +184,21 @@ private struct PaneStatusButton: View {
         }
         .accessibilityLabel(Text(verbatim: "\(pal?.displayName ?? "")，\(StatusDot.label(dot))"))
         .accessibilityIdentifier("tile-header-\(id)")
+    }
+
+    @ViewBuilder private func icon(dot: StatusDotKind, running: Int) -> some View {
+        #if DEBUG || PERF_HARNESS
+        // Perf measuring, `-paneIcon flat`: the state's flat dot, no drop
+        // (each working drop costs about 7% of a core on the Mac, whether
+        // hosted with its pane or in a graph of its own).
+        if UserDefaults.standard.string(forKey: "paneIcon") == "flat" {
+            StatusDot(dot, size: 20).frame(width: PaneMetrics.button, height: PaneMetrics.button)
+        } else {
+            SessionIndicator(state: dot, size: PaneMetrics.button, glass: true, running: running, voiceOwner: .some(id), innerOnly: true)
+        }
+        #else
+        SessionIndicator(state: dot, size: PaneMetrics.button, glass: true, running: running, voiceOwner: .some(id), innerOnly: true)
+        #endif
     }
 }
 
