@@ -6,12 +6,14 @@ import Foundation
 
 /// Whose files: `{kind:"pal", id}`, `{kind:"palo"}` or `{kind:"folder", id}`.
 public struct FileScope: Codable, Sendable, Hashable {
-    public enum Kind: String, Codable, Sendable { case pal, palo, folder }
+    public enum Kind: String, Codable, Sendable { case pal, palo, home, folder }
     public var kind: Kind
     public var id: String?
 
-    public init(kind: Kind, id: String? = nil) { self.kind = kind; self.id = kind == .palo ? nil : id }
+    public init(kind: Kind, id: String? = nil) { self.kind = kind; self.id = kind == .palo || kind == .home ? nil : id }
     public static let palo = FileScope(kind: .palo)
+    /// The owner's home folder on the computer (its dot files hidden unless asked for).
+    public static let home = FileScope(kind: .home)
     public static func pal(_ id: String) -> FileScope { FileScope(kind: .pal, id: id) }
     public static func folder(_ id: String) -> FileScope { FileScope(kind: .folder, id: id) }
 }

@@ -100,6 +100,16 @@ extension DemoHost {
         "artifacts/brief/brief.md": DemoFile("# 晨报\n\n- 今天没什么要你处理的\n"),
     ]
 
+    /// The owner's home folder (Palo's 文件 → 用户目录).
+    static let ownerHomeFiles: [String: DemoFile] = [
+        "Documents/notes/读书笔记.md": DemoFile("# 读书笔记\n\n- 《设计心理学》\n"),
+        "Documents/报销/十月发票.pdf": DemoFile("%PDF-1.4 demo"),
+        "code/site/README.md": DemoFile("# Site\n"),
+        "code/blog/README.md": DemoFile("# Blog\n"),
+        "Desktop/待办.txt": DemoFile("买菜\n交水电费\n"),
+        "Pictures/README.txt": DemoFile("照片在这里\n"),
+    ]
+
     /// The computer's folders, for 打开文件夹… (folders only).
     static let computerFolders: [String] = [
         "code/site/src", "code/site/docs", "code/blog", "code/app", "Documents/notes", "Documents/报销", "Pictures", "Desktop",
@@ -111,6 +121,7 @@ extension DemoHost {
         let id = p?["id"]?.stringValue ?? ""
         switch kind {
         case "palo": return ("\(Self.demoHome)/.paloally/home", Self.homeFiles)
+        case "home": return (Self.demoHome, Self.ownerHomeFiles)
         case "pal":
             guard let pal = pals.first(where: { $0.id == id }) else { throw DemoError(message: "没有这个文件夹") }
             return (pal.cwd, Self.projectFiles)

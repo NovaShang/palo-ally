@@ -48,7 +48,7 @@ struct FileTreeScreen: View {
     private var title: String {
         switch scope.kind {
         case .pal: store.pal(id: scope.id ?? "")?.displayName ?? String(localized: "文件", table: "Files")
-        case .folder, .palo: root.path.map { ($0 as NSString).lastPathComponent } ?? String(localized: "文件", table: "Files")
+        case .folder, .palo, .home: root.path.map { ($0 as NSString).lastPathComponent } ?? String(localized: "文件", table: "Files")
         }
     }
 

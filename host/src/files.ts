@@ -8,12 +8,13 @@ import { t } from "./i18n/index.ts";
 import { newId, readJson, writeJson } from "./util.ts";
 
 // Files on the computer, read-only (docs/files-prd.md): a Pal's project
-// folder, the assistant's home (its working folder and its artifacts), and
-// folders the owner chose. Every path is resolved to its real path (symlinks
+// folder, the assistant's home (its working folder and its artifacts),
+// folders the owner chose, and the owner's own home folder (Palo's 文件 can
+// switch to it; its dot files stay out unless asked for). Every path is resolved to its real path (symlinks
 // followed) and must stay inside the scope's root; PaloAlly's own state is
 // never readable, whatever the scope.
 
-export type FileScope = { kind: "pal"; id: string } | { kind: "palo" } | { kind: "folder"; id: string };
+export type FileScope = { kind: "pal"; id: string } | { kind: "palo" } | { kind: "home" } | { kind: "folder"; id: string };
 
 export interface FileEntry {
   name: string;
@@ -70,6 +71,7 @@ export class FileBrowser {
   root(scope: FileScope): string {
     let dir: string | undefined;
     if (scope.kind === "palo") dir = this.d.paths.home;
+    else if (scope.kind === "home") dir = this.home();
     else if (scope.kind === "pal") dir = this.d.palCwd(scope.id);
     else dir = this.folders().find((f) => f.id === scope.id)?.path;
     if (!dir) throw new Error(t("files.err.noScope"));
@@ -127,6 +129,8 @@ export class FileBrowser {
     }
     for (const name of names) {
       if (!showHidden && HIDDEN_NAMES.has(name)) continue;
+      // The owner's home: dot files (keys, apps' settings) only when asked for.
+      if (!showHidden && scope.kind === "home" && name.startsWith(".")) continue;
       const e = this.entry(root, join(real, name), name);
       if (e) entries.push(e);
     }
@@ -215,6 +219,8 @@ export class FileBrowser {
       }
       for (const k of kids) {
         const childRel = rel ? `${rel}/${k.name}` : k.name;
+        // The owner's home: its dot files and folders are never searched.
+        if (scope.kind === "home" && k.name.startsWith(".")) continue;
         let kind: "file" | "dir" | null = k.isDirectory() ? "dir" : k.isFile() ? "file" : null;
         // A link: listed when it points inside; never walked into (no loops).
         if (k.isSymbolicLink()) {
@@ -344,12 +350,13 @@ export class FileBrowser {
 export function parseScope(v: unknown): FileScope {
   const s = v as { kind?: unknown; id?: unknown } | null;
   if (s && s.kind === "palo") return { kind: "palo" };
+  if (s && s.kind === "home") return { kind: "home" };
   if (s && (s.kind === "pal" || s.kind === "folder") && typeof s.id === "string" && s.id) return { kind: s.kind, id: s.id.slice(0, 100) };
   throw new Error(t("files.err.noScope"));
 }
 
 function scopeLabel(s: FileScope): string {
-  return s.kind === "palo" ? "palo" : `${s.kind}:${s.id}`;
+  return s.kind === "palo" || s.kind === "home" ? s.kind : `${s.kind}:${s.id}`;
 }
 
 function realOrNull(p: string): string | null {

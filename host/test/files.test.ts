@@ -56,6 +56,28 @@ function world() {
 const site = { kind: "pal", id: "pal_site" } as const;
 
 describe("files", () => {
+  test("the owner's home: listed and searched, its dot files only when asked for, PaloAlly's own state never", () => {
+    const { files, home } = world();
+    mkdirSync(join(home, ".ssh"), { recursive: true });
+    writeFileSync(join(home, ".ssh", "id_ed25519"), "private key\n");
+    writeFileSync(join(home, ".zshrc"), "export A=1\n");
+    const homeScope = { kind: "home" } as const;
+    const top = files.list(homeScope);
+    expect(top.root).toBe(home);
+    const names = top.entries.map((e) => e.name);
+    expect(names).toContain("code");
+    expect(names).toContain("secret.txt");
+    expect(names).not.toContain(".ssh");
+    expect(names).not.toContain(".zshrc");
+    expect(files.list(homeScope, "", true).entries.map((e) => e.name)).toContain(".ssh");
+    // a search never walks into dot folders
+    expect(files.search(homeScope, "id_ed25519").matches).toEqual([]);
+    expect(files.search(homeScope, "Widget").matches.map((m) => m.path)).toContain("code/site/src/deep/er/Widget.swift");
+    // PaloAlly's own state stays out, though it is under the home
+    expect(() => files.read(homeScope, "apps/.paloally/identity.json")).toThrow();
+    expect(parseScope({ kind: "home" })).toEqual({ kind: "home" });
+  });
+
   test("list: a Pal's folder, folders first, heavy and machine-made entries hidden until asked", () => {
     const { files, project } = world();
     const r = files.list(site, "");
@@ -98,7 +120,7 @@ describe("files", () => {
     expect(() => files.read({ kind: "palo" }, join(paths.root, "identity.json"))).toThrow("找不到这个文件");
     // unknown scopes
     expect(() => files.list({ kind: "pal", id: "pal_nope" }, "")).toThrow("没有这个文件夹");
-    expect(() => parseScope({ kind: "home" })).toThrow("没有这个文件夹");
+    expect(() => parseScope({ kind: "root" })).toThrow("没有这个文件夹"); // the whole disk is not one
     expect(() => parseScope({ kind: "pal" })).toThrow("没有这个文件夹");
     expect(parseScope({ kind: "palo", id: "x" })).toEqual({ kind: "palo" });
   });

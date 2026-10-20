@@ -134,8 +134,6 @@ struct LibraryView: View {
         case .time: timeline
         case .folder: folderGroups
         }
-        // Folders on the computer, and 打开文件夹… (docs/files-prd.md).
-        OwnerFoldersSection()
     }
 
     /// 这个会话 / 全部, above the list in a session's pane.

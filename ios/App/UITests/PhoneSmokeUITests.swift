@@ -58,6 +58,15 @@ final class PhoneSmokeUITests: XCTestCase {
         filesTab.tap()
         sleep(2)
         shot(app, "\(look)-4b-palo-files")
+        // Its capsule switches between the owner's home folder and Palo's own.
+        let root = app.descendants(matching: .any)["files-root"].firstMatch
+        XCTAssertTrue(root.exists, "Palo's 文件 has no folder capsule")
+        root.tap()
+        let palos = app.buttons["Palo 的文件"].firstMatch
+        XCTAssertTrue(palos.waitForExistence(timeout: 3), "the capsule's menu has no Palo 的文件")
+        palos.tap()
+        sleep(2)
+        shot(app, "\(look)-4b2-palo-own-files")
         app.descendants(matching: .any)["pane-tab-library"].firstMatch.tap()
         let search = app.descendants(matching: .any)["pane-search"].firstMatch
         XCTAssertTrue(search.exists, "the pane has no search button")

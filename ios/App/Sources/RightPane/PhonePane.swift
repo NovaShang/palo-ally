@@ -14,6 +14,8 @@ final class PhonePaneState {
     static let shared = PhonePaneState()
     enum Segment: Hashable { case library, files }
     var segment: Segment = .library
+    /// Palo's 文件: the owner's home folder, or Palo's own.
+    var paloFilesRoot: FileScope = .home
 }
 
 extension EnvironmentValues {
@@ -99,8 +101,10 @@ struct PhonePane: View {
     private var state: PhonePaneState { .shared }
 
     var body: some View {
-        let scope = RightPaneScope.resolve(key: key, activeSessionID: activeSessionID, store: store)
-        let palID = RightPaneScope.palID(of: scope)
+        let resolved = RightPaneScope.resolve(key: key, activeSessionID: activeSessionID, store: store)
+        // Palo's 文件 shows the folder picked in its capsule.
+        let scope = resolved.kind == .palo && state.segment == .files ? state.paloFilesRoot : resolved
+        let palID = RightPaneScope.palID(of: resolved)
         Group {
             switch state.segment {
             case .library:
@@ -169,13 +173,22 @@ struct PhonePane: View {
                 } label: { EmptyView() }
             }
             .accessibilityIdentifier("library-grouping")
-        case .files:
+        case .files where scope.kind == .pal:
             Text(folderName(scope))
                 .font(.headline)
                 .lineLimit(1)
                 .padding(.horizontal, 16)
                 .frame(height: 40)
                 .glassEffect(.regular, in: .capsule)
+        case .files:
+            @Bindable var state = state
+            capsuleMenu(folderName(scope)) {
+                Picker(selection: $state.paloFilesRoot) {
+                    Text("用户目录", tableName: "Files").tag(FileScope.home)
+                    Text("Palo 的文件", tableName: "Files").tag(FileScope.palo)
+                } label: { EmptyView() }
+            }
+            .accessibilityIdentifier("files-root")
         }
     }
 
@@ -197,10 +210,11 @@ struct PhonePane: View {
     }
 
     private func folderName(_ scope: FileScope) -> String {
-        if scope.kind == .pal, let id = scope.id, let pal = store.pal(id: id) {
-            return (pal.cwd as NSString).lastPathComponent
+        switch scope.kind {
+        case .pal: return scope.id.flatMap { store.pal(id: $0) }.map { ($0.cwd as NSString).lastPathComponent } ?? ""
+        case .home: return String(localized: "用户目录", table: "Files")
+        default: return String(localized: "Palo 的文件", table: "Files")
         }
-        return String(localized: "电脑上的文件", table: "Files")
     }
 
     // MARK: bottom

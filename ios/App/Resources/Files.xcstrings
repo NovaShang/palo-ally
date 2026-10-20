@@ -462,6 +462,28 @@
           }
         }
       }
+    },
+    "Palo 的文件" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Palo's Files"
+          }
+        }
+      }
+    },
+    "用户目录" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Home Folder"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
