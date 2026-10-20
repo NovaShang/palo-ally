@@ -473,12 +473,12 @@ struct VoiceScrim: View {
         GeometryReader { proxy in
             let frame = proxy.frame(in: .global)
             // From a little above the zones down to the bottom edge.
-            let start = max(0, (zonesTop ?? frame.maxY - 140) - frame.minY - 90)
+            let start = max(0, (zonesTop ?? frame.maxY - 140) - frame.minY - 130)
             let h = max(1, frame.height)
             LinearGradient(stops: [
                 .init(color: Color(.systemBackground).opacity(0), location: start / h),
-                .init(color: Color(.systemBackground).opacity(0.9), location: min(1, (start + 90) / h)),
-                .init(color: Color(.systemBackground).opacity(0.9), location: 1),
+                .init(color: Color(.systemBackground).opacity(0.97), location: min(1, (start + 90) / h)),
+                .init(color: Color(.systemBackground).opacity(0.97), location: 1),
             ], startPoint: .top, endPoint: .bottom)
         }
         .ignoresSafeArea()
@@ -577,6 +577,8 @@ private struct VoiceWordsStage: View {
                 .transaction(value: landed) { t in
                     if voice.exit == .cancel, motion { t.animation = .easeIn(duration: 0.24) }
                 }
+                // Low, just above 取消 / 编辑 (the owner's ask), growing upward.
+                .frame(height: max(0, bottom - top), alignment: .bottom)
                 .position(x: layer.width / 2, y: (top + bottom) / 2 - layer.minY)
             if case .send(let cid) = voice.exit, voice.copyOf == cid, motion,
                let row = voice.echoRow, let bubble = voice.echoBubble,
