@@ -210,6 +210,38 @@ describe("messages", () => {
     expect(b.ctx.pusher.pushes.find((p) => p.title === "家人A的助理")!.body).toContain("孩子发烧了");
   });
 
+  test("an error line is never sent to an Ally, not even as a draft; words that mention one still go", async () => {
+    const net = new AllyNet();
+    const a = net.add("家人A");
+    const b = net.add("家人B");
+    await befriend(a, b);
+    const peer = a.hub.allies.list()[0]!;
+    const errors = [
+      "API Error: Connection refused",
+      "API Error: 529 {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\"}}",
+      "Connection refused",
+      "Request timed out.",
+      "fetch failed",
+      "Error: Connection error.",
+      "Claude AI usage limit reached|1792500000",
+      "Prompt is too long",
+      "**API Error: Connection refused**",
+    ];
+    for (const text of errors) {
+      const said = await a.hub.toolHandlers().ally_send({ to: "家人B", text });
+      expect(said).toContain("没发：这是一条出错信息");
+      expect(said).toContain("别转给 Ally");
+    }
+    expect(a.hub.allies.log(peer.id)).toEqual([]);
+    expect(a.hub.chat.recent(5).filter((m) => m.kind === "ally")).toEqual([]);
+    expect(a.hub.audit.tail(20).filter((e) => e.type === "ally.refused_error")).toHaveLength(errors.length);
+    // a sentence about an error is words for them
+    for (const text of ["刚才网络断了，提示 Connection refused，我稍后再试", "我这边连接被拒绝了，晚点回你"]) {
+      expect(await a.hub.toolHandlers().ally_send({ to: "家人B", text })).not.toContain("出错信息");
+    }
+    expect(a.hub.allies.log(peer.id)).toHaveLength(2);
+  });
+
   test("slots and replyTo travel; the turn lists the times", async () => {
     const net = new AllyNet();
     const a = net.add("家人A");

@@ -14,6 +14,7 @@ export const enAllies: Record<keyof typeof zhAllies, string> = {
   "ally.tool.none": "No Allies yet. The owner can add one in the app.",
   "ally.err.noText": "Nothing to send",
   "ally.tool.tooLong": "Too long: one message can't exceed 4 KB (about 4,000 English characters). Shorten it and draft again.",
+  "ally.tool.apiError": "Not sent: this is an error message ({text}), not words for them. Don't forward errors to an Ally; if they need to know, say what happened in your own words, or tell the owner first.",
   "ally.tool.badSlots": "Bad time slots: each is {start, end} in ISO 8601 with a time zone (like 2026-10-17T14:00:00+08:00), end after start, at most 5.",
   "ally.err.removed": "That's no longer an Ally",
   "ally.err.tooLong": "Too long: one message can't exceed 4 KB",

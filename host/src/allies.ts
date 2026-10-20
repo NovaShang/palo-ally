@@ -479,6 +479,12 @@ export class Allies {
     const text = String(args.text ?? "").trim();
     if (!text) return t("ally.err.noText");
     if (Buffer.byteLength(text) > ALLY_LIMITS.textBytes) return t("ally.tool.tooLong");
+    // A harness or API error line ("API Error: Connection refused") is not
+    // words for another person: it never goes out, not even as a draft.
+    if (isHarnessErrorText(text)) {
+      this.d.audit.log("ally.refused_error", { allyId: a.id, chars: text.length });
+      return t("ally.tool.apiError", { text: truncate(text.split("\n")[0]!, 80) });
+    }
     let slots: AllySlot[] | undefined;
     if (Array.isArray(args.slots) && args.slots.length) {
       const v = validSlots(args.slots);
@@ -1179,6 +1185,22 @@ export class Allies {
 
 // The wire entry, without our bookkeeping. Entries from before §11 were all
 // the assistants' words.
+// The lines Claude Code and the API write in place of an answer when a turn
+// fails (an assistant entry with isApiErrorMessage; see handoffs.ts). "API
+// Error…" is one however it goes on; the others only as the whole text, so
+// a sentence that mentions them still goes.
+const ERROR_PREFIX = /^(API Error\b|Error: (API|Connection|Request|getaddrinfo|connect E|read E)|APIConnection(Timeout)?Error\b|APIError\b)/i;
+const ERROR_WHOLE =
+  /^(Connection (refused|error|reset)|Request (timed out|was aborted)|fetch failed|socket hang up|(connect )?E(CONNREFUSED|CONNRESET|TIMEDOUT|NOTFOUND|AI_AGAIN)\b.*|Overloaded|Internal server error|Execution error|Prompt is too long|Credit balance is too low|Invalid API key\b.*|Claude AI usage limit reached\b.*|You.?ve (hit|reached) your (usage )?limit\b.*|OAuth token (has )?expired\b.*|Please run \/login\b.*)[.!。]?$/i;
+
+/** Text that is a harness or API error line, not words someone wrote. */
+export function isHarnessErrorText(text: string): boolean {
+  const s = text.trim().replace(/^[\s*_`>]+|[\s*_`]+$/g, "");
+  if (!s) return false;
+  if (ERROR_PREFIX.test(s)) return true;
+  return !s.includes("\n") && s.length <= 200 && ERROR_WHOLE.test(s);
+}
+
 function publicEntry(e: StoredEntry): AllyEntry {
   const { deliveredAt: _d, nudgedAt: _n, ...rest } = e;
   return { ...rest, author: e.author ?? "assistant" };

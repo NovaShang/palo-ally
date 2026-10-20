@@ -12,6 +12,7 @@ export const zhAllies = {
   "ally.tool.none": "还没有 Ally。主人可以在 App 的「它」里加。",
   "ally.err.noText": "没有要发的话",
   "ally.tool.tooLong": "太长了：一条不能超过 4 KB（大约 1300 个汉字），精简一下再拟。",
+  "ally.tool.apiError": "没发：这是一条出错信息（{text}），不是要说给对方的话。出错别转给 Ally；要说就用自己的话讲清楚情况，或者先告诉主人。",
   "ally.tool.badSlots": "时段格式不对：每个是 {start, end}，ISO 8601 带时区（如 2026-10-17T14:00:00+08:00），结束晚于开始，最多 5 个。",
   "ally.err.removed": "已经不是 Ally 了",
   "ally.err.tooLong": "太长了，一条不能超过 4 KB",
