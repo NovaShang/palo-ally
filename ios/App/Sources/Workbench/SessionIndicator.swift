@@ -95,7 +95,7 @@ struct SessionIndicator: View {
                 .opacity(state == .working && breathing ? 0.8 : 1)
             if dropMiddle {
                 ZStack {
-                    SessionDrop(state: state, voiceLevel: nil).frame(width: 56 * s, height: 56 * s)
+                    SessionDrop(state: state, voiceLevel: nil).frame(width: 72 * s, height: 72 * s)
                     mark(radius: 21 * s)
                 }
             } else if let center {
