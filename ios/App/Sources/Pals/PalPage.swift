@@ -15,6 +15,9 @@ struct PalPage: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("PalPage")
+        #endif
         PalConversation(palID: palID, inTile: inTile)
             .environment(store.palStore(palID))
     }
@@ -105,6 +108,9 @@ struct PalRenameAlert: ViewModifier {
     @State private var failure: String?
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("PalRenameAlert")
+        #endif
         content
             .alert("重命名", isPresented: Binding(get: { pal != nil }, set: { if !$0 { pal = nil } })) {
                 TextField("名字", text: $text)

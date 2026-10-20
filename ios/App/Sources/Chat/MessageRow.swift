@@ -7,6 +7,9 @@ struct MessageRow: View {
     let message: ChatMessage
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("MessageRow")
+        #endif
         #if DEBUG
         let _ = RenderTrace.note("row \(message.id)")
         #endif
@@ -37,6 +40,9 @@ private struct UserBubble: View {
     let message: ChatMessage
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("UserBubble")
+        #endif
         HStack(alignment: .bottom, spacing: 6) {
             Spacer(minLength: 48)
             if message.delivery == .failed {
@@ -125,6 +131,9 @@ private struct BubbleText: View {
     let message: ChatMessage
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("BubbleText")
+        #endif
         let text = Text(MarkdownBlock.attributed(message.text))
         if !store.folds(message) {
             text
@@ -204,6 +213,9 @@ private struct BubbleInteractions: ViewModifier {
     var rewind: (() -> Void)?
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("BubbleInteractions")
+        #endif
         if enabled {
             content
                 .contextMenu {
@@ -225,6 +237,9 @@ private struct AssistantMessage: View {
     let message: ChatMessage
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("AssistantMessage")
+        #endif
         // No avatar: it cost width on every reply and said nothing new.
         HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
@@ -313,6 +328,9 @@ private struct TaskChip: View {
     let taskId: String
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("TaskChip")
+        #endif
         if let task = store.task(id: taskId) {
             // Opens just this task over the conversation; closing returns here.
             Button {
@@ -340,6 +358,9 @@ private struct NoticeRow: View {
     let text: String
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("NoticeRow")
+        #endif
         Text(MarkdownBlock.attributed(text))
             .font(.footnote)
             .foregroundStyle(.secondary)
@@ -366,6 +387,9 @@ private struct AttachmentStrip: View {
     private var cards: [Attachment] { attachments.filter { !$0.showsInline } }
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("AttachmentStrip")
+        #endif
         VStack(alignment: .leading, spacing: 6) {
             if !pictures.isEmpty {
                 HStack(spacing: 6) {
@@ -494,6 +518,9 @@ private struct FileCard: View {
     let loading: Bool
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("FileCard")
+        #endif
         HStack(spacing: 12) {
             Image(systemName: symbol)
                 .font(.title3)
@@ -616,6 +643,9 @@ private struct GoalCard: View {
     }
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("GoalCard")
+        #endif
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 Text(card.title.isEmpty ? String(localized: "到点提醒") : card.title).font(.headline)

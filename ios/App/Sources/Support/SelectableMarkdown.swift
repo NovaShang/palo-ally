@@ -33,6 +33,9 @@ struct SelectableMarkdown: UIViewRepresentable {
     }
 
     func updateUIView(_ view: MarkdownTextView, context: Context) {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("upd SelectableMarkdown")
+        #endif
         view.onQuote = onQuote
         view.wholeReply = wholeReply
         view.fileLinks = fileLinks

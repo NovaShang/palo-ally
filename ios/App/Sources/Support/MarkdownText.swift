@@ -10,6 +10,9 @@ struct MarkdownText: View {
     var compact: Bool = true
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("MarkdownText")
+        #endif
         Markdown(streaming ? source + " ▍" : source)
             .markdownTheme(compact ? .paloAlly : .paloAllyDocument)
             .markdownCodeSyntaxHighlighter(.plainText)

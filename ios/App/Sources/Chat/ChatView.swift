@@ -313,6 +313,9 @@ private struct PageNavigationBar: ViewModifier {
     let enabled: Bool
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("PageNavigationBar")
+        #endif
         if enabled {
             content
                 .navigationTitle(title)
@@ -332,6 +335,9 @@ struct VoiceTileGate<Content: View>: View {
     @Environment(\.tile) private var tile
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("VoiceTileGate")
+        #endif
         if tile == nil || voice.owner == tile?.id { content() }
     }
 }
@@ -344,6 +350,9 @@ private struct OrbTracking: ViewModifier {
     let scrolling: Bool
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("OrbTracking")
+        #endif
         if enabled {
             content.modifier(OrbPresenceTracking(scrolledUp: scrolledUp, scrolling: scrolling))
         } else {
@@ -364,6 +373,9 @@ private struct ConversationRows: View {
     @Environment(\.placesAsColumns) private var asColumn
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("ConversationRows")
+        #endif
         #if DEBUG
         let _ = RenderTrace.note("list")
         #endif
@@ -548,6 +560,9 @@ private struct ConversationChanges: ViewModifier {
     @Environment(AppStore.self) private var store
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("ConversationChanges")
+        #endif
         content
             // A layout switch rebuilds the column: back onto the end if it was there.
             .onChange(of: model.layout) { scroll.layoutChanged() }
@@ -593,6 +608,9 @@ private struct TopStrip<Strip: View>: ViewModifier {
     @ViewBuilder let strip: () -> Strip
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("TopStrip")
+        #endif
         if asBar {
             content.safeAreaBar(edge: .top, spacing: 0, content: strip)
         } else {
@@ -612,6 +630,9 @@ private struct TopRowProbe: ViewModifier {
     let id: String
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("TopRowProbe")
+        #endif
         if Self.enabled {
             content.onGeometryChange(for: Bool.self) { g in
                 let f = g.frame(in: .scrollView)
@@ -634,6 +655,9 @@ private struct ClickToUnfocusComposer: ViewModifier {
     @Environment(AppModel.self) private var model
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("ClickToUnfocusComposer")
+        #endif
         if Platform.isMac {
             content.simultaneousGesture(TapGesture().onEnded { model.composerUnfocusRequests += 1 })
         } else {
@@ -657,6 +681,9 @@ private struct PhoneTitleOrb: View {
     @State private var column: CGRect = .zero
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("PhoneTitleOrb")
+        #endif
         Color.clear
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { column = $0 }
             .overlay(alignment: .topLeading) {
@@ -679,6 +706,9 @@ private struct MacTopOrb: View {
     @State private var width: CGFloat = 0
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("MacTopOrb")
+        #endif
         Color.clear
             .frame(height: FloatingTitleOrb.macRestHeight)
             .frame(maxWidth: .infinity)
@@ -708,6 +738,9 @@ struct StatusBanner: View {
     @State private var signingIn = false
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("StatusBanner")
+        #endif
         Group {
             // Only a drop that has lasted (or a refusal): returning to the app
             // always starts with a quick reconnect, which isn't news.
@@ -774,6 +807,9 @@ struct ThinkingIndicator: View {
     }
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("ThinkingIndicator")
+        #endif
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
             Text(text)
@@ -818,6 +854,9 @@ struct BackgroundWorkLine: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("BackgroundWorkLine")
+        #endif
         Button { model.setDetail(true, tile: tileDetail) } label: {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
@@ -837,6 +876,9 @@ struct BackgroundWorkLine: View {
 
 struct EmptyChatHint: View {
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("EmptyChatHint")
+        #endif
         VStack(spacing: 10) {
             Image(systemName: "sparkles")
                 .font(.largeTitle)
@@ -874,6 +916,9 @@ private struct SuggestionsSlot: View {
     @State private var quietClock = Date()
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("SuggestionsSlot")
+        #endif
         let gate = SuggestionsGate.shared
         let shows = gate.shows(store, now: quietClock)
         VStack(alignment: .leading, spacing: 0) {
@@ -913,6 +958,9 @@ private struct VoiceScrimLayer: View {
     @Environment(VoiceInputController.self) private var voice
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("VoiceScrimLayer")
+        #endif
         if voice.mounted || Self.demo {
             let capsule = voice.capsuleFrame
             VoiceScrim(opacity: voice.mounted ? voice.scrimOpacity : 1,
@@ -1000,6 +1048,9 @@ private struct HeldAppearance: ViewModifier {
     let scheme: ColorScheme?
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("HeldAppearance")
+        #endif
         content.transformEnvironment(\.colorScheme) { if let scheme { $0 = scheme } }
     }
 }
@@ -1015,6 +1066,9 @@ struct MacTitlebarIndicator: ViewModifier {
     static let size: CGFloat = 30
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("MacTitlebarIndicator")
+        #endif
         if enabled {
             let half = SessionIndicator.outerSize(size: Self.size, glass: true) / 2
             content.overlay(alignment: .topLeading) {

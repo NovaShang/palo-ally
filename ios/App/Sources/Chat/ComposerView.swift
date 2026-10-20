@@ -158,6 +158,9 @@ struct ComposerView: View {
     }
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("ComposerView")
+        #endif
         VStack(spacing: 6) {
             if let typed = slashQuery {
                 SlashSuggestions(commands: SlashCommand.filter(store.commands, typed: typed)) { cmd in
@@ -923,6 +926,9 @@ private struct IntakeHooks: ViewModifier {
     let addImages: ([Data]) -> Void
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("IntakeHooks")
+        #endif
         content
             .onChange(of: intake?.incoming.count ?? 0, initial: true) { _, n in
                 guard n > 0, let intake else { return }
@@ -965,6 +971,9 @@ private struct StagedRow: View {
     let remove: (Int) -> Void
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("StagedRow")
+        #endif
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(Array(items.enumerated()), id: \.offset) { i, item in
@@ -1014,6 +1023,9 @@ private struct SlashSuggestions: View {
     let pick: (SlashCommand) -> Void
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("SlashSuggestions")
+        #endif
         if !commands.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(commands) { c in
@@ -1044,6 +1056,9 @@ private struct QuoteBanner: View {
     let cancel: () -> Void
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("QuoteBanner")
+        #endif
         HStack(alignment: .center, spacing: 10) {
             Capsule().fill(.tertiary).frame(width: 2.5, height: 30)
             VStack(alignment: .leading, spacing: 1) {
