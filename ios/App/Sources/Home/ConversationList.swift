@@ -321,12 +321,6 @@ private struct PaloItem: View {
                             .lineLimit(1)
                     }
                     Spacer(minLength: 4)
-                    if let ts = lastMessage?.ts, ts > 0 {
-                        Text(Copy.relative(ts))
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
-                    }
                 }
                 HStack(spacing: 6) {
                     Text(secondLine(line))
@@ -419,8 +413,8 @@ private struct WorkspaceRow: View {
     private var toggleLabel: String { expanded ? String(localized: "收起") : String(localized: "展开") }
 }
 
-/// A session: its dot and name; on the right what waits on the owner, else
-/// when it was last busy. Phones add its last words under the name.
+/// A session: its state glyph, its name and its last words under it; on the
+/// right what waits on the owner. No time: the room goes to the two lines.
 private struct PalListRow: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
@@ -430,30 +424,22 @@ private struct PalListRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            // The session's round indicator (as on its page): whole on a
-            // phone's two-line row; the state glyph alone in a sidebar's.
-            SessionIndicator(pal, size: model.layout == .phone ? 30 : 16, glass: false)
-                .frame(width: model.layout == .phone ? 30 : 18)
+            // The state glyph of the session's indicator, alone (no arc, no label).
+            SessionIndicator(pal, size: 22, glass: false)
+                .frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
                 Text(pal.displayName)
                     .font(.body)
                     .lineLimit(1)
-                if model.layout == .phone {
-                    Text(Copy.palLine(pal))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                Text(Copy.palLine(pal))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             Spacer(minLength: 4)
             let waiting = store.palPendingCount(pal.id)
             if waiting > 0 {
                 WaitingBadge(count: waiting)
-            } else if let at = pal.updatedAt, at > 0 {
-                Text(Copy.relative(at))
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
             }
         }
         .padding(.vertical, model.layout == .phone ? 3 : (Platform.isMac ? 0 : 1))

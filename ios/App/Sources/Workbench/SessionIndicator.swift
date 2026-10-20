@@ -119,7 +119,9 @@ struct SessionIndicator: View {
         return ZStack {
             switch state {
             case .idle:
-                Circle().strokeBorder(color, lineWidth: r * 0.22).frame(width: r * 1.6, height: r * 1.6)
+                // Nothing going on: a gray ring with a dot in it, quiet.
+                Circle().strokeBorder(color, lineWidth: r * 0.2).frame(width: r * 2, height: r * 2)
+                Circle().fill(color).frame(width: r * 0.8, height: r * 0.8)
             case .working:
                 Circle().fill(color).frame(width: r * 2, height: r * 2)
                 Path { p in

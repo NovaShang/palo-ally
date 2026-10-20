@@ -37,7 +37,7 @@ ul{padding-left:20px;margin:6px 0}li{margin:4px 0}
 <div class="dark"><div class="grid" style="justify-content:center;gap:40px;align-items:center">
  <div id="big"></div>
  <div style="font-size:14px;line-height:2;color:rgba(235,235,245,.85)">
-  <div>① <b>中间</b>：状态图标。在干是蓝色的播放，等你是橙色的问号，做完了是绿色的对勾，闲着是灰色的空心圆。</div>
+  <div>① <b>中间</b>：状态图标。在干是蓝色的播放，等你是橙色的问号，做完了是绿色的对勾，闲着是灰色圆环里一个灰色圆点。</div>
   <div>② <b>外圈</b>：上下文用了多少。平时是白色；超过 80% 变橙，提醒你快该压缩了；超过 95% 变红。</div>
   <div>③ <b>缺口里的小字</b>：思考深度 low / med / hi / xhi / max，用圆体（SF Pro Rounded）。</div>
   <div>中间的图标和外圈的圆弧同一个圆心。</div>
@@ -112,7 +112,7 @@ ul{padding-left:20px;margin:6px 0}li{margin:4px 0}
 const ST={working:{c:'#0A85FF',g:'play'},waiting:{c:'#FF9F0A',g:'q'},done:{c:'#30D158',g:'check'},idle:{c:'#8E8E93',g:'ring'}};
 const MODEL={Haiku:'#8FD5E8',Sonnet:'#A6B6F7',Opus:'#D6A6EE',Fable:'#F4A7A0',其他:'#C7C7CC'};
 function glyph(st,cx,cy,r){const s=ST[st];
- if(s.g==='ring')return `<circle cx="${cx}" cy="${cy}" r="${r*0.8}" fill="none" stroke="${s.c}" stroke-width="${r*0.22}"/>`;
+ if(s.g==='ring')return `<circle cx="${cx}" cy="${cy}" r="${r*0.9}" fill="none" stroke="${s.c}" stroke-width="${r*0.2}"/><circle cx="${cx}" cy="${cy}" r="${r*0.4}" fill="${s.c}"/>`;
  let inner='';
  if(s.g==='play')inner=`<path d="M${cx-r*0.28} ${cy-r*0.42} L${cx+r*0.48} ${cy} L${cx-r*0.28} ${cy+r*0.42}Z" fill="#fff"/>`;
  if(s.g==='check')inner=`<path d="M${cx-r*0.42} ${cy+r*0.02} L${cx-r*0.1} ${cy+r*0.34} L${cx+r*0.46} ${cy-r*0.32}" fill="none" stroke="#fff" stroke-width="${r*0.2}" stroke-linecap="round" stroke-linejoin="round"/>`;

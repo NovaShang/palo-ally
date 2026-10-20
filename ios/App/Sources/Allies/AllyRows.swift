@@ -1,7 +1,8 @@
 import PaloAllyKit
 import SwiftUI
 
-/// One Ally: who, the tag, the last exchange, and a dot while they're online.
+/// One Ally: who, the tag, the last exchange, and a dot while they're online
+/// (no time: the room goes to the two lines).
 struct AllyRow: View {
     let ally: AllyInfo
     /// The owner's assistant, for its words on the last line.
@@ -17,12 +18,6 @@ struct AllyRow: View {
                         .lineLimit(1)
                     AllyKindTag(kind: ally.kind)
                     Spacer(minLength: 4)
-                    if let ts = ally.lastEntry?.ts, ts > 0 {
-                        Text(Copy.relative(ts))
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
-                    }
                 }
                 Text(Copy.allyLastLine(ally, assistant: assistant))
                     .font(.subheadline)
