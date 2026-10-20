@@ -94,8 +94,8 @@ struct FloatingTitleOrb: View {
         let line = store.agentStatusLine
         // While it listens the label steps aside: nothing else to say.
         let caption = line.kind == .idle || voice.panelMounted ? nil : line.text
-        Button(action: action) {
-            ZStack {
+        ZStack {
+            Button(action: action) {
                 Group {
                     if reduceMotion {
                         // No spring when motion is reduced: a short crossfade between sizes.
@@ -105,19 +105,26 @@ struct FloatingTitleOrb: View {
                     }
                 }
                 .background { ListeningGlow(size: big).opacity(Double(listen)) }
-                if let caption {
-                    TitleOrbCaption(text: caption, kind: line.kind)
-                        .frame(maxWidth: 200)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .offset(y: Self.captionOffset(d))
-                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
-                }
             }
-            .frame(width: max(Self.box.width, canvas), height: boxHeight)
-            .offset(y: rest + (dropped - rest) * listen)
-            .opacity(flies ? 1 - Double(min(1, listening * 4)) : 1)
+            .buttonStyle(.plain)
+            if let caption {
+                // 「等你点头」 and the like lead to what waits (the card in
+                // the conversation); otherwise, like the orb, the details.
+                Button {
+                    if line.kind != .needsYou || !model.showWaiting(in: store) { action() }
+                } label: {
+                    TitleOrbCaption(text: caption, kind: line.kind)
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: 200)
+                .fixedSize(horizontal: false, vertical: true)
+                .offset(y: Self.captionOffset(d))
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            }
         }
-        .buttonStyle(.plain)
+        .frame(width: max(Self.box.width, canvas), height: boxHeight)
+        .offset(y: rest + (dropped - rest) * listen)
+        .opacity(flies ? 1 - Double(min(1, listening * 4)) : 1)
         .allowsHitTesting(!voice.panelMounted)
         .animation(reduceMotion ? .easeInOut(duration: 0.25) : .spring(response: 0.5, dampingFraction: 0.62),
                    value: presence)

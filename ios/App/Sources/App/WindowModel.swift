@@ -423,6 +423,22 @@ final class WindowModel {
         openPalo()
     }
 
+    /// The orange 「等你…」 line, or Palo's waiting count: brings what waits
+    /// on the owner in Palo's conversation (`store`, Palo's) into view, from
+    /// elsewhere opening that conversation first (`open`). False when
+    /// nothing there can be shown.
+    @discardableResult
+    func showWaiting(in store: AppStore, open: Bool = false) -> Bool {
+        guard let item = store.firstWaiting else { return false }
+        if open { openPalo() }
+        switch item {
+        case .message(let seq): focusMessageSeq = seq
+        case .approval(let id): focusApprovalID = id
+        case .question(let id): focusQuestionID = id
+        }
+        return true
+    }
+
     /// Launch options take effect once the root knows its layout (phones
     /// push, large screens use a sheet and the inspector); in the first
     /// window only.

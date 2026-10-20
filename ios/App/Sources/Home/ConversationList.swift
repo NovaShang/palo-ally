@@ -294,7 +294,9 @@ private struct PaloItem: View {
             Text(secondLine(line))
                 .foregroundStyle(line.kind == .offline ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
         } trailing: {
+            // The count leads to what waits (the row still opens the conversation).
             WaitingBadge(count: waiting)
+                .simultaneousGesture(TapGesture().onEnded { model.showWaiting(in: store, open: true) })
         }
         // Several computers: the switcher in it is a control of its own.
         .accessibilityElement(children: model.hasSeveralHosts ? .contain : .combine)
