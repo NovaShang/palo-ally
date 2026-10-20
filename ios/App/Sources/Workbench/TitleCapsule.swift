@@ -65,8 +65,8 @@ struct TitleCapsule: View {
 
 /// Phones and iPads: the page's title is only the round indicator on its
 /// own glass circle (docs/workbench-design/indicator.html): no name, no
-/// status line. The same on Palo's page and a session's; tapping it opens
-/// the details, as the capsule does. On a phone it is also where Palo's orb
+/// status line. Palo's page shows its live orb there instead. Tapping it
+/// opens the details, as the capsule does. On a phone it is also where Palo's orb
 /// rests: holding to talk, the orb flies out of it.
 struct PageIndicator: View {
     /// The indicator itself; the glass circle is larger.
@@ -90,7 +90,8 @@ struct PageIndicator: View {
                 .contentShape(.circle)
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: .circle)
+        // Palo's orb is its own glass drop: no circle behind it.
+        .glassEffect(isPalo ? .identity : .regular.interactive(), in: .circle)
         .modifier(PaloOrbHomeIfNeeded(enabled: isPalo && restsHere, token: token))
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { onFrame?($0) }
         .popover(isPresented: Binding(get: { model.detailShown && !AgentDetailPlacement.usesSheet(model: model, store: store) },
@@ -107,8 +108,9 @@ struct PageIndicator: View {
 
     @ViewBuilder private var indicator: some View {
         if isPalo {
-            SessionIndicator(state: store.paloDot, contextPct: store.status?.contextPct, effort: store.status?.effort,
-                             model: store.status?.model, size: size, glass: false, running: store.paloTasksRunning)
+            // Palo: its live orb, whose motion is its state (the round
+            // indicator's context and depth are in its details).
+            TitleOrbDrop(size: size)
         } else if let pal = store.palID.flatMap({ store.pal(id: $0) }) {
             // Holding to talk to it: the level in its middle.
             SessionIndicator(state: dot ?? pal.dot, contextPct: pal.contextPct, effort: pal.effort, model: pal.model,
