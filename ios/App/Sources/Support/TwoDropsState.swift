@@ -174,19 +174,20 @@ public final class TwoDropsState {
         }
         if m != .typing && m != .speaking && m != .approval && m != .offline { set(.anchor, 0) }
         if solo {
+            // One body, the same size in every state (the mark on it always
+            // inside); what moves goes around it: a small drop circling just
+            // past its edge, the surface churning. Never the camera's zoom.
+            set(.zoom, Self.idle[P.zoom.rawValue])
             switch m {
             case .thinking, .streaming, .background:
-                // Working: the inner drop runs round inside, pushing the
-                // surface out as it goes; the glass churns.
-                set(.sep, 0.26 + 0.08 * b); set(.ratio, 0.6); set(.k, 0.34)
-                set(.wobA, 0.6); set(.wobSpeed, 1.4); set(.flow, 0.6); set(.flowSpeed, 1.6)
+                set(.sep, 0.55 + 0.1 * b); set(.ratio, 0.38); set(.k, 0.3)
+                set(.wobA, 0.45); set(.wobSpeed, 1.2); set(.flow, 0.6); set(.flowSpeed, 1.6)
             case .approval:
-                // Waiting: leaning out to one side, still.
-                set(.sep, 0.42); set(.ratio, 0.55); set(.reach, 0.12); set(.k, 0.3)
+                set(.sep, 0.6); set(.ratio, 0.38); set(.reach, 0.1); set(.k, 0.3)
             case .speaking:
-                set(.sep, 0.16 + 0.3 * L); set(.ratio, 0.6)
+                set(.sep, 0.3 + 0.3 * L); set(.ratio, 0.4)
             default:
-                set(.sep, 0.06); set(.ratio, 0.55); set(.azVel, 0.08)
+                set(.sep, 0.06); set(.ratio, 0.5); set(.azVel, 0.08)
             }
         }
         return t
