@@ -2,7 +2,7 @@ import PaloAllyKit
 import SwiftUI
 
 struct LibraryView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     /// One box for both what it made and what was said. `-libraryQuery` prefills it.
     @State private var query = UserDefaults.standard.string(forKey: "libraryQuery") ?? ""
@@ -382,7 +382,7 @@ enum LibraryGrouping: String {
 }
 
 #Preview {
-    let model = AppModel.demo()
+    let model = WindowModel.demo()
     NavigationStack { LibraryView() }
         .environment(model)
         .environment(model.store!)

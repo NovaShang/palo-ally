@@ -6,7 +6,7 @@ import SwiftUI
 /// folder, ⌘↩ adds it to the workspace you're in; 选择其他文件夹… walks the
 /// computer's folders. The new session opens, named by its first words.
 struct NewSessionPanel: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var folders: [SessionFolder]?
@@ -181,7 +181,7 @@ struct NewSessionPanel: View {
 
 extension AppStore {
     /// The workspace a page belongs to: its own, or the session's.
-    func workspaceID(of page: AppModel.Conversation?) -> String? {
+    func workspaceID(of page: WindowModel.Conversation?) -> String? {
         switch page {
         case .workspace(let id): id
         case .pal(let id): pal(id: id)?.workspaceId
@@ -190,7 +190,7 @@ extension AppStore {
     }
 
     /// The folder of the session that's open (a workspace: nothing).
-    func openSessionFolder(_ page: AppModel.Conversation?) -> String? {
+    func openSessionFolder(_ page: WindowModel.Conversation?) -> String? {
         if case .pal(let id) = page { return pal(id: id)?.cwd }
         return nil
     }

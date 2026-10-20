@@ -28,13 +28,13 @@ extension EnvironmentValues {
 /// Full-screen modals over whatever is on screen.
 @MainActor
 enum PaneModal {
-    static func file(_ target: FileTarget, model: AppModel, store: AppStore) {
+    static func file(_ target: FileTarget, model: WindowModel, store: AppStore) {
         present(model: model, store: store) { close in
             FilePage(target: target, close: close)
         }
     }
 
-    static func artifact(_ id: String, model: AppModel, store: AppStore) {
+    static func artifact(_ id: String, model: WindowModel, store: AppStore) {
         present(model: model, store: store) { close in
             ArtifactDetailView(artifactID: id)
                 .toolbar { ToolbarItem(placement: .topBarLeading) { Button(role: .close, action: close) } }
@@ -52,7 +52,7 @@ enum PaneModal {
         return true
     }
 
-    private static func present<Content: View>(model: AppModel, store: AppStore,
+    private static func present<Content: View>(model: WindowModel, store: AppStore,
                                                @ViewBuilder _ content: @escaping (@escaping () -> Void) -> Content) {
         guard let top = QuickLookPresenter.topController() else { return }
         weak var presented: UIViewController?
@@ -92,7 +92,7 @@ struct PhonePane: View {
     var activeSessionID: String? = nil
     let onClose: () -> Void
 
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var chrome = PaneChrome()
     @State private var searching = false

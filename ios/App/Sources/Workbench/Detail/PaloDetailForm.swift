@@ -7,7 +7,7 @@ import SwiftUI
 /// for the assistant, only its own idle compaction.
 struct PaloDetailForm: View {
     @Environment(\.tileDetail) private var tileDetail
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var memoryCount: Int?
     @State private var failure: String?

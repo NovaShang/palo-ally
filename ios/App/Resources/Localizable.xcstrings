@@ -7555,6 +7555,28 @@
           }
         }
       }
+    },
+    "新建窗口" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Window"
+          }
+        }
+      }
+    },
+    "在新窗口中打开" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in New Window"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

@@ -8,13 +8,12 @@ extension EnvironmentValues {
     @Entry var inFloatingSidebar = false
 }
 
-/// What the detail column needs to know about the sidebar's chrome.
+/// What the detail column needs to know about the Mac's title bar (the same
+/// in every window). Whether an iPad window's capsule is up is the window's
+/// own (`WindowModel.capsuleOnPad`).
 @MainActor @Observable
 final class SidebarChrome {
     static let shared = SidebarChrome()
-    /// An iPad in landscape with the sidebar away: the capsule is up, so the
-    /// detail's own system sidebar button goes.
-    var capsuleOnPad = false
     /// The Mac: the title bar's middle line (the traffic lights'), in the window.
     var titlebarMidY: CGFloat = 26
 }
@@ -29,7 +28,7 @@ final class SidebarChrome {
 /// The split view itself keeps doing the collapse (`columnVisibility`, the
 /// full width for the detail); this only adds the way back.
 struct SidebarCollapse: ViewModifier {
-    let model: AppModel
+    let model: WindowModel
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var peeking = false
     @State private var hideTask: Task<Void, Never>?
@@ -70,7 +69,7 @@ struct SidebarCollapse: ViewModifier {
             }
             .onChange(of: model.selection) { hide() }
             .onChange(of: canPeek) { _, can in if !can { hide() } }
-            .onChange(of: showsCapsule && !Platform.isMac) { _, on in SidebarChrome.shared.capsuleOnPad = on }
+            .onChange(of: showsCapsule && !Platform.isMac) { _, on in model.capsuleOnPad = on }
             .task { refreshChrome() }
     }
 
@@ -177,8 +176,10 @@ struct SidebarCollapse: ViewModifier {
 /// An iPad whose capsule is up has its own sidebar button: the system one in
 /// the detail's navigation bar would be a second.
 struct HidesSystemSidebarToggle: ViewModifier {
+    @Environment(WindowModel.self) private var model
+
     func body(content: Content) -> some View {
-        if SidebarChrome.shared.capsuleOnPad {
+        if model.capsuleOnPad {
             content.toolbar(removing: .sidebarToggle)
         } else {
             content

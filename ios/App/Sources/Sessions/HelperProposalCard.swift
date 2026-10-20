@@ -6,7 +6,7 @@ import SwiftUI
 /// 开吧, the one button in the theme color. Once answered it stays, saying
 /// so; a started helper opens from here.
 struct HelperProposalCard: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     let proposal: HelperProposal
 

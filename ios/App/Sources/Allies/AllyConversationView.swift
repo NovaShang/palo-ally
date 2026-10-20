@@ -9,7 +9,7 @@ import SwiftUI
 /// it is (`ally.say`), no card. ⋯ has the trust level (能对话 / 每句要你看)
 /// and 解除, asked in the page.
 struct AllyConversationView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @Environment(\.chatDraft) private var draft
     let allyID: String

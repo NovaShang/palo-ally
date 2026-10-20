@@ -23,7 +23,7 @@ enum MacUpdate {
 /// The sidebar's foot: 「Mac 版有新版本 0.1.9」, 下载, and a close that lasts
 /// until a newer version comes out. Plain glass; the theme color isn't used.
 struct MacUpdateHint: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @Environment(\.openURL) private var openURL
     @AppStorage(MacUpdate.dismissedKey) private var dismissed = ""

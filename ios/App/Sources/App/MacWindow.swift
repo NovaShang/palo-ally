@@ -31,7 +31,7 @@ enum Platform {
 /// navigation bar inside it. Installed once per window; elsewhere it does
 /// nothing.
 struct MacWindowChrome: ViewModifier {
-    let model: AppModel
+    let model: WindowModel
 
     func body(content: Content) -> some View {
         #if targetEnvironment(macCatalyst)
@@ -77,14 +77,14 @@ private struct NavigationBarStyleProbe: UIViewControllerRepresentable {
 }
 
 private struct MacToolbarInstaller: UIViewRepresentable {
-    let model: AppModel
+    let model: WindowModel
 
     func makeUIView(context: Context) -> InstallView { InstallView(model: model) }
     func updateUIView(_ view: InstallView, context: Context) {}
 
     final class InstallView: UIView {
-        let model: AppModel
-        init(model: AppModel) {
+        let model: WindowModel
+        init(model: WindowModel) {
             self.model = model
             super.init(frame: .zero)
             isHidden = true
@@ -151,12 +151,15 @@ private extension NSToolbarItem.Identifier {
 final class MacToolbar: NSObject, NSToolbarDelegate {
     private static var installed: [ObjectIdentifier: MacToolbar] = [:]
 
-    private let model: AppModel
+    private let model: WindowModel
     private let toolbar = NSToolbar(identifier: "palo.main")
 
-    static func install(on scene: UIWindowScene, model: AppModel) {
+    static func install(on scene: UIWindowScene, model: WindowModel) {
         let key = ObjectIdentifier(scene)
         guard installed[key] == nil, let titlebar = scene.titlebar else { return }
+        // Windows closed since let go of their toolbars (and their models).
+        let open = Set(UIApplication.shared.connectedScenes.map(ObjectIdentifier.init))
+        installed = installed.filter { open.contains($0.key) }
         let bar = MacToolbar(model: model)
         installed[key] = bar
         titlebar.titleVisibility = .hidden
@@ -166,7 +169,7 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
         AppKitBundle.immerseWindows(toolbar: bar.toolbar.identifier)
     }
 
-    private init(model: AppModel) {
+    private init(model: WindowModel) {
         self.model = model
         super.init()
         toolbar.delegate = self

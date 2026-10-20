@@ -18,7 +18,7 @@ struct FileTreeScreen: View {
     /// The right pane: a file opens as a tab of its own instead of a page pushed here.
     var onOpenFile: ((FileTarget) -> Void)? = nil
 
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @Environment(\.placesAsColumns) private var asColumn
     @Environment(\.dismiss) private var dismiss

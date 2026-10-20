@@ -44,7 +44,7 @@ enum OrbPresence: String, Equatable {
 }
 
 /// Works out the orb's presence from the conversation's scroll state, the
-/// assistant's status and the owner's voice, and keeps `AppModel.orbPresence`
+/// assistant's status and the owner's voice, and keeps `WindowModel.orbPresence`
 /// up to date — one place, so every orb reads the same thing. It also feeds
 /// the two-drop avatar (AvatarSignals): the assistant's state, and the
 /// events it acts out (the owner sends, a reply lands, something's handed
@@ -54,7 +54,7 @@ struct OrbPresenceTracking: ViewModifier {
     let scrolledUp: Bool
     /// The owner's finger (or its fling) is moving the list.
     let scrolling: Bool
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
 

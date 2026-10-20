@@ -14,7 +14,7 @@ struct FileTarget: Hashable, Identifiable {
     var id: String { "\(scope.kind.rawValue)|\(scope.id ?? "")|\(path)" }
 }
 
-extension AppModel {
+extension WindowModel {
     /// A folder opened from 成果: in place of 成果's list, in the pane (back returns to it).
     func openFolder(_ id: String) {
         filesPanel = .folder(id)
@@ -33,7 +33,7 @@ extension AppModel {
 /// folder's tree pushed over 成果 (phones), and the scope paths in replies
 /// resolve against (the assistant's home, or the Pal's folder).
 struct FilesInConversation: ViewModifier {
-    let current: AppModel.Conversation
+    let current: WindowModel.Conversation
     @Environment(AppStore.self) private var store
 
     func body(content: Content) -> some View {
@@ -56,7 +56,7 @@ struct FilesInConversation: ViewModifier {
 /// A folder's tree in the pane in place of 成果's list (back to 成果).
 struct FilesPanel: View {
     let scope: FileScope
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
 
     var body: some View {
         NavigationStack {
@@ -73,7 +73,7 @@ struct FilesPanel: View {
 
 /// 成果's 文件夹: the folders opened before, and 打开文件夹….
 struct OwnerFoldersSection: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var folders: [OwnerFolder] = []
     @State private var picking = false

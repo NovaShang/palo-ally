@@ -9,7 +9,7 @@ import SwiftUI
 struct RewindPanel: View {
     let target: ChatMessage
     @Environment(AppStore.self) private var store
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(\.chatDraft) private var draft
     /// A Pal: whether its files can go back (nil while the computer is asked).
     @State private var canRestore: Bool?

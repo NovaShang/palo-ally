@@ -6,7 +6,7 @@ import SwiftUI
 /// 想运行」); once it waited past the hook's limit it stays, untappable, as
 /// 「在电脑上等你」 until it's settled there.
 struct ApprovalCard: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     let approval: Approval
     /// The source label opens that session's page (not on the page itself).

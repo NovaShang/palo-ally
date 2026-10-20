@@ -19,7 +19,7 @@ struct QuickSwitchStrip: View {
     /// The workspace's sessions (`QuickSwitch.members`), two or more.
     let members: [String]
 
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     /// Asked from a chip's menu, answered by the bar: the strip goes away
     /// while the keyboard is up, and the rename alert's field brings it up.
@@ -128,8 +128,8 @@ struct QuickSwitchStrip: View {
 /// they slide past above it. Hidden while the keyboard is up (in Bento the
 /// keyboard slides over it).
 struct QuickSwitchBar: ViewModifier {
-    let current: AppModel.Conversation
-    @Environment(AppModel.self) private var model
+    let current: WindowModel.Conversation
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var keyboardUp = false
     @State private var renaming: Pal?

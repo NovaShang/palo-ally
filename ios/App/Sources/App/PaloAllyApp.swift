@@ -10,61 +10,84 @@ struct PaloAllyApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
-        WindowGroup {
-            RootView()
-                .environment(appDelegate.model)
-                .onOpenURL { appDelegate.model.handle(url: $0) }
-                .onChange(of: scenePhase) { _, phase in
-                    breadcrumb("scene \(phase)")
-                    switch phase {
-                    case .active: appDelegate.model.didBecomeActive()
-                    case .background: appDelegate.model.didEnterBackground()
-                    default: break
-                    }
-                }
+        // iPads and the Mac: any number of windows (File → 新建窗口, a row's
+        // 在新窗口中打开, a row dragged out on an iPad), each with its own
+        // `WindowModel`; phones: one. A window opened for a conversation is
+        // given it as its value.
+        WindowGroup(for: WindowTarget.self) { $target in
+            WindowRoot(app: appDelegate.model, target: target)
+        }
+        // The app as a whole (any window up or none): the connections wake and sleep with it.
+        .onChange(of: scenePhase) { _, phase in
+            breadcrumb("scene \(phase)")
+            switch phase {
+            case .active: appDelegate.model.didBecomeActive()
+            case .background: appDelegate.model.didEnterBackground()
+            default: break
+            }
         }
         .commands {
-            // File → 新建会话 (⌘N) and 新建工作区 (⌘⇧N), in place of the system's New.
-            CommandGroup(replacing: .newItem) {
-                Button("新建会话") { appDelegate.model.newSession = true }
-                    .keyboardShortcut("n", modifiers: .command)
-                Button("新建工作区") { appDelegate.model.newWorkspace = [] }
-                    .keyboardShortcut("n", modifiers: [.command, .shift])
-            }
+            // File → 新建会话 (⌘N), 新建工作区 (⌘⇧N) and 新建窗口 (⌥⌘N),
+            // in place of the system's New.
+            WindowCommands(app: appDelegate.model)
             // View → Show / Hide Sidebar (⌃⌘S), the system's. It also anchors
             // PlaceCommands below (`before: .sidebar`); without it the menu
             // build throws at launch. The collapsed state is saved from
             // `columnVisibility` (RootView), so the system toggle is remembered.
             SidebarCommands()
-            PlaceCommands(model: appDelegate.model)
+            PlaceCommands(app: appDelegate.model)
+        }
+    }
+}
+
+/// File: new things, in the window in front, and a new window.
+private struct WindowCommands: Commands {
+    let app: AppModel
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("新建会话") { app.frontWindow?.newSession = true }
+                .keyboardShortcut("n", modifiers: .command)
+            Button("新建工作区") { app.frontWindow?.newWorkspace = [] }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+            if UIApplication.shared.supportsMultipleScenes {
+                Divider()
+                Button("新建窗口") { openWindow(value: WindowTarget(.palo)) }
+                    .keyboardShortcut("n", modifiers: [.command, .option])
+            }
         }
     }
 }
 
 /// Mac menu bar / iPad hardware keyboard: the assistant's management (the
-/// orb) and 成果 (beside the conversation on large windows).
+/// orb) and 成果 (beside the conversation on large windows), in the window in front.
 private struct PlaceCommands: Commands {
-    let model: AppModel
+    let app: AppModel
+
+    private func inFront(_ body: (WindowModel) -> Void) {
+        if let w = app.frontWindow { body(w) }
+    }
 
     var body: some Commands {
         CommandGroup(before: .sidebar) {
-            Button("管理助理") { model.toggleManagement() }
+            Button("管理助理") { inFront { $0.toggleManagement() } }
                 .keyboardShortcut("1", modifiers: .command)
-            Button("右侧栏") { model.toggleLibrary() }
+            Button("右侧栏") { inFront { $0.toggleLibrary() } }
                 .keyboardShortcut("2", modifiers: .command)
             // ⌘F searches 成果 and the conversation (nothing else here has
             // Find). It lives here: Catalyst ignores a replaced text-editing
             // group, and the system Find items are taken out below.
-            Button("搜索成果和对话") { model.focusLibrarySearch() }
+            Button("搜索成果和对话") { inFront { $0.focusLibrarySearch() } }
                 .keyboardShortcut("f", modifiers: .command)
             // One level back: a sheet closes, a pushed page pops, then 成果
             // beside the conversation closes.
-            Button("返回") { model.goBack() }
+            Button("返回") { inFront { $0.goBack() } }
                 .keyboardShortcut("[", modifiers: .command)
         }
         // ⌘, : management with its settings page.
         CommandGroup(replacing: .appSettings) {
-            Button("设置…") { model.openSettings() }
+            Button("设置…") { inFront { $0.openSettings() } }
                 .keyboardShortcut(",", modifiers: .command)
         }
         CommandGroup(replacing: .textEditing) {}
@@ -73,7 +96,7 @@ private struct PlaceCommands: Commands {
 
 /// Owns the model so it exists before the system can deliver a notification
 /// response (a tap that cold-launches the app arrives right after
-/// didFinishLaunching, before any view appears).
+/// didFinishLaunching, before any view appears; it waits for the first window).
 @MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     let model = AppModel()
@@ -81,7 +104,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
-        // A paloally: link tapped in a conversation.
+        // A paloally: link tapped in a conversation (the window clicked in is the one used last).
         InAppLinks.open = { [model] in model.handle(url: $0) }
         // Voice logs already carry "[voice]"; append the time since the press.
         voiceLogSink = { debugLog("\($0)\(VoiceTiming.suffix)") }

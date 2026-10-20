@@ -26,7 +26,7 @@ struct PalPage: View {
 private struct PalConversation: View {
     let palID: String
     let inTile: Bool
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     /// The Pal's own store.
     @Environment(AppStore.self) private var store
 

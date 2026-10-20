@@ -18,7 +18,7 @@ struct RightPane: View {
     /// Phone: the pane is a cover and closes by being dismissed.
     var onClose: (() -> Void)? = nil
 
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var pages = WebTabPages()
     @State private var pageByTab: [Int: WebTabPage] = [:]
@@ -118,7 +118,7 @@ enum RightPaneScope {
 
 /// 成果: the list with its items pushed over it, or a folder's tree in its place.
 struct LibraryTab: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
 
     var body: some View {
         @Bindable var model = model
@@ -302,7 +302,7 @@ private struct RightPaneCover: ViewModifier {
     @Binding var isPresented: Bool
     let key: String
     let activeSessionID: String?
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
 
     func body(content: Content) -> some View {
@@ -316,7 +316,7 @@ private struct RightPaneCover: ViewModifier {
 
 #if DEBUG
 #Preview("Right pane, session") {
-    let model = AppModel.demo()
+    let model = WindowModel.demo()
     RightPane(key: PaneTabsKey.session("pal-site"))
         .environment(model)
         .environment(model.store!)
@@ -328,7 +328,7 @@ private struct RightPaneCover: ViewModifier {
 }
 
 #Preview("Right pane, Palo") {
-    let model = AppModel.demo()
+    let model = WindowModel.demo()
     RightPane(key: PaneTabsKey.palo)
         .environment(model)
         .environment(model.store!)

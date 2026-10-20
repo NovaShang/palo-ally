@@ -9,7 +9,7 @@ import SwiftUI
 /// became opens from here. One the computer couldn't take over says why and
 /// stays on offer.
 struct PalAdoptCard: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     let proposal: PalAdoptProposal
 

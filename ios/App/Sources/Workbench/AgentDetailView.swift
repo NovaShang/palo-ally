@@ -9,7 +9,7 @@ import SwiftUI
 /// title bar's right button, not here. Reads the store in the environment:
 /// a session's own (`palStore`) or the assistant's (Detail/PaloDetailForm).
 struct AgentDetailView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @Environment(\.tileDetail) private var tileDetail
     /// The list's content height, so a popover fits it (nil: not measured yet).
@@ -47,7 +47,7 @@ struct AgentDetailView: View {
 private struct SessionDetailForm: View {
     let palID: String
     @Environment(\.tileDetail) private var tileDetail
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var detail: PalDetail?
     @State private var failure: String?

@@ -7,7 +7,7 @@ import SwiftUI
 /// and gets the keyboard and the voice. The layout is kept on the computer.
 struct WorkspaceTilesPage: View {
     let workspaceID: String
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     /// The tile whose details are open.
     @State private var details = TileDetails()
@@ -206,7 +206,7 @@ final class TileDetails {
 private struct WorkspaceBar: ViewModifier {
     let workspaceID: String
     @Environment(AppStore.self) private var store
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
 
     func body(content: Content) -> some View {
         let workspace = store.workspace(id: workspaceID)
@@ -238,7 +238,7 @@ private struct WorkspaceBar: ViewModifier {
 }
 
 private struct PaneButton: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
 
     var body: some View {
         Button { model.togglePane() } label: { Image(systemName: "sidebar.trailing") }
@@ -252,7 +252,7 @@ private struct PaneButton: View {
 private struct TileMenu: View {
     let workspaceID: String
     let glass: Bool
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var failure: String?
 

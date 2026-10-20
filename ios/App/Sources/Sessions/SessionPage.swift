@@ -22,7 +22,7 @@ struct SessionPage: View {
 
 private struct SessionConversation: View {
     let sessionID: String
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     /// The session's own store.
     @Environment(AppStore.self) private var store
 

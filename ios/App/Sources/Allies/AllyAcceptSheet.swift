@@ -13,7 +13,7 @@ struct PendingAllyInvite: Identifiable, Equatable {
 /// allies-prd §11.1), then this computer pairs with theirs both ways.
 /// Progress and failures in plain words.
 struct AllyAcceptSheet: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     let pending: PendingAllyInvite

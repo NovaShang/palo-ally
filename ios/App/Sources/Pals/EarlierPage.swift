@@ -9,7 +9,7 @@ import SwiftUI
 /// where it left off. The system search field narrows the list by title or
 /// folder.
 struct EarlierPage: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
 
     /// The conversation being asked about, and how far along.

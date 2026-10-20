@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 
 struct PairingView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     let isSheet: Bool
 
@@ -228,7 +228,7 @@ struct PairingView: View {
 /// assistant's pair_link, tapped on the device it was sent to): it's for
 /// another device, so it's offered for passing on, and kept unused.
 struct LinkForAnotherDeviceAlert: ViewModifier {
-    let model: AppModel
+    let model: WindowModel
 
     func body(content: Content) -> some View {
         let pending = model.linkForAnotherDevice
@@ -270,5 +270,5 @@ enum SystemShare {
 }
 
 #Preview {
-    PairingView(isSheet: false).environment(AppModel(launch: LaunchOptions(demo: false, screen: nil, tab: nil)))
+    PairingView(isSheet: false).environment(WindowModel(app: AppModel(launch: LaunchOptions(demo: false, screen: nil, tab: nil))))
 }

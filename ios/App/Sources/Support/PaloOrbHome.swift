@@ -2,10 +2,10 @@ import SwiftUI
 
 /// Where the Palo orb rests when it isn't listening: the sidebar's Palo
 /// item, or the collapsed sidebar's capsule. On the Palo page the listening
-/// orb flies out from here and back (docs/workbench-prd.md §11).
+/// orb flies out from here and back (docs/workbench-prd.md §11). One per
+/// window (`WindowModel.orbHome`): each window has its own coordinates.
 @MainActor @Observable
 final class PaloOrbHome {
-    static let shared = PaloOrbHome()
     /// In global coordinates; nil while nothing on screen holds it.
     var frame: CGRect?
     /// Whoever set `frame` last, so a place that goes away only clears its own.
@@ -26,21 +26,23 @@ extension View {
 
 private struct PaloOrbHomeMark: ViewModifier {
     @State var owner: UUID
+    @Environment(WindowModel.self) private var model
 
     init(owner: UUID) { _owner = State(initialValue: owner) }
 
     func body(content: Content) -> some View {
-        content
+        let home = model.orbHome
+        return content
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
-                PaloOrbHome.shared.frame = frame
-                PaloOrbHome.shared.owner = owner
+                home.frame = frame
+                home.owner = owner
             }
             .onDisappear {
-                if PaloOrbHome.shared.owner == owner {
-                    PaloOrbHome.shared.frame = nil
-                    PaloOrbHome.shared.owner = nil
+                if home.owner == owner {
+                    home.frame = nil
+                    home.owner = nil
                 }
             }
-            .opacity(PaloOrbHome.shared.flying ? 0 : 1)
+            .opacity(home.flying ? 0 : 1)
     }
 }

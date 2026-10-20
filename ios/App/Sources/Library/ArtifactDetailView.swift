@@ -325,7 +325,7 @@ struct SandboxedHTMLView: UIViewRepresentable {
 }
 
 #Preview {
-    let model = AppModel.demo()
+    let model = WindowModel.demo()
     NavigationStack { ArtifactDetailView(artifactID: "ar1") }
         .environment(model)
         .environment(model.store!)

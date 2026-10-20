@@ -11,7 +11,7 @@ import SwiftUI
 /// Phones: one step back from a conversation, like Messages; iPads and the
 /// Mac: the sidebar.
 struct ConversationList: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     /// 重命名 asked from a session's row (pals-prd §13).
     @State private var renaming: Pal?
@@ -29,22 +29,26 @@ struct ConversationList: View {
         let tree = store.sidebarTree
         List(selection: $model.selection) {
             PaloItem(waitingSessions: tree.waitingCount)
-                .tag(AppModel.Conversation.palo)
+                .tag(WindowModel.Conversation.palo)
                 .accessibilityIdentifier("row-palo")
+                .modifier(OpenInNewWindow(conversation: .palo))
+                .contextMenu { OpenInNewWindowButton(conversation: .palo) }
 
             if store.palsSupported == true {
                 if !tree.workspaces.isEmpty {
                     Section {
                         ForEach(tree.workspaces) { node in
                             WorkspaceRow(node: node, expanded: isExpanded(node)) { toggle(node) }
-                                .tag(AppModel.Conversation.workspace(node.id))
+                                .tag(WindowModel.Conversation.workspace(node.id))
                                 .accessibilityIdentifier("row-workspace-\(node.id)")
+                                .modifier(OpenInNewWindow(conversation: .workspace(node.id)))
                                 .contextMenu { workspaceMenu(node.workspace) }
                             if isExpanded(node) {
                                 ForEach(node.members) { pal in
                                     PalListRow(pal: pal, inset: true)
-                                        .tag(AppModel.Conversation.pal(pal.id))
+                                        .tag(WindowModel.Conversation.pal(pal.id))
                                         .accessibilityIdentifier("row-pal-\(pal.id)")
+                                        .modifier(OpenInNewWindow(conversation: .pal(pal.id)))
                                         .contextMenu { sessionMenu(pal) }
                                 }
                             }
@@ -57,8 +61,9 @@ struct ConversationList: View {
                 Section {
                     ForEach(tree.sessions) { pal in
                         PalListRow(pal: pal)
-                            .tag(AppModel.Conversation.pal(pal.id))
+                            .tag(WindowModel.Conversation.pal(pal.id))
                             .accessibilityIdentifier("row-pal-\(pal.id)")
+                            .modifier(OpenInNewWindow(conversation: .pal(pal.id)))
                             .contextMenu { sessionMenu(pal) }
                     }
                 } header: {
@@ -74,7 +79,7 @@ struct ConversationList: View {
                 Section {
                     ForEach(store.allies) { ally in
                         AllyListRow(ally: ally)
-                            .tag(AppModel.Conversation.ally(ally.id))
+                            .tag(WindowModel.Conversation.ally(ally.id))
                             .accessibilityIdentifier("row-ally-\(ally.id)")
                     }
                 } header: {
@@ -89,7 +94,7 @@ struct ConversationList: View {
             // The computers and the devices paired with them: quiet, last.
             Section {
                 DevicesListRow()
-                    .tag(AppModel.Conversation.devices)
+                    .tag(WindowModel.Conversation.devices)
                     .accessibilityIdentifier("row-devices")
             }
         }
@@ -103,7 +108,7 @@ struct ConversationList: View {
             VStack(spacing: 0) {
                 MacUpdateHint()
                 SidebarFooter(newSession: { model.newSession = true }, newWorkspace: { model.newWorkspace = [] },
-                              history: { store.historyPickerPresented = true })
+                              history: { model.historyPickerPresented = true })
             }
         }
         .palRename($renaming)
@@ -152,6 +157,7 @@ struct ConversationList: View {
     // MARK: menus
 
     @ViewBuilder private func sessionMenu(_ pal: Pal) -> some View {
+        OpenInNewWindowButton(conversation: .pal(pal.id))
         Button("重命名", systemImage: "pencil") { renaming = pal }
             .disabled(!store.connection.isOnline)
         if store.workspacesSupported == true {
@@ -175,6 +181,7 @@ struct ConversationList: View {
     }
 
     @ViewBuilder private func workspaceMenu(_ w: Workspace) -> some View {
+        OpenInNewWindowButton(conversation: .workspace(w.id))
         Button("重命名", systemImage: "pencil") {
             workspaceName = w.name
             renamingWorkspace = w
@@ -252,7 +259,7 @@ struct WaitingBadge: View {
 /// floating copy leaves it to the capsule).
 private struct OrbHomeIfDocked: ViewModifier {
     @Environment(\.inFloatingSidebar) private var floating
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
 
     func body(content: Content) -> some View {
         // Phones: never. The list stays alive under Palo's page, so it would
@@ -266,7 +273,7 @@ private struct OrbHomeIfDocked: ViewModifier {
 /// sessions wait on the owner; what waits on the owner in its own
 /// conversation as the count.
 private struct PaloItem: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     /// Sessions (anywhere) waiting on the owner.
     let waitingSessions: Int
@@ -362,7 +369,7 @@ private struct WorkspaceRow: View {
 /// A session: its state glyph, its name and its last words under it; on the
 /// right what waits on the owner. No time: the room goes to the two lines.
 private struct PalListRow: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     let pal: Pal
     /// Listed under its workspace.
@@ -393,7 +400,7 @@ struct SidebarRowLayout<Icon: View, Title: View, Subtitle: View, Trailing: View>
     @ViewBuilder var title: Title
     @ViewBuilder var subtitle: Subtitle
     @ViewBuilder var trailing: Trailing
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
 
     var body: some View {
         HStack(spacing: 10) {
@@ -414,7 +421,7 @@ struct SidebarRowLayout<Icon: View, Title: View, Subtitle: View, Trailing: View>
         .sidebarRowText()
     }
 
-    static func verticalPadding(_ model: AppModel) -> CGFloat {
+    static func verticalPadding(_ model: WindowModel) -> CGFloat {
         model.layout == .phone ? 3 : (Platform.isMac ? 8 : 1)
     }
 }
@@ -422,7 +429,7 @@ struct SidebarRowLayout<Icon: View, Title: View, Subtitle: View, Trailing: View>
 /// The sidebar's foot: ＋ with its menu on the left, 设置 on the right.
 /// Neutral glass; the theme color isn't used.
 private struct SidebarFooter: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     let newSession: () -> Void
     let newWorkspace: () -> Void
@@ -494,7 +501,7 @@ private struct FooterMenuStyle: ViewModifier {
 /// of every assistant (the current one ticked, a dot on one with something
 /// new or waiting) and 电脑与设备… (docs/devices-prd.md §2).
 private struct AssistantSwitcher: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     let name: String
 
     var body: some View {
@@ -554,7 +561,7 @@ private struct AssistantSwitcher: View {
 
 /// 电脑与设备: the last row, quiet (secondary), like 最近的对话.
 private struct DevicesListRow: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
 
     var body: some View {
         SidebarRowLayout {

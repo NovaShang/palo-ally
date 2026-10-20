@@ -53,7 +53,7 @@ struct WatchesSection: View {
 /// the owner. Tap sends the request and slides back to the conversation.
 private struct MoreIdeasSection: View {
     @Environment(AppStore.self) private var store
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
 
     var body: some View {
         if !store.suggestions.isEmpty {

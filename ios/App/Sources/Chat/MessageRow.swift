@@ -232,7 +232,7 @@ private struct BubbleInteractions: ViewModifier {
 }
 
 private struct AssistantMessage: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     let message: ChatMessage
 
@@ -324,7 +324,7 @@ private struct AssistantMessage: View {
 
 private struct TaskChip: View {
     @Environment(AppStore.self) private var store
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     let taskId: String
 
     var body: some View {
@@ -379,7 +379,7 @@ private struct NoticeRow: View {
 /// offers 「在产出物库中查看」. Web-page artifacts open in the library's web view.
 private struct AttachmentStrip: View {
     @Environment(AppStore.self) private var store
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     let attachments: [Attachment]
     @State private var loading: String?
 

@@ -32,7 +32,7 @@ struct TitleOrbSlot: View {
 }
 
 /// The orb floating over the bar's middle (phones and iPads), centered on
-/// the bar's center line. Its size follows `AppModel.orbPresence` on a
+/// the bar's center line. Its size follows `WindowModel.orbPresence` on a
 /// spring; past the bar it simply spills over the content and the status
 /// bar's margin (a little lower rather than into the Dynamic Island). The
 /// caption is a small glass label across its lower part.
@@ -51,7 +51,7 @@ struct FloatingTitleOrb: View {
     /// and it shouldn't crowd the messages it floats over).
     var topAligned = false
     let action: () -> Void
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @Environment(VoiceInputController.self) private var voice
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -78,7 +78,7 @@ struct FloatingTitleOrb: View {
         // With a resting place on screen (the sidebar's Palo item) the
         // listening orb flies out from there (`FlyingPaloOrb`): this one
         // stays where it is and gives way as the hold begins.
-        let flies = PaloOrbHome.shared.frame != nil
+        let flies = model.orbHome.frame != nil
         let listen = flies ? 0 : listening
         let big = OrbPresence.voiceDiameter(width: columnWidth)
         let d = barSize + (big - barSize) * listen
@@ -173,18 +173,19 @@ struct FlyingPaloOrb: View {
     /// Where the phone bar's middle is (an iPad's page); the end point
     /// follows the same rule as the words' (`VoiceWordsLayer`).
     let placement: OrbPlacement
+    @Environment(WindowModel.self) private var model
     @Environment(VoiceInputController.self) private var voice
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let out = PaloOrbHome.shared.frame != nil && voice.panelMounted
+        let out = model.orbHome.frame != nil && voice.panelMounted
         flight
-            .onChange(of: out, initial: true) { _, now in PaloOrbHome.shared.flying = now }
-            .onDisappear { PaloOrbHome.shared.flying = false }
+            .onChange(of: out, initial: true) { _, now in model.orbHome.flying = now }
+            .onDisappear { model.orbHome.flying = false }
     }
 
     @ViewBuilder private var flight: some View {
-        if let home = PaloOrbHome.shared.frame, voice.panelMounted {
+        if let home = model.orbHome.frame, voice.panelMounted {
             let p = min(max(voice.presence, 0), 1)
             let listen = reduceMotion ? (p > 0 ? 1 : 0) : p
             GeometryReader { proxy in
@@ -235,7 +236,7 @@ private struct ListeningGlow: View {
 /// it spills past `size` on every side.
 struct TitleOrbDrop: View {
     let size: CGFloat
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
 
     /// The pair fills about three quarters of the shader's canvas.
@@ -284,7 +285,7 @@ private struct FloatingOrbAccessibility: ViewModifier {
 }
 
 private struct TitleOrbAccessibility: ViewModifier {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
 
     func body(content: Content) -> some View {

@@ -4,7 +4,7 @@ import SwiftUI
 /// 新建工作区: a name (optional) and the sessions to put in it. The host
 /// wants at least one.
 struct NewWorkspaceSheet: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
@@ -91,7 +91,7 @@ private extension String {
 /// §12): its sessions, each one a tap away. Elsewhere `WorkspaceTilesPage`.
 struct WorkspacePage: View {
     let workspaceID: String
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
 
     var body: some View {

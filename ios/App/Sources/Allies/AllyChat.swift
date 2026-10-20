@@ -37,7 +37,7 @@ struct AllyMessageRow: View {
 /// What an Ally's assistant passed on: labelled 「家人的助理」, their words as
 /// they were, set off by a quiet rule. Tapping the label opens that Ally.
 private struct AllyIncoming: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     let message: ChatMessage
     let entry: AllyEntry?

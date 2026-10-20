@@ -9,7 +9,7 @@ import SwiftUI
 struct AssistantView: View {
     /// Shown as a sheet (large screens): it closes with 完成.
     var inSheet = false
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
 
     var body: some View {
@@ -91,7 +91,7 @@ struct AssistantView: View {
 }
 
 private struct AssistantHeader: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var confirmStop = false
     @State private var working = false
@@ -190,7 +190,7 @@ private struct AssistantHeader: View {
 }
 
 #Preview {
-    let model = AppModel.demo()
+    let model = WindowModel.demo()
     NavigationStack { AssistantView() }
         .environment(model)
         .environment(model.store!)

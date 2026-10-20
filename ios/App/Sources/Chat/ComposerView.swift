@@ -23,7 +23,7 @@ import UniformTypeIdentifiers
 /// The same composer for the assistant and for a Pal (pals-prd §15).
 struct ComposerView: View {
     @Environment(AppStore.self) private var store
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(VoiceInputController.self) private var voice
     @Environment(\.scenePhase) private var scenePhase
     /// Inside a workspace's tile: only the active one takes voice and focus.

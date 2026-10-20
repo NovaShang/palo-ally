@@ -11,7 +11,7 @@ import SwiftUI
 /// session opens.
 struct HistoryPicker: View {
     @Binding var isPresented: Bool
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
 
     @State private var query = ""
@@ -178,18 +178,18 @@ struct HistoryPicker: View {
 }
 
 extension View {
-    /// The 从历史记录继续… sheet, shown while `store.historyPickerPresented` is set.
+    /// The 从历史记录继续… sheet, shown while the window's `historyPickerPresented` is set.
     func historyPicker() -> some View { modifier(HistoryPickerSheet()) }
 }
 
 private struct HistoryPickerSheet: ViewModifier {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
 
     func body(content: Content) -> some View {
-        @Bindable var store = store
-        content.sheet(isPresented: $store.historyPickerPresented) {
-            HistoryPicker(isPresented: $store.historyPickerPresented)
+        @Bindable var model = model
+        content.sheet(isPresented: $model.historyPickerPresented) {
+            HistoryPicker(isPresented: $model.historyPickerPresented)
                 .environment(model)
                 .environment(store)
         }

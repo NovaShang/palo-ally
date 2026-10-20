@@ -9,7 +9,7 @@ import SwiftUI
 struct IdentityEditor: View {
     enum Purpose { case firstTime, edit }
 
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     let purpose: Purpose
@@ -94,7 +94,7 @@ struct IdentityEditor: View {
         error = nil
         Task {
             do {
-                // The computer's answer recolors the app (AppModel follows settings.color).
+                // The computer's answer recolors the app (WindowModel follows settings.color).
                 try await store.updateSettings(patch: .object(["assistantName": .string(finalName),
                                                                "color": .string(color.rawValue)]))
                 model.namingDone = true

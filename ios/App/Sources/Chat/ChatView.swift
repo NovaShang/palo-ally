@@ -27,7 +27,7 @@ struct ChatView: View {
         /// A session's page: its title is the capsule that opens the details.
         var capsule = false
     }
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     /// Kept by MainScreen so it survives the layout switching containers.
     @Environment(\.chatDraft) private var draft
@@ -559,7 +559,7 @@ private struct ConversationRows: View {
 /// What the scroll coordinator hears about the conversation changing.
 private struct ConversationChanges: ViewModifier {
     let scroll: ChatScrollCoordinator
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
 
     func body(content: Content) -> some View {
@@ -655,7 +655,7 @@ private struct TopRowProbe: ViewModifier {
 /// the press-to-talk button. Simultaneous: the click still reaches links,
 /// buttons and text selection.
 private struct ClickToUnfocusComposer: ViewModifier {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
 
     func body(content: Content) -> some View {
         #if DEBUG || PERF_HARNESS
@@ -680,7 +680,7 @@ private struct ClickToUnfocusComposer: ViewModifier {
 /// slot. Keeps its own idea of where the column is, for the same reason.
 private struct PhoneTitleOrb: View {
     let placement: OrbPlacement
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @State private var column: CGRect = .zero
 
     var body: some View {
@@ -704,7 +704,7 @@ private struct PhoneTitleOrb: View {
 /// The Mac: the orb hanging from the top middle of the conversation column,
 /// below the titlebar. As tall as the resting orb; bigger, it overflows.
 private struct MacTopOrb: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var width: CGFloat = 0
 
@@ -736,7 +736,7 @@ private struct MacTopOrb: View {
 /// Banner for connection trouble, and for Claude Code's login running out
 /// on the computer (everything waits until it's signed in again).
 struct StatusBanner: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var signingIn = false
 
@@ -854,7 +854,7 @@ struct ThinkingIndicator: View {
 struct BackgroundWorkLine: View {
     let count: Int
     @Environment(\.tileDetail) private var tileDetail
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
 
     var body: some View {
         #if DEBUG || PERF_HARNESS
@@ -900,7 +900,7 @@ struct EmptyChatHint: View {
 }
 
 #Preview {
-    let model = AppModel.demo()
+    let model = WindowModel.demo()
     NavigationStack { ChatView() }
         .environment(model)
         .environment(model.store!)
@@ -1064,7 +1064,7 @@ private struct HeldAppearance: ViewModifier {
 struct MacTitlebarIndicator: ViewModifier {
     let enabled: Bool
     var dot: StatusDotKind? = nil
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
 
     static let size: CGFloat = 30
 

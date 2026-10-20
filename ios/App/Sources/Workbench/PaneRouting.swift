@@ -8,7 +8,7 @@ import SwiftUI
 // there are no tabs: the pane is one page (PhonePane), and what is opened
 // is a full-screen modal (PaneModal).
 
-extension AppModel {
+extension WindowModel {
     /// Whose tabs the open page uses: `palo`, `pal:<id>`, `ws:<id>`; nil on
     /// pages without a pane (an Ally, 以前的, devices).
     var paneKey: String? {
@@ -133,10 +133,11 @@ extension AppModel {
         openInPane { $0.openWeb($1, url: url.absoluteString) }
     }
 
-    /// Where taps in replies go (set once the main screen is up).
+    /// Where taps in replies go (set once the main screen is up): the window
+    /// clicked in, which is the one used last by then.
     func installPaneOpeners() {
-        PaneOpeners.file = { [weak self] target in self?.openFileInPane(target) ?? false }
-        PaneOpeners.web = { [weak self] url in self?.openWebInPane(url) }
+        PaneOpeners.file = { [weak app] target in app?.frontWindow?.openFileInPane(target) ?? false }
+        PaneOpeners.web = { [weak app] url in app?.frontWindow?.openWebInPane(url) }
     }
 
     /// A tile became the one the owner works in.
@@ -152,7 +153,7 @@ extension AppModel {
 }
 
 extension EnvironmentValues {
-    /// A tile's details are open (per tile; nil outside a tiling: `AppModel.detailShown`).
+    /// A tile's details are open (per tile; nil outside a tiling: `WindowModel.detailShown`).
     @Entry var tileDetail: Binding<Bool>? = nil
     /// Set on the page inside a workspace's tile.
     @Entry var tile: TileContext? = nil
@@ -164,7 +165,7 @@ struct TileContext: Equatable {
     var isActive: Bool
 }
 
-extension AppModel {
+extension WindowModel {
     /// Open or close the details: the tile's own, else the page's.
     func setDetail(_ on: Bool, tile: Binding<Bool>?) {
         if let tile { tile.wrappedValue = on } else { detailShown = on }

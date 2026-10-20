@@ -1,7 +1,7 @@
 import PaloAllyKit
 import SwiftUI
 
-extension AppModel {
+extension WindowModel {
     /// The sidebar shown or put away: the window's sidebar button, ⌃⌘S and
     /// the capsule's button all come here.
     func toggleSidebar() {
@@ -40,7 +40,7 @@ extension AppModel {
 /// controls: the strips start below it.
 struct CollapsedSidebarCapsule: View {
     let collapsed: Bool
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var listShown = false
 

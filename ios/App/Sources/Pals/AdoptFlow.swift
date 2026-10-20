@@ -6,7 +6,7 @@ import SwiftUI
 /// or (a terminal session) the line asking the owner to quit it there, with
 /// 取消. Tapping a row looks at its conversation, read only (pals-prd §14).
 struct AdoptFlowSheet: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -53,7 +53,7 @@ struct AdoptFlowSheet: View {
 /// 接管. Adopting it happens in place: a moment's wait, or (a terminal
 /// session) the line asking the owner to quit it there, with 取消.
 struct OtherSessionRow: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     let session: CCSession
     /// Show its folder under the name (the history list).

@@ -3,7 +3,7 @@ import PaloAllyVoice
 import SwiftUI
 
 struct SettingsView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
 
     @Environment(\.openURL) private var openURL

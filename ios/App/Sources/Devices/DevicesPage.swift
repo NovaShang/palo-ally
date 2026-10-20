@@ -7,7 +7,7 @@ import SwiftUI
 /// 电脑; and the owner's devices paired with the current computer (this one
 /// marked; another taken off after asking in place), 添加设备 with its QR code.
 struct DevicesPage: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
 
     @State private var devices: [PairedDevice] = []

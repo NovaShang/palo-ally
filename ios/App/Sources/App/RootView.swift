@@ -2,7 +2,7 @@ import PaloAllyKit
 import SwiftUI
 
 struct RootView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
 
     var body: some View {
         Group {
@@ -107,7 +107,7 @@ private struct DemoCapture: ViewModifier {
 /// library: 成果; settings; sidebar: the list's column; list), logging what's
 /// on screen after each.
 private struct LayoutStressTest: ViewModifier {
-    let model: AppModel
+    let model: WindowModel
 
     func body(content: Content) -> some View {
         content.task {
@@ -169,7 +169,7 @@ private struct LayoutStressTest: ViewModifier {
 /// are pushed over the conversation on phones; on large screens management
 /// is a sheet and 成果 the inspector beside the conversation.
 struct MainScreen: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -300,7 +300,7 @@ struct MainScreen: View {
 /// The detail column: the conversation picked in the list, with pages
 /// pushed over it (phones).
 private struct ConversationDetail: View {
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
 
     var body: some View {
         @Bindable var model = model
@@ -338,7 +338,7 @@ private struct ConversationDetail: View {
             .modifier(HidesSystemSidebarToggle())
             // A folder's tree over 成果 (phones), and the files paths in replies link to.
             .modifier(FilesInConversation(current: current))
-            .navigationDestination(for: AppModel.Page.self) { page in
+            .navigationDestination(for: WindowModel.Page.self) { page in
                 switch page {
                 case .manage: AssistantView()
                 case .library: LibraryView()
@@ -366,7 +366,7 @@ private struct ConversationDetail: View {
 /// The right pane (workbench-prd §7): large screens set it beside the
 /// conversation as the split view's inspector; phones (and short windows) show
 /// the same pane as a full page from the same button. Whose tabs it shows
-/// follows the open page (`AppModel.paneKey`). Phones don't get the inspector
+/// follows the open page (`WindowModel.paneKey`). Phones don't get the inspector
 /// at all (one that isn't shown still lends its toolbar and search field to
 /// the conversation there).
 ///
@@ -375,7 +375,7 @@ private struct ConversationDetail: View {
 /// an item only highlighted its row, and opening one from the conversation
 /// crashed SwiftUI comparing paths (`AnyNavigationPath.Error.comparisonTypeMismatch`).
 private struct RightPaneHost: ViewModifier {
-    let model: AppModel
+    let model: WindowModel
     let store: AppStore
 
     func body(content: Content) -> some View {
@@ -416,11 +416,11 @@ extension EnvironmentValues {
     /// Large screens: the conversation sits beside the sidebar (or 成果 in
     /// the inspector), with roomier margins.
     @Entry var placesAsColumns = false
-    /// The open conversation's unsent text (kept per conversation by AppModel).
+    /// The open conversation's unsent text (kept per conversation by WindowModel).
     @Entry var chatDraft: Binding<String> = .constant("")
 }
 
 #Preview("Demo") {
-    let model = AppModel.demo()
+    let model = WindowModel.demo()
     RootView().environment(model)
 }

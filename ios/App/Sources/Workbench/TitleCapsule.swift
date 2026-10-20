@@ -12,7 +12,7 @@ struct TitleCapsule: View {
     /// A session's page: while the owner holds to talk to it, the dot
     /// becomes the live level bar (Palo's page has its orb instead).
     var showsVoiceLevel = false
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
 
     var body: some View {
@@ -75,7 +75,7 @@ struct PageIndicator: View {
     var dot: StatusDotKind? = nil
     /// Where the circle is, in window coordinates (the voice flight).
     var onFrame: ((CGRect) -> Void)? = nil
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var token = UUID()
 
@@ -130,7 +130,7 @@ struct PageIndicator: View {
     /// sidebar is away without its capsule.
     private var restsHere: Bool {
         if model.layout == .phone { return true }
-        return model.sidebarCollapsed && !SidebarChrome.shared.capsuleOnPad
+        return model.sidebarCollapsed && !model.capsuleOnPad
     }
 }
 
@@ -163,7 +163,7 @@ private struct PaloOrbHomeIfNeeded: ViewModifier {
 @MainActor enum AgentDetailPlacement {
     /// iPhone, and Palo's page on an iPad (no capsule there: its orb is the
     /// title): a sheet. Elsewhere a popover under the capsule.
-    static func usesSheet(model: AppModel, store: AppStore) -> Bool {
+    static func usesSheet(model: WindowModel, store: AppStore) -> Bool {
         guard !Platform.barInWindowToolbar else { return false }
         return model.layout == .phone || store.scope == .palo
     }
@@ -185,7 +185,7 @@ struct PaloTitleCapsule: View {
 struct AgentDetailSheet: ViewModifier {
     /// false inside a tile: its header opens its own details.
     var enabled = true
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
 
     func body(content: Content) -> some View {

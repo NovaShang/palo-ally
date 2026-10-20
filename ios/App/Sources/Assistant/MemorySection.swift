@@ -3,7 +3,7 @@ import SwiftUI
 
 struct MemorySection: View {
     @Environment(AppStore.self) private var store
-    @Environment(AppModel.self) private var model
+    @Environment(WindowModel.self) private var model
     @State private var files: [MemoryFile] = []
     @State private var loading = true
     @State private var error: String?
