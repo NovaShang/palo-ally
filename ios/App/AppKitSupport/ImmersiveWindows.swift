@@ -68,6 +68,16 @@ final class ImmersiveWindows: NSObject {
         return "\(r.maxX),\(frame.bounds.height - r.midY)"
     }
 
+    /// The pointer over a split workspace's divider: "h" the left-right resize
+    /// cursor, "v" the up-down one, anything else the arrow again.
+    @objc func setResizeCursor(_ kind: String) {
+        switch kind {
+        case "h": NSCursor.resizeLeftRight.set()
+        case "v": NSCursor.resizeUpDown.set()
+        default: NSCursor.arrow.set()
+        }
+    }
+
     #if DEBUG
     /// The titlebar (traffic lights, toolbar items, and any band) as a PNG
     /// at `path`, transparent where it draws nothing, and its frame in the

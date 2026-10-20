@@ -7577,6 +7577,61 @@
           }
         }
       }
+    },
+    "右栏（成果 / 文件）" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Right Pane (Results / Files)"
+          }
+        }
+      }
+    },
+    "单独打开" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open on Its Own"
+          }
+        }
+      }
+    },
+    "重命名…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename…"
+          }
+        }
+      }
+    },
+    "关闭这格" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close This Pane"
+          }
+        }
+      }
+    },
+    "结束会话…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End Session…"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

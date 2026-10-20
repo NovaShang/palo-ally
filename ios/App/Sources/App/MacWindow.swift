@@ -102,7 +102,7 @@ private struct MacToolbarInstaller: UIViewRepresentable {
 /// ios/App/AppKitSupport): window work UIKit has no API for.
 @MainActor
 enum AppKitBundle {
-    private static let object: NSObject? = {
+    static let object: NSObject? = {
         guard let url = Bundle.main.builtInPlugInsURL?.appendingPathComponent("PaloAllyAppKit.bundle"),
               let bundle = Bundle(url: url), bundle.load(),
               let type = bundle.principalClass as? NSObject.Type else {

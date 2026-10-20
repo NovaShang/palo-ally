@@ -1,20 +1,30 @@
 import PaloAllyKit
 import SwiftUI
 
-/// A workspace's page (workbench-prd §5.3): its sessions tiled on one canvas.
-/// Each tile is the session's own page (`PalPage`, minus its chrome: the
-/// tile's header is the title); the active tile has the theme-colored border
-/// and gets the keyboard and the voice. The layout is kept on the computer.
+/// A workspace's page (workbench-prd §5.3, docs/workbench-design/split-final.html):
+/// its sessions tiled on one canvas, flat panes with hairlines between them.
+/// Each pane is the session's own page (`PalPage`, minus its chrome) under a
+/// slim header, in a view graph of its own (`PaneRoot`). Every pane looks the
+/// same: the current one (where the keyboard and the right pane go) is only
+/// remembered. The layout is kept on the computer.
 struct WorkspaceTilesPage: View {
     let workspaceID: String
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
-    /// The tile whose details are open.
+    @Environment(VoiceInputController.self) private var voice
+    @Environment(\.scenePhase) private var scenePhase
+    /// The pane whose details are open.
     @State private var details = TileDetails()
-    /// The tile asked to close (ending its session, after a confirm).
+    /// What the panes' ⋯ menus do (set here, read by every pane).
+    @State private var actions = PaneActions()
+    /// What the panes get from this graph that changes (they are hosted apart).
+    @State private var bridge = PaneBridge()
+    @State private var canvas = PaneCanvasHandle()
+    /// The pane asked to end (its session, after a confirm).
     @State private var closing: String?
     @State private var ending = false
     @State private var failure: String?
+    @State private var renaming: Pal?
     /// The layout just kept, shown until the stored one catches up.
     @State private var pending: LayoutTree.Node?
 
@@ -28,16 +38,15 @@ struct WorkspaceTilesPage: View {
             if let workspace, let tree = model.tree(of: workspace) {
                 TiledWorkspaceView(
                     layout: pending ?? tree,
-                    activeId: model.activeTile(in: workspaceID),
+                    active: { model.activeTile(in: workspaceID) },
                     info: info,
-                    onLayoutChange: { new, final in if final { save(new) } },
+                    accent: model.currentTheme.uiColor,
+                    handle: canvas,
+                    makePane: makePane,
+                    onLayoutChange: save,
                     onActivate: { model.activate(tile: $0, in: workspaceID) },
-                    onExpand: { model.openPal($0) },
-                    onClose: { closing = $0 },
-                    detailFor: details.open,
-                    detail: detailView,
-                    content: tile)
-                    .padding(6)
+                    onMoveFocus: moveFocus,
+                    onCornerPane: { bridge.cornerPane = $0 })
             } else if workspace != nil {
                 Text("这个工作区里没有会话了。")
                     .foregroundStyle(.secondary)
@@ -52,6 +61,9 @@ struct WorkspaceTilesPage: View {
         }
         .safeAreaInset(edge: .top, spacing: 0) { StatusBanner() }
         .overlay(alignment: .bottom) { closeConfirm }
+        .palRename($renaming)
+        .onAppear(perform: setUpActions)
+        .onChange(of: scenePhase, initial: true) { _, phase in bridge.scenePhase = phase }
         .animation(.snappy, value: closing)
         // ⌘⌥→ / ⌘⌥←: the next and the previous tile.
         .background { focusKeys }
@@ -84,34 +96,51 @@ struct WorkspaceTilesPage: View {
         }
     }
 
-    // MARK: tiles
+    // MARK: panes
 
     private func info(_ id: String) -> TileInfo {
         guard let pal = store.singlePal(id: id) else { return TileInfo(name: "") }
-        return TileInfo(name: pal.displayName, status: Copy.palSubtitle(pal, waking: false), dot: pal.dot,
-                        contextPct: pal.contextPct, effort: pal.effort, model: pal.model, running: pal.tasksRunning)
+        return TileInfo(name: pal.displayName, dot: pal.dot)
     }
 
-    /// The same binding every time (a new one would count as a change and
-    /// re-render whatever reads it in the tile's page).
-    private func detailBinding(_ id: String) -> Binding<Bool> { details.binding(id) }
-
-    private func tile(_ id: String) -> some View {
-        PalPage(palID: id, inTile: true)
-            .environment(\.tile, TileContext(id: id, isActive: model.activeTile(in: workspaceID) == id))
-            .environment(\.tileDetail, detailBinding(id))
-            // Each session keeps its own unsent words, here and on its own page.
-            .environment(\.chatDraft, model.draftBinding(.pal(id)))
-            .environment(\.fileLinks, FileLinkContext(scope: .pal(id), resolver: .shared(for: store)))
-            .environment(\.placesAsColumns, false)
+    /// A pane's own view graph: the page and everything it reads from
+    /// around it, passed in (`PaneRoot`).
+    private func makePane(_ id: String) -> UIViewController {
+        let host = PaneHostingController(rootView: PaneRoot(id: id, workspaceID: workspaceID, model: model, store: store,
+                                                          voice: voice, details: details, actions: actions, bridge: bridge))
+        // The pane places its own header; only the keyboard pushes it (iPads).
+        host.safeAreaRegions = .keyboard
+        host.sizingOptions = []
+        host.view.backgroundColor = .systemBackground
+        return host
     }
 
-    private func detailView(_ id: String) -> AnyView {
-        AnyView(
-            AgentDetailView()
-                .environment(model)
-                .environment(store.palStore(id))
-                .environment(\.tileDetail, detailBinding(id)))
+    private func setUpActions() {
+        let workspaceID = workspaceID
+        actions.openPane = { id in
+            model.activate(tile: id, in: workspaceID)
+            model.setPane(open: true)
+        }
+        actions.openAlone = { model.openPal($0) }
+        actions.rename = { id in renaming = store.singlePal(id: id) }
+        actions.moveOut = { takeOut($0) }
+        actions.closePane = { takeOut($0) }
+        actions.end = { closing = $0 }
+    }
+
+    /// Off the canvas: the session goes on, on its own in the list.
+    private func takeOut(_ id: String) {
+        let next = workspace.flatMap { model.tree(of: $0) }.flatMap { LayoutTree.focusAfterClosing(id, in: $0) }
+        Task {
+            do {
+                try await store.moveSession(id, to: nil)
+                if model.activeTiles[workspaceID] == id || model.activeTiles[workspaceID] == nil, let next {
+                    model.activate(tile: next, in: workspaceID)
+                }
+            } catch {
+                failure = Copy.error(error)
+            }
+        }
     }
 
     // MARK: layout
@@ -145,6 +174,8 @@ struct WorkspaceTilesPage: View {
         guard let workspace, let tree = model.tree(of: workspace), let active = model.activeTile(in: workspaceID),
               let next = LayoutTree.neighbor(of: active, previous: previous, in: tree) else { return }
         model.activate(tile: next, in: workspaceID)
+        // No mark shows the current pane: the caret goes there.
+        canvas.controller?.focusComposer(of: next)
     }
 
     // MARK: close
