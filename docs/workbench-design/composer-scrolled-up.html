@@ -46,7 +46,7 @@ h1{font-size:22px;margin:6px 0}h2{font-size:16px;margin:26px 0 6px}
 .notes li{margin:5px 0}
 </style></head><body><main>
 <h1>往上翻时，输入框收成圆钮（第二版）</h1>
-<p class="sub">在对话最底下时，输入框和现在一样。往上翻看历史时（就是现在「回到最新」按钮出现的时候），输入框收起，变成三个独立的玻璃圆钮：左边 <b>＋</b> 附件；中间小一号的 <b>↓</b> 回到最新；右边一段写着<b>「轻点打字，按住说话」</b>的文字胶囊：点一下就地打字，按住说话。</p>
+<p class="sub">在对话最底下时，输入框和现在一样。往上翻看历史时（就是现在「回到最新」按钮出现的时候），输入框收起，变成三个独立的玻璃圆钮：左边 <b>＋</b> 附件；中间小一号的 <b>↓</b> 回到最新；右边一段窄的文字胶囊，分两行写着<b>「轻点打字 / 按住说话」</b>：点一下就地打字，按住说话。</p>
 
 <h2>1. 手机</h2>
 <div class="row" id="p"></div>
@@ -56,7 +56,7 @@ h1{font-size:22px;margin:6px 0}h2{font-size:16px;margin:26px 0 6px}
 <div class="row" id="t"></div>
 
 <div class="notes"><b>细节（按你定的）</b><ul>
-<li><b>三颗</b>：左 ＋（附件菜单，和现在一样）；中 ↓（回到最新，比两边小一号，不显示新消息条数）；右边是一段文字胶囊「轻点打字，按住说话」（没有图标），一个控件：点一下就地展开输入框并弹出键盘，对话位置不动；按住就是按住说话（弹出「取消 / 编辑」，和现在一样）。展开时这颗胶囊直接拉长成输入框。</li>
+<li><b>三颗</b>：左 ＋（附件菜单，和现在一样）；中 ↓（回到最新，比两边小一号，不显示新消息条数）；右边是一段窄的文字胶囊，两行字「轻点打字」「按住说话」（没有图标，字号比正文小一号，高度和两边圆钮一样），一个控件：点一下就地展开输入框并弹出键盘，对话位置不动；按住就是按住说话（弹出「取消 / 编辑」，和现在一样）。展开时这颗胶囊直接拉长成输入框。</li>
 <li><b>大小</b>：两边和输入框一样高（手机 48、Mac 单页 40、分屏格子 36），↓ 约为它们的七成。中性玻璃，不用主题色。</li>
 <li><b>什么时候收</b>：离开底部（和现在「回到最新」出现的条件一样）。有草稿、带着附件、输入框正被点着、正在录音时不收。</li>
 <li><b>什么时候展开</b>：点 ↓（同时回到最新）、点一下 🎙、滚回最底下、Mac 上在这个对话里直接开始敲字。</li>
@@ -67,7 +67,7 @@ h1{font-size:22px;margin:6px 0}h2{font-size:16px;margin:26px 0 6px}
 const msgs=`<div>上周五的会议纪要整理好了，重点三条：预算延到下月、设计稿周三评审、招聘先停。</div><div class="me">评审那天我在外面</div><div>那我把评审改到周四上午，已经发邀请给大家。</div><div class="me">好</div>`;
 const phone=(dock,cap,dark,extra='')=>`<div><div class="phone${dark?' d':''}"><div class="top"><div class="c40 g">‹</div><div class="c40 g">◉</div><div class="c40 g">▤</div></div><div class="chat">${msgs}</div><div class="fade"></div>${extra}<div class="dock">${dock}</div></div><div class="cap">${cap}</div></div>`;
 const full=`<div class="cap48 g">＋&nbsp;&nbsp;按住说话，轻点打字<span style="margin-left:auto">🎙</span></div>`;
-const btns=`<div class="btn g">＋</div><div class="spacer"></div><div class="btn g small" style="transform:scale(.72)">↓</div><div class="spacer"></div><div class="btn g" style="width:auto;padding:0 16px;font-size:13px;color:#3a3a3c;white-space:nowrap">轻点打字，按住说话</div>`;
+const btns=`<div class="btn g">＋</div><div class="spacer"></div><div class="btn g small" style="transform:scale(.72)">↓</div><div class="spacer"></div><div class="btn g" style="width:auto;padding:0 14px;font-size:10.5px;line-height:1.25;color:#3a3a3c;white-space:nowrap;text-align:center;display:flex;flex-direction:column;justify-content:center">轻点打字<br>按住说话</div>`;
 const typing=`<div class="btn g">＋</div><div class="cap48 g"><span class="field">我周四上午也不太行<span class="caret"></span></span><span style="margin-left:auto;width:30px;height:30px;border-radius:15px;background:#E2559F;color:#fff;display:grid;place-items:center">↑</span></div>`;
 document.getElementById('p').innerHTML=phone(full,'在最底下：和现在一样。')+phone(btns,'往上翻：收成三颗圆钮，中间的 ↓ 小一号。')+phone(typing,'点一下右边的胶囊：就地展开打字，对话停在原处。')+phone(btns,'深色。',1);
 const mac=(dock,cap,tile)=>`<div><div class="mac${tile?' tile':''}" style="${tile?'width:360px;height:300px':''}">${tile?'<div class="tb"><div class="ind">▶</div><b>博客改版</b><span style="color:#86868b">在改评论区样式</span></div>':''}<div class="chat" style="${tile?'top:30px;padding:0 12px 56px;font-size:12px':''}">${msgs}</div><div class="fade"></div><div class="dock">${dock}</div></div><div class="cap">${cap}</div></div>`;
