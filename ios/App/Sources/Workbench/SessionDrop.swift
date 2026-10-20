@@ -12,6 +12,9 @@ struct SessionDrop: View {
     var state: StatusDotKind
     /// 0…1 while the owner speaks to it; nil: not listening.
     var voiceLevel: Float?
+    /// The glass in a neutral gray whatever the state (the drop as a
+    /// container, the state shown by what's on it); its motion still follows the state.
+    var neutral = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
@@ -20,7 +23,7 @@ struct SessionDrop: View {
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30, paused: false)) { ctx in
-            let u = engine.frame(now: ctx.date.timeIntervalSinceReferenceDate, state: state, voiceLevel: voiceLevel,
+            let u = engine.frame(now: ctx.date.timeIntervalSinceReferenceDate, state: state, neutral: neutral, voiceLevel: voiceLevel,
                                  reduceMotion: reduceMotion, dark: scheme == .dark, scale: Float(displayScale))
             GeometryReader { geo in
                 let side = min(geo.size.width, geo.size.height)
@@ -51,8 +54,8 @@ private final class SoloEngine {
     private var shown: StatusDotKind?
     private var last: Double?
 
-    func frame(now: Double, state: StatusDotKind, voiceLevel: Float?, reduceMotion: Bool, dark: Bool, scale: Float) -> [Float] {
-        let c = SessionDrop.color(state)
+    func frame(now: Double, state: StatusDotKind, neutral: Bool, voiceLevel: Float?, reduceMotion: Bool, dark: Bool, scale: Float) -> [Float] {
+        let c = SessionDrop.color(neutral ? .idle : state)
         // The inner drop a lighter shade of the same color: one drop, not two.
         let partner = c + (SIMD3<Float>(repeating: 1) - c) * 0.35
         let d: TwoDropsState
@@ -62,7 +65,7 @@ private final class SoloEngine {
             drops = d
             shown = state
         }
-        if shown != state {
+        if shown != state, !neutral {
             d.send(.colorChange(primary: c, partner: partner))
             shown = state
         }
@@ -89,6 +92,27 @@ private final class SoloEngine {
 struct SessionDropPreview: View {
     @State private var listening = false
     @State private var level: Float = 0
+    /// The indicator without its glass circle, laid on a drop a little
+    /// larger than it: the drop is the container.
+    private func containerRow(neutral: Bool) -> some View {
+        HStack {
+            ForEach(states, id: \.1) { st, name in
+                VStack(spacing: 6) {
+                    ZStack {
+                        SessionDrop(state: st, voiceLevel: nil, neutral: neutral)
+                            .frame(width: 66, height: 66)
+                        SessionIndicator(state: st, contextPct: 46, effort: "high", model: "claude-opus-5-5",
+                                         size: 50, glass: false)
+                    }
+                    .frame(width: 70, height: 70)
+                    Text(name).font(.caption).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.vertical, 8)
+    }
+
     private let states: [(StatusDotKind, String)] = [(.working, "在干"), (.waiting, "等你"), (.done, "做完了"), (.idle, "闲着")]
 
     var body: some View {
@@ -118,6 +142,12 @@ struct SessionDropPreview: View {
                 }
                 .padding(.vertical, 8)
             }
+            Section("C. 水滴当容器，代替外面的玻璃圆（染状态色）") {
+                containerRow(neutral: false)
+            }
+            Section("C2. 水滴当容器（灰色水滴，状态看里面的图标）") {
+                containerRow(neutral: true)
+            }
             Section("按住说话时：从标题落下来，变大，跟着声音抖") {
                 VStack(spacing: 16) {
                     SessionDrop(state: .working, voiceLevel: listening ? level : nil)
@@ -132,7 +162,7 @@ struct SessionDropPreview: View {
                 .padding(.vertical, 8)
             }
             Section {
-                Text("这是试验页，用的就是 Palo 球的引擎，只是一滴水、染状态色。看完告诉我选 A 还是 B，或者要怎么改。")
+                Text("这是试验页，用的就是 Palo 球的引擎，只是一滴水、染状态色。看完告诉我选 A、B、C 还是 C2，或者要怎么改。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
