@@ -206,6 +206,7 @@ final class TileDetails {
 private struct WorkspaceBar: ViewModifier {
     let workspaceID: String
     @Environment(AppStore.self) private var store
+    @Environment(AppModel.self) private var model
 
     func body(content: Content) -> some View {
         let workspace = store.workspace(id: workspaceID)
@@ -218,9 +219,15 @@ private struct WorkspaceBar: ViewModifier {
 
     @ViewBuilder private func bar(_ content: some View) -> some View {
         if Platform.barInWindowToolbar {
-            // The Mac: no title strip (the sidebar names the workspace; each
-            // tile has its own header), no 并排 button.
+            // The Mac: no navigation bar, no title strip (the sidebar names
+            // the workspace; each tile has its own header), no 并排 button.
+            // The tiles run up into the window's title bar row: this view
+            // needs every point of height. Clear of the traffic lights and
+            // the sidebar's capsule when the sidebar is away.
             content
+                .toolbar(.hidden, for: .navigationBar)
+                .padding(.top, model.sidebarCollapsed ? SidebarChrome.shared.titlebarMidY * 2 - 6 : 0)
+                .ignoresSafeArea(.container, edges: .top)
         } else {
             content.toolbar {
                 ToolbarItem(placement: .topBarTrailing) { TileMenu(workspaceID: workspaceID, glass: false) }
