@@ -1600,7 +1600,7 @@ describe("session details (workbench)", () => {
     await t.hub.pals.stopAndWait();
   });
 
-  test("with no effort chosen, the effort Claude Code starts at is shown; a chosen one wins", async () => {
+  test("with no effort chosen, the effort Claude Code's hooks say its turns run at is shown; a chosen one wins", async () => {
     const t = det();
     t.driver.appliedEffort = "high";
     const id = await mk(t);

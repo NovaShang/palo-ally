@@ -38,7 +38,9 @@ export type HarnessEvent =
       consumedUuids?: string[]; // user messages this turn answered (absent on older CLIs)
       startupFailure?: string; // why Claude Code refused to start (e.g. session_held_by_background)
     }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  // the effort the turn runs at, as Claude Code's hooks report it
+  | { type: "effort"; level: string };
 
 export interface ModelOption {
   value: string; // what to pass as model

@@ -129,14 +129,7 @@ export class FakeMainSession implements MainSession {
     this.busy = true;
     while (this.queue.length && !this.closed) {
       const { text, uuid } = this.queue.shift()!;
-      if (this.pal)
-        this.opts.onEvent({
-          type: "init",
-          sessionId: this.sessionId,
-          model: this.opts.model ?? "fake-model",
-          tools: [],
-          ...(this.driver.appliedEffort ? { effort: this.driver.appliedEffort } : {}),
-        });
+      if (this.pal) this.opts.onEvent({ type: "init", sessionId: this.sessionId, model: this.opts.model ?? "fake-model", tools: [] });
       const ctx: FakeCtx = {
         opts: this.opts,
         session: this,
@@ -192,6 +185,8 @@ export class FakeMainSession implements MainSession {
       this.total += this.driver.turnCost;
       this.driver.totals.set(this.sessionId, this.total);
       const failed = this.driver.resultError;
+      // what Claude Code's Stop hook says the turn ran at
+      if (this.driver.appliedEffort) this.opts.onEvent({ type: "effort", level: this.driver.appliedEffort });
       this.opts.onEvent({
         type: "result",
         isError: !!failed,
@@ -269,7 +264,7 @@ export class FakeDriver implements HarnessDriver {
   filesRewound?: (uuid: string) => FilesRewound; // Claude Code renames asked of running processes // each session's running total of cost, as a resume goes on from it
   contextTokens = 1000; // what each turn's result reports
   contextWindow?: number; // the window each turn's result reports (absent: an older CLI that doesn't)
-  appliedEffort?: string; // the effort a session's start reports running at
+  appliedEffort?: string; // the effort each turn's hooks report it runs at
   probeResponder: (req: ProbeRequest) => ProbeResult = () => ({ output: { results: [] }, costUsd: 0.0001 });
   // the permission mode a session reports running in (default: the one asked for)
   permissionModeFor?: (requested: string) => string;

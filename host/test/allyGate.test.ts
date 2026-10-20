@@ -167,10 +167,21 @@ describe("reaching Claude Code", () => {
     expect(asked[0].input).toEqual({ command: "rm -rf ~" });
   });
 
-  test("only the assistant's session has the hook; a Pal's doesn't", () => {
-    expect(sessionOptions(base()).hooks).toBeUndefined();
+  test("only the assistant's session has the gate; a Pal's doesn't", () => {
+    expect(sessionOptions(base()).hooks?.PreToolUse).toBeUndefined();
     const { tools: _t, ...pal } = base();
-    expect(sessionOptions(pal as any).hooks).toBeUndefined();
+    expect(sessionOptions(pal as any).hooks?.PreToolUse).toBeUndefined();
+  });
+
+  test("every session's Stop hook reports the effort its turn ran at, the main thread's only, and decides nothing", async () => {
+    const events: any[] = [];
+    const { tools: _t, ...pal } = base({ onEvent: (e) => events.push(e) });
+    const stop = sessionOptions(pal as any).hooks!.Stop![0]!.hooks[0]!;
+    const signal = new AbortController().signal;
+    expect(await stop({ hook_event_name: "Stop", effort: { level: "high" } } as any, undefined, { signal })).toEqual({});
+    await stop({ hook_event_name: "Stop", effort: { level: "low" }, agent_id: "a-1" } as any, undefined, { signal });
+    await stop({ hook_event_name: "Stop" } as any, undefined, { signal });
+    expect(events).toEqual([{ type: "effort", level: "high" }]);
   });
 });
 

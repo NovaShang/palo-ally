@@ -400,6 +400,14 @@ export function sessionOptions(opts: AnySessionOptions): Options {
   if (opts.sharedChrome) extraArgs.chrome = null;
   if (opts.name) extraArgs.name = opts.name;
   const gate = opts.toolGate;
+  // A hook's input says the effort the turn runs at (after any downgrade for
+  // the model): the main thread's is reported, nothing is decided.
+  const effortHook = async (input: unknown) => {
+    const i = input as { agent_id?: string; effort?: { level?: unknown } };
+    const level = i.effort?.level;
+    if (!i.agent_id && typeof level === "string" && level) opts.onEvent({ type: "effort", level });
+    return {};
+  };
   return {
     cwd: opts.cwd,
     model: opts.model,
@@ -442,14 +450,14 @@ export function sessionOptions(opts: AnySessionOptions): Options {
         defaultToNo: o.defaultToNo,
         suppressAlwaysAllowRule: o.suppressAlwaysAllowRule,
       }) as any,
-    // The host's gate runs as a PreToolUse hook: Claude Code consults it for
-    // every call before its own permission decision, so it also covers what
-    // auto mode or an allow rule would approve without asking canUseTool
-    // (a hook's deny wins over both; SDK callback hooks run even when the
-    // owner's settings turn hooks off).
-    ...(gate
-      ? {
-          hooks: {
+    hooks: {
+      // The host's gate runs as a PreToolUse hook: Claude Code consults it for
+      // every call before its own permission decision, so it also covers what
+      // auto mode or an allow rule would approve without asking canUseTool
+      // (a hook's deny wins over both; SDK callback hooks run even when the
+      // owner's settings turn hooks off).
+      ...(gate
+        ? {
             PreToolUse: [
               {
                 hooks: [
@@ -461,9 +469,11 @@ export function sessionOptions(opts: AnySessionOptions): Options {
                 ],
               },
             ],
-          },
-        }
-      : {}),
+          }
+        : {}),
+      // Each turn's end says the effort it ran at.
+      Stop: [{ hooks: [effortHook] }],
+    },
     env: {
       ...(opts.baseEnv ?? process.env),
       ...opts.env,

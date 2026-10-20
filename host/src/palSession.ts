@@ -1,4 +1,3 @@
-import { settingsEffort } from "./ccEffort.ts";
 import { t as tr } from "./i18n/index.ts";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -57,7 +56,7 @@ export interface PalRecord {
   autoNamed?: boolean; // still under the placeholder name it was created with: named from its first words after a turn
   workspaceId?: string; // the workspace it belongs to (workspaces: docs/workbench-rpc.md §3)
   effort?: string; // chosen effort level; absent = the model's default (applies at the next start when it's asleep)
-  appliedEffort?: string; // the effort Claude Code said it runs at when it last started (the default when none is chosen)
+  appliedEffort?: string; // the effort Claude Code last said its turns run at (its hooks' input): the default when none is chosen
   contextTokens?: number; // its context size after its last turn or compaction
   contextWindow?: number; // its model's context window, as Claude Code last reported it
   lastCompactAt?: number; // when it last compacted
@@ -344,12 +343,9 @@ export class PalSession {
     return contextWindowFor(this.model ?? this.rec.model, this.rec.contextTokens, this.rec.contextWindow);
   }
 
-  /**
-   * The effort it runs at: the one chosen, else what Claude Code said it
-   * started with, else what Claude Code's settings give it.
-   */
+  /** The effort it runs at: the one chosen, else the one Claude Code last said its turns run at. */
   private effort(): string | undefined {
-    return this.rec.effort ?? this.rec.appliedEffort ?? settingsEffort(this.model ?? this.rec.model, this.rec.cwd, this.d.claudeDir);
+    return this.rec.effort ?? this.rec.appliedEffort;
   }
 
   /** What pals.detail shows besides the Pal itself. */
@@ -945,6 +941,13 @@ export class PalSession {
   private onEvent(e: HarnessEvent): void {
     this.lastEventAt = this.d.now();
     switch (e.type) {
+      case "effort":
+        if (e.level !== this.rec.appliedEffort) {
+          this.rec.appliedEffort = e.level;
+          this.d.save();
+          this.d.changed();
+        }
+        break;
       case "init":
         if (e.model && e.model !== this.model) {
           this.model = e.model;
