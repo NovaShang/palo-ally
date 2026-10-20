@@ -7,7 +7,7 @@ import { AwayDetector } from "../src/away.ts";
 import { transcriptPath } from "../src/handoffs.ts";
 import { findHelper, makeSpawner } from "../src/palLauncher.ts";
 import { pagePalMessages, toPalMessages, transcriptLastLine, transcriptModel } from "../src/palHistory.ts";
-import { MAX_PALS, optionFor, PALO_NAME, type PalsDeps, type PalsTiming } from "../src/pals.ts";
+import { MAX_PALS, optionFor, PALO_NAME, PROPOSAL_TTL_MS, type PalsDeps, type PalsTiming } from "../src/pals.ts";
 import { type PalRecord, startError } from "../src/palSession.ts";
 import type { Paths } from "../src/config.ts";
 import { BEHAVIORS } from "../src/home.ts";
@@ -963,6 +963,67 @@ describe("back to the terminal", () => {
     expect(t.hub.pals.list()).toEqual([]);
     await expect(t.call("pals.remove", { id: second.id })).rejects.toThrow("找不到这个会话");
     expect(JSON.parse(readFileSync(t.paths.pals, "utf8")).pals).toEqual([]);
+  });
+});
+
+describe("proposal cards don't wait on the owner forever", () => {
+  test("a card nobody answered expires after a day, goes out again, and a client that was away gets it from sync", async () => {
+    let clock = Date.now();
+    const t = setup({ pals: { now: () => clock } });
+    await t.hub.toolHandlers().pal_propose({ name: "网站", dir: t.project, duty: "做网站" });
+    const card = t.hub.chat.recent(1)[0]!;
+    const away = (await t.call("sync", {})).seq;
+    expect(t.hub.pals.expireProposals()).toBe(0);
+    clock += PROPOSAL_TTL_MS - 1000;
+    expect(t.hub.pals.expireProposals()).toBe(0);
+    clock += 2000;
+    expect(t.hub.pals.expireProposals()).toBe(1);
+    expect(t.hub.chat.get(card.id)!.proposal!.status).toBe("expired");
+    const resent = t.events.filter((e) => e.event === "chat.message" && e.data.id === card.id).at(-1)!.data;
+    expect([resent.seq, resent.proposal.status, typeof resent.updatedSeq]).toEqual([card.seq, "expired", "number"]);
+    // the app that missed the event: the card comes again, at its own place (same seq)
+    const back = await t.call("sync", { sinceSeq: away });
+    expect(back.messages.map((m: any) => [m.id, m.seq, m.proposal?.status])).toEqual([[card.id, card.seq, "expired"]]);
+    expect(back.seq).toBeGreaterThan(away);
+    expect((await t.call("sync", { sinceSeq: back.seq })).messages).toEqual([]);
+    // too late to 开吧
+    expect(await t.call("helper.decide", { proposalId: card.proposal!.id, action: "create" })).toEqual({});
+    expect(t.driver.pals).toHaveLength(0);
+    expect(t.hub.pals.expireProposals()).toBe(0);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("a new card for the same name replaces the waiting one; the oldest of too many expires; a card whose record is gone expires", async () => {
+    const t = setup();
+    const tools = t.hub.toolHandlers();
+    await tools.pal_propose({ name: "网站", dir: t.project, duty: "做网站" });
+    const first = t.hub.chat.recent(1)[0]!;
+    await tools.pal_propose({ name: "网站", dir: t.project, duty: "先做列表页" });
+    const second = t.hub.chat.recent(1)[0]!;
+    expect(t.hub.chat.get(first.id)!.proposal!.status).toBe("expired");
+    expect(t.hub.chat.get(second.id)!.proposal!.status).toBe("pending");
+    // fifty more: the waiting one drops off the records, so its card expires
+    for (let i = 0; i < 50; i++) await tools.pal_propose({ name: `第${i}个`, dir: t.project, duty: "做事" });
+    expect(t.hub.chat.get(second.id)!.proposal!.status).toBe("expired");
+    // a card in the conversation with no record behind it (an older host's)
+    const orphan = t.hub.chat.add({ role: "assistant", kind: "helper", text: "开一个会话「旧」", channel: "system", proposal: { id: "hp_old", name: "旧", cwd: t.project, duty: "做事", status: "pending" } });
+    await expect(t.call("helper.decide", { proposalId: "hp_old", action: "create" })).rejects.toThrow("这个提议已经没有了");
+    expect(t.hub.chat.get(orphan.id)!.proposal!.status).toBe("expired");
+    // and the sweep leaves the ones still on offer alone
+    const pending = t.hub.chat.filter((m) => m.kind === "helper" && m.proposal?.status === "pending").length;
+    expect(pending).toBe(50);
+    expect(t.hub.pals.expireProposals()).toBe(0);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("a card whose name a Pal has now expires", async () => {
+    const t = setup();
+    await t.hub.toolHandlers().pal_propose({ name: "网站", dir: t.project, duty: "做网站" });
+    const card = t.hub.chat.recent(1)[0]!;
+    await t.call("pals.adopt", { sessionId: bgSession(t, "网站") });
+    expect(t.hub.pals.expireProposals()).toBe(1);
+    expect(t.hub.chat.get(card.id)!.proposal!.status).toBe("expired");
+    await t.hub.pals.stopAndWait();
   });
 });
 

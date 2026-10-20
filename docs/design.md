@@ -129,14 +129,16 @@ ChatMessage { seq:number; id:string; role:"user"|"assistant"|"system";
      最新文字和状态看 entry */;
   proposal?:HelperProposal|PalAdoptProposal
   /* kind "helper"：Palo 提议开 Pal（HelperProposal）；kind "pal_adopt"：Palo 提议接管一个退出了的对话
-     （PalAdoptProposal）。状态变了，同一条消息（同 id、同 seq）再发一次 chat.message */;
+     （PalAdoptProposal）。状态变了，同一条消息（同 id、同 seq）再发一次 chat.message，带 updatedSeq。
+     没人答的卡片一天后 expired；记录没了的、同名新卡片替掉的也 expired */;
+  updatedSeq?:number /* 再发时这次变化占的 seq；sync{sinceSeq} 会把 updatedSeq 大于 sinceSeq 的旧消息再给一次 */;
   pal?:string /* 属于哪个 Pal 的对话（Pal.id）；没有 = Palo 的。Pal 的消息不进 Palo 的对话，seq = 毫秒时间 */;
   from?:string /* Pal 对话里不是主人说的 user 消息：助理的名字（Palo 的话）或别的会话的名字 */;
   uuid?:string /* Palo 对话里主人的消息在 Claude Code 记录里的 uuid；有它才能「回到这里重来」（docs/rewind-prd.md） */ }
 HelperProposal { id /* helper.decide 的 proposalId */; name; cwd; duty; dailyUsd:number;
   status:"pending"|"created"|"discarded"|"expired"; sessionId? /* 开了以后 */; palId?; note? }
 PalAdoptProposal { id /* helper.decide 的 proposalId */; sessionId; cwd; title;
-  status:"pending"|"adopted"|"discarded"|"failed"; palId? /* 接管了以后 */; note? /* failed 的原因 */ }
+  status:"pending"|"adopted"|"discarded"|"failed"|"expired"; palId? /* 接管了以后 */; note? /* failed 的原因 */ }
 RecentSession { sessionId; cwd; title /* 自定义标题，否则 Claude Code 的摘要，否则第一句话的前 40 个字 */;
   lastModified:number /*ms*/; size:number /* 记录的字节数 */ }
 Pal { id /* pal_… */; name /* SendMessage 用的名字 */; cwd; sessionId;
@@ -194,7 +196,7 @@ ModelOption { value; displayName; description; efforts:string[] }
 | method | params | result |
 |---|---|---|
 | `hello` | `{client:"ios"\|"mac"\|"cli", version, locale?}` | `{hostName, version, status, language}`（locale：App 的首选语言，BCP 47，如 `zh-Hans-CN`、`en-US`，可不带，旧 App 不带也行；主机的 `settings.language` 还没设时，第一个带 locale 的主人设备决定它（zh* 是 zh，其他是 en）；已经设了就不动。language：主机现在说的语言 `"zh"\|"en"`，加了这一项旧客户端照常解码） |
-| `sync` | `{sinceSeq?:number}` | `{seq, messages, tasks, approvals, watches, artifacts, settings, status, streaming?, rewound?}`（rewound：sinceSeq 之后撤回的消息 id，客户端拿掉；messages：sinceSeq 之后的，最多 500；无 sinceSeq 时最近 100。streaming：正在写的回复 `{id, text}`，text 是到目前为止的全文，替换客户端手里同 id 的内容，之后的 chat.delta 接着追加） |
+| `sync` | `{sinceSeq?:number}` | `{seq, messages, tasks, approvals, watches, artifacts, settings, status, streaming?, rewound?}`（rewound：sinceSeq 之后撤回的消息 id，客户端拿掉；messages：sinceSeq 之后的，加上 updatedSeq 在 sinceSeq 之后的旧消息（客户端已有的就替换，没有的不插进来），最多 500；无 sinceSeq 时最近 100。streaming：正在写的回复 `{id, text}`，text 是到目前为止的全文，替换客户端手里同 id 的内容，之后的 chat.delta 接着追加） |
 | `chat.send` | `{text, clientMsgId?, attachments?, replyTo?}` | `{id, seq}`（同一 clientMsgId 重发只执行一次，返回原来的；attachments 是 `media.upload` / `media.uploadChunk` 给的 id，最多 10 个） |
 | `chat.history` | `{beforeSeq, limit}` | `{messages}` |
 | `chat.rewind` | `{messageId}` | `{text}`（回到主人这条消息之前：这条和之后的撤回，文字给输入框；正在忙时报错「它还在忙，先停下再重来」。docs/rewind-prd.md） |

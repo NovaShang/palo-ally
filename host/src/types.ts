@@ -48,6 +48,9 @@ export interface ChatMessage {
   // Gone back to before it (回到这里重来): kept in the log, never sent to clients.
   rewound?: boolean;
   rewoundSeq?: number; // the seq the rewind took (sync tells clients that missed it)
+  // Sent again with a change (a proposal card's status): the seq that change
+  // took. sync{sinceSeq} gives it again to a client that missed it.
+  updatedSeq?: number;
 }
 
 export interface ReplyTo {
@@ -412,7 +415,7 @@ export interface RecentSession {
   size: number; // its transcript's bytes
 }
 
-export type PalAdoptStatus = "pending" | "adopted" | "discarded" | "failed";
+export type PalAdoptStatus = "pending" | "adopted" | "discarded" | "failed" | "expired";
 
 // The assistant's card proposing to take one over (pal_adopt); the owner
 // answers with helper.decide.

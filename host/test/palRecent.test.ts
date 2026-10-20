@@ -12,7 +12,7 @@ import { AwayDetector } from "../src/away.ts";
 import { type RegistryEntry, readRegistry } from "../src/ccSessions.ts";
 import { BEHAVIORS } from "../src/home.ts";
 import { folderMatch, isOwnFolder, palNameFor, palTitle, type RecentSource, recentTitle, shortName } from "../src/palRecent.ts";
-import { MAX_PALS, type PalsTiming } from "../src/pals.ts";
+import { MAX_PALS, PROPOSAL_TTL_MS, type PalsTiming } from "../src/pals.ts";
 import { handleRpc } from "../src/rpc.ts";
 import type { PalAdoptProposal } from "../src/types.ts";
 import type { FakeScript } from "./fakeDriver.ts";
@@ -57,7 +57,7 @@ function fakeSource() {
   return { infos, programmatic, calls, source };
 }
 
-function setup(o: { spawn?: boolean; extraHolders?: () => RegistryEntry[] } = {}) {
+function setup(o: { spawn?: boolean; extraHolders?: () => RegistryEntry[]; now?: () => number } = {}) {
   const claude = new FakeClaudeDir();
   const cli = new FakeCli(claude);
   cleanups.push(() => claude.cleanup(), () => cli.close());
@@ -71,6 +71,7 @@ function setup(o: { spawn?: boolean; extraHolders?: () => RegistryEntry[] } = {}
       readMessages,
       timing: FAST,
       recentSource: src.source,
+      ...(o.now ? { now: o.now } : {}),
       ...(o.extraHolders ? { registry: () => [...readRegistry(join(claude.dir, "sessions")), ...o.extraHolders!()] } : {}),
     },
   });
@@ -351,6 +352,33 @@ describe("the assistant brings one back (pals_recent, pal_adopt)", () => {
     expect(await tools.pal_adopt({ sessionId: t.ended(t.paths.home, { customTitle: "Palo" }) })).toContain("PaloAlly 自己的会话");
     expect(await tools.pal_adopt({ sessionId: "" })).toContain("pals_recent");
     term.kill("SIGKILL");
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("its card doesn't wait forever: taken over from the list it says adopted; unanswered for a day it expires", async () => {
+    let clock = Date.now();
+    const t = setup({ now: () => clock });
+    const site = t.folder("site");
+    const tools = t.hub.toolHandlers();
+    const a = t.ended(site, { customTitle: "从列表接" });
+    await tools.pal_adopt({ sessionId: a });
+    const card = t.hub.chat.recent(1)[0]!;
+    const { pal } = await t.call("pals.adopt", { sessionId: a });
+    expect(t.hub.chat.get(card.id)!.proposal).toMatchObject({ status: "adopted", palId: pal.id });
+    // 接管 on the card now gives the same Pal
+    expect((await t.call("helper.decide", { proposalId: card.proposal!.id, action: "create" })).pal.id).toBe(pal.id);
+
+    const b = t.ended(site, { customTitle: "没人理" });
+    await tools.pal_adopt({ sessionId: b });
+    const old = t.hub.chat.recent(1)[0]!;
+    clock += PROPOSAL_TTL_MS;
+    expect(t.hub.pals.expireProposals()).toBe(1);
+    expect(t.hub.chat.get(old.id)!.proposal!.status).toBe("expired");
+    expect(t.hub.chat.get(old.id)!.updatedSeq).toBeGreaterThan(old.seq);
+    // too late to 接管; the assistant can offer it again
+    expect(await t.call("helper.decide", { proposalId: old.proposal!.id, action: "create" })).toEqual({});
+    expect(t.hub.pals.list().map((p) => p.sessionId)).toEqual([a]);
+    expect(await tools.pal_adopt({ sessionId: b })).toContain("主人点「接管」才会接");
     await t.hub.pals.stopAndWait();
   });
 

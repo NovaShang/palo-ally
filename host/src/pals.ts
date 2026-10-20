@@ -100,6 +100,12 @@ interface EndedSession {
 
 const ENDED_MAX = 200;
 const FOLD_CHECK_MS = 60 * 60_000;
+// A proposal card nobody answered is no longer on offer after a day (the
+// orange 「等你点头」 must not stay forever); looked at this often.
+export const PROPOSAL_TTL_MS = 24 * 60 * 60_000;
+const PROPOSAL_CHECK_MS = 10 * 60_000;
+// The proposal records kept (the newest); a card dropped from them expires.
+const PROPOSALS_KEPT = 50;
 
 /** pals.detail (docs/workbench-rpc.md §2). */
 export interface PalDetail {
@@ -299,6 +305,7 @@ export class Pals {
   private guardTimer: ReturnType<typeof setInterval> | null = null;
   private sleepTimer: ReturnType<typeof setInterval> | null = null;
   private foldTimer: ReturnType<typeof setInterval> | null = null;
+  private proposalTimer: ReturnType<typeof setInterval> | null = null;
   private balanceTimer: ReturnType<typeof setTimeout> | null = null;
   private waking = new Set<string>(); // asleep Pals being woken (said once)
   private startTimers: ReturnType<typeof setTimeout>[] = [];
@@ -476,6 +483,9 @@ export class Pals {
     // A session crossing foldDays changes `folded` with nobody touching it: say so.
     this.foldTimer = setInterval(() => this.emitSoon(), FOLD_CHECK_MS);
     (this.foldTimer as any).unref?.();
+    this.expireProposals();
+    this.proposalTimer = setInterval(() => this.expireProposals(), PROPOSAL_CHECK_MS);
+    (this.proposalTimer as any).unref?.();
     this.emitSoon();
   }
 
@@ -487,6 +497,7 @@ export class Pals {
     if (this.guardTimer) clearInterval(this.guardTimer);
     if (this.sleepTimer) clearInterval(this.sleepTimer);
     if (this.foldTimer) clearInterval(this.foldTimer);
+    if (this.proposalTimer) clearInterval(this.proposalTimer);
     if (this.balanceTimer) clearTimeout(this.balanceTimer);
     this.balanceTimer = null;
     if (this.emitTimer) clearTimeout(this.emitTimer);
@@ -1021,6 +1032,9 @@ export class Pals {
       throw e;
     }
     this.d.audit.log("pal.adopted", { pal: rec.id, session: s.id, name: rec.name, cwd: rec.cwd, by, ...(ended ? { ended: true } : {}) });
+    // A card still offering it (taken over from the list instead) says so.
+    for (const card of this.data.adoptions)
+      if (card.sessionId === s.id && (card.status === "pending" || card.status === "failed")) this.settleAdopt(card.id, { status: "adopted", palId: rec.id, note: undefined });
     this.emitNow();
     this.balanceSoon();
     return pal;
@@ -1540,10 +1554,13 @@ export class Pals {
     }
     const full = this.full();
     if (full) return full;
+    // A new card for the same name replaces one still waiting.
+    const key = p.name.toLowerCase();
+    for (const old of this.data.proposals) if (old.status === "pending" && old.name.trim().toLowerCase() === key) this.settleProposal(old.id, { status: "expired" });
     const proposal: HelperProposal = { id: newId("hp_"), ...p, status: "pending" };
     const where = tildePath(p.cwd);
     const msg = this.d.chat.add({ role: "assistant", kind: "helper", text: t("pals.proposalText", { name: p.name, where }), channel: "system", proposal });
-    this.data.proposals = [...this.data.proposals, { ...proposal, createdAt: this.now(), messageId: msg.id }].slice(-50);
+    this.data.proposals = this.keep(this.data.proposals, { ...proposal, createdAt: this.now(), messageId: msg.id }, (id) => this.settleProposal(id, { status: "expired" }));
     this.save();
     this.d.audit.log("pal.proposed", { id: proposal.id, name: p.name, cwd: p.cwd });
     return t("pals.proposalShown", { id: proposal.id });
@@ -1557,7 +1574,65 @@ export class Pals {
     this.save();
     if (!p.messageId) return;
     const { createdAt: _c, messageId: _m, ...proposal } = p;
-    this.d.chat.update(p.messageId, { proposal });
+    this.d.chat.update(p.messageId, { proposal }, { resync: true });
+  }
+
+  // The newest PROPOSALS_KEPT records with `added`; a card that drops off
+  // while still waiting expires first (nothing could answer it any more).
+  private keep<T extends { id: string; status: string }>(list: T[], added: T, expire: (id: string) => void): T[] {
+    const all = [...list, added];
+    for (const old of all.slice(0, Math.max(0, all.length - PROPOSALS_KEPT))) if (old.status === "pending" || old.status === "failed") expire(old.id);
+    return all.slice(-PROPOSALS_KEPT);
+  }
+
+  /**
+   * Proposal cards don't wait on the owner forever (a card left 「等你点头」
+   * kept the app's status orange for good). Settled here: a card a day old
+   * (expired); a 接管 card whose conversation is a Pal now (adopted); a 开吧
+   * card whose name a Pal has now (expired); and a card in the conversation
+   * still showing 「pending」 whose record is gone or says otherwise (its
+   * record's state, else expired). Each goes out again like a decision.
+   * Returns how many changed.
+   */
+  expireProposals(): number {
+    const now = this.now();
+    let n = 0;
+    for (const p of this.data.proposals) {
+      if (p.status !== "pending") continue;
+      const named = this.get(p.name);
+      if (now - p.createdAt >= PROPOSAL_TTL_MS || (named && named.rec.name.toLowerCase() === p.name.trim().toLowerCase())) {
+        this.settleProposal(p.id, { status: "expired" });
+        this.d.audit.log("pal.proposal_expired", { id: p.id });
+        n++;
+      }
+    }
+    for (const a of this.data.adoptions) {
+      if (a.status !== "pending" && a.status !== "failed") continue;
+      const pal = this.get(a.sessionId);
+      if (pal && pal.rec.sessionId === a.sessionId) {
+        this.settleAdopt(a.id, { status: "adopted", palId: pal.id, note: undefined });
+        n++;
+      } else if (a.status === "pending" && now - a.createdAt >= PROPOSAL_TTL_MS) {
+        this.settleAdopt(a.id, { status: "expired" });
+        this.d.audit.log("pal.adopt_expired", { id: a.id, session: a.sessionId });
+        n++;
+      }
+    }
+    const cards = this.d.chat.filter((m) => (m.kind === "helper" || m.kind === "pal_adopt") && !m.rewound && !m.pal && m.proposal?.status === "pending");
+    for (const m of cards) {
+      const id = m.proposal!.id;
+      const rec = m.kind === "helper" ? this.data.proposals.find((x) => x.id === id) : this.data.adoptions.find((x) => x.id === id);
+      if (rec?.status === "pending" && (!rec.messageId || rec.messageId === m.id)) continue;
+      let proposal: HelperProposal | PalAdoptProposal;
+      if (rec && rec.messageId === m.id) {
+        const { createdAt: _c, messageId: _m, ...wire } = rec;
+        proposal = wire;
+      } else proposal = { ...m.proposal!, status: "expired" } as HelperProposal | PalAdoptProposal;
+      this.d.chat.update(m.id, { proposal }, { resync: true });
+      this.d.audit.log("pal.card_settled", { id, status: proposal.status });
+      n++;
+    }
+    return n;
   }
 
   /** helper.decide: 开吧 opens the Pal (and returns it), 不用 drops the proposal. A pal_adopt card: 接管 / 不用. */
@@ -1565,7 +1640,10 @@ export class Pals {
     const card = this.data.adoptions.find((x) => x.id === proposalId);
     if (card) return this.decideAdopt(card, action, by);
     const p = this.data.proposals.find((x) => x.id === proposalId);
-    if (!p) throw new Error(t("pals.proposalGone"));
+    if (!p) {
+      this.expireProposals(); // its card, if it still says pending, says it's gone
+      throw new Error(t("pals.proposalGone"));
+    }
     if (p.status !== "pending") {
       const pal = p.palId ? this.pals.get(p.palId) : undefined;
       return pal ? { pal: pal.toWire() } : {};
@@ -1644,7 +1722,7 @@ export class Pals {
     const proposal: PalAdoptProposal = { id: newId("pa_"), sessionId: sid, cwd: found.cwd, title: found.title, status: "pending" };
     const where = tildePath(found.cwd);
     const msg = this.d.chat.add({ role: "assistant", kind: "pal_adopt", text: t("pals.adoptText", { title: found.title, where }), channel: "system", proposal });
-    this.data.adoptions = [...this.data.adoptions, { ...proposal, createdAt: this.now(), messageId: msg.id }].slice(-50);
+    this.data.adoptions = this.keep(this.data.adoptions, { ...proposal, createdAt: this.now(), messageId: msg.id }, (id) => this.settleAdopt(id, { status: "expired" }));
     this.save();
     this.d.audit.log("pal.adopt_proposed", { id: proposal.id, session: sid, cwd: found.cwd });
     return t("pals.adoptShown", { id: proposal.id, title: found.title, where });
@@ -1658,14 +1736,14 @@ export class Pals {
     this.save();
     if (!p.messageId) return;
     const { createdAt: _c, messageId: _m, ...proposal } = p;
-    this.d.chat.update(p.messageId, { proposal });
+    this.d.chat.update(p.messageId, { proposal }, { resync: true });
   }
 
   // 接管 takes it over (and returns the Pal); 不用 drops the card. One that
   // couldn't be taken over says why on the card (failed, with a note) and
   // can be tapped again; one taken over gives its Pal again.
   private async decideAdopt(card: PalFile["adoptions"][number], action: string, by: string): Promise<{ pal?: Pal }> {
-    if (card.status === "adopted" || card.status === "discarded") {
+    if (card.status === "adopted" || card.status === "discarded" || card.status === "expired") {
       const pal = card.palId ? this.pals.get(card.palId) : undefined;
       return pal ? { pal: pal.toWire() } : {};
     }
@@ -1678,7 +1756,8 @@ export class Pals {
     try {
       const r = await this.adopt(card.sessionId, by, { wait: false });
       if (!("pal" in r)) throw new Error(t("pals.inTerminal"));
-      this.settleAdopt(card.id, { status: "adopted", palId: r.pal.id, note: undefined });
+      // Taking it over already settled this card (finishAdopt); otherwise here.
+      if ((card.status as string) !== "adopted" || card.palId !== r.pal.id) this.settleAdopt(card.id, { status: "adopted", palId: r.pal.id, note: undefined });
       this.d.audit.log("pal.adopt_accepted", { id: card.id, pal: r.pal.id, session: card.sessionId, by });
       return { pal: r.pal };
     } catch (e) {

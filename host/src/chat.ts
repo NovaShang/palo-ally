@@ -23,7 +23,7 @@ export class ChatLog {
     }
     this.messages = all;
     // A rewind takes a seq of its own (rewoundSeq), with no message under it.
-    this.seq = this.messages.reduce((m, x) => Math.max(m, x.seq, x.rewoundSeq ?? 0), 0);
+    this.seq = this.messages.reduce((m, x) => Math.max(m, x.seq, x.rewoundSeq ?? 0, x.updatedSeq ?? 0), 0);
   }
 
   get lastSeq(): number {
@@ -50,10 +50,14 @@ export class ChatLog {
 
   // update changes a message the owner acts on (a helper proposal's status):
   // the same id and seq, sent again as chat.message for clients to replace.
-  update(id: string, patch: Partial<Omit<ChatMessage, "id" | "seq" | "ts">>): ChatMessage | undefined {
+  // `resync`: a change a client must not miss (a card's status). It takes a
+  // seq of its own (updatedSeq), so sync{sinceSeq} gives the message again to
+  // a client that was away when it changed.
+  update(id: string, patch: Partial<Omit<ChatMessage, "id" | "seq" | "ts" | "updatedSeq">>, o: { resync?: boolean } = {}): ChatMessage | undefined {
     const i = this.messages.findIndex((m) => m.id === id);
     if (i < 0) return undefined;
     const next = { ...this.messages[i]!, ...patch } as ChatMessage;
+    if (o.resync) next.updatedSeq = ++this.seq;
     this.messages[i] = next;
     appendJsonl(this.path, next);
     this.bus.emit("chat.message", next);
@@ -74,6 +78,11 @@ export class ChatLog {
     }
   }
 
+  /** The messages that match, oldest first (rewound ones too). */
+  filter(pred: (m: ChatMessage) => boolean): ChatMessage[] {
+    return this.messages.filter(pred);
+  }
+
   get(id: string): ChatMessage | undefined {
     for (let i = this.messages.length - 1; i >= 0; i--) if (this.messages[i]!.id === id) return this.messages[i];
     return undefined;
@@ -90,8 +99,9 @@ export class ChatLog {
     return this.messages.filter((m) => !m.rewound);
   }
 
+  // New ones, and older ones changed since (updatedSeq), in the log's order.
   since(seq: number, limit = 500): ChatMessage[] {
-    return this.messages.filter((m) => m.seq > seq && !m.rewound).slice(0, limit);
+    return this.messages.filter((m) => (m.seq > seq || (m.updatedSeq ?? 0) > seq) && !m.rewound).slice(0, limit);
   }
 
   recent(limit: number): ChatMessage[] {
