@@ -460,22 +460,31 @@ struct VoiceInputPanel: View {
     }
 }
 
-/// The whole screen behind the recording UI, evenly: the screen's own
-/// background, partly see-through, so the page stays readable underneath
-/// (the owner's ask: a mask, not a blank screen; no blur, which smears the
-/// words below) while the words in the middle stand out over it. Follows
-/// light / dark mode.
+/// Behind the recording UI: not an even veil (the owner's ask). The page
+/// stays clear, except toward the bottom, where the screen's background
+/// rises behind the zones and the composer so they read; the words in the
+/// middle carry their own soft backdrop (`VoiceWordsStage`). No blur.
 struct VoiceScrim: View {
-    /// How much of the background the mask lays over the page when fully in.
-    static let strength = 0.78
     let opacity: CGFloat
+    /// The top of the zones, in global coordinates (nil: not laid out yet).
+    var zonesTop: CGFloat? = nil
 
     var body: some View {
-        Color(.systemBackground).opacity(Self.strength)
-            .ignoresSafeArea()
-            .opacity(Double(opacity))
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        GeometryReader { proxy in
+            let frame = proxy.frame(in: .global)
+            // From a little above the zones down to the bottom edge.
+            let start = max(0, (zonesTop ?? frame.maxY - 140) - frame.minY - 90)
+            let h = max(1, frame.height)
+            LinearGradient(stops: [
+                .init(color: Color(.systemBackground).opacity(0), location: start / h),
+                .init(color: Color(.systemBackground).opacity(0.9), location: min(1, (start + 90) / h)),
+                .init(color: Color(.systemBackground).opacity(0.9), location: 1),
+            ], startPoint: .top, endPoint: .bottom)
+        }
+        .ignoresSafeArea()
+        .opacity(Double(opacity))
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
@@ -503,6 +512,10 @@ struct VoiceWordsLayer: View {
                                 safeTop: proxy.safeAreaInsets.top, barCenterY: orbPlacement.slot.width > 0 ? orbPlacement.slot.midY : nil)
             }
             .ignoresSafeArea()
+            // Coming in, they rise with the zones and the scrim (they used
+            // to show a frame before the scrim was there); going out, the
+            // exit moves them itself.
+            .opacity(voice.exit == nil && !voice.resolving ? Double(min(1, voice.presence * 1.6)) : 1)
             .allowsHitTesting(false)
         }
     }
@@ -534,6 +547,15 @@ private struct VoiceWordsStage: View {
             voice.placeWords(text: $0, block: $1)
         }
         .frame(width: width)
+        // Their own soft backdrop, so they don't mix into the page under
+        // them (the scrim leaves the middle clear). A soft-edged patch of
+        // the screen's background, not a blur of the page.
+        .background {
+            RoundedRectangle(cornerRadius: 28)
+                .fill(Color(.systemBackground).opacity(0.88))
+                .padding(-20)
+                .blur(radius: 16)
+        }
         let src = voice.wordsFrame, block = voice.wordsBlock
         let way = exitWay(src: src, capsule: capsule)
         ZStack(alignment: .topLeading) {

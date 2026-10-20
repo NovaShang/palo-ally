@@ -874,7 +874,11 @@ private struct VoiceScrimLayer: View {
     @Environment(VoiceInputController.self) private var voice
 
     var body: some View {
-        if voice.mounted || Self.demo { VoiceScrim(opacity: voice.mounted ? voice.scrimOpacity : 1) }
+        if voice.mounted || Self.demo {
+            let capsule = voice.capsuleFrame
+            VoiceScrim(opacity: voice.mounted ? voice.scrimOpacity : 1,
+                       zonesTop: capsule.height > 0 ? capsule.minY - VoiceInputPanel.gap - VoiceInputPanel.zoneHeight : nil)
+        }
     }
 
     /// `-demoScrim YES` (debug builds): the scrim alone, for a look at it.
