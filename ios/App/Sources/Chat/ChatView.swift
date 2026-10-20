@@ -188,12 +188,10 @@ struct ChatView: View {
         }
         .modifier(TopStrip(asBar: macOrb || macPage) {
             VStack(spacing: 0) {
-                if macPage {
-                    MacPageStrip(title: title, subtitle: pageTop?.subtitle ?? "", dot: pageTop?.dot, trailing: pageTop?.menu,
-                                 capsule: pageTop?.capsule == true
-                                    // The session's indicator at the page's top left, as on
-                                    // the phone (no name capsule: the sidebar names it).
-                                    ? AnyView(PageIndicator(size: 30, dot: pageTop?.dot)) : nil)
+                // A session's page has no strip: its indicator is in the
+                // title bar row (MacTitlebarIndicator).
+                if macPage && pageTop?.capsule != true {
+                    MacPageStrip(title: title, subtitle: pageTop?.subtitle ?? "", dot: pageTop?.dot, trailing: pageTop?.menu)
                 }
                 if !inTile { StatusBanner() }
                 // The Mac: the orb hangs small from the top middle of the
@@ -205,6 +203,7 @@ struct ChatView: View {
             }
             .frame(maxWidth: .infinity)
         })
+        .modifier(MacTitlebarIndicator(enabled: macPage && pageTop?.capsule == true, dot: pageTop?.dot))
         // Images and files dropped anywhere on it go to the composer.
         .modifier(ComposerDropTarget(intake: intake, enabled: bottomPanel == nil && store.rewindTarget == nil))
         // While holding to talk, the screen's background covers the
@@ -1002,5 +1001,30 @@ private struct HeldAppearance: ViewModifier {
 
     func body(content: Content) -> some View {
         content.transformEnvironment(\.colorScheme) { if let scheme { $0 = scheme } }
+    }
+}
+
+/// The Mac: a session's indicator in the window's title bar row, at the
+/// page's top left, centered on the traffic lights' line; clear of the
+/// sidebar's capsule while the sidebar is away. The page runs under the row.
+struct MacTitlebarIndicator: ViewModifier {
+    let enabled: Bool
+    var dot: StatusDotKind? = nil
+    @Environment(AppModel.self) private var model
+
+    static let size: CGFloat = 30
+
+    func body(content: Content) -> some View {
+        if enabled {
+            let half = SessionIndicator.outerSize(size: Self.size, glass: true) / 2
+            content.overlay(alignment: .topLeading) {
+                PageIndicator(size: Self.size, dot: dot)
+                    .padding(.leading, model.sidebarCollapsed ? 280 : 14)
+                    .padding(.top, max(2, SidebarChrome.shared.titlebarMidY - half))
+                    .ignoresSafeArea(edges: .top)
+            }
+        } else {
+            content
+        }
     }
 }
