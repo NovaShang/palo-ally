@@ -9,7 +9,6 @@ struct StatusDot: View {
     let kind: StatusDotKind
     var size: CGFloat = 8
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var breathing = false
 
     init(_ kind: StatusDotKind, size: CGFloat = 8) { self.kind = kind; self.size = size }
     init(_ pal: Pal, size: CGFloat = 8) { self.init(pal.dot, size: size) }
@@ -21,24 +20,19 @@ struct StatusDot: View {
             // The halo is drawn outside the layout: rows don't grow for it.
             .background {
                 if kind == .working {
-                    Circle()
-                        .fill(Self.color(.working).opacity(breathing ? 0.22 : 0.38))
+                    // Breathing in a view graph of its own (IsolatedHost): a
+                    // forever animation in the window's graph re-rendered the
+                    // whole window every frame.
+                    IsolatedHost { StatusHalo(size: size, still: reduceMotion) }
                         .frame(width: size * 2.1, height: size * 2.1)
-                        .blur(radius: size * 0.3)
                         .transition(.opacity)
                 }
             }
             .animation(.snappy, value: kind)
-            .onAppear { startBreathing() }
-            .onChange(of: kind) { startBreathing() }
             .accessibilityElement()
             .accessibilityLabel(Self.label(kind))
     }
 
-    private func startBreathing() {
-        guard kind == .working, !reduceMotion else { breathing = false; return }
-        withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { breathing = true }
-    }
 
     static func color(_ kind: StatusDotKind) -> Color {
         switch kind {
@@ -65,5 +59,23 @@ extension Color {
     init(rgb: UInt32) {
         self.init(.sRGB, red: Double((rgb >> 16) & 0xFF) / 255, green: Double((rgb >> 8) & 0xFF) / 255,
                   blue: Double(rgb & 0xFF) / 255, opacity: 1)
+    }
+}
+
+/// The working dot's soft halo, breathing.
+private struct StatusHalo: View {
+    let size: CGFloat
+    let still: Bool
+    @State private var breathing = false
+
+    var body: some View {
+        Circle()
+            .fill(StatusDot.color(.working).opacity(breathing ? 0.22 : 0.38))
+            .frame(width: size * 2.1, height: size * 2.1)
+            .blur(radius: size * 0.3)
+            .onAppear {
+                guard !still else { return }
+                withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { breathing = true }
+            }
     }
 }

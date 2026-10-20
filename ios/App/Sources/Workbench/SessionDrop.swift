@@ -17,24 +17,11 @@ struct SessionDrop: View {
     /// container, the state shown by what's on it); its motion still follows the state.
     var neutral = false
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.displayScale) private var displayScale
-    @State private var engine = SoloEngine()
-
     var body: some View {
-        TimelineView(.animation(minimumInterval: voiceLevel != nil || state == .working || state == .waiting ? 1.0 / 30 : 1.0 / 10, paused: false)) { ctx in
-            let u = engine.frame(now: ctx.date.timeIntervalSinceReferenceDate, state: state, neutral: neutral, voiceLevel: voiceLevel,
-                                 reduceMotion: reduceMotion, dark: scheme == .dark, scale: Float(displayScale))
-            GeometryReader { geo in
-                let side = min(geo.size.width, geo.size.height)
-                // The drawing needs room past the drop (shadow, motion).
-                GlassDropsView(uniforms: u, canvas: side / 0.75)
-                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
-            }
-        }
-        .aspectRatio(1, contentMode: .fit)
-        .accessibilityHidden(true)
+        // Drawn apart (IsolatedHost): its frames redraw the drop, not the window.
+        IsolatedHost { SessionDropCanvas(state: state, voiceLevel: voiceLevel, neutral: neutral) }
+            .aspectRatio(1, contentMode: .fit)
+            .accessibilityHidden(true)
     }
 
     /// The state's color, for the glass (sRGB 0…1).
@@ -46,6 +33,34 @@ struct SessionDrop: View {
         case .idle: 0x9A9AA0
         }
         return SIMD3(Float((hex >> 16) & 0xFF) / 255, Float((hex >> 8) & 0xFF) / 255, Float(hex & 0xFF) / 255)
+    }
+}
+
+/// SessionDrop's drawing. Idle or done it holds still (one frame).
+struct SessionDropCanvas: View {
+    var state: StatusDotKind
+    /// 0…1 while the owner speaks to it; nil: not listening.
+    var voiceLevel: Float?
+    /// The glass in a neutral gray whatever the state (the drop as a
+    /// container, the state shown by what's on it); its motion still follows the state.
+    var neutral = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.displayScale) private var displayScale
+    @State private var engine = SoloEngine()
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: voiceLevel == nil && (state == .idle || state == .done))) { ctx in
+            let u = engine.frame(now: ctx.date.timeIntervalSinceReferenceDate, state: state, neutral: neutral, voiceLevel: voiceLevel,
+                                 reduceMotion: reduceMotion, dark: scheme == .dark, scale: Float(displayScale))
+            GeometryReader { geo in
+                let side = min(geo.size.width, geo.size.height)
+                // The drawing needs room past the drop (shadow, motion).
+                GlassDropsView(uniforms: u, canvas: side / 0.75)
+                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
+            }
+        }
     }
 }
 

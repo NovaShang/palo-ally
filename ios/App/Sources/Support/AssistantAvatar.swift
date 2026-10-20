@@ -18,6 +18,29 @@ import UIKit
 struct AssistantAvatar: View {
     var theme: AppTheme
     var live = false
+    var hostID: String?
+    var bleed: CGFloat = 1
+    var interactive = false
+
+    init(theme: AppTheme, live: Bool = false, hostID: String? = nil, bleed: CGFloat = 1, interactive: Bool = false) {
+        self.theme = theme; self.live = live; self.hostID = hostID; self.bleed = bleed; self.interactive = interactive
+    }
+
+    var body: some View {
+        // Its frames are drawn in a view graph of its own (IsolatedHost):
+        // each one redraws the pair, not the window.
+        IsolatedHost {
+            AssistantAvatarCanvas(theme: theme, live: live, hostID: hostID, bleed: bleed, interactive: interactive)
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The avatar's drawing (AssistantAvatar hosts it apart).
+struct AssistantAvatarCanvas: View {
+    var theme: AppTheme
+    var live = false
     /// The assistant shown, for live avatars: a change of identity together
     /// with the color plays the host-switch handover instead of a recolor.
     var hostID: String?
@@ -37,7 +60,7 @@ struct AssistantAvatar: View {
     @State private var engine = AvatarEngine()
     @State private var calm = 0
 
-    init(theme: AppTheme, live: Bool = false, hostID: String? = nil, bleed: CGFloat = 1, interactive: Bool = false) {
+    init(theme: AppTheme, live: Bool, hostID: String?, bleed: CGFloat, interactive: Bool) {
         self.theme = theme
         self.live = live
         self.hostID = hostID

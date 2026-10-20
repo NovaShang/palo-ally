@@ -37,7 +37,6 @@ struct SessionIndicator: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
-    @State private var breathing = false
 
     init(state: StatusDotKind, contextPct: Int? = nil, effort: String? = nil, model: String? = nil,
          size: CGFloat = 38, glass: Bool = true, running: Int = 0, voiceOwner: String?? = nil) {
@@ -67,8 +66,6 @@ struct SessionIndicator: View {
             .padding(glass ? Self.glassPadding(size: size) : 0)
             .glassEffect(glass ? .regular : .identity, in: .circle)
             .animation(.snappy, value: state)
-            .onAppear { startBreathing() }
-            .onChange(of: state) { startBreathing() }
             .accessibilityElement()
             .accessibilityLabel(StatusDot.label(state))
             .accessibilityValue(accessibilityValue)
@@ -88,9 +85,18 @@ struct SessionIndicator: View {
         let s = size / 100
         ZStack {
             if showsRing { ring(s) }
-            let glyph = glyph(radius: showsRing ? 21 * s : 40 * s)
-                .scaleEffect(state == .working && breathing ? 0.86 : 1)
-                .opacity(state == .working && breathing ? 0.8 : 1)
+            let r = showsRing ? 21 * s : 40 * s
+            let flat = glyph(radius: r)
+            // Working, it breathes, in a view graph of its own (IsolatedHost):
+            // a forever animation in the window's graph re-rendered the whole
+            // window every frame (the sidebar's rows, the Mac).
+            let glyph = Group {
+                if state == .working && !reduceMotion {
+                    IsolatedHost { Breathing { flat } }.frame(width: r * 2, height: r * 2)
+                } else {
+                    flat
+                }
+            }
             if showsRing && center == nil {
                 // The session's liquid-glass drop fills the arc, its white
                 // mark (or the task count) on it; holding to talk to it,
@@ -229,10 +235,6 @@ struct SessionIndicator: View {
         .frame(width: r * 2, height: r * 2)
     }
 
-    private func startBreathing() {
-        guard state == .working, !reduceMotion else { breathing = false; return }
-        withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { breathing = true }
-    }
 }
 
 /// The indicator's middle while the owner holds to talk to its conversation:
@@ -279,3 +281,18 @@ private struct IndicatorVoiceCenter<Glyph: View>: View {
     .preferredColorScheme(.dark)
 }
 #endif
+
+/// Its content breathing, slowly (the working glyph).
+private struct Breathing<Content: View>: View {
+    @ViewBuilder let content: Content
+    @State private var low = false
+
+    var body: some View {
+        content
+            .scaleEffect(low ? 0.86 : 1)
+            .opacity(low ? 0.8 : 1)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { low = true }
+            }
+    }
+}
