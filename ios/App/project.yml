@@ -139,7 +139,7 @@ targets:
         DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
         # On the Mac only the Mac's own tests (the others drive an iPhone).
         EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]: "*"
-        INCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]: "MacScrollWheelUITests.swift MacLibraryUITests.swift MacUpdateUITests.swift"
+        INCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]: "MacScrollWheelUITests.swift MacLibraryUITests.swift MacUpdateUITests.swift MacSmokeUITests.swift"
 schemes:
   PaloAlly:
     build:

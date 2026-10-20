@@ -129,6 +129,7 @@ struct ConversationList: View {
         .navigationTitle(Platform.barInWindowToolbar ? "" : "PaloAlly")
         .toolbar(Platform.barInWindowToolbar ? .hidden : .automatic, for: .navigationBar)
         .modifier(MacSidebarToggle())
+        .modifier(MacSidebarLook())
         // The foot: the Mac app is behind the computer's (a quiet capsule), then ＋ and 设置.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
@@ -240,6 +241,31 @@ private struct MacSidebarToggle: ViewModifier {
     }
 }
 
+/// The Mac: a Mac sidebar's own rows, 28 pt like Finder's, not a touch
+/// screen's 44; and a neutral gray selection, as Finder's when the sidebar
+/// isn't focused, so the Palo orb and the status dots are what stand out.
+/// The rows keep their own text colors on it (sidebarRowText).
+private struct MacSidebarLook: ViewModifier {
+    func body(content: Content) -> some View {
+        if Platform.isMac {
+            content
+                .listStyle(.sidebar)
+                .environment(\.defaultMinListRowHeight, 28)
+                .tint(Color(uiColor: .systemGray4))
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    /// The Mac: a sidebar row's text stays the label color when selected
+    /// (the selection would draw it in its tint, gray on gray).
+    @ViewBuilder func sidebarRowText() -> some View {
+        if Platform.isMac { foregroundStyle(Color.primary) } else { self }
+    }
+}
+
 // MARK: - rows
 
 /// How many things wait on the owner in a conversation: an orange count on
@@ -313,6 +339,7 @@ private struct PaloItem: View {
             }
         }
         .padding(.vertical, 8)
+        .sidebarRowText()
         // Several computers: the switcher in it is a control of its own.
         .accessibilityElement(children: model.hasSeveralHosts ? .contain : .combine)
     }
@@ -358,7 +385,7 @@ private struct WorkspaceRow: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(expanded ? 90 : 0))
-                    .frame(width: 22, height: 28)
+                    .frame(width: 22, height: Platform.isMac ? 22 : 28)
                     .contentShape(.rect)
             }
             .buttonStyle(.borderless)
@@ -383,7 +410,8 @@ private struct WorkspaceRow: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Platform.isMac ? 0 : 2)
+        .sidebarRowText()
         .accessibilityElement(children: .combine)
         .accessibilityAction(named: toggleLabel, toggle)
     }
@@ -426,8 +454,9 @@ private struct PalListRow: View {
                     .lineLimit(1)
             }
         }
-        .padding(.vertical, model.layout == .phone ? 3 : 1)
+        .padding(.vertical, model.layout == .phone ? 3 : (Platform.isMac ? 0 : 1))
         .padding(.leading, inset ? 24 : 0)
+        .sidebarRowText()
         .accessibilityElement(children: .combine)
         .accessibilityValue(StatusDot.label(pal.dot))
     }
@@ -453,6 +482,7 @@ private struct EarlierRow: View {
                     .foregroundStyle(.tertiary)
             }
         }
+        .sidebarRowText()
         .accessibilityElement(children: .combine)
     }
 }
@@ -479,12 +509,11 @@ private struct SidebarFooter: View {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .semibold))
                     .frame(width: 32, height: 32)
+                    .contentShape(.circle)
             }
-            .menuStyle(.button)
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-            .tint(.primary)
             .menuIndicator(.hidden)
+            .modifier(FooterMenuStyle())
+            .tint(.primary)
             .disabled(!store.connection.isOnline)
             .accessibilityLabel("新建")
             .accessibilityIdentifier("sidebar-add")
@@ -495,15 +524,34 @@ private struct SidebarFooter: View {
                 Image(systemName: "gearshape")
                     .font(.system(size: 15, weight: .semibold))
                     .frame(width: 32, height: 32)
+                    .contentShape(.circle)
             }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
+            .glassCircleButton()
             .tint(.primary)
             .accessibilityLabel("设置")
             .accessibilityIdentifier("sidebar-settings")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+}
+
+/// The footer's ＋ as a menu button. On the Mac a Menu with the glass button
+/// style draws as a flat chip; the borderless menu with glass outside it is
+/// round glass like 设置 (as the page strips' ⋯, MacStripMenu).
+private struct FooterMenuStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        if Platform.isMac {
+            content
+                .buttonStyle(.borderless)
+                .frame(width: 32, height: 32)
+                .glassEffect(.regular.interactive(), in: .circle)
+        } else {
+            content
+                .menuStyle(.button)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+        }
     }
 }
 
@@ -576,11 +624,12 @@ private struct DevicesListRow: View {
             Image(systemName: "desktopcomputer")
                 .font(.system(size: 17))
                 .foregroundStyle(.secondary)
-                .frame(width: 40)
+                .frame(width: Platform.isMac ? 22 : 40)
                 .accessibilityHidden(true)
             Text("电脑与设备")
                 .foregroundStyle(.secondary)
         }
+        .sidebarRowText()
         .accessibilityElement(children: .combine)
     }
 }
@@ -595,5 +644,6 @@ private struct AllyListRow: View {
             AllyRow(ally: ally, assistant: store.assistantName)
             WaitingBadge(count: store.pendingAllyDrafts.filter { $0.allyId == ally.id }.count)
         }
+        .sidebarRowText()
     }
 }

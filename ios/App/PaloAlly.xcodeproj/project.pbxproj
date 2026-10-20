@@ -71,6 +71,7 @@
 		6A3F40F12C7DD391D2815F87 /* ChatScrollUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 519EA8CCFA1176D5CDDF3D1F /* ChatScrollUITests.swift */; };
 		6BCAF3C12F7DC362181184FE /* SessionsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE4AA9EBB1D0B96631FCE357 /* SessionsSection.swift */; };
 		6FAF60052DD6375026A2F352 /* NavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7204F49936E047B0B9DD85FC /* NavigationUITests.swift */; };
+		73FB0BEDDF2A6B7535AB283C /* MacSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28789F2BB4ABD1614BBD19E1 /* MacSmokeUITests.swift */; };
 		74C9D47F46F4ABBC4A275D28 /* TouchScript.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BD7B104CFAE4D190F69E603 /* TouchScript.swift */; };
 		771DA9C8AA0708C69B5C0D2B /* MessageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51926AB68F34CBF76C2C1507 /* MessageRow.swift */; };
 		7BD8D9724ED4EFF78AB71306 /* SessionPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79CD58E84DE9E5FA0BD784A8 /* SessionPage.swift */; };
@@ -194,6 +195,7 @@
 		203E0D5FDF575715878433E1 /* AdoptFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdoptFlow.swift; sourceTree = "<group>"; };
 		24E36607C5409252B9B2D6FD /* LocalizationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationUITests.swift; sourceTree = "<group>"; };
 		2702A873DF14736BD0666093 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
+		28789F2BB4ABD1614BBD19E1 /* MacSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSmokeUITests.swift; sourceTree = "<group>"; };
 		2A0AB3E164ECDB40C83C785A /* VoiceExitUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceExitUITests.swift; sourceTree = "<group>"; };
 		2B4899D65015CCAB78463CEA /* PalCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PalCopy.swift; sourceTree = "<group>"; };
 		2BD7B104CFAE4D190F69E603 /* TouchScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchScript.swift; sourceTree = "<group>"; };
@@ -503,6 +505,7 @@
 				24E36607C5409252B9B2D6FD /* LocalizationUITests.swift */,
 				A10351FDBF285D30A12AA443 /* MacLibraryUITests.swift */,
 				C23F1133E2D253017B448FCB /* MacScrollWheelUITests.swift */,
+				28789F2BB4ABD1614BBD19E1 /* MacSmokeUITests.swift */,
 				DBD405BBFB463F533F93B77C /* MacUpdateUITests.swift */,
 				7204F49936E047B0B9DD85FC /* NavigationUITests.swift */,
 				02A414F23E433BB4EA6F9700 /* PairLinkUITests.swift */,
@@ -768,6 +771,7 @@
 				2175FC6EEE394CD7DB490C5A /* LocalizationUITests.swift in Sources */,
 				B2032FE442E03D4426BA7760 /* MacLibraryUITests.swift in Sources */,
 				0F39329E305A6477FBD720F0 /* MacScrollWheelUITests.swift in Sources */,
+				73FB0BEDDF2A6B7535AB283C /* MacSmokeUITests.swift in Sources */,
 				0419A6F417D1D13C482C58F7 /* MacUpdateUITests.swift in Sources */,
 				6FAF60052DD6375026A2F352 /* NavigationUITests.swift in Sources */,
 				030B52AAEED423A6E7E8C177 /* PairLinkUITests.swift in Sources */,
@@ -1038,7 +1042,7 @@
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				"EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = "*";
 				GENERATE_INFOPLIST_FILE = YES;
-				"INCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = "MacScrollWheelUITests.swift MacLibraryUITests.swift MacUpdateUITests.swift";
+				"INCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = "MacScrollWheelUITests.swift MacLibraryUITests.swift MacUpdateUITests.swift MacSmokeUITests.swift";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1061,7 +1065,7 @@
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				"EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = "*";
 				GENERATE_INFOPLIST_FILE = YES;
-				"INCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = "MacScrollWheelUITests.swift MacLibraryUITests.swift MacUpdateUITests.swift";
+				"INCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = "MacScrollWheelUITests.swift MacLibraryUITests.swift MacUpdateUITests.swift MacSmokeUITests.swift";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
