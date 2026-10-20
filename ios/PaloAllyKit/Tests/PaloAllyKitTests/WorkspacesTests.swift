@@ -208,7 +208,8 @@ struct WorkbenchStoreTests {
     @Test func theDetailsAreAskedAndTheModelChangedForTheNextTurn() async throws {
         let (store, host) = await demoStore()
         let d = try await store.palDetail(id: "pal-site")
-        #expect(d.pal?.id == "pal-site" && d.contextWindow == 200_000 && d.models.count == 2 && d.tasks.isEmpty)
+        #expect(d.pal?.id == "pal-site" && d.contextWindow == 200_000 && d.models.count == 2 && d.tasks.count == 1)
+        #expect(d.pastTasks.map(\.status) == [.done, .failed] && d.pastTasks.allSatisfy { ($0.endedAt ?? 0) > $0.startedAt })
         #expect(await host.lastParams["pals.detail"] == ["id": "pal-site"])
         // Through the session's own store, as the capsule's details do.
         let own = store.palStore("pal-site")

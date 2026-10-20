@@ -78,6 +78,7 @@
   effort: String?,
   models: [{id: String, name: String, efforts: [String]}],  // 可选模型，efforts 是该模型支持的深度，空表示不支持
   tasks: [{id: String, title: String, kind: "subagent" | "bg", startedAt: Int64, summary?: String}],
+  pastTasks: [{id, title, kind, startedAt, summary?, endedAt: Int64, status: "done" | "failed" | "stopped"}],  // 结束了的任务，新的在前，最多 30 条
   lastCompactAt: Int64?
 }
 ```

@@ -107,7 +107,7 @@ struct PageIndicator: View {
 
     @ViewBuilder private var indicator: some View {
         if isPalo {
-            SessionIndicator(state: paloState, contextPct: store.status?.contextPct, effort: store.status?.effort,
+            SessionIndicator(state: store.paloDot, contextPct: store.status?.contextPct, effort: store.status?.effort,
                              model: store.status?.model, size: size, glass: false)
         } else if let pal = store.palID.flatMap({ store.pal(id: $0) }) {
             // Holding to talk to it: the level in its middle.
@@ -118,18 +118,10 @@ struct PageIndicator: View {
         }
     }
 
-    /// Palo waits on the owner, works, or is idle.
-    private var paloState: StatusDotKind {
-        switch store.agentStatusLine.kind {
-        case .needsYou: .waiting
-        case .working: .working
-        default: store.assistantWorking ? .working : .idle
-        }
-    }
 
     private var label: String {
         let name = isPalo ? store.assistantName : store.palID.flatMap { store.pal(id: $0)?.displayName } ?? ""
-        let state = StatusDot.label(isPalo ? paloState : dot ?? store.palID.flatMap { store.pal(id: $0)?.dot } ?? .idle)
+        let state = StatusDot.label(isPalo ? store.paloDot : dot ?? store.palID.flatMap { store.pal(id: $0)?.dot } ?? .idle)
         return "\(name)，\(state)"
     }
 
@@ -139,6 +131,17 @@ struct PageIndicator: View {
     private var restsHere: Bool {
         if model.layout == .phone { return true }
         return model.sidebarCollapsed && !SidebarChrome.shared.capsuleOnPad
+    }
+}
+
+extension AppStore {
+    /// Palo's state for its indicator: waiting on the owner, working, or idle.
+    var paloDot: StatusDotKind {
+        switch agentStatusLine.kind {
+        case .needsYou: .waiting
+        case .working: .working
+        default: assistantWorking ? .working : .idle
+        }
     }
 }
 

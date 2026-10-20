@@ -1666,6 +1666,23 @@ describe("session details (workbench)", () => {
     await t.call("pals.send", { id, text: "end bg" });
     await waitFor(() => t.hub.pals.list().find((p) => p.id === id)?.status === "idle", 3_000);
     await waitFor(() => (t.hub.pals.get(id) as any).detailInfo().tasks.length === 0, 3_000);
+    // both are in its history, newest first, with how they ended; it survives a restart of the record
+    const past = (await t.call("pals.detail", { id })).pastTasks;
+    expect(past.map((x: any) => [x.id, x.status, x.summary])).toEqual([
+      ["t_1", "done", "好了"],
+      ["t_2", "done", undefined],
+    ]);
+    expect(past[0].endedAt).toBeGreaterThanOrEqual(past[0].startedAt);
+    expect(recOf(t, id).pastTasks!.length).toBe(2);
+    // what is still running when its process ends is stopped
+    await t.call("pals.send", { id, text: "start bg" });
+    await waitFor(() => t.hub.pals.list().find((p) => p.id === id)?.status === "idle", 3_000);
+    await sleepNow(t, id);
+    expect(recOf(t, id).pastTasks!.slice(0, 2).map((x) => [x.id, x.status])).toEqual([
+      ["t_2", "stopped"],
+      ["t_1", "stopped"],
+    ]);
+    expect(recOf(t, id).pastTasks!.length).toBe(2); // the same ids, not doubled
     await t.hub.pals.stopAndWait();
   });
 

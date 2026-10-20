@@ -1,15 +1,21 @@
 import PaloAllyKit
 import SwiftUI
 
-/// What the title capsule opens (workbench-prd §6): for a session its name,
-/// state, folder, model and depth, context, background tasks, usage and
-/// workspace, and 结束; for Palo the same shell with its model and its
-/// 目标 / 履历 / 记忆 in short. Reads the store in the environment: a
-/// session's own (`palStore`) or the assistant's.
+/// What the title's indicator opens (docs/workbench-design/details-v2.html):
+/// a card that answers who it is and what it is doing at a glance (the
+/// indicator, its name, folder and line), then its model, depth and
+/// context, 停止 while it works, its tasks (what runs now, then 历史任务),
+/// and for a session its usage, workspace and 结束. Files and 成果 are the
+/// title bar's right button, not here. Reads the store in the environment:
+/// a session's own (`palStore`) or the assistant's (Detail/PaloDetailForm).
 struct AgentDetailView: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     @Environment(\.tileDetail) private var tileDetail
+    /// The list's content height, so a popover fits it (nil: not measured yet).
+    @State private var contentHeight: CGFloat?
+
+    private var asSheet: Bool { AgentDetailPlacement.usesSheet(model: model, store: store) }
 
     var body: some View {
         NavigationStack {
@@ -20,14 +26,18 @@ struct AgentDetailView: View {
                     SessionDetailForm(palID: id)
                 }
             }
-            .navigationTitle(store.scope == .palo ? store.assistantName : (store.palID.flatMap { store.pal(id: $0)?.displayName } ?? ""))
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, h in
+                contentHeight = h
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if AgentDetailPlacement.usesSheet(model: model, store: store) {
+                if asSheet {
                     ToolbarItem(placement: .confirmationAction) { Button("完成") { model.setDetail(false, tile: tileDetail) }.tint(.primary) }
                 }
             }
         }
+        // A popover takes its content's height (the navigation bar's 52 included), within reason.
+        .frame(height: asSheet ? nil : contentHeight.map { min(max($0 + 52, 240), 640) })
         .accessibilityIdentifier("agent-detail")
     }
 }
@@ -45,180 +55,81 @@ private struct SessionDetailForm: View {
     @State private var newName = ""
     @State private var working: String?
     @State private var confirmEnd = false
-    @FocusState private var nameFocused: Bool
 
     private var pal: Pal? { store.pal(id: palID) ?? detail?.pal }
     private var online: Bool { store.connection.isOnline }
-    private var beside: Bool { UIDevice.current.userInterfaceIdiom != .phone }
     /// Asked again when the host says the session changed (`pals.updated`).
     private var refreshKey: String {
         "\(online)|\(pal?.updatedAt ?? 0)|\(pal?.attention.rawValue ?? "")|\(pal?.contextPct ?? -1)|\(pal?.model ?? "")|\(pal?.effort ?? "")"
     }
 
     var body: some View {
-        Form {
+        List {
             if let failure {
                 Section { Text(Copy.spaced(failure)).foregroundStyle(.red).font(.footnote) }
             }
             if let pal {
-                header(pal)
-                folder(pal)
-                modelSection
-                context(pal)
+                Section {
+                    DetailHeader(indicator: AnyView(SessionIndicator(pal, size: 58, glass: false)), name: pal.displayName,
+                                 caption: CCSession.shortPath(pal.cwd), line: statusLine(pal), state: pal.dot,
+                                 editing: $editing, draft: $newName, canRename: online,
+                                 onRename: { Task { await rename() } },
+                                 onBeginRename: { newName = pal.displayName; editing = true })
+                        .detailBare()
+                }
+                .listSectionSpacing(.compact)
+                Section {
+                    pickers
+                    DetailContextRow(percent: contextPercent(pal), tokens: detail?.contextTokens, window: detail?.contextWindow,
+                                     compact: { compact() }, compacting: working == "compact",
+                                     canCompact: online && working == nil && pal.status != .busy)
+                    if pal.status == .busy {
+                        DetailStopRow(working: working == "stop") { stopTurn() }
+                            .disabled(!online)
+                    }
+                }
                 tasks
-                usage
-                workspace(pal)
+                usageAndWorkspace(pal)
                 end(pal)
             }
         }
+        .navigationTitle("")
         .disabled(!online && detail == nil)
         .task(id: refreshKey) { await load() }
     }
 
+    private func statusLine(_ pal: Pal) -> String {
+        if let a = pal.activity, pal.status == .busy, !a.isEmpty { return a }
+        return StatusDot.label(pal.dot)
+    }
+
     // MARK: sections
 
-    private func header(_ pal: Pal) -> some View {
-        Section {
-            if editing {
-                HStack {
-                    TextField("名字", text: $newName)
-                        .focused($nameFocused)
-                        .submitLabel(.done)
-                        .onSubmit { Task { await rename() } }
-                        .accessibilityIdentifier("detail-name-field")
-                    Button("好") { Task { await rename() } }
-                        .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            } else {
-                HStack {
-                    Text(pal.displayName).font(.headline).lineLimit(2)
-                    Spacer(minLength: 8)
-                    Button {
-                        newName = pal.displayName
-                        editing = true
-                        nameFocused = true
-                    } label: {
-                        Image(systemName: "pencil")
-                    }
-                    .buttonStyle(.borderless)
-                    .tint(.secondary)
-                    .disabled(!online)
-                    .accessibilityLabel("重命名")
-                    .accessibilityIdentifier("detail-rename")
-                }
-            }
-            HStack(spacing: 8) {
-                StatusDot(pal.dot)
-                Text(statusLine(pal)).foregroundStyle(.secondary).lineLimit(2)
-            }
-            .font(.subheadline)
+    /// 模型 and 思考深度: the system's pickers (a menu each).
+    @ViewBuilder private var pickers: some View {
+        let models = detail?.models ?? []
+        let currentID = detail?.model ?? pal?.model
+        let current = models.first { $0.id == currentID }
+        let efforts = current?.efforts ?? []
+        let effort = detail?.effort ?? pal?.effort
+        Picker("模型", selection: Binding(get: { current?.id ?? currentID ?? "" },
+                                         set: { m in Task { await set(model: m) } })) {
+            if current == nil { Text(ModelName.short(currentID ?? "")).tag(currentID ?? "") }
+            ForEach(models) { Text($0.name).tag($0.id) }
         }
-    }
-
-    private func statusLine(_ pal: Pal) -> String {
-        let status = StatusDot.label(pal.dot)
-        if let a = pal.activity, pal.status == .busy, !a.isEmpty { return "\(status) · \(a)" }
-        return "\(status) · \(Copy.palStatus(pal.status))"
-    }
-
-    private func folder(_ pal: Pal) -> some View {
-        Section("文件夹") {
-            Text(CCSession.shortPath(pal.cwd))
-                .font(.callout)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                Button {
-                    openFiles()
-                } label: {
-                    Label { Text("文件", tableName: "Files") } icon: { Image(systemName: "folder") }
-                        .frame(maxWidth: .infinity)
-                }
-                .accessibilityIdentifier("detail-files")
-                if beside {
-                    Button { reveal("finder") } label: { Label("访达", systemImage: "macwindow").frame(maxWidth: .infinity) }
-                        .disabled(!online || working != nil)
-                        .accessibilityIdentifier("detail-finder")
-                    Button { reveal("terminal") } label: { Label("终端", systemImage: "apple.terminal").frame(maxWidth: .infinity) }
-                        .disabled(!online || working != nil)
-                        .accessibilityIdentifier("detail-terminal")
-                }
+        .pickerStyle(.menu)
+        .detailNeutral()
+        .disabled(!online || working != nil || models.isEmpty)
+        .accessibilityIdentifier("detail-model")
+        if !efforts.isEmpty {
+            Picker("思考深度", selection: Binding(get: { effort ?? "" }, set: { e in Task { await set(effort: e) } })) {
+                if effort.map({ !efforts.contains($0) }) ?? true { Text(effort.map(DetailEffort.label) ?? "—").tag(effort ?? "") }
+                ForEach(efforts, id: \.self) { Text(DetailEffort.label($0)).tag($0) }
             }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .tint(.primary)
-            .controlSize(.regular)
-        }
-    }
-
-    @ViewBuilder private var modelSection: some View {
-        if let d = detail, !d.models.isEmpty {
-            let current = d.models.first { $0.id == (d.model ?? pal?.model) }
-            let efforts = current?.efforts ?? []
-            Section {
-                Menu {
-                    ForEach(d.models) { m in
-                        Button { Task { await set(model: m.id) } } label: {
-                            if m.id == current?.id { Label(m.name, systemImage: "checkmark") } else { Text(m.name) }
-                        }
-                    }
-                } label: {
-                    ModelRowLabel(title: Text("模型"), shown: current?.name ?? ModelName.short(d.model ?? pal?.model ?? ""))
-                }
-                .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6))
-                .disabled(!online || working != nil)
-                .accessibilityIdentifier("detail-model")
-                if !efforts.isEmpty {
-                    Menu {
-                        ForEach(efforts, id: \.self) { e in
-                            Button { Task { await set(effort: e) } } label: {
-                                if e == (d.effort ?? pal?.effort) { Label(EffortName.label(e), systemImage: "checkmark") } else { Text(EffortName.label(e)) }
-                            }
-                        }
-                    } label: {
-                        ModelRowLabel(title: Text("思考深度"), shown: EffortName.label(d.effort ?? pal?.effort))
-                    }
-                    .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6))
-                    .disabled(!online || working != nil)
-                    .accessibilityIdentifier("detail-effort")
-                }
-            } footer: {
-                Text("改了从下一轮开始生效。")
-            }
-        }
-    }
-
-    @ViewBuilder private func context(_ pal: Pal) -> some View {
-        let pct = contextPercent(pal)
-        if let pct {
-            Section("上下文") {
-                HStack(spacing: 10) {
-                    ProgressView(value: Double(min(pct, 100)) / 100)
-                        .tint(Self.arcTint(pct))
-                    Text("\(pct)%").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
-                }
-                HStack {
-                    if let at = detail?.lastCompactAt, at > 0 {
-                        Text("上次压缩 \(Copy.relative(at))").font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 8)
-                    Button(working == "compact" ? String(localized: "正在压缩…") : String(localized: "压缩")) { compact() }
-                        .buttonStyle(.bordered)
-                        .buttonBorderShape(.capsule)
-                        .tint(.primary)
-                        .disabled(!online || working != nil || pal.status == .busy)
-                        .accessibilityIdentifier("detail-compact")
-                }
-            }
-        }
-    }
-
-    /// The indicator's arc colors: orange from 80%, red from 95%.
-    private static func arcTint(_ pct: Int) -> Color {
-        switch IndicatorRules.arcTone(fraction: Double(pct) / 100) {
-        case .normal: .secondary
-        case .warn: Color(rgb: 0xFF9F0A)
-        case .danger: Color(rgb: 0xFF453A)
+            .pickerStyle(.menu)
+            .detailNeutral()
+            .disabled(!online || working != nil)
+            .accessibilityIdentifier("detail-effort")
         }
     }
 
@@ -227,83 +138,58 @@ private struct SessionDetailForm: View {
         return pal.contextPct
     }
 
+    /// What runs now (swipe to stop), then 历史任务.
     @ViewBuilder private var tasks: some View {
-        if let list = detail?.tasks, !list.isEmpty {
-            Section("后台任务") {
-                ForEach(list) { t in
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: t.kind == .subagent ? "person.2" : "terminal")
-                            .foregroundStyle(.secondary)
-                            .frame(width: 22)
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(t.title).lineLimit(2)
-                            Text(t.kind == .subagent ? String(localized: "子 agent") : String(localized: "后台任务"))
-                                .font(.caption).foregroundStyle(.secondary)
-                            if let s = t.summary, !s.isEmpty {
-                                Text(s).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                            }
-                        }
-                        Spacer(minLength: 8)
-                        Button("停") { stop(t) }
-                            .buttonStyle(.bordered)
-                            .buttonBorderShape(.capsule)
-                            .tint(.primary)
-                            .controlSize(.small)
+        let running = detail?.tasks ?? []
+        Section {
+            ForEach(running) { t in
+                SessionTaskRow(task: t)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button("停", role: .destructive) { stop(t) }
                             .disabled(!online || working != nil)
                             .accessibilityIdentifier("detail-stop-\(t.id)")
                     }
-                }
             }
+            NavigationLink {
+                SessionPastTasks(tasks: detail?.pastTasks ?? [])
+            } label: {
+                Text("历史任务")
+            }
+            .accessibilityIdentifier("detail-past-tasks")
+        } header: {
+            detailTasksHeader(running: running.count)
         }
     }
 
-    @ViewBuilder private var usage: some View {
-        if let d = detail {
-            Section("用量") {
-                LabeledContent("今天", value: Self.money(d.spentToday))
-                LabeledContent("累计", value: Self.money(d.costTotalUsd))
-            }
-        }
-    }
-
-    private static func money(_ usd: Double) -> String { String(format: "$%.2f", usd) }
-
-    private func workspace(_ pal: Pal) -> some View {
+    @ViewBuilder private func usageAndWorkspace(_ pal: Pal) -> some View {
         let current = pal.workspaceId.flatMap { store.workspace(id: $0) }
-        return Section("工作区") {
-            if let current {
-                LabeledContent("现在在", value: current.title(pals: store.pals))
+        let others = store.workspaces.filter { $0.id != pal.workspaceId }
+        Section {
+            if let d = detail {
+                LabeledContent("今天", value: DetailTokens.money(d.spentToday))
+                LabeledContent("累计", value: DetailTokens.money(d.costTotalUsd))
             }
-            HStack(spacing: 8) {
-                Button {
-                    model.setDetail(false, tile: tileDetail)
-                    // The sheet comes up once this one is gone.
-                    Task {
-                        try? await Task.sleep(for: .milliseconds(400))
-                        model.newWorkspace = [pal.id]
-                    }
-                } label: {
-                    Label("并排…", systemImage: "rectangle.split.2x1").frame(maxWidth: .infinity)
-                }
-                .disabled(!online)
-                .accessibilityIdentifier("detail-tile")
+            if current != nil || !others.isEmpty {
                 Menu {
-                    ForEach(store.workspaces.filter { $0.id != pal.workspaceId }) { w in
+                    ForEach(others) { w in
                         Button(w.title(pals: store.pals)) { move(to: w.id) }
                     }
                     if pal.workspaceId != nil {
                         Button("不放在工作区里") { move(to: nil) }
                     }
                 } label: {
-                    Label("移到…", systemImage: "arrow.right.square").frame(maxWidth: .infinity)
+                    HStack {
+                        Text("工作区").foregroundStyle(.primary)
+                        Spacer(minLength: 12)
+                        Text(current?.title(pals: store.pals) ?? String(localized: "无")).foregroundStyle(.secondary).lineLimit(1)
+                        Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
+                    }
+                    .contentShape(.rect)
                 }
-                .disabled(!online || (store.workspaces.filter { $0.id != pal.workspaceId }.isEmpty && pal.workspaceId == nil))
+                .tint(.primary)
+                .disabled(!online)
                 .accessibilityIdentifier("detail-move")
             }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .tint(.primary)
         }
     }
 
@@ -316,6 +202,7 @@ private struct SessionDetailForm: View {
                              cancel: { confirmEnd = false }, confirm: { endSession() })
             } else {
                 Button("结束这个会话", role: .destructive) { confirmEnd = true }
+                    .frame(maxWidth: .infinity)
                     .disabled(!online)
                     .accessibilityIdentifier("detail-end")
             }
@@ -367,6 +254,10 @@ private struct SessionDetailForm: View {
         }
     }
 
+    private func stopTurn() {
+        run("stop") { try await store.stop() }
+    }
+
     private func stop(_ t: PalTask) {
         run("stop") {
             try await store.stopTask(id: palID, taskId: t.id)
@@ -374,22 +265,8 @@ private struct SessionDetailForm: View {
         }
     }
 
-    private func reveal(_ kind: String) {
-        run("reveal") { try await store.revealSession(id: palID, kind: kind) }
-    }
-
     private func move(to workspaceID: String?) {
         run("move") { try await store.moveSession(palID, to: workspaceID) }
-    }
-
-    private func openFiles() {
-        model.setDetail(false, tile: tileDetail)
-        let id = palID
-        // On a phone the files come up as a sheet, once this one is gone.
-        Task {
-            try? await Task.sleep(for: .milliseconds(model.libraryBeside ? 0 : 400))
-            model.openPalFiles(id)
-        }
     }
 
     private func endSession() {
@@ -402,73 +279,56 @@ private struct SessionDetailForm: View {
     }
 }
 
-// MARK: - Palo
-
-private struct PaloDetailForm: View {
-    @Environment(\.tileDetail) private var tileDetail
-    @Environment(AppModel.self) private var model
-    @Environment(AppStore.self) private var store
-    @State private var memoryCount: Int?
+/// A subagent or background task of a session: what it is, since when, its latest line.
+private struct SessionTaskRow: View {
+    let task: PalTask
 
     var body: some View {
-        @Bindable var model = model
-        Form {
-            Section {
-                HStack(spacing: 8) {
-                    StatusDot(store.assistantWorking ? .working : .idle)
-                    Text(store.assistantWorking ? (store.status?.activity ?? StatusDot.label(.working)) : StatusDot.label(.idle))
-                        .foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: task.kind == .subagent ? "person.2" : "terminal")
+                .foregroundStyle(.secondary)
+                .frame(width: 22)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.title).lineLimit(2)
+                HStack(spacing: 4) {
+                    Text(task.kind == .subagent ? String(localized: "子 agent") : String(localized: "后台任务"))
+                    if let end = task.endedAt, end > 0 {
+                        Text("·")
+                        Text(Copy.relative(end))
+                    } else if task.startedAt > 0 {
+                        Text("·")
+                        Text(task.startedAt.msDate, style: .relative)
+                    }
+                    if let status = task.status, status != .done {
+                        Text("·")
+                        Text(status == .failed ? String(localized: "没成") : String(localized: "停了"))
+                    }
                 }
-                .font(.subheadline)
-            }
-            Section {
-                ModelRow { model.showModelPicker = true }
-                    .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6))
-            }
-            goals
-            history
-            Section("记忆") {
-                Text(memoryCount.map { $0 > 0 ? String(localized: "它记着 \($0) 条") : String(localized: "还没记下什么") } ?? "…")
-                    .foregroundStyle(.secondary)
-            }
-            Section {
-                Button("查看全部") {
-                    model.setDetail(false, tile: tileDetail)
-                    model.openManagement()
+                .font(.caption).foregroundStyle(.secondary)
+                if let s = task.summary, !s.isEmpty {
+                    Text(s).font(.caption).foregroundStyle(.secondary).lineLimit(3)
                 }
-                .accessibilityIdentifier("detail-all")
-            }
-        }
-        .sheet(isPresented: $model.showModelPicker) {
-            ModelPickerSheet().environment(model).environment(store)
-        }
-        .task(id: model.memoryRevision) {
-            memoryCount = (try? await store.memoryFiles())?.count
-        }
-    }
-
-    @ViewBuilder private var goals: some View {
-        let live = store.watches.filter { $0.state != .done }.prefix(3)
-        Section("目标") {
-            if live.isEmpty {
-                Text("还没有目标").foregroundStyle(.secondary)
-            }
-            ForEach(Array(live)) { w in
-                NavigationLink { GoalDetail(id: w.id) } label: { GoalRow(goal: w) }
             }
         }
     }
+}
 
-    @ViewBuilder private var history: some View {
-        let active = store.tasks.filter(\.isActive).sorted { $0.updatedAt > $1.updatedAt }.prefix(2)
-        let done = store.tasks.filter { !$0.isActive }.sorted { $0.updatedAt > $1.updatedAt }.prefix(3)
-        Section("履历") {
-            if active.isEmpty && done.isEmpty {
-                Text("还没有办过的事").foregroundStyle(.secondary)
+/// 历史任务 of a session: the ones that ended, newest first.
+private struct SessionPastTasks: View {
+    let tasks: [PalTask]
+
+    var body: some View {
+        List {
+            if tasks.isEmpty {
+                ContentUnavailableView("还没有做完的任务", systemImage: "checklist",
+                                       description: Text("它开的子 agent 和后台任务做完后会记在这里。"))
+            } else {
+                ForEach(tasks) { SessionTaskRow(task: $0) }
             }
-            ForEach(Array(active)) { RunningHistoryRow(task: $0) }
-            ForEach(Array(done)) { DoneHistoryRow(task: $0) }
         }
+        .navigationTitle("历史任务")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

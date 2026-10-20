@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>详情页设计稿（第二版）</title>
+<style>
+:root{--blue:#0A85FF;--amber:#FF9F0A;--green:#30D158;--gray:#8E8E93}
+*{box-sizing:border-box}
+body{margin:0;background:#e9e9ee;color:#1c1c1e;font:15px/1.5 -apple-system,"PingFang SC",system-ui,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:20px 14px 70px}
+h1{font-size:24px;margin:6px 0}h2{font-size:18px;margin:30px 0 6px}
+.sub{color:#6e6e73;font-size:14px;max-width:820px}
+.shots{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start;margin-top:12px}
+.cap{font-size:13px;color:#6e6e73;margin-top:6px;max-width:330px}
+/* phone */
+.phone{width:330px;height:700px;border-radius:46px;position:relative;overflow:hidden;box-shadow:0 0 0 9px #111,0 10px 30px rgba(0,0,0,.25)}
+.phone.l{background:#f2f2f7}.phone.d{background:#000;color:#f5f5f7}
+.chat{position:absolute;inset:0;padding:70px 18px;font-size:14px;line-height:1.6;opacity:.35}
+.sheet{position:absolute;left:6px;right:6px;bottom:6px;border-radius:38px;overflow:hidden;padding:10px 14px 18px}
+.l .sheet{background:rgba(242,242,247,.96);box-shadow:0 -1px 0 rgba(0,0,0,.04),0 -10px 30px rgba(0,0,0,.12)}
+.d .sheet{background:rgba(28,28,30,.97);box-shadow:0 -10px 30px rgba(0,0,0,.6)}
+.grab{width:36px;height:5px;border-radius:3px;background:rgba(127,127,127,.4);margin:0 auto 6px}
+.top{display:flex;align-items:center;justify-content:flex-end;height:34px}
+.done{font-size:15px;font-weight:600;padding:6px 14px;border-radius:18px}
+.l .done{background:rgba(255,255,255,.8);box-shadow:0 1px 2px rgba(0,0,0,.08)}.d .done{background:rgba(255,255,255,.12)}
+.head{display:flex;gap:14px;align-items:center;padding:2px 4px 14px}
+.head .txt{min-width:0;flex:1}
+.name{font-size:21px;font-weight:700;line-height:1.2;display:flex;align-items:center;gap:6px}
+.name .pen{font-size:13px;opacity:.35}
+.meta{font-size:13px;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.doing{font-size:13px;margin-top:2px;display:flex;align-items:center;gap:6px}
+.dot{width:7px;height:7px;border-radius:4px;display:inline-block}
+.acts{display:grid;grid-template-columns:repeat(var(--n,3),1fr);gap:8px;margin:0 0 14px}
+.act{height:56px;border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px}
+.l .act{background:rgba(255,255,255,.75);box-shadow:inset 0 0 0 .5px rgba(0,0,0,.06)}
+.d .act{background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.08)}
+.act .ic{font-size:17px;line-height:1}
+.act.off{opacity:.35}
+.grp{border-radius:22px;overflow:hidden;margin:0 0 12px}
+.l .grp{background:#fff}.d .grp{background:#2c2c2e}
+.ghd{font-size:12.5px;opacity:.55;margin:0 14px 5px}
+.cell{display:flex;align-items:center;gap:10px;min-height:46px;padding:0 14px;font-size:15px}
+.cell+.cell{border-top:.5px solid rgba(127,127,127,.22)}
+.cell .v{margin-left:auto;opacity:.55;display:flex;gap:4px;align-items:center}
+.seg{display:flex;flex:1;border-radius:10px;padding:2px;gap:2px}
+.cell.stack{flex-direction:column;align-items:stretch;gap:8px;padding:10px 14px}
+.stopbtn{display:flex;align-items:center;justify-content:center;gap:6px;font-weight:600}
+.l .seg{background:rgba(118,118,128,.12)}.d .seg{background:rgba(118,118,128,.24)}
+.seg span{flex:1;text-align:center;font-size:13px;padding:5px 0;border-radius:8px}
+.l .seg .on{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12);font-weight:600}
+.d .seg .on{background:#636366;font-weight:600}
+.bar{height:6px;border-radius:3px;flex:1;overflow:hidden}
+.l .bar{background:rgba(0,0,0,.08)}.d .bar{background:rgba(255,255,255,.12)}
+.bar i{display:block;height:100%;border-radius:3px}
+.pill{font-size:13px;font-weight:600;padding:5px 12px;border-radius:14px}
+.l .pill{background:rgba(118,118,128,.12)}.d .pill{background:rgba(118,118,128,.28)}
+.red{color:#FF3B30;justify-content:center}
+.small{font-size:12px;opacity:.55}
+.mac{width:360px;border-radius:22px;padding:14px;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+.mac.l{background:rgba(246,246,248,.97)}.mac.d{background:rgba(36,36,38,.97);color:#f5f5f7}
+.notes{background:#fff;border-radius:16px;padding:12px 16px;margin-top:14px;max-width:880px}
+.notes li{margin:5px 0}
+</style></head><body><main>
+<h1>详情页设计稿（第二版）</h1>
+<p class="sub">思路：一张从底部升起的卡片，<b>半屏时就能看到最常用的东西</b>（它是谁、在做什么、几个动作、模型和上下文），往上拉才是不常用的（正在跑的任务、用量、工作区、结束）。头部改成横排，省出一半高度。所有按钮都是中性的玻璃，不用主题色；颜色只出现在状态上，和指示器同一套。</p>
+
+<p class="sub"><b>和右边界面的分工</b>：详情只管「它」本身（状态、模型、上下文、在跑的任务、用量、工作区、结束）；右边只管「它的东西」（成果、文件、网页），入口只有标题栏右上角那一个。</p>
+<p class="sub"><b>选择器</b>：模型和思考深度都是系统默认的选择器，一行左边是名字，右边是当前值和上下小箭头，点开弹出系统选单。思考深度写 low / med / hi / xhi / max，和指示器一样。</p>
+<p class="sub"><b>任务</b>：Palo 和会话都直接列出正在进行的任务（子 agent、后台任务），每个一行，往左滑出「停」；下面一行是「历史任务」，点进去回看以前的。Palo 额外有「目标」「记忆」两行（原来的「履历」并进了「历史任务」）。</p>
+<p class="sub"><b>没有按钮那一排</b>：文件和成果在右上角；「停止」放在上下文那一组的最下面，只在它在干的时候出现。输入框右边永远是麦克风，不再被停止键换掉。</p>
+<h2>1. 会话，半屏（点标题上的指示器打开）</h2>
+<div class="shots" id="s1"></div>
+
+<h2>2. 会话，拉到全屏</h2>
+<div class="shots" id="s2"></div>
+
+<h2>3. Palo</h2>
+<div class="shots" id="s3"></div>
+
+<h2>4. Mac 和 iPad：从指示器下面弹出的浮层</h2>
+<div class="shots" id="s4"></div>
+
+<div class="notes"><b>和现在那版比</b><ul>
+<li>头部从竖排（大图标、名字、文件夹、状态各占一行）改成横排，半屏能多看到模型、思考深度和上下文三行。</li>
+<li>去掉了那一排白色大按钮：文件和成果在右上角，并排、终端、访达不要了。「停止」在上下文那一组最下面，输入框右边一直是麦克风。「压缩」只放在上下文那一行。</li>
+<li>模型和思考深度都是系统选择器；思考深度用 low / med / hi / xhi / max，和指示器同一套写法，中英文都排得开。</li>
+<li>Palo 和会话都直接列出正在进行的任务，下面是「历史任务」。</li>
+<li>思考深度不再弹菜单，直接在分段控件里点；模型点一下弹出系统菜单。不再有粉色的字。</li>
+<li>上下文一行：进度条、「82k / 200k」、压缩。进度条颜色和指示器外圈一样，过 80% 变橙，过 95% 变红。</li>
+<li>Palo 的头部状态和标题栏的指示器用同一个判断，不会一个写「在干」一个是问号。</li>
+<li>没内容的组不显示：没在跑的任务就没有「正在跑」。</li>
+</ul></div>
+</main>
+<script>
+const IC={
+stop:'<svg width="18" height="18" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>',
+folder:'<svg width="20" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+split:'<svg width="20" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M12 5v14"/></svg>',
+term:'<svg width="20" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 10l3 2-3 2M12 15h4"/></svg>',
+lib:'<svg width="20" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2.5"/><path d="M7 5h10M9 2.5h6"/></svg>',
+finder:'<svg width="20" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M12 4c-1.5 3-1.5 7 0 10M8 9v1M16 9v1M8 15c2.5 1.5 5.5 1.5 8 0"/></svg>',
+gear:'<svg width="20" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M5.5 18.5l1.8-1.8M16.7 7.3l1.8-1.8"/></svg>'};
+const COL={working:'#0A85FF',waiting:'#FF9F0A',done:'#30D158',idle:'#8E8E93'};
+const MODEL_D={opus:'#D6A6EE',sonnet:'#A6B6F7',other:'#C7C7CC'},MODEL_L={opus:'#9A55C4',sonnet:'#5468D9',other:'#8E8E93'};
+function glyph(st,cx,cy,r){const c=COL[st];
+ if(st==='idle')return `<circle cx="${cx}" cy="${cy}" r="${r*.9}" fill="none" stroke="${c}" stroke-width="${r*.2}"/><circle cx="${cx}" cy="${cy}" r="${r*.4}" fill="${c}"/>`;
+ let s=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="${c}"/>`;
+ if(st==='working')s+=`<path d="M${cx-r*.28} ${cy-r*.42}L${cx+r*.48} ${cy}L${cx-r*.28} ${cy+r*.42}Z" fill="#fff"/>`;
+ if(st==='waiting')s+=`<text x="${cx}" y="${cy+r*.38}" text-anchor="middle" font-size="${r*1.15}" font-weight="800" fill="#fff" font-family="ui-rounded,-apple-system">?</text>`;
+ if(st==='done')s+=`<path d="M${cx-r*.42} ${cy+r*.02}L${cx-r*.1} ${cy+r*.34}L${cx+r*.46} ${cy-r*.32}" fill="none" stroke="#fff" stroke-width="${r*.2}" stroke-linecap="round" stroke-linejoin="round"/>`;
+ return s;}
+function ind(st,pct,eff,model,size,light){const R=40,C=2*Math.PI*R;
+ const ring=pct>=.95?(light?'#FF3B30':'#FF453A'):pct>=.8?(light?'#FF9500':'#FF9F0A'):(light?'#1C1C1E':'rgba(255,255,255,.9)');
+ return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" style="display:block;flex:none"><circle cx="50" cy="50" r="40" fill="none" stroke="${light?'rgba(0,0,0,.12)':'rgba(255,255,255,.16)'}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${.75*C} ${C}" transform="rotate(135 50 50)"/><circle cx="50" cy="50" r="40" fill="none" stroke="${ring}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${pct*.75*C} ${C}" transform="rotate(135 50 50)"/>${glyph(st,50,50,21)}<text x="50" y="96" text-anchor="middle" font-size="21" font-weight="700" fill="${(light?MODEL_L:MODEL_D)[model]}" font-family="ui-rounded,-apple-system">${eff}</text></svg>`;}
+function seg(on){return `<div class="seg">${['low','med','hi','xhi','max'].map(x=>`<span class="${x===on?'on':''}" style="font-family:ui-rounded,-apple-system;font-weight:${x===on?700:500}">${x}</span>`).join('')}</div>`;}
+const T={zh:{tasksHead:'正在进行',tasksNone:'任务',history:'历史任务',model:'模型',effort:'思考深度',ctx:'上下文',compact:'压缩',stop:'停止',running:'正在跑 · 2',today:'今天',total:'累计',ws:'工作区',end:'结束这个会话',done:'完成'},
+ en:{tasksHead:'In Progress',tasksNone:'Tasks',history:'Past Tasks',model:'Model',effort:'Effort',ctx:'Context',compact:'Compact',stop:'Stop',running:'Running · 2',today:'Today',total:'Total',ws:'Workspace',end:'End This Session',done:'Done'}};
+function ctx(pct,used,win,light,compact=true,t=T.zh){const c=pct>=.95?'#FF3B30':pct>=.8?'#FF9F0A':'#8E8E93';
+ return `<div class="cell"><span>${t.ctx}</span><div class="bar"><i style="width:${pct*100}%;background:${c}"></i></div><span class="small">${used} / ${win}</span>${compact?`<span class="pill">${t.compact}</span>`:''}</div>`;}
+function picker(label,value){return `<div class="cell">${label}<span class="v" style="opacity:.6">${value} <span style="font-size:11px">⌃⌄</span></span></div>`;}
+function tasks(t,list,light){const head=`<div class="ghd">${list.length?`${t.tasksHead} · ${list.length}`:t.tasksNone}</div>`;
+ const rows=list.map(([n,v,c])=>`<div class="cell"><span class="dot" style="background:${c}"></span>${n}<span class="v">${v}</span></div>`).join('');
+ return head+`<div class="grp">${rows}<div class="cell">${t.history}<span class="v">›</span></div></div>`;}
+function stopRow(t){return `<div class="cell stopbtn" style="color:#FF3B30">■ ${t.stop}</div>`;}
+function session(o){const L=o.light,t=o.en?T.en:T.zh;
+ const acts=[[IC.stop,'停止',o.state!=='working'],[IC.split,'并排',false]].concat(o.mac?[[IC.term,'终端',false],[IC.finder,'访达',false]]:[]);
+ let h=`<div class="top">${o.mac?'':`<span class="done">${t.done}</span>`}</div>
+ <div class="head">${ind(o.state,o.pct,o.effLabel,o.model,58,L)}<div class="txt"><div class="name">${o.name}<span class="pen">✎</span></div><div class="meta">${o.folder}</div><div class="doing"><span class="dot" style="background:${COL[o.state]}"></span>${o.doing}</div></div></div>
+ <div class="grp">${picker(t.model,o.modelName)}${picker(t.effort,o.eff)}${ctx(o.pct,o.used,o.win,L,true,t)}${o.state==='working'?stopRow(t):''}</div>`;
+ if(o.full){
+  h+=tasks(t,o.state==='working'?(o.en?[['Build device app','2 min',COL.working],['Subagent · check Mac app','working',COL.working]]:[['xcodebuild 真机包','2 分钟',COL.working],['子 agent · 检查 Mac 版','在干',COL.working]]):[],L);
+  h+=`<div class="grp"><div class="cell">${t.today}<span class="v">$3.20</span></div><div class="cell">${t.total}<span class="v">$18.40</span></div><div class="cell">${t.ws}<span class="v">PaloAlly ›</span></div></div>
+  <div class="grp"><div class="cell red">${t.end}</div></div>`;}
+ return h;}
+function palo(o){const L=o.light;
+ let h=`<div class="top"><span class="done">完成</span></div>
+ <div class="head">${ind('waiting',.23,'hi','other',58,L)}<div class="txt"><div class="name">Palo<span class="pen">✎</span></div><div class="meta">你的助理</div><div class="doing"><span class="dot" style="background:${COL.waiting}"></span><span style="color:${COL.waiting};font-weight:600">2 个会话在等你 ›</span></div></div></div>
+ <div class="grp">${picker('模型','GLM 4.6')}${picker('思考深度','hi')}${ctx(.23,'46k','200k',L,false)}</div>`;
+ if(o.full) h+=tasks(T.zh,[['查周五能订的餐厅','1 分钟',COL.working]],L)+`<div class="grp"><div class="cell">目标<span class="v">3 个 ›</span></div><div class="cell">记忆<span class="v">48 条 ›</span></div></div>
+ <div class="grp"><div class="cell">今天<span class="v">$6.10</span></div></div>
+ <div class="grp"><div class="cell">设置<span class="v">›</span></div></div>`;
+ return h;}
+function phone(inner,light,top){return `<div><div class="phone ${light?'l':'d'}"><div class="chat">好的，我先把现有的分类看一遍。<br><br>收到，按这五条来。先从分类开始。<br><br>这周的 12 篇笔记都归好类了，标签也补上了。</div><div class="sheet" style="top:${top}px">${inner}</div></div></div>`;}
+const S={name:'修语音误触',folder:'~/code/palo-ally',state:'working',doing:'正在跑 swift test',pct:.41,used:'82k',win:'200k',eff:'hi',effLabel:'hi',model:'opus',modelName:'Opus 5.5'};
+document.getElementById('s1').innerHTML=phone(session({...S,light:1}),1,300)+phone(session({...S,en:1,name:'Fix voice mis-taps',doing:'Running swift test'}),0,300)+`<div class="cap">半屏：头部、模型、思考深度、上下文，在干的时候上下文下面是红字「停止」，一屏看完。右边那张是英文、深色：思考深度用 low / med / hi / xhi / max，和指示器下面的小字一样，单独占一行，英文也排得开。</div>`;
+document.getElementById('s2').innerHTML=phone(session({...S,light:1,full:1}),1,44)+phone(session({...S,state:'idle',doing:'闲着',pct:.86,used:'172k',full:1,light:0}),0,44)+`<div class="cap">往上拉：正在进行的任务（往左滑出「停」）和「历史任务」、用量和工作区、最下面单独一行红字「结束这个会话」。右边是闲着的会话：没有在跑的任务，这一组的标题是「任务」，里面只有「历史任务」；上下文 86% 变橙。</div>`;
+document.getElementById('s3').innerHTML=phone(palo({light:1}),1,330)+phone(palo({light:1,full:1}),1,44)+`<div class="cap">和会话同一个骨架。头部第三行是「几个会话在等你」，点一下跳过去。没有按钮；「设置」是最下面一行。往上拉是正在进行的任务和「历史任务」，再下面是「目标」「记忆」，点进去就是现在「它」那一页里对应的部分。没有「结束」。Palo 没有手动压缩，所以上下文那行没有「压缩」。</div>`;
+document.getElementById('s4').innerHTML=`<div class="mac l">${session({...S,light:1,full:1,mac:1})}</div><div class="mac d">${session({...S,full:1,mac:1})}</div><div class="cap">内容和手机全屏一样，没有「完成」，点外面就收起。</div>`;
+</script></body></html>

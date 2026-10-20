@@ -367,6 +367,15 @@ public struct PalTask: Codable, Sendable, Hashable, Identifiable {
     public var kind: Kind
     public var startedAt: Int64
     public var summary: String?
+    /// An ended one (`pastTasks`): when, and how it ended.
+    public var endedAt: Int64?
+    public var status: Ending?
+
+    public enum Ending: String, TolerantStringEnum {
+        case done, failed, stopped, unknown
+        public static let fallback = Ending.unknown
+    }
+
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
         id = l.string("id", or: "")
@@ -374,6 +383,8 @@ public struct PalTask: Codable, Sendable, Hashable, Identifiable {
         kind = l.decode(Kind.self, "kind", or: .unknown)
         startedAt = l.millis("startedAt", or: 0)
         summary = l.string("summary")
+        endedAt = l.millis("endedAt")
+        status = l.decode(Ending.self, "status")
     }
 }
 
@@ -388,6 +399,8 @@ public struct PalDetail: Decodable, Sendable {
     public var effort: String?
     public var models: [PalModelOption]
     public var tasks: [PalTask]
+    /// Its tasks that ended, newest first.
+    public var pastTasks: [PalTask]
     public var lastCompactAt: Int64?
 
     public init(from decoder: Decoder) throws {
@@ -401,6 +414,7 @@ public struct PalDetail: Decodable, Sendable {
         effort = l.string("effort")
         models = l.array(PalModelOption.self, "models", or: [])
         tasks = l.array(PalTask.self, "tasks", or: [])
+        pastTasks = l.array(PalTask.self, "pastTasks") ?? [] // older hosts don't keep them
         lastCompactAt = l.millis("lastCompactAt")
     }
 }

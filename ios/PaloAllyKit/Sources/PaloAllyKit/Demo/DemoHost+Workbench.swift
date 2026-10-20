@@ -123,11 +123,23 @@ extension DemoHost {
         case RPCMethod.palsDetail:
             let id = p["id"]?.stringValue ?? ""
             guard let pal = pals.first(where: { $0.id == id }) else { throw DemoError(message: "找不到这个会话") }
-            return ["pal": try .from(pal), "contextTokens": 84_000, "contextWindow": 200_000, "costTotalUsd": 3.82,
-                    "spentToday": 1.2, "model": .string(pal.model ?? "claude-opus-5-5"), "effort": .string(pal.effort ?? "high"),
-                    "models": [["id": "claude-opus-5-5", "name": "Opus 5.5", "efforts": ["low", "medium", "high"]],
-                               ["id": "claude-sonnet-4-5", "name": "Sonnet 4.5", "efforts": []]],
-                    "tasks": .array([])]
+            let now = Date().epochMillis, min: Int64 = 60_000
+            // One running in the one that waits on the owner; a few that ended in each.
+            let running: JSONValue = pal.status == .waiting
+                ? [["id": "t_run", "title": "跑一遍构建和测试", "kind": "bg", "startedAt": .number(Double(now - 2 * min)), "summary": "已跑 40 个"]]
+                : []
+            let past: JSONValue = [
+                ["id": "t_p1", "title": "查列表页的调用方", "kind": "subagent", "startedAt": .number(Double(now - 50 * min)),
+                 "endedAt": .number(Double(now - 46 * min)), "status": "done", "summary": "找到 3 处，都在 ListPage.tsx 里"],
+                ["id": "t_p2", "title": "跑全部测试", "kind": "bg", "startedAt": .number(Double(now - 3 * 60 * min)),
+                 "endedAt": .number(Double(now - 3 * 60 * min + 4 * min)), "status": "failed", "summary": "2 个失败：排序和分页"],
+            ]
+            return ["pal": try .from(pal), "contextTokens": .number(Double((pal.contextPct ?? 42) * 2000)), "contextWindow": 200_000,
+                    "costTotalUsd": 3.82, "spentToday": 1.2, "model": .string(pal.model ?? "claude-opus-5-5"),
+                    "effort": .string(pal.effort ?? "high"),
+                    "models": [["id": "claude-opus-5-5", "name": "Opus 5.5", "efforts": ["low", "medium", "high", "xhigh", "max"]],
+                               ["id": "claude-sonnet-4-5", "name": "Sonnet 4.5", "efforts": ["low", "medium", "high"]]],
+                    "tasks": running, "pastTasks": past]
         case RPCMethod.palsSetModel:
             let id = p["id"]?.stringValue ?? ""
             guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "找不到这个会话") }

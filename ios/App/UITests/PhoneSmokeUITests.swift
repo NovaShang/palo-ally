@@ -35,6 +35,10 @@ final class PhoneSmokeUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["agent-detail"].waitForExistence(timeout: 5), "Palo's details didn't open")
         sleep(1)
         shot(app, "\(look)-3-palo-details")
+        // Pulled up to the full height: the rest of it.
+        app.descendants(matching: .any)["agent-detail"].firstMatch.swipeUp()
+        sleep(1)
+        shot(app, "\(look)-3b-palo-details-full")
         app.buttons["完成"].firstMatch.tap()
         XCTAssertTrue(palo.waitForExistence(timeout: 5))
 
@@ -62,6 +66,10 @@ final class PhoneSmokeUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["agent-detail"].waitForExistence(timeout: 5), "the session's details didn't open")
         sleep(1)
         shot(app, "\(look)-7-session-details")
+        // Pulled up to the full height: the rest of it.
+        app.descendants(matching: .any)["agent-detail"].firstMatch.swipeUp()
+        sleep(1)
+        shot(app, "\(look)-7b-session-details-full")
         app.buttons["完成"].firstMatch.tap()
 
         // Back to the list and into Palo again.

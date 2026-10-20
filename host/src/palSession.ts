@@ -60,6 +60,7 @@ export interface PalRecord {
   appliedEffort?: string; // with none chosen: the effort it was started at (from Claude Code's settings), then what its Stop hook says turns ran at
   contextTokens?: number; // its context size after its last turn or compaction
   contextWindow?: number; // its model's context window, as Claude Code last reported it
+  pastTasks?: PastPalTask[]; // its subagents and background tasks that ended, newest first (at most 30)
   lastCompactAt?: number; // when it last compacted
 }
 
@@ -71,6 +72,14 @@ export interface PalTask {
   startedAt: number;
   summary?: string;
 }
+
+/** One of its tasks that has ended (pals.detail.pastTasks). */
+export interface PastPalTask extends PalTask {
+  endedAt: number;
+  status: "done" | "failed" | "stopped";
+}
+
+const PAST_TASKS = 30;
 
 /** The context window of a model (its id carries "[1m]" when it's the long one). */
 export function contextWindowOf(model?: string): number {
@@ -350,7 +359,19 @@ export class PalSession {
   }
 
   /** What pals.detail shows besides the Pal itself. */
-  detailInfo(): { contextTokens?: number; contextWindow: number; model?: string; effort?: string; tasks: PalTask[]; lastCompactAt?: number; costTotalUsd: number } {
+  /** A task is over: it leaves the running ones and goes on top of its history. False: not one of them. */
+  private endTask(id: string, status: PastPalTask["status"], summary?: string): boolean {
+    const t = this.tasks.get(id);
+    if (!t) return false;
+    this.tasks.delete(id);
+    const words = (summary && truncate(summary, 200)) || t.summary;
+    const past: PastPalTask = { id: t.id, title: t.title, kind: t.kind, startedAt: t.startedAt, endedAt: this.d.now(), status, ...(words ? { summary: words } : {}) };
+    this.rec.pastTasks = [past, ...(this.rec.pastTasks ?? []).filter((p) => p.id !== id)].slice(0, PAST_TASKS);
+    this.d.save();
+    return true;
+  }
+
+  detailInfo(): { contextTokens?: number; contextWindow: number; model?: string; effort?: string; tasks: PalTask[]; pastTasks: PastPalTask[]; lastCompactAt?: number; costTotalUsd: number } {
     const model = this.model ?? this.rec.model;
     return {
       ...(typeof this.rec.contextTokens === "number" ? { contextTokens: this.rec.contextTokens } : {}),
@@ -358,6 +379,7 @@ export class PalSession {
       ...(model ? { model } : {}),
       ...(this.effort() ? { effort: this.effort() } : {}),
       tasks: [...this.tasks.values()].map(({ id, title, kind, startedAt, summary }) => ({ id, title, kind, startedAt, ...(summary ? { summary } : {}) })),
+      pastTasks: this.rec.pastTasks ?? [],
       ...(typeof this.rec.lastCompactAt === "number" ? { lastCompactAt: this.rec.lastCompactAt } : {}),
       costTotalUsd: this.rec.costTotalUsd ?? 0,
     };
@@ -626,7 +648,8 @@ export class PalSession {
     this.openTools.clear();
     this.turnTools.clear();
     this.bgTasks.clear();
-    this.tasks.clear();
+    // what was still running ends with its process
+    for (const id of [...this.tasks.keys()]) this.endTask(id, "stopped");
     this.compacting = false;
     this.wakeCost = false;
     this.activity = "";
@@ -1007,12 +1030,12 @@ export class PalSession {
         this.openTools.delete(e.toolUseId);
         this.turnTools.delete(e.toolUseId);
         // a foreground subagent ends with its tool result
-        for (const [id, t] of this.tasks) if (t.toolUseId === e.toolUseId && !t.backgrounded) this.tasks.delete(id);
+        for (const [id, t] of this.tasks) if (t.toolUseId === e.toolUseId && !t.backgrounded) this.endTask(id, e.isError ? "failed" : "done");
         break;
       case "background_tasks": {
         this.bgTasks = new Set(e.taskIds);
         let gone = false;
-        for (const [id, t] of this.tasks) if (t.backgrounded && !this.bgTasks.has(id)) gone = this.tasks.delete(id) || gone;
+        for (const [id, t] of this.tasks) if (t.backgrounded && !this.bgTasks.has(id)) gone = this.endTask(id, "done") || gone;
         if (gone) this.touch();
         break;
       }
@@ -1046,7 +1069,7 @@ export class PalSession {
       }
       case "task_notification":
         this.bgTasks.delete(e.taskId);
-        if (this.tasks.delete(e.taskId)) this.touch();
+        if (this.endTask(e.taskId, e.status === "completed" ? "done" : e.status, e.summary)) this.touch();
         break;
       case "compact":
         this.rec.lastCompactAt = this.d.now();

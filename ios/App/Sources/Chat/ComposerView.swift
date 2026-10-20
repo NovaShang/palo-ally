@@ -496,9 +496,9 @@ struct ComposerView: View {
     /// send, the send button to its right.
     private var trailingButton: some View {
         HStack(spacing: 0) {
-            // While the agent works the mic is a stop button; typing, or
-            // holding to talk, still queues the next message.
-            if store.isBusy && !dictating { stopButton } else { micButton }
+            // The mic stays while the agent works (停止 is in its details);
+            // typing, or holding to talk, queues the next message.
+            micButton
             if canSend && !dictating {
                 Button(action: send) {
                     Image(systemName: "arrow.up.circle.fill")
@@ -513,24 +513,6 @@ struct ComposerView: View {
             }
         }
         .padding(.trailing, 2)
-    }
-
-    private var stopButton: some View {
-        Button {
-            Task { try? await store.stop() }
-        } label: {
-            Image(systemName: "stop.fill")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.primary)
-                .frame(width: 34, height: 34)
-                .glassEffect(.regular.interactive(), in: .circle)
-                .frame(width: 44, height: 44)
-                .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .disabled(!store.connection.isOnline)
-        .accessibilityLabel("停止")
-        .accessibilityIdentifier("composer-stop")
     }
 
     private var micButton: some View {

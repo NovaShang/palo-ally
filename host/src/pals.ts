@@ -20,7 +20,7 @@ import { PalLauncher, type PalLaunch } from "./palLauncher.ts";
 import { pagePalMessages, toPalMessages } from "./palHistory.ts";
 import type { ForkSession } from "./rewind.ts";
 import { RECENT_MAX, type RecentEntry, RecentSessions, type RecentSource, folderMatch, ownRoots, palNameFor, palTitle, recentWire, sdkRename, sdkSource, shortName } from "./palRecent.ts";
-import { HeldElsewhere, type Holder, type PalRecord, type PalTask, PalSession, peerWrap } from "./palSession.ts";
+import { HeldElsewhere, type Holder, type PalRecord, type PalTask, type PastPalTask, PalSession, peerWrap } from "./palSession.ts";
 import type { QuestionManager } from "./questions.ts";
 import type { Router } from "./router.ts";
 import type { Sessions } from "./sessions.ts";
@@ -112,6 +112,7 @@ export interface PalDetail {
   effort?: string;
   models: { id: string; name: string; efforts: string[] }[];
   tasks: PalTask[];
+  pastTasks: PastPalTask[];
   lastCompactAt?: number;
 }
 
