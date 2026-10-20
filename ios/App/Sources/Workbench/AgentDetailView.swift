@@ -108,9 +108,9 @@ private struct SessionDetailForm: View {
     /// 模型 and 思考深度: the system's pickers (a menu each).
     @ViewBuilder private var pickers: some View {
         let models = detail?.models ?? []
-        let currentID = detail?.model ?? pal?.model
+        let currentID = detail?.modelOption ?? detail?.model ?? pal?.model
         let current = models.first { $0.id == currentID }
-        let efforts = current?.efforts ?? []
+        let efforts = detail?.efforts ?? []
         let effort = detail?.effort ?? pal?.effort
         Picker("模型", selection: Binding(get: { current?.id ?? currentID ?? "" },
                                          set: { m in Task { await set(model: m) } })) {
@@ -123,8 +123,8 @@ private struct SessionDetailForm: View {
         .accessibilityIdentifier("detail-model")
         if !efforts.isEmpty {
             Picker("思考深度", selection: Binding(get: { effort ?? "" }, set: { e in Task { await set(effort: e) } })) {
-                if effort.map({ !efforts.contains($0) }) ?? true { Text(effort.map(DetailEffort.label) ?? "—").tag(effort ?? "") }
-                ForEach(efforts, id: \.self) { Text(DetailEffort.label($0)).tag($0) }
+                if effort.map({ !efforts.contains($0) }) ?? true { Text(EffortName.label(effort)).tag(effort ?? "") }
+                ForEach(efforts, id: \.self) { Text(EffortName.label($0)).tag($0) }
             }
             .pickerStyle(.menu)
             .detailNeutral()

@@ -70,6 +70,15 @@ final class PhoneSmokeUITests: XCTestCase {
         app.descendants(matching: .any)["agent-detail"].firstMatch.swipeUp()
         sleep(1)
         shot(app, "\(look)-7b-session-details-full")
+        // Its depth can be chosen, by its full name.
+        let effort = app.descendants(matching: .any)["detail-effort"].firstMatch
+        XCTAssertTrue(effort.exists, "the session's details have no 思考深度")
+        effort.tap()
+        let deep = app.buttons["深"].firstMatch
+        XCTAssertTrue(deep.waitForExistence(timeout: 3), "思考深度's menu didn't open with its full names")
+        shot(app, "\(look)-7c-effort-menu")
+        deep.tap()
+        sleep(1)
         app.buttons["完成"].firstMatch.tap()
 
         // Back to the list and into Palo again.

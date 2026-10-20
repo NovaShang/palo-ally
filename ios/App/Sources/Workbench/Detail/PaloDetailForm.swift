@@ -120,7 +120,7 @@ struct PaloDetailForm: View {
             Picker("思考深度", selection: Binding(get: { store.status?.effort ?? "" },
                                                 set: { apply(effort: .some($0.isEmpty ? nil : $0)) })) {
                 Text("默认").tag("")
-                ForEach(efforts, id: \.self) { Text(DetailEffort.label($0)).tag($0) }
+                ForEach(efforts, id: \.self) { Text(EffortName.label($0)).tag($0) }
             }
             .pickerStyle(.menu)
             .detailNeutral()

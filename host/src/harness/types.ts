@@ -47,6 +47,7 @@ export interface ModelOption {
   displayName: string;
   description: string;
   efforts: string[]; // supported effort levels, empty if the model has none
+  resolved?: string; // the full model id the value stands for ("opus[1m]" → "claude-opus-5-5[1m]")
 }
 
 export interface SlashCommandInfo {

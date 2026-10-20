@@ -546,6 +546,7 @@ class ClaudeMainSession implements MainSession {
             displayName: m.displayName,
             description: m.description,
             efforts: m.supportsEffort ? (m.supportedEffortLevels ?? []) : [],
+            ...(m.resolvedModel ? { resolved: m.resolvedModel } : {}),
           })),
         }),
       )

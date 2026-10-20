@@ -104,11 +104,6 @@ extension View {
     func detailNeutral() -> some View { tint(.secondary) }
 }
 
-enum DetailEffort {
-    /// low / med / hi / xhi / max: the indicator's words, the same in every language.
-    static func label(_ effort: String) -> String { IndicatorRules.effortLabel(effort) ?? effort }
-}
-
 // MARK: - context
 
 enum DetailTokens {

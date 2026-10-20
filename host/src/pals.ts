@@ -111,9 +111,32 @@ export interface PalDetail {
   model?: string;
   effort?: string;
   models: { id: string; name: string; efforts: string[] }[];
+  modelOption?: string; // which of `models` it runs on (its model is often the full id an alias stands for)
+  efforts: string[]; // the depths its model takes: its option's, else the same model's without the window suffix
   tasks: PalTask[];
   pastTasks: PastPalTask[];
   lastCompactAt?: number;
+}
+
+/**
+ * The option a session's model is: its own value, or the alias whose full id
+ * it is (an alias's [1m] has to match too).
+ */
+export function optionFor(model: string | undefined, options: ModelOption[]): string | undefined {
+  if (!model) return undefined;
+  const norm = (s: string) => s.trim().toLowerCase();
+  const m = norm(model);
+  return (
+    options.find((o) => norm(o.value) === m)?.value ??
+    options.find((o) => o.resolved && norm(o.resolved) === m)?.value ??
+    // a dated id ("claude-opus-5-5-20260101[1m]") against its undated one
+    options.find((o) => o.resolved && norm(o.resolved).replace(/-\d{8}(?=\[|$)/, "") === m.replace(/-\d{8}(?=\[|$)/, ""))?.value
+  );
+}
+
+/** A model id without its window suffix: "claude-opus-5-5[1m]" → "claude-opus-5-5". */
+function baseModel(model: string | undefined): string | undefined {
+  return model?.replace(/\[[^\]]*\]$/, "");
 }
 
 class NoDesktop extends Error {}
@@ -1183,9 +1206,15 @@ export class Pals {
   /** pals.detail: what the capsule's details show. */
   async detail(id: string): Promise<PalDetail> {
     const pal = this.mustGet(id);
-    const models = ((await this.d.models?.().catch(() => [])) ?? []).map((m) => ({ id: m.value, name: m.displayName, efforts: m.efforts }));
+    const options = (await this.d.models?.().catch(() => [])) ?? [];
+    const models = options.map((m) => ({ id: m.value, name: m.displayName, efforts: m.efforts }));
     const info = pal.detailInfo();
-    return { pal: pal.toWire(), ...info, spentToday: this.spentToday(pal), models };
+    const modelOption = optionFor(info.model, options);
+    // No option for it exactly (a window the list doesn't offer): the same model's depths.
+    const base = baseModel(info.model)?.toLowerCase();
+    const sameModel = options.find((o) => o.value.toLowerCase() === base || (o.resolved && baseModel(o.resolved)!.toLowerCase() === base));
+    const efforts = options.find((o) => o.value === modelOption)?.efforts ?? sameModel?.efforts ?? [];
+    return { pal: pal.toWire(), ...info, spentToday: this.spentToday(pal), models, ...(modelOption ? { modelOption } : {}), efforts };
   }
 
   /**

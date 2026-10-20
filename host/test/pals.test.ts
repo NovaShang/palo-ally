@@ -7,7 +7,7 @@ import { AwayDetector } from "../src/away.ts";
 import { transcriptPath } from "../src/handoffs.ts";
 import { findHelper, makeSpawner } from "../src/palLauncher.ts";
 import { pagePalMessages, toPalMessages, transcriptLastLine, transcriptModel } from "../src/palHistory.ts";
-import { MAX_PALS, PALO_NAME, type PalsDeps, type PalsTiming } from "../src/pals.ts";
+import { MAX_PALS, optionFor, PALO_NAME, type PalsDeps, type PalsTiming } from "../src/pals.ts";
 import { type PalRecord, startError } from "../src/palSession.ts";
 import type { Paths } from "../src/config.ts";
 import { BEHAVIORS } from "../src/home.ts";
@@ -1579,6 +1579,43 @@ describe("session details (workbench)", () => {
     });
     expect(d.lastCompactAt).toBeUndefined();
     await expect(t.call("pals.detail", { id: "pal_nope" })).rejects.toThrow();
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("a session's model, a full id, is matched to the alias option it stands for, with that option's depths; one the list lacks still gets its model's depths", () => {
+    const opts = [
+      { value: "default", displayName: "Default", description: "", efforts: ["low", "medium", "high", "xhigh", "max"], resolved: "claude-opus-5-5" },
+      { value: "opus[1m]", displayName: "Opus 1M", description: "", efforts: ["low", "high"], resolved: "claude-opus-5-5[1m]" },
+      { value: "sonnet", displayName: "Sonnet", description: "", efforts: ["low", "medium", "high"], resolved: "claude-sonnet-5" },
+    ];
+    expect(optionFor("claude-opus-5-5[1m]", opts)).toBe("opus[1m]");
+    expect(optionFor("Claude-Sonnet-5", opts)).toBe("sonnet");
+    expect(optionFor("sonnet", opts)).toBe("sonnet");
+    expect(optionFor("claude-sonnet-5-20260101", opts)).toBe("sonnet");
+    expect(optionFor("claude-haiku-4-5", opts)).toBeUndefined();
+    expect(optionFor(undefined, opts)).toBeUndefined();
+  });
+
+  test("pals.detail says which option it runs on and the depths it takes", async () => {
+    const t = setup({
+      palScript: echo,
+      pals: {
+        models: async () => [
+          { value: "default", displayName: "Default", description: "", efforts: ["low", "medium", "high"], resolved: "claude-opus-5-5" },
+          { value: "sonnet", displayName: "Sonnet", description: "", efforts: ["low", "high"], resolved: "claude-sonnet-5" },
+        ],
+      },
+    });
+    const { pal } = await t.call("pals.create", { cwd: t.project, text: "开工" });
+    await waitFor(() => t.hub.pals.list().find((p) => p.id === pal.id)?.status === "idle", 3_000);
+    (t.hub.pals.get(pal.id) as any).rec.model = "claude-sonnet-5";
+    (t.hub.pals.get(pal.id) as any).model = "claude-sonnet-5";
+    let d = await t.call("pals.detail", { id: pal.id });
+    expect([d.modelOption, d.efforts]).toEqual(["sonnet", ["low", "high"]]);
+    // a long window the list doesn't offer: no option, the same model's depths
+    (t.hub.pals.get(pal.id) as any).model = "claude-opus-5-5[1m]";
+    d = await t.call("pals.detail", { id: pal.id });
+    expect([d.modelOption, d.efforts]).toEqual([undefined, ["low", "medium", "high"]]);
     await t.hub.pals.stopAndWait();
   });
 

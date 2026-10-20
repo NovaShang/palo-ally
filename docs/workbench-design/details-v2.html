@@ -63,7 +63,7 @@ h1{font-size:24px;margin:6px 0}h2{font-size:18px;margin:30px 0 6px}
 <p class="sub">思路：一张从底部升起的卡片，<b>半屏时就能看到最常用的东西</b>（它是谁、在做什么、几个动作、模型和上下文），往上拉才是不常用的（正在跑的任务、用量、工作区、结束）。头部改成横排，省出一半高度。所有按钮都是中性的玻璃，不用主题色；颜色只出现在状态上，和指示器同一套。</p>
 
 <p class="sub"><b>和右边界面的分工</b>：详情只管「它」本身（状态、模型、上下文、在跑的任务、用量、工作区、结束）；右边只管「它的东西」（成果、文件、网页），入口只有标题栏右上角那一个。</p>
-<p class="sub"><b>选择器</b>：模型和思考深度都是系统默认的选择器，一行左边是名字，右边是当前值和上下小箭头，点开弹出系统选单。思考深度写 low / med / hi / xhi / max，和指示器一样。</p>
+<p class="sub"><b>选择器</b>：模型和思考深度都是系统默认的选择器，一行左边是名字，右边是当前值和上下小箭头，点开弹出系统选单。思考深度的选项用完整的名字：浅、中、深、很深、最深（英文 Low、Medium、High、Extra high、Max），不用指示器上的简写。</p>
 <p class="sub"><b>任务</b>：Palo 和会话都直接列出正在进行的任务（子 agent、后台任务），每个一行，往左滑出「停」；下面一行是「历史任务」，点进去回看以前的。Palo 额外有「目标」「记忆」两行（原来的「履历」并进了「历史任务」）。</p>
 <p class="sub"><b>没有按钮那一排</b>：文件和成果在右上角；「停止」放在上下文那一组的最下面，只在它在干的时候出现。输入框右边永远是麦克风，不再被停止键换掉。</p>
 <h2>1. 会话，半屏（点标题上的指示器打开）</h2>
@@ -81,7 +81,7 @@ h1{font-size:24px;margin:6px 0}h2{font-size:18px;margin:30px 0 6px}
 <div class="notes"><b>和现在那版比</b><ul>
 <li>头部从竖排（大图标、名字、文件夹、状态各占一行）改成横排，半屏能多看到模型、思考深度和上下文三行。</li>
 <li>去掉了那一排白色大按钮：文件和成果在右上角，并排、终端、访达不要了。「停止」在上下文那一组最下面，输入框右边一直是麦克风。「压缩」只放在上下文那一行。</li>
-<li>模型和思考深度都是系统选择器；思考深度用 low / med / hi / xhi / max，和指示器同一套写法，中英文都排得开。</li>
+<li>模型和思考深度都是系统选择器，选项用完整的名字。</li>
 <li>Palo 和会话都直接列出正在进行的任务，下面是「历史任务」。</li>
 <li>思考深度不再弹菜单，直接在分段控件里点；模型点一下弹出系统菜单。不再有粉色的字。</li>
 <li>上下文一行：进度条、「82k / 200k」、压缩。进度条颜色和指示器外圈一样，过 80% 变橙，过 95% 变红。</li>
@@ -133,14 +133,14 @@ function session(o){const L=o.light,t=o.en?T.en:T.zh;
 function palo(o){const L=o.light;
  let h=`<div class="top"><span class="done">完成</span></div>
  <div class="head">${ind('waiting',.23,'hi','other',58,L)}<div class="txt"><div class="name">Palo<span class="pen">✎</span></div><div class="meta">你的助理</div><div class="doing"><span class="dot" style="background:${COL.waiting}"></span><span style="color:${COL.waiting};font-weight:600">2 个会话在等你 ›</span></div></div></div>
- <div class="grp">${picker('模型','GLM 4.6')}${picker('思考深度','hi')}${ctx(.23,'46k','200k',L,false)}</div>`;
+ <div class="grp">${picker('模型','GLM 4.6')}${picker('思考深度','深')}${ctx(.23,'46k','200k',L,false)}</div>`;
  if(o.full) h+=tasks(T.zh,[['查周五能订的餐厅','1 分钟',COL.working]],L)+`<div class="grp"><div class="cell">目标<span class="v">3 个 ›</span></div><div class="cell">记忆<span class="v">48 条 ›</span></div></div>
  <div class="grp"><div class="cell">今天<span class="v">$6.10</span></div></div>
  <div class="grp"><div class="cell">设置<span class="v">›</span></div></div>`;
  return h;}
 function phone(inner,light,top){return `<div><div class="phone ${light?'l':'d'}"><div class="chat">好的，我先把现有的分类看一遍。<br><br>收到，按这五条来。先从分类开始。<br><br>这周的 12 篇笔记都归好类了，标签也补上了。</div><div class="sheet" style="top:${top}px">${inner}</div></div></div>`;}
-const S={name:'修语音误触',folder:'~/code/palo-ally',state:'working',doing:'正在跑 swift test',pct:.41,used:'82k',win:'200k',eff:'hi',effLabel:'hi',model:'opus',modelName:'Opus 5.5'};
-document.getElementById('s1').innerHTML=phone(session({...S,light:1}),1,300)+phone(session({...S,en:1,name:'Fix voice mis-taps',doing:'Running swift test'}),0,300)+`<div class="cap">半屏：头部、模型、思考深度、上下文，在干的时候上下文下面是红字「停止」，一屏看完。右边那张是英文、深色：思考深度用 low / med / hi / xhi / max，和指示器下面的小字一样，单独占一行，英文也排得开。</div>`;
+const S={name:'修语音误触',folder:'~/code/palo-ally',state:'working',doing:'正在跑 swift test',pct:.41,used:'82k',win:'200k',eff:'深',effLabel:'hi',model:'opus',modelName:'Opus 5.5'};
+document.getElementById('s1').innerHTML=phone(session({...S,light:1}),1,300)+phone(session({...S,en:1,eff:'High',name:'Fix voice mis-taps',doing:'Running swift test'}),0,300)+`<div class="cap">半屏：头部、模型、思考深度、上下文，在干的时候上下文下面是红字「停止」，一屏看完。右边那张是英文、深色。</div>`;
 document.getElementById('s2').innerHTML=phone(session({...S,light:1,full:1}),1,44)+phone(session({...S,state:'idle',doing:'闲着',pct:.86,used:'172k',full:1,light:0}),0,44)+`<div class="cap">往上拉：正在进行的任务（往左滑出「停」）和「历史任务」、用量和工作区、最下面单独一行红字「结束这个会话」。右边是闲着的会话：没有在跑的任务，这一组的标题是「任务」，里面只有「历史任务」；上下文 86% 变橙。</div>`;
 document.getElementById('s3').innerHTML=phone(palo({light:1}),1,330)+phone(palo({light:1,full:1}),1,44)+`<div class="cap">和会话同一个骨架。头部第三行是「几个会话在等你」，点一下跳过去。没有按钮；「设置」是最下面一行。往上拉是正在进行的任务和「历史任务」，再下面是「目标」「记忆」，点进去就是现在「它」那一页里对应的部分。没有「结束」。Palo 没有手动压缩，所以上下文那行没有「压缩」。</div>`;
 document.getElementById('s4').innerHTML=`<div class="mac l">${session({...S,light:1,full:1,mac:1})}</div><div class="mac d">${session({...S,full:1,mac:1})}</div><div class="cap">内容和手机全屏一样，没有「完成」，点外面就收起。</div>`;

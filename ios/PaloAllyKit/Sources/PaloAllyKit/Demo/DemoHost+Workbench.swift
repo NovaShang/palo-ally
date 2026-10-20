@@ -139,6 +139,8 @@ extension DemoHost {
                     "effort": .string(pal.effort ?? "high"),
                     "models": [["id": "claude-opus-5-5", "name": "Opus 5.5", "efforts": ["low", "medium", "high", "xhigh", "max"]],
                                ["id": "claude-sonnet-4-5", "name": "Sonnet 4.5", "efforts": ["low", "medium", "high"]]],
+                    "modelOption": .string(pal.model ?? "claude-opus-5-5"),
+                    "efforts": pal.model == "claude-sonnet-4-5" ? ["low", "medium", "high"] : ["low", "medium", "high", "xhigh", "max"],
                     "tasks": running, "pastTasks": past]
         case RPCMethod.palsSetModel:
             let id = p["id"]?.stringValue ?? ""

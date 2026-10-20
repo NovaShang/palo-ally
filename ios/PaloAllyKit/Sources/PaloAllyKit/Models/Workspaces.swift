@@ -398,6 +398,10 @@ public struct PalDetail: Decodable, Sendable {
     public var model: String?
     public var effort: String?
     public var models: [PalModelOption]
+    /// Which of `models` it runs on (its `model` is often the full id an alias stands for); nil: none of them.
+    public var modelOption: String?
+    /// The depths its model takes.
+    public var efforts: [String]
     public var tasks: [PalTask]
     /// Its tasks that ended, newest first.
     public var pastTasks: [PalTask]
@@ -413,6 +417,10 @@ public struct PalDetail: Decodable, Sendable {
         model = l.string("model")
         effort = l.string("effort")
         models = l.array(PalModelOption.self, "models", or: [])
+        modelOption = l.string("modelOption")
+        // older hosts: the option whose id is its model
+        let options = models, current = model
+        efforts = l.array(String.self, "efforts") ?? options.first { $0.id == current }?.efforts ?? []
         tasks = l.array(PalTask.self, "tasks", or: [])
         pastTasks = l.array(PalTask.self, "pastTasks") ?? [] // older hosts don't keep them
         lastCompactAt = l.millis("lastCompactAt")
