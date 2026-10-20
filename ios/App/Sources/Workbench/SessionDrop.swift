@@ -18,8 +18,9 @@ struct SessionDrop: View {
     var neutral = false
 
     var body: some View {
-        // Drawn apart (IsolatedHost): its frames redraw the drop, not the window.
-        IsolatedHost { SessionDropCanvas(state: state, voiceLevel: voiceLevel, neutral: neutral) }
+        // Drawn in place: hosted apart (IsolatedHost) its glass lost the page
+        // behind it and its colors went wrong.
+        SessionDropCanvas(state: state, voiceLevel: voiceLevel, neutral: neutral)
             .aspectRatio(1, contentMode: .fit)
             .accessibilityHidden(true)
     }
@@ -36,7 +37,8 @@ struct SessionDrop: View {
     }
 }
 
-/// SessionDrop's drawing. Idle or done it holds still (one frame).
+/// SessionDrop's drawing: 30 frames a second while it works, waits or
+/// listens, 10 at rest (never paused: a pause froze a color change halfway).
 struct SessionDropCanvas: View {
     var state: StatusDotKind
     /// 0…1 while the owner speaks to it; nil: not listening.
@@ -51,7 +53,7 @@ struct SessionDropCanvas: View {
     @State private var engine = SoloEngine()
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: voiceLevel == nil && (state == .idle || state == .done))) { ctx in
+        TimelineView(.animation(minimumInterval: voiceLevel != nil || state == .working || state == .waiting ? 1.0 / 30 : 1.0 / 10)) { ctx in
             let u = engine.frame(now: ctx.date.timeIntervalSinceReferenceDate, state: state, neutral: neutral, voiceLevel: voiceLevel,
                                  reduceMotion: reduceMotion, dark: scheme == .dark, scale: Float(displayScale))
             GeometryReader { geo in
