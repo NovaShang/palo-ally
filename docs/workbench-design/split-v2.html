@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mac 分屏：重新设计</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#e9e9ee;color:#1c1c1e;font:13px/1.45 -apple-system,"PingFang SC",system-ui,sans-serif}
+main{max-width:1240px;margin:0 auto;padding:20px 14px 70px}
+h1{font-size:22px;margin:6px 0}h2{font-size:16px;margin:28px 0 6px}
+.sub{color:#6e6e73;font-size:14px;max-width:900px}
+.win{width:1180px;height:560px;border-radius:12px;overflow:hidden;display:flex;box-shadow:0 0 0 .5px rgba(0,0,0,.2),0 12px 30px rgba(0,0,0,.18);background:#fff;margin-top:10px;position:relative}
+.win.d{background:#1e1e20;color:#f2f2f7}
+.side{width:230px;background:#f3f2f7;border-right:.5px solid rgba(0,0,0,.1);padding:40px 10px;font-size:12px;color:#6e6e73}
+.d .side{background:#2a292e;border-color:rgba(255,255,255,.08);color:#98989d}
+.side .r{height:34px;display:flex;align-items:center;gap:8px;padding:0 8px;border-radius:7px}
+.side .r.sel{background:rgba(0,0,0,.07);color:#1c1c1e}.d .side .r.sel{background:rgba(255,255,255,.1);color:#fff}
+.area{flex:1;display:flex;flex-direction:column;min-width:0}
+.panes{flex:1;display:flex;min-height:0}
+.pane{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+.pane+.pane{border-left:1px solid rgba(0,0,0,.09)}.d .pane+.pane{border-color:rgba(255,255,255,.09)}
+.ph{height:34px;display:flex;align-items:center;gap:7px;padding:0 10px;font-size:12px;border-bottom:.5px solid rgba(0,0,0,.07);flex:none}
+.d .ph{border-color:rgba(255,255,255,.07)}
+.ph .n{font-weight:600}.ph .st{color:#86868b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ph .x{margin-left:auto;color:#aeaeb2;font-size:11px;letter-spacing:4px;opacity:0}
+.pane:hover .ph .x{opacity:1}
+.ind{width:20px;height:20px;border-radius:10px;display:grid;place-items:center;color:#fff;font-size:9px;font-weight:800;flex:none}
+.body{flex:1;padding:12px 14px;display:flex;flex-direction:column;gap:9px;justify-content:flex-end;overflow:hidden;font-size:12.5px}
+.me{align-self:flex-end;background:rgba(118,118,128,.14);border-radius:14px;padding:6px 10px;max-width:80%}
+.d .me{background:rgba(255,255,255,.12)}
+.dim .body,.dim .ph .st{opacity:.55}
+.cur .ph{background:rgba(10,133,255,.07)}.d .cur .ph{background:rgba(10,133,255,.16)}
+.cur::after{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:#0A85FF}
+.wait .ph{background:rgba(255,159,10,.10)}
+.comp{height:46px;margin:8px 12px 10px;border-radius:23px;display:flex;align-items:center;padding:0 8px 0 14px;gap:8px;color:#8e8e93;background:rgba(255,255,255,.75);box-shadow:0 1px 6px rgba(0,0,0,.12),inset 0 0 0 .5px rgba(0,0,0,.08);flex:none}
+.d .comp{background:rgba(60,60,64,.7);box-shadow:0 1px 6px rgba(0,0,0,.5),inset 0 0 0 .5px rgba(255,255,255,.1)}
+.to{font-size:12px;color:#1c1c1e;background:rgba(10,133,255,.12);border-radius:10px;padding:2px 8px;white-space:nowrap}
+.d .to{color:#fff;background:rgba(10,133,255,.3)}
+.mini{height:32px;margin:6px 8px 8px;border-radius:16px;display:flex;align-items:center;padding:0 12px;color:#8e8e93;font-size:12px;background:rgba(118,118,128,.1);flex:none}
+.lay{display:flex;gap:6px;position:absolute;right:12px;top:8px}
+.lay i{width:26px;height:18px;border-radius:4px;border:1.5px solid #aeaeb2;display:block}
+.notes{background:#fff;border-radius:16px;padding:12px 16px;margin-top:14px;max-width:1000px;font-size:14px}
+.notes li{margin:5px 0}
+.cap{font-size:13px;color:#6e6e73;margin-top:6px}
+.ghost{position:absolute;top:0;bottom:0;width:2px;background:#0A85FF}
+</style></head><body><main>
+<h1>Mac 分屏：重新设计</h1>
+<p class="sub">一个窗口，几块平铺的面板，像编辑器的分栏：没有卡片、没有圆角、没有发光，面板之间一条细线。每块面板顶上一行窄标题：状态球 + 名字 + 它在干什么。当前那块顶上一条蓝线、标题底色淡蓝，别的面板内容稍微变淡；在等你的那块标题是淡橙。</p>
+<h2>A. 整个窗口只有一个输入框（推荐）</h2>
+<div id="a"></div>
+<div class="cap">输入框在最下面横跨所有面板，左边写着发给谁（「→ 博客改版」）。点哪块面板，就发给哪块；⌘⌥←/→ 切换。面板里不再各有一个输入框，内容区多出一大块。</div>
+<h2>B. 每块面板一个矮输入框</h2>
+<div id="b"></div>
+<div class="cap">每块面板底部一个 32pt 高的单行输入框，打字时才长高。直观，但面板多了还是挤。</div>
+<h2>C. 调整布局</h2>
+<div id="c"></div>
+<div class="cap">拖面板之间的细线调宽窄：拖的时候只有一条蓝线跟着走，松手才重排。拖一块面板的标题到另一块上，交换位置。右上角几个布局按钮一键排成：左右两栏、三栏、上下、2×2。关闭和展开放在标题行最右边，鼠标移上去才出现。</div>
+<div class="notes"><b>和现在比</b><ul>
+<li>去掉：每格的圆角卡片、边框发光、浮在内容上的胶囊头、右上角两个圆按钮、每格一个大输入框（A 方案）。</li>
+<li>当前面板一眼看出：顶上蓝线 + 标题淡蓝 + 其他面板变淡。蓝色只用在这一处。</li>
+<li>性能上也更轻：没有每格的玻璃和阴影；输入框只有一个，打字只动一处。另一个子任务在查架构上的卡顿，如果需要重写会一并给出方案。</li>
+</ul></div>
+</main>
+<script>
+const ind=(c,g)=>`<div class="ind" style="background:${c}">${g}</div>`;
+const msgs=(a,b)=>`<div class="me">${a}</div><div>${b}</div>`;
+function pane(o){return `<div class="pane ${o.cls||''}"><div class="ph">${ind(o.c,o.g)}<span class="n">${o.n}</span><span class="st">${o.s}</span><span class="x">⤢ ✕</span></div><div class="body">${msgs(o.m1,o.m2)}</div>${o.mini?'<div class="mini">给 '+o.n+' 发消息…</div>':''}${o.ghost?'<div class="ghost" style="right:-60px"></div>':''}</div>`}
+const P=[{n:'网站帮手',s:'要不要把旧页面删掉？',c:'#FF9F0A',g:'?',m1:'首页改好了吗',m2:'改好了。旧的 about 页还要留吗？',cls:'wait dim'},
+ {n:'博客改版',s:'在改评论区样式',c:'#0A85FF',g:'▶',m1:'评论区太挤了',m2:'我把间距加大，头像缩小一点，正在跑截图对比。',cls:'cur'},
+ {n:'测试',s:'都通过了',c:'#8e8e93',g:'•',m1:'跑一遍全部测试',m2:'412 个测试全部通过。',cls:'dim'}];
+function win(o){
+ const side=`<div class="side"><div class="r">● Palo</div><div style="margin:10px 8px 4px;font-size:11px">工作区</div><div class="r sel">▦ 官网改版</div><div class="r" style="padding-left:24px">网站帮手</div><div class="r" style="padding-left:24px">博客改版</div><div class="r" style="padding-left:24px">测试</div></div>`;
+ const panes=P.map((p,i)=>pane({...p,mini:o.mini,ghost:o.ghost&&i==0})).join('');
+ const comp=o.mini?'':`<div class="comp"><span class="to">→ 博客改版</span>按住说话，轻点打字<span style="margin-left:auto">🎙</span></div>`;
+ const lay=o.lay?`<div class="lay"><i></i><i style="border-style:double"></i><i></i><i></i></div>`:'';
+ return `<div class="win${o.dark?' d':''}">${side}<div class="area"><div class="panes">${panes}</div>${comp}</div>${lay}</div>`;
+}
+document.getElementById('a').innerHTML=win({})+win({dark:1});
+document.getElementById('b').innerHTML=win({mini:1});
+document.getElementById('c').innerHTML=win({ghost:1,lay:1});
+</script></body></html>

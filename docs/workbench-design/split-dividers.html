@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>分屏：单线分隔 vs 圆角卡片</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#e9e9ee;color:#1c1c1e;font:13px/1.45 -apple-system,"PingFang SC",system-ui,sans-serif}
+main{max-width:1240px;margin:0 auto;padding:20px 14px 70px}
+h1{font-size:22px;margin:6px 0}h2{font-size:16px;margin:26px 0 6px}
+.sub{color:#6e6e73;font-size:14px;max-width:900px}
+.win{width:1000px;height:440px;border-radius:12px;overflow:hidden;display:flex;box-shadow:0 0 0 .5px rgba(0,0,0,.2),0 12px 30px rgba(0,0,0,.18);background:#fff;margin-top:8px;position:relative}
+.side{width:200px;background:#f3f2f7;border-right:.5px solid rgba(0,0,0,.1);flex:none}
+.area{flex:1;display:flex;flex-direction:column;min-width:0}
+.grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;min-height:0}
+.grid.cards{gap:8px;padding:8px;background:#ececf0}
+.pane{display:flex;flex-direction:column;min-width:0;min-height:0;position:relative;background:#fff}
+.lines .pane{border-right:1px solid rgba(0,0,0,.09);border-bottom:1px solid rgba(0,0,0,.09)}
+.cards .pane{border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.12),0 0 0 .5px rgba(0,0,0,.08);overflow:hidden}
+.cards .pane.cur{box-shadow:0 0 0 2px #0A85FF,0 4px 14px rgba(10,133,255,.25)}
+.ph{height:30px;display:flex;align-items:center;gap:7px;padding:0 10px;font-size:12px;border-bottom:.5px solid rgba(0,0,0,.07);flex:none}
+.ph .n{font-weight:600}.ph .st{color:#86868b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ind{width:18px;height:18px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:8px;font-weight:800;flex:none}
+.body{flex:1;padding:8px 12px;display:flex;flex-direction:column;gap:6px;justify-content:flex-end;overflow:hidden;font-size:12px}
+.me{align-self:flex-end;background:rgba(118,118,128,.14);border-radius:12px;padding:4px 9px;max-width:80%}
+.lines .dim .body{opacity:.55}
+.lines .cur .ph{background:rgba(10,133,255,.07)}
+.lines .cur::after{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:#0A85FF}
+.wait .ph{background:rgba(255,159,10,.10)}
+.comp{height:42px;margin:6px 12px 8px;border-radius:21px;display:flex;align-items:center;padding:0 14px;gap:8px;color:#8e8e93;background:rgba(255,255,255,.75);box-shadow:0 1px 6px rgba(0,0,0,.12),inset 0 0 0 .5px rgba(0,0,0,.08);flex:none}
+.to{font-size:12px;color:#1c1c1e;background:rgba(10,133,255,.12);border-radius:10px;padding:2px 8px}
+.lift{position:absolute;z-index:3;border-radius:12px;box-shadow:0 0 0 2px #0A85FF,0 14px 30px rgba(0,0,0,.25);transform:scale(.97)}
+.drag{position:absolute;z-index:4;width:150px;height:30px;border-radius:15px;background:rgba(255,255,255,.95);box-shadow:0 6px 16px rgba(0,0,0,.25);display:flex;align-items:center;gap:6px;padding:0 10px;font-size:12px;font-weight:600}
+.notes{background:#fff;border-radius:16px;padding:12px 16px;margin-top:8px;max-width:1000px;font-size:14px}
+.notes li{margin:4px 0}
+</style></head><body><main>
+<h1>分屏：单线分隔 vs 圆角卡片</h1>
+<p class="sub">同一个 2×2 分屏，同样的内容，三种画法。当前格是右上「博客改版」，左上「网站帮手」在等你。</p>
+<h2>A. 单线分隔（推荐）</h2><div id="a"></div>
+<div class="notes"><ul><li>格子之间一条 1px 细线，没有缝、没有圆角阴影，内容最宽。</li><li>当前格：顶上一条蓝线 + 标题淡蓝 + 其他格内容变淡。</li></ul></div>
+<h2>B. 圆角卡片</h2><div id="b"></div>
+<div class="notes"><ul><li>每格一张圆角卡片，之间 8pt 缝，窗口底色衬在缝里。</li><li>当前格：蓝色描边加一圈淡蓝光。分得最清楚，但每格四周少了一圈空间；拖动和调整大小时，每格的圆角裁切和阴影都要重画。</li></ul></div>
+<h2>C. 折中：平时单线，拖动时浮起成卡片</h2><div id="c"></div>
+<div class="notes"><ul><li>平时和 A 一样。拖一格的标题去换位置时，鼠标下的目标格浮起成一张蓝边卡片，告诉你会落到哪里；松手后回到单线。</li></ul></div>
+</main>
+<script>
+const ind=(c,g)=>`<div class="ind" style="background:${c}">${g}</div>`;
+const P=[{n:'网站帮手',s:'要不要把旧页面删掉？',c:'#FF9F0A',g:'?',m1:'首页改好了吗',m2:'改好了。旧的 about 页还要留吗？',cls:'wait dim'},
+ {n:'博客改版',s:'在改评论区样式',c:'#0A85FF',g:'▶',m1:'评论区太挤了',m2:'我把间距加大，头像缩小，正在跑截图对比。',cls:'cur'},
+ {n:'测试',s:'都通过了',c:'#8e8e93',g:'•',m1:'跑一遍全部测试',m2:'412 个测试全部通过。',cls:'dim'},
+ {n:'发票报销',s:'整理好了',c:'#30D158',g:'✓',m1:'把九月的发票整理一下',m2:'整理好了，共 14 张，表格在 成果 里。',cls:'dim'}];
+const pane=p=>`<div class="pane ${p.cls}"><div class="ph">${ind(p.c,p.g)}<span class="n">${p.n}</span><span class="st">${p.s}</span></div><div class="body"><div class="me">${p.m1}</div><div>${p.m2}</div></div></div>`;
+function win(kind,extra=''){return `<div class="win"><div class="side"></div><div class="area"><div class="grid ${kind}">${P.map(pane).join('')}</div><div class="comp"><span class="to">→ 博客改版</span>按住说话，轻点打字</div></div>${extra}</div>`}
+document.getElementById('a').innerHTML=win('lines');
+document.getElementById('b').innerHTML=win('cards');
+document.getElementById('c').innerHTML=win('lines',`<div class="lift" style="left:604px;top:204px;width:392px;height:182px"></div><div class="drag" style="left:640px;top:270px">${ind('#FF9F0A','?')}网站帮手</div>`);
+</script></body></html>

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mac 分屏：样式细节</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#e9e9ee;color:#1c1c1e;font:13px/1.45 -apple-system,"PingFang SC",system-ui,sans-serif}
+main{max-width:1240px;margin:0 auto;padding:20px 14px 70px}
+h1{font-size:22px;margin:6px 0}h2{font-size:16px;margin:26px 0 6px}
+.sub{color:#6e6e73;font-size:14px;max-width:900px}
+.win{width:1060px;height:480px;border-radius:12px;overflow:hidden;display:flex;box-shadow:0 0 0 .5px rgba(0,0,0,.2),0 12px 30px rgba(0,0,0,.18);background:#fff;margin-top:8px;position:relative}
+.win.d{background:#1e1e20;color:#f2f2f7}
+.side{width:210px;background:#f3f2f7;border-right:.5px solid rgba(0,0,0,.1);flex:none;position:relative}
+.d .side{background:#2a292e;border-color:rgba(255,255,255,.08)}
+.lights{position:absolute;top:14px;left:14px;display:flex;gap:8px}.lights i{width:12px;height:12px;border-radius:6px;display:block}
+.lights i:nth-child(1){background:#ff5f57}.lights i:nth-child(2){background:#febc2e}.lights i:nth-child(3){background:#28c840}
+.area{flex:1;position:relative;min-width:0}
+.p{position:absolute;display:flex;flex-direction:column;overflow:hidden;background:inherit}
+.vl{position:absolute;width:1px;background:rgba(0,0,0,.1)}.hl{position:absolute;height:1px;background:rgba(0,0,0,.1)}
+.d .vl,.d .hl{background:rgba(255,255,255,.1)}
+.ph{height:24px;overflow:visible;padding-left:42px!important;padding-right:44px!important;z-index:3;display:flex;align-items:center;gap:8px;padding:0 10px;font-size:12px;flex:none;position:relative}
+.ph .n{font-weight:600;white-space:nowrap}.ph .st{color:#86868b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.ctl{position:absolute;right:8px;top:5px;display:flex;gap:4px;flex:none}
+.ctl span{width:28px;height:28px;border-radius:14px;display:grid;place-items:center;font-size:13px;color:#3a3a3c;background:rgba(255,255,255,.78);box-shadow:0 2px 10px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,255,255,.9),inset 0 0 0 .5px rgba(0,0,0,.08)}
+.d .ctl span{color:#f2f2f7;background:rgba(60,60,64,.65);box-shadow:0 2px 10px rgba(0,0,0,.5),inset 0 0 0 .5px rgba(255,255,255,.12)}
+.ph .ind{position:absolute;left:8px;top:5px;width:28px;height:28px;}
+.drag .ind{width:22px;height:22px;}
+.ind{width:26px;height:26px;border-radius:13px;display:grid;place-items:center;color:#fff;font-size:10px;font-weight:800;flex:none;box-shadow:0 2px 8px rgba(0,0,0,.18),inset 0 1px 1px rgba(255,255,255,.7),inset 0 -3px 6px rgba(0,0,0,.18);background-image:radial-gradient(circle at 35% 30%,rgba(255,255,255,.55),rgba(255,255,255,0) 55%)!important}
+.body{flex:1;padding:6px 14px 0;display:flex;flex-direction:column;gap:7px;justify-content:flex-end;font-size:12px;min-height:0}
+.me{align-self:flex-end;background:rgba(118,118,128,.14);border-radius:12px;padding:4px 9px;max-width:80%}
+.d .me{background:rgba(255,255,255,.12)}
+.comp{margin:8px 10px 8px;height:36px;border-radius:18px;display:flex;align-items:center;padding:0 10px 0 12px;gap:8px;color:#8e8e93;font-size:12px;flex:none;background:rgba(255,255,255,.8);box-shadow:0 1px 6px rgba(0,0,0,.12),inset 0 0 0 .5px rgba(0,0,0,.08)}
+.d .comp{background:rgba(60,60,64,.7);box-shadow:0 1px 6px rgba(0,0,0,.5),inset 0 0 0 .5px rgba(255,255,255,.1)}
+
+
+
+
+.grab{position:absolute;background:#0A85FF;border-radius:2px;z-index:4}
+.ghost{position:absolute;border:1.5px solid #0A85FF;border-radius:2px;background:rgba(10,133,255,.04);z-index:3}
+.lift{position:absolute;z-index:4;border-radius:12px;box-shadow:0 0 0 2px #0A85FF,0 14px 30px rgba(0,0,0,.22);transform:scale(.97)}
+.edge{position:absolute;z-index:4;background:rgba(10,133,255,.18);border:2px solid #0A85FF;border-radius:10px}
+.drag{position:absolute;z-index:5;height:30px;border-radius:15px;background:rgba(255,255,255,.95);box-shadow:0 6px 16px rgba(0,0,0,.25);display:flex;align-items:center;gap:6px;padding:0 10px;font-size:12px;font-weight:600}
+.cursor{position:absolute;z-index:6;font-size:15px}
+.notes{background:#fff;border-radius:16px;padding:12px 16px;margin-top:10px;max-width:1060px;font-size:14px}
+.notes li{margin:4px 0}
+</style></head><body><main>
+<h1>Mac 分屏：样式细节</h1>
+<p class="sub">单线分隔的具体样子。左上、右上两格，下面一整格；左上「网站帮手」在等你，右上「博客改版」在干活。</p>
+<h2>1. 平时</h2><div id="a"></div>
+<div class="notes"><ul>
+<li><b>标题行很窄</b>（24pt，只放名字和灰字），没有底色、没有底线，和对话融为一体，对话从它下面滚过去（顶上只有很淡的渐隐）。</li>
+<li><b>左上角</b>：表示状态的玻璃图标（28pt），一半浮出标题行、压到对话上方，只有内圈（水滴 + 白色标记或任务数），不带上下文外圈和模型、深度标记；那些在详情里。点它打开详情。后面是名字和它在干什么（灰字）。</li>
+<li><b>右上角</b>：一颗浮起来的玻璃圆钮 ⋯（28pt），同样浮出标题行，菜单见第 2 部分。对话第一行会从这两颗玻璃下面经过。</li>
+<li><b>没有「当前格」标记</b>：每格看起来一样。打字进光标所在的输入框；按住哪格的 🎙 就发给哪格；右栏跟着最后点过的格子。等你的格子靠状态图标的橙色看出来。</li>
+<li><b>分隔线</b>：1px，浅灰（深色模式浅白 10%），格子之间没有缝。窗口最外圈没有边框。</li>
+<li><b>输入框</b>：每格底部 36pt，往上翻时收成三颗圆钮（另一份稿）。</li>
+</ul></div>
+<h2>2. 点标题行右边的 ⋯、拖分隔线</h2><div id="b"></div>
+<div class="notes"><ul>
+<li><b>右上角的 ⋯</b> 是浮起来的玻璃圆钮（28pt），一直在。菜单里：右栏（成果 / 文件）、单独打开、重命名…、移出工作区、关闭这格、结束会话…（红色）。点状态球打开详情，和现在一样。</li>
+<li><b>分隔线悬停</b>：线加粗到 3pt、变成淡蓝，鼠标变成左右（或上下）拖动的形状（系统能做到的话）。</li>
+<li><b>拖分隔线</b>：只有一条蓝线跟着鼠标走，加一圈蓝色细框标出各格的新大小；格子本身不动，松手才一次排好。</li>
+</ul></div>
+<h2>3. 拖标题换位置 / 拖到边上切开</h2><div id="c"></div>
+<div class="notes"><ul>
+<li><b>拖标题</b>：按住一格的标题行拖动，鼠标下跟着一个小胶囊（状态球 + 名字），原来那格变淡。</li>
+<li><b>落到另一格中间</b>：那格浮起成蓝边圆角卡片，松手两格<b>交换位置</b>（左图）。</li>
+<li><b>落到另一格的边上</b>（离边 25% 以内）：那一侧亮起一块淡蓝区域，松手就<b>把那格切开</b>，拖来的放进这一半（右图）。</li>
+<li>拖到侧栏或窗口外：取消。</li>
+</ul></div>
+<h2>4. 深色</h2><div id="d"></div>
+</main>
+<script>
+const P={
+ a:{n:'网站帮手',s:'要不要把旧页面删掉？',c:'#FF9F0A',g:'?',m:['首页改好了吗','改好了。旧的 about 页还要留吗？'],cls:'wait dim'},
+ b:{n:'博客改版',s:'在改评论区样式',c:'#0A85FF',g:'▶',m:['评论区太挤了','我把间距加大，头像缩小，正在跑截图对比。'],cls:'cur'},
+ c:{n:'测试',s:'都通过了',c:'#8e8e93',g:'•',m:['跑一遍全部测试','412 个测试全部通过，用时 3 分 12 秒。'],cls:'dim'}};
+const pane=(k,x,y,w,h,o={})=>{const p=P[k];return `<div class="p ${o.cls??p.cls}" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px;${o.style||''}"><div class="ph"><div class="ind" style="background:${p.c}">${p.g}</div><span class="n">${p.n}</span><span class="st">${p.s}</span><span class="ctl"><span>⋯</span></span>${o.menu?`<div style="position:absolute;right:8px;top:30px;width:170px;border-radius:9px;padding:5px;background:rgba(246,246,248,.97);box-shadow:0 8px 24px rgba(0,0,0,.2),inset 0 0 0 .5px rgba(0,0,0,.1);font-size:12.5px;font-weight:400;z-index:9;color:#1c1c1e">${['右栏：成果 / 文件','单独打开','重命名…','移出工作区','—','关闭这格','结束会话…'].map(t=>t==='—'?'<hr style="border:0;border-top:.5px solid rgba(127,127,127,.3);margin:4px 6px">':`<div style="padding:3px 9px;border-radius:5px${t==='结束会话…'?';color:#FF3B30':''}">${t}</div>`).join('')}</div>`:''}</div><div class="body"><div class="me">${p.m[0]}</div><div>${p.m[1]}</div></div><div class="comp">＋&nbsp;&nbsp;按住说话，点一下打字<span style="margin-left:auto">🎙</span></div></div>`};
+// area 850x480
+function win(extra='',dark=false,opts={}){
+ const W=850,H=480,vx=opts.vx??425,hy=270;
+ return `<div class="win${dark?' d':''}"><div class="side"><div class="lights"><i></i><i></i><i></i></div></div><div class="area">${pane('a',0,0,vx,hy,opts.a||{})}${pane('b',vx+1,0,W-vx-1,hy,opts.b||{})}${pane('c',0,hy+1,W,H-hy-1,opts.c||{})}<div class="vl" style="left:${vx}px;top:0;height:${hy}px"></div><div class="hl" style="left:0;top:${hy}px;width:${W}px"></div>${extra}</div></div>`;
+}
+document.getElementById('a').innerHTML=win();
+document.getElementById('b').innerHTML=win('',false,{b:{ctl:1,menu:1}})+win(`<div class="grab" style="left:548px;top:0;width:3px;height:270px"></div><div class="ghost" style="left:0;top:0;width:548px;height:270px"></div><div class="ghost" style="left:551px;top:0;width:299px;height:270px"></div><div class="cursor" style="left:542px;top:120px">⇔</div>`);
+document.getElementById('c').innerHTML=win(`<div class="lift" style="left:428px;top:4px;width:418px;height:262px"></div><div class="drag" style="left:560px;top:110px"><span class="ind" style="background:#8e8e93">•</span>测试</div>`,false,{c:{cls:'dim',style:'opacity:.45'}})+win(`<div class="edge" style="left:4px;top:274px;width:205px;height:202px"></div><div class="drag" style="left:60px;top:350px"><span class="ind" style="background:#FF9F0A">?</span>网站帮手</div>`,false,{a:{cls:'wait dim',style:'opacity:.45'}});
+document.getElementById('d').innerHTML=win('',true);
+</script></body></html>
