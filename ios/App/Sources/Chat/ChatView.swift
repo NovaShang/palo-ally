@@ -56,10 +56,13 @@ struct ChatView: View {
     private var macPage: Bool { Platform.barInWindowToolbar && !isPalo && !inTile }
     private var title: String {
         isPalo ? store.assistantName
-            : store.palID.flatMap { store.pal(id: $0)?.displayName } ?? store.viewedSessionID.flatMap { store.viewedSession($0)?.name } ?? ""
+            : store.palID.flatMap { store.singlePal(id: $0)?.displayName } ?? store.viewedSessionID.flatMap { store.viewedSession($0)?.name } ?? ""
     }
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("PageTop")
+        #endif
         #if DEBUG
         let _ = RenderTrace.note("ChatView")
         #endif
@@ -529,13 +532,13 @@ private struct ConversationRows: View {
     /// still says it's being written (it lingered there a few frames).
     private var showsBusyIndicator: Bool {
         // A Pal stopped on a card: the card is the news, not a spinner.
-        if let id = store.palID, store.pal(id: id)?.status == .waiting, !store.awaitingReply { return false }
+        if let id = store.palID, store.singlePal(id: id)?.status == .waiting, !store.awaitingReply { return false }
         return store.connection.isOnline && (store.awaitingReply || (store.status?.busy == true && !store.replyEndedSinceStatus))
     }
 
     /// Subagents and background tasks still running (the session's, or Palo's own).
     private var backgroundRunning: Int {
-        if let id = store.palID { return store.pal(id: id)?.tasksRunning ?? 0 }
+        if let id = store.palID { return store.singlePal(id: id)?.tasksRunning ?? 0 }
         return store.scope == .palo ? store.paloTasksRunning : 0
     }
 

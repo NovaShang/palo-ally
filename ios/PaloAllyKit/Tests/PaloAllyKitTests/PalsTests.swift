@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Testing
 @testable import PaloAllyKit
 
@@ -88,6 +89,33 @@ struct PalsStoreTests {
         store.start()
         _ = await until { store.connection == .online && store.pals.count == 4 }
         return (store, host)
+    }
+
+    /// `singlePal` follows its own Pal: a change to another one on the list
+    /// doesn't notify its readers, a change to it does, and so does it leaving.
+    @Test func singlePalIsObservedAlone() async throws {
+        let (store, _) = await demoStore()
+        let page = store.palStore("pal-site")
+        #expect(page.singlePal(id: "pal-site")?.name == "网站帮手")
+        func changes(_ read: @escaping () -> Void, when change: () -> Void) -> Bool {
+            final class Fired: @unchecked Sendable { var on = false }
+            let fired = Fired()
+            withObservationTracking(read) { fired.on = true }
+            change()
+            return fired.on
+        }
+        var list = store.pals
+        list[1].lastLine = "另一个会话在忙"
+        #expect(!changes({ _ = page.singlePal(id: "pal-site") }, when: { store.setPals(list, others: nil) }))
+        // The whole list's readers do hear it.
+        list[1].lastLine = "又变了"
+        #expect(changes({ _ = page.pal(id: "pal-site") }, when: { store.setPals(list, others: nil) }))
+        list[0].lastLine = "它自己变了"
+        #expect(changes({ _ = page.singlePal(id: "pal-site") }, when: { store.setPals(list, others: nil) }))
+        #expect(store.singlePal(id: "pal-site")?.lastLine == "它自己变了")
+        list.remove(at: 0)
+        #expect(changes({ _ = page.singlePal(id: "pal-site") }, when: { store.setPals(list, others: nil) }))
+        #expect(page.singlePal(id: "pal-site") == nil)
     }
 
     @Test func listLoadsWithTheOtherSessions() async throws {

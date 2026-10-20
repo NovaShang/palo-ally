@@ -126,7 +126,7 @@ struct ComposerView: View {
     /// terminal of sorts, the assistant's a request.
     private var prompt: String {
         guard let id = store.palID else { return String(localized: "想让我做点什么？") }
-        let name = store.pal(id: id)?.displayName ?? String(localized: "它")
+        let name = store.singlePal(id: id)?.displayName ?? String(localized: "它")
         return Copy.spaced(String(localized: "跟\(name)说点什么"))
     }
 

@@ -39,18 +39,21 @@ private struct PalConversation: View {
     /// The Pal as last seen: it leaves the list once ended or gone.
     @State private var last: Pal?
 
-    private var pal: Pal? { store.pal(id: palID) ?? last }
+    private var pal: Pal? { store.singlePal(id: palID) ?? last }
     /// No longer on the list (ended here or elsewhere, or gone at the computer).
-    private var gone: Bool { store.pal(id: palID) == nil && store.palsSupported == true }
+    private var gone: Bool { store.singlePal(id: palID) == nil && store.palsSupported == true }
     /// Words sent to it asleep: it's being woken (§12).
     private var waking: Bool { store.status?.busy == true && store.status?.activity == AppStore.wakingActivity }
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("PalConversation")
+        #endif
         ChatView(bottomPanel: bottom, pageTop: inTile ? nil : .init(subtitle: subtitle, dot: waking ? .working : pal?.dot, capsule: true),
                  inTile: inTile)
-            .onChange(of: store.pal(id: palID), initial: true) { _, p in if let p { last = p } }
+            .onChange(of: store.singlePal(id: palID), initial: true) { _, p in if let p { last = p } }
             // Opened, or finished while it is open: seen, on every device.
-            .onChange(of: store.pal(id: palID)?.attention, initial: true) { _, a in
+            .onChange(of: store.singlePal(id: palID)?.attention, initial: true) { _, a in
                 if a == .done { store.markSeen(id: palID) }
             }
             .animation(.snappy, value: panel)
