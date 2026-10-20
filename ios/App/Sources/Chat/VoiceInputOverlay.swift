@@ -541,7 +541,7 @@ private struct VoiceWordsStage: View {
                                                          columnWidth: layer.width)
         let capsule = voice.capsuleFrame
         let zonesTop = capsule.height > 0 ? capsule.minY - VoiceInputPanel.gap - VoiceInputPanel.zoneHeight : layer.maxY - 180
-        let top = orbBottom + 20, bottom = max(top + 80, zonesTop - 20)
+        let top = orbBottom + 20, bottom = max(top + 80, zonesTop - 48)
         let width = min(layer.width - 52, 520)
         let words = VoiceWords(text: shownText, style: style, maxHeight: min(bottom - top, layer.height * 0.5)) {
             voice.placeWords(text: $0, block: $1)
