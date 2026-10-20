@@ -237,7 +237,6 @@ struct ChatView: View {
             if let current = quickSwitchCurrent, !keyboardUp,
                !QuickSwitch.members(current: current, pals: store.pals, workspaces: store.workspaces).isEmpty {
                 QuickSwitchSlot()
-                    .transition(.opacity)
             }
             ComposerView(draft: draft, intake: intake) { text, images, files, how in
                 switch how {

@@ -200,7 +200,12 @@ struct QuickSwitchOverlay: ViewModifier {
                         QuickSwitchStrip(current: id, members: members)
                             .frame(width: r.width, height: r.height)
                             .offset(x: r.minX, y: r.minY)
-                            .transition(.opacity)
+                            // Never moves in an animation: while the pages
+                            // slide, the incoming one reports its slot from
+                            // where its layout starts (below), and the strip
+                            // rose from there. Its chips still change color
+                            // in their own animation.
+                            .animation(nil, value: r)
                     }
                 }
             }
