@@ -46,19 +46,15 @@ struct TiledWorkspaceView<Content: View>: View {
     var detail: (String) -> AnyView = { _ in AnyView(EmptyView()) }
     @ViewBuilder var content: (String) -> Content
 
-    @State private var liveTree: LayoutTree.Node?
-    @State private var dividerBase: LayoutTree.Node?
-    @State private var hoveredDivider: String?
-    @State private var draggingDivider: String?
-    @State private var tileDrag: TileDrag?
-
-    private struct TileDrag: Equatable {
-        var id: String
-        var translation: CGSize
-        var location: CGPoint
-    }
+    /// What the pointer is doing (a divider or a header being dragged, a
+    /// divider under it). Read only by the layers that draw it, never by
+    /// this body: a drag's every move re-renders those, not the tiles' pages.
+    @State private var pointer = TileCanvasPointer()
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("Tiled")
+        #endif
         GeometryReader { outer in
             let normalized = LayoutTree.resized(layout)
             let order = LayoutTree.leafOrder(of: normalized)
@@ -69,31 +65,27 @@ struct TiledWorkspaceView<Content: View>: View {
             // divider and an outline of where the tiles will go follow the
             // pointer (relaying out every chat per frame made it crawl);
             // the new layout lands once, on release.
-            let tree = shown
-            let ghost = narrow.isNarrow ? nil : liveTree
             let size = CGSize(width: outer.size.width,
                               height: outer.size.height - (narrow.isNarrow ? TileMetrics.switcherHeight : 0))
             VStack(spacing: 0) {
-                canvas(tree: tree, ghost: ghost, size: size, interactive: !narrow.isNarrow)
+                canvas(tree: shown, size: size, interactive: !narrow.isNarrow)
                     .frame(width: size.width, height: size.height)
                 if narrow.isNarrow {
                     switcher(narrow.switcher)
                         .frame(height: TileMetrics.switcherHeight)
                 }
             }
+            #if DEBUG || PERF_HARNESS
+            .task { await TileCanvasPointer.wiggle(pointer, layout: layout, width: outer.size.width, onLayoutChange: onLayoutChange) }
+            #endif
         }
     }
 
     // MARK: - the canvas
 
-    private func rect(of f: (w: Double, h: Double, x: Double, y: Double), in size: CGSize) -> CGRect {
-        CGRect(x: f.x * size.width, y: f.y * size.height, width: f.w * size.width, height: f.h * size.height)
-    }
-
-    private func canvas(tree: LayoutTree.Node, ghost: LayoutTree.Node?, size: CGSize, interactive: Bool) -> some View {
-        let fractions = LayoutTree.fractions(of: tree)
+    private func canvas(tree: LayoutTree.Node, size: CGSize, interactive: Bool) -> some View {
+        let frames = TileCanvasPointer.frames(of: tree, in: size)
         let order = LayoutTree.leafOrder(of: tree)
-        let frames: [String: CGRect] = fractions.mapValues { rect(of: $0, in: size) }
         let inset = TileMetrics.gap / 2
         return ZStack(alignment: .topLeading) {
             ForEach(order, id: \.self) { id in
@@ -101,32 +93,20 @@ struct TiledWorkspaceView<Content: View>: View {
                     tile(id, in: r)
                 }
             }
-            if let ghost {
-                // Where the tiles will go: outlines only.
-                let ghostFrames = LayoutTree.fractions(of: ghost).mapValues { rect(of: $0, in: size) }
-                ForEach(LayoutTree.leafOrder(of: ghost), id: \.self) { id in
-                    if let r = ghostFrames[id]?.insetBy(dx: inset, dy: inset) {
-                        RoundedRectangle(cornerRadius: TileMetrics.corner, style: .continuous)
-                            .fill(Color.primary.opacity(0.04))
-                            .strokeBorder(Color.accentColor.opacity(0.7), lineWidth: 1.5)
-                            .frame(width: max(r.width, 1), height: max(r.height, 1))
-                            .position(x: r.midX, y: r.midY)
-                            .allowsHitTesting(false)
-                    }
-                }
-            }
             if interactive {
+                // Where the tiles will go while a divider moves: outlines only.
+                TileGhostLayer(pointer: pointer, size: size)
                 // The dividers follow the outline while one moves.
-                ForEach(LayoutTree.dividers(of: ghost ?? tree)) { d in
-                    divider(d, size: size, tree: tree)
-                }
+                TileDividerLayer(pointer: pointer, tree: tree, size: size, onLayoutChange: onLayoutChange)
             }
             ForEach(order, id: \.self) { id in
                 if let r = frames[id]?.insetBy(dx: inset, dy: inset) {
-                    chrome(id, in: r, interactive: interactive, frames: frames, tree: tree)
+                    TileChrome(id: id, rect: r, interactive: interactive, frames: frames, tree: tree, pointer: pointer,
+                               info: info, onLayoutChange: onLayoutChange, onActivate: onActivate, onExpand: onExpand,
+                               onClose: onClose, detailFor: detailFor, detail: detail)
                 }
             }
-            dropPreview(frames: frames, inset: inset)
+            TileDropPreview(pointer: pointer, frames: frames)
         }
         .coordinateSpace(name: TileMetrics.canvas)
         .frame(width: size.width, height: size.height, alignment: .topLeading)
@@ -160,23 +140,213 @@ struct TiledWorkspaceView<Content: View>: View {
             .accessibilityIdentifier("tile-\(id)")
     }
 
-    // MARK: - header capsule and buttons
+    static func apply(_ zone: PaneDropZone, moving id: String, onto target: String, in tree: LayoutTree.Node) -> LayoutTree.Node? {
+        TileCanvasPointer.apply(zone, moving: id, onto: target, in: tree)
+    }
 
-    @ViewBuilder
-    private func chrome(_ id: String, in r: CGRect, interactive: Bool, frames: [String: CGRect], tree: LayoutTree.Node) -> some View {
-        let i = info(id)
-        let dragging = tileDrag?.id == id
+    // MARK: - the narrow switcher
+
+    private func switcher(_ ids: [String]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            GlassEffectContainer(spacing: 8) {
+                HStack(spacing: 8) {
+                    ForEach(ids, id: \.self) { id in
+                        TileSwitchButton(id: id, info: info, onActivate: onActivate)
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
+        }
+        .frame(maxHeight: .infinity)
+    }
+}
+
+/// What the pointer is doing on a tiled canvas. Its own observable object so
+/// that a drag's moves re-render only what reads it (the dividers, the
+/// outlines, the dragged header and the drop preview), not every tile.
+@MainActor
+@Observable
+final class TileCanvasPointer {
+    /// While a divider moves: where the tiles will go.
+    var liveTree: LayoutTree.Node?
+    @ObservationIgnored var dividerBase: LayoutTree.Node?
+    var hoveredDivider: String?
+    var draggingDivider: String?
+    var tileDrag: TileDrag?
+
+    struct TileDrag: Equatable {
+        var id: String
+        var translation: CGSize
+        var location: CGPoint
+    }
+
+    static func frames(of tree: LayoutTree.Node, in size: CGSize) -> [String: CGRect] {
+        LayoutTree.fractions(of: tree).mapValues { f in
+            CGRect(x: f.x * size.width, y: f.y * size.height, width: f.w * size.width, height: f.h * size.height)
+        }
+    }
+
+    /// The tile under the point, and where on it the drop would land.
+    static func dropTarget(at p: CGPoint, dragging id: String, frames: [String: CGRect]) -> (String, PaneDropZone)? {
+        guard let (target, frame) = frames.first(where: { $0.key != id && $0.value.contains(p) }) else { return nil }
+        return (target, PaneDropZone.zone(at: p, in: frame))
+    }
+
+    static func apply(_ zone: PaneDropZone, moving id: String, onto target: String, in tree: LayoutTree.Node) -> LayoutTree.Node? {
+        guard id != target else { return nil }
+        guard let dock = zone.dock else { return LayoutTree.swapping(id, target, in: tree) }
+        return LayoutTree.docking(pane: id, at: target, horizontal: dock.horizontal, before: dock.before, in: tree)
+    }
+
+    #if DEBUG || PERF_HARNESS
+    /// `-demoWiggle YES`: the first divider is dragged back and forth (what
+    /// `TileDividerLayer`'s drag does per pointer move, 120 moves a second),
+    /// and let go, over and over (perf measuring). With `-perfAlternate YES`
+    /// it moves through each busy window and is let go as a quiet one starts.
+    static func wiggle(_ pointer: TileCanvasPointer, layout: LayoutTree.Node, width: CGFloat,
+                       onLayoutChange: @escaping (LayoutTree.Node, Bool) -> Void) async {
+        guard UserDefaults.standard.bool(forKey: "demoWiggle") else { return }
+        try? await Task.sleep(for: .seconds(4))
+        let alternate = UserDefaults.standard.bool(forKey: "perfAlternate")
+        while !Task.isCancelled {
+            if !PerfSwitch.driving { try? await Task.sleep(for: .milliseconds(20)); continue }
+            let tree = LayoutTree.resized(layout)
+            guard let d = LayoutTree.dividers(of: tree).first else { return }
+            let start = Date()
+            while alternate ? PerfSwitch.driving : Date().timeIntervalSince(start) < 3 {
+                let t = Date().timeIntervalSince(start)
+                let dx = sin(t * 2 * .pi / 1.5) * 0.15 * width
+                if pointer.dividerBase == nil { pointer.dividerBase = tree }
+                pointer.draggingDivider = d.id
+                let next = LayoutTree.movingDivider(path: d.path, index: d.index, by: Double(dx / max(width, 1)),
+                                                    in: pointer.dividerBase ?? tree)
+                pointer.liveTree = next
+                onLayoutChange(next, false)
+                try? await Task.sleep(for: .milliseconds(8))
+            }
+            if let final = pointer.liveTree { onLayoutChange(final, true) }
+            pointer.liveTree = nil; pointer.dividerBase = nil; pointer.draggingDivider = nil
+            if !alternate { try? await Task.sleep(for: .seconds(2)) }
+        }
+    }
+    #endif
+}
+
+/// Where the tiles will go while a divider moves: outlines only.
+private struct TileGhostLayer: View {
+    let pointer: TileCanvasPointer
+    let size: CGSize
+
+    var body: some View {
+        if let ghost = pointer.liveTree {
+            let inset = TileMetrics.gap / 2
+            let ghostFrames = TileCanvasPointer.frames(of: ghost, in: size)
+            ForEach(LayoutTree.leafOrder(of: ghost), id: \.self) { id in
+                if let r = ghostFrames[id]?.insetBy(dx: inset, dy: inset) {
+                    RoundedRectangle(cornerRadius: TileMetrics.corner, style: .continuous)
+                        .fill(Color.primary.opacity(0.04))
+                        .strokeBorder(Color.accentColor.opacity(0.7), lineWidth: 1.5)
+                        .frame(width: max(r.width, 1), height: max(r.height, 1))
+                        .position(x: r.midX, y: r.midY)
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+    }
+}
+
+/// The dividers: lit under the pointer, dragged to resize (the tiles follow
+/// on release).
+private struct TileDividerLayer: View {
+    let pointer: TileCanvasPointer
+    let tree: LayoutTree.Node
+    let size: CGSize
+    let onLayoutChange: (LayoutTree.Node, Bool) -> Void
+
+    var body: some View {
+        ForEach(LayoutTree.dividers(of: pointer.liveTree ?? tree)) { d in
+            divider(d)
+        }
+    }
+
+    /// No resize cursor: SwiftUI's `pointerStyle` is macOS-only, not on Catalyst or iPad;
+    /// the line lights up under the pointer instead.
+    private func divider(_ d: LayoutTree.Divider) -> some View {
+        let along: CGFloat = d.vertical ? size.height : size.width
+        let across: CGFloat = d.vertical ? size.width : size.height
+        let center: CGFloat = CGFloat(d.position) * across
+        let from: CGFloat = CGFloat(d.span.lowerBound) * along
+        let length: CGFloat = CGFloat(d.span.upperBound - d.span.lowerBound) * along
+        let lit = pointer.hoveredDivider == d.id || pointer.draggingDivider == d.id
+        let line: CGFloat = max(length - 24, 0)
+        let hotSize = CGSize(width: d.vertical ? TileMetrics.hot : length, height: d.vertical ? length : TileMetrics.hot)
+        let lineSize = CGSize(width: d.vertical ? 3 : line, height: d.vertical ? line : 3)
+        let mid = CGPoint(x: d.vertical ? center : from + length / 2, y: d.vertical ? from + length / 2 : center)
+        let tint: Color = pointer.draggingDivider == d.id ? Color.accentColor.opacity(0.8) : Color.primary.opacity(lit ? 0.35 : 0)
+        return Capsule()
+            .fill(tint)
+            .frame(width: lineSize.width, height: lineSize.height)
+            .frame(width: hotSize.width, height: hotSize.height)
+            .contentShape(Rectangle())
+            .position(mid)
+            .onHover { inside in
+                if inside { pointer.hoveredDivider = d.id } else if pointer.hoveredDivider == d.id { pointer.hoveredDivider = nil }
+            }
+            .gesture(drag(d, across: across))
+            .animation(.easeOut(duration: 0.12), value: lit)
+            .accessibilityHidden(true)
+    }
+
+    private func drag(_ d: LayoutTree.Divider, across: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 1, coordinateSpace: .named(TileMetrics.canvas))
+            .onChanged { v in
+                if pointer.dividerBase == nil { pointer.dividerBase = tree }
+                if pointer.draggingDivider != d.id { pointer.draggingDivider = d.id }
+                let travel: CGFloat = d.vertical ? v.translation.width : v.translation.height
+                let delta = Double(travel / max(across, 1))
+                let next = LayoutTree.movingDivider(path: d.path, index: d.index, by: delta, in: pointer.dividerBase ?? tree)
+                if pointer.liveTree != next { pointer.liveTree = next }
+                onLayoutChange(next, false)
+            }
+            .onEnded { _ in
+                if let final = pointer.liveTree { onLayoutChange(final, true) }
+                pointer.liveTree = nil; pointer.dividerBase = nil; pointer.draggingDivider = nil
+            }
+    }
+}
+
+/// A tile's header (its round indicator, dragged to swap or dock the tile)
+/// and its buttons. Its own view: what the header shows of the session is
+/// read here, so a session ticking re-renders its own header only.
+private struct TileChrome: View {
+    let id: String
+    let rect: CGRect
+    let interactive: Bool
+    let frames: [String: CGRect]
+    let tree: LayoutTree.Node
+    let pointer: TileCanvasPointer
+    let info: (String) -> TileInfo
+    let onLayoutChange: (LayoutTree.Node, Bool) -> Void
+    let onActivate: (String) -> Void
+    let onExpand: (String) -> Void
+    let onClose: (String) -> Void
+    let detailFor: Binding<String?>
+    let detail: (String) -> AnyView
+
+    var body: some View {
+        let r = rect
+        let drag = pointer.tileDrag?.id == id ? pointer.tileDrag : nil
+        let dragging = drag != nil
         ZStack(alignment: .topLeading) {
-            header(i, id: id)
-                .offset(x: 8 + (dragging ? tileDrag?.translation.width ?? 0 : 0),
-                        y: 6 + (dragging ? tileDrag?.translation.height ?? 0 : 0))
+            header(info(id))
+                .offset(x: 8 + (drag?.translation.width ?? 0), y: 6 + (drag?.translation.height ?? 0))
                 .scaleEffect(dragging ? 1.04 : 1, anchor: .topLeading)
                 .zIndex(dragging ? 2 : 0)
                 .onTapGesture {
                     onActivate(id)
                     detailFor.wrappedValue = detailFor.wrappedValue == id ? nil : id
                 }
-                .gesture(headerDrag(id, frames: frames, tree: tree), including: interactive ? .all : .subviews)
+                .gesture(headerDrag, including: interactive ? .all : .subviews)
                 .popover(isPresented: Binding(get: { detailFor.wrappedValue == id },
                                               set: { if !$0, detailFor.wrappedValue == id { detailFor.wrappedValue = nil } })) {
                     detail(id)
@@ -201,7 +371,7 @@ struct TiledWorkspaceView<Content: View>: View {
     /// The tile's title: the session's round indicator on its glass circle,
     /// as a session's page has it (no name capsule: the sidebar names it);
     /// holding to talk to the tile, the level in its middle.
-    private func header(_ i: TileInfo, id: String) -> some View {
+    private func header(_ i: TileInfo) -> some View {
         SessionIndicator(state: i.dot, contextPct: i.contextPct, effort: i.effort, model: i.model,
                          size: 26, glass: true, running: i.running, voiceOwner: .some(id))
             .contentShape(.circle)
@@ -221,36 +391,30 @@ struct TiledWorkspaceView<Content: View>: View {
         .accessibilityLabel(label)
     }
 
-    // MARK: - dragging a tile by its capsule
+    // MARK: dragging a tile by its header
 
-    private func headerDrag(_ id: String, frames: [String: CGRect], tree: LayoutTree.Node) -> some Gesture {
+    private var headerDrag: some Gesture {
         DragGesture(minimumDistance: 6, coordinateSpace: .named(TileMetrics.canvas))
             .onChanged { v in
-                onActivate(id)
-                tileDrag = TileDrag(id: id, translation: v.translation, location: v.location)
+                if pointer.tileDrag == nil { onActivate(id) }
+                pointer.tileDrag = TileCanvasPointer.TileDrag(id: id, translation: v.translation, location: v.location)
             }
             .onEnded { v in
-                defer { tileDrag = nil }
-                guard let (target, zone) = dropTarget(at: v.location, dragging: id, frames: frames) else { return }
-                if let new = Self.apply(zone, moving: id, onto: target, in: tree) { onLayoutChange(new, true) }
+                defer { pointer.tileDrag = nil }
+                guard let (target, zone) = TileCanvasPointer.dropTarget(at: v.location, dragging: id, frames: frames) else { return }
+                if let new = TileCanvasPointer.apply(zone, moving: id, onto: target, in: tree) { onLayoutChange(new, true) }
             }
     }
+}
 
-    /// The tile under the point, and where on it the drop would land.
-    private func dropTarget(at p: CGPoint, dragging id: String, frames: [String: CGRect]) -> (String, PaneDropZone)? {
-        guard let (target, frame) = frames.first(where: { $0.key != id && $0.value.contains(p) }) else { return nil }
-        return (target, PaneDropZone.zone(at: p, in: frame))
-    }
+/// Where a dragged header would land: the tile under it, or a side of it.
+private struct TileDropPreview: View {
+    let pointer: TileCanvasPointer
+    let frames: [String: CGRect]
 
-    static func apply(_ zone: PaneDropZone, moving id: String, onto target: String, in tree: LayoutTree.Node) -> LayoutTree.Node? {
-        guard id != target else { return nil }
-        guard let dock = zone.dock else { return LayoutTree.swapping(id, target, in: tree) }
-        return LayoutTree.docking(pane: id, at: target, horizontal: dock.horizontal, before: dock.before, in: tree)
-    }
-
-    @ViewBuilder
-    private func dropPreview(frames: [String: CGRect], inset: CGFloat) -> some View {
-        if let d = tileDrag, let (target, zone) = dropTarget(at: d.location, dragging: d.id, frames: frames),
+    var body: some View {
+        let inset = TileMetrics.gap / 2
+        if let d = pointer.tileDrag, let (target, zone) = TileCanvasPointer.dropTarget(at: d.location, dragging: d.id, frames: frames),
            let frame = frames[target]?.insetBy(dx: inset, dy: inset) {
             let r = zone.highlightRect(in: frame)
             RoundedRectangle(cornerRadius: TileMetrics.corner, style: .continuous)
@@ -266,80 +430,28 @@ struct TiledWorkspaceView<Content: View>: View {
                 .animation(.snappy(duration: 0.15), value: target)
         }
     }
+}
 
-    // MARK: - dividers
+/// One capsule of the narrow switcher (reads its session itself).
+private struct TileSwitchButton: View {
+    let id: String
+    let info: (String) -> TileInfo
+    let onActivate: (String) -> Void
 
-    /// No resize cursor: SwiftUI's `pointerStyle` is macOS-only, not on Catalyst or iPad;
-    /// the line lights up under the pointer instead.
-    private func divider(_ d: LayoutTree.Divider, size: CGSize, tree: LayoutTree.Node) -> some View {
-        let along: CGFloat = d.vertical ? size.height : size.width
-        let across: CGFloat = d.vertical ? size.width : size.height
-        let center: CGFloat = CGFloat(d.position) * across
-        let from: CGFloat = CGFloat(d.span.lowerBound) * along
-        let length: CGFloat = CGFloat(d.span.upperBound - d.span.lowerBound) * along
-        let lit = hoveredDivider == d.id || draggingDivider == d.id
-        let line: CGFloat = max(length - 24, 0)
-        let hotSize = CGSize(width: d.vertical ? TileMetrics.hot : length, height: d.vertical ? length : TileMetrics.hot)
-        let lineSize = CGSize(width: d.vertical ? 3 : line, height: d.vertical ? line : 3)
-        let mid = CGPoint(x: d.vertical ? center : from + length / 2, y: d.vertical ? from + length / 2 : center)
-        let tint: Color = draggingDivider == d.id ? Color.accentColor.opacity(0.8) : Color.primary.opacity(lit ? 0.35 : 0)
-        return Capsule()
-            .fill(tint)
-            .frame(width: lineSize.width, height: lineSize.height)
-            .frame(width: hotSize.width, height: hotSize.height)
-            .contentShape(Rectangle())
-            .position(mid)
-            .onHover { inside in
-                if inside { hoveredDivider = d.id } else if hoveredDivider == d.id { hoveredDivider = nil }
+    var body: some View {
+        let i = info(id)
+        Button { onActivate(id) } label: {
+            HStack(spacing: 6) {
+                StatusDot(i.dot, size: 8)
+                Text(i.name).font(.subheadline).lineLimit(1)
             }
-            .gesture(dividerDrag(d, across: across, tree: tree))
-            .animation(.easeOut(duration: 0.12), value: lit)
-            .accessibilityHidden(true)
-    }
-
-    private func dividerDrag(_ d: LayoutTree.Divider, across: CGFloat, tree: LayoutTree.Node) -> some Gesture {
-        DragGesture(minimumDistance: 1, coordinateSpace: .named(TileMetrics.canvas))
-            .onChanged { v in
-                if dividerBase == nil { dividerBase = tree }
-                draggingDivider = d.id
-                let travel: CGFloat = d.vertical ? v.translation.width : v.translation.height
-                let delta = Double(travel / max(across, 1))
-                let next = LayoutTree.movingDivider(path: d.path, index: d.index, by: delta, in: dividerBase ?? tree)
-                liveTree = next
-                onLayoutChange(next, false)
-            }
-            .onEnded { _ in
-                if let final = liveTree { onLayoutChange(final, true) }
-                liveTree = nil; dividerBase = nil; draggingDivider = nil
-            }
-    }
-
-    // MARK: - the narrow switcher
-
-    private func switcher(_ ids: [String]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            GlassEffectContainer(spacing: 8) {
-                HStack(spacing: 8) {
-                    ForEach(ids, id: \.self) { id in
-                        let i = info(id)
-                        Button { onActivate(id) } label: {
-                            HStack(spacing: 6) {
-                                StatusDot(i.dot, size: 8)
-                                Text(i.name).font(.subheadline).lineLimit(1)
-                            }
-                            .padding(.horizontal, 12)
-                            .frame(height: 34)
-                            .contentShape(.capsule)
-                        }
-                        .buttonStyle(.plain)
-                        .glassEffect(.regular.interactive(), in: .capsule)
-                        .accessibilityIdentifier("tile-switch-\(id)")
-                    }
-                }
-                .padding(.horizontal, 12)
-            }
+            .padding(.horizontal, 12)
+            .frame(height: 34)
+            .contentShape(.capsule)
         }
-        .frame(maxHeight: .infinity)
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .accessibilityIdentifier("tile-switch-\(id)")
     }
 }
 

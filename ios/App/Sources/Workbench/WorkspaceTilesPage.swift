@@ -10,7 +10,7 @@ struct WorkspaceTilesPage: View {
     @Environment(AppModel.self) private var model
     @Environment(AppStore.self) private var store
     /// The tile whose details are open.
-    @State private var detailTile: String?
+    @State private var details = TileDetails()
     /// The tile asked to close (ending its session, after a confirm).
     @State private var closing: String?
     @State private var ending = false
@@ -19,10 +19,11 @@ struct WorkspaceTilesPage: View {
     @State private var pending: LayoutTree.Node?
 
     private var workspace: Workspace? { store.workspace(id: workspaceID) }
-    private var title: String { workspace?.title(pals: store.pals) ?? "" }
-    private var count: Int { workspace?.memberIds.count ?? 0 }
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("TilesPage")
+        #endif
         Group {
             if let workspace, let tree = model.tree(of: workspace) {
                 TiledWorkspaceView(
@@ -33,7 +34,7 @@ struct WorkspaceTilesPage: View {
                     onActivate: { model.activate(tile: $0, in: workspaceID) },
                     onExpand: { model.openPal($0) },
                     onClose: { closing = $0 },
-                    detailFor: $detailTile,
+                    detailFor: details.open,
                     detail: detailView,
                     content: tile)
                     .padding(6)
@@ -54,10 +55,27 @@ struct WorkspaceTilesPage: View {
         .animation(.snappy, value: closing)
         // ⌘⌥→ / ⌘⌥←: the next and the previous tile.
         .background { focusKeys }
-        .navigationTitle(title)
-        .navigationSubtitle(String(localized: "\(count) 个会话"))
-        .modifier(WorkspaceBar(workspaceID: workspaceID, title: title, subtitle: String(localized: "\(count) 个会话")))
+        // The title reads every session's name: in a modifier of its own, so
+        // a session ticking doesn't re-render the page and all its tiles.
+        .modifier(WorkspaceBar(workspaceID: workspaceID))
         .accessibilityIdentifier("workspace-page")
+        #if DEBUG || PERF_HARNESS
+        // `-demoType <keys per second>`: types into the active tile's draft,
+        // as a keyboard would (perf measuring); clears every 60 characters.
+        .task {
+            let cps = UserDefaults.standard.double(forKey: "demoType")
+            guard cps > 0 else { return }
+            try? await Task.sleep(for: .seconds(3))
+            var n = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1 / cps))
+                guard PerfSwitch.driving, let id = model.activeTile(in: workspaceID) else { continue }
+                let draft = model.draftBinding(.pal(id))
+                n += 1
+                draft.wrappedValue = n % 60 == 0 ? "" : draft.wrappedValue + (n % 7 == 0 ? " " : "字")
+            }
+        }
+        #endif
         .onChange(of: workspace == nil && store.workspacesSupported == true) { _, gone in
             if gone { model.showList() }
         }
@@ -69,14 +87,14 @@ struct WorkspaceTilesPage: View {
     // MARK: tiles
 
     private func info(_ id: String) -> TileInfo {
-        guard let pal = store.pal(id: id) else { return TileInfo(name: "") }
+        guard let pal = store.singlePal(id: id) else { return TileInfo(name: "") }
         return TileInfo(name: pal.displayName, status: Copy.palSubtitle(pal, waking: false), dot: pal.dot,
                         contextPct: pal.contextPct, effort: pal.effort, model: pal.model, running: pal.tasksRunning)
     }
 
-    private func detailBinding(_ id: String) -> Binding<Bool> {
-        Binding(get: { detailTile == id }, set: { detailTile = $0 ? id : (detailTile == id ? nil : detailTile) })
-    }
+    /// The same binding every time (a new one would count as a change and
+    /// re-render whatever reads it in the tile's page).
+    private func detailBinding(_ id: String) -> Binding<Bool> { details.binding(id) }
 
     private func tile(_ id: String) -> some View {
         PalPage(palID: id, inTile: true)
@@ -163,15 +181,42 @@ struct WorkspaceTilesPage: View {
     }
 }
 
+/// Which tile's details are open, with one binding per tile kept (like
+/// `DraftBox`): the same value every time it is put in a tile's environment.
+@MainActor
+@Observable
+final class TileDetails {
+    var tile: String?
+    @ObservationIgnored private var bindings: [String: Binding<Bool>] = [:]
+    @ObservationIgnored lazy var open = Binding<String?>(get: { [unowned self] in self.tile },
+                                                         set: { [unowned self] in self.tile = $0 })
+
+    func binding(_ id: String) -> Binding<Bool> {
+        if let b = bindings[id] { return b }
+        let b = Binding<Bool>(get: { [unowned self] in self.tile == id },
+                              set: { [unowned self] on in self.tile = on ? id : (self.tile == id ? nil : self.tile) })
+        bindings[id] = b
+        return b
+    }
+}
+
 /// The workspace's title, 并排 and (off the Mac) the right pane's button.
 /// The Mac has no navigation bar: its window toolbar holds the pane's button
 /// and a strip at the page's top holds the rest.
 private struct WorkspaceBar: ViewModifier {
     let workspaceID: String
-    let title: String
-    let subtitle: String
+    @Environment(AppStore.self) private var store
 
     func body(content: Content) -> some View {
+        let workspace = store.workspace(id: workspaceID)
+        let title = workspace?.title(pals: store.pals) ?? ""
+        let count = workspace?.memberIds.count ?? 0
+        bar(content
+            .navigationTitle(title)
+            .navigationSubtitle(String(localized: "\(count) 个会话")))
+    }
+
+    @ViewBuilder private func bar(_ content: some View) -> some View {
         if Platform.barInWindowToolbar {
             // The Mac: no title strip (the sidebar names the workspace; each
             // tile has its own header), no 并排 button.
