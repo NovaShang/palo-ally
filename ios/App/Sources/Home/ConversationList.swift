@@ -380,22 +380,26 @@ private struct WorkspaceRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 22)
                 .accessibilityHidden(true)
-            Text(node.title.isEmpty ? String(localized: "工作区") : node.title)
-                .font(.body.weight(.medium))
-                .lineLimit(1)
+            // Two lines, as a session's row: the name, then what it holds.
+            VStack(alignment: .leading, spacing: 2) {
+                Text(node.title.isEmpty ? String(localized: "工作区") : node.title)
+                    .font(.body)
+                    .lineLimit(1)
+                Text("\(node.members.count) 个会话")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
             Spacer(minLength: 4)
             if node.waiting > 0 {
                 Text("\(node.waiting) 等你")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(StatusDot.color(.waiting))
                     .lineLimit(1)
-            } else {
-                Text("\(node.members.count)")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
             }
         }
-        .padding(.vertical, Platform.isMac ? 0 : 2)
+        // The same room as a session's row.
+        .padding(.vertical, Platform.isMac ? 8 : 3)
         .sidebarRowText()
         .accessibilityElement(children: .combine)
         .accessibilityAction(named: toggleLabel, toggle)

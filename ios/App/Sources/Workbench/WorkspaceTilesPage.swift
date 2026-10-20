@@ -172,7 +172,9 @@ private struct WorkspaceBar: ViewModifier {
 
     func body(content: Content) -> some View {
         if Platform.barInWindowToolbar {
-            content.macPageTop(title, subtitle: subtitle, trailing: AnyView(TileMenu(workspaceID: workspaceID, glass: true)))
+            // The Mac: no title strip (the sidebar names the workspace; each
+            // tile has its own header), no 并排 button.
+            content
         } else {
             content.toolbar {
                 ToolbarItem(placement: .topBarTrailing) { TileMenu(workspaceID: workspaceID, glass: false) }
