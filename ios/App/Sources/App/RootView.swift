@@ -170,6 +170,11 @@ private struct LayoutStressTest: ViewModifier {
                         if let app = (NSClassFromString("NSApplication") as? NSObject.Type)?.value(forKey: "sharedApplication") as? NSObject {
                             app.perform(NSSelectorFromString("terminate:"), with: nil)
                         }
+                    // `hide`: as ⌘H (the windows go to the background).
+                    case "hide":
+                        if let app = (NSClassFromString("NSApplication") as? NSObject.Type)?.value(forKey: "sharedApplication") as? NSObject {
+                            app.perform(NSSelectorFromString("hide:"), with: nil)
+                        }
                     // `activate`: the app comes to the front (key windows only change in front).
                     case "activate":
                         if let app = (NSClassFromString("NSApplication") as? NSObject.Type)?.value(forKey: "sharedApplication") as? NSObject {

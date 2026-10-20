@@ -100,6 +100,7 @@ struct WindowRoot: View {
     /// open (iPads and the Mac): the computer, then the conversation on it.
     private func restore() {
         guard UIDevice.current.userInterfaceIdiom != .phone else { return }
+        debugLog("[window] restore host \(savedHost.isEmpty ? "-" : savedHost) conversation \(saved.isEmpty ? "-" : saved) target \(target?.host ?? "-") \(target?.conversation ?? "-")")
         // What it showed last wins over what it was opened for (it may have moved on since).
         if !savedHost.isEmpty {
             // Its computer was unpaired since: the one used last, on its assistant.
