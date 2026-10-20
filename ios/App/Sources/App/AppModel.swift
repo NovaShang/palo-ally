@@ -189,14 +189,24 @@ final class AppModel {
     /// The open windows (phones: one).
     var windows: [WindowModel] { windowRefs.compactMap(\.model) }
 
-    /// The window links, notification taps and menu commands go to: the one
-    /// used last, else any.
-    var frontWindow: WindowModel? { lastActive ?? windows.first }
+    /// The window links, notification taps and menu commands go to: the key
+    /// window (the Mac's front one), else the one used last, else any.
+    var frontWindow: WindowModel? {
+        let all = windows
+        if all.count > 1,
+           let key = UIApplication.shared.connectedScenes.lazy.compactMap({ $0 as? UIWindowScene })
+               .first(where: { $0.windows.contains(where: \.isKeyWindow) }),
+           let w = all.first(where: { $0.scene === key }) {
+            return w
+        }
+        return lastActive ?? all.first
+    }
 
     func register(_ window: WindowModel) {
         windowRefs.removeAll { $0.model == nil || $0.model === window }
         windowRefs.append(WeakWindow(model: window))
-        if lastActive == nil { lastActive = window }
+        // A window that just opened is the one in front.
+        lastActive = window
         let pending = waiting
         waiting = []
         for deliver in pending { deliver(window) }
