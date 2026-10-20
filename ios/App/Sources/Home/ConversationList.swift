@@ -50,20 +50,7 @@ struct ConversationList: View {
                             }
                         }
                     } header: {
-                        HStack {
-                            Text("工作区").textCase(nil)
-                            Spacer()
-                            Button {
-                                model.newWorkspace = []
-                            } label: {
-                                Image(systemName: "plus").font(.footnote.weight(.semibold))
-                            }
-                            .buttonStyle(.borderless)
-                            .tint(.secondary)
-                            .disabled(!store.connection.isOnline)
-                            .accessibilityLabel("新建工作区")
-                            .accessibilityIdentifier("workspace-add")
-                        }
+                        Text("工作区").textCase(nil)
                     }
                 }
 
@@ -90,18 +77,6 @@ struct ConversationList: View {
                             .tag(AppModel.Conversation.ally(ally.id))
                             .accessibilityIdentifier("row-ally-\(ally.id)")
                     }
-                    Button {
-                        model.showAllyInvite = true
-                    } label: {
-                        // Neutral: the theme color is for 发送.
-                        Label {
-                            Text("添加").foregroundStyle(Color.primary)
-                        } icon: {
-                            Image(systemName: "plus").foregroundStyle(Color.primary)
-                        }
-                    }
-                    .tint(.primary)
-                    .disabled(!store.connection.isOnline)
                 } header: {
                     Text("Allies").textCase(nil)
                 } footer: {
@@ -298,33 +273,22 @@ private struct PaloItem: View {
 
     var body: some View {
         let line = store.agentStatusLine
-        HStack(spacing: 14) {
+        SidebarRowLayout {
             AssistantAvatar(theme: model.currentTheme, hostID: model.activeHostID, bleed: 1.3)
-                .frame(width: 56, height: 56)
+                .frame(width: 30, height: 30)
                 .modifier(OrbHomeIfDocked())
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    if model.hasSeveralHosts {
-                        AssistantSwitcher(name: name)
-                    } else {
-                        Text(name)
-                            .font(.title3.weight(.semibold))
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 4)
-                }
-                HStack(spacing: 6) {
-                    Text(secondLine(line))
-                        .font(.subheadline)
-                        .foregroundStyle(line.kind == .offline ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
-                        .lineLimit(2)
-                    Spacer(minLength: 4)
-                    WaitingBadge(count: waiting)
-                }
+        } title: {
+            if model.hasSeveralHosts {
+                AssistantSwitcher(name: name)
+            } else {
+                Text(name)
             }
+        } subtitle: {
+            Text(secondLine(line))
+                .foregroundStyle(line.kind == .offline ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
+        } trailing: {
+            WaitingBadge(count: waiting)
         }
-        .padding(.vertical, 8)
-        .sidebarRowText()
         // Several computers: the switcher in it is a control of its own.
         .accessibilityElement(children: model.hasSeveralHosts ? .contain : .combine)
     }
@@ -364,43 +328,30 @@ private struct WorkspaceRow: View {
     let toggle: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 2) {
             Button(action: toggle) {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(expanded ? 90 : 0))
-                    .frame(width: 22, height: Platform.isMac ? 22 : 28)
+                    .frame(width: 20, height: 28)
                     .contentShape(.rect)
             }
             .buttonStyle(.borderless)
             .accessibilityLabel(toggleLabel)
-            Image(systemName: "square.grid.2x2")
-                .font(.system(size: 15))
-                .foregroundStyle(.secondary)
-                .frame(width: 22)
-                .accessibilityHidden(true)
-            // Two lines, as a session's row: the name, then what it holds.
-            VStack(alignment: .leading, spacing: 2) {
-                Text(node.title.isEmpty ? String(localized: "工作区") : node.title)
-                    .font(.body)
-                    .lineLimit(1)
-                Text("\(node.members.count) 个会话")
-                    .font(.subheadline)
+            SidebarRowLayout {
+                Image(systemName: "square.grid.2x2")
+                    .font(.system(size: 15))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 4)
-            if node.waiting > 0 {
-                Text("\(node.waiting) 等你")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(StatusDot.color(.waiting))
-                    .lineLimit(1)
+                    .accessibilityHidden(true)
+            } title: {
+                Text(node.title.isEmpty ? String(localized: "工作区") : node.title)
+            } subtitle: {
+                Text("\(node.members.count) 个会话")
+            } trailing: {
+                if node.waiting > 0 { WaitingBadge(count: node.waiting) }
             }
         }
-        // The same room as a session's row.
-        .padding(.vertical, Platform.isMac ? 8 : 3)
-        .sidebarRowText()
         .accessibilityElement(children: .combine)
         .accessibilityAction(named: toggleLabel, toggle)
     }
@@ -418,32 +369,53 @@ private struct PalListRow: View {
     var inset = false
 
     var body: some View {
-        HStack(spacing: 10) {
+        SidebarRowLayout {
             // The state glyph of the session's indicator, alone (no arc, no label).
             SessionIndicator(pal, size: 28, glass: false, glyphOnly: true)
-                .frame(width: 28)
+        } title: {
+            Text(pal.displayName)
+        } subtitle: {
+            Text(Copy.palLine(pal))
+        } trailing: {
+            WaitingBadge(count: store.palPendingCount(pal.id))
+        }
+        .padding(.leading, inset ? 24 : 0)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(StatusDot.label(pal.dot))
+    }
+}
+
+/// Every row of the list (docs/workbench-design/mac-sidebar.html): a 28 pt
+/// column for its picture, its name, a gray line under it, on the right
+/// only what waits on the owner; one row height for all of them.
+struct SidebarRowLayout<Icon: View, Title: View, Subtitle: View, Trailing: View>: View {
+    @ViewBuilder var icon: Icon
+    @ViewBuilder var title: Title
+    @ViewBuilder var subtitle: Subtitle
+    @ViewBuilder var trailing: Trailing
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 10) {
+            icon.frame(width: 28, height: 28)
             VStack(alignment: .leading, spacing: 2) {
-                Text(pal.displayName)
+                title
                     .font(.body)
                     .lineLimit(1)
-                Text(Copy.palLine(pal))
+                subtitle
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
-            let waiting = store.palPendingCount(pal.id)
-            if waiting > 0 {
-                WaitingBadge(count: waiting)
-            }
+            trailing
         }
-        // The Mac: a two-line sidebar row's room (Mail's, Notes'), not the
-        // one-line 28 pt the list's minimum is for.
-        .padding(.vertical, model.layout == .phone ? 3 : (Platform.isMac ? 8 : 1))
-        .padding(.leading, inset ? 24 : 0)
+        .padding(.vertical, Self.verticalPadding(model))
         .sidebarRowText()
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(StatusDot.label(pal.dot))
+    }
+
+    static func verticalPadding(_ model: AppModel) -> CGFloat {
+        model.layout == .phone ? 3 : (Platform.isMac ? 8 : 1)
     }
 }
 
@@ -465,6 +437,9 @@ private struct SidebarFooter: View {
                         .accessibilityIdentifier("history-continue")
                 }
                 Button("新建工作区", systemImage: "square.grid.2x2", action: newWorkspace)
+                if store.alliesSupported != false {
+                    Button("添加 Ally…", systemImage: "person.badge.plus") { model.showAllyInvite = true }
+                }
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .semibold))
@@ -579,17 +554,20 @@ private struct AssistantSwitcher: View {
 
 /// 电脑与设备: the last row, quiet (secondary), like 最近的对话.
 private struct DevicesListRow: View {
+    @Environment(AppModel.self) private var model
+
     var body: some View {
-        HStack(spacing: 12) {
+        SidebarRowLayout {
             Image(systemName: "desktopcomputer")
-                .font(.system(size: 17))
+                .font(.system(size: 16))
                 .foregroundStyle(.secondary)
-                .frame(width: Platform.isMac ? 22 : 40)
-                .accessibilityHidden(true)
+        } title: {
             Text("电脑与设备")
-                .foregroundStyle(.secondary)
+        } subtitle: {
+            Text(model.pairedHost?.hostLabel ?? "")
+        } trailing: {
+            EmptyView()
         }
-        .sidebarRowText()
         .accessibilityElement(children: .combine)
     }
 }
@@ -600,10 +578,19 @@ private struct AllyListRow: View {
     let ally: AllyInfo
 
     var body: some View {
-        HStack(spacing: 8) {
-            AllyRow(ally: ally, assistant: store.assistantName)
+        SidebarRowLayout {
+            AllyAvatar(ally: ally, size: 28)
+        } title: {
+            HStack(spacing: 6) {
+                Text(ally.displayName)
+                AllyKindTag(kind: ally.kind)
+            }
+        } subtitle: {
+            Text(Copy.allyLastLine(ally, assistant: store.assistantName))
+        } trailing: {
             WaitingBadge(count: store.pendingAllyDrafts.filter { $0.allyId == ally.id }.count)
         }
-        .sidebarRowText()
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(Copy.allyPresence(ally))
     }
 }

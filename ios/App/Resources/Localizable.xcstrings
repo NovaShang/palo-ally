@@ -7544,6 +7544,17 @@
           }
         }
       }
+    },
+    "添加 Ally…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Ally…"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
