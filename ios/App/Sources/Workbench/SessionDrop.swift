@@ -99,12 +99,14 @@ struct SessionDropPreview: View {
             ForEach(states, id: \.1) { st, name in
                 VStack(spacing: 6) {
                     ZStack {
+                        // Big enough that the indicator never shows past
+                        // the glass, however the drop moves.
                         SessionDrop(state: st, voiceLevel: nil, neutral: neutral)
-                            .frame(width: 66, height: 66)
+                            .frame(width: 84, height: 84)
                         SessionIndicator(state: st, contextPct: 46, effort: "high", model: "claude-opus-5-5",
                                          size: 50, glass: false)
                     }
-                    .frame(width: 70, height: 70)
+                    .frame(width: 88, height: 88)
                     Text(name).font(.caption).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
