@@ -5,6 +5,7 @@ import SwiftUI
 struct TileInfo: Equatable {
     var name: String
     var dot: StatusDotKind = .idle
+    var running = 0
 }
 
 /// The tiling's measures.
@@ -51,7 +52,7 @@ struct TiledWorkspaceView: View {
             VStack(spacing: 0) {
                 PaneCanvas(tree: shown, interactive: !narrow.isNarrow, accent: accent, handle: handle,
                            makePane: makePane, onLayoutChange: onLayoutChange, onActivate: onActivate,
-                           onMoveFocus: onMoveFocus, paneName: { info($0).name }, onCornerPane: onCornerPane)
+                           onMoveFocus: onMoveFocus, paneInfo: info, onCornerPane: onCornerPane)
                 if narrow.isNarrow {
                     switcher(narrow.switcher)
                         .frame(height: TileMetrics.switcherHeight)

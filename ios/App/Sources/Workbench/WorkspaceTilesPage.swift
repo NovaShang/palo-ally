@@ -100,7 +100,7 @@ struct WorkspaceTilesPage: View {
 
     private func info(_ id: String) -> TileInfo {
         guard let pal = store.singlePal(id: id) else { return TileInfo(name: "") }
-        return TileInfo(name: pal.displayName, dot: pal.dot)
+        return TileInfo(name: pal.displayName, dot: pal.dot, running: pal.tasksRunning)
     }
 
     /// A pane's own view graph: the page and everything it reads from

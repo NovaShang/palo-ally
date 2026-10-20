@@ -22,7 +22,8 @@ final class PaneCanvasController: UIViewController {
     /// ⌘⌥→ / ⌘⌥←.
     var onMoveFocus: (Bool) -> Void = { _ in }
     /// The name a dragged pane's capsule shows.
-    var paneName: (String) -> String = { $0 }
+    /// What a dragged pane's capsule shows.
+    var paneInfo: (String) -> TileInfo = { TileInfo(name: $0) }
     /// The Mac: the pane under the window toolbar's trailing button, if any.
     var onCornerPane: (String?) -> Void = { _ in }
     private var cornerPane: String?
@@ -76,6 +77,9 @@ final class PaneCanvasController: UIViewController {
         edge.layer.cornerCurve = .continuous
         edge.layer.borderWidth = 2
         applyAccent()
+        #if DEBUG
+        Self.all.add(self)
+        #endif
         #if DEBUG || PERF_HARNESS
         startWiggle()
         #endif
@@ -340,13 +344,22 @@ final class PaneCanvasController: UIViewController {
         c.layer.shadowOpacity = 0.25
         c.layer.shadowRadius = 8
         c.layer.shadowOffset = CGSize(width: 0, height: 6)
-        let icon = pane.content.resizableSnapshotView(from: PaneMetrics.iconRect, afterScreenUpdates: false, withCapInsets: .zero)
-            ?? UIView()
-        icon.frame = CGRect(x: 4, y: 3, width: 24, height: 24)
-        icon.layer.cornerRadius = 12
+        let info = paneInfo(pane.id)
+        let icon = UILabel(frame: CGRect(x: 5, y: 4, width: 22, height: 22))
+        icon.backgroundColor = UIColor(StatusDot.color(info.dot))
+        icon.layer.cornerRadius = 11
         icon.clipsToBounds = true
+        icon.textAlignment = .center
+        icon.textColor = .white
+        icon.font = .systemFont(ofSize: 11, weight: .heavy)
+        icon.text = switch info.dot {
+        case .waiting: "?"
+        case .working: info.running > 0 ? "\(min(info.running, 99))" : "▶"
+        case .done: "✓"
+        case .idle: "•"
+        }
         let label = UILabel()
-        label.text = paneName(pane.id)
+        label.text = info.name
         label.font = .systemFont(ofSize: 12, weight: .semibold)
         label.textColor = .label
         label.sizeToFit()
@@ -452,6 +465,87 @@ final class PaneCanvasController: UIViewController {
     }
     #endif
 }
+
+#if DEBUG
+extension PaneCanvasController {
+    /// The canvases on screen (for `-demoActions` `canvas:` steps).
+    static let all = NSHashTable<PaneCanvasController>.weakObjects()
+
+    /// A `-demoActions` step on this canvas, through the same calls the
+    /// pointer's gestures make (no real events: the Mac's UI automation needs
+    /// the owner's permission):
+    /// `click:<id>` a click in a pane; `next` ⌘⌥→; `hover` the first divider lit;
+    /// `divider:<dx>` the first divider dragged that far and held, `divider-end`
+    /// let go; `drag:<id>:<target>:<center|left|right|top|bottom>` a pane
+    /// dragged by its header and held over the target, `drag-end` dropped.
+    func demo(_ step: String) {
+        let parts = step.split(separator: ":").map(String.init)
+        guard let tree else { return }
+        let frames = Self.paneFrames(of: tree, in: lastSize)
+        switch parts.first {
+        case "click":
+            if parts.count > 1 { panes[parts[1]].map { _ = $0.hitTest(CGPoint(x: 100, y: 100), with: DemoTouchEvent()) } }
+        case "next":
+            onMoveFocus(false)
+        case "details":
+            if parts.count > 1, let host = hosts[parts[1]] as? PaneHostingController { host.rootView.details.tile = parts[1] }
+        case "presented":
+            for (id, host) in hosts { debugLog("[canvas] \(id) presents \(host.presentedViewController.map { String(describing: type(of: $0)) } ?? "-")") }
+        case "details-close":
+            (hosts.values.first as? PaneHostingController)?.rootView.details.tile = nil
+        case "hover":
+            dividers.values.first?.demoHover(true)
+        case "divider":
+            if let d = LayoutTree.dividers(of: tree).first { moveDivider(d.id, by: CGFloat(Double(parts.last ?? "0") ?? 0)) }
+        case "divider-end":
+            dividers.values.forEach { $0.demoHover(false) }
+            endDivider(commit: true)
+        case "drag":
+            guard parts.count > 3, let pane = panes[parts[1]], let target = frames[parts[2]],
+                  let source = frames[parts[1]] else { return }
+            let p: CGPoint = switch parts[3] {
+            case "left": CGPoint(x: target.minX + target.width * 0.1, y: target.midY)
+            case "right": CGPoint(x: target.maxX - target.width * 0.1, y: target.midY)
+            case "top": CGPoint(x: target.midX, y: target.minY + target.height * 0.1)
+            case "bottom": CGPoint(x: target.midX, y: target.maxY - target.height * 0.1)
+            default: CGPoint(x: target.midX, y: target.midY)
+            }
+            beginPaneDrag(pane, at: CGPoint(x: source.minX + 80, y: source.minY + 12))
+            movePaneDrag(to: p)
+            demoDrop = p
+        case "drag-end":
+            endPaneDrag(at: demoDrop ?? .zero, commit: true)
+        default:
+            break
+        }
+        let order = LayoutTree.leafOrder(of: self.tree ?? tree)
+        let placed = order.map { id in "\(id) \(Self.paneFrames(of: self.tree ?? tree, in: lastSize)[id].map { NSCoder.string(for: $0) } ?? "-")" }
+        let focused = panes.first { $0.value.firstResponderInside }?.key ?? "-"
+        debugLog("[canvas] \(step): \(placed.joined(separator: ", ")) caret \(focused)")
+    }
+}
+
+/// A click, as far as `PaneContainerView.hitTest` can tell.
+private final class DemoTouchEvent: UIEvent {
+    override var type: UIEvent.EventType { .touches }
+}
+
+private extension UIView {
+    var firstResponderInside: Bool {
+        if isFirstResponder { return true }
+        return subviews.contains { $0.firstResponderInside }
+    }
+}
+
+private nonisolated(unsafe) var demoDropPoints: [ObjectIdentifier: CGPoint] = [:]
+
+private extension PaneCanvasController {
+    var demoDrop: CGPoint? {
+        get { demoDropPoints[ObjectIdentifier(self)] }
+        set { demoDropPoints[ObjectIdentifier(self)] = newValue }
+    }
+}
+#endif
 
 /// Where a dragged pane would land, and what dropping it there makes.
 enum TileDrop {
@@ -579,6 +673,10 @@ final class DividerView: UIView {
         restyle()
     }
 
+    #if DEBUG
+    func demoHover(_ on: Bool) { hovered = on; restyle() }
+    #endif
+
     @objc private func hover(_ g: UIHoverGestureRecognizer) {
         switch g.state {
         case .began, .changed:
@@ -630,7 +728,7 @@ struct PaneCanvas: UIViewControllerRepresentable {
     let onLayoutChange: (LayoutTree.Node) -> Void
     let onActivate: (String) -> Void
     let onMoveFocus: (Bool) -> Void
-    let paneName: (String) -> String
+    let paneInfo: (String) -> TileInfo
     let onCornerPane: (String?) -> Void
 
     func makeUIViewController(context: Context) -> PaneCanvasController {
@@ -649,7 +747,7 @@ struct PaneCanvas: UIViewControllerRepresentable {
         c.onLayoutChange = onLayoutChange
         c.onActivate = onActivate
         c.onMoveFocus = onMoveFocus
-        c.paneName = paneName
+        c.paneInfo = paneInfo
         c.onCornerPane = onCornerPane
         c.apply(tree: tree, interactive: interactive, accent: accent)
     }

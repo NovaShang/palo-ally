@@ -152,6 +152,11 @@ private struct LayoutStressTest: ViewModifier {
                     // `notify:demo-2`: a message notification from that computer tapped.
                     case _ where a.hasPrefix("notify:"):
                         model.app.handleNotification(userInfo: ["hostId": String(a.dropFirst(7))])
+                    // `canvas:<step>`: the window's split workspace (PaneCanvasController.demo).
+                    case _ where a.hasPrefix("canvas:"):
+                        for c in PaneCanvasController.all.allObjects where c.view.window?.windowScene === w.scene {
+                            c.demo(String(a.dropFirst(7)))
+                        }
                     case _ where a.hasPrefix("open:"):
                         if let c = WindowModel.Conversation(storageKey: String(a.dropFirst(5))) { w.open(c) }
                     // `snap:<name>`: this window to <app tmp>/<name>.png.
