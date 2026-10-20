@@ -1,4 +1,5 @@
 @preconcurrency import MarkdownUI
+import PaloAllyKit
 import SwiftUI
 
 /// Chat and library markdown, rendered by MarkdownUI (GitHub-flavored:
@@ -10,7 +11,9 @@ struct MarkdownText: View {
     var compact: Bool = true
 
     var body: some View {
-        Markdown(streaming ? source + " ▍" : source)
+        // Bare addresses end where address characters end (not at the next space).
+        let marked = BareLinks.marking(in: source)
+        Markdown(streaming ? marked + " ▍" : marked)
             .markdownTheme(compact ? .paloAlly : .paloAllyDocument)
             .markdownCodeSyntaxHighlighter(.plainText)
             .textSelection(.enabled)
@@ -109,7 +112,7 @@ enum MarkdownBlock: Equatable {
         // Markdown each time showed up in the profile.
         let key = s as NSString
         if let hit = attributedCache.object(forKey: key) { return hit.value }
-        let value = (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+        let value = (try? AttributedString(markdown: BareLinks.marking(in: s), options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(s)
         attributedCache.setObject(Parsed(value), forKey: key)
         return value

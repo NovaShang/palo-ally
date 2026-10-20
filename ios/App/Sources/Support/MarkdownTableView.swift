@@ -138,7 +138,7 @@ struct MarkdownTableView: View {
     /// once (a table being written gets a row at a time, the rest unchanged).
     static func inline(_ text: String) -> AttributedString {
         if let parsed = inlineCache[text] { return parsed }
-        let parsed = (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+        let parsed = (try? AttributedString(markdown: BareLinks.marking(in: text), options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(text)
         if inlineCache.count >= 2000 { inlineCache.removeAll(keepingCapacity: true) }
         inlineCache[text] = parsed

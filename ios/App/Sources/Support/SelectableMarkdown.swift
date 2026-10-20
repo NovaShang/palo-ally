@@ -812,9 +812,10 @@ enum MarkdownRenderer {
     }
 
     /// Inline markdown (bold, italic, `code`, ~~strike~~, links) via Foundation.
-    /// A bare `paloally://` link (the assistant's pair_link) is a link too.
+    /// Bare addresses end where address characters end, and a bare
+    /// `paloally://` link (the assistant's pair_link) is a link too.
     private static func inline(_ text: String, font: UIFont, style: NSParagraphStyle, color: UIColor = .label) -> NSAttributedString {
-        let parsed = (try? AttributedString(markdown: AppLink.markingBareLinks(in: text), options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+        let parsed = (try? AttributedString(markdown: BareLinks.marking(in: text), options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(text)
         let out = NSMutableAttributedString()
         for run in parsed.runs {

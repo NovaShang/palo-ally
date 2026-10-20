@@ -160,7 +160,7 @@ struct AppLinkTests {
         #expect(AppLink.markingBareLinks(in: "点开 \(pair).") == "点开 <\(pair)>.")
         #expect(AppLink.markingBareLinks(in: "**\(pair)**") == "**<\(pair)>**")
         // Already a link, or code: left alone.
-        for s in ["<\(pair)>", "[点这里](\(pair))", "`\(pair)`", "代码 `x \(pair)` 里", "没有链接", "https://example.com"] {
+        for s in ["<\(pair)>", "[点这里](\(pair))", "`\(pair)`", "代码 `x \(pair)` 里", "没有链接"] {
             #expect(AppLink.markingBareLinks(in: s) == s)
         }
         // What Foundation's Markdown then makes of it.
