@@ -19,6 +19,10 @@ import UniformTypeIdentifiers
 ///   something to send;
 /// - [+] → photos or files, staged above the capsule; also dropped on the
 ///   conversation or pasted into the field (`ComposerIntake`).
+/// - up in the history (where 「回到最新」 shows) with nothing being written,
+///   it folds into three glass buttons: [+], a smaller [↓] (back to the
+///   latest) and a 「轻点打字，按住说话」 capsule (hold to talk as on the field;
+///   tap to write, where the reader is). See `wantsFold`.
 ///
 /// The same composer for the assistant and for a Pal (pals-prd §15).
 struct ComposerView: View {
@@ -35,6 +39,13 @@ struct ComposerView: View {
     enum Outgoing { case typed, spoken(cid: String) }
     /// Dropped and pasted images and files, to stage.
     var intake: ComposerIntake? = nil
+    /// The reader is up in the history (「回到最新」 shows): the composer may fold.
+    var scrolledUp = false
+    /// 「回到最新」, the folded composer's middle button.
+    var onJump: (() -> Void)? = nil
+    /// Told when it folds or unfolds (the floating 「回到最新」 shows only
+    /// while it is up in the history unfolded: a draft, the field focused).
+    var onFolded: ((Bool) -> Void)? = nil
     let onSend: (String, [AppStore.OutgoingImage], [AppStore.OutgoingFile], Outgoing) -> Void
     /// Images and files picked or pasted for the next message (bento's staged attachments).
     @State private var staged: [Staged] = []
@@ -75,6 +86,13 @@ struct ComposerView: View {
     @State private var editedIn: (before: String, words: String)?
 
     private static let capsuleSpace = "composerCapsule"
+
+    /// Folded into [+] [↓] [轻点打字，按住说话] (`wantsFold`); changed only by `settleFold`.
+    @State private var folded = false
+    /// The owner opened the folded composer (tapped its mic, typed on the
+    /// Mac): it stays open while they write, folds again once they leave it.
+    @State private var openedByOwner = false
+    @Namespace private var glassSpace
 
     // Placement. Keyboard down ("docked"): the capsule floats concentric with
     // the display corners, like ChatGPT and the iOS 26 system bars — equal
@@ -175,6 +193,50 @@ struct ComposerView: View {
             || voice.isActive || pressing || store.replyDraft != nil
     }
 
+    /// Up in the history with nothing on the go: folded. Never while there
+    /// is a draft, staged attachments, a reply being quoted, the field
+    /// focused, dictation, or the owner just opened it.
+    private var wantsFold: Bool {
+        scrolledUp && onJump != nil && !openedByOwner && !focused && !dictating && !finishingDictation
+            && draft.isEmpty && staged.isEmpty && store.replyDraft == nil
+    }
+
+    /// A hold to talk is on (this composer's): it never folds meanwhile, and
+    /// one begun on the folded capsule keeps it folded until the finger is up.
+    private var voiceBusy: Bool {
+        pressing || voiceStarted || finishingHold || (mine && (voice.isActive || voice.isArmed || voice.panelMounted))
+    }
+
+    /// Folds or unfolds to match `wantsFold`, like liquid glass: the capsule
+    /// melts into the three buttons and back. Its height stays the same, so
+    /// the conversation above doesn't move.
+    private func settleFold(animated: Bool = true) {
+        let want = wantsFold
+        guard want != folded else { return }
+        if want && voiceBusy { return }
+        // A finger on the folded capsule: it must stay under it.
+        if !want && (pressing || voiceStarted) { return }
+        debugLog("[composer] \(want ? "folded" : "unfolded")")
+        if animated {
+            withAnimation(.smooth(duration: 0.25)) { folded = want }
+        } else {
+            folded = want
+        }
+        onFolded?(want)
+    }
+
+    /// Tap on the folded capsule (or typing on the Mac): opens in place and
+    /// focuses the field, without scrolling (the reader keeps their place).
+    private func openFolded() {
+        openedByOwner = true
+        settleFold()
+        Task { @MainActor in
+            // The field exists once the capsule is back.
+            try? await Task.sleep(for: .milliseconds(60))
+            focusToken += 1
+        }
+    }
+
     var body: some View {
         #if DEBUG || PERF_HARNESS
         let _ = PerfProbe.count("ComposerView")
@@ -201,7 +263,7 @@ struct ComposerView: View {
                     .foregroundStyle(.secondary)
                     .transition(.opacity)
             }
-            capsule
+            foldingCapsule
         }
         .background {
             // ⌘↩ types a newline; Return alone sends on a hardware keyboard.
@@ -353,20 +415,122 @@ struct ComposerView: View {
         // Swells with the same hold-driven motion as everything else.
         .scaleEffect(1 + 0.035 * voicePresence)
         .glassEffect(capsuleGlass, in: .rect(cornerRadius: capsuleRadius, style: .continuous))
+        // Folded, it becomes the text capsule.
+        .glassEffectID("voice", in: glassSpace)
         .animation(.snappy, value: voice.target)
         .animation(.snappy, value: dictating)
         .animation(.snappy, value: canSend)
         .animation(.snappy, value: idle)
         // The hold-to-talk panel floats just above the capsule, anchored to it.
-        .overlay(alignment: .bottom) {
-            // One view from arming through listening and back: it grows out
-            // of the capsule with `presence` and folds back into it.
-            if mine && voice.panelMounted {
-                VoiceInputPanel(voice: voice)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.bottom, voice.capsuleSize.height + 18)
+        .overlay(alignment: .bottom) { voicePanel }
+    }
+
+    /// One view from arming through listening and back: it grows out of
+    /// the capsule with `presence` and folds back into it.
+    @ViewBuilder private var voicePanel: some View {
+        if mine && voice.panelMounted {
+            VoiceInputPanel(voice: voice)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, voice.capsuleSize.height + 18)
+        }
+    }
+
+    // MARK: - Folded
+
+    /// The capsule, or the three buttons it folds into, in one glass container.
+    private var foldingCapsule: some View {
+        GlassEffectContainer(spacing: 16) {
+            if folded { foldedRow } else { capsule }
+        }
+        .onChange(of: wantsFold, initial: true) { old, new in
+            settleFold(animated: old != new)
+        }
+        .onChange(of: voiceBusy) { settleFold() }
+        // Back at the end, or the field left: the next time up folds again.
+        .onChange(of: scrolledUp) { _, up in if !up { openedByOwner = false } }
+        .onChange(of: focused) { _, on in if !on && openedByOwner { openedByOwner = false } }
+    }
+
+    /// Up in the history: [+] at the left, a smaller [↓] in the middle,
+    /// [轻点打字，按住说话] at the right, as tall as the capsule they came from (the same
+    /// row height, so the conversation's inset doesn't change). Neutral glass.
+    private var foldedRow: some View {
+        let side = rowHeight
+        let middle = (rowHeight * 0.7).rounded()
+        return HStack(spacing: 0) {
+            Menu { attachItems } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: compact ? 15 : 18, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .frame(width: side, height: side)
+                    .contentShape(.circle)
+            }
+            .tint(.primary)
+            .buttonStyle(.borderless)
+            .menuIndicator(.hidden)
+            .frame(width: side, height: side)
+            .glassEffect(.regular.interactive(), in: .circle)
+            .glassEffectID("plus", in: glassSpace)
+            .disabled(staged.count >= Self.maxStaged)
+            .accessibilityLabel("添加照片或文件")
+            .accessibilityIdentifier("composerFoldedPlus")
+            Spacer(minLength: 0)
+            Button { onJump?() } label: {
+                Image(systemName: "arrow.down")
+                    .font(.system(size: compact ? 12 : 15, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: middle, height: middle)
+                    .contentShape(.circle)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .circle)
+            .glassEffectID("jump", in: glassSpace)
+            .accessibilityLabel("回到最新")
+            .accessibilityIdentifier("jumpToLatest")
+            Spacer(minLength: 0)
+            VStack(spacing: compact ? -1 : 0) {
+                Text("轻点打字")
+                Text("按住说话")
+            }
+            .font(compact ? .caption2.weight(.medium) : .footnote.weight(.medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, compact ? 12 : 14)
+            .frame(height: side)
+            .contentShape(.capsule)
+            // Hold: talk, as on the field (the zones and the words the
+            // same). Tap: write here.
+            .gesture(ComposerPressGesture(
+                holdThreshold: Self.holdSeconds,
+                space: .named(Self.capsuleSpace),
+                onTouchDown: pressBegan,
+                onTap: { pressLifted(tap: true) },
+                onAbandon: { pressLifted(tap: false) },
+                onHold: pressHeld))
+            .glassEffect(.regular, in: .capsule)
+            .glassEffectID("voice", in: glassSpace)
+            .accessibilityElement()
+            .accessibilityLabel("轻点打字，按住说话")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("composerFoldedVoice")
+            .accessibilityAction { openFolded() }
+        }
+        .frame(height: rowHeight)
+        // Spans the capsule's width: the hold's zones read the finger as on the capsule.
+        .coordinateSpace(.named(Self.capsuleSpace))
+        .background {
+            // The Mac: typing while reading opens it with what was typed.
+            if Platform.isMac && placesVoice {
+                TypeToCompose(claim: model.composerUnfocusRequests) { typed in
+                    draft += typed
+                    openFolded()
+                }
+                .frame(width: 1, height: 1)
+                .accessibilityHidden(true)
             }
         }
+        .overlay(alignment: .bottom) { voicePanel }
     }
 
     /// Keeps the buttons centred on a one-line docked capsule (they stay at
@@ -393,17 +557,20 @@ struct ComposerView: View {
 
     // MARK: - Pieces
 
+    /// The [+] menu, folded or not.
+    @ViewBuilder private var attachItems: some View {
+        if Self.cameraAvailable {
+            Button("拍照", systemImage: "camera") { showCamera = true }
+        }
+        Button("照片", systemImage: "photo.on.rectangle") { showPhotos = true }
+        Button("文件", systemImage: "doc") { showFiles = true }
+        Button { showComputerFiles = true } label: {
+            Label { Text("电脑上的文件", tableName: "Files") } icon: { Image(systemName: "desktopcomputer") }
+        }
+    }
+
     private var plusButton: some View {
-        Menu {
-            if Self.cameraAvailable {
-                Button("拍照", systemImage: "camera") { showCamera = true }
-            }
-            Button("照片", systemImage: "photo.on.rectangle") { showPhotos = true }
-            Button("文件", systemImage: "doc") { showFiles = true }
-            Button { showComputerFiles = true } label: {
-                Label { Text("电脑上的文件", tableName: "Files") } icon: { Image(systemName: "desktopcomputer") }
-            }
-        } label: {
+        Menu { attachItems } label: {
             Image(systemName: "plus")
                 .font(.system(size: compact ? 15 : 18, weight: .medium))
                 .foregroundStyle(.secondary)
@@ -546,12 +713,15 @@ struct ComposerView: View {
             Group {
                 if dictating {
                     // Listening: a tinted glass stop button — tap again to finish.
-                    Image(systemName: "stop.fill")
-                        .font(.system(size: compact ? 11 : 13, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: compact ? 28 : 34, height: compact ? 28 : 34)
-                        .glassEffect(.regular.tint(Color.accentColor.opacity(0.9)).interactive(), in: .circle)
-                        .symbolEffect(.pulse, isActive: !finishingDictation)
+                    // Its own container: not blended into the capsule's glass.
+                    GlassEffectContainer {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: compact ? 11 : 13, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: compact ? 28 : 34, height: compact ? 28 : 34)
+                            .glassEffect(.regular.tint(Color.accentColor.opacity(0.9)).interactive(), in: .circle)
+                            .symbolEffect(.pulse, isActive: !finishingDictation)
+                    }
                 } else {
                     Image(systemName: "mic")
                         .font(.system(size: compact ? 15 : 18, weight: .medium))
@@ -658,7 +828,10 @@ struct ComposerView: View {
         moved = !tap
         VoiceTiming.mark(tap ? "tap (audio discarded)" : "moved away (audio discarded)")
         disarm()
-        if tap { focusToken += 1 }
+        if tap {
+            // The folded capsule: open to write.
+            if folded { openFolded() } else { focusToken += 1 }
+        }
     }
 
     /// After the hold committed: dragging between zones, then release.
@@ -908,6 +1081,69 @@ struct ComposerView: View {
         }
         if let problem { voice.dictation.errorMessage = problem }
     }
+}
+
+/// The Mac, the composer folded: keys typed while reading open it. A
+/// 1-pt key catcher takes the first responder when nothing else has it
+/// (no field, no list being keyed through); the first characters typed
+/// go into the draft and the field takes over from there. Spaces alone
+/// don't count (they don't start a message).
+private struct TypeToCompose: UIViewRepresentable {
+    /// Changes when a click in the conversation leaves the field: claim again.
+    let claim: Int
+    let onType: (String) -> Void
+
+    func makeUIView(context: Context) -> Catcher {
+        let v = Catcher()
+        v.onType = onType
+        return v
+    }
+
+    func updateUIView(_ v: Catcher, context: Context) {
+        v.onType = onType
+        v.claim()
+    }
+
+    final class Catcher: UIView, UIKeyInput {
+        var onType: ((String) -> Void)?
+        override var canBecomeFirstResponder: Bool { true }
+        var hasText: Bool { false }
+        func insertText(_ text: String) {
+            guard text.contains(where: { !$0.isWhitespace && !$0.isNewline }) else { return }
+            onType?(text)
+        }
+        func deleteBackward() {}
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            claim()
+        }
+
+        func claim() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.window != nil, !self.isFirstResponder else { return }
+                let current = FirstResponder.find()
+                guard current == nil || !(current is UIKeyInput || current is UICollectionView || current is UITableView) else { return }
+                self.becomeFirstResponder()
+            }
+        }
+    }
+}
+
+/// The window's first responder, if any.
+@MainActor
+private enum FirstResponder {
+    private static weak var found: UIResponder?
+    static func find() -> UIResponder? {
+        found = nil
+        UIApplication.shared.sendAction(#selector(UIResponder.paFindFirstResponder), to: nil, from: nil, for: nil)
+        return found
+    }
+    static func report(_ r: UIResponder) { found = r }
+}
+
+extension UIResponder {
+    @objc fileprivate func paFindFirstResponder() { FirstResponder.report(self) }
 }
 
 /// The system camera (UIImagePickerController); hands back the photo, or nil

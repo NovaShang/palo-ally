@@ -44,6 +44,8 @@ struct ChatView: View {
     @State private var orbPlacement = OrbPlacement()
     /// Images and files dropped on the conversation or pasted, for the composer.
     @State private var intake = ComposerIntake()
+    /// The composer is folded into its buttons (its ↓ stands for 「回到最新」).
+    @State private var composerFolded = false
     @Environment(\.scenePhase) private var scenePhase
 
     /// The assistant's own conversation (not a Pal's).
@@ -54,6 +56,8 @@ struct ChatView: View {
     /// The Mac: a Pal's or a session's page runs to the window's top too,
     /// its title and menu floating in a strip (MacPageStrip).
     private var macPage: Bool { Platform.barInWindowToolbar && !isPalo && !inTile }
+    /// Up in the history: 「回到最新」 shows, and the composer folds into its buttons.
+    private var scrolledUp: Bool { store.viewingPast || scroll.showsJump }
     private var title: String {
         isPalo ? store.assistantName
             : store.palID.flatMap { store.singlePal(id: $0)?.displayName } ?? store.viewedSessionID.flatMap { store.viewedSession($0)?.name } ?? ""
@@ -178,7 +182,10 @@ struct ChatView: View {
         }
         .modifier(ConversationChanges(scroll: scroll))
         .overlay(alignment: .bottom) {
-            let showJump = store.viewingPast || scroll.showsJump
+            // Folded, the composer's own ↓ is 「回到最新」 (ComposerView); the
+            // floating one is for when it can't fold (something being
+            // written) or a panel replaces it.
+            let showJump = scrolledUp && !(composerFolded && bottomPanel == nil && store.rewindTarget == nil)
             ZStack {
                 if showJump {
                     JumpToLatestButton(hasNew: scroll.unseenBelow) { scroll.jumpToLatest() }
@@ -221,7 +228,9 @@ struct ChatView: View {
             } else if let bottomPanel {
                 bottomPanel
             } else {
-            ComposerView(draft: draft, intake: intake) { text, images, files, how in
+            ComposerView(draft: draft, intake: intake, scrolledUp: scrolledUp,
+                         onJump: { scroll.jumpToLatest() },
+                         onFolded: { composerFolded = $0 }) { text, images, files, how in
                 switch how {
                 case .typed:
                     // The message rises to the top as it appears (design §3.5).
