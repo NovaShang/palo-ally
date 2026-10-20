@@ -21,7 +21,15 @@ struct IsolatedHost<Content: View>: UIViewRepresentable {
         controller.view.isUserInteractionEnabled = false
         controller.safeAreaRegions = []
         context.coordinator.controller = controller
-        return controller.view
+        // Hit testing never reaches the inner hosting view: on the Mac a
+        // hover's hit test into it trapped in SwiftUI (the app crashed on
+        // moving the mouse).
+        let box = Passthrough()
+        box.backgroundColor = .clear
+        controller.view.frame = box.bounds
+        controller.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        box.addSubview(controller.view)
+        return box
     }
 
     func updateUIView(_ view: UIView, context: Context) {
@@ -34,6 +42,12 @@ struct IsolatedHost<Content: View>: UIViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
+
+    /// Takes no touches, hovers or clicks, nor lets them in.
+    final class Passthrough: UIView {
+        override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? { nil }
+        override func point(inside point: CGPoint, with event: UIEvent?) -> Bool { false }
+    }
 
     final class Coordinator {
         var controller: UIHostingController<Content>?
