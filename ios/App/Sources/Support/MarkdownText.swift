@@ -11,6 +11,9 @@ struct MarkdownText: View {
     var compact: Bool = true
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("MarkdownText")
+        #endif
         // Bare addresses end where address characters end (not at the next space).
         let marked = BareLinks.marking(in: source)
         Markdown(streaming ? marked + " ▍" : marked)

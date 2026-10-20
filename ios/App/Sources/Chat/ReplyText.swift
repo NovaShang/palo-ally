@@ -17,6 +17,9 @@ struct ReplyText: View {
     @Environment(\.appTheme) private var theme
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("ReplyText")
+        #endif
         #if DEBUG
         let _ = RenderTrace.note("text \(message.id)")
         #endif
@@ -131,6 +134,9 @@ private struct ReplyBody: View {
     let trailingRoom: CGFloat
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("ReplyBody")
+        #endif
         let pieces = model.pieces
         VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(pieces.enumerated()), id: \.offset) { _, piece in
@@ -153,6 +159,9 @@ private struct LivePiece: View {
     let onQuote: (String) -> Void
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("LivePiece")
+        #endif
         LiveMarkdown(model: model, height: model.liveHeight, onQuote: onQuote)
     }
 }
@@ -177,6 +186,9 @@ private struct LiveMarkdown: UIViewRepresentable {
     }
 
     func updateUIView(_ host: LiveTextHost, context: Context) {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("upd LiveMarkdown")
+        #endif
         host.text.onQuote = onQuote
         host.text.wholeReply = wholeReply
         host.text.fileLinks = fileLinks

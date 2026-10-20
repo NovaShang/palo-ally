@@ -95,6 +95,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         TraitLog.start()
         AwayAppearance.start()
         DiagnosticsCollector.shared.start()
+        #if DEBUG || PERF_HARNESS
+        PerfProbe.start()
+        #endif
         return true
     }
 

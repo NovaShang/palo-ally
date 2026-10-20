@@ -660,8 +660,11 @@ extension DemoHost {
             default: break
             }
         }
-        let workspaces = [Workspace(id: "ws-site", name: "官网改版", memberIds: ["pal-site", "pal-blog"], layout: nil,
+        var workspaces = [Workspace(id: "ws-site", name: "官网改版", memberIds: ["pal-site", "pal-blog"], layout: nil,
                                     createdAt: now - 3 * 24 * hour, updatedAt: now - 2 * hour)]
+        #if DEBUG || PERF_HARNESS
+        PerfSeed.apply(pals: &allPals, logs: &logs, workspace: &workspaces[0], now: now)
+        #endif
         return PalSeed(pals: allPals, logs: logs,
                        others: others, approvals: approvals, questions: questions, proposal: proposal, recent: recent,
                        workspaces: workspaces)

@@ -267,7 +267,10 @@ public final class AppStore {
     /// The Pals, in the host's order.
     public internal(set) var pals: [Pal] {
         get { shared.pals }
-        set { shared.pals = newValue }
+        set {
+            shared.pals = newValue
+            shared.syncPalSlots()
+        }
     }
     /// The computer's other live Claude Code sessions, to adopt.
     public internal(set) var otherSessions: [CCSession] {

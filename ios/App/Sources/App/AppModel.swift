@@ -471,6 +471,15 @@ final class AppModel {
         case "identity": openManagement(); showIdentityEditor = true
         case "list", "allies", "sessions", "pals": showList()
         case "recent", "earlier": open(.earlier)
+        #if DEBUG || PERF_HARNESS
+        // `-demoScreen workspace`: the demo's split workspace (`-demoWorkspace <id>`, default ws-site).
+        case "workspace":
+            let id = UserDefaults.standard.string(forKey: "demoWorkspace") ?? "ws-site"
+            Task { @MainActor in
+                for _ in 0..<40 where store?.workspace(id: id) == nil { try? await Task.sleep(for: .milliseconds(100)) }
+                openWorkspace(id)
+            }
+        #endif
         #if DEBUG
         case "file": Task { await openDemoFile() }
         case "ally":
@@ -722,6 +731,9 @@ final class AppModel {
             hostIDs.append(id)
             assignTheme(id)
             if let state = launch.demoState, state != "quote" { Task { await host.applyScenario(state) } }
+            #if DEBUG || PERF_HARNESS
+            if i == 0 { Task { await host.startPerfTicks() } }
+            #endif
             s.start()
             // -demoState quote: the composer with a reply quote open (screenshots).
             if launch.demoState == "quote" {

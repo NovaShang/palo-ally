@@ -37,7 +37,13 @@ final class SuggestionsGate {
         touch()
     }
 
-    func touch() { lastActivity = .now }
+    /// At most once a second: it's observed by every conversation's
+    /// suggestions slot, and typing touches it on every keystroke (each one
+    /// re-rendered every tile's slot); a second is nothing against the quiet spell.
+    func touch() {
+        let now = Date.now
+        if now.timeIntervalSince(lastActivity) >= 1 { lastActivity = now }
+    }
 
     /// Since when the chat has been quiet: this session's activity or the
     /// newest message, whichever is later (so reopening the app after a

@@ -10,6 +10,11 @@ extension AppStore {
 
     public func pal(id: String) -> Pal? { pals.first { $0.id == id } }
 
+    /// The same Pal, observed on its own: a view that reads it is updated
+    /// when this Pal changes, not on every change to the list (`pal(id:)`
+    /// reads the whole list). For what each tile and page shows of its own session.
+    public func singlePal(id: String) -> Pal? { shared.palSlot(id).pal }
+
     /// The Pals as the list shows them: awake ones first, then those asleep
     /// (§12), each the most lately used first.
     public var listedPals: [Pal] { Pal.listed(pals) }

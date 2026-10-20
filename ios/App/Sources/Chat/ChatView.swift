@@ -56,10 +56,13 @@ struct ChatView: View {
     private var macPage: Bool { Platform.barInWindowToolbar && !isPalo && !inTile }
     private var title: String {
         isPalo ? store.assistantName
-            : store.palID.flatMap { store.pal(id: $0)?.displayName } ?? store.viewedSessionID.flatMap { store.viewedSession($0)?.name } ?? ""
+            : store.palID.flatMap { store.singlePal(id: $0)?.displayName } ?? store.viewedSessionID.flatMap { store.viewedSession($0)?.name } ?? ""
     }
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("PageTop")
+        #endif
         #if DEBUG
         let _ = RenderTrace.note("ChatView")
         #endif
@@ -313,6 +316,9 @@ private struct PageNavigationBar: ViewModifier {
     let enabled: Bool
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("PageNavigationBar")
+        #endif
         if enabled {
             content
                 .navigationTitle(title)
@@ -332,6 +338,9 @@ struct VoiceTileGate<Content: View>: View {
     @Environment(\.tile) private var tile
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("VoiceTileGate")
+        #endif
         if tile == nil || voice.owner == tile?.id { content() }
     }
 }
@@ -344,6 +353,9 @@ private struct OrbTracking: ViewModifier {
     let scrolling: Bool
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("OrbTracking")
+        #endif
         if enabled {
             content.modifier(OrbPresenceTracking(scrolledUp: scrolledUp, scrolling: scrolling))
         } else {
@@ -364,6 +376,9 @@ private struct ConversationRows: View {
     @Environment(\.placesAsColumns) private var asColumn
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("ConversationRows")
+        #endif
         #if DEBUG
         let _ = RenderTrace.note("list")
         #endif
@@ -467,9 +482,9 @@ private struct ConversationRows: View {
         // The scroll view's pan gesture is the reader's finger.
         .background(ScrollViewHook { scroll.attach(scrollView: $0) })
         // A quote above a bubble jumps to what it quotes.
-        .environment(\.chatScrollTo) { id in scroll.reveal(id) }
+        .environment(\.chatScrollTo, ChatRowActions(scroll: scroll))
         // 展开全部 / 收起 on a long message: the change stays in its row.
-        .environment(\.chatRowResizing) { id, folding in scroll.resizing(id, folding: folding) }
+        .environment(\.chatRowResizing, ChatRowActions(scroll: scroll))
         // Beside a sidebar or inspector the column gets roomier margins.
         .padding(.horizontal, asColumn ? 28 : 16)
         .environment(\.messageGutter, asColumn ? 28 : 16)
@@ -517,13 +532,13 @@ private struct ConversationRows: View {
     /// still says it's being written (it lingered there a few frames).
     private var showsBusyIndicator: Bool {
         // A Pal stopped on a card: the card is the news, not a spinner.
-        if let id = store.palID, store.pal(id: id)?.status == .waiting, !store.awaitingReply { return false }
+        if let id = store.palID, store.singlePal(id: id)?.status == .waiting, !store.awaitingReply { return false }
         return store.connection.isOnline && (store.awaitingReply || (store.status?.busy == true && !store.replyEndedSinceStatus))
     }
 
     /// Subagents and background tasks still running (the session's, or Palo's own).
     private var backgroundRunning: Int {
-        if let id = store.palID { return store.pal(id: id)?.tasksRunning ?? 0 }
+        if let id = store.palID { return store.singlePal(id: id)?.tasksRunning ?? 0 }
         return store.scope == .palo ? store.paloTasksRunning : 0
     }
 
@@ -548,6 +563,9 @@ private struct ConversationChanges: ViewModifier {
     @Environment(AppStore.self) private var store
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("ConversationChanges")
+        #endif
         content
             // A layout switch rebuilds the column: back onto the end if it was there.
             .onChange(of: model.layout) { scroll.layoutChanged() }
@@ -593,6 +611,9 @@ private struct TopStrip<Strip: View>: ViewModifier {
     @ViewBuilder let strip: () -> Strip
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("TopStrip")
+        #endif
         if asBar {
             content.safeAreaBar(edge: .top, spacing: 0, content: strip)
         } else {
@@ -612,6 +633,9 @@ private struct TopRowProbe: ViewModifier {
     let id: String
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("TopRowProbe")
+        #endif
         if Self.enabled {
             content.onGeometryChange(for: Bool.self) { g in
                 let f = g.frame(in: .scrollView)
@@ -634,6 +658,9 @@ private struct ClickToUnfocusComposer: ViewModifier {
     @Environment(AppModel.self) private var model
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("ClickToUnfocusComposer")
+        #endif
         if Platform.isMac {
             content.simultaneousGesture(TapGesture().onEnded { model.composerUnfocusRequests += 1 })
         } else {
@@ -657,6 +684,9 @@ private struct PhoneTitleOrb: View {
     @State private var column: CGRect = .zero
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("PhoneTitleOrb")
+        #endif
         Color.clear
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { column = $0 }
             .overlay(alignment: .topLeading) {
@@ -679,6 +709,9 @@ private struct MacTopOrb: View {
     @State private var width: CGFloat = 0
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("MacTopOrb")
+        #endif
         Color.clear
             .frame(height: FloatingTitleOrb.macRestHeight)
             .frame(maxWidth: .infinity)
@@ -708,6 +741,9 @@ struct StatusBanner: View {
     @State private var signingIn = false
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("StatusBanner")
+        #endif
         Group {
             // Only a drop that has lasted (or a refusal): returning to the app
             // always starts with a quick reconnect, which isn't news.
@@ -774,6 +810,9 @@ struct ThinkingIndicator: View {
     }
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("ThinkingIndicator")
+        #endif
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
             Text(text)
@@ -818,6 +857,9 @@ struct BackgroundWorkLine: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("BackgroundWorkLine")
+        #endif
         Button { model.setDetail(true, tile: tileDetail) } label: {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
@@ -837,6 +879,9 @@ struct BackgroundWorkLine: View {
 
 struct EmptyChatHint: View {
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("EmptyChatHint")
+        #endif
         VStack(spacing: 10) {
             Image(systemName: "sparkles")
                 .font(.largeTitle)
@@ -874,6 +919,9 @@ private struct SuggestionsSlot: View {
     @State private var quietClock = Date()
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("SuggestionsSlot")
+        #endif
         let gate = SuggestionsGate.shared
         let shows = gate.shows(store, now: quietClock)
         VStack(alignment: .leading, spacing: 0) {
@@ -913,6 +961,9 @@ private struct VoiceScrimLayer: View {
     @Environment(VoiceInputController.self) private var voice
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("VoiceScrimLayer")
+        #endif
         if voice.mounted || Self.demo {
             let capsule = voice.capsuleFrame
             VoiceScrim(opacity: voice.mounted ? voice.scrimOpacity : 1,
@@ -1000,6 +1051,9 @@ private struct HeldAppearance: ViewModifier {
     let scheme: ColorScheme?
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("HeldAppearance")
+        #endif
         content.transformEnvironment(\.colorScheme) { if let scheme { $0 = scheme } }
     }
 }
@@ -1015,6 +1069,9 @@ struct MacTitlebarIndicator: ViewModifier {
     static let size: CGFloat = 30
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("MacTitlebarIndicator")
+        #endif
         if enabled {
             let half = SessionIndicator.outerSize(size: Self.size, glass: true) / 2
             content.overlay(alignment: .topLeading) {
