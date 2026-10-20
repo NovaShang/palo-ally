@@ -229,15 +229,15 @@ struct ChatView: View {
                 bottomPanel
             } else {
             VStack(spacing: 6) {
-            // iPhone, a session in a workspace: the chips that switch between
-            // its sessions, counted in this inset so the conversation clears
-            // them. Put away while typing, to leave the conversation room.
-            if let current = quickSwitchCurrent, !keyboardUp {
-                let members = QuickSwitch.members(current: current, pals: store.pals, workspaces: store.workspaces)
-                if !members.isEmpty {
-                    QuickSwitchStrip(current: current, members: members)
-                        .transition(.opacity)
-                }
+            // iPhone, a session in a workspace: room for the chips that switch
+            // between its sessions, counted in this inset so the conversation
+            // clears them. The strip itself is drawn by the page's container
+            // (QuickSwitchOverlay), so it stays put while the sessions change
+            // under it. Put away while typing, to leave the conversation room.
+            if let current = quickSwitchCurrent, !keyboardUp,
+               !QuickSwitch.members(current: current, pals: store.pals, workspaces: store.workspaces).isEmpty {
+                QuickSwitchSlot()
+                    .transition(.opacity)
             }
             ComposerView(draft: draft, intake: intake) { text, images, files, how in
                 switch how {

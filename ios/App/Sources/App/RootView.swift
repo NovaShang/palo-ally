@@ -298,6 +298,10 @@ private struct ConversationDetail: View {
                     ChatView()
                 case .pal(let id):
                     PalPage(palID: id).id("pal-\(id)")
+                        // Switched from the quick-switch strip: the pages slide.
+                        .transition(.asymmetric(
+                            insertion: .move(edge: model.quickSwitchForward ? .trailing : .leading),
+                            removal: .move(edge: model.quickSwitchForward ? .leading : .trailing)))
                 case .ally(let id):
                     AllyConversationView(allyID: id).id("ally-\(id)")
                 case .workspace(let id):
@@ -315,6 +319,7 @@ private struct ConversationDetail: View {
                     DevicesPage()
                 }
             }
+            .modifier(QuickSwitchOverlay(current: current))
             .modifier(InContentNavigationBar())
             .modifier(HidesSystemSidebarToggle())
             // A folder's tree over 成果 (phones), and the files paths in replies link to.

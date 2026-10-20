@@ -155,6 +155,8 @@ final class AppModel {
     var paneCover = false
     /// 新建工作区 asked (⌘⇧N, ＋, a session's 并排…): with these sessions chosen.
     var newWorkspace: [String]?
+    /// The quick-switch strip's last move went forward (the next page slides in from the right).
+    var quickSwitchForward = true
 
     /// Phones: the list or the conversation (the conversation at launch).
     var compactColumn: NavigationSplitViewColumn = .detail
