@@ -25,6 +25,7 @@ struct QuickSwitchStrip: View {
     /// while the keyboard is up, and the rename alert's field brings it up.
     @Binding var renaming: Pal?
     @Binding var ending: Pal?
+    @State private var width: CGFloat = 0
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -36,7 +37,11 @@ struct QuickSwitchStrip: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
+                // As wide as the screen at least: a few chips sit in the middle.
+                .frame(minWidth: width)
             }
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .onAppear { proxy.scrollTo(current, anchor: .center) }
             .onChange(of: current) { _, c in
                 // Keep the current tab in view.
