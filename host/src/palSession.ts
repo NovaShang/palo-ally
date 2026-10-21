@@ -10,6 +10,7 @@ import { readHead, readTail, transcriptPath } from "./handoffs.ts";
 import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type DeliveryToolHandlers, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
 import type { MediaStore } from "./media.ts";
 import { type PalLaunch, isHelperFailure, makeSpawner } from "./palLauncher.ts";
+import type { RawSessionMessage } from "./ccSessions.ts";
 import { CARD_TOOLS, type PalMapOptions, TranscriptFollower, cardKey, toPalMessages, transcriptLastLine, transcriptModel, userEntryMessage } from "./palHistory.ts";
 import { ASK_TOOL, type QuestionManager } from "./questions.ts";
 import { type ForkSession, type PendingRewind, beforeCompaction, chainTo, hasFileCheckpoint, leafOf, ownerText, readTranscript, rewindBusy, rewindNoFiles, rewindNotFound } from "./rewind.ts";
@@ -1249,7 +1250,8 @@ export class PalSession {
     if (e?.type !== "user" || e.isSidechain) return;
     if (this.inherited?.has(String(e.uuid ?? ""))) return;
     const m = userEntryMessage(
-      { type: "user", uuid: String(e.uuid ?? ""), message: e.message, timestamp: e.timestamp, origin: e.origin, parent_tool_use_id: null },
+      { type: "user", uuid: String(e.uuid ?? ""), message: e.message, timestamp: e.timestamp, origin: e.origin, parent_tool_use_id: null,
+        isMeta: e.isMeta, isCompactSummary: e.isCompactSummary, promptSource: e.promptSource } as RawSessionMessage,
       { ...this.d.mapOptions(), pal: this.rec.id },
     );
     if (!m || !m.id || this.emitted.has(m.id)) return;

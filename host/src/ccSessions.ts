@@ -478,6 +478,11 @@ export function summarizeTranscript(entries: any[]): TranscriptSummary {
 
 // ---- history (getSessionMessages → what the app shows) ----
 
+/** Claude Code's summary after compacting, by its opening words. */
+export function isCompactSummaryText(text: string): boolean {
+  return text.trimStart().startsWith("This session is being continued from a previous conversation");
+}
+
 export interface RawSessionMessage {
   type: string;
   uuid: string;
@@ -530,7 +535,7 @@ export function toCCMessages(raw: RawSessionMessage[], assistantName: string, pa
       if (text && m.message?.model !== "<synthetic>") out.push({ id: m.uuid, ts, role: "assistant", text });
       continue;
     }
-    if (m.type !== "user" || (m as any).isCompactSummary) continue;
+    if (m.type !== "user" || (m as any).isCompactSummary || (m as any).isMeta || (m as any).promptSource === "system") continue;
     const text = userText(content);
     if (text === null) continue;
     const origin = m.origin;
@@ -550,7 +555,7 @@ export function toCCMessages(raw: RawSessionMessage[], assistantName: string, pa
       continue;
     }
     const t = text.trim();
-    if (!t || /^(<local-command-|<system-reminder>|<command-message>|Caveat: )/.test(t)) continue;
+    if (!t || /^(<local-command-|<system-reminder>|<command-message>|<task-notification>|Caveat: )/.test(t) || isCompactSummaryText(t)) continue;
     out.push({ id: m.uuid, ts, role: "owner", text: t });
   }
   return out;

@@ -1899,6 +1899,22 @@ describe("pieces", () => {
     );
     expect(all.map((m) => m.text)).toEqual(["看图"]);
     expect(pagePalMessages(all, "missing", 10)).toEqual(all);
+    // Put in by the system, not typed: a scheduled wake-up's prompt (meta,
+    // source system), a task notification, Claude Code's compaction summary
+    // (whose flag getSessionMessages drops).
+    const u = (uuid: string, text: string, extra: object = {}) =>
+      ({ type: "user", uuid, timestamp: "2026-10-12T10:00:00Z", message: { role: "user", content: text }, ...extra }) as any;
+    const sys = toPalMessages(
+      [
+        u("w", "Check the logs and report", { isMeta: true, promptSource: "system" }),
+        u("s", "Check the logs and report", { promptSource: "system" }),
+        u("n", "<task-notification> <task-id>b1</task-id> </task-notification>"),
+        u("c", "This session is being continued from a previous conversation that ran out of context."),
+        u("o", "好的", { origin: { kind: "human" }, promptSource: "sdk" }),
+      ],
+      { pal: "pal_x", assistantName: "Palo", paloName: "Palo" },
+    );
+    expect(sys.map((m) => [m.id, m.role])).toEqual([["c", "system"], ["o", "user"]]);
   });
 
   test("a spawner tells Claude Code's pid: directly, or as the helper reports it on descriptor 3; its input and output pass straight through", async () => {

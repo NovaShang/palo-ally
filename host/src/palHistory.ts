@@ -1,6 +1,6 @@
 import { t as tr } from "./i18n/index.ts";
 import { closeSync, existsSync, fstatSync, openSync, readSync, watch, type FSWatcher } from "node:fs";
-import { type RawSessionMessage, firstLine, peerBody } from "./ccSessions.ts";
+import { type RawSessionMessage, firstLine, isCompactSummaryText, peerBody } from "./ccSessions.ts";
 import { PALO_SEND_TOOL } from "./harness/types.ts";
 import type { Attachment, ChatMessage } from "./types.ts";
 
@@ -49,10 +49,15 @@ export function peerName(origin: any, content: string, o: PalMapOptions): string
   return name === o.paloName ? o.assistantName : name || tr("pals.otherSession");
 }
 
+/** What Claude Code puts in a user entry itself, not anyone's words. */
+const NOT_TYPED = /^(<local-command-|<system-reminder>|<command-message>|<task-notification>|Caveat: |<cross-session-message)/;
+
 /** One user entry as the app shows it, or null (tool results, Claude Code's own notices). */
 export function userEntryMessage(m: RawSessionMessage, o: PalMapOptions): ChatMessage | null {
   // (Claude Code's own lines it marks meta, as the transcript has them, aren't anyone's words.)
-  if (m.type !== "user" || m.parent_tool_use_id || (m as any).isMeta) return null;
+  // (Claude Code's own lines it marks meta, or put in by the system rather
+  // than typed: a scheduled wake-up's prompt, a task notification.)
+  if (m.type !== "user" || m.parent_tool_use_id || (m as any).isMeta || (m as any).promptSource === "system") return null;
   const content = m.message?.content;
   // An image sent on its own has no words.
   const text = userText(content) ?? (hasImage(content) ? "" : null);
@@ -60,7 +65,8 @@ export function userEntryMessage(m: RawSessionMessage, o: PalMapOptions): ChatMe
   const ts = Date.parse(m.timestamp ?? "") || 0;
   const base = { seq: ts, id: m.uuid, role: "user" as const, kind: "text" as const, ts, pal: o.pal };
   // Claude Code compacted the conversation: its summary isn't anyone's words.
-  if ((m as any).isCompactSummary) return { ...base, role: "system", kind: "notice", text: tr("pals.compacted"), channel: "system" };
+  // (getSessionMessages drops the flag: the summary's opening words tell it.)
+  if ((m as any).isCompactSummary || isCompactSummaryText(text)) return { ...base, role: "system", kind: "notice", text: tr("pals.compacted"), channel: "system" };
   const origin = m.origin;
   if (origin?.kind === "peer") return { ...base, text: peerBody(origin, text), channel: "system", from: peerName(origin, text, o) };
   // Only what the owner typed (or the host typed for them); Claude Code's own
@@ -78,7 +84,7 @@ export function userEntryMessage(m: RawSessionMessage, o: PalMapOptions): ChatMe
   const sent = o.recall?.(m.uuid);
   if (sent) return { ...base, text: sent.text, channel: "app", ...(sent.attachments.length ? { attachments: sent.attachments } : {}) };
   if (!t && hasImage(content)) return { ...base, text: tr("pals.image"), channel: "app" };
-  if (!t || /^(<local-command-|<system-reminder>|<command-message>|Caveat: |<cross-session-message)/.test(t)) return null;
+  if (!t || NOT_TYPED.test(t)) return null;
   return { ...base, text: t, channel: "app" };
 }
 
