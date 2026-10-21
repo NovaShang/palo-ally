@@ -522,6 +522,8 @@ final class WindowModel {
             openManagement()
         }
         #if DEBUG
+        // `-demoSidebar hidden`: the sidebar put away (iPad screenshots).
+        if UserDefaults.standard.string(forKey: "demoSidebar") == "hidden" { columnVisibility = .detailOnly }
         // `-demoAdopt <session id>`: 接管 tapped on that session in the list
         // (`-demoAdoptAfter 0` keeps a terminal one waiting to be quit).
         if let sid = UserDefaults.standard.string(forKey: "demoAdopt") {
