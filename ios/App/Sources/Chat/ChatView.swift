@@ -48,6 +48,14 @@ struct ChatView: View {
 
     /// The assistant's own conversation (not a Pal's).
     private var isPalo: Bool { store.scope == .palo }
+    /// A session's page title (phones and iPads): its drop, sized like Palo's
+    /// orb: smaller while reading back, larger while it waits on the owner.
+    private var sessionOrb: SessionOrb? {
+        guard !isPalo, let pal = store.palID.flatMap({ store.pal(id: $0) }) else { return nil }
+        let state = pageTop?.dot ?? pal.dot
+        let presence: OrbPresence = state == .waiting ? .present : (!scroll.following || store.viewingPast) ? .compact : .rest
+        return SessionOrb(state: state, running: pal.tasksRunning, name: pal.displayName, presence: presence)
+    }
     /// The Mac: the assistant's conversation keeps the window toolbar's
     /// toggles and floats its orb in the column; a Pal's page has its bar.
     private var macOrb: Bool { Platform.barInWindowToolbar && isPalo }
@@ -245,7 +253,14 @@ struct ChatView: View {
         // over this column.
         // Phones and iPads: Palo's orb over the bar's middle.
         .overlay(alignment: .topLeading) {
-            if isPalo && !inTile && !Platform.barInWindowToolbar { PhoneTitleOrb(placement: orbPlacement) }
+            if !inTile && !Platform.barInWindowToolbar {
+                if isPalo {
+                    PhoneTitleOrb(placement: orbPlacement)
+                } else if pageTop?.capsule == true, let orb = sessionOrb {
+                    // A session's page: its own drop over the bar, as Palo's orb.
+                    PhoneTitleOrb(placement: orbPlacement, session: orb)
+                }
+            }
         }
         .overlay {
             if isPalo && !inTile { FlyingPaloOrb(placement: orbPlacement) }
@@ -294,7 +309,17 @@ struct ChatView: View {
                             if orbPlacement.slot != frame { orbPlacement.slot = frame }
                         } action: { model.detailShown = true }
                     } else {
-                        PageIndicator(dot: pageTop?.dot)
+                        // A session: its drop floats over the bar the same way.
+                        TitleOrbSlot(session: sessionOrb) { frame in
+                            if orbPlacement.slot != frame { orbPlacement.slot = frame }
+                        } action: { model.detailShown.toggle() }
+                        .popover(isPresented: Binding(get: { model.detailShown && !AgentDetailPlacement.usesSheet(model: model, store: store) },
+                                                      set: { model.detailShown = $0 })) {
+                            AgentDetailView()
+                                .environment(model)
+                                .environment(store)
+                                .frame(minWidth: 360, idealWidth: 380, minHeight: 420, idealHeight: 560)
+                        }
                     }
                 }
                 .sharedBackgroundVisibility(.hidden)
@@ -680,6 +705,7 @@ private struct ClickToUnfocusComposer: ViewModifier {
 /// slot. Keeps its own idea of where the column is, for the same reason.
 private struct PhoneTitleOrb: View {
     let placement: OrbPlacement
+    var session: SessionOrb? = nil
     @Environment(WindowModel.self) private var model
     @State private var column: CGRect = .zero
 
@@ -692,7 +718,7 @@ private struct PhoneTitleOrb: View {
             .overlay(alignment: .topLeading) {
                 let slot = placement.slot
                 if slot.width > 0 {
-                    FloatingTitleOrb(barCenterY: slot.midY, columnWidth: column.width) {
+                    FloatingTitleOrb(barCenterY: slot.midY, columnWidth: column.width, session: session) {
                         model.detailShown = true
                     }
                     .position(x: slot.midX - column.minX, y: slot.midY - column.minY)

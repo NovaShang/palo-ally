@@ -38,15 +38,19 @@ struct SessionIndicator: View {
     /// its white mark (or the task count) filling `size`, on a glass circle
     /// of that size; no context arc, no effort label (the details have them).
     var innerOnly = false
+    /// With `innerOnly`: the drop unclipped, its motion spilling past `size`
+    /// (a page's title on phones and iPads, floating like Palo's orb).
+    var bare = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
 
     init(state: StatusDotKind, contextPct: Int? = nil, effort: String? = nil, model: String? = nil,
-         size: CGFloat = 38, glass: Bool = true, running: Int = 0, voiceOwner: String?? = nil, innerOnly: Bool = false) {
+         size: CGFloat = 38, glass: Bool = true, running: Int = 0, voiceOwner: String?? = nil, innerOnly: Bool = false,
+         bare: Bool = false) {
         self.state = state; self.contextPct = contextPct; self.effort = effort; self.model = model
         self.size = size; self.glass = glass; self.running = running; self.voiceOwner = voiceOwner
-        self.innerOnly = innerOnly
+        self.innerOnly = innerOnly; self.bare = bare
     }
 
     /// A session.
@@ -91,9 +95,16 @@ struct SessionIndicator: View {
         return ZStack {
             // The drop fills most of the glass (its drawing has room around
             // it); its motion stays inside.
-            SessionDrop(state: state, voiceLevel: nil).frame(width: size * 1.3, height: size * 1.3)
-                .frame(width: size, height: size)
-                .clipShape(.circle)
+            if bare {
+                // A page's title: the drop alone, its motion free to spill
+                // out as Palo's orb does (TitleOrbDrop's canvas).
+                SessionDrop(state: state, voiceLevel: nil).frame(width: size / 0.75, height: size / 0.75)
+                    .frame(width: size, height: size)
+            } else {
+                SessionDrop(state: state, voiceLevel: nil).frame(width: size * 1.3, height: size * 1.3)
+                    .frame(width: size, height: size)
+                    .clipShape(.circle)
+            }
             if let owner = voiceOwner {
                 IndicatorVoiceCenter(owner: owner, side: size * 0.6) { mark(radius: r) }
             } else {

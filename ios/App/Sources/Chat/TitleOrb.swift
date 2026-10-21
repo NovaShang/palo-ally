@@ -3,9 +3,8 @@ import SwiftUI
 
 /// The assistant's orb at the top of the conversation. Its motion is the
 /// status — calm when idle, livelier while it works, and it listens as the
-/// owner types or speaks. Only when it isn't idle does a short caption say
-/// what it's doing (or that something waits on the owner), as a small glass
-/// label across its lower part. Tapping opens the assistant's management
+/// owner types or speaks. No caption (the owner's ask, 2026-10-20): what it
+/// does shows in its motion and size. Tapping opens the assistant's management
 /// (目标, 履历, 记忆, the model, 设置).
 ///
 /// Phones and iPads: the orb may be bigger than the bar (see OrbPresence), so
@@ -18,24 +17,32 @@ import SwiftUI
 /// floating orb sits (the bar takes touches over its own height). Reports
 /// where it is so the orb can center on it.
 struct TitleOrbSlot: View {
+    /// A session's page (nil: Palo's).
+    var session: SessionOrb? = nil
     let frame: (CGRect) -> Void
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        let button = Button(action: action) {
             Color.clear.frame(width: 48, height: 44).contentShape(.rect)
         }
         .buttonStyle(.plain)
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame($0) }
-        .modifier(TitleOrbAccessibility())
+        if let session {
+            button
+                .accessibilityLabel(Text("\(session.name)，\(StatusDot.label(session.state))"))
+                .accessibilityHint(Text("打开详情"))
+                .accessibilityIdentifier("title-capsule")
+        } else {
+            button.modifier(TitleOrbAccessibility())
+        }
     }
 }
 
 /// The orb floating over the bar's middle (phones and iPads), centered on
 /// the bar's center line. Its size follows `WindowModel.orbPresence` on a
 /// spring; past the bar it simply spills over the content and the status
-/// bar's margin (a little lower rather than into the Dynamic Island). The
-/// caption is a small glass label across its lower part.
+/// bar's margin (a little lower rather than into the Dynamic Island).
 ///
 /// While the owner holds to talk it drops out of the bar into the upper
 /// conversation, very large, and listens — following the same hold-driven
@@ -50,6 +57,9 @@ struct FloatingTitleOrb: View {
     /// The Mac: hangs from the top of the column, smaller (no bar to fill,
     /// and it shouldn't crowd the messages it floats over).
     var topAligned = false
+    /// A session's page: its drop in its state's color with the state's white
+    /// mark, instead of Palo's pair; same place, same motion when listening.
+    var session: SessionOrb? = nil
     let action: () -> Void
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
@@ -72,13 +82,13 @@ struct FloatingTitleOrb: View {
 
     var body: some View {
         @Bindable var model = model
-        let presence = model.orbPresence
+        let presence = session?.presence ?? model.orbPresence
         // In the bar, the size the state asks for; listening grows from the largest.
         let barSize = (presence == .voice ? OrbPresence.present : presence).body * (topAligned ? Self.macScale : 1)
         // With a resting place on screen (the sidebar's Palo item) the
         // listening orb flies out from there (`FlyingPaloOrb`): this one
         // stays where it is and gives way as the hold begins.
-        let flies = model.orbHome.frame != nil
+        let flies = session == nil && model.orbHome.frame != nil
         let listen = flies ? 0 : listening
         let big = OrbPresence.voiceDiameter(width: columnWidth)
         let d = barSize + (big - barSize) * listen
@@ -91,36 +101,19 @@ struct FloatingTitleOrb: View {
         let dropped = topAligned
             ? Self.macTopPad + Self.listenGap + big / 2 - boxHeight / 2
             : Self.halfBar + Self.listenGap + big / 2
-        let line = store.agentStatusLine
-        // While it listens the label steps aside: nothing else to say.
-        let caption = line.kind == .idle || voice.panelMounted ? nil : line.text
         ZStack {
             Button(action: action) {
                 Group {
                     if reduceMotion {
                         // No spring when motion is reduced: a short crossfade between sizes.
-                        TitleOrbDrop(size: d).id("\(presence.rawValue)-\(listen)").transition(.opacity)
+                        drop(d).id("\(presence.rawValue)-\(listen)").transition(.opacity)
                     } else {
-                        TitleOrbDrop(size: d)
+                        drop(d)
                     }
                 }
                 .background { ListeningGlow(size: big).opacity(Double(listen)) }
             }
             .buttonStyle(.plain)
-            if let caption {
-                // 「等你点头」 and the like lead to what waits (the card in
-                // the conversation); otherwise, like the orb, the details.
-                Button {
-                    if line.kind != .needsYou || !model.showWaiting(in: store) { action() }
-                } label: {
-                    TitleOrbCaption(text: caption, kind: line.kind)
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: 200)
-                .fixedSize(horizontal: false, vertical: true)
-                .offset(y: Self.captionOffset(d))
-                .transition(.opacity.combined(with: .scale(scale: 0.9)))
-            }
         }
         .frame(width: max(Self.box.width, canvas), height: boxHeight)
         .offset(y: rest + (dropped - rest) * listen)
@@ -131,9 +124,16 @@ struct FloatingTitleOrb: View {
         // Lively, with a little overshoot, as it drops out to listen.
         .animation(reduceMotion ? .easeInOut(duration: 0.25) : .spring(response: 0.42, dampingFraction: 0.58),
                    value: listen)
-        .animation(.snappy, value: caption)
         // Phones: the slot in the bar speaks for it. The Mac has no slot.
         .modifier(FloatingOrbAccessibility(speaks: barCenterY == nil))
+    }
+
+    @ViewBuilder private func drop(_ d: CGFloat) -> some View {
+        if let session {
+            SessionOrbDrop(session: session, size: d)
+        } else {
+            TitleOrbDrop(size: d)
+        }
     }
 
     /// 0…1: how far it has dropped out of the bar to listen — the hold-to-talk
@@ -150,14 +150,6 @@ struct FloatingTitleOrb: View {
         let big = OrbPresence.voiceDiameter(width: columnWidth)
         if let barCenterY { return barCenterY + halfBar + listenGap + big }
         return columnTop + macTopPad + listenGap + big
-    }
-
-    /// The label's center below the orb's: across its lower part — low
-    /// enough to leave most of the drops showing — but never much past the
-    /// bar (or the orb, when the orb spills further).
-    static func captionOffset(_ d: CGFloat) -> CGFloat {
-        let halfLabel: CGFloat = 10
-        return min(max(14, d * 0.28), max(halfBar, d / 2) - halfLabel + 3)
     }
 
     /// How far below the bar's center line the orb sits so its top stays
@@ -265,21 +257,26 @@ struct TitleOrbDrop: View {
     }
 }
 
-/// What it's doing, one line: a small glass label laid over the orb.
-struct TitleOrbCaption: View {
-    let text: String
-    let kind: AgentStatusLine.Kind
+/// A session's page title on phones and iPads, as Palo's orb: what it shows.
+struct SessionOrb: Equatable {
+    var state: StatusDotKind
+    var running: Int
+    var name: String
+    /// Its size: resting, smaller while reading back, larger while it waits on the owner.
+    var presence: OrbPresence
+}
+
+/// A session's drop as its page's title (SessionOrb): no glass circle, no
+/// context arc, no model or effort (the details have them); while the owner
+/// holds to talk to it, the live level stands in for the mark.
+struct SessionOrbDrop: View {
+    let session: SessionOrb
+    let size: CGFloat
 
     var body: some View {
-        Text(text)
-            .font(.caption2.weight(.medium))
-            .foregroundStyle(kind == .needsYou ? AnyShapeStyle(StatusDot.color(.waiting)) : AnyShapeStyle(.primary))
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .contentTransition(.opacity)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 3)
-            .glassEffect(.regular, in: .capsule)
+        SessionIndicator(state: session.state, size: size, glass: false, running: session.running,
+                         voiceOwner: .some(nil), innerOnly: true, bare: true)
+            .contentShape(Circle())
     }
 }
 
