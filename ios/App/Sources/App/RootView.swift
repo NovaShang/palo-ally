@@ -460,7 +460,8 @@ private struct RightPaneHost: ViewModifier {
                     .id(key)
                     .environment(model)
                     .environment(store)
-                    .inspectorColumnWidth(min: 320, ideal: 400, max: 640)
+                    // No real cap: the owner drags it wide for a browser (2026-10-20).
+                    .inspectorColumnWidth(min: 320, ideal: 400, max: 4000)
             }
         }
     }
