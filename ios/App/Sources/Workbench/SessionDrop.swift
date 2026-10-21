@@ -16,11 +16,13 @@ struct SessionDrop: View {
     /// The glass in a neutral gray whatever the state (the drop as a
     /// container, the state shown by what's on it); its motion still follows the state.
     var neutral = false
+    /// While the owner talks to it: the theme color instead of the state's.
+    var listenColor: SIMD3<Float>? = nil
 
     var body: some View {
         // Drawn in place: hosted apart (IsolatedHost) its glass lost the page
         // behind it and its colors went wrong.
-        SessionDropCanvas(state: state, voiceLevel: voiceLevel, neutral: neutral)
+        SessionDropCanvas(state: state, voiceLevel: voiceLevel, neutral: neutral, listenColor: listenColor)
             .aspectRatio(1, contentMode: .fit)
             .accessibilityHidden(true)
     }
@@ -47,6 +49,7 @@ struct SessionDropCanvas: View {
     /// The glass in a neutral gray whatever the state (the drop as a
     /// container, the state shown by what's on it); its motion still follows the state.
     var neutral = false
+    var listenColor: SIMD3<Float>? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
@@ -71,7 +74,7 @@ struct SessionDropCanvas: View {
         if !MacAppActivity.shared.frontmost { interval = 1.0 / 10 }
         #endif
         return TimelineView(.animation(minimumInterval: interval, paused: paused)) { ctx in
-            let u = engine.frame(now: ctx.date.timeIntervalSinceReferenceDate, state: state, neutral: neutral, voiceLevel: voiceLevel,
+            let u = engine.frame(now: ctx.date.timeIntervalSinceReferenceDate, state: state, neutral: neutral, color: listenColor, voiceLevel: voiceLevel,
                                  reduceMotion: reduceMotion, dark: scheme == .dark, scale: Float(displayScale))
             GeometryReader { geo in
                 let side = min(geo.size.width, geo.size.height)
@@ -93,11 +96,11 @@ struct SessionDropCanvas: View {
 @MainActor
 private final class SoloEngine {
     private var drops: TwoDropsState?
-    private var shown: StatusDotKind?
+    private var shown: SIMD3<Float>?
     private var last: Double?
 
-    func frame(now: Double, state: StatusDotKind, neutral: Bool, voiceLevel: Float?, reduceMotion: Bool, dark: Bool, scale: Float) -> [Float] {
-        let c = SessionDrop.color(neutral ? .idle : state)
+    func frame(now: Double, state: StatusDotKind, neutral: Bool, color: SIMD3<Float>?, voiceLevel: Float?, reduceMotion: Bool, dark: Bool, scale: Float) -> [Float] {
+        let c = color ?? SessionDrop.color(neutral ? .idle : state)
         // The inner drop a lighter shade of the same color: one drop, not two.
         let partner = c + (SIMD3<Float>(repeating: 1) - c) * 0.35
         let d: TwoDropsState
@@ -105,11 +108,11 @@ private final class SoloEngine {
             d = TwoDropsState(primary: c, partner: partner, seed: UInt64.random(in: 1...UInt64.max))
             d.solo = true
             drops = d
-            shown = state
+            shown = c
         }
-        if shown != state, !neutral {
+        if shown != c {
             d.send(.colorChange(primary: c, partner: partner))
-            shown = state
+            shown = c
         }
         d.reduceMotion = reduceMotion
         var i = TwoDropsState.Inputs()

@@ -89,6 +89,16 @@ struct SessionIndicator: View {
         return parts.joined(separator: "，")
     }
 
+    /// The drop: while the owner holds to talk to it, in the theme color and
+    /// trembling with the voice (the owner's ask, 2026-10-21).
+    @ViewBuilder private var drop: some View {
+        if let owner = voiceOwner {
+            ListeningSessionDrop(state: state, owner: owner)
+        } else {
+            SessionDrop(state: state, voiceLevel: nil)
+        }
+    }
+
     /// The drop and its mark, filling the glass circle (`innerOnly`).
     private var inner: some View {
         let r = size * 0.27
@@ -98,10 +108,10 @@ struct SessionIndicator: View {
             if bare {
                 // A page's title: the drop alone, its motion free to spill
                 // out as Palo's orb does (TitleOrbDrop's canvas).
-                SessionDrop(state: state, voiceLevel: nil).frame(width: size / 0.75, height: size / 0.75)
+                drop.frame(width: size / 0.75, height: size / 0.75)
                     .frame(width: size, height: size)
             } else {
-                SessionDrop(state: state, voiceLevel: nil).frame(width: size * 1.3, height: size * 1.3)
+                drop.frame(width: size * 1.3, height: size * 1.3)
                     .frame(width: size, height: size)
                     .clipShape(.circle)
             }
@@ -276,6 +286,21 @@ struct SessionIndicator: View {
 /// The indicator's middle while the owner holds to talk to its conversation:
 /// live level bars in place of the glyph (workbench-prd §11). A view of its
 /// own so only it follows the level.
+/// A session's drop that listens: the theme color and the voice's level
+/// while the owner holds to talk to this conversation.
+private struct ListeningSessionDrop: View {
+    let state: StatusDotKind
+    let owner: String?
+    @Environment(VoiceInputController.self) private var voice
+    @Environment(\.appTheme) private var theme
+
+    var body: some View {
+        let listening = voice.panelMounted && voice.owner == owner
+        SessionDrop(state: state, voiceLevel: listening ? voice.dictation.level : nil,
+                    listenColor: listening ? theme.glass.primary : nil)
+    }
+}
+
 private struct IndicatorVoiceCenter<Glyph: View>: View {
     let owner: String?
     let side: CGFloat
@@ -284,8 +309,9 @@ private struct IndicatorVoiceCenter<Glyph: View>: View {
 
     var body: some View {
         if voice.isActive && voice.owner == owner {
+            // White on the drop, which turns the theme color while it listens.
             LevelBars(level: voice.dictation.level, bars: 3, barWidth: max(2, side * 0.08), tallest: side * 0.6)
-                .tint(.primary)
+                .tint(.white)
                 .frame(width: side, height: side)
                 .accessibilityHidden(true)
         } else {
