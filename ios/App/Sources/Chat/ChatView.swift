@@ -717,7 +717,11 @@ private struct PhoneTitleOrb: View {
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { column = $0 }
             .overlay(alignment: .topLeading) {
                 let slot = placement.slot
-                if slot.width > 0 {
+                // Only while this page is the one on screen: a page sliding
+                // away (the quick-switch strip) reports its column off screen,
+                // and its orb, pinned to the bar's middle, would stay behind
+                // as a second one.
+                if slot.width > 0, column.minX <= slot.midX, slot.midX <= column.maxX {
                     FloatingTitleOrb(barCenterY: slot.midY, columnWidth: column.width, session: session) {
                         model.detailShown = true
                     }
