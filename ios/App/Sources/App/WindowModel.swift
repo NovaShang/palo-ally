@@ -144,6 +144,17 @@ final class WindowModel {
     var selection: Conversation? = .palo {
         didSet {
             guard selection != oldValue else { return }
+            // Phones: a workspace opens straight at the session last shown in
+            // it (else its first); its quick-switch strip goes to the others.
+            if layout == .phone, case .workspace(let w)? = selection, let target = Self.landing(in: w, store: store) {
+                selection = .pal(target)
+                return
+            }
+            if case .pal(let id)? = selection, let w = store?.pal(id: id)?.workspaceId {
+                var last = UserDefaults.standard.dictionary(forKey: Self.lastTabKey) as? [String: String] ?? [:]
+                last[w] = id
+                UserDefaults.standard.set(last, forKey: Self.lastTabKey)
+            }
             // Each conversation starts at its own root.
             detailPath = NavigationPath()
             detailShown = false
@@ -151,6 +162,17 @@ final class WindowModel {
             filesPanel = nil
         }
     }
+    private static let lastTabKey = "workspaceLastTab"
+
+    /// The session a workspace opens at on a phone: the one last shown in it
+    /// while still a member, else its first; nil when it has none.
+    static func landing(in workspaceID: String, store: AppStore?) -> String? {
+        guard let members = store?.workspace(id: workspaceID)?.memberIds, !members.isEmpty else { return nil }
+        let last = (UserDefaults.standard.dictionary(forKey: lastTabKey) as? [String: String])?[workspaceID]
+        if let last, members.contains(last) { return last }
+        return members.first
+    }
+
     /// The title capsule's details are open (workbench-prd §6).
     var detailShown = false
     /// 新建会话 asked (⌘N, the sidebar's ＋): in a workspace when it has one.
