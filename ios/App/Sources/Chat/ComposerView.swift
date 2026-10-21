@@ -94,8 +94,8 @@ struct ComposerView: View {
     private static let minInset: CGFloat = 12
     /// A tile of a split workspace on the Mac: a one-line capsule this tall,
     /// smaller buttons, tighter margins (the tiles need the room).
-    private static let compactHeight: CGFloat = 36
-    private static let compactButtonHeight: CGFloat = 36
+    private static let compactHeight: CGFloat = 30
+    private static let compactButtonHeight: CGFloat = 30
 
     private var docked: Bool { !keyboardUp }
     /// The compact composer (a tile on the Mac).
@@ -106,7 +106,7 @@ struct ComposerView: View {
     private var spansDisplay: Bool { model.layout == .phone }
     private var concentric: Bool { docked && spansDisplay && displayRadius > 0 }
     private var sideInset: CGFloat {
-        if compact { return 12 }
+        if compact { return 8 }
         // Beside a sidebar or inspector: the same even margins as the conversation.
         guard concentric else { return spansDisplay ? Self.minInset : 20 }
         return max(Self.minInset, displayRadius - Self.dockedRadius)
@@ -125,7 +125,7 @@ struct ComposerView: View {
     /// goes `sideInset` from the screen's bottom edge — into that inset when
     /// the inset is the larger of the two.
     private var bottomPadding: CGFloat {
-        if compact { return 6 }
+        if compact { return 4 }
         return concentric || (docked && spansDisplay) ? max(0, sideInset - homeInset) : 8
     }
     private var bottomOffset: CGFloat { concentric || (docked && spansDisplay) ? max(0, homeInset - sideInset) : 0 }
@@ -217,7 +217,7 @@ struct ComposerView: View {
         }
         .onAppear { HardwareKeyboard.startWatching() }
         .padding(.horizontal, sideInset)
-        .padding(.top, compact ? 4 : 6)
+        .padding(.top, compact ? 2 : 6)
         .padding(.bottom, bottomPadding)
         .offset(y: bottomOffset)
         // Large screens: same line length as the conversation, centred.
@@ -451,7 +451,7 @@ struct ComposerView: View {
                     fieldFrame = $0
                     if placesVoice { voice.placeField($0) }
                 }
-                .padding(.vertical, compact ? 8 : 11)
+                .padding(.vertical, compact ? 6 : 11)
                 // Blank while those words fly in; it fades in as they land.
                 .opacity(dictating || (mine && voice.veilsField) ? 0 : 1)
             if dictating {
@@ -532,7 +532,7 @@ struct ComposerView: View {
             if canSend && !dictating {
                 Button(action: send) {
                     Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: compact ? 24 : 30))
+                        .font(.system(size: compact ? 21 : 30))
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.tint)
                         .frame(width: compact ? 32 : 40, height: buttonHeight)
@@ -553,7 +553,7 @@ struct ComposerView: View {
                     Image(systemName: "stop.fill")
                         .font(.system(size: compact ? 11 : 13, weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: compact ? 28 : 34, height: compact ? 28 : 34)
+                        .frame(width: compact ? 24 : 34, height: compact ? 24 : 34)
                         .glassEffect(.regular.tint(Color.accentColor.opacity(0.9)).interactive(), in: .circle)
                         .symbolEffect(.pulse, isActive: !finishingDictation)
                 } else {
