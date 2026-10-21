@@ -200,29 +200,86 @@ struct WordsInputBar: View {
     let send: () -> Void
     var identifier = "page-input"
     @FocusState private var focused: Bool
+    @Environment(VoiceInputController.self) private var voice
+    /// Tap-to-talk dictation is running into this bar (the mic, as in the
+    /// conversations' composer): the live words show in the field's place.
+    @State private var dictating = false
+    @State private var finishing = false
 
     var body: some View {
         let canSend = enabled && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         HStack(alignment: .bottom, spacing: 4) {
-            TextField(placeholder, text: $text, axis: .vertical)
-                .lineLimit(1...6)
-                .focused($focused)
-                .padding(.vertical, 11)
-                .padding(.leading, 16)
-                .accessibilityIdentifier(identifier)
-            Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 30))
+            ZStack(alignment: .leading) {
+                TextField(placeholder, text: $text, axis: .vertical)
+                    // The Mac has the room: a long dictation stays readable.
+                    .lineLimit(1...(Platform.isMac ? 12 : 6))
+                    .focused($focused)
+                    .opacity(dictating ? 0 : 1)
+                    .accessibilityIdentifier(identifier)
+                if dictating {
+                    HStack(spacing: 8) {
+                        LevelBars(level: voice.dictation.level, bars: 4).frame(height: 18)
+                        Text(live)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .truncationMode(.head)
+                    }
+                }
+            }
+            .padding(.vertical, 11)
+            .padding(.leading, 16)
+            Button(action: toggleDictation) {
+                Image(systemName: dictating ? "stop.circle.fill" : "mic")
+                    .font(.system(size: dictating ? 26 : 18, weight: .medium))
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(canSend ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
-                    .frame(width: 44, height: 44)
+                    .foregroundStyle(dictating ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                    .frame(width: 40, height: 44)
             }
             .buttonStyle(.plain)
-            .disabled(!canSend)
-            .keyboardShortcut(.return, modifiers: .command)
-            .accessibilityLabel("发送")
-            .padding(.trailing, 2)
+            .disabled(finishing || voice.isActive || voice.isArmed)
+            .accessibilityLabel(dictating ? String(localized: "结束语音输入") : String(localized: "语音输入"))
+            if !dictating {
+                Button(action: send) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 30))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(canSend ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSend)
+                .keyboardShortcut(.return, modifiers: .command)
+                .accessibilityLabel("发送")
+            }
         }
+        .padding(.trailing, 2)
         .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
+        .onDisappear { if dictating { voice.dictation.cancel(); dictating = false } }
+    }
+
+    private var live: String {
+        let t = voice.dictation.transcript
+        if !t.isEmpty { return t }
+        return finishing ? String(localized: "识别中…") : String(localized: "在听…再点一下麦克风结束")
+    }
+
+    /// Tap: listen; tap again: the words land at the end of what's written,
+    /// and the field takes the keyboard to check them.
+    private func toggleDictation() {
+        if dictating {
+            finishing = true
+            Task {
+                let words = await voice.dictation.finish()
+                finishing = false
+                dictating = false
+                if !words.isEmpty { text = text.isEmpty ? words : text + words }
+                focused = true
+            }
+        } else {
+            focused = false
+            voice.dictation.prewarm()
+            voice.dictation.start()
+            dictating = true
+        }
     }
 }

@@ -169,7 +169,11 @@ struct ComposerView: View {
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !staged.isEmpty }
     /// Idle: not editing — the field reads 「按住说话，轻点打字」 and takes presses.
-    private var idle: Bool { !focused && !dictating }
+    /// Not editing: a layer over the field tells a tap (write) from a hold
+    /// (talk). On the Mac, not while the field holds words: the layer took
+    /// the wheel and the trackpad too, so a long dictation couldn't be
+    /// scrolled back to check (a click focuses the field there anyway).
+    private var idle: Bool { !focused && !dictating && !(Platform.isMac && !draft.isEmpty) }
 
     /// The owner is doing something here — typing, dictating, holding to
     /// talk, staging attachments, quoting. The 「试试」 suggestions at the end
@@ -432,7 +436,8 @@ struct ComposerView: View {
             // keyboard / Mac, Return sends (see hardwareReturn) and
             // Shift/Option/⌘+Return is a newline.
             TextField("", text: $draft, prompt: Text(focused ? prompt : ""), axis: .vertical)
-                .lineLimit(1...6)
+                // The Mac page has the room: a long dictation stays readable (tiles keep 6).
+                .lineLimit(1...(Platform.isMac && !compact ? 12 : 6))
                 .focused($focused)
                 .accessibilityIdentifier("composerField")
                 // The Mac: Esc leaves the field (the text stays); with an
