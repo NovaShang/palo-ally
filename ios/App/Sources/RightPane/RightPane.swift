@@ -305,12 +305,51 @@ private struct RightPaneCover: ViewModifier {
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
 
+    /// How far the page has been dragged back to the right by its left edge.
+    @State private var drag: CGFloat = 0
+
     func body(content: Content) -> some View {
-        content.fullScreenCover(isPresented: $isPresented) {
-            PhonePane(key: key, activeSessionID: activeSessionID, onClose: { isPresented = false })
-                .environment(model)
-                .environment(store)
+        // Slides in from the right like a pushed page (the owner's ask), not
+        // up from the bottom; a swipe from its left edge takes it back.
+        content.overlay {
+            GeometryReader { proxy in
+                if isPresented {
+                    PhonePane(key: key, activeSessionID: activeSessionID, onClose: close)
+                        .environment(model)
+                        .environment(store)
+                        .background(Color(.systemBackground).ignoresSafeArea())
+                        .overlay(alignment: .leading) { edgeSwipe(width: proxy.size.width) }
+                        .offset(x: drag)
+                        .transition(.move(edge: .trailing))
+                }
+            }
         }
+        .animation(.snappy(duration: 0.32), value: isPresented)
+    }
+
+    private func close() { isPresented = false }
+
+    /// The page's left edge: dragged right, the page follows; let go past a
+    /// third of the width (or flicked), it goes, else it springs back.
+    private func edgeSwipe(width: CGFloat) -> some View {
+        Color.clear
+            .frame(width: 20)
+            .contentShape(.rect)
+            .ignoresSafeArea()
+            .gesture(
+                DragGesture(minimumDistance: 8, coordinateSpace: .global)
+                    .onChanged { drag = max(0, $0.translation.width) }
+                    .onEnded { v in
+                        let gone = v.translation.width > width / 3 || v.predictedEndTranslation.width > width / 2
+                        if gone {
+                            withAnimation(.snappy(duration: 0.25)) { drag = width } completion: {
+                                var t = Transaction(); t.disablesAnimations = true
+                                withTransaction(t) { isPresented = false; drag = 0 }
+                            }
+                        } else {
+                            withAnimation(.snappy) { drag = 0 }
+                        }
+                    })
     }
 }
 
