@@ -74,6 +74,8 @@ struct ComposerView: View {
     @State private var pressing = false
     @State private var moved = false
     @State private var voiceStarted = false
+    /// Counts presses, so a late reveal of an earlier press does nothing.
+    @State private var pressSerial = 0
     /// A finished hold is still resolving its final text: ignore new presses.
     @State private var finishingHold = false
     /// Where this composer is, kept for the voice when its tile becomes the active one.
@@ -150,6 +152,8 @@ struct ComposerView: View {
     /// only tells a tap (keyboard) from a hold (voice), and is long enough for
     /// the arming animation to read.
     private static let holdSeconds = 0.22
+    /// How long a press shows nothing of the recording UI (it records already).
+    private static let showDelay = 0.08
 
     /// Typing "/" (and nothing after a space yet) opens command suggestions.
     /// Nothing in the UI mentions this: it's for people who already know.
@@ -749,10 +753,16 @@ struct ComposerView: View {
         pressing = true
         moved = false
         voiceStarted = false
-        // Arming: the recording UI starts growing out of the capsule right
-        // away, paced by the hold.
-        voice.panelMounted = true
-        withAnimation(.easeOut(duration: Self.holdSeconds)) { voice.presence = 0.72 }
+        // Arming: recording starts now, but the recording UI waits a beat
+        // before it grows out of the capsule, so a plain tap shows nothing
+        // of it (the owner's ask: 50–100 ms).
+        pressSerial += 1
+        let serial = pressSerial
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.showDelay) {
+            guard serial == pressSerial, pressing, !voiceStarted else { return }
+            voice.panelMounted = true
+            withAnimation(.easeOut(duration: Self.holdSeconds - Self.showDelay)) { voice.presence = 0.72 }
+        }
         // Record from the very first instant; no permission yet → the system
         // asks, nothing records, and this press is spent.
         guard voice.arm() else {
@@ -841,6 +851,7 @@ struct ComposerView: View {
             guard pressing else { return }
             voiceStarted = true
             voice.commit()
+            voice.panelMounted = true
             VoiceTiming.mark("hold committed")
             // Committed: settle into place.
             withAnimation(.spring(response: 0.32, dampingFraction: 0.74)) { voice.presence = 1 }
