@@ -8,7 +8,7 @@ import SwiftUI
 /// own panels in place of the composer (`bottomPanel`).
 struct ChatView: View {
     /// The conversation never gets wider than this (large screens).
-    static let readableWidth: CGFloat = 760
+    static let readableWidth: CGFloat = 1200
     /// Mac: room between the floating orb's strip and the first message.
     static let macTopMargin: CGFloat = 6
     /// Shown in place of the composer while it's there (a Pal's 交还终端 / 移出).
