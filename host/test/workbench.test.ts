@@ -346,6 +346,15 @@ describe("right-pane tabs", () => {
     await t.hub.pals.stopAndWait();
   });
 
+  test("a preview keeps the scope it was opened in; the same path in two scopes is two tabs", async () => {
+    const t = setup();
+    const tabs = [{ kind: "preview", path: "a.md", scope: "pal:pal_1", extra: 1 }, { kind: "preview", path: "a.md", scope: "pal:pal_2" }, { kind: "preview", path: "a.md", scope: "pal:pal_1" }, { kind: "preview", path: "a.md" }, { kind: "preview", path: "b.md", scope: "palo" }, { kind: "preview", path: "c.md", scope: "folder:f_9" }, { kind: "preview", path: "d.md", scope: "home" }];
+    const s = (await t.call("workbench.tabs.set", { key: "palo", tabs, open: true })).state;
+    expect(s.tabs).toEqual([{ kind: "preview", path: "a.md", scope: "pal:pal_1" }, { kind: "preview", path: "a.md", scope: "pal:pal_2" }, { kind: "preview", path: "a.md" }, { kind: "preview", path: "b.md", scope: "palo" }, { kind: "preview", path: "c.md", scope: "folder:f_9" }, { kind: "preview", path: "d.md", scope: "home" }]);
+    expect((await t.call("workbench.tabs.get", { key: "palo" })).states.palo.tabs).toEqual(s.tabs);
+    await t.hub.pals.stopAndWait();
+  });
+
   test("duplicates collapse, active is clamped, bad tabs and keys are refused", async () => {
     const t = setup();
     const a = await t.mk("甲");
@@ -357,6 +366,7 @@ describe("right-pane tabs", () => {
     expect((await set({ tabs: [{ kind: "files" }], active: -3 })).state.active).toBe(0);
     for (const bad of [[{ kind: "web", url: "ftp://x" }], [{ kind: "web", url: "nope" }], [{ kind: "preview", path: " " }], [{ kind: "" }], [{}], ["files"]]) await expect(set({ tabs: bad })).rejects.toThrow("标签");
     await expect(set({ tabs: "x" })).rejects.toThrow("标签");
+    for (const scope of ["", "nope", "pal:", "pal:a b", 3, "x".repeat(90)]) await expect(set({ tabs: [{ kind: "preview", path: "/x", scope }] })).rejects.toThrow("标签");
     await expect(t.call("workbench.tabs.set", { key: "palo", tabs: [] })).rejects.toThrow("标签");
     await expect(set({ key: "other", tabs: [] })).rejects.toThrow("标签位置");
     await expect(set({ key: "pal:pal_nope", tabs: [] })).rejects.toThrow("不存在");

@@ -95,7 +95,11 @@ function parseTab(v: unknown): PaneTab {
       return { kind: v.kind };
     case "preview":
       if (typeof v.path !== "string" || !v.path.trim()) throw bad();
-      return { kind: "preview", path: v.path };
+      // Where the path is read from ("pal:<id>", "palo", "home", "folder:<id>"):
+      // a workspace's preview keeps the folder it was opened in.
+      if (v.scope === undefined || v.scope === null) return { kind: "preview", path: v.path };
+      if (typeof v.scope !== "string" || !/^(palo|home|(pal|folder):[\w.-]{1,80})$/.test(v.scope)) throw bad();
+      return { kind: "preview", path: v.path, scope: v.scope };
     case "web": {
       let ok = false;
       try {
@@ -112,7 +116,7 @@ function parseTab(v: unknown): PaneTab {
   }
 }
 
-const tabId = (tab: PaneTab): string => (tab.kind === "preview" ? `preview:${tab.path}` : tab.kind === "web" ? `web:${tab.url}` : tab.kind === "files" || tab.kind === "library" ? tab.kind : JSON.stringify(tab));
+const tabId = (tab: PaneTab): string => (tab.kind === "preview" ? `preview:${tab.scope ?? ""}:${tab.path}` : tab.kind === "web" ? `web:${tab.url}` : tab.kind === "files" || tab.kind === "library" ? tab.kind : JSON.stringify(tab));
 
 export class Workbench {
   private data: WorkbenchFile;

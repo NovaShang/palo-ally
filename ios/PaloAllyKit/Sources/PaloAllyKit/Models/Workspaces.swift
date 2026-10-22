@@ -483,12 +483,19 @@ public struct PaneTab: Codable, Sendable, Hashable {
     public var kind: String
     public var path: String?
     public var url: String?
-    public init(kind: String, path: String? = nil, url: String? = nil) { self.kind = kind; self.path = path; self.url = url }
+    /// A preview's files (`FileScope.tag`): where it was opened, so a
+    /// workspace's preview stays put when another pane becomes the active one.
+    /// nil (tabs from before): the pane's own files.
+    public var scope: String?
+    public init(kind: String, path: String? = nil, url: String? = nil, scope: String? = nil) {
+        self.kind = kind; self.path = path; self.url = url; self.scope = scope
+    }
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
         kind = l.string("kind", or: "")
         path = l.string("path")
         url = l.string("url")
+        scope = l.string("scope")
     }
 }
 

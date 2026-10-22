@@ -44,6 +44,18 @@ struct PaneTabsRulesTests {
         #expect(again.tabs.count == 4 && again.active == 2 && again.open)
     }
 
+    @Test func aPreviewKeepsTheFilesItWasOpenedIn() {
+        let ws = PaneTabsKey.workspace("w1")
+        let s = TabsState().openingPreview(path: "a.md", scope: .pal("p1"), key: ws)
+            .openingPreview(path: "a.md", scope: .pal("p2"), key: ws)
+            .openingPreview(path: "a.md", scope: .pal("p1"), key: ws)
+        #expect(s.tabs.count == 4 && s.active == 2)
+        #expect(s.tabs[2].fileScope == .pal("p1") && s.tabs[3].fileScope == .pal("p2"))
+        #expect(PaneTab.previewTab("a.md").fileScope == nil)
+        for scope in [FileScope.palo, .home, .pal("x"), .folder("f:1")] { #expect(FileScope(tag: scope.tag) == scope) }
+        for bad in ["", "pal:", "nope", "palo:x", "home:1"] { #expect(FileScope(tag: bad) == nil) }
+    }
+
     @Test func aWebTabIsKeptPerAddress() {
         let a = TabsState().openingWeb(url: " https://a.test ", key: session).openingWeb(url: "https://b.test", key: session)
         #expect(a.tabs.compactMap(\.url) == ["https://a.test", "https://b.test"])

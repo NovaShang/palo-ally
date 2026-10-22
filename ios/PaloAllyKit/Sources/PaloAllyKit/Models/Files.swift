@@ -16,6 +16,27 @@ public struct FileScope: Codable, Sendable, Hashable {
     public static let home = FileScope(kind: .home)
     public static func pal(_ id: String) -> FileScope { FileScope(kind: .pal, id: id) }
     public static func folder(_ id: String) -> FileScope { FileScope(kind: .folder, id: id) }
+
+    /// As one short string, the way a right-pane tab keeps it:
+    /// `pal:<id>`, `palo`, `home` or `folder:<id>`.
+    public var tag: String {
+        switch kind {
+        case .palo, .home: kind.rawValue
+        case .pal, .folder: kind.rawValue + ":" + (id ?? "")
+        }
+    }
+
+    /// The scope a `tag` names; nil for anything else.
+    public init?(tag: String) {
+        switch tag {
+        case "palo": self = .palo
+        case "home": self = .home
+        default:
+            let parts = tag.split(separator: ":", maxSplits: 1).map(String.init)
+            guard parts.count == 2, !parts[1].isEmpty, let k = Kind(rawValue: parts[0]), k == .pal || k == .folder else { return nil }
+            self.init(kind: k, id: parts[1])
+        }
+    }
 }
 
 /// One child of a folder.
