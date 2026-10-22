@@ -9,6 +9,8 @@ struct SavedWindow: Codable, Equatable {
     var conversation: String
     var host: String?
     var sidebarCollapsed: Bool?
+    /// Its right pane, open or not, per page it was opened or closed on (`WindowModel.paneOpenHere`).
+    var paneOpen: [String: Bool]?
     /// The window's frame on screen (`systemFrame`): x, y, width, height.
     var frame: [Double]?
     /// Palo's small companion window (the collapsed sidebar's orb).
@@ -21,7 +23,7 @@ struct SavedWindow: Codable, Equatable {
 }
 
 /// The Mac: the windows open at quit come back at the next launch, each with
-/// what it showed (its conversation, computer, sidebar and place on screen).
+/// what it showed (its conversation, computer, sidebar, right pane and place on screen).
 ///
 /// macOS's own window restoration is off for most people ("Close windows
 /// when quitting an application" is on by default), so the app keeps its own
@@ -208,6 +210,7 @@ final class WindowMemory {
         r.conversation = (model.selection ?? .palo).storageKey
         r.host = model.activeHostID
         if model.layout == .split { r.sidebarCollapsed = model.columnVisibility == .detailOnly }
+        r.paneOpen = model.paneOpenHere.isEmpty ? nil : model.paneOpenHere
         r.mini = model.isMini ? true : nil
         if let i = records.firstIndex(where: { $0.id == r.id }) {
             guard records[i] != r else { return }

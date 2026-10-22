@@ -160,6 +160,8 @@ private struct LayoutStressTest: ViewModifier {
                     case "library": w.toggleLibrary()
                     case "settings": w.openSettings()
                     case "sidebar": w.columnVisibility = w.columnVisibility == .detailOnly ? .all : .detailOnly
+                    // `w2.pane`: that window's right pane, as its button (⌘2).
+                    case "pane": w.togglePane()
                     case "list": w.showList()
                     // `w2.close`: that window closed, as its close button does.
                     case "close":
@@ -459,6 +461,14 @@ private struct ConversationDetail: View {
         }
         // Beside the sidebar the conversation gets roomier margins.
         .environment(\.placesAsColumns, model.layout != .phone)
+        #if DEBUG
+        // `-widthTrace YES`: each window's conversation column, as it changes.
+        .onGeometryChange(for: Int.self) { Int($0.size.width.rounded()) } action: { width in
+            guard UserDefaults.standard.bool(forKey: "widthTrace") else { return }
+            let i = (model.app.windows.firstIndex { $0 === model } ?? -1) + 1
+            debugLog("[width] window \(i) (\(model.windowID.prefix(8))) conversation column \(width) pt, sidebar \(model.sidebarCollapsed ? "away" : "shown"), pane \(model.paneIsOpen)")
+        }
+        #endif
     }
 }
 
@@ -495,9 +505,18 @@ private struct RightPaneHost: ViewModifier {
                     .environment(model)
                     .environment(store)
                     // No real cap: the owner drags it wide for a browser (2026-10-20).
-                    .inspectorColumnWidth(min: 320, ideal: 400, max: 4000)
+                    .inspectorColumnWidth(min: 320, ideal: Self.idealWidth, max: 4000)
             }
         }
+    }
+
+    /// `-demoPaneWidth 1000` (DEBUG): the pane opens that wide, as if dragged.
+    private static var idealWidth: CGFloat {
+        #if DEBUG
+        let w = UserDefaults.standard.double(forKey: "demoPaneWidth")
+        if w > 0 { return w }
+        #endif
+        return 400
     }
 }
 

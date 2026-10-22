@@ -119,6 +119,7 @@ struct WindowRoot: View {
                 WindowMemory.shared.update(model)
             }
             .onChange(of: model.columnVisibility) { WindowMemory.shared.update(model) }
+            .onChange(of: model.paneOpenHere) { WindowMemory.shared.update(model) }
             #if DEBUG
             .onReceive(NotificationCenter.default.publisher(for: .demoOpenPaloMini)) { note in
                 guard (note.object as? WindowModel) === model else { return }
@@ -136,6 +137,7 @@ struct WindowRoot: View {
         if let scene = model.scene { WindowMemory.shared.sceneReady(model, scene) }
         if let entry {
             if let host = entry.host, app.stores[host] != nil { model.hostID = host }
+            if let panes = entry.paneOpen { model.paneOpenHere = panes }
             if let collapsed = entry.sidebarCollapsed {
                 model.prefersSidebarCollapsed = collapsed
                 model.columnVisibility = collapsed ? .detailOnly : .all

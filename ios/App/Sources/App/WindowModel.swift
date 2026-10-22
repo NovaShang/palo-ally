@@ -69,7 +69,11 @@ final class WindowModel {
     func switchTo(_ id: String) {
         guard app.hostIDs.contains(id) else { return }
         let changed = id != activeHostID
-        if changed { markSeen() }
+        if changed {
+            markSeen()
+            // Its pages' panes are that computer's.
+            paneOpenHere = [:]
+        }
         hostID = id
         app.use(id)
         if changed { showAssistantConversation() }
@@ -209,6 +213,11 @@ final class WindowModel {
     var activeTiles: [String: String] = [:]
     /// Phones (and short windows): the right pane as a full page.
     var paneCover = false
+    /// Large screens: the right pane shown or not, per page (`paneKey`), as
+    /// this window has it. The computer keeps one flag per page for every
+    /// window and device; it is only the default here, for a page this
+    /// window hasn't opened or closed the pane on (see `editPane`).
+    var paneOpenHere: [String: Bool] = [:]
     /// 从历史记录继续… is open: the ＋ menu sets it, `.historyPicker()` shows the sheet.
     var historyPickerPresented = false
     /// 新建工作区 asked (⌘⇧N, ＋, a session's 并排…): with these sessions chosen.
@@ -520,8 +529,10 @@ final class WindowModel {
                 if let which = UserDefaults.standard.string(forKey: "demoPaneTabs"), let store {
                     let hub = PaneTabsHub.shared(for: store)
                     let key = PaneTabsKey.workspace(id)
-                    hub.openPreview(key, path: "README.md", scope: .pal(store.workspace(id: id)?.memberIds.first ?? "pal-site"))
-                    hub.openWeb(key, url: "https://example.com")
+                    editPane(key) { hub in
+                        hub.openPreview(key, path: "README.md", scope: .pal(store.workspace(id: id)?.memberIds.first ?? "pal-site"))
+                        hub.openWeb(key, url: "https://example.com")
+                    }
                     if which == "preview" { hub.activate(key, at: PaneTabsKey.pinnedCount) }
                 }
                 #endif

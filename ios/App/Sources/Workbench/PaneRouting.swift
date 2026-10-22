@@ -48,17 +48,33 @@ extension WindowModel {
         return nil
     }
 
-    /// Whether the open page's pane shows.
+    /// Whether the open page's pane shows: as this window has it, else as
+    /// the computer last had it.
     var paneIsOpen: Bool {
         guard libraryBeside else { return paneCover }
         guard let key = paneKey, let hub = paneHub else { return false }
-        return hub.state(for: key).open
+        return paneOpenHere[key] ?? hub.state(for: key).open
     }
 
     func setPane(open: Bool) {
         guard libraryBeside else { paneCover = open; return }
         guard let key = paneKey else { return }
-        paneHub?.setOpen(key, open)
+        editPane(key) { $0.setOpen(key, open) }
+    }
+
+    /// Every edit of a page's pane from this window goes through here. The
+    /// computer's flag changes (the default for windows and devices that open
+    /// the page later), but the other windows showing the page keep their
+    /// pane as it is: one window's pane opening must not narrow another's
+    /// conversation. This window takes the result as its own.
+    func editPane(_ key: String, _ edit: (PaneTabsHub) -> Void) {
+        guard let hub = paneHub else { return }
+        let before = hub.state(for: key).open
+        for w in app.windows where w !== self && w.paneOpenHere[key] == nil && w.paneKey == key && w.paneHub === hub {
+            w.paneOpenHere[key] = before
+        }
+        edit(hub)
+        paneOpenHere[key] = hub.state(for: key).open
     }
 
     /// The pane's button (and ⌘2).
@@ -74,7 +90,7 @@ extension WindowModel {
         if paneKey == nil { openPalo() }
         guard let key = paneKey, let hub = paneHub else { return }
         if libraryBeside {
-            edit(hub, key)
+            editPane(key) { edit($0, key) }
             return
         }
         if libraryPath.count == 1, let id = libraryPath.first, let store {
@@ -101,7 +117,7 @@ extension WindowModel {
     func openPalFiles(_ palID: String) {
         let key = paneKey(forSession: palID)
         if libraryBeside {
-            paneHub?.openFiles(key)
+            editPane(key) { $0.openFiles(key) }
         } else {
             PhonePaneState.shared.segment = .files
             paneCover = true
@@ -133,7 +149,7 @@ extension WindowModel {
         default:
             return false
         }
-        hub.openPreview(key, path: target.path, scope: target.scope)
+        editPane(key) { $0.openPreview(key, path: target.path, scope: target.scope) }
         return true
     }
 

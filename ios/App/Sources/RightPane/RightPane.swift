@@ -6,7 +6,8 @@ import SwiftUI
 /// a row of tabs on glass, and the tab's page under it. The first two tabs
 /// are pinned, 成果 and 文件; files and web pages open as tabs after them. Which tabs are open, which shows, and whether the pane is
 /// open is kept on the computer per `key` (`PaneTabsKey`), so every device
-/// shows the same one.
+/// shows the same one; whether it is open is each window's own once it has
+/// opened or closed it (`WindowModel.editPane`).
 ///
 /// Wide screens set it beside the content; on a phone `.rightPaneCover(...)`
 /// shows `PhonePane` instead (no tabs, modal previews).
@@ -35,8 +36,8 @@ struct RightPane: View {
                 tabs: state.tabs, active: state.active, key: key, pages: pageByTab,
                 select: { hub.activate(key, at: $0) },
                 close: { hub.close(key, at: $0) },
-                addWeb: { hub.openWeb(key, url: "") },
-                closePane: { if let onClose { onClose() } else { hub.setOpen(key, false) } })
+                addWeb: { model.editPane(key) { $0.openWeb(key, url: "") } },
+                closePane: { if let onClose { onClose() } else { model.editPane(key) { $0.setOpen(key, false) } } })
             content
         }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
@@ -82,8 +83,8 @@ struct RightPane: View {
             LibraryTab().environment(\.libraryPalID, RightPaneScope.palID(of: scope))
         case PaneTab.files:
             NavigationStack {
-                FileTreeScreen(scope: scope, close: { if let onClose { onClose() } else { hub.setOpen(key, false) } },
-                               onOpenFile: { hub.openPreview(key, path: $0.path, scope: scope) })
+                FileTreeScreen(scope: scope, close: { if let onClose { onClose() } else { model.editPane(key) { $0.setOpen(key, false) } } },
+                               onOpenFile: { file in model.editPane(key) { $0.openPreview(key, path: file.path, scope: scope) } })
                     .modifier(InContentNavigationBar())
             }
             .id(scope)
