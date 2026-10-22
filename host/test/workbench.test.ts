@@ -56,7 +56,7 @@ const leaf = (session: string, x: number, w: number): LayoutNode => ({ type: "le
 const row = (...ids: string[]): LayoutNode => ({ type: "hsplit", w: 1, h: 1, x: 0, y: 0, children: ids.map((id, i) => leaf(id, i / ids.length, 1 / ids.length)) });
 
 describe("workspaces", () => {
-  test("create, list, rename, delete: ids, members in order, no layout yet, newest write first", async () => {
+  test("create, list, rename, delete: ids, members in order, no layout yet, newest workspace on top", async () => {
     const t = setup();
     const a = await t.mk("甲");
     const b = await t.mk("乙");
@@ -73,9 +73,10 @@ describe("workspaces", () => {
     const renamed = (await t.call("workspaces.update", { id: workspace.id, name: "官网改版" })).workspace;
     expect(renamed).toMatchObject({ name: "官网改版", memberIds: [a.id, b.id] });
     expect(renamed.updatedAt).toBeGreaterThan(workspace.updatedAt);
-    expect((await t.call("workspaces.list")).workspaces[0].id).toBe(workspace.id);
+    // a write doesn't change the owner's order
+    expect((await t.call("workspaces.list")).workspaces.map((w: any) => w.id)).toEqual([second.id, workspace.id]);
     // every write is echoed to every device, the sender too
-    expect(t.last("workspaces.updated").workspaces[0]).toEqual(renamed);
+    expect(t.last("workspaces.updated").workspaces[1]).toEqual(renamed);
     // an empty workspace is allowed (and so is leaving memberIds out): created to be filled later, kept until deleted
     const empty = (await t.call("workspaces.create", { name: "空的", memberIds: [] })).workspace;
     expect(empty).toMatchObject({ name: "空的", memberIds: [], layout: null });
@@ -148,7 +149,7 @@ describe("workspaces", () => {
     await t.call("workbench.tabs.set", { key: `ws:${ws.id}`, tabs: [{ kind: "files" }], open: true });
     expect(await t.call("workspaces.delete", { id: ws.id })).toEqual({ ok: true });
     expect((await t.call("workspaces.list")).workspaces).toEqual([]);
-    expect(t.last("workspaces.updated")).toEqual({ workspaces: [] });
+    expect(t.last("workspaces.updated")).toEqual({ workspaces: [], sessionOrder: [a.id, b.id] });
     expect(t.hub.pals.list().map((p) => [p.name, p.workspaceId])).toEqual(expect.arrayContaining([["甲", undefined], ["乙", undefined]]));
     expect(t.hub.pals.list()).toHaveLength(2);
     expect(t.last("workbench.updated")).toEqual({ key: `ws:${ws.id}`, state: null });
@@ -382,6 +383,90 @@ describe("right-pane tabs", () => {
     await t.hub.pals.stopAndWait();
     const again = setup({ paths: t.paths, claude: t.claude });
     expect((await again.call("workbench.tabs.get", { key: "palo" })).states.palo).toEqual(s);
+    await again.hub.pals.stopAndWait();
+  });
+});
+
+describe("the owner's order", () => {
+  const ids = (r: any) => r.workspaces.map((w: any) => w.id);
+
+  test("a new session goes on top; workbench.order.set puts sessions in the owner's order, unknown ids ignored, missing ones kept after", async () => {
+    const t = setup();
+    const a = await t.mk("甲");
+    const b = await t.mk("乙");
+    const c = await t.mk("丙");
+    expect((await t.call("workspaces.list")).sessionOrder).toEqual([c.id, b.id, a.id]);
+    expect(t.last("workspaces.updated").sessionOrder).toEqual([c.id, b.id, a.id]);
+    const r = await t.call("workbench.order.set", { kind: "sessions", ids: [a.id, "pal_nope", c.id, a.id] });
+    expect(r.sessionOrder).toEqual([a.id, c.id, b.id]);
+    expect(t.last("workspaces.updated").sessionOrder).toEqual([a.id, c.id, b.id]);
+    expect((await t.call("sync", {})).sessionOrder).toEqual([a.id, c.id, b.id]);
+    const d = await t.mk("丁");
+    expect((await t.call("workspaces.list")).sessionOrder).toEqual([d.id, a.id, c.id, b.id]);
+    await expect(t.call("workbench.order.set", { kind: "nope", ids: [] })).rejects.toThrow();
+    await expect(t.call("workbench.order.set", { kind: "sessions" })).rejects.toThrow();
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("workspaces reorder, a new one is on top, members reorder through workspaces.update, a layout is untouched", async () => {
+    const t = setup();
+    const [a, b, c] = [await t.mk("甲"), await t.mk("乙"), await t.mk("丙")];
+    const w1 = (await t.call("workspaces.create", { name: "一", memberIds: [a.id, b.id, c.id] })).workspace;
+    const w2 = (await t.call("workspaces.create", { name: "二" })).workspace;
+    expect(ids(await t.call("workspaces.list"))).toEqual([w2.id, w1.id]);
+    const r = await t.call("workbench.order.set", { kind: "workspaces", ids: [w1.id, "ws_nope"] });
+    expect(r.workspaceOrder).toEqual([w1.id, w2.id]);
+    expect(ids(await t.call("workspaces.list"))).toEqual([w1.id, w2.id]);
+    expect(ids(t.last("workspaces.updated"))).toEqual([w1.id, w2.id]);
+    await t.call("workspaces.update", { id: w1.id, layout: row(a.id, b.id) });
+    const u = (await t.call("workspaces.update", { id: w1.id, memberIds: [c.id, "pal_nope", a.id] })).workspace;
+    expect(u.memberIds).toEqual([c.id, a.id, b.id]);
+    expect(u.layout).toEqual(row(a.id, b.id));
+    await expect(t.call("workspaces.update", { id: w1.id, memberIds: "x" })).rejects.toThrow();
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("a session moving out goes on top, or to the given index; moving in takes an index; moving within reorders", async () => {
+    const t = setup();
+    const [a, b, c, d] = [await t.mk("甲"), await t.mk("乙"), await t.mk("丙"), await t.mk("丁")];
+    const ws = (await t.call("workspaces.create", { memberIds: [a.id, b.id, c.id] })).workspace;
+    expect((await t.call("workspaces.list")).sessionOrder).toEqual([d.id]);
+    await t.call("workspaces.move", { palId: b.id });
+    expect((await t.call("workspaces.list")).sessionOrder).toEqual([b.id, d.id]);
+    await t.call("workspaces.move", { palId: c.id, index: 1 });
+    expect((await t.call("workspaces.list")).sessionOrder).toEqual([b.id, c.id, d.id]);
+    // in, at an index
+    let r = await t.call("workspaces.move", { palId: d.id, workspaceId: ws.id, index: 0 });
+    expect(r.workspaces[0].memberIds).toEqual([d.id, a.id]);
+    expect((await t.call("workspaces.list")).sessionOrder).toEqual([b.id, c.id]);
+    r = await t.call("workspaces.move", { palId: b.id, workspaceId: ws.id });
+    expect(r.workspaces[0].memberIds).toEqual([d.id, a.id, b.id]); // no index: the end
+    // within the workspace
+    r = await t.call("workspaces.move", { palId: b.id, workspaceId: ws.id, index: 0 });
+    expect(r.workspaces[0].memberIds).toEqual([b.id, d.id, a.id]);
+    // within the ordinary ones
+    await t.call("workspaces.move", { palId: c.id, index: 5 });
+    expect((await t.call("workspaces.list")).sessionOrder).toEqual([c.id]);
+    // deleting a workspace sends its members back on top, in their order
+    await t.call("workspaces.delete", { id: ws.id });
+    expect((await t.call("workspaces.list")).sessionOrder).toEqual([b.id, d.id, a.id, c.id]);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("the order survives a restart; ended sessions leave it", async () => {
+    const t = setup();
+    const [a, b, c] = [await t.mk("甲"), await t.mk("乙"), await t.mk("丙")];
+    const w1 = (await t.call("workspaces.create", { memberIds: [] })).workspace;
+    const w2 = (await t.call("workspaces.create", { memberIds: [] })).workspace;
+    await t.call("workbench.order.set", { kind: "sessions", ids: [b.id, c.id, a.id] });
+    await t.call("workbench.order.set", { kind: "workspaces", ids: [w1.id, w2.id] });
+    await t.hub.pals.stopAndWait();
+    const again = setup({ paths: t.paths, claude: t.claude });
+    const r = await again.call("workspaces.list");
+    expect(r.sessionOrder).toEqual([b.id, c.id, a.id]);
+    expect(ids(r)).toEqual([w1.id, w2.id]);
+    await again.call("pals.remove", { id: c.id });
+    expect((await again.call("workspaces.list")).sessionOrder).toEqual([b.id, a.id]);
     await again.hub.pals.stopAndWait();
   });
 });

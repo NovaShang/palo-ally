@@ -375,6 +375,7 @@ export class Hub {
       shownIds: () => this.workbench?.shownIds() ?? new Set<string>(),
       workspaceJoin: (workspaceId, palId) => this.workbench?.join(workspaceId, palId),
       palGone: (palId) => this.workbench?.gone(palId),
+      palAdded: (palId) => this.workbench?.added(palId),
       log: this.log,
       ...deps.pals,
     });

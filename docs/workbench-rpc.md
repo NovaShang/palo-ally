@@ -313,7 +313,7 @@ PaneTab =
 ### `workspaces.list`
 
 - 参数：无。
-- 返回：`{workspaces: Workspace[]}`，按 `updatedAt` 新到旧。
+- 返回：`{workspaces: Workspace[], sessionOrder: string[]}`。`workspaces` 的数组顺序就是侧栏里工作区的顺序（owner 手动排的，新建的在最上面，不再按 `updatedAt`）；每个工作区的 `memberIds` 顺序也是手动序。`sessionOrder` 是不在任何工作区的普通会话的顺序（最上面在前），只含这些会话；host 不认识的新会话会补到最前面。
 - 错误：无。
 
 ```json
@@ -338,7 +338,7 @@ PaneTab =
 
 只改给出的字段。客户端拖分隔线时节流 500ms 调用。
 
-- 参数：`{id: string, name?: string, layout?: LayoutNode | null}`
+- 参数：`{id: string, name?: string, layout?: LayoutNode | null, memberIds?: string[]}`。`memberIds` 用来给成员重新排序：给出的、确是成员的 id 按给的顺序排前面，没给的保持原相对顺序排后面，未知 id 忽略；不改成员集合，也不动 `layout`。
 - 返回：`{workspace: Workspace}`
 - 错误：工作区不存在；`layout` 不合法（见布局树规则）；名字过长。
 - 广播：`workspaces.updated`（包括发起的这台，app 用 `updatedAt` 丢掉比自己新写入还旧的回声）。
@@ -352,11 +352,11 @@ PaneTab =
 
 把一个会话移进、移出或移到另一个工作区。成员的增删都走这一个方法；多选就逐个调用。
 
-- 参数：`{palId: string, workspaceId?: string}`。不给 `workspaceId` 表示移出，变回普通会话。
+- 参数：`{palId: string, workspaceId?: string, index?: number}`。不给 `workspaceId` 表示移出，变回普通会话。`index` 可选：移进工作区时是在 `memberIds` 里的位置（不给就加在末尾），移出时是在 `sessionOrder` 里的位置（不给就放最上面）；会话已经在目标里（同一个工作区，或本来就是普通会话又不给 `workspaceId`）时，`index` 只调整它的位置。超出范围会夹到两端。
 - 返回：`{workspaces: Workspace[]}`，所有被改动的工作区（旧的和新的；旧的变空也在里面，不删）。
 - 行为：互斥由 host 强制，会话在别的工作区时先从那边摘出来。摘出成员时按布局树规则删叶子。旧工作区因迁移变空也保留。新成员加在 `memberIds` 末尾，不改 `layout`（app 自己把它放进树里再 `workspaces.update`）。
 - 错误：会话不存在；`workspaceId` 不存在。
-- 广播：`workspaces.updated` 和 `pals.updated`。
+- 广播：`workspaces.updated` 和 `pals.updated`（只调位置时只有 `workspaces.updated`）。
 
 ```json
 {"id":"w4","method":"workspaces.move","params":{"palId":"pal_77aa00bb11cc","workspaceId":"ws_a1b2c3d4e5f6"}}
@@ -376,9 +376,25 @@ PaneTab =
 {"id":"w5","result":{"ok":true}}
 ```
 
+### `workbench.order.set`
+
+owner 在侧栏拖动排序后调用，所有设备同一个顺序。
+
+- 参数：`{kind: "sessions" | "workspaces", ids: string[]}`。`sessions` 排的是不在工作区里的普通会话（`sessionOrder`），`workspaces` 排的是工作区（`workspaces` 数组顺序）。
+- 行为：`ids` 里认识的 id 按给的顺序排最前面（重复的只算第一次）；不认识的 id 忽略；没给到的保持原来的相对顺序排在后面。所以只发被拖动的那一段也安全。成员顺序走 `workspaces.update` 的 `memberIds`，不在这里。
+- 新会话（`pals.create`、`pals.adopt`、`pals.resume` 等）自动排到 `sessionOrder` 最上面；新建的工作区排到 `workspaces` 最上面；会话结束或移除时从顺序里去掉；工作区被删，它的成员按原顺序回到 `sessionOrder` 最上面。
+- 返回：`{sessionOrder: string[], workspaceOrder: string[]}`（`workspaceOrder` 是工作区 id，等同 `workspaces` 的数组顺序）。
+- 错误：`kind` 不对或 `ids` 不是数组。
+- 广播：`workspaces.updated`（带 `sessionOrder`）。
+
+```json
+{"id":"o1","method":"workbench.order.set","params":{"kind":"sessions","ids":["pal_55e0c4a1b2d3","pal_3f9a1c0b2d4e"]}}
+{"id":"o1","result":{"sessionOrder":["pal_55e0c4a1b2d3","pal_3f9a1c0b2d4e"],"workspaceOrder":["ws_a1b2c3d4e5f6"]}}
+```
+
 ### 事件 `workspaces.updated`
 
-和 `pals.updated` 一样整表替换，数据是 `{workspaces: Workspace[]}`。
+和 `pals.updated` 一样整表替换，数据是 `{workspaces: Workspace[], sessionOrder: string[]}`：数组顺序和 `sessionOrder` 就是手动序，别的设备拖动排序后就是靠它跟上。
 
 ```json
 {"event":"workspaces.updated","data":{"workspaces":[{"id":"ws_a1b2c3d4e5f6","name":"官网","memberIds":["pal_3f9a1c0b2d4e"],"layout":null,"createdAt":1792300000000,"updatedAt":1792310300000}]}}
@@ -421,19 +437,20 @@ TabsState { tabs: [PaneTab], active: Int, open: Bool, updatedAt: Int64 }
 
 - `workspaces: Workspace[]`
 - `workbenchTabs: {[key]: TabsState}`（等同 `workbench.tabs.get` 不带参数）
+- `sessionOrder: string[]`（见 `workspaces.list`）
 
 会话列表仍然不在 `sync` 里（沿用 `pals.list` 和 `pals.updated`）。`hello` 不变。
 
 ```json
 {"id":"s1","method":"sync","params":{"sinceSeq":120}}
-{"id":"s1","result":{"seq":130,"messages":[],"tasks":[],"approvals":[],"questions":[],"watches":[],"artifacts":[],"settings":{},"status":{},"workspaces":[{"id":"ws_a1b2c3d4e5f6","name":"官网","memberIds":["pal_3f9a1c0b2d4e"],"layout":null,"createdAt":1792300000000,"updatedAt":1792310300000}],"workbenchTabs":{"palo":{"tabs":[{"kind":"library"}],"active":0,"open":true,"updatedAt":1792310000000}}}}
+{"id":"s1","result":{"seq":130,"messages":[],"tasks":[],"approvals":[],"questions":[],"watches":[],"artifacts":[],"settings":{},"status":{},"workspaces":[{"id":"ws_a1b2c3d4e5f6","name":"官网","memberIds":["pal_3f9a1c0b2d4e"],"layout":null,"createdAt":1792300000000,"updatedAt":1792310300000}],"sessionOrder":["pal_55e0c4a1b2d3"],"workbenchTabs":{"palo":{"tabs":[{"kind":"library"}],"active":0,"open":true,"updatedAt":1792310000000}}}}
 ```
 
 （示例里只列了和本文有关的键，其余按现有 `sync` 不变；`settings` 新增 `foldDays: Int`（默认 3，`0` 表示不自动收起）和 `maxAwake: Int`（默认 8），都经 `settings.update` 修改。）
 
 ## 5. 汇总
 
-新增方法（进 `RPC_METHODS` 和 `RPCMethod.all`）：`pals.create`、`pals.folders`、`pals.detail`、`pals.setModel`、`pals.setMode`、`pals.compact`、`pals.stopTask`、`pals.seen`、`pals.end`、`pals.reveal`、`pals.earlier`、`pals.resume`、`workspaces.list`、`workspaces.create`、`workspaces.update`、`workspaces.move`、`workspaces.delete`、`workbench.tabs.get`、`workbench.tabs.set`。
+新增方法（进 `RPC_METHODS` 和 `RPCMethod.all`）：`pals.create`、`pals.folders`、`pals.detail`、`pals.setModel`、`pals.setMode`、`pals.compact`、`pals.stopTask`、`pals.seen`、`pals.end`、`pals.reveal`、`pals.earlier`、`pals.resume`、`workspaces.list`、`workspaces.create`、`workspaces.update`、`workspaces.move`、`workspaces.delete`、`workbench.order.set`、`workbench.tabs.get`、`workbench.tabs.set`。
 
 新增事件：`workspaces.updated`、`workbench.updated`。`pals.updated` 形状不变。
 

@@ -11,7 +11,10 @@ import type { LayoutNode, PaneTab, TabsState, Workspace } from "./types.ts";
 import { newId, readJson, writeJson } from "./util.ts";
 
 interface WorkbenchFile {
+  /** In the owner's order (the sidebar), top first. */
   workspaces: Workspace[];
+  /** The owner's order of the sessions in no workspace, top first. */
+  sessionOrder: string[];
   tabs: Record<string, TabsState>;
 }
 
@@ -34,6 +37,25 @@ const NAME_MAX = 40;
 
 /** The leaf that shows Palo in a workspace: a view of the assistant, not a member (any workspace may have it, at most once). */
 export const PALO_LEAF = "palo";
+
+/** `current` re-ordered by `ids`: the ones named (and in `current`) first in that order, the rest after in their own order; unknown ids are ignored. */
+function ordered(current: string[], ids: unknown[]): string[] {
+  const have = new Set(current);
+  const first = [...new Set(ids)].filter((id): id is string => typeof id === "string" && have.has(id));
+  return [...first, ...current.filter((id) => !first.includes(id))];
+}
+
+function orderedBy<T extends { id: string }>(items: T[], ids: unknown[]): T[] {
+  const order = ordered(items.map((x) => x.id), ids);
+  return order.map((id) => items.find((x) => x.id === id)!);
+}
+
+/** `current` without `id`, then with it at `index` (clamped). */
+function placed(current: string[], id: string, index: number): string[] {
+  const rest = current.filter((x) => x !== id);
+  rest.splice(Math.max(0, Math.min(Math.floor(index), rest.length)), 0, id);
+  return rest;
+}
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const obj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -122,8 +144,12 @@ export class Workbench {
 
   constructor(private d: WorkbenchDeps) {
     const saved = readJson<Partial<WorkbenchFile>>(d.paths.workbench, {});
+    const workspaces = Array.isArray(saved.workspaces) ? saved.workspaces : [];
+    // Before there was a manual order the list was newest write first: that is where the order starts.
+    if (!Array.isArray(saved.sessionOrder)) workspaces.sort((a, b) => b.updatedAt - a.updatedAt);
     this.data = {
-      workspaces: Array.isArray(saved.workspaces) ? saved.workspaces : [],
+      workspaces,
+      sessionOrder: Array.isArray(saved.sessionOrder) ? saved.sessionOrder.filter((x): x is string => typeof x === "string") : [],
       tabs: obj(saved.tabs) ? (saved.tabs as Record<string, TabsState>) : {},
     };
     this.reconcile();
@@ -161,6 +187,7 @@ export class Workbench {
         changed = true;
       }
     }
+    this.sessionOrder(); // settles the order (and saves it the first time)
     if (changed) this.save();
   }
 
@@ -177,9 +204,43 @@ export class Workbench {
     return this.data.workspaces.some((w) => w.id === id);
   }
 
-  /** Newest write first. */
+  /** In the owner's order, top first. */
   list(): Workspace[] {
-    return [...this.data.workspaces].sort((a, b) => b.updatedAt - a.updatedAt).map((w) => structuredClone(w));
+    return this.data.workspaces.map((w) => structuredClone(w));
+  }
+
+  /**
+   * The sessions in no workspace, in the owner's order. A session the order doesn't know yet
+   * (new, or from before there was an order) goes on top, in the sessions' own order; the dead are dropped.
+   */
+  sessionOrder(): string[] {
+    const ordinary = this.d.palList().map((p) => p.id).filter((id) => !this.workspaceOf(id));
+    const known = new Set(ordinary);
+    const seen = new Set<string>();
+    const kept = this.data.sessionOrder.filter((id) => known.has(id) && !seen.has(id) && !!seen.add(id));
+    const fresh = ordinary.filter((id) => !seen.has(id));
+    const order = [...fresh, ...kept];
+    if (order.length !== this.data.sessionOrder.length || order.some((id, i) => id !== this.data.sessionOrder[i])) {
+      this.data.sessionOrder = order;
+      this.save();
+    }
+    return [...order];
+  }
+
+  /** The ordinary sessions with `palId` at `index` (clamped; none = the top). */
+  private place(palId: string, index?: number): void {
+    const rest = this.sessionOrder().filter((id) => id !== palId);
+    const at = isNum(index) ? Math.max(0, Math.min(Math.floor(index), rest.length)) : 0;
+    rest.splice(at, 0, palId);
+    this.data.sessionOrder = rest;
+  }
+
+  /** A new session: on top of the ordinary ones (unless it starts in a workspace). */
+  added(palId: string): void {
+    if (this.workspaceOf(palId)) return;
+    this.place(palId);
+    this.save();
+    this.emitNow();
   }
 
   /** Sessions that are leaves of some layout: the ones on screen, never put to sleep to make room. */
@@ -213,7 +274,7 @@ export class Workbench {
   emitNow(): void {
     if (this.emitTimer) clearTimeout(this.emitTimer);
     this.emitTimer = null;
-    this.d.bus.emit("workspaces.updated", { workspaces: this.list() });
+    this.d.bus.emit("workspaces.updated", { workspaces: this.list(), sessionOrder: this.sessionOrder() });
   }
 
   private emitSoon(): void {
@@ -263,10 +324,10 @@ export class Workbench {
   /** A session is gone (ended, removed, handed back): out of its workspace and layout, its tabs dropped. */
   gone(palId: string): void {
     const ws = this.detach(palId);
+    this.data.sessionOrder = this.data.sessionOrder.filter((id) => id !== palId);
     const key = `pal:${palId}`;
     const had = key in this.data.tabs;
     delete this.data.tabs[key];
-    if (!ws && !had) return;
     this.save();
     if (ws) this.emitNow();
     if (had) this.d.bus.emit("workbench.updated", { key, state: null });
@@ -287,7 +348,7 @@ export class Workbench {
     const now = this.now();
     const ws: Workspace = { id: newId("ws_"), name, memberIds: [], layout: null, createdAt: now, updatedAt: now };
     for (const id of ids) this.detach(id);
-    this.data.workspaces.push(ws);
+    this.data.workspaces.unshift(ws);
     for (const id of ids) this.attach(ws, id, false);
     ws.updatedAt = now;
     this.save();
@@ -296,7 +357,7 @@ export class Workbench {
     return { workspace: structuredClone(ws) };
   }
 
-  update(o: { id?: unknown; name?: unknown; layout?: unknown }): { workspace: Workspace } {
+  update(o: { id?: unknown; name?: unknown; layout?: unknown; memberIds?: unknown }): { workspace: Workspace } {
     const ws = this.must(o?.id);
     let name = ws.name;
     if (o.name !== undefined) name = this.cleanName(o.name);
@@ -312,6 +373,10 @@ export class Workbench {
     }
     ws.name = name;
     ws.layout = layout;
+    if (o.memberIds !== undefined) {
+      if (!Array.isArray(o.memberIds)) throw new Error(t("wb.badOrder"));
+      ws.memberIds = ordered(ws.memberIds, o.memberIds);
+    }
     this.touch(ws);
     this.save();
     this.emitNow();
@@ -319,11 +384,12 @@ export class Workbench {
   }
 
   /** Into a workspace, out of one, or from one to another. Returns the workspaces it changed. */
-  move(o: { palId?: unknown; workspaceId?: unknown }): { workspaces: Workspace[] } {
+  move(o: { palId?: unknown; workspaceId?: unknown; index?: unknown }): { workspaces: Workspace[] } {
     const palId = this.mustPal(o?.palId);
     const target = o.workspaceId === undefined || o.workspaceId === null || o.workspaceId === "" ? undefined : this.must(o.workspaceId);
     const old = this.workspaceOf(palId);
     const changed = new Set<Workspace>();
+    const index = isNum(o.index) ? o.index : undefined;
     if (old !== target) {
       if (old) {
         this.detach(palId);
@@ -331,19 +397,43 @@ export class Workbench {
       }
       if (target) {
         this.attach(target, palId, false);
+        if (index !== undefined) target.memberIds = placed(target.memberIds, palId, index);
         changed.add(target);
-      } else this.d.setPalWorkspace(palId, undefined);
+      } else {
+        this.d.setPalWorkspace(palId, undefined);
+        this.place(palId, index); // out of a workspace: the top, unless it says where
+      }
       this.save();
       this.emitNow();
       this.d.palsChanged();
+    } else if (index !== undefined) {
+      // Already there: only its place moves.
+      if (target) {
+        target.memberIds = placed(target.memberIds, palId, index);
+        this.touch(target);
+      } else this.place(palId, index);
+      this.save();
+      this.emitNow();
+      if (target) changed.add(target);
     } else if (target) changed.add(target);
     return { workspaces: [...changed].map((w) => structuredClone(w)) };
+  }
+
+  /** workbench.order.set: the owner's order of the ordinary sessions, or of the workspaces. */
+  orderSet(o: { kind?: unknown; ids?: unknown }): { sessionOrder: string[]; workspaceOrder: string[] } {
+    if ((o?.kind !== "sessions" && o?.kind !== "workspaces") || !Array.isArray(o.ids)) throw new Error(t("wb.badOrder"));
+    if (o.kind === "sessions") this.data.sessionOrder = ordered(this.sessionOrder(), o.ids);
+    else this.data.workspaces = orderedBy(this.data.workspaces, o.ids);
+    this.save();
+    this.emitNow();
+    return { sessionOrder: this.sessionOrder(), workspaceOrder: this.data.workspaces.map((w) => w.id) };
   }
 
   delete(o: { id?: unknown }): { ok: true } {
     const ws = this.must(o?.id);
     this.data.workspaces = this.data.workspaces.filter((w) => w !== ws);
     for (const id of ws.memberIds) this.d.setPalWorkspace(id, undefined);
+    this.data.sessionOrder = [...ws.memberIds, ...this.data.sessionOrder.filter((id) => !ws.memberIds.includes(id))];
     const key = `ws:${ws.id}`;
     const had = key in this.data.tabs;
     delete this.data.tabs[key];
