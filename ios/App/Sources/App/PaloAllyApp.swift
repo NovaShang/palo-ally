@@ -9,6 +9,18 @@ struct PaloAllyApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        // Chinese whatever the system's language (the owner's call): set
+        // before any string is looked up; a launch argument still wins (UI
+        // tests pass -AppleLanguages). The first launch after an update may
+        // still be in the old language.
+        let d = UserDefaults.standard
+        if d.volatileDomain(forName: UserDefaults.argumentDomain)["AppleLanguages"] == nil,
+           (d.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?["AppleLanguages"] as? [String])?.first != "zh-Hans" {
+            d.set(["zh-Hans"], forKey: "AppleLanguages")
+        }
+    }
+
     var body: some Scene {
         // iPads and the Mac: any number of windows (File → 新建窗口, a row's
         // 在新窗口中打开, a row dragged out on an iPad), each with its own
