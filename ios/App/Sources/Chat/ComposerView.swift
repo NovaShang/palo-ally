@@ -172,7 +172,7 @@ struct ComposerView: View {
         // Never while a picker is up: the Mac's file panel froze the app
         // when the catcher kept taking the keyboard back from it.
         model.layout != .phone && placesVoice && !focused && !dictating
-            && !showFiles && !showCamera && !showComputerFiles
+            && !showFiles && !showPhotos && !showCamera && !showComputerFiles
     }
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !staged.isEmpty }
