@@ -261,6 +261,15 @@ private struct LayoutStressTest: ViewModifier {
                             .takeUnretainedValue() as? String
                         debugLog("[nav] \(r ?? "no AppKit bundle")")
                     #endif
+                    // `split`: each window's split view controllers and their inspector widths.
+                    case "split":
+                        func walk(_ vc: UIViewController, _ depth: Int) {
+                            if let s = vc as? UISplitViewController {
+                                debugLog("[nav] split \(type(of: s)) depth \(depth): inspector preferred \(s.preferredInspectorColumnWidth) fraction \(s.preferredInspectorColumnWidthFraction) min \(s.minimumInspectorColumnWidth) max \(s.maximumInspectorColumnWidth); primary \(s.primaryColumnWidth) preferred \(s.preferredPrimaryColumnWidth) fraction \(s.preferredPrimaryColumnWidthFraction) min \(s.minimumPrimaryColumnWidth) max \(s.maximumPrimaryColumnWidth) edge \(s.primaryEdge.rawValue) style \(s.style.rawValue) mode \(s.displayMode.rawValue) supplementary \(s.supplementaryColumnWidth)")
+                            }
+                            for c in vc.children { walk(c, depth + 1) }
+                        }
+                        if let root = w.scene?.windows.first?.rootViewController { walk(root, 0) }
                     // `presented`: what each window presents now (popovers don't show in snapshots).
                     case "presented":
                         for (i, w) in model.app.windows.enumerated() {
@@ -643,6 +652,12 @@ private struct RightPaneHost: ViewModifier {
                     .environment(store)
                     // No real cap: the owner drags it wide for a browser (2026-10-20).
                     .inspectorColumnWidth(min: 320, ideal: Self.idealWidth, max: 4000)
+                    // The Mac took none of it (a bare split view neither, the
+                    // split lab): the pane opened at 280 pt and couldn't be
+                    // dragged wider. Set on the split view itself.
+                    .background {
+                        InspectorWidth(ideal: Self.idealWidth, open: model.paneIsOpen, sidebarShown: !model.sidebarCollapsed)
+                    }
                     // Whether it is really on screen, and how wide (the debug log).
                     .onAppear {
                         model.inspectorShown = true
@@ -654,18 +669,22 @@ private struct RightPaneHost: ViewModifier {
                     }
                     .onGeometryChange(for: Int.self) { Int($0.size.width.rounded()) } action: { w in
                         debugLog("[layout] \(model.traceName): inspector \(w) pt of \(model.windowWidth)")
+                        // The width it was left at (dragged), for the next time it opens.
+                        if model.paneIsOpen, w >= 320 { InspectorWidth.remember(CGFloat(w)) }
+                        InspectorWidth.check()
                     }
             }
         }
     }
 
     /// `-demoPaneWidth 1000` (DEBUG): the pane opens that wide, as if dragged.
+    /// Else the width it was last left at, else 400.
     private static var idealWidth: CGFloat {
         #if DEBUG
         let w = UserDefaults.standard.double(forKey: "demoPaneWidth")
         if w > 0 { return w }
         #endif
-        return 400
+        return InspectorWidth.remembered ?? 400
     }
 }
 
@@ -715,3 +734,122 @@ private struct SplitLab: View {
     }
 }
 #endif
+
+
+/// The Mac: the right pane's widths set on the split view that shows it
+/// (`inspectorColumnWidth` never reached it there): at least 320 pt, at most
+/// what leaves the conversation 360 pt beside the sidebar, opening at
+/// `ideal`. SwiftUI puts its own back whenever it updates the pane (opening
+/// it, the sidebar coming or going), so they are checked again then, and as
+/// the window is resized.
+struct InspectorWidth: UIViewRepresentable {
+    let ideal: CGFloat
+    /// The pane shown: each time it opens it starts at `ideal`.
+    let open: Bool
+    let sidebarShown: Bool
+
+    static let minimum: CGFloat = 320
+    /// The conversation keeps at least this beside the pane.
+    static let conversationMinimum: CGFloat = 360
+
+    private static let key = "rightPaneWidth"
+    private static let checkNote = Notification.Name("PaloAlly.inspectorWidthCheck")
+    static var remembered: CGFloat? {
+        let w = UserDefaults.standard.double(forKey: key)
+        return w >= minimum ? w : nil
+    }
+    static func remember(_ w: CGFloat) {
+        guard Platform.isMac, abs(UserDefaults.standard.double(forKey: key) - w) >= 1 else { return }
+        UserDefaults.standard.set(Double(w), forKey: key)
+    }
+    /// The pane's width changed: SwiftUI may have put its own widths back.
+    static func check() {
+        guard Platform.isMac else { return }
+        NotificationCenter.default.post(name: checkNote, object: nil)
+    }
+
+    func makeUIView(context: Context) -> Probe {
+        let v = Probe()
+        v.isUserInteractionEnabled = false
+        return v
+    }
+
+    func updateUIView(_ view: Probe, context: Context) {
+        view.ideal = ideal
+        let opened = open && !view.open
+        let sidebarChanged = view.sidebarShown != sidebarShown
+        view.open = open
+        view.sidebarShown = sidebarShown
+        if opened || sidebarChanged { view.applySoon(opening: opened) }
+    }
+
+    final class Probe: UIView {
+        var ideal: CGFloat = 400
+        var open = false
+        var sidebarShown = true
+        private var observers: [NSObjectProtocol] = []
+        private var resize: NSKeyValueObservation?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard Platform.isMac, let scene = window?.windowScene else {
+                observers.forEach(NotificationCenter.default.removeObserver)
+                observers = []
+                resize = nil
+                return
+            }
+            if observers.isEmpty {
+                observers.append(NotificationCenter.default.addObserver(forName: InspectorWidth.checkNote, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.apply(opening: false) }
+                })
+            }
+            resize = scene.observe(\.effectiveGeometry) { [weak self] _, _ in
+                DispatchQueue.main.async { self?.applySoon(opening: false) }
+            }
+            applySoon(opening: true)
+        }
+
+        /// Now, and after SwiftUI's own pass over the split view.
+        func applySoon(opening: Bool) {
+            guard Platform.isMac, window != nil else { return }
+            apply(opening: opening)
+            DispatchQueue.main.async { [weak self] in self?.apply(opening: opening) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.apply(opening: opening) }
+        }
+
+        private func apply(opening: Bool) {
+            guard open, window != nil, let split = inspectorSplit else { return }
+            // The sidebar's split view is inside the inspector's; its own
+            // width, not what a squeeze left it.
+            let sidebar = Self.splits(under: split).first { $0 !== split }
+            let sidebarWidth = sidebar.map { s in
+                s.displayMode == .secondaryOnly ? 0 : (s.preferredPrimaryColumnWidth > 0 ? s.preferredPrimaryColumnWidth : s.primaryColumnWidth)
+            } ?? 0
+            let most = max(InspectorWidth.minimum, split.view.bounds.width - sidebarWidth - InspectorWidth.conversationMinimum)
+            let reset = split.minimumInspectorColumnWidth != InspectorWidth.minimum
+            guard reset || opening || abs(split.maximumInspectorColumnWidth - most) >= 1 else { return }
+            split.minimumInspectorColumnWidth = InspectorWidth.minimum
+            split.maximumInspectorColumnWidth = most
+            // Opening, or SwiftUI just put its own back: where it was left.
+            let start = min(opening ? ideal : max(ideal, InspectorWidth.remembered ?? 0), most)
+            if reset || opening { split.preferredInspectorColumnWidth = start }
+            debugLog("[layout] inspector widths: \(Int(InspectorWidth.minimum)) to \(Int(most)) pt (window \(Int(split.view.bounds.width)), sidebar \(Int(sidebarWidth)))\(reset || opening ? ", at \(Int(start))" : "")")
+        }
+
+        private var inspectorSplit: UISplitViewController? {
+            var r = next
+            while let responder = r {
+                if let split = responder as? UISplitViewController,
+                   split.viewController(for: .inspector) != nil || String(describing: type(of: split)).contains("Inspector") {
+                    return split
+                }
+                r = responder.next
+            }
+            return nil
+        }
+
+        private static func splits(under vc: UIViewController) -> [UISplitViewController] {
+            ((vc as? UISplitViewController).map { [$0] } ?? []) + vc.children.flatMap { splits(under: $0) }
+        }
+    }
+}
