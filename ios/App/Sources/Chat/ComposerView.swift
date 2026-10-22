@@ -99,7 +99,7 @@ struct ComposerView: View {
 
     private var docked: Bool { !keyboardUp }
     /// The compact composer (a tile on the Mac).
-    private var compact: Bool { tile != nil && Platform.isMac }
+    private var compact: Bool { tile != nil }
     /// Concentric only when the composer actually spans the display's bottom
     /// corners (the phone layout); beside a sidebar or inspector it's a
     /// regular floating capsule with even margins.
@@ -173,7 +173,7 @@ struct ComposerView: View {
     /// (talk). On the Mac, not while the field holds words: the layer took
     /// the wheel and the trackpad too, so a long dictation couldn't be
     /// scrolled back to check (a click focuses the field there anyway).
-    private var idle: Bool { !focused && !dictating && !(Platform.isMac && !draft.isEmpty) }
+    private var idle: Bool { !focused && !dictating && !(model.layout != .phone && !draft.isEmpty) }
 
     /// The owner is doing something here — typing, dictating, holding to
     /// talk, staging attachments, quoting. The 「试试」 suggestions at the end
@@ -437,7 +437,7 @@ struct ComposerView: View {
             // Shift/Option/⌘+Return is a newline.
             TextField("", text: $draft, prompt: Text(focused ? prompt : ""), axis: .vertical)
                 // The Mac page has the room: a long dictation stays readable (tiles keep 6).
-                .lineLimit(1...(Platform.isMac && !compact ? 12 : 6))
+                .lineLimit(1...(model.layout != .phone && !compact ? 12 : 6))
                 .focused($focused)
                 .accessibilityIdentifier("composerField")
                 // The Mac: Esc leaves the field (the text stays); with an

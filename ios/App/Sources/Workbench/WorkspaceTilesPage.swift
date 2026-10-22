@@ -231,7 +231,7 @@ final class TileDetails {
     }
 }
 
-/// The workspace's title, 并排 and (off the Mac) the right pane's button.
+/// The workspace page's bar: only the right pane's button (off the Mac).
 /// The Mac has no navigation bar: its window toolbar holds the pane's button
 /// and a strip at the page's top holds the rest.
 private struct WorkspaceBar: ViewModifier {
@@ -260,10 +260,15 @@ private struct WorkspaceBar: ViewModifier {
                 .padding(.top, model.sidebarCollapsed ? SidebarChrome.shared.titlebarMidY * 2 - 6 : 0)
                 .ignoresSafeArea(.container, edges: .top)
         } else {
-            content.toolbar {
-                ToolbarItem(placement: .topBarTrailing) { TileMenu(workspaceID: workspaceID, glass: false) }
-                ToolbarItem(placement: .topBarTrailing) { PaneButton() }
-            }
+            // iPads as the Mac (the owner's ask, 2026-10-22): no big title
+            // (the sidebar names the workspace, each tile has its header), no
+            // 并排; only the right pane's button in a slim bar.
+            content
+                .toolbarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
+                    ToolbarItem(placement: .topBarTrailing) { PaneButton() }
+                }
         }
     }
 }
@@ -279,73 +284,3 @@ private struct PaneButton: View {
     }
 }
 
-/// 并排: one more tile, from the sessions that aren't in this workspace, or a new one.
-private struct TileMenu: View {
-    let workspaceID: String
-    let glass: Bool
-    @Environment(WindowModel.self) private var model
-    @Environment(AppStore.self) private var store
-    @State private var failure: String?
-
-    private var others: [Pal] { store.listedPals.filter { $0.workspaceId != workspaceID } }
-
-    var body: some View {
-        Menu {
-            if !others.isEmpty {
-                Section("已有的会话") {
-                    ForEach(others) { pal in
-                        Button(pal.displayName) { add(pal.id) }
-                    }
-                }
-            }
-            Button("新开一个会话…", systemImage: "plus") {
-                model.newSessionIntoWorkspace = workspaceID
-                model.newSession = true
-            }
-        } label: {
-            if glass {
-                Image(systemName: "rectangle.split.2x1")
-                    .font(.system(size: 14, weight: .semibold))
-                    .frame(width: 32, height: 32)
-                    .contentShape(.circle)
-            } else {
-                Image(systemName: "rectangle.split.2x1")
-            }
-        }
-        .modifier(GlassMenuStyle(glass: glass))
-        .disabled(!store.connection.isOnline)
-        .tint(.primary)
-        .accessibilityLabel("并排")
-        .accessibilityIdentifier("workspace-tile")
-        .alert(failure ?? "", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
-            Button("好", role: .cancel) { failure = nil }
-        }
-    }
-
-    private func add(_ id: String) {
-        Task {
-            do {
-                try await store.moveSession(id, to: workspaceID)
-                model.activate(tile: id, in: workspaceID)
-            } catch {
-                failure = Copy.error(error)
-            }
-        }
-    }
-}
-
-private struct GlassMenuStyle: ViewModifier {
-    let glass: Bool
-
-    func body(content: Content) -> some View {
-        if glass {
-            content
-                .buttonStyle(.borderless)
-                .menuIndicator(.hidden)
-                .frame(width: 32, height: 32)
-                .glassEffect(.regular.interactive(), in: .circle)
-        } else {
-            content
-        }
-    }
-}

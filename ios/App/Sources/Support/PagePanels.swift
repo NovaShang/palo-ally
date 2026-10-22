@@ -205,6 +205,7 @@ struct WordsInputBar: View {
     /// conversations' composer): the live words show in the field's place.
     @State private var dictating = false
     @State private var finishing = false
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         let canSend = enabled && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -212,7 +213,7 @@ struct WordsInputBar: View {
             ZStack(alignment: .leading) {
                 TextField(placeholder, text: $text, axis: .vertical)
                     // The Mac has the room: a long dictation stays readable.
-                    .lineLimit(1...(Platform.isMac ? 12 : 6))
+                    .lineLimit(1...(sizeClass == .regular ? 12 : 6))
                     .focused($focused)
                     .opacity(dictating ? 0 : 1)
                     .accessibilityIdentifier(identifier)

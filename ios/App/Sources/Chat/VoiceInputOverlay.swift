@@ -687,7 +687,9 @@ private struct VoiceWords: View {
                 frames.text = f
                 report()
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // Centred in their block (a short line sat at its left edge on
+            // large screens); a longer text still reads from the left.
+            .frame(maxWidth: .infinity, alignment: .center)
             // As tall as the words, up to `maxHeight` (the newest at the bottom).
             .frame(height: natural > 0 ? min(natural, maxHeight) : nil, alignment: .bottom)
             .clipped()
