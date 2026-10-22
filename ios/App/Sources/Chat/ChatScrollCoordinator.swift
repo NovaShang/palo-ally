@@ -164,6 +164,30 @@ final class ChatScrollCoordinator {
     @ObservationIgnored private var insetSettle: Task<Void, Never>?
 
     /// The UIKit scroll view, found from inside the content (`ScrollViewHook`).
+    /// The chat's scroll view's top and bottom edge effects as UIKit has
+    /// them, for the debug log ("top soft, bottom soft"; nil before it's up).
+    func edgeStyles() -> String? {
+        guard let s = scrollView else { return nil }
+        func name(_ e: UIScrollEdgeEffect) -> String {
+            (e.style == .soft ? "soft" : e.style == .hard ? "hard" : "automatic") + (e.isHidden ? " hidden" : "")
+        }
+        // What UIKit actually draws at the top (its effect view's layer is
+        // named for the variant: "soft", or on the Mac's content column
+        // "thinFilm(floating)" with a 1 pt keyline, whatever style is asked).
+        var drawn: [String] = []
+        func find(_ v: UIView, _ depth: Int) {
+            if String(describing: type(of: v)) == "ScrollEdgeEffectView", v.frame.minY <= 1 {
+                let names = (v.layer.sublayers ?? []).compactMap(\.name)
+                let keyline = (v.layer.sublayers ?? []).flatMap { $0.sublayers ?? [] }.contains { $0.name == "Keyline" }
+                drawn.append("\(names.joined(separator: "+"))\(keyline ? " with keyline" : "") alpha \(String(format: "%.1f", v.alpha))")
+            }
+            guard depth < 3 else { return }
+            for sub in v.subviews { find(sub, depth + 1) }
+        }
+        find(s, 0)
+        return "top \(name(s.topEdgeEffect)), bottom \(name(s.bottomEdgeEffect))\(drawn.isEmpty ? "" : ", drawn " + drawn.joined(separator: "; "))"
+    }
+
     func attach(scrollView: UIScrollView) {
         if scrollView !== self.scrollView {
             if let old = self.scrollView, let w = panWatcher { old.panGestureRecognizer.removeTarget(w, action: nil) }

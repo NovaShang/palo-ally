@@ -152,9 +152,9 @@ struct ChatView: View {
         }
         #endif
         .scrollDismissesKeyboard(.immediately)
-        // The Mac: a click in the conversation takes focus off the
-        // composer (links, buttons and selection still get their click).
-        .modifier(ClickToUnfocusComposer())
+        // With a keyboard a click in the conversation puts the keyboard in
+        // its composer (links, buttons and selection still get their click).
+        .modifier(ClickFocusesComposer())
         .onScrollPhaseChange { _, phase in scroll.phase(phase) }
         .onScrollGeometryChange(for: ChatScroll.Metrics.self) { g in
             #if DEBUG
@@ -293,6 +293,17 @@ struct ChatView: View {
         .scrollEdgeEffectStyle(.soft, for: .top)
         // Under the floating composer the same: a soft blur, not a bar.
         .scrollEdgeEffectStyle(.soft, for: .bottom)
+        // The edge UIKit draws under the title bar row, in the debug log as
+        // the sidebar comes and goes (the owner saw a hard one, sidebar away).
+        .onChange(of: model.sidebarCollapsed, initial: true) {
+            guard Platform.isMac, !inTile else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(600))
+                if let edges = scroll.edgeStyles() {
+                    debugLog("[edge] \(model.traceName) \(isPalo ? "palo" : "page"), sidebar \(model.sidebarCollapsed ? "away" : "shown"): chat \(edges)")
+                }
+            }
+        }
         // The Mac: the assistant's conversation leaves 成果 to the window
         // toolbar (MacToolbar) and floats its orb in the column.
         .toolbar(macOrb || macPage ? .hidden : .automatic, for: .navigationBar)
@@ -678,25 +689,6 @@ private struct TopRowProbe: ViewModifier {
     }
 }
 #endif
-
-/// The Mac only (phones keep their own keyboard handling): a click anywhere
-/// in the conversation leaves the composer, so an empty one turns back into
-/// the press-to-talk button. Simultaneous: the click still reaches links,
-/// buttons and text selection.
-private struct ClickToUnfocusComposer: ViewModifier {
-    @Environment(WindowModel.self) private var model
-
-    func body(content: Content) -> some View {
-        #if DEBUG || PERF_HARNESS
-        let _ = PerfProbe.count("ClickToUnfocusComposer")
-        #endif
-        if model.layout != .phone {
-            content.simultaneousGesture(TapGesture().onEnded { model.composerUnfocusRequests += 1 })
-        } else {
-            content
-        }
-    }
-}
 
 /// Where the phone bar's middle is, in window coordinates. A reference type
 /// on purpose: the bar reports it, only the orb's overlay reads it, so a

@@ -85,6 +85,35 @@ final class ImmersiveWindows: NSObject {
         return true
     }
 
+    /// The title bar as AppKit has it, for the debug log: the window's
+    /// titlebar settings, then every view of the titlebar container (class,
+    /// frame, hidden, alpha; a visual effect view's material and state), so a
+    /// band or a line drawn over the content can be told apart. Sizes and
+    /// states only.
+    @objc func titlebarFacts() -> String? {
+        guard let id = Self.toolbarID else { return nil }
+        var lines: [String] = []
+        for window in NSApplication.shared.windows where window.toolbar?.identifier.hasPrefix(id) == true {
+            let bar = window.toolbar
+            lines.append("window \(Int(window.frame.width))x\(Int(window.frame.height)) key \(window.isKeyWindow ? 1 : 0) transparent \(window.titlebarAppearsTransparent ? 1 : 0) separator \(window.titlebarSeparatorStyle.rawValue) fullSize \(window.styleMask.contains(.fullSizeContentView) ? 1 : 0) toolbar style \(window.toolbarStyle.rawValue) baseline \(bar?.showsBaselineSeparator == true ? 1 : 0) visible \(bar?.isVisible == true ? 1 : 0)")
+            guard let container = window.standardWindowButton(.closeButton)?.superview?.superview?.superview else { continue }
+            func walk(_ v: NSView, _ depth: Int) {
+                var line = String(repeating: "  ", count: depth) + String(describing: type(of: v))
+                let f = v.frame
+                line += " \(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height))"
+                if v.isHidden { line += " hidden" }
+                if v.alphaValue < 1 { line += " alpha \(String(format: "%.2f", v.alphaValue))" }
+                if let e = v as? NSVisualEffectView { line += " material \(e.material.rawValue) state \(e.state.rawValue) blending \(e.blendingMode.rawValue)" }
+                if let c = v.layer?.backgroundColor, c.alpha > 0 { line += " fill \(String(format: "%.2f", c.alpha))" }
+                lines.append(line)
+                guard depth < 5 else { return }
+                for sub in v.subviews where !(sub is NSButton) { walk(sub, depth + 1) }
+            }
+            walk(container, 1)
+        }
+        return lines.joined(separator: "\n")
+    }
+
     /// Where the traffic lights end, and the middle of their line, in the
     /// window's top-left coordinates as "x,y"; x is 0 in full screen (they
     /// are gone there), y 26 when there is no button to measure.

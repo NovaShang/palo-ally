@@ -122,6 +122,31 @@ private struct DemoCapture: ViewModifier {
                 NSLog("[hit-appkit]\n%@", r)
             }
             #endif
+            // `-bandProbe YES`: every view lying across the window's top (a band under the title bar row).
+            if d.bool(forKey: "bandProbe") {
+                func walk(_ v: UIView, _ depth: Int) {
+                    let f = v.convert(v.bounds, to: window)
+                    if (f.minY <= 1 && f.height >= 20 && f.height <= 140 || f.minY > 30 && f.minY < 70 && f.height <= 3), f.width >= 300, !v.isHidden {
+                        NSLog("[band] %@ %@ %d,%d %dx%d alpha %.2f", String(repeating: " ", count: depth), String(describing: type(of: v)), Int(f.minX), Int(f.minY), Int(f.width), Int(f.height), v.alpha)
+                        NSLog("[band]    = %@", v.description.prefix(300).description)
+                        func layers(_ l: CALayer, _ d: Int) {
+                            NSLog("[band]    %@%@ %@ %@ filters %@ bg %@ op %.2f", String(repeating: " ", count: d), String(describing: type(of: l)), l.name ?? "-", NSCoder.string(for: l.frame), String(describing: (l.filters ?? []).map { String(describing: $0).prefix(60) }), l.backgroundColor.map { "\($0.alpha)" } ?? "-", l.opacity)
+                            for c in l.sublayers ?? [] where d < 4 { layers(c, d + 1) }
+                        }
+                        layers(v.layer, 0)
+                        for sub in v.subviews { NSLog("[band]    sub %@ %@", String(describing: type(of: sub)), NSCoder.string(for: sub.frame)) }
+                        var p = v.superview
+                        var n = 0
+                        while let up = p, n < 10 {
+                            let g = up.convert(up.bounds, to: window)
+                            NSLog("[band]    < %@ %d,%d %dx%d", String(describing: type(of: up)).prefix(120).description, Int(g.minX), Int(g.minY), Int(g.width), Int(g.height))
+                            p = up.superview; n += 1
+                        }
+                    }
+                    for s in v.subviews { walk(s, depth + 1) }
+                }
+                walk(window, 0)
+            }
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                 _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
             }
@@ -449,8 +474,24 @@ private struct LayoutTrace: ViewModifier {
             .onDisappear { log("main screen gone") }
             .onChange(of: model.libraryBeside) { _, beside in log("pane \(beside ? "beside" : "over")") }
             .onChange(of: model.layout) { _, l in log("layout \(l)") }
-            .onChange(of: model.columnVisibility) { _, _ in log("sidebar \(model.sidebarCollapsed ? "away" : "shown")") }
+            .onChange(of: model.columnVisibility) { _, _ in
+                log("sidebar \(model.sidebarCollapsed ? "away" : "shown")")
+                logTitlebar()
+            }
+            .task { logTitlebar() }
             .onChange(of: model.paneIsOpen) { _, open in log("pane \(open ? "open" : "closed") (ours)") }
+    }
+
+    /// The Mac: the title bar's views as AppKit has them, once the sidebar has moved.
+    private func logTitlebar() {
+        #if targetEnvironment(macCatalyst)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(800))
+            if let facts = AppKitBundle.call("titlebarFacts") {
+                debugLog("[titlebar] \(model.traceName), sidebar \(model.sidebarCollapsed ? "away" : "shown"):\n\(facts)")
+            }
+        }
+        #endif
     }
 
     private func log(_ what: String) {
