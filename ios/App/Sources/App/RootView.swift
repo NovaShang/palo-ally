@@ -461,14 +461,13 @@ private struct ConversationDetail: View {
         }
         // Beside the sidebar the conversation gets roomier margins.
         .environment(\.placesAsColumns, model.layout != .phone)
-        #if DEBUG
-        // `-widthTrace YES`: each window's conversation column, as it changes.
+        // Each window's conversation column as it changes, in the debug log
+        // the owner can export (a width gone wrong without a known cause).
         .onGeometryChange(for: Int.self) { Int($0.size.width.rounded()) } action: { width in
-            guard UserDefaults.standard.bool(forKey: "widthTrace") else { return }
             let i = (model.app.windows.firstIndex { $0 === model } ?? -1) + 1
-            debugLog("[width] window \(i) (\(model.windowID.prefix(8))) conversation column \(width) pt, sidebar \(model.sidebarCollapsed ? "away" : "shown"), pane \(model.paneIsOpen)")
+            let window = Int((model.scene?.effectiveGeometry.coordinateSpace.bounds.width ?? 0).rounded())
+            debugLog("[width] window \(i) (\(model.windowID.prefix(8))) \((model.selection ?? .palo).storageKey): column \(width) of \(window) pt, layout \(model.layout), sidebar \(model.sidebarCollapsed ? "away" : "shown"), pane \(model.paneIsOpen ? "open" : "closed"), short \(model.shortWindow)")
         }
-        #endif
     }
 }
 
