@@ -434,8 +434,9 @@ struct ComposerView: View {
                 .contentShape(.rect)
         }
         .tint(.secondary) // Menu tints its label with the accent; match the mic
-        // The Mac draws a menu as a bordered pop-up with a chevron; keep the bare +.
-        .buttonStyle(.borderless)
+        // The Mac draws a menu as a bordered pop-up with a chevron; keep the
+        // bare +, its whole frame clickable (macMenuHitArea).
+        .macMenuHitArea()
         .menuIndicator(.hidden)
         .frame(width: compact ? 32 : 40, height: buttonHeight) // the Mac sizes a borderless menu to its glyph
         .padding(.leading, compact ? 2 : 4)

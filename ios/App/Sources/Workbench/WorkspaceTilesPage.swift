@@ -69,7 +69,7 @@ struct WorkspaceTilesPage: View {
         .background { focusKeys }
         // The title reads every session's name: in a modifier of its own, so
         // a session ticking doesn't re-render the page and all its tiles.
-        .modifier(WorkspaceBar(workspaceID: workspaceID))
+        .modifier(WorkspaceBar(workspaceID: workspaceID, actions: actions))
         .accessibilityIdentifier("workspace-page")
         #if DEBUG || PERF_HARNESS
         // `-demoType <keys per second>`: types into the active tile's draft,
@@ -126,6 +126,16 @@ struct WorkspaceTilesPage: View {
         actions.moveOut = { takeOut($0) }
         actions.closePane = { takeOut($0) }
         actions.end = { closing = $0 }
+        actions.add = { id, placement in
+            Task {
+                do {
+                    try await model.addPane(id, to: workspaceID, placement: placement)
+                } catch {
+                    failure = Copy.error(error)
+                }
+            }
+        }
+        actions.addNew = { model.newSessionAsPane(in: workspaceID, placement: $0) }
     }
 
     /// Off the canvas: the session goes on, on its own in the list.
@@ -231,44 +241,93 @@ final class TileDetails {
     }
 }
 
-/// The workspace page's bar: only the right pane's button (off the Mac).
-/// The Mac has no navigation bar: its window toolbar holds the pane's button
-/// and a strip at the page's top holds the rest.
+/// The workspace page's bar, the same as every page's: its name in the
+/// middle, and at the right ＋ (a new pane, split off the active one as
+/// Bento Term's New Pane) and the right pane's button. The Mac has them in
+/// the window's title bar row (the window toolbar holds ＋ and the pane's
+/// button, MacToolbar); the tiles start below the row. iPads have them in a
+/// slim navigation bar.
 private struct WorkspaceBar: ViewModifier {
     let workspaceID: String
+    let actions: PaneActions
     @Environment(AppStore.self) private var store
     @Environment(WindowModel.self) private var model
 
     func body(content: Content) -> some View {
         let workspace = store.workspace(id: workspaceID)
         let title = workspace?.title(pals: store.pals) ?? ""
-        // The title names the window (the Mac, an iPad's windows); no
-        // subtitle: it showed in the iPad's slim bar.
-        bar(content.navigationTitle(title))
+        // The title names the window too (the Mac, an iPad's windows).
+        bar(content.navigationTitle(title), title: title)
     }
 
-    @ViewBuilder private func bar(_ content: some View) -> some View {
+    /// ＋: beside the active pane, to its right.
+    private var placement: PanePlacement? {
+        model.activeTile(in: workspaceID).map { PanePlacement(pane: $0, horizontal: true) }
+    }
+
+    @ViewBuilder private func bar(_ content: some View, title: String) -> some View {
         if Platform.barInWindowToolbar {
-            // The Mac: no navigation bar, no title strip (the sidebar names
-            // the workspace; each tile has its own header), no 并排 button.
-            // The tiles run up into the window's title bar row: this view
-            // needs every point of height. Clear of the traffic lights and
-            // the sidebar's capsule when the sidebar is away.
+            let others = store.paneCandidates(for: workspaceID)
+            let online = store.connection.isOnline
             content
                 .toolbar(.hidden, for: .navigationBar)
-                .padding(.top, model.sidebarCollapsed ? SidebarChrome.shared.titlebarMidY * 2 - 6 : 0)
-                .ignoresSafeArea(.container, edges: .top)
+                .macTitlebarCenter { MacTitlebarTitle(title: title) }
+                .macToolbarMenus(signature: "\(others.map { "\($0.id)=\($0.displayName)" })|\(placement?.pane ?? "")|\(online)") {
+                    MacToolbarMenus(add: addItems(others: others, online: online))
+                }
         } else {
-            // iPads as the Mac (the owner's ask, 2026-10-22): no big title
-            // (the sidebar names the workspace, each tile has its header), no
-            // 并排; only the right pane's button in a slim bar.
             content
                 .toolbarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
-                    ToolbarItem(placement: .topBarTrailing) { PaneButton() }
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        AddPaneMenu(workspaceID: workspaceID, actions: actions, placement: placement)
+                        PaneButton()
+                    }
                 }
         }
+    }
+
+    private func addItems(others: [Pal], online: Bool) -> [MacMenuItem] {
+        let placement = placement
+        let actions = actions
+        var items: [MacMenuItem] = []
+        if !others.isEmpty {
+            items.append(MacMenuItem(title: String(localized: "已有的会话"), children: others.map { pal in
+                MacMenuItem(title: pal.displayName, disabled: !online) { actions.add(pal.id, placement) }
+            }, inline: true))
+        }
+        items.append(MacMenuItem(title: String(localized: "新开一个会话…"), image: "plus", disabled: !online) {
+            actions.addNew(placement)
+        })
+        return items
+    }
+}
+
+/// iPads: ＋ in the workspace's bar, the same choices as the Mac's.
+private struct AddPaneMenu: View {
+    let workspaceID: String
+    let actions: PaneActions
+    let placement: PanePlacement?
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        let others = store.paneCandidates(for: workspaceID)
+        Menu {
+            if !others.isEmpty {
+                Section("已有的会话") {
+                    ForEach(others) { pal in
+                        Button(pal.displayName) { actions.add(pal.id, placement) }
+                    }
+                }
+            }
+            Button("新开一个会话…", systemImage: "plus") { actions.addNew(placement) }
+        } label: {
+            Image(systemName: "plus")
+        }
+        .disabled(!store.connection.isOnline)
+        .tint(.primary)
+        .accessibilityLabel("新窗格")
+        .accessibilityIdentifier("workspace-add-pane")
     }
 }
 
@@ -282,4 +341,3 @@ private struct PaneButton: View {
             .accessibilityIdentifier("pane-toggle")
     }
 }
-

@@ -57,6 +57,9 @@ struct FloatingTitleOrb: View {
     /// The Mac: hangs from the top of the column, smaller (no bar to fill,
     /// and it shouldn't crowd the messages it floats over).
     var topAligned = false
+    /// The Mac: the title bar row's middle line, from this view's top (the
+    /// window's): the resting orb sits centered on it, in the row.
+    var rowMidY: CGFloat? = nil
     /// A session's page: its drop in its state's color with the state's white
     /// mark, instead of Palo's pair; same place, same motion when listening.
     var session: SessionOrb? = nil
@@ -73,8 +76,9 @@ struct FloatingTitleOrb: View {
     private static let halfBar: CGFloat = 22
     /// Listening: the gap between the bar's bottom and the big orb.
     private static let listenGap: CGFloat = 14
-    /// The Mac's resting sizes relative to the phone's.
-    static let macScale: CGFloat = 0.62
+    /// The Mac's sizes in the title bar row relative to the phone's: 26 pt
+    /// resting, a little bigger while something waits on the owner.
+    static let macScale: CGFloat = 26 / 56
     /// The Mac: the orb's top below the column's top edge.
     private static let macTopPad: CGFloat = 4
     /// The Mac: the strip the resting orb hangs in, below the titlebar.
@@ -95,12 +99,7 @@ struct FloatingTitleOrb: View {
         let canvas = TitleOrbDrop.canvas(for: d)
         let boxHeight = max(Self.box.height, canvas)
         // Where it rests and where it drops to listen, from the box's center.
-        let rest = topAligned
-            ? Self.macTopPad + barSize / 2 - boxHeight / 2
-            : barCenterY.map { Self.islandClearance(d: barSize, barCenterY: $0) } ?? 0
-        let dropped = topAligned
-            ? Self.macTopPad + Self.listenGap + big / 2 - boxHeight / 2
-            : Self.halfBar + Self.listenGap + big / 2
+        let (rest, dropped) = offsets(barSize: barSize, big: big, boxHeight: boxHeight)
         ZStack {
             Button(action: action) {
                 Group {
@@ -126,6 +125,18 @@ struct FloatingTitleOrb: View {
                    value: listen)
         // Phones: the slot in the bar speaks for it. The Mac has no slot.
         .modifier(FloatingOrbAccessibility(speaks: barCenterY == nil))
+    }
+
+    /// Where it rests and where it drops to listen, from the box's center.
+    private func offsets(barSize: CGFloat, big: CGFloat, boxHeight: CGFloat) -> (CGFloat, CGFloat) {
+        if let rowMidY {
+            // In the row; it drops to where it did below the row before.
+            return (rowMidY - boxHeight / 2, 2 * rowMidY + Self.macTopPad + Self.listenGap + big / 2 - boxHeight / 2)
+        }
+        if topAligned {
+            return (Self.macTopPad + barSize / 2 - boxHeight / 2, Self.macTopPad + Self.listenGap + big / 2 - boxHeight / 2)
+        }
+        return (barCenterY.map { Self.islandClearance(d: barSize, barCenterY: $0) } ?? 0, Self.halfBar + Self.listenGap + big / 2)
     }
 
     @ViewBuilder private func drop(_ d: CGFloat) -> some View {
@@ -274,8 +285,7 @@ struct SessionOrbDrop: View {
     let size: CGFloat
 
     var body: some View {
-        SessionIndicator(state: session.state, size: size, glass: false, running: session.running,
-                         voiceOwner: .some(nil), innerOnly: true, bare: true)
+        SessionIndicator(state: session.state, size: size, running: session.running, voiceOwner: .some(nil))
             .contentShape(Circle())
     }
 }

@@ -79,6 +79,27 @@ private struct DemoCapture: ViewModifier {
             let delay = d.double(forKey: "demoSnapshotDelay")
             try? await Task.sleep(for: .seconds(delay > 0 ? delay : 3))
             guard let window = scene?.keyWindow ?? scene?.windows.first else { return }
+            // `-hitProbe "x,y|x,y"`: which view takes a click at each point
+            // in the window (a button that answers on part of itself only).
+            for spec in (d.string(forKey: "hitProbe") ?? "").split(separator: "|") {
+                let xy = spec.split(separator: ",").compactMap { Double($0) }
+                guard xy.count == 2 else { continue }
+                let p = CGPoint(x: xy[0], y: xy[1])
+                var chain: [String] = []
+                var v = window.hitTest(p, with: nil)
+                while let view = v, chain.count < 4 {
+                    let f = view.convert(view.bounds, to: window)
+                    chain.append("\(type(of: view)) \(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height))")
+                    v = view.superview
+                }
+                NSLog("[hit] %@", "\(Int(p.x)),\(Int(p.y)): \(chain.joined(separator: " < "))")
+            }
+            #if targetEnvironment(macCatalyst)
+            if let spec = d.string(forKey: "hitProbe"),
+               let r = AppKitBundle.object?.perform(NSSelectorFromString("hitChain:"), with: spec)?.takeUnretainedValue() as? String {
+                NSLog("[hit-appkit]\n%@", r)
+            }
+            #endif
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                 _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
             }
@@ -329,7 +350,10 @@ struct MainScreen: View {
             .environment(voice)
         }
         // 新建会话 (⌘N, ＋) and 新建工作区 (⌘⇧N, ＋, a session's 并排…).
-        .sheet(isPresented: $model.newSession, onDismiss: { model.newSessionIntoWorkspace = nil }) {
+        .sheet(isPresented: $model.newSession, onDismiss: {
+            model.newSessionIntoWorkspace = nil
+            model.newSessionPlacement = nil
+        }) {
             NewSessionPanel().environment(model).environment(store)
         }
         .sheet(isPresented: Binding(get: { model.newWorkspace != nil }, set: { if !$0 { model.newWorkspace = nil } })) {

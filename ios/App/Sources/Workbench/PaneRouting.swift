@@ -171,3 +171,46 @@ extension WindowModel {
         if let tile { tile.wrappedValue = on } else { detailShown = on }
     }
 }
+
+/// Where a pane added to a split workspace goes: beside `pane`, to its
+/// right (`horizontal`) or below it.
+struct PanePlacement: Equatable {
+    var pane: String
+    var horizontal: Bool
+}
+
+extension WindowModel {
+    /// A session into a split workspace as a pane of its own, beside
+    /// `placement`'s pane (else where the layout puts a newcomer), and the
+    /// pane to talk to. A new session already in it is only placed.
+    func addPane(_ id: String, to workspaceID: String, placement: PanePlacement?) async throws {
+        guard let store else { return }
+        if store.pal(id: id)?.workspaceId != workspaceID {
+            try await store.moveSession(id, to: workspaceID)
+        }
+        if let placement, placement.pane != id, let ws = store.workspace(id: workspaceID), let shown = tree(of: ws) {
+            // The tiling without it (it may already be in, where newcomers go).
+            let without = LayoutTree.leafOrder(of: shown).contains(id) ? LayoutTree.removing(pane: id, from: shown) : shown
+            if let without,
+               let placed = LayoutTree.splitting(pane: placement.pane, adding: id, horizontal: placement.horizontal, in: without),
+               let json = placed.json {
+                _ = try await store.updateWorkspace(id: workspaceID, layout: json)
+            }
+        }
+        activate(tile: id, in: workspaceID)
+    }
+
+    /// 新开一个会话… for a split workspace, its pane going to `placement`.
+    func newSessionAsPane(in workspaceID: String, placement: PanePlacement?) {
+        newSessionIntoWorkspace = workspaceID
+        newSessionPlacement = placement
+        newSession = true
+    }
+
+    /// ⌘D / ⌘⇧D: a new session split off the active pane of the open
+    /// workspace, to its right or below it.
+    func splitActivePane(horizontal: Bool) {
+        guard case .workspace(let id)? = selection, layout == .split, let active = activeTile(in: id) else { return }
+        newSessionAsPane(in: id, placement: PanePlacement(pane: active, horizontal: horizontal))
+    }
+}

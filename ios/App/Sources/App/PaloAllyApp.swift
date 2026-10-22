@@ -85,6 +85,12 @@ private struct PlaceCommands: Commands {
             // beside the conversation closes.
             Button("返回") { inFront { $0.goBack() } }
                 .keyboardShortcut("[", modifiers: .command)
+            Divider()
+            // A split workspace: a new session's pane off the active one.
+            Button("向右分出新会话…") { inFront { $0.splitActivePane(horizontal: true) } }
+                .keyboardShortcut("d", modifiers: .command)
+            Button("向下分出新会话…") { inFront { $0.splitActivePane(horizontal: false) } }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
         }
         // ⌘, : management with its settings page.
         CommandGroup(replacing: .appSettings) {

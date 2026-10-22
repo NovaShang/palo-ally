@@ -380,7 +380,7 @@ private struct PalListRow: View {
     var body: some View {
         SidebarRowLayout {
             // The state glyph of the session's indicator, alone (no arc, no label).
-            SessionIndicator(pal, size: 28, glass: false, glyphOnly: true)
+            SessionIndicator(pal, size: 28, glyphOnly: true)
         } title: {
             Text(pal.displayName)
         } subtitle: {
@@ -487,7 +487,7 @@ private struct FooterMenuStyle: ViewModifier {
     func body(content: Content) -> some View {
         if Platform.isMac {
             content
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .frame(width: 32, height: 32)
                 .glassEffect(.regular.interactive(), in: .circle)
         } else {

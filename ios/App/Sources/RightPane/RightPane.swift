@@ -128,7 +128,8 @@ struct LibraryTab: View {
             NavigationStack(path: $model.libraryPath) {
                 LibraryView()
                     .modifier(InContentNavigationBar())
-                    .macPageTop(String(localized: "成果"))
+                    // The Mac: the pane's tabs already say 成果 (no second title).
+                    .macBarHidden()
             }
         }
     }

@@ -92,7 +92,8 @@ struct MacPageStrip: View {
     }
 }
 
-/// A round glass button for the strip's trailing side (⋯, ✕).
+/// A round glass button for the strip's trailing side (⋯, ✕): frame, then
+/// the hit shape, then the glass, so the whole circle takes the click.
 struct MacStripButton<Label: View>: View {
     let action: () -> Void
     @ViewBuilder let label: () -> Label
@@ -122,7 +123,7 @@ struct MacStripMenu<Content: View>: View {
                 .frame(width: 32, height: 32)
                 .contentShape(.circle)
         }
-        .buttonStyle(.borderless)
+        .macMenuHitArea()
         .menuIndicator(.hidden)
         .frame(width: 32, height: 32)
         .glassEffect(.regular.interactive(), in: .circle)
@@ -133,9 +134,22 @@ struct MacStripMenu<Content: View>: View {
 /// The Mac: no navigation bar; the strip at the top instead. Elsewhere nothing changes.
 struct MacPageTop: ViewModifier {
     let strip: MacPageStrip
+    /// A page of the window (an Ally, 电脑与设备): its title in the title bar
+    /// row itself (MacTitlebar), not in a strip below it; its menu is the
+    /// window toolbar's ⋯ (`macToolbarMenu`).
+    var inRow = false
+    /// The page's background, what the row's fade is made of.
+    var fade = Color(.systemBackground)
 
     func body(content: Content) -> some View {
-        if Platform.barInWindowToolbar {
+        if Platform.barInWindowToolbar && inRow {
+            content
+                .toolbar(.hidden, for: .navigationBar)
+                .macTitlebarFade(fade)
+                .macTitlebarCenter {
+                    MacTitlebarTitle(title: strip.title, subtitle: strip.subtitle, dot: strip.dot)
+                }
+        } else if Platform.barInWindowToolbar {
             content
                 .toolbar(.hidden, for: .navigationBar)
                 .safeAreaBar(edge: .top, spacing: 0) { strip }
@@ -147,12 +161,128 @@ struct MacPageTop: ViewModifier {
 }
 
 extension View {
-    /// The Mac's floating strip in place of this page's navigation bar (MacPageStrip).
+    /// The Mac's floating strip in place of this page's navigation bar
+    /// (MacPageStrip); `inRow`: in the window's title bar row (MacTitlebar).
     func macPageTop(_ title: String, subtitle: String = "", dot: StatusDotKind? = nil, back: (() -> Void)? = nil,
-                    trailing: AnyView? = nil) -> some View {
-        modifier(MacPageTop(strip: MacPageStrip(title: title, subtitle: subtitle, dot: dot, back: back, trailing: trailing)))
+                    trailing: AnyView? = nil, inRow: Bool = false, fade: Color = Color(.systemBackground)) -> some View {
+        modifier(MacPageTop(strip: MacPageStrip(title: title, subtitle: subtitle, dot: dot, back: back, trailing: trailing),
+                            inRow: inRow, fade: fade))
+    }
+
+    /// The Mac: no navigation bar and nothing in its place (a page whose
+    /// title is already said above it, as 成果 under the right pane's tabs).
+    @ViewBuilder func macBarHidden() -> some View {
+        if Platform.barInWindowToolbar { toolbar(.hidden, for: .navigationBar) } else { self }
+    }
+
+    /// The Mac draws a menu with the borderless style as an AppKit button
+    /// the size of its glyph (an ⋯ took clicks on a strip 5 pt tall); with
+    /// the plain style its whole label takes them. Elsewhere borderless.
+    @ViewBuilder func macMenuHitArea() -> some View {
+        if Platform.isMac { buttonStyle(.plain) } else { buttonStyle(.borderless) }
     }
 }
+
+// MARK: - the title bar row
+
+/// The Mac window's title bar is the traffic lights' row, the window
+/// toolbar's (docs/workbench-design/mac-titlebar.html), transparent: the
+/// page shows through it. A conversation page runs up under it and only
+/// fades out there (no band, no line); a workspace's tiles start below it.
+/// The row holds the sidebar's button at the left (SidebarCollapse), the
+/// page's identity in the middle (MacTitlebarItems), and at the right the
+/// toolbar's own items as one group: the page's ⋯, a workspace's ＋, and
+/// the right pane's button last (MacToolbar).
+enum MacTitlebar {
+    /// The traffic lights' middle line, in the window.
+    @MainActor static var midY: CGFloat { SidebarChrome.shared.titlebarMidY }
+    /// The row's height: the content starts below it.
+    @MainActor static var height: CGFloat { midY * 2 }
+}
+
+/// A page's title in the row: the name, and a small status line under it.
+struct MacTitlebarTitle: View {
+    let title: String
+    var subtitle = ""
+    var dot: StatusDotKind? = nil
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text(title)
+                .font(.headline)
+                .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("page-title")
+            if !subtitle.isEmpty {
+                HStack(spacing: 5) {
+                    if let dot { StatusDot(dot, size: 6) }
+                    Text(subtitle)
+                        .lineLimit(1)
+                        .contentTransition(.opacity)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("page-status")
+            }
+        }
+        .animation(.snappy, value: subtitle)
+    }
+}
+
+/// The Mac: the page's identity in the middle of the title bar row, over
+/// its column (clear of the sidebar's button and the toolbar's items).
+struct MacTitlebarItems<Center: View>: ViewModifier {
+    @ViewBuilder let center: () -> Center
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .top) {
+            center()
+                .padding(.horizontal, 120)
+                .frame(maxWidth: .infinity)
+                .frame(height: MacTitlebar.height)
+                .ignoresSafeArea(.container, edges: .top)
+        }
+    }
+}
+
+/// The Mac: a conversation page under the title bar row has no band and no
+/// line where it meets it: the system's scroll edge (a blur with a hard
+/// bottom edge on the Mac) is off, and the page's own color covers the row
+/// and fades out just below it.
+struct MacTitlebarFade: ViewModifier {
+    var color = Color(.systemBackground)
+
+    func body(content: Content) -> some View {
+        content
+            .scrollEdgeEffectHidden(true, for: .top)
+            .overlay(alignment: .top) {
+                let row = MacTitlebar.height
+                let fade: CGFloat = 18
+                LinearGradient(stops: [
+                    .init(color: color, location: 0),
+                    .init(color: color, location: (row - 8) / (row + fade)),
+                    .init(color: color.opacity(0), location: 1),
+                ], startPoint: .top, endPoint: .bottom)
+                .frame(height: row + fade)
+                .ignoresSafeArea(.container, edges: .top)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+    }
+}
+
+extension View {
+    /// The Mac: the page's identity in the title bar row (MacTitlebarItems).
+    func macTitlebarCenter<C: View>(@ViewBuilder _ center: @escaping () -> C) -> some View {
+        modifier(MacTitlebarItems(center: center))
+    }
+
+    /// The Mac: the soft fade under the title bar row in place of the band (MacTitlebarFade).
+    func macTitlebarFade(_ color: Color = Color(.systemBackground)) -> some View {
+        modifier(MacTitlebarFade(color: color))
+    }
+}
+
 
 /// A page's ⋯ menu: in the navigation bar on phones and iPads, a round glass
 /// button in the strip on the Mac.

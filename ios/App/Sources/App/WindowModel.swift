@@ -179,6 +179,12 @@ final class WindowModel {
     var newSession = false
     /// 并排 → 新开: the new session goes into this workspace as a tile.
     var newSessionIntoWorkspace: String?
+    /// 向右分出 / 向下分出 → 新开一个会话: where in that workspace its pane goes.
+    var newSessionPlacement: PanePlacement?
+    /// The Mac: what the open page puts in the window toolbar (its ⋯, a
+    /// workspace's ＋), and which page put it there.
+    var macToolbarMenus: MacToolbarMenus?
+    @ObservationIgnored var macToolbarOwner: UUID?
     /// Each workspace's active tile (a session id), kept while the window is open.
     var activeTiles: [String: String] = [:]
     /// Phones (and short windows): the right pane as a full page.

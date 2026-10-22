@@ -70,7 +70,7 @@ private struct SessionDetailForm: View {
             }
             if let pal {
                 Section {
-                    DetailHeader(indicator: AnyView(SessionIndicator(pal, size: 58, glass: false)), name: pal.displayName,
+                    DetailHeader(indicator: AnyView(SessionIndicator(pal, size: 46)), name: pal.displayName,
                                  caption: CCSession.shortPath(pal.cwd), line: statusLine(pal), state: pal.dot,
                                  editing: $editing, draft: $newName, canRename: online,
                                  onRename: { Task { await rename() } },
@@ -85,7 +85,7 @@ private struct SessionDetailForm: View {
                                      canCompact: online && working == nil && pal.status != .busy)
                 }
                 tasks
-                usageAndWorkspace(pal)
+                workspaceSection(pal)
                 end(pal)
             }
         }
@@ -173,14 +173,10 @@ private struct SessionDetailForm: View {
         }
     }
 
-    @ViewBuilder private func usageAndWorkspace(_ pal: Pal) -> some View {
+    @ViewBuilder private func workspaceSection(_ pal: Pal) -> some View {
         let current = pal.workspaceId.flatMap { store.workspace(id: $0) }
         let others = store.workspaces.filter { $0.id != pal.workspaceId }
         Section {
-            if let d = detail {
-                LabeledContent("今天", value: DetailTokens.money(d.spentToday))
-                LabeledContent("累计", value: DetailTokens.money(d.costTotalUsd))
-            }
             if current != nil || !others.isEmpty {
                 Menu {
                     ForEach(others) { w in

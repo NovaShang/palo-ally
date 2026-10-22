@@ -24,6 +24,64 @@ enum Platform {
     }()
 }
 
+/// An entry of a menu in the Mac window toolbar (built as a UIMenu): an
+/// action, or with `children` a submenu (`inline`: a titled section).
+struct MacMenuItem {
+    var title: String
+    var image: String? = nil
+    var checked = false
+    var destructive = false
+    var disabled = false
+    var children: [MacMenuItem]? = nil
+    var inline = false
+    var action: () -> Void = {}
+}
+
+/// What the open page puts in the Mac window toolbar, left of the right
+/// pane's button: its ⋯ menu, and a workspace's ＋ (a new pane).
+struct MacToolbarMenus {
+    var menu: [MacMenuItem]? = nil
+    var add: [MacMenuItem]? = nil
+}
+
+/// The Mac: the page's menus in the window toolbar while it is shown.
+/// `signature` says when they changed (they hold actions, not values).
+private struct MacToolbarMenusHost: ViewModifier {
+    let menus: () -> MacToolbarMenus
+    let signature: String
+    @Environment(WindowModel.self) private var model
+    @State private var token = UUID()
+
+    func body(content: Content) -> some View {
+        if Platform.barInWindowToolbar {
+            content
+                .onChange(of: signature, initial: true) {
+                    model.macToolbarOwner = token
+                    model.macToolbarMenus = menus()
+                }
+                .onAppear {
+                    model.macToolbarOwner = token
+                    model.macToolbarMenus = menus()
+                }
+                .onDisappear {
+                    // Only its own: the next page may have put its menus up first.
+                    guard model.macToolbarOwner == token else { return }
+                    model.macToolbarOwner = nil
+                    model.macToolbarMenus = nil
+                }
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    /// The Mac: this page's ⋯ and ＋ as window toolbar items (MacToolbar).
+    func macToolbarMenus(signature: String, _ menus: @escaping () -> MacToolbarMenus) -> some View {
+        modifier(MacToolbarMenusHost(menus: menus, signature: signature))
+    }
+}
+
 /// Mac: a standard window toolbar with the system sidebar toggle by the
 /// traffic lights (it shows and hides the list) and 成果 at the trailing
 /// edge, and no window title. The orb isn't in the toolbar: it floats at the
@@ -141,12 +199,17 @@ enum AppKitBundle {
 }
 
 private extension NSToolbarItem.Identifier {
+    static let pageMenu = NSToolbarItem.Identifier("palo.pageMenu")
+    static let addPane = NSToolbarItem.Identifier("palo.addPane")
     static let library = NSToolbarItem.Identifier("palo.library")
 }
 
-/// The window toolbar: 成果 at the trailing edge, nothing that can overflow
-/// at any width. The sidebar's button is the capsule's (SidebarCollapse), so
-/// it never meets the traffic lights or the page strips.
+/// The window toolbar, the title bar row's right-hand group
+/// (docs/workbench-design/mac-titlebar.html): the open page's ⋯, a
+/// workspace's ＋ (a new pane), and the right pane's button last. System
+/// items, so they take their clicks by construction. Nothing that can
+/// overflow. The sidebar's button is the capsule's (SidebarCollapse); the
+/// page's identity is the page's own, in the middle of the row.
 @MainActor
 final class MacToolbar: NSObject, NSToolbarDelegate {
     private static var installed: [ObjectIdentifier: MacToolbar] = [:]
@@ -175,39 +238,94 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
         toolbar.allowsUserCustomization = false
+        track()
     }
 
-    /// The separator that follows the sidebar's edge, and 成果 at the
-    /// trailing edge.
+    /// The separator that follows the sidebar's edge, room, and the pane's
+    /// button; the page's items go in before that (`refresh`).
     private static let items: [NSToolbarItem.Identifier] = [
         .primarySidebarTrackingSeparatorItemIdentifier, .flexibleSpace, .library,
     ]
+    private static let pageItems: [NSToolbarItem.Identifier] = [.pageMenu, .addPane]
+
+    /// Follows the page's menus (they come and go with the page).
+    private func track() {
+        withObservationTracking { _ = model.macToolbarMenus } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.refresh()
+                self?.track()
+            }
+        }
+    }
+
+    private func refresh() {
+        let menus = model.macToolbarMenus
+        let wanted = Self.pageItems.filter { menuItems(for: $0, in: menus) != nil }
+        let shown = toolbar.items.map(\.itemIdentifier).filter(Self.pageItems.contains)
+        if shown != wanted {
+            for i in toolbar.items.indices.reversed() where Self.pageItems.contains(toolbar.items[i].itemIdentifier) {
+                toolbar.removeItem(at: i)
+            }
+            let at = toolbar.items.firstIndex { $0.itemIdentifier == .library } ?? toolbar.items.count
+            for (k, id) in wanted.enumerated() { toolbar.insertItem(withItemIdentifier: id, at: at + k) }
+        }
+        for case let item as NSMenuToolbarItem in toolbar.items {
+            if let entries = menuItems(for: item.itemIdentifier, in: menus) { item.itemMenu = UIMenu(children: Self.elements(entries)) }
+        }
+    }
+
+    private func menuItems(for id: NSToolbarItem.Identifier, in menus: MacToolbarMenus?) -> [MacMenuItem]? {
+        switch id {
+        case .pageMenu: menus?.menu
+        case .addPane: menus?.add
+        default: nil
+        }
+    }
+
+    private static func elements(_ entries: [MacMenuItem]) -> [UIMenuElement] {
+        entries.map { e in
+            let image = e.image.flatMap { UIImage(systemName: $0) }
+            if let children = e.children {
+                return UIMenu(title: e.title, image: image, options: e.inline ? .displayInline : [], children: elements(children))
+            }
+            var attributes: UIMenuElement.Attributes = []
+            if e.destructive { attributes.insert(.destructive) }
+            if e.disabled { attributes.insert(.disabled) }
+            let action = e.action
+            return UIAction(title: e.title, image: image, attributes: attributes, state: e.checked ? .on : .off) { _ in action() }
+        }
+    }
 
     // MARK: NSToolbarDelegate
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { Self.items }
 
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { Self.items }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { Self.items + Self.pageItems }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         switch id {
         case .library:
-            return toggle(id, symbol: "sidebar.trailing", label: String(localized: "右侧栏"), tip: String(localized: "显示或隐藏右侧栏 ⌘2"),
-                          action: #selector(toggleLibrary))
+            let button = UIBarButtonItem(image: UIImage(systemName: "sidebar.trailing"), style: .plain,
+                                         target: self, action: #selector(toggleLibrary))
+            let item = NSToolbarItem(itemIdentifier: id, barButtonItem: button)
+            item.label = String(localized: "右侧栏")
+            item.toolTip = String(localized: "显示或隐藏右侧栏 ⌘2")
+            item.visibilityPriority = .high
+            return item
+        case .pageMenu, .addPane:
+            let item = NSMenuToolbarItem(itemIdentifier: id)
+            let add = id == .addPane
+            item.image = UIImage(systemName: add ? "plus" : "ellipsis")
+            item.showsIndicator = false
+            item.label = add ? String(localized: "新窗格") : String(localized: "更多")
+            item.toolTip = add ? String(localized: "在右边分出一个会话 ⌘D") : nil
+            item.visibilityPriority = .high
+            if let entries = menuItems(for: id, in: model.macToolbarMenus) { item.itemMenu = UIMenu(children: Self.elements(entries)) }
+            return item
         default:
             return nil
         }
-    }
-
-    private func toggle(_ id: NSToolbarItem.Identifier, symbol: String, label: String, tip: String,
-                        action: Selector) -> NSToolbarItem {
-        let button = UIBarButtonItem(image: UIImage(systemName: symbol), style: .plain, target: self, action: action)
-        let item = NSToolbarItem(itemIdentifier: id, barButtonItem: button)
-        item.label = label
-        item.toolTip = tip
-        item.visibilityPriority = .high
-        return item
     }
 
     @objc private func toggleLibrary() { model.toggleLibrary() }

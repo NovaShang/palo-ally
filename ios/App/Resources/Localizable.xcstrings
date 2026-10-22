@@ -409,28 +409,6 @@
         }
       }
     },
-    "上次叫醒不到 $0.01" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Last wake-up cost under $0.01"
-          }
-        }
-      }
-    },
-    "上次叫醒约 $%@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Last wake-up cost about $%@"
-          }
-        }
-      }
-    },
     "下载" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1586,6 +1564,50 @@
         }
       }
     },
+    "向下分出" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Split Down"
+          }
+        }
+      }
+    },
+    "向下分出新会话…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Split Down with a New Session…"
+          }
+        }
+      }
+    },
+    "向右分出" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Split Right"
+          }
+        }
+      }
+    },
+    "向右分出新会话…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Split Right with a New Session…"
+          }
+        }
+      }
+    },
     "告诉它你想长期盯住或推进的事，比如「回国机票降价了告诉我」「每天早上给我一份晨报」。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1769,6 +1791,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "In progress"
+          }
+        }
+      }
+    },
+    "在右边分出一个会话 ⌘D" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Split a session off to the right ⌘D"
           }
         }
       }
@@ -3214,6 +3247,17 @@
         }
       }
     },
+    "新窗格" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Pane"
+          }
+        }
+      }
+    },
     "方式" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4096,17 +4140,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "What time each day"
-          }
-        }
-      }
-    },
-    "每天最多 %@ 美元" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Up to %@ USD a day"
           }
         }
       }
@@ -5284,17 +5317,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Can chat"
-          }
-        }
-      }
-    },
-    "花费" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spend"
           }
         }
       }

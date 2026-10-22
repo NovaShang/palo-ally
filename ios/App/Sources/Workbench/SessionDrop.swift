@@ -137,41 +137,15 @@ private final class SoloEngine {
 struct SessionDropPreview: View {
     @State private var listening = false
     @State private var level: Float = 0
-    /// The indicator without its glass circle, laid on a drop a little
-    /// larger than it: the drop is the container.
-    private func containerRow(neutral: Bool) -> some View {
-        HStack {
-            ForEach(states, id: \.1) { st, name in
-                VStack(spacing: 6) {
-                    ZStack {
-                        // Big enough that the indicator never shows past
-                        // the glass, however the drop moves.
-                        SessionDrop(state: st, voiceLevel: nil, neutral: neutral)
-                            .frame(width: 84, height: 84)
-                        SessionIndicator(state: st, contextPct: 46, effort: "high", model: "claude-opus-5-5",
-                                         size: 50, glass: false)
-                    }
-                    .frame(width: 88, height: 88)
-                    Text(name).font(.caption).foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-            }
-        }
-        .padding(.vertical, 8)
-    }
-
-    private func dropMiddle(_ i: SessionIndicator) -> SessionIndicator { i }
-
     private let states: [(StatusDotKind, String)] = [(.working, "在干"), (.waiting, "等你"), (.done, "做完了"), (.idle, "闲着")]
 
     var body: some View {
         List {
-            Section("D. 放在指示器中间，加大，上面是白色图标或数字") {
+            Section("现在用的：水滴，上面是白色图标或数字（没有玻璃圈）") {
                 HStack {
                     ForEach(states, id: \.1) { st, name in
                         VStack(spacing: 6) {
-                            dropMiddle(SessionIndicator(state: st, contextPct: 46, effort: "high", model: "claude-opus-5-5",
-                                                        size: 58, running: st == .working ? 0 : 0))
+                            SessionIndicator(state: st, size: 46)
                             Text(name).font(.caption).foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity)
@@ -180,29 +154,14 @@ struct SessionDropPreview: View {
                 .padding(.vertical, 8)
                 HStack {
                     VStack(spacing: 6) {
-                        dropMiddle(SessionIndicator(state: .working, contextPct: 72, effort: "max", model: "claude-opus-5-5",
-                                                    size: 58, running: 3))
+                        SessionIndicator(state: .working, size: 46, running: 3)
                         Text("在干，3 个子任务").font(.caption).foregroundStyle(.secondary)
                     }
                     VStack(spacing: 6) {
-                        dropMiddle(SessionIndicator(state: .working, contextPct: 30, effort: "medium", model: "claude-sonnet-5-5",
-                                                    size: 38))
+                        SessionIndicator(state: .working, size: 26)
                         Text("标题栏的大小").font(.caption).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity)
-                }
-                .padding(.vertical, 8)
-            }
-            Section("A. 放在指示器中间（外圈照旧）") {
-                HStack {
-                    ForEach(states, id: \.1) { st, name in
-                        VStack(spacing: 6) {
-                            SessionIndicator(state: st, contextPct: 46, effort: "high", model: "claude-opus-5-5", size: 58)
-                                .modifiedCenter(SessionDrop(state: st, voiceLevel: nil))
-                            Text(name).font(.caption).foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
                 }
                 .padding(.vertical, 8)
             }
@@ -218,12 +177,6 @@ struct SessionDropPreview: View {
                 }
                 .padding(.vertical, 8)
             }
-            Section("C. 水滴当容器，代替外面的玻璃圆（染状态色）") {
-                containerRow(neutral: false)
-            }
-            Section("C2. 水滴当容器（灰色水滴，状态看里面的图标）") {
-                containerRow(neutral: true)
-            }
             Section("按住说话时：从标题落下来，变大，跟着声音抖") {
                 VStack(spacing: 16) {
                     SessionDrop(state: .working, voiceLevel: listening ? level : nil)
@@ -238,7 +191,7 @@ struct SessionDropPreview: View {
                 .padding(.vertical, 8)
             }
             Section {
-                Text("这是试验页，用的就是 Palo 球的引擎，只是一滴水、染状态色。最上面的 D 是按你说的：水滴在指示器中间，加大，上面白色图标或数字。")
+                Text("这是试验页，用的就是 Palo 球的引擎，只是一滴水、染状态色。最上面是现在各处用的样子。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
@@ -257,11 +210,4 @@ struct SessionDropPreview: View {
     }
 }
 
-private extension SessionIndicator {
-    func modifiedCenter<V: View>(_ v: V) -> SessionIndicator {
-        var copy = self
-        copy.center = AnyView(v)
-        return copy
-    }
-}
 #endif

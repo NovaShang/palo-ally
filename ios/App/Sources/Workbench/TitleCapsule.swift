@@ -63,13 +63,12 @@ struct TitleCapsule: View {
     }
 }
 
-/// Phones and iPads: the page's title is only the round indicator on its
-/// own glass circle (docs/workbench-design/indicator.html): no name, no
-/// status line. The same on Palo's page and a session's; tapping it opens
+/// The page's title as only its state: the session's live drop with its
+/// mark, no glass circle (SessionIndicator): no name, no status line. The same on Palo's page and a session's; tapping it opens
 /// the details, as the capsule does. On a phone it is also where Palo's orb
 /// rests: holding to talk, the orb flies out of it.
 struct PageIndicator: View {
-    /// The indicator itself; the glass circle is larger.
+    /// The drop (its motion spills a little past it).
     var size: CGFloat = 38
     /// The state to show instead of the session's own (waking).
     var dot: StatusDotKind? = nil
@@ -86,11 +85,9 @@ struct PageIndicator: View {
             model.detailShown.toggle()
         } label: {
             indicator
-                .padding(SessionIndicator.glassPadding(size: size))
                 .contentShape(.circle)
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: .circle)
         .modifier(PaloOrbHomeIfNeeded(enabled: isPalo && restsHere, token: token))
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { onFrame?($0) }
         .popover(isPresented: Binding(get: { model.detailShown && !AgentDetailPlacement.usesSheet(model: model, store: store) },
@@ -107,14 +104,12 @@ struct PageIndicator: View {
 
     @ViewBuilder private var indicator: some View {
         if isPalo {
-            SessionIndicator(state: store.paloDot, contextPct: store.status?.contextPct, effort: store.status?.effort,
-                             model: store.status?.model, size: size, glass: false, running: store.paloTasksRunning)
+            SessionIndicator(state: store.paloDot, size: size, running: store.paloTasksRunning)
         } else if let pal = store.palID.flatMap({ store.pal(id: $0) }) {
             // Holding to talk to it: the level in its middle.
-            SessionIndicator(state: dot ?? pal.dot, contextPct: pal.contextPct, effort: pal.effort, model: pal.model,
-                             size: size, glass: false, running: pal.tasksRunning, voiceOwner: .some(nil))
+            SessionIndicator(state: dot ?? pal.dot, size: size, running: pal.tasksRunning, voiceOwner: .some(nil))
         } else {
-            SessionIndicator(state: dot ?? .idle, size: size, glass: false)
+            SessionIndicator(state: dot ?? .idle, size: size)
         }
     }
 

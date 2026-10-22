@@ -99,8 +99,10 @@ struct AllyConversationView: View {
         .navigationSubtitle(Copy.allyPresence(ally))
         .navigationBarTitleDisplayMode(.inline)
         .modifier(BarMenu { menu(ally) })
-        // The Mac: to the window's top, its name and menu floating (MacPageStrip).
-        .macPageTop(ally.displayName, subtitle: Copy.allyPresence(ally), trailing: AnyView(menu(ally)))
+        // The Mac: its name and 在线 in the middle of the title bar row, ⋯ at its right (MacTitlebar).
+        .macPageTop(ally.displayName, subtitle: Copy.allyPresence(ally), inRow: true)
+        // …and its ⋯ in the window toolbar, left of the right pane's button.
+        .macToolbarMenus(signature: "\(ally.effectiveTrust)|\(menuDisabled)") { macMenu(ally) }
         .refreshable { _ = try? await store.loadAllyLog(id: allyID) }
         .animation(.snappy, value: panel)
         .animation(.snappy, value: log.count)
@@ -177,6 +179,24 @@ struct AllyConversationView: View {
     }
 
     // MARK: menu
+
+    private var menuDisabled: Bool { working || store.ally(id: allyID) == nil || !store.connection.isOnline }
+
+    /// The Mac: the same menu as the window toolbar's ⋯ (MacToolbar).
+    private func macMenu(_ ally: AllyInfo) -> MacToolbarMenus {
+        let off = menuDisabled
+        let trust = [AllyTrust.converse, .review].map { t in
+            MacMenuItem(title: Copy.allyTrust(t), checked: ally.effectiveTrust == t, disabled: off) {
+                Task { await setTrust(t) }
+            }
+        }
+        return MacToolbarMenus(menu: [
+            MacMenuItem(title: String(localized: "你的助理怎么回 TA"), children: trust, inline: true),
+            MacMenuItem(title: String(localized: "解除"), image: "person.2.slash", destructive: true, disabled: off) {
+                panel = .remove
+            },
+        ])
+    }
 
     private func menu(_ ally: AllyInfo) -> some View {
         PageMenu(label: String(localized: "更多")) {

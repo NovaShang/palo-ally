@@ -29,7 +29,37 @@ final class ImmersiveWindows: NSObject {
             }
         }
         Self.applyAll(tries: 30)
+        #if DEBUG
+        Self.logTitlebarClicks()
+        #endif
     }
+
+    #if DEBUG
+    private static var clickMonitor: Any?
+
+    /// A click in the title bar row: which AppKit view takes it (the app's
+    /// content gets it as UINSInputView; anything else is the titlebar's).
+    private static func logTitlebarClicks() {
+        guard clickMonitor == nil else { return }
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+            MainActor.assumeIsolated {
+                if let window = event.window, let frame = window.contentView?.superview {
+                    let top = frame.bounds.height - event.locationInWindow.y
+                    if top < 60 {
+                        var chain: [String] = []
+                        var v = frame.hitTest(event.locationInWindow)
+                        while let view = v, chain.count < 4 {
+                            chain.append(String(describing: type(of: view)))
+                            v = view.superview
+                        }
+                        NSLog("[titlebar-click] %d,%d: %@", Int(event.locationInWindow.x), Int(top), chain.joined(separator: " < "))
+                    }
+                }
+            }
+            return event
+        }
+    }
+    #endif
 
     /// The scene's window and its toolbar come a little after UIKit asks for
     /// them: tries every 0.1 s until one is there.
@@ -79,6 +109,29 @@ final class ImmersiveWindows: NSObject {
     }
 
     #if DEBUG
+    /// `spec` "x,y|x,y" in the window's top-left coordinates: for each
+    /// point, the AppKit view a click there goes to and its ancestors
+    /// (whether the titlebar takes it or the app's content gets it).
+    @objc func hitChain(_ spec: String) -> String {
+        guard let id = Self.toolbarID,
+              let window = NSApplication.shared.windows.first(where: { $0.toolbar?.identifier == id }),
+              let frame = window.contentView?.superview else { return "no window" }
+        var lines: [String] = []
+        for item in spec.split(separator: "|") {
+            let xy = item.split(separator: ",").compactMap { Double($0) }
+            guard xy.count == 2 else { continue }
+            let p = NSPoint(x: xy[0], y: frame.bounds.height - xy[1])
+            var chain: [String] = []
+            var v = frame.hitTest(frame.convert(p, to: frame.superview))
+            while let view = v, chain.count < 4 {
+                chain.append(String(describing: type(of: view)))
+                v = view.superview
+            }
+            lines.append("\(Int(xy[0])),\(Int(xy[1])): \(chain.joined(separator: " < "))")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     /// The titlebar (traffic lights, toolbar items, and any band) as a PNG
     /// at `path`, transparent where it draws nothing, and its frame in the
     /// window: the app draws it over its own snapshot for the demo's

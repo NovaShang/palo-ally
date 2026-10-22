@@ -26,9 +26,7 @@ struct PaloDetailForm: View {
                 Section { Text(Copy.spaced(failure)).foregroundStyle(.red).font(.footnote) }
             }
             Section {
-                DetailHeader(indicator: AnyView(SessionIndicator(state: store.paloDot, contextPct: store.status?.contextPct,
-                                                                effort: store.status?.effort, model: store.status?.model,
-                                                                size: 58, glass: false, running: store.paloTasksRunning)),
+                DetailHeader(indicator: AnyView(TitleOrbDrop(size: 46)),
                              name: store.assistantName,
                              caption: String(localized: "你的助理"),
                              line: headerLine, state: store.paloDot,

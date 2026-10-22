@@ -197,24 +197,14 @@ struct ChatView: View {
             // Scoped to the button: must not animate the list itself.
             .animation(.snappy(duration: 0.2), value: showJump)
         }
-        .modifier(TopStrip(asBar: macOrb || macPage) {
-            VStack(spacing: 0) {
-                // A session's page has no strip: its indicator is in the
-                // title bar row (MacTitlebarIndicator).
-                if macPage && pageTop?.capsule != true {
-                    MacPageStrip(title: title, subtitle: pageTop?.subtitle ?? "", dot: pageTop?.dot, trailing: pageTop?.menu)
-                }
-                if !inTile { StatusBanner() }
-                // The Mac: the orb hangs small from the top middle of the
-                // column, just below the window's titlebar; the messages
-                // pass under both, softly.
-                if macOrb {
-                    MacTopOrb()
-                }
-            }
-            .frame(maxWidth: .infinity)
+        .modifier(TopStrip(asBar: false) {
+            if !inTile { StatusBanner().frame(maxWidth: .infinity) }
         })
-        .modifier(MacTitlebarIndicator(enabled: macPage && pageTop?.capsule == true, dot: pageTop?.dot))
+        // The Mac: the page runs up under the window's title bar row, which
+        // holds its identity (Palo's orb, a session's drop, a title) in the
+        // middle and its menu at the right; the messages fade out under it.
+        .modifier(MacChatTitlebar(kind: macOrb ? .orb : macPage ? (pageTop?.capsule == true ? .indicator : .title) : .none,
+                                  title: title, pageTop: pageTop))
         // Images and files dropped anywhere on it go to the composer.
         .modifier(ComposerDropTarget(intake: intake, enabled: bottomPanel == nil && store.rewindTarget == nil))
         // While holding to talk, the screen's background covers the
@@ -731,8 +721,8 @@ private struct PhoneTitleOrb: View {
     }
 }
 
-/// The Mac: the orb hanging from the top middle of the conversation column,
-/// below the titlebar. As tall as the resting orb; bigger, it overflows.
+/// The Mac: Palo's orb in the middle of the window's title bar row, over
+/// the conversation column (it drops out large below the row to listen).
 private struct MacTopOrb: View {
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
@@ -743,11 +733,11 @@ private struct MacTopOrb: View {
         let _ = PerfProbe.count("MacTopOrb")
         #endif
         Color.clear
-            .frame(height: FloatingTitleOrb.macRestHeight)
+            .frame(height: 1)
             .frame(maxWidth: .infinity)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .overlay(alignment: .top) {
-                FloatingTitleOrb(barCenterY: nil, columnWidth: width, topAligned: true) {
+                FloatingTitleOrb(barCenterY: nil, columnWidth: width, topAligned: true, rowMidY: MacTitlebar.midY) {
                     model.detailShown = true
                 }
                 .frame(height: 0, alignment: .top)
@@ -760,6 +750,36 @@ private struct MacTopOrb: View {
                         .frame(minWidth: 360, idealWidth: 380, minHeight: 420, idealHeight: 560)
                 }
             }
+            .ignoresSafeArea(.container, edges: .top)
+    }
+}
+
+/// The Mac: what a conversation page shows in the window's title bar row.
+private struct MacChatTitlebar: ViewModifier {
+    enum Kind { case none, orb, indicator, title }
+    let kind: Kind
+    let title: String
+    let pageTop: ChatView.PageTop?
+
+    func body(content: Content) -> some View {
+        switch kind {
+        case .none:
+            content
+        case .orb:
+            content
+                .macTitlebarFade()
+                .overlay(alignment: .top) { MacTopOrb() }
+        case .indicator:
+            content
+                .macTitlebarFade()
+                .modifier(MacTitlebarIndicator(enabled: true, dot: pageTop?.dot))
+        case .title:
+            content
+                .macTitlebarFade()
+                .macTitlebarCenter {
+                    MacTitlebarTitle(title: title, subtitle: pageTop?.subtitle ?? "", dot: pageTop?.dot)
+                }
+        }
     }
 }
 
@@ -1088,27 +1108,26 @@ private struct HeldAppearance: ViewModifier {
     }
 }
 
-/// The Mac: a session's indicator in the window's title bar row, at the
-/// page's top left, centered on the traffic lights' line; clear of the
-/// sidebar's capsule while the sidebar is away. The page runs under the row.
+/// The Mac: a session's indicator in the middle of the window's title bar
+/// row, centered on the traffic lights' line, as Palo's orb. The page runs
+/// under the row.
 struct MacTitlebarIndicator: ViewModifier {
     let enabled: Bool
     var dot: StatusDotKind? = nil
-    @Environment(WindowModel.self) private var model
 
-    static let size: CGFloat = 30
+    /// Palo's orb's resting size in the row.
+    static let size: CGFloat = 26
 
     func body(content: Content) -> some View {
         #if DEBUG || PERF_HARNESS
         let _ = PerfProbe.count("MacTitlebarIndicator")
         #endif
         if enabled {
-            let half = SessionIndicator.outerSize(size: Self.size, glass: true) / 2
-            content.overlay(alignment: .topLeading) {
+            let half = Self.size / 2
+            content.overlay(alignment: .top) {
                 PageIndicator(size: Self.size, dot: dot)
-                    .padding(.leading, model.sidebarCollapsed ? 280 : 14)
-                    .padding(.top, max(2, SidebarChrome.shared.titlebarMidY - half))
-                    .ignoresSafeArea(edges: .top)
+                    .padding(.top, max(2, MacTitlebar.midY - half))
+                    .ignoresSafeArea(.container, edges: .top)
             }
         } else {
             content

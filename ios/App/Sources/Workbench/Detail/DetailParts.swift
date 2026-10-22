@@ -117,7 +117,6 @@ enum DetailTokens {
         return "\(n)"
     }
 
-    static func money(_ usd: Double) -> String { String(format: "$%.2f", usd) }
 }
 
 /// 「上下文」 as one row: the bar (the indicator's arc colors), "82k / 200k",

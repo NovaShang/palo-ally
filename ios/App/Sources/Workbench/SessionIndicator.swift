@@ -1,92 +1,47 @@
 import PaloAllyKit
 import SwiftUI
 
-/// The round session indicator (docs/workbench-design/indicator.html):
-/// the session's liquid-glass drop in the middle (SessionDrop) with the state's
-/// white mark on it (the lists keep Bento's flat glyph), a 270 degree context
-/// arc around it (the label color, orange from 80%, red from 95%, on a faint
-/// track), and the effort label in the gap at the bottom, colored by model,
-/// cool to warm (deeper on a light background). Glyph, arc and the glass
-/// circle behind it share one center: everything is laid out in one square.
-///
-/// `size` is the indicator itself. With `glass` the Liquid Glass circle is
-/// larger by `glassPadding` on each side, so the view's frame is
-/// `size + 2 * glassPadding(size)` (use `outerSize(size:glass:)`). Below 26pt
-/// only the glyph shows.
+/// A session's state, the simple way (docs/workbench-design/indicator.html,
+/// retired its context arc and effort label on 2026-10-22): the session's
+/// live drop (SessionDrop) with the state's white mark on it, or the task
+/// count while subagents run; no glass circle under it. The drop is drawn
+/// unclipped, its motion spilling a little past `size`, as Palo's orb does.
+/// The lists keep Bento's flat glyph (`glyphOnly`). Context, model and
+/// effort are said in the details, as text.
 struct SessionIndicator: View {
     var state: StatusDotKind
-    /// 0 to 100; nil draws an empty arc.
-    var contextPct: Int?
-    /// Raw effort ("low", "medium", "high", "xhigh", "max"); nil hides the label.
-    var effort: String?
-    /// A model id or name; picks the label's color.
-    var model: String?
     var size: CGFloat = 38
-    var glass = true
-    /// Only the state glyph, at any size (the lists): no arc, no label.
+    /// Only the state glyph, flat (the lists).
     var glyphOnly = false
     /// Subagents and background tasks running: while it works, their count
-    /// stands in the blue circle in place of the play glyph.
+    /// stands in place of the play mark.
     var running = 0
     /// The conversation the owner may hold to talk to (nil: a single page,
-    /// else a tile's session id): while they do, live level bars replace the
-    /// glyph. Not set: never.
+    /// else a tile's session id): while they do, the drop takes the theme
+    /// color and live level bars replace the mark. Not set: never.
     var voiceOwner: String?? = nil
-    /// In place of the state glyph (the session-drop prototype).
-    var center: AnyView? = nil
-    /// Only the inner part (a split workspace's pane header): the drop with
-    /// its white mark (or the task count) filling `size`, on a glass circle
-    /// of that size; no context arc, no effort label (the details have them).
-    var innerOnly = false
-    /// With `innerOnly`: the drop unclipped, its motion spilling past `size`
-    /// (a page's title on phones and iPads, floating like Palo's orb).
-    var bare = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
 
-    init(state: StatusDotKind, contextPct: Int? = nil, effort: String? = nil, model: String? = nil,
-         size: CGFloat = 38, glass: Bool = true, running: Int = 0, voiceOwner: String?? = nil, innerOnly: Bool = false,
-         bare: Bool = false) {
-        self.state = state; self.contextPct = contextPct; self.effort = effort; self.model = model
-        self.size = size; self.glass = glass; self.running = running; self.voiceOwner = voiceOwner
-        self.innerOnly = innerOnly; self.bare = bare
+    init(state: StatusDotKind, size: CGFloat = 38, running: Int = 0, voiceOwner: String?? = nil) {
+        self.state = state; self.size = size; self.running = running; self.voiceOwner = voiceOwner
     }
 
     /// A session.
-    init(_ pal: Pal, size: CGFloat = 38, glass: Bool = true, glyphOnly: Bool = false) {
-        self.init(state: pal.dot, contextPct: pal.contextPct, effort: pal.effort, model: pal.model, size: size, glass: glass,
-                  running: pal.tasksRunning)
+    init(_ pal: Pal, size: CGFloat = 38, glyphOnly: Bool = false) {
+        self.init(state: pal.dot, size: size, running: pal.tasksRunning)
         self.glyphOnly = glyphOnly
     }
 
-    /// Palo: busy or not from the host's status, with its own context.
-    init(palo status: HostStatus?, contextPct: Int?, size: CGFloat = 38, glass: Bool = true) {
-        self.init(state: (status?.busy ?? false) ? .working : .idle, contextPct: contextPct,
-                  effort: status?.effort, model: status?.model, size: size, glass: glass)
-    }
-
-    static func glassPadding(size: CGFloat) -> CGFloat { max(4, (size * 0.13).rounded()) }
-    static func outerSize(size: CGFloat, glass: Bool) -> CGFloat { glass ? size + 2 * glassPadding(size: size) : size }
-
     var body: some View {
         Group {
-            if innerOnly { inner } else { indicator }
+            if glyphOnly { flatGlyph } else { dropWithMark }
         }
-            .frame(width: size, height: size)
-            .padding(glass && !innerOnly ? Self.glassPadding(size: size) : 0)
-            .glassEffect(glass ? .regular : .identity, in: .circle)
-            .animation(.snappy, value: state)
-            .accessibilityElement()
-            .accessibilityLabel(StatusDot.label(state))
-            .accessibilityValue(accessibilityValue)
-    }
-
-    private var accessibilityValue: String {
-        var parts: [String] = []
-        if state == .working, running > 0 { parts.append(String(localized: "\(running) 个任务在跑")) }
-        if let contextPct { parts.append(String(localized: "上下文 \("\(contextPct)%")")) }
-        return parts.joined(separator: "，")
+        .frame(width: size, height: size)
+        .animation(.snappy, value: state)
+        .accessibilityElement()
+        .accessibilityLabel(StatusDot.label(state))
+        .accessibilityValue(state == .working && running > 0 ? String(localized: "\(running) 个任务在跑") : "")
     }
 
     /// The drop: while the owner holds to talk to it, in the theme color and
@@ -99,22 +54,13 @@ struct SessionIndicator: View {
         }
     }
 
-    /// The drop and its mark, filling the glass circle (`innerOnly`).
-    private var inner: some View {
+    /// The drop alone, its motion free to spill out (TitleOrbDrop's canvas),
+    /// and its mark.
+    private var dropWithMark: some View {
         let r = size * 0.27
         return ZStack {
-            // The drop fills most of the glass (its drawing has room around
-            // it); its motion stays inside.
-            if bare {
-                // A page's title: the drop alone, its motion free to spill
-                // out as Palo's orb does (TitleOrbDrop's canvas).
-                drop.frame(width: size / 0.75, height: size / 0.75)
-                    .frame(width: size, height: size)
-            } else {
-                drop.frame(width: size * 1.3, height: size * 1.3)
-                    .frame(width: size, height: size)
-                    .clipShape(.circle)
-            }
+            drop.frame(width: size / 0.75, height: size / 0.75)
+                .frame(width: size, height: size)
             if let owner = voiceOwner {
                 IndicatorVoiceCenter(owner: owner, side: size * 0.6) { mark(radius: r) }
             } else {
@@ -124,77 +70,17 @@ struct SessionIndicator: View {
         .frame(width: size, height: size)
     }
 
-    private var showsRing: Bool { !glyphOnly && IndicatorRules.showsRing(size: Double(size)) }
-    private var light: Bool { colorScheme == .light }
-
-    @ViewBuilder private var indicator: some View {
-        let s = size / 100
-        ZStack {
-            if showsRing { ring(s) }
-            let r = showsRing ? 21 * s : 40 * s
-            let flat = glyph(radius: r)
-            // Working, it breathes, in a view graph of its own (IsolatedHost):
-            // a forever animation in the window's graph re-rendered the whole
-            // window every frame (the sidebar's rows, the Mac).
-            let glyph = Group {
-                if state == .working && !reduceMotion {
-                    IsolatedHost { Breathing { flat } }.frame(width: r * 2, height: r * 2)
-                } else {
-                    flat
-                }
-            }
-            if showsRing && center == nil {
-                // The session's liquid-glass drop fills the arc, its white
-                // mark (or the task count) on it; holding to talk to it,
-                // live level bars in place of the mark.
-                ZStack {
-                    SessionDrop(state: state, voiceLevel: nil).frame(width: 72 * s, height: 72 * s)
-                    if let owner = voiceOwner {
-                        IndicatorVoiceCenter(owner: owner, side: 38 * s) { mark(radius: 21 * s) }
-                    } else {
-                        mark(radius: 21 * s)
-                    }
-                }
-            } else if let center {
-                center.frame(width: 44 * s, height: 44 * s)
-            } else if let owner = voiceOwner {
-                IndicatorVoiceCenter(owner: owner, side: 38 * s) { glyph }
-            } else {
-                glyph
-            }
-            if showsRing, let label = IndicatorRules.effortLabel(effort) {
-                Text(label)
-                    .font(.system(size: 21 * s, weight: .bold))
-                    .fontDesign(.rounded)
-                    .foregroundStyle(Color(rgb: light ? IndicatorModelClass(modelId: model).lightRGB
-                                                      : IndicatorModelClass(modelId: model).rgb))
-                    .lineLimit(1)
-                    .fixedSize()
-                    // Centered on the label's own height, low in the arc's gap: the mock's baseline at y 96.
-                    .position(x: size / 2, y: 86 * s)
-            }
+    /// The lists' flat glyph; working, it breathes, in a view graph of its
+    /// own (IsolatedHost): a forever animation in the window's graph
+    /// re-rendered the whole window every frame (the sidebar's rows, the Mac).
+    @ViewBuilder private var flatGlyph: some View {
+        let r = size * 0.4
+        let flat = glyph(radius: r)
+        if state == .working && !reduceMotion {
+            IsolatedHost { Breathing { flat } }.frame(width: r * 2, height: r * 2)
+        } else {
+            flat
         }
-        .frame(width: size, height: size)
-    }
-
-    private func ring(_ s: CGFloat) -> some View {
-        let fraction = IndicatorRules.fraction(pct: contextPct)
-        let stroke = StrokeStyle(lineWidth: 7 * s, lineCap: .round)
-        let tone: Color = switch IndicatorRules.arcTone(fraction: fraction) {
-        case .normal: light ? Color(rgb: 0x1C1C1E) : .white.opacity(0.9)
-        case .warn: Color(rgb: light ? 0xFF9500 : 0xFF9F0A)
-        case .danger: Color(rgb: light ? 0xFF3B30 : 0xFF453A)
-        }
-        let track: Color = light ? .black.opacity(0.12) : .white.opacity(0.16)
-        // A trim runs from 3 o'clock, clockwise; 135 degrees turns the 270 degree
-        // sweep so its gap is at the bottom, like the mock's SVG.
-        return ZStack {
-            Circle().trim(from: 0, to: 0.75).stroke(track, style: stroke)
-            Circle().trim(from: 0, to: max(0.001, fraction) * 0.75).stroke(tone, style: stroke)
-        }
-        .rotationEffect(.degrees(135))
-        .frame(width: 80 * s, height: 80 * s)
-        .animation(.snappy, value: fraction)
     }
 
     private func glyph(radius r: CGFloat) -> some View {
@@ -323,22 +209,10 @@ private struct IndicatorVoiceCenter<Glyph: View>: View {
 #if DEBUG
 #Preview("Session indicator") {
     let states: [StatusDotKind] = [.working, .waiting, .done, .idle]
-    let models = ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5-5", "claude-fable-1", "default"]
-    let efforts = ["low", "medium", "high", "xhigh", "max"]
-    return ScrollView {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("States").font(.caption)
-            HStack(spacing: 20) { ForEach(states, id: \.self) { SessionIndicator(state: $0, contextPct: 41, effort: "high", model: "opus", size: 64) } }
-            Text("Context 12 / 41 / 83 / 97").font(.caption)
-            HStack(spacing: 20) { ForEach([12, 41, 83, 97], id: \.self) { SessionIndicator(state: .idle, contextPct: $0, effort: "high", model: "opus", size: 64) } }
-            Text("Effort and model").font(.caption)
-            HStack(spacing: 20) { ForEach(0..<5, id: \.self) { SessionIndicator(state: .idle, contextPct: 50, effort: efforts[$0], model: models[$0], size: 64) } }
-            Text("Sizes 16 / 24 / 26 / 32 / 38 / 150, glass and flat").font(.caption)
-            HStack(spacing: 14) { ForEach([16, 24, 26, 32, 38, 150] as [CGFloat], id: \.self) { SessionIndicator(state: .waiting, contextPct: 62, effort: "xhigh", model: "fable", size: $0) } }
-            HStack(spacing: 14) { ForEach([16, 24, 26, 32, 38] as [CGFloat], id: \.self) { SessionIndicator(state: .done, contextPct: 62, effort: "xhigh", model: "fable", size: $0, glass: false) } }
-        }
-        .padding()
+    return VStack(alignment: .leading, spacing: 20) {
+        HStack(spacing: 20) { ForEach(states, id: \.self) { SessionIndicator(state: $0, size: 44) } }
     }
+    .padding()
     .background(Color.black)
     .preferredColorScheme(.dark)
 }

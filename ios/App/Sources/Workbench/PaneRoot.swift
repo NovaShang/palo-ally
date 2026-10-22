@@ -12,16 +12,22 @@ final class PaneActions {
     var moveOut: (String) -> Void = { _ in }
     var closePane: (String) -> Void = { _ in }
     var end: (String) -> Void = { _ in }
+    /// A session as a new pane (beside a pane, or where newcomers go).
+    var add: (String, PanePlacement?) -> Void = { _, _ in }
+    /// 新开一个会话… as a new pane.
+    var addNew: (PanePlacement?) -> Void = { _ in }
 }
 
 /// The pane's measures (docs/workbench-design/split-final.html).
 enum PaneMetrics {
-    /// The slim header: the name and what the session is doing.
-    static let headerHeight: CGFloat = 24
-    /// The glass status icon and the ⋯ button, floating half out of the header.
+    /// The slim header: the session's name, level with the status drop and ⋯.
+    static let headerHeight: CGFloat = 32
+    /// The status drop and the ⋯ button, centered on the header's line.
     static let button: CGFloat = 28
+    /// The status drop inside the icon's room (bare, no glass circle).
+    static let drop: CGFloat = 22
     static let buttonInset: CGFloat = 8
-    static let buttonTop: CGFloat = 5
+    static let buttonTop: CGFloat = 2
     /// Where the name starts and the status line ends (clear of the two buttons).
     static let titleLeading: CGFloat = 42
     static let titleTrailing: CGFloat = 44
@@ -113,6 +119,8 @@ private struct PaneContent: View {
             .environment(\.chatDraft, model.draftBinding(.pal(id)))
             .environment(\.fileLinks, FileLinkContext(scope: .pal(id), resolver: .shared(for: store)))
             .environment(\.placesAsColumns, false)
+            // The Mac: no blur with a hard edge under the header, a soft fade.
+            .modifier(PaneHeaderFade())
             // The conversation scrolls under the header, softly faded at the top.
             .safeAreaBar(edge: .top, spacing: 0) { PaneTitle(id: id, corner: corner) }
             .overlay(alignment: .topLeading) {
@@ -121,7 +129,7 @@ private struct PaneContent: View {
                     .padding(.top, PaneMetrics.buttonTop)
             }
             .overlay(alignment: .topTrailing) {
-                PaneMenu(id: id, actions: actions)
+                PaneMenu(id: id, workspaceID: workspaceID, actions: actions)
                     .padding(.trailing, PaneMetrics.buttonInset + (corner ? PaneMetrics.cornerShift : 0))
                     .padding(.top, PaneMetrics.buttonTop)
             }
@@ -131,7 +139,32 @@ private struct PaneContent: View {
     }
 }
 
-/// The header: the name (semibold) and what the session is doing (gray).
+/// The Mac: the system's scroll edge under the header is a blur with a
+/// hard bottom edge there; the pane's own color fades out instead.
+private struct PaneHeaderFade: ViewModifier {
+    func body(content: Content) -> some View {
+        if Platform.barInWindowToolbar {
+            content
+                .scrollEdgeEffectHidden(true, for: .top)
+                .overlay(alignment: .top) {
+                    let solid = PaneMetrics.headerHeight
+                    let fade: CGFloat = 16
+                    LinearGradient(stops: [
+                        .init(color: Color(.systemBackground), location: 0),
+                        .init(color: Color(.systemBackground), location: solid / (solid + fade)),
+                        .init(color: Color(.systemBackground).opacity(0), location: 1),
+                    ], startPoint: .top, endPoint: .bottom)
+                    .frame(height: solid + fade)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
+        } else {
+            content
+        }
+    }
+}
+
+/// The header: the session's name only (its state is the drop's).
 /// No background, no line: it is part of the conversation.
 private struct PaneTitle: View {
     let id: String
@@ -143,11 +176,6 @@ private struct PaneTitle: View {
         HStack(spacing: 8) {
             Text(pal?.displayName ?? "")
                 .font(.system(size: 12, weight: .semibold))
-                .lineLimit(1)
-                .layoutPriority(1)
-            Text(pal.map { Copy.palSubtitle($0, waking: false) } ?? "")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)
@@ -194,11 +222,18 @@ private struct PaneStatusButton: View {
         if UserDefaults.standard.string(forKey: "paneIcon") == "flat" {
             StatusDot(dot, size: 20).frame(width: PaneMetrics.button, height: PaneMetrics.button)
         } else {
-            SessionIndicator(state: dot, size: PaneMetrics.button, glass: true, running: running, voiceOwner: .some(id), innerOnly: true)
+            drop(dot: dot, running: running)
         }
         #else
-        SessionIndicator(state: dot, size: PaneMetrics.button, glass: true, running: running, voiceOwner: .some(id), innerOnly: true)
+        drop(dot: dot, running: running)
         #endif
+    }
+
+    /// The session's live drop with its mark, bare (no glass circle, as
+    /// the page title's SessionOrbDrop), centered where the glass icon was.
+    private func drop(dot: StatusDotKind, running: Int) -> some View {
+        SessionIndicator(state: dot, size: PaneMetrics.drop, running: running, voiceOwner: .some(id))
+            .frame(width: PaneMetrics.button, height: PaneMetrics.button)
     }
 }
 
@@ -217,15 +252,23 @@ private struct PaneDetail: View {
     }
 }
 
-/// ⋯: the pane's menu, a floating glass button that is always there.
+/// ⋯: the pane's menu, a floating glass button that is always there. Its
+/// first two entries split this pane (Bento Term's Split Right / Split
+/// Down, ⌘D / ⌘⇧D for the active pane).
 private struct PaneMenu: View {
     let id: String
+    let workspaceID: String
     let actions: PaneActions
     @Environment(AppStore.self) private var store
 
     var body: some View {
         let online = store.connection.isOnline
         Menu {
+            Menu("向右分出", systemImage: "rectangle.split.2x1") { choices(horizontal: true) }
+                .disabled(!online)
+            Menu("向下分出", systemImage: "rectangle.split.1x2") { choices(horizontal: false) }
+                .disabled(!online)
+            Divider()
             Button("右栏（成果 / 文件）", systemImage: "sidebar.trailing") { actions.openPane(id) }
             Button("单独打开", systemImage: "arrow.up.left.and.arrow.down.right") { actions.openAlone(id) }
             Button("重命名…", systemImage: "pencil") { actions.rename(id) }
@@ -236,18 +279,41 @@ private struct PaneMenu: View {
             Button("结束会话…", systemImage: "stop.circle", role: .destructive) { actions.end(id) }
                 .disabled(!online)
         } label: {
+            // Frame, then the hit shape, then the glass: the whole circle takes the click.
             Image(systemName: "ellipsis")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.primary)
                 .frame(width: PaneMetrics.button, height: PaneMetrics.button)
                 .contentShape(.circle)
         }
-        .buttonStyle(.borderless)
+        .macMenuHitArea()
         .menuIndicator(.hidden)
         .tint(.primary)
         .frame(width: PaneMetrics.button, height: PaneMetrics.button)
         .glassEffect(.regular.interactive(), in: .circle)
         .accessibilityLabel("更多")
         .accessibilityIdentifier("tile-menu-\(id)")
+    }
+
+    /// The sessions not in this workspace, then a new one.
+    @ViewBuilder private func choices(horizontal: Bool) -> some View {
+        let placement = PanePlacement(pane: id, horizontal: horizontal)
+        let others = store.paneCandidates(for: workspaceID)
+        if !others.isEmpty {
+            Section("已有的会话") {
+                ForEach(others) { pal in
+                    Button(pal.displayName) { actions.add(pal.id, placement) }
+                }
+            }
+        }
+        Button("新开一个会话…", systemImage: "plus") { actions.addNew(placement) }
+    }
+}
+
+extension AppStore {
+    /// The sessions a split workspace can take as a new pane: the listed
+    /// ones not already in it.
+    func paneCandidates(for workspaceID: String) -> [Pal] {
+        listedPals.filter { $0.workspaceId != workspaceID }
     }
 }

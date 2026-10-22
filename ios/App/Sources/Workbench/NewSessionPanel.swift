@@ -158,6 +158,8 @@ struct NewSessionPanel: View {
         guard starting == nil else { return }
         // 并排 → 新开 asks for a tile in its workspace.
         let workspaceID = requested ?? model.newSessionIntoWorkspace
+        // 向右分出 / 向下分出: beside that pane (read now: closing clears it).
+        let placement = requested == nil ? model.newSessionPlacement : nil
         starting = path
         failure = nil
         Task {
@@ -167,6 +169,7 @@ struct NewSessionPanel: View {
                 dismiss()
                 if let workspaceID, model.selection == .workspace(workspaceID) {
                     // A tile in the workspace that's open: it is the one to talk to.
+                    if placement != nil { try? await model.addPane(pal.id, to: workspaceID, placement: placement) }
                     model.activate(tile: pal.id, in: workspaceID)
                 } else {
                     model.openPal(pal.id)
