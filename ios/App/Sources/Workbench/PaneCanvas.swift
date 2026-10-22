@@ -746,6 +746,14 @@ struct PaneCanvas: UIViewControllerRepresentable {
         update(c)
     }
 
+    /// Any size it's offered: the panes fit themselves into it. Asked for
+    /// its own size instead, the canvas answered with what its panes'
+    /// hosting views wanted side by side, and the split view squeezed the
+    /// right pane to make room for that.
+    func sizeThatFits(_ proposal: ProposedViewSize, uiViewController: PaneCanvasController, context: Context) -> CGSize? {
+        proposal.replacingUnspecifiedDimensions(by: CGSize(width: 320, height: 320))
+    }
+
     private func update(_ c: PaneCanvasController) {
         c.makePane = makePane
         c.onLayoutChange = onLayoutChange
