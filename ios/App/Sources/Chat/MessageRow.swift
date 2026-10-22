@@ -458,6 +458,10 @@ private struct AttachmentStrip: View {
     private func open(_ a: Attachment) {
         // Web pages render in the artifact view, opened on their own over the chat.
         if isWebPage(a) { return model.openArtifact(a.id) }
+        // Large windows: every artifact opens beside the conversation, in the
+        // right pane's 成果 (which shows Markdown, PDFs and images itself),
+        // not in a sheet over it. Phones and short windows keep the sheet.
+        if a.kind == "artifact", model.libraryBeside { return model.openArtifact(a.id) }
         guard loading == nil else { return }
         loading = a.id
         Task {
