@@ -166,6 +166,9 @@ struct ComposerView: View {
     private var voicePresence: CGFloat { mine ? voice.presence : 0 }
     /// This composer may place the voice's landing spots (the active tile, or no tiling).
     private var placesVoice: Bool { tile?.isActive ?? true }
+    /// Keys typed while nothing has the keyboard come here (large screens,
+    /// this page or the active tile, not already writing).
+    private var catchesTyping: Bool { model.layout != .phone && placesVoice && !focused && !dictating }
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !staged.isEmpty }
     /// Idle: not editing — the field reads 「按住说话，轻点打字」 and takes presses.
@@ -220,6 +223,18 @@ struct ComposerView: View {
                 .accessibilityHidden(true)
         }
         .onAppear { HardwareKeyboard.startWatching() }
+        .background {
+            // With a keyboard (the Mac, an iPad with one): typing anywhere
+            // in the conversation writes here, no click first.
+            if catchesTyping {
+                TypeToCompose(claim: model.composerUnfocusRequests) { typed in
+                    draft += typed
+                    focusToken += 1
+                }
+                .frame(width: 1, height: 1)
+                .accessibilityHidden(true)
+            }
+        }
         .padding(.horizontal, sideInset)
         .padding(.top, compact ? 2 : 6)
         .padding(.bottom, bottomPadding)
@@ -923,6 +938,68 @@ struct ComposerView: View {
             }
         }
         if let problem { voice.dictation.errorMessage = problem }
+    }
+}
+
+/// Typing with no field focused (a hardware keyboard): a hidden 1-pt text
+/// field takes the keyboard when nothing else has it (no field, no list being
+/// keyed through), lets an input method compose there (pinyin and its
+/// candidates), and hands over what it commits; the composer takes over from
+/// there. Spaces alone don't count (they don't start a message). Never
+/// without a hardware keyboard: it would raise the on-screen one.
+private struct TypeToCompose: UIViewRepresentable {
+    /// Changes when a click in the conversation leaves the field: claim again.
+    let claim: Int
+    let onType: (String) -> Void
+
+    func makeUIView(context: Context) -> Catcher {
+        let v = Catcher()
+        v.onType = onType
+        return v
+    }
+
+    func updateUIView(_ v: Catcher, context: Context) {
+        v.onType = onType
+        v.claim()
+    }
+
+    final class Catcher: UITextField {
+        var onType: ((String) -> Void)?
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            alpha = 0.02
+            tintColor = .clear
+            autocorrectionType = .no
+            spellCheckingType = .no
+            inputAssistantItem.leadingBarButtonGroups = []
+            inputAssistantItem.trailingBarButtonGroups = []
+            addTarget(self, action: #selector(changed), for: .editingChanged)
+        }
+
+        required init?(coder: NSCoder) { fatalError() }
+
+        @objc private func changed() {
+            // Still composing (marked text): wait for the committed words.
+            guard markedTextRange == nil, let t = text, !t.isEmpty else { return }
+            text = ""
+            guard t.contains(where: { !$0.isWhitespace && !$0.isNewline }) else { return }
+            onType?(t)
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            claim()
+        }
+
+        func claim() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.window != nil, !self.isFirstResponder, HardwareKeyboard.isAttached else { return }
+                let current = HardwareKeyboard.firstResponder
+                guard current == nil || !(current is UIKeyInput || current is UICollectionView || current is UITableView) else { return }
+                self.becomeFirstResponder()
+            }
+        }
     }
 }
 

@@ -686,7 +686,7 @@ private struct ClickToUnfocusComposer: ViewModifier {
         #if DEBUG || PERF_HARNESS
         let _ = PerfProbe.count("ClickToUnfocusComposer")
         #endif
-        if Platform.isMac {
+        if model.layout != .phone {
             content.simultaneousGesture(TapGesture().onEnded { model.composerUnfocusRequests += 1 })
         } else {
             content

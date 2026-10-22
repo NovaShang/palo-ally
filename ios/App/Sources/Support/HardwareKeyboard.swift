@@ -26,6 +26,13 @@ enum HardwareKeyboard {
         return codes.contains { keys.button(forKeyCode: $0)?.isPressed == true }
     }
 
+    /// Whatever has the keyboard (first responder), if anything.
+    static var firstResponder: UIResponder? {
+        UIResponder.paloFocused = nil
+        UIApplication.shared.sendAction(#selector(UIResponder.paloCaptureFocused), to: nil, from: nil, for: nil)
+        return UIResponder.paloFocused
+    }
+
     /// The text input that has the keyboard, if any.
     static var focusedTextInput: (UIResponder & UITextInput)? {
         UIResponder.paloFocused = nil
