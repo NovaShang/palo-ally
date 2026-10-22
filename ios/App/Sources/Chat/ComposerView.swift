@@ -487,6 +487,16 @@ struct ComposerView: View {
                     focused = false
                     return .handled
                 }
+                // Return sends before the field types its newline: no
+                // newline flashing in, the message going, the field
+                // clearing, one after the other. Shift/Option/⌘ still type
+                // a newline; an input method composing keeps Return.
+                .onKeyPress(.return, phases: .down) { press in
+                    guard focused, !dictating, HardwareKeyboard.isAttached, !HardwareKeyboard.isComposing,
+                          press.modifiers.isDisjoint(with: [.shift, .option, .command]) else { return .ignored }
+                    sendFromReturn(text: draft)
+                    return .handled
+                }
                 // While idle the press layer owns every touch: the text
                 // field's own long-press / selection recognizers must not see it.
                 .allowsHitTesting(!idle)
