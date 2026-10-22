@@ -9,6 +9,8 @@ import SwiftUI
 struct ChatView: View {
     /// The conversation never gets wider than this (large screens).
     static let readableWidth: CGFloat = 1200
+    /// The ChatGPT-style room after a send (design §3.5), off by the owner's call.
+    static let turnRoomOn = false
     /// Mac: room between the floating orb's strip and the first message.
     static let macTopMargin: CGFloat = 6
     /// Shown in place of the composer while it's there (a Pal's 交还终端 / 移出).
@@ -407,7 +409,10 @@ private struct ConversationRows: View {
         // message, not the next), else the one the coordinator remembers.
         let sending = messages.last { $0.role == .user && $0.seq == 0 && $0.delivery == .sending }?.clientMsgId
         let turn = sending ?? scroll.turnStart
-        ConversationStack(spacing: 14, turnMinHeight: atTheEnd ? scroll.turnRoom : 0) {
+        // No room below a sent message any more (the owner, 2026-10-22: a
+        // screen cleared on every send broke his reading of what's above).
+        // The message lands at the end like any chat; the reply grows under it.
+        ConversationStack(spacing: 14, turnMinHeight: atTheEnd && ChatView.turnRoomOn ? scroll.turnRoom : 0) {
             if window.lowerBound > 0 || store.hasOlderMessages {
                 // Reading up toward the top lays more out on its own; this
                 // is for doing it at once (and for VoiceOver). The message
