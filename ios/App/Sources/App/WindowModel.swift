@@ -218,6 +218,8 @@ final class WindowModel {
     /// window and device; it is only the default here, for a page this
     /// window hasn't opened or closed the pane on (see `editPane`).
     var paneOpenHere: [String: Bool] = [:]
+    /// The inspector's content is on screen (its onAppear/onDisappear), for the debug log.
+    @ObservationIgnored var inspectorShown = false
     /// 从历史记录继续… is open: the ＋ menu sets it, `.historyPicker()` shows the sheet.
     var historyPickerPresented = false
     /// 新建工作区 asked (⌘⇧N, ＋, a session's 并排…): with these sessions chosen.

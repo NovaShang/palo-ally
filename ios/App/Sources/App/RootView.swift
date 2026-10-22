@@ -11,6 +11,8 @@ struct RootView: View {
                 GlassDropsDemo(theme: model.currentTheme)
             } else if model.launch.screen == "scrollLab" {
                 ScrollLab()
+            } else if model.launch.screen == "splitLab" {
+                SplitLab()
             } else {
                 screens
             }
@@ -29,10 +31,15 @@ struct RootView: View {
         #endif
     }
 
+    /// The Mac: the window is on screen, so its split view may be made.
+    @State private var onScreen = !Platform.isMac
+
     @ViewBuilder private var screens: some View {
         Group {
             if model.launch.screen == "avatars" {
                 AvatarGallery()
+            } else if !onScreen {
+                Color.clear
             } else if let store = model.store {
                 MainScreen()
                     .environment(store)
@@ -40,6 +47,19 @@ struct RootView: View {
             } else {
                 PairingView(isSheet: false)
             }
+        }
+        .task {
+            // A split view with an inspector made before its window is on
+            // screen (every window but the first: a new one, one reopened
+            // at launch) never moved its columns again: the conversation
+            // kept the width it was made with whatever the sidebar, the
+            // right pane or the window did (SplitLab; macOS 26 and 27).
+            // Made a moment after the window is up, it follows them.
+            guard !onScreen else { return }
+            for _ in 0..<40 where model.windowWidth == 0 { try? await Task.sleep(for: .milliseconds(50)) }
+            try? await Task.sleep(for: .milliseconds(150))
+            onScreen = true
+            debugLog("[layout] \(model.traceName): main screen made, window \(model.windowWidth) pt")
         }
     }
 }
@@ -161,7 +181,7 @@ private struct LayoutStressTest: ViewModifier {
                     case "settings": w.openSettings()
                     case "sidebar": w.columnVisibility = w.columnVisibility == .detailOnly ? .all : .detailOnly
                     // `w2.pane`: that window's right pane, as its button (⌘2).
-                    case "pane": w.togglePane()
+                    case "pane": if w.launch.screen == "splitLab" { w.paneCover.toggle() } else { w.togglePane() }
                     case "list": w.showList()
                     // `w2.close`: that window closed, as its close button does.
                     case "close":
@@ -186,6 +206,13 @@ private struct LayoutStressTest: ViewModifier {
                     case _ where a.hasPrefix("canvas:"):
                         for c in PaneCanvasController.all.allObjects where c.view.window?.windowScene === w.scene {
                             c.demo(String(a.dropFirst(7)))
+                        }
+                    // `w2.size:1440x1100`: that window resized, as a drag of its corner.
+                    case _ where a.hasPrefix("size:"):
+                        let wh = a.dropFirst(5).split(separator: "x").compactMap { Double($0) }
+                        if wh.count == 2, let scene = w.scene {
+                            let f = scene.effectiveGeometry.systemFrame
+                            scene.requestGeometryUpdate(.Mac(systemFrame: CGRect(x: f.minX, y: f.minY, width: wh[0], height: wh[1])))
                         }
                     case _ where a.hasPrefix("open:"):
                         if let c = WindowModel.Conversation(storageKey: String(a.dropFirst(5))) { w.open(c) }
@@ -220,8 +247,14 @@ private struct LayoutStressTest: ViewModifier {
                     }
                     try? await Task.sleep(for: .seconds(1.5))
                     for (i, w) in model.app.windows.enumerated() {
-                        debugLog("[nav] after \(step): window \(i + 1)\(w === model.app.frontWindow ? " (front)" : "")\(w.isMini ? " (mini)" : "") frame \(w.scene.map { "\($0.frameOnScreen)" } ?? "-") sidebar \(w.columnVisibility == .detailOnly ? "away" : "shown") host \(w.activeHostID ?? "-") (\(w.store?.assistantName ?? "")) last \(model.app.lastHostID ?? "-") layout \(w.layout.rawValue) selection \(String(describing: w.selection)) management \(w.showManagement) pane \(w.paneIsOpen) settings \(w.showSettings)")
+                        debugLog("[nav] after \(step): window \(i + 1)\(w === model.app.frontWindow ? " (front)" : "")\(w.isMini ? " (mini)" : "") frame \(w.scene.map { "\($0.frameOnScreen) state \($0.activationState.rawValue) key \($0.keyWindow != nil)" } ?? "-") sidebar \(w.columnVisibility == .detailOnly ? "away" : "shown") host \(w.activeHostID ?? "-") (\(w.store?.assistantName ?? "") store \(w.store?.traceID ?? 0)) last \(model.app.lastHostID ?? "-") layout \(w.layout.rawValue) selection \(String(describing: w.selection)) management \(w.showManagement) pane \(w.paneIsOpen) settings \(w.showSettings)")
                     }
+                    #if targetEnvironment(macCatalyst)
+                    for (i, w) in model.app.windows.enumerated() {
+                        let items = w.scene?.titlebar?.toolbar?.items.map(\.itemIdentifier.rawValue) ?? []
+                        debugLog("[nav] after \(step): window \(i + 1) toolbar \(items)")
+                    }
+                    #endif
                     try? await Task.sleep(for: .seconds(0.5))
                 }
             }
@@ -331,6 +364,7 @@ struct MainScreen: View {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
             if voice.previewText == nil { voice.abort() }
         }
+        .modifier(LayoutTrace(model: model, store: store))
         .onAppear {
             if model.launch.screen == "voice" { voice.showPreview("你好，你好，你好，我正在说话" /* i18n-ok: demo preview text */) }
             model.markSeen()
@@ -398,10 +432,47 @@ struct MainScreen: View {
     }
 }
 
+/// The window's layout facts in the exportable debug log, on change only
+/// (sizes and states, never text): the main screen coming and going (a new
+/// computer's store rebuilds it), the right pane's host switching between
+/// beside and over, and the inspector actually being on screen.
+private struct LayoutTrace: ViewModifier {
+    let model: WindowModel
+    let store: AppStore
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { log("main screen up") }
+            .onDisappear { log("main screen gone") }
+            .onChange(of: model.libraryBeside) { _, beside in log("pane \(beside ? "beside" : "over")") }
+            .onChange(of: model.layout) { _, l in log("layout \(l)") }
+            .onChange(of: model.columnVisibility) { _, _ in log("sidebar \(model.sidebarCollapsed ? "away" : "shown")") }
+            .onChange(of: model.paneIsOpen) { _, open in log("pane \(open ? "open" : "closed") (ours)") }
+    }
+
+    private func log(_ what: String) {
+        debugLog("[layout] \(model.traceName): \(what); host \(model.activeHostID?.prefix(8) ?? "-") store \(store.traceID)\(store === model.store ? "" : " (not the window's)"), \(model.selection?.storageKey ?? "-"), sidebar \(model.sidebarCollapsed ? "away" : "shown"), pane \(model.paneIsOpen ? "open" : "closed"), inspector \(model.inspectorShown ? "shown" : "none"), window \(model.windowWidth) pt")
+    }
+}
+
+extension AppStore {
+    /// A short id for the logs (which store a view hierarchy holds).
+    var traceID: Int { Int(UInt(bitPattern: ObjectIdentifier(self).hashValue) % 10000) }
+}
+
+extension WindowModel {
+    /// "window 2 (3A5D2D12)": which window, for the logs.
+    var traceName: String {
+        "window \((app.windows.firstIndex { $0 === self } ?? -1) + 1) (\(windowID.prefix(8)))"
+    }
+    var windowWidth: Int { Int((scene?.effectiveGeometry.coordinateSpace.bounds.width ?? 0).rounded()) }
+}
+
 /// The detail column: the conversation picked in the list, with pages
 /// pushed over it (phones).
 private struct ConversationDetail: View {
     @Environment(WindowModel.self) private var model
+    @Environment(AppStore.self) private var store
 
     var body: some View {
         @Bindable var model = model
@@ -466,7 +537,7 @@ private struct ConversationDetail: View {
         .onGeometryChange(for: Int.self) { Int($0.size.width.rounded()) } action: { width in
             let i = (model.app.windows.firstIndex { $0 === model } ?? -1) + 1
             let window = Int((model.scene?.effectiveGeometry.coordinateSpace.bounds.width ?? 0).rounded())
-            debugLog("[width] window \(i) (\(model.windowID.prefix(8))) \((model.selection ?? .palo).storageKey): column \(width) of \(window) pt, layout \(model.layout), sidebar \(model.sidebarCollapsed ? "away" : "shown"), pane \(model.paneIsOpen ? "open" : "closed"), short \(model.shortWindow)")
+            debugLog("[width] window \(i) (\(model.windowID.prefix(8))) \((model.selection ?? .palo).storageKey): column \(width) of \(window) pt, layout \(model.layout), sidebar \(model.sidebarCollapsed ? "away" : "shown"), pane \(model.paneIsOpen ? "open" : "closed"), short \(model.shortWindow), host \(store === model.store ? "same" : "OTHER") store \(store.traceID)")
         }
     }
 }
@@ -505,6 +576,18 @@ private struct RightPaneHost: ViewModifier {
                     .environment(store)
                     // No real cap: the owner drags it wide for a browser (2026-10-20).
                     .inspectorColumnWidth(min: 320, ideal: Self.idealWidth, max: 4000)
+                    // Whether it is really on screen, and how wide (the debug log).
+                    .onAppear {
+                        model.inspectorShown = true
+                        debugLog("[layout] \(model.traceName): inspector up")
+                    }
+                    .onDisappear {
+                        model.inspectorShown = false
+                        debugLog("[layout] \(model.traceName): inspector gone")
+                    }
+                    .onGeometryChange(for: Int.self) { Int($0.size.width.rounded()) } action: { w in
+                        debugLog("[layout] \(model.traceName): inspector \(w) pt of \(model.windowWidth)")
+                    }
             }
         }
     }
@@ -542,3 +625,26 @@ extension EnvironmentValues {
     let model = WindowModel.demo()
     RootView().environment(model)
 }
+
+#if DEBUG
+/// `-demoScreen splitLab`: a bare split view with an inspector, to tell the
+/// system's behaviour from the app's (a second window's columns).
+private struct SplitLab: View {
+    @Environment(WindowModel.self) private var model
+
+    var body: some View {
+        @Bindable var model = model
+        NavigationSplitView(columnVisibility: $model.columnVisibility) {
+            List { Text("list") }
+        } detail: {
+            Color.yellow
+                .onGeometryChange(for: Int.self) { Int($0.size.width.rounded()) } action: { w in
+                    debugLog("[width] lab \(model.traceName): column \(w) of \(model.windowWidth) pt, sidebar \(model.columnVisibility == .detailOnly ? "away" : "shown"), pane \(model.paneCover)")
+                }
+        }
+        .inspector(isPresented: Binding(get: { model.paneCover }, set: { model.paneCover = $0 })) {
+            Color.blue.inspectorColumnWidth(min: 320, ideal: 400, max: 4000)
+        }
+    }
+}
+#endif
