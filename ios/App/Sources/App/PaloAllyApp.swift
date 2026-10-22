@@ -20,7 +20,6 @@ struct PaloAllyApp: App {
             }
         }
     }
-    }
 
     var body: some Scene {
         // iPads and the Mac: any number of windows (File → 新建窗口, a row's
