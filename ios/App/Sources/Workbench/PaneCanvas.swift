@@ -87,7 +87,11 @@ final class PaneCanvasController: UIViewController {
 
     // MARK: - what to show
 
-    func apply(tree new: LayoutTree.Node, interactive: Bool, accent: UIColor) {
+    func apply(tree incoming: LayoutTree.Node, interactive: Bool, accent: UIColor) {
+        // One geometry for panes and dividers: a stored tree whose split
+        // nodes' sizes had gone stale against their leaves put the lines
+        // where no boundary was, and moving them moved nothing.
+        let new = LayoutTree.resized(incoming)
         let accentChanged = !accent.isEqual(self.accent)
         self.accent = accent
         if accentChanged { applyAccent() }
