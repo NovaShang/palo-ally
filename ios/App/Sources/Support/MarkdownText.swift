@@ -44,14 +44,18 @@ extension Theme {
                 configuration.label
                     .relativeLineSpacing(.em(0.2))
                     .markdownTextStyle { FontFamilyVariant(.monospaced); FontSize(.em(0.85)) }
-                    .padding(10)
+                    // Its own height: a horizontal scroll view measured it
+                    // short, and the block ran into the paragraph below.
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 7)
+                    .padding(.horizontal, 10)
                     .padding(.trailing, 30) // room for the copy button
             }
             .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(alignment: .topTrailing) {
                 CopyButton(text: configuration.content, label: String(localized: "复制代码")).padding(2)
             }
-            .markdownMargin(top: 0, bottom: 8)
+            .markdownMargin(top: 4, bottom: 14)
         }
         .table { configuration in
             ScrollView(.horizontal, showsIndicators: false) {
@@ -77,10 +81,12 @@ extension Theme {
         .text { BackgroundColor(nil) }
         .codeBlock { configuration in
             ScrollView(.horizontal, showsIndicators: false) {
-                configuration.label.markdownTextStyle { FontFamilyVariant(.monospaced); FontSize(.em(0.85)) }.padding(12)
+                configuration.label.markdownTextStyle { FontFamilyVariant(.monospaced); FontSize(.em(0.85)) }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 9).padding(.horizontal, 12)
             }
             .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .markdownMargin(top: 0, bottom: 12)
+            .markdownMargin(top: 4, bottom: 16)
         }
         .table { configuration in
             ScrollView(.horizontal, showsIndicators: false) { configuration.label }
