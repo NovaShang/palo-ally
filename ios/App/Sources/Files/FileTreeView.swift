@@ -15,7 +15,8 @@ struct FileTreeScreen: View {
     var close: (() -> Void)? = nil
     /// After 插入到输入框 (the phone's sheet goes away to show the composer).
     var inserted: (() -> Void)? = nil
-    /// The right pane: a file opens as a tab of its own instead of a page pushed here.
+    /// The right pane: a file opens as a tab of its own instead of a page
+    /// pushed here (with its absolute path once the listing said the root).
     var onOpenFile: ((FileTarget) -> Void)? = nil
 
     @Environment(WindowModel.self) private var model
@@ -42,13 +43,17 @@ struct FileTreeScreen: View {
     private var fieldInColumn: Bool { asColumn && UIDevice.current.userInterfaceIdiom == .mac }
 
     private func show(_ target: FileTarget) {
-        if let onOpenFile { onOpenFile(target) } else { opened = target }
+        if let onOpenFile {
+            var t = target
+            t.absolute = root.path.map { FilePaths.join($0, target.path) }
+            onOpenFile(t)
+        } else { opened = target }
     }
 
     private var title: String {
         switch scope.kind {
         case .pal: store.pal(id: scope.id ?? "")?.displayName ?? String(localized: "文件", table: "Files")
-        case .folder, .palo, .home: root.path.map { ($0 as NSString).lastPathComponent } ?? String(localized: "文件", table: "Files")
+        case .folder, .palo, .home, .root: root.path.map { ($0 as NSString).lastPathComponent } ?? String(localized: "文件", table: "Files")
         }
     }
 

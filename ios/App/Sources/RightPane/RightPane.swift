@@ -84,17 +84,20 @@ struct RightPane: View {
         case PaneTab.files:
             NavigationStack {
                 FileTreeScreen(scope: scope, close: { if let onClose { onClose() } else { model.editPane(key) { $0.setOpen(key, false) } } },
-                               onOpenFile: { file in model.editPane(key) { $0.openPreview(key, path: file.path, scope: scope) } })
+                               onOpenFile: { file in model.editPane(key) { $0.openPreview(key, path: file.absolute ?? file.path) } })
                     .modifier(InContentNavigationBar())
             }
             .id(scope)
         case PaneTab.preview:
-            // Read from where it was opened: a workspace's preview stays on
-            // its session's file when another pane becomes the active one.
+            // An absolute path reads from anywhere on the computer, so a
+            // workspace's preview stays on its file whichever pane is active;
+            // a tab kept before (relative) reads from the pane's files.
             // The tab's chip names the file: no bar of its own, its actions in a ⋯.
             let index = state.active
-            FilePage(target: FileTarget(scope: tab.fileScope ?? scope, path: tab.path ?? ""),
-                     close: { hub.close(key, at: index) }, inPane: true)
+            let path = tab.path ?? ""
+            FilePage(target: FileTarget(scope: tab.isAbsolutePreview ? .root : scope, path: path),
+                     close: { hub.close(key, at: index) }, inPane: true,
+                     fallbackScope: tab.isAbsolutePreview ? scope : nil)
                 .id(tab)
         default:
             ContentUnavailableView(String(localized: "这个标签打不开", table: "Files"), systemImage: "questionmark.square.dashed")

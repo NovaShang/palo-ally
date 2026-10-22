@@ -109,7 +109,7 @@ enum FileLinks {
             URLQueryItem(name: "k", value: ctx.scope.kind.rawValue),
             URLQueryItem(name: "i", value: ctx.scope.id ?? ""),
             URLQueryItem(name: "p", value: file.path),
-        ]
+        ] + (file.abs.map { [URLQueryItem(name: "a", value: $0)] } ?? [])
         return c.url
     }
 
@@ -121,7 +121,7 @@ enum FileLinks {
         let q = Dictionary((c.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { a, _ in a })
         guard let kind = FileScope.Kind(rawValue: q["k"] ?? ""), let path = q["p"], !path.isEmpty,
               let store = FileLinkResolver.find(q["r"] ?? "")?.store else { return nil }
-        let target = FileTarget(scope: FileScope(kind: kind, id: q["i"]), path: path)
+        let target = FileTarget(scope: FileScope(kind: kind, id: q["i"]), path: path, absolute: q["a"].flatMap { $0.hasPrefix("/") ? $0 : nil })
         return UIAction { _ in FilePagePresenter.present(target, store: store) }
     }
 }

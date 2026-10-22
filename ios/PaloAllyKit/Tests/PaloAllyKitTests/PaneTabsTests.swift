@@ -44,16 +44,16 @@ struct PaneTabsRulesTests {
         #expect(again.tabs.count == 4 && again.active == 2 && again.open)
     }
 
-    @Test func aPreviewKeepsTheFilesItWasOpenedIn() {
+    @Test func aPreviewIsKeptByItsAbsolutePath() {
         let ws = PaneTabsKey.workspace("w1")
-        let s = TabsState().openingPreview(path: "a.md", scope: .pal("p1"), key: ws)
-            .openingPreview(path: "a.md", scope: .pal("p2"), key: ws)
-            .openingPreview(path: "a.md", scope: .pal("p1"), key: ws)
+        let s = TabsState().openingPreview(path: "/Users/a/site/a.md", key: ws)
+            .openingPreview(path: "/Users/a/blog/a.md", key: ws)
+            .openingPreview(path: "/Users/a/site/a.md", key: ws)
         #expect(s.tabs.count == 4 && s.active == 2)
-        #expect(s.tabs[2].fileScope == .pal("p1") && s.tabs[3].fileScope == .pal("p2"))
-        #expect(PaneTab.previewTab("a.md").fileScope == nil)
-        for scope in [FileScope.palo, .home, .pal("x"), .folder("f:1")] { #expect(FileScope(tag: scope.tag) == scope) }
-        for bad in ["", "pal:", "nope", "palo:x", "home:1"] { #expect(FileScope(tag: bad) == nil) }
+        #expect(s.tabs[2].isAbsolutePreview && !PaneTab.previewTab("a.md").isAbsolutePreview)
+        // A tab an earlier version kept with a scope still reads (the scope is dropped).
+        let old = try! JSONDecoder().decode(PaneTab.self, from: Data(#"{"kind":"preview","path":"a.md","scope":"pal:p1"}"#.utf8))
+        #expect(old == PaneTab.previewTab("a.md"))
     }
 
     @Test func aWebTabIsKeptPerAddress() {

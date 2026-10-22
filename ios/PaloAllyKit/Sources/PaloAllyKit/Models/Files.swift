@@ -4,39 +4,21 @@ import Foundation
 // folder, the assistant's home (its working folder and artifacts), and
 // folders the owner opened from the preview pane.
 
-/// Whose files: `{kind:"pal", id}`, `{kind:"palo"}` or `{kind:"folder", id}`.
+/// Whose files: `{kind:"pal", id}`, `{kind:"palo"}`, `{kind:"home"}`,
+/// `{kind:"folder", id}`, or `{kind:"root"}` (any absolute path).
 public struct FileScope: Codable, Sendable, Hashable {
-    public enum Kind: String, Codable, Sendable { case pal, palo, home, folder }
+    public enum Kind: String, Codable, Sendable { case pal, palo, home, folder, root }
     public var kind: Kind
     public var id: String?
 
-    public init(kind: Kind, id: String? = nil) { self.kind = kind; self.id = kind == .palo || kind == .home ? nil : id }
+    public init(kind: Kind, id: String? = nil) { self.kind = kind; self.id = kind == .pal || kind == .folder ? id : nil }
     public static let palo = FileScope(kind: .palo)
     /// The owner's home folder on the computer (its dot files hidden unless asked for).
     public static let home = FileScope(kind: .home)
     public static func pal(_ id: String) -> FileScope { FileScope(kind: .pal, id: id) }
     public static func folder(_ id: String) -> FileScope { FileScope(kind: .folder, id: id) }
-
-    /// As one short string, the way a right-pane tab keeps it:
-    /// `pal:<id>`, `palo`, `home` or `folder:<id>`.
-    public var tag: String {
-        switch kind {
-        case .palo, .home: kind.rawValue
-        case .pal, .folder: kind.rawValue + ":" + (id ?? "")
-        }
-    }
-
-    /// The scope a `tag` names; nil for anything else.
-    public init?(tag: String) {
-        switch tag {
-        case "palo": self = .palo
-        case "home": self = .home
-        default:
-            let parts = tag.split(separator: ":", maxSplits: 1).map(String.init)
-            guard parts.count == 2, !parts[1].isEmpty, let k = Kind(rawValue: parts[0]), k == .pal || k == .folder else { return nil }
-            self.init(kind: k, id: parts[1])
-        }
-    }
+    /// The whole disk, by absolute path: a right-pane preview tab's file.
+    public static let root = FileScope(kind: .root)
 }
 
 /// One child of a folder.
@@ -171,12 +153,15 @@ public struct ResolvedFile: Codable, Sendable, Hashable {
     public var text: String
     /// Relative to the scope's folder.
     public var path: String
+    /// Its absolute path on the computer (nil from hosts before it was sent).
+    public var abs: String?
     public var size: Int64
-    public init(text: String, path: String, size: Int64) { self.text = text; self.path = path; self.size = size }
+    public init(text: String, path: String, abs: String? = nil, size: Int64) { self.text = text; self.path = path; self.abs = abs; self.size = size }
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
         text = l.string("text", or: "")
         path = l.string("path", or: "")
+        abs = l.string("abs")
         size = l.int64("size", or: 0)
     }
 }

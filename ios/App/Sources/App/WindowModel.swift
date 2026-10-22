@@ -530,7 +530,8 @@ final class WindowModel {
                     let hub = PaneTabsHub.shared(for: store)
                     let key = PaneTabsKey.workspace(id)
                     editPane(key) { hub in
-                        hub.openPreview(key, path: "README.md", scope: .pal(store.workspace(id: id)?.memberIds.first ?? "pal-site"))
+                        let cwd = store.pal(id: store.workspace(id: id)?.memberIds.first ?? "pal-site")?.cwd ?? ""
+                        hub.openPreview(key, path: cwd.isEmpty ? "README.md" : FilePaths.join(cwd, "README.md"))
                         hub.openWeb(key, url: "https://example.com")
                     }
                     if which == "preview" { hub.activate(key, at: PaneTabsKey.pinnedCount) }

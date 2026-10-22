@@ -23,10 +23,11 @@ extension PaneTab {
     public static let preview = "preview"
     public static let web = "web"
 
-    public static func previewTab(_ path: String, scope: FileScope? = nil) -> PaneTab { PaneTab(kind: preview, path: path, scope: scope?.tag) }
+    /// A file by its absolute path (tabs from before: relative to the pane's files).
+    public static func previewTab(_ path: String) -> PaneTab { PaneTab(kind: preview, path: path) }
 
-    /// A preview's own files; nil when it was kept without them.
-    public var fileScope: FileScope? { scope.flatMap(FileScope.init(tag:)) }
+    /// The preview's path is absolute: read from anywhere on the computer (`FileScope.root`).
+    public var isAbsolutePreview: Bool { kind == Self.preview && (path ?? "").hasPrefix("/") }
     public static func webTab(_ url: String) -> PaneTab { PaneTab(kind: web, url: url) }
 }
 
@@ -81,10 +82,9 @@ extension TabsState {
         opening(PaneTab(kind: PaneTab.library), key: key) { $0.kind == PaneTab.library }
     }
 
-    /// A file as a tab; the same path in the same files reuses its tab.
-    public func openingPreview(path: String, scope: FileScope? = nil, key: String) -> TabsState {
-        let tab = PaneTab.previewTab(path, scope: scope)
-        return opening(tab, key: key) { $0.kind == PaneTab.preview && $0.path == path && $0.scope == tab.scope }
+    /// A file as a tab (its absolute path); the same path reuses its tab.
+    public func openingPreview(path: String, key: String) -> TabsState {
+        opening(.previewTab(path), key: key) { $0.kind == PaneTab.preview && $0.path == path }
     }
 
     /// A page as a tab; the same address reuses its tab.
@@ -188,7 +188,7 @@ public final class PaneTabsHub {
 
     public func openFiles(_ key: String) { update(key) { $0.openingFiles(key: key) } }
     public func openLibrary(_ key: String) { update(key) { $0.openingLibrary(key: key) } }
-    public func openPreview(_ key: String, path: String, scope: FileScope? = nil) { update(key) { $0.openingPreview(path: path, scope: scope, key: key) } }
+    public func openPreview(_ key: String, path: String) { update(key) { $0.openingPreview(path: path, key: key) } }
     public func openWeb(_ key: String, url: String) { update(key) { $0.openingWeb(url: url, key: key) } }
     public func retargetWeb(_ key: String, at index: Int, url: String) { update(key) { $0.retargetingWeb(at: index, to: url, key: key) } }
     public func close(_ key: String, at index: Int) { update(key) { $0.closing(at: index, key: key) } }

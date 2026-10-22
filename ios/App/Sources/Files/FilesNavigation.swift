@@ -8,8 +8,11 @@ import SwiftUI
 /// One file in a scope, to open.
 struct FileTarget: Hashable, Identifiable {
     let scope: FileScope
-    /// Relative to the scope's folder.
+    /// Relative to the scope's folder (`.root`: absolute).
     let path: String
+    /// Its absolute path on the computer, when known (a reply's link, from a
+    /// host that says it): what a right-pane tab keeps.
+    var absolute: String? = nil
     var name: String { (path as NSString).lastPathComponent }
     var id: String { "\(scope.kind.rawValue)|\(scope.id ?? "")|\(path)" }
 }

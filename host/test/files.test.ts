@@ -120,9 +120,21 @@ describe("files", () => {
     expect(() => files.read({ kind: "palo" }, join(paths.root, "identity.json"))).toThrow("找不到这个文件");
     // unknown scopes
     expect(() => files.list({ kind: "pal", id: "pal_nope" }, "")).toThrow("没有这个文件夹");
-    expect(() => parseScope({ kind: "root" })).toThrow("没有这个文件夹"); // the whole disk is not one
+    expect(parseScope({ kind: "root", id: "x" })).toEqual({ kind: "root" });
     expect(() => parseScope({ kind: "pal" })).toThrow("没有这个文件夹");
     expect(parseScope({ kind: "palo", id: "x" })).toEqual({ kind: "palo" });
+  });
+
+  test("root: any file on the disk by its absolute path (a preview tab's)", () => {
+    const { files, home, project, audit } = world();
+    const root = { kind: "root" } as const;
+    expect(Buffer.from(files.read(root, join(home, "secret.txt")).data, "base64").toString()).toBe("not yours\n");
+    expect(Buffer.from(files.read(root, join(project, "README.md")).data, "base64").toString()).toBe("# Site\n");
+    expect(Buffer.from(files.read(root, "~/code/site/README.md").data, "base64").toString()).toBe("# Site\n");
+    expect(() => files.read(root, join(project, "nope.md"))).toThrow("找不到这个文件");
+    expect(() => files.read(root, project)).toThrow("这是文件夹");
+    expect(() => files.read(root, "/a\0b")).toThrow("找不到这个文件");
+    expect(audit.tail(5).filter((e) => e.type === "files.read").map((e) => [e.scope, e.path])).toContainEqual(["root", realpathSync(join(project, "README.md"))]);
   });
 
   test("a link inside the project reads as its target", () => {
@@ -175,6 +187,7 @@ describe("files", () => {
       ["er/Widget.swift", "src/deep/er/Widget.swift"],
     ]);
     expect(r.files[0]!.size).toBe(20);
+    expect(r.files[0]!.abs).toBe(join(project, "src", "app.ts"));
     // the assistant: its home, then its artifacts
     const palo = files.resolve({ kind: "palo" }, ["notes.md", "brief/brief.md", "brief.md"]);
     expect(palo.files.map((f) => f.path)).toEqual(["notes.md", "artifacts/brief/brief.md", "artifacts/brief/brief.md"]);

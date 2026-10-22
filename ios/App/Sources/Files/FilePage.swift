@@ -15,12 +15,18 @@ struct FilePage: View {
     /// A tab of the right pane: its chip already names the file, so no bar
     /// or strip; its actions are a floating ⋯ at the top right.
     var inPane = false
+    /// A tab's absolute path read through `.root`: where to read it when the
+    /// computer's PaloAlly is older and has no `.root` (the pane's own files,
+    /// which take an absolute path inside them).
+    var fallbackScope: FileScope? = nil
 
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.placesAsColumns) private var asColumn
     @State private var phase = Phase.loading
     @State private var raw = false
+    /// The scope the file was read from, when it was the fallback.
+    @State private var readScope: FileScope?
 
     enum Phase: Equatable {
         case loading
@@ -177,8 +183,12 @@ struct FilePage: View {
     /// A Markdown file's relative pictures, from the same folder on the computer.
     private var images: FilePreviewWebView.ImageSource {
         let store = store
-        let scope = target.scope
+        let scope = readScope ?? target.scope
+        // A document kept by its absolute path: its pictures' paths come back
+        // without the leading "/", put it back.
+        let absolute = target.path.hasPrefix("/")
         return .init(directory: (target.path as NSString).deletingLastPathComponent) { path in
+            let path = absolute && !path.hasPrefix("/") ? "/" + path : path
             guard let r = try? await store.readFile(scope, path: path), !r.tooLarge,
                   r.data.count <= FilePreviewWebView.imageMaxBytes else { return nil }
             return r.data
@@ -188,8 +198,17 @@ struct FilePage: View {
     private func load() async {
         if case .text = phase {} else { phase = .loading }
         do {
-            let r = try await store.readFile(target.scope, path: target.path) { got, total in
+            let progress: (Int64, Int64) -> Void = { got, total in
                 if total > ArtifactChunk.maxChunk { phase = .progress(Double(got) / Double(max(total, 1))) }
+            }
+            let r: (data: Data, mime: String, size: Int64, tooLarge: Bool)
+            do {
+                r = try await store.readFile(target.scope, path: target.path, progress: progress)
+                readScope = nil
+            } catch {
+                guard let fallbackScope else { throw error }
+                r = try await store.readFile(fallbackScope, path: target.path, progress: progress)
+                readScope = fallbackScope
             }
             if r.tooLarge {
                 phase = .tooLarge(r.size)

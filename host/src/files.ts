@@ -12,9 +12,11 @@ import { newId, readJson, writeJson } from "./util.ts";
 // folders the owner chose, and the owner's own home folder (Palo's 文件 can
 // switch to it; its dot files stay out unless asked for). Every path is resolved to its real path (symlinks
 // followed) and must stay inside the scope's root; PaloAlly's own state is
-// never readable, whatever the scope.
+// never readable, whatever the scope. Except `root`: the whole disk, by
+// absolute path, for a right-pane preview tab (it keeps the file's absolute
+// path); nothing is held back there for now.
 
-export type FileScope = { kind: "pal"; id: string } | { kind: "palo" } | { kind: "home" } | { kind: "folder"; id: string };
+export type FileScope = { kind: "pal"; id: string } | { kind: "palo" } | { kind: "home" } | { kind: "folder"; id: string } | { kind: "root" };
 
 export interface FileEntry {
   name: string;
@@ -70,6 +72,7 @@ export class FileBrowser {
   /** The scope's root, as a real path. */
   root(scope: FileScope): string {
     let dir: string | undefined;
+    if (scope.kind === "root") return "/";
     if (scope.kind === "palo") dir = this.d.paths.home;
     else if (scope.kind === "home") dir = this.home();
     else if (scope.kind === "pal") dir = this.d.palCwd(scope.id);
@@ -87,8 +90,11 @@ export class FileBrowser {
    */
   private locate(scope: FileScope, path: string): { root: string; real: string; rel: string } {
     const root = this.root(scope);
-    const real = this.inside(root, this.expand(path, root));
+    // The whole disk: any path that exists. A policy the owner sets on the
+    // computer (which folders a device may read) would go here, when there is one.
+    const real = scope.kind === "root" ? (path.includes("\0") ? null : realOrNull(this.expand(path, root))) : this.inside(root, this.expand(path, root));
     if (!real) throw new Error(t("files.err.notFound"));
+    if (scope.kind === "root") return { root, real, rel: real };
     return { root, real, rel: relative(root, real).split(sep).join("/") };
   }
 
@@ -246,10 +252,10 @@ export class FileBrowser {
    * artifacts; a folder: that folder); a bare name or a path cut short is
    * looked up in the tree when it isn't there. Unresolved ones are left out.
    */
-  resolve(scope: FileScope, candidates: string[]): { files: { text: string; path: string; size: number }[] } {
+  resolve(scope: FileScope, candidates: string[]): { files: { text: string; path: string; abs: string; size: number }[] } {
     const root = this.root(scope);
     const bases = scope.kind === "palo" ? [root, join(root, "artifacts")] : [root];
-    const out: { text: string; path: string; size: number }[] = [];
+    const out: { text: string; path: string; abs: string; size: number }[] = [];
     const seen = new Set<string>();
     // The tree walks for names that aren't where the reply said: a few, and
     // a second in all, so one message full of names can't keep the host busy.
@@ -280,7 +286,8 @@ export class FileBrowser {
         if (found) hit = this.inside(root, join(root, found.path));
       }
       if (!hit) continue;
-      out.push({ text, path: relative(root, hit).split(sep).join("/"), size: statSync(hit).size });
+      // `abs`: the file's absolute path, the way a right-pane tab keeps it.
+      out.push({ text, path: relative(root, hit).split(sep).join("/"), abs: hit, size: statSync(hit).size });
     }
     return { files: out };
   }
@@ -351,12 +358,13 @@ export function parseScope(v: unknown): FileScope {
   const s = v as { kind?: unknown; id?: unknown } | null;
   if (s && s.kind === "palo") return { kind: "palo" };
   if (s && s.kind === "home") return { kind: "home" };
+  if (s && s.kind === "root") return { kind: "root" };
   if (s && (s.kind === "pal" || s.kind === "folder") && typeof s.id === "string" && s.id) return { kind: s.kind, id: s.id.slice(0, 100) };
   throw new Error(t("files.err.noScope"));
 }
 
 function scopeLabel(s: FileScope): string {
-  return s.kind === "palo" || s.kind === "home" ? s.kind : `${s.kind}:${s.id}`;
+  return s.kind === "palo" || s.kind === "home" || s.kind === "root" ? s.kind : `${s.kind}:${s.id}`;
 }
 
 function realOrNull(p: string): string | null {

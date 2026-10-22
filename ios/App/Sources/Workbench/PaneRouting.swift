@@ -149,7 +149,13 @@ extension WindowModel {
         default:
             return false
         }
-        editPane(key) { $0.openPreview(key, path: target.path, scope: target.scope) }
+        // The tab keeps the absolute path: the computer's, else the session's
+        // folder joined with it; an older computer's Palo file stays relative.
+        let path = target.absolute
+            ?? (target.scope.kind == .pal ? store?.pal(id: target.scope.id ?? "")?.cwd : nil)
+                .flatMap { $0.hasPrefix("/") ? FilePaths.join($0, target.path) : nil }
+            ?? target.path
+        editPane(key) { $0.openPreview(key, path: path) }
         return true
     }
 

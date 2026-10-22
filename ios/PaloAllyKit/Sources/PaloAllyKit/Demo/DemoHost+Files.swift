@@ -132,6 +132,15 @@ extension DemoHost {
         }
     }
 
+    /// The whole disk (`{kind:"root"}`, a preview tab's absolute path): the
+    /// made-up folder deepest above it.
+    func diskScope(_ path: String) -> (root: String, files: [String: DemoFile]) {
+        let roots: [(String, [String: DemoFile])] = [("\(Self.demoHome)/.paloally/home", Self.homeFiles), (Self.demoHome, Self.ownerHomeFiles)]
+            + pals.map { ($0.cwd, Self.projectFiles) } + ownerFolders.map { ($0.path, Self.projectFiles) }
+        let inside = roots.filter { !$0.0.isEmpty && path.hasPrefix($0.0 + "/") }
+        return inside.max { $0.0.count < $1.0.count } ?? ("/", [:])
+    }
+
     /// The `files.*` methods; nil for any other.
     func dispatchFiles(_ method: String, _ p: JSONValue) throws -> JSONValue? {
         switch method {
@@ -152,7 +161,8 @@ extension DemoHost {
             }
             return try .from(FilesListResult(root: root, path: dir, entries: Self.sorted(Array(entries.values))))
         case RPCMethod.filesRead:
-            let (root, files) = try filesScope(p["scope"])
+            let (root, files) = p["scope"]?["kind"]?.stringValue == "root"
+                ? diskScope(p["path"]?.stringValue ?? "") : try filesScope(p["scope"])
             guard let path = Self.normalize(p["path"]?.stringValue ?? "", root: root), let file = files[path] else {
                 throw DemoError(message: "找不到这个文件，或者它不在能看的范围里")
             }
@@ -199,7 +209,7 @@ extension DemoHost {
                     : c.hasPrefix("/") ? nil
                     : files.keys.sorted().first { $0.hasSuffix("/" + rel) && !$0.split(separator: "/").contains { Self.hiddenNames.contains(String($0)) } }
                 guard let hit, let f = files[hit] else { continue }
-                out.append(ResolvedFile(text: text, path: hit, size: f.size))
+                out.append(ResolvedFile(text: text, path: hit, abs: root + "/" + hit, size: f.size))
             }
             return try .from(FilesResolveResult(files: out))
         case RPCMethod.filesFoldersList:
