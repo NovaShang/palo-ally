@@ -70,6 +70,10 @@ struct CollapsedSidebarCapsule: View {
                     AssistantAvatar(theme: model.currentTheme, hostID: model.activeHostID, bleed: 1.3)
                         .frame(width: 26, height: 26)
                         .paloOrbHome()
+                        // The orb is drawn apart and takes no clicks itself:
+                        // without a shape of its own the button had none to
+                        // take (a click on it did nothing).
+                        .contentShape(.circle)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(store.assistantName.isEmpty ? "Palo" : store.assistantName)
@@ -108,6 +112,7 @@ struct CollapsedSidebarCapsule: View {
     /// The Mac: Palo in a small window of its own beside this one (the one
     /// already open comes forward); on an iPad, Palo's conversation here.
     private func orbClicked() {
+        debugLog("[windows] capsule orb clicked in \(model.traceName)\(model.isMini ? " (mini)" : ""), multiple windows \(UIApplication.shared.supportsMultipleScenes)")
         if Platform.isMac, !model.isMini, UIApplication.shared.supportsMultipleScenes {
             model.app.showPaloMini(from: model) { openWindow(value: $0) }
         } else {

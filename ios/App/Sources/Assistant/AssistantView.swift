@@ -106,6 +106,7 @@ private struct AssistantHeader: View {
                 VStack(spacing: 10) {
                     AssistantAvatar(theme: model.currentTheme, live: true, hostID: model.activeHostID, bleed: 1.3)
                         .frame(width: 96, height: 96)
+                        .contentShape(.circle) // drawn apart, it takes no clicks itself
                     Text(store.assistantName).font(.title2.bold()).foregroundStyle(.primary)
                 }
             }
