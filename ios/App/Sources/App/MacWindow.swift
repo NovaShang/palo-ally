@@ -224,7 +224,9 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
     private static var installed: [ObjectIdentifier: MacToolbar] = [:]
 
     private let model: WindowModel
-    private let toolbar = NSToolbar(identifier: "palo.main")
+    /// One identifier per window: AppKit keeps toolbars that share one in
+    /// step across windows.
+    private let toolbar = NSToolbar(identifier: "palo.main.\(UUID().uuidString)")
 
     static func install(on scene: UIWindowScene, model: WindowModel) {
         let key = ObjectIdentifier(scene)
@@ -238,7 +240,7 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
         titlebar.toolbarStyle = .unified
         titlebar.separatorStyle = .none
         titlebar.toolbar = bar.toolbar
-        AppKitBundle.immerseWindows(toolbar: bar.toolbar.identifier)
+        AppKitBundle.immerseWindows(toolbar: "palo.main")
     }
 
     private init(model: WindowModel) {

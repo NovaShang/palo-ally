@@ -73,7 +73,7 @@ final class ImmersiveWindows: NSObject {
 
     @discardableResult
     private static func apply(_ window: NSWindow) -> Bool {
-        guard let id = toolbarID, window.toolbar?.identifier == id else { return false }
+        guard let id = toolbarID, window.toolbar?.identifier.hasPrefix(id) == true else { return false }
         if !window.styleMask.contains(.fullSizeContentView) { window.styleMask.insert(.fullSizeContentView) }
         if !window.titlebarAppearsTransparent { window.titlebarAppearsTransparent = true }
         if window.titlebarSeparatorStyle != .none { window.titlebarSeparatorStyle = .none }
@@ -90,7 +90,7 @@ final class ImmersiveWindows: NSObject {
     /// are gone there), y 26 when there is no button to measure.
     @objc func leadingChrome() -> String? {
         guard let id = Self.toolbarID,
-              let window = NSApplication.shared.windows.first(where: { $0.toolbar?.identifier == id }),
+              let window = NSApplication.shared.windows.first(where: { $0.toolbar?.identifier.hasPrefix(id) == true }),
               let frame = window.contentView?.superview else { return nil }
         if window.styleMask.contains(.fullScreen) { return "0,26" }
         guard let zoom = window.standardWindowButton(.zoomButton) else { return "80,26" }
@@ -114,7 +114,7 @@ final class ImmersiveWindows: NSObject {
     /// (whether the titlebar takes it or the app's content gets it).
     @objc func hitChain(_ spec: String) -> String {
         guard let id = Self.toolbarID,
-              let window = NSApplication.shared.windows.first(where: { $0.toolbar?.identifier == id }),
+              let window = NSApplication.shared.windows.first(where: { $0.toolbar?.identifier.hasPrefix(id) == true }),
               let frame = window.contentView?.superview else { return "no window" }
         var lines: [String] = []
         for item in spec.split(separator: "|") {
@@ -138,7 +138,7 @@ final class ImmersiveWindows: NSObject {
     /// `-demoSnapshot`, when the screen can't be captured. Glass comes out flat.
     @objc func snapshotTitlebar(to path: String) -> String? {
         guard let id = Self.toolbarID,
-              let window = NSApplication.shared.windows.first(where: { $0.toolbar?.identifier == id }),
+              let window = NSApplication.shared.windows.first(where: { $0.toolbar?.identifier.hasPrefix(id) == true }),
               let titlebar = window.standardWindowButton(.closeButton)?.superview?.superview,
               let frame = window.contentView?.superview,
               let rep = titlebar.bitmapImageRepForCachingDisplay(in: titlebar.bounds) else { return nil }
