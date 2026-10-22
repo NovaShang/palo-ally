@@ -155,6 +155,9 @@ final class WindowModel {
                 last[w] = id
                 UserDefaults.standard.set(last, forKey: Self.lastTabKey)
             }
+            // The last page's toolbar items (a workspace's ＋) go with it;
+            // the new page puts up its own as it appears.
+            clearMacToolbarMenus()
             // Each conversation starts at its own root.
             detailPath = NavigationPath()
             detailShown = false
@@ -184,7 +187,18 @@ final class WindowModel {
     /// The Mac: what the open page puts in the window toolbar (its ⋯, a
     /// workspace's ＋), and which page put it there.
     var macToolbarMenus: MacToolbarMenus?
+    /// The conversation those menus were made for.
+    var macToolbarPage: Conversation?
     @ObservationIgnored var macToolbarOwner: UUID?
+    /// The page's menus while the window still shows the page that put them up.
+    var currentMacToolbarMenus: MacToolbarMenus? {
+        macToolbarPage != nil && macToolbarPage == selection ? macToolbarMenus : nil
+    }
+    func clearMacToolbarMenus() {
+        macToolbarOwner = nil
+        macToolbarPage = nil
+        macToolbarMenus = nil
+    }
     /// Each workspace's active tile (a session id), kept while the window is open.
     var activeTiles: [String: String] = [:]
     /// Phones (and short windows): the right pane as a full page.

@@ -46,32 +46,41 @@ struct MacToolbarMenus {
 
 /// The Mac: the page's menus in the window toolbar while it is shown.
 /// `signature` says when they changed (they hold actions, not values).
+/// They belong to the conversation the page was made for: the toolbar shows
+/// them only while the window still shows that one (`macToolbarPage`), and a
+/// new selection drops them at once (WindowModel.selection), so a page that
+/// lingers (its removal animating, a late disappear) can't leave its ＋ or
+/// ⋯ on the next page.
 private struct MacToolbarMenusHost: ViewModifier {
     let menus: () -> MacToolbarMenus
     let signature: String
     @Environment(WindowModel.self) private var model
     @State private var token = UUID()
+    /// The window's conversation when this page came up.
+    @State private var page: WindowModel.Conversation?
 
     func body(content: Content) -> some View {
         if Platform.barInWindowToolbar {
             content
-                .onChange(of: signature, initial: true) {
-                    model.macToolbarOwner = token
-                    model.macToolbarMenus = menus()
-                }
-                .onAppear {
-                    model.macToolbarOwner = token
-                    model.macToolbarMenus = menus()
-                }
+                .onChange(of: signature, initial: true) { publish() }
+                .onAppear { publish() }
                 .onDisappear {
                     // Only its own: the next page may have put its menus up first.
                     guard model.macToolbarOwner == token else { return }
-                    model.macToolbarOwner = nil
-                    model.macToolbarMenus = nil
+                    model.clearMacToolbarMenus()
                 }
         } else {
             content
         }
+    }
+
+    private func publish() {
+        if page == nil { page = model.selection }
+        // A page on its way out (the window moved on) doesn't put its menus back.
+        guard let page, page == model.selection else { return }
+        model.macToolbarOwner = token
+        model.macToolbarPage = page
+        model.macToolbarMenus = menus()
     }
 }
 
@@ -250,7 +259,11 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
 
     /// Follows the page's menus (they come and go with the page).
     private func track() {
-        withObservationTracking { _ = model.macToolbarMenus } onChange: { [weak self] in
+        withObservationTracking {
+            _ = model.macToolbarMenus
+            _ = model.macToolbarPage
+            _ = model.selection
+        } onChange: { [weak self] in
             Task { @MainActor in
                 self?.refresh()
                 self?.track()
@@ -259,7 +272,7 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
     }
 
     private func refresh() {
-        let menus = model.macToolbarMenus
+        let menus = model.currentMacToolbarMenus
         let wanted = Self.pageItems.filter { menuItems(for: $0, in: menus) != nil }
         let shown = toolbar.items.map(\.itemIdentifier).filter(Self.pageItems.contains)
         if shown != wanted {
@@ -268,6 +281,7 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
             }
             let at = toolbar.items.firstIndex { $0.itemIdentifier == .library } ?? toolbar.items.count
             for (k, id) in wanted.enumerated() { toolbar.insertItem(withItemIdentifier: id, at: at + k) }
+            debugLog("[toolbar] page items \(wanted.map(\.rawValue)) for \(model.selection?.storageKey ?? "-")")
         }
         for case let item as NSMenuToolbarItem in toolbar.items {
             if let entries = menuItems(for: item.itemIdentifier, in: menus) { item.itemMenu = UIMenu(children: Self.elements(entries)) }
@@ -321,7 +335,7 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
             item.label = add ? String(localized: "新窗格") : String(localized: "更多")
             item.toolTip = add ? String(localized: "在右边分出一个会话 ⌘D") : nil
             item.visibilityPriority = .high
-            if let entries = menuItems(for: id, in: model.macToolbarMenus) { item.itemMenu = UIMenu(children: Self.elements(entries)) }
+            if let entries = menuItems(for: id, in: model.currentMacToolbarMenus) { item.itemMenu = UIMenu(children: Self.elements(entries)) }
             return item
         default:
             return nil
