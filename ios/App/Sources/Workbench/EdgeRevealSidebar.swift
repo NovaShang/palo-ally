@@ -77,7 +77,7 @@ struct SidebarCollapse: ViewModifier {
 
     @ViewBuilder private var capsule: some View {
         if Platform.isMac {
-            CollapsedSidebarCapsule(collapsed: model.sidebarCollapsed)
+            CollapsedSidebarCapsule(collapsed: model.sidebarCollapsed, extras: !model.isMini)
                 .padding(.leading, inset)
                 .padding(.top, max(2, midY - 17))
                 .ignoresSafeArea()

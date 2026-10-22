@@ -1,5 +1,6 @@
 import PaloAllyKit
 import SwiftUI
+import UIKit
 
 extension WindowModel {
     /// The sidebar shown or put away: the window's sidebar button, ⌃⌘S and
@@ -40,9 +41,13 @@ extension WindowModel {
 /// controls: the strips start below it.
 struct CollapsedSidebarCapsule: View {
     let collapsed: Bool
+    /// The orb and the counts while collapsed (not in Palo's small window,
+    /// where they would cover its orb in the middle of the row).
+    var extras = true
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var listShown = false
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         let (waiting, done) = model.attentionSessions(in: store)
@@ -60,14 +65,17 @@ struct CollapsedSidebarCapsule: View {
             .help(Text("显示或隐藏侧栏 ⌃⌘S"))
             #endif
 
-            if collapsed {
-                Button { model.openPalo() } label: {
+            if collapsed && extras {
+                Button(action: orbClicked) {
                     AssistantAvatar(theme: model.currentTheme, hostID: model.activeHostID, bleed: 1.3)
                         .frame(width: 26, height: 26)
                         .paloOrbHome()
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(store.assistantName.isEmpty ? "Palo" : store.assistantName)
+                #if targetEnvironment(macCatalyst)
+                .help(Text("在小窗口中打开 Palo"))
+                #endif
 
                 if !waiting.isEmpty || !done.isEmpty {
                     Button { listShown.toggle() } label: {
@@ -95,6 +103,16 @@ struct CollapsedSidebarCapsule: View {
         .animation(.snappy, value: collapsed)
         .animation(.snappy, value: waiting.count)
         .animation(.snappy, value: done.count)
+    }
+
+    /// The Mac: Palo in a small window of its own beside this one (the one
+    /// already open comes forward); on an iPad, Palo's conversation here.
+    private func orbClicked() {
+        if Platform.isMac, !model.isMini, UIApplication.shared.supportsMultipleScenes {
+            model.app.showPaloMini(from: model) { openWindow(value: $0) }
+        } else {
+            model.openPalo()
+        }
     }
 
     /// "2 等你 · 1 做完", only what isn't zero.
