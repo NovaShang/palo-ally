@@ -72,6 +72,12 @@ targets:
         # A sidebar row dragged out of the window (iPads) opens it in a new one.
         NSUserActivityTypes:
           - com.novashang.paloally.conversation
+        # A sidebar row dragged within the sidebar (reorder, into a workspace).
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.novashang.paloally.sidebar-item
+            UTTypeDescription: PaloAlly sidebar item
+            UTTypeConformsTo:
+              - public.data
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft

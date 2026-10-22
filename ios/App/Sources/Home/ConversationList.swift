@@ -4,7 +4,10 @@ import SwiftUI
 /// The list (workbench-prd §4): Palo on top, big, with what it did last or
 /// how many sessions wait on the owner; 工作区, each opening to its sessions
 /// ("N 等你" on the row), with a ＋; 会话, the ordinary ones by latest
-/// activity; Allies, with 添加; and, quietly, 电脑与设备.
+/// activity; Allies, with 添加; and, quietly, 电脑与设备. Workspaces and
+/// sessions are in the owner's own order, which a drag changes (kept on the
+/// computer, the same on every device): reorder, drop one session on another
+/// to make a workspace, drag in and out of a workspace (`SidebarDragDrop`).
 /// At the foot: ＋ (新建会话, 从历史记录继续…, 新建工作区) and 设置. Every row's
 /// dot is the one StatusDot. With several computers paired, the assistant's
 /// name on the first row switches between them.
@@ -23,10 +26,16 @@ struct ConversationList: View {
     @State private var deleting: Workspace?
     /// The workspaces opened in the list.
     @State private var expanded: Set<String> = []
+    /// What a drop failed with.
+    @State private var dropFailure: String?
 
     var body: some View {
         @Bindable var model = model
         let tree = store.sidebarTree
+        let order = store.sessionOrder
+        let drop = { (move: SidebarDrop.Move) in run(move) }
+        // Only with a host that has workspaces (and a list to drag in).
+        let dnd = store.workspacesSupported == true
         List(selection: $model.selection) {
             PaloItem(waitingSessions: tree.waitingCount)
                 .tag(WindowModel.Conversation.palo)
@@ -41,15 +50,18 @@ struct ConversationList: View {
                             WorkspaceRow(node: node, expanded: isExpanded(node)) { toggle(node) }
                                 .tag(WindowModel.Conversation.workspace(node.id))
                                 .accessibilityIdentifier("row-workspace-\(node.id)")
-                                .modifier(OpenInNewWindow(conversation: .workspace(node.id)))
                                 .contextMenu { workspaceMenu(node.workspace) }
+                                .sidebarRowDrag(dnd, drags: .workspace(node.id), conversation: .workspace(node.id),
+                                                target: .workspace(node.id), tree: tree, sessionOrder: order, perform: drop)
                             if isExpanded(node) {
                                 ForEach(node.members) { pal in
                                     PalListRow(pal: pal, inset: true)
                                         .tag(WindowModel.Conversation.pal(pal.id))
                                         .accessibilityIdentifier("row-pal-\(pal.id)")
-                                        .modifier(OpenInNewWindow(conversation: .pal(pal.id)))
                                         .contextMenu { sessionMenu(pal) }
+                                        .sidebarRowDrag(dnd, drags: .session(pal.id), conversation: .pal(pal.id),
+                                                        target: .member(pal.id, workspace: node.id), tree: tree, sessionOrder: order,
+                                                        perform: drop)
                                 }
                             }
                         }
@@ -63,11 +75,16 @@ struct ConversationList: View {
                         PalListRow(pal: pal)
                             .tag(WindowModel.Conversation.pal(pal.id))
                             .accessibilityIdentifier("row-pal-\(pal.id)")
-                            .modifier(OpenInNewWindow(conversation: .pal(pal.id)))
                             .contextMenu { sessionMenu(pal) }
+                            .sidebarRowDrag(dnd, drags: .session(pal.id), conversation: .pal(pal.id), target: .session(pal.id),
+                                            tree: tree, sessionOrder: order, perform: drop)
                     }
                 } header: {
+                    // Also where a session dragged out of a workspace can land: the top.
                     Text("会话").textCase(nil)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .sidebarRowDrag(dnd, drags: nil, conversation: nil, target: .sessionsTop, tree: tree, sessionOrder: order,
+                                        perform: drop)
                 } footer: {
                     if store.pals.isEmpty {
                         Text("点左下角的 ＋ 新建一个会话，或者让 Palo 帮你开。")
@@ -136,6 +153,12 @@ struct ConversationList: View {
         } message: {
             Text("里面的会话不会结束，变回普通会话。")
         }
+        .alert(dropFailure ?? "", isPresented: Binding(get: { dropFailure != nil }, set: { if !$0 { dropFailure = nil } })) {
+            Button("好", role: .cancel) { dropFailure = nil }
+        }
+        #if DEBUG
+        .task { await demoDrops(tree: { store.sidebarTree }) }
+        #endif
         // The workspace holding the session picked is opened.
         .onChange(of: model.selection, initial: true) { _, c in
             guard case .pal(let id)? = c, let ws = store.pal(id: id)?.workspaceId else { return }
@@ -145,6 +168,72 @@ struct ConversationList: View {
         .animation(.snappy, value: store.workspaces)
         .animation(.snappy, value: expanded)
     }
+
+    // MARK: dropping
+
+    /// A drag let go: shown at once by the store, kept on the computer. One
+    /// session onto another: 新建工作区 with both, for the owner to name.
+    private func run(_ move: SidebarDrop.Move) {
+        debugLog("[sidebar-drop] \(move)")
+        if case .group(let target, let dragged) = move {
+            model.newWorkspace = [target, dragged]
+            return
+        }
+        Task {
+            do {
+                switch move {
+                case .reorderSessions(let ids): try await store.reorderSessions(ids)
+                case .reorderWorkspaces(let ids): try await store.reorderWorkspaces(ids)
+                case .reorderMembers(let ws, let ids): try await store.reorderMembers(workspaceId: ws, ids)
+                case .moveSession(let id, let ws, let index):
+                    if let ws { expanded.insert(ws) }
+                    try await store.moveSession(id, to: ws, index: index)
+                case .group: break
+                }
+            } catch {
+                dropFailure = Copy.error(error)
+            }
+        }
+    }
+
+    #if DEBUG
+    /// `-demoDrops "session:pal-notes>session:pal-photos:after,..."`: drops
+    /// through the same plan and `run` a real drop takes (targets:
+    /// `session:<id>`, `member:<id>@<workspace>`, `workspace:<id>`, `top`;
+    /// zones: before, onto, after), two seconds apart, logging the list after
+    /// each. The first window runs them.
+    private func demoDrops(tree: () -> SidebarTree) async {
+        guard let steps = UserDefaults.standard.string(forKey: "demoDrops") else { return }
+        try? await Task.sleep(for: .seconds(5))
+        guard model.app.windows.first === model else { return }
+        for step in steps.split(separator: ",").map(String.init) {
+            let parts = step.split(separator: ">", maxSplits: 1).map(String.init)
+            let rest = parts.count == 2 ? parts[1].split(separator: ":").map(String.init) : []
+            guard parts.count == 2, let item = SidebarDrop.Item(token: parts[0]), !rest.isEmpty else {
+                debugLog("[sidebar-drop] bad step \(step)"); continue
+            }
+            let zone: SidebarDrop.Zone = switch rest.last { case "before": .before; case "after": .after; default: .onto }
+            let target: SidebarDrop.Target? = switch rest[0] {
+            case "top": .sessionsTop
+            case "session" where rest.count >= 2: .session(rest[1])
+            case "workspace" where rest.count >= 2: .workspace(rest[1])
+            case "member" where rest.count >= 2:
+                rest[1].split(separator: "@").count == 2
+                    ? .member(String(rest[1].split(separator: "@")[0]), workspace: String(rest[1].split(separator: "@")[1])) : nil
+            default: nil
+            }
+            guard let target else { debugLog("[sidebar-drop] bad target in \(step)"); continue }
+            if let move = SidebarDrop.plan(item, on: target, zone: zone, tree: tree(), sessionOrder: store.sessionOrder) {
+                run(move)
+            } else {
+                debugLog("[sidebar-drop] \(step): nothing to do")
+            }
+            try? await Task.sleep(for: .seconds(2))
+            let t = tree()
+            debugLog("[sidebar-drop] after \(step): workspaces \(t.workspaces.map { "\($0.id)[\($0.members.map(\.id).joined(separator: " "))]" }.joined(separator: " ")) sessions \(t.sessions.map(\.id).joined(separator: " ")) newWorkspace \(model.newWorkspace.map { $0.joined(separator: " ") } ?? "-")")
+        }
+    }
+    #endif
 
     // MARK: workspaces
 

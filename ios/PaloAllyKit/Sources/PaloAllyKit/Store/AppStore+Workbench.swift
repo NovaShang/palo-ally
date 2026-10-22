@@ -29,8 +29,14 @@ extension AppStore {
 
     public func workspace(id: String) -> Workspace? { workspaces.first { $0.id == id } }
 
-    /// The sidebar's sections.
-    public var sidebarTree: SidebarTree { SidebarTree.build(pals: pals, workspaces: workspaces) }
+    /// The owner's order of the sessions in no workspace; nil from a host that keeps none.
+    public internal(set) var sessionOrder: [String]? {
+        get { shared.sessionOrder }
+        set { shared.sessionOrder = newValue }
+    }
+
+    /// The sidebar's sections, in the owner's manual order.
+    public var sidebarTree: SidebarTree { SidebarTree.build(pals: pals, workspaces: workspaces, sessionOrder: sessionOrder) }
 
     /// Sessions waiting on the owner, anywhere.
     public var waitingSessionCount: Int { pals.filter { $0.attention == .waiting }.count }
@@ -44,6 +50,8 @@ extension AppStore {
             let r: WorkspacesResult = try await rpc.call(RPCMethod.workspacesList, params: EmptyParams())
             workspacesSupported = true
             setWorkspaces(r.workspaces)
+            // A host that keeps no order sends none: an order dragged here this run stays.
+            if let o = r.sessionOrder, o != sessionOrder { sessionOrder = o }
         } catch {
             if isUnknownMethod(error) { workspacesSupported = false }
             throw error
@@ -87,6 +95,9 @@ extension AppStore {
             if let mine = workspaces.first(where: { $0.id == w.id }), mine.updatedAt > w.updatedAt { list[i] = mine }
         }
         setWorkspaces(list)
+        // Order echoes: the host's array order and sessionOrder win, except a
+        // workspace this device wrote more lately keeps its place in `list`.
+        if let o = r.sessionOrder, o != sessionOrder { sessionOrder = o }
         workspacesSupported = true
     }
 
@@ -168,7 +179,8 @@ extension AppStore {
         let r: WorkspaceResult = try await rpc.call(RPCMethod.workspacesCreate,
                                                     params: WorkspaceCreateParams(name: name, memberIds: memberIds))
         guard let w = r.workspace else { throw RPCError.badResponse }
-        setWorkspaces(workspaces.filter { $0.id != w.id } + [w])
+        // A new workspace goes on top of the owner's order (a host that keeps none: at the end).
+        setWorkspaces(sessionOrder != nil ? [w] + workspaces.filter { $0.id != w.id } : workspaces.filter { $0.id != w.id } + [w])
         // Members moved in: their lists change with it.
         try? await refreshPals()
         try? await refreshWorkspaces()
@@ -177,19 +189,20 @@ extension AppStore {
 
     /// Name and tiling; shown at once, put back when the host says no.
     @discardableResult
-    public func updateWorkspace(id: String, name: String? = nil, layout: JSONValue? = nil) async throws -> Workspace {
-        if let parent { return try await parent.updateWorkspace(id: id, name: name, layout: layout) }
+    public func updateWorkspace(id: String, name: String? = nil, layout: JSONValue? = nil, memberIds: [String]? = nil) async throws -> Workspace {
+        if let parent { return try await parent.updateWorkspace(id: id, name: name, layout: layout, memberIds: memberIds) }
         let before = workspaces
         if let i = workspaces.firstIndex(where: { $0.id == id }) {
             var list = workspaces
             if let name { list[i].name = name }
             if let layout { list[i].layout = layout == .null ? nil : layout }
+            if let memberIds { list[i].memberIds = Self.reordered(list[i].memberIds, by: memberIds) }
             list[i].updatedAt = max(list[i].updatedAt, Date().epochMillis)
             setWorkspaces(list)
         }
         do {
             let r: WorkspaceResult = try await rpc.call(RPCMethod.workspacesUpdate,
-                                                        params: WorkspaceUpdateParams(id: id, name: name, layout: layout))
+                                                        params: WorkspaceUpdateParams(id: id, name: name, layout: layout, memberIds: memberIds))
             guard let w = r.workspace else { throw RPCError.badResponse }
             setWorkspaces(workspaces.map { $0.id == w.id ? w : $0 })
             return w
@@ -199,19 +212,99 @@ extension AppStore {
         }
     }
 
-    /// Into a workspace, out of one (`workspaceId` nil), or to another.
-    public func moveSession(_ palId: String, to workspaceId: String?) async throws {
-        if let parent { return try await parent.moveSession(palId, to: workspaceId) }
-        let r: WorkspacesResult = try await rpc.call(RPCMethod.workspacesMove,
-                                                     params: WorkspaceMoveParams(palId: palId, workspaceId: workspaceId))
-        var list = workspaces
-        for w in r.workspaces {
-            if let i = list.firstIndex(where: { $0.id == w.id }) { list[i] = w } else { list.append(w) }
+    /// Into a workspace, out of one (`workspaceId` nil), or to another; `index`
+    /// is where it lands in that workspace's members, or in the ordinary
+    /// sessions when it leaves one. Shown at once, put back when the host says no.
+    public func moveSession(_ palId: String, to workspaceId: String?, index: Int? = nil) async throws {
+        if let parent { return try await parent.moveSession(palId, to: workspaceId, index: index) }
+        let (beforeWS, beforeOrder, beforePals) = (workspaces, sessionOrder, pals)
+        applyMoveLocally(palId, to: workspaceId, index: index)
+        do {
+            let r: WorkspacesResult = try await rpc.call(RPCMethod.workspacesMove,
+                                                         params: WorkspaceMoveParams(palId: palId, workspaceId: workspaceId, index: index))
+            var list = workspaces
+            for w in r.workspaces {
+                if let i = list.firstIndex(where: { $0.id == w.id }) { list[i] = w } else { list.append(w) }
+            }
+            setWorkspaces(list)
+        } catch {
+            setWorkspaces(beforeWS); sessionOrder = beforeOrder; setPals(beforePals, others: nil)
+            throw error
         }
-        setWorkspaces(list)
-        // A workspace left empty by the move is gone at the host.
+        // A workspace left empty by the move stays; the host's order and lists are the truth.
         try? await refreshPals()
         try? await refreshWorkspaces()
+    }
+
+    /// The same move as the host will make, drawn before it answers.
+    func applyMoveLocally(_ palId: String, to workspaceId: String?, index: Int?) {
+        var list = workspaces
+        for i in list.indices { list[i].memberIds.removeAll { $0 == palId } }
+        var order = sessionOrder
+        order?.removeAll { $0 == palId }
+        if let workspaceId, let i = list.firstIndex(where: { $0.id == workspaceId }) {
+            let at = min(max(index ?? list[i].memberIds.count, 0), list[i].memberIds.count)
+            list[i].memberIds.insert(palId, at: at)
+            list[i].updatedAt = max(list[i].updatedAt, Date().epochMillis)
+        } else if order != nil {
+            let at = min(max(index ?? 0, 0), order!.count)
+            order!.insert(palId, at: at)
+        }
+        setWorkspaces(list)
+        if order != sessionOrder { sessionOrder = order }
+        if var p = pal(id: palId) {
+            p.workspaceId = workspaceId
+            upsert(pal: p)
+        }
+    }
+
+    /// `ids` first in that order, then whatever it didn't name in its old order.
+    static func reordered(_ old: [String], by ids: [String]) -> [String] {
+        var seen = Set<String>()
+        let named = ids.filter { old.contains($0) && seen.insert($0).inserted }
+        return named + old.filter { !seen.contains($0) }
+    }
+
+    /// The owner dragged ordinary sessions into a new order (`workbench.order.set`).
+    public func reorderSessions(_ ids: [String]) async throws {
+        if let parent { return try await parent.reorderSessions(ids) }
+        let before = sessionOrder
+        sessionOrder = Self.reordered(sessionOrder ?? sidebarTree.sessionIDs, by: ids)
+        do {
+            let r: OrderSetResult = try await rpc.call(RPCMethod.workbenchOrderSet, params: OrderSetParams(kind: "sessions", ids: ids))
+            sessionOrder = r.sessionOrder
+        } catch {
+            // A host from before the order: kept here, for this run.
+            if isUnknownMethod(error) { return }
+            sessionOrder = before
+            throw error
+        }
+    }
+
+    /// The owner dragged workspaces into a new order.
+    public func reorderWorkspaces(_ ids: [String]) async throws {
+        if let parent { return try await parent.reorderWorkspaces(ids) }
+        let before = workspaces
+        let order = Self.reordered(workspaces.map(\.id), by: ids)
+        setWorkspaces(order.compactMap { id in workspaces.first { $0.id == id } })
+        do {
+            let r: OrderSetResult = try await rpc.call(RPCMethod.workbenchOrderSet, params: OrderSetParams(kind: "workspaces", ids: ids))
+            let byID = Dictionary(workspaces.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            setWorkspaces(r.workspaceOrder.compactMap { byID[$0] } + workspaces.filter { !r.workspaceOrder.contains($0.id) })
+        } catch {
+            if isUnknownMethod(error) {
+                // A host from before the order: kept here for this run, which needs an order to list by.
+                if sessionOrder == nil { sessionOrder = sidebarTree.sessionIDs }
+                return
+            }
+            setWorkspaces(before)
+            throw error
+        }
+    }
+
+    /// The owner dragged a workspace's members into a new order.
+    public func reorderMembers(workspaceId: String, _ ids: [String]) async throws {
+        _ = try await updateWorkspace(id: workspaceId, memberIds: ids)
     }
 
     /// Its sessions become ordinary ones; none is ended.

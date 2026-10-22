@@ -161,6 +161,7 @@ private let resultTypes: [String: Check] = [
     RPCMethod.workspacesUpdate: strict(WorkspaceResult.self),
     RPCMethod.workspacesMove: strict(WorkspacesResult.self),
     RPCMethod.workspacesDelete: strict(OKResult.self),
+    RPCMethod.workbenchOrderSet: strict(OrderSetResult.self),
     RPCMethod.workbenchTabsGet: strict(TabsGetResult.self),
     RPCMethod.workbenchTabsSet: strict(TabsSetResult.self),
     // Going back (its words and whether the files went too), or only asking

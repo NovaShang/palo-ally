@@ -54,6 +54,8 @@ public actor DemoHost {
     /// the browser pane's tabs by key.
     public internal(set) var workspaces: [Workspace] = []
     var endedItems: [EarlierItem] = []
+    /// The owner's order of the sessions in no workspace (workbench.order.set).
+    var manualSessionOrder: [String] = []
     var paneTabs: [String: TabsState] = [:]
     /// A Pal's turn being written, to stop (`pals.stop`).
     var palTurns: [String: Task<Void, Never>] = [:]
