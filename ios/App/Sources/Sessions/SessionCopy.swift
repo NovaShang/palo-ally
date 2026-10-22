@@ -69,11 +69,4 @@ extension Copy {
         let n = note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return n.isEmpty ? String(localized: "在电脑上等你") : n
     }
-
-    /// A daily limit in dollars: 「每天最多 5 美元」.
-    static func dailyLimit(_ usd: Double?) -> String? {
-        guard let usd, usd > 0 else { return nil }
-        let amount = usd == usd.rounded() ? "\(Int(usd))" : String(format: "%.2f", usd)
-        return String(localized: "每天最多 \(amount) 美元")
-    }
 }

@@ -32,9 +32,6 @@ struct HelperProposalCard: View {
                 if !proposal.duty.isEmpty {
                     ProposalFact(name: String(localized: "负责"), value: proposal.duty)
                 }
-                if let limit = Copy.dailyLimit(proposal.dailyUsd) {
-                    ProposalFact(name: String(localized: "花费"), value: limit)
-                }
             }
 
             if proposal.isPending {

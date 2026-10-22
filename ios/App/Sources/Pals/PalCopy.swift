@@ -26,22 +26,15 @@ extension Copy {
         }
     }
 
-    /// A Pal page's subtitle: 「在忙 · ~/code/site」; stopped, why; asleep,
-    /// what waking it cost last time when that's known; being woken, so.
+    /// A Pal page's subtitle: 「在忙 · ~/code/site」; stopped, why; being woken, so.
     static func palSubtitle(_ p: Pal, waking: Bool = false) -> String {
         if waking { return String(localized: "正在叫醒…") }
         let second: String
         switch p.status {
         case .stopped: second = oneLine(p.note).nonEmpty ?? p.shortCwd
-        case .asleep: second = p.lastWakeUsd.map(wakeCost) ?? p.shortCwd
         default: second = p.shortCwd
         }
         return [palStatus(p.status), second].filter { !$0.isEmpty }.joined(separator: " · ")
-    }
-
-    /// 「上次叫醒约 $0.04」: a cold start costs more than a turn (§12).
-    static func wakeCost(_ usd: Double) -> String {
-        usd < 0.01 ? String(localized: "上次叫醒不到 $0.01") : String(localized: "上次叫醒约 $\(String(format: "%.2f", usd))")
     }
 
     private static func oneLine(_ s: String?) -> String {
