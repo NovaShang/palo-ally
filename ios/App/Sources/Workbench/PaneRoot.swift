@@ -16,6 +16,8 @@ final class PaneActions {
     var add: (String, PanePlacement?) -> Void = { _, _ in }
     /// 新开一个会话… as a new pane.
     var addNew: (PanePlacement?) -> Void = { _ in }
+    /// 从工作区移开: Palo's pane off the workspace (Palo goes on).
+    var removePalo: () -> Void = {}
 }
 
 /// The pane's measures (docs/workbench-design/split-final.html).
@@ -63,8 +65,15 @@ struct PaneRoot: View {
         #if DEBUG || PERF_HARNESS
         let _ = PerfProbe.count("PaneRoot")
         #endif
-        PaneContent(id: id, workspaceID: workspaceID, details: details, actions: actions,
-                    corner: bridge.cornerPane == id)
+        Group {
+            if id == LayoutTree.paloPane {
+                PaloPaneContent(workspaceID: workspaceID, details: details, actions: actions,
+                                corner: bridge.cornerPane == id)
+            } else {
+                PaneContent(id: id, workspaceID: workspaceID, details: details, actions: actions,
+                            corner: bridge.cornerPane == id)
+            }
+        }
             .environment(model)
             .environment(store)
             .environment(voice)
@@ -119,10 +128,9 @@ private struct PaneContent: View {
             .environment(\.chatDraft, model.draftBinding(.pal(id)))
             .environment(\.fileLinks, FileLinkContext(scope: .pal(id), resolver: .shared(for: store)))
             .environment(\.placesAsColumns, false)
-            // The Mac: no blur with a hard edge under the header, a soft fade.
-            .modifier(PaneHeaderFade())
-            // The conversation scrolls under the header, softly faded at the top.
+            // The conversation scrolls under the header, with the system's soft edge.
             .safeAreaBar(edge: .top, spacing: 0) { PaneTitle(id: id, corner: corner) }
+            .scrollEdgeEffectStyle(.soft, for: .top)
             .overlay(alignment: .topLeading) {
                 PaneStatusButton(id: id, details: details)
                     .padding(.leading, PaneMetrics.buttonInset)
@@ -139,28 +147,114 @@ private struct PaneContent: View {
     }
 }
 
-/// The Mac: the system's scroll edge under the header is a blur with a
-/// hard bottom edge there; the pane's own color fades out instead.
-private struct PaneHeaderFade: ViewModifier {
-    func body(content: Content) -> some View {
-        if Platform.barInWindowToolbar {
-            content
-                .scrollEdgeEffectHidden(true, for: .top)
-                .overlay(alignment: .top) {
-                    let solid = PaneMetrics.headerHeight
-                    let fade: CGFloat = 16
-                    LinearGradient(stops: [
-                        .init(color: Color(.systemBackground), location: 0),
-                        .init(color: Color(.systemBackground), location: solid / (solid + fade)),
-                        .init(color: Color(.systemBackground).opacity(0), location: 1),
-                    ], startPoint: .top, endPoint: .bottom)
-                    .frame(height: solid + fade)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                }
-        } else {
-            content
+/// Palo's pane (a view of the assistant, not a member): its conversation as
+/// on its own page, under the same slim header with its orb and its name.
+/// Holding to talk here talks to Palo; its orb drops out to listen inside
+/// this pane (TilePaloOrb), as a session pane's drop listens in its header.
+private struct PaloPaneContent: View {
+    let workspaceID: String
+    let details: TileDetails
+    let actions: PaneActions
+    let corner: Bool
+    @Environment(WindowModel.self) private var model
+    @Environment(AppStore.self) private var store
+    private let id = LayoutTree.paloPane
+
+    var body: some View {
+        ChatView(inTile: true)
+            .environment(\.tile, TileContext(id: id, isActive: model.activeTile(in: workspaceID) == id))
+            .environment(\.tileDetail, details.binding(id))
+            .environment(\.chatDraft, model.draftBinding(.palo))
+            .environment(\.fileLinks, FileLinkContext(scope: .palo, resolver: .shared(for: store)))
+            .environment(\.placesAsColumns, false)
+            .overlay { TilePaloOrb(owner: id, from: CGPoint(x: PaneMetrics.iconRect.midX, y: PaneMetrics.iconRect.midY)) }
+            .safeAreaBar(edge: .top, spacing: 0) { PaneTitle(id: id, corner: corner) }
+            .scrollEdgeEffectStyle(.soft, for: .top)
+            .overlay(alignment: .topLeading) {
+                PaloPaneOrbButton(details: details)
+                    .padding(.leading, PaneMetrics.buttonInset)
+                    .padding(.top, PaneMetrics.buttonTop)
+            }
+            .overlay(alignment: .topTrailing) {
+                PaloPaneMenu(workspaceID: workspaceID, actions: actions)
+                    .padding(.trailing, PaneMetrics.buttonInset + (corner ? PaneMetrics.cornerShift : 0))
+                    .padding(.top, PaneMetrics.buttonTop)
+            }
+            .overlay { TileVoiceGlow(owner: id, shape: Rectangle()) }
+            .background(Color(uiColor: .systemBackground))
+    }
+}
+
+/// Palo's orb in its pane's header, bare at the drop's size; opens Palo's
+/// details. While the owner holds to talk in this pane it is out listening.
+private struct PaloPaneOrbButton: View {
+    let details: TileDetails
+    @Environment(WindowModel.self) private var model
+    @Environment(AppStore.self) private var store
+    @Environment(VoiceInputController.self) private var voice
+    private let id = LayoutTree.paloPane
+
+    var body: some View {
+        let out = voice.panelMounted && voice.owner == id
+        Button {
+            details.tile = details.tile == id ? nil : id
+        } label: {
+            TitleOrbDrop(size: PaneMetrics.drop)
+                .frame(width: PaneMetrics.button, height: PaneMetrics.button)
+                .contentShape(.circle)
         }
+        .buttonStyle(.plain)
+        .opacity(out ? 0 : 1)
+        .animation(.easeOut(duration: 0.12), value: out)
+        .popover(isPresented: details.binding(id)) {
+            AgentDetailView()
+                .environment(model)
+                .environment(store)
+                .environment(\.tileDetail, details.binding(id))
+                .frame(minWidth: 360, idealWidth: 380, minHeight: 420, idealHeight: 560)
+                .presentationCompactAdaptation(.sheet)
+        }
+        .accessibilityLabel(Text(verbatim: "\(store.assistantName)：\(store.agentStatusLine.text)"))
+        .accessibilityIdentifier("tile-header-\(id)")
+    }
+}
+
+/// Palo's pane's ⋯: split it like any pane, or take it off the workspace.
+/// Nothing else (Palo isn't renamed, moved or ended from here).
+private struct PaloPaneMenu: View {
+    let workspaceID: String
+    let actions: PaneActions
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        let online = store.connection.isOnline
+        let id = LayoutTree.paloPane
+        Menu {
+            Menu("向右分出", systemImage: "rectangle.split.2x1") {
+                PaneChoices(workspaceID: workspaceID, placement: PanePlacement(pane: id, horizontal: true), actions: actions)
+            }
+            .disabled(!online)
+            Menu("向下分出", systemImage: "rectangle.split.1x2") {
+                PaneChoices(workspaceID: workspaceID, placement: PanePlacement(pane: id, horizontal: false), actions: actions)
+            }
+            .disabled(!online)
+            Divider()
+            Button("从工作区移开", systemImage: "rectangle.portrait.and.arrow.right") { actions.removePalo() }
+                .disabled(!online)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.primary)
+                .frame(width: PaneMetrics.button, height: PaneMetrics.button)
+                .contentShape(.circle)
+        }
+        .macMenuHitArea()
+        .menuIndicator(.hidden)
+        .tint(.primary)
+        .frame(width: PaneMetrics.button, height: PaneMetrics.button)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .accessibilityLabel("更多")
+        .accessibilityIdentifier("tile-menu-\(id)")
     }
 }
 
@@ -172,9 +266,9 @@ private struct PaneTitle: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
-        let pal = store.singlePal(id: id)
+        let name = id == LayoutTree.paloPane ? store.assistantName : store.singlePal(id: id)?.displayName ?? ""
         HStack(spacing: 8) {
-            Text(pal?.displayName ?? "")
+            Text(name)
                 .font(.system(size: 12, weight: .semibold))
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -295,9 +389,25 @@ private struct PaneMenu: View {
         .accessibilityIdentifier("tile-menu-\(id)")
     }
 
-    /// The sessions not in this workspace, then a new one.
+    /// Palo (when it isn't a pane here yet), the sessions not in this workspace, then a new one.
     @ViewBuilder private func choices(horizontal: Bool) -> some View {
-        let placement = PanePlacement(pane: id, horizontal: horizontal)
+        PaneChoices(workspaceID: workspaceID, placement: PanePlacement(pane: id, horizontal: horizontal), actions: actions)
+    }
+}
+
+/// What 向右分出 / 向下分出 offer: Palo first (when it isn't a pane here
+/// yet), the sessions not in this workspace, then a new one.
+private struct PaneChoices: View {
+    let workspaceID: String
+    let placement: PanePlacement
+    let actions: PaneActions
+    @Environment(WindowModel.self) private var model
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        if !model.showsPalo(in: workspaceID) {
+            Button(store.assistantName) { actions.add(LayoutTree.paloPane, placement) }
+        }
         let others = store.paneCandidates(for: workspaceID)
         if !others.isEmpty {
             Section("已有的会话") {

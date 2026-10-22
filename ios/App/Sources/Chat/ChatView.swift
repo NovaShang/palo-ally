@@ -60,7 +60,8 @@ struct ChatView: View {
     }
     /// The Mac: the assistant's conversation keeps the window toolbar's
     /// toggles and floats its orb in the column; a Pal's page has its bar.
-    private var macOrb: Bool { Platform.barInWindowToolbar && isPalo }
+    /// (Palo's pane in a workspace has its pane's header instead.)
+    private var macOrb: Bool { Platform.barInWindowToolbar && isPalo && !inTile }
     /// The Mac: a Pal's or a session's page runs to the window's top too,
     /// its title and menu floating in a strip (MacPageStrip).
     private var macPage: Bool { Platform.barInWindowToolbar && !isPalo && !inTile }
@@ -108,6 +109,14 @@ struct ChatView: View {
             let mid = store.messages[store.messages.count / 2].id
             scroll.detach(at: mid)
             debugLog("[anchor] reading from \(mid)")
+        }
+        // `-demoDetails YES`: the page's details open (snapshots of the popover).
+        .task {
+            guard !inTile, UserDefaults.standard.bool(forKey: "demoDetails") else { return }
+            try? await Task.sleep(for: .seconds(2))
+            model.detailShown = true
+            try? await Task.sleep(for: .seconds(1.5))
+            NSLog("[details] still open after 1.5 s: %@", model.detailShown ? "yes" : "no")
         }
         // `-demoJump <s>`: tap 「回到最新」 that many seconds in (it logs where it lands).
         .task {
@@ -257,7 +266,7 @@ struct ChatView: View {
         .overlay {
             if isPalo && !inTile { FlyingPaloOrb(placement: orbPlacement) }
         }
-        .modifier(OrbTracking(enabled: isPalo, scrolledUp: !scroll.following || store.viewingPast, scrolling: scroll.userScrolling))
+        .modifier(OrbTracking(enabled: isPalo && !inTile, scrolledUp: !scroll.following || store.viewingPast, scrolling: scroll.userScrolling))
         // 「试试」 timing: a reply finishing counts as activity.
         .onChange(of: store.isBusy) { _, busy in if !busy { SuggestionsGate.shared.touch() } }
         // Leaving the app, and coming back (after the catch-up).
@@ -291,7 +300,7 @@ struct ChatView: View {
             // Palo's page and a session's alike (phones and iPads): the round
             // indicator is the title, and the right pane is the one button at
             // the right. The Mac has its own strip and window toolbar.
-            if !Platform.barInWindowToolbar && (isPalo || pageTop?.capsule == true && store.palID != nil) {
+            if !Platform.barInWindowToolbar && !inTile && (isPalo || pageTop?.capsule == true && store.palID != nil) {
                 ToolbarItem(placement: .principal) {
                     if isPalo {
                         // Palo: its live orb, as in 0.1.17: the bar holds a

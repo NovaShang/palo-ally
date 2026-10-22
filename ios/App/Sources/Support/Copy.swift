@@ -4,6 +4,9 @@ import SwiftUI
 
 /// User-facing wording. Warm, simple, and free of technical words.
 enum Copy {
+    /// A split workspace's ＋: 「把 Palo 放进来」 (the assistant's own name).
+    static func addPalo(_ name: String) -> String { spaced(String(localized: "把\(name)放进来")) }
+
     static func relative(_ ms: Int64) -> String {
         guard ms > 0 else { return "" }
         let date = ms.msDate

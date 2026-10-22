@@ -144,21 +144,28 @@ extension LayoutTree {
 
     // MARK: - Reconcile with the members
 
-    /// The tree a workspace should show: only its members (extra leaves and
-    /// repeats go), members the tree lacks added by `inserting`, then
-    /// renormalized. No tree at all: the even grid. Nil when there are no members.
+    /// Palo's pane in a workspace's layout: a view of the assistant, not a
+    /// member (docs/workbench-rpc.md). Any workspace may have it, at most once.
+    public static let paloPane = "palo"
+
+    /// The tree a workspace should show: only its members and Palo's pane
+    /// when the tree has it (extra leaves and repeats go), members the tree
+    /// lacks added by `inserting`, then renormalized. No tree at all: the even
+    /// grid. Nil when there is nothing to show.
     public static func reconciled(_ tree: Node?, members: [String]) -> Node? {
-        guard !members.isEmpty else { return nil }
-        guard var node = tree.map(canonical) else { return tiledPreset(panes: members) }
-        let keep = Set(members)
+        let palo = tree.map { leafOrder(of: $0).contains(paloPane) } ?? false
+        let panes = members.filter { $0 != paloPane } + (palo ? [paloPane] : [])
+        guard !panes.isEmpty else { return nil }
+        guard var node = tree.map(canonical) else { return tiledPreset(panes: panes) }
+        let keep = Set(panes)
         let order = leafOrder(of: node)
         let extra = Set(order.filter { !keep.contains($0) })
         let repeated = Set(Dictionary(grouping: order, by: { $0 }).filter { $0.value.count > 1 }.keys).intersection(keep)
         for id in extra.union(repeated) {
-            guard let r = removing(pane: id, from: node) else { return tiledPreset(panes: members) }
+            guard let r = removing(pane: id, from: node) else { return tiledPreset(panes: panes) }
             node = r
         }
-        for id in members where !leafOrder(of: node).contains(id) { node = inserting(pane: id, into: node) }
+        for id in panes where !leafOrder(of: node).contains(id) { node = inserting(pane: id, into: node) }
         return renormalized(node, w: 1, h: 1, x: 0, y: 0)
     }
 

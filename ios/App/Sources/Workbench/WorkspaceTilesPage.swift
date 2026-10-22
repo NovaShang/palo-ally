@@ -82,7 +82,7 @@ struct WorkspaceTilesPage: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1 / cps))
                 guard PerfSwitch.driving, let id = model.activeTile(in: workspaceID) else { continue }
-                let draft = model.draftBinding(.pal(id))
+                let draft = model.draftBinding(id == LayoutTree.paloPane ? .palo : .pal(id))
                 n += 1
                 draft.wrappedValue = n % 60 == 0 ? "" : draft.wrappedValue + (n % 7 == 0 ? " " : "字")
             }
@@ -99,6 +99,7 @@ struct WorkspaceTilesPage: View {
     // MARK: panes
 
     private func info(_ id: String) -> TileInfo {
+        if id == LayoutTree.paloPane { return TileInfo(name: store.assistantName, dot: store.isBusy ? .working : .idle) }
         guard let pal = store.singlePal(id: id) else { return TileInfo(name: "") }
         return TileInfo(name: pal.displayName, dot: pal.dot, running: pal.tasksRunning)
     }
@@ -136,6 +137,15 @@ struct WorkspaceTilesPage: View {
             }
         }
         actions.addNew = { model.newSessionAsPane(in: workspaceID, placement: $0) }
+        actions.removePalo = {
+            Task {
+                do {
+                    try await model.removePalo(from: workspaceID)
+                } catch {
+                    failure = Copy.error(error)
+                }
+            }
+        }
     }
 
     /// Off the canvas: the session goes on, on its own in the list.
@@ -269,11 +279,15 @@ private struct WorkspaceBar: ViewModifier {
         if Platform.barInWindowToolbar {
             let others = store.paneCandidates(for: workspaceID)
             let online = store.connection.isOnline
+            let palo = model.showsPalo(in: workspaceID)
+            let name = store.assistantName
             content
                 .toolbar(.hidden, for: .navigationBar)
+                // The title bar row is the page's: its background, not the window's.
+                .background { Color(.systemBackground).ignoresSafeArea(.container, edges: .top) }
                 .macTitlebarCenter { MacTitlebarTitle(title: title) }
-                .macToolbarMenus(signature: "\(others.map { "\($0.id)=\($0.displayName)" })|\(placement?.pane ?? "")|\(online)") {
-                    MacToolbarMenus(add: addItems(others: others, online: online))
+                .macToolbarMenus(signature: "\(others.map { "\($0.id)=\($0.displayName)" })|\(placement?.pane ?? "")|\(online)|\(palo)|\(name)") {
+                    MacToolbarMenus(add: addItems(others: others, online: online, palo: palo, name: name))
                 }
         } else {
             content
@@ -287,10 +301,15 @@ private struct WorkspaceBar: ViewModifier {
         }
     }
 
-    private func addItems(others: [Pal], online: Bool) -> [MacMenuItem] {
+    private func addItems(others: [Pal], online: Bool, palo: Bool, name: String) -> [MacMenuItem] {
         let placement = placement
         let actions = actions
         var items: [MacMenuItem] = []
+        if !palo {
+            items.append(MacMenuItem(title: Copy.addPalo(name), image: "square.and.arrow.down", disabled: !online) {
+                actions.add(LayoutTree.paloPane, placement)
+            })
+        }
         if !others.isEmpty {
             items.append(MacMenuItem(title: String(localized: "已有的会话"), children: others.map { pal in
                 MacMenuItem(title: pal.displayName, disabled: !online) { actions.add(pal.id, placement) }
@@ -310,9 +329,16 @@ private struct AddPaneMenu: View {
     let placement: PanePlacement?
     @Environment(AppStore.self) private var store
 
+    @Environment(WindowModel.self) private var model
+
     var body: some View {
         let others = store.paneCandidates(for: workspaceID)
         Menu {
+            if !model.showsPalo(in: workspaceID) {
+                Button(Copy.addPalo(store.assistantName), systemImage: "square.and.arrow.down") {
+                    actions.add(LayoutTree.paloPane, placement)
+                }
+            }
             if !others.isEmpty {
                 Section("已有的会话") {
                     ForEach(others) { pal in

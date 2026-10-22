@@ -15,7 +15,8 @@ extension WindowModel {
         switch selection ?? .palo {
         case .palo: PaneTabsKey.palo
         case .pal(let id): PaneTabsKey.session(id)
-        case .workspace(let id): PaneTabsKey.workspace(id)
+        // Palo's pane in it: Palo's own tabs while it is the one in use.
+        case .workspace(let id): activeTile(in: id) == LayoutTree.paloPane ? PaneTabsKey.palo : PaneTabsKey.workspace(id)
         default: nil
         }
     }
@@ -30,13 +31,20 @@ extension WindowModel {
     /// The active tile of a workspace: the one last chosen, else the first.
     func activeTile(in workspaceID: String) -> String? {
         guard let ws = store?.workspace(id: workspaceID) else { return nil }
-        if let id = activeTiles[workspaceID], ws.memberIds.contains(id) { return id }
-        return tree(of: ws).flatMap { LayoutTree.leafOrder(of: $0).first }
+        let order = tree(of: ws).map(LayoutTree.leafOrder(of:)) ?? []
+        if let id = activeTiles[workspaceID], order.contains(id) { return id }
+        return order.first
     }
 
-    /// The session a workspace's files belong to (nil elsewhere).
+    /// Whether a workspace shows Palo as one of its panes.
+    func showsPalo(in workspaceID: String) -> Bool {
+        guard let ws = store?.workspace(id: workspaceID), let tree = tree(of: ws) else { return false }
+        return LayoutTree.leafOrder(of: tree).contains(LayoutTree.paloPane)
+    }
+
+    /// The session a workspace's files belong to (nil elsewhere, and while Palo's pane is the one in use).
     var paneSessionID: String? {
-        if case .workspace(let id)? = selection { return activeTile(in: id) }
+        if case .workspace(let id)? = selection, let tile = activeTile(in: id), tile != LayoutTree.paloPane { return tile }
         return nil
     }
 
@@ -115,7 +123,12 @@ extension WindowModel {
             guard let id = target.scope.id else { return false }
             key = paneKey(forSession: id)
         case .palo:
-            if selection != .palo { openPalo() }
+            // Palo's pane of the open workspace: it stays, its pane becomes the one in use.
+            if case .workspace(let w)? = selection, showsPalo(in: w) {
+                activate(tile: LayoutTree.paloPane, in: w)
+            } else if selection != .palo {
+                openPalo()
+            }
             key = PaneTabsKey.palo
         default:
             return false
@@ -185,6 +198,10 @@ extension WindowModel {
     /// pane to talk to. A new session already in it is only placed.
     func addPane(_ id: String, to workspaceID: String, placement: PanePlacement?) async throws {
         guard let store else { return }
+        if id == LayoutTree.paloPane {
+            try await addPalo(to: workspaceID, placement: placement)
+            return
+        }
         if store.pal(id: id)?.workspaceId != workspaceID {
             try await store.moveSession(id, to: workspaceID)
         }
@@ -198,6 +215,40 @@ extension WindowModel {
             }
         }
         activate(tile: id, in: workspaceID)
+    }
+
+    /// Palo into a split workspace as a pane (a view of it: it stays at the
+    /// top of the sidebar and joins no workspace), beside `placement`'s pane
+    /// or where a newcomer goes.
+    private func addPalo(to workspaceID: String, placement: PanePlacement?) async throws {
+        guard let store, let ws = store.workspace(id: workspaceID) else { return }
+        let palo = LayoutTree.paloPane
+        let shown = tree(of: ws)
+        var placed: LayoutTree.Node?
+        if let shown, LayoutTree.leafOrder(of: shown).contains(palo) {
+            placed = nil
+        } else if let shown {
+            if let placement, placement.pane != palo {
+                placed = LayoutTree.splitting(pane: placement.pane, adding: palo, horizontal: placement.horizontal, in: shown)
+            }
+            placed = placed ?? LayoutTree.inserting(pane: palo, into: shown)
+        } else {
+            placed = LayoutTree.single(pane: palo)
+        }
+        if let json = placed?.json { _ = try await store.updateWorkspace(id: workspaceID, layout: json) }
+        activate(tile: palo, in: workspaceID)
+    }
+
+    /// Palo's pane off a workspace (Palo itself goes on, at the top of the sidebar).
+    func removePalo(from workspaceID: String) async throws {
+        guard let store, let ws = store.workspace(id: workspaceID), let shown = tree(of: ws),
+              LayoutTree.leafOrder(of: shown).contains(LayoutTree.paloPane) else { return }
+        let next = LayoutTree.focusAfterClosing(LayoutTree.paloPane, in: shown)
+        let rest = LayoutTree.removing(pane: LayoutTree.paloPane, from: shown)
+        _ = try await store.updateWorkspace(id: workspaceID, layout: rest?.json ?? .null)
+        if activeTiles[workspaceID] == LayoutTree.paloPane || activeTiles[workspaceID] == nil, let next {
+            activate(tile: next, in: workspaceID)
+        }
     }
 
     /// 新开一个会话… for a split workspace, its pane going to `placement`.

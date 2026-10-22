@@ -222,6 +222,43 @@ struct FlyingPaloOrb: View {
     }
 }
 
+/// Palo's listening orb in its pane of a split workspace: while the owner
+/// holds to talk in that pane, it drops out of the pane's header (`from`,
+/// in the pane) to the listening spot over the pane's conversation, where
+/// the words sit under it (`VoiceWordsLayer`), and back on release. The
+/// same orb and springs as FlyingPaloOrb.
+struct TilePaloOrb: View {
+    /// The pane's id (`voice.owner` while it is the one spoken to).
+    let owner: String
+    let from: CGPoint
+    @Environment(VoiceInputController.self) private var voice
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        if voice.panelMounted && voice.owner == owner {
+            let p = min(max(voice.presence, 0), 1)
+            let listen = reduceMotion ? (p > 0 ? 1 : 0) : p
+            GeometryReader { proxy in
+                let layer = proxy.frame(in: .global)
+                let big = OrbPresence.voiceDiameter(width: layer.width)
+                let bottom = FloatingTitleOrb.listeningBottom(barCenterY: nil, columnTop: layer.minY + proxy.safeAreaInsets.top,
+                                                              columnWidth: layer.width)
+                let end = CGPoint(x: layer.width / 2, y: bottom - big / 2 - layer.minY)
+                let startSize: CGFloat = 22
+                let d = startSize + (big - startSize) * listen
+                TitleOrbDrop(size: d)
+                    .background { ListeningGlow(size: big).opacity(Double(listen)) }
+                    .position(x: from.x + (end.x - from.x) * listen, y: from.y + (end.y - from.y) * listen)
+                    .animation(reduceMotion ? .easeInOut(duration: 0.25) : .spring(response: 0.42, dampingFraction: 0.58),
+                               value: listen)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
 /// A soft wash of the background behind the listening orb, so it reads over
 /// the conversation (the voice scrim rises from the bottom; this is its top).
 private struct ListeningGlow: View {

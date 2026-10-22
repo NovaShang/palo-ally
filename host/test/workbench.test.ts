@@ -157,6 +157,30 @@ describe("workspaces", () => {
     await t.hub.pals.stopAndWait();
   });
 
+  test("Palo's leaf: any workspace may show it without it being a member, once; members leaving keep it", async () => {
+    const t = setup();
+    const a = await t.mk("甲");
+    const b = await t.mk("乙");
+    const ws = (await t.call("workspaces.create", { memberIds: [a.id, b.id] })).workspace;
+    const other = (await t.call("workspaces.create", { memberIds: [] })).workspace;
+    const layout = row(a.id, "palo", b.id);
+    expect((await t.call("workspaces.update", { id: ws.id, layout })).workspace).toMatchObject({ memberIds: [a.id, b.id], layout });
+    // in several workspaces at once, even one with no sessions
+    expect((await t.call("workspaces.update", { id: other.id, layout: leaf("palo", 0, 1) })).workspace.layout).toEqual(leaf("palo", 0, 1));
+    await expect(t.call("workspaces.update", { id: ws.id, layout: row("palo", "palo") })).rejects.toThrow("不止一次");
+    expect([...t.hub.workbench.shownIds()].sort()).toEqual([a.id, b.id].sort());
+    await t.call("pals.end", { id: b.id });
+    await t.call("workspaces.move", { palId: a.id });
+    const w = (await t.call("workspaces.list")).workspaces.find((x: any) => x.id === ws.id);
+    expect(w).toMatchObject({ memberIds: [], layout: leaf("palo", 1 / 3, 1 / 3) });
+    // a new session joining a laid-out workspace gets a tile beside Palo
+    const c = await t.mk("丙", { workspaceId: ws.id });
+    const w2 = (await t.call("workspaces.list")).workspaces.find((x: any) => x.id === ws.id);
+    expect(w2.memberIds).toEqual([c.id]);
+    expect(leavesOf(w2.layout)).toEqual(["palo", c.id]);
+    await t.hub.pals.stopAndWait();
+  });
+
   test("restart restores workspaces, layouts, tabs and each session's workspace; dead members are dropped", async () => {
     const t = setup();
     const a = await t.mk("甲");

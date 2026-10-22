@@ -664,6 +664,10 @@ extension DemoHost {
                                     createdAt: now - 3 * 24 * hour, updatedAt: now - 2 * hour)]
         #if DEBUG || PERF_HARNESS
         PerfSeed.apply(pals: &allPals, logs: &logs, workspace: &workspaces[0], now: now)
+        // `-demoPaloPane YES`: Palo is a pane of 官网改版 too, at its left.
+        if UserDefaults.standard.bool(forKey: "demoPaloPane") {
+            workspaces[0].layout = LayoutTree.tiledPreset(panes: [LayoutTree.paloPane] + workspaces[0].memberIds)?.json
+        }
         #endif
         return PalSeed(pals: allPals, logs: logs,
                        others: others, approvals: approvals, questions: questions, proposal: proposal, recent: recent,

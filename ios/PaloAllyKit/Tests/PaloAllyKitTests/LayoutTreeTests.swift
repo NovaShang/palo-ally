@@ -194,6 +194,19 @@ struct LayoutTreeTests {
         #expect(T.reconciled(t, members: ["a", "b", "c"]) == t)
     }
 
+    @Test func reconcileKeepsPalosPaneWithoutItBeingAMember() {
+        let withPalo = T.Node.hsplit(w: 1, h: 1, x: 0, y: 0, children: [
+            .leaf(id: "a", w: 1 / 3, h: 1, x: 0, y: 0), .leaf(id: T.paloPane, w: 1 / 3, h: 1, x: 1 / 3, y: 0),
+            .leaf(id: "b", w: 1 / 3, h: 1, x: 2 / 3, y: 0)])
+        #expect(T.reconciled(withPalo, members: ["a", "b"]).map(T.leafOrder(of:)) == ["a", T.paloPane, "b"])
+        // members leaving keep it; with no members it is all there is
+        #expect(T.reconciled(withPalo, members: ["a"]).map(T.leafOrder(of:)) == ["a", T.paloPane])
+        #expect(T.reconciled(withPalo, members: []).map(T.leafOrder(of:)) == [T.paloPane])
+        // never added by reconciling
+        #expect(T.reconciled(row3(), members: ["a", "b", "c"]).map(T.leafOrder(of:)) == ["a", "b", "c"])
+        #expect(T.reconciled(nil, members: ["a"]).map(T.leafOrder(of:)) == ["a"])
+    }
+
     @Test func reconcileMergesRepeats() {
         let dup = T.Node.hsplit(w: 1, h: 1, x: 0, y: 0, children: [
             .leaf(id: "a", w: 0.5, h: 1, x: 0, y: 0), .leaf(id: "a", w: 0.5, h: 1, x: 0.5, y: 0)])

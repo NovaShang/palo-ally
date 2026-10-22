@@ -1,7 +1,7 @@
 // Workspaces and the right pane's tab state (docs/workbench-rpc.md §3).
 // A workspace is a set of sessions the owner tiles together. The host keeps
 // who is in it and the layout tree as the app wrote it; it checks that the
-// layout's leaves are members and never looks at the geometry. Nothing here
+// layout's leaves are members (or Palo's leaf, PALO_LEAF) and never looks at the geometry. Nothing here
 // ends a session: leaving or deleting a workspace only turns a session back
 // into an ordinary one. An empty workspace stays until workspaces.delete.
 import type { Bus } from "./bus.ts";
@@ -31,6 +31,9 @@ export interface WorkbenchDeps {
 }
 
 const NAME_MAX = 40;
+
+/** The leaf that shows Palo in a workspace: a view of the assistant, not a member (any workspace may have it, at most once). */
+export const PALO_LEAF = "palo";
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const obj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -179,7 +182,7 @@ export class Workbench {
 
   /** Sessions that are leaves of some layout: the ones on screen, never put to sleep to make room. */
   shownIds(): Set<string> {
-    return new Set(this.data.workspaces.flatMap((w) => leavesOf(w.layout)));
+    return new Set(this.data.workspaces.flatMap((w) => leavesOf(w.layout)).filter((id) => id !== PALO_LEAF));
   }
 
   workspaceOf(palId: string): Workspace | undefined {
@@ -302,7 +305,7 @@ export class Workbench {
         const leaves: string[] = [];
         layout = parseNode(o.layout, leaves);
         if (new Set(leaves).size !== leaves.length) throw new Error(t("wb.layoutDupe"));
-        if (leaves.some((id) => !ws.memberIds.includes(id))) throw new Error(t("wb.layoutNotMember"));
+        if (leaves.some((id) => id !== PALO_LEAF && !ws.memberIds.includes(id))) throw new Error(t("wb.layoutNotMember"));
       }
     }
     ws.name = name;
