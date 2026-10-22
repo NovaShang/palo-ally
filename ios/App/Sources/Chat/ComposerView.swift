@@ -993,7 +993,10 @@ private struct TypeToCompose: UIViewRepresentable {
         }
 
         func claim() {
-            DispatchQueue.main.async { [weak self] in
+            // A beat late: a click that leaves the composer may be landing
+            // on another field (a question card's 其他…), which must get the
+            // keyboard first; it is checked for just below.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
                 guard let self, self.window != nil, !self.isFirstResponder, HardwareKeyboard.isAttached else { return }
                 let current = HardwareKeyboard.firstResponder
                 guard current == nil || !(current is UIKeyInput || current is UICollectionView || current is UITableView) else { return }
