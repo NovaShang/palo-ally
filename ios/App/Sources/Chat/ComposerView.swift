@@ -166,14 +166,6 @@ struct ComposerView: View {
     private var voicePresence: CGFloat { mine ? voice.presence : 0 }
     /// This composer may place the voice's landing spots (the active tile, or no tiling).
     private var placesVoice: Bool { tile?.isActive ?? true }
-    /// Keys typed while nothing has the keyboard come here (large screens,
-    /// this page or the active tile, not already writing).
-    private var catchesTyping: Bool {
-        // Never while a picker is up: the Mac's file panel froze the app
-        // when the catcher kept taking the keyboard back from it.
-        model.layout != .phone && placesVoice && !focused && !dictating
-            && !showFiles && !showPhotos && !showCamera && !showComputerFiles
-    }
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !staged.isEmpty }
     /// Idle: not editing — the field reads 「按住说话，轻点打字」 and takes presses.
@@ -228,18 +220,6 @@ struct ComposerView: View {
                 .accessibilityHidden(true)
         }
         .onAppear { HardwareKeyboard.startWatching() }
-        .background {
-            // With a keyboard (the Mac, an iPad with one): typing anywhere
-            // in the conversation writes here, no click first.
-            if catchesTyping {
-                TypeToCompose(claim: model.composerUnfocusRequests) { typed in
-                    draft += typed
-                    focusToken += 1
-                }
-                .frame(width: 1, height: 1)
-                .accessibilityHidden(true)
-            }
-        }
         .padding(.horizontal, sideInset)
         .padding(.top, compact ? 2 : 6)
         .padding(.bottom, bottomPadding)
@@ -277,6 +257,13 @@ struct ComposerView: View {
             try? await Task.sleep(for: .seconds(parts[1]))
             debugLog("[demo] keyboard down")
             model.composerUnfocusRequests += 1
+        }
+        // `-demoPickFile YES`: 文件 from the ＋ menu, 4 s in (the Mac's file panel).
+        .task {
+            guard UserDefaults.standard.bool(forKey: "demoPickFile"), placesVoice else { return }
+            try? await Task.sleep(for: .seconds(4))
+            debugLog("[demo] file picker")
+            showFiles = true
         }
         #endif
         // A click elsewhere in the conversation (the Mac) leaves the field.
@@ -944,82 +931,6 @@ struct ComposerView: View {
             }
         }
         if let problem { voice.dictation.errorMessage = problem }
-    }
-}
-
-/// Typing with no field focused (a hardware keyboard): a hidden 1-pt text
-/// field takes the keyboard when nothing else has it (no field, no list being
-/// keyed through), lets an input method compose there (pinyin and its
-/// candidates), and hands over what it commits; the composer takes over from
-/// there. Spaces alone don't count (they don't start a message). Never
-/// without a hardware keyboard: it would raise the on-screen one.
-private struct TypeToCompose: UIViewRepresentable {
-    /// Changes when a click in the conversation leaves the field: claim again.
-    let claim: Int
-    let onType: (String) -> Void
-
-    func makeUIView(context: Context) -> Catcher {
-        let v = Catcher()
-        v.onType = onType
-        return v
-    }
-
-    func updateUIView(_ v: Catcher, context: Context) {
-        v.onType = onType
-        v.claim()
-    }
-
-    final class Catcher: UITextField {
-        var onType: ((String) -> Void)?
-
-        override init(frame: CGRect) {
-            super.init(frame: frame)
-            alpha = 0.02
-            tintColor = .clear
-            autocorrectionType = .no
-            spellCheckingType = .no
-            inputAssistantItem.leadingBarButtonGroups = []
-            inputAssistantItem.trailingBarButtonGroups = []
-            addTarget(self, action: #selector(changed), for: .editingChanged)
-        }
-
-        required init?(coder: NSCoder) { fatalError() }
-
-        @objc private func changed() {
-            // Still composing (marked text): wait for the committed words.
-            guard markedTextRange == nil, let t = text, !t.isEmpty else { return }
-            text = ""
-            guard t.contains(where: { !$0.isWhitespace && !$0.isNewline }) else { return }
-            onType?(t)
-        }
-
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            claim()
-        }
-
-        func claim() {
-            // A beat late: a click that leaves the composer may be landing
-            // on another field (a question card's 其他…), which must get the
-            // keyboard first; it is checked for just below.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                guard let self, let window = self.window, !self.isFirstResponder, HardwareKeyboard.isAttached,
-                      // Only in the window in front: not under a panel or another window.
-                      window.isKeyWindow, UIApplication.shared.applicationState == .active else { return }
-                // Something presented over the page (details, a sheet) keeps the keyboard.
-                guard !Self.presents(window.rootViewController) else { return }
-                let current = HardwareKeyboard.firstResponder
-                guard current == nil || !(current is UIKeyInput || current is UICollectionView || current is UITableView) else { return }
-                self.becomeFirstResponder()
-            }
-        }
-
-        /// Whether a controller in this tree presents something.
-        private static func presents(_ vc: UIViewController?) -> Bool {
-            guard let vc else { return false }
-            if vc.presentedViewController != nil { return true }
-            return vc.children.contains { presents($0) }
-        }
     }
 }
 
