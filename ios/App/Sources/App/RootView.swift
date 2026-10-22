@@ -161,6 +161,11 @@ private struct LayoutStressTest: ViewModifier {
                     case "settings": w.openSettings()
                     case "sidebar": w.columnVisibility = w.columnVisibility == .detailOnly ? .all : .detailOnly
                     case "list": w.showList()
+                    // `w2.close`: that window closed, as its close button does.
+                    case "close":
+                        if let scene = w.scene { UIApplication.shared.requestSceneSessionDestruction(scene.session, options: nil) }
+                    // `mini`: the collapsed sidebar's Palo orb clicked (the Mac: Palo's small window).
+                    case "mini": NotificationCenter.default.post(name: .demoOpenPaloMini, object: w)
                     // `w2.key`: that window becomes the key window, as a click in it does.
                     case "key":
                         if let scene = w.scene {
@@ -213,7 +218,7 @@ private struct LayoutStressTest: ViewModifier {
                     }
                     try? await Task.sleep(for: .seconds(1.5))
                     for (i, w) in model.app.windows.enumerated() {
-                        debugLog("[nav] after \(step): window \(i + 1)\(w === model.app.frontWindow ? " (front)" : "") host \(w.activeHostID ?? "-") (\(w.store?.assistantName ?? "")) last \(model.app.lastHostID ?? "-") layout \(w.layout.rawValue) selection \(String(describing: w.selection)) management \(w.showManagement) pane \(w.paneIsOpen) settings \(w.showSettings)")
+                        debugLog("[nav] after \(step): window \(i + 1)\(w === model.app.frontWindow ? " (front)" : "")\(w.isMini ? " (mini)" : "") frame \(w.scene.map { "\($0.frameOnScreen)" } ?? "-") sidebar \(w.columnVisibility == .detailOnly ? "away" : "shown") host \(w.activeHostID ?? "-") (\(w.store?.assistantName ?? "")) last \(model.app.lastHostID ?? "-") layout \(w.layout.rawValue) selection \(String(describing: w.selection)) management \(w.showManagement) pane \(w.paneIsOpen) settings \(w.showSettings)")
                     }
                     try? await Task.sleep(for: .seconds(0.5))
                 }
@@ -287,8 +292,10 @@ struct MainScreen: View {
         .onChange(of: sizeClass, initial: true) { _, c in
             model.shortWindow = heightClass == .compact
             model.setLayout(c == .compact ? .phone : .split)
-            // The sidebar stays as it was left on this computer (one setting, not per workspace).
-            if c != .compact, UserDefaults.standard.bool(forKey: Self.sidebarCollapsedKey) {
+            // The sidebar stays as this window had it (the Mac's windows come
+            // back with theirs), else as it was last left on this computer
+            // (one setting, not per workspace).
+            if c != .compact, model.prefersSidebarCollapsed ?? UserDefaults.standard.bool(forKey: Self.sidebarCollapsedKey) {
                 model.columnVisibility = .detailOnly
             }
             model.applyLaunchScreen()
@@ -296,6 +303,7 @@ struct MainScreen: View {
         .onChange(of: heightClass) { _, h in model.shortWindow = h == .compact }
         .onChange(of: model.columnVisibility) { _, v in
             guard sizeClass == .regular else { return }
+            model.prefersSidebarCollapsed = v == .detailOnly
             UserDefaults.standard.set(v == .detailOnly, forKey: Self.sidebarCollapsedKey)
         }
         .environment(voice)

@@ -12,10 +12,22 @@ struct WindowTarget: Codable, Hashable {
     /// The computer's id (nil: the one used last).
     var host: String?
     var nonce = UUID()
+    /// The Mac: the saved window this one brings back (WindowMemory).
+    var restore: String?
+    /// The Mac: Palo's small companion window.
+    var mini: Bool?
 
     init(_ conversation: WindowModel.Conversation, host: String?) {
         self.conversation = conversation.storageKey
         self.host = host
+    }
+
+    /// A window of the last session, opened again at launch.
+    init(restoring saved: SavedWindow) {
+        conversation = saved.conversation
+        host = saved.host
+        restore = saved.id
+        mini = saved.mini
     }
 
     /// A sidebar row dragged out of the window (iPads): the system opens a
@@ -46,15 +58,18 @@ struct WindowTarget: Codable, Hashable {
 /// One window: its own `WindowModel` over the shared `AppModel`. It
 /// registers with the app (links, notification taps and menu commands go to
 /// the window used last), and remembers the computer and the conversation it
-/// shows, so it comes back with them (iPads and the Mac; phones always open
-/// on Palo of the computer used last, as before).
+/// shows, so it comes back with them: on the Mac through the app's own list
+/// of windows (WindowMemory), on iPads through the system's restoration
+/// (phones always open on Palo of the computer used last, as before).
 struct WindowRoot: View {
     let app: AppModel
     let target: WindowTarget?
     @State private var model: WindowModel
     @SceneStorage("window.conversation") private var saved = ""
     @SceneStorage("window.host") private var savedHost = ""
+    @SceneStorage("window.id") private var savedID = ""
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openWindow) private var openWindow
 
     init(app: AppModel, target: WindowTarget?) {
         self.app = app
@@ -73,11 +88,18 @@ struct WindowRoot: View {
                 if let id = WindowTarget.host(in: activity) { model.switchTo(id) }
                 if let c = WindowTarget.conversation(in: activity) { model.open(c) }
             }
-            .background { SceneReader { model.scene = $0 } }
+            .background {
+                SceneReader { scene in
+                    model.scene = scene
+                    WindowMemory.shared.sceneReady(model, scene)
+                }
+            }
             .onAppear {
-                restore()
+                if WindowMemory.enabled { remember() } else { restore() }
                 app.register(model)
                 if let id = model.activeHostID { savedHost = id }
+                if let c = model.selection { saved = c.storageKey }
+                WindowMemory.shared.update(model)
             }
             .onDisappear { app.unregister(model) }
             .onChange(of: scenePhase) { _, phase in
@@ -90,14 +112,47 @@ struct WindowRoot: View {
             }
             .onChange(of: model.selection) { _, c in
                 if let c { saved = c.storageKey }
+                WindowMemory.shared.update(model)
             }
             .onChange(of: model.activeHostID) { _, id in
                 if let id { savedHost = id }
+                WindowMemory.shared.update(model)
             }
+            .onChange(of: model.columnVisibility) { WindowMemory.shared.update(model) }
+            #if DEBUG
+            .onReceive(NotificationCenter.default.publisher(for: .demoOpenPaloMini)) { note in
+                guard (note.object as? WindowModel) === model else { return }
+                app.showPaloMini(from: model) { openWindow(value: $0) }
+            }
+            #endif
+    }
+
+    /// The Mac: which of the saved windows this is (WindowMemory), with what
+    /// it showed; at launch the others of the last session open again.
+    private func remember() {
+        let entry = WindowMemory.shared.attach(model, target: target, sceneID: savedID) { openWindow(value: $0) }
+        savedID = model.windowID
+        // Its scene may have come before its entry.
+        if let scene = model.scene { WindowMemory.shared.sceneReady(model, scene) }
+        if let entry {
+            if let host = entry.host, app.stores[host] != nil { model.hostID = host }
+            if let collapsed = entry.sidebarCollapsed {
+                model.prefersSidebarCollapsed = collapsed
+                model.columnVisibility = collapsed ? .detailOnly : .all
+            }
+            if let c = WindowModel.Conversation(storageKey: entry.conversation), c != model.selection {
+                model.selection = c
+            }
+        } else if model.isMini {
+            model.columnVisibility = .detailOnly
+        } else if let c = target.flatMap({ WindowModel.Conversation(storageKey: $0.conversation) }), c != model.selection {
+            model.selection = c
+        }
     }
 
     /// What this window was opened for, else what it showed when it was last
-    /// open (iPads and the Mac): the computer, then the conversation on it.
+    /// open (iPads, through the system's restoration): the computer, then the
+    /// conversation on it.
     private func restore() {
         guard UIDevice.current.userInterfaceIdiom != .phone else { return }
         debugLog("[window] restore host \(savedHost.isEmpty ? "-" : savedHost) conversation \(saved.isEmpty ? "-" : saved) target \(target?.host ?? "-") \(target?.conversation ?? "-")")
@@ -113,6 +168,13 @@ struct WindowRoot: View {
         }
     }
 }
+
+#if DEBUG
+extension Notification.Name {
+    /// `-demoActions mini`: the collapsed sidebar's orb clicked in that window (object: its model).
+    static let demoOpenPaloMini = Notification.Name("demoOpenPaloMini")
+}
+#endif
 
 /// Hands over the window scene the view is in.
 private struct SceneReader: UIViewRepresentable {
