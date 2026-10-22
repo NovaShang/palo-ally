@@ -239,7 +239,7 @@ private struct LayoutStressTest: ViewModifier {
                     case _ where a.hasPrefix("size:"):
                         let wh = a.dropFirst(5).split(separator: "x").compactMap { Double($0) }
                         if wh.count == 2, let scene = w.scene {
-                            let f = scene.effectiveGeometry.systemFrame
+                            let f = scene.frameOnScreen
                             scene.requestGeometryUpdate(.Mac(systemFrame: CGRect(x: f.minX, y: f.minY, width: wh[0], height: wh[1])))
                         }
                     case _ where a.hasPrefix("open:"):
