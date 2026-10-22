@@ -20,6 +20,8 @@ struct RootView: View {
         }
         // Each assistant has its own color; switching re-tints the whole app.
         .appTheme(model.currentTheme)
+        // Every list, form and page: the system's soft scroll edge, never the hard one.
+        .scrollEdgeEffectStyle(.soft, for: .all)
         .animation(.snappy, value: model.activeHostID)
         #if DEBUG
         .modifier(DemoCapture(demo: model.mode == .demo))

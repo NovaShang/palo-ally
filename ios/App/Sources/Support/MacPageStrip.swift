@@ -249,7 +249,11 @@ struct MacTitlebarItems<Center: View>: ViewModifier {
 /// (never the hard one).
 struct MacTitlebarFade: ViewModifier {
     func body(content: Content) -> some View {
-        content.scrollEdgeEffectStyle(.soft, for: .top)
+        // With the navigation bar hidden the soft edge had nothing to sit
+        // under, so it never showed: an empty bar stands in for one.
+        content
+            .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: 1).accessibilityHidden(true) }
+            .scrollEdgeEffectStyle(.soft, for: .top)
     }
 }
 

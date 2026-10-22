@@ -104,7 +104,7 @@ private struct PaneTheme: ViewModifier {
     @Environment(WindowModel.self) private var model
 
     func body(content: Content) -> some View {
-        content.appTheme(model.currentTheme)
+        content.appTheme(model.currentTheme).scrollEdgeEffectStyle(.soft, for: .all)
     }
 }
 
