@@ -207,6 +207,9 @@ private struct LayoutStressTest: ViewModifier {
                         for c in PaneCanvasController.all.allObjects where c.view.window?.windowScene === w.scene {
                             c.demo(String(a.dropFirst(7)))
                         }
+                    // `artifact:ar1`: that artifact's card tapped in the conversation (an artifact card's pane path).
+                    case _ where a.hasPrefix("artifact:"):
+                        w.openArtifact(String(a.dropFirst(9)))
                     // `w2.size:1440x1100`: that window resized, as a drag of its corner.
                     case _ where a.hasPrefix("size:"):
                         let wh = a.dropFirst(5).split(separator: "x").compactMap { Double($0) }

@@ -256,7 +256,8 @@ final class WindowModel {
     /// the conversation (there's no room for a column).
     var shortWindow = false
     /// 成果 opens beside the conversation (large screens) rather than pushed.
-    var libraryBeside: Bool { layout == .split && (!shortWindow || Platform.isMac) }
+    /// The Mac always (a window starts out with the phone layout for a moment).
+    var libraryBeside: Bool { Platform.isMac || layout == .split && !shortWindow }
 
     func setLayout(_ new: Layout, converting: Bool = false) {
         guard new != layout || converting else { return }

@@ -88,7 +88,11 @@ extension WindowModel {
     /// and anything else is 成果 in the pane page.
     func openInPane(_ edit: (PaneTabsHub, String) -> Void) {
         if paneKey == nil { openPalo() }
-        guard let key = paneKey, let hub = paneHub else { return }
+        guard let key = paneKey, let hub = paneHub else {
+            debugLog("[open] \(traceName): no pane to open in (page \((selection ?? .palo).storageKey), store \(store == nil ? "none" : "up"))")
+            return
+        }
+        debugLog("[open] \(traceName): pane \(key) → \(libraryBeside ? "beside" : libraryPath.count == 1 ? "modal" : "page")")
         if libraryBeside {
             editPane(key) { edit($0, key) }
             return

@@ -456,12 +456,14 @@ private struct AttachmentStrip: View {
     }
 
     private func open(_ a: Attachment) {
-        // Web pages render in the artifact view, opened on their own over the chat.
-        if isWebPage(a) { return model.openArtifact(a.id) }
-        // Large windows: every artifact opens beside the conversation, in the
+        // Web pages render in the artifact view (in the right pane, or on
+        // their own over the chat on phones). The Mac and large iPad windows:
+        // every artifact opens beside the conversation, in this window's
         // right pane's 成果 (which shows Markdown, PDFs and images itself),
-        // not in a sheet over it. Phones and short windows keep the sheet.
-        if a.kind == "artifact", model.layout != .phone { return model.openArtifact(a.id) }
+        // never in a sheet over it. Phones keep the sheet.
+        let inPane = isWebPage(a) || a.kind == "artifact" && model.libraryBeside
+        debugLog("[open] \(a.kind) card (\(a.mediaType)) tapped in \(model.traceName) on \((model.selection ?? .palo).storageKey): layout \(model.layout), beside \(model.libraryBeside), short \(model.shortWindow) → \(inPane ? "right pane" : isMarkdown(a) ? "Markdown sheet" : "QuickLook")")
+        if inPane { return model.openArtifact(a.id) }
         guard loading == nil else { return }
         loading = a.id
         Task {
