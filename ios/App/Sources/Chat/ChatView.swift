@@ -152,9 +152,9 @@ struct ChatView: View {
         }
         #endif
         .scrollDismissesKeyboard(.immediately)
-        // With a keyboard a click in the conversation puts the keyboard in
-        // its composer (links, buttons and selection still get their click).
-        .modifier(ClickFocusesComposer())
+        // The Mac: a click in the conversation takes focus off the
+        // composer (links, buttons and selection still get their click).
+        .modifier(ClickToUnfocusComposer())
         .onScrollPhaseChange { _, phase in scroll.phase(phase) }
         .onScrollGeometryChange(for: ChatScroll.Metrics.self) { g in
             #if DEBUG
@@ -689,6 +689,25 @@ private struct TopRowProbe: ViewModifier {
     }
 }
 #endif
+
+/// The Mac only (phones keep their own keyboard handling): a click anywhere
+/// in the conversation leaves the composer, so an empty one turns back into
+/// the press-to-talk button. Simultaneous: the click still reaches links,
+/// buttons and text selection.
+private struct ClickToUnfocusComposer: ViewModifier {
+    @Environment(WindowModel.self) private var model
+
+    func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("ClickToUnfocusComposer")
+        #endif
+        if model.layout != .phone {
+            content.simultaneousGesture(TapGesture().onEnded { model.composerUnfocusRequests += 1 })
+        } else {
+            content
+        }
+    }
+}
 
 /// Where the phone bar's middle is, in window coordinates. A reference type
 /// on purpose: the bar reports it, only the orb's overlay reads it, so a
