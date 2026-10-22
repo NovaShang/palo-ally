@@ -259,7 +259,11 @@ final class AppModel {
     /// went (unpaired, or the demo left) shows the one used last, on its
     /// assistant's conversation.
     private func settleWindows() {
-        for w in windows where w.hostID.map({ stores[$0] == nil }) ?? true {
+        // Not before the computers are known: a window restored at launch
+        // (WindowMemory) names its computer before that computer's store is
+        // made, and was sent back to the assistant's conversation for it.
+        guard !hostIDs.isEmpty else { return }
+        for w in windows where w.hostID.map({ !hostIDs.contains($0) || stores[$0] == nil }) ?? true {
             let had = w.hostID != nil
             w.hostID = lastHostID
             if had { w.showAssistantConversation() }
