@@ -168,7 +168,12 @@ struct ComposerView: View {
     private var placesVoice: Bool { tile?.isActive ?? true }
     /// Keys typed while nothing has the keyboard come here (large screens,
     /// this page or the active tile, not already writing).
-    private var catchesTyping: Bool { model.layout != .phone && placesVoice && !focused && !dictating }
+    private var catchesTyping: Bool {
+        // Never while a picker is up: the Mac's file panel froze the app
+        // when the catcher kept taking the keyboard back from it.
+        model.layout != .phone && placesVoice && !focused && !dictating
+            && !showFiles && !showCamera && !showComputerFiles
+    }
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !staged.isEmpty }
     /// Idle: not editing — the field reads 「按住说话，轻点打字」 and takes presses.
@@ -998,7 +1003,9 @@ private struct TypeToCompose: UIViewRepresentable {
             // on another field (a question card's 其他…), which must get the
             // keyboard first; it is checked for just below.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                guard let self, let window = self.window, !self.isFirstResponder, HardwareKeyboard.isAttached else { return }
+                guard let self, let window = self.window, !self.isFirstResponder, HardwareKeyboard.isAttached,
+                      // Only in the window in front: not under a panel or another window.
+                      window.isKeyWindow, UIApplication.shared.applicationState == .active else { return }
                 // Something presented over the page (details, a sheet) keeps the keyboard.
                 guard !Self.presents(window.rootViewController) else { return }
                 let current = HardwareKeyboard.firstResponder
