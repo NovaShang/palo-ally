@@ -143,7 +143,35 @@ private struct PaneContent: View {
             }
             // Spoken to: the pane's edge glows softly with the voice.
             .overlay { TileVoiceGlow(owner: id, shape: Rectangle()) }
+            // Its state as a faint wash over the whole pane (Bento Term's).
+            .overlay { PaneStateWash(id: id) }
             .background(Color(uiColor: .systemBackground))
+    }
+}
+
+/// A faint wash of the pane's state color, Bento Term's values: 在干 5%,
+/// 做完了 (not looked at yet) 10%, 等你 12%, 闲着 none. Cross-fades as the
+/// state changes; takes no touches. Its own view, so a state change
+/// re-renders only it.
+private struct PaneStateWash: View {
+    let id: String
+    @Environment(AppStore.self) private var store
+
+    static func alpha(_ dot: StatusDotKind) -> Double {
+        switch dot {
+        case .working: 0.05
+        case .done: 0.10
+        case .waiting: 0.12
+        case .idle: 0
+        }
+    }
+
+    var body: some View {
+        let dot = store.singlePal(id: id)?.dot ?? .idle
+        StatusDot.color(dot).opacity(Self.alpha(dot))
+            .animation(.easeInOut(duration: 0.25), value: dot)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
