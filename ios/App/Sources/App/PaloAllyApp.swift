@@ -10,15 +10,16 @@ struct PaloAllyApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        // Chinese whatever the system's language (the owner's call): set
-        // before any string is looked up; a launch argument still wins (UI
-        // tests pass -AppleLanguages). The first launch after an update may
-        // still be in the old language.
+        // Undo f2f2128, which pinned the app to Chinese whatever the system's
+        // language: once, the language it wrote goes, and the system decides again.
         let d = UserDefaults.standard
-        if d.volatileDomain(forName: UserDefaults.argumentDomain)["AppleLanguages"] == nil,
-           (d.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?["AppleLanguages"] as? [String])?.first != "zh-Hans" {
-            d.set(["zh-Hans"], forKey: "AppleLanguages")
+        if !d.bool(forKey: "languagePinUndone") {
+            d.set(true, forKey: "languagePinUndone")
+            if (d.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?["AppleLanguages"] as? [String]) == ["zh-Hans"] {
+                d.removeObject(forKey: "AppleLanguages")
+            }
         }
+    }
     }
 
     var body: some Scene {
