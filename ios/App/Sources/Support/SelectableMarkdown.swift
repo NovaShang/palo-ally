@@ -269,7 +269,7 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         let storage = textStorage
         let pad = { (i: Int) -> CGFloat in
             guard storage.length > 0, let kind = storage.attribute(.paloBlock, at: i, effectiveRange: nil) as? String else { return 0 }
-            return kind == "code" || kind == "table" ? 6 : 0
+            return kind == "code" || kind == "table" ? 5 : 0
         }
         let inset = UIEdgeInsets(top: pad(0), left: 0, bottom: storage.length > 0 ? pad(storage.length - 1) : 0, right: 0)
         if inset != textContainerInset { textContainerInset = inset }
@@ -703,8 +703,11 @@ final class MarkdownLayoutManager: NSLayoutManager {
             _ = storage.attribute(.paloBlock, at: range.location, longestEffectiveRange: &full, in: all)
             guard seen.insert(full.location).inserted else { return }
             var rect = CGRect.null
-            enumerateLineFragments(forGlyphRange: glyphRange(forCharacterRange: full, actualCharacterRange: nil)) { frag, _, _, _, _ in
-                rect = rect.union(frag)
+            // The lines' used rects: the fragments also hold the paragraph
+            // spacing before and after the block, and a box drawn from them
+            // ran into the paragraph below.
+            enumerateLineFragments(forGlyphRange: glyphRange(forCharacterRange: full, actualCharacterRange: nil)) { frag, used, _, _, _ in
+                rect = rect.union(CGRect(x: frag.minX, y: frag.minY + used.minY - frag.minY, width: frag.width, height: used.height))
             }
             guard !rect.isNull else { return }
             rect = rect.offsetBy(dx: origin.x, dy: origin.y)
@@ -714,7 +717,8 @@ final class MarkdownLayoutManager: NSLayoutManager {
             ctx.setAlpha(fadeAlpha(at: full.location))
             switch kind {
             case "code", "table":
-                let box = CGRect(x: origin.x, y: rect.minY - 6, width: container.size.width, height: rect.height + 12)
+                // A little padding inside; the room outside is the paragraph spacing.
+                let box = CGRect(x: origin.x, y: rect.minY - 5, width: container.size.width, height: rect.height + 10)
                 UIColor.secondaryLabel.withAlphaComponent(0.1).setFill()
                 UIBezierPath(roundedRect: box, cornerRadius: 10).fill()
             case "quote":
@@ -789,7 +793,7 @@ enum MarkdownRenderer {
                 piece = q
             case let .code(lines):
                 let mono = UIFont.monospacedSystemFont(ofSize: size * 0.85, weight: .regular)
-                let style = paragraph(size: size * 0.85, before: 10, after: 16)
+                let style = paragraph(size: size * 0.85, before: 14, after: 20)
                 style.headIndent = 10
                 style.firstLineHeadIndent = 10
                 style.tailIndent = -10
