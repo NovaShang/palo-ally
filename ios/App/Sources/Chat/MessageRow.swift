@@ -461,7 +461,7 @@ private struct AttachmentStrip: View {
         // Large windows: every artifact opens beside the conversation, in the
         // right pane's 成果 (which shows Markdown, PDFs and images itself),
         // not in a sheet over it. Phones and short windows keep the sheet.
-        if a.kind == "artifact", model.libraryBeside { return model.openArtifact(a.id) }
+        if a.kind == "artifact", model.layout != .phone { return model.openArtifact(a.id) }
         guard loading == nil else { return }
         loading = a.id
         Task {
@@ -472,7 +472,7 @@ private struct AttachmentStrip: View {
                 MarkdownFilePresenter.present(
                     url: url, title: a.name ?? url.lastPathComponent, artifactID: artifact == nil ? nil : a.id,
                     imageSource: artifact.map { store.markdownImages(artifactID: $0.id, documentPath: $0.mainFile) },
-                    openInLibrary: openInLibrary)
+                    in: model.scene, openInLibrary: openInLibrary)
                 return
             }
             // Everything else previewable in this message, so QuickLook can
@@ -489,7 +489,7 @@ private struct AttachmentStrip: View {
                 if item.id == a.id { start = items.count }
                 items.append(.init(url: url, title: item.name, artifactID: item.kind == "artifact" ? item.id : nil))
             }
-            QuickLookPresenter.present(items, startAt: start, openInLibrary: openInLibrary)
+            QuickLookPresenter.present(items, startAt: start, in: model.scene, openInLibrary: openInLibrary)
         }
     }
 

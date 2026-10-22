@@ -54,7 +54,7 @@ enum PaneModal {
 
     private static func present<Content: View>(model: WindowModel, store: AppStore,
                                                @ViewBuilder _ content: @escaping (@escaping () -> Void) -> Content) {
-        guard let top = QuickLookPresenter.topController() else { return }
+        guard let top = QuickLookPresenter.topController(in: model.scene) else { return }
         weak var presented: UIViewController?
         let close: () -> Void = { presented?.dismiss(animated: true) }
         let page = NavigationStack { content(close) }

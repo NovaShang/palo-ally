@@ -49,8 +49,9 @@ enum QuickLookPresenter {
         let artifactID: String?
     }
 
-    static func present(_ items: [Item], startAt start: Int, openInLibrary: @escaping (String) -> Void) {
-        guard !items.isEmpty, let top = topController() else { return }
+    static func present(_ items: [Item], startAt start: Int, in scene: UIWindowScene? = nil,
+                        openInLibrary: @escaping (String) -> Void) {
+        guard !items.isEmpty, let top = topController(in: scene) else { return }
         let preview = AttachmentPreviewController(items: items, start: min(max(start, 0), items.count - 1), openInLibrary: openInLibrary)
         #if targetEnvironment(macCatalyst)
         // The Mac: full screen would put the preview's own bar (and its Done)
@@ -66,9 +67,14 @@ enum QuickLookPresenter {
         #endif
     }
 
-    static func topController() -> UIViewController? {
+    /// The controller to present from: in `scene` (the window the tap came
+    /// from) when given; else the window in front. With several windows on
+    /// the Mac, "a key window" alone found another window's.
+    static func topController(in scene: UIWindowScene? = nil) -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        let window = scenes.flatMap(\.windows).first { $0.isKeyWindow } ?? scenes.first?.windows.first
+        let front = scenes.first { $0.activationState == .foregroundActive && ($0.keyWindow?.isKeyWindow ?? false) }
+        let window = (scene ?? front).flatMap { $0.keyWindow ?? $0.windows.first }
+            ?? scenes.flatMap(\.windows).first { $0.isKeyWindow } ?? scenes.first?.windows.first
         var top = window?.rootViewController
         while let next = top?.presentedViewController, !next.isBeingDismissed { top = next }
         return top

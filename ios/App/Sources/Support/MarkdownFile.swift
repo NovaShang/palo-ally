@@ -100,9 +100,9 @@ struct MarkdownFileSheet: View {
 @MainActor
 enum MarkdownFilePresenter {
     static func present(url: URL, title: String, artifactID: String?,
-                        imageSource: FilePreviewWebView.ImageSource?,
+                        imageSource: FilePreviewWebView.ImageSource?, in scene: UIWindowScene? = nil,
                         openInLibrary: @escaping (String) -> Void) {
-        guard let top = QuickLookPresenter.topController() else { return }
+        guard let top = QuickLookPresenter.topController(in: scene) else { return }
         weak var presented: UIViewController?
         let sheet = MarkdownFileSheet(
             url: url, title: title, artifactID: artifactID, imageSource: imageSource,
