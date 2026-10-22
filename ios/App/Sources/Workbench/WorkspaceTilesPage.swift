@@ -242,10 +242,9 @@ private struct WorkspaceBar: ViewModifier {
     func body(content: Content) -> some View {
         let workspace = store.workspace(id: workspaceID)
         let title = workspace?.title(pals: store.pals) ?? ""
-        let count = workspace?.memberIds.count ?? 0
-        bar(content
-            .navigationTitle(title)
-            .navigationSubtitle(String(localized: "\(count) 个会话")))
+        // The title names the window (the Mac, an iPad's windows); no
+        // subtitle: it showed in the iPad's slim bar.
+        bar(content.navigationTitle(title))
     }
 
     @ViewBuilder private func bar(_ content: some View) -> some View {
