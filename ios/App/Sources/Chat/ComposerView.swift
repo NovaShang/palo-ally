@@ -131,7 +131,7 @@ struct ComposerView: View {
     /// goes `sideInset` from the screen's bottom edge — into that inset when
     /// the inset is the larger of the two.
     private var bottomPadding: CGFloat {
-        if compact { return 4 }
+        if compact { return sideInset } // as far from the bottom as from the sides
         return concentric || (docked && spansDisplay) ? max(0, sideInset - homeInset) : 8
     }
     private var bottomOffset: CGFloat { concentric || (docked && spansDisplay) ? max(0, homeInset - sideInset) : 0 }
