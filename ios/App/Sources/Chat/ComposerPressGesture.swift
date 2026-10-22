@@ -16,10 +16,21 @@ import UIKit.UIGestureRecognizerSubclass
 /// - lifted before `holdThreshold` without moving → `onTap`;
 /// - moved past `slop` / cancelled before it → `onAbandon` (a scroll);
 /// - held past it → `.began`, then `.changed` while dragging, `.ended` on release.
+///
+/// While the field is being edited the same recognizer sits on the text field
+/// itself, beside its own selection gestures: `shouldCommit` decides at the
+/// threshold (nothing records before), a pointer must stay within
+/// `pointerSlop`, and committing cancels the text view's gestures for this
+/// press (`cancelsOthersOnCommit`) so the hold doesn't also select text.
 @MainActor
 final class ComposerPressRecognizer: UIGestureRecognizer {
     var holdThreshold: TimeInterval = 0.22
     var slop: CGFloat = 12
+    /// A mouse or trackpad pointer's slop (it holds still far better than a finger); nil = `slop`.
+    var pointerSlop: CGFloat?
+    /// Asked when the threshold passes: false = not a hold for voice, the touch stays the text view's.
+    var shouldCommit: (() -> Bool)?
+    var cancelsOthersOnCommit = false
     /// The touch's own timestamp (system uptime) is passed along so the delay
     /// before we heard about it can be measured.
     var onTouchDown: ((TimeInterval) -> Bool)?
@@ -29,6 +40,7 @@ final class ComposerPressRecognizer: UIGestureRecognizer {
     private var touch: UITouch?
     private var start: CGPoint = .zero
     private var timer: Timer?
+    private var activeSlop: CGFloat = 12
 
     override init(target: Any?, action: Selector?) {
         super.init(target: target, action: action)
@@ -58,6 +70,8 @@ final class ComposerPressRecognizer: UIGestureRecognizer {
         }
         touch = t
         start = t.location(in: view)
+        let pointer = t.type == .indirectPointer || ProcessInfo.processInfo.isMacCatalystApp
+        activeSlop = pointer ? (pointerSlop ?? slop) : slop
         guard onTouchDown?(t.timestamp) ?? true else {
             state = .failed
             return
@@ -65,6 +79,12 @@ final class ComposerPressRecognizer: UIGestureRecognizer {
         let timer = Timer(timeInterval: holdThreshold, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.state == .possible, self.touch != nil else { return }
+                if let shouldCommit = self.shouldCommit, !shouldCommit() {
+                    self.timer = nil
+                    self.state = .failed
+                    return
+                }
+                if self.cancelsOthersOnCommit { self.cancelTextGestures() }
                 // Committed: from here the touch belongs to voice.
                 self.cancelsTouchesInView = true
                 self.state = .began
@@ -79,7 +99,7 @@ final class ComposerPressRecognizer: UIGestureRecognizer {
         switch state {
         case .possible:
             let p = touch.location(in: view)
-            if hypot(p.x - start.x, p.y - start.y) > slop { abandon() }
+            if hypot(p.x - start.x, p.y - start.y) > activeSlop { abandon() }
         case .began, .changed:
             state = .changed
         default:
@@ -115,6 +135,33 @@ final class ComposerPressRecognizer: UIGestureRecognizer {
         onAbandon?()
         state = .failed
     }
+
+    /// The text view under the press drops what its own gestures were doing
+    /// with it (selecting, the loupe): toggling `isEnabled` cancels a
+    /// recognizer, and the touch already down never reaches it again. Only
+    /// the text view and the views inside it, never SwiftUI's host.
+    private func cancelTextGestures() {
+        var chain: [UIView] = []
+        var v = touch?.view
+        while let current = v, current !== view {
+            chain.append(current)
+            if current is UITextView { break }
+            v = current.superview
+        }
+        guard chain.last is UITextView else {
+            debugLog("[hold] no text view under the press: its gestures are left alone")
+            return
+        }
+        var n = 0
+        for current in chain {
+            for g in current.gestureRecognizers ?? [] where g !== self && g.isEnabled {
+                g.isEnabled = false
+                g.isEnabled = true
+                n += 1
+            }
+        }
+        debugLog("[hold] the text view's \(n) gestures let go of the press")
+    }
 }
 
 /// SwiftUI wrapper. `onHold` gets `.began` / `.changed` / `.ended` /
@@ -122,6 +169,9 @@ final class ComposerPressRecognizer: UIGestureRecognizer {
 struct ComposerPressGesture: UIGestureRecognizerRepresentable {
     var holdThreshold: TimeInterval
     var space: NamedCoordinateSpace
+    var pointerSlop: CGFloat? = nil
+    var shouldCommit: (() -> Bool)? = nil
+    var cancelsOthersOnCommit = false
     var onTouchDown: (TimeInterval) -> Bool
     var onTap: () -> Void
     var onAbandon: () -> Void
@@ -151,6 +201,9 @@ struct ComposerPressGesture: UIGestureRecognizerRepresentable {
 
     private func apply(_ r: ComposerPressRecognizer) {
         r.holdThreshold = holdThreshold
+        r.pointerSlop = pointerSlop
+        r.shouldCommit = shouldCommit
+        r.cancelsOthersOnCommit = cancelsOthersOnCommit
         r.onTouchDown = onTouchDown
         r.onTap = onTap
         r.onAbandon = onAbandon

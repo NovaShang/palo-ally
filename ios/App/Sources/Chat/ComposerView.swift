@@ -12,7 +12,11 @@ import UniformTypeIdentifiers
 ///   the finger lands (so the first words are never lost) while an arming
 ///   animation runs; release before it completes = a tap (audio discarded,
 ///   animation reverses, keyboard); held past it = listening — release sends,
-///   slide onto 取消 / 编辑 first to cancel or edit;
+///   slide onto 取消 / 编辑 first to cancel or edit; also while the field is
+///   being edited (a press that stays put a little longer, `editHoldSeconds`;
+///   a click still places the cursor, a drag still selects). Words spoken
+///   continue what the field holds: 发送 sends the two as one message, 编辑
+///   puts them in the field, 取消 leaves the field as it was;
 /// - tap the mic (always there, also while typing) → dictation into the
 ///   field: tap again to stop, the words land at the end of the draft to
 ///   edit (never auto-sent); a send button appears beside it when there's
@@ -67,6 +71,8 @@ struct ComposerView: View {
     @State private var pressSerial = 0
     /// A finished hold is still resolving its final text: ignore new presses.
     @State private var finishingHold = false
+    /// When the press on the field being edited landed (timing only).
+    @State private var editTouchTime: TimeInterval?
     /// Where this composer is, kept for the voice when its tile becomes the active one.
     @State private var capsuleSize: CGSize = .zero
     @State private var capsuleFrame: CGRect = .zero
@@ -136,6 +142,14 @@ struct ComposerView: View {
     private static let holdSeconds = 0.22
     /// How long a press shows nothing of the recording UI (it records already).
     private static let showDelay = 0.08
+    /// While the field is being edited a press must stay put this long to
+    /// talk: longer than a click, or the pause before dragging to select.
+    /// Nothing records before it (every click into the text would turn the
+    /// microphone on), so the panel comes up at once when it passes.
+    private static let editHoldSeconds = 0.35
+    /// How far a mouse or trackpad pointer may drift and still be a hold
+    /// (a drag to select text moves further).
+    private static let editPointerSlop: CGFloat = 4
 
     /// Typing "/" (and nothing after a space yet) opens command suggestions.
     /// Nothing in the UI mentions this: it's for people who already know.
@@ -268,6 +282,24 @@ struct ComposerView: View {
         #endif
         // A click elsewhere in the conversation (the Mac) leaves the field.
         .onChange(of: model.composerUnfocusRequests) { if focused { focused = false } }
+        // With a keyboard, a click in this conversation puts the keyboard here (ClickFocusesComposer).
+        .onReceive(NotificationCenter.default.publisher(for: ComposerFocus.request)) { note in
+            guard ComposerFocus.isFor(note, window: ObjectIdentifier(model), tile: tile?.id) else { return }
+            guard !dictating, !voice.isActive, !voice.isArmed else {
+                debugLog("[focus] the composer is busy with voice: it stays as it is")
+                return
+            }
+            debugLog("[focus] the composer takes the keyboard\(focused ? " (it had it)" : "")\(tile.map { ", pane \($0.id.prefix(8))" } ?? "")")
+            focusToken += 1
+        }
+        #if DEBUG
+        // `-demoDraft "已有的字"`: the field starts with these words (voice drills with a draft).
+        .task {
+            guard let words = UserDefaults.standard.string(forKey: "demoDraft"), draft.isEmpty, placesVoice else { return }
+            draft = words
+            debugLog("[demo] the composer holds \(words.count) characters")
+        }
+        #endif
         // The orb in the title bar notices the owner typing.
         .onChange(of: draft) { old, new in
             if hardwareReturn(old: old, new: new) {
@@ -458,6 +490,23 @@ struct ComposerView: View {
                 // While idle the press layer owns every touch: the text
                 // field's own long-press / selection recognizers must not see it.
                 .allowsHitTesting(!idle)
+                // While editing: a press that stays put talks, beside the
+                // text view's own gestures (a click, a drag, typing: theirs).
+                // Always attached, so the field keeps its identity (and focus).
+                .gesture(ComposerPressGesture(
+                    holdThreshold: Self.editHoldSeconds,
+                    space: .named(Self.capsuleSpace),
+                    pointerSlop: Self.editPointerSlop,
+                    shouldCommit: { beginHoldWhileEditing(touchTime: editTouchTime) },
+                    cancelsOthersOnCommit: true,
+                    onTouchDown: editPressDown,
+                    onTap: {},
+                    onAbandon: {},
+                    onHold: { state, point in
+                        // Only a hold this field started (another tile's voice is not ours).
+                        guard pressing || voiceStarted else { return }
+                        pressHeld(state, at: point)
+                    }))
                 // Where words spoken into 编辑 land.
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
                     guard $0.isFiniteRect else { return }
@@ -615,6 +664,43 @@ struct ComposerView: View {
             return false
         }
         VoiceTiming.mark("recording requested (arm returned)")
+        // The words continue what the field holds.
+        voice.draftPrefix = draft
+        return true
+    }
+
+    /// A press on the field while it is being edited. Only notes it: a
+    /// click or a drag is the text view's, and nothing records yet.
+    private func editPressDown(touchTime: TimeInterval) -> Bool {
+        let ok = !idle && !finishingHold && !dictating && !voice.isActive && !voice.isArmed && tile?.isActive != false
+        editTouchTime = ok ? touchTime : nil
+        #if DEBUG
+        debugLog("[hold] press on the field being edited\(ok ? "" : " (not for voice now)")")
+        #endif
+        return ok
+    }
+
+    /// The press on the field being edited stayed put past `editHoldSeconds`:
+    /// recording starts and commits at once, from the words in the field.
+    /// False: not now (the text view keeps the press).
+    private func beginHoldWhileEditing(touchTime: TimeInterval?) -> Bool {
+        guard !finishingHold, !dictating, !voice.isActive, !voice.isArmed, tile?.isActive != false else {
+            debugLog("[hold] held on the field, but voice is busy: the press stays the text's")
+            return false
+        }
+        claimVoice()
+        VoiceTiming.begin("hold on the field being edited", touchTime: touchTime)
+        guard voice.arm() else {
+            debugLog("[hold] held on the field, no microphone yet")
+            return false
+        }
+        voice.draftPrefix = draft
+        pressing = true
+        moved = false
+        voiceStarted = false
+        pressSerial += 1
+        voice.panelMounted = true
+        debugLog("[hold] talking from the field (\(draft.count) characters in it)")
         return true
     }
 
@@ -649,12 +735,20 @@ struct ComposerView: View {
         let gap = UserDefaults.standard.double(forKey: "voiceDrillGap")
         for round in 0..<repeats {
             if round > 0 { try? await Task.sleep(for: .seconds(gap > 0 ? gap : 4)) }
-            debugLog("[drill] hold to talk for \(seconds) s")
-            guard pressBegan(touchTime: ProcessInfo.processInfo.systemUptime) else {
-                debugLog("[drill] press refused")
-                return
+            debugLog("[drill] hold to talk for \(seconds) s\(idle ? "" : " on the field being edited")")
+            if idle {
+                guard pressBegan(touchTime: ProcessInfo.processInfo.systemUptime) else {
+                    debugLog("[drill] press refused")
+                    return
+                }
+                try? await Task.sleep(for: .seconds(Self.holdSeconds))
+            } else {
+                try? await Task.sleep(for: .seconds(Self.editHoldSeconds))
+                guard beginHoldWhileEditing(touchTime: nil) else {
+                    debugLog("[drill] press refused")
+                    return
+                }
             }
-            try? await Task.sleep(for: .seconds(Self.holdSeconds))
             pressHeld(.began, at: .zero)
             var at = CGPoint(x: voice.capsuleSize.width / 2, y: 10)
             switch UserDefaults.standard.string(forKey: "voiceDrillTarget") {
@@ -748,10 +842,13 @@ struct ComposerView: View {
     private func release() async {
         let target = voice.target
         let heard = voice.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        debugLog("[voice] released on \(target), \(heard.count) characters heard")
+        // What the field held: the words continue it (cancel leaves it as it is).
+        let before = draft
+        debugLog("[voice] released on \(target), \(heard.count) characters heard, \(before.count) in the field")
         if target == .cancel {
             voice.leave(.cancel, words: heard)
             _ = await voice.end()
+            debugLog("[hold] cancelled: the field keeps its \(draft.count) characters")
             return
         }
         guard !heard.isEmpty else {
@@ -775,7 +872,7 @@ struct ComposerView: View {
             let landed = VoiceGuard.mustConfirm(heardLive: false, fromBatch: voice.dictation.finalFromBatch) ? VoiceInputController.Target.edit : target
             // Landing a message only stages it (shown, waiting): without the
             // send below it sat on the clock for good.
-            if let cid = land(landed, final) { await sendLanded(cid, final) }
+            if let cid = land(landed, final) { await sendLanded(cid, Self.joined(before, final)) }
             editedIn = nil
             return
         }
@@ -784,11 +881,27 @@ struct ComposerView: View {
         debugLog("[voice] final: \(final.count) characters, \(final == heard || final.isEmpty ? "as heard" : "changed")")
         let words = final.isEmpty ? heard : final
         if let cid {
-            await sendLanded(cid, words)
-        } else if let e = editedIn, words != e.words, draft == e.before + e.words {
-            draft = e.before + words
+            await sendLanded(cid, Self.joined(before, words))
+        } else if let e = editedIn, words != e.words, draft == Self.joined(e.before, e.words) {
+            draft = Self.joined(e.before, words)
         }
+        #if DEBUG
+        if cid == nil { debugLog("[hold] the field now reads: \(draft)") }
+        #endif
         editedIn = nil
+    }
+
+    /// A draft and the words that continue it, as one text: a space between
+    /// two Latin words, nothing between Chinese ones.
+    static func joined(_ before: String, _ words: String) -> String {
+        before + separator(before, words) + words
+    }
+
+    static func separator(_ before: String, _ words: String) -> String {
+        guard let last = before.last, let first = words.first, !last.isWhitespace, !first.isWhitespace,
+              last.isASCII, first.isASCII, first.isLetter || first.isNumber,
+              last.isLetter || last.isNumber || ".,;:!?)".contains(last) else { return "" }
+        return " "
     }
 
     /// Sends a spoken message `land` placed, with its final words. Once the
@@ -799,6 +912,9 @@ struct ComposerView: View {
     private func sendLanded(_ cid: String, _ words: String) async {
         await voice.whenGone()
         try? await Task.sleep(for: .milliseconds(34))
+        #if DEBUG
+        debugLog("[hold] sends: \(words)")
+        #endif
         withAnimation(.smooth(duration: 0.3)) { store.sendStaged(cid, text: words) }
     }
 
@@ -806,18 +922,24 @@ struct ComposerView: View {
     /// (returns its client id), or into the field.
     @discardableResult
     private func land(_ target: VoiceInputController.Target, _ words: String) -> String? {
+        let before = draft
         if target == .edit {
-            let before = draft
             editedIn = (before, words)
             // The field takes them in the same motion (it may grow).
-            withAnimation(VoiceInputController.exitMotion) { draft = before + words }
+            withAnimation(VoiceInputController.exitMotion) { draft = Self.joined(before, words) }
             voice.leave(.edit, words: words)
             return nil
         }
         let cid = UUID().uuidString.lowercased()
         // Hidden before it exists: its first frame is already unseen.
         voice.leave(.send(cid: cid), words: words)
-        deliver(words, .spoken(cid: cid))
+        // What the field held goes with the words, as one message (and its
+        // staged pictures and files, as for a typed one).
+        if !before.isEmpty {
+            draft = ""
+            editedIn = nil
+        }
+        deliver(Self.joined(before, words), .spoken(cid: cid))
         return cid
     }
 
@@ -1136,4 +1258,97 @@ private struct QuoteBanner: View {
 extension CGRect {
     /// Laid out: no NaN or infinity anywhere (a null rect has infinite origins).
     var isFiniteRect: Bool { origin.x.isFinite && origin.y.isFinite && size.width.isFinite && size.height.isFinite }
+}
+
+/// A single click in a conversation, on a device with a keyboard (the Mac,
+/// an iPad with one): its composer takes the keyboard, so typing can start
+/// right away. Touch-only iPads keep the old way (the click leaves the
+/// field); phones are left alone. Simultaneous: links, buttons, the cards
+/// and selecting text get their click as before.
+struct ClickFocusesComposer: ViewModifier {
+    @Environment(WindowModel.self) private var model
+    @Environment(\.tile) private var tile
+
+    func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("ClickFocusesComposer")
+        #endif
+        if model.layout != .phone {
+            content.simultaneousGesture(TapGesture().onEnded {
+                if HardwareKeyboard.isAttached {
+                    ComposerFocus.clicked(window: ObjectIdentifier(model), tile: tile?.id)
+                } else {
+                    model.composerUnfocusRequests += 1
+                }
+            })
+        } else {
+            content
+        }
+    }
+}
+
+/// Which composer a click in a conversation asks to take the keyboard, and
+/// whether it should: only after a lone click (not the first of a double
+/// click), with no text selected and no other text field holding the keyboard.
+@MainActor
+enum ComposerFocus {
+    static let request = Notification.Name("PaloAlly.composerFocusRequest")
+
+    private static var lastClick: TimeInterval = 0
+    private static var clicks = 0
+
+    static func clicked(window: ObjectIdentifier, tile: String?) {
+        let now = ProcessInfo.processInfo.systemUptime
+        let wait = doubleClickInterval
+        let again = now - lastClick < wait
+        lastClick = now
+        clicks += 1
+        guard !again else {
+            debugLog("[focus] a double click in the conversation: the composer is left alone")
+            return
+        }
+        let serial = clicks
+        let keyWindow = Self.keyWindow
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
+            // Another click came: a double (or triple) click, selecting.
+            guard serial == clicks else { return }
+            if let why = reasonToLeave(keyWindow: keyWindow) {
+                debugLog("[focus] a click in the conversation: \(why), the composer is left alone")
+                return
+            }
+            NotificationCenter.default.post(name: request, object: nil,
+                                            userInfo: ["window": window, "tile": tile ?? ""])
+        }
+    }
+
+    static func isFor(_ note: Notification, window: ObjectIdentifier, tile: String?) -> Bool {
+        note.userInfo?["window"] as? ObjectIdentifier == window && note.userInfo?["tile"] as? String == (tile ?? "")
+    }
+
+    private static func reasonToLeave(keyWindow: UIWindow?) -> String? {
+        let responder = HardwareKeyboard.firstResponder
+        if let text = responder as? UITextView {
+            if text.isEditable { return "a text field has the keyboard" }
+            if text.selectedRange.length > 0 { return "text is selected" }
+        }
+        if responder is UITextField { return "a text field has the keyboard" }
+        let now = Self.keyWindow
+        if now !== keyWindow { return "another window came up" }
+        if now?.rootViewController?.presentedViewController != nil { return "a sheet came up" }
+        return nil
+    }
+
+    private static var keyWindow: UIWindow? {
+        UIApplication.shared.connectedScenes.lazy
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
+    }
+
+    /// The system's double-click time on the Mac (AppKit's, no permission
+    /// needed); elsewhere a third of a second.
+    private static var doubleClickInterval: TimeInterval {
+        guard ProcessInfo.processInfo.isMacCatalystApp, let event = NSClassFromString("NSEvent"),
+              let t = ((event as AnyObject).value(forKey: "doubleClickInterval") as? NSNumber)?.doubleValue
+        else { return 0.3 }
+        return min(max(t, 0.2), 0.5)
+    }
 }

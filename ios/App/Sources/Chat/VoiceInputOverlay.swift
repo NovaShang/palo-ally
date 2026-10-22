@@ -35,6 +35,9 @@ final class VoiceInputController {
     private(set) var previewText: String?
 
     var transcript: String { previewText ?? dictation.transcript }
+    /// What the composer already held when this hold began: the live words
+    /// show after it (it dimmer), and go out with it. Cleared with the hold.
+    var draftPrefix = ""
 
     func showPreview(_ text: String, target: Target = .send) {
         previewText = text
@@ -112,6 +115,7 @@ final class VoiceInputController {
     func disarm() {
         guard isArmed else { return }
         isArmed = false
+        draftPrefix = ""
         dictation.cancel()
     }
 
@@ -137,6 +141,7 @@ final class VoiceInputController {
     /// Gesture interrupted (e.g. app went to background).
     func abort() {
         interruptExit()
+        draftPrefix = ""
         guard isActive || isArmed else { return }
         isActive = false
         isArmed = false
@@ -378,6 +383,7 @@ final class VoiceInputController {
     }
 
     private func resetExit() {
+        draftPrefix = ""
         hiddenEcho = nil
         copyOf = nil
         exit = nil
@@ -543,7 +549,7 @@ private struct VoiceWordsStage: View {
         let zonesTop = capsule.height > 0 ? capsule.minY - VoiceInputPanel.gap - VoiceInputPanel.zoneHeight : layer.maxY - 180
         let top = orbBottom + 20, bottom = max(top + 80, zonesTop - 48)
         let width = min(layer.width - 52, 520)
-        let words = VoiceWords(text: shownText, style: style, maxHeight: min(bottom - top, layer.height * 0.5)) {
+        let words = VoiceWords(text: shownText, prefix: shownPrefix, style: style, maxHeight: min(bottom - top, layer.height * 0.5)) {
             voice.placeWords(text: $0, block: $1)
         }
         .frame(width: width)
@@ -614,6 +620,12 @@ private struct VoiceWordsStage: View {
         }
     }
 
+    /// The composer's draft the words continue (not with 没听清).
+    private var shownPrefix: String {
+        if case .unheard = voice.exit { return "" }
+        return voice.draftPrefix
+    }
+
     private var style: VoiceWords.Style {
         switch voice.exit {
         case .unheard: return .note
@@ -660,6 +672,8 @@ private struct VoiceWordsStage: View {
 private struct VoiceWords: View {
     enum Style { case words, dimmed, placeholder, note }
     let text: String
+    /// The composer's draft, before the words (dimmer); "" = none.
+    var prefix = ""
     let style: Style
     let maxHeight: CGFloat
     /// Where they are (global): what shows of the text itself, and the block.
@@ -675,7 +689,7 @@ private struct VoiceWords: View {
 
     var body: some View {
         let overflows = natural > maxHeight + 0.5
-        Text(text)
+        Text(content)
             .font(.title2.weight(.medium))
             .lineSpacing(4)
             .foregroundStyle(color)
@@ -707,8 +721,21 @@ private struct VoiceWords: View {
             .animation(.snappy, value: text)
             .animation(.snappy, value: style)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(text)
+            .accessibilityLabel(prefix.isEmpty ? text : ComposerView.joined(prefix, text))
             .accessibilityIdentifier("voiceWords")
+    }
+
+    /// The words, after the draft they continue: the draft dimmer, the new
+    /// words joined to it as they will be sent (a placeholder or a note on a
+    /// line of its own).
+    private var content: AttributedString {
+        guard !prefix.isEmpty else { return AttributedString(text) }
+        let spoken = style == .words || style == .dimmed
+        var head = AttributedString(prefix + (spoken ? ComposerView.separator(prefix, text) : "\n"))
+        head.foregroundColor = style == .dimmed ? Color.primary.opacity(0.25) : Color.secondary
+        var tail = AttributedString(text)
+        tail.foregroundColor = color
+        return head + tail
     }
 
     private func report() {
