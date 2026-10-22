@@ -494,6 +494,17 @@ final class WindowModel {
             Task { @MainActor in
                 for _ in 0..<40 where store?.workspace(id: id) == nil { try? await Task.sleep(for: .milliseconds(100)) }
                 openWorkspace(id)
+                #if DEBUG
+                // `-demoPaneTabs web | preview`: a file and a page open in its
+                // right pane, that one showing.
+                if let which = UserDefaults.standard.string(forKey: "demoPaneTabs"), let store {
+                    let hub = PaneTabsHub.shared(for: store)
+                    let key = PaneTabsKey.workspace(id)
+                    hub.openPreview(key, path: "README.md", scope: .pal(store.workspace(id: id)?.memberIds.first ?? "pal-site"))
+                    hub.openWeb(key, url: "https://example.com")
+                    if which == "preview" { hub.activate(key, at: PaneTabsKey.pinnedCount) }
+                }
+                #endif
             }
         #endif
         #if DEBUG

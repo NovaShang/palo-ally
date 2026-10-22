@@ -39,6 +39,7 @@ struct LaunchOptions {
     /// -demoState idle | busy | tasks — title-capsule screenshot states.
     var demoState: String? = nil
     /// -demoLayout wide — on large screens, open the sidebar and the inspector.
+    /// -demoPaneTabs web | preview | address — with `-demoScreen workspace` (DEBUG): a file and a page in its right pane.
     var demoLayout: String? = nil
     /// -demoHostVersion 9.9.9 (or PALOALLY_DEMO_HOST_VERSION): the demo computer reports
     /// that version, to show the Mac app's 「有新版本」 hint. Default: none.

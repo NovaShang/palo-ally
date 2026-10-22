@@ -133,7 +133,7 @@ extension WindowModel {
         default:
             return false
         }
-        hub.openPreview(key, path: target.path)
+        hub.openPreview(key, path: target.path, scope: target.scope)
         return true
     }
 

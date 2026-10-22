@@ -12,6 +12,9 @@ struct FilePage: View {
     let target: FileTarget
     /// Shown modally (a path tapped in a reply): a close button.
     var close: (() -> Void)? = nil
+    /// A tab of the right pane: its chip already names the file, so no bar
+    /// or strip; its actions are a floating ⋯ at the top right.
+    var inPane = false
 
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -40,7 +43,19 @@ struct FilePage: View {
         return false
     }
 
-    var body: some View {
+    @ViewBuilder var body: some View {
+        if inPane {
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .topTrailing) { paneMenu.padding(10) }
+                .task(id: target) { await load() }
+                .accessibilityIdentifier("file-page")
+        } else {
+            page
+        }
+    }
+
+    private var page: some View {
         content
             .navigationTitle(target.name)
             .navigationBarTitleDisplayMode(.inline)
@@ -128,6 +143,33 @@ struct FilePage: View {
             if let close {
                 MacStripButton(action: close) { Image(systemName: "xmark") }
                     .accessibilityLabel(Text("关闭", tableName: "Files"))
+            }
+        }
+    }
+
+    /// The pane's ⋯: what a page's bar would hold.
+    private var paneMenu: some View {
+        MacStripMenu(label: String(localized: "更多", table: "Files")) {
+            if let fileURL {
+                ShareLink(item: fileURL) { Label { Text("共享", tableName: "Files") } icon: { Image(systemName: "square.and.arrow.up") } }
+            }
+            if isMarkdown {
+                Button { raw.toggle() } label: {
+                    Label {
+                        Text(raw ? String(localized: "看排版", table: "Files") : String(localized: "看源文本", table: "Files"))
+                    } icon: {
+                        Image(systemName: raw ? "doc.richtext" : "chevron.left.forwardslash.chevron.right")
+                    }
+                }
+            }
+            Button { UIPasteboard.general.string = target.path } label: {
+                Label { Text("拷贝路径", tableName: "Files") } icon: { Image(systemName: "doc.on.doc") }
+            }
+            if let close {
+                Divider()
+                Button(action: close) {
+                    Label { Text("关闭标签", tableName: "Files") } icon: { Image(systemName: "xmark") }
+                }
             }
         }
     }

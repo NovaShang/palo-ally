@@ -36,6 +36,11 @@ struct RightPane: View {
                 select: { hub.activate(key, at: $0) },
                 close: { hub.close(key, at: $0) },
                 addWeb: { hub.openWeb(key, url: "") },
+                go: { index, text in
+                    guard let page = pageByTab[index], let url = page.go(text) else { return }
+                    page.startURL = url
+                    hub.retargetWeb(key, at: index, url: url)
+                },
                 closePane: { if let onClose { onClose() } else { hub.setOpen(key, false) } })
             content
         }
@@ -51,25 +56,16 @@ struct RightPane: View {
     private var content: some View {
         let active = state.activeTab
         let activePage = pageByTab[state.active]
-        return VStack(spacing: 0) {
-            if let activePage, active?.kind == PaneTab.web {
-                WebAddressBar(page: activePage) { text in
-                    if let url = activePage.go(text) {
-                        activePage.startURL = url
-                        hub.retargetWeb(key, at: state.active, url: url)
-                    }
-                }
+        // The web tab's address is its chip in the row above (no row of its own).
+        return ZStack {
+            ForEach(pages.pages, id: \.startURLIdentity) { page in
+                let shown = page === activePage && active?.kind == PaneTab.web
+                WebTabHost(page: page)
+                    .opacity(shown ? 1 : 0)
+                    .allowsHitTesting(shown)
+                    .accessibilityHidden(!shown)
             }
-            ZStack {
-                ForEach(pages.pages, id: \.startURLIdentity) { page in
-                    let shown = page === activePage && active?.kind == PaneTab.web
-                    WebTabHost(page: page)
-                        .opacity(shown ? 1 : 0)
-                        .allowsHitTesting(shown)
-                        .accessibilityHidden(!shown)
-                }
-                if let active, active.kind != PaneTab.web { other(active) }
-            }
+            if let active, active.kind != PaneTab.web { other(active) }
         }
     }
 
@@ -80,17 +76,18 @@ struct RightPane: View {
         case PaneTab.files:
             NavigationStack {
                 FileTreeScreen(scope: scope, close: { if let onClose { onClose() } else { hub.setOpen(key, false) } },
-                               onOpenFile: { hub.openPreview(key, path: $0.path) })
+                               onOpenFile: { hub.openPreview(key, path: $0.path, scope: scope) })
                     .modifier(InContentNavigationBar())
             }
             .id(scope)
         case PaneTab.preview:
+            // Read from where it was opened: a workspace's preview stays on
+            // its session's file when another pane becomes the active one.
+            // The tab's chip names the file: no bar of its own, its actions in a ⋯.
             let index = state.active
-            NavigationStack {
-                FilePage(target: FileTarget(scope: scope, path: tab.path ?? ""), close: { hub.close(key, at: index) })
-                    .modifier(InContentNavigationBar())
-            }
-            .id(tab)
+            FilePage(target: FileTarget(scope: tab.fileScope ?? scope, path: tab.path ?? ""),
+                     close: { hub.close(key, at: index) }, inPane: true)
+                .id(tab)
         default:
             ContentUnavailableView(String(localized: "这个标签打不开", table: "Files"), systemImage: "questionmark.square.dashed")
         }
@@ -149,20 +146,38 @@ private struct RightPaneTabBar: View {
     let select: (Int) -> Void
     let close: (Int) -> Void
     let addWeb: () -> Void
+    /// What was typed in a web tab's chip: load it there.
+    let go: (Int, String) -> Void
     let closePane: () -> Void
+
+    /// The active web tab's chip is its address field, being typed in
+    /// (Safari's compact tabs): a click on it, or a new empty tab.
+    @State private var editing = false
+
+    private var activeWebPage: WebTabPage? {
+        tabs.indices.contains(active) && tabs[active].kind == PaneTab.web ? pages[active] : nil
+    }
+
+    /// A new web tab has no address yet: it opens typing.
+    private var activeIsBlankWeb: Bool {
+        tabs.indices.contains(active) && tabs[active].kind == PaneTab.web && (tabs[active].url ?? "").isEmpty
+    }
 
     var body: some View {
         GlassEffectContainer(spacing: 8) {
             HStack(spacing: 8) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        ForEach(Array(tabs.enumerated()), id: \.offset) { i, tab in
-                            tabButton(i, tab)
-                        }
-                    }
-                    .padding(4)
+                if editing, let page = activeWebPage {
+                    // Typing an address: the shown page's chip takes the whole row
+                    // (Safari's compact tabs); Esc gives the tabs back.
+                    let i = active
+                    WebAddressField(page: page, submit: { go(i, $0); editing = false }, cancel: { editing = false })
+                        .background(.primary.opacity(0.12), in: .capsule)
+                        .padding(4)
+                        .glassEffect(.regular, in: .capsule)
+                } else {
+                    tabStrip
                 }
-                .glassEffect(.regular, in: .capsule)
+                if let page = activeWebPage { WebNavButtons(page: page) }
                 Button(action: addWeb) {
                     Image(systemName: "plus").frame(width: 32, height: 32).contentShape(.circle)
                 }
@@ -181,16 +196,45 @@ private struct RightPaneTabBar: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
         }
+        .onChange(of: active, initial: true) {
+            editing = activeIsBlankWeb
+            #if DEBUG
+            // `-demoPaneTabs address`: the page's chip being typed in.
+            if UserDefaults.standard.string(forKey: "demoPaneTabs") == "address", activeWebPage != nil { editing = true }
+            #endif
+        }
+        .onChange(of: activeIsBlankWeb) { _, blank in if blank { editing = true } }
+    }
+
+    private var tabStrip: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(Array(tabs.enumerated()), id: \.offset) { i, tab in
+                        tabButton(i, tab).id(i)
+                    }
+                }
+                .padding(4)
+            }
+            // The shown tab stays in sight in a narrow pane.
+            .onChange(of: active, initial: true) { _, i in withAnimation(.snappy) { proxy.scrollTo(i) } }
+        }
+        .glassEffect(.regular, in: .capsule)
     }
 
     private func tabButton(_ i: Int, _ tab: PaneTab) -> some View {
         let isActive = i == active
+        let page = pages[i]
+        let isWeb = tab.kind == PaneTab.web
         // Select and close are sibling buttons: a tap over a nested close button would swallow it.
         return HStack(spacing: 0) {
-            Button { select(i) } label: {
+            Button {
+                // The shown web tab's chip is its address: a click types in it.
+                if isActive && isWeb && page != nil { editing = true } else { select(i) }
+            } label: {
                 HStack(spacing: 5) {
                     Image(systemName: icon(tab)).font(.system(size: 11)).foregroundStyle(.secondary)
-                    TabTitle(tab: tab, page: pages[i])
+                    TabTitle(tab: tab, page: page)
                         .lineLimit(1)
                 }
                 .padding(.leading, 10)
@@ -199,6 +243,7 @@ private struct RightPaneTabBar: View {
                 .contentShape(.capsule)
             }
             .buttonStyle(.plain)
+            .help(isWeb ? (page?.address ?? tab.url ?? "") : (tab.path ?? ""))
             if i >= PaneTabsKey.pinnedCount {
                 Button { close(i) } label: {
                     Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
@@ -210,7 +255,43 @@ private struct RightPaneTabBar: View {
         }
         .frame(maxWidth: 180)
         .background(isActive ? AnyShapeStyle(.primary.opacity(0.12)) : AnyShapeStyle(.clear), in: .capsule)
+        .contentShape(.capsule)
+        .contextMenu { if i >= PaneTabsKey.pinnedCount { menu(i, tab, page: page) } }
         .accessibilityAddTraits(isActive ? .isSelected : [])
+    }
+
+    /// A file's or a page's actions, on its chip.
+    @ViewBuilder private func menu(_ i: Int, _ tab: PaneTab, page: WebTabPage?) -> some View {
+        if tab.kind == PaneTab.web {
+            let address = page.map { $0.address.isEmpty ? $0.startURL : $0.address } ?? tab.url ?? ""
+            if let url = URL(string: address), !address.isEmpty {
+                Button {
+                    UIApplication.shared.open(url)
+                } label: {
+                    Label { Text("在浏览器中打开", tableName: "Files") } icon: { Image(systemName: "safari") }
+                }
+                Button {
+                    UIPasteboard.general.string = address
+                } label: {
+                    Label { Text("拷贝网址", tableName: "Files") } icon: { Image(systemName: "link") }
+                }
+            }
+            if let page {
+                Button { page.reloadOrStop() } label: {
+                    Label { Text("刷新", tableName: "Files") } icon: { Image(systemName: "arrow.clockwise") }
+                }
+            }
+        } else if tab.kind == PaneTab.preview, let path = tab.path {
+            Button {
+                UIPasteboard.general.string = path
+            } label: {
+                Label { Text("拷贝路径", tableName: "Files") } icon: { Image(systemName: "doc.on.doc") }
+            }
+        }
+        Divider()
+        Button { close(i) } label: {
+            Label { Text("关闭标签", tableName: "Files") } icon: { Image(systemName: "xmark") }
+        }
     }
 
     private func icon(_ tab: PaneTab) -> String {
@@ -221,6 +302,72 @@ private struct RightPaneTabBar: View {
         case PaneTab.web: "globe"
         default: "questionmark.square"
         }
+    }
+}
+
+/// The shown web tab's address being typed, across the row: all of it
+/// selected; Return loads it, Esc (or a click elsewhere) puts the title back.
+private struct WebAddressField: View {
+    @ObservedObject var page: WebTabPage
+    let submit: (String) -> Void
+    let cancel: () -> Void
+    @State private var text = ""
+    @State private var selection: TextSelection?
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "globe").font(.system(size: 11)).foregroundStyle(.secondary)
+            TextField(String(localized: "输入网址或搜索", table: "Files"), text: $text, selection: $selection)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.webSearch)
+                .submitLabel(.go)
+                .focused($focused)
+                .onSubmit { submit(text) }
+                .onKeyPress(.escape) { cancel(); return .handled }
+                .accessibilityIdentifier("web-address")
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 4)
+        .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28)
+        .onAppear {
+            text = page.address.isEmpty ? page.startURL : page.address
+            Task { @MainActor in
+                focused = true
+                selection = TextSelection(range: text.startIndex..<text.endIndex)
+            }
+        }
+        .onChange(of: focused) { was, now in if was, !now { cancel() } }
+    }
+}
+
+/// Back, forward and reload of the shown web tab, at the row's end.
+private struct WebNavButtons: View {
+    @ObservedObject var page: WebTabPage
+
+    var body: some View {
+        HStack(spacing: 0) {
+            button("chevron.backward", String(localized: "后退", table: "Files")) { page.webView.goBack() }
+                .disabled(!page.canGoBack)
+            button("chevron.forward", String(localized: "前进", table: "Files")) { page.webView.goForward() }
+                .disabled(!page.canGoForward)
+            button(page.isLoading ? "xmark" : "arrow.clockwise", String(localized: "刷新", table: "Files")) { page.reloadOrStop() }
+        }
+        .padding(.horizontal, 2)
+        .glassEffect(.regular.interactive(), in: .capsule)
+    }
+
+    private func button(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .frame(width: 28, height: 32)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }
 
@@ -247,46 +394,6 @@ private struct TabTitle: View {
             else if !fallback.isEmpty { Text(verbatim: WebAddress.label(for: fallback)) }
             else { Text(String(localized: "新网页", table: "Files")) }
         }
-    }
-}
-
-// MARK: - the address field
-
-private struct WebAddressBar: View {
-    @ObservedObject var page: WebTabPage
-    let submit: (String) -> Void
-    @State private var text = ""
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Button { page.webView.goBack() } label: { Image(systemName: "chevron.backward") }
-                .disabled(!page.canGoBack)
-                .accessibilityLabel(String(localized: "后退", table: "Files"))
-            Button { page.webView.goForward() } label: { Image(systemName: "chevron.forward") }
-                .disabled(!page.canGoForward)
-                .accessibilityLabel(String(localized: "前进", table: "Files"))
-            TextField(String(localized: "输入网址或搜索", table: "Files"), text: $text)
-                .textFieldStyle(.plain)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.webSearch)
-                .submitLabel(.go)
-                .focused($focused)
-                .onSubmit { submit(text); focused = false }
-                .padding(.horizontal, 12)
-                .frame(height: 30)
-                .glassEffect(.regular, in: .capsule)
-            Button { page.reloadOrStop() } label: { Image(systemName: page.isLoading ? "xmark" : "arrow.clockwise") }
-                .accessibilityLabel(String(localized: "刷新", table: "Files"))
-        }
-        .buttonStyle(.plain)
-        .font(.system(size: 13, weight: .semibold))
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 12)
-        .padding(.bottom, 6)
-        .onAppear { text = page.address.isEmpty ? page.startURL : page.address; if page.startURL.isEmpty && page.address.isEmpty { focused = true } }
-        .onChange(of: page.address) { _, a in if !focused, !a.isEmpty { text = a } }
     }
 }
 

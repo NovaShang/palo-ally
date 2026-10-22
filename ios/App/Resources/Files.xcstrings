@@ -188,6 +188,28 @@
         }
       }
     },
+    "拷贝网址" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Address"
+          }
+        }
+      }
+    },
+    "在浏览器中打开" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in Browser"
+          }
+        }
+      }
+    },
     "插入到输入框" : {
       "extractionState" : "manual",
       "localizations" : {
