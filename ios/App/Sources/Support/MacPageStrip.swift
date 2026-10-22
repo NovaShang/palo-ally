@@ -138,14 +138,12 @@ struct MacPageTop: ViewModifier {
     /// row itself (MacTitlebar), not in a strip below it; its menu is the
     /// window toolbar's ⋯ (`macToolbarMenu`).
     var inRow = false
-    /// The page's background, what the row's fade is made of.
-    var fade = Color(.systemBackground)
 
     func body(content: Content) -> some View {
         if Platform.barInWindowToolbar && inRow {
             content
                 .toolbar(.hidden, for: .navigationBar)
-                .macTitlebarFade(fade)
+                .macTitlebarFade()
                 .macTitlebarCenter {
                     MacTitlebarTitle(title: strip.title, subtitle: strip.subtitle, dot: strip.dot)
                 }
@@ -164,9 +162,9 @@ extension View {
     /// The Mac's floating strip in place of this page's navigation bar
     /// (MacPageStrip); `inRow`: in the window's title bar row (MacTitlebar).
     func macPageTop(_ title: String, subtitle: String = "", dot: StatusDotKind? = nil, back: (() -> Void)? = nil,
-                    trailing: AnyView? = nil, inRow: Bool = false, fade: Color = Color(.systemBackground)) -> some View {
+                    trailing: AnyView? = nil, inRow: Bool = false) -> some View {
         modifier(MacPageTop(strip: MacPageStrip(title: title, subtitle: subtitle, dot: dot, back: back, trailing: trailing),
-                            inRow: inRow, fade: fade))
+                            inRow: inRow))
     }
 
     /// The Mac: no navigation bar and nothing in its place (a page whose
@@ -187,8 +185,9 @@ extension View {
 
 /// The Mac window's title bar is the traffic lights' row, the window
 /// toolbar's (docs/workbench-design/mac-titlebar.html), transparent: the
-/// page shows through it. A conversation page runs up under it and only
-/// fades out there (no band, no line); a workspace's tiles start below it.
+/// page shows through it. A conversation page runs up under it with the
+/// system's soft scroll edge (no band, no line); a workspace's tiles start
+/// below it, the row painted with the page's background.
 /// The row holds the sidebar's button at the left (SidebarCollapse), the
 /// page's identity in the middle (MacTitlebarItems), and at the right the
 /// toolbar's own items as one group: the page's ⋯, a workspace's ＋, and
@@ -246,28 +245,11 @@ struct MacTitlebarItems<Center: View>: ViewModifier {
 }
 
 /// The Mac: a conversation page under the title bar row has no band and no
-/// line where it meets it: the system's scroll edge (a blur with a hard
-/// bottom edge on the Mac) is off, and the page's own color covers the row
-/// and fades out just below it.
+/// line where it meets it: the system's soft scroll edge, set explicitly
+/// (never the hard one).
 struct MacTitlebarFade: ViewModifier {
-    var color = Color(.systemBackground)
-
     func body(content: Content) -> some View {
-        content
-            .scrollEdgeEffectHidden(true, for: .top)
-            .overlay(alignment: .top) {
-                let row = MacTitlebar.height
-                let fade: CGFloat = 18
-                LinearGradient(stops: [
-                    .init(color: color, location: 0),
-                    .init(color: color, location: (row - 8) / (row + fade)),
-                    .init(color: color.opacity(0), location: 1),
-                ], startPoint: .top, endPoint: .bottom)
-                .frame(height: row + fade)
-                .ignoresSafeArea(.container, edges: .top)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            }
+        content.scrollEdgeEffectStyle(.soft, for: .top)
     }
 }
 
@@ -277,9 +259,9 @@ extension View {
         modifier(MacTitlebarItems(center: center))
     }
 
-    /// The Mac: the soft fade under the title bar row in place of the band (MacTitlebarFade).
-    func macTitlebarFade(_ color: Color = Color(.systemBackground)) -> some View {
-        modifier(MacTitlebarFade(color: color))
+    /// The Mac: the soft scroll edge under the title bar row in place of the band (MacTitlebarFade).
+    func macTitlebarFade() -> some View {
+        modifier(MacTitlebarFade())
     }
 }
 

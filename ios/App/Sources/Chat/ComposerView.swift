@@ -998,11 +998,20 @@ private struct TypeToCompose: UIViewRepresentable {
             // on another field (a question card's 其他…), which must get the
             // keyboard first; it is checked for just below.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                guard let self, self.window != nil, !self.isFirstResponder, HardwareKeyboard.isAttached else { return }
+                guard let self, let window = self.window, !self.isFirstResponder, HardwareKeyboard.isAttached else { return }
+                // Something presented over the page (details, a sheet) keeps the keyboard.
+                guard !Self.presents(window.rootViewController) else { return }
                 let current = HardwareKeyboard.firstResponder
                 guard current == nil || !(current is UIKeyInput || current is UICollectionView || current is UITableView) else { return }
                 self.becomeFirstResponder()
             }
+        }
+
+        /// Whether a controller in this tree presents something.
+        private static func presents(_ vc: UIViewController?) -> Bool {
+            guard let vc else { return false }
+            if vc.presentedViewController != nil { return true }
+            return vc.children.contains { presents($0) }
         }
     }
 }

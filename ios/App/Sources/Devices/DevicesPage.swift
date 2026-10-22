@@ -100,7 +100,7 @@ struct DevicesPage: View {
         }
         .navigationTitle("电脑与设备")
         .navigationBarTitleDisplayMode(.inline)
-        .macPageTop(String(localized: "电脑与设备"), inRow: true, fade: Color(.systemGroupedBackground))
+        .macPageTop(String(localized: "电脑与设备"), inRow: true)
         .animation(.snappy, value: confirmUnpair)
         .animation(.snappy, value: confirmRemove)
         .animation(.snappy, value: devices)
