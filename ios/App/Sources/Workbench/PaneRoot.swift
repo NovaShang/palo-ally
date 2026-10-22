@@ -300,6 +300,11 @@ private struct PaneTitle: View {
                 .font(.system(size: 12, weight: .semibold))
                 .lineLimit(1)
                 .truncationMode(.tail)
+                // A soft halo of the page's own color: the name stays legible
+                // over the messages scrolling under the header.
+                .shadow(color: Color(.systemBackground), radius: 2)
+                .shadow(color: Color(.systemBackground), radius: 4)
+                .shadow(color: Color(.systemBackground).opacity(0.8), radius: 8)
             Spacer(minLength: 0)
         }
         .padding(.leading, PaneMetrics.titleLeading)
