@@ -179,6 +179,15 @@ extension View {
     @ViewBuilder func macMenuHitArea() -> some View {
         if Platform.isMac { buttonStyle(.plain) } else { buttonStyle(.borderless) }
     }
+
+    /// A button in the Mac's title bar row over a conversation (a page's
+    /// orb or drop): over messages scrolled under the row (the system's soft
+    /// scroll edge) the plain style never ran its action: the click reached
+    /// the page (`-hitProbe`) but the button didn't fire; the borderless one
+    /// does (`click:` in `-demoActions`). Plain elsewhere.
+    @ViewBuilder func macTitlebarButtonStyle() -> some View {
+        if Platform.isMac { buttonStyle(.borderless) } else { buttonStyle(.plain) }
+    }
 }
 
 // MARK: - the title bar row

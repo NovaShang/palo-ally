@@ -255,6 +255,29 @@ private struct LayoutStressTest: ViewModifier {
                             debugLog("[nav] snapshot \(url.path)")
                         }
                     #if targetEnvironment(macCatalyst)
+                    // `click:650;26`: a left click there in the key window, as AppKit delivers one.
+                    case _ where a.hasPrefix("click:"):
+                        let r = AppKitBundle.object?.perform(NSSelectorFromString("click:"), with: a.dropFirst(6).replacingOccurrences(of: ";", with: ","))?
+                            .takeUnretainedValue() as? String
+                        debugLog("[nav] \(r ?? "no AppKit bundle")")
+                    #endif
+                    // `presented`: what each window presents now (popovers don't show in snapshots).
+                    case "presented":
+                        for (i, w) in model.app.windows.enumerated() {
+                            var chain: [String] = []
+                            var vc = w.scene?.windows.first?.rootViewController?.presentedViewController
+                            while let p = vc {
+                                var anchor = ""
+                                if let pc = p.popoverPresentationController, let source = pc.sourceView, let window = source.window {
+                                    let r = source.convert(pc.sourceRect.isEmpty ? source.bounds : pc.sourceRect, to: window)
+                                    anchor = " from \(Int(r.minX)),\(Int(r.minY)) \(Int(r.width))x\(Int(r.height))"
+                                }
+                                chain.append("\(type(of: p)) \(p.modalPresentationStyle == .popover ? "popover" : "style \(p.modalPresentationStyle.rawValue)") \(Int(p.preferredContentSize.width))x\(Int(p.preferredContentSize.height))\(anchor)")
+                                vc = p.presentedViewController
+                            }
+                            debugLog("[nav] window \(i + 1) presents \(chain.isEmpty ? "nothing" : chain.joined(separator: " > "))")
+                        }
+                    #if targetEnvironment(macCatalyst)
                     // `quit`: as ⌘Q (the windows are saved, to come back on the next launch).
                     case "quit":
                         if let app = (NSClassFromString("NSApplication") as? NSObject.Type)?.value(forKey: "sharedApplication") as? NSObject {

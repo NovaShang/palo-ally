@@ -161,6 +161,34 @@ final class ImmersiveWindows: NSObject {
         return lines.joined(separator: "\n")
     }
 
+    /// A left click at "x,y" (the window's top-left coordinates, as UIKit
+    /// has them) queued for the front app window as a real one is (the
+    /// title bar's own handling included), paced like a hand's, without
+    /// moving the pointer: the whole path a click takes.
+    @objc func click(_ spec: String) -> String {
+        guard let id = Self.toolbarID,
+              let window = NSApplication.shared.keyWindow.flatMap({ $0.toolbar?.identifier.hasPrefix(id) == true ? $0 : nil })
+                ?? NSApplication.shared.windows.first(where: { $0.toolbar?.identifier.hasPrefix(id) == true }),
+              let frame = window.contentView?.superview else { return "no window" }
+        let xy = spec.split(separator: ",").compactMap { Double($0) }
+        guard xy.count == 2 else { return "bad point" }
+        let p = NSPoint(x: xy[0], y: frame.bounds.height - xy[1])
+        // As a hand does it: the pointer arrives, rests, presses, lets go.
+        let steps: [(NSEvent.EventType, Double)] = [(.mouseMoved, 0), (.mouseMoved, 0.15), (.leftMouseDown, 0.4), (.leftMouseUp, 0.52)]
+        let number = window.windowNumber
+        for (type, delay) in steps {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                if let e = NSEvent.mouseEvent(with: type, location: type == .mouseMoved && delay == 0 ? NSPoint(x: p.x - 6, y: p.y + 4) : p,
+                                              modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                              windowNumber: number, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0) {
+                    NSApplication.shared.postEvent(e, atStart: false)
+                }
+            }
+        }
+        let m = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+        return "clicked \(Int(xy[0])),\(Int(xy[1])) in \(Int(window.frame.width))x\(Int(window.frame.height)); the pointer at \(Int(m.x)),\(Int(frame.bounds.height - m.y))"
+    }
+
     /// The titlebar (traffic lights, toolbar items, and any band) as a PNG
     /// at `path`, transparent where it draws nothing, and its frame in the
     /// window: the app draws it over its own snapshot for the demo's

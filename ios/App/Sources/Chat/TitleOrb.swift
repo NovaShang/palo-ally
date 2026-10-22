@@ -112,7 +112,7 @@ struct FloatingTitleOrb: View {
                 }
                 .background { ListeningGlow(size: big).opacity(Double(listen)) }
             }
-            .buttonStyle(.plain)
+            .macTitlebarButtonStyle()
         }
         .frame(width: max(Self.box.width, canvas), height: boxHeight)
         .offset(y: rest + (dropped - rest) * listen)

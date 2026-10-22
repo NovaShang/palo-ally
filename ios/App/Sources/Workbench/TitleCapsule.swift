@@ -82,12 +82,13 @@ struct PageIndicator: View {
 
     var body: some View {
         Button {
+            if Platform.isMac { debugLog("[titlebar] orb clicked: \(model.traceName) \(isPalo ? "palo" : "session"), details \(model.detailShown ? "closing" : "opening")") }
             model.detailShown.toggle()
         } label: {
             indicator
                 .contentShape(.circle)
         }
-        .buttonStyle(.plain)
+        .macTitlebarButtonStyle()
         .modifier(PaloOrbHomeIfNeeded(enabled: isPalo && restsHere, token: token))
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { onFrame?($0) }
         .popover(isPresented: Binding(get: { model.detailShown && !AgentDetailPlacement.usesSheet(model: model, store: store) },

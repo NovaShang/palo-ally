@@ -744,17 +744,26 @@ private struct MacTopOrb: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .overlay(alignment: .top) {
                 FloatingTitleOrb(barCenterY: nil, columnWidth: width, topAligned: true, rowMidY: MacTitlebar.midY) {
+                    debugLog("[titlebar] orb clicked: \(model.traceName) palo, details \(model.detailShown ? "shown" : "opening")")
                     model.detailShown = true
                 }
                 .frame(height: 0, alignment: .top)
-                // Palo's details hang from its orb (no name capsule on the Mac).
-                .popover(isPresented: Binding(get: { model.detailShown && !AgentDetailPlacement.usesSheet(model: model, store: store) },
-                                              set: { model.detailShown = $0 }), arrowEdge: .top) {
-                    AgentDetailView()
-                        .environment(model)
-                        .environment(store)
-                        .frame(minWidth: 360, idealWidth: 380, minHeight: 420, idealHeight: 560)
-                }
+            }
+            .overlay(alignment: .top) {
+                // Palo's details hang from its orb (no name capsule on the
+                // Mac): from where it rests in the row, the orb's own size.
+                let d = OrbPresence.rest.body * FloatingTitleOrb.macScale
+                Color.clear
+                    .frame(width: d, height: d)
+                    .allowsHitTesting(false)
+                    .popover(isPresented: Binding(get: { model.detailShown && !AgentDetailPlacement.usesSheet(model: model, store: store) },
+                                                  set: { model.detailShown = $0 }), arrowEdge: .top) {
+                        AgentDetailView()
+                            .environment(model)
+                            .environment(store)
+                            .frame(minWidth: 360, idealWidth: 380, minHeight: 420, idealHeight: 560)
+                    }
+                    .padding(.top, max(0, MacTitlebar.midY - d / 2))
             }
             .ignoresSafeArea(.container, edges: .top)
     }
@@ -1134,6 +1143,10 @@ struct MacTitlebarIndicator: ViewModifier {
                 PageIndicator(size: Self.size, dot: dot)
                     .padding(.top, max(2, MacTitlebar.midY - half))
                     .ignoresSafeArea(.container, edges: .top)
+                    // Over a conversation scrolled under the row (the soft
+                    // scroll edge there) the drop took no clicks until it had
+                    // a hover region of its own (`click:` in `-demoActions`).
+                    .onHover { _ in }
             }
         } else {
             content
