@@ -72,7 +72,7 @@ html, body {
 /* A Markdown file's source (PaloAlly's raw view): no gutter, lines wrap. */
 .code.source {
   margin: 0;
-  padding: 16px 20px 24px;
+  padding: 16px 24px 24px;
   font: 12px/18px ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
 }
 .code.source code.hljs {
@@ -93,9 +93,9 @@ html, body {
 
 /* ---- Markdown view ---- */
 
+/* The whole width it is given (the right pane is dragged wide on purpose). */
 .markdown {
-  padding: 16px 20px 24px;
-  max-width: 860px;
+  padding: 16px 24px 24px;
   font: 14px/1.55 -apple-system, "Helvetica Neue", "PingFang SC", sans-serif;
   word-wrap: break-word;
 }

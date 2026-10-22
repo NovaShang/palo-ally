@@ -177,9 +177,9 @@ struct ArtifactDetailView: View {
         } else if ext == "txt" {
             ScrollView {
                 MarkdownText(source: String(decoding: c.data, as: UTF8.self), compact: false)
-                    .padding(20)
-                    .frame(maxWidth: 720, alignment: .leading)
-                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else if ["html", "htm"].contains(ext) || (c.path == a.mainFile && a.previewStyle == .html) {
             SandboxedHTMLView(html: String(decoding: c.data, as: UTF8.self), artifactID: a.id,
