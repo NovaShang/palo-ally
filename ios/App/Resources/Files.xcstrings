@@ -177,6 +177,17 @@
         }
       }
     },
+    "重新载入" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reload"
+          }
+        }
+      }
+    },
     "拷贝路径" : {
       "extractionState" : "manual",
       "localizations" : {

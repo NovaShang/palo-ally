@@ -252,3 +252,51 @@ public struct FolderRemoveParams: Codable, Sendable {
     public var id: String
     public init(id: String) { self.id = id }
 }
+
+/// `files.watch {scope, path}` / `files.unwatch {scope, path}`: a preview on
+/// screen follows its file (renewed while shown; it lapses otherwise).
+public struct FilesWatchParams: Codable, Sendable, Hashable {
+    public var scope: FileScope
+    public var path: String
+    public init(scope: FileScope, path: String) { self.scope = scope; self.path = path }
+}
+
+/// `files.watch → {size, mtime, lease}`: the file now, and how long (ms) the
+/// watch lives without a renewal.
+public struct FilesWatchResult: Decodable, Sendable {
+    public var size: Int64
+    public var mtime: Int64
+    public var lease: Int64
+
+    public init(size: Int64, mtime: Int64, lease: Int64) { self.size = size; self.mtime = mtime; self.lease = lease }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        size = l.int64("size", or: 0)
+        mtime = l.millis("mtime", or: 0)
+        lease = l.int64("lease", or: 90_000)
+    }
+}
+
+/// `files.changed {scope, path, size, mtime, gone?}`: a watched file changed
+/// on disk (scope and path as the app gave them); `gone`: deleted or moved away.
+public struct FileChanged: Decodable, Sendable, Hashable {
+    public var scope: FileScope
+    public var path: String
+    public var size: Int64
+    public var mtime: Int64
+    public var gone: Bool
+
+    public init(scope: FileScope, path: String, size: Int64, mtime: Int64, gone: Bool = false) {
+        self.scope = scope; self.path = path; self.size = size; self.mtime = mtime; self.gone = gone
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        scope = l.decode(FileScope.self, "scope", or: .root)
+        path = l.string("path", or: "")
+        size = l.int64("size", or: 0)
+        mtime = l.millis("mtime", or: 0)
+        gone = l.bool("gone") ?? false
+    }
+}

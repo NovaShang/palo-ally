@@ -34,14 +34,14 @@ export const RPC_METHODS = [
   "workspaces.list", "workspaces.create", "workspaces.update", "workspaces.move", "workspaces.delete", "workbench.order.set", "workbench.tabs.get", "workbench.tabs.set",
   "pair.invite", "device.list", "device.remove",
   "auth.login.start", "auth.login.code", "auth.login.cancel",
-  "files.list", "files.read", "files.search", "files.resolve", "files.folders.list", "files.folders.browse", "files.folders.add", "files.folders.remove",
+  "files.list", "files.read", "files.search", "files.resolve", "files.watch", "files.unwatch", "files.folders.list", "files.folders.browse", "files.folders.add", "files.folders.remove",
 ] as const;
 
 export const RPC_EVENTS = [
   "chat.message", "chat.delta", "chat.rewound", "task.updated", "approval.updated", "question.updated", "watch.updated",
   "artifact.updated", "settings.updated", "status", "commands.updated",
   "suggestions.updated", "ally.updated", "ally.entry", "sessions.updated", "pals.updated",
-  "workspaces.updated", "workbench.updated",
+  "workspaces.updated", "workbench.updated", "files.changed",
 ] as const;
 
 // Admin methods are reachable only on the local unix socket (the owner's own
@@ -371,6 +371,15 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       const paths = Array.isArray(p.paths) ? p.paths.map(String) : typeof p.text === "string" ? [p.text] : [];
       return hub.files.resolve(parseScope(p.scope), paths);
     }
+    // A preview on screen follows its file: renewed while shown, lapses
+    // otherwise; `files.changed` says when it changed.
+    case "files.watch":
+      ownerOnly(ctx, t("files.err.owner"));
+      return hub.fileWatches.watch(parseScope(p.scope), String(p.path ?? ""));
+    case "files.unwatch":
+      ownerOnly(ctx, t("files.err.owner"));
+      hub.fileWatches.unwatch(parseScope(p.scope), String(p.path ?? ""));
+      return { ok: true };
     case "files.folders.list":
       ownerOnly(ctx, t("files.err.owner"));
       return { folders: hub.files.folders() };

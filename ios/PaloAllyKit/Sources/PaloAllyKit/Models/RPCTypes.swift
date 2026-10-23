@@ -157,12 +157,15 @@ public enum RPCMethod {
     public static let filesRead = "files.read"
     public static let filesSearch = "files.search"
     public static let filesResolve = "files.resolve"
+    /// A preview on screen follows its file (`files.changed` says when it changed).
+    public static let filesWatch = "files.watch"
+    public static let filesUnwatch = "files.unwatch"
     public static let filesFoldersList = "files.folders.list"
     public static let filesFoldersBrowse = "files.folders.browse"
     public static let filesFoldersAdd = "files.folders.add"
     public static let filesFoldersRemove = "files.folders.remove"
 
-    public static let files: [String] = [filesList, filesRead, filesSearch, filesResolve, filesFoldersList,
+    public static let files: [String] = [filesList, filesRead, filesSearch, filesResolve, filesWatch, filesUnwatch, filesFoldersList,
                                          filesFoldersBrowse, filesFoldersAdd, filesFoldersRemove]
 
     /// Every method the client knows. The contract test checks this equals
@@ -209,11 +212,13 @@ public enum RPCEventName {
     public static let workbenchUpdated = "workbench.updated"
 
     public static let workbench: [String] = [workspacesUpdated, workbenchUpdated]
+    /// A file a preview watches changed on disk (`files.watch`).
+    public static let filesChanged = "files.changed"
 
     public static let all: [String] = [
         chatMessage, chatDelta, chatRewound, taskUpdated, approvalUpdated, questionUpdated, watchUpdated, artifactUpdated, settingsUpdated,
         status, commandsUpdated, suggestionsUpdated,
-    ] + allies + sessions + pals + workbench
+    ] + allies + sessions + pals + workbench + [filesChanged]
 }
 
 public struct EmptyParams: Codable, Sendable { public init() {} }

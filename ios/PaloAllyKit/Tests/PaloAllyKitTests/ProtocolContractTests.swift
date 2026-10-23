@@ -111,6 +111,8 @@ private let resultTypes: [String: Check] = [
     RPCMethod.filesRead: strict(FileChunk.self),
     RPCMethod.filesSearch: strict(FilesSearchResult.self),
     RPCMethod.filesResolve: strict(FilesResolveResult.self),
+    RPCMethod.filesWatch: strict(FilesWatchResult.self),
+    RPCMethod.filesUnwatch: strict(OKResult.self),
     RPCMethod.filesFoldersList: strict(OwnerFoldersResult.self),
     RPCMethod.filesFoldersBrowse: strict(FolderBrowseResult.self),
     RPCMethod.filesFoldersAdd: strict(OwnerFolderResult.self),
@@ -233,6 +235,7 @@ private let eventTypes: [String: Check] = [
         }
     },
     RPCEventName.workspacesUpdated: strict(WorkspacesResult.self),
+    RPCEventName.filesChanged: strict(FileChanged.self),
     RPCEventName.workbenchUpdated: { json in
         guard let u = WorkbenchTabsUpdate(json: json) else { return ["WorkbenchTabsUpdate did not recognise the payload"] }
         return u.state == nil ? [] : strictIssues(TabsState.self, json["state"] ?? .null)

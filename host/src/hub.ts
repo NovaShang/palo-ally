@@ -41,6 +41,7 @@ import { Sessions, type SessionsDeps } from "./sessions.ts";
 import { PALO_NAME, Pals, type PalsDeps } from "./pals.ts";
 import { Workbench } from "./workbench.ts";
 import { FileBrowser } from "./files.ts";
+import { FileWatches } from "./fileWatch.ts";
 
 export type { ClientConn, WechatChannel, WechatReplyTarget } from "./channels/types.ts";
 export { timing } from "./conversation.ts";
@@ -97,6 +98,8 @@ export class Hub {
   readonly workbench: Workbench;
   /** Files on the computer, read-only (docs/files-prd.md). */
   readonly files: FileBrowser;
+  /** Previews following their file on disk (`files.watch`). */
+  readonly fileWatches: FileWatches;
   readonly stallWatch: StallWatch;
   /** Claude Code's login: noticed when it runs out, signed in again from the phone (auth.ts). */
   readonly auth: AuthWatch;
@@ -134,6 +137,7 @@ export class Hub {
 
     this.audit = new Audit(this.paths.audit);
     this.files = new FileBrowser({ paths: this.paths, audit: this.audit, palCwd: (id) => this.pals?.list().find((p) => p.id === id)?.cwd });
+    this.fileWatches = new FileWatches({ files: this.files, bus: this.bus });
     this.chat = new ChatLog(this.paths.chat, this.bus);
     this.tasks = new TaskTracker(this.paths.tasks, this.paths.taskActivity, this.bus, (t, k) => this.proactive.onTaskTransition(t, k));
     this.watches = new WatchStore(this.paths.watches, this.bus);
@@ -491,6 +495,7 @@ export class Hub {
     this.conversation.stopIdleCompact();
     if (this.suggestionTimer) clearInterval(this.suggestionTimer);
     this.artifacts.stop();
+    this.fileWatches.stop();
     this.conversation.close();
     for (const c of this.clients.values()) c.off();
   }

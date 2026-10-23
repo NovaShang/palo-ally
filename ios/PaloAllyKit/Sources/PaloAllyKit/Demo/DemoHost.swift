@@ -81,6 +81,11 @@ public actor DemoHost {
     var helloClient = "ios"
     /// Folders the owner opened from the preview pane (files.folders.*).
     var ownerFolders: [OwnerFolder] = []
+    /// Files changed since the demo began (`-demoFileEditAfter`), by absolute path.
+    var editedFiles: [String: (file: DemoFile, mtime: Int64)] = [:]
+    /// Watched files (files.watch), by scope and path, and whether the demo edit is on its way.
+    var watchedFiles: [String: JSONValue] = [:]
+    var fileEditScheduled = false
     /// Asleep Pals being woken (§12), for words that come meanwhile to wait on.
     var palWakes: [String: Task<Void, Never>] = [:]
     /// Seeded with Pals: an accepted proposal opens a Pal, not a helper.

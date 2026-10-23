@@ -8,6 +8,12 @@ import UIKit
 /// highlighted, pictures, PDFs and the rest in Quick Look (the renderer
 /// ported from Bento Term), with the system share sheet. Over 5 MB the host
 /// sends only the size: said so, nothing fetched.
+///
+/// It follows the file on the computer like an editor's preview: while on
+/// screen (and the app not in the background) the host watches it
+/// (`AppStore.followFile`; an older host is polled) and a change is read
+/// again in place, keeping the scroll position. ⌘R, or 重新载入 in its ⋯,
+/// reads it again by hand.
 struct FilePage: View {
     let target: FileTarget
     /// Shown modally (a path tapped in a reply): a close button.
@@ -23,7 +29,14 @@ struct FilePage: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.placesAsColumns) private var asColumn
+    @Environment(\.scenePhase) private var scenePhase
     @State private var phase = Phase.loading
+    /// Bumped on each re-read, so Quick Look shows the new copy.
+    @State private var revision: Int64 = 0
+    /// Re-reads in flight: only the newest one lands.
+    @State private var readGeneration = 0
+    /// The follow task has run before (back from the background: read it again first).
+    @State private var followedBefore = false
     @State private var raw = false
     /// The scope the file was read from, when it was the fallback.
     @State private var readScope: FileScope?
@@ -44,6 +57,26 @@ struct FilePage: View {
         }
     }
 
+    /// Something is shown (not loading, not failed): worth following.
+    private var isLoaded: Bool {
+        switch phase {
+        case .text, .quickLook, .tooLarge: true
+        default: false
+        }
+    }
+
+    /// What the follow task depends on: the file, where it was read from,
+    /// and whether there is something to follow and the app is in front.
+    private struct Follow: Hashable {
+        let target: FileTarget
+        let scope: FileScope
+        let on: Bool
+    }
+
+    private var follow: Follow {
+        Follow(target: target, scope: readScope ?? target.scope, on: isLoaded && scenePhase != .background)
+    }
+
     private var isMarkdown: Bool {
         if case .text(_, .markdown, _) = phase { return true }
         return false
@@ -54,7 +87,9 @@ struct FilePage: View {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .overlay(alignment: .topTrailing) { paneMenu.padding(10) }
+                .background { reloadKey }
                 .task(id: target) { await load() }
+                .task(id: follow) { await followFile(follow) }
                 .accessibilityIdentifier("file-page")
         } else {
             page
@@ -67,7 +102,9 @@ struct FilePage: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }
             .macPageTop(target.name, subtitle: subtitle, back: close == nil ? { dismiss() } : nil, trailing: AnyView(macTrailing))
+            .background { reloadKey }
             .task(id: target) { await load() }
+            .task(id: follow) { await followFile(follow) }
             .accessibilityIdentifier("file-page")
     }
 
@@ -88,7 +125,7 @@ struct FilePage: View {
                             text: text, raw: raw, imageSource: kind == .markdown ? images : nil)
                 .ignoresSafeArea(edges: .bottom)
         case .quickLook(let url):
-            QuickLookView(url: url, revision: 0)
+            QuickLookView(url: url, revision: revision)
                 .ignoresSafeArea(edges: .bottom)
         case .tooLarge(let size):
             ContentUnavailableView {
@@ -130,8 +167,9 @@ struct FilePage: View {
 
     private var macTrailing: some View {
         HStack(spacing: 8) {
-            if isMarkdown || fileURL != nil {
+            if phase != .loading {
                 MacStripMenu(label: String(localized: "更多", table: "Files")) {
+                    reloadButton
                     if let fileURL {
                         ShareLink(item: fileURL) { Label { Text("共享", tableName: "Files") } icon: { Image(systemName: "square.and.arrow.up") } }
                     }
@@ -156,6 +194,7 @@ struct FilePage: View {
     /// The pane's ⋯: what a page's bar would hold.
     private var paneMenu: some View {
         MacStripMenu(label: String(localized: "更多", table: "Files")) {
+            reloadButton
             if let fileURL {
                 ShareLink(item: fileURL) { Label { Text("共享", tableName: "Files") } icon: { Image(systemName: "square.and.arrow.up") } }
             }
@@ -180,6 +219,22 @@ struct FilePage: View {
         }
     }
 
+    /// 重新载入 in a ⋯ (⌘R does the same).
+    private var reloadButton: some View {
+        Button { Task { await reload() } } label: {
+            Label { Text("重新载入", tableName: "Files") } icon: { Image(systemName: "arrow.clockwise") }
+        }
+    }
+
+    /// ⌘R (Mac, iPad keyboard): read the file again.
+    private var reloadKey: some View {
+        Button("") { Task { await reload() } }
+            .keyboardShortcut("r", modifiers: .command)
+            .frame(width: 0, height: 0)
+            .opacity(0)
+            .accessibilityHidden(true)
+    }
+
     /// A Markdown file's relative pictures, from the same folder on the computer.
     private var images: FilePreviewWebView.ImageSource {
         let store = store
@@ -195,11 +250,33 @@ struct FilePage: View {
         }
     }
 
-    private func load() async {
-        if case .text = phase {} else { phase = .loading }
+    /// Read it again in place: what is shown stays until the new content is
+    /// in (same content: nothing changes), and a failed re-read keeps it.
+    /// Shown nothing yet, or failed: a plain load.
+    private func reload() async {
+        guard isLoaded else { return await load() }
+        await load(quietly: true)
+    }
+
+    /// While `follow.on`: re-read the file each time it changes on disk.
+    private func followFile(_ follow: Follow) async {
+        guard follow.on else { return }
+        // Back in front (or shown again): it may have changed meanwhile.
+        if followedBefore { await reload() }
+        followedBefore = true
+        await store.followFile(follow.scope, path: follow.target.path) {
+            debugLog("file page: re-reading \(follow.target.name), changed on disk")
+            await reload()
+        }
+    }
+
+    private func load(quietly: Bool = false) async {
+        readGeneration += 1
+        let generation = readGeneration
+        if !quietly { if case .text = phase {} else { phase = .loading } }
         do {
             let progress: (Int64, Int64) -> Void = { got, total in
-                if total > ArtifactChunk.maxChunk { phase = .progress(Double(got) / Double(max(total, 1))) }
+                if !quietly, total > ArtifactChunk.maxChunk { phase = .progress(Double(got) / Double(max(total, 1))) }
             }
             let r: (data: Data, mime: String, size: Int64, tooLarge: Bool)
             do {
@@ -210,16 +287,32 @@ struct FilePage: View {
                 r = try await store.readFile(fallbackScope, path: target.path, progress: progress)
                 readScope = fallbackScope
             }
+            guard generation == readGeneration else { return }
             if r.tooLarge {
                 phase = .tooLarge(r.size)
                 return
             }
-            let url = try Self.save(r.data, for: target)
             var kind = FileContentKind.forName(target.name)
             if kind == .text { kind = FileContentKind.sniff(r.data) }
-            phase = kind == .quickLook ? .quickLook(url) : .text(String(decoding: r.data, as: UTF8.self), kind, url)
+            let text = kind == .quickLook ? nil : String(decoding: r.data, as: UTF8.self)
+            // Re-read and the same: leave it be (no re-render, no flash).
+            if quietly, let text, case .text(let shown, let shownKind, _) = phase, shown == text, shownKind == kind { return }
+            if quietly, text == nil, case .quickLook(let shown) = phase, (try? Data(contentsOf: shown)) == r.data { return }
+            let url = try Self.save(r.data, for: target)
+            if let text {
+                phase = .text(text, kind, url)
+            } else {
+                if quietly, case .quickLook = phase { revision += 1 }
+                phase = .quickLook(url)
+            }
+            if quietly { debugLog("file page: \(target.name) re-read (\(r.data.count) bytes)") }
         } catch {
-            phase = .failed(Copy.error(error))
+            guard generation == readGeneration else { return }
+            if quietly {
+                debugLog("file page: re-reading \(target.name) failed: \(error)")
+            } else {
+                phase = .failed(Copy.error(error))
+            }
         }
     }
 

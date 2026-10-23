@@ -799,6 +799,8 @@ public final class AppStore {
             apply(workspacesUpdate: data)
         case RPCEventName.workbenchUpdated:
             PaneTabsHub.shared(for: self).apply(update: data)
+        case RPCEventName.filesChanged:
+            if let c = try? data.decode(FileChanged.self) { FileChangeFeed.shared(for: self).publish(c) }
         case RPCEventName.status:
             // The assistant's own state; a Pal's comes with the Pals list.
             guard scope == .palo else { return }

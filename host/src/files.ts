@@ -191,6 +191,17 @@ export class FileBrowser {
     return { data: buf.toString("base64"), size: st.size, mime, eof: start + len >= st.size };
   }
 
+  // ---------------- files.watch (its stat) ----------------
+
+  /** A file's real path, size and modification time (ms); the same refusals as a read. Not audited. */
+  stat(scope: FileScope, path: string): { real: string; size: number; mtime: number } {
+    const { real } = this.locate(scope, path);
+    const st = statSync(real);
+    if (st.isDirectory()) throw new Error(t("files.err.isDir"));
+    if (!st.isFile()) throw new Error(t("files.err.notFound"));
+    return { real, size: st.size, mtime: Math.round(st.mtimeMs) };
+  }
+
   // ---------------- files.search ----------------
 
   /**
@@ -363,7 +374,7 @@ export function parseScope(v: unknown): FileScope {
   throw new Error(t("files.err.noScope"));
 }
 
-function scopeLabel(s: FileScope): string {
+export function scopeLabel(s: FileScope): string {
   return s.kind === "palo" || s.kind === "home" || s.kind === "root" ? s.kind : `${s.kind}:${s.id}`;
 }
 

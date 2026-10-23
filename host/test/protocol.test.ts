@@ -342,6 +342,11 @@ describe("host ↔ app protocol", () => {
     const big = { params: { scope, path: "video.mov" }, result: await call("files.read", { scope, path: "video.mov" }) };
     expect(big.result.tooLarge).toBe(true);
     methods["files.read"] = [read, big];
+    // The preview follows the file: watched, changed on disk, unwatched.
+    expect((await run("files.watch", { scope, path: "README.md" })).lease).toBeGreaterThan(0);
+    writeFileSync(join(project, "README.md"), "# 文档\n安装说明见 src/app.ts（已更新）\n");
+    expect(hub.fileWatches.check()).toHaveLength(1);
+    await run("files.unwatch", { scope, path: "README.md" });
     await run("files.search", { scope, query: "app", limit: 20 });
     expect((await run("files.resolve", { scope, paths: ["src/app.ts", "README.md:2", "src/nope.ts"] })).files).toHaveLength(2);
     await run("files.folders.browse", { path: project });

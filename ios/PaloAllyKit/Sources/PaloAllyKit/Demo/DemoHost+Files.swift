@@ -141,11 +141,64 @@ extension DemoHost {
         return inside.max { $0.0.count < $1.0.count } ?? ("/", [:])
     }
 
+    /// The file a `files.read`/`files.watch` names: its path in its scope,
+    /// its content now (the demo's edit, if any), and its absolute path.
+    func demoFile(_ p: JSONValue) throws -> (path: String, file: DemoFile, abs: String) {
+        let (root, files) = p["scope"]?["kind"]?.stringValue == "root"
+            ? diskScope(p["path"]?.stringValue ?? "") : try filesScope(p["scope"])
+        guard let path = Self.normalize(p["path"]?.stringValue ?? "", root: root), let file = files[path] else {
+            throw DemoError(message: "找不到这个文件，或者它不在能看的范围里")
+        }
+        let abs = Self.absPath(root, path)
+        return (path, editedFiles[abs]?.file ?? file, abs)
+    }
+
+    /// When the made-up files were last changed (two hours before the demo began; steady, like a real disk's).
+    static let demoFilesTime = Date().epochMillis - 7_200_000
+
+    static func absPath(_ root: String, _ path: String) -> String {
+        root.hasSuffix("/") ? root + path : root + "/" + path
+    }
+
+    static var noFileWatch: Bool { UserDefaults.standard.bool(forKey: "demoNoFileWatch") }
+
+    static func watchKey(_ p: JSONValue) -> String {
+        "\(p["scope"]?["kind"]?.stringValue ?? "")|\(p["scope"]?["id"]?.stringValue ?? "")|\(p["path"]?.stringValue ?? "")"
+    }
+
+    /// `-demoFileEditAfter <seconds>`: that long after the first files.watch,
+    /// every watched file gets a line added at its end (and a newer mtime),
+    /// and `files.changed` says so, as the host's watch would.
+    func scheduleDemoFileEdit() {
+        let after = UserDefaults.standard.double(forKey: "demoFileEditAfter")
+        guard after > 0, !fileEditScheduled else { return }
+        fileEditScheduled = true
+        Task {
+            try? await Task.sleep(for: .seconds(after))
+            editWatchedDemoFiles()
+        }
+    }
+
+    private func editWatchedDemoFiles() {
+        for w in watchedFiles.values {
+            guard let abs = w["abs"]?.stringValue, let current = try? demoFile(w) else { continue }
+            var text = String(decoding: current.file.data, as: UTF8.self)
+            text += "\n## 刚改的\n\n这一段是演示里文件在电脑上被改了以后自己出现的。\n"
+            let mtime = Date().epochMillis
+            editedFiles[abs] = (DemoFile(text), mtime)
+            guard !Self.noFileWatch else { continue }
+            let size = Int64(Data(text.utf8).count)
+            emit(RPCEventName.filesChanged, JSONValue.object(["scope": w["scope"] ?? .null, "path": w["path"] ?? .null,
+                                                              "size": .number(Double(size)), "mtime": .number(Double(mtime))]))
+        }
+    }
+
     /// The `files.*` methods; nil for any other.
     func dispatchFiles(_ method: String, _ p: JSONValue) throws -> JSONValue? {
         switch method {
         case RPCMethod.filesList:
-            let (root, files) = try filesScope(p["scope"])
+            let (root, files) = p["scope"]?["kind"]?.stringValue == "root"
+                ? diskScope((p["path"]?.stringValue ?? "") + "/") : try filesScope(p["scope"])
             let dir = Self.normalize(p["path"]?.stringValue ?? "", root: root)
             guard let dir, dir.isEmpty || Self.isDir(dir, in: files) else { throw DemoError(message: "找不到这个文件，或者它不在能看的范围里") }
             let hidden = p["showHidden"]?.boolValue == true
@@ -157,14 +210,16 @@ extension DemoHost {
                 guard let name = parts.first, hidden || !Self.hiddenNames.contains(name) else { continue }
                 entries[name] = parts.count > 1
                     ? FileEntry(name: name, kind: .dir, size: 0, mtime: Date().epochMillis - 3_600_000)
-                    : FileEntry(name: name, kind: .file, size: file.size, mtime: Date().epochMillis - 7_200_000)
+                    : FileEntry(name: name, kind: .file, size: editedFiles[Self.absPath(root, path)]?.file.size ?? file.size,
+                                mtime: editedFiles[Self.absPath(root, path)]?.mtime ?? Self.demoFilesTime)
             }
             return try .from(FilesListResult(root: root, path: dir, entries: Self.sorted(Array(entries.values))))
         case RPCMethod.filesRead:
-            let (root, files) = p["scope"]?["kind"]?.stringValue == "root"
-                ? diskScope(p["path"]?.stringValue ?? "") : try filesScope(p["scope"])
-            guard let path = Self.normalize(p["path"]?.stringValue ?? "", root: root), let file = files[path] else {
-                throw DemoError(message: "找不到这个文件，或者它不在能看的范围里")
+            let (path, file, abs) = try demoFile(p)
+            // `-demoNoFileWatch`: a host from before files.watch; the edit still comes.
+            if Self.noFileWatch, (p["offset"]?.doubleValue ?? 0) == 0, path.hasSuffix(".md") {
+                watchedFiles[Self.watchKey(p)] = ["scope": p["scope"] ?? .null, "path": p["path"] ?? .null, "abs": .string(abs)]
+                scheduleDemoFileEdit()
             }
             let mime = DemoHost.mime(for: path)
             if file.size > FileChunk.maxFile {
@@ -174,6 +229,15 @@ extension DemoHost {
             let end = min(file.data.count, offset + 256 * 1024)
             return ["data": .string(file.data.subdata(in: offset..<end).base64EncodedString()), "size": .number(Double(file.size)),
                     "mime": .string(mime), "eof": .bool(end >= file.data.count)]
+        case RPCMethod.filesWatch where !Self.noFileWatch:
+            let (_, file, abs) = try demoFile(p)
+            watchedFiles[Self.watchKey(p)] = ["scope": p["scope"] ?? .null, "path": p["path"] ?? .null, "abs": .string(abs)]
+            scheduleDemoFileEdit()
+            return ["size": .number(Double(file.size)), "mtime": .number(Double(editedFiles[abs]?.mtime ?? Self.demoFilesTime)),
+                    "lease": 90_000]
+        case RPCMethod.filesUnwatch where !Self.noFileWatch:
+            watchedFiles[Self.watchKey(p)] = nil
+            return ["ok": true]
         case RPCMethod.filesSearch:
             let (_, files) = try filesScope(p["scope"])
             let q = (p["query"]?.stringValue ?? "").trimmingCharacters(in: .whitespaces).lowercased()

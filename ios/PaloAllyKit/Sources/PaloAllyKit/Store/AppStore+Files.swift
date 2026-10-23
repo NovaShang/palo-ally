@@ -29,6 +29,83 @@ extension AppStore {
         }
     }
 
+    // MARK: following a file on screen
+
+    /// Follow one file for as long as the calling task runs (a preview on
+    /// screen): `changed` is called each time it changed on disk. The host
+    /// watches it (`files.watch`, renewed at a third of its lease, so a
+    /// restarted host picks it up again) and says so with `files.changed`; a
+    /// host from before that is asked every `pollInterval` for the file's
+    /// size and time (its folder's `files.list`). Never throws: offline it
+    /// waits and tries again.
+    public func followFile(_ scope: FileScope, path: String, pollInterval: Duration = .milliseconds(1500),
+                           changed: @escaping @MainActor () async -> Void) async {
+        let params = FilesWatchParams(scope: scope, path: path)
+        let name = (path as NSString).lastPathComponent
+        let feed = FileChangeFeed.shared(for: self)
+        let (stream, token) = feed.subscribe()
+        defer { feed.unsubscribe(token) }
+        var lease = Duration.seconds(30)
+        while !Task.isCancelled {
+            do {
+                let r: FilesWatchResult = try await rpc.call(RPCMethod.filesWatch, params: params)
+                lease = .milliseconds(max(5_000, r.lease / 3))
+                break
+            } catch {
+                if Self.unknownMethod(error) {
+                    debugLog("files: follow \(name) by polling (host has no files.watch)")
+                    await pollFile(scope, path: path, every: pollInterval, changed: changed)
+                    return
+                }
+                // Offline, or not there (yet): try again in a while.
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
+        guard !Task.isCancelled else { return }
+        debugLog("files: watching \(name)")
+        let rpc = rpc
+        let renew = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: lease)
+                guard !Task.isCancelled else { return }
+                _ = try? await rpc.call(RPCMethod.filesWatch, params: params, as: FilesWatchResult.self)
+            }
+        }
+        for await c in stream where c.scope == scope && c.path == path && !c.gone {
+            debugLog("files: \(name) changed on disk (\(c.size) bytes)")
+            await changed()
+        }
+        renew.cancel()
+        Task { _ = try? await rpc.call(RPCMethod.filesUnwatch, params: params, as: OKResult.self) }
+    }
+
+    /// An older host: the file's size and time from its folder's listing, compared.
+    private func pollFile(_ scope: FileScope, path: String, every interval: Duration,
+                          changed: @escaping @MainActor () async -> Void) async {
+        let dir = (path as NSString).deletingLastPathComponent
+        let name = (path as NSString).lastPathComponent
+        var last: (Int64, Int64)?
+        while !Task.isCancelled {
+            if let list = try? await listFiles(scope, path: dir, showHidden: true),
+               let e = list.entries.first(where: { $0.name == name && !$0.isDir }) {
+                let now = (e.size, e.mtime)
+                if let before = last, before != now {
+                    debugLog("files: \(name) changed on disk (polled, \(e.size) bytes)")
+                    last = now
+                    await changed()
+                } else {
+                    last = now
+                }
+            }
+            try? await Task.sleep(for: interval)
+        }
+    }
+
+    nonisolated static func unknownMethod(_ error: Error) -> Bool {
+        if case .remote(let m)? = error as? RPCError { return m.lowercased().contains("unknown method") }
+        return "\(error)".lowercased().contains("unknown method")
+    }
+
     /// File and folder names under the scope's folder, best first.
     public func searchFiles(_ scope: FileScope, query: String, limit: Int = 50) async throws -> FilesSearchResult {
         try await rpc.call(RPCMethod.filesSearch, params: FilesSearchParams(scope: scope, query: query, limit: limit))
@@ -60,5 +137,36 @@ extension AppStore {
 
     public func removeOwnerFolder(id: String) async throws {
         let _: OKResult = try await rpc.call(RPCMethod.filesFoldersRemove, params: FolderRemoveParams(id: id))
+    }
+}
+
+/// `files.changed` events, to the previews following their files (one feed
+/// per computer: a Pal's or session's store shares its computer's).
+@MainActor
+public final class FileChangeFeed {
+    private static let table = NSMapTable<AppStore, FileChangeFeed>(keyOptions: .weakMemory, valueOptions: .strongMemory)
+    private var subscribers: [UUID: AsyncStream<FileChanged>.Continuation] = [:]
+
+    public static func shared(for store: AppStore) -> FileChangeFeed {
+        let root = store.parent ?? store
+        if let f = table.object(forKey: root) { return f }
+        let f = FileChangeFeed()
+        table.setObject(f, forKey: root)
+        return f
+    }
+
+    public func subscribe() -> (AsyncStream<FileChanged>, UUID) {
+        let id = UUID()
+        let (stream, continuation) = AsyncStream<FileChanged>.makeStream(bufferingPolicy: .bufferingNewest(8))
+        subscribers[id] = continuation
+        return (stream, id)
+    }
+
+    public func unsubscribe(_ id: UUID) {
+        subscribers.removeValue(forKey: id)?.finish()
+    }
+
+    public func publish(_ change: FileChanged) {
+        for c in subscribers.values { c.yield(change) }
     }
 }

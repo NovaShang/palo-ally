@@ -2,11 +2,13 @@
 // inside a scope only, symlinks followed and checked, `..` refused,
 // PaloAlly's own state never readable, owner devices only.
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { Audit } from "../src/audit.ts";
 import { FileBrowser, MAX_READ_BYTES, cleanCandidate, parseScope } from "../src/files.ts";
+import { FileWatches, type FileChanged } from "../src/fileWatch.ts";
+import { Bus } from "../src/bus.ts";
 import { parseAllyWire } from "../src/proto/ally.ts";
 import { handleRpc } from "../src/rpc.ts";
 import { Paths } from "../src/config.ts";
@@ -237,6 +239,8 @@ describe("files", () => {
       ["files.folders.browse", {}],
       ["files.folders.add", { path: paths.home }],
       ["files.folders.remove", { id: "fld_x" }],
+      ["files.watch", { scope: { kind: "palo" }, path: "notes.md" }],
+      ["files.unwatch", { scope: { kind: "palo" }, path: "notes.md" }],
     ] as const) {
       await expect(stranger(m, p)).rejects.toThrow("只有主人自己的设备");
     }
@@ -244,5 +248,86 @@ describe("files", () => {
     expect(parseAllyWire(JSON.stringify({ id: 1, method: "files.read", params: { scope: { kind: "palo" }, path: "notes.md" } }))).toBeNull();
     expect(parseAllyWire(JSON.stringify({ type: "files.read", scope: { kind: "palo" }, path: "notes.md" }))).toBeNull();
     expect(hub.audit.tail(10).filter((e) => e.type === "files.read")).toHaveLength(1);
+  });
+
+  test("files.watch: a preview follows its file (edits, atomic saves, deletion), a lease nobody renews lapses", async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "paloally-watch-")));
+    made.push(dir);
+    const file = join(dir, "notes.md");
+    writeFileSync(file, "# one\n");
+    const audit = new Audit(join(dir, "audit.jsonl"));
+    const files = new FileBrowser({ paths: new Paths(join(dir, ".paloally")), audit, palCwd: () => undefined });
+    const bus = new Bus();
+    const seen: FileChanged[] = [];
+    bus.on((event, data) => {
+      if (event === "files.changed") seen.push(data as FileChanged);
+    });
+    let now = 1_000;
+    // The sweep alone (no folder watch), driven by hand.
+    const w = new FileWatches({ files, bus, now: () => now, folderWatch: false, pollMs: 60_000 });
+    const scope = { kind: "root" } as const;
+    const first = w.watch(scope, file);
+    expect(first).toMatchObject({ size: 6, lease: 90_000 });
+    expect(w.check()).toEqual([]);
+    // An edit in place (same size, newer mtime).
+    writeFileSync(file, "# two\n");
+    utimesSync(file, new Date(), new Date(Date.now() + 5_000));
+    expect(w.check()).toEqual([{ scope, path: file, size: 6, mtime: expect.any(Number) }]);
+    expect(w.check()).toEqual([]);
+    // Saved the way editors do: a new file renamed over the old one.
+    writeFileSync(join(dir, ".notes.md.tmp"), "# three, longer\n");
+    renameSync(join(dir, ".notes.md.tmp"), file);
+    expect(w.check().map((c) => c.size)).toEqual([16]);
+    // Gone, then back.
+    rmSync(file);
+    expect(w.check()).toEqual([{ scope, path: file, size: 0, mtime: 0, gone: true }]);
+    expect(w.check()).toEqual([]);
+    writeFileSync(file, "# back\n");
+    expect(w.check().map((c) => c.gone ?? false)).toEqual([false]);
+    expect(seen).toHaveLength(4);
+    // Renewed, it stays; not renewed, it lapses.
+    now += 60_000;
+    w.watch(scope, file);
+    now += 60_000;
+    expect(w.count).toBe(1);
+    w.check();
+    expect(w.count).toBe(1);
+    now += 31_000;
+    w.check();
+    expect(w.count).toBe(0);
+    // Unwatched: no more news. A missing file can't be watched.
+    w.watch(scope, file);
+    w.unwatch(scope, file);
+    expect(w.count).toBe(0);
+    expect(() => w.watch(scope, join(dir, "nope.md"))).toThrow();
+    // Reads aren't audited by watching.
+    expect(audit.tail(10)).toEqual([]);
+    w.stop();
+  });
+
+  test("files.watch: the folder watch reports a save within a moment, once", async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "paloally-watch-")));
+    made.push(dir);
+    const file = join(dir, "page.html");
+    writeFileSync(file, "<p>one</p>");
+    const files = new FileBrowser({ paths: new Paths(join(dir, ".paloally")), audit: new Audit(join(dir, "audit.jsonl")), palCwd: () => undefined });
+    const bus = new Bus();
+    const seen: FileChanged[] = [];
+    bus.on((event, data) => {
+      if (event === "files.changed") seen.push(data as FileChanged);
+    });
+    const w = new FileWatches({ files, bus, pollMs: 60_000, settleMs: 50 });
+    w.watch({ kind: "root" }, file);
+    await new Promise((r) => setTimeout(r, 50));
+    // Three quick writes: one change, after they settle.
+    writeFileSync(file, "<p>two</p>");
+    writeFileSync(file, "<p>three</p>");
+    writeFileSync(file, "<p>four!</p>");
+    const until = Date.now() + 3_000;
+    while (!seen.length && Date.now() < until) await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ scope: { kind: "root" }, path: file, size: 12 });
+    w.stop();
   });
 });
