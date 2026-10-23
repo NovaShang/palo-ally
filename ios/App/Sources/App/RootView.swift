@@ -260,6 +260,12 @@ private struct LayoutStressTest: ViewModifier {
                         let r = AppKitBundle.object?.perform(NSSelectorFromString("click:"), with: a.dropFirst(6).replacingOccurrences(of: ";", with: ","))?
                             .takeUnretainedValue() as? String
                         debugLog("[nav] \(r ?? "no AppKit bundle")")
+                    // `rpress:650;300;1.5` a right press there held 1.5 s (a short one: 0.1);
+                    // `rpress:650;300;2;400;600` moved to 400,600 while held (MacRightHold).
+                    case _ where a.hasPrefix("rpress:"):
+                        let r = AppKitBundle.object?.perform(NSSelectorFromString("rightPress:"), with: a.dropFirst(7).replacingOccurrences(of: ";", with: ","))?
+                            .takeUnretainedValue() as? String
+                        debugLog("[nav] \(r ?? "no AppKit bundle")")
                     #endif
                     // `split`: each window's split view controllers and their inspector widths.
                     case "split":

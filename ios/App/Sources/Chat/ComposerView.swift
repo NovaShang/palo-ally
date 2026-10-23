@@ -71,6 +71,9 @@ struct ComposerView: View {
     @State private var pressSerial = 0
     /// A finished hold is still resolving its final text: ignore new presses.
     @State private var finishingHold = false
+    /// The hold under way is the right mouse button's (`pointerHold`), not a press on the field.
+    @State private var pointerHolding = false
+    @State private var onScreen = false
     /// When the press on the field being edited landed (timing only).
     @State private var editTouchTime: TimeInterval?
     /// Where this composer is, kept for the voice when its tile becomes the active one.
@@ -331,6 +334,13 @@ struct ComposerView: View {
         #if DEBUG
         .task { await runVoiceDrill() }
         #endif
+        // The Mac: the right mouse button held anywhere in the window, for this composer (MacRightHold).
+        .onReceive(NotificationCenter.default.publisher(for: PointerVoice.note)) { note in
+            guard let e = PointerVoice.from(note), e.window == ObjectIdentifier(model), e.owner == tile?.id else { return }
+            pointerHold(e)
+        }
+        .onAppear { onScreen = true }
+        .onDisappear { onScreen = false }
         // Rotation changes the home-indicator inset.
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _ in homeInset = DisplayCorners.bottomInset }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { keyboardMoved($0) }
@@ -779,6 +789,60 @@ struct ComposerView: View {
     }
     #endif
 
+    /// The Mac: the right mouse button held anywhere in the window (Bento
+    /// Term's right-hold): the same hold as a press on the field, already
+    /// past its threshold, so it commits at once; the pointer picks 取消 or
+    /// 编辑 by going onto them, and letting go anywhere else sends.
+    private func pointerHold(_ e: PointerVoice) {
+        switch e.phase {
+        case .began:
+            guard onScreen, !finishingHold, !dictating, !pressing, !voice.isActive, !voice.isArmed else {
+                debugLog("[hold] right mouse held, but this composer is busy\(onScreen ? "" : " (not on screen)")")
+                return
+            }
+            claimVoice()
+            VoiceTiming.begin("right mouse held")
+            guard voice.arm() else {
+                debugLog("[hold] right mouse held, no microphone yet")
+                return
+            }
+            voice.draftPrefix = draft
+            pressing = true
+            moved = false
+            voiceStarted = false
+            pressSerial += 1
+            pointerHolding = true
+            voice.panelMounted = true
+            pressHeld(.began, at: .zero)
+            debugLog("[hold] talking from the right mouse button\(tile.map { ", pane \($0.id.prefix(12))" } ?? ""), the composer at \(Int(capsuleFrame.minX)),\(Int(capsuleFrame.minY)) \(Int(capsuleFrame.width))x\(Int(capsuleFrame.height))")
+        case .moved:
+            guard pointerHolding else { return }
+            pressHeld(.changed, at: capsulePoint(e.point))
+        case .ended:
+            guard pointerHolding else { return }
+            pointerHolding = false
+            pressHeld(.ended, at: capsulePoint(e.point))
+        case .cancelled:
+            guard pointerHolding else { return }
+            pointerHolding = false
+            debugLog("[hold] the right mouse hold was taken away: nothing sent")
+            pressHeld(.cancelled, at: .zero)
+        }
+    }
+
+    /// A point in the window as the capsule's press would have it
+    /// (VoiceLayout): on the 取消 / 编辑 zones above the capsule (a little
+    /// around them too) those; anywhere else 发送.
+    private func capsulePoint(_ p: CGPoint) -> CGPoint {
+        let c = capsuleFrame
+        let send = CGPoint(x: c.width / 2, y: c.height / 2)
+        guard c.width > 0 else { return send }
+        let top = c.minY - VoiceInputPanel.gap - VoiceInputPanel.zoneHeight
+        let zones = CGRect(x: c.minX - 16, y: top - 16, width: c.width + 32, height: c.minY - top + 12)
+        guard zones.contains(p) else { return send }
+        return CGPoint(x: min(max(p.x - c.minX, 0), c.width), y: -40)
+    }
+
     /// Lifted (tap) or moved away (scroll) before the hold committed.
     private func pressLifted(tap: Bool) {
         guard pressing else { return }
@@ -836,6 +900,7 @@ struct ComposerView: View {
     /// Gesture interrupted (app left the foreground).
     private func resetPress() {
         pressing = false
+        pointerHolding = false
         voiceStarted = false
         moved = false
         voice.abort()

@@ -207,6 +207,8 @@ final class WindowModel {
         macToolbarPage = nil
         macToolbarMenus = nil
     }
+    /// The Mac: Palo's popover is open over this window (MacRightHold talks to it).
+    @ObservationIgnored var paloPopoverUp = false
     /// Each workspace's active tile (a session id), kept while the window is open.
     var activeTiles: [String: String] = [:]
     /// Phones (and short windows): the right pane as a full page.

@@ -208,7 +208,13 @@ struct PaloPopover: View {
             .environment(voice)
             .frame(width: Self.size.width, height: Self.size.height)
             .presentationCompactAdaptation(.popover)
-            .onAppear { debugLog("[windows] Palo's popover up in \(model.traceName)") }
-            .onDisappear { debugLog("[windows] Palo's popover gone in \(model.traceName)") }
+            .onAppear {
+                model.paloPopoverUp = true
+                debugLog("[windows] Palo's popover up in \(model.traceName)")
+            }
+            .onDisappear {
+                model.paloPopoverUp = false
+                debugLog("[windows] Palo's popover gone in \(model.traceName)")
+            }
     }
 }

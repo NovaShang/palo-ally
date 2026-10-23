@@ -241,7 +241,16 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
         titlebar.separatorStyle = .none
         titlebar.toolbar = bar.toolbar
         AppKitBundle.immerseWindows(toolbar: "palo.main")
+        MacRightHold.install()
     }
+
+    /// The model of the window whose toolbar is `id` (MacRightHold).
+    static func model(toolbar id: String) -> WindowModel? {
+        installed.values.first { $0.toolbar.identifier == id }?.model
+    }
+
+    /// Every window's model.
+    static var models: [WindowModel] { installed.values.map(\.model) }
 
     private init(model: WindowModel) {
         self.model = model
