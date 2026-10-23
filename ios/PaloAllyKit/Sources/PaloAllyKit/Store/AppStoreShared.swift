@@ -61,7 +61,8 @@ final class AppStoreShared {
 
     func palSlot(_ id: String) -> PalSlot {
         if let s = palSlots[id] { return s }
-        let s = PalSlot(pals.first { $0.id == id })
+        // Not through `pals`: a view's first read made it follow the whole list once.
+        let s = PalSlot(_pals.first { $0.id == id })
         palSlots[id] = s
         return s
     }
@@ -70,7 +71,7 @@ final class AppStoreShared {
     func syncPalSlots() {
         for (id, slot) in palSlots {
             let p = pals.first { $0.id == id }
-            if slot.pal != p { slot.pal = p }
+            if slot.pal != p { slot.update(p) }
         }
     }
 }
@@ -81,8 +82,30 @@ final class AppStoreShared {
 @MainActor
 @Observable
 final class PalSlot {
-    var pal: Pal?
-    init(_ pal: Pal?) { self.pal = pal }
+    private(set) var pal: Pal?
+    // A few of its facts observed apart: a view showing only its name (a
+    // composer's prompt, a pane's title) or its state isn't re-rendered by
+    // the status line and context ticking while the session works.
+    private(set) var name: String?
+    private(set) var status: PalStatus?
+    private(set) var tasksRunning = 0
+    private(set) var attention: PalAttention?
+
+    init(_ pal: Pal?) {
+        self.pal = pal
+        name = pal?.displayName
+        status = pal?.status
+        tasksRunning = pal?.tasksRunning ?? 0
+        attention = pal?.attention
+    }
+
+    func update(_ p: Pal?) {
+        pal = p
+        if name != p?.displayName { name = p?.displayName }
+        if status != p?.status { status = p?.status }
+        if tasksRunning != p?.tasksRunning ?? 0 { tasksRunning = p?.tasksRunning ?? 0 }
+        if attention != p?.attention { attention = p?.attention }
+    }
 }
 
 /// A session on its way to becoming a Pal (`pals.adopt`).

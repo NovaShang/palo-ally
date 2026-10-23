@@ -70,7 +70,7 @@ struct ChatView: View {
     private var macPage: Bool { Platform.barInWindowToolbar && !isPalo && !inTile }
     private var title: String {
         isPalo ? store.assistantName
-            : store.palID.flatMap { store.singlePal(id: $0)?.displayName } ?? store.viewedSessionID.flatMap { store.viewedSession($0)?.name } ?? ""
+            : store.palID.flatMap { store.singlePalName(id: $0) } ?? store.viewedSessionID.flatMap { store.viewedSession($0)?.name } ?? ""
     }
 
     var body: some View {
@@ -579,13 +579,13 @@ private struct ConversationRows: View {
     /// still says it's being written (it lingered there a few frames).
     private var showsBusyIndicator: Bool {
         // A Pal stopped on a card: the card is the news, not a spinner.
-        if let id = store.palID, store.singlePal(id: id)?.status == .waiting, !store.awaitingReply { return false }
+        if let id = store.palID, store.singlePalStatus(id: id) == .waiting, !store.awaitingReply { return false }
         return store.connection.isOnline && (store.awaitingReply || (store.status?.busy == true && !store.replyEndedSinceStatus))
     }
 
     /// Subagents and background tasks still running (the session's, or Palo's own).
     private var backgroundRunning: Int {
-        if let id = store.palID { return store.singlePal(id: id)?.tasksRunning ?? 0 }
+        if let id = store.palID { return store.singlePalTasksRunning(id: id) }
         return store.scope == .palo ? store.paloTasksRunning : 0
     }
 

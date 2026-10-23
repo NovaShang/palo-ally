@@ -118,6 +118,38 @@ struct PalsStoreTests {
         #expect(page.singlePal(id: "pal-site") == nil)
     }
 
+    /// Its name, state and running tasks are observed apart: the status line
+    /// and context ticking while it works don't notify their readers.
+    @Test func singlePalFactsIgnoreTicks() async throws {
+        let (store, _) = await demoStore()
+        let page = store.palStore("pal-site")
+        func changes(_ read: @escaping () -> Void, when change: () -> Void) -> Bool {
+            final class Fired: @unchecked Sendable { var on = false }
+            let fired = Fired()
+            withObservationTracking(read) { fired.on = true }
+            change()
+            return fired.on
+        }
+        let facts = {
+            _ = page.singlePalName(id: "pal-site")
+            _ = page.singlePalStatus(id: "pal-site")
+            _ = page.singlePalTasksRunning(id: "pal-site")
+            _ = page.singlePalAttention(id: "pal-site")
+        }
+        var list = store.pals
+        list[0].lastLine = "在跑测试"
+        list[0].contextPct = 42
+        #expect(!changes(facts, when: { store.setPals(list, others: nil) }))
+        list[0].name = "新名字"
+        #expect(changes({ _ = page.singlePalName(id: "pal-site") }, when: { store.setPals(list, others: nil) }))
+        #expect(page.singlePalName(id: "pal-site") == "新名字")
+        list[0].status = list[0].status == .busy ? .idle : .busy
+        #expect(changes({ _ = page.singlePalStatus(id: "pal-site") }, when: { store.setPals(list, others: nil) }))
+        list.remove(at: 0)
+        #expect(changes({ _ = page.singlePalName(id: "pal-site") }, when: { store.setPals(list, others: nil) }))
+        #expect(page.singlePalName(id: "pal-site") == nil)
+    }
+
     @Test func listLoadsWithTheOtherSessions() async throws {
         let (store, _) = await demoStore()
         #expect(store.palsSupported == true && store.sessionHooksEnabled == true)

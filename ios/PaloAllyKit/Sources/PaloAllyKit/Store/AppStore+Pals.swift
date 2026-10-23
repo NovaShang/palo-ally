@@ -15,6 +15,13 @@ extension AppStore {
     /// reads the whole list). For what each tile and page shows of its own session.
     public func singlePal(id: String) -> Pal? { shared.palSlot(id).pal }
 
+    /// One fact of the same Pal, observed on its own (`singlePal` re-renders
+    /// its reader on every tick of the session's status line and context).
+    public func singlePalName(id: String) -> String? { shared.palSlot(id).name }
+    public func singlePalStatus(id: String) -> PalStatus? { shared.palSlot(id).status }
+    public func singlePalTasksRunning(id: String) -> Int { shared.palSlot(id).tasksRunning }
+    public func singlePalAttention(id: String) -> PalAttention? { shared.palSlot(id).attention }
+
     /// The Pals as the list shows them: awake ones first, then those asleep
     /// (§12), each the most lately used first.
     public var listedPals: [Pal] { Pal.listed(pals) }

@@ -300,7 +300,7 @@ private struct PaneTitle: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
-        let name = id == LayoutTree.paloPane ? store.assistantName : store.singlePal(id: id)?.displayName ?? ""
+        let name = id == LayoutTree.paloPane ? store.assistantName : store.singlePalName(id: id) ?? ""
         #if DEBUG || PERF_HARNESS
         let _ = PerfProbe.count("PaneTitle")
         #endif

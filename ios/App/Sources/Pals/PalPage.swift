@@ -41,7 +41,7 @@ private struct PalConversation: View {
 
     private var pal: Pal? { store.singlePal(id: palID) ?? last }
     /// No longer on the list (ended here or elsewhere, or gone at the computer).
-    private var gone: Bool { store.singlePal(id: palID) == nil && store.palsSupported == true }
+    private var gone: Bool { store.singlePalName(id: palID) == nil && store.palsSupported == true }
     /// Words sent to it asleep: it's being woken (§12).
     private var waking: Bool { store.status?.busy == true && store.status?.activity == AppStore.wakingActivity }
 
@@ -51,9 +51,16 @@ private struct PalConversation: View {
         #endif
         ChatView(bottomPanel: bottom, pageTop: inTile ? nil : .init(subtitle: subtitle, dot: waking ? .working : pal?.dot, capsule: true),
                  inTile: inTile)
-            .onChange(of: store.singlePal(id: palID), initial: true) { _, p in if let p { last = p } }
+            // A tile shows nothing of it but its conversation: it doesn't
+            // follow the session's every tick (its status line, context).
+            .onChange(of: inTile ? nil : store.singlePal(id: palID), initial: true) { _, p in if let p { last = p } }
+            .onChange(of: inTile ? store.singlePalName(id: palID) : nil, initial: true) {
+                // Read after the update: read in it, the whole Pal was followed again.
+                guard inTile else { return }
+                Task { @MainActor in if let p = store.singlePal(id: palID) { last = p } }
+            }
             // Opened, or finished while it is open: seen, on every device.
-            .onChange(of: store.singlePal(id: palID)?.attention, initial: true) { _, a in
+            .onChange(of: store.singlePalAttention(id: palID), initial: true) { _, a in
                 if a == .done { store.markSeen(id: palID) }
             }
             .animation(.snappy, value: panel)
@@ -78,11 +85,11 @@ private struct PalConversation: View {
 
     /// In place of the composer: what's being asked, or the line to copy.
     private var bottom: AnyView? {
-        let name = pal?.displayName ?? String(localized: "它")
         let content: AnyView
         switch panel {
         case .none:
             guard gone else { return nil }
+            let name = pal?.displayName ?? String(localized: "它")
             content = AnyView(
                 NoticePanel(text: Copy.spaced(String(localized: "\(name)已经不在会话列表里了。对话记录还在电脑上。")), action: String(localized: "回到列表")) {
                     model.showList()
