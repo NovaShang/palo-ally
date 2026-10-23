@@ -115,6 +115,8 @@ enum RightPaneScope {
         if key.hasPrefix("ws:") {
             let wsID = String(key.dropFirst(3))
             let members = store.workspace(id: wsID)?.memberIds ?? []
+            // Palo's pane in use: Palo's files.
+            if activeSessionID == LayoutTree.paloPane { return .palo }
             if let id = activeSessionID ?? members.first { return .pal(id) }
         }
         return .palo

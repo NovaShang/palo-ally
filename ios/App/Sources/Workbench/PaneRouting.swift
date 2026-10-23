@@ -15,8 +15,9 @@ extension WindowModel {
         switch selection ?? .palo {
         case .palo: PaneTabsKey.palo
         case .pal(let id): PaneTabsKey.session(id)
-        // Palo's pane in it: Palo's own tabs while it is the one in use.
-        case .workspace(let id): activeTile(in: id) == LayoutTree.paloPane ? PaneTabsKey.palo : PaneTabsKey.workspace(id)
+        // The workspace's own, whichever pane is in use (Palo's included):
+        // only the 文件 tab's folder follows the pane (`paneSessionID`).
+        case .workspace(let id): PaneTabsKey.workspace(id)
         default: nil
         }
     }
@@ -42,9 +43,10 @@ extension WindowModel {
         return LayoutTree.leafOrder(of: tree).contains(LayoutTree.paloPane)
     }
 
-    /// The session a workspace's files belong to (nil elsewhere, and while Palo's pane is the one in use).
+    /// The pane a workspace's 文件 tab follows: its session, or
+    /// `LayoutTree.paloPane` for Palo's (nil elsewhere).
     var paneSessionID: String? {
-        if case .workspace(let id)? = selection, let tile = activeTile(in: id), tile != LayoutTree.paloPane { return tile }
+        if case .workspace(let id)? = selection, let tile = activeTile(in: id) { return tile }
         return nil
     }
 
@@ -146,10 +148,11 @@ extension WindowModel {
             // Palo's pane of the open workspace: it stays, its pane becomes the one in use.
             if case .workspace(let w)? = selection, showsPalo(in: w) {
                 activate(tile: LayoutTree.paloPane, in: w)
-            } else if selection != .palo {
-                openPalo()
+                key = PaneTabsKey.workspace(w)
+            } else {
+                if selection != .palo { openPalo() }
+                key = PaneTabsKey.palo
             }
-            key = PaneTabsKey.palo
         default:
             return false
         }
