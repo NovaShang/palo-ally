@@ -7720,6 +7720,16 @@
           }
         }
       }
+    },
+    "把%@放进来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bring %@ in"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
