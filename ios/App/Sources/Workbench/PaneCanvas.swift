@@ -173,23 +173,37 @@ final class PaneCanvasController: UIViewController {
     }
 
     /// The panes' frames: the tree's rects, 1pt hairlines between them (none at the canvas's edges).
-    static func paneFrames(of tree: LayoutTree.Node, in size: CGSize) -> [String: CGRect] {
+    /// Each pane's frame, on whole device pixels (`scale`, with the canvas
+    /// at `origin` in its window): a pane at a half pixel drew its text
+    /// blurred, on a 1x display above all.
+    static func paneFrames(of tree: LayoutTree.Node, in size: CGSize, scale: CGFloat = 2, origin: CGPoint = .zero) -> [String: CGRect] {
+        let s = max(scale, 1)
         let line: CGFloat = 1
+        func px(_ v: CGFloat, _ o: CGFloat) -> CGFloat { ((v + o) * s).rounded() / s - o }
         return LayoutTree.fractions(of: tree).mapValues { f in
-            var minX = (f.x * size.width).rounded(), minY = (f.y * size.height).rounded()
-            var maxX = ((f.x + f.w) * size.width).rounded(), maxY = ((f.y + f.h) * size.height).rounded()
+            var minX = f.x * size.width, minY = f.y * size.height
+            var maxX = (f.x + f.w) * size.width, maxY = (f.y + f.h) * size.height
             if minX > 0.5 { minX += line / 2 }
             if minY > 0.5 { minY += line / 2 }
             if maxX < size.width - 0.5 { maxX -= line / 2 }
             if maxY < size.height - 0.5 { maxY -= line / 2 }
+            minX = px(minX, origin.x); minY = px(minY, origin.y)
+            maxX = px(maxX, origin.x); maxY = px(maxY, origin.y)
             return CGRect(x: minX, y: minY, width: max(0, maxX - minX), height: max(0, maxY - minY))
         }
+    }
+
+    /// This canvas's device pixels: its scale and where it sits in its window.
+    private var pixelGrid: (scale: CGFloat, origin: CGPoint) {
+        let scale = view.window?.screen.scale ?? view.traitCollection.displayScale
+        return (scale, view.window.map { view.convert(CGPoint.zero, to: $0) } ?? .zero)
     }
 
     private func layoutCanvas() {
         lastSize = view.bounds.size
         guard let tree, lastSize.width > 0, lastSize.height > 0 else { return }
-        let frames = Self.paneFrames(of: tree, in: lastSize)
+        let grid = pixelGrid
+        let frames = Self.paneFrames(of: tree, in: lastSize, scale: grid.scale, origin: grid.origin)
         for (id, pane) in panes {
             guard let r = frames[id] else { continue }
             if pane.frame != r { pane.frame = r }
