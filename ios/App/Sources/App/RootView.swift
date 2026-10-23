@@ -810,7 +810,7 @@ struct InspectorWidth: UIViewRepresentable {
                 })
             }
             resize = scene.observe(\.effectiveGeometry) { [weak self] _, _ in
-                DispatchQueue.main.async { self?.applySoon(opening: false) }
+                DispatchQueue.main.async { MainActor.assumeIsolated { self?.applySoon(opening: false) } }
             }
             applySoon(opening: true)
         }
