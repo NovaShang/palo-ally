@@ -436,8 +436,13 @@ final class PaneCanvasController: UIViewController {
         }, completion: { _ in c?.removeFromSuperview() })
         // Dropped on the sidebar or outside: nothing happens.
         guard commit, let id, let target, let tree, view.bounds.contains(p),
-              let new = TileDrop.apply(target.zone, moving: id, onto: target.id, in: tree) else { return }
+              let dropped = TileDrop.apply(target.zone, moving: id, onto: target.id, in: tree) else { return }
+        let new = LayoutTree.resized(dropped)
         self.tree = new
+        // A new shape (a pane docked to another's edge) has new boundaries:
+        // their dividers made now. Without it a 2x2 lost a line, and the
+        // host's echo of the same tree never brought it back.
+        syncPanes()
         UIView.animate(withDuration: 0.2) { self.layoutCanvas() }
         onLayoutChange(new)
     }
