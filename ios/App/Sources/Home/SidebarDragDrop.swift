@@ -65,7 +65,7 @@ private struct SidebarRowDragDrop: ViewModifier {
     private func dragDrop(_ content: Content) -> some View {
         let state = SidebarDragState.shared
         let delegate = Delegate(target: target, height: height, state: state, tree: tree, sessionOrder: sessionOrder, perform: perform)
-        source(content
+        return source(content
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
             .overlay { Marker(target: target, state: state) })
             .onDrop(of: [.paloAllySidebarItem], delegate: delegate)
