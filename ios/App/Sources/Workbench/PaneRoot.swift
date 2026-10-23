@@ -125,7 +125,7 @@ private struct PaneContent: View {
             .environment(\.tile, TileContext(id: id, isActive: model.activeTile(in: workspaceID) == id))
             .environment(\.tileDetail, details.binding(id))
             // Each session keeps its own unsent words, here and on its own page.
-            .environment(\.chatDraft, model.draftBinding(.pal(id)))
+            .chatDraft(model.draftBox(.pal(id)))
             .environment(\.fileLinks, FileLinkContext(scope: .pal(id), resolver: .shared(for: store)))
             .environment(\.placesAsColumns, false)
             // The conversation scrolls under the header, with the system's soft edge.
@@ -198,7 +198,7 @@ private struct PaloPaneContent: View {
         ChatView(inTile: true)
             .environment(\.tile, TileContext(id: id, isActive: model.activeTile(in: workspaceID) == id))
             .environment(\.tileDetail, details.binding(id))
-            .environment(\.chatDraft, model.draftBinding(.palo))
+            .chatDraft(model.draftBox(.palo))
             .environment(\.fileLinks, FileLinkContext(scope: .palo, resolver: .shared(for: store)))
             .environment(\.placesAsColumns, false)
             .overlay { TilePaloOrb(owner: id, from: CGPoint(x: PaneMetrics.iconRect.midX, y: PaneMetrics.iconRect.midY)) }

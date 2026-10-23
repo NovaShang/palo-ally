@@ -683,7 +683,7 @@ private struct ConversationDetail: View {
             }
         }
         // Each conversation keeps its own unsent words.
-        .environment(\.chatDraft, model.draftBinding(current))
+        .chatDraft(model.draftBox(current))
         .background {
             // Esc puts 成果 away, like ⌘[.
             if model.libraryBeside && model.paneKey == PaneTabsKey.palo && model.paneIsOpen {
@@ -795,6 +795,15 @@ extension EnvironmentValues {
     @Entry var placesAsColumns = false
     /// The open conversation's unsent text (kept per conversation by WindowModel).
     @Entry var chatDraft: Binding<String> = .constant("")
+    /// The same words' box: what the composer reads (`ComposerView.draftBox`).
+    @Entry var chatDraftBox: DraftBox? = nil
+}
+
+extension View {
+    /// The open conversation's unsent words, for the page and its composer.
+    func chatDraft(_ box: DraftBox) -> some View {
+        environment(\.chatDraft, box.binding).environment(\.chatDraftBox, box)
+    }
 }
 
 #Preview("Demo") {

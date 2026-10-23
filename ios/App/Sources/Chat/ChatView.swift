@@ -33,7 +33,9 @@ struct ChatView: View {
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     /// Kept by MainScreen so it survives the layout switching containers.
-    @Environment(\.chatDraft) private var draft
+    @Environment(\.chatDraftBox) private var draftBox
+    /// Words of its own where none are handed down (previews).
+    @State private var ownDraft = DraftBox()
     /// The one owner of the scroll position (design §3.6): following the
     /// end, letting go when the reader drags up, 「回到最新」, bringing a
     /// message into view. The views only tell it what happened.
@@ -231,7 +233,7 @@ struct ChatView: View {
             } else if let bottomPanel {
                 bottomPanel
             } else {
-            ComposerView(draft: draft, intake: intake) { text, images, files, how in
+            ComposerView(draftBox: draftBox ?? ownDraft, intake: intake) { text, images, files, how in
                 switch how {
                 case .typed:
                     // The message rises to the top as it appears (design §3.5).

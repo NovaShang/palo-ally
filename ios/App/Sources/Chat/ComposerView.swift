@@ -32,7 +32,18 @@ struct ComposerView: View {
     @Environment(\.scenePhase) private var scenePhase
     /// Inside a workspace's tile: only the active one takes voice and focus.
     @Environment(\.tile) private var tile
-    @Binding var draft: String
+    /// The conversation's unsent words, as their box (not a `@Binding`: a
+    /// binding counts as changed on every pass over a view's dynamic
+    /// properties, and any focus change in the window, a click in a web
+    /// page or in another pane, makes such a pass in every composer, which
+    /// then re-rendered every pane's composer). Reading the words here
+    /// still tracks them, so typing redraws this composer.
+    let draftBox: DraftBox
+    private var draft: String {
+        get { draftBox.text }
+        nonmutating set { draftBox.text = newValue }
+    }
+    private var draftBinding: Binding<String> { draftBox.binding }
     /// How a message goes out: typed (it rises to the top in an animation),
     /// or spoken (placed at once under the voice scrim, its words then fly
     /// into it; sent once the final words come, `AppStore.sendStaged`).
@@ -372,7 +383,7 @@ struct ComposerView: View {
         }
         // Dropped on the conversation or pasted: staged as if picked.
         .modifier(IntakeHooks(intake: intake, staged: $staged, focused: focused, room: Self.maxStaged, addImages: addImages))
-        .modifier(ComputerFileSheet(shown: $showComputerFiles, draft: $draft))
+        .modifier(ComputerFileSheet(shown: $showComputerFiles, draft: draftBinding))
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { image in
                 showCamera = false
@@ -487,7 +498,7 @@ struct ComposerView: View {
             // Return is a newline; sending is the send button. On a hardware
             // keyboard / Mac, Return sends (see hardwareReturn) and
             // Shift/Option/⌘+Return is a newline.
-            TextField("", text: $draft, prompt: Text(focused ? prompt : ""), axis: .vertical)
+            TextField("", text: draftBinding, prompt: Text(focused ? prompt : ""), axis: .vertical)
                 // The Mac page has the room: a long dictation stays readable (tiles keep 6).
                 .lineLimit(1...(model.layout != .phone && !compact ? 12 : 6))
                 .focused($focused)

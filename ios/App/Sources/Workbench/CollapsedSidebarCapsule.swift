@@ -197,7 +197,7 @@ struct PaloPopover: View {
     var body: some View {
         ChatView(inTile: true)
             .environment(\.tile, TileContext(id: Self.id, isActive: true))
-            .environment(\.chatDraft, model.draftBinding(.palo))
+            .chatDraft(model.draftBox(.palo))
             .environment(\.fileLinks, FileLinkContext(scope: .palo, resolver: .shared(for: store)))
             .environment(\.placesAsColumns, false)
             .overlay { TilePaloOrb(owner: Self.id, from: CGPoint(x: Self.size.width / 2, y: 0)) }
