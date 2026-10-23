@@ -264,6 +264,9 @@ private struct WorkspaceBar: ViewModifier {
     @Environment(WindowModel.self) private var model
 
     func body(content: Content) -> some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("WorkspaceBar")
+        #endif
         let workspace = store.workspace(id: workspaceID)
         let title = workspace?.title(pals: store.pals) ?? ""
         // The title names the window too (the Mac, an iPad's windows).

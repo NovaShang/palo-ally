@@ -92,7 +92,11 @@ final class WebTabPage: NSObject, ObservableObject, WKNavigationDelegate, WKUIDe
 struct WebTabHost: UIViewRepresentable {
     let page: WebTabPage
     func makeUIView(context: Context) -> WKWebView { page.webView }
-    func updateUIView(_ view: WKWebView, context: Context) {}
+    func updateUIView(_ view: WKWebView, context: Context) {
+        #if DEBUG || PERF_HARNESS
+        PerfProbe.count("upd WebTabHost")
+        #endif
+    }
 }
 
 /// The pages of the pane's web tabs, matched to the stored tabs by address.

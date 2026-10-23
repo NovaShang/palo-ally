@@ -108,6 +108,10 @@ final class AppModel {
     private(set) var hosts: [String: PairedHost] = [:]
     private(set) var stores: [String: AppStore] = [:]
     private var demoHosts: [String: DemoHost] = [:]
+    #if DEBUG
+    /// The demo's computer behind a store (`-demoActions` `tick:` / `stream:`).
+    func demoHost(_ id: String) -> DemoHost? { demoHosts[id] }
+    #endif
     /// The computer used last (the one in the window in front): a new
     /// window and the next launch open on it; phones show it.
     private(set) var lastHostID: String?

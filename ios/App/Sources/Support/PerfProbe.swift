@@ -14,6 +14,8 @@ enum PerfProbe {
     static let on = UserDefaults.standard.bool(forKey: "perfMeter")
     static let alternate = UserDefaults.standard.bool(forKey: "perfAlternate")
     private static var counts: [String: Int] = [:]
+    /// The same, since the last `takeStep()` (a `-demoActions` step's own).
+    private static var stepCounts: [String: Int] = [:]
     private static var link: CADisplayLink?
     private static var target = Linker()
     private static var last: CFTimeInterval = 0
@@ -27,12 +29,21 @@ enum PerfProbe {
     @inline(__always) static func count(_ name: String) {
         guard on else { return }
         counts[name, default: 0] += 1
+        stepCounts[name, default: 0] += 1
     }
 
     /// `n` more of something (rows measured, say).
     @inline(__always) static func add(_ name: String, _ n: Int) {
         guard on, n > 0 else { return }
         counts[name, default: 0] += n
+        stepCounts[name, default: 0] += n
+    }
+
+    /// The bodies counted since the last call, most first; starts the next step.
+    static func takeStep() -> String {
+        defer { stepCounts = [:] }
+        return stepCounts.sorted { $0.value > $1.value || $0.value == $1.value && $0.key < $1.key }
+            .map { "\($0.key)×\($0.value)" }.joined(separator: " ")
     }
 
     static func start() {

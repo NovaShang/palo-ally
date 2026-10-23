@@ -161,6 +161,30 @@ final class ImmersiveWindows: NSObject {
         return lines.joined(separator: "\n")
     }
 
+    /// The pointer moved to "x,y" (as `click:` has them) and resting there,
+    /// in a few steps as a hand's: hovers only, no click.
+    @objc func move(_ spec: String) -> String {
+        guard let id = Self.toolbarID,
+              let window = NSApplication.shared.keyWindow.flatMap({ $0.toolbar?.identifier.hasPrefix(id) == true ? $0 : nil })
+                ?? NSApplication.shared.windows.first(where: { $0.toolbar?.identifier.hasPrefix(id) == true }),
+              let frame = window.contentView?.superview else { return "no window" }
+        let xy = spec.split(separator: ",").compactMap { Double($0) }
+        guard xy.count == 2 else { return "bad point" }
+        let p = NSPoint(x: xy[0], y: frame.bounds.height - xy[1])
+        let number = window.windowNumber
+        for k in 0...4 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(k) * 0.05) {
+                let q = NSPoint(x: p.x - Double(4 - k) * 6, y: p.y + Double(4 - k) * 4)
+                if let e = NSEvent.mouseEvent(with: .mouseMoved, location: q, modifierFlags: [],
+                                              timestamp: ProcessInfo.processInfo.systemUptime,
+                                              windowNumber: number, context: nil, eventNumber: 0, clickCount: 0, pressure: 0) {
+                    NSApplication.shared.postEvent(e, atStart: false)
+                }
+            }
+        }
+        return "moved to \(Int(xy[0])),\(Int(xy[1]))"
+    }
+
     /// A left click at "x,y" (the window's top-left coordinates, as UIKit
     /// has them) queued for the front app window as a real one is (the
     /// title bar's own handling included), paced like a hand's, without

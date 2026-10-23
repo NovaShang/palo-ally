@@ -31,6 +31,9 @@ struct RightPane: View {
     private var scope: FileScope { RightPaneScope.resolve(key: key, activeSessionID: activeSessionID, store: store) }
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("RightPane")
+        #endif
         VStack(spacing: 0) {
             RightPaneTabBar(
                 tabs: state.tabs, active: state.active, key: key, pages: pageByTab,

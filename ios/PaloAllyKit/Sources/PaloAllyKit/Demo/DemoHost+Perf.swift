@@ -72,6 +72,26 @@ enum PerfSeed {
 }
 
 extension DemoHost {
+    /// One status tick of a session (a `-demoActions` `tick:` step): its line
+    /// and context change, and its state when `state` is busy / idle.
+    public func perfTick(_ id: String, state: String?) {
+        setPal(id) {
+            switch state {
+            case "busy": $0.status = .busy
+            case "idle": $0.status = .idle; $0.finishedAt = Date().epochMillis
+            default: break
+            }
+            $0.lastLine = "在跑第 \(Int.random(in: 1...99)) 个测试文件。"
+            $0.contextPct = Int.random(in: 20...90)
+            $0.updatedAt = Date().epochMillis
+        }
+    }
+
+    /// A reply streamed into one session (a `-demoActions` `stream:` step).
+    public func perfStream(_ id: String) async {
+        await streamPal(id, "构建通过了，没有报错。列表页可以看了，接下来做详情页。")
+    }
+
     /// `-demoTick` / `-demoStreamEvery`: what working sessions send while the
     /// owner types in another tile.
     public func startPerfTicks() {

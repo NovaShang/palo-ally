@@ -96,6 +96,9 @@ final class PaneCanvasController: UIViewController {
         self.accent = accent
         if accentChanged { applyAccent() }
         guard new != tree || interactive != self.interactive else { return }
+        #if DEBUG || PERF_HARNESS
+        PerfProbe.count("canvas relayout")
+        #endif
         // Don't relayout under a drag: it lands with the release.
         tree = new
         self.interactive = interactive
@@ -508,6 +511,11 @@ extension PaneCanvasController {
         switch parts.first {
         case "click":
             if parts.count > 1 { panes[parts[1]].map { _ = $0.hitTest(CGPoint(x: 100, y: 100), with: DemoTouchEvent()) } }
+        case "where":
+            for (id, pane) in panes {
+                let r = pane.convert(pane.bounds, to: nil)
+                debugLog("[canvas] where \(id) \(Int(r.minX)),\(Int(r.minY)) \(Int(r.width))x\(Int(r.height))")
+            }
         case "next":
             onMoveFocus(false)
         case "details":
@@ -762,6 +770,9 @@ struct PaneCanvas: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ c: PaneCanvasController, context: Context) {
+        #if DEBUG || PERF_HARNESS
+        PerfProbe.count("upd PaneCanvas")
+        #endif
         update(c)
     }
 

@@ -185,6 +185,7 @@ private struct LayoutStressTest: ViewModifier {
             if let actions = d.string(forKey: "demoActions") {
                 try? await Task.sleep(for: .seconds(d.double(forKey: "demoActionsDelay") > 0 ? d.double(forKey: "demoActionsDelay") : 4))
                 guard model.app.windows.first === model else { return }
+                if PerfProbe.on { debugLog("[perfstep] start | \(PerfProbe.takeStep())") }
                 for step in actions.split(separator: ",").map(String.init) {
                     guard model.store != nil else { break }
                     var w = model
@@ -285,6 +286,11 @@ private struct LayoutStressTest: ViewModifier {
                         let r = AppKitBundle.object?.perform(NSSelectorFromString("click:"), with: a.dropFirst(6).replacingOccurrences(of: ";", with: ","))?
                             .takeUnretainedValue() as? String
                         debugLog("[nav] \(r ?? "no AppKit bundle")")
+                    // `hover:650;300`: the pointer moved there (no click).
+                    case _ where a.hasPrefix("hover:"):
+                        let r = AppKitBundle.object?.perform(NSSelectorFromString("move:"), with: a.dropFirst(6).replacingOccurrences(of: ";", with: ","))?
+                            .takeUnretainedValue() as? String
+                        debugLog("[nav] \(r ?? "no AppKit bundle")")
                     // `rpress:650;300;1.5` a right press there held 1.5 s (a short one: 0.1);
                     // `rpress:650;300;2;400;600` moved to 400,600 while held (MacRightHold).
                     case _ where a.hasPrefix("rpress:"):
@@ -292,6 +298,42 @@ private struct LayoutStressTest: ViewModifier {
                             .takeUnretainedValue() as? String
                         debugLog("[nav] \(r ?? "no AppKit bundle")")
                     #endif
+                    // `tick:pal-site:busy`: that session's status ticks (`busy`/`idle`: its state too).
+                    case _ where a.hasPrefix("tick:"):
+                        let parts = a.split(separator: ":").map(String.init)
+                        if parts.count > 1, let id = w.activeHostID, let host = model.app.demoHost(id) {
+                            await host.perfTick(parts[1], state: parts.count > 2 ? parts[2] : nil)
+                        }
+                    // `stream:pal-blog`: a reply streams into that session.
+                    case _ where a.hasPrefix("stream:"):
+                        if let id = w.activeHostID, let host = model.app.demoHost(id) {
+                            let pal = String(a.dropFirst(7))
+                            Task { await host.perfStream(pal) }
+                        }
+                    // `tab:2`: the right pane's tab at that index shown (its chip clicked).
+                    case _ where a.hasPrefix("tab:"):
+                        if let key = w.paneKey, let i = Int(a.dropFirst(4)) { w.paneHub?.activate(key, at: i) }
+                    // `type:字`: typed into the open page's (the active pane's) draft.
+                    case _ where a.hasPrefix("type:"):
+                        let page: WindowModel.Conversation = {
+                            if case .workspace(let id)? = w.selection, let tile = w.activeTile(in: id) {
+                                return tile == LayoutTree.paloPane ? .palo : .pal(tile)
+                            }
+                            return w.selection ?? .palo
+                        }()
+                        w.draftBox(page).text += String(a.dropFirst(5))
+                    // `web:http://localhost:8765/a.html`: a page opened in the right pane, as a link in a reply does.
+                    case _ where a.hasPrefix("web:"):
+                        if let url = URL(string: String(a.dropFirst(4))) { w.openWebInPane(url) }
+                    // `unfocus`: the keyboard leaves whatever has it.
+                    case "unfocus":
+                        w.scene?.windows.first?.endEditing(true)
+                    // `where`: the split workspace's panes' frames in the window, and its width (for `click:`).
+                    case "where":
+                        for c in PaneCanvasController.all.allObjects where c.view.window?.windowScene === w.scene {
+                            c.demo("where")
+                        }
+                        debugLog("[nav] window \(w.windowWidth) pt")
                     // `split`: each window's split view controllers and their inspector widths.
                     case "split":
                         func walk(_ vc: UIViewController, _ depth: Int) {
@@ -353,6 +395,8 @@ private struct LayoutStressTest: ViewModifier {
                     }
                     #endif
                     try? await Task.sleep(for: .seconds(0.5))
+                    // The bodies this step ran (with `-perfMeter YES`).
+                    if PerfProbe.on { debugLog("[perfstep] \(step) | \(PerfProbe.takeStep())") }
                 }
             }
             guard d.bool(forKey: "resizeTest") else { return }
@@ -405,6 +449,9 @@ struct MainScreen: View {
 
     var body: some View {
         @Bindable var model = model
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("MainScreen")
+        #endif
         NavigationSplitView(columnVisibility: $model.columnVisibility, preferredCompactColumn: $model.compactColumn) {
             ConversationList()
                 .navigationSplitViewColumnWidth(min: 260, ideal: 310, max: 400)
@@ -590,6 +637,9 @@ private struct ConversationDetail: View {
     var body: some View {
         @Bindable var model = model
         let current = model.selection ?? .palo
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("ConversationDetail")
+        #endif
         NavigationStack(path: $model.detailPath) {
             Group {
                 switch current {
@@ -672,6 +722,9 @@ private struct RightPaneHost: ViewModifier {
 
     func body(content: Content) -> some View {
         let key = model.paneKey ?? PaneTabsKey.palo
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("RightPaneHost")
+        #endif
         if !model.libraryBeside {
             content.rightPaneCover(
                 isPresented: Binding(get: { model.paneCover }, set: { model.paneCover = $0 }),

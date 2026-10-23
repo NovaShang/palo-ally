@@ -168,6 +168,9 @@ private struct PaneStateWash: View {
 
     var body: some View {
         let dot = store.singlePal(id: id)?.dot ?? .idle
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("PaneStateWash")
+        #endif
         StatusDot.color(dot).opacity(Self.alpha(dot))
             .animation(.easeInOut(duration: 0.25), value: dot)
             .allowsHitTesting(false)
@@ -189,6 +192,9 @@ private struct PaloPaneContent: View {
     private let id = LayoutTree.paloPane
 
     var body: some View {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("PaloPaneContent")
+        #endif
         ChatView(inTile: true)
             .environment(\.tile, TileContext(id: id, isActive: model.activeTile(in: workspaceID) == id))
             .environment(\.tileDetail, details.binding(id))
@@ -295,6 +301,9 @@ private struct PaneTitle: View {
 
     var body: some View {
         let name = id == LayoutTree.paloPane ? store.assistantName : store.singlePal(id: id)?.displayName ?? ""
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("PaneTitle")
+        #endif
         HStack(spacing: 8) {
             Text(name)
                 .font(.system(size: 12, weight: .semibold))
@@ -325,6 +334,9 @@ private struct PaneStatusButton: View {
     var body: some View {
         let pal = store.singlePal(id: id)
         let dot = pal?.dot ?? .idle
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("PaneStatusButton")
+        #endif
         Button {
             details.tile = details.tile == id ? nil : id
         } label: {
@@ -391,6 +403,9 @@ private struct PaneMenu: View {
     var body: some View {
         let online = store.connection.isOnline
         Menu {
+        #if DEBUG || PERF_HARNESS
+        let _ = PerfProbe.count("PaneMenu")
+        #endif
             Menu("向右分出", systemImage: "rectangle.split.2x1") { choices(horizontal: true) }
                 .disabled(!online)
             Menu("向下分出", systemImage: "rectangle.split.1x2") { choices(horizontal: false) }

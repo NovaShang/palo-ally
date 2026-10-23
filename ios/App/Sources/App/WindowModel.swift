@@ -535,7 +535,8 @@ final class WindowModel {
                     editPane(key) { hub in
                         let cwd = store.pal(id: store.workspace(id: id)?.memberIds.first ?? "pal-site")?.cwd ?? ""
                         hub.openPreview(key, path: cwd.isEmpty ? "README.md" : FilePaths.join(cwd, "README.md"))
-                        hub.openWeb(key, url: "https://example.com")
+                        // `-demoWebURL`: a page of one's own (a local one for measuring).
+                        hub.openWeb(key, url: UserDefaults.standard.string(forKey: "demoWebURL") ?? "https://example.com")
                     }
                     if which == "preview" { hub.activate(key, at: PaneTabsKey.pinnedCount) }
                 }
