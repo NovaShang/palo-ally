@@ -50,13 +50,17 @@ private struct SidebarRowDragDrop: ViewModifier {
     let perform: (SidebarDrop.Move) -> Void
     @Environment(WindowModel.self) private var model
     @State private var height: CGFloat = 0
+    static let enabled = false
 
     @ViewBuilder func body(content: Content) -> some View {
         // Phones only for now: in the sidebar (the Mac, iPads) a click or
         // tap on a session or workspace row stopped selecting it (only the
         // context menu worked). Plain rows there until a drag that keeps
         // selection works is found.
-        if model.layout == .phone {
+        // Off everywhere for now: on iPads and phones too a tap on a
+        // session or workspace row stopped opening it. Back once a drag
+        // that keeps taps is found and tried on a real screen.
+        if Self.enabled {
             dragDrop(content)
         } else {
             content
