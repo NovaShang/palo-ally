@@ -476,6 +476,8 @@ final class WindowModel {
     var showAllyInvite = false
     /// An Ally's invite opened from the system Camera: the confirm sheet.
     var allyInvite: PendingAllyInvite?
+    /// Shared from another app, for the composer of its conversation (ChatView takes it).
+    var shareRequest: ShareRequest?
 
     /// Back to the assistant's conversation and brings message `seq` into view.
     func jumpToMessage(seq: Int64) {
@@ -631,6 +633,8 @@ final class WindowModel {
     /// link goes straight to pairing, an Ally's invite to its confirm sheet.
     func handle(url incoming: URL) {
         guard let url = AppLink.normalized(incoming, ownScheme: Self.urlScheme) else { return }
+        // The share extension opening the app on what was just shared.
+        if ShareInbox.isShareLink(url) { return app.takeShares() }
         // Someone else's assistant (the system Camera opened their QR code):
         // confirmed in a sheet over the conversation, added on this computer.
         if AllyInviteLink.isAllyLink(url.absoluteString) {

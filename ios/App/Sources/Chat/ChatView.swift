@@ -221,6 +221,8 @@ struct ChatView: View {
                                   title: title, pageTop: pageTop))
         // Images and files dropped anywhere on it go to the composer.
         .modifier(ComposerDropTarget(intake: intake, enabled: bottomPanel == nil && store.rewindTarget == nil))
+        // Shared from another app's share sheet to this conversation: staged in the composer.
+        .modifier(ShareTaker(intake: intake, draft: draftBox ?? ownDraft))
         // While holding to talk, the screen's background covers the
         // conversation (same hold-driven motion as the orb and the zones).
         .overlay { VoiceTileGate { VoiceScrimLayer() } }

@@ -594,10 +594,19 @@ final class AppModel {
         // Long stays in the background leave a stale socket: each store forces
         // a fresh connection after 30 s away.
         for s in stores.values { s.didBecomeActive() }
+        // Shared from another app's share sheet while away.
+        takeShares()
+        if !watchingShareTargets {
+            watchingShareTargets = true
+            writeShareTargets()
+            watchShareTargets()
+        }
     }
+    @ObservationIgnored private var watchingShareTargets = false
 
     func didEnterBackground() {
         for id in hostsOnScreen { markSeen(id) }
+        writeShareTargets()
         for s in stores.values { s.didEnterBackground() }
     }
 

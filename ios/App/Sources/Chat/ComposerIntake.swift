@@ -39,15 +39,16 @@ final class ComposerIntake {
         if !isFile, types.allSatisfy({ $0.conforms(to: .text) && !$0.conforms(to: .fileURL) }) { return nil }
         // A file: its bytes under its own name.
         if let url = await fileURL(p), let d = try? Data(contentsOf: url, options: .mappedIfSafe) {
-            return file(d, name: url.lastPathComponent)
+            return staged(d, name: url.lastPathComponent)
         }
         guard let type = types.first(where: { $0.conforms(to: .data) && !$0.conforms(to: .text) }) ?? types.first,
               let d = await data(p, type.identifier) else { return nil }
         let name = p.suggestedName.map { n in n.contains(".") ? n : n + (type.preferredFilenameExtension.map { ".\($0)" } ?? "") }
-        return file(d, name: name ?? String(localized: "文件"))
+        return staged(d, name: name ?? String(localized: "文件"))
     }
 
-    private static func file(_ d: Data, name: String) -> Staged? {
+    /// A file's bytes as the composer stages them: a picture as an image, else a file (nil over 100 MB).
+    static func staged(_ d: Data, name: String) -> Staged? {
         guard d.count <= 100 * 1024 * 1024 else { return nil }
         let type = UTType(filenameExtension: (name as NSString).pathExtension)
         if type?.conforms(to: .image) == true, let img = ImagePrep.process(d) { return .image(img) }

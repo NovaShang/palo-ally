@@ -30,6 +30,7 @@ targets:
     sources:
       - path: Sources
       - path: Resources
+      - path: Shared
     dependencies:
       - package: PaloAllyKit
       - package: PaloAllyKit
@@ -44,6 +45,16 @@ targets:
         codeSign: true
         copy:
           destination: plugins
+      # 分享到 PaloAlly from other apps' share sheets (ShareExtension).
+      # Off until the App Group group.com.novashang.paloally is registered in
+      # the developer portal and assigned to com.novashang.paloally and
+      # com.novashang.paloally.share (the API key's automatic signing can't
+      # register groups). Then uncomment these four lines and the app's
+      # application-groups entitlement below.
+      # - target: PaloAllyShare
+      #   platformFilter: iOS
+      #   embed: true
+      #   codeSign: true
     entitlements:
       path: PaloAlly.entitlements
       properties:
@@ -53,6 +64,10 @@ targets:
         com.apple.security.device.audio-input: true
         com.apple.security.device.camera: true
         com.apple.security.files.user-selected.read-write: true
+        # Shares from the extension come through this group (ShareInbox);
+        # on with the extension above.
+        # com.apple.security.application-groups:
+        #   - group.com.novashang.paloally
     info:
       path: Sources/Info.plist
       properties:
@@ -115,6 +130,51 @@ targets:
         STRING_CATALOG_GENERATE_SYMBOLS: NO
         ENABLE_PREVIEWS: YES
         CODE_SIGN_STYLE: Automatic
+  # 分享到 PaloAlly: the share sheet's extension (ShareExtension). Hands
+  # what was shared to the app through the App Group (Shared/ShareInbox).
+  PaloAllyShare:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: ShareExtension
+      - path: Shared
+    entitlements:
+      path: ShareExtension/PaloAllyShare.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+          - group.com.novashang.paloally
+    info:
+      path: ShareExtension/Info.plist
+      properties:
+        CFBundleDisplayName: PaloAlly
+        CFBundleDevelopmentRegion: zh-Hans
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsAttachmentsWithMaxCount: 6
+              NSExtensionActivationSupportsFileWithMaxCount: 6
+              NSExtensionActivationSupportsImageWithMaxCount: 6
+              NSExtensionActivationSupportsMovieWithMaxCount: 6
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.novashang.paloally.share
+        PRODUCT_NAME: PaloAllyShare
+        SUPPORTS_MACCATALYST: YES
+        DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
+        TARGETED_DEVICE_FAMILY: "1,2,6"
+        SWIFT_EMIT_LOC_STRINGS: YES
+        LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+        STRING_CATALOG_GENERATE_SYMBOLS: NO
+        CODE_SIGN_STYLE: Automatic
+        SKIP_INSTALL: YES
   # The Mac app's AppKit bundle (ios/App/AppKitSupport), loaded at launch.
   PaloAllyAppKit:
     type: bundle
