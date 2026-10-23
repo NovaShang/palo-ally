@@ -242,6 +242,31 @@ private struct LayoutStressTest: ViewModifier {
                             let f = scene.frameOnScreen
                             scene.requestGeometryUpdate(.Mac(systemFrame: CGRect(x: f.minX, y: f.minY, width: wh[0], height: wh[1])))
                         }
+                    // `live:1600:1100`: the window's edge dragged from 1600 to 1100 pt
+                    // wide, a step a frame (a live resize).
+                    case _ where a.hasPrefix("live:"):
+                        let ws = a.dropFirst(5).split(separator: ":").compactMap { Double($0) }
+                        if ws.count == 2, let scene = w.scene {
+                            let f = scene.frameOnScreen
+                            for i in 0...60 {
+                                let width = ws[0] + (ws[1] - ws[0]) * Double(i) / 60
+                                scene.requestGeometryUpdate(.Mac(systemFrame: CGRect(x: f.minX, y: f.minY, width: width, height: f.height)))
+                                try? await Task.sleep(for: .milliseconds(16))
+                            }
+                        }
+                    // `pane-drag:400:800`: the right pane's divider dragged from 400 to 800 pt, a step a frame.
+                    case _ where a.hasPrefix("pane-drag:"):
+                        let ws = a.dropFirst(10).split(separator: ":").compactMap { Double($0) }
+                        func splits(_ vc: UIViewController) -> [UISplitViewController] {
+                            ((vc as? UISplitViewController).map { [$0] } ?? []) + vc.children.flatMap(splits)
+                        }
+                        // The outermost split view holds the inspector (the sidebar's is inside it).
+                        if ws.count == 2, let root = w.scene?.windows.first?.rootViewController, let split = splits(root).first {
+                            for i in 0...60 {
+                                split.preferredInspectorColumnWidth = ws[0] + (ws[1] - ws[0]) * Double(i) / 60
+                                try? await Task.sleep(for: .milliseconds(16))
+                            }
+                        }
                     case _ where a.hasPrefix("open:"):
                         if let c = WindowModel.Conversation(storageKey: String(a.dropFirst(5))) { w.open(c) }
                     // `snap:<name>`: this window to <app tmp>/<name>.png.

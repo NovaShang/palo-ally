@@ -29,6 +29,12 @@ enum PerfProbe {
         counts[name, default: 0] += 1
     }
 
+    /// `n` more of something (rows measured, say).
+    @inline(__always) static func add(_ name: String, _ n: Int) {
+        guard on, n > 0 else { return }
+        counts[name, default: 0] += n
+    }
+
     static func start() {
         guard on, link == nil else { return }
         mainThread = mach_thread_self()
@@ -57,7 +63,7 @@ enum PerfProbe {
         let sorted = deltas.sorted()
         func q(_ p: Double) -> Double { sorted.isEmpty ? 0 : sorted[min(sorted.count - 1, Int(Double(sorted.count) * p))] }
         let hitches = deltas.filter { $0 > max(expected, 8.3) * 1.5 }.count
-        let top = counts.sorted { $0.value > $1.value }.prefix(14).map { "\($0.key)×\($0.value)" }.joined(separator: " ")
+        let top = counts.sorted { $0.value > $1.value }.prefix(40).map { "\($0.key)×\($0.value)" }.joined(separator: " ")
         let label = alternate ? (PerfSwitch.driving ? "drive " : "rest  ") : ""
         if alternate { PerfSwitch.driving.toggle() }
         debugLog(String(format: "[perf] \(label)cpu %.0f%% main %.0f%% frames %d p50 %.1f p95 %.1f max %.1f ms hitches %d | ",
