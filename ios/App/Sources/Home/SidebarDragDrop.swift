@@ -52,6 +52,17 @@ private struct SidebarRowDragDrop: ViewModifier {
     @State private var height: CGFloat = 0
 
     func body(content: Content) -> some View {
+        #if targetEnvironment(macCatalyst)
+        // Off on the Mac for now: with it, a left click on a session or a
+        // workspace row stopped selecting it (only the right-click menu
+        // worked). The rows are plain until a drag that keeps clicks is found.
+        content
+        #else
+        dragDrop(content)
+        #endif
+    }
+
+    private func dragDrop(_ content: Content) -> some View {
         let state = SidebarDragState.shared
         let delegate = Delegate(target: target, height: height, state: state, tree: tree, sessionOrder: sessionOrder, perform: perform)
         source(content
