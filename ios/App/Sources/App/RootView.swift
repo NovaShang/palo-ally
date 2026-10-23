@@ -879,6 +879,9 @@ struct InspectorWidth: UIViewRepresentable {
         var sidebarShown = true
         private var observers: [NSObjectProtocol] = []
         private var resize: NSKeyValueObservation?
+        /// The split view whose widths are held (`holdWidths`).
+        private weak var held: UISplitViewController?
+        private var holds: [NSKeyValueObservation] = []
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
@@ -909,6 +912,7 @@ struct InspectorWidth: UIViewRepresentable {
 
         private func apply(opening: Bool) {
             guard open, window != nil, let split = inspectorSplit else { return }
+            holdWidths(of: split)
             // The sidebar's split view is inside the inspector's; its own
             // width, not what a squeeze left it.
             let sidebar = Self.splits(under: split).first { $0 !== split }
@@ -925,6 +929,41 @@ struct InspectorWidth: UIViewRepresentable {
             if reset || opening { split.preferredInspectorColumnWidth = start }
             debugLog("[layout] inspector widths: \(Int(InspectorWidth.minimum)) to \(Int(most)) pt (window \(Int(split.view.bounds.width)), sidebar \(Int(sidebarWidth)))\(reset || opening ? ", at \(Int(start))" : "")")
         }
+
+        /// SwiftUI resets the pane's widths to the system's (280 pt) each
+        /// time it updates the inspector: a click that moves the keyboard,
+        /// a pane becoming the active one, a tab. Put back later, the pane
+        /// went 400 → 280 → 400 pt and every conversation beside it laid
+        /// out twice. Put back here, as SwiftUI sets them (before any
+        /// layout), nothing moves.
+        private func holdWidths(of split: UISplitViewController) {
+            guard held !== split else { return }
+            held = split
+            // The width SwiftUI just replaced with the system's, else nil.
+            func replaced(_ change: NSKeyValueObservedChange<CGFloat>) -> CGFloat? {
+                guard let old = change.oldValue, let new = change.newValue, new < 0, old > 0 else { return nil }
+                return old
+            }
+            holds = [
+                split.observe(\.minimumInspectorColumnWidth, options: [.old, .new]) { [weak self] split, change in
+                    MainActor.assumeIsolated {
+                        if self?.holding == true, let w = replaced(change) { split.minimumInspectorColumnWidth = w }
+                    }
+                },
+                split.observe(\.maximumInspectorColumnWidth, options: [.old, .new]) { [weak self] split, change in
+                    MainActor.assumeIsolated {
+                        if self?.holding == true, let w = replaced(change) { split.maximumInspectorColumnWidth = w }
+                    }
+                },
+                split.observe(\.preferredInspectorColumnWidth, options: [.old, .new]) { [weak self] split, change in
+                    MainActor.assumeIsolated {
+                        if self?.holding == true, let w = replaced(change) { split.preferredInspectorColumnWidth = w }
+                    }
+                },
+            ]
+        }
+
+        private var holding: Bool { open && window != nil }
 
         private var inspectorSplit: UISplitViewController? {
             var r = next
