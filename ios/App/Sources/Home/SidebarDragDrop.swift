@@ -51,15 +51,16 @@ private struct SidebarRowDragDrop: ViewModifier {
     @Environment(WindowModel.self) private var model
     @State private var height: CGFloat = 0
 
-    func body(content: Content) -> some View {
-        #if targetEnvironment(macCatalyst)
-        // Off on the Mac for now: with it, a left click on a session or a
-        // workspace row stopped selecting it (only the right-click menu
-        // worked). The rows are plain until a drag that keeps clicks is found.
-        content
-        #else
-        dragDrop(content)
-        #endif
+    @ViewBuilder func body(content: Content) -> some View {
+        // Phones only for now: in the sidebar (the Mac, iPads) a click or
+        // tap on a session or workspace row stopped selecting it (only the
+        // context menu worked). Plain rows there until a drag that keeps
+        // selection works is found.
+        if model.layout == .phone {
+            dragDrop(content)
+        } else {
+            content
+        }
     }
 
     private func dragDrop(_ content: Content) -> some View {
