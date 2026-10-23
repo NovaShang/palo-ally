@@ -1619,6 +1619,17 @@
         }
       }
     },
+    "和 Palo 说话" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Talk to Palo"
+          }
+        }
+      }
+    },
     "和%@解除？" : {
       "extractionState" : "manual",
       "localizations" : {

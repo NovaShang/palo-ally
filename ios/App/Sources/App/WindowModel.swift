@@ -23,8 +23,6 @@ final class WindowModel {
     @ObservationIgnored weak var scene: UIWindowScene?
     /// The Mac: which saved window this is (WindowMemory).
     @ObservationIgnored var windowID = ""
-    /// The Mac: Palo's small companion window (the collapsed sidebar's orb).
-    var isMini = false
     /// The sidebar as this window last had it (nil: as the last one used left it).
     @ObservationIgnored var prefersSidebarCollapsed: Bool?
 

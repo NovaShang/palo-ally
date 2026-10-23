@@ -14,8 +14,6 @@ struct WindowTarget: Codable, Hashable {
     var nonce = UUID()
     /// The Mac: the saved window this one brings back (WindowMemory).
     var restore: String?
-    /// The Mac: Palo's small companion window.
-    var mini: Bool?
 
     init(_ conversation: WindowModel.Conversation, host: String?) {
         self.conversation = conversation.storageKey
@@ -27,7 +25,6 @@ struct WindowTarget: Codable, Hashable {
         conversation = saved.conversation
         host = saved.host
         restore = saved.id
-        mini = saved.mini
     }
 
     /// A sidebar row dragged out of the window (iPads): the system opens a
@@ -120,12 +117,6 @@ struct WindowRoot: View {
             }
             .onChange(of: model.columnVisibility) { WindowMemory.shared.update(model) }
             .onChange(of: model.paneOpenHere) { WindowMemory.shared.update(model) }
-            #if DEBUG
-            .onReceive(NotificationCenter.default.publisher(for: .demoOpenPaloMini)) { note in
-                guard (note.object as? WindowModel) === model else { return }
-                app.showPaloMini(from: model) { openWindow(value: $0) }
-            }
-            #endif
     }
 
     /// The Mac: which of the saved windows this is (WindowMemory), with what
@@ -145,8 +136,6 @@ struct WindowRoot: View {
             if let c = WindowModel.Conversation(storageKey: entry.conversation), c != model.selection {
                 model.selection = c
             }
-        } else if model.isMini {
-            model.columnVisibility = .detailOnly
         } else if let c = target.flatMap({ WindowModel.Conversation(storageKey: $0.conversation) }), c != model.selection {
             model.selection = c
         }
@@ -173,8 +162,8 @@ struct WindowRoot: View {
 
 #if DEBUG
 extension Notification.Name {
-    /// `-demoActions mini`: the collapsed sidebar's orb clicked in that window (object: its model).
-    static let demoOpenPaloMini = Notification.Name("demoOpenPaloMini")
+    /// `-demoActions palo`: the collapsed sidebar's orb clicked in that window (object: its model).
+    static let demoTogglePaloPopover = Notification.Name("demoTogglePaloPopover")
 }
 #endif
 

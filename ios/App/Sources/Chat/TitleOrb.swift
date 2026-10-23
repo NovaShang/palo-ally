@@ -150,7 +150,8 @@ struct FloatingTitleOrb: View {
     /// 0…1: how far it has dropped out of the bar to listen — the hold-to-talk
     /// motion's own progress (with Reduce Motion: in or out, nothing between).
     private var listening: CGFloat {
-        let p = voice.panelMounted ? min(max(voice.presence, 0), 1) : 0
+        // Not while a tile holds the voice (Palo's popover over the page).
+        let p = voice.panelMounted && voice.owner == nil ? min(max(voice.presence, 0), 1) : 0
         return reduceMotion ? (p > 0 ? 1 : 0) : p
     }
 
@@ -188,14 +189,14 @@ struct FlyingPaloOrb: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let out = model.orbHome.frame != nil && voice.panelMounted
+        let out = model.orbHome.frame != nil && voice.panelMounted && voice.owner == nil
         flight
             .onChange(of: out, initial: true) { _, now in model.orbHome.flying = now }
             .onDisappear { model.orbHome.flying = false }
     }
 
     @ViewBuilder private var flight: some View {
-        if let home = model.orbHome.frame, voice.panelMounted {
+        if let home = model.orbHome.frame, voice.panelMounted, voice.owner == nil {
             let p = min(max(voice.presence, 0), 1)
             let listen = reduceMotion ? (p > 0 ? 1 : 0) : p
             GeometryReader { proxy in

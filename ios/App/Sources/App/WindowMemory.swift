@@ -13,7 +13,7 @@ struct SavedWindow: Codable, Equatable {
     var paneOpen: [String: Bool]?
     /// The window's frame on screen (`systemFrame`): x, y, width, height.
     var frame: [Double]?
-    /// Palo's small companion window (the collapsed sidebar's orb).
+    /// An old Palo small window (retired for a popover): dropped at load.
     var mini: Bool?
 
     var systemFrame: CGRect? {
@@ -57,13 +57,11 @@ final class WindowMemory {
     private var framesApplied: Set<String> = []
     private var saveTask: Task<Void, Never>?
     private weak var app: AppModel?
-    /// Where the Palo mini window opens: by the window it was asked from.
-    var miniAnchor: CGRect?
-    static let miniSize = CGSize(width: 420, height: 680)
 
     private init() {
         let data = UserDefaults.standard.data(forKey: Self.key)
         records = data.flatMap { try? JSONDecoder().decode([SavedWindow].self, from: $0) } ?? []
+        records.removeAll { $0.mini == true }
         guard Self.enabled else { return }
         debugLog("[windows] saved at last quit: \(Self.describe(records))")
         let center = NotificationCenter.default
@@ -122,13 +120,10 @@ final class WindowMemory {
         }
         if let r = found {
             model.windowID = r.id
-            model.isMini = r.mini ?? false
             debugLog("[windows] window takes \(Self.describe([r]))")
         } else {
             model.windowID = duplicate ? UUID().uuidString : target?.restore ?? UUID().uuidString
-            model.isMini = target?.mini ?? false
-            if model.isMini { model.prefersSidebarCollapsed = true }
-            debugLog("[windows] new window \(model.windowID.prefix(8))\(model.isMini ? " (Palo mini)" : "")")
+            debugLog("[windows] new window \(model.windowID.prefix(8))")
         }
         update(model)
         reopen(others, open: open)
@@ -157,8 +152,7 @@ final class WindowMemory {
     }
 
     /// The window's scene is known: its frame is followed from now on, and a
-    /// restored one goes back where it was (a new mini window: small, by the
-    /// window it came from).
+    /// restored one goes back where it was.
     func sceneReady(_ model: WindowModel, _ scene: UIWindowScene) {
         guard Self.enabled, !model.windowID.isEmpty else { return }
         let id = model.windowID
@@ -166,8 +160,7 @@ final class WindowMemory {
         if !framesApplied.contains(id) {
             framesApplied.insert(id)
             let saved = records.first { $0.id == id }?.systemFrame
-            if model.isMini { scene.sizeRestrictions?.minimumSize = CGSize(width: 340, height: 420) }
-            if let frame = saved ?? (model.isMini ? miniFrame() : nil) {
+            if let frame = saved {
                 // The window must be up first; an early request is sometimes dropped.
                 Task { @MainActor in
                     for _ in 0..<3 {
@@ -194,13 +187,6 @@ final class WindowMemory {
         }
     }
 
-    private func miniFrame() -> CGRect {
-        let size = Self.miniSize
-        guard let a = miniAnchor, a.width > 0 else { return CGRect(origin: CGPoint(x: 120, y: 120), size: size) }
-        // At the right of the window it came from, a little down from its top.
-        return CGRect(x: max(0, a.maxX - size.width - 24), y: a.minY + 48, width: size.width, height: size.height)
-    }
-
     // MARK: in step with the windows
 
     /// What the window shows now (its conversation, computer, sidebar).
@@ -211,7 +197,6 @@ final class WindowMemory {
         r.host = model.activeHostID
         if model.layout == .split { r.sidebarCollapsed = model.columnVisibility == .detailOnly }
         r.paneOpen = model.paneOpenHere.isEmpty ? nil : model.paneOpenHere
-        r.mini = model.isMini ? true : nil
         if let i = records.firstIndex(where: { $0.id == r.id }) {
             guard records[i] != r else { return }
             records[i] = r
@@ -300,30 +285,8 @@ final class WindowMemory {
         guard !list.isEmpty else { return "none" }
         return list.map { r in
             "\(r.id.prefix(8)) \(r.conversation) host \(r.host ?? "-") sidebar \(r.sidebarCollapsed.map { $0 ? "away" : "shown" } ?? "-")"
-                + "\(r.systemFrame.map { " frame " + describe($0) } ?? "")\(r.mini == true ? " mini" : "")"
+                + "\(r.systemFrame.map { " frame " + describe($0) } ?? "")"
         }.joined(separator: "; ")
-    }
-}
-
-extension AppModel {
-    /// The collapsed sidebar's orb on the Mac: Palo in a small window of its
-    /// own, beside the one it was clicked in; the one already open comes to
-    /// the front instead (on this window's computer, at Palo's conversation).
-    func showPaloMini(from window: WindowModel, open: (WindowTarget) -> Void) {
-        if let mini = windows.first(where: \.isMini) {
-            if let id = window.activeHostID, mini.activeHostID != id { mini.switchTo(id) }
-            mini.openPalo()
-            if let scene = mini.scene {
-                UIApplication.shared.activateSceneSession(for: UISceneSessionActivationRequest(session: scene.session))
-            }
-            debugLog("[windows] Palo mini to the front")
-            return
-        }
-        WindowMemory.shared.miniAnchor = window.scene?.frameOnScreen
-        var target = WindowTarget(.palo, host: window.activeHostID)
-        target.mini = true
-        debugLog("[windows] opening the Palo mini window")
-        open(target)
     }
 }
 

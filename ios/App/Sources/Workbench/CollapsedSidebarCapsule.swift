@@ -41,13 +41,12 @@ extension WindowModel {
 /// controls: the strips start below it.
 struct CollapsedSidebarCapsule: View {
     let collapsed: Bool
-    /// The orb and the counts while collapsed (not in Palo's small window,
-    /// where they would cover its orb in the middle of the row).
-    var extras = true
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
+    @Environment(VoiceInputController.self) private var voice
     @State private var listShown = false
-    @Environment(\.openWindow) private var openWindow
+    /// The Mac: Palo's conversation in a popover from the orb.
+    @State private var paloShown = false
 
     var body: some View {
         let (waiting, done) = model.attentionSessions(in: store)
@@ -65,7 +64,7 @@ struct CollapsedSidebarCapsule: View {
             .help(Text("显示或隐藏侧栏 ⌃⌘S"))
             #endif
 
-            if collapsed && extras {
+            if collapsed {
                 Button(action: orbClicked) {
                     AssistantAvatar(theme: model.currentTheme, hostID: model.activeHostID, bleed: 1.3)
                         .frame(width: 26, height: 26)
@@ -76,9 +75,21 @@ struct CollapsedSidebarCapsule: View {
                         .contentShape(.circle)
                 }
                 .buttonStyle(.plain)
+                .popover(isPresented: $paloShown, arrowEdge: .top) {
+                    // Made only while open (its conversation, its composer).
+                    if let palo = model.store {
+                        PaloPopover(model: model, store: palo, voice: voice)
+                    }
+                }
                 .accessibilityLabel(store.assistantName.isEmpty ? "Palo" : store.assistantName)
                 #if targetEnvironment(macCatalyst)
-                .help(Text("在小窗口中打开 Palo"))
+                .help(Text("和 Palo 说话"))
+                #endif
+                #if DEBUG
+                .onReceive(NotificationCenter.default.publisher(for: .demoTogglePaloPopover)) { note in
+                    guard (note.object as? WindowModel) === model else { return }
+                    orbClicked()
+                }
                 #endif
 
                 if !waiting.isEmpty || !done.isEmpty {
@@ -109,12 +120,12 @@ struct CollapsedSidebarCapsule: View {
         .animation(.snappy, value: done.count)
     }
 
-    /// The Mac: Palo in a small window of its own beside this one (the one
-    /// already open comes forward); on an iPad, Palo's conversation here.
+    /// The Mac: Palo's conversation in a popover from the orb (again: it
+    /// closes); on an iPad, Palo's conversation here.
     private func orbClicked() {
-        debugLog("[windows] capsule orb clicked in \(model.traceName)\(model.isMini ? " (mini)" : ""), multiple windows \(UIApplication.shared.supportsMultipleScenes)")
-        if Platform.isMac, !model.isMini, UIApplication.shared.supportsMultipleScenes {
-            model.app.showPaloMini(from: model) { openWindow(value: $0) }
+        if Platform.isMac {
+            debugLog("[windows] capsule orb clicked in \(model.traceName): Palo's popover \(paloShown ? "closing" : "opening")")
+            paloShown.toggle()
         } else {
             model.openPalo()
         }
@@ -165,5 +176,39 @@ private struct AttentionList: View {
         .frame(width: 300)
         .frame(height: min(360, CGFloat(waiting.count + done.count) * 50 + 14))
         .presentationCompactAdaptation(.popover)
+    }
+}
+
+/// The Mac: Palo's conversation in a popover from the collapsed sidebar's
+/// orb, instead of a window of its own: the same conversation as Palo's page
+/// (the same store, the same unsent words), its own scroll. Hosted as Palo's
+/// pane in a workspace is (a tile of its own): holding to talk here talks to
+/// Palo, the voice's panel, scrim and words show in here, and its orb drops
+/// out from the popover's top to listen.
+struct PaloPopover: View {
+    let model: WindowModel
+    let store: AppStore
+    let voice: VoiceInputController
+
+    /// Its voice and focus owner (`voice.owner`, `ComposerFocus`).
+    static let id = "palo-popover"
+    static let size = CGSize(width: 420, height: 640)
+
+    var body: some View {
+        ChatView(inTile: true)
+            .environment(\.tile, TileContext(id: Self.id, isActive: true))
+            .environment(\.chatDraft, model.draftBinding(.palo))
+            .environment(\.fileLinks, FileLinkContext(scope: .palo, resolver: .shared(for: store)))
+            .environment(\.placesAsColumns, false)
+            .overlay { TilePaloOrb(owner: Self.id, from: CGPoint(x: Self.size.width / 2, y: 0)) }
+            // Presented apart from the window: its theme too.
+            .appTheme(model.currentTheme)
+            .environment(model)
+            .environment(store)
+            .environment(voice)
+            .frame(width: Self.size.width, height: Self.size.height)
+            .presentationCompactAdaptation(.popover)
+            .onAppear { debugLog("[windows] Palo's popover up in \(model.traceName)") }
+            .onDisappear { debugLog("[windows] Palo's popover gone in \(model.traceName)") }
     }
 }

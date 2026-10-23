@@ -211,8 +211,8 @@ private struct LayoutStressTest: ViewModifier {
                     // `w2.close`: that window closed, as its close button does.
                     case "close":
                         if let scene = w.scene { UIApplication.shared.requestSceneSessionDestruction(scene.session, options: nil) }
-                    // `mini`: the collapsed sidebar's Palo orb clicked (the Mac: Palo's small window).
-                    case "mini": NotificationCenter.default.post(name: .demoOpenPaloMini, object: w)
+                    // `palo`: the collapsed sidebar's Palo orb clicked (the Mac: Palo's popover, open or closed).
+                    case "palo": NotificationCenter.default.post(name: .demoTogglePaloPopover, object: w)
                     // `w2.key`: that window becomes the key window, as a click in it does.
                     case "key":
                         if let scene = w.scene {
@@ -282,6 +282,12 @@ private struct LayoutStressTest: ViewModifier {
                                     anchor = " from \(Int(r.minX)),\(Int(r.minY)) \(Int(r.width))x\(Int(r.height))"
                                 }
                                 chain.append("\(type(of: p)) \(p.modalPresentationStyle == .popover ? "popover" : "style \(p.modalPresentationStyle.rawValue)") \(Int(p.preferredContentSize.width))x\(Int(p.preferredContentSize.height))\(anchor)")
+                                // Its content as drawn, to <app tmp>/presented-<n>.png (window snapshots leave popovers out).
+                                let view = p.view!
+                                let image = UIGraphicsImageRenderer(bounds: view.bounds).image { _ in
+                                    _ = view.drawHierarchy(in: view.bounds, afterScreenUpdates: true)
+                                }
+                                try? image.pngData()?.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("presented-\(i + 1).png"))
                                 vc = p.presentedViewController
                             }
                             debugLog("[nav] window \(i + 1) presents \(chain.isEmpty ? "nothing" : chain.joined(separator: " > "))")
@@ -307,7 +313,7 @@ private struct LayoutStressTest: ViewModifier {
                     }
                     try? await Task.sleep(for: .seconds(1.5))
                     for (i, w) in model.app.windows.enumerated() {
-                        debugLog("[nav] after \(step): window \(i + 1)\(w === model.app.frontWindow ? " (front)" : "")\(w.isMini ? " (mini)" : "") frame \(w.scene.map { "\($0.frameOnScreen) state \($0.activationState.rawValue) key \($0.keyWindow != nil)" } ?? "-") sidebar \(w.columnVisibility == .detailOnly ? "away" : "shown") host \(w.activeHostID ?? "-") (\(w.store?.assistantName ?? "") store \(w.store?.traceID ?? 0)) last \(model.app.lastHostID ?? "-") layout \(w.layout.rawValue) selection \(String(describing: w.selection)) management \(w.showManagement) pane \(w.paneIsOpen) settings \(w.showSettings)")
+                        debugLog("[nav] after \(step): window \(i + 1)\(w === model.app.frontWindow ? " (front)" : "") frame \(w.scene.map { "\($0.frameOnScreen) state \($0.activationState.rawValue) key \($0.keyWindow != nil)" } ?? "-") sidebar \(w.columnVisibility == .detailOnly ? "away" : "shown") host \(w.activeHostID ?? "-") (\(w.store?.assistantName ?? "") store \(w.store?.traceID ?? 0)) last \(model.app.lastHostID ?? "-") layout \(w.layout.rawValue) selection \(String(describing: w.selection)) management \(w.showManagement) pane \(w.paneIsOpen) settings \(w.showSettings)")
                     }
                     #if targetEnvironment(macCatalyst)
                     for (i, w) in model.app.windows.enumerated() {

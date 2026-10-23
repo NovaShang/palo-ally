@@ -175,8 +175,9 @@ struct ComposerView: View {
         }
     }
 
-    /// Voice on screen is this composer's: always outside a tiling, else the tile being spoken to.
-    private var mine: Bool { tile == nil || voice.owner == tile?.id }
+    /// Voice on screen is this composer's: outside a tiling unless a tile
+    /// holds it (Palo's popover over the page), else the tile being spoken to.
+    private var mine: Bool { voice.owner == tile?.id }
     private var voicePresence: CGFloat { mine ? voice.presence : 0 }
     /// This composer may place the voice's landing spots (the active tile, or no tiling).
     private var placesVoice: Bool { tile?.isActive ?? true }
@@ -969,6 +970,7 @@ struct ComposerView: View {
             // Typing → dictating → typing: the words land at the end of the
             // draft and the keyboard comes back when it's done.
             focused = false
+            voice.owner = tile?.id // its errors show here
             VoiceTiming.begin("mic tap")
             voice.dictation.prewarm()
             voice.dictation.start()

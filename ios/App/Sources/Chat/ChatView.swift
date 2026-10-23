@@ -378,7 +378,8 @@ struct VoiceTileGate<Content: View>: View {
         #if DEBUG || PERF_HARNESS
         let _ = PerfProbe.count("VoiceTileGate")
         #endif
-        if tile == nil || voice.owner == tile?.id { content() }
+        // A page's own: unless a tile holds the voice (Palo's popover over it).
+        if voice.owner == tile?.id { content() }
     }
 }
 
