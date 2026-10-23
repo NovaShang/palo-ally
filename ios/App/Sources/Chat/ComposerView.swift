@@ -77,9 +77,10 @@ struct ComposerView: View {
     /// When the press on the field being edited landed (timing only).
     @State private var editTouchTime: TimeInterval?
     /// Where this composer is, kept for the voice when its tile becomes the active one.
-    @State private var capsuleSize: CGSize = .zero
-    @State private var capsuleFrame: CGRect = .zero
-    @State private var fieldFrame: CGRect = .zero
+    /// Where the capsule and its field are, for the voice. Not view state:
+    /// they change on every frame of a resize and only handlers read them
+    /// (as state they re-rendered the composer on every one of those frames).
+    @State private var places = ComposerPlaces()
     /// Words that flew into the field (`.edit`) before the final ones came:
     /// the draft as it was, and what was added. The final words replace
     /// them if the draft is still just that.
@@ -253,9 +254,9 @@ struct ComposerView: View {
             if active == false {
                 if focused { focused = false }
             } else if active == true {
-                voice.capsuleSize = capsuleSize
-                voice.placeCapsule(capsuleFrame)
-                voice.placeField(fieldFrame)
+                voice.capsuleSize = places.capsuleSize
+                voice.placeCapsule(places.capsuleFrame)
+                voice.placeField(places.fieldFrame)
             }
         }
         // Back from 回到这里重来 with the message's words: straight on to editing them.
@@ -399,13 +400,13 @@ struct ComposerView: View {
         // never equals itself, and kept it would come back as a change forever.
         .onGeometryChange(for: CGSize.self) { $0.size } action: {
             guard $0.width.isFinite, $0.height.isFinite else { return }
-            capsuleSize = $0
+            places.capsuleSize = $0
             if placesVoice { voice.capsuleSize = $0 }
         }
         // Where the voice words go and land (it changes only when the composer moves).
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
             guard $0.isFiniteRect else { return }
-            capsuleFrame = $0
+            places.capsuleFrame = $0
             if placesVoice { voice.placeCapsule($0) }
         }
         // Swells with the same hold-driven motion as everything else.
@@ -531,7 +532,7 @@ struct ComposerView: View {
                 // Where words spoken into 编辑 land.
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
                     guard $0.isFiniteRect else { return }
-                    fieldFrame = $0
+                    places.fieldFrame = $0
                     if placesVoice { voice.placeField($0) }
                 }
                 .padding(.vertical, compact ? 6 : 11)
@@ -729,9 +730,9 @@ struct ComposerView: View {
     private func claimVoice() {
         voice.owner = tile?.id
         if tile != nil {
-            voice.capsuleSize = capsuleSize
-            voice.placeCapsule(capsuleFrame)
-            voice.placeField(fieldFrame)
+            voice.capsuleSize = places.capsuleSize
+            voice.placeCapsule(places.capsuleFrame)
+            voice.placeField(places.fieldFrame)
         }
         voice.onExitDone = { exit in
             if exit == .edit || exit == .unheard(edit: true) { focusToken += 1 }
@@ -814,7 +815,7 @@ struct ComposerView: View {
             pointerHolding = true
             voice.panelMounted = true
             pressHeld(.began, at: .zero)
-            debugLog("[hold] talking from the right mouse button\(tile.map { ", pane \($0.id.prefix(12))" } ?? ""), the composer at \(Int(capsuleFrame.minX)),\(Int(capsuleFrame.minY)) \(Int(capsuleFrame.width))x\(Int(capsuleFrame.height))")
+            debugLog("[hold] talking from the right mouse button\(tile.map { ", pane \($0.id.prefix(12))" } ?? ""), the composer at \(Int(places.capsuleFrame.minX)),\(Int(places.capsuleFrame.minY)) \(Int(places.capsuleFrame.width))x\(Int(places.capsuleFrame.height))")
         case .moved:
             guard pointerHolding else { return }
             pressHeld(.changed, at: capsulePoint(e.point))
@@ -834,7 +835,7 @@ struct ComposerView: View {
     /// (VoiceLayout): on the 取消 / 编辑 zones above the capsule (a little
     /// around them too) those; anywhere else 发送.
     private func capsulePoint(_ p: CGPoint) -> CGPoint {
-        let c = capsuleFrame
+        let c = places.capsuleFrame
         let send = CGPoint(x: c.width / 2, y: c.height / 2)
         guard c.width > 0 else { return send }
         let top = c.minY - VoiceInputPanel.gap - VoiceInputPanel.zoneHeight
@@ -1428,4 +1429,11 @@ enum ComposerFocus {
         else { return 0.3 }
         return min(max(t, 0.2), 0.5)
     }
+}
+
+/// Where a composer's capsule and field are (ComposerView.places).
+private final class ComposerPlaces {
+    var capsuleSize: CGSize = .zero
+    var capsuleFrame: CGRect = .zero
+    var fieldFrame: CGRect = .zero
 }

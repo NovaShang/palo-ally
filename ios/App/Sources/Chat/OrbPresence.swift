@@ -22,10 +22,13 @@ enum OrbPresence: String, Equatable {
         }
     }
 
+    /// From this column width on, the listening orb is as large as it gets.
+    static let voiceFullWidth: CGFloat = 500
+
     /// Listening: very large, but at most 40% of the column — 150 pt on a
     /// phone, up to 200 pt in an iPad or Mac column.
     static func voiceDiameter(width: CGFloat) -> CGFloat {
-        let cap: CGFloat = width < 500 ? 150 : 200
+        let cap: CGFloat = width < voiceFullWidth ? 150 : 200
         return max(Self.present.body, min(cap, width * 0.4))
     }
 

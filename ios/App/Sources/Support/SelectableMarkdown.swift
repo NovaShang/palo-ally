@@ -100,27 +100,23 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
     /// TextKit layout over the whole answer; a long chat full of long answers
     /// then pinned the main thread. Cleared whenever the text changes.
     private var measured: [CGFloat: CGSize] = [:]
-    /// For each width SwiftUI gave the view, the width its text was laid out
-    /// at (narrower while a window is being resized, see TextWidthSettling),
-    /// so drawing uses exactly the layout that was measured.
-    private var layoutWidthFor: [CGFloat: CGFloat] = [:]
     private var lastExactWidth: CGFloat?
     /// The width SwiftUI last measured the view at (nil until it has).
     var measuredWidth: CGFloat? { lastExactWidth }
 
     func fittingSize(width: CGFloat) -> CGSize {
         let exact = (width * 2).rounded(.down) / 2
-        // Only real column widths count as a resize (not the huge width
-        // SwiftUI proposes when it asks for an ideal size).
-        let real = exact < 5000
-        let key = real ? TextWidthSettling.layoutWidth(for: exact, previous: lastExactWidth, view: self) : exact
-        if real { lastExactWidth = exact }
-        if layoutWidthFor.count > 16 { layoutWidthFor.removeAll() }
-        layoutWidthFor[exact] = key
-        if let hit = measured[key] { return hit }
-        let fit = layOut(width: key)
+        // Only real column widths (not the huge width SwiftUI proposes when
+        // it asks for an ideal size). A width changing on every frame (a
+        // resize) is held back by the conversation's column: ColumnWidthHold.
+        if exact < 5000 { lastExactWidth = exact }
+        if let hit = measured[exact] { return hit }
+        #if DEBUG || PERF_HARNESS
+        PerfProbe.count("text measure")
+        #endif
+        let fit = layOut(width: exact)
         if measured.count > 8 { measured.removeAll() }
-        measured[key] = fit
+        measured[exact] = fit
         return fit
     }
 
@@ -143,13 +139,13 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
     }
 
     override func layoutSubviews() {
-        // Lay the text out at the width it was measured at for this frame.
+        // Lay the text out at the width it was measured at.
         let exact = (bounds.width * 2).rounded(.down) / 2
-        if exact > 0 {
-            let key = layoutWidthFor[exact] ?? exact
-            if textContainer.size.width != key || textContainer.size.height < Self.unbounded {
-                textContainer.size = CGSize(width: key, height: .greatestFiniteMagnitude)
-            }
+        if exact > 0, textContainer.size.width != exact || textContainer.size.height < Self.unbounded {
+            #if DEBUG || PERF_HARNESS
+            if textContainer.size.width != exact { PerfProbe.count("text rewrap") }
+            #endif
+            textContainer.size = CGSize(width: exact, height: .greatestFiniteMagnitude)
         }
         super.layoutSubviews()
         #if DEBUG
@@ -171,14 +167,6 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
                 askForHeight()
             }
         }
-    }
-
-    /// A resize has settled: measure again at the exact width.
-    func widthSettled() {
-        layoutWidthFor.removeAll()
-        measured.removeAll()
-        askForHeight()
-        setNeedsLayout()
     }
 
     /// Has SwiftUI measure the view again: through its intrinsic size, or
@@ -212,7 +200,6 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         view.registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (v: MarkdownTextView, _) in
             v.lastSource = nil
             v.measured.removeAll()
-            v.layoutWidthFor.removeAll()
             v.render(source: v.pendingSource, streaming: v.lastStreaming, linkColor: v.lastLinkColor ?? .link)
             v.askForHeight()
         }
@@ -281,7 +268,6 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         settleSelectable()
         applyFileLinks()
         renderVersion += 1
-        layoutWidthFor.removeAll()
         // New text, new height: have SwiftUI ask sizeThatFits again. Not for
         // the end of a reply being written: its model reports a new height
         // only when there is one, since SwiftUI's host turns this into a
@@ -965,46 +951,6 @@ enum MarkdownRenderer {
         let rest = line.dropFirst(digits.count)
         guard rest.hasPrefix(". ") || rest.hasPrefix(") ") else { return nil }
         return (n, String(rest.dropFirst(2)))
-    }
-}
-
-/// Live resizing (a window edge dragged, a sidebar sliding in) proposes a new
-/// width on every frame, and laying out every visible answer at each one
-/// stuttered. While widths keep changing, text is laid out at a coarse width
-/// (rounded down to a step, so it never overflows), which most frames then
-/// find already measured; once the width has been still for a moment, the
-/// views that used a coarse width measure exactly once more.
-@MainActor
-enum TextWidthSettling {
-    static let step: CGFloat = 24
-    static let quiet: TimeInterval = 0.3
-    private static var lastChange: CFTimeInterval = 0
-    private static var resizing = false
-    private static var coarse = NSHashTable<MarkdownTextView>.weakObjects()
-    private static var settle: Timer?
-
-    static func layoutWidth(for exact: CGFloat, previous: CGFloat?, view: MarkdownTextView) -> CGFloat {
-        // Phones don't live-resize: always lay out at the exact width there.
-        if UIDevice.current.userInterfaceIdiom == .phone { return exact }
-        if let previous, previous != exact {
-            let now = CACurrentMediaTime()
-            if now - lastChange < quiet { resizing = true }
-            lastChange = now
-            settle?.invalidate()
-            settle = Timer.scheduledTimer(withTimeInterval: quiet, repeats: false) { _ in
-                MainActor.assumeIsolated { settled() }
-            }
-        }
-        guard resizing else { return exact }
-        coarse.add(view)
-        return max(step, (exact / step).rounded(.down) * step)
-    }
-
-    private static func settled() {
-        resizing = false
-        let views = coarse.allObjects
-        coarse.removeAllObjects()
-        for v in views { v.widthSettled() }
     }
 }
 

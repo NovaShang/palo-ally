@@ -1,4 +1,5 @@
 import PaloAllyKit
+import QuartzCore
 import SwiftUI
 
 /// A conversation: the assistant's, or one Pal's (pals-prd §4), whichever
@@ -412,6 +413,8 @@ private struct ConversationRows: View {
     let highlightedID: String?
     @Environment(AppStore.self) private var store
     @Environment(\.placesAsColumns) private var asColumn
+    /// The width the rows are laid out at, held while the column's keeps changing.
+    @State private var widthHold = ColumnWidthHold()
 
     var body: some View {
         #if DEBUG || PERF_HARNESS
@@ -433,7 +436,8 @@ private struct ConversationRows: View {
         // No room below a sent message any more (the owner, 2026-10-22: a
         // screen cleared on every send broke his reading of what's above).
         // The message lands at the end like any chat; the reply grows under it.
-        ConversationStack(spacing: 14, turnMinHeight: atTheEnd && ChatView.turnRoomOn ? scroll.turnRoom : 0) {
+        ConversationStack(spacing: 14, turnMinHeight: atTheEnd && ChatView.turnRoomOn ? scroll.turnRoom : 0,
+                          hold: widthHold, settled: widthHold.settled) {
             if window.lowerBound > 0 || store.hasOlderMessages {
                 // Reading up toward the top lays more out on its own; this
                 // is for doing it at once (and for VoiceOver). The message
@@ -742,7 +746,10 @@ private struct MacTopOrb: View {
         Color.clear
             .frame(height: 1)
             .frame(maxWidth: .infinity)
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            // Only the listening orb's size reads the width, and it stops
+            // growing at `voiceFullWidth`: wider, nothing changes (a resize,
+            // the pane or the sidebar moving, re-rendered the orb every frame).
+            .onGeometryChange(for: CGFloat.self) { min($0.size.width, OrbPresence.voiceFullWidth) } action: { width = $0 }
             .overlay(alignment: .top) {
                 FloatingTitleOrb(barCenterY: nil, columnWidth: width, topAligned: true, rowMidY: MacTitlebar.midY) {
                     debugLog("[titlebar] orb clicked: \(model.traceName) palo, details \(model.detailShown ? "shown" : "opening")")
@@ -1064,6 +1071,10 @@ struct ConversationStack: Layout {
     var spacing: CGFloat
     /// The turn's least height; 0 for none.
     var turnMinHeight: CGFloat
+    /// The width the rows are laid out at (`ColumnWidthHold`).
+    var hold: ColumnWidthHold? = nil
+    /// Changes when a held width is let go: lays the rows out again.
+    var settled = 0
 
     struct Cache {
         var width: CGFloat?
@@ -1076,14 +1087,27 @@ struct ConversationStack: Layout {
     private func heights(_ subviews: Subviews, width: CGFloat?, _ cache: inout Cache) -> [CGFloat] {
         if cache.width == width, cache.heights.count == subviews.count { return cache.heights }
         let proposal = ProposedViewSize(width: width, height: nil)
+        #if DEBUG || PERF_HARNESS
+        let n = subviews.count
+        MainActor.assumeIsolated {
+            PerfProbe.count("stack measure")
+            PerfProbe.add("rows measured", n)
+        }
+        #endif
         cache.heights = subviews.map { $0.sizeThatFits(proposal).height }
         cache.width = width
         return cache.heights
     }
 
+    /// The width to lay the rows out at for the one proposed.
+    private func rowWidth(_ proposed: CGFloat?) -> CGFloat? {
+        guard let hold else { return proposed }
+        return MainActor.assumeIsolated { hold.width(for: proposed) }
+    }
+
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
         let width = proposal.width ?? subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
-        let hs = heights(subviews, width: proposal.width, &cache)
+        let hs = heights(subviews, width: rowWidth(proposal.width), &cache)
         var y: CGFloat = 0
         var turnTop: CGFloat?
         for (i, h) in hs.enumerated() {
@@ -1096,13 +1120,78 @@ struct ConversationStack: Layout {
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
-        let hs = heights(subviews, width: proposal.width, &cache)
+        let width = rowWidth(proposal.width) ?? bounds.width
+        let hs = heights(subviews, width: width, &cache)
+        // A held width sits centred in the one there is now (a few points
+        // either way while it changes).
+        let x = bounds.minX + ((bounds.width - width) / 2).rounded()
         var y = bounds.minY
         for (i, s) in subviews.enumerated() {
-            s.place(at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading,
-                    proposal: ProposedViewSize(width: bounds.width, height: hs[i]))
+            s.place(at: CGPoint(x: x, y: y), anchor: .topLeading,
+                    proposal: ProposedViewSize(width: width, height: hs[i]))
             y += hs[i] + spacing
         }
+    }
+}
+
+/// The conversation's width, held while it keeps changing: a window edge or
+/// the right pane's divider dragged, a resize animating. Every new width had
+/// every laid-out row measured and its text wrapped again, on every frame,
+/// which pinned the main thread (a split workspace above all). A change
+/// after a rest is taken at once (a pane or sidebar toggled jumps to its
+/// width in one step); one coming right after another is held, the column
+/// centred in the width there is, and taken once the width has rested
+/// `settle` seconds: one layout at the start of a drag, one at its end. The
+/// row being read stays put through that layout (ChatScrollCoordinator holds it).
+@MainActor
+@Observable
+final class ColumnWidthHold {
+    static let settle: TimeInterval = 0.12
+    /// A change this long after the last one is a new one, taken at once.
+    static let rest: TimeInterval = 0.25
+    /// Counts the held widths let go (read by the view, so the rows are laid out again).
+    private(set) var settled = 0
+    @ObservationIgnored private var laidOut: CGFloat?
+    @ObservationIgnored private var pending: CGFloat?
+    @ObservationIgnored private var lastChange: CFTimeInterval = 0
+    @ObservationIgnored private var timer: Timer?
+
+    func width(for proposed: CGFloat?) -> CGFloat? {
+        // Only real column widths (not SwiftUI asking for an ideal size).
+        guard let p = proposed, p.isFinite, p > 1, p < 5000 else { return proposed }
+        guard let w = laidOut else {
+            laidOut = p
+            return p
+        }
+        if p == pending { return w }
+        if abs(p - w) < 0.25 {
+            // Back where it was laid out: nothing to let go of.
+            pending = nil
+            timer?.invalidate()
+            return w
+        }
+        let now = CACurrentMediaTime()
+        defer { lastChange = now }
+        if pending == nil, now - lastChange > Self.rest {
+            laidOut = p
+            return p
+        }
+        pending = p
+        timer?.invalidate()
+        let t = Timer(timeInterval: Self.settle, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.letGo() }
+        }
+        // Also while a window edge is dragged (the event-tracking run loop mode).
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+        return w
+    }
+
+    private func letGo() {
+        guard let p = pending else { return }
+        laidOut = p
+        pending = nil
+        settled &+= 1
     }
 }
 
