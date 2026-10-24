@@ -286,6 +286,12 @@ private struct LayoutStressTest: ViewModifier {
                         let r = AppKitBundle.object?.perform(NSSelectorFromString("click:"), with: a.dropFirst(6).replacingOccurrences(of: ";", with: ","))?
                             .takeUnretainedValue() as? String
                         debugLog("[nav] \(r ?? "no AppKit bundle")")
+                    // `drag:1200;500;900;500`: a left drag from the one point to the other (a divider dragged).
+                    case _ where a.hasPrefix("drag:"):
+                        let r = AppKitBundle.object?.perform(NSSelectorFromString("drag:"), with: a.dropFirst(5).replacingOccurrences(of: ";", with: ","))?
+                            .takeUnretainedValue() as? String
+                        debugLog("[nav] \(r ?? "no AppKit bundle")")
+                        try? await Task.sleep(for: .seconds(1.5))
                     // `hover:650;300`: the pointer moved there (no click).
                     case _ where a.hasPrefix("hover:"):
                         let r = AppKitBundle.object?.perform(NSSelectorFromString("move:"), with: a.dropFirst(6).replacingOccurrences(of: ";", with: ","))?
@@ -325,6 +331,10 @@ private struct LayoutStressTest: ViewModifier {
                     // `web:http://localhost:8765/a.html`: a page opened in the right pane, as a link in a reply does.
                     case _ where a.hasPrefix("web:"):
                         if let url = URL(string: String(a.dropFirst(4))) { w.openWebInPane(url) }
+                    // `file:pal-site:README.md`: that session's file opened in the right pane, as a link in a reply does.
+                    case _ where a.hasPrefix("file:"):
+                        let parts = a.split(separator: ":", maxSplits: 2).map(String.init)
+                        if parts.count == 3 { _ = w.openFileInPane(FileTarget(scope: .pal(parts[1]), path: parts[2])) }
                     // `unfocus`: the keyboard leaves whatever has it.
                     case "unfocus":
                         w.scene?.windows.first?.endEditing(true)

@@ -213,6 +213,37 @@ final class ImmersiveWindows: NSObject {
         return "clicked \(Int(xy[0])),\(Int(xy[1])) in \(Int(window.frame.width))x\(Int(window.frame.height)); the pointer at \(Int(m.x)),\(Int(frame.bounds.height - m.y))"
     }
 
+    /// A left drag from "x1,y1" to "x2,y2" (as `click:` has them), pressed,
+    /// moved a step a frame and let go as a hand does: a divider dragged.
+    @objc func drag(_ spec: String) -> String {
+        guard let id = Self.toolbarID,
+              let window = NSApplication.shared.keyWindow.flatMap({ $0.toolbar?.identifier.hasPrefix(id) == true ? $0 : nil })
+                ?? NSApplication.shared.windows.first(where: { $0.toolbar?.identifier.hasPrefix(id) == true }),
+              let frame = window.contentView?.superview else { return "no window" }
+        let v = spec.split(separator: ",").compactMap { Double($0) }
+        guard v.count == 4 else { return "bad points" }
+        let h = frame.bounds.height
+        let a = NSPoint(x: v[0], y: h - v[1]), b = NSPoint(x: v[2], y: h - v[3])
+        var steps: [(NSEvent.EventType, Double, NSPoint)] = [(.mouseMoved, 0, a), (.mouseMoved, 0.15, a), (.leftMouseDown, 0.4, a)]
+        for k in 1...30 {
+            let f = Double(k) / 30
+            steps.append((.leftMouseDragged, 0.5 + f * 0.5, NSPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f)))
+        }
+        steps.append((.leftMouseUp, 1.1, b))
+        let number = window.windowNumber
+        for (type, delay, p) in steps {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                if let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [],
+                                              timestamp: ProcessInfo.processInfo.systemUptime,
+                                              windowNumber: number, context: nil, eventNumber: 0, clickCount: 1,
+                                              pressure: type == .leftMouseUp || type == .mouseMoved ? 0 : 1) {
+                    NSApplication.shared.postEvent(e, atStart: false)
+                }
+            }
+        }
+        return "dragged \(Int(v[0])),\(Int(v[1])) to \(Int(v[2])),\(Int(v[3]))"
+    }
+
     /// The titlebar (traffic lights, toolbar items, and any band) as a PNG
     /// at `path`, transparent where it draws nothing, and its frame in the
     /// window: the app draws it over its own snapshot for the demo's
