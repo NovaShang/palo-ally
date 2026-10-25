@@ -383,9 +383,10 @@ export class Pals {
       onWaiting: (pal, body, ids) => this.pushWaiting(pal, body, ids),
       toPalo: (pal, text) => this.toolPaloSend(pal, text),
       tools: (pal) => this.sessionTools(pal),
-      onTurnEnd: (pal) => {
+      onTurnEnd: (pal, finished) => {
         this.balanceSoon();
         void this.readTitle(pal);
+        if (finished) this.pushDone(pal);
       },
       onAuth: (pal, ok) => this.d.onAuth?.({ id: pal.id, name: pal.rec.name }, ok),
       beforeStart: (pal) => this.readTitle(pal),
@@ -1506,6 +1507,20 @@ export class Pals {
     const streaming = before === undefined ? pal.streaming() : null;
     return { messages, ...(streaming ? { streaming } : {}) };
   }
+
+  // 「X 回复了」: a turn that really ended, with its reply's first line;
+  // at most once per Pal a minute (the app hides it when that conversation
+  // is the one on screen). Push only, never WeChat.
+  private pushDone(pal: PalSession): void {
+    const line = pal.toWire().lastLine;
+    if (!line) return;
+    const now = this.now();
+    if (now - (this.lastDonePush.get(pal.id) ?? 0) < 60_000) return;
+    this.lastDonePush.set(pal.id, now);
+    const msg: ChatMessage = { seq: 0, id: newId("m_"), role: "assistant", kind: "text", text: line, channel: "system", ts: now, pal: pal.id };
+    void this.d.router.proactive(msg, { title: t("pals.doneTitle", { name: this.shownName(pal) }), skipWechat: true }).catch(() => {});
+  }
+  private lastDonePush = new Map<string, number>();
 
   // 「X 在等你」: at most once per Pal every 10 minutes.
   private pushWaiting(pal: PalSession, body: string, ids: { approvalId?: string; questionId?: string }): void {

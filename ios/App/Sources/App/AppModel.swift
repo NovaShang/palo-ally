@@ -256,6 +256,19 @@ final class AppModel {
         return windows.last { $0.activeHostID == id }
     }
 
+    /// Whether a window in front shows session `pal`: its page, or a pane of
+    /// the workspace it shows.
+    func showsOnScreen(pal: String) -> Bool {
+        windows.contains { w in
+            guard w.scene?.activationState == .foregroundActive else { return false }
+            switch w.selection {
+            case .pal(let id)?: return id == pal
+            case .workspace(let ws)?: return w.store?.workspace(id: ws)?.memberIds.contains(pal) == true
+            default: return false
+            }
+        }
+    }
+
     /// The computers some window shows.
     var hostsOnScreen: Set<String> { Set(windows.compactMap(\.activeHostID)) }
 

@@ -166,7 +166,18 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     // a notification, iPhone 16, 2026-10-07 17:18).
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
                                             withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        // A session's 「… 回复了」 while its conversation is on screen in
+        // front: only in the list, no banner or sound.
+        let pal = response(of: notification)
+        if let pal, Thread.isMainThread, MainActor.assumeIsolated({ model.showsOnScreen(pal: pal) }) {
+            completionHandler([.list])
+            return
+        }
         completionHandler([.banner, .sound, .list])
+    }
+
+    private nonisolated func response(of notification: UNNotification) -> String? {
+        notification.request.content.userInfo["pal"] as? String
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,

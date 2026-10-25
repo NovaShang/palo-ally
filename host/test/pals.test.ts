@@ -443,7 +443,7 @@ describe("talking to a Pal", () => {
     await waitFor(() => t.hub.questions.listPending().length === 1);
     const q = t.hub.questions.listPending()[0]!;
     expect(q.source).toEqual({ kind: "pal", id: pal.id, name: "网站" });
-    expect(t.pusher.pushes).toHaveLength(1);
+    expect(t.pusher.pushes.filter((p) => p.title.endsWith("在等你"))).toHaveLength(1);
     await t.call("question.answer", { id: q.id, answers: { "方案选哪个？": "B" } });
     await waitFor(() => t.hub.pals.list()[0]!.status === "idle");
     expect(t.driver.decisions.at(-1)!.decision).toMatchObject({ behavior: "allow", updatedInput: { answers: { "方案选哪个？": "B" } } });
@@ -1486,13 +1486,16 @@ describe("the owner's own sessions (workbench)", () => {
     });
     const { pal } = await t.call("pals.create", { cwd: t.project, text: "先打个招呼" });
     await waitFor(() => find(t, pal.id).attention === "done");
-    expect(t.pusher.pushes).toEqual([]); // done is not pushed
+    // done is pushed as 「… 回复了」 with the reply's first line
+    await waitFor(() => t.pusher.pushes.length === 1);
+    expect(t.pusher.pushes).toEqual([expect.objectContaining({ title: "新会话 回复了", body: "收到：先打个招呼", data: expect.objectContaining({ pal: pal.id }) })]);
+    const waits = () => t.pusher.pushes.filter((p) => p.title.endsWith("在等你"));
     await t.call("pals.send", { id: pal.id, text: "要确认" });
     await waitFor(() => t.hub.approvals.listPending().length === 1);
-    expect(t.pusher.pushes).toEqual([expect.objectContaining({ title: "新会话 在等你", body: "想运行：npm test", data: expect.objectContaining({ pal: pal.id }) })]);
+    expect(waits()).toEqual([expect.objectContaining({ title: "新会话 在等你", body: "想运行：npm test", data: expect.objectContaining({ pal: pal.id }) })]);
     await t.call("approval.answer", { id: t.hub.approvals.listPending()[0]!.id, allow: true });
     await waitFor(() => find(t, pal.id).attention === "done");
-    expect(t.pusher.pushes).toHaveLength(1);
+    expect(waits()).toHaveLength(1);
     // named, the push says its name
     await t.call("pals.rename", { id: pal.id, name: "官网" });
     (t.hub.pals as any).lastPush.clear();

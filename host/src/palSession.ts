@@ -137,7 +137,8 @@ export interface PalSessionDeps {
   /** Its tools that reach the owner (Artifact, SendUserFile, …), scoped to it; none: it has only palo_send. */
   tools?: (pal: PalSession) => DeliveryToolHandlers | undefined;
   /** A turn ended (its spending is checked). */
-  onTurnEnd: (pal: PalSession) => void;
+  /** A turn is over; `finished`: it really ended (not stopped, not failed, nothing queued). */
+  onTurnEnd: (pal: PalSession, finished?: boolean) => void;
   /** A turn went through (true) or failed for want of Claude Code's login (false). */
   onAuth?: (pal: PalSession, ok: boolean) => void;
   /** It was asleep and is up again. */
@@ -1212,7 +1213,7 @@ export class PalSession {
           this.endTurn();
         }
         this.follower?.poke();
-        this.d.onTurnEnd(this);
+        this.d.onTurnEnd(this, !this.pendingUuids.size && !stopped && !e.isError);
         break;
       }
       case "error":
