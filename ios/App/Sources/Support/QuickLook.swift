@@ -63,7 +63,12 @@ enum QuickLookPresenter {
         nav.preferredContentSize = CGSize(width: 960, height: 720)
         top.present(nav, animated: true)
         #else
-        top.present(preview, animated: true)
+        // A page of ours with QuickLook inside it, so the bar (and its ✕) is
+        // ours: on its own, QuickLook went full screen on a long docx and
+        // hid its Done for good, leaving no way out.
+        let nav = UINavigationController(rootViewController: PhonePreviewPage(preview: preview))
+        nav.modalPresentationStyle = .fullScreen
+        top.present(nav, animated: true)
         #endif
     }
 
@@ -123,6 +128,18 @@ private final class AttachmentPreviewController: QLPreviewController, QLPreviewC
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    /// Whose bar holds the buttons: the phone's page around it, or its own.
+    private var barItem: UINavigationItem {
+        #if targetEnvironment(macCatalyst)
+        navigationItem
+        #else
+        (parent as? PhonePreviewPage)?.navigationItem ?? navigationItem
+        #endif
+    }
+
+    var currentURL: URL? { items[safe: currentPreviewItemIndex]?.url }
+    var currentTitle: String? { items[safe: currentPreviewItemIndex].map { $0.title ?? $0.url.lastPathComponent } }
+
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         guard libraryButton == nil, items.contains(where: { $0.artifactID != nil }) else { return }
@@ -132,7 +149,7 @@ private final class AttachmentPreviewController: QLPreviewController, QLPreviewC
         })
         button.accessibilityLabel = String(localized: "在产出物库中查看")
         libraryButton = button
-        navigationItem.leftBarButtonItems = (navigationItem.leftBarButtonItems ?? []) + [button]
+        barItem.leftBarButtonItems = (barItem.leftBarButtonItems ?? []) + [button]
         updateLibraryButton()
         indexObservation = observe(\.currentPreviewItemIndex, options: [.new]) { controller, _ in
             MainActor.assumeIsolated { (controller as? AttachmentPreviewController)?.updateLibraryButton() }
@@ -142,6 +159,9 @@ private final class AttachmentPreviewController: QLPreviewController, QLPreviewC
     /// Only shown while the current page is a library item.
     private func updateLibraryButton() {
         libraryButton?.isHidden = items[safe: currentPreviewItemIndex]?.artifactID == nil
+        #if !targetEnvironment(macCatalyst)
+        (parent as? PhonePreviewPage)?.pageChanged()
+        #endif
     }
 
     func numberOfPreviewItems(in controller: QLPreviewController) -> Int { previewItems.count }
@@ -151,6 +171,57 @@ private final class AttachmentPreviewController: QLPreviewController, QLPreviewC
         return previewItems[index]
     }
 }
+
+#if !targetEnvironment(macCatalyst)
+/// The phone's preview page: our bar with ✕, the title, 共享 and
+/// 在产出物库中查看; QuickLook inside it shows the file (zoom, paging) and
+/// can't take the way out away when it goes full screen.
+private final class PhonePreviewPage: UIViewController {
+    private let preview: AttachmentPreviewController
+
+    init(preview: AttachmentPreviewController) {
+        self.preview = preview
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+        addChild(preview)
+        preview.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(preview.view)
+        NSLayoutConstraint.activate([
+            preview.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            preview.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            preview.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            preview.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+        preview.didMove(toParent: self)
+        navigationItem.leftBarButtonItems = [UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak self] _ in
+            self?.dismiss(animated: true)
+        })]
+        let share = UIBarButtonItem(systemItem: .action, primaryAction: UIAction { [weak self] _ in self?.share() })
+        share.accessibilityLabel = String(localized: "共享")
+        navigationItem.rightBarButtonItems = [share]
+        navigationItem.largeTitleDisplayMode = .never
+        pageChanged()
+    }
+
+    func pageChanged() {
+        navigationItem.title = preview.currentTitle
+    }
+
+    private func share() {
+        guard let url = preview.currentURL else { return }
+        let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        sheet.popoverPresentationController?.sourceItem = navigationItem.rightBarButtonItems?.first
+        present(sheet, animated: true)
+    }
+}
+#endif
 
 private extension Array {
     subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
