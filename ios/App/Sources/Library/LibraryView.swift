@@ -18,6 +18,7 @@ struct LibraryView: View {
     /// In a session's pane: the session whose items lead, and the 这个会话 / 全部 choice.
     @Environment(\.libraryPalID) private var palID
     @Environment(\.libraryOpensModal) private var opensModal
+    @Environment(\.libraryOpensTab) private var opensTab
     @State private var onlyThisSession = true
     /// The phone's pane page: its glass bars hold the search, 这个会话 / 全部
     /// and 按时间 / 按文件夹, so the list shows none of its own.
@@ -331,6 +332,10 @@ struct LibraryView: View {
         if opensModal {
             Button { PaneModal.artifact(a.id, model: model, store: store) } label: { label().contentShape(.rect) }
                 .buttonStyle(.plain)
+        } else if let opensTab {
+            Button { opensTab(a.id) } label: { label().contentShape(.rect) }
+                .buttonStyle(.borderless)
+                .tint(.primary)
         } else {
             NavigationLink(value: a.id, label: label)
         }

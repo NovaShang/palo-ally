@@ -377,6 +377,15 @@ describe("right-pane tabs", () => {
     await t.hub.pals.stopAndWait();
   });
 
+  test("an artifact tab keeps its id; the same item twice is one tab; one without an id is refused", async () => {
+    const t = setup();
+    const tabs = [{ kind: "library" }, { kind: "files" }, { kind: "artifact", path: "art_1" }, { kind: "artifact", path: "art_1" }, { kind: "artifact", path: "art_2" }];
+    const s = (await t.call("workbench.tabs.set", { key: "palo", tabs, active: 4, open: true })).state;
+    expect(s.tabs).toEqual([{ kind: "library" }, { kind: "files" }, { kind: "artifact", path: "art_1" }, { kind: "artifact", path: "art_2" }]);
+    await expect(t.call("workbench.tabs.set", { key: "palo", tabs: [{ kind: "artifact" }], active: 0, open: true })).rejects.toThrow();
+    await t.hub.pals.stopAndWait();
+  });
+
   test("a tab kind the host doesn't know is kept as written, through a restart too, and doesn't collapse into another", async () => {
     const t = setup();
     const odd = [{ kind: "terminal", cwd: "/x", n: 2 }, { kind: "terminal", cwd: "/y" }, { kind: "files" }];

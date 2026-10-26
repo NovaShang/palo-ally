@@ -83,7 +83,14 @@ struct RightPane: View {
     @ViewBuilder private func other(_ tab: PaneTab) -> some View {
         switch tab.kind {
         case PaneTab.library:
-            LibraryTab().environment(\.libraryPalID, RightPaneScope.palID(of: scope))
+            LibraryTab()
+                .environment(\.libraryPalID, RightPaneScope.palID(of: scope))
+                // An item opens as its own tab, as a file from 文件 does.
+                .environment(\.libraryOpensTab) { id in model.editPane(key) { $0.openArtifact(key, id: id) } }
+        case PaneTab.artifact:
+            let index = state.active
+            ArtifactDetailView(artifactID: tab.path ?? "", inPane: true, close: { hub.close(key, at: index) })
+                .id(tab)
         case PaneTab.files:
             NavigationStack {
                 FileTreeScreen(scope: scope, close: { if let onClose { onClose() } else { model.editPane(key) { $0.setOpen(key, false) } } },
@@ -288,6 +295,7 @@ private struct RightPaneTabBar: View {
         case PaneTab.library: "square.grid.2x2"
         case PaneTab.files: "folder"
         case PaneTab.preview: "doc.text"
+        case PaneTab.artifact: "square.stack"
         case PaneTab.web: "globe"
         default: "questionmark.square"
         }
@@ -457,6 +465,7 @@ private struct TabTitle: View {
         case PaneTab.library: Text(String(localized: "成果"))
         case PaneTab.files: Text(String(localized: "文件", table: "Files"))
         case PaneTab.preview: Text(verbatim: ((tab.path ?? "") as NSString).lastPathComponent)
+        case PaneTab.artifact: ArtifactTabTitle(id: tab.path ?? "")
         case PaneTab.web:
             if let page { LiveTitle(page: page, fallback: tab.url ?? "") } else { Text(verbatim: WebAddress.label(for: tab.url ?? "")) }
         default: Text(verbatim: tab.kind)
@@ -471,6 +480,17 @@ private struct TabTitle: View {
             else if !fallback.isEmpty { Text(verbatim: WebAddress.label(for: fallback)) }
             else { Text(String(localized: "新网页", table: "Files")) }
         }
+    }
+}
+
+/// An item of 成果's title, as it is now.
+private struct ArtifactTabTitle: View {
+    @Environment(AppStore.self) private var store
+    let id: String
+
+    var body: some View {
+        let title = store.artifact(id: id)?.title ?? ""
+        Text(verbatim: title.isEmpty ? String(localized: "成果") : title)
     }
 }
 

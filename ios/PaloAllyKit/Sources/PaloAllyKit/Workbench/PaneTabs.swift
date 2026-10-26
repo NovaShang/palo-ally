@@ -22,6 +22,8 @@ extension PaneTab {
     public static let files = "files"
     public static let preview = "preview"
     public static let web = "web"
+    /// One item of 成果, by its id (kept in `path`).
+    public static let artifact = "artifact"
 
     /// A file by its absolute path (tabs from before: relative to the pane's files).
     public static func previewTab(_ path: String) -> PaneTab { PaneTab(kind: preview, path: path) }
@@ -29,6 +31,9 @@ extension PaneTab {
     /// The preview's path is absolute: read from anywhere on the computer (`FileScope.root`).
     public var isAbsolutePreview: Bool { kind == Self.preview && (path ?? "").hasPrefix("/") }
     public static func webTab(_ url: String) -> PaneTab { PaneTab(kind: web, url: url) }
+    public static func artifactTab(_ id: String) -> PaneTab { PaneTab(kind: artifact, path: id) }
+    /// An artifact tab's item.
+    public var artifactID: String? { kind == Self.artifact ? path : nil }
 }
 
 extension TabsState {
@@ -85,6 +90,11 @@ extension TabsState {
     /// A file as a tab (its absolute path); the same path reuses its tab.
     public func openingPreview(path: String, key: String) -> TabsState {
         opening(.previewTab(path), key: key) { $0.kind == PaneTab.preview && $0.path == path }
+    }
+
+    /// An item of 成果 as a tab; the same item reuses its tab.
+    public func openingArtifact(id: String, key: String) -> TabsState {
+        opening(.artifactTab(id), key: key) { $0.kind == PaneTab.artifact && $0.path == id }
     }
 
     /// A page as a tab; the same address reuses its tab.
@@ -190,6 +200,7 @@ public final class PaneTabsHub {
     public func openLibrary(_ key: String) { update(key) { $0.openingLibrary(key: key) } }
     public func openPreview(_ key: String, path: String) { update(key) { $0.openingPreview(path: path, key: key) } }
     public func openWeb(_ key: String, url: String) { update(key) { $0.openingWeb(url: url, key: key) } }
+    public func openArtifact(_ key: String, id: String) { update(key) { $0.openingArtifact(id: id, key: key) } }
     public func retargetWeb(_ key: String, at index: Int, url: String) { update(key) { $0.retargetingWeb(at: index, to: url, key: key) } }
     public func close(_ key: String, at index: Int) { update(key) { $0.closing(at: index, key: key) } }
     public func activate(_ key: String, at index: Int) { update(key) { $0.activating(index, key: key) } }

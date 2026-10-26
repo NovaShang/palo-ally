@@ -23,6 +23,8 @@ extension EnvironmentValues {
     @Entry var libraryOpensModal: Bool = false
     /// The session whose items 成果 offers first (nil: Palo's, everything).
     @Entry var libraryPalID: String? = nil
+    /// 成果 in the pane beside the conversation: an item opens as its own tab.
+    @Entry var libraryOpensTab: ((String) -> Void)? = nil
 }
 
 /// Full-screen modals over whatever is on screen.

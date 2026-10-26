@@ -8,6 +8,11 @@ struct ArtifactDetailView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     let artifactID: String
+    /// A tab of the right pane: its chip already names the item, so no bar
+    /// or strip; its actions are a floating ⋯ at the top right.
+    var inPane = false
+    /// Closes that tab.
+    var close: (() -> Void)? = nil
     @State private var selectedPath: String?
     @State private var content: Loaded?
     @State private var error: String?
@@ -27,7 +32,22 @@ struct ArtifactDetailView: View {
 
     private var artifact: Artifact? { store.artifact(id: artifactID) }
 
-    var body: some View {
+    @ViewBuilder var body: some View {
+        if inPane {
+            main
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .topTrailing) { if let artifact { paneMenu(artifact).padding(10) } }
+                .task(id: reloadKey) { await load() }
+                .accessibilityIdentifier("artifact-tab")
+        } else {
+            page
+        }
+    }
+
+    /// Reload whenever the host rewrites the artifact ("live" artifacts).
+    private var reloadKey: String { "\(artifact?.updatedAt ?? 0)|\(selectedPath ?? "")" }
+
+    private var main: some View {
         Group {
             if let artifact {
                 if let content {
@@ -68,6 +88,10 @@ struct ArtifactDetailView: View {
                 ContentUnavailableView("找不到了", systemImage: "questionmark.folder")
             }
         }
+    }
+
+    private var page: some View {
+        main
         .navigationTitle(artifact?.title ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -122,39 +146,51 @@ struct ArtifactDetailView: View {
         // The Mac (in 成果 beside the conversation): to the column's top, back,
         // its title and one menu floating (MacPageStrip).
         .macPageTop(artifact?.title ?? "", back: { dismiss() }, trailing: artifact.map { AnyView(macMenu($0)) })
-        // Reload whenever the host rewrites the artifact ("live" artifacts).
-        .task(id: "\(artifact?.updatedAt ?? 0)|\(selectedPath ?? "")") {
-            await load()
+        .task(id: reloadKey) { await load() }
+    }
+
+    /// The tab's ⋯: the strip's menu, and closing the tab.
+    private func paneMenu(_ artifact: Artifact) -> some View {
+        MacStripMenu(label: String(localized: "更多")) {
+            menuItems(artifact)
+            if let close {
+                Divider()
+                Button(action: close) {
+                    Label { Text("关闭标签", tableName: "Files") } icon: { Image(systemName: "xmark") }
+                }
+            }
         }
     }
 
     /// The Mac's strip: the bar's actions in one menu.
     private func macMenu(_ artifact: Artifact) -> some View {
-        MacStripMenu(label: String(localized: "更多")) {
-            if let content {
-                ShareLink(item: content.fileURL) { Label("共享", systemImage: "square.and.arrow.up") }
-            }
+        MacStripMenu(label: String(localized: "更多")) { menuItems(artifact) }
+    }
+
+    @ViewBuilder private func menuItems(_ artifact: Artifact) -> some View {
+        if let content {
+            ShareLink(item: content.fileURL) { Label("共享", systemImage: "square.and.arrow.up") }
+        }
+        Button {
+            Task { try? await store.setPinned(artifact, !artifact.pinned) }
+        } label: {
+            Label(artifact.pinned ? String(localized: "取消置顶") : String(localized: "置顶"), systemImage: artifact.pinned ? "pin.slash" : "pin")
+        }
+        if let content, isMarkdown(artifact, content.path) {
             Button {
-                Task { try? await store.setPinned(artifact, !artifact.pinned) }
+                showSource.toggle()
             } label: {
-                Label(artifact.pinned ? String(localized: "取消置顶") : String(localized: "置顶"), systemImage: artifact.pinned ? "pin.slash" : "pin")
+                Label(showSource ? String(localized: "查看排版") : String(localized: "查看源码"),
+                      systemImage: showSource ? "doc.richtext" : "chevron.left.forwardslash.chevron.right")
             }
-            if let content, isMarkdown(artifact, content.path) {
-                Button {
-                    showSource.toggle()
-                } label: {
-                    Label(showSource ? String(localized: "查看排版") : String(localized: "查看源码"),
-                          systemImage: showSource ? "doc.richtext" : "chevron.left.forwardslash.chevron.right")
+        }
+        if artifact.files.count > 1 {
+            Picker("文件", selection: Binding(get: { currentPath(artifact) }, set: { selectedPath = $0 })) {
+                ForEach(artifact.files, id: \.path) { f in
+                    Text("\(f.path)  \(Copy.byteSize(f.size))").tag(f.path)
                 }
             }
-            if artifact.files.count > 1 {
-                Picker("文件", selection: Binding(get: { currentPath(artifact) }, set: { selectedPath = $0 })) {
-                    ForEach(artifact.files, id: \.path) { f in
-                        Text("\(f.path)  \(Copy.byteSize(f.size))").tag(f.path)
-                    }
-                }
-                .pickerStyle(.menu)
-            }
+            .pickerStyle(.menu)
         }
     }
 

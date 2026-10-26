@@ -120,6 +120,10 @@ function parseTab(v: unknown): PaneTab {
       // The file's absolute path (older tabs: relative to the pane's files).
       // A `scope` an older app wrote is dropped.
       return { kind: "preview", path: v.path };
+    case "artifact":
+      // One item of 成果, by its id.
+      if (typeof v.path !== "string" || !v.path.trim()) throw bad();
+      return { kind: "artifact", path: v.path };
     case "web": {
       let ok = false;
       try {
@@ -136,7 +140,7 @@ function parseTab(v: unknown): PaneTab {
   }
 }
 
-const tabId = (tab: PaneTab): string => (tab.kind === "preview" ? `preview:${tab.path}` : tab.kind === "web" ? `web:${tab.url}` : tab.kind === "files" || tab.kind === "library" ? tab.kind : JSON.stringify(tab));
+const tabId = (tab: PaneTab): string => (tab.kind === "preview" || tab.kind === "artifact" ? `${tab.kind}:${tab.path}` : tab.kind === "web" ? `web:${tab.url}` : tab.kind === "files" || tab.kind === "library" ? tab.kind : JSON.stringify(tab));
 
 export class Workbench {
   private data: WorkbenchFile;

@@ -460,7 +460,7 @@ export interface Workspace {
 }
 
 /** A right-pane tab. Kinds the host doesn't know (a newer app wrote them) are kept as they are. */
-export type PaneTab = { kind: "files" } | { kind: "library" } | { kind: "preview"; path: string } | { kind: "web"; url: string } | { kind: string; [k: string]: unknown };
+export type PaneTab = { kind: "files" } | { kind: "library" } | { kind: "preview"; path: string } | { kind: "web"; url: string } | { kind: "artifact"; path: string } | { kind: string; [k: string]: unknown };
 
 export interface TabsState {
   tabs: PaneTab[];

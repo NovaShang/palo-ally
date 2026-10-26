@@ -359,13 +359,16 @@ final class WindowModel {
     }
 
     /// From the conversation: just that artifact; one step back returns to it.
+    /// Beside the conversation (Mac, iPad): its own tab, like a file.
     func openArtifact(_ id: String) {
+        if libraryBeside { return openInPane { $0.openArtifact($1, id: id) } }
         libraryPath = [id]
         openInPane { $0.openLibrary($1) }
     }
 
     /// The way out of a single item to its whole collection.
     func showInLibrary(_ id: String? = nil) {
+        if libraryBeside, let id { return openArtifact(id) }
         libraryPath = id.map { [$0] } ?? []
         openInPane { $0.openLibrary($1) }
     }
