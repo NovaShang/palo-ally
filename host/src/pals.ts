@@ -949,7 +949,12 @@ export class Pals {
     const pal = this.pals.get(id);
     if (!pal || pal.rec.workspaceId === workspaceId) return;
     if (workspaceId) pal.rec.workspaceId = workspaceId;
-    else delete pal.rec.workspaceId;
+    else {
+      delete pal.rec.workspaceId;
+      // Taken out of a workspace counts as use: an old session lands in 会话
+      // instead of folding away the moment it leaves.
+      pal.rec.lastUsedAt = Math.max(pal.rec.lastUsedAt, this.now());
+    }
     this.save();
   }
 

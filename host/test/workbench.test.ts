@@ -285,7 +285,7 @@ describe("workspaces and sessions", () => {
     await t.hub.pals.stopAndWait();
   });
 
-  test("sessions in a workspace never fold; out of it they do", async () => {
+  test("sessions in a workspace never fold; taken out, one counts as used (stays in 会话) and folds again days later", async () => {
     const t = setup();
     const a = await t.mk("甲");
     const b = await t.mk("乙");
@@ -294,6 +294,8 @@ describe("workspaces and sessions", () => {
     expect(t.pal(a.id).folded).toBe(false);
     expect(t.pal(b.id).folded).toBe(true);
     await t.call("workspaces.move", { palId: a.id });
+    expect(t.pal(a.id).folded).toBe(false);
+    (t.hub.pals.get(a.id) as any).rec.lastUsedAt = Date.now() - 30 * 86_400_000;
     expect(t.pal(a.id).folded).toBe(true);
     await t.hub.pals.stopAndWait();
   });
