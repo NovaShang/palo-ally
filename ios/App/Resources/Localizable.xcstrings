@@ -7730,6 +7730,36 @@
           }
         }
       }
+    },
+    "更早的会话" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Earlier sessions"
+          }
+        }
+      }
+    },
+    "全部历史记录…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All history…"
+          }
+        }
+      }
+    },
+    "更早的会话，%lld 个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Earlier sessions, %lld"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

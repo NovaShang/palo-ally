@@ -182,6 +182,8 @@ public struct SidebarTree: Sendable, Equatable {
     public var sessions: [Pal]
     /// Sessions put away for lack of use: 以前的 holds them.
     public var foldedCount: Int
+    /// Those sessions, the latest activity first (the sidebar's 更早的会话).
+    public var folded: [Pal] = []
     /// Sessions waiting on the owner, anywhere.
     public var waitingCount: Int
 
@@ -223,9 +225,11 @@ public struct SidebarTree: Sendable, Equatable {
             let known = ordinary.filter { rank[$0.id] != nil }.sorted { rank[$0.id]! < rank[$1.id]! }
             ordinary = fresh + known
         }
-        return SidebarTree(workspaces: nodes, sessions: ordinary,
-                           foldedCount: loose.filter { $0.element.folded }.count,
-                           waitingCount: pals.filter { $0.attention == .waiting }.count)
+        let folded = loose.map(\.element).filter(\.folded).sorted { ($0.updatedAt ?? 0) > ($1.updatedAt ?? 0) }
+        var tree = SidebarTree(workspaces: nodes, sessions: ordinary, foldedCount: folded.count,
+                               waitingCount: pals.filter { $0.attention == .waiting }.count)
+        tree.folded = folded
+        return tree
     }
 
     /// The sidebar's order of ordinary sessions, ready to send back after a drag.

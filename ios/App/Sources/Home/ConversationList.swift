@@ -26,6 +26,8 @@ struct ConversationList: View {
     @State private var deleting: Workspace?
     /// The workspaces opened in the list.
     @State private var expanded: Set<String> = []
+    /// 更早的会话 opened.
+    @AppStorage("sidebarEarlierOpen") private var earlierOpen = false
     /// What a drop failed with.
     @State private var dropFailure: String?
 
@@ -78,6 +80,30 @@ struct ConversationList: View {
                             .contextMenu { sessionMenu(pal) }
                             .sidebarRowDrag(dnd, drags: .session(pal.id), conversation: .pal(pal.id), target: .session(pal.id),
                                             tree: tree, sessionOrder: order, perform: drop)
+                    }
+                    // Put away for lack of use: one quiet row, opened in place,
+                    // so they are still there to see (and the rest of the history a tap on).
+                    if !tree.folded.isEmpty {
+                        EarlierRow(count: tree.folded.count, expanded: earlierOpen) { earlierOpen.toggle() }
+                            .accessibilityIdentifier("row-earlier")
+                        if earlierOpen {
+                            ForEach(tree.folded) { pal in
+                                PalListRow(pal: pal, inset: true)
+                                    .tag(WindowModel.Conversation.pal(pal.id))
+                                    .accessibilityIdentifier("row-pal-\(pal.id)")
+                                    .contextMenu { sessionMenu(pal) }
+                            }
+                            Button { model.historyPickerPresented = true } label: {
+                                Text("全部历史记录…")
+                                    .foregroundStyle(.secondary)
+                                    .padding(.leading, 22)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(.rect)
+                            }
+                            .buttonStyle(.borderless)
+                            .tint(.primary)
+                            .accessibilityIdentifier("row-earlier-history")
+                        }
                     }
                 } header: {
                     // Also where a session dragged out of a workspace can land: the top.
@@ -455,6 +481,34 @@ private struct WorkspaceRow: View {
     }
 
     private var toggleLabel: String { expanded ? String(localized: "收起") : String(localized: "展开") }
+}
+
+/// 更早的会话 N: the sessions put away for lack of use, opened in place.
+private struct EarlierRow: View {
+    let count: Int
+    let expanded: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        Button(action: toggle) {
+            HStack(spacing: 2) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
+                    .frame(width: 20, height: 28)
+                Text("更早的会话")
+                Spacer(minLength: 8)
+                Text("\(count)").monospacedDigit()
+            }
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.borderless)
+        .tint(.primary)
+        .accessibilityLabel(String(localized: "更早的会话，\(count) 个"))
+        .accessibilityHint(expanded ? String(localized: "收起") : String(localized: "展开"))
+    }
 }
 
 /// A session: its state glyph, its name and its last words under it; on the
