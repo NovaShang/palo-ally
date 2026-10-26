@@ -154,6 +154,12 @@ private extension WebTabPage {
 
 // MARK: - the tab row
 
+/// What the tab strip scrolls to keep in sight.
+private struct TabsShown: Equatable {
+    let count: Int
+    let active: Int
+}
+
 private struct RightPaneTabBar: View {
     let tabs: [PaneTab]
     let active: Int
@@ -198,8 +204,12 @@ private struct RightPaneTabBar: View {
                 }
                 .padding(4)
             }
-            // The shown tab stays in sight in a narrow pane.
-            .onChange(of: active, initial: true) { _, i in withAnimation(.snappy) { proxy.scrollTo(i) } }
+            // The shown tab stays in sight in a narrow pane, a new one too:
+            // after the strip has laid it out, else a file opened from the
+            // conversation showed with its tab off the strip's end.
+            .onChange(of: TabsShown(count: tabs.count, active: active), initial: true) { _, shown in
+                Task { @MainActor in withAnimation(.snappy) { proxy.scrollTo(shown.active) } }
+            }
         }
         .glassEffect(.regular, in: .capsule)
     }
