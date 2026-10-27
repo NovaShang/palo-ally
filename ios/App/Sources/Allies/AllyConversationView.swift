@@ -298,10 +298,19 @@ private struct AllyEntryRow: View {
         entry.author == .owner ? ally.displayName : ally.assistantLabel
     }
 
-    /// The state under this side's words: the newest's, and any that didn't go out as it should.
+    /// Under this side's words: when they went, and the state (the newest's,
+    /// and any that didn't go out as it should).
     private var caption: String? {
-        guard showsState || entry.status == .queued || entry.status == .rejected else { return nil }
-        return Copy.allyStatus(entry)
+        let state = showsState || entry.status == .queued || entry.status == .rejected ? Copy.allyStatus(entry) : nil
+        let parts = [AllyTime.of(entry), state].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+}
+
+/// When an entry was said, the time of day (the quiet time lines carry the day).
+enum AllyTime {
+    static func of(_ entry: AllyEntry) -> String? {
+        entry.ts > 0 ? entry.ts.msDate.formatted(.dateTime.hour().minute()) : nil
     }
 }
 
@@ -320,18 +329,16 @@ private struct TheirWords: View {
                     if entry.urgent {
                         Text("急").font(.caption.weight(.semibold)).foregroundStyle(.orange)
                     }
+                    if let time = AllyTime.of(entry) {
+                        Text(verbatim: time).font(.caption).foregroundStyle(.tertiary).monospacedDigit()
+                    }
                 }
                 HStack(alignment: .top, spacing: 10) {
                     Capsule().fill(.quaternary).frame(width: 3)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(entry.text)
-                            .font(.body)
-                            .foregroundStyle(.primary)
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .contextMenu {
-                                Button("复制", systemImage: "doc.on.doc") { Clipboard.copy(entry.text) }
-                            }
+                        // Selectable like the assistant's replies: a part of
+                        // it (a command to copy), not only the whole.
+                        SelectableMarkdown(source: entry.text)
                         if let slots = entry.slots, !slots.isEmpty {
                             AllySlotList(slots: slots)
                         }
