@@ -222,7 +222,7 @@ struct ArtifactDetailView: View {
                               images: store.markdownImages(artifactID: a.id, documentPath: c.path))
                 .ignoresSafeArea(edges: .bottom)
         } else {
-            QuickLookView(url: c.fileURL, revision: c.revision)
+            EmbeddedPreview(url: c.fileURL, revision: c.revision)
                 .ignoresSafeArea(edges: .bottom)
         }
     }

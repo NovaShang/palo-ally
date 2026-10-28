@@ -125,7 +125,7 @@ struct FilePage: View {
                             text: text, raw: raw, imageSource: kind == .markdown ? images : nil)
                 .ignoresSafeArea(edges: .bottom)
         case .quickLook(let url):
-            QuickLookView(url: url, revision: revision)
+            EmbeddedPreview(url: url, revision: revision)
                 .ignoresSafeArea(edges: .bottom)
         case .tooLarge(let size):
             ContentUnavailableView {

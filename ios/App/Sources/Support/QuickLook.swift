@@ -1,6 +1,64 @@
+import PDFKit
 import QuickLook
 import SwiftUI
 import UIKit
+
+/// A file shown inside a page or a pane tab: QuickLook, except a PDF on the
+/// Mac. There QuickLook embedded in a pane showed the first page only and
+/// didn't scroll (10-27); PDFKit lays the pages one under another, as wide as
+/// the pane, and scrolls with the wheel or trackpad.
+struct EmbeddedPreview: View {
+    let url: URL
+    let revision: Int64
+
+    var body: some View {
+        #if targetEnvironment(macCatalyst)
+        if url.pathExtension.lowercased() == "pdf" {
+            PDFPreview(url: url, revision: revision)
+        } else {
+            QuickLookView(url: url, revision: revision)
+        }
+        #else
+        QuickLookView(url: url, revision: revision)
+        #endif
+    }
+}
+
+/// A PDF, its pages in one column, fitted to the width.
+struct PDFPreview: UIViewRepresentable {
+    let url: URL
+    let revision: Int64
+
+    final class Coordinator {
+        var url: URL?
+        var revision: Int64 = 0
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> PDFView {
+        let view = PDFView()
+        view.displayMode = .singlePageContinuous
+        view.displayDirection = .vertical
+        view.autoScales = true
+        view.backgroundColor = .secondarySystemBackground
+        load(view, context: context)
+        return view
+    }
+
+    func updateUIView(_ view: PDFView, context: Context) {
+        if context.coordinator.url != url || context.coordinator.revision != revision { load(view, context: context) }
+    }
+
+    /// A new revision of the same document keeps the page that was showing.
+    private func load(_ view: PDFView, context: Context) {
+        let page = view.currentPage.flatMap { view.document?.index(for: $0) }
+        context.coordinator.url = url
+        context.coordinator.revision = revision
+        view.document = PDFDocument(url: url)
+        if let page, let doc = view.document, page < doc.pageCount, let p = doc.page(at: page) { view.go(to: p) }
+    }
+}
 
 /// The system previewer, embedded (the library's artifact detail uses it for
 /// everything that isn't markdown or a web page).

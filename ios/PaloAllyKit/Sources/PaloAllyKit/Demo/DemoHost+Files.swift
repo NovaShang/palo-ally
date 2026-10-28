@@ -55,6 +55,7 @@ extension DemoHost {
         """),
         "package.json": DemoFile("{\n  \"name\": \"site\",\n  \"private\": true,\n  \"scripts\": { \"dev\": \"vite\", \"build\": \"vite build\" }\n}\n"),
         ".gitignore": DemoFile("node_modules\ndist\n"),
+        "docs/验收报告.pdf": DemoFile(data: DemoHost.demoPDF(pages: 6)),
         "src/app.ts": DemoFile("import { createRoot } from \"react-dom/client\";\nimport { App } from \"./App\";\n\ncreateRoot(document.getElementById(\"root\")!).render(<App />);\n"),
         "src/pages/ListPage.tsx": DemoFile("""
         import { useItems } from "../hooks/useItems";

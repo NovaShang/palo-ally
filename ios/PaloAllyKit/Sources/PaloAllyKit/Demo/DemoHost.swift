@@ -1,3 +1,5 @@
+import CoreGraphics
+import CoreText
 import Foundation
 
 /// A complete in-memory host speaking design.md §5.3 over an
@@ -1666,6 +1668,7 @@ public actor DemoHost {
             ("ar8", "装修预算", "家务", 150, "# 装修预算\n\n- 厨房 ¥18,000\n- 卫生间 ¥12,500\n"),
             ("ar9", "保险到期提醒", "理财", 300, "# 保险到期\n\n- 车险 11 月 3 日\n- 家财险 次年 2 月\n"),
         ]
+        let reportPDF = Self.demoPDF(pages: 6)
         let artifacts = [
             Artifact(id: "ar1", title: "每日晨报", type: "markdown", mainFile: "briefing.md", pinned: true, folder: "日常",
                      updatedAt: now - 5 * hour, files: [ArtifactFile(path: "briefing.md", size: Int64(briefing.utf8.count)),
@@ -1678,13 +1681,18 @@ public actor DemoHost {
         ] + more.map { m in
             Artifact(id: m.id, title: m.title, type: "markdown", mainFile: "\(m.id).md", folder: m.folder,
                      updatedAt: now - m.hoursAgo * hour, files: [ArtifactFile(path: "\(m.id).md", size: Int64(m.body.utf8.count))])
-        }
+        } + [
+            // A PDF of several pages (QuickLook's preview, scrolled).
+            Artifact(id: "ar10", title: "体检报告", type: "file", mainFile: "report.pdf", pinned: false, folder: "家务",
+                     updatedAt: now - 40 * hour, files: [ArtifactFile(path: "report.pdf", size: Int64(reportPDF.count))]),
+        ]
         let files: [String: Data] = [
             "ar1/briefing.md": Data(briefing.utf8),
             "ar1/img/weather.svg": weatherSVG,
             "ar2/index.html": Data(compare.utf8),
             "ar2/img/hotel.svg": hotelSVG,
             "ar3/spending.csv": Data(csv.utf8),
+            "ar10/report.pdf": reportPDF,
         ].merging(Dictionary(uniqueKeysWithValues: more.map { ("\($0.id)/\($0.id).md", Data($0.body.utf8)) })) { a, _ in a }
         let memory: [String: (scope: MemoryScope, content: String, updatedAt: Int64)] = [
             "user.md": (.core, "# 关于我\n\n- 住在杭州，常去上海出差\n- 喜欢靠窗座位\n- 不吃香菜\n", now - 48 * hour),
@@ -1696,5 +1704,28 @@ public actor DemoHost {
         return Seed(messages: messages, tasks: tasks, approvals: approvals, questions: questions, watches: watches,
                     artifacts: artifacts,
                     files: files, memory: memory)
+    }
+}
+
+extension DemoHost {
+    /// A real PDF of `pages` A4 pages, each with a big page number.
+    static func demoPDF(pages: Int) -> Data {
+        let data = NSMutableData()
+        var box = CGRect(x: 0, y: 0, width: 595, height: 842)
+        guard let consumer = CGDataConsumer(data: data as CFMutableData),
+              let ctx = CGContext(consumer: consumer, mediaBox: &box, nil) else { return Data() }
+        for n in 1...max(pages, 1) {
+            ctx.beginPDFPage(nil)
+            ctx.setFillColor(CGColor(gray: 0.92, alpha: 1))
+            ctx.fill(CGRect(x: 40, y: 40, width: 515, height: 762))
+            let text = NSAttributedString(string: "第 \(n) 页",
+                                          attributes: [NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName("Helvetica" as CFString, 72, nil)])
+            let line = CTLineCreateWithAttributedString(text)
+            ctx.textPosition = CGPoint(x: 180, y: 420)
+            CTLineDraw(line, ctx)
+            ctx.endPDFPage()
+        }
+        ctx.closePDF()
+        return data as Data
     }
 }
