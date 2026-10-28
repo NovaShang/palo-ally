@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import PaloAllyObjC
 
 /// Captures microphone audio and emits 16-bit mono PCM chunks at a target rate
 /// (OpenAI gpt-realtime-whisper wants 24 kHz). AVAudioEngine + AVAudioConverter
@@ -8,10 +9,23 @@ import AVFoundation
 public final class AudioCaptureService: @unchecked Sendable {
     enum CaptureError: LocalizedError {
         case converterUnavailable
-        var errorDescription: String? { "Could not create audio converter." }
+        case micUnavailable(String)
+        var errorDescription: String? {
+            switch self {
+            case .converterUnavailable: "Could not create audio converter."
+            case .micUnavailable(let reason): "The microphone could not start: \(reason)"
+            }
+        }
     }
 
-    private let engine = AVAudioEngine()
+    /// Replaced when the input hardware changed under it (see `engineChanged`).
+    private var engine = AVAudioEngine()
+    /// The input or output hardware changed (a device came or went, the Mac
+    /// slept): the engine's graph may describe a device that's gone, and
+    /// installing a tap on it raises (this Mac, 10-27, after 11 hours asleep).
+    /// The next start makes a fresh engine.
+    private var engineStale = false
+    private var configObserver: NSObjectProtocol?
     private var converter: AVAudioConverter?
     /// The input format the current `converter` was built from. The tap delivers
     /// the input node's live format, which can change between/within sessions
@@ -36,7 +50,34 @@ public final class AudioCaptureService: @unchecked Sendable {
     private var loggedFirstBuffer = false
     private var engineStartedAt: TimeInterval = 0
 
-    public init() {}
+    public init() {
+        observeConfiguration()
+    }
+
+    deinit {
+        if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
+    }
+
+    private func observeConfiguration() {
+        if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
+        configObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.control.async {
+                dlog("[voice] audio hardware changed: the next recording uses a fresh engine")
+                self.engineStale = true
+            }
+        }
+    }
+
+    /// A new engine in place of one whose graph may be out of date. On the control queue, not running.
+    private func replaceEngine() {
+        _ = PAOCatchException { self.engine.inputNode.removeTap(onBus: 0) }
+        engine = AVAudioEngine()
+        engineStale = false
+        observeConfiguration()
+    }
 
     // MARK: - Warm session (PaloAlly)
     //
@@ -154,8 +195,9 @@ public final class AudioCaptureService: @unchecked Sendable {
         #endif
         // Touch the input node so CoreAudio instantiates the HAL unit now, then
         // preallocate render resources. Both costs are otherwise paid on start().
+        if engineStale { replaceEngine() }
         _ = engine.inputNode.outputFormat(forBus: 0)
-        engine.prepare()
+        if PAOCatchException({ self.engine.prepare() }) != nil { engineStale = true }
     }
 
     /// Starts capture off the main thread; `completion` runs on the control
@@ -182,6 +224,7 @@ public final class AudioCaptureService: @unchecked Sendable {
         // taps on the same input bus corrupts CoreAudio and hangs the main thread.
         // A prior session that failed without a clean stop must be torn down first.
         if isRunning { stopNow() }
+        if engineStale { replaceEngine() }
         engine.inputNode.removeTap(onBus: 0)   // belt-and-suspenders: drop any stale tap
         self.targetRate = targetSampleRate
         self.outputFormat = AVAudioFormat(
@@ -224,21 +267,53 @@ public final class AudioCaptureService: @unchecked Sendable {
         // app dies. nil can never mismatch.
         // PaloAlly: 1024 frames (≈20 ms) instead of 4096, so audio reaches the
         // gate/socket sooner (a request; the system may still batch).
-        input.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, when in
-            self?.handleBuffer(buffer, when: when)
+        //
+        // It can still raise when the engine's graph is out of date (the input
+        // device changed while the app wasn't told): caught, a fresh engine
+        // gets one more try, and a second failure is an error, not a crash.
+        if let exception = installTap(on: input) {
+            dlog("[voice] installTap raised \(exception.name.rawValue): \(exception.reason ?? "") — retrying on a fresh engine")
+            replaceEngine()
+            let fresh = engine.inputNode.outputFormat(forBus: 0)
+            guard fresh.sampleRate > 0, fresh.channelCount > 0 else {
+                throw CaptureError.converterUnavailable
+            }
+            if let again = installTap(on: engine.inputNode) {
+                dlog("[voice] installTap raised again \(again.name.rawValue): \(again.reason ?? "")")
+                throw CaptureError.micUnavailable(again.reason ?? again.name.rawValue)
+            }
         }
 
         loggedFirstBuffer = false
         let beforeEngine = ms()
-        engine.prepare()
+        if let exception = PAOCatchException({ self.engine.prepare() }) {
+            engine.inputNode.removeTap(onBus: 0)
+            engineStale = true
+            throw CaptureError.micUnavailable(exception.reason ?? exception.name.rawValue)
+        }
         engineStartedAt = ProcessInfo.processInfo.systemUptime
-        try engine.start()
+        do {
+            try engine.start()
+        } catch {
+            engine.inputNode.removeTap(onBus: 0)
+            engineStale = true
+            throw error
+        }
         isRunning = true
         dlog("[voice] engine.start \(ms() - beforeEngine)ms (capture start total \(ms())ms)")
     }
 
     public func stop() {
         control.async { self.stopNow() }
+    }
+
+    /// The tap that feeds `handleBuffer`; the exception if installing it raised.
+    private func installTap(on input: AVAudioInputNode) -> NSException? {
+        PAOCatchException {
+            input.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, when in
+                self?.handleBuffer(buffer, when: when)
+            }
+        }
     }
 
     private func stopNow() {
@@ -253,7 +328,7 @@ public final class AudioCaptureService: @unchecked Sendable {
         // PaloAlly: keep the session warm for the next press (released when
         // the app leaves the foreground); keep the engine's resources ready.
         if Self.warmWanted {
-            engine.prepare()
+            if PAOCatchException({ self.engine.prepare() }) != nil { engineStale = true }
         } else {
             Self.deactivateSessionNow()
         }

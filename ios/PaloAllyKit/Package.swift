@@ -15,8 +15,10 @@ let package = Package(
         .target(name: "PaloAllyKit", resources: [.process("Resources")]),
         // Voice input ported from bento's BentoVoiceKit; built in the Swift 5
         // language mode it was written for.
-        .target(name: "PaloAllyVoice", swiftSettings: [.swiftLanguageMode(.v5)]),
-        .testTarget(name: "PaloAllyVoiceTests", dependencies: ["PaloAllyVoice"]),
+        .target(name: "PaloAllyVoice", dependencies: ["PaloAllyObjC"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        // Catches Objective-C exceptions some system calls raise (Swift can't).
+        .target(name: "PaloAllyObjC"),
+        .testTarget(name: "PaloAllyVoiceTests", dependencies: ["PaloAllyVoice", "PaloAllyObjC"]),
         // Markdown preview ported from bento's BentoFilePreviewKit (markdown-it
         // + highlight.js in a WKWebView, all bundled), same language mode.
         .target(
