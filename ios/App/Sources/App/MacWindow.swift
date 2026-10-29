@@ -242,6 +242,7 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
         titlebar.toolbar = bar.toolbar
         AppKitBundle.immerseWindows(toolbar: "palo.main")
         MacRightHold.install()
+        MacClickLog.install()
     }
 
     /// The model of the window whose toolbar is `id` (MacRightHold).
@@ -295,8 +296,33 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
             debugLog("[toolbar] page items \(wanted.map(\.rawValue)) for \(model.selection?.storageKey ?? "-")")
         }
         for case let item as NSMenuToolbarItem in toolbar.items {
-            if let entries = menuItems(for: item.itemIdentifier, in: menus) { item.itemMenu = UIMenu(children: Self.elements(entries)) }
+            if let entries = menuItems(for: item.itemIdentifier, in: menus) { item.itemMenu = menu(item.itemIdentifier, entries) }
         }
+        countRefresh()
+    }
+
+    /// An item's menu; it says in the debug log when it opens (a click on
+    /// the item that did nothing shows as a click without it).
+    private func menu(_ id: NSToolbarItem.Identifier, _ entries: [MacMenuItem]) -> UIMenu {
+        let opened = UIDeferredMenuElement.uncached { done in
+            debugLog("[toolbar] \(id.rawValue) menu opened")
+            done([])
+        }
+        return UIMenu(children: [opened] + Self.elements(entries))
+    }
+
+    /// How often the items' menus are rebuilt, at most a line a minute: a
+    /// menu replaced while it is being clicked may not open.
+    private var refreshes = 0
+    private var refreshesSince: TimeInterval = 0
+    private func countRefresh() {
+        refreshes += 1
+        let now = ProcessInfo.processInfo.systemUptime
+        if refreshesSince == 0 { refreshesSince = now }
+        guard now - refreshesSince >= 60 else { return }
+        if refreshes > 10 { debugLog("[toolbar] menus rebuilt \(refreshes) times in \(Int(now - refreshesSince)) s") }
+        refreshes = 0
+        refreshesSince = now
     }
 
     private func menuItems(for id: NSToolbarItem.Identifier, in menus: MacToolbarMenus?) -> [MacMenuItem]? {
@@ -346,13 +372,52 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
             item.label = add ? String(localized: "新窗格") : String(localized: "更多")
             item.toolTip = add ? String(localized: "在右边分出一个会话 ⌘D") : nil
             item.visibilityPriority = .high
-            if let entries = menuItems(for: id, in: model.currentMacToolbarMenus) { item.itemMenu = UIMenu(children: Self.elements(entries)) }
+            if let entries = menuItems(for: id, in: model.currentMacToolbarMenus) { item.itemMenu = menu(id, entries) }
             return item
         default:
             return nil
         }
     }
 
-    @objc private func toggleLibrary() { model.toggleLibrary() }
+    @objc private func toggleLibrary() {
+        debugLog("[toolbar] 右侧栏 clicked in \(model.traceName)")
+        model.toggleLibrary()
+    }
+}
+
+/// Every left click in a window goes to the debug log (from the AppKit
+/// bundle's `PaloAllyClick`): where, whether the window was key, which
+/// AppKit view took it and which UIKit view under it. With the actions'
+/// own lines ([sidebar], [toolbar]) a click that did nothing shows as a
+/// click with no action after it.
+@MainActor
+enum MacClickLog {
+    private static var observer: NSObjectProtocol?
+
+    static func install() {
+        guard observer == nil else { return }
+        observer = NotificationCenter.default.addObserver(forName: NSNotification.Name("PaloAllyClick"), object: nil, queue: .main) { note in
+            let info = note.userInfo ?? [:]
+            let x = info["x"] as? Double ?? 0, y = info["y"] as? Double ?? 0
+            let key = info["key"] as? Bool ?? true, count = info["count"] as? Int ?? 1
+            let appkit = info["appkit"] as? String ?? ""
+            MainActor.assumeIsolated {
+                var uikit = "-"
+                if appkit.hasPrefix("UINSInputView"),
+                   let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                       .flatMap(\.windows).first(where: \.isKeyWindow) {
+                    var chain: [String] = []
+                    var v = window.hitTest(CGPoint(x: x, y: y), with: nil)
+                    while let view = v, chain.count < 2 {
+                        let name = String(describing: type(of: view))
+                        chain.append(name.count > 40 ? String(name.prefix(40)) + "…" : name)
+                        v = view.superview
+                    }
+                    uikit = chain.joined(separator: " < ")
+                }
+                debugLog("[click] \(Int(x)),\(Int(y))\(key ? "" : " (window not key)")\(count > 1 ? " ×\(count)" : ""): \(appkit) | \(uikit)")
+            }
+        }
+    }
 }
 #endif

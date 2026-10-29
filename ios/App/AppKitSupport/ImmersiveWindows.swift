@@ -29,37 +29,39 @@ final class ImmersiveWindows: NSObject {
             }
         }
         Self.applyAll(tries: 30)
-        #if DEBUG
-        Self.logTitlebarClicks()
-        #endif
+        Self.reportClicks()
     }
 
-    #if DEBUG
     private static var clickMonitor: Any?
 
-    /// A click in the title bar row: which AppKit view takes it (the app's
-    /// content gets it as UINSInputView; anything else is the titlebar's).
-    private static func logTitlebarClicks() {
+    /// Every left click in an app window, for the app's debug log (posted as
+    /// `PaloAllyClick`; the app adds what UIKit makes of it): where it
+    /// landed in the window's top-left coordinates, whether the window was
+    /// key, the click count, and which AppKit view takes it (the app's
+    /// content gets it as UINSInputView; a toolbar item is the titlebar's).
+    /// Buttons that "take a few clicks" (10-29) are told apart this way.
+    private static func reportClicks() {
         guard clickMonitor == nil else { return }
         clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
             MainActor.assumeIsolated {
                 if let window = event.window, let frame = window.contentView?.superview {
                     let top = frame.bounds.height - event.locationInWindow.y
-                    if top < 60 {
-                        var chain: [String] = []
-                        var v = frame.hitTest(event.locationInWindow)
-                        while let view = v, chain.count < 4 {
-                            chain.append(String(describing: type(of: view)))
-                            v = view.superview
-                        }
-                        NSLog("[titlebar-click] %d,%d: %@", Int(event.locationInWindow.x), Int(top), chain.joined(separator: " < "))
+                    var chain: [String] = []
+                    var v = frame.hitTest(event.locationInWindow)
+                    while let view = v, chain.count < 3 {
+                        chain.append(String(describing: type(of: view)))
+                        v = view.superview
                     }
+                    NotificationCenter.default.post(name: NSNotification.Name("PaloAllyClick"), object: nil, userInfo: [
+                        "x": Double(event.locationInWindow.x), "y": Double(top),
+                        "key": window.isKeyWindow, "count": event.clickCount,
+                        "appkit": chain.joined(separator: " < "),
+                    ])
                 }
             }
             return event
         }
     }
-    #endif
 
     /// The scene's window and its toolbar come a little after UIKit asks for
     /// them: tries every 0.1 s until one is there.

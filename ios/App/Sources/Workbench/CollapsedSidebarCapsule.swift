@@ -6,6 +6,7 @@ extension WindowModel {
     /// The sidebar shown or put away: the window's sidebar button, ⌃⌘S and
     /// the capsule's button all come here.
     func toggleSidebar() {
+        debugLog("[sidebar] \(columnVisibility == .detailOnly ? "shown" : "put away") in \(traceName)")
         withAnimation(.snappy) {
             columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
         }
@@ -52,10 +53,12 @@ struct CollapsedSidebarCapsule: View {
         let (waiting, done) = model.attentionSessions(in: store)
         HStack(spacing: 6) {
             Button { model.toggleSidebar() } label: {
+                // The whole square takes the click, not a circle inside the
+                // capsule: its rim answered nothing (10-29).
                 Image(systemName: "sidebar.leading")
                     .font(.system(size: 14, weight: .semibold))
-                    .frame(width: 30, height: 30)
-                    .contentShape(.circle)
+                    .frame(width: 32, height: 34)
+                    .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(collapsed ? String(localized: "显示侧栏") : String(localized: "隐藏侧栏"))
@@ -111,7 +114,7 @@ struct CollapsedSidebarCapsule: View {
                 }
             }
         }
-        .padding(.horizontal, 2)
+        .padding(.horizontal, 1)
         .frame(height: 34)
         .tint(.primary) // chrome stays neutral
         .glassEffect(.regular.interactive(), in: .capsule)
