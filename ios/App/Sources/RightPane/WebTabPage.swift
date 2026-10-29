@@ -24,6 +24,13 @@ final class WebTabPage: NSObject, ObservableObject, WKNavigationDelegate, WKUIDe
         startURL = url
         let config = WKWebViewConfiguration()
         config.defaultWebpagePreferences.allowsContentJavaScript = true
+        // The desktop site, as Safari on the Mac and an iPad gets it. Left to
+        // itself WebKit picks by the view's width, and a pane's width made it
+        // the phone site, with a phone's user agent, even on the Mac.
+        config.defaultWebpagePreferences.preferredContentMode = .desktop
+        // And named as Safari: without it the user agent ends at "(KHTML, like
+        // Gecko)" and some sites take it for an app's embedded view.
+        config.applicationNameForUserAgent = "Version/\(ProcessInfo.processInfo.operatingSystemVersion.majorVersion).0 Safari/605.1.15"
         webView = WKWebView(frame: .zero, configuration: config)
         super.init()
         webView.navigationDelegate = self
