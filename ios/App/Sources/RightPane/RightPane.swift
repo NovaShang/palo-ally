@@ -44,6 +44,11 @@ struct RightPane: View {
             content
         }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        // A hairline at its edge: a white page met a white conversation with
+        // nothing between them (10-30).
+        .overlay(alignment: .leading) {
+            Rectangle().fill(Color(.separator)).frame(width: 1).ignoresSafeArea()
+        }
         .environment(\.placesAsColumns, true)
         .task(id: store.connection.isOnline) { if store.connection.isOnline { await hub.load() } }
         .onChange(of: state.tabs, initial: true) { _, tabs in pageByTab = pages.reconcile(tabs) }
@@ -55,19 +60,10 @@ struct RightPane: View {
     private var content: some View {
         let active = state.activeTab
         let activePage = pageByTab[state.active]
-        // The web tab's address is its chip in the row above (no row of its own).
-        return ZStack {
-            ForEach(pages.pages, id: \.startURLIdentity) { page in
-                let shown = page === activePage && active?.kind == PaneTab.web
-                WebTabHost(page: page)
-                    .opacity(shown ? 1 : 0)
-                    .allowsHitTesting(shown)
-                    .accessibilityHidden(!shown)
-            }
-            if let active, active.kind != PaneTab.web { other(active) }
-        }
-        // A page's own controls float in it, at the bottom (a file's ⋯ is at its top).
-        .overlay(alignment: .bottom) {
+        return VStack(spacing: 0) {
+            // A web tab's controls in a bar of their own at the top, as a
+            // browser has them, the page under it (they floated over the
+            // page's bottom before, 10-30). Its tab names the site.
             if let activePage, active?.kind == PaneTab.web {
                 let index = state.active
                 WebPageControls(page: activePage) { text in
@@ -76,6 +72,16 @@ struct RightPane: View {
                     hub.retargetWeb(key, at: index, url: url)
                 }
                 .id(ObjectIdentifier(activePage))
+            }
+            ZStack {
+                ForEach(pages.pages, id: \.startURLIdentity) { page in
+                    let shown = page === activePage && active?.kind == PaneTab.web
+                    WebTabHost(page: page)
+                        .opacity(shown ? 1 : 0)
+                        .allowsHitTesting(shown)
+                        .accessibilityHidden(!shown)
+                }
+                if let active, active.kind != PaneTab.web { other(active) }
             }
         }
     }
@@ -329,7 +335,7 @@ private struct WebAddressField: View {
         }
         .padding(.leading, 10)
         .padding(.trailing, 4)
-        .frame(maxWidth: 420, minHeight: 32, maxHeight: 32)
+        .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28)
         .onAppear {
             text = page.address.isEmpty ? page.startURL : page.address
             Task { @MainActor in
@@ -341,37 +347,58 @@ private struct WebAddressField: View {
     }
 }
 
-/// A web tab's controls, a glass capsule floating at the page's bottom:
-/// back, forward, reload, the site (a click types an address in its place:
-/// Return loads, Esc or a click elsewhere puts it back) and ⋯. It slips away
-/// while the page scrolls down and comes back on scrolling up or with the
-/// pointer near the bottom.
+/// A web tab's controls, a glass bar above the page as a browser's: back,
+/// forward, reload, the address across the rest (a click types one in its
+/// place: Return loads, Esc or a click elsewhere puts it back) and ⋯.
 private struct WebPageControls: View {
     @ObservedObject var page: WebTabPage
     let go: (String) -> Void
     @State private var editing = false
 
     private var address: String { page.address.isEmpty ? page.startURL : page.address }
-    private var hidden: Bool { page.controlsHidden && !editing }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            if hidden {
-                // Where the capsule was: the pointer coming near brings it back.
-                Color.clear
-                    .frame(maxWidth: 320).frame(height: 44)
-                    .contentShape(.rect)
-                    .onHover { if $0 { page.controlsHidden = false } }
+        HStack(spacing: 0) {
+            button("chevron.backward", String(localized: "后退", table: "Files")) { page.webView.goBack() }
+                .disabled(!page.canGoBack)
+            button("chevron.forward", String(localized: "前进", table: "Files")) { page.webView.goForward() }
+                .disabled(!page.canGoForward)
+            button(page.isLoading ? "xmark" : "arrow.clockwise", String(localized: "刷新", table: "Files")) { page.reloadOrStop() }
+            Group {
+                if editing {
+                    WebAddressField(page: page, submit: { go($0); editing = false }, cancel: { editing = false })
+                } else {
+                    Button { editing = true } label: {
+                        Group {
+                            if address.isEmpty {
+                                Text("输入网址或搜索", tableName: "Files").foregroundStyle(.secondary)
+                            } else {
+                                Text(verbatim: WebAddress.label(for: address))
+                            }
+                        }
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(1)
+                        .padding(.horizontal, 10)
+                        .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .help(address)
+                    .accessibilityIdentifier("web-site")
+                }
             }
-            capsule
-                .offset(y: hidden ? 64 : 0)
-                .opacity(hidden ? 0 : 1)
-                .allowsHitTesting(!hidden)
+            .frame(maxWidth: .infinity)
+            .background(.fill.tertiary, in: .capsule)
+            .padding(.horizontal, 4)
+            menu
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 14)
-        .animation(.snappy(duration: 0.25), value: hidden)
-        .animation(.snappy(duration: 0.25), value: editing)
+        .font(.system(size: 13, weight: .semibold))
+        .tint(.primary)
+        .padding(.horizontal, 4)
+        .frame(height: 38)
+        .glassEffect(.regular, in: .capsule)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 6)
         .onAppear {
             // A new tab has no address yet: it opens typing.
             if page.startURL.isEmpty && page.address.isEmpty { editing = true }
@@ -380,45 +407,6 @@ private struct WebPageControls: View {
             if UserDefaults.standard.string(forKey: "demoPaneTabs") == "address" { editing = true }
             #endif
         }
-    }
-
-    private var capsule: some View {
-        HStack(spacing: 0) {
-            if editing {
-                WebAddressField(page: page, submit: { go($0); editing = false }, cancel: { editing = false })
-            } else {
-                button("chevron.backward", String(localized: "后退", table: "Files")) { page.webView.goBack() }
-                    .disabled(!page.canGoBack)
-                button("chevron.forward", String(localized: "前进", table: "Files")) { page.webView.goForward() }
-                    .disabled(!page.canGoForward)
-                button(page.isLoading ? "xmark" : "arrow.clockwise", String(localized: "刷新", table: "Files")) { page.reloadOrStop() }
-                Button { editing = true } label: {
-                    Group {
-                        if address.isEmpty {
-                            Text("输入网址或搜索", tableName: "Files").foregroundStyle(.secondary)
-                        } else {
-                            Text(verbatim: WebAddress.label(for: address))
-                        }
-                    }
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
-                    .padding(.horizontal, 8)
-                    .frame(minWidth: 60, maxWidth: 220, minHeight: 32)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .help(address)
-                .accessibilityIdentifier("web-site")
-                menu
-            }
-        }
-        // Compact: as wide as what it shows (a long site name stops at 220).
-        .fixedSize(horizontal: !editing, vertical: false)
-        .font(.system(size: 13, weight: .semibold))
-        .tint(.primary)
-        .padding(.horizontal, 4)
-        .frame(height: 40)
-        .glassEffect(.regular.interactive(), in: .capsule)
     }
 
     private var menu: some View {

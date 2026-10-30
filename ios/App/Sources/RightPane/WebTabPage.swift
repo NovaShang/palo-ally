@@ -15,9 +15,6 @@ final class WebTabPage: NSObject, ObservableObject, WKNavigationDelegate, WKUIDe
     @Published private(set) var canGoBack = false
     @Published private(set) var canGoForward = false
     @Published private(set) var isLoading = false
-    /// The page's floating controls are out of the way: it's being scrolled down.
-    @Published var controlsHidden = false
-    private var lastOffset: CGFloat = 0
     private var observers: [NSKeyValueObservation] = []
 
     init(url: String) {
@@ -54,9 +51,6 @@ final class WebTabPage: NSObject, ObservableObject, WKNavigationDelegate, WKUIDe
             webView.observe(\.isLoading, options: [.initial, .new]) { [weak self] v, _ in
                 MainActor.assumeIsolated { self?.isLoading = v.isLoading }
             },
-            webView.scrollView.observe(\.contentOffset, options: [.new]) { [weak self] v, _ in
-                MainActor.assumeIsolated { self?.scrolled(to: v.contentOffset.y, top: -v.adjustedContentInset.top) }
-            },
         ]
         if let u = WebAddress.url(from: url) { webView.load(URLRequest(url: u)) }
     }
@@ -68,19 +62,6 @@ final class WebTabPage: NSObject, ObservableObject, WKNavigationDelegate, WKUIDe
         guard let u = WebAddress.url(from: text) else { return nil }
         webView.load(URLRequest(url: u))
         return u.absoluteString
-    }
-
-    /// Down hides the controls, up (or the top) brings them back.
-    private func scrolled(to y: CGFloat, top: CGFloat) {
-        let delta = y - lastOffset
-        lastOffset = y
-        if y <= top + 24 {
-            if controlsHidden { controlsHidden = false }
-        } else if delta > 6, !controlsHidden {
-            controlsHidden = true
-        } else if delta < -6, controlsHidden {
-            controlsHidden = false
-        }
     }
 
     func reloadOrStop() {
