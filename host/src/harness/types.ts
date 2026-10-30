@@ -255,5 +255,12 @@ export const PALO_SEND_TOOL = "mcp__paloally__palo_send";
 /** What a session's process may call without asking the owner: palo_send and the tools that reach the owner. */
 export const SESSION_ALLOWED_TOOLS = [PALO_SEND_TOOL, ...["Artifact", "SendUserFile", "notify_user", "copy_to_clipboard", "pals_list"].map((n) => `mcp__paloally__${n}`)];
 
-/** Claude Code's own versions of these deliver nowhere PaloAlly can see; the session uses ours. (SendMessage stays.) */
-export const SESSION_DISALLOWED = ["Artifact", "SendUserFile"];
+/**
+ * Claude Code's own SendUserFile delivers nowhere PaloAlly can see; the
+ * session uses ours. (SendMessage stays.) Claude Code's Artifact stays on
+ * too (10-30): it is claude.ai's (a page published there with a link, data
+ * it keeps, comments; claude.ai/artifact links read), not a copy of ours,
+ * which keeps a result in the owner's 产出物库. Each tool's description says
+ * which to use.
+ */
+export const SESSION_DISALLOWED = ["SendUserFile"];

@@ -173,7 +173,7 @@ describe("palo_send: a Pal answers the assistant through the host", () => {
 describe("a session's tools that reach the owner", () => {
   const MANAGER = ["pal_propose", "pal_adopt", "pals_recent", "pal_send", "register_watch", "list_watches", "remove_watch", "update_goal", "report_task", "ally_list", "ally_send", "pair_link"];
 
-  test("exactly the intended tools, pre-approved; the built-in Artifact and SendUserFile are off, SendMessage stays; Palo's list is unchanged", async () => {
+  test("exactly the intended tools, pre-approved; the built-in SendUserFile is off, claude.ai's Artifact and SendMessage stay; Palo's list is unchanged", async () => {
     const t = setup();
     await adopt(t);
     const sdk: any = sessionOptions(palOpts(t) as MainSessionOptions);
@@ -181,7 +181,8 @@ describe("a session's tools that reach the owner", () => {
     expect(names.sort()).toEqual(["Artifact", "SendUserFile", "copy_to_clipboard", "notify_user", "palo_send", "pals_list"]);
     for (const m of MANAGER) expect(names).not.toContain(m);
     expect(sdk.allowedTools.sort()).toEqual(names.map((n) => `mcp__paloally__${n}`).sort());
-    expect(sdk.disallowedTools).toEqual(["Artifact", "SendUserFile"]);
+    // claude.ai's Artifact stays on (it isn't a copy of ours); SendUserFile is ours only.
+    expect(sdk.disallowedTools).toEqual(["SendUserFile"]);
     expect(sdk.disallowedTools).not.toContain("SendMessage");
     expect(sdk.allowedTools).not.toContain("SendMessage");
     for (const n of names) {

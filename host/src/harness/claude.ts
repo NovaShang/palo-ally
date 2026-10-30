@@ -216,7 +216,7 @@ export function deliveryTools(h: DeliveryToolHandlers, forSession = false) {
       ),
     Artifact: tool(
       "Artifact",
-      "Publish a page or document the user will keep and come back to — a report, a dashboard, a write-up (HTML, Markdown, PDF, or any file) — into the user's library (产出物库), with a card in the conversation. Publishing the same file_path again updates the same artifact (periodic ones like a morning brief: overwrite the file and publish again). A multi-file artifact passes its other files through `files`, mapping each published path (relative, as the main file references it) to a source file.",
+      "Publish a page or document the user will keep and come back to — a report, a dashboard, a write-up (HTML, Markdown, PDF, or any file) — into the user's library (产出物库), with a card in the conversation. Publishing the same file_path again updates the same artifact (periodic ones like a morning brief: overwrite the file and publish again). A multi-file artifact passes its other files through `files`, mapping each published path (relative, as the main file references it) to a source file.\n\nThis is the default for keeping a result: it stays private on the user's computer and shows in the PaloAlly app. Claude Code's own Artifact tool (no mcp__ prefix) is claude.ai's: use it when the user wants a claude.ai link (to share or open on the web), a page that stores data or takes comments, or when reading a claude.ai/artifact link.",
       {
         file_path: z.string().describe("The main file to publish (absolute or relative to cwd)."),
         title: z.string().optional().describe("A short name for it."),
@@ -435,8 +435,8 @@ export function sessionOptions(opts: AnySessionOptions): Options {
     forwardSubagentText: true,
     agentProgressSummaries: true, // live one-line progress for subagent tasks
     mcpServers: main ? { ...extra, paloally: paloallyMcpServer(opts.tools!) } : opts.paloSend ? { ...extra, paloally: paloSendMcpServer(opts.paloSend, opts.sessionTools) } : extra,
-    // Its own tools never ask the owner; Claude Code's built-in Artifact and
-    // SendUserFile are off, so the model uses ours, which land in PaloAlly.
+    // Its own tools never ask the owner; Claude Code's built-in SendUserFile
+    // is off, so the model uses ours, which lands in PaloAlly.
     ...(!main && opts.paloSend
       ? { allowedTools: opts.sessionTools ? SESSION_ALLOWED_TOOLS : [PALO_SEND_TOOL], ...(opts.sessionTools ? { disallowedTools: SESSION_DISALLOWED } : {}) }
       : {}),
