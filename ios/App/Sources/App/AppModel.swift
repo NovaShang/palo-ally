@@ -139,7 +139,7 @@ final class AppModel {
     func draftBox(host: String?, _ c: WindowModel.Conversation) -> DraftBox {
         let key = DraftKey(host: host ?? "", conversation: c)
         if let box = draftBoxes[key] { return box }
-        let box = DraftBox()
+        let box = DraftBox(persistKey: "\(key.host)|\(c.storageKey)")
         draftBoxes[key] = box
         return box
     }
@@ -698,10 +698,37 @@ enum PushEnv {
     }
 }
 
-/// One conversation's unsent words (AppModel.draftBox).
+/// One conversation's unsent words (AppModel.draftBox). With a `persistKey`
+/// they are kept on the device as they change, so a crash or a quit doesn't
+/// take them (11-03): the box made again on the next launch has them back,
+/// and the words of a recording that never finished after them.
 @MainActor @Observable
 final class DraftBox {
-    var text = ""
+    var text = "" {
+        didSet { if let persistKey, text != oldValue { Self.store(text, for: persistKey) } }
+    }
+    @ObservationIgnored let persistKey: String?
     @ObservationIgnored lazy var binding = Binding<String>(get: { [unowned self] in self.text },
                                                            set: { [unowned self] in self.text = $0 })
+
+    init(persistKey: String? = nil) {
+        self.persistKey = persistKey
+        guard let persistKey else { return }
+        var kept = (UserDefaults.standard.dictionary(forKey: Self.defaultsKey)?[persistKey] as? String) ?? ""
+        if let words = VoiceRecovery.take(for: persistKey) {
+            kept = kept.isEmpty ? words : kept + words
+            debugLog("[draft] \(words.count) characters of an unfinished recording put back")
+        }
+        text = kept
+        if !kept.isEmpty { Self.store(kept, for: persistKey) }
+    }
+
+    private static let defaultsKey = "composerDrafts"
+
+    private static func store(_ text: String, for key: String) {
+        let d = UserDefaults.standard
+        var all = d.dictionary(forKey: defaultsKey) ?? [:]
+        all[key] = text.isEmpty ? nil : text
+        d.set(all, forKey: defaultsKey)
+    }
 }

@@ -70,6 +70,7 @@ final class SpeechDictation {
             onPartial: { [weak self] text in
                 guard let self, self.generation.isCurrent(token) else { return }
                 self.transcript = text
+                VoiceRecovery.save(text)
             },
             onError: { [weak self] message in
                 guard let self, self.generation.isCurrent(token) else {
@@ -96,6 +97,7 @@ final class SpeechDictation {
         breadcrumb("voice finish after \(Int(Date().timeIntervalSince(startedAt))) s")
         let text = await session.finish(language: lang)
         breadcrumb("voice final: \(text.count) chars")
+        VoiceRecovery.clear()
         isRecording = false
         level = 0
         if !text.isEmpty {
@@ -114,6 +116,7 @@ final class SpeechDictation {
         #endif
         generation.invalidate()
         session.cancel()
+        VoiceRecovery.clear()
         isRecording = false
         level = 0
         transcript = ""

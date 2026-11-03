@@ -86,6 +86,42 @@ public final class VoiceSession {
     /// re-transcribe the full clip with a higher-accuracy batch model.
     private var recordedPCM = Data()
 
+    // PaloAlly: a long recording runs over several realtime connections, one
+    // after another: the relay ends a connection after 180 s of audio, and
+    // the words after that were lost (11-02). At `segmentSeconds` of audio
+    // sent, a new connection takes over while the old one finishes its words.
+    private static var segmentSeconds: Double {
+        #if DEBUG
+        // `-voiceSegmentSeconds 10`: hand over sooner (to watch it happen).
+        let d = UserDefaults.standard.double(forKey: "voiceSegmentSeconds")
+        if d > 0 { return d }
+        #endif
+        return 165
+    }
+    /// The current connection's number (1 for the first).
+    private var segment = 0
+    /// Each connection's words so far; the transcript is them in order.
+    private var segmentTexts: [Int: String] = [:]
+    /// The audio since the current connection began (what a batch fallback redoes).
+    private var segmentPCM = Data()
+    /// Seconds of audio sent to the current connection.
+    private var segmentSent: Double = 0
+    /// Older connections that delivered their last words.
+    private var segmentDone: Set<Int> = []
+    /// An older connection finishing its words, and the work waiting on it.
+    private var finishing: RealtimeASR?
+    private var rotation: Task<Void, Never>?
+    private var segmentLanguage = ""
+    private var segmentKey = ""
+    private var segmentProxy: URL?
+    private var partialHandler: (@MainActor (String) -> Void)?
+    private var errorHandler: (@MainActor (String) -> Void)?
+
+    /// The words of the connections before the current one.
+    private var earlierText: String {
+        segmentTexts.keys.sorted().filter { $0 < segment }.compactMap { segmentTexts[$0] }.joined()
+    }
+
     public init() {}
 
     /// Pre-allocate the mic engine ahead of an imminent recording (e.g. the right
@@ -128,6 +164,13 @@ public final class VoiceSession {
         realtimeFinalArrived = false
         realtimeCompleted = false
         realtimeFailed = false
+        segment = 0
+        segmentTexts = [:]
+        segmentPCM = Data()
+        segmentSent = 0
+        segmentDone = []
+        rotation = nil
+        finishing = nil
         dlog("[voice] start engine=\(engine)")
 
         // Fast path: when permission is already granted (the common case after the
@@ -219,6 +262,8 @@ public final class VoiceSession {
 
         case .qwen:
             stopCapture()
+            // A hand-over under way: the older connection's last words first.
+            await rotation?.value
             let asr = realtime
             // Silent hold: the gate never opened, so the model received no
             // audio. Don't commit (forcing a model to transcribe nothing is
@@ -252,18 +297,20 @@ public final class VoiceSession {
                 pendingPCM = []
                 Task { await asr?.cancel() }
                 let streamed = lastTranscript
-                guard !recordedPCM.isEmpty else { return streamed }
+                guard !segmentPCM.isEmpty else { return streamed }
                 if streamed.isEmpty,
                    VoiceGuard.isMisTap(pcmBytes: recordedPCM.count, sampleRate: activeSampleRate, heardLive: false) {
                     dlog("[voice] clip too short (\(recordedPCM.count) bytes) — dropped as a mis-tap")
                     return ""
                 }
-                dlog("[voice] realtime failed mid-recording → batch the clip (\(recordedPCM.count) bytes)")
+                // Only the current connection's audio: the earlier ones' words are in.
+                let earlier = earlierText
+                dlog("[voice] realtime failed mid-recording → batch connection \(segment)'s audio (\(segmentPCM.count) bytes)")
                 let better = await BatchTranscriptionService.shared.transcribe(
-                    pcm: recordedPCM, sampleRate: activeSampleRate, language: language, corpus: activeCorpus)
+                    pcm: segmentPCM, sampleRate: activeSampleRate, language: language, corpus: activeCorpus)
                 if streamed.isEmpty, let better, VoiceGuard.echoesCorpus(better, corpus: activeCorpus) { return "" }
                 finalFromBatch = better != nil
-                return better ?? streamed
+                return better.map { earlier + $0 } ?? streamed
             }
             // Released mid-speech (or Qwen, always): commit the buffer and wait
             // (bounded) for the realtime final. The socket stays open during this
@@ -312,10 +359,14 @@ public final class VoiceSession {
         case .qwen:
             stopCapture()
             let asr = realtime
+            let older = finishing
+            rotation?.cancel()
+            rotation = nil
+            finishing = nil
             realtime = nil
             realtimeReady = false
             pendingPCM = []
-            Task { await asr?.cancel() }
+            Task { await asr?.cancel(); await older?.cancel() }
         }
         isActive = false
         if Self.activeRecording === self { Self.activeRecording = nil }
@@ -397,64 +448,28 @@ public final class VoiceSession {
                                onError: @escaping @MainActor (String) -> Void) {
         let defaults = UserDefaults.standard
         // Empty hint = auto-detect, which is best for 中英混说 on both engines.
-        let language = openAILanguageHint(for: defaults.string(forKey: "speech_locale") ?? "auto")
+        segmentLanguage = openAILanguageHint(for: defaults.string(forKey: "speech_locale") ?? "auto")
         activeCorpus = ""
 
         // BYOK via a DashScope key; otherwise the bundled relay proxy (key
         // injected server-side, zero-config). Qwen is the only realtime engine
         // (Apple is on-device and handled separately).
-        let key = (defaults.string(forKey: "dashscope_api_key") ?? "")
+        segmentKey = (defaults.string(forKey: "dashscope_api_key") ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let proxyURL: URL? = key.isEmpty ? QwenRealtimeASRService.defaultProxyURL : nil
+        segmentProxy = segmentKey.isEmpty ? QwenRealtimeASRService.defaultProxyURL : nil
         activeCorpus = assembleQwenCorpus(screenText: contextProvider?())
-        let asr: RealtimeASR = QwenRealtimeASRService(
-            apiKey: key, proxyURL: proxyURL, language: language, corpus: activeCorpus)
-        dlog("[voice] qwen begin: byok=\(!key.isEmpty) proxy=\(proxyURL != nil) lang=\(language.isEmpty ? "auto" : language) corpus=\(activeCorpus.count)c")
-        realtime = asr
+        partialHandler = onPartial
+        errorHandler = onError
+        dlog("[voice] qwen begin: byok=\(!segmentKey.isEmpty) proxy=\(segmentProxy != nil) lang=\(segmentLanguage.isEmpty ? "auto" : segmentLanguage) corpus=\(activeCorpus.count)c")
+        let asr = openSegment()
         activeSampleRate = asr.sampleRate
-        pendingPCM = []
-        realtimeReady = false
         speechGate = SpeechGate(sampleRate: asr.sampleRate)
 
-        asr.onInterim = { text in Task { @MainActor in
-            self.lastTranscript = text; self.lastInterimAt = Date(); onPartial(text)
-        } }
-        asr.onFinal = { text in Task { @MainActor in
-            self.lastTranscript = text; self.realtimeFinalArrived = true; onPartial(text)
-        } }
-        asr.onCompleted = { Task { @MainActor in self.realtimeCompleted = true } }
-        asr.onError = { err in
-            if VoiceErrors.isCancellation(err) {
-                dlog("[voice] realtime asr cancelled (not an error)")
-                return
-            }
-            dlog("[voice] realtime asr error: \(err.localizedDescription)")
-            Task { @MainActor in
-                self.realtimeFailed = true
-                onError(err.localizedDescription)
-            }
-        }
         // Buffer audio captured before the socket is open; flush on connect.
         // Everything is recorded locally, but only chunks the speech gate
         // admits go upstream — silence never reaches the model.
-        audioCapture.onPCM = { [weak self, weak asr] pcm in
-            Task { @MainActor in
-                guard let self else { return }
-                self.recordedPCM.append(pcm)   // full clip for the right-swipe batch path
-                if let onLevel = self.onLevel {
-                    // Map roughly -50 dB…-10 dB to 0…1.
-                    let db = 20 * log10(max(SpeechGate.rms16(pcm), 1) / 32768)
-                    onLevel(Float(max(0, min(1, (db + 50) / 40))))
-                }
-                let wasOpen = self.speechGate.isOpen
-                let admitted = self.speechGate.admit(pcm)
-                if !wasOpen, self.speechGate.isOpen {
-                    dlog("[voice] speech gate OPEN (rms=\(Int(SpeechGate.rms16(pcm))), pre-roll=\(admitted.count - 1) chunks)")
-                }
-                guard !admitted.isEmpty else { return }
-                if self.realtimeReady { for p in admitted { await asr?.sendAudio(p) } }
-                else { self.pendingPCM.append(contentsOf: admitted) }
-            }
+        audioCapture.onPCM = { [weak self] pcm in
+            Task { @MainActor in await self?.take(pcm) }
         }
 
         // Start the mic immediately so the opening words are captured while the
@@ -472,16 +487,52 @@ public final class VoiceSession {
         #else
         startMic(rate: rate, onError: onError)
         #endif
+    }
+
+    /// A new realtime connection becomes the current one; its words go after
+    /// the earlier connections'.
+    @discardableResult
+    private func openSegment() -> RealtimeASR {
+        segment += 1
+        let n = segment
+        let asr: RealtimeASR = QwenRealtimeASRService(
+            apiKey: segmentKey, proxyURL: segmentProxy, language: segmentLanguage, corpus: activeCorpus)
+        realtime = asr
+        realtimeReady = false
+        pendingPCM = []
+        segmentPCM = Data()
+        segmentSent = 0
+        realtimeFinalArrived = false
+        realtimeCompleted = false
+
+        asr.onInterim = { text in Task { @MainActor in self.segmentWords(n, text, final: false) } }
+        asr.onFinal = { text in Task { @MainActor in self.segmentWords(n, text, final: true) } }
+        asr.onCompleted = { Task { @MainActor in
+            if n == self.segment { self.realtimeCompleted = true } else { self.segmentDone.insert(n) }
+        } }
+        asr.onError = { err in
+            if VoiceErrors.isCancellation(err) {
+                dlog("[voice] realtime asr cancelled (not an error)")
+                return
+            }
+            dlog("[voice] realtime asr error (connection \(n)): \(err.localizedDescription)")
+            Task { @MainActor in
+                guard n == self.segment else { self.segmentDone.insert(n); return }
+                self.realtimeFailed = true
+                self.errorHandler?(err.localizedDescription)
+            }
+        }
         Task {
             do {
                 try await asr.start()
+                guard n == segment else { return }
                 realtimeReady = true
                 let buffered = pendingPCM
                 pendingPCM = []
-                dlog("[voice] realtime WSS connected; flushing \(buffered.count) buffered chunks")
+                dlog("[voice] realtime WSS connected (connection \(n)); flushing \(buffered.count) buffered chunks")
                 for pcm in buffered { await asr.sendAudio(pcm) }
                 #if DEBUG
-                if VoiceDrill.failAfter > 0, let qwen = asr as? QwenRealtimeASRService {
+                if VoiceDrill.failAfter > 0, n == 1, let qwen = asr as? QwenRealtimeASRService {
                     try? await Task.sleep(for: .seconds(VoiceDrill.failAfter))
                     dlog("[voice] drill: dropping the realtime socket")
                     qwen.debugDropSocket()
@@ -492,9 +543,67 @@ public final class VoiceSession {
                     dlog("[voice] realtime WSS start cancelled (not an error)")
                     return
                 }
-                dlog("[voice] realtime WSS start FAILED: \(error.localizedDescription)")
-                await MainActor.run { onError(error.localizedDescription) }
+                dlog("[voice] realtime WSS start FAILED (connection \(n)): \(error.localizedDescription)")
+                guard n == segment else { return }
+                if n > 1 { realtimeFailed = true }
+                await MainActor.run { self.errorHandler?(error.localizedDescription) }
             }
+        }
+        return asr
+    }
+
+    /// A connection's words so far (its final ones when `final`).
+    private func segmentWords(_ n: Int, _ text: String, final: Bool) {
+        segmentTexts[n] = text
+        lastTranscript = segmentTexts.keys.sorted().compactMap { segmentTexts[$0] }.joined()
+        if n == segment {
+            lastInterimAt = Date()
+            if final { realtimeFinalArrived = true }
+        } else if final {
+            segmentDone.insert(n)
+        }
+        partialHandler?(lastTranscript)
+    }
+
+    /// One chunk from the mic.
+    private func take(_ pcm: Data) async {
+        recordedPCM.append(pcm)   // full clip for the right-swipe batch path
+        segmentPCM.append(pcm)
+        if let onLevel {
+            // Map roughly -50 dB…-10 dB to 0…1.
+            let db = 20 * log10(max(SpeechGate.rms16(pcm), 1) / 32768)
+            onLevel(Float(max(0, min(1, (db + 50) / 40))))
+        }
+        let wasOpen = speechGate.isOpen
+        let admitted = speechGate.admit(pcm)
+        if !wasOpen, speechGate.isOpen {
+            dlog("[voice] speech gate OPEN (rms=\(Int(SpeechGate.rms16(pcm))), pre-roll=\(admitted.count - 1) chunks)")
+        }
+        guard !admitted.isEmpty else { return }
+        if realtimeReady, let asr = realtime { for p in admitted { await asr.sendAudio(p) } }
+        else { pendingPCM.append(contentsOf: admitted) }
+        segmentSent += Double(admitted.reduce(0) { $0 + $1.count }) / (activeSampleRate * 2)
+        if segmentSent >= Self.segmentSeconds, rotation == nil, isActive { rotate() }
+    }
+
+    /// The current connection is near the relay's limit: a new one takes the
+    /// audio from here, the old one is committed and closed once its last
+    /// words are in (at most 3 s).
+    private func rotate() {
+        guard let old = realtime else { return }
+        let oldN = segment
+        dlog("[voice] long recording: connection \(oldN) at \(Int(segmentSent)) s, a new one takes over")
+        finishing = old
+        openSegment()
+        rotation = Task { @MainActor in
+            await old.commit()
+            for _ in 0..<150 where !segmentDone.contains(oldN) {
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            if !segmentDone.contains(oldN) { dlog("[voice] connection \(oldN) gave no final in 3 s; its last words stand") }
+            await old.cancel()
+            if finishing === old { finishing = nil }
+            rotation = nil
         }
     }
 

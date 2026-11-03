@@ -741,6 +741,7 @@ struct ComposerView: View {
     /// The voice is this composer's for the hold: its place, and where it is told when the words are done.
     private func claimVoice() {
         voice.owner = tile?.id
+        VoiceRecovery.target = draftBox.persistKey
         if tile != nil {
             voice.capsuleSize = places.capsuleSize
             voice.placeCapsule(places.capsuleFrame)
@@ -1049,6 +1050,7 @@ struct ComposerView: View {
             // draft and the keyboard comes back when it's done.
             focused = false
             voice.owner = tile?.id // its errors show here
+            VoiceRecovery.target = draftBox.persistKey
             VoiceTiming.begin("mic tap")
             voice.dictation.prewarm()
             voice.dictation.start()

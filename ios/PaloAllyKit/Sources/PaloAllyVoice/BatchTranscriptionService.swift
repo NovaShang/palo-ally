@@ -17,7 +17,7 @@ public final class BatchTranscriptionService: @unchecked Sendable {
     private static let qwenRelayURL = URL(string: BentoEndpoints.relayBaseURL + "/v1/asr/qwen/transcribe")!
     private static let qwenDirectURL = URL(string: "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation")!
 
-    /// Longest clip sent (the relay's limit is 120 s).
+    /// Longest piece sent at once (the relay's limit is 120 s).
     static let maxSeconds: Double = 110
 
     public init() {}
@@ -27,16 +27,23 @@ public final class BatchTranscriptionService: @unchecked Sendable {
     /// text. Returns the text, or nil on empty/failure.
     public func transcribe(pcm: Data, sampleRate: Double, language: String = "", corpus: String = "") async -> String? {
         guard !pcm.isEmpty else { return nil }
-        // PaloAlly: the relay refuses clips over 120 s, which would lose the
-        // whole utterance; send the first `maxSeconds` instead.
-        let cap = Int(sampleRate * Self.maxSeconds) * 2
-        var pcm = pcm
-        if pcm.count > cap {
-            dlog("[batch-asr] clip \(pcm.count / 2 / Int(sampleRate)) s, sending the first \(Int(Self.maxSeconds)) s")
-            pcm = pcm.prefix(cap)
+        // PaloAlly: the relay refuses clips over 120 s, so a longer one goes in
+        // pieces of `maxSeconds`, one after another, their words joined (only
+        // the first piece was sent before, and the rest was lost, 11-02).
+        let piece = Int(sampleRate * Self.maxSeconds) * 2
+        var words: [String] = []
+        var start = 0
+        while start < pcm.count {
+            let end = min(start + piece, pcm.count)
+            let part = pcm.subdata(in: (pcm.startIndex + start)..<(pcm.startIndex + end))
+            if pcm.count > piece { dlog("[batch-asr] piece \(start / piece + 1) of \((pcm.count + piece - 1) / piece)") }
+            if let text = await transcribeQwen(wav: Self.wav(pcm: part, sampleRate: sampleRate), language: language, corpus: corpus),
+               !text.isEmpty {
+                words.append(text)
+            }
+            start = end
         }
-        let wav = Self.wav(pcm: pcm, sampleRate: sampleRate)
-        return await transcribeQwen(wav: wav, language: language, corpus: corpus)
+        return words.isEmpty ? nil : words.joined()
     }
 
     /// Qwen `qwen3-asr-flash` batch via DashScope multimodal ASR. Zero-config posts
