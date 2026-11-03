@@ -86,15 +86,16 @@ public final class AudioCaptureService: @unchecked Sendable {
     // hardware waking up — so the first words were lost. With the session
     // already active it was ~50 ms.
     //
-    // It used to stay active, the engine prepared, for as long as the app was
-    // in front. That took the audio system from everything else (11-03, the
-    // owner: music sounded wrong with PaloAlly open, voice unused): on the Mac
-    // a prepared engine holds the input device open, which turns AirPods to
-    // their call profile; on a phone the play-and-record session with a 20 ms
-    // buffer reshapes the music's output. Now the session and the input are
-    // taken when a recording starts, kept for a short while after it (the next
-    // press is quick: dictating comes in runs), and given back, telling the
-    // music it may carry on as it was. The Mac gives them back at once.
+    // So they stay warm (the session active, the engine prepared) while the
+    // app is in front, but only when that takes nothing from anyone (11-03,
+    // the owner: music sounded wrong with PaloAlly open, voice unused):
+    // - a phone or iPad: not while another app plays sound (our play-and-record
+    //   session with a 20 ms buffer reshaped the music's output);
+    // - the Mac: not while the input is a Bluetooth device (a prepared engine
+    //   holds the input open, which turns AirPods to their call profile).
+    // Checked every few seconds and after each recording; when it can't stay
+    // warm the audio is given back (the music told it may carry on) and a
+    // press pays the wake-up instead.
     //
     // Category .playAndRecord + .mixWithOthers: an active session must not
     // stop or duck the user's music. .defaultToSpeaker keeps playback on the
@@ -103,9 +104,50 @@ public final class AudioCaptureService: @unchecked Sendable {
     // switching them to the low-quality HFP profile. Mode .default keeps the
     // system's standard input processing (gain, noise) — no voice-chat ducking.
 
-    /// How long the session stays after a recording on a phone or an iPad.
-    private static let keepAfterRecording: TimeInterval = 30
-    private static var release: DispatchWorkItem?
+    /// The capture warmed last (one per app in practice), for `setSessionWarm(false)`.
+    private static weak var current: AudioCaptureService?
+    /// The app is in front with a composer: warmth is wanted when allowed.
+    private var inFront = false
+    /// The session is active and the engine prepared, ahead of a press.
+    private var warm = false
+    private var recheck: DispatchSourceTimer?
+
+    /// Whether staying warm takes nothing from anyone now (control queue).
+    private static func mayStayWarm() -> Bool {
+        // Never before the mic is granted: touching the input would ask for it.
+        #if targetEnvironment(macCatalyst)
+        return MicPermission.micAuthorizedSync() && !MacAudioInput.isBluetooth()
+        #elseif os(iOS)
+        return MicPermission.micAuthorizedSync() && !AVAudioSession.sharedInstance().isOtherAudioPlaying
+        #else
+        return true
+        #endif
+    }
+
+    /// Warms or lets go, as `inFront` and `mayStayWarm` say (control queue).
+    private func reconsider() {
+        guard !isRunning else { return }
+        let want = inFront && Self.mayStayWarm()
+        if want, !warm {
+            #if os(iOS)
+            Self.warmWanted = true
+            Self.observeInterruptions()
+            guard (try? Self.activateSessionNow(reason: "warm")) != nil else { return }
+            #endif
+            if engineStale { replaceEngine() }
+            _ = engine.inputNode.outputFormat(forBus: 0)
+            if PAOCatchException({ self.engine.prepare() }) != nil { engineStale = true }
+            warm = true
+            dlog("[voice] warm: ready for a press")
+        } else if !want, warm {
+            engine.reset()
+            #if os(iOS)
+            Self.deactivateSessionNow()
+            #endif
+            warm = false
+            dlog("[voice] cold: the audio given back (\(inFront ? "another app needs it" : "app away"))")
+        }
+    }
 
     private static var warmWanted = false
     private static var sessionReady = false
@@ -114,6 +156,15 @@ public final class AudioCaptureService: @unchecked Sendable {
     /// Keep the audio session active (foreground) or let it go (background).
     /// Only when microphone access is already granted — never prompts.
     public static func setSessionWarm(_ warm: Bool) {
+        if !warm {
+            control.async {
+                guard let c = current else { return }
+                c.inFront = false
+                c.recheck?.cancel()
+                c.recheck = nil
+                c.reconsider()
+            }
+        }
         #if os(iOS)
         control.async {
             warmWanted = warm
@@ -187,9 +238,17 @@ public final class AudioCaptureService: @unchecked Sendable {
     }
 
     private func prewarmNow() {
-        // PaloAlly: nothing ahead of a recording any more. A warm session or
-        // a prepared engine holds the audio system while the app is merely
-        // open (see Warm session above); a press pays the wake-up instead.
+        // PaloAlly: warm only while that takes nothing from anyone, checked
+        // again every 3 s (see Warm session above).
+        Self.current = self
+        inFront = true
+        reconsider()
+        guard recheck == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: control)
+        timer.schedule(deadline: .now() + 3, repeating: 3)
+        timer.setEventHandler { [weak self] in self?.reconsider() }
+        timer.resume()
+        recheck = timer
     }
 
     /// Starts capture off the main thread; `completion` runs on the control
@@ -230,9 +289,6 @@ public final class AudioCaptureService: @unchecked Sendable {
         // (AGC, noise handling); `.measurement` made far-field speech quiet and
         // noisy. PaloAlly: the session is normally already active (warm), so
         // this is ~0 ms; see the warm-session notes above.
-        // Kept for a little after this recording (stopNow), not for good.
-        Self.release?.cancel()
-        Self.release = nil
         Self.warmWanted = true
         Self.observeInterruptions()
         if try !Self.activateSessionNow(reason: "start") {
@@ -317,23 +373,17 @@ public final class AudioCaptureService: @unchecked Sendable {
         converter = nil
         converterInputFormat = nil
 
-        // PaloAlly: the input device closes (a prepared engine keeps it open).
+        // PaloAlly: warm again for the next press when that takes nothing
+        // from anyone, else the input closes and the session goes.
+        warm = false
         engine.reset()
-        #if os(iOS)
-        Self.release?.cancel()
-        #if targetEnvironment(macCatalyst)
-        Self.deactivateSessionNow()
-        #else
-        // The session a little longer, for the next press; then it goes.
-        if Self.warmWanted {
-            let item = DispatchWorkItem { Self.deactivateSessionNow() }
-            Self.release = item
-            Self.control.asyncAfter(deadline: .now() + Self.keepAfterRecording, execute: item)
+        if inFront && Self.mayStayWarm() {
+            reconsider()
         } else {
+            #if os(iOS)
             Self.deactivateSessionNow()
+            #endif
         }
-        #endif
-        #endif
     }
 
     private func handleBuffer(_ inputBuffer: AVAudioPCMBuffer, when: AVAudioTime? = nil) {
@@ -393,3 +443,26 @@ public final class AudioCaptureService: @unchecked Sendable {
         onPCM?(data)
     }
 }
+
+#if targetEnvironment(macCatalyst)
+import CoreAudio
+
+/// The Mac's default input device, as CoreAudio has it.
+enum MacAudioInput {
+    /// A Bluetooth input (AirPods and the like): opening it switches the
+    /// headphones to their call profile, music included.
+    static func isBluetooth() -> Bool {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice,
+                                                 mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var device = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device) == noErr,
+              device != 0 else { return false }
+        address.mSelector = kAudioDevicePropertyTransportType
+        var transport = UInt32(0)
+        size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &transport) == noErr else { return false }
+        return transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE
+    }
+}
+#endif
