@@ -84,19 +84,28 @@ public final class AudioCaptureService: @unchecked Sendable {
     // Device logs showed the first mic buffer ~700 ms after engine.start
     // whenever the session had to be (re)activated per press — the input
     // hardware waking up — so the first words were lost. With the session
-    // already active it was ~50 ms. So the session stays active while the app
-    // is in the foreground and only the engine starts/stops per recording.
+    // already active it was ~50 ms.
+    //
+    // It used to stay active, the engine prepared, for as long as the app was
+    // in front. That took the audio system from everything else (11-03, the
+    // owner: music sounded wrong with PaloAlly open, voice unused): on the Mac
+    // a prepared engine holds the input device open, which turns AirPods to
+    // their call profile; on a phone the play-and-record session with a 20 ms
+    // buffer reshapes the music's output. Now the session and the input are
+    // taken when a recording starts, kept for a short while after it (the next
+    // press is quick: dictating comes in runs), and given back, telling the
+    // music it may carry on as it was. The Mac gives them back at once.
     //
     // Category .playAndRecord + .mixWithOthers: an active session must not
-    // stop or duck the user's music (.record would silence it for as long as
-    // the app is open). .defaultToSpeaker keeps playback on the speaker instead
-    // of the earpiece; .allowBluetoothA2DP keeps headphones in high-quality
-    // A2DP for music (the built-in mic records) rather than switching them to
-    // the low-quality HFP profile. Mode .default keeps the system's standard
-    // input processing (gain, noise) — no voice-chat ducking.
-    //
-    // An active session alone doesn't light the orange mic indicator; that
-    // shows only while input I/O runs (engine started).
+    // stop or duck the user's music. .defaultToSpeaker keeps playback on the
+    // speaker instead of the earpiece; .allowBluetoothA2DP keeps headphones
+    // in high-quality A2DP for music (the built-in mic records) rather than
+    // switching them to the low-quality HFP profile. Mode .default keeps the
+    // system's standard input processing (gain, noise) — no voice-chat ducking.
+
+    /// How long the session stays after a recording on a phone or an iPad.
+    private static let keepAfterRecording: TimeInterval = 30
+    private static var release: DispatchWorkItem?
 
     private static var warmWanted = false
     private static var sessionReady = false
@@ -145,7 +154,7 @@ public final class AudioCaptureService: @unchecked Sendable {
         dlog("[voice] audio session released")
     }
 
-    /// A call / Siri / another app takes the session: re-activate when it ends.
+    /// A call / Siri / another app takes the session: it's theirs until the next recording.
     private static func observeInterruptions() {
         guard !observing else { return }
         observing = true
@@ -154,19 +163,15 @@ public final class AudioCaptureService: @unchecked Sendable {
             let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
             let type = raw.flatMap(AVAudioSession.InterruptionType.init(rawValue:))
             control.async {
+                // Not taken back when it ends: the next recording takes it.
                 if type == .began {
                     sessionReady = false
                     dlog("[voice] audio session interrupted")
-                } else if type == .ended, warmWanted {
-                    _ = try? activateSessionNow(reason: "interruption ended")
                 }
             }
         }
         nc.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: nil) { _ in
-            control.async {
-                sessionReady = false
-                if warmWanted { _ = try? activateSessionNow(reason: "media services reset") }
-            }
+            control.async { sessionReady = false }
         }
     }
     #endif
@@ -182,22 +187,9 @@ public final class AudioCaptureService: @unchecked Sendable {
     }
 
     private func prewarmNow() {
-        guard !isRunning else { return }
-        #if os(iOS)
-        // PaloAlly: prewarm happens in the foreground (composer shown / app
-        // active), so it also makes the session warm: active, no input I/O,
-        // no mic indicator. Idempotent.
-        if MicPermission.micAuthorizedSync() {
-            Self.warmWanted = true
-            Self.observeInterruptions()
-            _ = try? Self.activateSessionNow(reason: "prewarm")
-        }
-        #endif
-        // Touch the input node so CoreAudio instantiates the HAL unit now, then
-        // preallocate render resources. Both costs are otherwise paid on start().
-        if engineStale { replaceEngine() }
-        _ = engine.inputNode.outputFormat(forBus: 0)
-        if PAOCatchException({ self.engine.prepare() }) != nil { engineStale = true }
+        // PaloAlly: nothing ahead of a recording any more. A warm session or
+        // a prepared engine holds the audio system while the app is merely
+        // open (see Warm session above); a press pays the wake-up instead.
     }
 
     /// Starts capture off the main thread; `completion` runs on the control
@@ -238,8 +230,9 @@ public final class AudioCaptureService: @unchecked Sendable {
         // (AGC, noise handling); `.measurement` made far-field speech quiet and
         // noisy. PaloAlly: the session is normally already active (warm), so
         // this is ~0 ms; see the warm-session notes above.
-        // Recording only happens in the foreground: keep the session warm
-        // afterwards too (e.g. the first press right after granting the mic).
+        // Kept for a little after this recording (stopNow), not for good.
+        Self.release?.cancel()
+        Self.release = nil
         Self.warmWanted = true
         Self.observeInterruptions()
         if try !Self.activateSessionNow(reason: "start") {
@@ -324,14 +317,22 @@ public final class AudioCaptureService: @unchecked Sendable {
         converter = nil
         converterInputFormat = nil
 
+        // PaloAlly: the input device closes (a prepared engine keeps it open).
+        engine.reset()
         #if os(iOS)
-        // PaloAlly: keep the session warm for the next press (released when
-        // the app leaves the foreground); keep the engine's resources ready.
+        Self.release?.cancel()
+        #if targetEnvironment(macCatalyst)
+        Self.deactivateSessionNow()
+        #else
+        // The session a little longer, for the next press; then it goes.
         if Self.warmWanted {
-            if PAOCatchException({ self.engine.prepare() }) != nil { engineStale = true }
+            let item = DispatchWorkItem { Self.deactivateSessionNow() }
+            Self.release = item
+            Self.control.asyncAfter(deadline: .now() + Self.keepAfterRecording, execute: item)
         } else {
             Self.deactivateSessionNow()
         }
+        #endif
         #endif
     }
 

@@ -332,9 +332,7 @@ struct ComposerView: View {
         .onChange(of: slashQuery) { _, q in
             if q != nil { Task { await store.loadCommands() } }
         }
-        // Warm the audio path ahead of the first press (no mic indicator).
         .onAppear {
-            voice.prewarm()
             displayRadius = DisplayCorners.radius
             homeInset = DisplayCorners.bottomInset
             // Words that went into the field: then the keyboard, to edit them.
@@ -358,7 +356,7 @@ struct ComposerView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { keyboardMoved($0) }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { keyboardMoved($0, hiding: true) }
         .onChange(of: scenePhase) { _, phase in
-            guard phase != .active else { voice.prewarm(); return }
+            guard phase != .active else { return }
             if dictating { voice.dictation.cancel(); dictating = false }
             if pressing { resetPress() }
             // After any recording is stopped (same serial audio queue).
