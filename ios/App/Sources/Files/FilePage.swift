@@ -40,6 +40,10 @@ struct FilePage: View {
     @State private var raw = false
     /// The scope the file was read from, when it was the fallback.
     @State private var readScope: FileScope?
+    /// 重新载入 asked by the owner: the page is drawn again (its pictures
+    /// too), and says so for a moment.
+    @State private var redraws = 0
+    @State private var reloadedNote = false
 
     enum Phase: Equatable {
         case loading
@@ -87,6 +91,7 @@ struct FilePage: View {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .overlay(alignment: .topTrailing) { paneMenu.padding(10) }
+                .overlay(alignment: .bottom) { reloadedCapsule }
                 .background { reloadKey }
                 .task(id: target) { await load() }
                 .task(id: follow) { await followFile(follow) }
@@ -98,6 +103,7 @@ struct FilePage: View {
 
     private var page: some View {
         content
+            .overlay(alignment: .bottom) { reloadedCapsule }
             .navigationTitle(target.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }
@@ -123,6 +129,7 @@ struct FilePage: View {
         case .text(let text, let kind, _):
             FileTextPreview(fileName: kind == .markdown ? FilePreviewRoute.markdownRenderName(target.name) : target.name,
                             text: text, raw: raw, imageSource: kind == .markdown ? images : nil)
+                .id(redraws)
                 .ignoresSafeArea(edges: .bottom)
         case .quickLook(let url):
             EmbeddedPreview(url: url, revision: revision)
@@ -219,16 +226,38 @@ struct FilePage: View {
         }
     }
 
+    @ViewBuilder private var reloadedCapsule: some View {
+        if reloadedNote {
+            Text("已重新载入", tableName: "Files")
+                .font(.footnote.weight(.medium))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .glassEffect(.regular, in: .capsule)
+                .padding(.bottom, 16)
+                .transition(.opacity)
+        }
+    }
+
+    /// 重新载入 in a ⋯ (⌘R does the same): read and draw again whatever came
+    /// back, even the same (it looked as if nothing happened, 11-03).
+    private func reloadByHand() async {
+        await load(quietly: isLoaded, force: true)
+        redraws += 1
+        withAnimation { reloadedNote = true }
+        try? await Task.sleep(for: .seconds(1.5))
+        withAnimation { reloadedNote = false }
+    }
+
     /// 重新载入 in a ⋯ (⌘R does the same).
     private var reloadButton: some View {
-        Button { Task { await reload() } } label: {
+        Button { Task { await reloadByHand() } } label: {
             Label { Text("重新载入", tableName: "Files") } icon: { Image(systemName: "arrow.clockwise") }
         }
     }
 
     /// ⌘R (Mac, iPad keyboard): read the file again.
     private var reloadKey: some View {
-        Button("") { Task { await reload() } }
+        Button("") { Task { await reloadByHand() } }
             .keyboardShortcut("r", modifiers: .command)
             .frame(width: 0, height: 0)
             .opacity(0)
@@ -270,7 +299,7 @@ struct FilePage: View {
         }
     }
 
-    private func load(quietly: Bool = false) async {
+    private func load(quietly: Bool = false, force: Bool = false) async {
         readGeneration += 1
         let generation = readGeneration
         if !quietly { if case .text = phase {} else { phase = .loading } }
@@ -296,8 +325,8 @@ struct FilePage: View {
             if kind == .text { kind = FileContentKind.sniff(r.data) }
             let text = kind == .quickLook ? nil : String(decoding: r.data, as: UTF8.self)
             // Re-read and the same: leave it be (no re-render, no flash).
-            if quietly, let text, case .text(let shown, let shownKind, _) = phase, shown == text, shownKind == kind { return }
-            if quietly, text == nil, case .quickLook(let shown) = phase, (try? Data(contentsOf: shown)) == r.data { return }
+            if quietly, !force, let text, case .text(let shown, let shownKind, _) = phase, shown == text, shownKind == kind { return }
+            if quietly, !force, text == nil, case .quickLook(let shown) = phase, (try? Data(contentsOf: shown)) == r.data { return }
             let url = try Self.save(r.data, for: target)
             if let text {
                 phase = .text(text, kind, url)

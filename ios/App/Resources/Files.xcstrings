@@ -517,6 +517,16 @@
           }
         }
       }
+    },
+    "已重新载入" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reloaded"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

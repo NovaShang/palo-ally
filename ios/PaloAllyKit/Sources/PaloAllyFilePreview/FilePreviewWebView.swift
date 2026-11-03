@@ -40,6 +40,28 @@ public final class FilePreviewWebView: WKWebView, WKNavigationDelegate {
         }
     }
 
+    #if canImport(UIKit)
+    private let pressDelegate = AlongsideEverything()
+
+    @objc private func takeKeyboard(_ press: UILongPressGestureRecognizer) {
+        if press.state == .began, !isFirstResponder { _ = becomeFirstResponder() }
+    }
+
+    /// ⌘C copies what is selected in the page, also when the page didn't
+    /// take the keyboard (a selection made without a click on it).
+    public override var keyCommands: [UIKeyCommand]? {
+        let copy = UIKeyCommand(input: "c", modifierFlags: .command, action: #selector(copySelection))
+        copy.wantsPriorityOverSystemBehavior = true
+        return (super.keyCommands ?? []) + [copy]
+    }
+
+    @objc private func copySelection() {
+        evaluateJavaScript("window.getSelection().toString()") { result, _ in
+            if let text = result as? String, !text.isEmpty { UIPasteboard.general.string = text }
+        }
+    }
+    #endif
+
     private var templateReady = false
     private var pending: Payload?
     private var imageSource: ImageSource?
@@ -69,6 +91,16 @@ public final class FilePreviewWebView: WKWebView, WKNavigationDelegate {
         v.isOpaque = false
         v.backgroundColor = .clear
         v.scrollView.backgroundColor = .clear
+        // A press in the page makes it the one ⌘C and the Edit menu's Copy go
+        // to: left alone, the keyboard stayed with the conversation's composer
+        // and ⌘C copied nothing there (only the right-click menu worked, 11-03).
+        let press = UILongPressGestureRecognizer(target: v, action: #selector(takeKeyboard(_:)))
+        press.minimumPressDuration = 0
+        press.cancelsTouchesInView = false
+        press.delaysTouchesBegan = false
+        press.delaysTouchesEnded = false
+        press.delegate = v.pressDelegate
+        v.addGestureRecognizer(press)
         #endif
         if let html = templateURL {
             v.loadFileURL(html, allowingReadAccessTo: html.deletingLastPathComponent())
@@ -206,3 +238,10 @@ private final class FilePreviewImageBridge: NSObject, WKScriptMessageHandler {
         MainActor.assumeIsolated { owner?.enqueueImages(srcs, seq: seq) }
     }
 }
+
+#if canImport(UIKit)
+/// Recognizes alongside every other gesture (selecting, scrolling, links).
+private final class AlongsideEverything: NSObject, UIGestureRecognizerDelegate {
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+}
+#endif
