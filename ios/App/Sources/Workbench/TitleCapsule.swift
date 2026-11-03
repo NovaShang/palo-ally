@@ -123,10 +123,10 @@ struct PageIndicator: View {
 
     /// Where Palo's orb rests while it isn't listening, when nothing else on
     /// screen holds that place: this circle on a phone, and on an iPad whose
-    /// sidebar is away without its capsule.
+    /// sidebar is away.
     private var restsHere: Bool {
         if model.layout == .phone { return true }
-        return model.sidebarCollapsed && !model.capsuleOnPad
+        return model.sidebarCollapsed
     }
 }
 

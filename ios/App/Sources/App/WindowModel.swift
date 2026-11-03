@@ -16,9 +16,6 @@ final class WindowModel {
     let app: AppModel
     /// Where the Palo orb rests in this window (each window has its own coordinates).
     let orbHome = PaloOrbHome()
-    /// An iPad in landscape with the sidebar away: the capsule is up, so the
-    /// detail's own system sidebar button goes.
-    var capsuleOnPad = false
     /// This window's scene (set once its view is in a window).
     @ObservationIgnored weak var scene: UIWindowScene?
     /// The Mac: which saved window this is (WindowMemory).

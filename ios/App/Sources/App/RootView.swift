@@ -680,7 +680,6 @@ private struct ConversationDetail: View {
             }
             .modifier(QuickSwitchBar(current: current))
             .modifier(InContentNavigationBar())
-            .modifier(HidesSystemSidebarToggle())
             // A folder's tree over 成果 (phones), and the files paths in replies link to.
             .modifier(FilesInConversation(current: current))
             .navigationDestination(for: WindowModel.Page.self) { page in
