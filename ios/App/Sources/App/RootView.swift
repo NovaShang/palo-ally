@@ -1,3 +1,4 @@
+import PaloAllyFilePreview
 import PaloAllyKit
 import SwiftUI
 
@@ -287,6 +288,35 @@ private struct LayoutStressTest: ViewModifier {
                             .takeUnretainedValue() as? String
                         debugLog("[nav] \(r ?? "no AppKit bundle")")
                     // `drag:1200;500;900;500`: a left drag from the one point to the other (a divider dragged).
+                    // `selectpreview`: everything in the file preview selected (as a drag over it would).
+                    case "selectpreview":
+                        if let win = w.scene?.windows.first {
+                            var queue: [UIView] = [win]
+                            while !queue.isEmpty {
+                                let v = queue.removeFirst()
+                                if let web = v as? FilePreviewWebView { web.notePressed(); web.evaluateJavaScript("document.execCommand('selectAll')", completionHandler: nil); break }
+                                queue.append(contentsOf: v.subviews)
+                            }
+                        }
+                    // `copy`: ⌘C pressed.
+                    case "copy":
+                        debugLog("[nav] \((AppKitBundle.object?.perform(NSSelectorFromString("pressCopy"))?.takeUnretainedValue() as? String) ?? "no AppKit bundle")")
+                    // `composerfocus`: the conversation's composer takes the keyboard, as a click in it does.
+                    case "composerfocus":
+                        NotificationCenter.default.post(name: ComposerFocus.request, object: nil,
+                                                        userInfo: ["window": ObjectIdentifier(w), "tile": ""])
+                    // `scroll:700;780;-30`: the mouse wheel turned there (negative: down).
+                    case _ where a.hasPrefix("scroll:"):
+                        let r = AppKitBundle.object?.perform(NSSelectorFromString("scroll:"), with: a.dropFirst(7).replacingOccurrences(of: ";", with: ","))?
+                            .takeUnretainedValue() as? String
+                        debugLog("[nav] \(r ?? "no AppKit bundle")")
+                        try? await Task.sleep(for: .seconds(1))
+                        if let win = w.scene?.windows.first {
+                            func find(_ v: UIView) -> [UITextView] { ((v as? UITextView).map { [$0] } ?? []) + v.subviews.flatMap(find) }
+                            for t in find(win) where t.isEditable {
+                                debugLog("[nav] composer text \(Int(t.bounds.height)) of \(Int(t.contentSize.height)) pt, at \(Int(t.contentOffset.y)), \(t.isFirstResponder ? "editing" : "not editing")")
+                            }
+                        }
                     case _ where a.hasPrefix("drag:"):
                         let r = AppKitBundle.object?.perform(NSSelectorFromString("drag:"), with: a.dropFirst(5).replacingOccurrences(of: ";", with: ","))?
                             .takeUnretainedValue() as? String

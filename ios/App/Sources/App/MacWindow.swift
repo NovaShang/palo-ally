@@ -1,3 +1,4 @@
+import PaloAllyFilePreview
 import PaloAllyKit
 import SwiftUI
 import UIKit
@@ -243,6 +244,8 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
         AppKitBundle.immerseWindows(toolbar: "palo.main")
         MacRightHold.install()
         MacClickLog.install()
+        MacTextWheel.install()
+        MacCopy.install()
     }
 
     /// The model of the window whose toolbar is `id` (MacRightHold).
@@ -382,6 +385,80 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
     @objc private func toggleLibrary() {
         debugLog("[toolbar] 右侧栏 clicked in \(model.traceName)")
         model.toggleLibrary()
+    }
+}
+
+/// A mouse wheel over text being edited scrolls it (the AppKit bundle's
+/// `PaloAllyWheel`): UIKit didn't pass a wheel's notches to the text view
+/// while it edited, and many of them took the app down (11-04).
+@MainActor
+enum MacTextWheel {
+    private static var observer: NSObjectProtocol?
+    /// Points per line of a notch.
+    private static let lineHeight: CGFloat = 18
+
+    static func install() {
+        guard observer == nil else { return }
+        observer = NotificationCenter.default.addObserver(forName: NSNotification.Name("PaloAllyWheel"), object: nil, queue: nil) { note in
+            let info = note.userInfo ?? [:]
+            let x = info["x"] as? Double ?? 0, y = info["y"] as? Double ?? 0, lines = info["lines"] as? Double ?? 0
+            nonisolated(unsafe) let result = info["result"] as? NSMutableDictionary
+            MainActor.assumeIsolated {
+                let windows = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows)
+                guard lines != 0, let window = windows.first(where: \.isKeyWindow) ?? windows.first else { return }
+                var v = window.hitTest(CGPoint(x: x, y: y), with: nil)
+                while let current = v, !(current is UITextView) { v = current.superview }
+                guard let text = v as? UITextView, text.isEditable, text.isFirstResponder,
+                      text.contentSize.height > text.bounds.height + 1 else {
+                    #if DEBUG
+                    debugLog("[wheel] \(Int(x)),\(Int(y)) \(lines) lines: not over text being edited (\(v.map { "\(type(of: $0))" } ?? "nothing"), first responder \((v as? UITextView)?.isFirstResponder ?? false))")
+                    #endif
+                    return
+                }
+                let top = -text.adjustedContentInset.top
+                let bottom = max(top, text.contentSize.height + text.adjustedContentInset.bottom - text.bounds.height)
+                let target = min(max(text.contentOffset.y - CGFloat(lines) * lineHeight, top), bottom)
+                text.setContentOffset(CGPoint(x: text.contentOffset.x, y: target), animated: false)
+                result?["handled"] = true
+            }
+        }
+    }
+}
+
+/// ⌘C (the AppKit bundle's `PaloAllyCopy`): text selected in the file
+/// preview pressed last is copied from it, unless the keyboard is with a
+/// text field that has a selection of its own (that one's ⌘C stands).
+@MainActor
+enum MacCopy {
+    private static var observer: NSObjectProtocol?
+
+    static func install() {
+        guard observer == nil else { return }
+        observer = NotificationCenter.default.addObserver(forName: NSNotification.Name("PaloAllyCopy"), object: nil, queue: nil) { note in
+            nonisolated(unsafe) let result = note.userInfo?["result"] as? NSMutableDictionary
+            MainActor.assumeIsolated {
+                guard let preview = FilePreviewWebView.lastPressed, preview.window != nil,
+                      !preview.selectedText.isEmpty else {
+                    #if DEBUG
+                    debugLog("[copy] ⌘C left alone: preview pressed \(FilePreviewWebView.lastPressed != nil), selection \(FilePreviewWebView.lastPressed?.selectedText.count ?? -1)")
+                    #endif
+                    return
+                }
+                if let field = HardwareKeyboard.focusedTextInput, !(field is FilePreviewWebView),
+                   let range = field.selectedTextRange, !range.isEmpty { return }
+                #if DEBUG
+                // `-copyDryRun YES` (tests): said in the log, the clipboard left as it is.
+                if UserDefaults.standard.bool(forKey: "copyDryRun") {
+                    debugLog("[copy] ⌘C (dry run): \(preview.selectedText.count) characters from the file preview")
+                    result?["handled"] = true
+                    return
+                }
+                #endif
+                UIPasteboard.general.string = preview.selectedText
+                debugLog("[copy] ⌘C: \(preview.selectedText.count) characters from the file preview")
+                result?["handled"] = true
+            }
+        }
     }
 }
 

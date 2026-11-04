@@ -30,6 +30,55 @@ final class ImmersiveWindows: NSObject {
         }
         Self.applyAll(tries: 30)
         Self.reportClicks()
+        Self.takeWheelOverText()
+        Self.offerCopy()
+    }
+
+    private static var copyMonitor: Any?
+
+    /// ⌘C is offered to the app first (`PaloAllyCopy`): text selected in a
+    /// file preview is copied from there even when the keyboard stayed with
+    /// the composer (11-04: ⌘C copied nothing, the right-click menu did).
+    /// When the app copied (`handled`), the key goes no further.
+    private static func offerCopy() {
+        guard copyMonitor == nil else { return }
+        copyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                  event.charactersIgnoringModifiers?.lowercased() == "c" else { return event }
+            let result = NSMutableDictionary()
+            MainActor.assumeIsolated {
+                NotificationCenter.default.post(name: NSNotification.Name("PaloAllyCopy"), object: nil, userInfo: ["result": result])
+            }
+            return result["handled"] as? Bool == true ? nil : event
+        }
+    }
+
+    private static var wheelMonitor: Any?
+
+    /// A mouse wheel's notches over text being edited (11-04): UIKit doesn't
+    /// pass them to the text view while it edits (a trackpad's scroll does
+    /// get there), and many of them took the app down in UIKit's event
+    /// handling. Each notch is offered to the app first (`PaloAllyWheel`,
+    /// with the place and lines); when the app scrolls a text view with it
+    /// (it sets `handled`), the event goes no further.
+    private static func takeWheelOverText() {
+        guard wheelMonitor == nil else { return }
+        wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            // A trackpad (or a Magic Mouse) has precise deltas and phases: left alone.
+            guard !event.hasPreciseScrollingDeltas, event.phase.isEmpty, event.momentumPhase.isEmpty,
+                  let window = event.window ?? NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first(where: { $0.isVisible && $0.toolbar != nil }),
+                  let frame = window.contentView?.superview else { return event }
+            // An event without a window has its place on the screen.
+            let at = event.window == nil ? window.convertPoint(fromScreen: event.locationInWindow) : event.locationInWindow
+            let result = NSMutableDictionary()
+            MainActor.assumeIsolated {
+                NotificationCenter.default.post(name: NSNotification.Name("PaloAllyWheel"), object: nil, userInfo: [
+                    "x": Double(at.x), "y": Double(frame.bounds.height - at.y),
+                    "lines": Double(event.scrollingDeltaY), "result": result,
+                ])
+            }
+            return result["handled"] as? Bool == true ? nil : event
+        }
     }
 
     private static var clickMonitor: Any?
@@ -213,6 +262,41 @@ final class ImmersiveWindows: NSObject {
         }
         let m = window.convertPoint(fromScreen: NSEvent.mouseLocation)
         return "clicked \(Int(xy[0])),\(Int(xy[1])) in \(Int(window.frame.width))x\(Int(window.frame.height)); the pointer at \(Int(m.x)),\(Int(frame.bounds.height - m.y))"
+    }
+
+    /// ⌘C pressed, as the keyboard does, queued for the app.
+    @objc func pressCopy() -> String {
+        guard let window = NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first(where: { $0.isVisible && $0.toolbar != nil }),
+              let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: ProcessInfo.processInfo.systemUptime,
+                                       windowNumber: window.windowNumber, context: nil, characters: "c", charactersIgnoringModifiers: "c",
+                                       isARepeat: false, keyCode: 8) else { return "no window" }
+        NSApplication.shared.postEvent(e, atStart: false)
+        return "pressed ⌘C"
+    }
+
+    /// A mouse wheel turned at "x,y" (as `click:` has them) by `lines` lines,
+    /// "x,y,lines" (negative: towards the end), in a few notches as a hand's:
+    /// a real wheel event, queued for the app as one from the mouse is.
+    @objc func scroll(_ spec: String) -> String {
+        guard let id = Self.toolbarID,
+              let window = NSApplication.shared.keyWindow.flatMap({ $0.toolbar?.identifier.hasPrefix(id) == true ? $0 : nil })
+                ?? NSApplication.shared.windows.first(where: { $0.toolbar?.identifier.hasPrefix(id) == true }),
+              let frame = window.contentView?.superview else { return "no window" }
+        let v = spec.split(separator: ",").compactMap { Double($0) }
+        guard v.count == 3 else { return "bad spec" }
+        let local = NSPoint(x: v[0], y: frame.bounds.height - v[1])
+        let screen = window.convertPoint(toScreen: local)
+        let main = NSScreen.screens.first?.frame.height ?? 0
+        let notches = 6
+        for k in 0..<notches {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3 + Double(k) * 0.05) {
+                guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1,
+                                       wheel1: Int32(v[2] / Double(notches)), wheel2: 0, wheel3: 0) else { return }
+                cg.location = CGPoint(x: screen.x, y: main - screen.y)
+                if let e = NSEvent(cgEvent: cg) { NSApplication.shared.postEvent(e, atStart: false) }
+            }
+        }
+        return "scrolled \(Int(v[2])) lines at \(Int(v[0])),\(Int(v[1]))"
     }
 
     /// A left drag from "x1,y1" to "x2,y2" (as `click:` has them), pressed,

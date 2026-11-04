@@ -40,11 +40,21 @@ public final class FilePreviewWebView: WKWebView, WKNavigationDelegate {
         }
     }
 
+    /// The text selected in the page now ("" when none).
+    public internal(set) var selectedText = ""
+    /// The preview pressed last: ⌘C copies its selection when the keyboard
+    /// is elsewhere (MacCopy in the app).
+    public private(set) static weak var lastPressed: FilePreviewWebView?
+    /// As if pressed (tests drive it without a click).
+    public func notePressed() { Self.lastPressed = self }
+
     #if canImport(UIKit)
     private let pressDelegate = AlongsideEverything()
 
     @objc private func takeKeyboard(_ press: UILongPressGestureRecognizer) {
-        if press.state == .began, !isFirstResponder { _ = becomeFirstResponder() }
+        guard press.state == .began else { return }
+        Self.lastPressed = self
+        if !isFirstResponder { _ = becomeFirstResponder() }
     }
 
     /// ⌘C copies what is selected in the page, also when the page didn't
@@ -79,8 +89,15 @@ public final class FilePreviewWebView: WKWebView, WKNavigationDelegate {
         // The page asks for images as they come into view; this is that channel.
         let bridge = FilePreviewImageBridge()
         cfg.userContentController.add(bridge, name: "bentoImages")
+        // What is selected in the page, as it changes (⌘C on the Mac, `selectedText`).
+        let selection = FilePreviewSelectionBridge()
+        cfg.userContentController.add(selection, name: "bentoSelection")
+        cfg.userContentController.addUserScript(WKUserScript(
+            source: "document.addEventListener('selectionchange', function () { window.webkit.messageHandlers.bentoSelection.postMessage(String(window.getSelection())); });",
+            injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         let v = FilePreviewWebView(frame: .zero, configuration: cfg)
         bridge.owner = v
+        selection.owner = v
         v.filler.deliver = { [weak v] src, uri in
             if let uri { v?.callJS("bentoSetImage", src, uri) } else { v?.callJS("bentoFailImage", src) }
         }
@@ -220,6 +237,17 @@ public final class FilePreviewWebView: WKWebView, WKNavigationDelegate {
         #elseif canImport(AppKit)
         NSWorkspace.shared.open(url)
         #endif
+    }
+}
+
+/// Carries the page's selection, as it changes, to the view.
+private final class FilePreviewSelectionBridge: NSObject, WKScriptMessageHandler {
+    weak var owner: FilePreviewWebView?
+
+    func userContentController(_ userContentController: WKUserContentController,
+                               didReceive message: WKScriptMessage) {
+        let text = message.body as? String ?? ""
+        MainActor.assumeIsolated { owner?.selectedText = text }
     }
 }
 
