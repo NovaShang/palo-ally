@@ -81,8 +81,12 @@ private struct UserBubble: View {
                 if !message.text.isEmpty {
                 // A quiet "this is mine" marker, not an accent: the owner's
                 // words matter no more than the assistant's.
+                // Another agent's words to this session (Palo, another session)
+                // read as traffic between agents, not as the owner's own: a
+                // size smaller and grey (11-04: she couldn't tell them apart).
                 BubbleText(message: message)
-                    .foregroundStyle(.primary)
+                    .font(fromAgent ? .callout : nil)
+                    .foregroundStyle(fromAgent ? .secondary : .primary)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
                     .background { bubble }
@@ -109,11 +113,14 @@ private struct UserBubble: View {
         return { [store, message] in withAnimation(.snappy) { store.rewindTarget = message } }
     }
 
+    /// Said to this session by another agent, not typed by the owner.
+    private var fromAgent: Bool { store.scope != .palo && !(message.from ?? "").isEmpty }
+
     /// The owner's words: a light fill. The assistant's words to a Pal: an
     /// outline (said for the owner, not by them).
     @ViewBuilder private var bubble: some View {
         let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
-        if store.scope != .palo, !(message.from ?? "").isEmpty {
+        if fromAgent {
             shape.strokeBorder(Color.primary.opacity(0.18), lineWidth: 1)
         } else {
             shape.fill(Color(.secondarySystemFill))

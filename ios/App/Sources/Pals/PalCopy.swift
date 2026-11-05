@@ -44,7 +44,7 @@ extension Copy {
     /// 「Palo 说」: over the assistant's words in a Pal's conversation.
     static func assistantSays(_ name: String) -> String {
         let who = name.isEmpty ? String(localized: "助理") : name
-        return spaced(String(localized: "\(who)说"))
+        return spaced(String(localized: "\(who)发来"))
     }
 }
 

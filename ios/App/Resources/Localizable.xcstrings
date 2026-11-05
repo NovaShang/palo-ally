@@ -7760,6 +7760,16 @@
           }
         }
       }
+    },
+    "%@发来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From %@"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
