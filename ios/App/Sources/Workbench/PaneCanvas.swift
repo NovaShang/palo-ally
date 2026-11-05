@@ -48,19 +48,25 @@ final class PaneCanvasController: UIViewController {
     private var dropTarget: (id: String, zone: PaneDropZone)?
     private let lift = UIView()
     private let edge = UIView()
-    /// The pane the owner is in, outlined when there are several.
-    private var activeID: String?
 
-    /// Panes stand apart by this much, the canvas showing through (11-05:
-    /// with a hairline between them, a screen of text didn't say which pane
-    /// a line belonged to).
+    /// Panes are rounded cards this far apart and in from the edges, the
+    /// canvas showing through (11-05: with a hairline between them, a screen
+    /// of text didn't say which pane a line belonged to; an accent outline on
+    /// the current one was too heavy, the owner said).
     static let gap: CGFloat = 6
-    static let gutter = UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.17, alpha: 1) : UIColor(white: 0.88, alpha: 1) }
+    static let cardRadius: CGFloat = 10
+    /// What shows round the cards and in a workspace's title bar row: the
+    /// Mac sidebar's colour, as it draws (236, 237, 237 in light mode).
+    static let backdrop = UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(red: 0.16, green: 0.16, blue: 0.17, alpha: 1)
+        : UIColor(red: 236 / 255, green: 237 / 255, blue: 237 / 255, alpha: 1) }
 
     override func loadView() {
         let v = CanvasView()
-        // Shows in the gutters between panes: a shade off the panes' own background.
-        v.backgroundColor = Self.gutter
+        // Clear: round the cards shows the window's own backdrop, the one
+        // behind the sidebar (the owner, 11-05: sidebar, title bar and
+        // background one colour, only the cards white).
+        v.backgroundColor = .clear
         v.clipsToBounds = true
         view = v
     }
@@ -96,18 +102,14 @@ final class PaneCanvasController: UIViewController {
 
     // MARK: - what to show
 
-    func apply(tree incoming: LayoutTree.Node, interactive: Bool, accent: UIColor, active: String? = nil) {
-        if active != activeID {
-            activeID = active
-            markActive()
-        }
+    func apply(tree incoming: LayoutTree.Node, interactive: Bool, accent: UIColor) {
         // One geometry for panes and dividers: a stored tree whose split
         // nodes' sizes had gone stale against their leaves put the lines
         // where no boundary was, and moving them moved nothing.
         let new = LayoutTree.resized(incoming)
         let accentChanged = !accent.isEqual(self.accent)
         self.accent = accent
-        if accentChanged { applyAccent(); markActive() }
+        if accentChanged { applyAccent() }
         guard new != tree || interactive != self.interactive else { return }
         #if DEBUG || PERF_HARNESS
         PerfProbe.count("canvas relayout")
@@ -116,18 +118,7 @@ final class PaneCanvasController: UIViewController {
         tree = new
         self.interactive = interactive
         syncPanes()
-        markActive()
         layoutCanvas()
-    }
-
-    /// The current pane outlined in the accent, when there is more than one.
-    private func markActive() {
-        let several = panes.count > 1
-        for (id, pane) in panes {
-            let on = several && id == activeID
-            pane.layer.borderWidth = on ? 1.5 : 0
-            pane.layer.borderColor = accent.withAlphaComponent(0.55).cgColor
-        }
     }
 
     /// The pane's composer gets the caret (⌘⌥→, ⌘⌥←).
@@ -198,7 +189,7 @@ final class PaneCanvasController: UIViewController {
         if view.bounds.size != lastSize { layoutCanvas() }
     }
 
-    /// The panes' frames: the tree's rects, `gap` apart (none at the canvas's edges).
+    /// The panes' frames: the tree's rects, `gap` apart and `gap` in from the canvas's edges.
     /// Each pane's frame, on whole device pixels (`scale`, with the canvas
     /// at `origin` in its window): a pane at a half pixel drew its text
     /// blurred, on a 1x display above all.
@@ -209,10 +200,12 @@ final class PaneCanvasController: UIViewController {
         return LayoutTree.fractions(of: tree).mapValues { f in
             var minX = f.x * size.width, minY = f.y * size.height
             var maxX = (f.x + f.w) * size.width, maxY = (f.y + f.h) * size.height
-            if minX > 0.5 { minX += line / 2 }
-            if minY > 0.5 { minY += line / 2 }
-            if maxX < size.width - 0.5 { maxX -= line / 2 }
-            if maxY < size.height - 0.5 { maxY -= line / 2 }
+            // Half the gap at a divider, the whole gap at the canvas's edge:
+            // every pane a card with the canvas round it.
+            minX += minX > 0.5 ? line / 2 : line
+            minY += minY > 0.5 ? line / 2 : line
+            maxX -= maxX < size.width - 0.5 ? line / 2 : line
+            maxY -= maxY < size.height - 0.5 ? line / 2 : line
             minX = px(minX, origin.x); minY = px(minY, origin.y)
             maxX = px(maxX, origin.x); maxY = px(maxY, origin.y)
             return CGRect(x: minX, y: minY, width: max(0, maxX - minX), height: max(0, maxY - minY))
@@ -453,7 +446,7 @@ final class PaneCanvasController: UIViewController {
 
     private static func unlift(_ pane: PaneContainerView) {
         pane.transform = .identity
-        pane.layer.cornerRadius = 0
+        pane.layer.cornerRadius = Self.cardRadius
     }
 
     private func endPaneDrag(at p: CGPoint, commit: Bool) {
@@ -637,6 +630,9 @@ final class PaneContainerView: UIView {
         self.content = content
         super.init(frame: .zero)
         clipsToBounds = true
+        // A rounded card on the canvas (PaneCanvasController.gap).
+        layer.cornerRadius = PaneCanvasController.cardRadius
+        layer.cornerCurve = .continuous
         accessibilityIdentifier = "tile-\(id)"
         content.frame = bounds
         content.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -775,8 +771,6 @@ extension AppKitBundle {
 struct PaneCanvas: UIViewControllerRepresentable {
     let tree: LayoutTree.Node
     let interactive: Bool
-    /// The pane the owner is in.
-    var active: String? = nil
     let accent: UIColor
     let handle: PaneCanvasHandle
     let makePane: (String) -> UIViewController
@@ -815,7 +809,7 @@ struct PaneCanvas: UIViewControllerRepresentable {
         c.onMoveFocus = onMoveFocus
         c.paneInfo = paneInfo
         c.onCornerPane = onCornerPane
-        c.apply(tree: tree, interactive: interactive, accent: accent, active: active)
+        c.apply(tree: tree, interactive: interactive, accent: accent)
     }
 }
 

@@ -111,6 +111,12 @@ struct FloatingTitleOrb: View {
                     }
                 }
                 .background { ListeningGlow(size: big).opacity(Double(listen)) }
+                // The Mac: the orb is some 26 pt, and in the title bar row
+                // only the middle of a button takes a click; a rectangle
+                // round it takes them, as a toolbar button's does (11-05:
+                // "the orb is hard to hit").
+                .frame(minWidth: Platform.isMac ? 48 : nil, minHeight: Platform.isMac ? 38 : nil)
+                .contentShape(Rectangle())
             }
             .macTitlebarButtonStyle()
         }

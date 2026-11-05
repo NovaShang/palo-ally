@@ -286,11 +286,10 @@ private struct WorkspaceBar: ViewModifier {
             let name = store.assistantName
             content
                 .toolbar(.hidden, for: .navigationBar)
-                // The title bar row is the page's: its background, not the window's.
-                .background { Color(.systemBackground).ignoresSafeArea(.container, edges: .top) }
-                // A hairline between the title bar row and the tiles under it
-                // (the owner's ask, 10-30): the row and a white pane ran together.
-                .overlay(alignment: .top) { Rectangle().fill(Color(.separator)).frame(height: 1) }
+                // The title bar row and the gaps round the tiles are the
+                // sidebar's colour; only the tiles are white cards (the
+                // owner, 11-05).
+                .background { Color(uiColor: PaneCanvasController.backdrop).ignoresSafeArea() }
                 .macTitlebarCenter { MacTitlebarTitle(title: title) }
                 .macToolbarMenus(signature: "\(others.map { "\($0.id)=\($0.displayName)" })|\(placement?.pane ?? "")|\(online)|\(palo)|\(name)") {
                     MacToolbarMenus(add: addItems(others: others, online: online, palo: palo, name: name))

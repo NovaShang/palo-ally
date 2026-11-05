@@ -50,7 +50,7 @@ struct TiledWorkspaceView: View {
                                                  width: outer.size.width, narrowBelow: TileMetrics.narrowBelow)
             let shown = narrow.isNarrow ? (LayoutTree.keeping(narrow.visible, in: normalized) ?? normalized) : normalized
             VStack(spacing: 0) {
-                PaneCanvas(tree: shown, interactive: !narrow.isNarrow, active: active(), accent: accent, handle: handle,
+                PaneCanvas(tree: shown, interactive: !narrow.isNarrow, accent: accent, handle: handle,
                            makePane: makePane, onLayoutChange: onLayoutChange, onActivate: onActivate,
                            onMoveFocus: onMoveFocus, paneInfo: info, onCornerPane: onCornerPane)
                 if narrow.isNarrow {
