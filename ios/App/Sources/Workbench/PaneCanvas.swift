@@ -53,13 +53,14 @@ final class PaneCanvasController: UIViewController {
     /// shade darker than the sidebar (11-05: with a hairline between them,
     /// a screen of text didn't say which pane a line belonged to; an accent
     /// outline was too heavy; a desk almost the sidebar's colour read as a
-    /// mismatch, so it is plainly its own).
+    /// mismatch, and a shade off it neither one nor the other: so it is
+    /// plainly its own, well darker than the sidebar).
     static let gap: CGFloat = 8
     static let cardRadius: CGFloat = 12
     /// The desk round the cards, and a workspace's title bar row.
     static let backdrop = UIColor { $0.userInterfaceStyle == .dark
-        ? UIColor(red: 0.10, green: 0.10, blue: 0.11, alpha: 1)
-        : UIColor(red: 225 / 255, green: 226 / 255, blue: 229 / 255, alpha: 1) }
+        ? UIColor(red: 0.06, green: 0.06, blue: 0.07, alpha: 1)
+        : UIColor(red: 212 / 255, green: 214 / 255, blue: 219 / 255, alpha: 1) }
 
     override func loadView() {
         let v = CanvasView()

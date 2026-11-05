@@ -15,12 +15,102 @@ struct EmbeddedPreview: View {
         #if targetEnvironment(macCatalyst)
         if url.pathExtension.lowercased() == "pdf" {
             PDFPreview(url: url, revision: revision)
+        } else if ImagePreview.handles(url) {
+            ImagePreview(url: url, revision: revision)
         } else {
             QuickLookView(url: url, revision: revision)
         }
         #else
         QuickLookView(url: url, revision: revision)
         #endif
+    }
+}
+
+/// A picture at its full resolution, fitted to the pane, that zooms (a
+/// trackpad's pinch, a double click between fitted and its own size). On the
+/// Mac QuickLook embedded in a pane drew pictures small and blurred and
+/// didn't zoom (11-05).
+struct ImagePreview: UIViewRepresentable {
+    let url: URL
+    let revision: Int64
+
+    static func handles(_ url: URL) -> Bool {
+        ["png", "jpg", "jpeg", "gif", "heic", "heif", "webp", "tif", "tiff", "bmp"].contains(url.pathExtension.lowercased())
+    }
+
+    func makeUIView(context: Context) -> ZoomingImageView { ZoomingImageView() }
+
+    func updateUIView(_ view: ZoomingImageView, context: Context) {
+        view.show(url: url, revision: revision)
+    }
+
+    final class ZoomingImageView: UIScrollView, UIScrollViewDelegate {
+        private let imageView = UIImageView()
+        private var shown: (URL, Int64)?
+        private var fittedFor: CGSize = .zero
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            delegate = self
+            backgroundColor = .secondarySystemBackground
+            showsHorizontalScrollIndicator = true
+            showsVerticalScrollIndicator = true
+            decelerationRate = .fast
+            imageView.contentMode = .scaleAspectFit
+            addSubview(imageView)
+            let twice = UITapGestureRecognizer(target: self, action: #selector(toggleZoom(_:)))
+            twice.numberOfTapsRequired = 2
+            addGestureRecognizer(twice)
+        }
+
+        required init?(coder: NSCoder) { fatalError() }
+
+        func show(url: URL, revision: Int64) {
+            guard shown?.0 != url || shown?.1 != revision else { return }
+            shown = (url, revision)
+            imageView.image = UIImage(contentsOfFile: url.path)
+            fittedFor = .zero
+            setNeedsLayout()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            guard let image = imageView.image, image.size.width > 0, image.size.height > 0, bounds.width > 0 else { return }
+            if fittedFor != bounds.size {
+                fittedFor = bounds.size
+                // Fitted to the pane (never blown up past its own size), up to
+                // 4 times its own size zoomed.
+                zoomScale = 1
+                imageView.frame = CGRect(origin: .zero, size: image.size)
+                contentSize = image.size
+                let fit = min(bounds.width / image.size.width, bounds.height / image.size.height, 1)
+                minimumZoomScale = fit
+                maximumZoomScale = max(4, fit)
+                zoomScale = fit
+            }
+            center()
+        }
+
+        /// A picture smaller than the pane sits in its middle.
+        private func center() {
+            let dx = max(0, (bounds.width - contentSize.width) / 2)
+            let dy = max(0, (bounds.height - contentSize.height) / 2)
+            contentInset = UIEdgeInsets(top: dy, left: dx, bottom: dy, right: dx)
+        }
+
+        func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
+        func scrollViewDidZoom(_ scrollView: UIScrollView) { center() }
+
+        @objc private func toggleZoom(_ tap: UITapGestureRecognizer) {
+            let target = zoomScale > minimumZoomScale + 0.01 ? minimumZoomScale : min(max(1, minimumZoomScale * 2), maximumZoomScale)
+            if target == minimumZoomScale {
+                setZoomScale(target, animated: true)
+            } else {
+                let p = tap.location(in: imageView)
+                let size = CGSize(width: bounds.width / target, height: bounds.height / target)
+                zoom(to: CGRect(x: p.x - size.width / 2, y: p.y - size.height / 2, width: size.width, height: size.height), animated: true)
+            }
+        }
     }
 }
 
@@ -121,6 +211,15 @@ enum QuickLookPresenter {
         nav.preferredContentSize = CGSize(width: 960, height: 720)
         top.present(nav, animated: true)
         #else
+        // A picture: our own viewer, at its full resolution and zooming
+        // (QuickLook inside our page drew it small and blurred, 11-05).
+        let tapped = items[min(max(start, 0), items.count - 1)]
+        if ImagePreview.handles(tapped.url) {
+            let nav = UINavigationController(rootViewController: PhoneImagePage(url: tapped.url, title: tapped.title))
+            nav.modalPresentationStyle = .fullScreen
+            top.present(nav, animated: true)
+            return
+        }
         // A page of ours with QuickLook inside it, so the bar (and its ✕) is
         // ours: on its own, QuickLook went full screen on a long docx and
         // hid its Done for good, leaving no way out.
@@ -234,6 +333,50 @@ private final class AttachmentPreviewController: QLPreviewController, QLPreviewC
 /// The phone's preview page: our bar with ✕, the title, 共享 and
 /// 在产出物库中查看; QuickLook inside it shows the file (zoom, paging) and
 /// can't take the way out away when it goes full screen.
+/// A picture full screen on a phone or iPad: ✕, its name, 共享, and the
+/// picture fitted, pinching and double tapping to zoom.
+private final class PhoneImagePage: UIViewController {
+    private let url: URL
+    private let name: String?
+
+    init(url: URL, title: String?) {
+        self.url = url
+        self.name = title
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+        let image = ImagePreview.ZoomingImageView()
+        image.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(image)
+        NSLayoutConstraint.activate([
+            image.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            image.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            image.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            image.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+        image.show(url: url, revision: 0)
+        navigationItem.title = name ?? url.lastPathComponent
+        navigationItem.largeTitleDisplayMode = .never
+        navigationItem.leftBarButtonItems = [UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak self] _ in
+            self?.dismiss(animated: true)
+        })]
+        let share = UIBarButtonItem(systemItem: .action, primaryAction: UIAction { [weak self] _ in
+            guard let self else { return }
+            let sheet = UIActivityViewController(activityItems: [self.url], applicationActivities: nil)
+            sheet.popoverPresentationController?.barButtonItem = self.navigationItem.rightBarButtonItems?.first
+            self.present(sheet, animated: true)
+        })
+        share.accessibilityLabel = String(localized: "共享")
+        navigationItem.rightBarButtonItems = [share]
+    }
+}
+
 private final class PhonePreviewPage: UIViewController {
     private let preview: AttachmentPreviewController
 
