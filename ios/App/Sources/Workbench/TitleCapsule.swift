@@ -86,7 +86,10 @@ struct PageIndicator: View {
             model.detailShown.toggle()
         } label: {
             indicator
-                .contentShape(.circle)
+                // The Mac: the whole drop as drawn (it spills past its size)
+                // and a little round it, not its core circle (11-05).
+                .frame(minWidth: Platform.isMac ? 44 : nil, minHeight: Platform.isMac ? 40 : nil)
+                .contentShape(Platform.isMac ? AnyShape(Rectangle()) : AnyShape(Circle()))
         }
         .macTitlebarButtonStyle()
         .modifier(PaloOrbHomeIfNeeded(enabled: isPalo && restsHere, token: token))

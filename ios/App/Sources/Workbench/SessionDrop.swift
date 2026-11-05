@@ -24,6 +24,10 @@ struct SessionDrop: View {
         // behind it and its colors went wrong.
         SessionDropCanvas(state: state, voiceLevel: voiceLevel, neutral: neutral, listenColor: listenColor)
             .aspectRatio(1, contentMode: .fit)
+            // A drawing only: the system glass it is drawn with took a click
+            // over the drop and dropped it, so the button it sits in answered
+            // only on the mark drawn over its middle (11-05).
+            .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
 

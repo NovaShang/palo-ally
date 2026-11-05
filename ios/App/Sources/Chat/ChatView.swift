@@ -296,6 +296,8 @@ struct ChatView: View {
         // to the workspace's page.)
         .modifier(PageNavigationBar(title: title, enabled: !inTile))
         .scrollEdgeEffectStyle(.soft, for: .top)
+        // The Mac draws its own fade under the title bar row (MacTitlebarFade).
+        .scrollEdgeEffectHidden(Platform.isMac, for: .top)
         // Under the floating composer the same: a soft blur, not a bar.
         .scrollEdgeEffectStyle(.soft, for: .bottom)
         // The edge UIKit draws under the title bar row, in the debug log as

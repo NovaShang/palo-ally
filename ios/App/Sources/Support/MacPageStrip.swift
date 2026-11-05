@@ -260,9 +260,28 @@ struct MacTitlebarFade: ViewModifier {
     func body(content: Content) -> some View {
         // With the navigation bar hidden the soft edge had nothing to sit
         // under, so it never showed: an empty bar stands in for one.
+        #if targetEnvironment(macCatalyst)
+        // Not the system's soft edge: its view lay over the row and took the
+        // clicks meant for what floats there (a session's drop answered only
+        // on its middle mark, 11-05). A fade of the page's own colour, which
+        // takes no clicks, does the same work.
+        content
+            .scrollEdgeEffectHidden(true, for: .top)
+            .overlay(alignment: .top) {
+                LinearGradient(stops: [.init(color: Color(.systemBackground), location: 0),
+                                       .init(color: Color(.systemBackground).opacity(0.85), location: 0.55),
+                                       .init(color: Color(.systemBackground).opacity(0), location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: MacTitlebar.height + 14)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                    .ignoresSafeArea(.container, edges: .top)
+            }
+        #else
         content
             .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: 1).accessibilityHidden(true) }
             .scrollEdgeEffectStyle(.soft, for: .top)
+        #endif
     }
 }
 
