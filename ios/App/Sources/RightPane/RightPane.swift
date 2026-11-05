@@ -40,7 +40,9 @@ struct RightPane: View {
                 select: { hub.activate(key, at: $0) },
                 close: { hub.close(key, at: $0) },
                 addWeb: { model.editPane(key) { $0.openWeb(key, url: "") } },
-                closePane: { if let onClose { onClose() } else { model.editPane(key) { $0.setOpen(key, false) } } })
+                closePane: { if let onClose { onClose() } else { model.editPane(key) { $0.setOpen(key, false) } } },
+                split: splitWorkspaceID == nil ? nil : { i in state.tabs.indices.contains(i) ? openInSplit(state.tabs[i]) : () },
+                drag: splitWorkspaceID == nil || !Platform.isMac ? nil : tabDrag)
             content
         }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
@@ -53,6 +55,50 @@ struct RightPane: View {
         .task(id: store.connection.isOnline) { if store.connection.isOnline { await hub.load() } }
         .onChange(of: state.tabs, initial: true) { _, tabs in pageByTab = pages.reconcile(tabs) }
         .accessibilityIdentifier("right-pane")
+    }
+
+    // MARK: 文档分屏
+
+    /// A workspace's pane (the Mac, iPads): its documents can go onto the
+    /// canvas as cards of their own.
+    private var splitWorkspaceID: String? {
+        guard key.hasPrefix("ws:"), onClose == nil else { return nil }
+        return String(key.dropFirst(3))
+    }
+
+    /// 在分屏中打开: the document as a card (its tab leaves the pane).
+    private func openInSplit(_ tab: PaneTab) {
+        guard let ws = splitWorkspaceID, let doc = DocumentLeaf(tab: tab) else { return }
+        Task { try? await model.openInSplit(doc, in: ws) }
+    }
+
+    /// The entry a document's ⋯ adds in a workspace's pane.
+    private func splitMenu(_ tab: PaneTab) -> [DocumentMenuItem] {
+        guard splitWorkspaceID != nil, DocumentLeaf(tab: tab) != nil else { return [] }
+        return [DocumentMenuItem(title: String(localized: "在分屏中打开", table: "Files"), systemImage: "rectangle.split.2x1") {
+            openInSplit(tab)
+        }]
+    }
+
+    /// A document's tab dragged out of the strip onto the workspace's canvas
+    /// (the Mac): the canvas shows where it would land; let go there, the
+    /// tab leaves the pane.
+    private var tabDrag: TabDrag {
+        TabDrag(
+            accepts: { DocumentLeaf(tab: $0) != nil },
+            begin: { tab, point in
+                guard let doc = DocumentLeaf(tab: tab) else { return }
+                let info = TileInfo(name: DocumentCardContent.name(doc, store: store), symbol: DocumentCardContent.symbol(doc))
+                model.documentDrop?.begin(doc, info: info, at: point)
+            },
+            move: { model.documentDrop?.move(to: $0) },
+            end: { tab, point, commit in
+                let landed = model.documentDrop?.end(at: point, commit: commit) ?? false
+                if landed, let ws = splitWorkspaceID, let doc = DocumentLeaf(tab: tab) {
+                    model.closeDocumentTab(doc, in: ws)
+                    model.activate(tile: doc.id, in: ws)
+                }
+            })
     }
 
     // The web pages stay in the tree, hidden, so they keep their place;
@@ -96,6 +142,7 @@ struct RightPane: View {
         case PaneTab.artifact:
             let index = state.active
             ArtifactDetailView(artifactID: tab.path ?? "", inPane: true, close: { hub.close(key, at: index) })
+                .environment(\.documentMenu, splitMenu(tab))
                 .id(tab)
         case PaneTab.files:
             NavigationStack {
@@ -114,6 +161,7 @@ struct RightPane: View {
             FilePage(target: FileTarget(scope: tab.isAbsolutePreview ? .root : scope, path: path),
                      close: { hub.close(key, at: index) }, inPane: true,
                      fallbackScope: tab.isAbsolutePreview ? scope : nil)
+                .environment(\.documentMenu, splitMenu(tab))
                 .id(tab)
         default:
             ContentUnavailableView(String(localized: "这个标签打不开", table: "Files"), systemImage: "questionmark.square.dashed")
@@ -173,6 +221,14 @@ private struct TabsShown: Equatable {
     let active: Int
 }
 
+/// A tab dragged out of the strip (`RightPane.tabDrag`); points in the window.
+struct TabDrag {
+    let accepts: (PaneTab) -> Bool
+    let begin: (PaneTab, CGPoint) -> Void
+    let move: (CGPoint) -> Void
+    let end: (PaneTab, CGPoint, Bool) -> Void
+}
+
 private struct RightPaneTabBar: View {
     let tabs: [PaneTab]
     let active: Int
@@ -182,6 +238,13 @@ private struct RightPaneTabBar: View {
     let close: (Int) -> Void
     let addWeb: () -> Void
     let closePane: () -> Void
+    /// 在分屏中打开 for a document's tab (a workspace's pane).
+    var split: ((Int) -> Void)? = nil
+    /// A document's tab dragged onto the canvas (a workspace's pane, the Mac).
+    var drag: TabDrag? = nil
+    /// The tab being dragged out, while it is.
+    @State private var dragging: PaneTab?
+    @GestureState private var pressing = false
 
     var body: some View {
         GlassEffectContainer(spacing: 8) {
@@ -259,7 +322,31 @@ private struct RightPaneTabBar: View {
         .background(isActive ? AnyShapeStyle(.primary.opacity(0.12)) : AnyShapeStyle(.clear), in: .capsule)
         .contentShape(.capsule)
         .contextMenu { if i >= PaneTabsKey.pinnedCount { menu(i, tab, page: page) } }
+        .simultaneousGesture(dragOut(tab), including: drag?.accepts(tab) == true ? .all : .subviews)
+        .onChange(of: pressing) { _, now in
+            // A drag the system took away: nothing lands.
+            if !now, let t = dragging { dragging = nil; drag?.end(t, .zero, false) }
+        }
         .accessibilityAddTraits(isActive ? .isSelected : [])
+    }
+
+    /// A document's chip pulled out of the strip; a click still selects it.
+    private func dragOut(_ tab: PaneTab) -> some Gesture {
+        DragGesture(minimumDistance: 6, coordinateSpace: .global)
+            .updating($pressing) { _, state, _ in state = true }
+            .onChanged { v in
+                guard let drag else { return }
+                if dragging == nil {
+                    dragging = tab
+                    drag.begin(tab, v.location)
+                }
+                drag.move(v.location)
+            }
+            .onEnded { v in
+                guard let t = dragging else { return }
+                dragging = nil
+                drag?.end(t, v.location, true)
+            }
     }
 
     /// A file's or a page's actions, on its chip.
@@ -288,6 +375,11 @@ private struct RightPaneTabBar: View {
                 UIPasteboard.general.string = path
             } label: {
                 Label { Text("拷贝路径", tableName: "Files") } icon: { Image(systemName: "doc.on.doc") }
+            }
+        }
+        if let split, DocumentLeaf(tab: tab) != nil {
+            Button { split(i) } label: {
+                Label { Text("在分屏中打开", tableName: "Files") } icon: { Image(systemName: "rectangle.split.2x1") }
             }
         }
         Divider()

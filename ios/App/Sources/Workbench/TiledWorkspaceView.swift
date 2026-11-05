@@ -6,6 +6,8 @@ struct TileInfo: Equatable {
     var name: String
     var dot: StatusDotKind = .idle
     var running = 0
+    /// A document's card: its mark instead of a state.
+    var symbol: String? = nil
 }
 
 /// The tiling's measures.

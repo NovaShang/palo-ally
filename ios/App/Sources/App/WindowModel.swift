@@ -208,6 +208,11 @@ final class WindowModel {
     @ObservationIgnored var paloPopoverUp = false
     /// Each workspace's active tile (a session id), kept while the window is open.
     var activeTiles: [String: String] = [:]
+    /// Each workspace's tile last used or opened, a document's card included:
+    /// what a narrow window keeps in sight.
+    var lastTiles: [String: String] = [:]
+    /// The workspace page on screen here takes a document's tab dragged onto its canvas.
+    @ObservationIgnored weak var documentDrop: DocumentDropTarget?
     /// Phones (and short windows): the right pane as a full page.
     var paneCover = false
     /// Large screens: the right pane shown or not, per page (`paneKey`), as

@@ -30,9 +30,10 @@ extension WindowModel {
     }
 
     /// The active tile of a workspace: the one last chosen, else the first.
+    /// Always a conversation (a session's or Palo's), never a document's card.
     func activeTile(in workspaceID: String) -> String? {
         guard let ws = store?.workspace(id: workspaceID) else { return nil }
-        let order = tree(of: ws).map(LayoutTree.leafOrder(of:)) ?? []
+        let order = (tree(of: ws).map(LayoutTree.leafOrder(of:)) ?? []).filter { !DocumentLeaf.isDocument($0) }
         if let id = activeTiles[workspaceID], order.contains(id) { return id }
         return order.first
     }
@@ -182,9 +183,21 @@ extension WindowModel {
         PaneOpeners.web = { [weak app] url in app?.frontWindow?.openWebInPane(url) }
     }
 
-    /// A tile became the one the owner works in.
+    /// A tile became the one the owner works in (a document's card isn't
+    /// one: the keyboard, the voice and the right pane stay with the
+    /// conversation they were with).
     func activate(tile id: String, in workspaceID: String) {
+        if lastTiles[workspaceID] != id { lastTiles[workspaceID] = id }
+        guard !DocumentLeaf.isDocument(id) else { return }
         if activeTiles[workspaceID] != id { activeTiles[workspaceID] = id }
+    }
+
+    /// The tile a narrow window keeps in sight: the one last used or opened
+    /// (a document's card too), else the active one.
+    func shownTile(in workspaceID: String) -> String? {
+        if let id = lastTiles[workspaceID], let ws = store?.workspace(id: workspaceID),
+           let tree = tree(of: ws), LayoutTree.leafOrder(of: tree).contains(id) { return id }
+        return activeTile(in: workspaceID)
     }
 }
 

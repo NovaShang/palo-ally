@@ -36,7 +36,8 @@ struct ArtifactDetailView: View {
         if inPane {
             main
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .overlay(alignment: .topTrailing) { if let artifact { paneMenu(artifact).padding(10) } }
+                .documentCardContent()
+                .overlay(alignment: .topTrailing) { if let artifact { paneMenu(artifact).documentMenuPlacement() } }
                 .task(id: reloadKey) { await load() }
                 .accessibilityIdentifier("artifact-tab")
         } else {
@@ -153,6 +154,7 @@ struct ArtifactDetailView: View {
     private func paneMenu(_ artifact: Artifact) -> some View {
         MacStripMenu(label: String(localized: "更多")) {
             menuItems(artifact)
+            DocumentMenuItems()
             if let close {
                 Divider()
                 Button(action: close) {

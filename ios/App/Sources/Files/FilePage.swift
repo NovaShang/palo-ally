@@ -90,7 +90,8 @@ struct FilePage: View {
         if inPane {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .overlay(alignment: .topTrailing) { paneMenu.padding(10) }
+                .documentCardContent()
+                .overlay(alignment: .topTrailing) { paneMenu.documentMenuPlacement() }
                 .overlay(alignment: .bottom) { reloadedCapsule }
                 .background { reloadKey }
                 .task(id: target) { await load() }
@@ -217,6 +218,7 @@ struct FilePage: View {
             Button { UIPasteboard.general.string = target.path } label: {
                 Label { Text("拷贝路径", tableName: "Files") } icon: { Image(systemName: "doc.on.doc") }
             }
+            DocumentMenuItems()
             if let close {
                 Divider()
                 Button(action: close) {

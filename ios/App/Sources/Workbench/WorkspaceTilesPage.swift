@@ -27,6 +27,8 @@ struct WorkspaceTilesPage: View {
     @State private var renaming: Pal?
     /// The layout just kept, shown until the stored one catches up.
     @State private var pending: LayoutTree.Node?
+    /// Where a document's tab dragged out of the right pane lands.
+    @State private var documentDrop = DocumentDropTarget()
 
     private var workspace: Workspace? { store.workspace(id: workspaceID) }
 
@@ -38,7 +40,7 @@ struct WorkspaceTilesPage: View {
             if let workspace, let tree = model.tree(of: workspace) {
                 TiledWorkspaceView(
                     layout: pending ?? tree,
-                    active: { model.activeTile(in: workspaceID) },
+                    active: { model.shownTile(in: workspaceID) },
                     info: info,
                     accent: model.currentTheme.uiColor,
                     handle: canvas,
@@ -63,6 +65,11 @@ struct WorkspaceTilesPage: View {
         .overlay(alignment: .bottom) { closeConfirm }
         .palRename($renaming)
         .onAppear(perform: setUpActions)
+        .onAppear {
+            documentDrop.handle = canvas
+            model.documentDrop = documentDrop
+        }
+        .onDisappear { if model.documentDrop === documentDrop { model.documentDrop = nil } }
         .onChange(of: scenePhase, initial: true) { _, phase in bridge.scenePhase = phase }
         .animation(.snappy, value: closing)
         // ⌘⌥→ / ⌘⌥←: the next and the previous tile.
@@ -100,6 +107,9 @@ struct WorkspaceTilesPage: View {
 
     private func info(_ id: String) -> TileInfo {
         if id == LayoutTree.paloPane { return TileInfo(name: store.assistantName, dot: store.isBusy ? .working : .idle) }
+        if let doc = DocumentLeaf(id: id) {
+            return TileInfo(name: DocumentCardContent.name(doc, store: store), symbol: DocumentCardContent.symbol(doc))
+        }
         guard let pal = store.singlePal(id: id) else { return TileInfo(name: "") }
         return TileInfo(name: pal.displayName, dot: pal.dot, running: pal.tasksRunning)
     }
@@ -141,6 +151,24 @@ struct WorkspaceTilesPage: View {
             Task {
                 do {
                     try await model.removePalo(from: workspaceID)
+                } catch {
+                    failure = Copy.error(error)
+                }
+            }
+        }
+        actions.documentToPane = { id in
+            Task {
+                do {
+                    try await model.documentToPane(id, in: workspaceID)
+                } catch {
+                    failure = Copy.error(error)
+                }
+            }
+        }
+        actions.closeDocument = { id in
+            Task {
+                do {
+                    try await model.closeDocumentCard(id, in: workspaceID)
                 } catch {
                     failure = Copy.error(error)
                 }
@@ -191,7 +219,10 @@ struct WorkspaceTilesPage: View {
     }
 
     private func moveFocus(previous: Bool) {
-        guard let workspace, let tree = model.tree(of: workspace), let active = model.activeTile(in: workspaceID),
+        // Documents' cards are passed over: the caret goes to a conversation.
+        guard let workspace, let full = model.tree(of: workspace), let active = model.activeTile(in: workspaceID) else { return }
+        let conversations = LayoutTree.leafOrder(of: full).filter { !DocumentLeaf.isDocument($0) }
+        guard let tree = LayoutTree.keeping(conversations, in: full),
               let next = LayoutTree.neighbor(of: active, previous: previous, in: tree) else { return }
         model.activate(tile: next, in: workspaceID)
         // No mark shows the current pane: the caret goes there.
