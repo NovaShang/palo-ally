@@ -76,22 +76,27 @@ final class PaneCanvasController: UIViewController {
         super.viewDidLoad()
         grabLine.isHidden = true
         grabLine.isUserInteractionEnabled = false
-        ghosts.lineWidth = 1.5
+        // Laying out (11-05, the owner: the lines and boxes looked rough): the
+        // new sizes as soft cards of the cards' own shape, the divider a short
+        // rounded handle in its gutter, the swap target a lifted card, a
+        // split's half a soft block concentric with the card.
+        grabLine.layer.cornerRadius = 2
+        ghosts.lineWidth = 1
         ghosts.isHidden = true
         lift.isHidden = true
         lift.isUserInteractionEnabled = false
-        lift.layer.cornerRadius = 12
+        lift.layer.cornerRadius = Self.cardRadius
         lift.layer.cornerCurve = .continuous
-        lift.layer.borderWidth = 2
+        lift.layer.borderWidth = 1
         lift.layer.shadowColor = UIColor.black.cgColor
-        lift.layer.shadowOpacity = 0.22
-        lift.layer.shadowRadius = 15
-        lift.layer.shadowOffset = CGSize(width: 0, height: 14)
+        lift.layer.shadowOpacity = 0.16
+        lift.layer.shadowRadius = 18
+        lift.layer.shadowOffset = CGSize(width: 0, height: 10)
         edge.isHidden = true
         edge.isUserInteractionEnabled = false
-        edge.layer.cornerRadius = 10
+        edge.layer.cornerRadius = Self.cardRadius - 6
         edge.layer.cornerCurve = .continuous
-        edge.layer.borderWidth = 2
+        edge.layer.borderWidth = 1
         applyAccent()
         #if DEBUG
         Self.all.add(self)
@@ -166,8 +171,9 @@ final class PaneCanvasController: UIViewController {
             dividers[id] = d
         }
         // Over the panes: the drag's pieces.
-        view.addSubview(grabLine)
         view.layer.addSublayer(ghosts)
+        // Over the preview of the new layout.
+        view.addSubview(grabLine)
         view.addSubview(lift)
         view.addSubview(edge)
         for (_, p) in panes { p.grip.isUserInteractionEnabled = true; p.dragEnabled = interactive }
@@ -175,11 +181,21 @@ final class PaneCanvasController: UIViewController {
 
     private func applyAccent() {
         grabLine.backgroundColor = accent
-        ghosts.strokeColor = accent.cgColor
-        ghosts.fillColor = accent.withAlphaComponent(0.04).cgColor
-        lift.layer.borderColor = accent.cgColor
-        edge.layer.borderColor = accent.cgColor
-        edge.backgroundColor = accent.withAlphaComponent(0.18)
+        // A divider dragged: a clean preview of the new layout over the
+        // panes, the desk with the cards where they will be (the panes'
+        // content under it, overlaid with outlines, looked muddled).
+        let traits = view.traitCollection
+        let dark = traits.userInterfaceStyle == .dark
+        ghosts.backgroundColor = Self.backdrop.resolvedColor(with: traits).cgColor
+        ghosts.fillColor = UIColor.systemBackground.resolvedColor(with: traits).cgColor
+        ghosts.strokeColor = (dark ? UIColor(white: 1, alpha: 0.10) : UIColor(white: 0, alpha: 0.07)).cgColor
+        ghosts.shadowColor = UIColor.black.cgColor
+        ghosts.shadowOpacity = dark ? 0 : 0.10
+        ghosts.shadowRadius = 4
+        ghosts.shadowOffset = CGSize(width: 0, height: 1)
+        lift.layer.borderColor = accent.withAlphaComponent(0.45).cgColor
+        edge.layer.borderColor = accent.withAlphaComponent(0.4).cgColor
+        edge.backgroundColor = accent.withAlphaComponent(0.12)
         for d in dividers.values { d.accent = accent }
     }
 
@@ -310,12 +326,12 @@ final class PaneCanvasController: UIViewController {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         if let moved = LayoutTree.dividers(of: next).first(where: { $0.id == id }) {
-            grabLine.frame = DividerView.lineRect(moved, in: lastSize, thickness: 3)
+            grabLine.frame = DividerView.handleRect(in: DividerView.lineRect(moved, in: lastSize, thickness: 4), vertical: moved.vertical)
             grabLine.isHidden = false
         }
         let path = UIBezierPath()
         for r in Self.paneFrames(of: next, in: lastSize).values {
-            path.append(UIBezierPath(rect: r.insetBy(dx: 0.75, dy: 0.75)))
+            path.append(UIBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), cornerRadius: Self.cardRadius))
         }
         ghosts.frame = view.bounds
         ghosts.path = path.cgPath
@@ -438,7 +454,7 @@ final class PaneCanvasController: UIViewController {
             } else {
                 // Splitting: the half it would take, in light accent.
                 Self.unlift(pane)
-                self.edge.frame = zone.highlightRect(in: frame).insetBy(dx: 4, dy: 4)
+                self.edge.frame = zone.highlightRect(in: frame).insetBy(dx: 6, dy: 6)
                 self.edge.isHidden = false
                 self.lift.isHidden = true
             }
@@ -686,8 +702,9 @@ final class PaneContainerView: UIView {
 }
 
 /// The handle of a gutter between panes: nothing drawn (the gutter shows).
-/// Hovered a 3pt light accent line (and the Mac shows a resize cursor);
-/// dragged, it moves the line and outlines only.
+/// Hovered a short grey rounded handle in its middle (and the Mac shows a
+/// resize cursor); dragged, the canvas draws the handle in the accent and the
+/// new sizes as soft cards.
 final class DividerView: UIView {
     let id: String
     private(set) var vertical = true
@@ -731,13 +748,20 @@ final class DividerView: UIView {
         restyle()
     }
 
+    /// A short rounded handle in the middle of the gutter `line` runs along.
+    static func handleRect(in line: CGRect, vertical: Bool) -> CGRect {
+        let t: CGFloat = 4, length = min(44, vertical ? line.height : line.width)
+        return vertical
+            ? CGRect(x: line.midX - t / 2, y: line.midY - length / 2, width: t, height: length)
+            : CGRect(x: line.midX - length / 2, y: line.midY - t / 2, width: length, height: t)
+    }
+
     private func restyle() {
-        let lit = hovered || dragging
-        let t: CGFloat = lit ? 3 : 1
-        line.frame = vertical
-            ? CGRect(x: (bounds.width - t) / 2, y: 0, width: t, height: bounds.height)
-            : CGRect(x: 0, y: (bounds.height - t) / 2, width: bounds.width, height: t)
-        line.backgroundColor = lit ? accent.withAlphaComponent(0.5) : .clear
+        // Hovered: a grey handle in the gutter; dragged (the canvas draws
+        // its own then): none here.
+        line.layer.cornerRadius = 2
+        line.frame = Self.handleRect(in: bounds, vertical: vertical)
+        line.backgroundColor = hovered && !dragging ? UIColor.secondaryLabel.withAlphaComponent(0.45) : .clear
     }
 
     override func layoutSubviews() {
