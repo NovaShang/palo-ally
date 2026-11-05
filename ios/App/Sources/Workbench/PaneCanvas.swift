@@ -7,8 +7,8 @@ import UIKit
 /// Each pane is a `UIHostingController` of its own (`PaneRoot`), so a frame
 /// of one pane (its drop working, a keystroke, a reply streaming) updates
 /// that pane's graph only, never the window's or the other panes'. This
-/// controller places them from the `LayoutTree`, draws the 1pt hairlines
-/// between them, and does all the pointer work (a divider hovered or
+/// controller places them from the `LayoutTree`, with gutters between
+/// them, and does all the pointer work (a divider hovered or
 /// dragged, a pane dragged by its header) with plain views and layers:
 /// no SwiftUI work per pointer move. The tree only changes on release.
 @MainActor
@@ -48,10 +48,19 @@ final class PaneCanvasController: UIViewController {
     private var dropTarget: (id: String, zone: PaneDropZone)?
     private let lift = UIView()
     private let edge = UIView()
+    /// The pane the owner is in, outlined when there are several.
+    private var activeID: String?
+
+    /// Panes stand apart by this much, the canvas showing through (11-05:
+    /// with a hairline between them, a screen of text didn't say which pane
+    /// a line belonged to).
+    static let gap: CGFloat = 6
+    static let gutter = UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.17, alpha: 1) : UIColor(white: 0.88, alpha: 1) }
 
     override func loadView() {
         let v = CanvasView()
-        v.backgroundColor = .systemBackground
+        // Shows in the gutters between panes: a shade off the panes' own background.
+        v.backgroundColor = Self.gutter
         v.clipsToBounds = true
         view = v
     }
@@ -87,14 +96,18 @@ final class PaneCanvasController: UIViewController {
 
     // MARK: - what to show
 
-    func apply(tree incoming: LayoutTree.Node, interactive: Bool, accent: UIColor) {
+    func apply(tree incoming: LayoutTree.Node, interactive: Bool, accent: UIColor, active: String? = nil) {
+        if active != activeID {
+            activeID = active
+            markActive()
+        }
         // One geometry for panes and dividers: a stored tree whose split
         // nodes' sizes had gone stale against their leaves put the lines
         // where no boundary was, and moving them moved nothing.
         let new = LayoutTree.resized(incoming)
         let accentChanged = !accent.isEqual(self.accent)
         self.accent = accent
-        if accentChanged { applyAccent() }
+        if accentChanged { applyAccent(); markActive() }
         guard new != tree || interactive != self.interactive else { return }
         #if DEBUG || PERF_HARNESS
         PerfProbe.count("canvas relayout")
@@ -103,11 +116,21 @@ final class PaneCanvasController: UIViewController {
         tree = new
         self.interactive = interactive
         syncPanes()
+        markActive()
         layoutCanvas()
     }
 
-    /// The pane's composer gets the caret (⌘⌥→, ⌘⌥←: there is no other
-    /// mark of the current pane).
+    /// The current pane outlined in the accent, when there is more than one.
+    private func markActive() {
+        let several = panes.count > 1
+        for (id, pane) in panes {
+            let on = several && id == activeID
+            pane.layer.borderWidth = on ? 1.5 : 0
+            pane.layer.borderColor = accent.withAlphaComponent(0.55).cgColor
+        }
+    }
+
+    /// The pane's composer gets the caret (⌘⌥→, ⌘⌥←).
     func focusComposer(of id: String) {
         guard let pane = panes[id] else { return }
         func field(in v: UIView) -> UIView? {
@@ -175,13 +198,13 @@ final class PaneCanvasController: UIViewController {
         if view.bounds.size != lastSize { layoutCanvas() }
     }
 
-    /// The panes' frames: the tree's rects, 1pt hairlines between them (none at the canvas's edges).
+    /// The panes' frames: the tree's rects, `gap` apart (none at the canvas's edges).
     /// Each pane's frame, on whole device pixels (`scale`, with the canvas
     /// at `origin` in its window): a pane at a half pixel drew its text
     /// blurred, on a 1x display above all.
     static func paneFrames(of tree: LayoutTree.Node, in size: CGSize, scale: CGFloat = 2, origin: CGPoint = .zero) -> [String: CGRect] {
         let s = max(scale, 1)
-        let line: CGFloat = 1
+        let line = gap
         func px(_ v: CGFloat, _ o: CGFloat) -> CGFloat { ((v + o) * s).rounded() / s - o }
         return LayoutTree.fractions(of: tree).mapValues { f in
             var minX = f.x * size.width, minY = f.y * size.height
@@ -643,9 +666,9 @@ final class PaneContainerView: UIView {
     }
 }
 
-/// A hairline between panes: 1pt, light gray (white 10% in dark mode).
-/// Hovered it thickens to 3pt light accent (and the Mac shows a resize
-/// cursor); dragged, it moves the line and outlines only.
+/// The handle of a gutter between panes: nothing drawn (the gutter shows).
+/// Hovered a 3pt light accent line (and the Mac shows a resize cursor);
+/// dragged, it moves the line and outlines only.
 final class DividerView: UIView {
     let id: String
     private(set) var vertical = true
@@ -656,7 +679,6 @@ final class DividerView: UIView {
     var accent: UIColor = .systemBlue { didSet { restyle() } }
     static let hot: CGFloat = 9
 
-    static let hairline = UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 1, alpha: 0.10) : UIColor(white: 0, alpha: 0.10) }
 
     init(id: String) {
         self.id = id
@@ -696,7 +718,7 @@ final class DividerView: UIView {
         line.frame = vertical
             ? CGRect(x: (bounds.width - t) / 2, y: 0, width: t, height: bounds.height)
             : CGRect(x: 0, y: (bounds.height - t) / 2, width: bounds.width, height: t)
-        line.backgroundColor = lit ? accent.withAlphaComponent(0.5) : Self.hairline
+        line.backgroundColor = lit ? accent.withAlphaComponent(0.5) : .clear
     }
 
     override func layoutSubviews() {
@@ -753,6 +775,8 @@ extension AppKitBundle {
 struct PaneCanvas: UIViewControllerRepresentable {
     let tree: LayoutTree.Node
     let interactive: Bool
+    /// The pane the owner is in.
+    var active: String? = nil
     let accent: UIColor
     let handle: PaneCanvasHandle
     let makePane: (String) -> UIViewController
@@ -791,7 +815,7 @@ struct PaneCanvas: UIViewControllerRepresentable {
         c.onMoveFocus = onMoveFocus
         c.paneInfo = paneInfo
         c.onCornerPane = onCornerPane
-        c.apply(tree: tree, interactive: interactive, accent: accent)
+        c.apply(tree: tree, interactive: interactive, accent: accent, active: active)
     }
 }
 
