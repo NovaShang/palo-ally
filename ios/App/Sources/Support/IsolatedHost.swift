@@ -10,10 +10,23 @@ import UIKit
 /// The content gets no SwiftUI environment from around it (UIKit traits
 /// such as the color scheme and the display scale do come through), and
 /// takes no touches: whatever it sits in (a button) gets them.
-struct IsolatedHost<Content: View>: UIViewRepresentable {
+struct IsolatedHost<Content: View>: View {
     let content: Content
 
     init(@ViewBuilder _ content: () -> Content) { self.content = content() }
+
+    var body: some View {
+        // Out of SwiftUI's hit testing too: the representable's own host
+        // view took a click over its whole area and dropped it (its box
+        // passes through, the host round it didn't), so the button it sits
+        // in got none there (11-05: the Mac title bar's orb, 26 pt, took a
+        // click only a few points outside its drawing).
+        IsolatedHostView(content: content).allowsHitTesting(false)
+    }
+}
+
+private struct IsolatedHostView<Content: View>: UIViewRepresentable {
+    let content: Content
 
     func makeUIView(context: Context) -> UIView {
         let controller = UIHostingController(rootView: content)

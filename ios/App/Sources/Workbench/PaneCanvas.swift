@@ -49,24 +49,21 @@ final class PaneCanvasController: UIViewController {
     private let lift = UIView()
     private let edge = UIView()
 
-    /// Panes are rounded cards this far apart and in from the edges, the
-    /// canvas showing through (11-05: with a hairline between them, a screen
-    /// of text didn't say which pane a line belonged to; an accent outline on
-    /// the current one was too heavy, the owner said).
-    static let gap: CGFloat = 6
-    static let cardRadius: CGFloat = 10
-    /// What shows round the cards and in a workspace's title bar row: the
-    /// Mac sidebar's colour, as it draws (236, 237, 237 in light mode).
+    /// Panes are cards this far apart and in from the edges, on a desk a
+    /// shade darker than the sidebar (11-05: with a hairline between them,
+    /// a screen of text didn't say which pane a line belonged to; an accent
+    /// outline was too heavy; a desk almost the sidebar's colour read as a
+    /// mismatch, so it is plainly its own).
+    static let gap: CGFloat = 8
+    static let cardRadius: CGFloat = 12
+    /// The desk round the cards, and a workspace's title bar row.
     static let backdrop = UIColor { $0.userInterfaceStyle == .dark
-        ? UIColor(red: 0.16, green: 0.16, blue: 0.17, alpha: 1)
-        : UIColor(red: 236 / 255, green: 237 / 255, blue: 237 / 255, alpha: 1) }
+        ? UIColor(red: 0.10, green: 0.10, blue: 0.11, alpha: 1)
+        : UIColor(red: 225 / 255, green: 226 / 255, blue: 229 / 255, alpha: 1) }
 
     override func loadView() {
         let v = CanvasView()
-        // Clear: round the cards shows the window's own backdrop, the one
-        // behind the sidebar (the owner, 11-05: sidebar, title bar and
-        // background one colour, only the cards white).
-        v.backgroundColor = .clear
+        v.backgroundColor = Self.backdrop
         v.clipsToBounds = true
         view = v
     }
@@ -629,10 +626,17 @@ final class PaneContainerView: UIView {
         self.id = id
         self.content = content
         super.init(frame: .zero)
-        clipsToBounds = true
-        // A rounded card on the canvas (PaneCanvasController.gap).
-        layer.cornerRadius = PaneCanvasController.cardRadius
+        // A card on the desk (PaneCanvasController.gap): the content rounded
+        // and clipped, the card itself casting a soft shadow (light) or
+        // edged with a faint line (dark, where a shadow doesn't show).
+        let r = PaneCanvasController.cardRadius
+        layer.cornerRadius = r
         layer.cornerCurve = .continuous
+        layer.shadowOffset = CGSize(width: 0, height: 1)
+        content.layer.cornerRadius = r
+        content.layer.cornerCurve = .continuous
+        content.clipsToBounds = true
+        styleCard()
         accessibilityIdentifier = "tile-\(id)"
         content.frame = bounds
         content.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -646,6 +650,21 @@ final class PaneContainerView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         grip.frame = PaneMetrics.grip(in: bounds, corner: corner)
+        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: PaneCanvasController.cardRadius).cgPath
+    }
+
+    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
+        super.traitCollectionDidChange(previous)
+        styleCard()
+    }
+
+    private func styleCard() {
+        let dark = traitCollection.userInterfaceStyle == .dark
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = dark ? 0 : 0.10
+        layer.shadowRadius = dark ? 0 : 4
+        layer.borderWidth = 1 / max(traitCollection.displayScale, 1)
+        layer.borderColor = (dark ? UIColor(white: 1, alpha: 0.10) : UIColor(white: 0, alpha: 0.07)).cgColor
     }
 
     /// None from the window: the Mac's titlebar inset made the top panes'
