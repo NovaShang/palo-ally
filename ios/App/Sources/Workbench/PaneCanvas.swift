@@ -56,7 +56,10 @@ final class PaneCanvasController: UIViewController {
     /// mismatch, and a shade off it neither one nor the other: so it is
     /// plainly its own, well darker than the sidebar).
     static let gap: CGFloat = 8
-    static let cardRadius: CGFloat = 12
+    /// Concentric with what sits in a card's corners: the composer (15 pt
+    /// round, 6 pt in, ComposerView) and the status icon and ⋯ (14 pt round,
+    /// 7 pt in, PaneMetrics) (the owner, 11-05).
+    static let cardRadius: CGFloat = 21
     /// The desk round the cards, and a workspace's title bar row.
     static let backdrop = UIColor { $0.userInterfaceStyle == .dark
         ? UIColor(red: 0.06, green: 0.06, blue: 0.07, alpha: 1)
@@ -187,7 +190,7 @@ final class PaneCanvasController: UIViewController {
         if view.bounds.size != lastSize { layoutCanvas() }
     }
 
-    /// The panes' frames: the tree's rects, `gap` apart and `gap` in from the canvas's edges.
+    /// The panes' frames: the tree's rects, `gap` apart and half of it in from the canvas's edges.
     /// Each pane's frame, on whole device pixels (`scale`, with the canvas
     /// at `origin` in its window): a pane at a half pixel drew its text
     /// blurred, on a 1x display above all.
@@ -198,12 +201,12 @@ final class PaneCanvasController: UIViewController {
         return LayoutTree.fractions(of: tree).mapValues { f in
             var minX = f.x * size.width, minY = f.y * size.height
             var maxX = (f.x + f.w) * size.width, maxY = (f.y + f.h) * size.height
-            // Half the gap at a divider, the whole gap at the canvas's edge:
-            // every pane a card with the canvas round it.
-            minX += minX > 0.5 ? line / 2 : line
-            minY += minY > 0.5 ? line / 2 : line
-            maxX -= maxX < size.width - 0.5 ? line / 2 : line
-            maxY -= maxY < size.height - 0.5 ? line / 2 : line
+            // Half the gap on every side: `gap` between cards, half of it
+            // round the outside (the owner, 11-05).
+            minX += line / 2
+            minY += line / 2
+            maxX -= line / 2
+            maxY -= line / 2
             minX = px(minX, origin.x); minY = px(minY, origin.y)
             maxX = px(maxX, origin.x); maxY = px(maxY, origin.y)
             return CGRect(x: minX, y: minY, width: max(0, maxX - minX), height: max(0, maxY - minY))
@@ -427,7 +430,7 @@ final class PaneCanvasController: UIViewController {
             if zone == .center {
                 // Swapping: the target lifts as a card with the accent edge.
                 pane.transform = CGAffineTransform(scaleX: 0.97, y: 0.97)
-                pane.layer.cornerRadius = 12
+                pane.layer.cornerRadius = Self.cardRadius
                 pane.layer.cornerCurve = .continuous
                 self.lift.frame = frame.insetBy(dx: frame.width * 0.015, dy: frame.height * 0.015)
                 self.lift.isHidden = false

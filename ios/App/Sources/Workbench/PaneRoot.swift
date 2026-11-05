@@ -23,13 +23,15 @@ final class PaneActions {
 /// The pane's measures (docs/workbench-design/split-final.html).
 enum PaneMetrics {
     /// The slim header: the session's name, level with the status drop and ⋯.
-    static let headerHeight: CGFloat = 32
+    static let headerHeight: CGFloat = 42
     /// The status drop and the ⋯ button, centered on the header's line.
     static let button: CGFloat = 28
     /// The status drop inside the icon's room (bare, no glass circle).
     static let drop: CGFloat = 22
-    static let buttonInset: CGFloat = 8
-    static let buttonTop: CGFloat = 2
+    /// As far in from the card's top as from its side: concentric with its
+    /// corner (PaneCanvasController.cardRadius = 7 + 14).
+    static let buttonInset: CGFloat = 7
+    static let buttonTop: CGFloat = 7
     /// Where the name starts and the status line ends (clear of the two buttons).
     static let titleLeading: CGFloat = 42
     static let titleTrailing: CGFloat = 44

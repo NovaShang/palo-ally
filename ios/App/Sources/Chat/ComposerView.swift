@@ -127,7 +127,8 @@ struct ComposerView: View {
     private var spansDisplay: Bool { model.layout == .phone }
     private var concentric: Bool { docked && spansDisplay && displayRadius > 0 }
     private var sideInset: CGFloat {
-        if compact { return 8 }
+        // A tile: concentric with the card's corner (PaneCanvasController.cardRadius = 6 + 15).
+        if compact { return 6 }
         // Beside a sidebar or inspector: the same even margins as the conversation.
         guard concentric else { return spansDisplay ? Self.minInset : 20 }
         return max(Self.minInset, displayRadius - Self.dockedRadius)
