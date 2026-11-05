@@ -454,11 +454,7 @@ private struct WorkspaceRow: View {
     var body: some View {
         HStack(spacing: 2) {
             Button(action: toggle) {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(expanded ? 90 : 0))
-                    .frame(width: 20, height: 28)
+                SidebarChevron(expanded: expanded)
                     .contentShape(.rect)
             }
             .buttonStyle(.borderless)
@@ -483,6 +479,21 @@ private struct WorkspaceRow: View {
     private var toggleLabel: String { expanded ? String(localized: "收起") : String(localized: "展开") }
 }
 
+/// The open/close arrow of a sidebar group. The Mac draws the app at 77 %,
+/// where an 11 pt gray chevron all but vanished (11-05): there it is larger,
+/// bolder and darker.
+private struct SidebarChevron: View {
+    let expanded: Bool
+
+    var body: some View {
+        Image(systemName: "chevron.right")
+            .font(.system(size: Platform.isMac ? 14 : 11, weight: Platform.isMac ? .bold : .semibold))
+            .foregroundStyle(Platform.isMac ? AnyShapeStyle(Color.primary.opacity(0.6)) : AnyShapeStyle(.secondary))
+            .rotationEffect(.degrees(expanded ? 90 : 0))
+            .frame(width: Platform.isMac ? 22 : 20, height: 28)
+    }
+}
+
 /// 更早的会话 N: the sessions put away for lack of use, opened in place.
 private struct EarlierRow: View {
     let count: Int
@@ -492,10 +503,7 @@ private struct EarlierRow: View {
     var body: some View {
         Button(action: toggle) {
             HStack(spacing: 2) {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .rotationEffect(.degrees(expanded ? 90 : 0))
-                    .frame(width: 20, height: 28)
+                SidebarChevron(expanded: expanded)
                 Text("更早的会话")
                 Spacer(minLength: 8)
                 Text("\(count)").monospacedDigit()
