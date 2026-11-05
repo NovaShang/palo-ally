@@ -116,7 +116,9 @@ public final class AudioCaptureService: @unchecked Sendable {
     private static func mayStayWarm() -> Bool {
         // Never before the mic is granted: touching the input would ask for it.
         #if targetEnvironment(macCatalyst)
-        return MicPermission.micAuthorizedSync() && !MacAudioInput.isBluetooth()
+        // The Mac: never (11-05, music sounded wrong after a recording on the
+        // owner's company Mac): the mic opens at the press, closes after.
+        return false
         #elseif os(iOS)
         return MicPermission.micAuthorizedSync() && !AVAudioSession.sharedInstance().isOtherAudioPlaying
         #else
@@ -191,7 +193,11 @@ public final class AudioCaptureService: @unchecked Sendable {
                                 options: [.mixWithOthers, .defaultToSpeaker, .allowBluetoothA2DP])
         let afterCategory = Int(Date().timeIntervalSince(t0) * 1000)
         // Smaller hardware I/O buffers: audio reaches the tap sooner.
+        // Not on the Mac: a dictation app there leaves the device's buffer
+        // alone (it is the whole Mac's, the music's too).
+        #if !targetEnvironment(macCatalyst)
         try? session.setPreferredIOBufferDuration(0.02)
+        #endif
         try session.setActive(true)
         sessionReady = true
         dlog("[voice] audio session activated (\(reason)): category \(afterCategory)ms, setActive \(Int(Date().timeIntervalSince(t0) * 1000) - afterCategory)ms, io \(Int(session.ioBufferDuration * 1000))ms")
@@ -296,6 +302,14 @@ public final class AudioCaptureService: @unchecked Sendable {
         }
         #endif
 
+        #if targetEnvironment(macCatalyst)
+        // The Mac: a Bluetooth headset's mic is never used: opening it switches the headset to its
+        // call profile, mono and 8 to 16 kHz, for the music too, and it comes
+        // back only well after. The built-in mic records instead, as other
+        // dictation apps do (Wispr Flow, Superwhisper).
+        let picked = MacAudioInput.preferBuiltIn(for: engine.inputNode)
+        dlog("[voice] audio before: \(MacAudioInput.describe())\(picked.map { ", recording from \($0)" } ?? "")")
+        #endif
         let input = engine.inputNode
         // Sanity-check the mic is ready (macOS can hand back a 0Hz/0ch format
         // before it is). Don't reuse this format for the tap, though — read it
@@ -384,6 +398,11 @@ public final class AudioCaptureService: @unchecked Sendable {
             Self.deactivateSessionNow()
             #endif
         }
+        #if targetEnvironment(macCatalyst)
+        // Whether the headset stayed in its music profile, and came back (the log).
+        dlog("[voice] audio after: \(MacAudioInput.describe())")
+        Self.control.asyncAfter(deadline: .now() + 5) { dlog("[voice] audio 5 s after: \(MacAudioInput.describe())") }
+        #endif
     }
 
     private func handleBuffer(_ inputBuffer: AVAudioPCMBuffer, when: AVAudioTime? = nil) {
@@ -447,22 +466,69 @@ public final class AudioCaptureService: @unchecked Sendable {
 #if targetEnvironment(macCatalyst)
 import CoreAudio
 
-/// The Mac's default input device, as CoreAudio has it.
+/// The Mac's audio devices, as CoreAudio has them.
 enum MacAudioInput {
-    /// A Bluetooth input (AirPods and the like): opening it switches the
-    /// headphones to their call profile, music included.
-    static func isBluetooth() -> Bool {
-        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice,
-                                                 mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        var device = AudioDeviceID(0)
-        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device) == noErr,
-              device != 0 else { return false }
-        address.mSelector = kAudioDevicePropertyTransportType
-        var transport = UInt32(0)
-        size = UInt32(MemoryLayout<UInt32>.size)
-        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &transport) == noErr else { return false }
-        return transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE
+    private static func property<T>(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector,
+                                    scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal, _ initial: T) -> T {
+        var address = AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
+        var value = initial
+        var size = UInt32(MemoryLayout<T>.size)
+        _ = AudioObjectGetPropertyData(object, &address, 0, nil, &size, &value)
+        return value
     }
+
+    private static func defaultDevice(input: Bool) -> AudioDeviceID {
+        property(AudioObjectID(kAudioObjectSystemObject),
+                 input ? kAudioHardwarePropertyDefaultInputDevice : kAudioHardwarePropertyDefaultOutputDevice, AudioDeviceID(0))
+    }
+
+    private static func name(_ device: AudioDeviceID) -> String {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioObjectPropertyName, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var name: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &name) == noErr, let name else { return "?" }
+        return name.takeRetainedValue() as String
+    }
+
+    private static func transport(_ device: AudioDeviceID) -> UInt32 { property(device, kAudioDevicePropertyTransportType, UInt32(0)) }
+
+    private static func isBluetooth(_ device: AudioDeviceID) -> Bool {
+        let t = transport(device)
+        return t == kAudioDeviceTransportTypeBluetooth || t == kAudioDeviceTransportTypeBluetoothLE
+    }
+
+    /// "in: MacBook Air Microphone (built-in, 48000 Hz) · out: AirPods (Bluetooth, 48000 Hz)", for the log.
+    static func describe() -> String {
+        func one(_ d: AudioDeviceID) -> String {
+            let kind = isBluetooth(d) ? "Bluetooth" : transport(d) == kAudioDeviceTransportTypeBuiltIn ? "built-in" : "other"
+            let rate = property(d, kAudioDevicePropertyNominalSampleRate, Float64(0))
+            return "\(name(d)) (\(kind), \(Int(rate)) Hz)"
+        }
+        return "in: \(one(defaultDevice(input: true))) · out: \(one(defaultDevice(input: false)))"
+    }
+
+    /// The input node records from the built-in mic when the default input
+    /// is a Bluetooth headset. The device's name when it switched, else nil.
+    static func preferBuiltIn(for input: AVAudioInputNode) -> String? {
+        guard isBluetooth(defaultDevice(input: true)), let unit = input.audioUnit else { return nil }
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var size = UInt32(0)
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return nil }
+        var devices = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &devices) == noErr else { return nil }
+        for d in devices where transport(d) == kAudioDeviceTransportTypeBuiltIn {
+            var streams = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams, mScope: kAudioObjectPropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
+            var bytes = UInt32(0)
+            guard AudioObjectGetPropertyDataSize(d, &streams, 0, nil, &bytes) == noErr, bytes > 0 else { continue }
+            var id = d
+            let status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                                              &id, UInt32(MemoryLayout<AudioDeviceID>.size))
+            if status == noErr { return name(d) }
+            dlog("[voice] the built-in mic couldn't be picked (\(status)): the default input records")
+            return nil
+        }
+        return nil
+    }
+
 }
 #endif
