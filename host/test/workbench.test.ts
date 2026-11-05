@@ -182,6 +182,27 @@ describe("workspaces", () => {
     await t.hub.pals.stopAndWait();
   });
 
+  test("a document's leaf: kept in the layout without being a member, through a restart; not a shown session", async () => {
+    const t = setup();
+    const a = await t.mk("甲");
+    const ws = (await t.call("workspaces.create", { memberIds: [a.id] })).workspace;
+    const layout = row(a.id, "doc:/Users/x/README.md", "doc:artifact:ar1");
+    expect((await t.call("workspaces.update", { id: ws.id, layout })).workspace.layout).toEqual(layout);
+    expect([...t.hub.workbench.shownIds()]).toEqual([a.id]);
+    await expect(t.call("workspaces.update", { id: ws.id, layout: row(a.id, "doc:relative.md") })).rejects.toThrow();
+    await expect(t.call("workspaces.update", { id: ws.id, layout: row(a.id, "doc:artifact:") })).rejects.toThrow();
+    await expect(t.call("workspaces.update", { id: ws.id, layout: row(a.id, "doc:/a", "doc:/a") })).rejects.toThrow("不止一次");
+    // the session leaving keeps the documents
+    await t.call("workspaces.move", { palId: a.id });
+    const left = (await t.call("workspaces.list")).workspaces.find((x: any) => x.id === ws.id);
+    expect(leavesOf(left.layout)).toEqual(["doc:/Users/x/README.md", "doc:artifact:ar1"]);
+    await t.hub.pals.stopAndWait();
+    const again = setup({ paths: t.paths, claude: t.claude });
+    const back = (await again.call("workspaces.list")).workspaces.find((x: any) => x.id === ws.id);
+    expect(leavesOf(back.layout)).toEqual(["doc:/Users/x/README.md", "doc:artifact:ar1"]);
+    await again.hub.pals.stopAndWait();
+  });
+
   test("restart restores workspaces, layouts, tabs and each session's workspace; dead members are dropped", async () => {
     const t = setup();
     const a = await t.mk("甲");

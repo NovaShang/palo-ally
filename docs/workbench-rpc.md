@@ -281,7 +281,7 @@ LayoutNode =
 规则：
 
 - 根的 `x y` 为 0，`w h` 为 1。每个 split 至少两个子节点，子项的矩形铺满父矩形，没有缝。
-- 叶子的 `session` 在整棵树里不重复，且必须是 `memberIds` 的成员。唯一例外是保留值 `"palo"`：它是 Palo 的格（只是视图，不是成员），任何工作区都可以有、最多一个，不进 `memberIds`，摘成员时也不动它，也不算「正在显示」的会话。
+- 叶子的 `session` 在整棵树里不重复，且必须是 `memberIds` 的成员。唯一例外是保留值 `"palo"`：它是 Palo 的格（只是视图，不是成员），任何工作区都可以有、最多一个，不进 `memberIds`，摘成员时也不动它，也不算「正在显示」的会话。另一个例外是文档卡片（文档分屏，Mac 和 iPad）：`"doc:"` 加文件在这台电脑上的绝对路径（`"doc:/Users/…/README.md"`），或 `"doc:artifact:"` 加成果的 id。它们同样只是视图：不进 `memberIds`，摘成员时不动，不算「正在显示」的会话；同一个文档在一棵树里最多一次。文件不在了，app 在卡片里说一声，叶子照留。
 - host 只做轻校验和存储：解析失败、`session` 重复、不在成员里则拒绝；比例是否铺满不校验，客户端用 `LayoutTree` 的 renormalize 修正。
 - 成员被摘掉（`workspaces.move`、`pals.end`、`pals.remove`）时，host 把对应叶子从树里删掉，兄弟节点顶上，不做比例重算（app 重算）；树空了则 `layout` 变 `null`。
 - 以最后写入者为准，不合并（plan §6.8）。

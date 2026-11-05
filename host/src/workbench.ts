@@ -1,7 +1,7 @@
 // Workspaces and the right pane's tab state (docs/workbench-rpc.md §3).
 // A workspace is a set of sessions the owner tiles together. The host keeps
 // who is in it and the layout tree as the app wrote it; it checks that the
-// layout's leaves are members (or Palo's leaf, PALO_LEAF) and never looks at the geometry. Nothing here
+// layout's leaves are members (or Palo's leaf, PALO_LEAF, or a document's, isDocumentLeaf) and never looks at the geometry. Nothing here
 // ends a session: leaving or deleting a workspace only turns a session back
 // into an ordinary one. An empty workspace stays until workspaces.delete.
 import type { Bus } from "./bus.ts";
@@ -37,6 +37,16 @@ const NAME_MAX = 40;
 
 /** The leaf that shows Palo in a workspace: a view of the assistant, not a member (any workspace may have it, at most once). */
 export const PALO_LEAF = "palo";
+
+/** A document's card in a workspace (文档分屏): `doc:` and a file's absolute path, or `doc:artifact:` and an item's id. A view, not a member, like Palo's leaf. */
+export function isDocumentLeaf(id: string): boolean {
+  return id.startsWith("doc:/") || (id.startsWith("doc:artifact:") && id.length > "doc:artifact:".length);
+}
+
+/** A leaf that is not a session: Palo's, or a document's. */
+function isViewLeaf(id: string): boolean {
+  return id === PALO_LEAF || isDocumentLeaf(id);
+}
 
 /** `current` re-ordered by `ids`: the ones named (and in `current`) first in that order, the rest after in their own order; unknown ids are ignored. */
 function ordered(current: string[], ids: unknown[]): string[] {
@@ -249,7 +259,7 @@ export class Workbench {
 
   /** Sessions that are leaves of some layout: the ones on screen, never put to sleep to make room. */
   shownIds(): Set<string> {
-    return new Set(this.data.workspaces.flatMap((w) => leavesOf(w.layout)).filter((id) => id !== PALO_LEAF));
+    return new Set(this.data.workspaces.flatMap((w) => leavesOf(w.layout)).filter((id) => !isViewLeaf(id)));
   }
 
   workspaceOf(palId: string): Workspace | undefined {
@@ -372,7 +382,7 @@ export class Workbench {
         const leaves: string[] = [];
         layout = parseNode(o.layout, leaves);
         if (new Set(leaves).size !== leaves.length) throw new Error(t("wb.layoutDupe"));
-        if (leaves.some((id) => id !== PALO_LEAF && !ws.memberIds.includes(id))) throw new Error(t("wb.layoutNotMember"));
+        if (leaves.some((id) => !isViewLeaf(id) && !ws.memberIds.includes(id))) throw new Error(t("wb.layoutNotMember"));
       }
     }
     ws.name = name;
