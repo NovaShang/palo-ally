@@ -7770,6 +7770,138 @@
           }
         }
       }
+    },
+    "已拷贝" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copied"
+          }
+        }
+      }
+    },
+    "要点" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key points"
+          }
+        }
+      }
+    },
+    "没整理出来" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't sum it up"
+          }
+        }
+      }
+    },
+    "正在整理最近的对话…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Going over the recent conversation…"
+          }
+        }
+      }
+    },
+    "你说过的原话" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your own words"
+          }
+        }
+      }
+    },
+    "逐字摘自你自己发的消息，没有改动。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quoted word for word from messages you sent yourself."
+          }
+        }
+      }
+    },
+    "转述的内容" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passed on by others"
+          }
+        }
+      }
+    },
+    "助理或别的会话说的、转来的，不是你的原话。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What assistants or other sessions said or passed on, not your own words."
+          }
+        }
+      }
+    },
+    "回到这条消息" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go to this message"
+          }
+        }
+      }
+    },
+    "整理了最近 %lld 条消息" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The last %lld messages"
+          }
+        }
+      }
+    },
+    "整理了最近 %lld 条消息 · %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The last %lld messages · %@"
+          }
+        }
+      }
+    },
+    "最近一段对话的要点，你自己的原话单独列出。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key points of the recent conversation, with your own words set apart."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

@@ -267,6 +267,7 @@ private struct PaloPaneMenu: View {
     let workspaceID: String
     let actions: PaneActions
     @Environment(AppStore.self) private var store
+    @Environment(WindowModel.self) private var model
 
     var body: some View {
         let online = store.connection.isOnline
@@ -281,6 +282,8 @@ private struct PaloPaneMenu: View {
             }
             .disabled(!online)
             Divider()
+            Button(TldrCopy.menuTitle, systemImage: TldrCopy.icon) { model.openTldr("palo") }
+                .disabled(!online)
             Button("从工作区移开", systemImage: "rectangle.portrait.and.arrow.right") { actions.removePalo() }
                 .disabled(!online)
         } label: {
@@ -407,6 +410,7 @@ private struct PaneMenu: View {
     let workspaceID: String
     let actions: PaneActions
     @Environment(AppStore.self) private var store
+    @Environment(WindowModel.self) private var model
 
     var body: some View {
         let online = store.connection.isOnline
@@ -419,6 +423,8 @@ private struct PaneMenu: View {
             Menu("向下分出", systemImage: "rectangle.split.1x2") { choices(horizontal: false) }
                 .disabled(!online)
             Divider()
+            Button(TldrCopy.menuTitle, systemImage: TldrCopy.icon) { model.openTldr(id) }
+                .disabled(!online)
             Button("右栏（成果 / 文件）", systemImage: "sidebar.trailing") { actions.openPane(id) }
             Button("单独打开", systemImage: "arrow.up.left.and.arrow.down.right") { actions.openAlone(id) }
             Button("重命名…", systemImage: "pencil") { actions.rename(id) }

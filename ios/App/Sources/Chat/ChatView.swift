@@ -121,6 +121,12 @@ struct ChatView: View {
             try? await Task.sleep(for: .seconds(1.5))
             NSLog("[details] still open after 1.5 s: %@", model.detailShown ? "yes" : "no")
         }
+        // `-demoTldr palo|<pal id>`: that conversation's 「TL;DR」 opens (snapshots).
+        .task {
+            guard !inTile, let key = store.tldrKey, UserDefaults.standard.string(forKey: "demoTldr") == key else { return }
+            try? await Task.sleep(for: .seconds(2))
+            model.openTldr(key)
+        }
         // `-demoJump <s>`: tap 「回到最新」 that many seconds in (it logs where it lands).
         .task {
             let at = UserDefaults.standard.double(forKey: "demoJump")
@@ -227,6 +233,17 @@ struct ChatView: View {
         // conversation (same hold-driven motion as the orb and the zones).
         .overlay { VoiceTileGate { VoiceScrimLayer() } }
         .modifier(AgentDetailSheet(enabled: !inTile))
+        // 「TL;DR」: its sheet; a quote tapped brings its message into view, tinted a moment.
+        .modifier(TldrPresenter { id in
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(350)) // let the sheet go
+                scroll.reveal(id)
+                withAnimation(.easeOut(duration: 0.2)) { highlightedID = id }
+                try? await Task.sleep(for: .seconds(1.6))
+                withAnimation(.easeOut(duration: 0.6)) { if highlightedID == id { highlightedID = nil } }
+            }
+        })
+        .modifier(TldrMacMenu(enabled: macOrb || macPage))
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // 回到这里重来: asked in place of the composer (docs/rewind-prd.md §3).
             if let target = store.rewindTarget {

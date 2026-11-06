@@ -78,6 +78,7 @@ private struct SessionDetailForm: View {
                         .detailBare()
                 }
                 .listSectionSpacing(.compact)
+                TldrDetailRow()
                 Section {
                     pickers
                     DetailContextRow(percent: contextPercent(pal), tokens: detail?.contextTokens, window: detail?.contextWindow,

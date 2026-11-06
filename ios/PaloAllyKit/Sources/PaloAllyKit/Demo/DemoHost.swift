@@ -325,6 +325,8 @@ public actor DemoHost {
             // computer; `authLogin`: being signed in again, the link out.
             s.auth = AuthStatus(state: .expired, since: now - 40 * 60_000,
                                 login: name == "authLogin" ? LoginStatus(state: .waiting, startedAt: now, url: Self.demoLoginURL) : nil)
+        case "tldr":
+            seedTldrStretch()
         case "longQuote":
             // `-demoState longQuote`: a reply, then the owner's words quoting a long
             // stretch of it (folds to two lines) and, below, a short quote (doesn't).
@@ -936,6 +938,8 @@ public actor DemoHost {
             if let e = p["effort"] { status.effort = e.stringValue }
             emit(RPCEventName.status, status)
             return ["status": try .from(status)]
+        case RPCMethod.chatTldr:
+            return try await demoTldr(p)
         case RPCMethod.suggestionsList:
             return ["suggestions": try .from(demoSuggestions)]
         case RPCMethod.suggestionsDismiss:

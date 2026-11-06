@@ -166,6 +166,7 @@ final class WindowModel {
             // Each conversation starts at its own root.
             detailPath = NavigationPath()
             detailShown = false
+            tldrFor = nil
             paneCover = false
             filesPanel = nil
         }
@@ -183,6 +184,8 @@ final class WindowModel {
 
     /// The title capsule's details are open (workbench-prd §6).
     var detailShown = false
+    /// The conversation whose 「TL;DR」 sheet is open (AppStore.tldrKey).
+    var tldrFor: String?
     /// 新建会话 asked (⌘N, the sidebar's ＋): in a workspace when it has one.
     var newSession = false
     /// 并排 → 新开: the new session goes into this workspace as a tile.
@@ -574,6 +577,8 @@ final class WindowModel {
             }
         #endif
         #if DEBUG
+        // `-demoScreen palo`: the assistant's conversation, whatever the window showed last.
+        case "palo": selection = .palo
         case "file": Task { await openDemoFile() }
         case "ally":
             let id = UserDefaults.standard.string(forKey: "demoAlly")

@@ -241,6 +241,9 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
         titlebar.toolbarStyle = .unified
         titlebar.separatorStyle = .none
         titlebar.toolbar = bar.toolbar
+        // A page that put its menus up before the toolbar was there (the
+        // window's first page): its items now.
+        bar.refresh()
         AppKitBundle.immerseWindows(toolbar: "palo.main")
         MacRightHold.install()
         MacClickLog.install()
