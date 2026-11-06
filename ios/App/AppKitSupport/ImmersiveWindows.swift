@@ -342,21 +342,25 @@ final class ImmersiveWindows: NSObject {
 
     /// A left drag from "x1,y1" to "x2,y2" (as `click:` has them), pressed,
     /// moved a step a frame and let go as a hand does: a divider dragged.
+    /// A fifth number: the move takes that many seconds (else half of one),
+    /// a step each 60th of a second.
     @objc func drag(_ spec: String) -> String {
         guard let id = Self.toolbarID,
               let window = NSApplication.shared.keyWindow.flatMap({ $0.toolbar?.identifier.hasPrefix(id) == true ? $0 : nil })
                 ?? NSApplication.shared.windows.first(where: { $0.toolbar?.identifier.hasPrefix(id) == true }),
               let frame = window.contentView?.superview else { return "no window" }
         let v = spec.split(separator: ",").compactMap { Double($0) }
-        guard v.count == 4 else { return "bad points" }
+        guard v.count == 4 || v.count == 5 else { return "bad points" }
+        let seconds = v.count == 5 ? max(0.1, v[4]) : 0.5
+        let count = max(30, Int(seconds * 60))
         let h = frame.bounds.height
         let a = NSPoint(x: v[0], y: h - v[1]), b = NSPoint(x: v[2], y: h - v[3])
         var steps: [(NSEvent.EventType, Double, NSPoint)] = [(.mouseMoved, 0, a), (.mouseMoved, 0.15, a), (.leftMouseDown, 0.4, a)]
-        for k in 1...30 {
-            let f = Double(k) / 30
-            steps.append((.leftMouseDragged, 0.5 + f * 0.5, NSPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f)))
+        for k in 1...count {
+            let f = Double(k) / Double(count)
+            steps.append((.leftMouseDragged, 0.5 + f * seconds, NSPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f)))
         }
-        steps.append((.leftMouseUp, 1.1, b))
+        steps.append((.leftMouseUp, 0.6 + seconds, b))
         let number = window.windowNumber
         for (type, delay, p) in steps {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {

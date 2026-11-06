@@ -13,6 +13,7 @@ import UIKit
 enum PerfProbe {
     static let on = UserDefaults.standard.bool(forKey: "perfMeter")
     static let alternate = UserDefaults.standard.bool(forKey: "perfAlternate")
+    private static let longFrames = UserDefaults.standard.bool(forKey: "perfLongFrames")
     private static var counts: [String: Int] = [:]
     /// The same, since the last `takeStep()` (a `-demoActions` step's own).
     private static var stepCounts: [String: Int] = [:]
@@ -20,6 +21,9 @@ enum PerfProbe {
     private static var target = Linker()
     private static var last: CFTimeInterval = 0
     private static var deltas: [Double] = []
+    /// The frames since the last `takeStep()`, and the main thread's CPU then.
+    private static var stepDeltas: [Double] = []
+    private static var stepMain: Double = 0
     private static var windowStart: CFTimeInterval = 0
     private static var cpuStart: Double = 0
     private static var mainStart: Double = 0
@@ -42,8 +46,22 @@ enum PerfProbe {
     /// The bodies counted since the last call, most first; starts the next step.
     static func takeStep() -> String {
         defer { stepCounts = [:] }
-        return stepCounts.sorted { $0.value > $1.value || $0.value == $1.value && $0.key < $1.key }
+        return frameStats() + " | " + stepCounts.sorted { $0.value > $1.value || $0.value == $1.value && $0.key < $1.key }
             .map { "\($0.key)×\($0.value)" }.joined(separator: " ")
+    }
+
+    /// The step's frames: how many, the median, 95th percentile and worst
+    /// gap, the ones late by half a frame or more, and the main thread's CPU
+    /// time; starts the next step's.
+    private static func frameStats() -> String {
+        let sorted = stepDeltas.sorted()
+        func q(_ p: Double) -> Double { sorted.isEmpty ? 0 : sorted[min(sorted.count - 1, Int(Double(sorted.count) * p))] }
+        // Late by half a frame or more against the display's own pace.
+        let hitches = stepDeltas.filter { $0 > max(q(0.5), 8.3) * 1.5 }.count
+        let main = mainThread == 0 ? 0 : threadCPU(mainThread)
+        defer { stepDeltas.removeAll(keepingCapacity: true); stepMain = main }
+        return String(format: "frames %d p50 %.1f p95 %.1f max %.1f ms hitches %d main %.0f ms",
+                      stepDeltas.count, q(0.5), q(0.95), sorted.last ?? 0, hitches, (main - stepMain) * 1000)
     }
 
     static func start() {
@@ -57,12 +75,20 @@ enum PerfProbe {
         windowStart = CACurrentMediaTime()
         cpuStart = processCPU()
         mainStart = threadCPU(mainThread)
+        stepMain = mainStart
         debugLog("[perf] meter on")
     }
 
     fileprivate static func tick(_ l: CADisplayLink) {
         let now = l.timestamp
-        if last > 0 { deltas.append((now - last) * 1000) }
+        if last > 0 {
+            let gap = (now - last) * 1000
+            deltas.append(gap)
+            stepDeltas.append(gap)
+            // `-perfLongFrames YES`: each frame of 50 ms or more, when it ended
+            // (to line it up with what the log says happened then).
+            if gap >= 50, longFrames { debugLog(String(format: "[perf] long frame %.0f ms", gap)) }
+        }
         last = now
         let window = UserDefaults.standard.object(forKey: "perfWindow") != nil
             ? UserDefaults.standard.double(forKey: "perfWindow") : 5

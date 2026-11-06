@@ -48,6 +48,13 @@ final class PaneCanvasController: UIViewController {
     /// Bumped by each drag: an earlier one's fade ending late leaves this
     /// one's preview alone.
     private var previewGeneration = 0
+    // While the canvas itself is resized (the sidebar's or the right pane's
+    // edge dragged, either shown or put away, the window's edge dragged):
+    // the panes keep the size they had under the preview until it settles.
+    private var resizeFrozen = false
+    private var resizeSettle: DispatchWorkItem?
+    /// When the canvas last took a new size laid out for real.
+    private var lastResize: CFTimeInterval = 0
     // While a pane is dragged by its header.
     private var dragged: String?
     private var capsule: UIView?
@@ -130,6 +137,8 @@ final class PaneCanvasController: UIViewController {
         #if DEBUG || PERF_HARNESS
         PerfProbe.count("canvas relayout")
         #endif
+        // A resize under way ends here: the panes take the new tree at once.
+        settleResize()
         // Don't relayout under a drag: it lands with the release.
         tree = new
         self.interactive = interactive
@@ -205,7 +214,78 @@ final class PaneCanvasController: UIViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        if view.bounds.size != lastSize { layoutCanvas() }
+        guard view.bounds.size != lastSize else { return }
+        if freezesResize() {
+            resize()
+        } else {
+            lastResize = CACurrentMediaTime()
+            layoutCanvas()
+        }
+    }
+
+    // MARK: - the canvas resized
+
+    /// The canvas is being resized by something else, a frame at a time:
+    /// a second new size within 0.1 s of the last (a column's edge or the
+    /// window's dragged, the right pane shown), or one in an animation (the
+    /// sidebar shown or put away). Each pane laid out again at every step
+    /// was 30 to 60 ms (11-05: the sidebar's edge dragged, 1.7 s of the main
+    /// thread for a 2 s drag), so they are pictured once and the preview of
+    /// the dividers' drag stands in until it settles. A one-off change (a
+    /// pane added, the page first shown) is laid out at once, as before.
+    private func freezesResize() -> Bool {
+        #if DEBUG
+        // `-canvasLiveResize YES`: laid out at every step, as before (to compare).
+        if Self.liveResize { return false }
+        #endif
+        guard tree != nil, lastSize.width > 0, lastSize.height > 0, view.window != nil,
+              dividerBase == nil, dragged == nil, documentDragged == nil, !panes.isEmpty else { return false }
+        return resizeFrozen || UIView.inheritedAnimationDuration > 0 || CACurrentMediaTime() - lastResize < 0.1
+    }
+
+    #if DEBUG
+    private static let liveResize = UserDefaults.standard.bool(forKey: "canvasLiveResize")
+    #endif
+
+    /// A step of a resize: the cards (pictures of the panes as they were)
+    /// take the new sizes, with the system's animation if there is one; the
+    /// panes stay as they are under them.
+    private func resize() {
+        let animation = UIView.inheritedAnimationDuration
+        if !resizeFrozen {
+            resizeFrozen = true
+            beginPreview(divider: nil)
+            #if DEBUG
+            debugLog("[canvas] resize: preview from \(Int(lastSize.width))x\(Int(lastSize.height))\(animation > 0 ? ", animated \(Int(animation * 1000)) ms" : "")")
+            #endif
+        }
+        #if DEBUG || PERF_HARNESS
+        PerfProbe.count("canvas resize step")
+        #endif
+        lastSize = view.bounds.size
+        preview.frame = view.bounds
+        if let tree { placePreview(tree, glide: false) }
+        resizeSettle?.cancel()
+        let settle = DispatchWorkItem { [weak self] in self?.settleResize() }
+        resizeSettle = settle
+        // Settled once no new size came for 0.15 s (or the animation is over).
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0.15, animation + 0.05), execute: settle)
+    }
+
+    /// The resize is over (or something else needs the panes now): they are
+    /// laid out once at the canvas's size, under the cards, and their own
+    /// content fades back in.
+    private func settleResize() {
+        guard resizeFrozen else { return }
+        resizeFrozen = false
+        resizeSettle?.cancel()
+        resizeSettle = nil
+        UIView.performWithoutAnimation { layoutCanvas() }
+        lastResize = 0
+        #if DEBUG
+        debugLog("[canvas] resize settled at \(Int(lastSize.width))x\(Int(lastSize.height))")
+        #endif
+        endPreview(at: nil)
     }
 
     /// The panes' frames: the tree's rects, `gap` apart and half of it in from the canvas's edges.
@@ -238,6 +318,9 @@ final class PaneCanvasController: UIViewController {
     }
 
     private func layoutCanvas() {
+        #if DEBUG || PERF_HARNESS
+        PerfProbe.count("canvas layout")
+        #endif
         lastSize = view.bounds.size
         guard let tree, lastSize.width > 0, lastSize.height > 0 else { return }
         let grid = pixelGrid
@@ -355,7 +438,9 @@ final class PaneCanvasController: UIViewController {
     /// vanishing at once was abrupt): each pane pictured once, on a card
     /// where it is, the preview fading in over the panes. No SwiftUI work
     /// while it moves: the cards are plain views.
-    private func beginPreview(divider id: String) {
+    /// Also while the canvas is resized (`resize`), with no divider.
+    private func beginPreview(divider id: String?) {
+        if id != nil { settleResize() }
         previewGeneration += 1
         previewDivider = id
         for card in previewCards.values { card.removeFromSuperview() }
@@ -378,9 +463,11 @@ final class PaneCanvasController: UIViewController {
         UIView.performWithoutAnimation {
             preview.frame = view.bounds
             preview.isHidden = false
-            if let tree, let handle = handleRect(divider: id, in: tree) { grabLine.frame = handle }
-            if grabLine.isHidden { grabLine.alpha = 0 }
-            grabLine.isHidden = false
+            if let id, let tree, let handle = handleRect(divider: id, in: tree) {
+                grabLine.frame = handle
+                if grabLine.isHidden { grabLine.alpha = 0 }
+                grabLine.isHidden = false
+            }
         }
         UIView.animate(withDuration: 0.18, delay: 0, options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction]) {
             self.preview.alpha = 1
@@ -395,8 +482,9 @@ final class PaneCanvasController: UIViewController {
     }
 
     /// The cards and the handle glide to where `tree` puts them (with
-    /// Reduce Motion they are just there).
-    private func placePreview(_ tree: LayoutTree.Node, completion: ((Bool) -> Void)? = nil) {
+    /// Reduce Motion they are just there). Not gliding (a resize): they go
+    /// there at once, or with the animation the canvas is resized in.
+    private func placePreview(_ tree: LayoutTree.Node, glide: Bool = true, completion: ((Bool) -> Void)? = nil) {
         let grid = pixelGrid
         let frames = Self.paneFrames(of: tree, in: lastSize, scale: grid.scale, origin: grid.origin)
         let handle = previewDivider.flatMap { handleRect(divider: $0, in: tree) }
@@ -408,7 +496,10 @@ final class PaneCanvasController: UIViewController {
             }
             if let handle { self.grabLine.frame = handle }
         }
-        if UIAccessibility.isReduceMotionEnabled {
+        if !glide {
+            place()
+            completion?(true)
+        } else if UIAccessibility.isReduceMotionEnabled {
             UIView.performWithoutAnimation(place)
             completion?(true)
         } else {
@@ -955,6 +1046,9 @@ final class PaneContainerView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        #if DEBUG || PERF_HARNESS
+        PerfProbe.count("pane layout")
+        #endif
         grip.frame = PaneMetrics.grip(in: bounds, corner: corner)
         layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: PaneCanvasController.cardRadius).cgPath
     }

@@ -303,15 +303,7 @@ struct ChatView: View {
         .scrollEdgeEffectStyle(.soft, for: .bottom)
         // The edge UIKit draws under the title bar row, in the debug log as
         // the sidebar comes and goes (the owner saw a hard one, sidebar away).
-        .onChange(of: model.sidebarCollapsed, initial: true) {
-            guard Platform.isMac, !inTile else { return }
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(600))
-                if let edges = scroll.edgeStyles() {
-                    debugLog("[edge] \(model.traceName) \(isPalo ? "palo" : "page"), sidebar \(model.sidebarCollapsed ? "away" : "shown"): chat \(edges)")
-                }
-            }
-        }
+        .modifier(SidebarEdgeLog(enabled: Platform.isMac && !inTile, isPalo: isPalo, scroll: scroll))
         // The Mac: the assistant's conversation leaves 成果 to the window
         // toolbar (MacToolbar) and floats its orb in the column.
         .toolbar(macOrb || macPage ? .hidden : .automatic, for: .navigationBar)
@@ -647,6 +639,32 @@ private struct ConversationChanges: ViewModifier {
             #endif
             // What's laid out follows the messages (the window, design §3.4).
             .onChange(of: store.messages.count) { scroll.messagesChanged() }
+    }
+}
+
+/// The edge under the title bar row, logged as the sidebar comes and goes.
+/// Its own modifier: read in the page's body, the sidebar shown or put
+/// away ran every conversation's body again (each tile's too, where nothing
+/// is logged), in the frame the sidebar began to move.
+private struct SidebarEdgeLog: ViewModifier {
+    let enabled: Bool
+    let isPalo: Bool
+    let scroll: ChatScrollCoordinator
+    @Environment(WindowModel.self) private var model
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.onChange(of: model.sidebarCollapsed, initial: true) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(600))
+                    if let edges = scroll.edgeStyles() {
+                        debugLog("[edge] \(model.traceName) \(isPalo ? "palo" : "page"), sidebar \(model.sidebarCollapsed ? "away" : "shown"): chat \(edges)")
+                    }
+                }
+            }
+        } else {
+            content
+        }
     }
 }
 

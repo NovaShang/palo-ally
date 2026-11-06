@@ -207,6 +207,8 @@ private struct LayoutStressTest: ViewModifier {
                     case "library": w.toggleLibrary()
                     case "settings": w.openSettings()
                     case "sidebar": w.columnVisibility = w.columnVisibility == .detailOnly ? .all : .detailOnly
+                    // `sidebar-anim`: the same, animated, as the capsule's button and ⌃⌘S do.
+                    case "sidebar-anim": w.toggleSidebar()
                     // `w2.pane`: that window's right pane, as its button (⌘2).
                     case "pane": if w.launch.screen == "splitLab" { w.paneCover.toggle() } else { w.togglePane() }
                     case "list": w.showList()
@@ -307,7 +309,8 @@ private struct LayoutStressTest: ViewModifier {
                         let r = AppKitBundle.object?.perform(NSSelectorFromString("click:"), with: a.dropFirst(6).replacingOccurrences(of: ";", with: ","))?
                             .takeUnretainedValue() as? String
                         debugLog("[nav] \(r ?? "no AppKit bundle")")
-                    // `drag:1200;500;900;500`: a left drag from the one point to the other (a divider dragged).
+                    // `drag:1200;500;900;500`: a left drag from the one point to the other (a divider dragged);
+                    // `drag:1200;500;900;500;2`: the same taking 2 s.
                     // `selectpreview`: everything in the file preview selected (as a drag over it would).
                     case "selectpreview":
                         if let win = w.scene?.windows.first {
@@ -382,7 +385,8 @@ private struct LayoutStressTest: ViewModifier {
                         let r = AppKitBundle.object?.perform(NSSelectorFromString("drag:"), with: a.dropFirst(5).replacingOccurrences(of: ";", with: ","))?
                             .takeUnretainedValue() as? String
                         debugLog("[nav] \(r ?? "no AppKit bundle")")
-                        try? await Task.sleep(for: .seconds(1.5))
+                        let seconds = a.split(separator: ";").count == 5 ? Double(a.split(separator: ";")[4]) ?? 0.5 : 0.5
+                        try? await Task.sleep(for: .seconds(1 + seconds))
                     // `hover:650;300`: the pointer moved there (no click).
                     case _ where a.hasPrefix("hover:"):
                         let r = AppKitBundle.object?.perform(NSSelectorFromString("move:"), with: a.dropFirst(6).replacingOccurrences(of: ";", with: ","))?
@@ -961,9 +965,18 @@ struct InspectorWidth: UIViewRepresentable {
         let w = UserDefaults.standard.double(forKey: key)
         return w >= minimum ? w : nil
     }
+    @MainActor private static var pendingWrite: DispatchWorkItem?
+    /// Kept once the pane has stopped changing for 0.3 s: written at each
+    /// step of a drag it was a round trip to the preferences a frame.
     static func remember(_ w: CGFloat) {
-        guard Platform.isMac, abs(UserDefaults.standard.double(forKey: key) - w) >= 1 else { return }
-        UserDefaults.standard.set(Double(w), forKey: key)
+        guard Platform.isMac else { return }
+        pendingWrite?.cancel()
+        let write = DispatchWorkItem {
+            guard abs(UserDefaults.standard.double(forKey: key) - w) >= 1 else { return }
+            UserDefaults.standard.set(Double(w), forKey: key)
+        }
+        pendingWrite = write
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: write)
     }
     /// The pane's width changed: SwiftUI may have put its own widths back.
     static func check() {
