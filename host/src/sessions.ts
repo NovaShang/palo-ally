@@ -1,8 +1,9 @@
 import { t } from "./i18n/index.ts";
 import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
-import { statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { transcriptPath } from "./handoffs.ts";
+import { pageFromTail } from "./transcriptTail.ts";
 import type { ApprovalManager } from "./approvals.ts";
 import type { Audit } from "./audit.ts";
 import { AwayDetector } from "./away.ts";
@@ -173,8 +174,16 @@ export class Sessions {
       sid = key;
       cwd = ended;
     }
+    const lim = Math.max(1, Math.min(Number(limit) || 50, 200));
+    // From the transcript's end, not all of it parsed (transcriptTail.ts).
+    const path = transcriptPath(this.d.claudeDir, cwd, sid);
+    if (!this.d.readMessages && existsSync(path)) {
+      const name = this.d.settings().assistantName || "Palo";
+      const palo = this.d.paloName?.() ?? "Palo";
+      return pageFromTail(path, sid, cwd, (r) => toCCMessages(r, name, palo), (all) => pageMessages(all, before, lim), before, lim);
+    }
     const all = await this.readAll(sid, cwd);
-    return pageMessages(all, before, Math.max(1, Math.min(Number(limit) || 50, 200)));
+    return pageMessages(all, before, lim);
   }
 
   private lastRead: { key: string; stamp: string; messages: CCMessage[] } | null = null;

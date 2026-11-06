@@ -18,6 +18,8 @@ import type { ArtifactLibrary } from "./artifacts.ts";
 import { makeDeliveryTools } from "./shellTools.ts";
 import { PalLauncher, type PalLaunch } from "./palLauncher.ts";
 import { pagePalMessages, toPalMessages } from "./palHistory.ts";
+import { pageFromTail } from "./transcriptTail.ts";
+import { transcriptPath } from "./handoffs.ts";
 import type { ForkSession } from "./rewind.ts";
 import { RECENT_MAX, type RecentEntry, RecentSessions, type RecentSource, folderMatch, ownRoots, palNameFor, palTitle, recentWire, sdkRename, sdkSource, shortName } from "./palRecent.ts";
 import { HeldElsewhere, type Holder, PAL_MODES, type PalRecord, type PalTask, type PastPalTask, PalSession, peerWrap } from "./palSession.ts";
@@ -1502,13 +1504,26 @@ export class Pals {
     // Gone back to an earlier message and not spoken to since: the old
     // session's conversation up to where it was cut (docs/rewind-prd.md §4.3).
     const pending = pal.pendingRewind();
-    try {
-      raw = pending ? pal.conversationEntries().chain : await read(pal.rec.sessionId, pal.rec.cwd);
-    } catch {
-      raw = []; // a new Pal's transcript isn't there before its first message
+    const lim = Math.max(1, Math.min(Number(limit) || 50, 200));
+    const convert = (r: RawSessionMessage[]) => toPalMessages(r, { pal: pal.id, ...this.mapOptions(pal.rec) });
+    let messages: ChatMessage[];
+    // From the transcript's end, not all of it parsed (transcriptTail.ts):
+    // a long session's whole file took 20 s a page.
+    const path = transcriptPath(this.d.claudeDir, pal.rec.cwd, pal.rec.sessionId);
+    if (!pending && !this.d.readMessages && existsSync(path)) {
+      try {
+        messages = await pageFromTail(path, pal.rec.sessionId, pal.rec.cwd, convert, (all) => pagePalMessages(all, before, lim), before, lim);
+      } catch {
+        messages = [];
+      }
+    } else {
+      try {
+        raw = pending ? pal.conversationEntries().chain : await read(pal.rec.sessionId, pal.rec.cwd);
+      } catch {
+        raw = []; // a new Pal's transcript isn't there before its first message
+      }
+      messages = pagePalMessages(convert(raw), before, lim);
     }
-    const all = toPalMessages(raw, { pal: pal.id, ...this.mapOptions(pal.rec) });
-    const messages = pagePalMessages(all, before, Math.max(1, Math.min(Number(limit) || 50, 200)));
     const streaming = before === undefined ? pal.streaming() : null;
     return { messages, ...(streaming ? { streaming } : {}) };
   }
