@@ -13,6 +13,8 @@ public enum RPCMethod {
     public static let chatAround = "chat.around"
     /// 回到这里重来: back to just before one of the owner's messages (docs/rewind-prd.md).
     public static let chatRewind = "chat.rewind"
+    /// 「TL;DR」: the recent stretch of a conversation in a few points, the owner's own words apart.
+    public static let chatTldr = "chat.tldr"
     public static let taskGet = "task.get"
     public static let taskStop = "task.stop"
     public static let approvalAnswer = "approval.answer"
@@ -173,7 +175,7 @@ public enum RPCMethod {
     /// Every method the client knows. The contract test checks this equals
     /// the host's method set exactly.
     public static let all: [String] = [
-        hello, sync, chatSend, chatHistory, chatSearch, chatAround, chatRewind, commandsList, modelGet, modelSet, taskGet, taskStop,
+        hello, sync, chatSend, chatHistory, chatSearch, chatAround, chatRewind, chatTldr, commandsList, modelGet, modelSet, taskGet, taskStop,
         approvalAnswer, questionAnswer, watchAdd, watchUpdate, watchRemove, artifactList, artifactRead, artifactPin,
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,

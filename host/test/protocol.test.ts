@@ -120,6 +120,15 @@ describe("host ↔ app protocol", () => {
     const found = await run("chat.search", { query: "你好", limit: 5 });
     expect(found.messages.length).toBeGreaterThan(0);
     await run("chat.around", { seq: found.messages[0].seq, before: 2, after: 2 });
+    // 「TL;DR」 of the assistant's conversation (a session's follows below).
+    const probeDefault = driver.probeResponder;
+    driver.probeResponder = () => ({
+      output: { points: ["打了个招呼", "要订周六中午的餐厅，又退回去重来了"], ownWords: [{ msg: 1, text: "你好" }], relayed: [{ who: "帕帕", gist: "回了一句你好" }] },
+      costUsd: 0.002,
+    });
+    const tldrPalo = { params: { scope: "palo" }, result: await call("chat.tldr", { scope: "palo" }) };
+    expect(tldrPalo.result.ownWords[0].text).toBe("你好");
+    driver.probeResponder = probeDefault;
     await run("commands.list");
     const models = await run("model.get");
     await run("model.set", { model: models.models[0].value, effort: "medium" });
@@ -274,6 +283,15 @@ describe("host ↔ app protocol", () => {
     methods["pals.send"] = [plainSend, { params: withFiles, result: await call("pals.send", withFiles) }];
     await waitFor(() => events.some((e) => e.event === "chat.message" && e.data.pal && e.data.clientMsgId === "c-pal-2"));
     await run("pals.history", { id: pal.id, limit: 50 });
+    // …and of the session's: what Palo passed on is relayed, not the owner's.
+    driver.probeResponder = () => ({
+      output: { points: ["列表页要按日期排序，已加上"], ownWords: [{ msg: 1, text: "列表要能按日期排序" }, { msg: 3, text: "今晚不用部署" }], relayed: [{ who: "Palo", gist: "今晚不用部署" }] },
+      costUsd: 0.002,
+    });
+    const tldrPal = { params: { scope: "pal", id: pal.id }, result: await call("chat.tldr", { scope: "pal", id: pal.id }) };
+    expect(tldrPal.result.ownWords.map((w: { text: string }) => w.text)).toEqual(["列表要能按日期排序"]);
+    driver.probeResponder = probeDefault;
+    methods["chat.tldr"] = [tldrPalo, tldrPal];
     void hub.pals.send(pal.id, "要确认");
     await waitFor(() => hub.approvals.listPending().length === 1);
     const palCard = JSON.parse(JSON.stringify(hub.approvals.listPending()[0]!));

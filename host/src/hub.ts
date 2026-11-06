@@ -21,6 +21,7 @@ import { localizeDefaultHome, setSoulName } from "./home.ts";
 import { isLang, parseLocale, setLang, t, systemLanguage, type Lang } from "./i18n/index.ts";
 import { makeShellTools } from "./shellTools.ts";
 import { SuggestionStore } from "./suggestions.ts";
+import { Tldr } from "./tldr.ts";
 import { TaskTracker } from "./tasks.ts";
 import type { Attachment, Channel, ChatMessage, PairedDevice, Status, Task, Watch, ReplyTo } from "./types.ts";
 import { MediaStore } from "./media.ts";
@@ -87,6 +88,7 @@ export class Hub {
   readonly router: Router;
   readonly probe: ProbeScheduler;
   readonly suggestions: SuggestionStore;
+  readonly tldr: Tldr;
   readonly conversation: Conversation;
   readonly handoffs: HandoffTracker;
   readonly power: PowerWatcher;
@@ -437,6 +439,21 @@ export class Hub {
       spend: (usd) => this.ledger.add("probeUsd", usd),
       log: (s) => this.log(s),
       now: deps.now,
+    });
+    // 「TL;DR」: the latest messages of the conversation asked about (a
+    // session's from the end of its transcript, as its page reads them).
+    this.tldr = new Tldr({
+      driver: deps.driver,
+      probeModel: () => this.config.probeModel,
+      cwd: () => this.paths.home,
+      env: () => this.config.env,
+      spend: (usd) => this.ledger.add("probeUsd", usd),
+      log: (s) => this.log(s),
+      messages: async (scope, id) => {
+        if (scope === "palo") return { messages: this.chat.recent(120), names: { assistant: this.config.settings.assistantName || PALO_NAME } };
+        const { messages } = await this.pals.history(id, undefined, 120);
+        return { messages, names: { assistant: this.pals.list().find((p) => p.id === id)?.name ?? "Claude Code" } };
+      },
     });
   }
 

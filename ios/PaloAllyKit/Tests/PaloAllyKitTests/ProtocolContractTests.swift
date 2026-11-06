@@ -72,6 +72,7 @@ private let resultTypes: [String: Check] = [
     RPCMethod.chatSearch: strict(ChatSearchResult.self),
     RPCMethod.chatAround: strict(MessagesResult.self),
     RPCMethod.chatRewind: strict(ChatRewindResult.self),
+    RPCMethod.chatTldr: strict(TldrResult.self),
     RPCMethod.commandsList: strict(CommandsResult.self),
     RPCMethod.modelGet: strict(ModelInfo.self),
     RPCMethod.modelSet: strict(StatusResult.self),
