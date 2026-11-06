@@ -5,6 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { RPC_EVENTS, RPC_METHODS, handleRpc } from "../src/rpc.ts";
+import { TLDR_MARKER, tldrPrompt } from "../src/tldr.ts";
 import type { FakeScript } from "./fakeDriver.ts";
 import { AllyNet } from "./allyNet.ts";
 import { checkFixture, cleanup, shape, tick } from "./helpers.ts";
@@ -120,15 +121,10 @@ describe("host ↔ app protocol", () => {
     const found = await run("chat.search", { query: "你好", limit: 5 });
     expect(found.messages.length).toBeGreaterThan(0);
     await run("chat.around", { seq: found.messages[0].seq, before: 2, after: 2 });
-    // 「TL;DR」 of the assistant's conversation (a session's follows below).
-    const probeDefault = driver.probeResponder;
-    driver.probeResponder = () => ({
-      output: { points: ["打了个招呼", "要订周六中午的餐厅，又退回去重来了"], ownWords: [{ msg: 1, text: "你好" }], relayed: [{ who: "帕帕", gist: "回了一句你好" }] },
-      costUsd: 0.002,
-    });
-    const tldrPalo = { params: { scope: "palo" }, result: await call("chat.tldr", { scope: "palo" }) };
-    expect(tldrPalo.result.ownWords[0].text).toBe("你好");
-    driver.probeResponder = probeDefault;
+    // 「TL;DR」: the app's marker, shown as a folded ask (chat.message samples).
+    const tldrSend = { text: TLDR_MARKER, clientMsgId: "c-tldr" };
+    methods["chat.send"] = [methods["chat.send"] as Sample, { params: tldrSend, result: await call("chat.send", tldrSend) }];
+    await hub.idle();
     await run("commands.list");
     const models = await run("model.get");
     await run("model.set", { model: models.models[0].value, effort: "medium" });
@@ -221,6 +217,8 @@ describe("host ↔ app protocol", () => {
       { type: "assistant", uuid: "c2", timestamp: "2026-10-12T10:01:00Z", message: { role: "assistant", content: [{ type: "text", text: "找到了：跳转时把原来的地址丢了。" }] } },
       { type: "user", uuid: "c3", timestamp: "2026-10-12T10:02:00Z", message: { role: "user", content: "…" }, origin: { kind: "peer", name: "笔记整理", body: "设计稿在 notes/设计.md" } },
       { type: "user", uuid: "c4", timestamp: "2026-10-12T10:03:00Z", message: { role: "user", content: "…" }, origin: { kind: "peer", name: "Palo", body: "主人说先别管登录页" } },
+      // a 「TL;DR」 ask, as it went in (marker first)
+      { type: "user", uuid: "c5", timestamp: "2026-10-12T10:04:00Z", message: { role: "user", content: tldrPrompt() }, origin: { kind: "human" } },
     ]);
     const term = (await run("sessions.list")).sessions[0];
     const sig = () => ({ signal: new AbortController().signal, env: {} });
@@ -272,6 +270,7 @@ describe("host ↔ app protocol", () => {
       { type: "user", uuid: "p1", timestamp: "2026-10-12T11:00:00Z", message: { role: "user", content: "列表要能按日期排序" }, origin: { kind: "human" } },
       { type: "assistant", uuid: "p2", timestamp: "2026-10-12T11:00:05Z", message: { id: "msg_01", role: "assistant", content: [{ type: "text", text: "加上了。" }] } },
       { type: "user", uuid: "p3", timestamp: "2026-10-12T11:01:00Z", message: { role: "user", content: "…" }, origin: { kind: "peer", name: "Palo", body: "主人说今晚不用部署" } },
+      { type: "user", uuid: "p4", timestamp: "2026-10-12T11:02:00Z", message: { role: "user", content: tldrPrompt() }, origin: { kind: "human" } },
     ]);
     await run("pals.send", { id: pal.id, text: "把列表页做完", clientMsgId: "c-pal-1" });
     await waitFor(() => events.some((e) => e.event === "chat.message" && e.data.pal && e.data.role === "assistant"));
@@ -283,15 +282,6 @@ describe("host ↔ app protocol", () => {
     methods["pals.send"] = [plainSend, { params: withFiles, result: await call("pals.send", withFiles) }];
     await waitFor(() => events.some((e) => e.event === "chat.message" && e.data.pal && e.data.clientMsgId === "c-pal-2"));
     await run("pals.history", { id: pal.id, limit: 50 });
-    // …and of the session's: what Palo passed on is relayed, not the owner's.
-    driver.probeResponder = () => ({
-      output: { points: ["列表页要按日期排序，已加上"], ownWords: [{ msg: 1, text: "列表要能按日期排序" }, { msg: 3, text: "今晚不用部署" }], relayed: [{ who: "Palo", gist: "今晚不用部署" }] },
-      costUsd: 0.002,
-    });
-    const tldrPal = { params: { scope: "pal", id: pal.id }, result: await call("chat.tldr", { scope: "pal", id: pal.id }) };
-    expect(tldrPal.result.ownWords.map((w: { text: string }) => w.text)).toEqual(["列表要能按日期排序"]);
-    driver.probeResponder = probeDefault;
-    methods["chat.tldr"] = [tldrPalo, tldrPal];
     void hub.pals.send(pal.id, "要确认");
     await waitFor(() => hub.approvals.listPending().length === 1);
     const palCard = JSON.parse(JSON.stringify(hub.approvals.listPending()[0]!));
@@ -492,6 +482,8 @@ describe("host ↔ app protocol", () => {
         chat.find((m) => m.pal && m.role === "user" && !m.from),
         chat.find((m) => m.pal && m.role === "assistant"),
         chat.find((m) => m.pal && m.from),
+        // the owner's 「TL;DR」 ask (shown folded)
+        chat.find((m) => m.tldr && !m.pal),
       ]),
     );
     // the assistant's conversation gone back, and a Pal's

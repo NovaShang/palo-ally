@@ -1,90 +1,43 @@
 import Foundation
 
-/// 「TL;DR」 (`chat.tldr`): the recent stretch of a conversation, the
-/// assistant's or a session's, in a few points, with the owner's own words
-/// (checked verbatim on the computer) apart from what assistants said or
-/// passed on. Nothing goes into the conversation; the computer keeps the
-/// last answer in memory until a new message comes.
-public struct TldrResult: Decodable, Sendable, Equatable {
-    public var points: [String]
-    public var ownWords: [TldrQuote]
-    public var relayed: [TldrRelayed]
-    /// How many messages it covers, from `since` to `until` (ms).
-    public var covered: Int
-    public var since: Int64
-    public var until: Int64
-    public var lastMessageId: String
-    /// The same answer as last time: nothing new since.
-    public var cached: Bool
+/// 「TL;DR」: a small button under the latest long reply asks the agent
+/// itself (the assistant, or a session) for the recent stretch of its
+/// conversation in a few points, the owner's own words apart from what was
+/// relayed. The app sends just the marker; the computer puts the
+/// instruction behind it (one wording, host/src/tldr.ts) and keeps the
+/// marker in front of it, so the ask comes back marked `tldr` and is shown
+/// folded, after a reload too. Its answer is the agent's next reply.
+public enum TldrAsk {
+    /// What the app sends (host/src/tldr.ts TLDR_MARKER). Never shown.
+    public static let marker = "<!-- paloally:tldr -->"
+    /// A reply this long (characters, or lines of text) gets the button.
+    public static let longChars = 800
+    public static let longLines = 12
 
-    public init(points: [String], ownWords: [TldrQuote] = [], relayed: [TldrRelayed] = [], covered: Int,
-                since: Int64 = 0, until: Int64 = 0, lastMessageId: String = "", cached: Bool = false) {
-        self.points = points; self.ownWords = ownWords; self.relayed = relayed; self.covered = covered
-        self.since = since; self.until = until; self.lastMessageId = lastMessageId; self.cached = cached
-    }
-
-    public init(from decoder: Decoder) throws {
-        let l = try Lenient(decoder)
-        points = l.array(String.self, "points", or: [])
-        ownWords = l.array(TldrQuote.self, "ownWords", or: [])
-        relayed = l.array(TldrRelayed.self, "relayed", or: [])
-        covered = l.int("covered", or: 0)
-        since = l.millis("since", or: 0)
-        until = l.millis("until", or: 0)
-        lastMessageId = l.string("lastMessageId", or: "")
-        cached = l.bool("cached", or: false)
-    }
-
-    /// The summary as Markdown, for 拷贝.
-    public func markdown(title: String, ownTitle: String, relayedTitle: String, time: (Int64) -> String) -> String {
-        var out = "## \(title)\n\n" + points.map { "- \($0)" }.joined(separator: "\n")
-        if !ownWords.isEmpty {
-            out += "\n\n### \(ownTitle)\n\n" + ownWords.map { "> \($0.text.replacingOccurrences(of: "\n", with: "\n> "))\n> (\(time($0.ts)))" }
-                .joined(separator: "\n\n")
+    /// Long enough to want its points: `longChars` characters or `longLines` lines.
+    public static func isLong(_ text: String) -> Bool {
+        if text.count >= longChars { return true }
+        var lines = 0
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true)
+        where !line.allSatisfy(\.isWhitespace) {
+            lines += 1
+            if lines >= longLines { return true }
         }
-        if !relayed.isEmpty {
-            out += "\n\n### \(relayedTitle)\n\n" + relayed.map { "- \($0.who): \($0.gist)" }.joined(separator: "\n")
-        }
-        return out + "\n"
+        return false
+    }
+
+    /// Words as they are shown: the marker never is.
+    public static func shown(_ text: String) -> String {
+        guard text.contains(marker) else { return text }
+        return text.replacingOccurrences(of: marker, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
-/// One of the owner's own sentences, verbatim, and the message it is in.
-public struct TldrQuote: Decodable, Sendable, Equatable, Hashable {
-    public var text: String
-    public var messageId: String
-    public var ts: Int64
-
-    public init(text: String, messageId: String, ts: Int64) {
-        self.text = text; self.messageId = messageId; self.ts = ts
+extension ChatMessage {
+    /// The owner's 「TL;DR」 ask: marked by the computer, or the marker the
+    /// app just sent (its echo, before the computer's copy comes back).
+    public var isTldrAsk: Bool {
+        guard role == .user else { return false }
+        return tldr == true || text.hasPrefix(TldrAsk.marker)
     }
-
-    public init(from decoder: Decoder) throws {
-        let l = try Lenient(decoder)
-        text = l.string("text", or: "")
-        messageId = l.string("messageId", or: "")
-        ts = l.millis("ts", or: 0)
-    }
-}
-
-/// What an assistant, a session or someone's assistant said or passed on.
-public struct TldrRelayed: Decodable, Sendable, Equatable, Hashable {
-    public var who: String
-    public var gist: String
-
-    public init(who: String, gist: String) {
-        self.who = who; self.gist = gist
-    }
-
-    public init(from decoder: Decoder) throws {
-        let l = try Lenient(decoder)
-        who = l.string("who", or: "")
-        gist = l.string("gist", or: "")
-    }
-}
-
-public struct TldrParams: Codable, Sendable {
-    public var scope: String
-    public var id: String?
-    public init(scope: String, id: String? = nil) { self.scope = scope; self.id = id }
 }

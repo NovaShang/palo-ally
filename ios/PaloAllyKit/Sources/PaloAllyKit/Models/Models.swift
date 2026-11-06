@@ -171,6 +171,9 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     /// change took. `sync{sinceSeq}` gives such a message again to a client
     /// that missed the change; its place stays `seq`.
     public var updatedSeq: Int64?
+    /// The owner's 「TL;DR」 ask (`TldrAsk`): shown folded; `text` is its
+    /// instruction (the host keeps the marker it went in with out of it).
+    public var tldr: Bool?
 
     // Local-only state.
     public var isStreaming: Bool = false
@@ -178,7 +181,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case seq, id, role, kind, text, channel, ts, proactive, taskId, approvalId, questionId, clientMsgId, attachments, label, replyTo, card
-        case allyId, allyName, dir, entryId, author, proposal, pal, from, uuid, updatedSeq
+        case allyId, allyName, dir, entryId, author, proposal, pal, from, uuid, updatedSeq, tldr
     }
 
     public init(
@@ -223,6 +226,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         from = l.string("from")
         uuid = l.string("uuid")
         updatedSeq = l.int64("updatedSeq")
+        tldr = l.bool("tldr")
     }
 
     /// As the host sends it: a `pal_adopt` card's proposal goes out as
@@ -259,6 +263,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         try c.encodeIfPresent(from, forKey: .from)
         try c.encodeIfPresent(uuid, forKey: .uuid)
         try c.encodeIfPresent(updatedSeq, forKey: .updatedSeq)
+        try c.encodeIfPresent(tldr, forKey: .tldr)
     }
 
     public var date: Date { ts.msDate }

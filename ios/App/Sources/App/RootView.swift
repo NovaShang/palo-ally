@@ -212,6 +212,13 @@ private struct LayoutStressTest: ViewModifier {
                     // `w2.pane`: that window's right pane, as its button (⌘2).
                     case "pane": if w.launch.screen == "splitLab" { w.paneCover.toggle() } else { w.togglePane() }
                     case "list": w.showList()
+                    // `tldr`: the 「TL;DR」 button under the latest long reply tapped (as a tap does);
+                    // `tldr-open`: the latest TL;DR ask unfolded, as a tap on its chevron.
+                    case "tldr":
+                        NotificationCenter.default.post(name: TldrButton.demoTap, object: nil)
+                        debugLog("[nav] tldr: \(w.store?.tldrOfferID.map { "under \($0)" } ?? "no button")")
+                    case "tldr-open":
+                        if let store = w.store, let ask = store.messages.last(where: \.isTldrAsk) { store.setUnfolded(ask.id, true) }
                     // `w2.close`: that window closed, as its close button does.
                     case "close":
                         if let scene = w.scene { UIApplication.shared.requestSceneSessionDestruction(scene.session, options: nil) }

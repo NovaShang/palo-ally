@@ -7771,134 +7771,46 @@
         }
       }
     },
-    "已拷贝" : {
+    "让它把最近这段对话整理成要点" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copied"
+            "value" : "Have it sum up the recent stretch of this conversation"
           }
         }
       }
     },
-    "要点" : {
+    "TL;DR：整理最近这段对话的要点" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Key points"
+            "value" : "TL;DR: sum up the recent stretch of this conversation"
           }
         }
       }
     },
-    "没整理出来" : {
+    "TL;DR 请求，收起" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Couldn't sum it up"
+            "value" : "TL;DR request, collapse"
           }
         }
       }
     },
-    "正在整理最近的对话…" : {
+    "TL;DR 请求，展开看发了什么" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Going over the recent conversation…"
-          }
-        }
-      }
-    },
-    "你说过的原话" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your own words"
-          }
-        }
-      }
-    },
-    "逐字摘自你自己发的消息，没有改动。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quoted word for word from messages you sent yourself."
-          }
-        }
-      }
-    },
-    "转述的内容" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Passed on by others"
-          }
-        }
-      }
-    },
-    "助理或别的会话说的、转来的，不是你的原话。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "What assistants or other sessions said or passed on, not your own words."
-          }
-        }
-      }
-    },
-    "回到这条消息" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Go to this message"
-          }
-        }
-      }
-    },
-    "整理了最近 %lld 条消息" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The last %lld messages"
-          }
-        }
-      }
-    },
-    "整理了最近 %lld 条消息 · %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The last %lld messages · %@"
-          }
-        }
-      }
-    },
-    "最近一段对话的要点，你自己的原话单独列出。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Key points of the recent conversation, with your own words set apart."
+            "value" : "TL;DR request, expand to see what was sent"
           }
         }
       }

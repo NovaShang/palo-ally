@@ -21,8 +21,8 @@ import { localizeDefaultHome, setSoulName } from "./home.ts";
 import { isLang, parseLocale, setLang, t, systemLanguage, type Lang } from "./i18n/index.ts";
 import { makeShellTools } from "./shellTools.ts";
 import { SuggestionStore } from "./suggestions.ts";
-import { Tldr } from "./tldr.ts";
 import { TaskTracker } from "./tasks.ts";
+import { TLDR_MARKER, isTldrAsk, tldrInstruction } from "./tldr.ts";
 import type { Attachment, Channel, ChatMessage, PairedDevice, Status, Task, Watch, ReplyTo } from "./types.ts";
 import { MediaStore } from "./media.ts";
 import { ensureMorningBrief } from "./brief.ts";
@@ -88,7 +88,6 @@ export class Hub {
   readonly router: Router;
   readonly probe: ProbeScheduler;
   readonly suggestions: SuggestionStore;
-  readonly tldr: Tldr;
   readonly conversation: Conversation;
   readonly handoffs: HandoffTracker;
   readonly power: PowerWatcher;
@@ -440,21 +439,6 @@ export class Hub {
       log: (s) => this.log(s),
       now: deps.now,
     });
-    // 「TL;DR」: the latest messages of the conversation asked about (a
-    // session's from the end of its transcript, as its page reads them).
-    this.tldr = new Tldr({
-      driver: deps.driver,
-      probeModel: () => this.config.probeModel,
-      cwd: () => this.paths.home,
-      env: () => this.config.env,
-      spend: (usd) => this.ledger.add("probeUsd", usd),
-      log: (s) => this.log(s),
-      messages: async (scope, id) => {
-        if (scope === "palo") return { messages: this.chat.recent(120), names: { assistant: this.config.settings.assistantName || PALO_NAME } };
-        const { messages } = await this.pals.history(id, undefined, 120);
-        return { messages, names: { assistant: this.pals.list().find((p) => p.id === id)?.name ?? "Claude Code" } };
-      },
-    });
   }
 
   // ---------------- lifecycle ----------------
@@ -554,10 +538,12 @@ export class Hub {
     attachments: Attachment[] = [],
     replyTo?: ReplyTo,
   ): ChatMessage | null {
-    const t = text.trim();
+    // 「TL;DR」 (the app's marker): the instruction in its place, shown folded.
+    const tldr = isTldrAsk(text) && !attachments.length;
+    const t = tldr ? tldrInstruction() : text.trim();
     if (!t && !attachments.length) return null;
-    const cmd = attachments.length ? null : this.tryCommand(t, channel);
-    const answered = cmd === null && channel === "wechat" && !attachments.length ? this.answerOnWechat(t) : null;
+    const cmd = attachments.length || tldr ? null : this.tryCommand(t, channel);
+    const answered = cmd === null && !tldr && channel === "wechat" && !attachments.length ? this.answerOnWechat(t) : null;
     // What goes to the harness has the uuid it's kept under there, so the
     // owner can go back to it later (not a slash command: docs/rewind-prd.md §3).
     const uuid = cmd === null && answered === null && !t.startsWith("/") ? randomUUID() : undefined;
@@ -568,8 +554,9 @@ export class Hub {
       channel,
       ...(clientMsgId ? { clientMsgId } : {}),
       ...(attachments.length ? { attachments } : {}),
-      ...(replyTo ? { replyTo } : {}),
+      ...(replyTo && !tldr ? { replyTo } : {}),
       ...(uuid ? { uuid } : {}),
+      ...(tldr ? { tldr: true } : {}),
     });
     // The owner is here: an Ally's message shown before now has been seen.
     if (channel === "app" || channel === "cli") this.allies.ownerActive();
@@ -589,7 +576,9 @@ export class Hub {
   }
 
   // The words an owner message goes to the harness as.
-  private ownerBody(m: Pick<ChatMessage, "text" | "channel" | "attachments" | "replyTo">): string {
+  private ownerBody(m: Pick<ChatMessage, "text" | "channel" | "attachments" | "replyTo" | "tldr">): string {
+    // A TL;DR ask goes in behind its marker (its history shows it folded).
+    if (m.tldr) return `${TLDR_MARKER}\n${m.text}`;
     const t = m.text;
     // Slash commands must reach the harness verbatim, so they get no prefix.
     const prefix = m.channel === "wechat" && !t.startsWith("/") ? "[来自微信] " : "";
@@ -647,7 +636,8 @@ export class Hub {
     this.bus.emit("chat.rewound", { id: msg.id, ids });
     this.audit.log("chat.rewind", { messageId: msg.id, seq: msg.seq, uuid: entry.uuid, from: sessionId, to, at, dropped: ids.length, ...(copy ? { copied: true } : {}), by });
     this.log(`went back to before message ${msg.id} (${ids.length} message(s) out; session ${sessionId} ${copy ? "copied" : "forked"} as ${to})`);
-    return { text: msg.text };
+    // (A TL;DR ask gives nothing back for the composer.)
+    return { text: msg.tldr ? "" : msg.text };
   }
 
   /**

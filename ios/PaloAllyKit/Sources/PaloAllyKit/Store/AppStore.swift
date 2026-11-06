@@ -1166,15 +1166,6 @@ public final class AppStore {
         public init(data: Data, mediaType: String, name: String) { self.data = data; self.mediaType = mediaType; self.name = name }
     }
 
-    // MARK: 「TL;DR」
-
-    /// This conversation's recent stretch in a few points (the assistant's,
-    /// or this store's Pal's). A model call on the computer: up to a minute.
-    public func tldr() async throws -> TldrResult {
-        let params = palID.map { TldrParams(scope: "pal", id: $0) } ?? TldrParams(scope: "palo")
-        return try await rpc.call(RPCMethod.chatTldr, params: params, as: TldrResult.self, timeout: 90)
-    }
-
     // MARK: 「试试」 suggestions
 
     /// Unused suggestions from the host (chips above the composer; the full
@@ -1248,8 +1239,8 @@ public final class AppStore {
         let cid = given ?? UUID().uuidString.lowercased()
         var echo = ChatMessage(seq: 0, id: "local-\(cid)", role: .user, kind: .text, text: text, channel: .app,
                                ts: Date().epochMillis, clientMsgId: cid)
-        // A 「试试」 chip starts fresh; anything typed goes with the open quote.
-        if suggestionId == nil, let reply = replyDraft {
+        // A 「试试」 chip starts fresh (and a 「TL;DR」); anything typed goes with the open quote.
+        if suggestionId == nil, text != TldrAsk.marker, let reply = replyDraft {
             echo.replyTo = reply
             replyDraft = nil
         }

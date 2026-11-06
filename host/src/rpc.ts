@@ -20,7 +20,7 @@ export interface RpcRequest {
 // The app-facing protocol (docs/design.md §5.3). test/protocol.test.ts drives
 // every one of these and writes the samples the Swift client decodes strictly.
 export const RPC_METHODS = [
-  "hello", "sync", "chat.send", "chat.history", "chat.search", "chat.around", "chat.rewind", "chat.tldr", "commands.list", "model.get", "model.set",
+  "hello", "sync", "chat.send", "chat.history", "chat.search", "chat.around", "chat.rewind", "commands.list", "model.get", "model.set",
   "task.get", "task.stop", "approval.answer", "question.answer", "watch.add", "watch.update", "watch.remove",
   "artifact.list", "artifact.read", "artifact.pin", "memory.list", "memory.read", "memory.write",
   "settings.update", "stop", "push.register", "push.unregister", "device.unpair", "audit.tail",
@@ -145,9 +145,6 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       const clamp = (v: unknown, d: number) => Math.max(0, Math.min(Number(v ?? d), 100));
       return { messages: hub.chat.around(Number(p.seq ?? 0), clamp(p.before, 25), clamp(p.after, 25)) };
     }
-    // 「TL;DR」: the recent stretch of the assistant's conversation or a session's in a few points, the owner's own words apart.
-    case "chat.tldr":
-      return await hub.tldr.run(p.scope === "pal" ? "pal" : "palo", String(p.id ?? ""));
     case "task.get": {
       const task = hub.tasks.get(String(p.id));
       if (!task) throw new Error(t("rpc.err.noTask"));

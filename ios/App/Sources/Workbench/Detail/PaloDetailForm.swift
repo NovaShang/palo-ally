@@ -37,8 +37,6 @@ struct PaloDetailForm: View {
             }
             .listSectionSpacing(.compact)
 
-            TldrDetailRow()
-
             Section {
                 pickers
                 DetailContextRow(percent: store.status?.contextPct, tokens: store.status?.contextTokens,

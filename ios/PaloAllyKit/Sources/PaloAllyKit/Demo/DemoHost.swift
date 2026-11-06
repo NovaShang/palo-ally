@@ -717,6 +717,8 @@ public actor DemoHost {
             if let r = p["replyTo"], let reply = try? r.decode(ReplyTo.self) { m.replyTo = reply }
             if let atts = try attachments(p["attachments"]) { m.attachments = atts }
             if !text.hasPrefix("/") { m.uuid = "u-\(m.id)" }
+            // 「TL;DR」: kept as the host keeps it (the instruction, marked).
+            Self.keptAsTldr(&m)
             messages.append(m)
             emit(RPCEventName.chatMessage, m)
             if let sid = p["suggestionId"]?.stringValue {
@@ -965,8 +967,6 @@ public actor DemoHost {
             if let e = p["effort"] { status.effort = e.stringValue }
             emit(RPCEventName.status, status)
             return ["status": try .from(status)]
-        case RPCMethod.chatTldr:
-            return try await demoTldr(p)
         case RPCMethod.suggestionsList:
             return ["suggestions": try .from(demoSuggestions)]
         case RPCMethod.suggestionsDismiss:
@@ -1448,7 +1448,10 @@ public actor DemoHost {
         var draft: (to: String, text: String, slots: [AllySlot]?)?
         var adoptCard: RecentSession?
         let reply: String
-        if text.contains("跟"), text.contains("说") || text.contains("约"),
+        if text.trimmingCharacters(in: .whitespacesAndNewlines) == TldrAsk.marker {
+            await pause(0.6)
+            reply = Self.tldrAnswer
+        } else if text.contains("跟"), text.contains("说") || text.contains("约"),
            let to = allies.first(where: { text.contains($0.ownerName) }) ?? allies.first {
             // 「跟家人说今晚我晚点回」: a draft card, sent only when the owner says so.
             if text.contains("约") {

@@ -12,6 +12,7 @@ import { type PalRecord, startError } from "../src/palSession.ts";
 import type { Paths } from "../src/config.ts";
 import { BEHAVIORS } from "../src/home.ts";
 import { handleRpc } from "../src/rpc.ts";
+import { TLDR_MARKER, tldrInstruction, tldrPrompt } from "../src/tldr.ts";
 import type { FakeScript } from "./fakeDriver.ts";
 import { FakeClaudeDir, FakeCli, assistantEntry } from "./fakeClaude.ts";
 import { makeHub, testConfig, tick, tmpPaths } from "./helpers.ts";
@@ -273,6 +274,30 @@ describe("talking to a Pal", () => {
     expect(await t.call("pals.send", { id: pal.id, text: "先别管登录页，把列表页做完", clientMsgId: "c-1" })).toEqual(sent);
     expect(proc.sent).toHaveLength(1);
     expect(t.hub.pals.list()[0]).toMatchObject({ status: "idle", lastLine: "收到：先别管登录页，把列表页做完" });
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("「TL;DR」: the app's marker goes in as the marker and the instruction; the page shows it as a TL;DR ask (no marker), live and read back from the transcript", async () => {
+    const t = setup();
+    const { pal } = await t.call("pals.adopt", { sessionId: bgSession(t) });
+    const sent = await t.call("pals.send", { id: pal.id, text: TLDR_MARKER, clientMsgId: "c-tl" });
+    await waitFor(() => t.palEvents("chat.message").some((m) => m.role === "assistant"));
+    const proc = t.driver.pals[0]!;
+    expect(proc.sent).toEqual([tldrPrompt()]);
+    expect(proc.sent[0]!.startsWith(`${TLDR_MARKER}\n`)).toBe(true);
+    const mine = t.palEvents("chat.message").find((m) => m.id === sent.id)!;
+    expect(mine).toMatchObject({ role: "user", tldr: true, text: tldrInstruction(), clientMsgId: "c-tl", channel: "app" });
+    expect(mine.text).not.toContain(TLDR_MARKER);
+    // the list's last line is the reply's, without the marker even if it was echoed
+    expect(t.hub.pals.list()[0]!.lastLine).not.toContain(TLDR_MARKER);
+    const read = toPalMessages(
+      [
+        { type: "user", uuid: "u1", timestamp: "2026-10-12T10:00:00Z", message: { role: "user", content: "列表要能按日期排序" }, origin: { kind: "human" } },
+        { type: "user", uuid: "u2", timestamp: "2026-10-12T10:01:00Z", message: { role: "user", content: tldrPrompt() }, origin: { kind: "human" } },
+      ] as any,
+      { pal: pal.id, assistantName: "Palo", paloName: "Palo" },
+    );
+    expect(read.map((m) => [m.id, m.tldr ?? false, m.text])).toEqual([["u1", false, "列表要能按日期排序"], ["u2", true, tldrInstruction()]]);
     await t.hub.pals.stopAndWait();
   });
 
