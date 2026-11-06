@@ -87,6 +87,7 @@ final class VoiceInputController {
         interruptExit(keepsPanel: true)
         isArmed = true
         target = .send
+        VoiceHaptics.prepare()
         dictation.start()
         return true
     }
@@ -106,6 +107,7 @@ final class VoiceInputController {
         isArmed = false
         isActive = true
         target = .send
+        VoiceHaptics.play(.enter)
         #if DEBUG
         VoiceFrames.shared.warm()
         #endif
@@ -123,7 +125,9 @@ final class VoiceInputController {
     func track(_ point: CGPoint) {
         guard isActive else { return }
         let t = VoiceLayout(size: capsuleSize).target(at: point)
-        if t != target { target = t }
+        guard t != target else { return }
+        target = t
+        VoiceHaptics.play(.zone(t))
     }
 
     /// Finger lifted. Returns where it was released and the recognized text
@@ -414,6 +418,60 @@ final class VoiceInputController {
 
 /// Hit-testing in the composer capsule's own coordinates: above its top edge
 /// the left half is 取消 and the right half 编辑; on it, release sends.
+/// What a hold to talk is felt as, on the phone (the owner's ask, 11-03: he
+/// didn't feel the old ones). One buzz per event: listening starts (medium),
+/// the finger goes onto 取消 or 编辑 (rigid) or back off them (light),
+/// let go to send (success, a double tap unlike the others) or to cancel or
+/// edit (light). The generators are made ready as the finger lands, so the
+/// first one has no lag. Each is logged, as the phone's log is the only way
+/// to see them. Nothing on the Mac.
+@MainActor
+enum VoiceHaptics {
+    enum Event {
+        case enter, send, cancel, edit
+        case zone(VoiceInputController.Target)
+
+        var name: String {
+            switch self {
+            case .enter: "enter"
+            case .send: "send"
+            case .cancel: "cancel"
+            case .edit: "edit"
+            case .zone(.cancel): "zone 取消"
+            case .zone(.edit): "zone 编辑"
+            case .zone(.send): "zone none"
+            }
+        }
+    }
+
+    #if !targetEnvironment(macCatalyst)
+    private static let medium = UIImpactFeedbackGenerator(style: .medium)
+    private static let rigid = UIImpactFeedbackGenerator(style: .rigid)
+    private static let light = UIImpactFeedbackGenerator(style: .light)
+    private static let note = UINotificationFeedbackGenerator()
+    #endif
+
+    /// The finger just landed: the hold may follow.
+    static func prepare() {
+        #if !targetEnvironment(macCatalyst)
+        medium.prepare(); rigid.prepare(); light.prepare(); note.prepare()
+        #endif
+    }
+
+    static func play(_ event: Event) {
+        #if !targetEnvironment(macCatalyst)
+        switch event {
+        case .enter: medium.impactOccurred(); rigid.prepare(); note.prepare()
+        case .zone(.cancel), .zone(.edit): rigid.impactOccurred(); rigid.prepare()
+        case .zone(.send): light.impactOccurred(); light.prepare()
+        case .send: note.notificationOccurred(.success)
+        case .cancel, .edit: light.impactOccurred()
+        }
+        debugLog("[voice] haptic: \(event.name)")
+        #endif
+    }
+}
+
 struct VoiceLayout {
     let size: CGSize
 
@@ -448,7 +506,6 @@ struct VoiceInputPanel: View {
         .offset(y: (1 - grow) * 34)
         .opacity(Double(min(1, p * 1.6)))
         .allowsHitTesting(false)
-        .sensoryFeedback(.selection, trigger: voice.target)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("正在听你说话，\(hint)")
     }

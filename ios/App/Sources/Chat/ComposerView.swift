@@ -366,8 +366,7 @@ struct ComposerView: View {
             // After any recording is stopped (same serial audio queue).
             if phase == .background { voice.dictation.coolDown() }
         }
-        .sensoryFeedback(.impact(weight: .light), trigger: pressing) { _, down in down }
-        .sensoryFeedback(.impact(weight: .medium), trigger: voiceStarted) { _, started in started }
+        // Hold to talk is felt through VoiceHaptics (listening, zones, release).
         .sensoryFeedback(.impact(weight: .light), trigger: dictating)
         .photosPicker(isPresented: $showPhotos, selection: $pickerItems,
                       maxSelectionCount: max(1, Self.maxStaged - staged.count), matching: .images)
@@ -937,6 +936,7 @@ struct ComposerView: View {
         let before = draft
         debugLog("[voice] released on \(target), \(heard.count) characters heard, \(before.count) in the field")
         if target == .cancel {
+            VoiceHaptics.play(.cancel)
             voice.leave(.cancel, words: heard)
             _ = await voice.end()
             debugLog("[hold] cancelled: the field keeps its \(draft.count) characters")
@@ -954,6 +954,9 @@ struct ComposerView: View {
             let madeUp = VoiceGuard.dropsResult(heardLive: false, pressSeconds: pressSeconds)
             if madeUp && !final.isEmpty { debugLog("[voice] dropped \(final.count) characters after a \(Int(pressSeconds * 1000)) ms press") }
             guard !final.isEmpty, !madeUp else {
+                #if !targetEnvironment(macCatalyst)
+                debugLog("[voice] haptic: none (nothing heard)")
+                #endif
                 voice.leave(.unheard(edit: target == .edit), words: voice.dictation.errorMessage ?? String(localized: "没听清"))
                 return
             }
@@ -1015,6 +1018,7 @@ struct ComposerView: View {
     private func land(_ target: VoiceInputController.Target, _ words: String) -> String? {
         let before = draft
         if target == .edit {
+            VoiceHaptics.play(.edit)
             editedIn = (before, words)
             // The field takes them in the same motion (it may grow).
             withAnimation(VoiceInputController.exitMotion) { draft = Self.joined(before, words) }
@@ -1022,6 +1026,7 @@ struct ComposerView: View {
             return nil
         }
         let cid = UUID().uuidString.lowercased()
+        VoiceHaptics.play(.send)
         // Hidden before it exists: its first frame is already unseen.
         voice.leave(.send(cid: cid), words: words)
         // What the field held goes with the words, as one message (and its
