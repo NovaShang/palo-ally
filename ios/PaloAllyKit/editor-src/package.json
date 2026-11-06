@@ -1,0 +1,23 @@
+{
+  "name": "paloally-file-editor",
+  "private": true,
+  "description": "The file editor's CodeMirror 6 build: bundled into ../Sources/PaloAllyFilePreview/Resources/FileEditor/editor.js (npm install && npm run build). Only that output is committed.",
+  "scripts": {
+    "build": "esbuild entry.js --bundle --minify --format=iife --target=safari17 --legal-comments=none --outfile=../Sources/PaloAllyFilePreview/Resources/FileEditor/editor.js"
+  },
+  "devDependencies": {
+    "@codemirror/commands": "^6.8.0",
+    "@codemirror/lang-css": "^6.3.0",
+    "@codemirror/lang-html": "^6.4.9",
+    "@codemirror/lang-javascript": "^6.2.3",
+    "@codemirror/lang-json": "^6.0.1",
+    "@codemirror/lang-markdown": "^6.3.2",
+    "@codemirror/language": "^6.11.0",
+    "@codemirror/legacy-modes": "^6.5.0",
+    "@codemirror/search": "^6.5.10",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.36.0",
+    "@lezer/highlight": "^1.2.1",
+    "esbuild": "^0.25.0"
+  }
+}

@@ -20,10 +20,11 @@ let package = Package(
         .target(name: "PaloAllyObjC"),
         .testTarget(name: "PaloAllyVoiceTests", dependencies: ["PaloAllyVoice", "PaloAllyObjC"]),
         // Markdown preview ported from bento's BentoFilePreviewKit (markdown-it
-        // + highlight.js in a WKWebView, all bundled), same language mode.
+        // + highlight.js in a WKWebView, all bundled), same language mode; and
+        // the text editor (CodeMirror 6, built from editor-src).
         .target(
             name: "PaloAllyFilePreview",
-            resources: [.copy("Resources/FilePreview")],
+            resources: [.copy("Resources/FilePreview"), .copy("Resources/FileEditor")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(name: "PaloAllyFilePreviewTests", dependencies: ["PaloAllyFilePreview"]),

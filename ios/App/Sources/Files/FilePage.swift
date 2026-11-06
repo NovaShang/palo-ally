@@ -14,6 +14,9 @@ import UIKit
 /// (`AppStore.followFile`; an older host is polled) and a change is read
 /// again in place, keeping the scroll position. ⌘R, or 重新载入 in its ⋯,
 /// reads it again by hand.
+///
+/// In a pane's tab on the Mac and iPad, a text file up to 1 MB can be
+/// edited in place (编辑 in its ⋯, ⌘E): see `FileEditSession`.
 struct FilePage: View {
     let target: FileTarget
     /// Shown modally (a path tapped in a reply): a close button.
@@ -25,11 +28,18 @@ struct FilePage: View {
     /// computer's PaloAlly is older and has no `.root` (the pane's own files,
     /// which take an absolute path inside them).
     var fallbackScope: FileScope? = nil
+    /// A pane's tab: its edit's key for a path (`FileEditSessions.key`);
+    /// nil where files aren't edited (a page pushed or shown over the conversation).
+    var editKey: ((String) -> String)? = nil
+    /// Show another file in this tab (picked from its path while editing).
+    var retarget: ((String) -> Void)? = nil
 
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.placesAsColumns) private var asColumn
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.colorScheme) private var colorScheme
     @State private var phase = Phase.loading
     /// Bumped on each re-read, so Quick Look shows the new copy.
     @State private var revision: Int64 = 0
@@ -44,6 +54,14 @@ struct FilePage: View {
     /// too), and says so for a moment.
     @State private var redraws = 0
     @State private var reloadedNote = false
+    /// The version the text shown was read at (nil: a host that can't save).
+    @State private var readVersion: String?
+    /// The bytes are UTF-8 as they are (anything else would be changed by saving).
+    @State private var plainUTF8 = false
+    /// A file picked from the path while this one had unsaved changes.
+    @State private var askSwitch: String?
+    /// ⌘E reaches both the editor and the page: once.
+    @State private var lastToggle = Date.distantPast
 
     enum Phase: Equatable {
         case loading
@@ -86,15 +104,49 @@ struct FilePage: View {
         return false
     }
 
+    private var sessions: FileEditSessions { .shared }
+    /// This tab's edit, while there is one.
+    private var session: FileEditSession? { editKey.flatMap { sessions.session($0(target.path)) } }
+    private var editing: Bool { session?.editing == true }
+
+    /// Editing is offered: a pane's tab on the Mac or a regular-width iPad,
+    /// a UTF-8 text file up to 1 MB from a host that saves, not an item of 成果.
+    private var canEdit: Bool {
+        guard editKey != nil, retarget != nil, readVersion != nil, plainUTF8, !isArtifact else { return false }
+        #if !targetEnvironment(macCatalyst)
+        guard sizeClass == .regular else { return false }
+        #endif
+        if case .text(let text, _, _) = phase { return text.utf8.count <= FilesWriteParams.maxBytes }
+        return false
+    }
+
+    /// 成果 are the assistant's: they're read here, not edited.
+    private var isArtifact: Bool {
+        (target.scope.kind == .palo && target.path.hasPrefix("artifacts/")) || target.path.contains("/.paloally/home/artifacts/")
+    }
+
     @ViewBuilder var body: some View {
         if inPane {
-            content
+            paneContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .overlay(alignment: .topTrailing) { paneMenu.padding(10) }
+                .overlay(alignment: .topTrailing) { if !editing { paneMenu.padding(10) } }
                 .overlay(alignment: .bottom) { reloadedCapsule }
-                .background { reloadKey }
+                .background { reloadKey; editKeyCommand }
                 .task(id: target) { await load() }
                 .task(id: follow) { await followFile(follow) }
+                .modifier(UnsavedChangesDialog(
+                    asking: Binding(get: { askSwitch != nil }, set: { if !$0 { askSwitch = nil } }),
+                    name: target.name,
+                    save: { saveThenSwitch() },
+                    discard: { if let path = askSwitch { show(path) } }))
+                #if DEBUG
+                .onReceive(NotificationCenter.default.publisher(for: .demoFileEdit)) { note in
+                    let step = note.object as? String ?? ""
+                    if step == "filesave", let session { Task { await session.save(store: store) } }
+                    else if step.hasPrefix("fileopen:") { switchFile(String(step.dropFirst(9))) }
+                    else { toggleEdit() }
+                }
+                #endif
                 .accessibilityIdentifier("file-page")
         } else {
             page
@@ -120,6 +172,77 @@ struct FilePage: View {
         return dir.isEmpty ? "" : dir
     }
 
+    /// A pane's tab: the editor while editing (kept, hidden, while its
+    /// unsaved text is previewed), else the file.
+    @ViewBuilder private var paneContent: some View {
+        if let session {
+            ZStack {
+                editorPage(session)
+                    .opacity(session.editing ? 1 : 0)
+                    .allowsHitTesting(session.editing)
+                    .accessibilityHidden(!session.editing)
+                if !session.editing { content }
+            }
+        } else {
+            content
+        }
+    }
+
+    private func editorPage(_ session: FileEditSession) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                FileBreadcrumb(target: target, paneScope: fallbackScope, pick: switchFile)
+                saveButton(session)
+                paneMenu
+            }
+            .padding(.leading, 6)
+            .padding(.trailing, 10)
+            .frame(height: 44)
+            Divider()
+            if session.conflict != nil {
+                FileConflictBar(loadTheirs: { Task { await loadTheirs(session) } },
+                                useMine: { Task { await session.save(store: store, force: true) } })
+                Divider()
+            } else if let error = session.error {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.circle").foregroundStyle(.secondary)
+                    Text(verbatim: error).font(.system(size: 12)).lineLimit(2)
+                    Spacer(minLength: 0)
+                    Button { session.error = nil } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                Divider()
+            }
+            FileEditorView(editor: session.editor)
+                .ignoresSafeArea(edges: .bottom)
+        }
+        .onAppear {
+            session.editor.onSave = { [store] in Task { await session.save(store: store) } }
+            session.editor.onToggle = { toggleEdit() }
+        }
+    }
+
+    /// 保存 (⌘S): there only while something is unsaved.
+    private func saveButton(_ session: FileEditSession) -> some View {
+        Button { Task { await session.save(store: store) } } label: {
+            ZStack {
+                Text("保存", tableName: "Files").opacity(session.saving ? 0 : 1)
+                if session.saving { ProgressView().controlSize(.mini) }
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .padding(.horizontal, 4)
+        }
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.capsule)
+        .controlSize(.small)
+        .disabled(!session.dirty || session.saving)
+        .keyboardShortcut("s", modifiers: .command)
+        .accessibilityIdentifier("file-save")
+    }
+
     @ViewBuilder private var content: some View {
         switch phase {
         case .loading:
@@ -127,8 +250,9 @@ struct FilePage: View {
         case .progress(let p):
             ProgressView(value: p).frame(maxWidth: 240).frame(maxWidth: .infinity, maxHeight: .infinity)
         case .text(let text, let kind, _):
+            // Unsaved text, previewed while the editor is away.
             FileTextPreview(fileName: kind == .markdown ? FilePreviewRoute.markdownRenderName(target.name) : target.name,
-                            text: text, raw: raw, imageSource: kind == .markdown ? images : nil)
+                            text: session?.previewText ?? text, raw: raw, imageSource: kind == .markdown ? images : nil)
                 .id(redraws)
                 .ignoresSafeArea(edges: .bottom)
         case .quickLook(let url):
@@ -201,11 +325,22 @@ struct FilePage: View {
     /// The pane's ⋯: what a page's bar would hold.
     private var paneMenu: some View {
         MacStripMenu(label: String(localized: "更多", table: "Files")) {
+            if canEdit || session != nil {
+                Button { toggleEdit() } label: {
+                    Label {
+                        Text(editing ? String(localized: "预览", table: "Files") : String(localized: "编辑", table: "Files"))
+                    } icon: {
+                        Image(systemName: editing ? "doc.richtext" : "pencil")
+                    }
+                }
+                .accessibilityIdentifier("file-toggle-edit")
+                Divider()
+            }
             reloadButton
             if let fileURL {
                 ShareLink(item: fileURL) { Label { Text("共享", tableName: "Files") } icon: { Image(systemName: "square.and.arrow.up") } }
             }
-            if isMarkdown {
+            if isMarkdown, !editing {
                 Button { raw.toggle() } label: {
                     Label {
                         Text(raw ? String(localized: "看排版", table: "Files") : String(localized: "看源文本", table: "Files"))
@@ -264,6 +399,80 @@ struct FilePage: View {
             .accessibilityHidden(true)
     }
 
+    /// ⌘E (Mac, iPad keyboard): 编辑 / 预览.
+    @ViewBuilder private var editKeyCommand: some View {
+        if canEdit || session != nil {
+            Button("") { toggleEdit() }
+                .keyboardShortcut("e", modifiers: .command)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
+    }
+
+    // MARK: editing
+
+    /// 编辑 ⇄ 预览. Back to the preview with nothing unsaved ends the edit;
+    /// with something unsaved the editor stays, hidden, and the preview shows its text.
+    private func toggleEdit() {
+        guard Date().timeIntervalSince(lastToggle) > 0.3 else { return }
+        lastToggle = Date()
+        guard let session else { return startEditing() }
+        if !session.editing {
+            session.previewText = nil
+            session.editing = true
+            session.editor.focusText()
+        } else if session.dirty {
+            Task {
+                session.previewText = await session.editor.snapshot()?.text
+                session.editing = false
+            }
+        } else {
+            sessions.end(session.key)
+        }
+    }
+
+    private func startEditing() {
+        guard canEdit, let editKey, case .text(let text, _, _) = phase, let version = readVersion else { return }
+        debugLog("file edit: editing \(target.name)")
+        sessions.begin(FileEditSession(key: editKey(target.path), scope: readScope ?? target.scope, path: target.path,
+                                       text: text, version: version, dark: colorScheme == .dark))
+    }
+
+    /// A file picked from the path: in this tab, in the editor; unsaved changes asked about first.
+    private func switchFile(_ path: String) {
+        if session?.dirty == true { askSwitch = path } else { show(path) }
+    }
+
+    private func show(_ path: String) {
+        guard let retarget, let editKey else { return }
+        askSwitch = nil
+        sessions.end(editKey(target.path))
+        sessions.startEditing.insert(editKey(path))
+        retarget(path)
+    }
+
+    private func saveThenSwitch() {
+        guard let path = askSwitch, let session else { return }
+        Task {
+            // A refused save (changed on the computer) stays, its bar up.
+            if await session.save(store: store) { show(path) }
+        }
+    }
+
+    /// 载入电脑上的版本: what the computer has, in the editor and the preview.
+    private func loadTheirs(_ session: FileEditSession) async {
+        debugLog("file edit: \(target.name), the computer's version taken")
+        do {
+            let r = try await store.readFile(session.scope, path: session.path)
+            guard !r.tooLarge, let version = r.version else { return }
+            session.adopt(text: String(decoding: r.data, as: UTF8.self), version: version)
+            await load(quietly: true)
+        } catch {
+            session.error = Copy.error(error)
+        }
+    }
+
     /// A Markdown file's relative pictures, from the same folder on the computer.
     private var images: FilePreviewWebView.ImageSource {
         let store = store
@@ -307,7 +516,7 @@ struct FilePage: View {
             let progress: (Int64, Int64) -> Void = { got, total in
                 if !quietly, total > ArtifactChunk.maxChunk { phase = .progress(Double(got) / Double(max(total, 1))) }
             }
-            let r: (data: Data, mime: String, size: Int64, tooLarge: Bool)
+            let r: (data: Data, mime: String, size: Int64, tooLarge: Bool, version: String?)
             do {
                 r = try await store.readFile(target.scope, path: target.path, progress: progress)
                 readScope = nil
@@ -324,12 +533,18 @@ struct FilePage: View {
             var kind = FileContentKind.forName(target.name)
             if kind == .text { kind = FileContentKind.sniff(r.data) }
             let text = kind == .quickLook ? nil : String(decoding: r.data, as: UTF8.self)
+            readVersion = r.version
+            plainUTF8 = text != nil && String(data: r.data, encoding: .utf8) != nil
+            // Being edited: the editor hears of it (in place, or the bar).
+            if let text, let version = r.version { session?.diskRead(text: text, version: version) }
             // Re-read and the same: leave it be (no re-render, no flash).
             if quietly, !force, let text, case .text(let shown, let shownKind, _) = phase, shown == text, shownKind == kind { return }
             if quietly, !force, text == nil, case .quickLook(let shown) = phase, (try? Data(contentsOf: shown)) == r.data { return }
             let url = try Self.save(r.data, for: target)
             if let text {
                 phase = .text(text, kind, url)
+                // Opened from the path while editing: in the editor.
+                if let editKey, sessions.startEditing.remove(editKey(target.path)) != nil, session == nil { startEditing() }
             } else {
                 if quietly, case .quickLook = phase { revision += 1 }
                 phase = .quickLook(url)

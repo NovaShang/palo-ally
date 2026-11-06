@@ -298,6 +298,25 @@ private struct LayoutStressTest: ViewModifier {
                                 queue.append(contentsOf: v.subviews)
                             }
                         }
+                    // `fileedit`: 编辑 / 预览 in the file tab shown (⌘E); `filesave`: its 保存 (⌘S).
+                    // `fileopen:/abs/path`: that file picked from the path at the editor's top.
+                    case "fileedit", "filesave", _ where a.hasPrefix("fileopen:"): NotificationCenter.default.post(name: .demoFileEdit, object: a)
+                    // `filetype:text`: typed into the file being edited, at its cursor.
+                    case _ where a.hasPrefix("filetype:"):
+                        if let win = w.scene?.windows.first {
+                            var queue: [UIView] = [win]
+                            while !queue.isEmpty {
+                                let v = queue.removeFirst()
+                                if let editor = v as? FileEditorWebView, editor.window != nil, !editor.isHidden {
+                                    editor.focusText()
+                                    let text = String(a.dropFirst(9)).replacingOccurrences(of: "\\n", with: "\n")
+                                    let json = String(data: (try? JSONEncoder().encode([text])) ?? Data(), encoding: .utf8) ?? "[\"\"]"
+                                    editor.evaluateJavaScript("paEditorInsert(\(json)[0])", completionHandler: nil)
+                                    break
+                                }
+                                queue.append(contentsOf: v.subviews)
+                            }
+                        }
                     // `copy`: ⌘C pressed.
                     case "copy":
                         debugLog("[nav] \((AppKitBundle.object?.perform(NSSelectorFromString("pressCopy"))?.takeUnretainedValue() as? String) ?? "no AppKit bundle")")

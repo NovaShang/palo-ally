@@ -122,6 +122,18 @@ extension TabsState {
         return s
     }
 
+    /// A file's tab shows another file (picked from its path while editing);
+    /// one already open in a tab of its own shows there instead, this one closed.
+    public func retargetingPreview(at index: Int, to path: String, key: String) -> TabsState {
+        var s = normalized(key: key)
+        guard s.tabs.indices.contains(index), s.tabs[index].kind == PaneTab.preview else { return s }
+        if let other = s.tabs.firstIndex(where: { $0.kind == PaneTab.preview && $0.path == path }), other != index {
+            return s.closing(at: index, key: key).activating(other > index ? other - 1 : other, key: key)
+        }
+        s.tabs[index].path = path
+        return s
+    }
+
     public func activating(_ index: Int, key: String) -> TabsState {
         var s = normalized(key: key)
         guard s.tabs.indices.contains(index) else { return s }
@@ -202,6 +214,7 @@ public final class PaneTabsHub {
     public func openWeb(_ key: String, url: String) { update(key) { $0.openingWeb(url: url, key: key) } }
     public func openArtifact(_ key: String, id: String) { update(key) { $0.openingArtifact(id: id, key: key) } }
     public func retargetWeb(_ key: String, at index: Int, url: String) { update(key) { $0.retargetingWeb(at: index, to: url, key: key) } }
+    public func retargetPreview(_ key: String, at index: Int, path: String) { update(key) { $0.retargetingPreview(at: index, to: path, key: key) } }
     public func close(_ key: String, at index: Int) { update(key) { $0.closing(at: index, key: key) } }
     public func activate(_ key: String, at index: Int) { update(key) { $0.activating(index, key: key) } }
     public func setOpen(_ key: String, _ open: Bool) { update(key) { $0.settingOpen(open, key: key) } }

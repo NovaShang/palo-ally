@@ -23,6 +23,8 @@ struct RightPane: View {
     @Environment(AppStore.self) private var store
     @State private var pages = WebTabPages()
     @State private var pageByTab: [Int: WebTabPage] = [:]
+    /// A file's tab with unsaved changes asked to close: its path.
+    @State private var askClose: String?
 
     private var hub: PaneTabsHub { PaneTabsHub.shared(for: store) }
     private var state: TabsState { hub.state(for: key) }
@@ -38,7 +40,8 @@ struct RightPane: View {
             RightPaneTabBar(
                 tabs: state.tabs, active: state.active, key: key, pages: pageByTab,
                 select: { hub.activate(key, at: $0) },
-                close: { hub.close(key, at: $0) },
+                close: { requestClose($0) },
+                unsaved: { tab in tab.kind == PaneTab.preview && FileEditSessions.shared.isDirty(editKey(tab.path ?? "")) },
                 addWeb: { model.editPane(key) { $0.openWeb(key, url: "") } },
                 closePane: { if let onClose { onClose() } else { model.editPane(key) { $0.setOpen(key, false) } } })
             content
@@ -52,7 +55,42 @@ struct RightPane: View {
         .environment(\.placesAsColumns, true)
         .task(id: store.connection.isOnline) { if store.connection.isOnline { await hub.load() } }
         .onChange(of: state.tabs, initial: true) { _, tabs in pageByTab = pages.reconcile(tabs) }
+        .modifier(UnsavedChangesDialog(
+            asking: Binding(get: { askClose != nil }, set: { if !$0 { askClose = nil } }),
+            name: ((askClose ?? "") as NSString).lastPathComponent,
+            save: { saveThenClose() },
+            discard: { if let path = askClose { closeFile(path) } }))
         .accessibilityIdentifier("right-pane")
+    }
+
+    /// A file's tab being edited, on this pane.
+    private func editKey(_ path: String) -> String { FileEditSessions.key(store: store, pane: key, path: path) }
+
+    /// A tab closed: a file with unsaved changes asks first (保存 / 不保存 / 取消).
+    private func requestClose(_ index: Int) {
+        guard let tab = state.tabs.indices.contains(index) ? state.tabs[index] : nil else { return }
+        if tab.kind == PaneTab.preview, let path = tab.path {
+            if FileEditSessions.shared.isDirty(editKey(path)) {
+                askClose = path
+                return
+            }
+            FileEditSessions.shared.end(editKey(path))
+        }
+        hub.close(key, at: index)
+    }
+
+    private func closeFile(_ path: String) {
+        askClose = nil
+        FileEditSessions.shared.end(editKey(path))
+        if let i = state.tabs.firstIndex(where: { $0.kind == PaneTab.preview && $0.path == path }) { hub.close(key, at: i) }
+    }
+
+    private func saveThenClose() {
+        guard let path = askClose, let session = FileEditSessions.shared.session(editKey(path)) else { return }
+        Task {
+            // Refused (changed on the computer): the tab stays, its bar up.
+            if await session.save(store: store) { closeFile(path) }
+        }
     }
 
     // The web pages stay in the tree, hidden, so they keep their place;
@@ -95,7 +133,7 @@ struct RightPane: View {
                 .environment(\.libraryOpensTab) { id in model.editPane(key) { $0.openArtifact(key, id: id) } }
         case PaneTab.artifact:
             let index = state.active
-            ArtifactDetailView(artifactID: tab.path ?? "", inPane: true, close: { hub.close(key, at: index) })
+            ArtifactDetailView(artifactID: tab.path ?? "", inPane: true, close: { requestClose(index) })
                 .id(tab)
         case PaneTab.files:
             NavigationStack {
@@ -112,8 +150,10 @@ struct RightPane: View {
             let index = state.active
             let path = tab.path ?? ""
             FilePage(target: FileTarget(scope: tab.isAbsolutePreview ? .root : scope, path: path),
-                     close: { hub.close(key, at: index) }, inPane: true,
-                     fallbackScope: tab.isAbsolutePreview ? scope : nil)
+                     close: { requestClose(index) }, inPane: true,
+                     fallbackScope: tab.isAbsolutePreview ? scope : nil,
+                     editKey: { editKey($0) },
+                     retarget: { hub.retargetPreview(key, at: index, path: $0) })
                 .id(tab)
         default:
             ContentUnavailableView(String(localized: "这个标签打不开", table: "Files"), systemImage: "questionmark.square.dashed")
@@ -180,6 +220,8 @@ private struct RightPaneTabBar: View {
     let pages: [Int: WebTabPage]
     let select: (Int) -> Void
     let close: (Int) -> Void
+    /// A file's tab with unsaved changes: a dot on its chip.
+    let unsaved: (PaneTab) -> Bool
     let addWeb: () -> Void
     let closePane: () -> Void
 
@@ -208,11 +250,13 @@ private struct RightPaneTabBar: View {
     }
 
     private var tabStrip: some View {
-        ScrollViewReader { proxy in
+        // Read here, not in ForEach's rows: their reads aren't observed.
+        let unsavedTabs = Set(tabs.indices.filter { unsaved(tabs[$0]) })
+        return ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
                     ForEach(Array(tabs.enumerated()), id: \.offset) { i, tab in
-                        tabButton(i, tab).id(i)
+                        tabButton(i, tab, unsaved: unsavedTabs.contains(i)).id(i)
                     }
                 }
                 .padding(4)
@@ -227,7 +271,7 @@ private struct RightPaneTabBar: View {
         .glassEffect(.regular, in: .capsule)
     }
 
-    private func tabButton(_ i: Int, _ tab: PaneTab) -> some View {
+    private func tabButton(_ i: Int, _ tab: PaneTab, unsaved: Bool) -> some View {
         let isActive = i == active
         let page = pages[i]
         let isWeb = tab.kind == PaneTab.web
@@ -238,6 +282,12 @@ private struct RightPaneTabBar: View {
                     Image(systemName: icon(tab)).font(.system(size: 11)).foregroundStyle(.secondary)
                     TabTitle(tab: tab, page: page)
                         .lineLimit(1)
+                    if unsaved {
+                        Circle()
+                            .fill(.primary.opacity(0.55))
+                            .frame(width: 6, height: 6)
+                            .accessibilityLabel(String(localized: "未保存", table: "Files"))
+                    }
                 }
                 .padding(.leading, 10)
                 .padding(.trailing, i < PaneTabsKey.pinnedCount ? 10 : 4)

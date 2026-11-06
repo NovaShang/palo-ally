@@ -1,0 +1,64 @@
+/* The file editor's page: its colours as the preview's (GitHub light and
+   dark), the syntax colours as variables the highlight style reads. */
+
+:root {
+  --bg: #ffffff;
+  --fg: #1f2328;
+  --muted: #656d76;
+  --gutter: #8c959f;
+  --border: #d0d7de;
+  --panel: #f6f8fa;
+  --caret: #0969da;
+  --selection: rgba(9, 105, 218, 0.18);
+  --active-line: rgba(128, 128, 128, 0.06);
+  --match: rgba(212, 167, 44, 0.25);
+  --match-edge: rgba(212, 167, 44, 0.6);
+  --match-strong: rgba(212, 167, 44, 0.55);
+  --hl-keyword: #cf222e;
+  --hl-title: #8250df;
+  --hl-constant: #0550ae;
+  --hl-string: #0a3069;
+  --hl-comment: #6e7781;
+  --hl-tag: #116329;
+  --hl-heading: #0550ae;
+  --hl-bullet: #953800;
+  --hl-link: #0969da;
+  --hl-code: #953800;
+  --hl-deleted: #82071e;
+}
+html[data-theme="dark"] {
+  --bg: #0d1117;
+  --fg: #e6edf3;
+  --muted: #8d96a0;
+  --gutter: #6e7681;
+  --border: #30363d;
+  --panel: #161b22;
+  --caret: #4493f8;
+  --selection: rgba(56, 139, 253, 0.3);
+  --active-line: rgba(128, 128, 128, 0.08);
+  --match: rgba(187, 128, 9, 0.3);
+  --match-edge: rgba(187, 128, 9, 0.7);
+  --match-strong: rgba(187, 128, 9, 0.6);
+  --hl-keyword: #ff7b72;
+  --hl-title: #d2a8ff;
+  --hl-constant: #79c0ff;
+  --hl-string: #a5d6ff;
+  --hl-comment: #8b949e;
+  --hl-tag: #7ee787;
+  --hl-heading: #79c0ff;
+  --hl-bullet: #ffa657;
+  --hl-link: #4493f8;
+  --hl-code: #ffa657;
+  --hl-deleted: #ffa198;
+}
+
+* { box-sizing: border-box; }
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-text-size-adjust: 100%;
+}
+body { overflow: hidden; }
