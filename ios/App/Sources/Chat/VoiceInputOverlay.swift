@@ -437,8 +437,8 @@ enum VoiceHaptics {
             case .send: "send"
             case .cancel: "cancel"
             case .edit: "edit"
-            case .zone(.cancel): "zone 取消"
-            case .zone(.edit): "zone 编辑"
+            case .zone(.cancel): "zone cancel"
+            case .zone(.edit): "zone edit"
             case .zone(.send): "zone none"
             }
         }
