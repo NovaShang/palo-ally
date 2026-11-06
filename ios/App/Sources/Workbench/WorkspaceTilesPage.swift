@@ -48,7 +48,10 @@ struct WorkspaceTilesPage: View {
                     onLayoutChange: save,
                     onActivate: { model.activate(tile: $0, in: workspaceID) },
                     onMoveFocus: moveFocus,
-                    onCornerPane: { bridge.cornerPane = $0 })
+                    onCornerPane: { bridge.cornerPane = $0 },
+                    onFolded: { ids in
+                        if model.foldedTiles[workspaceID, default: []] != ids { model.foldedTiles[workspaceID] = ids }
+                    })
             } else if workspace != nil {
                 Text("这个工作区里没有会话了。")
                     .foregroundStyle(.secondary)
@@ -76,7 +79,7 @@ struct WorkspaceTilesPage: View {
         .background { focusKeys }
         // The title reads every session's name: in a modifier of its own, so
         // a session ticking doesn't re-render the page and all its tiles.
-        .modifier(WorkspaceBar(workspaceID: workspaceID, actions: actions))
+        .modifier(WorkspaceBar(workspaceID: workspaceID, actions: actions, info: info))
         .accessibilityIdentifier("workspace-page")
         #if DEBUG || PERF_HARNESS
         // `-demoType <keys per second>`: types into the active tile's draft,
@@ -291,6 +294,7 @@ final class TileDetails {
 private struct WorkspaceBar: ViewModifier {
     let workspaceID: String
     let actions: PaneActions
+    let info: (String) -> TileInfo
     @Environment(AppStore.self) private var store
     @Environment(WindowModel.self) private var model
 
@@ -321,7 +325,7 @@ private struct WorkspaceBar: ViewModifier {
                 // sidebar's colour; only the tiles are white cards (the
                 // owner, 11-05).
                 .background { Color(uiColor: PaneCanvasController.backdrop).ignoresSafeArea() }
-                .macTitlebarCenter { MacTitlebarTitle(title: title) }
+                .macTitlebarCenter { WorkspaceTitle(workspaceID: workspaceID, title: title, info: info) }
                 .macToolbarMenus(signature: "\(others.map { "\($0.id)=\($0.displayName)" })|\(placement?.pane ?? "")|\(online)|\(palo)|\(name)") {
                     MacToolbarMenus(add: addItems(others: others, online: online, palo: palo, name: name))
                 }
@@ -329,6 +333,7 @@ private struct WorkspaceBar: ViewModifier {
             content
                 .toolbarTitleDisplayMode(.inline)
                 .toolbar {
+                    ToolbarItem(placement: .principal) { WorkspaceTitle(workspaceID: workspaceID, title: title, info: info) }
                     ToolbarItemGroup(placement: .topBarTrailing) {
                         AddPaneMenu(workspaceID: workspaceID, actions: actions, placement: placement)
                         PaneButton()
@@ -401,5 +406,39 @@ private struct PaneButton: View {
             .tint(.primary)
             .accessibilityLabel("右侧栏")
             .accessibilityIdentifier("pane-toggle")
+    }
+}
+
+/// The workspace's title in its bar: its name, or, while some panes don't
+/// fit, their tabs in its place (the name matters less than getting to
+/// them, the owner, 11-06); picked, a tab's column comes into view.
+private struct WorkspaceTitle: View {
+    let workspaceID: String
+    let title: String
+    let info: (String) -> TileInfo
+    @Environment(WindowModel.self) private var model
+
+    var body: some View {
+        let folded = model.foldedTiles[workspaceID] ?? []
+        if folded.isEmpty {
+            if Platform.isMac { MacTitlebarTitle(title: title) } else { Text(title).font(.headline).lineLimit(1) }
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                GlassEffectContainer(spacing: 6) {
+                    HStack(spacing: 6) {
+                        ForEach(folded, id: \.self) { id in
+                            TileSwitchButton(id: id, info: info) { model.activate(tile: $0, in: workspaceID) }
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                }
+            }
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            // No soft edge: it blurred the tabs, all of them by the edge.
+            .scrollEdgeEffectHidden(true)
+            .frame(maxWidth: 520)
+            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityLabel(Text("\(title)，\(folded.count) 个会话收在这里"))
+        }
     }
 }

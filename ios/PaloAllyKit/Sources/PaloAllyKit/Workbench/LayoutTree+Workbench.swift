@@ -222,6 +222,55 @@ extension LayoutTree {
         }
     }
 
+    /// What shows when the tree's columns don't all fit (`fit` of them do):
+    /// whole columns, each with its rows and its proportions, the one
+    /// holding `active` among them, then its neighbours to the right, then
+    /// to the left; the panes of the other columns go to `switcher`. A tree
+    /// whose one column is already too wide (its rows split side by side
+    /// again) falls back to the panes alone, side by side.
+    public static func foldingColumns(_ tree: Node, active: String?, fit: Int) -> (shown: Node, tiling: NarrowTiling) {
+        let order = leafOrder(of: tree)
+        guard columns(of: tree) > fit, fit > 0 else { return (tree, NarrowTiling(visible: order, switcher: [])) }
+        let units: [Node]
+        if case .hsplit(_, _, _, _, let children) = canonical(tree) { units = children } else { units = [tree] }
+        let anchor = units.firstIndex { leafOrder(of: $0).contains(active ?? "") } ?? 0
+        var picked = [anchor]
+        var used = columns(of: units[anchor])
+        if used <= fit {
+            var after = anchor + 1, before = anchor - 1
+            while true {
+                if after < units.count, used + columns(of: units[after]) <= fit {
+                    used += columns(of: units[after]); picked.append(after); after += 1
+                } else if before >= 0, used + columns(of: units[before]) <= fit {
+                    used += columns(of: units[before]); picked.append(before); before -= 1
+                } else { break }
+            }
+            let keep = Set(picked.flatMap { leafOrder(of: units[$0]) })
+            if let shown = keeping(order.filter(keep.contains), in: tree) {
+                return (shown, NarrowTiling(visible: order.filter(keep.contains), switcher: order.filter { !keep.contains($0) }))
+            }
+        }
+        let narrow = narrowPolicy(order: order, active: active, width: 0, narrowBelow: .infinity, maxVisible: fit)
+        return (sideBySide(narrow.visible), narrow)
+    }
+
+    /// The tree's top-level columns in shares by how many panes stand side
+    /// by side in each, their rows kept (display only): a column kept from
+    /// a folded layout is never a sliver.
+    public static func evenColumns(_ tree: Node) -> Node {
+        guard case .hsplit(let w, let h, let x, let y, let children) = canonical(tree), children.count > 1 else { return tree }
+        let total = Double(children.reduce(0) { $0 + columns(of: $1) })
+        let even = children.map { child -> Node in
+            let share = Double(columns(of: child)) / total
+            switch child {
+            case .leaf(let id, _, let ch, let cx, let cy): return .leaf(id: id, w: share, h: ch, x: cx, y: cy)
+            case .hsplit(_, let ch, let cx, let cy, let c): return .hsplit(w: share, h: ch, x: cx, y: cy, children: c)
+            case .vsplit(_, let ch, let cx, let cy, let c): return .vsplit(w: share, h: ch, x: cx, y: cy, children: c)
+            }
+        }
+        return renormalized(.hsplit(w: w, h: h, x: x, y: y, children: even), w: 1, h: 1, x: 0, y: 0)
+    }
+
     /// The panes side by side in equal shares (display only).
     public static func sideBySide(_ ids: [String]) -> Node {
         guard ids.count > 1 else { return single(pane: ids.first ?? "") }

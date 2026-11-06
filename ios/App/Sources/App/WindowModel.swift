@@ -206,6 +206,9 @@ final class WindowModel {
     }
     /// Each workspace's active tile (a session id), kept while the window is open.
     var activeTiles: [String: String] = [:]
+    /// Each workspace's panes that don't fit and wait as tabs in the title
+    /// bar row (TiledWorkspaceView reports them as it lays out).
+    var foldedTiles: [String: [String]] = [:]
     /// Each workspace's tile last used or opened, a document's card included:
     /// what a narrow window keeps in sight.
     var lastTiles: [String: String] = [:]

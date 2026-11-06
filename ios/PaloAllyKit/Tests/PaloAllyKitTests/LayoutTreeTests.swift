@@ -273,6 +273,20 @@ struct LayoutTreeTests {
         #expect(T.fitting(width: 200, minWidth: 340, gap: 8) == 1)
         #expect(T.leafOrder(of: T.sideBySide(["a", "b"])) == ["a", "b"])
         #expect(T.columns(of: T.sideBySide(["a", "b", "c"])) == 3)
+        // Three columns of two rows, room for two: whole columns fold, rows kept.
+        let col = { (a: String, b: String, x: Double) -> T.Node in
+            .vsplit(w: 1.0 / 3, h: 1, x: x, y: 0, children: [.leaf(id: a, w: 1.0 / 3, h: 0.5, x: x, y: 0),
+                                                                .leaf(id: b, w: 1.0 / 3, h: 0.5, x: x, y: 0.5)])
+        }
+        let grid = T.Node.hsplit(w: 1, h: 1, x: 0, y: 0, children: [col("a", "b", 0), col("c", "d", 1.0 / 3), col("e", "f", 2.0 / 3)])
+        let f = T.foldingColumns(grid, active: "f", fit: 2)
+        #expect(f.tiling.visible == ["c", "d", "e", "f"] && f.tiling.switcher == ["a", "b"])
+        #expect(T.columns(of: f.shown) == 2 && T.leafOrder(of: f.shown) == ["c", "d", "e", "f"])
+        let one = T.foldingColumns(grid, active: "a", fit: 1)
+        #expect(one.tiling.visible == ["a", "b"] && T.columns(of: one.shown) == 1)
+        #expect(T.foldingColumns(grid, active: "a", fit: 3).tiling.switcher.isEmpty)
+        let lopsided = T.Node.hsplit(w: 1, h: 1, x: 0, y: 0, children: [.leaf(id: "a", w: 0.2, h: 1, x: 0, y: 0), .leaf(id: "b", w: 0.8, h: 1, x: 0.2, y: 0)])
+        #expect(abs((T.fractions(of: T.evenColumns(lopsided))["a"]?.w ?? 0) - 0.5) < 0.01)
     }
 
     @Test func keepingTrimsForDisplay() {
