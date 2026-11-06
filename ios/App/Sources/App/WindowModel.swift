@@ -233,6 +233,22 @@ final class WindowModel {
     var compactColumn: NavigationSplitViewColumn = .detail
     /// iPads and the Mac: the sidebar shown or put away (the system toggle).
     var columnVisibility: NavigationSplitViewVisibility = .all
+    /// The Mac: the columns are moving in an animation we started (the
+    /// sidebar shown or put away), and what is in them keeps its size until
+    /// it ends (`FreezesWhileResized`).
+    var columnsMoving = false
+    @ObservationIgnored private var columnsMovingRun = 0
+    /// The columns move for about `seconds` from now.
+    func columnsMove(for seconds: Double) {
+        guard Platform.isMac else { return }
+        columnsMovingRun += 1
+        let run = columnsMovingRun
+        columnsMoving = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+            guard let self, run == self.columnsMovingRun else { return }
+            self.columnsMoving = false
+        }
+    }
     /// What's pushed over the conversation (phones: the assistant's
     /// management, 成果, an item opened from the conversation).
     var detailPath = NavigationPath()

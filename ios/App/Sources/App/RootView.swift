@@ -561,8 +561,14 @@ struct MainScreen: View {
         #if DEBUG || PERF_HARNESS
         let _ = PerfProbe.count("MainScreen")
         #endif
-        NavigationSplitView(columnVisibility: $model.columnVisibility, preferredCompactColumn: $model.compactColumn) {
+        NavigationSplitView(columnVisibility: Binding(get: { model.columnVisibility }, set: { v in
+            // The system's own toggle (the toolbar's button) too: what is in
+            // the columns keeps its size while they move.
+            if v != model.columnVisibility { model.columnsMove(for: 0.55) }
+            model.columnVisibility = v
+        }), preferredCompactColumn: $model.compactColumn) {
             ConversationList()
+                .modifier(FreezesWhileResized(model: model, name: "list"))
                 .navigationSplitViewColumnWidth(min: 260, ideal: 310, max: 400)
                 .modifier(InContentNavigationBar())
         } detail: {
@@ -803,6 +809,7 @@ private struct ConversationDetail: View {
         }
         // Beside the sidebar the conversation gets roomier margins.
         .environment(\.placesAsColumns, model.layout != .phone)
+        .modifier(FreezesWhileResized(model: model, name: "detail"))
         // Each window's conversation column as it changes, in the debug log
         // the owner can export (a width gone wrong without a known cause).
         .onGeometryChange(for: Int.self) { Int($0.size.width.rounded()) } action: { width in
@@ -846,6 +853,9 @@ private struct RightPaneHost: ViewModifier {
                 // Presented outside this hierarchy on some platforms: pass what it reads.
                 RightPane(key: key, activeSessionID: model.paneSessionID)
                     .id(key)
+                    // Its edge is at the left: held there by the window's.
+                    .modifier(FreezesWhileResized(model: model, name: "pane", alignment: .topTrailing,
+                                                  ground: Color(.systemGroupedBackground), leadingLine: true))
                     .environment(model)
                     .environment(store)
                     // No real cap: the owner drags it wide for a browser (2026-10-20).
@@ -883,6 +893,134 @@ private struct RightPaneHost: ViewModifier {
         if w > 0 { return w }
         #endif
         return InspectorWidth.remembered ?? 400
+    }
+}
+
+/// The Mac (11-05, the owner: nothing should update while things move): a
+/// column's content keeps the size it had while the column is resized, the
+/// sidebar's or the right pane's edge or the window's dragged (a second new
+/// size within 0.1 s of the last), or the columns move in an animation we
+/// started (`WindowModel.columnsMoving`). Laid out again at every step, a
+/// conversation, the right pane or the list took the frame past its time.
+/// It is held at its corner, clipped at the column's sides (or with the
+/// column's ground beyond it), a little washed out, and once no new size
+/// has come for 0.15 s (or the animation is over) it is laid out once at
+/// the new size and the wash fades.
+struct FreezesWhileResized: ViewModifier {
+    let model: WindowModel
+    /// For the debug log.
+    let name: String
+    var alignment: Alignment = .topLeading
+    /// Beyond the content while it is held smaller than its column, with
+    /// the column's edge drawn as a hairline (the right pane's own is on
+    /// its content, held away from the edge).
+    var ground: Color? = nil
+    var leadingLine = false
+    /// The size it was last laid out at.
+    @State private var size: CGSize = .zero
+    /// What doesn't change what is drawn: the column's size now, when it
+    /// last changed, the latest wait for it to settle.
+    @State private var track = Track()
+    private final class Track {
+        var container: CGSize = .zero
+        var lastChange: CFTimeInterval = 0
+        var run = 0
+    }
+    /// Held at this size since a resize was seen.
+    @State private var held: CGSize?
+
+    /// The size the content is held at now, if any.
+    private var pinned: CGSize? {
+        #if DEBUG
+        if Self.off { return nil }
+        #endif
+        guard Platform.isMac else { return nil }
+        if let held { return held }
+        return model.columnsMoving && size.width > 0 && size.height > 0 ? size : nil
+    }
+
+    #if DEBUG
+    /// `-freezeOff YES`: laid out at every step, as before (to compare).
+    private static let off = UserDefaults.standard.bool(forKey: "freezeOff")
+    #endif
+
+    func body(content: Content) -> some View {
+        let pinned = pinned
+        content
+            .frame(width: pinned?.width, height: pinned?.height, alignment: alignment)
+            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: alignment)
+            .clipShape(SidesClip(active: pinned != nil))
+            .background {
+                if let ground { ground.ignoresSafeArea() }
+            }
+            .overlay(alignment: .leading) {
+                if leadingLine {
+                    Rectangle().fill(Color(.separator)).frame(width: 1)
+                        .opacity(pinned == nil ? 0 : 1)
+                        .ignoresSafeArea()
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay {
+                Color(.systemBackground)
+                    .opacity(pinned == nil ? 0 : 0.3)
+                    .animation(.easeInOut(duration: pinned == nil ? 0.2 : 0.18), value: pinned == nil)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+            }
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { new in resized(to: new) }
+            .onChange(of: model.columnsMoving) { _, moving in
+                guard Platform.isMac else { return }
+                if moving {
+                    debugLog("[freeze] \(name) held at \(Int(size.width))x\(Int(size.height)) while the columns move")
+                } else {
+                    size = track.container
+                    debugLog("[freeze] \(name) laid out at \(Int(track.container.width))x\(Int(track.container.height))")
+                }
+            }
+    }
+
+    private func resized(to new: CGSize) {
+        track.container = new
+        guard Platform.isMac else { size = new; return }
+        #if DEBUG
+        if Self.off { size = new; return }
+        #endif
+        let now = CACurrentMediaTime()
+        defer { track.lastChange = now }
+        if model.columnsMoving, size.width > 0, size.height > 0 {
+            #if DEBUG || PERF_HARNESS
+            PerfProbe.count("held \(name)")
+            #endif
+            return
+        }
+        if held == nil {
+            guard now - track.lastChange < 0.1, size.width > 0, size.height > 0 else { size = new; return }
+            // The second step of a resize: held at the size it has now.
+            held = new
+            size = new
+            debugLog("[freeze] \(name) held at \(Int(new.width))x\(Int(new.height))")
+        }
+        #if DEBUG || PERF_HARNESS
+        PerfProbe.count("held \(name)")
+        #endif
+        track.run += 1
+        let mine = track.run
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [track] in
+            guard mine == track.run, held != nil else { return }
+            held = nil
+            size = track.container
+            debugLog("[freeze] \(name) laid out at \(Int(track.container.width))x\(Int(track.container.height))")
+        }
+    }
+}
+
+/// Clips at the sides only, and only while held: what is drawn under the
+/// title bar (above the column's safe area) stays.
+private struct SidesClip: Shape {
+    let active: Bool
+    func path(in rect: CGRect) -> Path {
+        Path(active ? rect.insetBy(dx: 0, dy: -10_000) : rect.insetBy(dx: -10_000, dy: -10_000))
     }
 }
 

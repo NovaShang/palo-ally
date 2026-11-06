@@ -7,6 +7,9 @@ extension WindowModel {
     /// the capsule's button all come here.
     func toggleSidebar() {
         debugLog("[sidebar] \(columnVisibility == .detailOnly ? "shown" : "put away") in \(traceName)")
+        // The split view's own animation is half a second; nothing in the
+        // columns is laid out again until it is over.
+        columnsMove(for: 0.55)
         withAnimation(.snappy) {
             columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
         }
