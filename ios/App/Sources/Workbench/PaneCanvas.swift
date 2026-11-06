@@ -40,7 +40,14 @@ final class PaneCanvasController: UIViewController {
     private var dividerBase: LayoutTree.Node?
     private var liveTree: LayoutTree.Node?
     private let grabLine = UIView()
-    private let ghosts = CAShapeLayer()
+    /// The preview of the new layout over the panes: the desk, and each pane
+    /// a card showing a picture of its content taken as the drag began.
+    private let preview = UIView()
+    private var previewCards: [String: PreviewCard] = [:]
+    private var previewDivider: String?
+    /// Bumped by each drag: an earlier one's fade ending late leaves this
+    /// one's preview alone.
+    private var previewGeneration = 0
     // While a pane is dragged by its header.
     private var dragged: String?
     private var capsule: UIView?
@@ -83,8 +90,9 @@ final class PaneCanvasController: UIViewController {
         // rounded handle in its gutter, the swap target a lifted card, a
         // split's half a soft block concentric with the card.
         grabLine.layer.cornerRadius = 2
-        ghosts.lineWidth = 1
-        ghosts.isHidden = true
+        preview.isHidden = true
+        preview.alpha = 0
+        preview.isUserInteractionEnabled = false
         lift.isHidden = true
         lift.isUserInteractionEnabled = false
         lift.layer.cornerRadius = Self.cardRadius
@@ -173,7 +181,7 @@ final class PaneCanvasController: UIViewController {
             dividers[id] = d
         }
         // Over the panes: the drag's pieces.
-        view.layer.addSublayer(ghosts)
+        view.addSubview(preview)
         // Over the preview of the new layout.
         view.addSubview(grabLine)
         view.addSubview(lift)
@@ -186,15 +194,7 @@ final class PaneCanvasController: UIViewController {
         // A divider dragged: a clean preview of the new layout over the
         // panes, the desk with the cards where they will be (the panes'
         // content under it, overlaid with outlines, looked muddled).
-        let traits = view.traitCollection
-        let dark = traits.userInterfaceStyle == .dark
-        ghosts.backgroundColor = Self.backdrop.resolvedColor(with: traits).cgColor
-        ghosts.fillColor = UIColor.systemBackground.resolvedColor(with: traits).cgColor
-        ghosts.strokeColor = (dark ? UIColor(white: 1, alpha: 0.10) : UIColor(white: 0, alpha: 0.07)).cgColor
-        ghosts.shadowColor = UIColor.black.cgColor
-        ghosts.shadowOpacity = dark ? 0 : 0.10
-        ghosts.shadowRadius = 4
-        ghosts.shadowOffset = CGSize(width: 0, height: 1)
+        preview.backgroundColor = Self.backdrop
         lift.layer.borderColor = accent.withAlphaComponent(0.45).cgColor
         edge.layer.borderColor = accent.withAlphaComponent(0.4).cgColor
         edge.backgroundColor = accent.withAlphaComponent(0.12)
@@ -312,47 +312,140 @@ final class PaneCanvasController: UIViewController {
         }
     }
 
-    /// The divider `id` is `travel` points from where it was: a line and
-    /// outlines of the new sizes follow; the panes stay.
+    /// The divider `id` is `travel` points from where it was: the handle
+    /// and the cards of the new sizes follow; the panes stay, under them.
     private func moveDivider(_ id: String, by travel: CGFloat) {
         guard let tree else { return }
         if dividerBase == nil {
             dividerBase = tree
             applyAccent() // the layers' colors, for the appearance now
+            beginPreview(divider: id)
         }
         guard let base = dividerBase, let d = LayoutTree.dividers(of: base).first(where: { $0.id == id }) else { return }
         let across = d.vertical ? lastSize.width : lastSize.height
         let next = LayoutTree.movingDivider(path: d.path, index: d.index, by: Double(travel / max(across, 1)), in: base)
         liveTree = next
         dividers[id]?.dragging = true
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        if let moved = LayoutTree.dividers(of: next).first(where: { $0.id == id }) {
-            grabLine.frame = DividerView.handleRect(in: DividerView.lineRect(moved, in: lastSize, thickness: 4), vertical: moved.vertical)
-            grabLine.isHidden = false
-        }
-        let path = UIBezierPath()
-        for r in Self.paneFrames(of: next, in: lastSize).values {
-            path.append(UIBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), cornerRadius: Self.cardRadius))
-        }
-        ghosts.frame = view.bounds
-        ghosts.path = path.cgPath
-        ghosts.isHidden = false
-        CATransaction.commit()
+        placePreview(next)
     }
 
     private func endDivider(commit: Bool) {
         let final = liveTree
+        let base = dividerBase
         dividerBase = nil
         liveTree = nil
-        grabLine.isHidden = true
-        ghosts.isHidden = true
         for d in dividers.values { d.dragging = false }
-        guard commit, let final else { return }
-        // Shown at once; the page keeps it on the computer.
-        tree = final
-        layoutCanvas()
-        onLayoutChange(final)
+        if commit, let final {
+            // Shown at once, under the preview: the panes take their new
+            // sizes while the cards hide them; the page keeps it on the
+            // computer.
+            tree = final
+            layoutCanvas()
+            onLayoutChange(final)
+            endPreview(at: final)
+        } else {
+            // Let go nowhere: the cards go back where they were.
+            endPreview(at: base)
+        }
+    }
+
+    // MARK: - the preview of a new layout
+
+    /// A divider's drag begins (11-05, the owner: the panes' content all
+    /// vanishing at once was abrupt): each pane pictured once, on a card
+    /// where it is, the preview fading in over the panes. No SwiftUI work
+    /// while it moves: the cards are plain views.
+    private func beginPreview(divider id: String) {
+        previewGeneration += 1
+        previewDivider = id
+        for card in previewCards.values { card.removeFromSuperview() }
+        previewCards = [:]
+        #if DEBUG
+        let began = Date()
+        #endif
+        for (pid, pane) in panes {
+            let card = PreviewCard(picture: Self.picture(of: pane.content), size: pane.bounds.size)
+            UIView.performWithoutAnimation {
+                card.frame = pane.frame
+                card.layoutIfNeeded()
+            }
+            preview.addSubview(card)
+            previewCards[pid] = card
+        }
+        #if DEBUG
+        debugLog("[canvas] preview pictured \(panes.count) panes in \(Int(Date().timeIntervalSince(began) * 1000)) ms")
+        #endif
+        UIView.performWithoutAnimation {
+            preview.frame = view.bounds
+            preview.isHidden = false
+            if let tree, let handle = handleRect(divider: id, in: tree) { grabLine.frame = handle }
+            if grabLine.isHidden { grabLine.alpha = 0 }
+            grabLine.isHidden = false
+        }
+        UIView.animate(withDuration: 0.18, delay: 0, options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction]) {
+            self.preview.alpha = 1
+            self.grabLine.alpha = 1
+        }
+    }
+
+    /// The handle of the divider `id` in `tree`, in the canvas.
+    private func handleRect(divider id: String, in tree: LayoutTree.Node) -> CGRect? {
+        guard let d = LayoutTree.dividers(of: tree).first(where: { $0.id == id }) else { return nil }
+        return DividerView.handleRect(in: DividerView.lineRect(d, in: lastSize, thickness: 4), vertical: d.vertical)
+    }
+
+    /// The cards and the handle glide to where `tree` puts them (with
+    /// Reduce Motion they are just there).
+    private func placePreview(_ tree: LayoutTree.Node, completion: ((Bool) -> Void)? = nil) {
+        let grid = pixelGrid
+        let frames = Self.paneFrames(of: tree, in: lastSize, scale: grid.scale, origin: grid.origin)
+        let handle = previewDivider.flatMap { handleRect(divider: $0, in: tree) }
+        let place = {
+            for (id, card) in self.previewCards {
+                guard let r = frames[id], card.frame != r else { continue }
+                card.frame = r
+                card.layoutIfNeeded()
+            }
+            if let handle { self.grabLine.frame = handle }
+        }
+        if UIAccessibility.isReduceMotionEnabled {
+            UIView.performWithoutAnimation(place)
+            completion?(true)
+        } else {
+            UIView.animate(withDuration: 0.16, delay: 0, options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction],
+                           animations: place, completion: completion)
+        }
+    }
+
+    /// Let go: the cards settle where `tree` puts them, then the panes'
+    /// own content fades back in (nil: it fades at once).
+    private func endPreview(at tree: LayoutTree.Node?) {
+        let generation = previewGeneration
+        let fade = { [weak self] in
+            guard let self, generation == self.previewGeneration else { return }
+            UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction], animations: {
+                self.preview.alpha = 0
+                self.grabLine.alpha = 0
+            }, completion: { _ in
+                guard generation == self.previewGeneration else { return }
+                self.preview.isHidden = true
+                self.grabLine.isHidden = true
+                for card in self.previewCards.values { card.removeFromSuperview() }
+                self.previewCards = [:]
+                self.previewDivider = nil
+            })
+        }
+        guard let tree else { fade(); return }
+        placePreview(tree) { _ in fade() }
+    }
+
+    /// A picture of a pane's content as it is on screen now, once per drag
+    /// (nil: none could be taken, and its card stays blank).
+    private static func picture(of content: UIView) -> UIView? {
+        guard content.window != nil, content.bounds.width > 0, content.bounds.height > 0 else { return nil }
+        // A snapshot view (2 to 4 ms a pane on the Mac, against 8 to 28
+        // for drawing it into an image), scaled as the card is.
+        return content.snapshotView(afterScreenUpdates: false)
     }
 
     // MARK: - dragging a pane by its header
@@ -652,8 +745,9 @@ extension PaneCanvasController {
     /// the owner's permission):
     /// `click:<id>` a click in a pane; `next` ⌘⌥→; `hover` the first divider lit;
     /// `divider:<dx>` the first divider dragged that far and held, `divider-end`
-    /// let go; `drag:<id>:<target>:<center|left|right|top|bottom>` a pane
-    /// dragged by its header and held over the target, `drag-end` dropped.
+    /// let go, `divider-cancel` the drag cancelled;
+    /// `drag:<id>:<target>:<center|left|right|top|bottom>` a pane dragged by
+    /// its header and held over the target, `drag-end` dropped.
     func demo(_ step: String) {
         let parts = step.split(separator: ":").map(String.init)
         guard let tree else { return }
@@ -681,6 +775,9 @@ extension PaneCanvasController {
         case "divider-end":
             dividers.values.forEach { $0.demoHover(false) }
             endDivider(commit: true)
+        case "divider-cancel":
+            dividers.values.forEach { $0.demoHover(false) }
+            endDivider(commit: false)
         case "drag":
             guard parts.count > 3, let pane = panes[parts[1]], let target = frames[parts[2]],
                   let source = frames[parts[1]] else { return }
@@ -754,6 +851,67 @@ enum TileDrop {
 
 /// The canvas's view (named for the view debugger).
 private final class CanvasView: UIView {}
+
+/// A pane in the preview of a new layout: a card of the panes' shape and
+/// edge showing the picture of the pane taken as the drag began, filling it
+/// from its top leading corner (the name stays in view), a little washed
+/// out: a preview, not the pane. Without a picture, a blank card.
+private final class PreviewCard: UIView {
+    private let clip = UIView()
+    private let picture: UIView?
+    /// The pane's size when it was pictured.
+    private let natural: CGSize
+    private let wash = UIView()
+
+    init(picture: UIView?, size: CGSize) {
+        self.picture = picture
+        natural = size
+        super.init(frame: CGRect(origin: .zero, size: size))
+        isUserInteractionEnabled = false
+        let r = PaneCanvasController.cardRadius
+        backgroundColor = .systemBackground
+        layer.cornerRadius = r
+        layer.cornerCurve = .continuous
+        layer.shadowOffset = CGSize(width: 0, height: 1)
+        clip.layer.cornerRadius = r
+        clip.layer.cornerCurve = .continuous
+        clip.clipsToBounds = true
+        addSubview(clip)
+        if let picture { clip.addSubview(picture) }
+        wash.backgroundColor = PaneCanvasController.backdrop.withAlphaComponent(0.35)
+        clip.addSubview(wash)
+        styleCard()
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        clip.frame = bounds
+        wash.frame = bounds
+        guard let picture, natural.width > 0, natural.height > 0 else { return }
+        // Filling the card (aspect fill), pinned to its top leading corner.
+        let s = max(bounds.width / natural.width, bounds.height / natural.height)
+        picture.bounds = CGRect(origin: .zero, size: natural)
+        picture.transform = CGAffineTransform(scaleX: s, y: s)
+        picture.center = CGPoint(x: natural.width * s / 2, y: natural.height * s / 2)
+    }
+
+    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
+        super.traitCollectionDidChange(previous)
+        styleCard()
+    }
+
+    /// As `PaneContainerView` draws its card.
+    private func styleCard() {
+        let dark = traitCollection.userInterfaceStyle == .dark
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = dark ? 0 : 0.10
+        layer.shadowRadius = dark ? 0 : 4
+        layer.borderWidth = 1 / max(traitCollection.displayScale, 1)
+        layer.borderColor = (dark ? UIColor(white: 1, alpha: 0.10) : UIColor(white: 0, alpha: 0.07)).cgColor
+    }
+}
 
 /// One pane: its hosting view, and over its header the band it is dragged by.
 final class PaneContainerView: UIView {
