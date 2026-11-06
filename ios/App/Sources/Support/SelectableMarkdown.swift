@@ -200,7 +200,11 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         view.registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (v: MarkdownTextView, _) in
             v.lastSource = nil
             v.measured.removeAll()
-            v.render(source: v.pendingSource, streaming: v.lastStreaming, linkColor: v.lastLinkColor ?? .link)
+            if let cell = v.cell {
+                v.renderCell(v.pendingSource, header: cell.header, alignment: cell.alignment, linkColor: v.lastLinkColor ?? .link)
+            } else {
+                v.render(source: v.pendingSource, streaming: v.lastStreaming, linkColor: v.lastLinkColor ?? .link)
+            }
             v.askForHeight()
         }
         return view
@@ -499,7 +503,42 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
     /// paragraph; copied text gets ordinary newlines back.
     override func copy(_ sender: Any?) {
         guard let range = selectedTextRange, let text = text(in: range) else { return super.copy(sender) }
+        #if DEBUG
+        // `-copyDryRun YES` (tests): said in the log, the clipboard left as it is.
+        if UserDefaults.standard.bool(forKey: "copyDryRun") {
+            debugLog("[copy] ⌘C (dry run): \(text.count) characters from \(cell == nil ? "a reply" : "a table cell"): \(text.prefix(60))")
+            return
+        }
+        #endif
         UIPasteboard.general.string = text.replacingOccurrences(of: "\u{2028}", with: "\n")
+    }
+
+    // MARK: a table's cell
+
+    /// Set when this is a table cell's text (MarkdownTableView): how it's drawn.
+    private(set) var cell: (header: Bool, alignment: NSTextAlignment)?
+    /// More for the selection menu (a table cell's 「复制表格」).
+    var moreMenu: [UIMenuElement] = []
+
+    /// A table cell's text: one paragraph of inline Markdown in the table's
+    /// type, selectable and with its paths linked like the prose around it.
+    func renderCell(_ text: String, header: Bool, alignment: NSTextAlignment, linkColor: UIColor) {
+        let key = "\(header ? "h" : "c")\(alignment.rawValue)|\(text)"
+        pendingSource = text
+        guard key != lastSource || !Self.sameColor(linkColor, lastLinkColor) else { return }
+        cell = (header, alignment)
+        lastSource = key
+        lastStreaming = false
+        lastLinkColor = linkColor
+        measured.removeAll()
+        attributedText = MarkdownRenderer.cell(text, header: header, alignment: alignment)
+        linkTextAttributes = [.foregroundColor: linkColor]
+        if textContainerInset != .zero { textContainerInset = .zero }
+        settleSelectable()
+        applyFileLinks()
+        renderVersion += 1
+        invalidateIntrinsicContentSize()
+        setNeedsLayout()
     }
 
     /// A `paloally:` link (a pairing link, an Ally's invite) opens here, as
@@ -551,6 +590,7 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
                 textView.selectedTextRange = nil
             })
         }
+        items += moreMenu
         guard !items.isEmpty else { return nil }
         items += suggestedActions
         return items.isEmpty ? nil : UIMenu(children: items)
@@ -804,6 +844,15 @@ enum MarkdownRenderer {
         s.paragraphSpacingBefore = before
         s.paragraphSpacing = after
         return s
+    }
+
+    /// A table cell's text (MarkdownTableView): inline Markdown in the table's type.
+    static func cell(_ text: String, header: Bool, alignment: NSTextAlignment) -> NSAttributedString {
+        let base = UIFont.preferredFont(forTextStyle: .subheadline)
+        let font = header ? UIFont.systemFont(ofSize: base.pointSize, weight: .semibold) : base
+        let style = NSMutableParagraphStyle()
+        style.alignment = alignment
+        return inline(text, font: font, style: style)
     }
 
     /// Inline markdown (bold, italic, `code`, ~~strike~~, links) via Foundation.

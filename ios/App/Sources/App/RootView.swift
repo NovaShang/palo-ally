@@ -319,6 +319,28 @@ private struct LayoutStressTest: ViewModifier {
                                 queue.append(contentsOf: v.subviews)
                             }
                         }
+                    // `selecttext:字`: those words selected in the reply's text (a table's cell too) that has them,
+                    // as a drag over them would; with `copy` after, what ⌘C copies goes to the log (`-copyDryRun`).
+                    case _ where a.hasPrefix("selecttext:"):
+                        let words = String(a.dropFirst(11))
+                        func find(_ v: UIView) -> MarkdownTextView? {
+                            if let t = v as? MarkdownTextView, (t.text as NSString).range(of: words).location != NSNotFound { return t }
+                            // A table cell not used yet: its text view, as the pointer over it brings.
+                            if let cell = v as? TableCellView, cell.text.contains(words) { return cell.goLive() }
+                            for s in v.subviews { if let t = find(s) { return t } }
+                            return nil
+                        }
+                        if let win = w.scene?.windows.first, let t = find(win) {
+                            _ = t.becomeFirstResponder()
+                            t.selectedRange = (t.text as NSString).range(of: words)
+                            debugLog("[nav] selected \(t.selectedRange.length) characters in \(t.cell == nil ? "a reply's text" : "a table cell"), first responder \(t.isFirstResponder)")
+                        } else {
+                            debugLog("[nav] selecttext: no text with \(words)")
+                        }
+                    // `copymenu`: 编辑 → 拷贝, sent along the responder chain as the menu does.
+                    case "copymenu":
+                        let sent = UIApplication.shared.sendAction(#selector(UIResponderStandardEditActions.copy(_:)), to: nil, from: nil, for: nil)
+                        debugLog("[nav] copy sent along the responder chain: \(sent ? "taken" : "nobody took it")")
                     // `fileedit`: 编辑 / 预览 in the file tab shown (⌘E); `filesave`: its 保存 (⌘S).
                     // `fileopen:/abs/path`: that file picked from the path at the editor's top.
                     case "fileedit", "filesave", _ where a.hasPrefix("fileopen:"): NotificationCenter.default.post(name: .demoFileEdit, object: a)

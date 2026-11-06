@@ -26,7 +26,7 @@ struct ReplyMarkdown: View {
                         // The streaming cursor belongs at the very end only.
                         SelectableMarkdown(source: text, streaming: streaming && i == segments.count - 1, onQuote: onQuote)
                     case .table(let table):
-                        MarkdownTableView(table: table, trailingRoom: trailingRoom)
+                        MarkdownTableView(table: table, trailingRoom: trailingRoom, onQuote: onQuote)
                     }
                 }
             }
@@ -40,6 +40,8 @@ struct ReplyMarkdown: View {
 struct MarkdownTableView: View {
     let table: MarkdownTable
     var trailingRoom: CGFloat = 0
+    /// 「引用回复」 in a cell's selection menu.
+    var onQuote: ((String) -> Void)? = nil
     @Environment(\.messageGutter) private var gutter
     @Environment(\.displayScale) private var displayScale
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -103,12 +105,12 @@ struct MarkdownTableView: View {
         sizes.combine(displayScale)
         return TableGrid(columns: n, sizes: sizes.finalize()) {
             if let header = table.header {
-                TableRowCells(cells: header, alignments: table.alignments, header: true)
+                TableRowCells(cells: header, alignments: table.alignments, header: true, source: table.source, onQuote: onQuote)
                 rule(strong: true)
             }
             let rows = showAll ? table.rows : Array(table.rows.prefix(Self.rowLimit))
             ForEach(Array(rows.enumerated()), id: \.offset) { r, row in
-                TableRowCells(cells: row, alignments: table.alignments, header: false)
+                TableRowCells(cells: row, alignments: table.alignments, header: false, source: table.source, onQuote: onQuote)
                 if r < rows.count - 1 { rule(strong: false) }
             }
         }
@@ -133,18 +135,6 @@ struct MarkdownTableView: View {
         }
         .animation(.easeOut(duration: 0.2), value: hidden)
     }
-
-    /// Bold, italic, `code` and links inside a cell; each cell's text parsed
-    /// once (a table being written gets a row at a time, the rest unchanged).
-    static func inline(_ text: String) -> AttributedString {
-        if let parsed = inlineCache[text] { return parsed }
-        let parsed = (try? AttributedString(markdown: BareLinks.marking(in: text), options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(text)
-        if inlineCache.count >= 2000 { inlineCache.removeAll(keepingCapacity: true) }
-        inlineCache[text] = parsed
-        return parsed
-    }
-    private static var inlineCache: [String: AttributedString] = [:]
 }
 
 /// One row's cells, laid out by the grid. Its own view, so a row that
@@ -153,18 +143,243 @@ private struct TableRowCells: View {
     let cells: [String]
     let alignments: [MarkdownTable.Alignment]
     let header: Bool
+    let source: String
+    let onQuote: ((String) -> Void)?
 
     var body: some View {
         ForEach(cells.indices, id: \.self) { c in
             let align = alignments[c]
-            Text(MarkdownTableView.inline(cells[c]))
-                .font(header ? .subheadline.weight(.semibold) : .subheadline)
-                .multilineTextAlignment(align == .center ? .center : align == .trailing ? .trailing : .leading)
+            CellText(text: cells[c], header: header,
+                     alignment: align == .center ? .center : align == .trailing ? .right : .left,
+                     source: source, onQuote: onQuote)
                 .padding(.vertical, 7)
                 .padding(.leading, c == 0 ? 0 : 10)
                 .padding(.trailing, c == cells.count - 1 ? 0 : 10)
                 .frame(maxWidth: .infinity, alignment: align == .center ? .center : align == .trailing ? .trailing : .leading)
         }
+    }
+}
+
+/// A cell's text, selected and copied as the prose around it is (a drag, a
+/// double click, ⌘C, the selection menu with 引用回复 and 复制表格), its
+/// paths links to the files on the computer, found the same way (FileLinks).
+/// As wide as its text on one line when asked for its own size (the grid's
+/// column widths), wrapping at the width it's given.
+private struct CellText: UIViewRepresentable {
+    let text: String
+    let header: Bool
+    let alignment: NSTextAlignment
+    /// The table as written, for 复制表格.
+    let source: String
+    let onQuote: ((String) -> Void)?
+    @Environment(\.appTheme) private var theme
+    @Environment(\.wholeReply) private var wholeReply
+    @Environment(\.fileLinks) private var fileLinks
+
+    func makeUIView(context: Context) -> TableCellView {
+        let view = TableCellView()
+        update(view)
+        return view
+    }
+
+    func updateUIView(_ view: TableCellView, context: Context) {
+        update(view)
+    }
+
+    private func update(_ view: TableCellView) {
+        view.onQuote = onQuote
+        view.wholeReply = wholeReply
+        view.table = source
+        view.show(text, header: header, alignment: alignment, linkColor: theme.uiColor, links: fileLinks)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: TableCellView, context: Context) -> CGSize? {
+        guard let width = proposal.width, width.isFinite else {
+            let fit = uiView.fittingSize(width: 10_000)
+            return CGSize(width: ceil(fit.width), height: ceil(fit.height))
+        }
+        guard width > 0 else { return nil }
+        return CGSize(width: width, height: ceil(uiView.fittingSize(width: width).height))
+    }
+}
+
+/// A table cell's text. Drawn by TextKit as the reply's text view lays it
+/// out (the same storage, container and fonts) until it's used: the pointer
+/// over it, or a long press, puts the reply's own text view
+/// (`MarkdownTextView`) in its place, laid out the same to the point, for
+/// selecting and copying. A text view for every cell from the start cost a
+/// table of 40 rows about half a second (most of it the text views'
+/// selection gestures being set up), for the few cells ever selected. A
+/// click on a link before then (a touch, no pointer) opens it here.
+final class TableCellView: UIView {
+    var onQuote: ((String) -> Void)? { didSet { live?.onQuote = onQuote } }
+    var wholeReply: WholeReplyActions? { didSet { live?.wholeReply = wholeReply } }
+    /// The table as written, for 复制表格.
+    var table = ""
+
+    private let storage = NSTextStorage()
+    private let layout = NSLayoutManager()
+    private let container = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+    private var shown: (text: String, header: Bool, alignment: NSTextAlignment)?
+    private var linkColor: UIColor = .link
+    private var links: FileLinkContext?
+    private var measured: [CGFloat: CGSize] = [:]
+    /// The text view in use, once the cell has been.
+    private var live: MarkdownTextView?
+    /// The cell's own tap and long press, until the text view takes over.
+    private var gestures: [UIGestureRecognizer] = []
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        storage.addLayoutManager(layout)
+        container.lineFragmentPadding = 0
+        layout.addTextContainer(container)
+        backgroundColor = .clear
+        isOpaque = false
+        contentMode = .redraw
+        gestures = [UITapGestureRecognizer(target: self, action: #selector(tapped(_:))),
+                    UILongPressGestureRecognizer(target: self, action: #selector(pressed(_:)))]
+        for g in gestures { addGestureRecognizer(g) }
+        addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(hovered(_:))))
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (v: TableCellView, _) in
+            guard let s = v.shown else { return }
+            v.shown = nil
+            v.show(s.text, header: s.header, alignment: s.alignment, linkColor: v.linkColor, links: v.links)
+            v.invalidateIntrinsicContentSize()
+        }
+        // Drawn again in the colors of the new appearance.
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (v: TableCellView, _) in v.setNeedsDisplay() }
+    }
+
+    required init?(coder: NSCoder) { fatalError("not from a coder") }
+
+    func show(_ text: String, header: Bool, alignment: NSTextAlignment, linkColor: UIColor, links: FileLinkContext?) {
+        let same = shown.map { $0.text == text && $0.header == header && $0.alignment == alignment } == true
+        let newLinks = links != self.links
+        self.links = links
+        // Dynamic colors compare by what they look like.
+        let sameColor = linkColor.resolvedColor(with: traitCollection) == self.linkColor.resolvedColor(with: traitCollection)
+        guard !same || !sameColor else {
+            if newLinks {
+                linkFiles()
+                live?.fileLinks = links
+                setNeedsDisplay()
+            }
+            return
+        }
+        shown = (text, header, alignment)
+        self.linkColor = linkColor
+        measured.removeAll()
+        storage.setAttributedString(MarkdownRenderer.cell(text, header: header, alignment: alignment))
+        linkFiles()
+        live?.fileLinks = links
+        live?.renderCell(text, header: header, alignment: alignment, linkColor: linkColor)
+        setNeedsDisplay()
+    }
+
+    /// The paths that are files become links, drawn in the link color (the
+    /// text view draws its links so itself); again once the computer answers.
+    private func linkFiles() {
+        if let links {
+            FileLinks.apply(links, to: storage) { [weak self] in
+                guard let self, self.live == nil else { return }
+                self.linkFiles()
+                self.setNeedsDisplay()
+            }
+        }
+        let all = NSRange(location: 0, length: storage.length)
+        storage.enumerateAttribute(.link, in: all) { value, range, _ in
+            if value != nil { storage.addAttribute(.foregroundColor, value: linkColor, range: range) }
+        }
+    }
+
+    /// As MarkdownTextView measures: TextKit at that width, the used rect.
+    func fittingSize(width: CGFloat) -> CGSize {
+        let exact = (width * 2).rounded(.down) / 2
+        if let hit = measured[exact] { return hit }
+        container.size = CGSize(width: exact, height: .greatestFiniteMagnitude)
+        layout.ensureLayout(for: container)
+        let used = layout.usedRect(for: container)
+        let fit = CGSize(width: ceil(used.width), height: ceil(used.height))
+        if measured.count > 8 { measured.removeAll() }
+        measured[exact] = fit
+        return fit
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let exact = (bounds.width * 2).rounded(.down) / 2
+        if container.size.width != exact {
+            container.size = CGSize(width: exact, height: .greatestFiniteMagnitude)
+            setNeedsDisplay()
+        }
+        if let live, live.frame != bounds { live.frame = bounds }
+    }
+
+    override func draw(_ rect: CGRect) {
+        guard live == nil, storage.length > 0 else { return }
+        let glyphs = layout.glyphRange(for: container)
+        layout.drawBackground(forGlyphRange: glyphs, at: .zero)
+        layout.drawGlyphs(forGlyphRange: glyphs, at: .zero)
+    }
+
+    /// The reply's text view in the cell's place, the same text in it.
+    /// The cell's text, as written.
+    var text: String { shown?.text ?? "" }
+
+    @discardableResult
+    func goLive() -> MarkdownTextView? {
+        if let live { return live }
+        guard let shown else { return nil }
+        #if DEBUG
+        debugLog("[table] cell in use: \(shown.text.prefix(30))")
+        #endif
+        let view = MarkdownTextView.make()
+        view.onQuote = onQuote
+        view.wholeReply = wholeReply
+        view.fileLinks = links
+        let table = table
+        view.moreMenu = [UIAction(title: String(localized: "复制表格"), image: UIImage(systemName: "doc.on.doc")) { _ in
+            UIPasteboard.general.string = table
+        }]
+        view.renderCell(shown.text, header: shown.header, alignment: shown.alignment, linkColor: linkColor)
+        view.frame = bounds
+        addSubview(view)
+        live = view
+        // Its own taps, presses and links from now on.
+        for g in gestures { removeGestureRecognizer(g) }
+        gestures = []
+        setNeedsDisplay()
+        return view
+    }
+
+    @objc private func hovered(_ g: UIHoverGestureRecognizer) {
+        if g.state == .began { goLive() }
+    }
+
+    /// A long press (a touch): the word under it selected, as in the prose.
+    @objc private func pressed(_ g: UILongPressGestureRecognizer) {
+        guard g.state == .began, live == nil, let view = goLive() else { return }
+        view.applySelectable()
+        let p = g.location(in: view)
+        guard let at = view.closestPosition(to: p),
+              let word = view.tokenizer.rangeEnclosingPosition(at, with: .word, inDirection: .storage(.forward)) else { return }
+        _ = view.becomeFirstResponder()
+        view.selectedTextRange = word
+    }
+
+    /// A link clicked before the text view is here.
+    @objc private func tapped(_ g: UITapGestureRecognizer) {
+        guard live == nil, storage.length > 0 else { return }
+        let p = g.location(in: self)
+        var fraction: CGFloat = 0
+        let i = layout.characterIndex(for: p, in: container, fractionOfDistanceBetweenInsertionPoints: &fraction)
+        guard i < storage.length else { return }
+        let glyph = layout.glyphIndexForCharacter(at: i)
+        guard layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container).insetBy(dx: -2, dy: -2).contains(p),
+              let value = storage.attribute(.link, at: i, effectiveRange: nil),
+              let url = (value as? URL) ?? (value as? String).flatMap(URL.init(string:)) else { return }
+        FileLinks.open(url)
     }
 }
 

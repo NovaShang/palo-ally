@@ -146,7 +146,7 @@ private struct ReplyBody: View {
                 case .live:
                     LivePiece(model: model, onQuote: onQuote)
                 case .table(let table):
-                    MarkdownTableView(table: table, trailingRoom: trailingRoom)
+                    MarkdownTableView(table: table, trailingRoom: trailingRoom, onQuote: onQuote)
                 }
             }
         }

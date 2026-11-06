@@ -129,30 +129,32 @@ enum FileLinks {
 
     /// What a tapped file link does: the file, over the conversation.
     @MainActor static func action(for url: URL) -> UIAction? {
+        guard let open = opener(url) else { return nil }
+        return UIAction { _ in open() }
+    }
+
+    @MainActor private static func opener(_ url: URL) -> (() -> Void)? {
         guard isFileLink(url), let c = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
         let q = Dictionary((c.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { a, _ in a })
         guard let kind = FileScope.Kind(rawValue: q["k"] ?? ""), let path = q["p"], !path.isEmpty,
               let store = FileLinkResolver.find(q["r"] ?? "")?.store else { return nil }
         let target = FileTarget(scope: FileScope(kind: kind, id: q["i"]), path: path, absolute: q["a"].flatMap { $0.hasPrefix("/") ? $0 : nil })
-        #if DEBUG
-        debugLog("[filelinks] open \(kind.rawValue) \(path)")
-        #endif
-        return UIAction { _ in FilePagePresenter.present(target, store: store) }
+        return {
+            #if DEBUG
+            debugLog("[filelinks] open \(kind.rawValue) \(path)")
+            #endif
+            FilePagePresenter.present(target, store: store)
+        }
     }
-}
 
-extension MarkdownTextView {
-    /// Links the paths in the text that are files on the computer. Runs after
-    /// every render (attributes only: the layout doesn't change), and again
-    /// once the computer has answered about paths it hadn't seen. What's
-    /// looked at: the text, its code spans (a path with spaces is whole in
-    /// one) and its Markdown links to a path (Claude Code's
+    /// Links the paths in `storage` that are files on the computer
+    /// (attributes only: the layout doesn't change); `again` runs once the
+    /// computer has answered about paths it hadn't seen. What's looked at:
+    /// the text, its code spans (a path with spaces is whole in one) and its
+    /// Markdown links to a path (Claude Code's
     /// `[ListPage.tsx:12](src/pages/ListPage.tsx#L12)`), which become file
     /// links when the computer has the file. Web links stay as they are.
-    func applyFileLinks() {
-        // Nothing while a reply is being written: links work once it's finished.
-        guard let ctx = fileLinks, !isWriting else { return }
-        let storage = textStorage
+    @MainActor static func apply(_ ctx: FileLinkContext, to storage: NSTextStorage, again: @escaping () -> Void) {
         guard storage.length > 0, storage.length < 200_000 else { return }
         let all = NSRange(location: 0, length: storage.length)
         var code: [NSRange] = []
@@ -194,7 +196,32 @@ extension MarkdownTextView {
             storage.endEditing()
         }
         if !unknown.isEmpty {
-            ctx.resolver.resolve(ctx.scope, unknown) { [weak self] in self?.applyFileLinks() }
+            ctx.resolver.resolve(ctx.scope, unknown, then: again)
         }
+    }
+
+    /// A link clicked where there's no text view to take it (a table cell
+    /// not used yet): as the reply's text view does with one.
+    @MainActor static func open(_ url: URL) {
+        if let file = opener(url) {
+            file()
+        } else if ["http", "https"].contains(url.scheme?.lowercased() ?? ""), let web = PaneOpeners.web {
+            web(url)
+        } else if url.scheme?.lowercased() == AppLink.scheme, let open = InAppLinks.open {
+            open(url)
+        } else if url.scheme != nil {
+            UIApplication.shared.open(url)
+        }
+    }
+}
+
+extension MarkdownTextView {
+    /// Links the paths in the text that are files on the computer
+    /// (`FileLinks.apply`). Runs after every render, and again once the
+    /// computer has answered about paths it hadn't seen.
+    func applyFileLinks() {
+        // Nothing while a reply is being written: links work once it's finished.
+        guard let ctx = fileLinks, !isWriting else { return }
+        FileLinks.apply(ctx, to: textStorage) { [weak self] in self?.applyFileLinks() }
     }
 }
