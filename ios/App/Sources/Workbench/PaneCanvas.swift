@@ -77,8 +77,10 @@ final class PaneCanvasController: UIViewController {
     /// 7 pt in, PaneMetrics) (the owner, 11-05).
     static let cardRadius: CGFloat = 21
     /// The desk round the cards, and a workspace's title bar row.
+    /// Dark: deeper than the cards, which stand up from it as lit surfaces
+    /// do in the dark (at 0.13 it was all but the cards' own grey, 11-05).
     static let backdrop = UIColor { $0.userInterfaceStyle == .dark
-        ? UIColor(red: 0.13, green: 0.13, blue: 0.14, alpha: 1)
+        ? UIColor(red: 0.045, green: 0.045, blue: 0.05, alpha: 1)
         : UIColor(red: 246 / 255, green: 246 / 255, blue: 248 / 255, alpha: 1) }
 
     override func loadView() {
