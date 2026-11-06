@@ -523,9 +523,12 @@ struct FilePage: View {
                 r = try await store.readFile(target.scope, path: target.path, progress: progress)
                 readScope = nil
             } catch {
-                guard let fallbackScope else { throw error }
-                r = try await store.readFile(fallbackScope, path: target.path, progress: progress)
-                readScope = fallbackScope
+                // A reply's link to a file outside the conversation's folder
+                // has its absolute path: read from the whole disk.
+                let outside: FileScope? = target.path.hasPrefix("/") && target.scope != .root ? .root : nil
+                guard let fallback = fallbackScope ?? outside else { throw error }
+                r = try await store.readFile(fallback, path: target.path, progress: progress)
+                readScope = fallback
             }
             guard generation == readGeneration else { return }
             if r.tooLarge {

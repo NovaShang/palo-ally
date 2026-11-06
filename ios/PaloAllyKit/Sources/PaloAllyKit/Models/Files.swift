@@ -213,13 +213,77 @@ public struct ResolvedFile: Codable, Sendable, Hashable {
     }
 }
 
-/// `files.resolve → {files}`: only the ones that resolved.
+/// `files.resolve → {files, unchecked?}`: only the ones that resolved, and
+/// the ones the computer didn't get to (its time for looking deeper ran
+/// out): those may be files, and are asked about again.
 public struct FilesResolveResult: Codable, Sendable {
     public var files: [ResolvedFile]
-    public init(files: [ResolvedFile]) { self.files = files }
+    public var unchecked: [String]
+    public init(files: [ResolvedFile], unchecked: [String] = []) { self.files = files; self.unchecked = unchecked }
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
         files = l.array(ResolvedFile.self, "files", or: [])
+        unchecked = l.array(String.self, "unchecked") ?? []
+    }
+}
+
+/// What the computer has said about the paths in replies, per scope, for
+/// the links (`files.resolve`): a file, not one, or not known yet. Only an
+/// answer says "not a file": an ask that failed (offline, timed out) or a
+/// path the computer didn't get to stays unknown, to be asked again, a few
+/// times (then it is taken as not a file, so a reply can't ask forever).
+public struct FileResolveCache: Sendable {
+    public enum Lookup: Equatable, Sendable {
+        case file(ResolvedFile)
+        case missing
+        case unknown
+    }
+
+    /// Asks a path may go unanswered (failed, or not got to) before it counts as not a file.
+    public static let maxTries = 4
+
+    private var known: [FileScope: [String: ResolvedFile?]] = [:]
+    private var tries: [FileScope: [String: Int]] = [:]
+
+    public init() {}
+
+    public func lookup(_ scope: FileScope, _ path: String) -> Lookup {
+        guard let entry = known[scope]?[path] else { return .unknown }
+        return entry.map(Lookup.file) ?? .missing
+    }
+
+    /// Of `paths`, the ones to ask about: not known yet, each once.
+    public func unknown(_ scope: FileScope, _ paths: [String]) -> [String] {
+        var seen = Set<String>()
+        return paths.filter { known[scope]?[$0] == nil && seen.insert($0).inserted }
+    }
+
+    /// The computer's answer about `asked`.
+    public mutating func answered(_ scope: FileScope, asked: [String], _ result: FilesResolveResult) {
+        let unchecked = Set(result.unchecked)
+        var table = known[scope] ?? [:]
+        for p in asked where !unchecked.contains(p) { table[p] = .some(nil) }
+        for f in result.files { table[f.text] = f }
+        known[scope] = table
+        unanswered(scope, result.unchecked.filter { table[$0] == nil })
+        for p in asked where !unchecked.contains(p) { tries[scope]?[p] = nil }
+    }
+
+    /// The ask about `asked` failed: nothing learned.
+    public mutating func failed(_ scope: FileScope, asked: [String]) {
+        unanswered(scope, asked.filter { known[scope]?[$0] == nil })
+    }
+
+    private mutating func unanswered(_ scope: FileScope, _ paths: [String]) {
+        for p in paths {
+            let n = (tries[scope]?[p] ?? 0) + 1
+            if n >= Self.maxTries {
+                known[scope, default: [:]][p] = .some(nil)
+                tries[scope]?[p] = nil
+            } else {
+                tries[scope, default: [:]][p] = n
+            }
+        }
     }
 }
 

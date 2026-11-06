@@ -65,6 +65,74 @@ struct PathDetectionTests {
     }
 }
 
+/// Every way a stretch of a reply can be read as a path (what's asked of
+/// the computer, best first), as the reply's text view lays it out.
+struct PathGuessTests {
+    /// Each guess's readings: path and the text it covers.
+    private func readings(_ text: String, code: [String] = [], links: [(String, String)] = []) -> [[String]] {
+        let ns = text as NSString
+        let spans = code.map { ns.range(of: $0) }
+        let linked = links.map { (range: ns.range(of: $0.0), url: URL(string: $0.1)!) }
+        return PathDetector.guesses(in: text, codeSpans: spans, links: linked).map { g in
+            g.readings.map { r in
+                let shown = ns.substring(with: r.range)
+                return shown == r.path ? r.path : "\(r.path) @\(shown)"
+            }
+        }
+    }
+
+    @Test("Plain text: absolute, relative, ~/, :line, Chinese punctuation after")
+    func plain() {
+        #expect(readings("改了 /Users/x/code/site/README.md。") == [["/Users/x/code/site/README.md"]])
+        #expect(readings("见 src/main.rs:42，然后 ~/notes/a.md、./b.md！") ==
+                [["src/main.rs @src/main.rs:42"], ["~/notes/a.md"], ["./b.md"]])
+        #expect(readings("（/etc/hosts）") == [["/etc/hosts"]])
+    }
+
+    @Test("A path right against Chinese is read with and without it")
+    func againstChinese() {
+        // Absolute after a word: the bare reading, then without the word.
+        #expect(readings("文件在/Users/x/a.md里") == [["文件在/Users/x/a.md里", "文件在/Users/x/a.md", "/Users/x/a.md里", "/Users/x/a.md"]])
+        #expect(readings("改了src/main.rs里的排序") == [["改了src/main.rs里的排序", "改了src/main.rs", "src/main.rs里的排序", "src/main.rs"]])
+        #expect(readings("先看README.md里面") == [["先看README.md", "README.md"]])
+        #expect(readings("在~/notes/a.md里") == [["~/notes/a.md里", "~/notes/a.md"]])
+        // A Chinese folder name stays one path.
+        #expect(readings("设计稿在 notes/设计/列表页.md") == [["notes/设计/列表页.md"]])
+    }
+
+    @Test("A code span is read whole first (spaces kept), then the paths inside")
+    func codeSpans() {
+        let text = "打开 /Users/x/My Docs/report v2.md 看看"
+        #expect(readings(text, code: ["/Users/x/My Docs/report v2.md"]) ==
+                [["/Users/x/My Docs/report v2.md", "/Users/x/My", "Docs/report", "v2.md"]])
+        #expect(readings("在 src/app.ts:12 里", code: ["src/app.ts:12"]) == [["src/app.ts @src/app.ts:12"]])
+        // A command: read whole too (the computer has no such file), then the path in it.
+        #expect(readings("跑 npm test -- src/a.test.ts 就行", code: ["npm test -- src/a.test.ts"]) == [["npm test -- src/a.test.ts", "src/a.test.ts"]])
+        #expect(readings("跑 npm run dev", code: ["npm run dev"]) == [])
+    }
+
+    @Test("A link to a path: its target first, then what its text says")
+    func links() {
+        #expect(readings("改了 ListPage.tsx:12 这里", links: [("ListPage.tsx:12", "src/pages/ListPage.tsx#L12")]) ==
+                [["src/pages/ListPage.tsx @ListPage.tsx:12", "ListPage.tsx @ListPage.tsx:12"]])
+        #expect(readings("见 报告", links: [("报告", "/Users/x/My%20Docs/a.md")]) == [["/Users/x/My Docs/a.md @报告"]])
+        #expect(readings("见 a.md", links: [("a.md", "file:///Users/x/a.md")]) == [["/Users/x/a.md @a.md", "a.md"]])
+        // Web addresses and anchors stay what they are.
+        #expect(readings("见 README.md", links: [("README.md", "https://github.com/a/b/blob/main/README.md")]) == [["README.md"]])
+        #expect(readings("见 上面", links: [("上面", "#setup")]) == [])
+    }
+
+    @Test("A link's target: path, percent escapes, line from #L or :line")
+    func linkedPath() {
+        #expect(PathDetector.linkedPath(URL(string: "src/a.ts#L12-L20")!)! == ("src/a.ts", 12))
+        #expect(PathDetector.linkedPath(URL(string: "/Users/x/a.swift:42")!)! == ("/Users/x/a.swift", 42))
+        #expect(PathDetector.linkedPath(URL(string: "file:///Users/x/%E8%AE%BE%E8%AE%A1.md")!)! == ("/Users/x/设计.md", nil))
+        #expect(PathDetector.linkedPath(URL(string: "https://x.com/a.md")!) == nil)
+        #expect(PathDetector.linkedPath(URL(string: "mailto:a@b.c")!) == nil)
+        #expect(PathDetector.linkedPath(URL(string: "#top")!) == nil)
+    }
+}
+
 /// The directory picker's location (Bento Term's tests, ported).
 struct DirectoryPickerPathTests {
     @Test func noLocationCannotConfirmOrMove() {

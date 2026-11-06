@@ -108,6 +108,7 @@ extension DemoHost {
         "code/site/README.md": DemoFile("# Site\n"),
         "code/blog/README.md": DemoFile("# Blog\n"),
         "Desktop/待办.txt": DemoFile("买菜\n交水电费\n"),
+        "Documents/My Notes/周报 v2.md": DemoFile("# 周报\n\n- 文件名里有空格\n"),
         "Pictures/README.txt": DemoFile("照片在这里\n"),
     ]
 
@@ -290,11 +291,25 @@ extension DemoHost {
             var asked: [String] = []
             if case .array(let list)? = p["paths"] { asked = list.compactMap(\.stringValue) }
             if let one = p["text"]?.stringValue { asked.append(one) }
+            // `-demoResolveFails 2`: the first two asks fail, as a dropped link would.
+            if resolveFailures < UserDefaults.standard.integer(forKey: "demoResolveFails") {
+                resolveFailures += 1
+                debugLog("demo: files.resolve fails (\(resolveFailures))")
+                throw DemoError(message: "连接断了")
+            }
             var out: [ResolvedFile] = []
             for text in asked {
                 var c = text.replacingOccurrences(of: #":\d+(:\d+)?$"#, with: "", options: .regularExpression)
                 while c.hasPrefix("./") { c.removeFirst(2) }
                 if c.hasPrefix("~/") { c = Self.demoHome + c.dropFirst(1) }
+                // As the host: an absolute path outside the scope is any file on the disk.
+                if c.hasPrefix("/"), Self.normalize(c, root: root) == nil {
+                    let disk = diskScope(c)
+                    if let rel = Self.normalize(c, root: disk.root), let f = disk.files[rel] {
+                        out.append(ResolvedFile(text: text, path: c, abs: c, size: f.size))
+                    }
+                    continue
+                }
                 guard let rel = Self.normalize(c, root: root) else { continue }
                 let hit = files[rel] != nil ? rel
                     : c.hasPrefix("/") ? nil

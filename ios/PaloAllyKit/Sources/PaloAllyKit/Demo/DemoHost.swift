@@ -88,6 +88,8 @@ public actor DemoHost {
     /// Watched files (files.watch), by scope and path, and whether the demo edit is on its way.
     var watchedFiles: [String: JSONValue] = [:]
     var fileEditScheduled = false
+    /// `files.resolve` asks failed so far (`-demoResolveFails <n>`: the first n fail, as offline).
+    var resolveFailures = 0
     /// Asleep Pals being woken (§12), for words that come meanwhile to wait on.
     var palWakes: [String: Task<Void, Never>] = [:]
     /// Seeded with Pals: an accepted proposal opens a Pal, not a helper.
@@ -373,6 +375,13 @@ public actor DemoHost {
 
             建议：日常放在 **dev** 上，需要碰本机应用的事再交给 Air。
             """)
+        case "filelinks":
+            // `-demoState filelinks`: paths written every way a reply writes
+            // them, each one a file (FileLinks): relative to the assistant's
+            // home, absolute outside it, in code spans, right against Chinese,
+            // with a line, as a Markdown link, with spaces, and in a table.
+            post("刚才改了哪些文件？", role: .user)
+            post(DemoHost.fileLinksAnswer)
         case "streamfinal":
             // Two real replies streamed in small pieces and then finalized, one
             // after the other: the rows must end up as tall as the final text
@@ -489,6 +498,24 @@ public actor DemoHost {
         post(String(repeating: line, count: 3), role: .user, channel: .wechat, broadcast: false)
         post(DemoHost.longProseAnswer(500 + round), channel: .wechat, broadcast: false)
     }
+
+    /// Paths in every shape a reply writes them (`-demoState filelinks`); all are files in the demo.
+    static let fileLinksAnswer = """
+    改了这几个：
+
+    - 直接写：user.md、artifacts/brief/brief.md，还有 /Users/demo/Desktop/待办.txt。
+    - 代码里：`soul.md`、`/Users/demo/code/blog/README.md`，`~/Documents/报销/十月发票.pdf`。
+    - 贴着中文：文件在/Users/demo/Desktop/待办.txt里，改了brief.md里的标题
+    - 带行号：CLAUDE.md:3，`artifacts/brief/brief.md:2`
+    - 链接：[brief.md:2](artifacts/brief/brief.md#L2)
+    - 有空格：`/Users/demo/Documents/My Notes/周报 v2.md`
+
+    | 文件 | 说明 |
+    |:---|:---|
+    | `user.md` | 关于主人的几句话，这一格的字可以选中复制 |
+    | /Users/demo/Desktop/待办.txt | 桌面上的待办 |
+    | ~/code/site/README.md | 网站的说明 |
+    """
 
     /// An answer with one very long table (`-demoState bigtable`).
     static func hugeTableAnswer(rows: Int) -> String {

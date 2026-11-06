@@ -235,11 +235,12 @@ describe("files", () => {
     expect(files.search(site, "s", 1).matches).toHaveLength(1);
   });
 
-  test("resolve: relative to the Pal's folder, ~ and absolute inside it, bare names found deeper, the rest left out", () => {
-    const { files, project, home } = world();
+  test("resolve: relative to the Pal's folder, ~ and absolute anywhere (absolute outside it), bare names found deeper, the rest left out", () => {
+    const { files, project, home, paths } = world();
     const r = files.resolve(site, [
       "src/app.ts", "./README.md:3", join(project, "src", "app.ts"), "~/code/site/README.md", "Widget.swift", "er/Widget.swift",
       "src/nope.ts", "../secret.txt", join(home, "secret.txt"), "~/secret.txt", "src", "secret-link.txt", "src/app.ts",
+      join(paths.root, "identity.json"), "~/apps/.paloally/identity.json", join(home, "code"), join(home, "nope.md"),
     ]);
     expect(r.files.map((f) => [f.text, f.path])).toEqual([
       ["src/app.ts", "src/app.ts"],
@@ -248,14 +249,35 @@ describe("files", () => {
       ["~/code/site/README.md", "README.md"],
       ["Widget.swift", "src/deep/er/Widget.swift"],
       ["er/Widget.swift", "src/deep/er/Widget.swift"],
+      // outside the Pal's folder: by its absolute path (a relative `..` or a link out of it still not)
+      [join(home, "secret.txt"), join(home, "secret.txt")],
+      ["~/secret.txt", join(home, "secret.txt")],
     ]);
     expect(r.files[0]!.size).toBe(20);
     expect(r.files[0]!.abs).toBe(join(project, "src", "app.ts"));
+    expect(r.files[7]!.abs).toBe(join(home, "secret.txt"));
+    expect(r.unchecked).toBeUndefined();
     // the assistant: its home, then its artifacts
     const palo = files.resolve({ kind: "palo" }, ["notes.md", "brief/brief.md", "brief.md"]);
     expect(palo.files.map((f) => f.path)).toEqual(["notes.md", "artifacts/brief/brief.md", "artifacts/brief/brief.md"]);
     expect(cleanCandidate("`src/app.ts:12:4`。")).toBe("src/app.ts");
     expect(cleanCandidate("/")).toBeNull();
+  });
+
+  test("resolve: names it had no time to look for come back unchecked, to be asked again", () => {
+    const { files } = world();
+    // eight walks per ask: the ninth bare name and on aren't looked for
+    const names = Array.from({ length: 10 }, (_, i) => `missing${i}.ts`);
+    const r = files.resolve(site, [...names, "Widget.swift", "src/app.ts"]);
+    expect(r.unchecked).toEqual(["missing8.ts", "missing9.ts", "Widget.swift"]);
+    // a path where the reply said needs no walk: still found
+    expect(r.files.map((f) => f.path)).toEqual(["src/app.ts"]);
+    // asked again on its own, it is found
+    expect(files.resolve(site, ["Widget.swift"]).files.map((f) => f.path)).toEqual(["src/deep/er/Widget.swift"]);
+    // past the first 40: unchecked too
+    const many = files.resolve(site, [...Array.from({ length: 40 }, (_, i) => `/nope/x${i}.ts`), "src/app.ts"]);
+    expect(many.files).toEqual([]);
+    expect(many.unchecked).toEqual(["src/app.ts"]);
   });
 
   test("the owner's folders: browse from home, add, list, use as a scope, remove; the disk, home and PaloAlly's own refused", () => {

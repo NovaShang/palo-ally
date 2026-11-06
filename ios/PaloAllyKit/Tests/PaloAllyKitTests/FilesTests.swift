@@ -44,7 +44,46 @@ struct FilesTests {
         await #expect(throws: (any Error).self) { try await store.readFile(scope, path: "../secret.txt") }
         #expect(try await store.searchFiles(scope, query: "listpage").matches.first?.path == "src/pages/ListPage.tsx")
         let resolved = try await store.resolveFiles(scope, paths: ["ListPage.tsx", "src/hooks/useItems.ts:3", "nope.md", "\(pal.cwd)/README.md", "/etc/hosts"])
-        #expect(resolved.map(\.path) == ["src/pages/ListPage.tsx", "src/hooks/useItems.ts", "README.md"])
+        #expect(resolved.files.map(\.path) == ["src/pages/ListPage.tsx", "src/hooks/useItems.ts", "README.md"])
+        // An absolute path outside the Pal's folder: a file on the computer all the same, kept absolute.
+        let outside = try await store.resolveFiles(scope, paths: ["/Users/demo/Desktop/待办.txt", "~/Documents/报销/十月发票.pdf", "/Users/demo/nope.md"])
+        #expect(outside.files.map(\.path) == ["/Users/demo/Desktop/待办.txt", "/Users/demo/Documents/报销/十月发票.pdf"])
+        #expect(outside.files.map(\.abs) == ["/Users/demo/Desktop/待办.txt", "/Users/demo/Documents/报销/十月发票.pdf"])
+    }
+
+    @Test func theResolveAnswerDecodesWithAndWithoutUnchecked() throws {
+        let old = #"{"files":[{"text":"a.md","path":"a.md","abs":"/x/a.md","size":3}]}"#
+        let (r, issues) = try LenientDiagnostics.collect { try JSONDecoder().decode(FilesResolveResult.self, from: Data(old.utf8)) }
+        #expect(issues.isEmpty && r.unchecked.isEmpty && r.files.map(\.path) == ["a.md"])
+        let new = #"{"files":[],"unchecked":["Widget.swift"]}"#
+        #expect(try JSONDecoder().decode(FilesResolveResult.self, from: Data(new.utf8)).unchecked == ["Widget.swift"])
+    }
+
+    /// The links' memory of what the computer said: only an answer says
+    /// "not a file"; a failed ask, or a path it didn't get to, is asked again.
+    @Test func resolveCacheKeepsOnlyAnswers() {
+        var cache = FileResolveCache()
+        let scope = FileScope.pal("p")
+        let file = ResolvedFile(text: "src/a.ts", path: "src/a.ts", abs: "/x/src/a.ts", size: 1)
+        #expect(cache.unknown(scope, ["src/a.ts", "b.md", "src/a.ts"]) == ["src/a.ts", "b.md"])
+        // Offline: nothing learned, both asked again.
+        cache.failed(scope, asked: ["src/a.ts", "b.md"])
+        #expect(cache.lookup(scope, "src/a.ts") == .unknown)
+        #expect(cache.unknown(scope, ["src/a.ts", "b.md"]) == ["src/a.ts", "b.md"])
+        // An answer: a file, not one, and one it didn't get to.
+        cache.answered(scope, asked: ["src/a.ts", "b.md", "Deep.swift"], FilesResolveResult(files: [file], unchecked: ["Deep.swift"]))
+        #expect(cache.lookup(scope, "src/a.ts") == .file(file))
+        #expect(cache.lookup(scope, "b.md") == .missing)
+        #expect(cache.lookup(scope, "Deep.swift") == .unknown)
+        #expect(cache.unknown(scope, ["src/a.ts", "b.md", "Deep.swift"]) == ["Deep.swift"])
+        // Another scope knows nothing of it.
+        #expect(cache.lookup(.palo, "src/a.ts") == .unknown)
+        // Never answered after a few tries: not a file, so a reply can't ask forever.
+        for _ in 1..<FileResolveCache.maxTries { cache.failed(scope, asked: ["Deep.swift"]) }
+        #expect(cache.lookup(scope, "Deep.swift") == .missing)
+        // A failure after an answer changes nothing.
+        cache.failed(scope, asked: ["src/a.ts"])
+        #expect(cache.lookup(scope, "src/a.ts") == .file(file))
     }
 
     @Test func opensAndForgetsTheOwnersFolders() async throws {

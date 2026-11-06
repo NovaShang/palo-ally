@@ -576,6 +576,8 @@ final class UnboundedHeightContainer: NSTextContainer {
 extension NSAttributedString.Key {
     /// "code" | "quote" | "table" | "rule": drawn by MarkdownLayoutManager.
     static let paloBlock = NSAttributedString.Key("paloBlock")
+    /// An inline `code` span: a path in one is whole, spaces and all (FileLinks).
+    static let paloCode = NSAttributedString.Key("paloCode")
 }
 
 final class MarkdownLayoutManager: NSLayoutManager {
@@ -807,10 +809,12 @@ enum MarkdownRenderer {
     /// Inline markdown (bold, italic, `code`, ~~strike~~, links) via Foundation.
     /// Bare addresses end where address characters end, and a bare
     /// `paloally://` link (the assistant's pair_link) is a link too.
-    private static func inline(_ text: String, font: UIFont, style: NSParagraphStyle, color: UIColor = .label) -> NSAttributedString {
+    static func inline(_ text: String, font: UIFont, style: NSParagraphStyle, color: UIColor = .label) -> NSAttributedString {
         let parsed = (try? AttributedString(markdown: BareLinks.marking(in: text), options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(text)
         let out = NSMutableAttributedString()
+        // Each code span its own value, so two side by side stay two.
+        var spans = 0
         for run in parsed.runs {
             let piece = String(parsed[run.range].characters)
             var attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color, .paragraphStyle: style]
@@ -824,6 +828,8 @@ enum MarkdownRenderer {
             if intent.contains(.code) {
                 attrs[.font] = UIFont.monospacedSystemFont(ofSize: font.pointSize * 0.9, weight: .regular)
                 attrs[.backgroundColor] = UIColor.secondaryLabel.withAlphaComponent(0.12)
+                spans += 1
+                attrs[.paloCode] = spans
             }
             if intent.contains(.strikethrough) { attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
             if let link = run.link { attrs[.link] = link }

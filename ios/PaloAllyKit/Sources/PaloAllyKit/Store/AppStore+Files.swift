@@ -129,11 +129,11 @@ extension AppStore {
         try await rpc.call(RPCMethod.filesSearch, params: FilesSearchParams(scope: scope, query: query, limit: limit))
     }
 
-    /// Which of the paths found in a reply are files the owner can open.
-    public func resolveFiles(_ scope: FileScope, paths: [String]) async throws -> [ResolvedFile] {
-        guard !paths.isEmpty else { return [] }
-        let r: FilesResolveResult = try await rpc.call(RPCMethod.filesResolve, params: FilesResolveParams(scope: scope, paths: paths))
-        return r.files
+    /// Which of the paths found in a reply are files the owner can open
+    /// (and which the computer didn't get to: `unchecked`).
+    public func resolveFiles(_ scope: FileScope, paths: [String]) async throws -> FilesResolveResult {
+        guard !paths.isEmpty else { return FilesResolveResult(files: []) }
+        return try await rpc.call(RPCMethod.filesResolve, params: FilesResolveParams(scope: scope, paths: paths))
     }
 
     // MARK: the owner's folders

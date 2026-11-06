@@ -25,14 +25,14 @@ extension EnvironmentValues {
 }
 
 /// What the computer said about the paths seen so far (per assistant), and
-/// the asks in flight, batched a moment so one reply is one request.
+/// the asks in flight, batched a moment so one reply is one request. Only
+/// an answer counts (`FileResolveCache`): an ask that failed (the link to
+/// the computer down a moment) is tried again a little later, and so are
+/// the paths it had no time to look for; once they're known, the text
+/// views that asked link them.
 @MainActor
 final class FileLinkResolver {
-    enum Lookup: Equatable {
-        case file(ResolvedFile)
-        case missing
-        case unknown
-    }
+    typealias Lookup = FileResolveCache.Lookup
 
     private static var byStore: [ObjectIdentifier: FileLinkResolver] = [:]
     private static var byID: [String: FileLinkResolver] = [:]
@@ -49,27 +49,32 @@ final class FileLinkResolver {
 
     let id = UUID().uuidString
     private(set) weak var store: AppStore?
-    private var known: [FileScope: [String: ResolvedFile?]] = [:]
-    private var asked: [FileScope: Set<String>] = [:]
+    private var cache = FileResolveCache()
+    private var asked: [FileScope: [String]] = [:]
     private var waiting: [FileScope: [() -> Void]] = [:]
     private var flush: Task<Void, Never>?
+    /// Asks that failed in a row: the next waits longer (1, 2, 4 … 30 s).
+    private var failures = 0
 
     private init(store: AppStore) { self.store = store }
 
     func lookup(_ scope: FileScope, _ path: String) -> Lookup {
-        guard let entry = known[scope]?[path] else { return .unknown }
-        return entry.map(Lookup.file) ?? .missing
+        cache.lookup(scope, path)
     }
 
-    /// Ask about `paths`; `then` runs once they're known (or the ask failed: missing).
+    /// Ask about `paths`; `then` runs once the computer has answered (and
+    /// again after a retry, for the paths still not known).
     func resolve(_ scope: FileScope, _ paths: [String], then: @escaping () -> Void) {
-        let new = paths.filter { known[scope]?[$0] == nil }
+        let new = cache.unknown(scope, paths)
         guard !new.isEmpty else { return }
-        asked[scope, default: []].formUnion(new)
+        var list = asked[scope] ?? []
+        list += new.filter { !list.contains($0) }
+        asked[scope] = list
         waiting[scope, default: []].append(then)
         guard flush == nil else { return }
+        let delay: Duration = failures == 0 ? .milliseconds(60) : .seconds(min(30, 1 << min(failures - 1, 5)))
         flush = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(60))
+            try? await Task.sleep(for: delay)
             await self?.send()
         }
     }
@@ -80,16 +85,23 @@ final class FileLinkResolver {
         let callbacks = waiting
         asked = [:]
         waiting = [:]
-        for (scope, set) in batches {
-            let paths = Array(set)
-            var found: [ResolvedFile] = []
+        for (scope, paths) in batches {
+            var failed = false
             for chunk in stride(from: 0, to: paths.count, by: 40).map({ Array(paths[$0..<min($0 + 40, paths.count)]) }) {
-                if let r = try? await store?.resolveFiles(scope, paths: chunk) { found += r }
+                guard let store else { return }
+                do {
+                    cache.answered(scope, asked: chunk, try await store.resolveFiles(scope, paths: chunk))
+                } catch {
+                    cache.failed(scope, asked: chunk)
+                    failed = true
+                }
             }
-            var table = known[scope] ?? [:]
-            for p in paths { table[p] = .some(nil) }
-            for f in found { table[f.text] = f }
-            known[scope] = table
+            failures = failed ? failures + 1 : 0
+            #if DEBUG
+            let linked = paths.filter { if case .file = cache.lookup(scope, $0) { true } else { false } }.count
+            debugLog("[filelinks] \(scope.kind.rawValue): asked \(paths.count), \(linked) files\(failed ? ", failed (try \(failures))" : "")")
+            #endif
+            // Each view links what is known now and asks again for the rest.
             for cb in callbacks[scope] ?? [] { cb() }
         }
     }
@@ -122,6 +134,9 @@ enum FileLinks {
         guard let kind = FileScope.Kind(rawValue: q["k"] ?? ""), let path = q["p"], !path.isEmpty,
               let store = FileLinkResolver.find(q["r"] ?? "")?.store else { return nil }
         let target = FileTarget(scope: FileScope(kind: kind, id: q["i"]), path: path, absolute: q["a"].flatMap { $0.hasPrefix("/") ? $0 : nil })
+        #if DEBUG
+        debugLog("[filelinks] open \(kind.rawValue) \(path)")
+        #endif
         return UIAction { _ in FilePagePresenter.present(target, store: store) }
     }
 }
@@ -129,26 +144,46 @@ enum FileLinks {
 extension MarkdownTextView {
     /// Links the paths in the text that are files on the computer. Runs after
     /// every render (attributes only: the layout doesn't change), and again
-    /// once the computer has answered about paths it hadn't seen.
+    /// once the computer has answered about paths it hadn't seen. What's
+    /// looked at: the text, its code spans (a path with spaces is whole in
+    /// one) and its Markdown links to a path (Claude Code's
+    /// `[ListPage.tsx:12](src/pages/ListPage.tsx#L12)`), which become file
+    /// links when the computer has the file. Web links stay as they are.
     func applyFileLinks() {
         // Nothing while a reply is being written: links work once it's finished.
         guard let ctx = fileLinks, !isWriting else { return }
         let storage = textStorage
         guard storage.length > 0, storage.length < 200_000 else { return }
-        let candidates = PathDetector.candidates(in: storage.string)
-        guard !candidates.isEmpty else { return }
+        let all = NSRange(location: 0, length: storage.length)
+        var code: [NSRange] = []
+        storage.enumerateAttribute(.paloCode, in: all) { value, range, _ in
+            if value != nil { code.append(range) }
+        }
+        var pathLinks: [(range: NSRange, url: URL)] = []
+        var webLinks: [NSRange] = []
+        storage.enumerateAttribute(.link, in: all) { value, range, _ in
+            guard let url = (value as? URL) ?? (value as? String).flatMap(URL.init(string:)) else { return }
+            if FileLinks.isFileLink(url) { return }
+            if PathDetector.linkedPath(url) != nil { pathLinks.append((range, url)) } else { webLinks.append(range) }
+        }
+        let guesses = PathDetector.guesses(in: storage.string, codeSpans: code, links: pathLinks)
+        guard !guesses.isEmpty else { return }
         var unknown: [String] = []
         var links: [(NSRange, URL)] = []
-        for c in candidates {
-            // A link the reply already has (a URL, Markdown) wins.
-            if let existing = storage.attribute(.link, at: c.range.location, effectiveRange: nil) {
-                let url = (existing as? URL) ?? (existing as? String).flatMap(URL.init(string:))
-                if url.map(FileLinks.isFileLink) != true { continue }
-            }
-            switch ctx.resolver.lookup(ctx.scope, c.path) {
-            case .file(let f): if let url = FileLinks.url(ctx, f) { links.append((c.range, url)) }
-            case .missing: break
-            case .unknown: unknown.append(c.path)
+        for g in guesses {
+            // A web link the reply already has wins.
+            if webLinks.contains(where: { NSIntersectionRange($0, g.range).length > 0 }) { continue }
+            var linked = false
+            for r in g.readings {
+                switch ctx.resolver.lookup(ctx.scope, r.path) {
+                case .file(let f):
+                    // The first reading that's a file (one before it still unknown
+                    // takes over when it turns out to be one).
+                    if !linked, let url = FileLinks.url(ctx, f) { links.append((r.range, url)) }
+                    linked = true
+                case .missing: break
+                case .unknown: if !linked { unknown.append(r.path) }
+                }
             }
         }
         if !links.isEmpty {

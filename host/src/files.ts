@@ -314,33 +314,53 @@ export class FileBrowser {
    * Paths written in a reply, as files the app can preview. A relative path
    * resolves against the Pal's project folder (Palo: its home, then its
    * artifacts; a folder: that folder); a bare name or a path cut short is
-   * looked up in the tree when it isn't there. Unresolved ones are left out.
+   * looked up in the tree when it isn't there. An absolute or `~/` path
+   * outside the scope's folder is any file on the computer (as a preview
+   * tab reads one, `root`), PaloAlly's own state aside: its `path` is then
+   * the absolute one. Unresolved ones are left out; the ones not looked up
+   * because the walks' budget ran out are `unchecked`, for the app to ask
+   * about again.
    */
-  resolve(scope: FileScope, candidates: string[]): { files: { text: string; path: string; abs: string; size: number }[] } {
+  resolve(scope: FileScope, candidates: string[]): { files: { text: string; path: string; abs: string; size: number }[]; unchecked?: string[] } {
     const root = this.root(scope);
     const bases = scope.kind === "palo" ? [root, join(root, "artifacts")] : [root];
     const out: { text: string; path: string; abs: string; size: number }[] = [];
+    const unchecked: string[] = [];
     const seen = new Set<string>();
     // The tree walks for names that aren't where the reply said: a few, and
     // a second in all, so one message full of names can't keep the host busy.
     let walks = 0;
     const walkUntil = Date.now() + 1000;
-    for (const raw of candidates.slice(0, 40)) {
-      if (typeof raw !== "string") continue;
+    const strings = candidates.filter((c): c is string => typeof c === "string");
+    for (const raw of strings.slice(40)) unchecked.push(raw.slice(0, 1024));
+    for (const raw of strings.slice(0, 40)) {
       const text = raw.slice(0, 1024);
       if (seen.has(text)) continue;
       seen.add(text);
       const p = cleanCandidate(text);
       if (!p) continue;
+      const absolute = p.startsWith("/") || p.startsWith("~");
       let hit: string | null = null;
-      for (const base of p.startsWith("/") || p.startsWith("~") ? [root] : bases) {
+      for (const base of absolute ? [root] : bases) {
         const real = this.inside(root, this.expand(p, base));
-        if (real && statSync(real).isFile()) {
+        if (real && isFile(real)) {
           hit = real;
           break;
         }
       }
-      if (!hit && !p.startsWith("/") && !p.startsWith("~") && !p.split("/").includes("..") && walks < 8 && Date.now() < walkUntil) {
+      if (!hit && absolute) {
+        // Anywhere on the computer, but never PaloAlly's own state.
+        const real = p.includes("\0") ? null : realOrNull(this.expand(p, root));
+        if (real && !this.forbidden(real) && isFile(real)) {
+          out.push({ text, path: real, abs: real, size: statSync(real).size });
+          continue;
+        }
+      }
+      if (!hit && !absolute && !p.split("/").includes("..")) {
+        if (walks >= 8 || Date.now() >= walkUntil) {
+          unchecked.push(text);
+          continue;
+        }
         walks++;
         // A short walk: the name may sit deeper than the reply said.
         const want = p.replace(/^\.\/+/, "");
@@ -353,7 +373,7 @@ export class FileBrowser {
       // `abs`: the file's absolute path, the way a right-pane tab keeps it.
       out.push({ text, path: relative(root, hit).split(sep).join("/"), abs: hit, size: statSync(hit).size });
     }
-    return { files: out };
+    return unchecked.length ? { files: out, unchecked } : { files: out };
   }
 
   // ---------------- the owner's folders ----------------
@@ -441,6 +461,15 @@ function realOrNull(p: string): string | null {
     return realpathSync(p);
   } catch {
     return null;
+  }
+}
+
+/** A file there (not a folder), readable as far as stat goes. */
+function isFile(real: string): boolean {
+  try {
+    return statSync(real).isFile();
+  } catch {
+    return false;
   }
 }
 
