@@ -18,6 +18,9 @@ final class PaneActions {
     var addNew: (PanePlacement?) -> Void = { _ in }
     /// 从工作区移开: Palo's pane off the workspace (Palo goes on).
     var removePalo: () -> Void = {}
+    /// A document's card: 在右侧栏打开 (back to the right pane) and 关闭卡片.
+    var documentToPane: (String) -> Void = { _ in }
+    var closeDocument: (String) -> Void = { _ in }
 }
 
 /// The pane's measures (docs/workbench-design/split-final.html).
@@ -71,6 +74,9 @@ struct PaneRoot: View {
             if id == LayoutTree.paloPane {
                 PaloPaneContent(workspaceID: workspaceID, details: details, actions: actions,
                                 corner: bridge.cornerPane == id)
+            } else if let doc = DocumentLeaf(id: id) {
+                DocumentCardContent(doc: doc, workspaceID: workspaceID, actions: actions,
+                                    corner: bridge.cornerPane == id)
             } else {
                 PaneContent(id: id, workspaceID: workspaceID, details: details, actions: actions,
                             corner: bridge.cornerPane == id)

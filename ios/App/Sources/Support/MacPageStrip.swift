@@ -115,17 +115,20 @@ struct MacStripButton<Label: View>: View {
 struct MacStripMenu<Content: View>: View {
     let label: String
     @ViewBuilder let content: () -> Content
+    /// In a workspace's document card: the size of the cards' own ⋯.
+    @Environment(\.documentCard) private var card
 
     var body: some View {
+        let size: CGFloat = card == nil ? 32 : PaneMetrics.button
         Menu(content: content) {
             Image(systemName: "ellipsis")
-                .font(.system(size: 14, weight: .semibold))
-                .frame(width: 32, height: 32)
+                .font(.system(size: card == nil ? 14 : 13, weight: .semibold))
+                .frame(width: size, height: size)
                 .contentShape(.circle)
         }
         .macMenuHitArea()
         .menuIndicator(.hidden)
-        .frame(width: 32, height: 32)
+        .frame(width: size, height: size)
         .glassEffect(.regular.interactive(), in: .circle)
         .accessibilityLabel(label)
     }

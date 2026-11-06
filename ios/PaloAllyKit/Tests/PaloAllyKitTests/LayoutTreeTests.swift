@@ -207,6 +207,35 @@ struct LayoutTreeTests {
         #expect(T.reconciled(nil, members: ["a"]).map(T.leafOrder(of:)) == ["a"])
     }
 
+    @Test func reconcileKeepsDocumentCards() {
+        let doc = DocumentLeaf.file("/Users/demo/code/site/README.md").id
+        let art = DocumentLeaf.artifact("ar1").id
+        let t = T.Node.hsplit(w: 1, h: 1, x: 0, y: 0, children: [
+            .leaf(id: "a", w: 0.25, h: 1, x: 0, y: 0), .leaf(id: doc, w: 0.25, h: 1, x: 0.25, y: 0),
+            .leaf(id: art, w: 0.25, h: 1, x: 0.5, y: 0), .leaf(id: doc, w: 0.25, h: 1, x: 0.75, y: 0)])
+        // kept without being members, a repeat merged; never added by reconciling
+        #expect(T.reconciled(t, members: ["a"]).map(T.leafOrder(of:)) == ["a", doc, art])
+        #expect(T.reconciled(t, members: []).map { Set(T.leafOrder(of: $0)) } == [doc, art])
+        #expect(T.reconciled(nil, members: ["a"]).map(T.leafOrder(of:)) == ["a"])
+        // through the host's JSON as it is
+        let back = T.Node(json: T.reconciled(t, members: ["a"])!.json)!
+        #expect(T.leafOrder(of: back) == ["a", doc, art])
+    }
+
+    @Test func documentLeafIDs() {
+        #expect(DocumentLeaf(id: "doc:/a/b.md") == .file("/a/b.md"))
+        #expect(DocumentLeaf(id: "doc:artifact:ar1") == .artifact("ar1"))
+        #expect(DocumentLeaf(id: "pal-site") == nil)
+        #expect(DocumentLeaf(id: T.paloPane) == nil)
+        #expect(DocumentLeaf(id: "doc:relative.md") == nil)
+        #expect(DocumentLeaf.file("/x y/文件.md").id == "doc:/x y/文件.md")
+        #expect(DocumentLeaf(tab: .previewTab("/a/b.md")) == .file("/a/b.md"))
+        #expect(DocumentLeaf(tab: .previewTab("b.md")) == nil)
+        #expect(DocumentLeaf(tab: .artifactTab("ar1")) == .artifact("ar1"))
+        #expect(DocumentLeaf(tab: .webTab("https://example.com")) == nil)
+        #expect(DocumentLeaf.artifact("ar1").tab == .artifactTab("ar1"))
+    }
+
     @Test func reconcileMergesRepeats() {
         let dup = T.Node.hsplit(w: 1, h: 1, x: 0, y: 0, children: [
             .leaf(id: "a", w: 0.5, h: 1, x: 0, y: 0), .leaf(id: "a", w: 0.5, h: 1, x: 0.5, y: 0)])

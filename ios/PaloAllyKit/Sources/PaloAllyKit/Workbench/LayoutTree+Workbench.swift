@@ -148,13 +148,17 @@ extension LayoutTree {
     /// member (docs/workbench-rpc.md). Any workspace may have it, at most once.
     public static let paloPane = "palo"
 
-    /// The tree a workspace should show: only its members and Palo's pane
-    /// when the tree has it (extra leaves and repeats go), members the tree
-    /// lacks added by `inserting`, then renormalized. No tree at all: the even
-    /// grid. Nil when there is nothing to show.
+    /// The tree a workspace should show: only its members, and Palo's pane
+    /// and the document cards (`DocumentLeaf`) the tree has (extra leaves
+    /// and repeats go), members the tree lacks added by `inserting`, then
+    /// renormalized. No tree at all: the even grid. Nil when there is
+    /// nothing to show.
     public static func reconciled(_ tree: Node?, members: [String]) -> Node? {
-        let palo = tree.map { leafOrder(of: $0).contains(paloPane) } ?? false
-        let panes = members.filter { $0 != paloPane } + (palo ? [paloPane] : [])
+        let had = tree.map(leafOrder(of:)) ?? []
+        let palo = had.contains(paloPane)
+        var docs: [String] = []
+        for id in had where DocumentLeaf.isDocument(id) && !docs.contains(id) { docs.append(id) }
+        let panes = members.filter { $0 != paloPane && !DocumentLeaf.isDocument($0) } + (palo ? [paloPane] : []) + docs
         guard !panes.isEmpty else { return nil }
         guard var node = tree.map(canonical) else { return tiledPreset(panes: panes) }
         let keep = Set(panes)

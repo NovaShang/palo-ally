@@ -46,6 +46,8 @@ final class PaneCanvasController: UIViewController {
     private var capsule: UIView?
     private var capsuleOffset: CGPoint = .zero
     private var dropTarget: (id: String, zone: PaneDropZone)?
+    /// A document's tab being dragged in from the right pane (its leaf id).
+    private var documentDragged: String?
     private let lift = UIView()
     private let edge = UIView()
 
@@ -374,7 +376,7 @@ final class PaneCanvasController: UIViewController {
         dragged = pane.id
         onActivate(pane.id)
         applyAccent()
-        let c = makeCapsule(for: pane)
+        let c = makeCapsule(paneInfo(pane.id))
         view.addSubview(c)
         capsule = c
         capsuleOffset = CGPoint(x: -24, y: -c.bounds.height / 2)
@@ -389,7 +391,7 @@ final class PaneCanvasController: UIViewController {
     }
 
     /// A small capsule under the pointer: the pane's status icon (a snapshot) and its name.
-    private func makeCapsule(for pane: PaneContainerView) -> UIView {
+    private func makeCapsule(_ info: TileInfo) -> UIView {
         let c = UIView()
         c.isUserInteractionEnabled = false
         c.backgroundColor = UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.22, alpha: 0.95) : UIColor(white: 1, alpha: 0.95) }
@@ -398,7 +400,6 @@ final class PaneCanvasController: UIViewController {
         c.layer.shadowOpacity = 0.25
         c.layer.shadowRadius = 8
         c.layer.shadowOffset = CGSize(width: 0, height: 6)
-        let info = paneInfo(pane.id)
         let icon = UILabel(frame: CGRect(x: 5, y: 4, width: 22, height: 22))
         icon.backgroundColor = UIColor(StatusDot.color(info.dot))
         icon.layer.cornerRadius = 11
@@ -422,6 +423,16 @@ final class PaneCanvasController: UIViewController {
         c.frame = CGRect(x: 0, y: 0, width: 34 + width + 12, height: 30)
         c.addSubview(icon)
         c.addSubview(label)
+        if let symbol = info.symbol {
+            // A document: its mark, grey, where a session's state is.
+            icon.text = nil
+            icon.backgroundColor = .clear
+            let mark = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)))
+            mark.tintColor = .secondaryLabel
+            mark.contentMode = .center
+            mark.frame = icon.frame
+            c.addSubview(mark)
+        }
         return c
     }
 
@@ -433,6 +444,12 @@ final class PaneCanvasController: UIViewController {
         CATransaction.commit()
         let frames = Self.paneFrames(of: tree, in: lastSize)
         let target = view.bounds.contains(p) ? TileDrop.target(at: p, dragging: id, frames: frames) : nil
+        showDropTarget(target, frames: frames)
+    }
+
+    /// Where a drop would land, shown: the target lifted for a swap, the half
+    /// it would take for a split.
+    private func showDropTarget(_ target: (String, PaneDropZone)?, frames: [String: CGRect]) {
         guard target?.0 != dropTarget?.id || target?.1 != dropTarget?.zone else { return }
         let previous = dropTarget?.id
         dropTarget = target.map { (id: $0.0, zone: $0.1) }
@@ -473,17 +490,7 @@ final class PaneCanvasController: UIViewController {
         }
         let id = dragged
         let target = dropTarget
-        let c = capsule
-        capsule = nil
-        UIView.animate(withDuration: 0.15, animations: {
-            c?.alpha = 0
-            for pane in self.panes.values {
-                pane.alpha = 1
-                Self.unlift(pane)
-            }
-            self.lift.isHidden = true
-            self.edge.isHidden = true
-        }, completion: { _ in c?.removeFromSuperview() })
+        clearDragPreview()
         // Dropped on the sidebar or outside: nothing happens.
         guard commit, let id, let target, let tree, view.bounds.contains(p),
               let dropped = TileDrop.apply(target.zone, moving: id, onto: target.id, in: tree) else { return }
@@ -495,6 +502,116 @@ final class PaneCanvasController: UIViewController {
         syncPanes()
         UIView.animate(withDuration: 0.2) { self.layoutCanvas() }
         onLayoutChange(new)
+    }
+
+    /// The capsule goes and the panes are as they were.
+    private func clearDragPreview() {
+        let c = capsule
+        capsule = nil
+        UIView.animate(withDuration: 0.15, animations: {
+            c?.alpha = 0
+            for pane in self.panes.values {
+                pane.alpha = 1
+                Self.unlift(pane)
+            }
+            self.lift.isHidden = true
+            self.edge.isHidden = true
+        }, completion: { _ in c?.removeFromSuperview() })
+    }
+
+    // MARK: - a document's tab dragged in from the right pane
+
+    /// A document's tab is dragged out of the right pane (`point` in the
+    /// window): its capsule follows the pointer over the whole window.
+    func beginDocumentDrag(_ id: String, info: TileInfo, at point: CGPoint) {
+        guard interactive, tree != nil, let window = view.window, documentDragged == nil, dragged == nil else { return }
+        documentDragged = id
+        applyAccent()
+        let c = makeCapsule(info)
+        window.addSubview(c)
+        capsule = c
+        capsuleOffset = CGPoint(x: -24, y: -c.bounds.height / 2)
+        c.center = CGPoint(x: point.x + c.bounds.width / 2 + capsuleOffset.x, y: point.y)
+        c.alpha = 0
+        c.transform = CGAffineTransform(scaleX: 0.9, y: 0.9)
+        UIView.animate(withDuration: 0.15) {
+            c.alpha = 1
+            c.transform = .identity
+        }
+    }
+
+    /// Over a card, the edge nearest the pointer shows the half the document
+    /// would take (no swap: it has no place of its own yet); a document
+    /// already a card lifts that card.
+    func moveDocumentDrag(to point: CGPoint) {
+        guard let id = documentDragged, let tree, let c = capsule else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        c.center = CGPoint(x: point.x + c.bounds.width / 2 + capsuleOffset.x, y: point.y)
+        CATransaction.commit()
+        let p = view.convert(point, from: nil)
+        let frames = Self.paneFrames(of: tree, in: lastSize)
+        var target: (String, PaneDropZone)?
+        if view.bounds.contains(p) {
+            if frames[id] != nil {
+                target = (id, .center)
+            } else if let (tid, frame) = frames.first(where: { $0.value.contains(p) }) {
+                target = (tid, TileDrop.edgeZone(at: p, in: frame))
+            }
+        }
+        showDropTarget(target, frames: frames)
+    }
+
+    /// Let go: over a card, the document docks at its edge as a card of its
+    /// own (the page keeps the layout); true when it is a card now.
+    func endDocumentDrag(at point: CGPoint, commit: Bool) -> Bool {
+        defer {
+            documentDragged = nil
+            dropTarget = nil
+        }
+        let id = documentDragged
+        let target = dropTarget
+        clearDragPreview()
+        guard commit, let id, let target, let tree, view.bounds.contains(view.convert(point, from: nil)) else { return false }
+        if LayoutTree.leafOrder(of: tree).contains(id) {
+            flash(id)
+            return true
+        }
+        guard let dock = target.zone.dock,
+              let placed = LayoutTree.splitting(pane: target.id, adding: id, horizontal: dock.horizontal,
+                                                newFirst: dock.before, in: tree) else { return false }
+        let new = LayoutTree.resized(placed)
+        self.tree = new
+        syncPanes()
+        // The new card starts where it goes; the others make room.
+        if let r = Self.paneFrames(of: new, in: lastSize)[id] {
+            UIView.performWithoutAnimation { panes[id]?.frame = r; panes[id]?.layoutIfNeeded() }
+        }
+        UIView.animate(withDuration: 0.2) { self.layoutCanvas() }
+        onLayoutChange(new)
+        return true
+    }
+
+    /// A card pointed out (a document asked for again while it is one): it
+    /// lifts with the accent edge for a moment.
+    func flash(_ id: String) {
+        guard let pane = panes[id] else { return }
+        applyAccent()
+        lift.frame = pane.frame
+        lift.alpha = 0
+        lift.isHidden = false
+        UIView.animate(withDuration: 0.18, animations: {
+            self.lift.alpha = 1
+            pane.transform = CGAffineTransform(scaleX: 0.985, y: 0.985)
+        }, completion: { _ in
+            UIView.animate(withDuration: 0.45, delay: 0.35, options: [.allowUserInteraction], animations: {
+                self.lift.alpha = 0
+                pane.transform = .identity
+            }, completion: { _ in
+                self.lift.isHidden = true
+                self.lift.alpha = 1
+            })
+        })
     }
 
     #if DEBUG || PERF_HARNESS
@@ -617,6 +734,15 @@ enum TileDrop {
     static func target(at p: CGPoint, dragging id: String, frames: [String: CGRect]) -> (String, PaneDropZone)? {
         guard let (target, frame) = frames.first(where: { $0.key != id && $0.value.contains(p) }) else { return nil }
         return (target, PaneDropZone.zone(at: p, in: frame))
+    }
+
+    /// A document coming in has no place to swap with: the nearest edge.
+    static func edgeZone(at p: CGPoint, in frame: CGRect) -> PaneDropZone {
+        guard frame.width > 0, frame.height > 0 else { return .right }
+        let u = (p.x - frame.minX) / frame.width
+        let v = (p.y - frame.minY) / frame.height
+        let edges: [(CGFloat, PaneDropZone)] = [(u, .left), (1 - u, .right), (v, .top), (1 - v, .bottom)]
+        return edges.min { $0.0 < $1.0 }!.1
     }
 
     static func apply(_ zone: PaneDropZone, moving id: String, onto target: String, in tree: LayoutTree.Node) -> LayoutTree.Node? {

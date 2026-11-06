@@ -234,6 +234,26 @@ private struct LayoutStressTest: ViewModifier {
                         for c in PaneCanvasController.all.allObjects where c.view.window?.windowScene === w.scene {
                             c.demo(String(a.dropFirst(7)))
                         }
+                    // `docsplit:2`: 在分屏中打开 on the open workspace's right pane tab at that index;
+                    // `docsplit:/abs/path`: that file (a tab or not); `docback:/abs/path`: its card's 在右侧栏打开;
+                    // `docclose:/abs/path`: its card's 关闭卡片.
+                    case _ where a.hasPrefix("docsplit:") || a.hasPrefix("docback:") || a.hasPrefix("docclose:"):
+                        guard case .workspace(let ws)? = w.selection, let store = w.store else { break }
+                        let arg = String(a.split(separator: ":", maxSplits: 1).last ?? "")
+                        let tabs = PaneTabsHub.shared(for: store).state(for: PaneTabsKey.workspace(ws)).tabs
+                        let doc = Int(arg).flatMap { tabs.indices.contains($0) ? DocumentLeaf(tab: tabs[$0]) : nil }
+                            ?? DocumentLeaf(id: arg.hasPrefix("artifact:") ? "doc:" + arg : "doc:" + arg)
+                        guard let doc else { debugLog("[nav] \(a): no document"); break }
+                        do {
+                            if a.hasPrefix("docsplit:") { try await w.openInSplit(doc, in: ws) }
+                            else if a.hasPrefix("docback:") { try await w.documentToPane(doc.id, in: ws) }
+                            else { try await w.closeDocumentCard(doc.id, in: ws) }
+                        } catch {
+                            debugLog("[nav] \(a): \(error)")
+                        }
+                        let layout = store.workspace(id: ws).flatMap { w.tree(of: $0) }.map(LayoutTree.leafOrder(of:)) ?? []
+                        let left = PaneTabsHub.shared(for: store).state(for: PaneTabsKey.workspace(ws)).tabs.map { $0.path ?? $0.url ?? $0.kind }
+                        debugLog("[nav] \(a): layout \(layout) tabs \(left)")
                     // `artifact:ar1`: that artifact's card tapped in the conversation (an artifact card's pane path).
                     case _ where a.hasPrefix("artifact:"):
                         w.openArtifact(String(a.dropFirst(9)))
