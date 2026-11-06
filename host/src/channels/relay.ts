@@ -91,6 +91,8 @@ export class RelayChannel implements AllyRelay {
   private ws: WebSocket | null = null;
   private streams = new Map<number, Stream>();
   private backoff = 1000;
+  /** How long a WebSocket may stay connecting before it is dropped and retried. */
+  dialTimeoutMs = 20_000;
   private stopped = false;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private lastPong = 0;
@@ -165,12 +167,15 @@ export class RelayChannel implements AllyRelay {
     // opens is retried, backoff resets only once a session has proven stable,
     // any inbound frame counts as liveness, and a socket replaced by another
     // host with the same identity backs off instead of fighting it.
+    // Bun never fires close or error on a socket closed while still
+    // connecting, so the timeout drops it and retries itself.
     const dialTimer = setTimeout(() => {
       if (this.ws === ws && ws.readyState === WebSocket.CONNECTING) {
-        this.log("dial timeout");
+        this.ws = null;
         ws.close();
+        this.fail("dial timeout");
       }
-    }, 20_000);
+    }, this.dialTimeoutMs);
     let stableTimer: ReturnType<typeof setTimeout> | null = null;
     ws.onopen = () => {
       clearTimeout(dialTimer);

@@ -890,8 +890,10 @@ private final class PreviewCard: UIView {
         clip.frame = bounds
         wash.frame = bounds
         guard let picture, natural.width > 0, natural.height > 0 else { return }
-        // Filling the card (aspect fill), pinned to its top leading corner.
-        let s = max(bounds.width / natural.width, bounds.height / natural.height)
+        // Filling the card (aspect fill), pinned to its top leading corner;
+        // never larger than life: a widened card shows its picture as it was
+        // and the card's own colour beyond it (enlarged text looked wrong).
+        let s = min(1, max(bounds.width / natural.width, bounds.height / natural.height))
         picture.bounds = CGRect(origin: .zero, size: natural)
         picture.transform = CGAffineTransform(scaleX: s, y: s)
         picture.center = CGPoint(x: natural.width * s / 2, y: natural.height * s / 2)

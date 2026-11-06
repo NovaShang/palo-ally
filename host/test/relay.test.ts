@@ -17,6 +17,33 @@ test("frame codec", () => {
   expect(parseFrame(new Uint8Array([1, 2]))).toBeNull();
 });
 
+test("a dial that never opens is retried, not left connecting", async () => {
+  // A relay that registers the host but never answers the socket upgrade.
+  let registers = 0;
+  const server = Bun.serve({
+    port: 0,
+    fetch(req) {
+      if (new URL(req.url).pathname === "/v1/daemon/register") {
+        registers++;
+        return new Response("{}");
+      }
+      return new Promise<Response>(() => {});
+    },
+  });
+  const ctx = makeHub();
+  const { id, daemonId } = loadHostIdentity(ctx.paths.identity);
+  const relay = new RelayChannel(ctx.hub, `http://127.0.0.1:${server.port}`, id, daemonId, ctx.paths.devices, () => {});
+  relay.dialTimeoutMs = 100;
+  try {
+    await relay.start();
+    await waitFor(() => registers >= 2, 5_000);
+  } finally {
+    relay.stop();
+    server.stop(true);
+    cleanup(ctx.paths);
+  }
+});
+
 d(`relay integration (${RELAY})`, () => {
   const ctx = makeHub();
   let relay: RelayChannel;
