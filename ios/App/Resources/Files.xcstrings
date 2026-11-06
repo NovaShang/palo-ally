@@ -527,6 +527,50 @@
           }
         }
       }
+    },
+    "在分屏中打开" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in Split View"
+          }
+        }
+      }
+    },
+    "在右侧栏打开" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in Side Pane"
+          }
+        }
+      }
+    },
+    "关闭卡片" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close Card"
+          }
+        }
+      }
+    },
+    "这份成果已经不在了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This item is no longer here"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
