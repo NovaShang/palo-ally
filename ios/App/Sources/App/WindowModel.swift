@@ -229,6 +229,12 @@ final class WindowModel {
     /// The quick-switch strip's last move went forward (the next page slides in from the right).
     var quickSwitchForward = true
 
+    /// A workspace is open in the conversation column.
+    var selectionIsWorkspace: Bool {
+        if case .workspace? = selection { return true }
+        return false
+    }
+
     /// Phones: the list or the conversation (the conversation at launch).
     var compactColumn: NavigationSplitViewColumn = .detail
     /// iPads and the Mac: the sidebar shown or put away (the system toggle).

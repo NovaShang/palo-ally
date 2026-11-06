@@ -809,7 +809,10 @@ private struct ConversationDetail: View {
         }
         // Beside the sidebar the conversation gets roomier margins.
         .environment(\.placesAsColumns, model.layout != .phone)
-        .modifier(FreezesWhileResized(model: model, name: "detail"))
+        // A workspace isn't held: its canvas already shows its cards as
+        // pictures that follow the edge (cheap native views), where a held
+        // column left a bare band beside them.
+        .modifier(FreezesWhileResized(model: model, name: "detail", enabled: !model.selectionIsWorkspace))
         // Each window's conversation column as it changes, in the debug log
         // the owner can export (a width gone wrong without a known cause).
         .onGeometryChange(for: Int.self) { Int($0.size.width.rounded()) } action: { width in
@@ -911,6 +914,8 @@ struct FreezesWhileResized: ViewModifier {
     /// For the debug log.
     let name: String
     var alignment: Alignment = .topLeading
+    /// Off: laid out live, as without this.
+    var enabled = true
     /// Beyond the content while it is held smaller than its column, with
     /// the column's edge drawn as a hairline (the right pane's own is on
     /// its content, held away from the edge).
@@ -931,6 +936,7 @@ struct FreezesWhileResized: ViewModifier {
 
     /// The size the content is held at now, if any.
     private var pinned: CGSize? {
+        guard enabled else { return nil }
         #if DEBUG
         if Self.off { return nil }
         #endif
