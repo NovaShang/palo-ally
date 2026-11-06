@@ -575,7 +575,7 @@ struct MainScreen: View {
         // The right pane beside the conversation: on the split view, not in its
         // detail column (see RightPaneHost).
         .modifier(RightPaneHost(model: model, store: store))
-        // The sidebar's way back from the left edge.
+        // Where the Mac's title bar row has its middle.
         .modifier(SidebarCollapse(model: model))
         // The pane's tabs come from the computer (once online, and again on reconnect).
         .task(id: store.connection.isOnline) {
