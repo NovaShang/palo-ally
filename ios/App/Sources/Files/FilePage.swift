@@ -582,8 +582,11 @@ struct FilePage: View {
 @MainActor
 enum FilePagePresenter {
     static func present(_ target: FileTarget, store: AppStore) {
-        // A pane's preview tab when the page has one.
-        if PaneOpeners.file?(target) == true { return }
+        // A pane's preview tab when the page has one; a picture on a large
+        // screen over the conversation instead, as a picture sent in it opens
+        // (one in the pane beside looked odd, 11-05). The phone: its pane modal.
+        let picture = UIDevice.current.userInterfaceIdiom != .phone && ImagePreview.handles(URL(fileURLWithPath: target.path))
+        if !picture, PaneOpeners.file?(target) == true { return }
         guard let top = QuickLookPresenter.topController() else { return }
         weak var presented: UIViewController?
         let page = NavigationStack {

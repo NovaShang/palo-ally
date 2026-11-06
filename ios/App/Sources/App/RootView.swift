@@ -404,6 +404,10 @@ private struct LayoutStressTest: ViewModifier {
                     case _ where a.hasPrefix("file:"):
                         let parts = a.split(separator: ":", maxSplits: 2).map(String.init)
                         if parts.count == 3 { _ = w.openFileInPane(FileTarget(scope: .pal(parts[1]), path: parts[2])) }
+                    // `filetap:pal-site:docs/home.png`: that path tapped in a reply (FilePagePresenter).
+                    case _ where a.hasPrefix("filetap:"):
+                        let parts = a.split(separator: ":", maxSplits: 2).map(String.init)
+                        if parts.count == 3, let store = w.store { FilePagePresenter.present(FileTarget(scope: .pal(parts[1]), path: parts[2]), store: store) }
                     // `unfocus`: the keyboard leaves whatever has it.
                     case "unfocus":
                         w.scene?.windows.first?.endEditing(true)
