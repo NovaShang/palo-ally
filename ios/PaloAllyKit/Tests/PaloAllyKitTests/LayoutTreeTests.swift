@@ -268,6 +268,11 @@ struct LayoutTreeTests {
         let few = T.narrowPolicy(order: ["a", "b"], active: "a", width: 300)
         #expect(few.visible == ["a", "b"] && few.switcher.isEmpty)
         #expect(T.narrowPolicy(order: order, active: "a", width: 500, maxVisible: 1).visible == ["a"])
+        #expect(T.fitting(width: 860, minWidth: 340, gap: 8) == 2)
+        #expect(T.fitting(width: 1128, minWidth: 340, gap: 8) == 3)
+        #expect(T.fitting(width: 200, minWidth: 340, gap: 8) == 1)
+        #expect(T.leafOrder(of: T.sideBySide(["a", "b"])) == ["a", "b"])
+        #expect(T.columns(of: T.sideBySide(["a", "b", "c"])) == 3)
     }
 
     @Test func keepingTrimsForDisplay() {

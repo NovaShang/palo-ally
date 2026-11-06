@@ -13,7 +13,11 @@ struct TileInfo: Equatable {
 /// The tiling's measures.
 private enum TileMetrics {
     static let switcherHeight: CGFloat = 48
-    static let narrowBelow: Double = 700
+    /// A pane narrower than this is too cramped to read and type in: the
+    /// panes that don't fit go to the row of capsules below (the owner,
+    /// 11-06: on an iPad three panes were squeezed side by side).
+    static let minPaneWidth: Double = 340
+    static let gap: Double = 8
 }
 
 /// A workspace's sessions tiled on one canvas (workbench-prd §5.3,
@@ -23,9 +27,10 @@ private enum TileMetrics {
 /// or docked) so the caller can keep it and send it to the host. Nothing
 /// else is decided here.
 ///
-/// On a narrow width (iPad slide over, split view) only two panes show and
-/// the rest sit in a row of capsules below; the stored layout is left alone
-/// and the dividers and dragging are off.
+/// When the panes can't all stand side by side at `minPaneWidth` (an iPad,
+/// a narrow window), only as many as fit show, the current one among them,
+/// and the rest sit in a row of capsules below; the stored layout is left
+/// alone and the dividers and dragging are off.
 struct TiledWorkspaceView: View {
     /// The tree to draw (any drift is renormalized here).
     let layout: LayoutTree.Node
@@ -47,10 +52,14 @@ struct TiledWorkspaceView: View {
         GeometryReader { outer in
             let normalized = LayoutTree.resized(layout)
             let order = LayoutTree.leafOrder(of: normalized)
-            let mayNarrow = Double(outer.size.width) < TileMetrics.narrowBelow && order.count > 2
+            let fit = LayoutTree.fitting(width: Double(outer.size.width), minWidth: TileMetrics.minPaneWidth, gap: TileMetrics.gap)
+            let mayNarrow = LayoutTree.columns(of: normalized) > fit
             let narrow = LayoutTree.narrowPolicy(order: order, active: mayNarrow ? active() : nil,
-                                                 width: outer.size.width, narrowBelow: TileMetrics.narrowBelow)
-            let shown = narrow.isNarrow ? (LayoutTree.keeping(narrow.visible, in: normalized) ?? normalized) : normalized
+                                                 width: outer.size.width, narrowBelow: mayNarrow ? .infinity : 0,
+                                                 maxVisible: fit)
+            // Folded: the ones that fit side by side in equal shares, not the
+            // stored proportions (a pane kept from them could be a sliver).
+            let shown = narrow.isNarrow ? LayoutTree.sideBySide(narrow.visible) : normalized
             VStack(spacing: 0) {
                 PaneCanvas(tree: shown, interactive: !narrow.isNarrow, accent: accent, handle: handle,
                            makePane: makePane, onLayoutChange: onLayoutChange, onActivate: onActivate,

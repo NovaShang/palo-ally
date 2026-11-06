@@ -213,6 +213,30 @@ extension LayoutTree {
                             switcher: order.indices.filter { !set.contains($0) }.map { order[$0] })
     }
 
+    /// How many panes stand side by side at the tree's widest: its columns.
+    public static func columns(of node: Node) -> Int {
+        switch node {
+        case .leaf: return 1
+        case .hsplit(_, _, _, _, let children): return children.reduce(0) { $0 + columns(of: $1) }
+        case .vsplit(_, _, _, _, let children): return children.map(columns(of:)).max() ?? 1
+        }
+    }
+
+    /// The panes side by side in equal shares (display only).
+    public static func sideBySide(_ ids: [String]) -> Node {
+        guard ids.count > 1 else { return single(pane: ids.first ?? "") }
+        let share = 1.0 / Double(ids.count)
+        return .hsplit(w: 1, h: 1, x: 0, y: 0, children: ids.enumerated().map { i, id in
+            .leaf(id: id, w: share, h: 1, x: Double(i) * share, y: 0)
+        })
+    }
+
+    /// How many panes of at least `minWidth` fit side by side in `width`,
+    /// `gap` apart; one at least.
+    public static func fitting(width: Double, minWidth: Double, gap: Double) -> Int {
+        max(1, Int((width + gap) / (minWidth + gap)))
+    }
+
     /// The tree reduced to some of its leaves (display only; the stored tree
     /// keeps the rest). Nil when none is left.
     public static func keeping(_ ids: [String], in tree: Node) -> Node? {
