@@ -337,6 +337,28 @@ private struct LayoutStressTest: ViewModifier {
                                 queue.append(contentsOf: v.subviews)
                             }
                         }
+                    // `keys:nihao `: those keys pressed, as the keyboard does (`⌘s`: with ⌘; `\n`: Return).
+                    case _ where a.hasPrefix("keys:"):
+                        let spec = String(a.dropFirst(5)).replacingOccurrences(of: "\\n", with: "\n")
+                        let r = AppKitBundle.object?.perform(NSSelectorFromString("pressKeys:"), with: spec)?.takeUnretainedValue() as? String
+                        debugLog("[nav] \(r ?? "no AppKit bundle")")
+                        try? await Task.sleep(for: .seconds(0.1 * Double(spec.count) + 0.5))
+                    // `compose:nihao:你好`: an input method's composition in the text that has
+                    // the keyboard, as UIKit hands it on (marked text a letter at a time, then the commit).
+                    case _ where a.hasPrefix("compose:"):
+                        let parts = a.dropFirst(8).split(separator: ":").map(String.init)
+                        func responder(_ v: UIView) -> UIView? {
+                            v.isFirstResponder ? v : v.subviews.lazy.compactMap(responder).first
+                        }
+                        guard parts.count == 2, let win = w.scene?.windows.first, let input = responder(win) as? (UIView & UITextInput) else {
+                            debugLog("[nav] compose: nothing has the keyboard"); break
+                        }
+                        for i in 1...parts[0].count {
+                            input.setMarkedText(String(parts[0].prefix(i)), selectedRange: NSRange(location: i, length: 0))
+                            try? await Task.sleep(for: .milliseconds(150))
+                        }
+                        input.insertText(parts[1])
+                        try? await Task.sleep(for: .milliseconds(300))
                     // `copy`: ⌘C pressed.
                     case "copy":
                         debugLog("[nav] \((AppKitBundle.object?.perform(NSSelectorFromString("pressCopy"))?.takeUnretainedValue() as? String) ?? "no AppKit bundle")")

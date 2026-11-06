@@ -85,7 +85,8 @@ final class FileEditSession {
             baseVersion = version
             return
         }
-        if dirty {
+        // Pinyin being typed is about to be unsaved text: the bar, not the computer's copy over it.
+        if dirty || editor.composing {
             conflict = version
         } else {
             editor.replace(with: text)

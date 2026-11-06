@@ -20,7 +20,12 @@ public final class FileEditorWebView: WKWebView, WKNavigationDelegate {
     /// ⌘E in the editor (back to the preview).
     public var onToggle: (() -> Void)?
 
-    /// Where a failed call is told (the app's debug log).
+    /// An input method's composition is open in the page (pinyin typed, not
+    /// yet a character): the text is about to change though it isn't said
+    /// to be unsaved until the composition ends.
+    public private(set) var composing = false
+
+    /// Where a failed call, and what the page notes, is told (the app's debug log).
     public static var log: ((String) -> Void)?
 
     private var ready = false
@@ -59,6 +64,7 @@ public final class FileEditorWebView: WKWebView, WKNavigationDelegate {
     public func load(fileName: String, text: String, dark: Bool, focus: Bool) {
         struct Payload: Encodable { let name: String; let text: String; let dark: Bool; let zh: Bool; let focus: Bool }
         self.dark = dark
+        composing = false
         let zh = (Locale.preferredLanguages.first ?? "zh").hasPrefix("zh")
         call("paEditorLoad", Payload(name: fileName, text: text, dark: dark, zh: zh, focus: focus))
     }
@@ -117,6 +123,8 @@ public final class FileEditorWebView: WKWebView, WKNavigationDelegate {
         case "dirty": onDirty?(body["dirty"] as? Bool ?? false)
         case "save": onSave?()
         case "toggle": onToggle?()
+        case "composing": composing = body["composing"] as? Bool ?? false
+        case "log": Self.log?("file editor: \(body["text"] as? String ?? "")")
         default: break
         }
     }

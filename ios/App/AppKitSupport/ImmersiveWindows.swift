@@ -274,6 +274,47 @@ final class ImmersiveWindows: NSObject {
         return "pressed ⌘C"
     }
 
+    /// Keys pressed one by one, as the keyboard does: letters, digits,
+    /// space, ↑↓←→; `\n` Return; `⌘x` that key with ⌘. Queued for the app,
+    /// a key every 80 ms, the app brought in front first. An input method
+    /// doesn't compose them (they come in as the letters): `compose:` for that.
+    @objc func pressKeys(_ spec: String) -> String {
+        guard let window = NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first(where: { $0.isVisible && $0.toolbar != nil })
+        else { return "no window" }
+        let wasActive = NSApplication.shared.isActive
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        let codes: [Character: UInt16] = [
+            "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9, "b": 11, "q": 12, "w": 13,
+            "e": 14, "r": 15, "y": 16, "t": 17, "1": 18, "2": 19, "3": 20, "4": 21, "6": 22, "5": 23, "9": 25, "7": 26,
+            "8": 28, "0": 29, "o": 31, "u": 32, "i": 34, "p": 35, "l": 37, "j": 38, "k": 40, "n": 45, "m": 46,
+            " ": 49, "\n": 36, "↓": 125, "↑": 126, "←": 123, "→": 124,
+        ]
+        var keys: [(Character, NSEvent.ModifierFlags)] = []
+        var command = false
+        for c in spec {
+            if c == "⌘" { command = true; continue }
+            keys.append((c, command ? .command : []))
+            command = false
+        }
+        for (i, (c, flags)) in keys.enumerated() {
+            guard let code = codes[c] else { continue }
+            let arrows: [Character: Int] = ["↑": 0xF700, "↓": 0xF701, "←": 0xF702, "→": 0xF703]
+            let chars = c == "\n" ? "\r" : arrows[c].map { String(UnicodeScalar($0)!) } ?? String(c)
+            for (k, type) in [NSEvent.EventType.keyDown, .keyUp].enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3 + Double(i) * 0.08 + Double(k) * 0.03) {
+                    // A keyboard's event underneath (UIKit reads that one), queued for this app only.
+                    guard let cg = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: type == .keyDown) else { return }
+                    cg.flags = flags.contains(.command) ? .maskCommand : []
+                    let units = Array(chars.utf16)
+                    cg.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
+                    if let e = NSEvent(cgEvent: cg) { NSApplication.shared.postEvent(e, atStart: false) }
+                }
+            }
+        }
+        return "pressed \(keys.count) keys (the app \(wasActive ? "was" : "wasn't") in front)"
+    }
+
     /// A mouse wheel turned at "x,y" (as `click:` has them) by `lines` lines,
     /// "x,y,lines" (negative: towards the end), in a few notches as a hand's:
     /// a real wheel event, queued for the app as one from the mouse is.

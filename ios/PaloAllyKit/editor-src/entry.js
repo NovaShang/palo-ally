@@ -2,7 +2,9 @@
 // and search only (no completion, no diagnostics). The app talks to it
 // through the window.paEditor* functions below and hears back on the
 // `paEditor` message handler: {type:"ready"}, {type:"dirty", dirty},
-// {type:"save"} (⌘S typed in the page), {type:"toggle"} (⌘E).
+// {type:"save"} (⌘S typed in the page), {type:"toggle"} (⌘E),
+// {type:"composing", composing} (an input method's composition open or
+// over) and {type:"log", text} (for the app's debug log).
 import { Compartment, EditorState, Prec } from "@codemirror/state";
 import {
   EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection,
@@ -138,7 +140,65 @@ let lastDirty = false;
 let snapshots = new Map();
 let snapshotSeq = 0;
 
+// An input method's composition (pinyin being typed, not yet a character)
+// is open: whether the text is unsaved isn't said until it ends, so the
+// app's state (保存, the tab's dot) doesn't change under the input method,
+// and the computer's copy waits to come in (`pendingReplace`).
+let composing = false;
+let pendingReplace = null;
+// What each composition did, in the app's debug log (sizes only, never the
+// text; the first few per file): where an input method's text goes missing.
+let compositions = 0;
+let composeUpdates = 0;
+let composeStartLength = 0;
+const log = (text) => post({ type: "log", text });
+
+function endComposition(committed) {
+  if (!composing) return;
+  composing = false;
+  post({ type: "composing", composing: false });
+  if (compositions <= 20 && view) {
+    log(`composition ${compositions}: ${composeUpdates} updates, ${committed} characters committed, the text ${view.state.doc.length - composeStartLength >= 0 ? "+" : ""}${view.state.doc.length - composeStartLength}`);
+  }
+  if (pendingReplace !== null) {
+    const text = pendingReplace;
+    pendingReplace = null;
+    window.paEditorReplace(text);
+  }
+  reportDirty();
+}
+
+function watchCompositions(v) {
+  const dom = v.contentDOM;
+  dom.addEventListener("compositionstart", () => {
+    if (composing) {
+      // Started again without ending: the page lost hold of it.
+      if (compositions <= 20) log(`composition ${compositions}: started again before it ended`);
+      return;
+    }
+    composing = true;
+    // Held by the app, not shown: the computer's copy changing now is a conflict, as with unsaved text.
+    post({ type: "composing", composing: true });
+    compositions += 1;
+    composeUpdates = 0;
+    composeStartLength = v.state.doc.length;
+  });
+  dom.addEventListener("compositionupdate", () => { composeUpdates += 1; });
+  // The commit is applied after this event: read the text once it is.
+  dom.addEventListener("compositionend", (e) => {
+    const committed = (e.data || "").length;
+    setTimeout(() => endComposition(committed), 0);
+  });
+  dom.addEventListener("blur", () => {
+    if (!composing) return;
+    if (compositions <= 20) log(`composition ${compositions}: the editor lost the keyboard in the middle`);
+    // Away from the keyboard with no end said: over all the same.
+    setTimeout(() => { if (composing && !v.compositionStarted) endComposition(0); }, 0);
+  });
+}
+
 function reportDirty() {
+  if (composing) return;
   const dirty = !!view && !!saved && !view.state.doc.eq(saved);
   if (dirty !== lastDirty) {
     lastDirty = dirty;
@@ -188,10 +248,14 @@ window.paEditorLoad = (p) => {
   saved = state.doc;
   snapshots = new Map();
   lastDirty = false;
+  composing = false;
+  pendingReplace = null;
+  compositions = 0;
   if (view) {
     view.setState(state);
   } else {
     view = new EditorView({ state, parent: document.getElementById("root") });
+    watchCompositions(view);
   }
   view.scrollDOM.scrollTop = 0;
   if (p.focus) view.focus();
@@ -205,6 +269,12 @@ window.paEditorLoad = (p) => {
  */
 window.paEditorReplace = (text) => {
   if (!view) return false;
+  // Not under an input method's open composition: once it ends.
+  if (composing) {
+    pendingReplace = text;
+    log("the computer's copy waits for a composition to end");
+    return true;
+  }
   // Compared line break for line break (a CRLF file's doc counts each as one).
   const br = view.state.lineBreak;
   const old = view.state.doc.toString();
