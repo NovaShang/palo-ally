@@ -131,6 +131,15 @@ jobs:
           echo "profile=$SECRETS/devid.provisionprofile" >> "$GITHUB_OUTPUT"
           echo "notary_key=$SECRETS/notary.p8" >> "$GITHUB_OUTPUT"
 
+      # The project is generated from project.yml (local builds run xcodegen
+      # too); the committed .pbxproj can lag behind files added since.
+      - name: Generate the project
+        working-directory: ios/App
+        run: |
+          set -e
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          xcodegen generate
+
       - name: Build, sign, notarize, package
         env:
           VERSION: ${{ steps.v.outputs.version }}
