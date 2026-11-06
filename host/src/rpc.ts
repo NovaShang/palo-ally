@@ -34,7 +34,7 @@ export const RPC_METHODS = [
   "workspaces.list", "workspaces.create", "workspaces.update", "workspaces.move", "workspaces.delete", "workbench.order.set", "workbench.tabs.get", "workbench.tabs.set",
   "pair.invite", "device.list", "device.remove",
   "auth.login.start", "auth.login.code", "auth.login.cancel",
-  "files.list", "files.read", "files.search", "files.resolve", "files.watch", "files.unwatch", "files.folders.list", "files.folders.browse", "files.folders.add", "files.folders.remove",
+  "files.list", "files.read", "files.write", "files.search", "files.resolve", "files.watch", "files.unwatch", "files.folders.list", "files.folders.browse", "files.folders.add", "files.folders.remove",
 ] as const;
 
 export const RPC_EVENTS = [
@@ -362,6 +362,11 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     case "files.read":
       ownerOnly(ctx, t("files.err.owner"));
       return hub.files.read(parseScope(p.scope), String(p.path ?? ""), Number(p.offset ?? 0), Number(p.length ?? 256 * 1024), ctx.deviceId ?? ctx.channel);
+    // The app's editor saving a text file: only over the version it read.
+    case "files.write":
+      ownerOnly(ctx, t("files.err.owner"));
+      if (typeof p.content !== "string") throw new Error(t("files.err.notFound"));
+      return hub.files.write(parseScope(p.scope), String(p.path ?? ""), p.content, String(p.baseVersion ?? ""), ctx.deviceId ?? ctx.channel);
     case "files.search":
       ownerOnly(ctx, t("files.err.owner"));
       return hub.files.search(parseScope(p.scope), String(p.query ?? ""), Number(p.limit ?? 50));

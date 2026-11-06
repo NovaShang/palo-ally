@@ -109,6 +109,7 @@ private let resultTypes: [String: Check] = [
     RPCMethod.authLoginCancel: strict(AuthResult.self),
     RPCMethod.filesList: strict(FilesListResult.self),
     RPCMethod.filesRead: strict(FileChunk.self),
+    RPCMethod.filesWrite: strict(FilesWriteResult.self),
     RPCMethod.filesSearch: strict(FilesSearchResult.self),
     RPCMethod.filesResolve: strict(FilesResolveResult.self),
     RPCMethod.filesWatch: strict(FilesWatchResult.self),

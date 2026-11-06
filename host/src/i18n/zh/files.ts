@@ -9,4 +9,7 @@ export const zhFiles = {
   "files.err.cantRead": "电脑上没有权限读这里",
   "files.err.folderNotAllowed": "选一个具体的文件夹，不能是整个磁盘、整个个人文件夹或 PaloAlly 自己的文件夹",
   "files.err.tooManyFolders": "最多记住 {max} 个文件夹，先移除一些",
+  "files.err.tooLargeToWrite": "超过 1 MB 的文件不能在这里改",
+  "files.err.cantWrite": "电脑上没有权限改这个文件",
+  "files.err.writeFailed": "没能存到电脑上，再试一次",
 } as const;

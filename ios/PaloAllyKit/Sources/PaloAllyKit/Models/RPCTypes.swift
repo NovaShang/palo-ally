@@ -155,6 +155,8 @@ public enum RPCMethod {
     /// folders the owner opened from the preview pane.
     public static let filesList = "files.list"
     public static let filesRead = "files.read"
+    /// A text file edited in the app, saved back (only over the version read).
+    public static let filesWrite = "files.write"
     public static let filesSearch = "files.search"
     public static let filesResolve = "files.resolve"
     /// A preview on screen follows its file (`files.changed` says when it changed).
@@ -165,7 +167,7 @@ public enum RPCMethod {
     public static let filesFoldersAdd = "files.folders.add"
     public static let filesFoldersRemove = "files.folders.remove"
 
-    public static let files: [String] = [filesList, filesRead, filesSearch, filesResolve, filesWatch, filesUnwatch, filesFoldersList,
+    public static let files: [String] = [filesList, filesRead, filesWrite, filesSearch, filesResolve, filesWatch, filesUnwatch, filesFoldersList,
                                          filesFoldersBrowse, filesFoldersAdd, filesFoldersRemove]
 
     /// Every method the client knows. The contract test checks this equals

@@ -154,6 +154,11 @@ extension DemoHost {
         return (path, editedFiles[abs]?.file ?? file, abs)
     }
 
+    /// A file's version as the host gives it (mtime in ms and size).
+    func demoVersion(_ file: DemoFile, abs: String) -> String {
+        "\(editedFiles[abs]?.mtime ?? Self.demoFilesTime):\(file.size)"
+    }
+
     /// When the made-up files were last changed (two hours before the demo began; steady, like a real disk's).
     static let demoFilesTime = Date().epochMillis - 7_200_000
 
@@ -223,13 +228,34 @@ extension DemoHost {
                 scheduleDemoFileEdit()
             }
             let mime = DemoHost.mime(for: path)
+            let version = JSONValue.string(demoVersion(file, abs: abs))
             if file.size > FileChunk.maxFile {
-                return ["data": "", "size": .number(Double(file.size)), "mime": .string(mime), "eof": true, "tooLarge": true]
+                return ["data": "", "size": .number(Double(file.size)), "mime": .string(mime), "eof": true, "tooLarge": true, "version": version]
             }
             let offset = min(Int(p["offset"]?.doubleValue ?? 0), file.data.count)
             let end = min(file.data.count, offset + 256 * 1024)
             return ["data": .string(file.data.subdata(in: offset..<end).base64EncodedString()), "size": .number(Double(file.size)),
-                    "mime": .string(mime), "eof": .bool(end >= file.data.count)]
+                    "mime": .string(mime), "eof": .bool(end >= file.data.count), "version": version]
+        // The editor saving: kept for the demo's run, over the version read
+        // only (an edit from -demoFileEditAfter meanwhile is a conflict).
+        case RPCMethod.filesWrite:
+            let (_, file, abs) = try demoFile(p)
+            let text = p["content"]?.stringValue ?? ""
+            guard Data(text.utf8).count <= FilesWriteParams.maxBytes else { throw DemoError(message: "超过 1 MB 的文件不能在这里改") }
+            let now = demoVersion(file, abs: abs)
+            guard p["baseVersion"]?.stringValue == now else {
+                return ["version": .string(now), "size": .number(Double(file.size)),
+                        "mtime": .number(Double(editedFiles[abs]?.mtime ?? Self.demoFilesTime)), "conflict": true]
+            }
+            // Never the same millisecond as the version it replaces.
+            let mtime = max(Date().epochMillis, (editedFiles[abs]?.mtime ?? Self.demoFilesTime) + 1)
+            let saved = DemoFile(text)
+            editedFiles[abs] = (saved, mtime)
+            for w in watchedFiles.values where w["abs"]?.stringValue == abs && !Self.noFileWatch {
+                emit(RPCEventName.filesChanged, JSONValue.object(["scope": w["scope"] ?? .null, "path": w["path"] ?? .null,
+                                                                  "size": .number(Double(saved.size)), "mtime": .number(Double(mtime))]))
+            }
+            return ["version": .string(demoVersion(saved, abs: abs)), "size": .number(Double(saved.size)), "mtime": .number(Double(mtime))]
         case RPCMethod.filesWatch where !Self.noFileWatch:
             let (_, file, abs) = try demoFile(p)
             watchedFiles[Self.watchKey(p)] = ["scope": p["scope"] ?? .null, "path": p["path"] ?? .null, "abs": .string(abs)]

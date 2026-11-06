@@ -1,4 +1,5 @@
-import { closeSync, lstatSync, openSync, readdirSync, readSync, realpathSync, statSync, type Stats } from "node:fs";
+import { chmodSync, closeSync, fsyncSync, lstatSync, openSync, readdirSync, readSync, realpathSync, renameSync, statSync, unlinkSync, writeSync, type Stats } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Audit } from "./audit.ts";
@@ -7,7 +8,8 @@ import type { Paths } from "./config.ts";
 import { t } from "./i18n/index.ts";
 import { newId, readJson, writeJson } from "./util.ts";
 
-// Files on the computer, read-only (docs/files-prd.md): a Pal's project
+// Files on the computer (docs/files-prd.md), read, and a text file written
+// back from the app's editor (`files.write`): a Pal's project
 // folder, the assistant's home (its working folder and its artifacts),
 // folders the owner chose, and the owner's own home folder (Palo's 文件 can
 // switch to it; its dot files stay out unless asked for). Every path is resolved to its real path (symlinks
@@ -41,6 +43,8 @@ const SEARCH_SKIP: ReadonlySet<string> = new Set([
 ]);
 /** Bigger than this: its size and path only, never its bytes. */
 export const MAX_READ_BYTES = 5 * 1024 * 1024;
+/** What the app's editor may write back (it edits text up to 1 MB). */
+export const MAX_WRITE_BYTES = 1024 * 1024;
 const MAX_LIST = 2000;
 const MAX_FOLDERS = 50;
 
@@ -169,7 +173,7 @@ export class FileBrowser {
    * size only (`tooLarge`), nothing read. The first chunk is audited.
    */
   read(scope: FileScope, path: string, offset = 0, length = CHUNK, by = "app"):
-    { data: string; size: number; mime: string; eof: boolean; tooLarge?: boolean } {
+    { data: string; size: number; mime: string; eof: boolean; tooLarge?: boolean; version: string } {
     const { real, rel } = this.locate(scope, path);
     const st = statSync(real);
     if (st.isDirectory()) throw new Error(t("files.err.isDir"));
@@ -177,7 +181,8 @@ export class FileBrowser {
     const mime = mimeOf(real);
     const start = Math.max(0, Math.floor(Number(offset) || 0));
     if (start === 0) this.d.audit.log("files.read", { scope: scopeLabel(scope), path: rel, size: st.size, by, ...(st.size > MAX_READ_BYTES ? { tooLarge: true } : {}) });
-    if (st.size > MAX_READ_BYTES) return { data: "", size: st.size, mime, eof: true, tooLarge: true };
+    const version = versionOf(st);
+    if (st.size > MAX_READ_BYTES) return { data: "", size: st.size, mime, eof: true, tooLarge: true, version };
     const len = Math.max(0, Math.min(Math.floor(Number(length) || CHUNK), CHUNK, st.size - start));
     const buf = Buffer.alloc(len);
     if (len > 0) {
@@ -188,7 +193,55 @@ export class FileBrowser {
         closeSync(fd);
       }
     }
-    return { data: buf.toString("base64"), size: st.size, mime, eof: start + len >= st.size };
+    return { data: buf.toString("base64"), size: st.size, mime, eof: start + len >= st.size, version };
+  }
+
+  // ---------------- files.write ----------------
+
+  /**
+   * A text file the owner edited in the app, written back whole. Only an
+   * existing file, only while it is still the version the app read
+   * (`baseVersion`, from `files.read`): changed meanwhile, nothing is
+   * written and the app is told (`conflict`), so an edit made on the
+   * computer is never lost without the owner choosing to. Written to a temp
+   * file beside it and renamed over it (never half a file), its mode kept.
+   */
+  write(scope: FileScope, path: string, content: string, baseVersion: string, by = "app"):
+    { version: string; size: number; mtime: number; conflict?: true } {
+    const { real, rel } = this.locate(scope, path);
+    // PaloAlly's own state, whatever the scope (`root` reads anything).
+    if (this.forbidden(real)) throw new Error(t("files.err.notFound"));
+    const st = statSync(real);
+    if (st.isDirectory()) throw new Error(t("files.err.isDir"));
+    if (!st.isFile()) throw new Error(t("files.err.notFound"));
+    const bytes = Buffer.from(content, "utf8");
+    if (bytes.length > MAX_WRITE_BYTES) throw new Error(t("files.err.tooLargeToWrite"));
+    const now = versionOf(st);
+    if (now !== baseVersion) return { version: now, size: st.size, mtime: Math.round(st.mtimeMs), conflict: true };
+    const temp = join(dirname(real), `.${basename(real)}.paloally-${randomBytes(4).toString("hex")}.tmp`);
+    try {
+      const fd = openSync(temp, "wx", st.mode & 0o777);
+      try {
+        writeSync(fd, bytes, 0, bytes.length, 0);
+        fsyncSync(fd);
+      } finally {
+        closeSync(fd);
+      }
+      // The umask may have taken bits off.
+      chmodSync(temp, st.mode & 0o7777);
+      renameSync(temp, real);
+    } catch (e) {
+      try {
+        unlinkSync(temp);
+      } catch {
+        // never made
+      }
+      const code = (e as NodeJS.ErrnoException).code;
+      throw new Error(t(code === "EACCES" || code === "EPERM" || code === "EROFS" ? "files.err.cantWrite" : "files.err.writeFailed"));
+    }
+    const after = statSync(real);
+    this.d.audit.log("files.write", { scope: scopeLabel(scope), path: rel, bytes: bytes.length, by });
+    return { version: versionOf(after), size: after.size, mtime: Math.round(after.mtimeMs) };
   }
 
   // ---------------- files.watch (its stat) ----------------
@@ -376,6 +429,11 @@ export function parseScope(v: unknown): FileScope {
 
 export function scopeLabel(s: FileScope): string {
   return s.kind === "palo" || s.kind === "home" || s.kind === "root" ? s.kind : `${s.kind}:${s.id}`;
+}
+
+/** A file's version as the editor knows it: its modification time (ms) and size. */
+export function versionOf(st: Stats): string {
+  return `${Math.round(st.mtimeMs)}:${st.size}`;
 }
 
 function realOrNull(p: string): string | null {

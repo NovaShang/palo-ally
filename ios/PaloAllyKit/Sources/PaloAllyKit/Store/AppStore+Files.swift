@@ -10,23 +10,41 @@ extension AppStore {
     }
 
     /// A whole file, in chunks. `tooLarge`: over 5 MB, nothing was read.
+    /// `version`: the file's when its first chunk was read (nil from an
+    /// older host): changed while read, a save over it is a conflict.
     public func readFile(_ scope: FileScope, path: String,
-                         progress: ((Int64, Int64) -> Void)? = nil) async throws -> (data: Data, mime: String, size: Int64, tooLarge: Bool) {
+                         progress: ((Int64, Int64) -> Void)? = nil)
+        async throws -> (data: Data, mime: String, size: Int64, tooLarge: Bool, version: String?) {
         var out = Data()
         var offset: Int64 = 0
+        var version: String?
         while true {
             let chunk: FileChunk = try await rpc.call(
                 RPCMethod.filesRead,
                 params: FilesReadParams(scope: scope, path: path, offset: offset),
                 timeout: 60)
-            if chunk.tooLarge { return (Data(), chunk.mime, chunk.size, true) }
+            if offset == 0 { version = chunk.version }
+            if chunk.tooLarge { return (Data(), chunk.mime, chunk.size, true, version) }
             out.append(chunk.data)
             offset += Int64(chunk.data.count)
             progress?(offset, max(chunk.size, offset))
             if chunk.eof || chunk.data.isEmpty || offset >= chunk.size || offset > FileChunk.maxFile {
-                return (out, chunk.mime, chunk.size, false)
+                return (out, chunk.mime, chunk.size, false, version)
             }
         }
+    }
+
+    /// A text file edited in the app, saved back whole over `baseVersion`
+    /// (the version it was read at); its new version. Changed on the
+    /// computer meanwhile: nothing is written, `FileWriteConflict` says the
+    /// version there now.
+    public func writeFile(_ scope: FileScope, path: String, text: String, baseVersion: String) async throws -> String {
+        let r: FilesWriteResult = try await rpc.call(
+            RPCMethod.filesWrite,
+            params: FilesWriteParams(scope: scope, path: path, content: text, baseVersion: baseVersion),
+            timeout: 60)
+        if r.conflict { throw FileWriteConflict(version: r.version) }
+        return r.version
     }
 
     // MARK: following a file on screen

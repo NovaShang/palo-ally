@@ -10,4 +10,7 @@ export const enFiles: Record<keyof typeof zhFiles, string> = {
   "files.err.cantRead": "The computer doesn't allow reading here",
   "files.err.folderNotAllowed": "Pick a specific folder, not the whole disk, your whole home folder or PaloAlly's own folder",
   "files.err.tooManyFolders": "At most {max} folders are remembered; remove some first",
+  "files.err.tooLargeToWrite": "Files over 1 MB can't be edited here",
+  "files.err.cantWrite": "The computer doesn't allow changing this file",
+  "files.err.writeFailed": "Couldn't save it on the computer; try again",
 };

@@ -86,14 +86,17 @@ public struct FilesReadParams: Codable, Sendable {
     }
 }
 
-/// `files.read → {data, size, mime, eof, tooLarge?}`: a chunk like
-/// `artifact.read`'s; over 5 MB only the size (`tooLarge`).
+/// `files.read → {data, size, mime, eof, tooLarge?, version?}`: a chunk like
+/// `artifact.read`'s; over 5 MB only the size (`tooLarge`). `version` (the
+/// file's mtime and size; nil from hosts before `files.write`): what an
+/// edit is saved over.
 public struct FileChunk: Decodable, Sendable {
     public var data: Data
     public var size: Int64
     public var mime: String
     public var eof: Bool
     public var tooLarge: Bool
+    public var version: String?
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
         data = Data(base64Encoded: l.string("data", or: ""), options: .ignoreUnknownCharacters) ?? Data()
@@ -101,9 +104,53 @@ public struct FileChunk: Decodable, Sendable {
         mime = l.string("mime", or: "application/octet-stream")
         eof = l.bool("eof", or: true)
         tooLarge = l.bool("tooLarge") ?? false
+        version = l.string("version")
     }
     /// What the host sends whole (docs/files-prd.md: 5 MB).
     public static let maxFile: Int64 = 5 * 1024 * 1024
+}
+
+/// `files.write {scope, path, content, baseVersion}`: a text file edited in
+/// the app, saved whole, only over the version it was read at.
+public struct FilesWriteParams: Codable, Sendable {
+    public var scope: FileScope
+    public var path: String
+    public var content: String
+    public var baseVersion: String
+    public init(scope: FileScope, path: String, content: String, baseVersion: String) {
+        self.scope = scope; self.path = path; self.content = content; self.baseVersion = baseVersion
+    }
+    /// What the editor opens and saves (the host refuses more).
+    public static let maxBytes = 1024 * 1024
+}
+
+/// `files.write → {version, size, mtime, conflict?}`: saved, its new version;
+/// `conflict`: it changed on the computer since it was read, nothing was
+/// written, `version` is the one on disk now.
+public struct FilesWriteResult: Decodable, Sendable {
+    public var version: String
+    public var size: Int64
+    public var mtime: Int64
+    public var conflict: Bool
+
+    public init(version: String, size: Int64, mtime: Int64, conflict: Bool = false) {
+        self.version = version; self.size = size; self.mtime = mtime; self.conflict = conflict
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        version = l.string("version", or: "")
+        size = l.int64("size", or: 0)
+        mtime = l.millis("mtime", or: 0)
+        conflict = l.bool("conflict") ?? false
+    }
+}
+
+/// A save refused: the file changed on the computer since it was read.
+/// `version`: the one on disk now (saved over it, the owner's copy wins).
+public struct FileWriteConflict: Error, Sendable, Equatable {
+    public var version: String
+    public init(version: String) { self.version = version }
 }
 
 /// `files.search {scope, query, limit?}`.

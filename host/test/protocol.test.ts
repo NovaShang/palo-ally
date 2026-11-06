@@ -342,6 +342,14 @@ describe("host ↔ app protocol", () => {
     const big = { params: { scope, path: "video.mov" }, result: await call("files.read", { scope, path: "video.mov" }) };
     expect(big.result.tooLarge).toBe(true);
     methods["files.read"] = [read, big];
+    // The editor saves it over the version it read; saved again over that
+    // same version (it changed since) is a conflict, nothing written.
+    const saveParams = { scope, path: "README.md", content: "# 文档\n安装说明见 src/app.ts，已改\n", baseVersion: read.result.version };
+    const saved = { params: saveParams, result: await call("files.write", saveParams) };
+    expect(saved.result.conflict).toBeUndefined();
+    const conflict = { params: saveParams, result: await call("files.write", saveParams) };
+    expect(conflict.result.conflict).toBe(true);
+    methods["files.write"] = [saved, conflict];
     // The preview follows the file: watched, changed on disk, unwatched.
     expect((await run("files.watch", { scope, path: "README.md" })).lease).toBeGreaterThan(0);
     writeFileSync(join(project, "README.md"), "# 文档\n安装说明见 src/app.ts（已更新）\n");

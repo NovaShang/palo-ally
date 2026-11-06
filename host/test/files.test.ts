@@ -2,11 +2,11 @@
 // inside a scope only, symlinks followed and checked, `..` refused,
 // PaloAlly's own state never readable, owner devices only.
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { Audit } from "../src/audit.ts";
-import { FileBrowser, MAX_READ_BYTES, cleanCandidate, parseScope } from "../src/files.ts";
+import { FileBrowser, MAX_READ_BYTES, MAX_WRITE_BYTES, cleanCandidate, parseScope } from "../src/files.ts";
 import { FileWatches, type FileChanged } from "../src/fileWatch.ts";
 import { Bus } from "../src/bus.ts";
 import { parseAllyWire } from "../src/proto/ally.ts";
@@ -148,18 +148,79 @@ describe("files", () => {
   test("read: chunks like artifact.read, audited once, big files give their size only", () => {
     const { files, project, audit } = world();
     const whole = files.read(site, "README.md");
-    expect(whole).toEqual({ data: Buffer.from("# Site\n").toString("base64"), size: 7, mime: expect.any(String), eof: true });
+    expect(whole).toEqual({ data: Buffer.from("# Site\n").toString("base64"), size: 7, mime: expect.any(String), eof: true, version: expect.stringMatching(/^\d+:7$/) });
     const first = files.read(site, "README.md", 0, 3, "dev-phone");
     expect([Buffer.from(first.data, "base64").toString(), first.eof]).toEqual(["# S", false]);
     const rest = files.read(site, "README.md", 3, 100, "dev-phone");
     expect([Buffer.from(rest.data, "base64").toString(), rest.eof]).toEqual(["ite\n", true]);
     expect(() => files.read(site, "src")).toThrow("这是文件夹");
     writeFileSync(join(project, "big.bin"), Buffer.alloc(MAX_READ_BYTES + 1));
-    expect(files.read(site, "big.bin")).toEqual({ data: "", size: MAX_READ_BYTES + 1, mime: expect.any(String), eof: true, tooLarge: true });
+    expect(files.read(site, "big.bin")).toEqual({ data: "", size: MAX_READ_BYTES + 1, mime: expect.any(String), eof: true, tooLarge: true, version: expect.any(String) });
     const reads = audit.tail(20).filter((e) => e.type === "files.read");
     expect(reads.map((e) => [e.path, e.scope])).toEqual([["README.md", "pal:pal_site"], ["README.md", "pal:pal_site"], ["big.bin", "pal:pal_site"]]);
     expect(reads[1]!.by).toBe("dev-phone");
     expect(reads[2]!.tooLarge).toBe(true);
+  });
+
+  test("write: over the version read, replaced whole (mode kept, a link stays a link), audited", () => {
+    const { files, project, audit } = world();
+    const file = join(project, "README.md");
+    chmodSync(file, 0o640);
+    const base = files.read(site, "README.md").version;
+    const r = files.write(site, "README.md", "# Site\n\n改过了\n", base, "dev-mac");
+    expect(r.conflict).toBeUndefined();
+    expect(readFileSync(file, "utf8")).toBe("# Site\n\n改过了\n");
+    expect(statSync(file).mode & 0o777).toBe(0o640);
+    expect(r.version).toBe(files.read(site, "README.md").version);
+    expect(r.size).toBe(Buffer.byteLength("# Site\n\n改过了\n"));
+    // no temp file left beside it
+    expect(readdirSync(project).filter((n) => n.includes(".paloally-"))).toEqual([]);
+    // written again over the new version
+    expect(files.write(site, "README.md", "# Site 2\n", r.version).conflict).toBeUndefined();
+    // a link inside the project: its target is written, the link stays
+    const linkBase = files.read(site, "app-link.ts").version;
+    files.write(site, "app-link.ts", "export const a = 2;\n", linkBase);
+    expect(lstatSync(join(project, "app-link.ts")).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(join(project, "app-link.ts"))).toBe(join(project, "src", "app.ts"));
+    expect(readFileSync(join(project, "src", "app.ts"), "utf8")).toBe("export const a = 2;\n");
+    const writes = audit.tail(20).filter((e) => e.type === "files.write");
+    expect(writes.map((e) => [e.path, e.bytes])).toEqual([["README.md", Buffer.byteLength("# Site\n\n改过了\n")], ["README.md", 9], ["src/app.ts", 20]]);
+    expect(writes[0]!.by).toBe("dev-mac");
+  });
+
+  test("write: changed on the computer since it was read is a conflict, nothing written; forcing takes the version now", () => {
+    const { files, project, audit } = world();
+    const file = join(project, "README.md");
+    const base = files.read(site, "README.md").version;
+    writeFileSync(file, "# Site, edited on the computer\n");
+    utimesSync(file, new Date(), new Date(Date.now() + 5_000));
+    const r = files.write(site, "README.md", "# mine\n", base);
+    expect(r.conflict).toBe(true);
+    expect(r.version).not.toBe(base);
+    expect(readFileSync(file, "utf8")).toBe("# Site, edited on the computer\n");
+    expect(audit.tail(20).filter((e) => e.type === "files.write")).toEqual([]);
+    // 「用我的覆盖」: over the version on disk now
+    expect(files.write(site, "README.md", "# mine\n", r.version).conflict).toBeUndefined();
+    expect(readFileSync(file, "utf8")).toBe("# mine\n");
+    // an empty or made-up version never writes
+    expect(files.write(site, "README.md", "# x\n", "").conflict).toBe(true);
+  });
+
+  test("write: over 1 MB, folders, missing files, outside the scope and PaloAlly's own state refused", () => {
+    const { files, project, paths } = world();
+    const base = files.read(site, "README.md").version;
+    expect(() => files.write(site, "README.md", "x".repeat(MAX_WRITE_BYTES + 1), base)).toThrow("超过 1 MB");
+    // a multi-byte character counts by its bytes
+    expect(() => files.write(site, "README.md", "改".repeat(Math.ceil(MAX_WRITE_BYTES / 3) + 1), base)).toThrow("超过 1 MB");
+    expect(readFileSync(join(project, "README.md"), "utf8")).toBe("# Site\n");
+    expect(() => files.write(site, "src", "x", base)).toThrow("这是文件夹");
+    expect(() => files.write(site, "nope.md", "x", base)).toThrow();
+    expect(() => files.write(site, "secret-link.txt", "x", base)).toThrow();
+    expect(() => files.write(site, "../secret.txt", "x", base)).toThrow();
+    const identity = join(paths.root, "identity.json");
+    const st = statSync(identity);
+    expect(() => files.write({ kind: "root" }, identity, "{}", `${Math.round(st.mtimeMs)}:${st.size}`)).toThrow();
+    expect(readFileSync(identity, "utf8")).toBe("{\"key\":\"private\"}");
   });
 
   test("search: names, best first, never into .git or node_modules or links out", () => {
@@ -233,6 +294,7 @@ describe("files", () => {
     for (const [m, p] of [
       ["files.list", { scope: { kind: "palo" } }],
       ["files.read", { scope: { kind: "palo" }, path: "notes.md" }],
+      ["files.write", { scope: { kind: "palo" }, path: "notes.md", content: "x", baseVersion: "1:1" }],
       ["files.search", { scope: { kind: "palo" }, query: "notes" }],
       ["files.resolve", { scope: { kind: "palo" }, paths: ["notes.md"] }],
       ["files.folders.list", {}],
@@ -248,6 +310,14 @@ describe("files", () => {
     expect(parseAllyWire(JSON.stringify({ id: 1, method: "files.read", params: { scope: { kind: "palo" }, path: "notes.md" } }))).toBeNull();
     expect(parseAllyWire(JSON.stringify({ type: "files.read", scope: { kind: "palo" }, path: "notes.md" }))).toBeNull();
     expect(hub.audit.tail(10).filter((e) => e.type === "files.read")).toHaveLength(1);
+    // the owner's device saves from the editor; a stranger's attempt left nothing
+    expect(readFileSync(join(paths.home, "notes.md"), "utf8")).toBe("# 笔记\n");
+    const base = (await phone("files.read", { scope: { kind: "palo" }, path: "notes.md" })).version;
+    const saved = await phone("files.write", { scope: { kind: "palo" }, path: "notes.md", content: "# 笔记\n改了\n", baseVersion: base });
+    expect(saved.conflict).toBeUndefined();
+    expect(readFileSync(join(paths.home, "notes.md"), "utf8")).toBe("# 笔记\n改了\n");
+    expect((await phone("files.write", { scope: { kind: "palo" }, path: "notes.md", content: "again", baseVersion: base })).conflict).toBe(true);
+    expect(hub.audit.tail(20).filter((e) => e.type === "files.write").map((e) => e.by)).toEqual(["dev-phone"]);
   });
 
   test("files.watch: a preview follows its file (edits, atomic saves, deletion), a lease nobody renews lapses", async () => {
