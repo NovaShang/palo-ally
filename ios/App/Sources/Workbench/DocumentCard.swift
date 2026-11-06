@@ -206,8 +206,9 @@ final class DocumentDropTarget {
 
     private var canvas: PaneCanvasController? { handle?.controller }
 
-    func begin(_ doc: DocumentLeaf, info: TileInfo, at point: CGPoint) {
-        canvas?.beginDocumentDrag(doc.id, info: info, at: point)
+    /// True when the canvas took it (a narrow one with more than two cards doesn't).
+    func begin(_ doc: DocumentLeaf, info: TileInfo, at point: CGPoint) -> Bool {
+        canvas?.beginDocumentDrag(doc.id, info: info, at: point) ?? false
     }
 
     func move(to point: CGPoint) {

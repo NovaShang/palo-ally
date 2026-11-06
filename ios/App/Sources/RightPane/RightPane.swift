@@ -45,7 +45,7 @@ struct RightPane: View {
                 addWeb: { model.editPane(key) { $0.openWeb(key, url: "") } },
                 closePane: { if let onClose { onClose() } else { model.editPane(key) { $0.setOpen(key, false) } } },
                 split: splitWorkspaceID == nil ? nil : { i in state.tabs.indices.contains(i) ? openInSplit(state.tabs[i]) : () },
-                drag: splitWorkspaceID == nil || !Platform.isMac ? nil : tabDrag)
+                drag: splitWorkspaceID == nil ? nil : tabDrag)
             content
         }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
@@ -126,15 +126,15 @@ struct RightPane: View {
     }
 
     /// A document's tab dragged out of the strip onto the workspace's canvas
-    /// (the Mac): the canvas shows where it would land; let go there, the
-    /// tab leaves the pane.
+    /// (the Mac; on an iPad pressed first, then moved): the canvas shows
+    /// where it would land; let go there, the tab leaves the pane.
     private var tabDrag: TabDrag {
         TabDrag(
             accepts: { DocumentLeaf(tab: $0) != nil && !hasUnsavedEdits($0) },
             begin: { tab, point in
-                guard let doc = DocumentLeaf(tab: tab) else { return }
+                guard let doc = DocumentLeaf(tab: tab) else { return false }
                 let info = TileInfo(name: DocumentCardContent.name(doc, store: store), symbol: DocumentCardContent.symbol(doc))
-                model.documentDrop?.begin(doc, info: info, at: point)
+                return model.documentDrop?.begin(doc, info: info, at: point) ?? false
             },
             move: { model.documentDrop?.move(to: $0) },
             end: { tab, point, commit in
@@ -143,6 +143,7 @@ struct RightPane: View {
                     model.closeDocumentTab(doc, in: ws)
                     model.activate(tile: doc.id, in: ws)
                 }
+                return landed
             })
     }
 
@@ -269,11 +270,13 @@ private struct TabsShown: Equatable {
 }
 
 /// A tab dragged out of the strip (`RightPane.tabDrag`); points in the window.
+/// `begin` is false when the canvas doesn't take it (too narrow), `end`
+/// true when the tab landed as a card.
 struct TabDrag {
     let accepts: (PaneTab) -> Bool
-    let begin: (PaneTab, CGPoint) -> Void
+    let begin: (PaneTab, CGPoint) -> Bool
     let move: (CGPoint) -> Void
-    let end: (PaneTab, CGPoint, Bool) -> Void
+    let end: (PaneTab, CGPoint, Bool) -> Bool
 }
 
 private struct RightPaneTabBar: View {
@@ -289,11 +292,20 @@ private struct RightPaneTabBar: View {
     let closePane: () -> Void
     /// 在分屏中打开 for a document's tab (a workspace's pane).
     var split: ((Int) -> Void)? = nil
-    /// A document's tab dragged onto the canvas (a workspace's pane, the Mac).
+    /// A document's tab dragged onto the canvas (a workspace's pane: the
+    /// Mac, an iPad).
     var drag: TabDrag? = nil
     /// The tab being dragged out, while it is.
     @State private var dragging: PaneTab?
     @GestureState private var pressing = false
+    /// An iPad's chip held long enough to be lifted by moving: the strip
+    /// stops scrolling under it until the finger is up.
+    @GestureState private var held = false
+    /// An iPad's drag that didn't start (the canvas too narrow): the rest
+    /// of that touch does nothing.
+    @State private var refused = false
+    /// The moves of an iPad's drag, for its log line.
+    @State private var moves = 0
 
     var body: some View {
         GlassEffectContainer(spacing: 8) {
@@ -337,6 +349,10 @@ private struct RightPaneTabBar: View {
             .onChange(of: TabsShown(count: tabs.count, active: active), initial: true) { _, shown in
                 Task { @MainActor in withAnimation(.snappy) { proxy.scrollTo(shown.active) } }
             }
+            // A chip held on an iPad: its finger moving lifts it rather
+            // than scroll the strip (set before it moves, so the strip's
+            // pan never starts).
+            .scrollDisabled(held || (!Platform.isMac && dragging != nil))
         }
         .glassEffect(.regular, in: .capsule)
     }
@@ -378,32 +394,87 @@ private struct RightPaneTabBar: View {
         .frame(maxWidth: 180)
         .background(isActive ? AnyShapeStyle(.primary.opacity(0.12)) : AnyShapeStyle(.clear), in: .capsule)
         .contentShape(.capsule)
+        .scaleEffect(!Platform.isMac && dragging == tab ? 1.08 : 1)
+        .animation(.snappy(duration: 0.2), value: !Platform.isMac && dragging == tab)
         .contextMenu { if i >= PaneTabsKey.pinnedCount { menu(i, tab, page: page) } }
-        .simultaneousGesture(dragOut(tab), including: drag?.accepts(tab) == true ? .all : .subviews)
+        .simultaneousGesture(Platform.isMac ? dragOut(tab) : liftOut(tab),
+                             including: drag?.accepts(tab) == true ? .all : .subviews)
         .onChange(of: pressing) { _, now in
-            // A drag the system took away: nothing lands.
-            if !now, let t = dragging { dragging = nil; drag?.end(t, .zero, false) }
+            // A drag the system took away (a context menu, a call): nothing lands.
+            if !now, let t = dragging {
+                dragging = nil
+                _ = drag?.end(t, .zero, false)
+                if !Platform.isMac { debugLog("[tabdrag] cancel: taken away after \(moves) moves") }
+            }
+            if !now { refused = false }
         }
+        .sensoryFeedback(.impact(weight: .light), trigger: dragging == tab) { _, lifted in lifted && !Platform.isMac }
         .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
     /// A document's chip pulled out of the strip; a click still selects it.
-    private func dragOut(_ tab: PaneTab) -> some Gesture {
-        DragGesture(minimumDistance: 6, coordinateSpace: .global)
+    private func dragOut(_ tab: PaneTab) -> AnyGesture<Void> {
+        AnyGesture(DragGesture(minimumDistance: 6, coordinateSpace: .global)
             .updating($pressing) { _, state, _ in state = true }
             .onChanged { v in
                 guard let drag else { return }
                 if dragging == nil {
                     dragging = tab
-                    drag.begin(tab, v.location)
+                    _ = drag.begin(tab, v.location)
                 }
                 drag.move(v.location)
             }
             .onEnded { v in
                 guard let t = dragging else { return }
                 dragging = nil
-                drag?.end(t, v.location, true)
+                _ = drag?.end(t, v.location, true)
             }
+            .map { _ in () })
+    }
+
+    /// An iPad's chip: pressed for a moment, then moved, it lifts (a light
+    /// tap, a little larger) and goes where the finger goes, as iPadOS lifts
+    /// an item; let go over the canvas it docks there, anywhere else it
+    /// settles back. A swipe straight away still scrolls the strip (the
+    /// press gives up past 10 pt), a tap still selects, and a press held
+    /// still still brings up the chip's menu: nothing lifts until the
+    /// finger moves 8 pt after the press. A pointer's click held, then
+    /// moved, does the same.
+    private func liftOut(_ tab: PaneTab) -> AnyGesture<Void> {
+        AnyGesture(LongPressGesture(minimumDuration: 0.35, maximumDistance: 10)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
+            .updating($pressing) { _, state, _ in state = true }
+            .updating($held) { value, state, _ in
+                if case .second(true, _) = value { state = true }
+            }
+            .onChanged { value in
+                guard case .second(true, let v?) = value, let drag, !refused else { return }
+                if dragging == nil {
+                    guard hypot(v.translation.width, v.translation.height) >= 8 else { return }
+                    guard drag.begin(tab, v.location) else {
+                        refused = true
+                        debugLog("[tabdrag] lift refused: no canvas takes it (too narrow, or none shown)")
+                        return
+                    }
+                    dragging = tab
+                    moves = 0
+                    debugLog("[tabdrag] lift \(tab.kind) at \(Int(v.location.x)),\(Int(v.location.y))")
+                }
+                moves += 1
+                if moves == 1 || moves % 30 == 0 {
+                    debugLog("[tabdrag] move \(moves) at \(Int(v.location.x)),\(Int(v.location.y))")
+                }
+                drag.move(v.location)
+            }
+            .onEnded { value in
+                refused = false
+                guard let t = dragging else { return }
+                dragging = nil
+                let at = if case .second(_, let v?) = value { v.location } else { CGPoint.zero }
+                let landed = drag?.end(t, at, true) ?? false
+                debugLog("[tabdrag] \(landed ? "drop: a card" : "cancel: let go off the canvas") at \(Int(at.x)),\(Int(at.y)) after \(moves) moves")
+            }
+            .map { _ in () })
     }
 
     /// A file's or a page's actions, on its chip.

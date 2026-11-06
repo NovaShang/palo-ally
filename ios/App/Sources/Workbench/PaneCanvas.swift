@@ -708,9 +708,11 @@ final class PaneCanvasController: UIViewController {
     // MARK: - a document's tab dragged in from the right pane
 
     /// A document's tab is dragged out of the right pane (`point` in the
-    /// window): its capsule follows the pointer over the whole window.
-    func beginDocumentDrag(_ id: String, info: TileInfo, at point: CGPoint) {
-        guard interactive, tree != nil, let window = view.window, documentDragged == nil, dragged == nil else { return }
+    /// window): its capsule follows the pointer over the whole window. False
+    /// when the canvas doesn't take it (too narrow to drag, another drag on).
+    @discardableResult
+    func beginDocumentDrag(_ id: String, info: TileInfo, at point: CGPoint) -> Bool {
+        guard interactive, tree != nil, let window = view.window, documentDragged == nil, dragged == nil else { return false }
         documentDragged = id
         applyAccent()
         let c = makeCapsule(info)
@@ -724,6 +726,7 @@ final class PaneCanvasController: UIViewController {
             c.alpha = 1
             c.transform = .identity
         }
+        return true
     }
 
     /// Over a card, the edge nearest the pointer shows the half the document
