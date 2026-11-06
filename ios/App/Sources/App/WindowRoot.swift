@@ -162,8 +162,6 @@ struct WindowRoot: View {
 
 #if DEBUG
 extension Notification.Name {
-    /// `-demoActions palo`: the collapsed sidebar's orb clicked in that window (object: its model).
-    static let demoTogglePaloPopover = Notification.Name("demoTogglePaloPopover")
     /// `-demoActions fileedit` / `filesave`: the file tab's 编辑 / 保存.
     static let demoFileEdit = Notification.Name("demoFileEdit")
 }

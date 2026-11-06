@@ -218,7 +218,7 @@ private extension NSToolbarItem.Identifier {
 /// (docs/workbench-design/mac-titlebar.html): the open page's ⋯, a
 /// workspace's ＋ (a new pane), and the right pane's button last. System
 /// items, so they take their clicks by construction. Nothing that can
-/// overflow. The sidebar's button is the capsule's (SidebarCollapse); the
+/// overflow. The sidebar's button is the system's own (.toggleSidebar); the
 /// page's identity is the page's own, in the middle of the row.
 @MainActor
 final class MacToolbar: NSObject, NSToolbarDelegate {
@@ -265,10 +265,11 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
         track()
     }
 
-    /// The separator that follows the sidebar's edge, room, and the pane's
-    /// button; the page's items go in before that (`refresh`).
+    /// The system's sidebar button (over the sidebar, by the traffic lights
+    /// when it is away), the separator that follows the sidebar's edge, room,
+    /// and the pane's button; the page's items go in before that (`refresh`).
     private static let items: [NSToolbarItem.Identifier] = [
-        .primarySidebarTrackingSeparatorItemIdentifier, .flexibleSpace, .library,
+        .toggleSidebar, .primarySidebarTrackingSeparatorItemIdentifier, .flexibleSpace, .library,
     ]
     private static let pageItems: [NSToolbarItem.Identifier] = [.pageMenu, .addPane]
 

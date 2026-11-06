@@ -18,9 +18,9 @@ final class SidebarChrome {
 }
 
 /// The sidebar's collapse on the Mac (workbench-prd §8), around the split view:
-/// - the capsule at the window's top left (the sidebar button; collapsed, the
-///   orb and what waits);
-/// - collapsed, the sidebar floats in from the left over the content without
+/// its button is the system's own, in the window toolbar (MacToolbar; the
+/// owner, 11-05: no capsule, no Palo orb by the traffic lights);
+/// collapsed, the sidebar floats in from the left over the content without
 ///   pushing it when the mouse is at the window's left edge. It goes when the
 ///   mouse leaves it (300 ms), when a row is picked, or on Esc.
 /// The split view itself keeps doing the collapse (`columnVisibility`, the
@@ -37,8 +37,6 @@ struct SidebarCollapse: ViewModifier {
     @State private var midY: CGFloat = 26
 
     private var large: Bool { sizeClass == .regular && model.layout == .split }
-    /// The Mac only: the capsule (the sidebar's button) and the floating sidebar.
-    private var showsCapsule: Bool { large && Platform.isMac }
     private var canPeek: Bool { large && model.sidebarCollapsed && Platform.isMac }
 
     func body(content: Content) -> some View {
@@ -46,9 +44,6 @@ struct SidebarCollapse: ViewModifier {
             .onGeometryChange(for: CGSize.self) { $0.size } action: { _ in refreshChrome() }
             .overlay(alignment: .leading) {
                 if canPeek { peekLayer }
-            }
-            .overlay(alignment: .topLeading) {
-                if showsCapsule { capsule }
             }
             .background {
                 // Esc puts the floating sidebar away.
@@ -62,15 +57,6 @@ struct SidebarCollapse: ViewModifier {
             .onChange(of: model.selection) { hide() }
             .onChange(of: canPeek) { _, can in if !can { hide() } }
             .task { refreshChrome() }
-    }
-
-    // MARK: capsule
-
-    private var capsule: some View {
-        CollapsedSidebarCapsule(collapsed: model.sidebarCollapsed)
-            .padding(.leading, inset)
-            .padding(.top, max(2, midY - 17))
-            .ignoresSafeArea()
     }
 
     /// The Mac: the window's traffic lights end somewhere, and full screen has none.

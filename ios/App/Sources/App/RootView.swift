@@ -215,8 +215,6 @@ private struct LayoutStressTest: ViewModifier {
                     // `w2.close`: that window closed, as its close button does.
                     case "close":
                         if let scene = w.scene { UIApplication.shared.requestSceneSessionDestruction(scene.session, options: nil) }
-                    // `palo`: the collapsed sidebar's Palo orb clicked (the Mac: Palo's popover, open or closed).
-                    case "palo": NotificationCenter.default.post(name: .demoTogglePaloPopover, object: w)
                     // `w2.key`: that window becomes the key window, as a click in it does.
                     case "key":
                         if let scene = w.scene {
@@ -577,7 +575,7 @@ struct MainScreen: View {
         // The right pane beside the conversation: on the split view, not in its
         // detail column (see RightPaneHost).
         .modifier(RightPaneHost(model: model, store: store))
-        // The sidebar's capsule and its way back from the left edge.
+        // The sidebar's way back from the left edge.
         .modifier(SidebarCollapse(model: model))
         // The pane's tabs come from the computer (once online, and again on reconnect).
         .task(id: store.connection.isOnline) {

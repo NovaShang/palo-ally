@@ -79,11 +79,7 @@ enum MacRightHold {
 
     /// The window and the composer a hold at `point` talks to.
     private static func route(toolbar: String, at point: CGPoint) -> (WindowModel, String?)? {
-        guard let model = MacToolbar.model(toolbar: toolbar) else {
-            // Not a main window: Palo's popover (a window of its own).
-            guard let model = MacToolbar.models.first(where: \.paloPopoverUp) else { return nil }
-            return (model, PaloPopover.id)
-        }
+        guard let model = MacToolbar.model(toolbar: toolbar) else { return nil }
         guard case .workspace(let ws) = model.selection else { return (model, nil) }
         if let pane = pane(at: point, in: model) {
             model.activate(tile: pane, in: ws)
