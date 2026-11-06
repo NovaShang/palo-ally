@@ -282,7 +282,6 @@ public final class AudioCaptureService: @unchecked Sendable {
         // A prior session that failed without a clean stop must be torn down first.
         if isRunning { stopNow() }
         if engineStale { replaceEngine() }
-        engine.inputNode.removeTap(onBus: 0)   // belt-and-suspenders: drop any stale tap
         self.targetRate = targetSampleRate
         self.outputFormat = AVAudioFormat(
             commonFormat: .pcmFormatInt16,
@@ -310,11 +309,26 @@ public final class AudioCaptureService: @unchecked Sendable {
         let picked = MacAudioInput.preferBuiltIn(for: engine.inputNode)
         dlog("[voice] audio before: \(MacAudioInput.describe())\(picked.map { ", recording from \($0)" } ?? "")")
         #endif
-        let input = engine.inputNode
+        // The input node is touched only now, the session set to record: on
+        // the Mac one made before had no channels, for good (11-05, every
+        // press failed once nothing kept the session warm).
+        engine.inputNode.removeTap(onBus: 0)   // belt-and-suspenders: drop any stale tap
+        var input = engine.inputNode
         // Sanity-check the mic is ready (macOS can hand back a 0Hz/0ch format
         // before it is). Don't reuse this format for the tap, though — read it
-        // again at the moment of install via `nil`.
-        let nodeFormat = input.outputFormat(forBus: 0)
+        // again at the moment of install via `nil`. Empty: once more on a
+        // fresh engine, made after the session.
+        var nodeFormat = input.outputFormat(forBus: 0)
+        if nodeFormat.sampleRate <= 0 || nodeFormat.channelCount == 0 {
+            dlog("[voice] the mic's format was empty (\(nodeFormat.sampleRate) Hz, \(nodeFormat.channelCount) ch): a fresh engine")
+            replaceEngine()
+            #if targetEnvironment(macCatalyst)
+            _ = MacAudioInput.preferBuiltIn(for: engine.inputNode)
+            #endif
+            input = engine.inputNode
+            nodeFormat = input.outputFormat(forBus: 0)
+            dlog("[voice] fresh engine's mic: \(nodeFormat.sampleRate) Hz, \(nodeFormat.channelCount) ch")
+        }
         guard nodeFormat.sampleRate > 0, nodeFormat.channelCount > 0 else {
             throw CaptureError.converterUnavailable
         }
