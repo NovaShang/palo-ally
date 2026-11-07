@@ -373,6 +373,17 @@ private struct LayoutStressTest: ViewModifier {
                         let r = AppKitBundle.object?.perform(NSSelectorFromString("pressKeys:"), with: spec)?.takeUnretainedValue() as? String
                         debugLog("[nav] \(r ?? "no AppKit bundle")")
                         try? await Task.sleep(for: .seconds(0.1 * Double(spec.count) + 0.5))
+                    // `responders`: the keyboard's responder chain, and any key command on it for the space bar.
+                    case "responders":
+                        func first(_ v: UIView) -> UIResponder? { v.isFirstResponder ? v : v.subviews.lazy.compactMap(first).first }
+                        var r: UIResponder? = w.scene?.windows.lazy.compactMap { first($0) }.first
+                        var line: [String] = []
+                        while let x = r {
+                            let space = (x.keyCommands ?? []).filter { $0.input == " " }.map { "\($0.modifierFlags.rawValue)" }
+                            line.append("\(type(of: x))\(space.isEmpty ? "" : "[space \(space)]")")
+                            r = x.next
+                        }
+                        debugLog("[nav] responders: \(line.joined(separator: " < "))")
                     // `compose:nihao:你好`: an input method's composition in the text that has
                     // the keyboard, as UIKit hands it on (marked text a letter at a time, then the commit).
                     case _ where a.hasPrefix("compose:"):

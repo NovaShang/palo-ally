@@ -32,6 +32,26 @@ final class ImmersiveWindows: NSObject {
         Self.reportClicks()
         Self.takeWheelOverText()
         Self.offerCopy()
+        Self.offerSpace()
+    }
+
+    private static var spaceMonitor: Any?
+
+    /// The space bar is offered to the app first (`PaloAllySpace`): typed
+    /// in the file editor it never reached the page (11-06), the system
+    /// took it on the way. When the app typed it (`handled`), it goes no
+    /// further.
+    private static func offerSpace() {
+        guard spaceMonitor == nil else { return }
+        spaceMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == 49,
+                  event.modifierFlags.intersection([.command, .control, .option]).isEmpty else { return event }
+            let result = NSMutableDictionary()
+            MainActor.assumeIsolated {
+                NotificationCenter.default.post(name: NSNotification.Name("PaloAllySpace"), object: nil, userInfo: ["result": result])
+            }
+            return result["handled"] as? Bool == true ? nil : event
+        }
     }
 
     private static var copyMonitor: Any?

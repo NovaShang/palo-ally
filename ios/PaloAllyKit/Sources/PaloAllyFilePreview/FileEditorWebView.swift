@@ -140,6 +140,30 @@ public final class FileEditorWebView: WKWebView, WKNavigationDelegate {
         }
     }
 
+    /// A space at the cursor (the Mac app types it: the system took the
+    /// key before the page had it, 11-06).
+    public func typeSpace() { if ready { evaluateJavaScript("paEditorInsert(' ')") } }
+
+    /// The editor whose text has the keyboard, if any.
+    public static var focused: FileEditorWebView? {
+        let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).filter(\.isKeyWindow)
+        for window in windows {
+            guard let first = firstResponder(in: window) else { continue }
+            var v: UIView? = first
+            while let view = v {
+                if let editor = view as? FileEditorWebView { return editor }
+                v = view.superview
+            }
+        }
+        return nil
+    }
+
+    private static func firstResponder(in view: UIView) -> UIView? {
+        if view.isFirstResponder { return view }
+        for sub in view.subviews { if let f = firstResponder(in: sub) { return f } }
+        return nil
+    }
+
     @objc private func saveCommand() { onSave?() }
     @objc private func toggleCommand() { onToggle?() }
     @objc private func findCommand() { if ready { evaluateJavaScript("paEditorFind()") } }

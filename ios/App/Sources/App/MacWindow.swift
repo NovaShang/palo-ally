@@ -249,6 +249,7 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
         MacClickLog.install()
         MacTextWheel.install()
         MacCopy.install()
+        MacSpace.install()
     }
 
     /// The model of the window whose toolbar is `id` (MacRightHold).
@@ -441,6 +442,8 @@ enum MacCopy {
         observer = NotificationCenter.default.addObserver(forName: NSNotification.Name("PaloAllyCopy"), object: nil, queue: nil) { note in
             nonisolated(unsafe) let result = note.userInfo?["result"] as? NSMutableDictionary
             MainActor.assumeIsolated {
+                // The file editor has the keyboard: its own copy, never a preview's.
+                if FileEditorWebView.focused != nil { return }
                 guard let preview = FilePreviewWebView.lastPressed, preview.window != nil,
                       !preview.selectedText.isEmpty else {
                     #if DEBUG
@@ -460,6 +463,27 @@ enum MacCopy {
                 #endif
                 UIPasteboard.general.string = preview.selectedText
                 debugLog("[copy] ⌘C: \(preview.selectedText.count) characters from the file preview")
+                result?["handled"] = true
+            }
+        }
+    }
+}
+
+/// The space bar (the AppKit bundle's `PaloAllySpace`) while the file
+/// editor has the keyboard: typed into its text by the app, as the system
+/// otherwise took it before the page had it (11-06). Not while an input
+/// method composes, which picks its candidate with it.
+@MainActor
+enum MacSpace {
+    private static var observer: NSObjectProtocol?
+
+    static func install() {
+        guard observer == nil else { return }
+        observer = NotificationCenter.default.addObserver(forName: NSNotification.Name("PaloAllySpace"), object: nil, queue: nil) { note in
+            nonisolated(unsafe) let result = note.userInfo?["result"] as? NSMutableDictionary
+            MainActor.assumeIsolated {
+                guard let editor = FileEditorWebView.focused, !editor.composing else { return }
+                editor.typeSpace()
                 result?["handled"] = true
             }
         }
