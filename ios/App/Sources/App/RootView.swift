@@ -349,8 +349,9 @@ private struct LayoutStressTest: ViewModifier {
                         let sent = UIApplication.shared.sendAction(#selector(UIResponderStandardEditActions.copy(_:)), to: nil, from: nil, for: nil)
                         debugLog("[nav] copy sent along the responder chain: \(sent ? "taken" : "nobody took it")")
                     // `fileedit`: 编辑 / 预览 in the file tab shown (⌘E); `filesave`: its 保存 (⌘S).
+                    // `fileshare`: the file's stream-then-share sheet (a file too big to preview).
                     // `fileopen:/abs/path`: that file picked from the path at the editor's top.
-                    case "fileedit", "filesave", _ where a.hasPrefix("fileopen:"): NotificationCenter.default.post(name: .demoFileEdit, object: a)
+                    case "fileedit", "filesave", "fileshare", _ where a.hasPrefix("fileopen:"): NotificationCenter.default.post(name: .demoFileEdit, object: a)
                     // `filetype:text`: typed into the file being edited, at its cursor.
                     case _ where a.hasPrefix("filetype:"):
                         if let win = w.scene?.windows.first {

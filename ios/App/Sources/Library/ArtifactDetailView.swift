@@ -22,6 +22,8 @@ struct ArtifactDetailView: View {
     @State private var progress: Double?
     /// Markdown shown as its source text instead of rendered.
     @State private var showSource = false
+    /// The stream-then-share sheet, for a file too big to preview here or 分享/导出.
+    @State private var shareTarget: FileShareTarget?
 
     struct Loaded: Equatable {
         let path: String
@@ -39,6 +41,7 @@ struct ArtifactDetailView: View {
                 .documentCardContent()
                 .overlay(alignment: .topTrailing) { if let artifact { paneMenu(artifact).documentMenuPlacement() } }
                 .task(id: reloadKey) { await load() }
+                .fileShareSheet(item: $shareTarget)
                 .accessibilityIdentifier("artifact-tab")
         } else {
             page
@@ -51,7 +54,9 @@ struct ArtifactDetailView: View {
     private var main: some View {
         Group {
             if let artifact {
-                if let content {
+                if isCurrentBig(artifact) {
+                    bigFile(artifact)
+                } else if let content {
                     preview(artifact, content)
                         .overlay(alignment: .bottom) {
                             if let refreshError {
@@ -89,6 +94,39 @@ struct ArtifactDetailView: View {
                 ContentUnavailableView("找不到了", systemImage: "questionmark.folder")
             }
         }
+    }
+
+    /// A file over the inline threshold: not read into memory, shared out instead.
+    private func bigFile(_ a: Artifact) -> some View {
+        ContentUnavailableView {
+            Label("文件太大", systemImage: "doc")
+        } description: {
+            Text("这个文件有 \(Copy.byteSize(currentSize(a)))，超过 5 MB 的文件不在这里打开。")
+        } actions: {
+            Button { shareTarget = makeShareTarget(a, tooLarge: true) } label: {
+                Label("分享 / 导出", systemImage: "square.and.arrow.up")
+            }
+            .buttonStyle(.glass)
+            .tint(.primary)
+            .accessibilityIdentifier("artifact-share-too-large")
+        }
+    }
+
+    /// The current file's size, and whether it's over the inline threshold.
+    private func currentSize(_ a: Artifact) -> Int64 {
+        a.files.first { $0.path == currentPath(a) }?.size ?? 0
+    }
+
+    private func isCurrentBig(_ a: Artifact) -> Bool {
+        currentSize(a) > FileChunk.maxFile
+    }
+
+    /// The stream-then-share target for the current file.
+    private func makeShareTarget(_ a: Artifact, tooLarge: Bool) -> FileShareTarget {
+        let path = currentPath(a)
+        let name = (path as NSString).lastPathComponent.isEmpty ? "file" : (path as NSString).lastPathComponent
+        return FileShareTarget(title: tooLarge ? "文件太大，无法在这里预览" : "分享文件",
+                               name: name, size: currentSize(a), source: .artifact(id: a.id, path: path))
     }
 
     private var page: some View {
@@ -141,6 +179,14 @@ struct ArtifactDetailView: View {
                         ShareLink(item: content.fileURL)
                             .tint(.primary)
                     }
+                } else {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { shareTarget = makeShareTarget(artifact, tooLarge: isCurrentBig(artifact)) } label: {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                        .tint(.primary)
+                        .accessibilityLabel(Text("分享 / 导出"))
+                    }
                 }
             }
         }
@@ -148,6 +194,7 @@ struct ArtifactDetailView: View {
         // its title and one menu floating (MacPageStrip).
         .macPageTop(artifact?.title ?? "", back: { dismiss() }, trailing: artifact.map { AnyView(macMenu($0)) })
         .task(id: reloadKey) { await load() }
+        .fileShareSheet(item: $shareTarget)
     }
 
     /// The tab's ⋯: the strip's menu, and closing the tab.
@@ -172,6 +219,10 @@ struct ArtifactDetailView: View {
     @ViewBuilder private func menuItems(_ artifact: Artifact) -> some View {
         if let content {
             ShareLink(item: content.fileURL) { Label("共享", systemImage: "square.and.arrow.up") }
+        } else {
+            Button { shareTarget = makeShareTarget(artifact, tooLarge: isCurrentBig(artifact)) } label: {
+                Label("共享", systemImage: "square.and.arrow.up")
+            }
         }
         Button {
             Task { try? await store.setPinned(artifact, !artifact.pinned) }
@@ -231,6 +282,15 @@ struct ArtifactDetailView: View {
 
     private func load() async {
         guard let a = artifact else { return }
+        // A file over the inline threshold is never read into memory; the
+        // page shows 分享/导出 (streamed) instead.
+        guard !isCurrentBig(a) else {
+            content = nil
+            progress = nil
+            error = nil
+            refreshError = nil
+            return
+        }
         let path = currentPath(a)
         let switching = content?.path != path
         error = nil

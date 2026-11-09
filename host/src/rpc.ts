@@ -361,7 +361,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return hub.files.list(parseScope(p.scope), typeof p.path === "string" ? p.path : "", p.showHidden === true);
     case "files.read":
       ownerOnly(ctx, t("files.err.owner"));
-      return hub.files.read(parseScope(p.scope), String(p.path ?? ""), Number(p.offset ?? 0), Number(p.length ?? 256 * 1024), ctx.deviceId ?? ctx.channel);
+      return hub.files.read(parseScope(p.scope), String(p.path ?? ""), Number(p.offset ?? 0), Number(p.length ?? 256 * 1024), ctx.deviceId ?? ctx.channel, p.stream === true);
     // The app's editor saving a text file: only over the version it read.
     case "files.write":
       ownerOnly(ctx, t("files.err.owner"));

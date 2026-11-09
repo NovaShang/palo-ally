@@ -577,6 +577,7 @@ final class WindowModel {
         // `-demoScreen palo`: the assistant's conversation, whatever the window showed last.
         case "palo": selection = .palo
         case "file": Task { await openDemoFile() }
+        case "bigfile": Task { await openDemoBigFile() }
         case "ally":
             let id = UserDefaults.standard.string(forKey: "demoAlly")
             Task { @MainActor in
@@ -653,6 +654,13 @@ final class WindowModel {
         MarkdownFilePresenter.present(url: url, title: a.title, artifactID: a.id,
                                       imageSource: store.markdownImages(artifactID: a.id, documentPath: a.mainFile),
                                       openInLibrary: { [weak self] in self?.showInLibrary($0) })
+    }
+
+    /// The demo's file over 5 MB, opened to its 文件太大 page (and its 分享/导出).
+    private func openDemoBigFile() async {
+        try? await Task.sleep(for: .seconds(1.5))
+        guard let store else { return }
+        FilePagePresenter.present(FileTarget(scope: .pal("pal-site"), path: "docs/大文件示例.pdf"), store: store)
     }
     #endif
 

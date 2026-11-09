@@ -62,6 +62,8 @@ struct FilePage: View {
     @State private var askSwitch: String?
     /// ⌘E reaches both the editor and the page: once.
     @State private var lastToggle = Date.distantPast
+    /// The stream-then-share sheet, for a file too big to preview here.
+    @State private var shareTarget: FileShareTarget?
 
     enum Phase: Equatable {
         case loading
@@ -125,6 +127,13 @@ struct FilePage: View {
         (target.scope.kind == .palo && target.path.hasPrefix("artifacts/")) || target.path.contains("/.paloally/home/artifacts/")
     }
 
+    /// The stream-then-share sheet's target: this file, streamed from the host.
+    private func makeShareTarget() -> FileShareTarget {
+        let size: Int64? = { if case .tooLarge(let s) = phase { return s }; return nil }()
+        return FileShareTarget(title: "文件太大，无法在这里预览", name: target.name, size: size,
+                               source: .file(scope: readScope ?? target.scope, path: target.path))
+    }
+
     @ViewBuilder var body: some View {
         if inPane {
             paneContent
@@ -144,10 +153,12 @@ struct FilePage: View {
                 .onReceive(NotificationCenter.default.publisher(for: .demoFileEdit)) { note in
                     let step = note.object as? String ?? ""
                     if step == "filesave", let session { Task { await session.save(store: store) } }
+                    else if step == "fileshare" { shareTarget = makeShareTarget() }
                     else if step.hasPrefix("fileopen:") { switchFile(String(step.dropFirst(9))) }
                     else { toggleEdit() }
                 }
                 #endif
+                .fileShareSheet(item: $shareTarget)
                 .accessibilityIdentifier("file-page")
         } else {
             page
@@ -164,6 +175,13 @@ struct FilePage: View {
             .background { reloadKey }
             .task(id: target) { await load() }
             .task(id: follow) { await followFile(follow) }
+            #if DEBUG
+            .onReceive(NotificationCenter.default.publisher(for: .demoFileEdit)) { note in
+                let step = note.object as? String ?? ""
+                if step == "fileshare" { shareTarget = makeShareTarget() }
+            }
+            #endif
+            .fileShareSheet(item: $shareTarget)
             .accessibilityIdentifier("file-page")
     }
 
@@ -264,6 +282,13 @@ struct FilePage: View {
                 Label { Text("文件太大", tableName: "Files") } icon: { Image(systemName: "doc") }
             } description: {
                 Text("这个文件有 \(Copy.byteSize(size))，超过 5 MB 的文件不在这里打开。可以在电脑上看。", tableName: "Files")
+            } actions: {
+                Button { shareTarget = makeShareTarget() } label: {
+                    Label { Text("分享 / 导出") } icon: { Image(systemName: "square.and.arrow.up") }
+                }
+                .buttonStyle(.glass)
+                .tint(.primary)
+                .accessibilityIdentifier("file-share-too-large")
             }
         case .failed(let why):
             ContentUnavailableView {
@@ -294,6 +319,12 @@ struct FilePage: View {
                 // The file itself, under its own name.
                 ShareLink(item: fileURL).tint(.primary)
             }
+        } else if case .tooLarge = phase {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { shareTarget = makeShareTarget() } label: { Image(systemName: "square.and.arrow.up") }
+                    .tint(.primary)
+                    .accessibilityLabel(Text("分享 / 导出"))
+            }
         }
     }
 
@@ -304,6 +335,10 @@ struct FilePage: View {
                     reloadButton
                     if let fileURL {
                         ShareLink(item: fileURL) { Label { Text("共享", tableName: "Files") } icon: { Image(systemName: "square.and.arrow.up") } }
+                    } else if case .tooLarge = phase {
+                        Button { shareTarget = makeShareTarget() } label: {
+                            Label { Text("共享", tableName: "Files") } icon: { Image(systemName: "square.and.arrow.up") }
+                        }
                     }
                     if isMarkdown {
                         Button { raw.toggle() } label: {
@@ -340,6 +375,10 @@ struct FilePage: View {
             reloadButton
             if let fileURL {
                 ShareLink(item: fileURL) { Label { Text("共享", tableName: "Files") } icon: { Image(systemName: "square.and.arrow.up") } }
+            } else if case .tooLarge = phase {
+                Button { shareTarget = makeShareTarget() } label: {
+                    Label { Text("共享", tableName: "Files") } icon: { Image(systemName: "square.and.arrow.up") }
+                }
             }
             if isMarkdown, !editing {
                 Button { raw.toggle() } label: {

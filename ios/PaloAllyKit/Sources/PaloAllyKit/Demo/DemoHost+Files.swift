@@ -31,6 +31,15 @@ extension DemoHost {
         """.utf8)
     }
 
+    /// A file over 5 MB with real bytes, to demo the too-large → share flow
+    /// (over the inline cap, under the stream cap, so it streams out).
+    static func bigDemoPDF() -> Data {
+        var data = Data("%PDF-1.4\n% PaloAlly 演示大文件\n".utf8)
+        let chunk = Data(repeating: 0x78, count: 64 * 1024)
+        while data.count < 6 * 1024 * 1024 { data.append(chunk) }
+        return Data(data.prefix(6 * 1024 * 1024))
+    }
+
     /// A Pal's project (any Pal's: the demo has one kind).
     static let projectFiles: [String: DemoFile] = [
         "README.md": DemoFile("""
@@ -89,6 +98,7 @@ extension DemoHost {
         "docs/preview.svg": DemoFile(data: DemoHost.demoSVG("首页示意", "#3FA37A")),
         "docs/home.png": DemoFile(data: DemoHost.demoPNG),
         "docs/intro.mov": DemoFile(size: 48 * 1024 * 1024),
+        "docs/大文件示例.pdf": DemoFile(data: DemoHost.bigDemoPDF()),
         ".git/HEAD": DemoFile("ref: refs/heads/main\n"),
         "node_modules/react/index.js": DemoFile("module.exports = {};\n"),
     ]
@@ -230,7 +240,9 @@ extension DemoHost {
             }
             let mime = DemoHost.mime(for: path)
             let version = JSONValue.string(demoVersion(file, abs: abs))
-            if file.size > FileChunk.maxFile {
+            // Sharing a file out (`stream`) lifts the inline cap to the stream cap.
+            let cap: Int64 = p["stream"]?.boolValue == true ? FileStream.maxBytes : FileChunk.maxFile
+            if file.size > cap {
                 return ["data": "", "size": .number(Double(file.size)), "mime": .string(mime), "eof": true, "tooLarge": true, "version": version]
             }
             let offset = min(Int(p["offset"]?.doubleValue ?? 0), file.data.count)

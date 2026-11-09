@@ -392,6 +392,8 @@ private struct AttachmentStrip: View {
     @Environment(WindowModel.self) private var model
     let attachments: [Attachment]
     @State private var loading: String?
+    /// The stream-then-share sheet, for a big file or the card's 分享/导出.
+    @State private var shareTarget: FileShareTarget?
 
     private var pictures: [Attachment] { attachments.filter(\.showsInline) }
     private var cards: [Attachment] { attachments.filter { !$0.showsInline } }
@@ -407,10 +409,10 @@ private struct AttachmentStrip: View {
                 }
             }
             ForEach(cards) { a in
-                Button { open(a) } label: { FileCard(attachment: a, loading: loading == a.id) }
-                    .buttonStyle(.plain)
+                FileCard(attachment: a, loading: loading == a.id, open: { open(a) }, share: { share(a) })
             }
         }
+        .fileShareSheet(item: $shareTarget)
     }
 
     private func key(_ a: Attachment) -> String { a.kind == "artifact" ? "artifact:\(a.id)" : a.id }
@@ -465,6 +467,38 @@ private struct AttachmentStrip: View {
         model.showInLibrary(id)
     }
 
+    /// The attachment's bytes on the computer, as its size when known (a
+    /// library item's main file, a sent file's own).
+    private func attachmentSize(_ a: Attachment) -> Int64? {
+        if a.kind == "artifact" {
+            let artifact = store.artifact(id: a.id)
+            let main = artifact?.mainFile ?? ""
+            return artifact?.files.first { $0.path == main }?.size ?? a.size
+        }
+        return a.size
+    }
+
+    /// Over the inline threshold (5 MB): can't be previewed here, only shared.
+    private func isBig(_ a: Attachment) -> Bool {
+        (attachmentSize(a) ?? 0) > FileChunk.maxFile
+    }
+
+    /// 分享 / 导出: stream it from the host to a device temp file, then the
+    /// system share sheet. `tooLarge` changes the heading.
+    private func share(_ a: Attachment, tooLarge: Bool = false) {
+        let name = fileName(a)
+        let size = attachmentSize(a)
+        switch a.kind {
+        case "artifact":
+            let path = store.artifact(id: a.id)?.mainFile ?? ""
+            shareTarget = FileShareTarget(title: tooLarge ? "文件太大，无法在这里预览" : "分享文件",
+                                          name: name, size: size, source: .artifact(id: a.id, path: path))
+        default:
+            shareTarget = FileShareTarget(title: tooLarge ? "文件太大，无法在这里预览" : "分享文件",
+                                          name: name, size: size, source: .media(id: a.id))
+        }
+    }
+
     private func open(_ a: Attachment) {
         // Web pages render in the artifact view (in the right pane, or on
         // their own over the chat on phones). The Mac and large iPad windows:
@@ -474,6 +508,9 @@ private struct AttachmentStrip: View {
         let inPane = isWebPage(a) || a.kind == "artifact" && model.libraryBeside
         debugLog("[open] \(a.kind) card (\(a.mediaType)) tapped in \(model.traceName) on \((model.selection ?? .palo).storageKey): layout \(model.layout), beside \(model.libraryBeside), short \(model.shortWindow) → \(inPane ? "right pane" : isMarkdown(a) ? "Markdown sheet" : "QuickLook")")
         if inPane { return model.openArtifact(a.id) }
+        // A file over the inline threshold can't be previewed here: straight
+        // to sharing it out (streamed, never read whole).
+        if isBig(a) { share(a, tooLarge: true); return }
         guard loading == nil else { return }
         loading = a.id
         Task {
@@ -528,31 +565,47 @@ private struct AttachmentStrip: View {
     }
 }
 
-/// A file or library item in the conversation: icon, name, size.
+/// A file or library item in the conversation: icon, name, size. Tap it to
+/// open (or, when it's too big, to share); 分享 / 导出 streams it out.
 private struct FileCard: View {
     let attachment: Attachment
     let loading: Bool
+    let open: () -> Void
+    let share: () -> Void
 
     var body: some View {
         #if DEBUG || PERF_HARNESS
         let _ = PerfProbe.count("FileCard")
         #endif
-        HStack(spacing: 12) {
-            Image(systemName: symbol)
-                .font(.title3)
-                .foregroundStyle(.secondary)
-                .frame(width: 40, height: 40)
-                .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 10, style: .continuous))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(attachment.name ?? String(localized: "文件")).font(.callout.weight(.medium)).lineLimit(1)
-                Text(detail).font(.caption).foregroundStyle(.secondary)
+        HStack(spacing: 8) {
+            Button(action: open) {
+                HStack(spacing: 12) {
+                    Image(systemName: symbol)
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 40, height: 40)
+                        .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 10, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(attachment.name ?? String(localized: "文件")).font(.callout.weight(.medium)).lineLimit(1)
+                        Text(detail).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                    if loading { ProgressView().controlSize(.small) }
+                    else { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
+                }
+                .contentShape(.rect)
             }
-            Spacer(minLength: 0)
-            if loading { ProgressView().controlSize(.small) }
-            else { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
+            .buttonStyle(.plain)
+            if !loading {
+                Button(action: share) {
+                    Image(systemName: "square.and.arrow.up").font(.footnote).foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("分享 / 导出"))
+            }
         }
         .padding(10)
-        .frame(maxWidth: 300, alignment: .leading)
+        .frame(maxWidth: 320, alignment: .leading)
         // In-content: a quiet card, not glass (glass is for chrome above content).
         .background(.background.secondary, in: .rect(cornerRadius: 16, style: .continuous))
         .overlay {

@@ -43,6 +43,8 @@ const SEARCH_SKIP: ReadonlySet<string> = new Set([
 ]);
 /** Bigger than this: its size and path only, never its bytes. */
 export const MAX_READ_BYTES = 5 * 1024 * 1024;
+/** A file streamed for sharing (chunked, to a device temp file) may be this big; over it, its size only. */
+export const MAX_STREAM_BYTES = 200 * 1024 * 1024;
 /** What the app's editor may write back (it edits text up to 1 MB). */
 export const MAX_WRITE_BYTES = 1024 * 1024;
 const MAX_LIST = 2000;
@@ -170,9 +172,11 @@ export class FileBrowser {
 
   /**
    * A chunk of a file, like artifact.read (≤ 256 KiB each). Over 5 MB: its
-   * size only (`tooLarge`), nothing read. The first chunk is audited.
+   * size only (`tooLarge`), nothing read. `stream` (sharing a file out to
+   * the device, chunk by chunk) lifts that to 200 MB instead, still never
+   * more than 256 KiB in one chunk. The first chunk is audited.
    */
-  read(scope: FileScope, path: string, offset = 0, length = CHUNK, by = "app"):
+  read(scope: FileScope, path: string, offset = 0, length = CHUNK, by = "app", stream = false):
     { data: string; size: number; mime: string; eof: boolean; tooLarge?: boolean; version: string } {
     const { real, rel } = this.locate(scope, path);
     const st = statSync(real);
@@ -180,9 +184,10 @@ export class FileBrowser {
     if (!st.isFile()) throw new Error(t("files.err.notFound"));
     const mime = mimeOf(real);
     const start = Math.max(0, Math.floor(Number(offset) || 0));
-    if (start === 0) this.d.audit.log("files.read", { scope: scopeLabel(scope), path: rel, size: st.size, by, ...(st.size > MAX_READ_BYTES ? { tooLarge: true } : {}) });
+    const cap = stream ? MAX_STREAM_BYTES : MAX_READ_BYTES;
+    if (start === 0) this.d.audit.log("files.read", { scope: scopeLabel(scope), path: rel, size: st.size, by, ...(stream ? { stream: true } : {}), ...(st.size > cap ? { tooLarge: true } : {}) });
     const version = versionOf(st);
-    if (st.size > MAX_READ_BYTES) return { data: "", size: st.size, mime, eof: true, tooLarge: true, version };
+    if (st.size > cap) return { data: "", size: st.size, mime, eof: true, tooLarge: true, version };
     const len = Math.max(0, Math.min(Math.floor(Number(length) || CHUNK), CHUNK, st.size - start));
     const buf = Buffer.alloc(len);
     if (len > 0) {

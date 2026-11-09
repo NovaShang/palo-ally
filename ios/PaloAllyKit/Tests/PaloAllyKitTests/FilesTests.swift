@@ -51,8 +51,30 @@ struct FilesTests {
         #expect(outside.files.map(\.abs) == ["/Users/demo/Desktop/待办.txt", "/Users/demo/Documents/报销/十月发票.pdf"])
     }
 
-    @Test func theResolveAnswerDecodesWithAndWithoutUnchecked() throws {
-        let old = #"{"files":[{"text":"a.md","path":"a.md","abs":"/x/a.md","size":3}]}"#
+    @Test func streamsABigFileToATempFileForSharing() async throws {
+        let host = DemoHost(speed: 0, pals: true)
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { store.connection == .online && store.pals.count == 4 })
+        let pal = try #require(await host.pals.first)
+        let scope = FileScope.pal(pal.id)
+        // Over the inline cap, under the stream cap: served chunk by chunk.
+        let url = try await store.streamFile(scope, path: "docs/大文件示例.pdf", name: "大文件示例.pdf")
+        #expect(url.lastPathComponent == "大文件示例.pdf")
+        #expect(FileManager.default.fileExists(atPath: url.path))
+        let downloaded = try Data(contentsOf: url)
+        #expect(downloaded.count == DemoHost.bigDemoPDF().count)
+        #expect(downloaded == DemoHost.bigDemoPDF())
+    }
+
+    @Test func streamParamEncodesOnlyWhenSet() throws {
+        let plain = String(decoding: try JSONEncoder().encode(FilesReadParams(scope: .palo, path: "a.md")), as: UTF8.self)
+        #expect(!plain.contains("stream"))
+        let streamed = String(decoding: try JSONEncoder().encode(FilesReadParams(scope: .palo, path: "a.md", stream: true)), as: UTF8.self)
+        #expect(streamed.contains(#""stream":true"#))
+    }
+
+    @Test func theResolveAnswerDecodesWithAndWithoutUnchecked() throws {        let old = #"{"files":[{"text":"a.md","path":"a.md","abs":"/x/a.md","size":3}]}"#
         let (r, issues) = try LenientDiagnostics.collect { try JSONDecoder().decode(FilesResolveResult.self, from: Data(old.utf8)) }
         #expect(issues.isEmpty && r.unchecked.isEmpty && r.files.map(\.path) == ["a.md"])
         let new = #"{"files":[],"unchecked":["Widget.swift"]}"#

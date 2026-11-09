@@ -75,14 +75,17 @@ public struct FilesListResult: Codable, Sendable {
     }
 }
 
-/// `files.read {scope, path, offset?, length?}`.
+/// `files.read {scope, path, offset?, length?, stream?}`.
 public struct FilesReadParams: Codable, Sendable {
     public var scope: FileScope
     public var path: String
     public var offset: Int64
     public var length: Int64
-    public init(scope: FileScope, path: String, offset: Int64 = 0, length: Int64 = ArtifactChunk.maxChunk) {
-        self.scope = scope; self.path = path; self.offset = offset; self.length = length
+    /// Share a file out: serve it in chunks past 5 MB (up to 200 MB) instead
+    /// of giving its size only. Omitted unless true.
+    public var stream: Bool?
+    public init(scope: FileScope, path: String, offset: Int64 = 0, length: Int64 = ArtifactChunk.maxChunk, stream: Bool? = nil) {
+        self.scope = scope; self.path = path; self.offset = offset; self.length = length; self.stream = stream
     }
 }
 
@@ -151,6 +154,19 @@ public struct FilesWriteResult: Decodable, Sendable {
 public struct FileWriteConflict: Error, Sendable, Equatable {
     public var version: String
     public init(version: String) { self.version = version }
+}
+
+/// A file too big to share out (`files.read` with `stream` over its cap):
+/// nothing is streamed. `size` is the file's.
+public struct FileStreamTooLarge: Error, Sendable, Equatable {
+    public var size: Int64
+    public init(size: Int64) { self.size = size }
+}
+
+/// Sharing a file out: `files.read` with `stream` serves it in 256 KiB chunks
+/// up to this size (over it, the host refuses with `tooLarge`). Never one blob.
+public enum FileStream {
+    public static let maxBytes: Int64 = 200 * 1024 * 1024
 }
 
 /// `files.search {scope, query, limit?}`.
