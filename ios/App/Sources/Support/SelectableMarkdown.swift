@@ -77,10 +77,22 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
     private func settleSelectable() {
         guard isSelectable == lastStreaming, !selectableQueued else { return }
         selectableQueued = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+        // Not in a window: at once (nothing under the pointer to update).
+        // In one: two turns of the main queue later, clear of SwiftUI taking
+        // views down: installing the selection's gestures makes UIKit look
+        // under the pointer, and a SwiftUI gesture view half gone there was
+        // a crash (11-10, AG precondition in GestureRecognizerRepresentableResponder).
+        guard window != nil else {
             selectableQueued = false
             applySelectable()
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.selectableQueued = false
+                self.applySelectable()
+            }
         }
     }
 

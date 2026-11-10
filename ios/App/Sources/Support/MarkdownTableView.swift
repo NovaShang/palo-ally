@@ -343,6 +343,10 @@ final class TableCellView: UIView {
             UIPasteboard.general.string = table
         }]
         view.renderCell(shown.text, header: shown.header, alignment: shown.alignment, linkColor: linkColor)
+        // Selectable before it is in the window: turning it on in a window
+        // installs its gestures there, and UIKit's pointer update then asked
+        // a SwiftUI gesture view going away, a crash (11-10).
+        view.applySelectable()
         view.frame = bounds
         addSubview(view)
         live = view
