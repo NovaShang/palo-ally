@@ -125,7 +125,7 @@ struct ArtifactDetailView: View {
     private func makeShareTarget(_ a: Artifact, tooLarge: Bool) -> FileShareTarget {
         let path = currentPath(a)
         let name = (path as NSString).lastPathComponent.isEmpty ? "file" : (path as NSString).lastPathComponent
-        return FileShareTarget(title: tooLarge ? "文件太大，无法在这里预览" : "分享文件",
+        return FileShareTarget(title: tooLarge ? String(localized: "文件太大，无法在这里预览", table: "Files") : String(localized: "分享文件", table: "Files"),
                                name: name, size: currentSize(a), source: .artifact(id: a.id, path: path))
     }
 

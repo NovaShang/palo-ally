@@ -130,7 +130,7 @@ struct FilePage: View {
     /// The stream-then-share sheet's target: this file, streamed from the host.
     private func makeShareTarget() -> FileShareTarget {
         let size: Int64? = { if case .tooLarge(let s) = phase { return s }; return nil }()
-        return FileShareTarget(title: "文件太大，无法在这里预览", name: target.name, size: size,
+        return FileShareTarget(title: String(localized: "文件太大，无法在这里预览", table: "Files"), name: target.name, size: size,
                                source: .file(scope: readScope ?? target.scope, path: target.path))
     }
 

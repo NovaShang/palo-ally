@@ -703,6 +703,39 @@
           }
         }
       }
+    },
+    "文件太大，无法在这里预览" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too large to preview here"
+          }
+        }
+      }
+    },
+    "分享文件" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Share File"
+          }
+        }
+      }
+    },
+    "文件太大，无法分享（最多 200 MB）" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too large to share (200 MB at most)"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

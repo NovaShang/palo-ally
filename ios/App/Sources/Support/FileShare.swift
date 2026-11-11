@@ -115,7 +115,7 @@ struct FileShareSheet: View {
             }
             url = downloaded
         } catch is FileStreamTooLarge {
-            failure = "文件太大，无法分享（最多 200 MB）"
+            failure = String(localized: "文件太大，无法分享（最多 200 MB）", table: "Files")
         } catch is CancellationError {
             dismiss()
         } catch {

@@ -491,10 +491,10 @@ private struct AttachmentStrip: View {
         switch a.kind {
         case "artifact":
             let path = store.artifact(id: a.id)?.mainFile ?? ""
-            shareTarget = FileShareTarget(title: tooLarge ? "文件太大，无法在这里预览" : "分享文件",
+            shareTarget = FileShareTarget(title: tooLarge ? String(localized: "文件太大，无法在这里预览", table: "Files") : String(localized: "分享文件", table: "Files"),
                                           name: name, size: size, source: .artifact(id: a.id, path: path))
         default:
-            shareTarget = FileShareTarget(title: tooLarge ? "文件太大，无法在这里预览" : "分享文件",
+            shareTarget = FileShareTarget(title: tooLarge ? String(localized: "文件太大，无法在这里预览", table: "Files") : String(localized: "分享文件", table: "Files"),
                                           name: name, size: size, source: .media(id: a.id))
         }
     }
