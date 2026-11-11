@@ -92,6 +92,7 @@ private let resultTypes: [String: Check] = [
     RPCMethod.stop: strict(StatusResult.self),
     RPCMethod.pushRegister: strict(OKResult.self),
     RPCMethod.pushUnregister: strict(OKResult.self),
+    RPCMethod.presence: strict(OKResult.self),
     RPCMethod.deviceUnpair: strict(OKResult.self),
     RPCMethod.auditTail: strict(AuditResult.self),
     RPCMethod.mediaUpload: strict(Attachment.self),

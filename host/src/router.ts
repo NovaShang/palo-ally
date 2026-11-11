@@ -42,7 +42,7 @@ export function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 export type DeliveryResult = {
   pushed: boolean;
   wechat: boolean;
-  suppressed?: "quiet" | "burst" | "duplicate";
+  suppressed?: "quiet" | "burst" | "duplicate" | "present";
   /** Devices a push reached, when the pusher reports it. */
   devices?: number;
   /** Why no push went out, in plain words (unset when one did). */
@@ -86,6 +86,8 @@ export class Router {
   private recent: { ts: number; key: string }[] = []; // guarded pushes actually sent
   private health: PushHealth | null = null;
   onRunaway: (reason: "burst" | "duplicate") => void = () => {};
+  /** The owner is in front of an app right now (presence.ts): it shows the message, so no interrupt. */
+  ownerPresent: () => boolean = () => false;
 
   pushHealth(): PushHealth | null {
     return this.health;
@@ -123,9 +125,17 @@ export class Router {
     return inWindow(minuteOfDay(this.now(), s.timezone), start, end);
   }
 
-  async proactive(msg: ChatMessage, opts: { urgent?: boolean; title?: string; skipWechat?: boolean } = {}): Promise<DeliveryResult> {
+  // `whilePresent`: pushed even while the owner is in an app (quiet hours and
+  // the runaway guard still hold it), for what the app may not show on its
+  // own, like a lost login.
+  async proactive(msg: ChatMessage, opts: { urgent?: boolean; title?: string; skipWechat?: boolean; whilePresent?: boolean } = {}): Promise<DeliveryResult> {
     const s = this.settings();
     if (!opts.urgent) {
+      // In front of an app: the message is there already; nothing buzzes.
+      if (!opts.whilePresent && this.ownerPresent()) {
+        this.audit.log("deliver.suppressed", { reason: "present", msg: msg.id });
+        return { pushed: false, wechat: false, suppressed: "present" };
+      }
       if (this.isQuiet()) {
         this.audit.log("deliver.suppressed", { reason: "quiet", msg: msg.id });
         return { pushed: false, wechat: false, suppressed: "quiet", ...(s.quietHours ? { quietEnds: s.quietHours.end } : {}) };

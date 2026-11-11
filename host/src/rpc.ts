@@ -23,7 +23,7 @@ export const RPC_METHODS = [
   "hello", "sync", "chat.send", "chat.history", "chat.search", "chat.around", "chat.rewind", "commands.list", "model.get", "model.set",
   "task.get", "task.stop", "approval.answer", "question.answer", "watch.add", "watch.update", "watch.remove",
   "artifact.list", "artifact.read", "artifact.pin", "memory.list", "memory.read", "memory.write",
-  "settings.update", "stop", "push.register", "push.unregister", "device.unpair", "audit.tail",
+  "settings.update", "stop", "push.register", "push.unregister", "presence", "device.unpair", "audit.tail",
   "media.upload", "media.uploadChunk", "media.get", "media.read",
   "suggestions.list", "suggestions.dismiss", "host.update",
   "ally.list", "ally.invite", "ally.accept", "ally.remove", "ally.log", "ally.draft.decide", "ally.say", "ally.trust",
@@ -213,6 +213,10 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       writeJson(hub.paths.pushTokens, next.slice(-10));
       return { ok: true };
     }
+    case "presence":
+      // The app is in front (said again every minute) or left it: no pushes while it is.
+      hub.notePresence(ctx.clientId, p.active === true);
+      return { ok: true };
     case "push.unregister": {
       const token = String(p.token ?? "");
       const tokens = readJson<{ token: string }[]>(hub.paths.pushTokens, []);

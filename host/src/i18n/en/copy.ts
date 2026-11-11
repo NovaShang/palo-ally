@@ -54,6 +54,7 @@ export const enCopy: Record<keyof typeof zhCopy, string> = {
   "notify.noReceipt": "The message is in the app chat; the push isn't confirmed delivered yet (the push service is slow). Don't assume the owner has seen it.",
   "notify.quiet": "Logged in the app chat. It's quiet hours, so nothing was pushed and it won't be pushed later{until}. If it's truly urgent, send again with urgent=true.",
   "notify.quietUntil": " (quiet until {end})",
+  "notify.present": "Logged in the app chat. The owner is using the app right now and will see it, so it wasn't pushed. Use urgent if it can't wait.",
   "notify.suppressed": "Logged in the app chat. Too many pushes lately (or the same one just went out), so this one wasn't pushed.",
   "notify.pushedDevices": "Pushed to {n} device(s)",
   "notify.pushed": "Pushed",

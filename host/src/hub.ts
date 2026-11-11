@@ -43,6 +43,7 @@ import { PALO_NAME, Pals, type PalsDeps } from "./pals.ts";
 import { Workbench } from "./workbench.ts";
 import { FileBrowser } from "./files.ts";
 import { FileWatches } from "./fileWatch.ts";
+import { Presence } from "./presence.ts";
 
 export type { ClientConn, WechatChannel, WechatReplyTarget } from "./channels/types.ts";
 export { timing } from "./conversation.ts";
@@ -113,6 +114,8 @@ export class Hub {
   private readonly claudeDir: string;
   private readonly forkSession: ForkSession;
   private clients = new Map<string, { conn: ClientConn; off: () => void }>();
+  /** Which connections' apps are in front right now: no pushes while one is (presence.ts). */
+  private readonly presence: Presence;
   private suggestionTimer: ReturnType<typeof setInterval> | null = null;
   // questions sent to WeChat as text: the owner's next WeChat message answers them
   private wechatQuestions = new Set<string>();
@@ -154,6 +157,8 @@ export class Hub {
       () => this.chat.lastUserActivity(),
     );
     this.router.onRunaway = (reason) => this.proactive?.onRunaway(reason);
+    this.presence = new Presence(deps.now);
+    this.router.ownerPresent = () => this.presence.present();
     let expiredNotice: ChatMessage | null = null;
     this.auth = new AuthWatch({
       path: `${this.paths.state}/auth.json`,
@@ -161,7 +166,8 @@ export class Hub {
       // Said once in the chat; pushed (and to WeChat) unless quiet hours hold it, then again after.
       notify: async () => {
         expiredNotice ??= this.chat.add({ role: "assistant", kind: "notice", text: t("auth.expired"), channel: "system", proactive: true });
-        const r = await this.router.proactive(expiredNotice, { title: t("auth.expiredTitle") });
+        // Pushed even while the owner is in an app: nothing works until they sign in again.
+        const r = await this.router.proactive(expiredNotice, { title: t("auth.expiredTitle"), whilePresent: true });
         return !r.suppressed;
       },
       recovered: (missed, how, since) => {
@@ -935,6 +941,14 @@ export class Hub {
     if (!c) return;
     c.off();
     this.clients.delete(id);
+    this.presence.drop(id);
+  }
+
+  /** `presence`: this connection's app came to the front (or said so again), or left it. */
+  notePresence(clientId: string, active: boolean): void {
+    // Only an open connection counts (one closing drops what it said).
+    if (active && !this.clients.has(clientId)) return;
+    if (this.presence.note(clientId, active)) this.audit.log("presence", { client: clientId, active });
   }
 
   clientCount(): number {

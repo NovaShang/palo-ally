@@ -29,6 +29,7 @@ import type { Sessions } from "./sessions.ts";
 import type { StallTarget } from "./stallWatch.ts";
 import type { Attachment, ChatMessage, EarlierItem, HelperProposal, Pal, PalAdoptProposal, RecentSession } from "./types.ts";
 import { isTldrAsk, tldrPrompt } from "./tldr.ts";
+import { DonePushes } from "./donePush.ts";
 import { newId, readJson, writeJson, zonedParts } from "./util.ts";
 
 // Pals (docs/pals-prd.md): Claude Code sessions the host runs itself. The
@@ -512,6 +513,7 @@ export class Pals {
     if (this.emitTimer) clearTimeout(this.emitTimer);
     for (const w of this.waiting.values()) if (w.timer) clearTimeout(w.timer);
     this.waiting.clear();
+    this.donePushes.stop();
     for (const pal of this.pals.values()) void pal.shutdown();
   }
 
@@ -1531,19 +1533,20 @@ export class Pals {
     return { messages, ...(streaming ? { streaming } : {}) };
   }
 
-  // 「X 回复了」: a turn that really ended, with its reply's first line;
-  // at most once per Pal a minute (the app hides it when that conversation
-  // is the one on screen). Push only, never WeChat.
+  // 「X 回复了」: a turn that really ended, with its reply's first line; only
+  // one that ran 2 minutes, each Pal once in 10 minutes, several finishing
+  // close together as one push (donePush.ts). Push only, never WeChat.
   private pushDone(pal: PalSession): void {
     const line = pal.toWire().lastLine;
-    if (!line) return;
-    const now = this.now();
-    if (now - (this.lastDonePush.get(pal.id) ?? 0) < 60_000) return;
-    this.lastDonePush.set(pal.id, now);
-    const msg: ChatMessage = { seq: 0, id: newId("m_"), role: "assistant", kind: "text", text: line, channel: "system", ts: now, pal: pal.id };
-    void this.d.router.proactive(msg, { title: t("pals.doneTitle", { name: this.shownName(pal) }), skipWechat: true }).catch(() => {});
+    if (line) this.donePushes.finished(pal.id, this.shownName(pal), line, pal.workedMs());
   }
-  private lastDonePush = new Map<string, number>();
+  private readonly donePushes = new DonePushes({
+    now: () => this.now(),
+    send: (p) => {
+      const msg: ChatMessage = { seq: 0, id: newId("m_"), role: "assistant", kind: "text", text: p.body, channel: "system", ts: this.now(), ...(p.pal ? { pal: p.pal } : {}) };
+      void this.d.router.proactive(msg, { title: p.title, skipWechat: true }).catch(() => {});
+    },
+  });
 
   // 「X 在等你」: at most once per Pal every 10 minutes.
   private pushWaiting(pal: PalSession, body: string, ids: { approvalId?: string; questionId?: string }): void {

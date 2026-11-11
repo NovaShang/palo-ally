@@ -218,6 +218,7 @@ ModelOption { value; displayName; description; efforts:string[] }
 | `settings.update` | `{patch}` | `{settings}` |
 | `stop` | `{}` | `{status}`（harness 的 interrupt + stopTask；不留阻塞状态） |
 | `push.register` / `push.unregister` | `{token, env?}` / `{token}` | `{ok}` |
+| `presence` | `{active}` | `{ok}`（App 到前台、离开前台时各说一次，在前台时每 60 秒再说一次；某个连接 90 秒内说过在前台且连接还开着，主人就算在场：不急的消息只进对话、不推送也不发微信，urgent 照推） |
 | `device.unpair` | `{}` | `{ok}`（移除发起调用的这台设备） |
 | `device.list` | `{}` | `{devices:PairedDevice[]}`（这台电脑配对过的主人的设备，发起调用的这台在最前、`current: true`；只给主人自己的设备和本机命令行。docs/devices-prd.md） |
 | `device.remove` | `{deviceId}` | `{ok}`（断开另一台设备、让 relay 忘掉它，记审计 `device.removed`；不能是发起调用的这台（用 `device.unpair`）） |

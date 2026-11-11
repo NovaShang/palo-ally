@@ -65,6 +65,8 @@ export const enPals: Record<keyof typeof zhPals, string> = {
   "pals.handBackFailed": "Couldn't hand it back: {why}",
   "pals.waitingTitle": "{name} is waiting for you",
   "pals.doneTitle": "{name} replied",
+  "pals.doneManyTitle": "{n} sessions replied",
+  "pals.doneManyMore": " and more",
   "pals.needName": "A session needs a name.",
   "pals.palNameLong": "That session name is too long.",
   "pals.needDuty": "Say what it's responsible for.",

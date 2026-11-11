@@ -346,6 +346,11 @@ public final class AppStore {
     var syncing = false
     private var resyncRequested = false
     private var pushRegistration: PushRegisterParams?
+    /// The app is in front, as last told by `setPresence`.
+    @ObservationIgnored public private(set) var presenceActive = false
+    @ObservationIgnored private var presenceTimer: Task<Void, Never>?
+    /// How often a presence in front is said again (the host forgets it after 90 s).
+    @ObservationIgnored public var presenceEvery: Double = 60
     private var inboundTask: Task<Void, Never>?
     /// Bumped on every connect / disconnect; stale catch-up loops stop.
     private var connectGeneration = 0
@@ -546,6 +551,8 @@ public final class AppStore {
                 if let push = pushRegistration {
                     _ = try? await rpc.call(RPCMethod.pushRegister, params: push, as: OKResult.self)
                 }
+                // A new connection starts with no presence on the host.
+                if presenceActive { sendPresence() }
                 resendQueued()
                 Task { await self.loadSuggestions() }
                 Task { await self.loadAllies() }
@@ -1933,6 +1940,37 @@ public final class AppStore {
         guard connection == .online else { return }
         let rpc = rpc
         Task { _ = try? await rpc.call(RPCMethod.pushRegister, params: params, as: OKResult.self) }
+    }
+
+    // MARK: presence
+
+    /// The app came to the front (`true`) or left it: told to the host now,
+    /// after every reconnect, and again every `presenceEvery` seconds while in
+    /// front, so the host holds back pushes only while the owner is looking
+    /// (it forgets a presence not heard for 90 s). A host from before
+    /// `presence` answers with an error, ignored.
+    public func setPresence(_ active: Bool) {
+        let changed = active != presenceActive
+        presenceActive = active
+        presenceTimer?.cancel()
+        presenceTimer = nil
+        if changed || active { sendPresence() }
+        guard active else { return }
+        presenceTimer = Task { [weak self, every = presenceEvery] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(every))
+                guard !Task.isCancelled, let self else { return }
+                self.sendPresence()
+            }
+        }
+    }
+
+    private func sendPresence() {
+        guard connection == .online else { return }
+        let params = PresenceParams(active: presenceActive)
+        debugLog("presence active=\(params.active)")
+        let rpc = rpc
+        Task { _ = try? await rpc.call(RPCMethod.presence, params: params, as: OKResult.self, timeout: 10) }
     }
 }
 

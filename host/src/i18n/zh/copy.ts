@@ -54,6 +54,7 @@ export const zhCopy = {
   "notify.noReceipt": "消息已放进 App 对话；推送还没确认送达（推送服务回得慢）。别当作主人已经看到。",
   "notify.quiet": "已记入 App 对话。现在是免打扰时段，没推送，之后也不会补推{until}。真要紧就带 urgent=true 再发一次。",
   "notify.quietUntil": "（免打扰到 {end}）",
+  "notify.present": "已记入 App 对话。主人正在用 App，看得到，这条没推送。要他放下手头的事立刻看，用 urgent。",
   "notify.suppressed": "已记入 App 对话。短时间内推送太多（或刚推过同样的内容），这条没推送。",
   "notify.pushedDevices": "已推送到 {n} 台设备",
   "notify.pushed": "已推送",

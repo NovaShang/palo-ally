@@ -33,6 +33,9 @@ public enum RPCMethod {
     public static let stop = "stop"
     public static let pushRegister = "push.register"
     public static let pushUnregister = "push.unregister"
+    /// The app is in front (`active`, said again every minute) or left it:
+    /// the host doesn't push while the owner is looking at an app.
+    public static let presence = "presence"
     public static let deviceUnpair = "device.unpair"
     public static let auditTail = "audit.tail"
     public static let commandsList = "commands.list"
@@ -175,7 +178,7 @@ public enum RPCMethod {
     public static let all: [String] = [
         hello, sync, chatSend, chatHistory, chatSearch, chatAround, chatRewind, commandsList, modelGet, modelSet, taskGet, taskStop,
         approvalAnswer, questionAnswer, watchAdd, watchUpdate, watchRemove, artifactList, artifactRead, artifactPin,
-        memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister,
+        memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister, presence,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
         suggestionsList, suggestionsDismiss, hostUpdate, pairInvite, deviceList, deviceRemove,
     ] + allies + sessions + pals + workbench + files + auth
@@ -638,6 +641,11 @@ public struct MemoryWriteResult: Decodable, Sendable {
 public struct PushUnregisterParams: Codable, Sendable {
     public var token: String
     public init(token: String) { self.token = token }
+}
+
+public struct PresenceParams: Codable, Sendable, Equatable {
+    public var active: Bool
+    public init(active: Bool) { self.active = active }
 }
 
 public struct SettingsResult: Decodable, Sendable {

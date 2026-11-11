@@ -143,6 +143,7 @@ export function offlineNotice(gapMs: number, last: number, now: number, tz: stri
 export function notifyResultText(r: DeliveryResult | null): string {
   if (!r) return t("notify.noReceipt");
   if (r.suppressed === "quiet") return t("notify.quiet", { until: r.quietEnds ? t("notify.quietUntil", { end: r.quietEnds }) : "" });
+  if (r.suppressed === "present") return t("notify.present");
   if (r.suppressed) return t("notify.suppressed");
   const pushed = r.devices ? t("notify.pushedDevices", { n: r.devices }) : t("notify.pushed");
   if (r.pushed && r.wechat) return t("notify.pushedWechat", { pushed });

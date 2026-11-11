@@ -158,6 +158,7 @@ describe("host ↔ app protocol", () => {
     await run("settings.update", { patch: { probeIntervalMinutes: 15, assistantName: "帕帕", color: "teal" } });
     await run("push.register", { token: "a".repeat(64), env: "sandbox" });
     await run("push.unregister", { token: "a".repeat(64) });
+    await run("presence", { active: true });
     driver.probeResponder = () => ({
       output: { suggestions: [{ chip: "找出没在用的订阅", prompt: "帮我把信用卡账单里的订阅都找出来，标出最近三个月没用过的", category: "省钱" }, { chip: "每周日给我做周报", prompt: "以后每周日晚上把我这一周做的事整理成周报" }] },
       costUsd: 0.0002,
@@ -319,11 +320,12 @@ describe("host ↔ app protocol", () => {
     // 最近的对话: one that ended in the same folder, listed; the assistant's
     // card for it, and the same card once the owner took it over.
     const endedId = "3c9d2e71-0000-4000-8000-000000000003";
+    const endedAt = Date.now() - 86400_000; // yesterday: pals.recent lists the last 30 days
     claude.transcript(project, endedId, [
-      { type: "user", uuid: "r1", timestamp: "2026-10-12T09:00:00Z", message: { role: "user", content: "把首页改成两栏" }, origin: { kind: "human" } },
-      { type: "assistant", uuid: "r2", timestamp: "2026-10-12T09:01:00Z", message: { id: "msg_r2", model: "claude-sonnet-4-6", role: "assistant", content: [{ type: "text", text: "两栏的样式好了。" }] } },
+      { type: "user", uuid: "r1", timestamp: new Date(endedAt - 60_000).toISOString(), message: { role: "user", content: "把首页改成两栏" }, origin: { kind: "human" } },
+      { type: "assistant", uuid: "r2", timestamp: new Date(endedAt).toISOString(), message: { id: "msg_r2", model: "claude-sonnet-4-6", role: "assistant", content: [{ type: "text", text: "两栏的样式好了。" }] } },
     ]);
-    ended.push({ sessionId: endedId, summary: "首页改成两栏", customTitle: "首页改成两栏", firstPrompt: "把首页改成两栏", lastModified: Date.parse("2026-10-12T09:01:00Z"), cwd: project });
+    ended.push({ sessionId: endedId, summary: "首页改成两栏", customTitle: "首页改成两栏", firstPrompt: "把首页改成两栏", lastModified: endedAt, cwd: project });
     await run("pals.recent", {});
     expect(methods["pals.recent"]).toMatchObject({ result: { sessions: [{ sessionId: endedId, cwd: project, title: "首页改成两栏" }] } });
     await hub.toolHandlers().pal_adopt({ sessionId: endedId });

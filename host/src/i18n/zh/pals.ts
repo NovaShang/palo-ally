@@ -63,6 +63,8 @@ export const zhPals = {
   "pals.handBackFailed": "没能交还：{why}",
   "pals.waitingTitle": "{name} 在等你",
   "pals.doneTitle": "{name} 回复了",
+  "pals.doneManyTitle": "{n} 个会话回复了",
+  "pals.doneManyMore": " 等",
   "pals.needName": "会话要有个名字",
   "pals.palNameLong": "会话的名字太长了",
   "pals.needDuty": "要写清楚它负责什么",

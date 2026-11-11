@@ -32,6 +32,8 @@ struct PaloAllyApp: App {
         // The app as a whole (any window up or none): the connections wake and sleep with it.
         .onChange(of: scenePhase) { _, phase in
             breadcrumb("scene \(phase)")
+            // In front or not, for the host's pushes (the Mac goes by AppKit's own: AppModel.watchMacFront).
+            if !ProcessInfo.processInfo.isMacCatalystApp { appDelegate.model.setInFront(phase == .active) }
             switch phase {
             case .active: appDelegate.model.didBecomeActive()
             case .background: appDelegate.model.didEnterBackground()

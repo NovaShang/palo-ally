@@ -192,6 +192,7 @@ export class PalSession {
   private stderrTail = "";
   private failures: number[] = [];
   private turnOpen = false;
+  private workSince = 0; // when it last went from idle to busy: how long the turn that ends ran
   private pendingUuids = new Set<string>();
   private pendingText = new Map<string, { text: string; from?: string; images?: ImageInput[] }>(); // the owner's words not yet taken, by uuid
   private openTools = new Map<string, string>(); // tool calls without a result yet (subagents' too): id → name
@@ -253,6 +254,11 @@ export class PalSession {
 
   get running(): boolean {
     return this.up && !!this.proc && !this.proc.closed;
+  }
+
+  /** How long the work that just ended ran: from when it went busy (0 if never). */
+  workedMs(): number {
+    return this.workSince ? Math.max(0, this.d.now() - this.workSince) : 0;
   }
 
   get busy(): boolean {
@@ -916,6 +922,7 @@ export class PalSession {
     this.emitted.add(uuid);
     if (!o.silent) this.d.emit("chat.message", msg);
     const content = o.peer ? peerWrap(o.peer, body) : body;
+    if (!this.busy) this.workSince = this.d.now();
     this.pendingUuids.add(uuid);
     this.pendingText.set(uuid, { text: content, ...(o.from ? { from: o.from } : {}), ...(images.length ? { images } : {}) });
     this.rec.lastUsedAt = ts;
@@ -1008,6 +1015,7 @@ export class PalSession {
 
   private beginTurn(): void {
     if (this.turnOpen || this.windingDown) return;
+    if (!this.busy) this.workSince = this.d.now();
     this.turnOpen = true;
     this.activity = "";
     this.touch();

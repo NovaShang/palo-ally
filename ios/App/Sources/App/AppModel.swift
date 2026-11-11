@@ -165,6 +165,9 @@ final class AppModel {
         if UserDefaults.standard.bool(forKey: "orbSine") { OrbInput.shared.startSyntheticVoice() }
         #endif
         if let link = launch.pairLink, let url = URL(string: link) { handle(url: url) }
+        #if targetEnvironment(macCatalyst)
+        watchMacFront()
+        #endif
     }
 
     var clientKind: String { ProcessInfo.processInfo.isMacCatalystApp ? "mac" : "ios" }
@@ -415,6 +418,8 @@ final class AppModel {
         s.onAdopted = { [weak self] pal in
             self?.window(showing: id)?.openPal(pal.id)
         }
+        // Said to the host once it's connected.
+        if inFront { s.setPresence(true) }
         return s
     }
 
@@ -602,6 +607,41 @@ final class AppModel {
     func handle(url: URL) {
         inFrontWindow { $0.handle(url: url) }
     }
+
+    // MARK: in front
+
+    /// The app is in front: phones, the scene active; the Mac, the app
+    /// frontmost (Catalyst keeps the scene active behind other apps). Every
+    /// host is told (`presence`) and holds its pushes back meanwhile.
+    @ObservationIgnored private(set) var inFront = false
+
+    func setInFront(_ front: Bool) {
+        guard front != inFront else { return }
+        inFront = front
+        breadcrumb("in front \(front)")
+        for s in stores.values { s.setPresence(front) }
+    }
+
+    #if targetEnvironment(macCatalyst)
+    @ObservationIgnored private var macFrontObservers: [NSObjectProtocol] = []
+
+    /// NSApplication's active state, read and followed through the runtime (no AppKit import on Catalyst).
+    private func watchMacFront() {
+        if let app = (NSClassFromString("NSApplication") as? NSObject.Type)?.value(forKey: "sharedApplication") as? NSObject,
+           let active = app.value(forKey: "active") as? Bool {
+            setInFront(active)
+        }
+        let nc = NotificationCenter.default
+        macFrontObservers = [
+            nc.addObserver(forName: .init("NSApplicationDidBecomeActiveNotification"), object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.setInFront(true) }
+            },
+            nc.addObserver(forName: .init("NSApplicationDidResignActiveNotification"), object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.setInFront(false) }
+            },
+        ]
+    }
+    #endif
 
     func didBecomeActive() {
         // Long stays in the background leave a stale socket: each store forces

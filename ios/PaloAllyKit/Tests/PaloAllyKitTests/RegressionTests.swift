@@ -182,6 +182,29 @@ struct StoreRegressionTests {
         #expect(await host.requestLog.contains("device.unpair"))
         #expect(await host.lastParams["push.unregister"]?["token"] == "0102")
     }
+
+    @Test func presenceIsSentOnChangeAndRepeatedWhileInFront() async throws {
+        let host = DemoHost(speed: 0)
+        let store = AppStore(transport: host.transport)
+        store.presenceEvery = 0.05
+        store.start()
+        #expect(await until { store.connection == .online })
+        #expect(!(await host.requestLog.contains(RPCMethod.presence))) // never said: nothing sent
+        store.setPresence(true)
+        #expect(await until { await host.lastParams[RPCMethod.presence]?["active"] == true })
+        // said again while in front
+        #expect(await until { await host.requestLog.filter { $0 == RPCMethod.presence }.count >= 3 })
+        store.setPresence(false)
+        #expect(await until { await host.lastParams[RPCMethod.presence]?["active"] == false })
+        let sent = await host.requestLog.filter { $0 == RPCMethod.presence }.count
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(await host.requestLog.filter { $0 == RPCMethod.presence }.count == sent) // away: no heartbeat
+    }
+
+    @Test func presenceParamsEncode() throws {
+        let data = try JSONEncoder().encode(PresenceParams(active: true))
+        #expect(String(decoding: data, as: UTF8.self) == #"{"active":true}"#)
+    }
 }
 
 /// Answers hello; never answers the first sync, answers later ones.

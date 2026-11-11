@@ -1502,6 +1502,21 @@ describe("the owner's own sessions (workbench)", () => {
     await t.hub.pals.stopAndWait();
   });
 
+  test("a turn that ran 2 minutes is pushed as 「… 回复了」 with its reply's first line and the Pal's id", async () => {
+    let clock = Date.now();
+    const t = setup({
+      pals: { now: () => clock },
+      palScript: async (text, ctx) => {
+        clock += 2 * 60_000; // it worked a while
+        return echo(text, ctx);
+      },
+    });
+    const { pal } = await t.call("pals.create", { cwd: t.project, text: "先打个招呼" });
+    await waitFor(() => t.pusher.pushes.length === 1);
+    expect(t.pusher.pushes).toEqual([expect.objectContaining({ title: "新会话 回复了", body: "收到：先打个招呼", data: expect.objectContaining({ pal: pal.id }) })]);
+    await t.hub.pals.stopAndWait();
+  });
+
   test("the waiting push also fires for the owner's own sessions (called 新会话 until named); done does not push; a second wait within 10 minutes is quiet", async () => {
     const t = setup({
       palScript: async (text, ctx) => {
@@ -1511,9 +1526,9 @@ describe("the owner's own sessions (workbench)", () => {
     });
     const { pal } = await t.call("pals.create", { cwd: t.project, text: "先打个招呼" });
     await waitFor(() => find(t, pal.id).attention === "done");
-    // done is pushed as 「… 回复了」 with the reply's first line
-    await waitFor(() => t.pusher.pushes.length === 1);
-    expect(t.pusher.pushes).toEqual([expect.objectContaining({ title: "新会话 回复了", body: "收到：先打个招呼", data: expect.objectContaining({ pal: pal.id }) })]);
+    // a short turn isn't pushed as 「… 回复了」 (only one of 2 minutes or more: donePush.ts)
+    await tick(40);
+    expect(t.pusher.pushes).toEqual([]);
     const waits = () => t.pusher.pushes.filter((p) => p.title.endsWith("在等你"));
     await t.call("pals.send", { id: pal.id, text: "要确认" });
     await waitFor(() => t.hub.approvals.listPending().length === 1);

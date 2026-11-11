@@ -933,7 +933,7 @@ public actor DemoHost {
             let token = p["token"]?.stringValue ?? ""
             pushTokens.removeAll { $0 == token }
             return ["ok": true]
-        case RPCMethod.deviceUnpair:
+        case RPCMethod.deviceUnpair, RPCMethod.presence:
             return ["ok": true]
         case RPCMethod.auditTail:
             return ["entries": []]
