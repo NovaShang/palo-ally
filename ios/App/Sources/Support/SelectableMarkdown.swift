@@ -66,41 +66,18 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
     private var lastSource: String?
     private var lastStreaming = false
     /// Whether the reply is still being written, as the last render saw it.
-    /// What the rest of the view asks, instead of `isSelectable`, which
-    /// trails it by a turn of the main queue.
+    /// What the rest of the view asks (selection is always on).
     var isWriting: Bool { lastStreaming }
-    private var selectableQueued = false
+    /// Selectable from the start, set before it is ever in a window, and
+    /// never changed: turning selection on in a window installs its
+    /// gestures there, and UIKit's pointer update then asked a SwiftUI
+    /// gesture view half taken down, a crash (10-18, again 11-10 even a
+    /// couple of main-queue turns later). A reply being written is simply
+    /// selectable too; `isWriting` is what the drawing asks.
+    private func settleSelectable() {}
 
-    /// Makes `isSelectable` match the reply (selectable once finished), outside
-    /// SwiftUI's update. Safe to ask often: one pending turn at a time, and it
-    /// reads the state when it runs, so a stale ask does nothing.
-    private func settleSelectable() {
-        guard isSelectable == lastStreaming, !selectableQueued else { return }
-        selectableQueued = true
-        // Not in a window: at once (nothing under the pointer to update).
-        // In one: two turns of the main queue later, clear of SwiftUI taking
-        // views down: installing the selection's gestures makes UIKit look
-        // under the pointer, and a SwiftUI gesture view half gone there was
-        // a crash (11-10, AG precondition in GestureRecognizerRepresentableResponder).
-        guard window != nil else {
-            selectableQueued = false
-            applySelectable()
-            return
-        }
-        DispatchQueue.main.async { [weak self] in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.selectableQueued = false
-                self.applySelectable()
-            }
-        }
-    }
-
-    /// The deferred part of `settleSelectable`; idempotent.
-    func applySelectable() {
-        let want = !lastStreaming
-        if isSelectable != want { isSelectable = want }
-    }
+    /// Kept for callers; selection is always on (see `settleSelectable`).
+    func applySelectable() {}
     private var lastLinkColor: UIColor?
     var currentLinkColor: UIColor? { lastLinkColor }
     /// The text version a too-short frame was already reported for (see
@@ -204,6 +181,7 @@ final class MarkdownTextView: UITextView, UITextViewDelegate {
         layout.owner = view
         view.delegate = view
         view.isEditable = false
+        view.isSelectable = true // before any window: see settleSelectable
         view.isScrollEnabled = false
         view.backgroundColor = .clear
         view.textContainerInset = .zero

@@ -343,10 +343,6 @@ final class TableCellView: UIView {
             UIPasteboard.general.string = table
         }]
         view.renderCell(shown.text, header: shown.header, alignment: shown.alignment, linkColor: linkColor)
-        // Selectable before it is in the window: turning it on in a window
-        // installs its gestures there, and UIKit's pointer update then asked
-        // a SwiftUI gesture view going away, a crash (11-10).
-        view.applySelectable()
         view.frame = bounds
         addSubview(view)
         live = view
@@ -364,7 +360,6 @@ final class TableCellView: UIView {
     /// A long press (a touch): the word under it selected, as in the prose.
     @objc private func pressed(_ g: UILongPressGestureRecognizer) {
         guard g.state == .began, live == nil, let view = goLive() else { return }
-        view.applySelectable()
         let p = g.location(in: view)
         guard let at = view.closestPosition(to: p),
               let word = view.tokenizer.rangeEnclosingPosition(at, with: .word, inDirection: .storage(.forward)) else { return }
