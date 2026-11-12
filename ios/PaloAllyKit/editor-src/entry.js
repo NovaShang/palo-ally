@@ -230,6 +230,21 @@ function extensions(name, zh, crlf) {
     EditorView.lineWrapping,
     languageSlot.of(lang.support),
     chrome,
+    // Copy, cut and paste through the app: the page's own clipboard writes
+    // never reached the system's on the Mac (11-12: cut removed the text and
+    // the clipboard stayed empty), so the text goes to the app, which puts it
+    // there; a paste the page gets no text with is asked of the app.
+    Prec.highest(EditorView.domEventHandlers({
+      copy: (e, v) => clip(e, v, false),
+      cut: (e, v) => clip(e, v, true),
+      paste: (e) => {
+        const text = e.clipboardData && e.clipboardData.getData("text/plain");
+        if (text) return false; // the page has it: CodeMirror's own paste
+        e.preventDefault();
+        post({ type: "paste" });
+        return true;
+      },
+    })),
     Prec.highest(keymap.of([
       { key: "Mod-s", run: () => (post({ type: "save" }), true), preventDefault: true },
       { key: "Mod-e", run: () => (post({ type: "toggle" }), true), preventDefault: true },
@@ -330,6 +345,53 @@ window.paEditorFind = () => {
 window.paEditorInsert = (text) => {
   if (!view) return false;
   view.dispatch(view.state.replaceSelection(text), { userEvent: "input.type", scrollIntoView: true });
+  return true;
+};
+
+/** The selection's text (whole lines when it is empty, as CodeMirror copies); cut takes it out. */
+function take(v, cut) {
+  const s = v.state;
+  let ranges = s.selection.ranges.filter((r) => !r.empty);
+  let linewise = false;
+  if (!ranges.length) {
+    linewise = true;
+    ranges = s.selection.ranges.map((r) => {
+      const line = s.doc.lineAt(r.head);
+      return { from: line.from, to: Math.min(s.doc.length, line.to + 1) };
+    });
+  }
+  const text = ranges.map((r) => s.sliceDoc(r.from, r.to)).join(linewise ? "" : s.lineBreak);
+  return { text, changes: cut && !s.readOnly ? ranges.map((r) => ({ from: r.from, to: r.to })) : null };
+}
+
+/** The page's own copy or cut (the right-click menu): the text to the app's clipboard. */
+function clip(e, v, cut) {
+  const { text, changes } = take(v, cut);
+  e.preventDefault();
+  post({ type: "copy", text, cut: !!cut });
+  if (changes) {
+    // After the event: removed inside it, WebKit's own cut left the page
+    // deaf to the keys typed next.
+    setTimeout(() => {
+      v.dispatch({ changes, scrollIntoView: true, userEvent: "delete.cut" });
+      v.focus();
+    }, 0);
+  }
+  return true;
+}
+
+/** ⌘C / ⌘X typed (the app catches them before WebKit): the text, cut out if asked. */
+window.paEditorClip = (cut) => {
+  if (!view) return "";
+  const { text, changes } = take(view, cut);
+  if (changes) view.dispatch({ changes, scrollIntoView: true, userEvent: "delete.cut" });
+  return text;
+};
+
+/** Text pasted at the cursor (the app read it from the clipboard). */
+window.paEditorPaste = (text) => {
+  if (!view) return false;
+  view.dispatch(view.state.replaceSelection(text), { userEvent: "input.paste", scrollIntoView: true });
   return true;
 };
 

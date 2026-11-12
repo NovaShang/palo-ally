@@ -481,9 +481,10 @@ enum MacSpace {
         guard observer == nil else { return }
         observer = NotificationCenter.default.addObserver(forName: NSNotification.Name("PaloAllySpace"), object: nil, queue: nil) { note in
             nonisolated(unsafe) let result = note.userInfo?["result"] as? NSMutableDictionary
+            let key = note.userInfo?["key"] as? String ?? " "
             MainActor.assumeIsolated {
                 guard let editor = FileEditorWebView.focused, !editor.composing else { return }
-                editor.typeSpace()
+                if key == " " { editor.typeSpace() } else { editor.editKey(key) }
                 result?["handled"] = true
             }
         }

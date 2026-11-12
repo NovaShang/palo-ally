@@ -44,11 +44,23 @@ final class ImmersiveWindows: NSObject {
     private static func offerSpace() {
         guard spaceMonitor == nil else { return }
         spaceMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard event.keyCode == 49,
-                  event.modifierFlags.intersection([.command, .control, .option]).isEmpty else { return event }
+            let mods = event.modifierFlags.intersection([.command, .control, .option, .shift])
+            let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+            let info: [String: Any]
+            if event.keyCode == 49, mods.isDisjoint(with: [.command, .control, .option]) {
+                info = ["key": " "]
+            } else if mods == .command, ["c", "x", "v"].contains(key) {
+                // ⌘C, ⌘X, ⌘V for the file editor (MacSpace): WebKit's own
+                // never reached the clipboard or the page (11-12).
+                info = ["key": key]
+            } else {
+                return event
+            }
             let result = NSMutableDictionary()
             MainActor.assumeIsolated {
-                NotificationCenter.default.post(name: NSNotification.Name("PaloAllySpace"), object: nil, userInfo: ["result": result])
+                var all = info
+                all["result"] = result
+                NotificationCenter.default.post(name: NSNotification.Name("PaloAllySpace"), object: nil, userInfo: all)
             }
             return result["handled"] as? Bool == true ? nil : event
         }

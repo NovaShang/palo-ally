@@ -121,6 +121,11 @@ public final class FileEditorWebView: WKWebView, WKNavigationDelegate {
     fileprivate func message(_ body: [String: Any]) {
         switch body["type"] as? String {
         case "dirty": onDirty?(body["dirty"] as? Bool ?? false)
+        case "copy":
+            // A cut took the keyboard from the text with it: given back.
+            if body["cut"] as? Bool == true { DispatchQueue.main.async { [weak self] in self?.focusText() } }
+            putOnClipboard(body["text"] as? String ?? "")
+        case "paste": pasteFromClipboard()
         case "save": onSave?()
         case "toggle": onToggle?()
         case "composing": composing = body["composing"] as? Bool ?? false
@@ -165,6 +170,41 @@ public final class FileEditorWebView: WKWebView, WKNavigationDelegate {
     }
 
     @objc private func saveCommand() { onSave?() }
+
+    /// ⌘C, ⌘X and ⌘V typed here (the Mac app catches them before WebKit,
+    /// whose own never reached the system's clipboard or the page, 11-12):
+    /// "c", "x" or "v".
+    public func editKey(_ key: String) {
+        guard ready else { return }
+        if key == "v" { return pasteFromClipboard() }
+        evaluateJavaScript("paEditorClip(\(key == "x"))") { [weak self] result, _ in
+            guard let text = result as? String, !text.isEmpty else { return }
+            self?.putOnClipboard(text)
+        }
+    }
+
+    private func putOnClipboard(_ text: String) {
+        #if DEBUG
+        // `-copyDryRun YES` (tests): said in the log, the clipboard left as it is.
+        if UserDefaults.standard.bool(forKey: "copyDryRun") {
+            Self.log?("file editor: copy (dry run) \(text.count) characters")
+            return
+        }
+        #endif
+        UIPasteboard.general.string = text
+    }
+
+    /// The clipboard's text at the cursor (⌘V, or the page's own paste that had no text).
+    private func pasteFromClipboard() {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "copyDryRun") {
+            Self.log?("file editor: paste (dry run)")
+            call("paEditorPaste", "[pasted]")
+            return
+        }
+        #endif
+        if let text = UIPasteboard.general.string { call("paEditorPaste", text) }
+    }
     @objc private func toggleCommand() { onToggle?() }
     @objc private func findCommand() { if ready { evaluateJavaScript("paEditorFind()") } }
 
