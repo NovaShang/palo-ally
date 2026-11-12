@@ -20,12 +20,19 @@ interface Pending {
   input: Record<string, unknown>;
   resolve: (d: PermissionDecision) => void;
   timer: ReturnType<typeof setTimeout>;
+  /** The asker stopped waiting (timeout): it was told the owner hasn't
+   *  answered and must not decide in their place; the card stays open and a
+   *  later answer reaches it as a message (`lateAnswer`). */
+  released?: boolean;
 }
 
 export interface QuestionHooks {
   taskForToolUse(toolUseId?: string): string | undefined;
   onCreated(q: Question): void; // hub: chat card, push, WeChat text
   timeoutMinutes(): number;
+  /** The owner answered a question its asker stopped waiting for: the
+   *  answers go to it in words (a Pal, or the assistant itself). */
+  lateAnswer?(q: Question, text: string): void;
 }
 
 export class QuestionManager {
@@ -85,7 +92,9 @@ export class QuestionManager {
 
     const result = new Promise<PermissionDecision>((resolve) => {
       const ms = o.timeoutMs ?? this.hooks.timeoutMinutes() * 60_000;
-      const timer = setTimeout(() => this.expire(question.id, "timeout", o.timeoutNote), ms);
+      // A computer session's own question can't be answered later from
+      // here: it just ends (its asker is told not to decide either).
+      const timer = setTimeout(() => (o.source?.kind === "session" ? this.expire(question.id, "timeout", o.timeoutNote) : this.release(question.id, o.timeoutNote)), ms);
       this.pending.set(question.id, { question, input: req.input, resolve, timer });
       const onAbort = () => this.expire(question.id, o.abortBy ?? "aborted", o.abortNote);
       if (req.signal.aborted) queueMicrotask(onAbort);
@@ -120,6 +129,7 @@ export class QuestionManager {
     }
     this.pending.delete(id);
     clearTimeout(p.timer);
+    const late = !!p.released;
     q.status = "answered";
     q.answers = clean;
     if (skipped.length) q.skipped = skipped;
@@ -128,8 +138,30 @@ export class QuestionManager {
     this.persist();
     this.audit.log("question.answered", { id, by, ...(skipped.length ? { skipped: skipped.length } : {}), ...(device ? { device } : {}), ...(q.source ? { session: q.source.id, sessionName: q.source.name } : {}) });
     this.bus.emit("question.updated", q);
-    p.resolve({ behavior: "allow", updatedInput: { ...p.input, answers: told } });
+    if (late) {
+      // Its asker stopped waiting: the answers reach it as words.
+      const lines = q.items.map((item) => `- ${item.question}\n  → ${told[item.question]}`).join("\n");
+      this.audit.log("question.late_answer", { id, ...(q.source ? { session: q.source.id } : {}) });
+      this.hooks.lateAnswer?.(q, t("question.lateAnswer", { lines }));
+    } else {
+      p.resolve({ behavior: "allow", updatedInput: { ...p.input, answers: told } });
+    }
     return q;
+  }
+
+  // release: the asker stops waiting, never with a choice made for the
+  // owner. It hears the owner hasn't answered and must not act on the
+  // question; the card stays open, and an answer later is passed on to it
+  // (11-12: told "carry on with your own judgment", a session acted on a
+  // question the owner never saw).
+  private release(id: string, note?: string): void {
+    const p = this.pending.get(id);
+    if (!p || p.released) return;
+    p.released = true;
+    clearTimeout(p.timer);
+    if (note) p.question.note = note;
+    this.audit.log("question.timeout_waiting", { id, ...(p.question.source ? { session: p.question.source.id } : {}) });
+    p.resolve({ behavior: "deny", message: t("question.timeout") });
   }
 
   // cancelAll closes every open question of the assistant's (the stop
@@ -153,11 +185,16 @@ export class QuestionManager {
     p.question.answeredBy = by;
     if (note) p.question.note = note;
     this.persist();
+    if (p.released) {
+      this.audit.log("question.closed", { id, by, ...(p.question.source ? { session: p.question.source.id } : {}) });
+      this.bus.emit("question.updated", p.question);
+      return;
+    }
     this.audit.log("question.expired", { id, by, ...(note ? { note } : {}), ...(p.question.source ? { session: p.question.source.id } : {}) });
     this.bus.emit("question.updated", p.question);
     p.resolve({
       behavior: "deny",
-      message: by === "timeout" ? t("question.timeout") : t("question.stopped"),
+      message: by === "timeout" ? t("question.timeoutClosed") : t("question.stopped"),
     });
   }
 

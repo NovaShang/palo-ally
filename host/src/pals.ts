@@ -618,6 +618,14 @@ export class Pals {
   }
 
   // An asleep Pal is about to be woken: said once, however many words wait.
+  /** PaloAlly's own words to a Pal (a question answered after it stopped
+   *  waiting): woken if asleep, as from PaloAlly. */
+  async tell(id: string, text: string): Promise<void> {
+    const pal = this.mustGet(id);
+    this.wakingFor(pal, "owner");
+    await pal.send(text, { from: "PaloAlly" });
+  }
+
   private wakingFor(pal: PalSession, why: string): boolean {
     if (!pal.asleep) return false;
     if (this.waking.has(pal.id)) return true;

@@ -198,6 +198,11 @@ export class Hub {
         this.proactive.onQuestionCreated(q, { sentToWechat: !!(target && this.wechat) });
       },
       timeoutMinutes: () => this.config.settings.approvalTimeoutMinutes,
+      // Answered after its asker stopped waiting: told in words.
+      lateAnswer: (q, text) => {
+        if (q.source?.kind === "pal") void this.pals.tell(q.source.id, text).catch((e) => this.log(`late answer to ${q.source?.name}: ${e}`));
+        else if (!q.source) this.conversation.enqueue({ text, origin: "system", proactive: true });
+      },
     });
     this.info = new HarnessInfo(
       this.paths.state,

@@ -112,12 +112,35 @@ describe("QuestionManager", () => {
     cleanup(paths);
   });
 
-  test("timeout, abort and stop deny with a message so the model carries on", async () => {
-    const { m, paths } = mk(0.0005); // ~30ms
+  test("a timeout never lets the asker decide: it is told to wait, the card stays open, and a later answer is passed on in words", async () => {
+    const paths = tmpPaths();
+    const late: [Question, string][] = [];
+    const m = new QuestionManager(`${paths.state}/q.json`, new Bus(), new Audit(paths.audit), {
+      taskForToolUse: () => undefined,
+      onCreated: () => {},
+      timeoutMinutes: () => 0.0005, // ~30ms
+      lateAnswer: (q, text) => late.push([q, text]),
+    });
     const d1 = await m.request(req(ask));
     expect(d1.behavior).toBe("deny");
-    expect(d1.behavior === "deny" && d1.message).toContain("按你的判断继续");
-    expect(m.list()[0]!.status).toBe("expired");
+    const said = d1.behavior === "deny" ? d1.message : "";
+    expect(said).toContain("不要替主人选");
+    expect(said).not.toContain("按你的判断");
+    // Still open for the owner.
+    const q = m.listPending()[0]!;
+    expect(q.status).toBe("pending");
+    m.answer(q.id, { "要把面签加进 Outlook 吗？": "先不加" }, "app");
+    expect(m.get(q.id)).toMatchObject({ status: "answered", answers: { "要把面签加进 Outlook 吗？": "先不加" } });
+    expect(late).toHaveLength(1);
+    expect(late[0]![1]).toContain("先不加");
+    expect(late[0]![1]).toContain("主人跳过了这题");
+    // A second answer changes nothing.
+    m.answer(q.id, { "要把面签加进 Outlook 吗？": "加进去" }, "app");
+    expect(late).toHaveLength(1);
+    cleanup(paths);
+  });
+
+  test("abort and stop deny with a message so the model carries on", async () => {
 
     const { m: m2, paths: p2 } = mk();
     const ac = new AbortController();
@@ -128,7 +151,6 @@ describe("QuestionManager", () => {
     m2.cancelAll("stop:app");
     expect((await p3).behavior).toBe("deny");
     expect(m2.listPending()).toHaveLength(0);
-    cleanup(paths);
     cleanup(p2);
   });
 
