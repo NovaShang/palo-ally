@@ -1,3 +1,4 @@
+import ImageIO
 import PDFKit
 import QuickLook
 import SwiftUI
@@ -65,12 +66,41 @@ struct ImagePreview: UIViewRepresentable {
 
         required init?(coder: NSCoder) { fatalError() }
 
+        /// Decoded off the main thread at most `maxPixels` on its longer side
+        /// (ImageIO, from the file): a picture of 100 million pixels never
+        /// becomes a bitmap of that size in memory.
         func show(url: URL, revision: Int64) {
             guard shown?.0 != url || shown?.1 != revision else { return }
             shown = (url, revision)
-            imageView.image = UIImage(contentsOfFile: url.path)
-            fittedFor = .zero
-            setNeedsLayout()
+            let maxPixels = Self.maxPixels
+            Task {
+                let image = await Task.detached(priority: .userInitiated) { Self.downsampled(url, maxPixels: maxPixels) }.value
+                guard shown?.0 == url, shown?.1 == revision else { return }
+                imageView.image = image
+                fittedFor = .zero
+                setNeedsLayout()
+            }
+        }
+
+        /// Room to zoom in on a large screen without a bitmap too big for a phone.
+        static var maxPixels: Int {
+            #if targetEnvironment(macCatalyst)
+            4096
+            #else
+            3072
+            #endif
+        }
+
+        nonisolated static func downsampled(_ url: URL, maxPixels: Int) -> UIImage? {
+            guard let src = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+                  let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, [
+                      kCGImageSourceCreateThumbnailFromImageAlways: true,
+                      kCGImageSourceCreateThumbnailWithTransform: true,
+                      kCGImageSourceShouldCacheImmediately: true,
+                      kCGImageSourceThumbnailMaxPixelSize: maxPixels,
+                  ] as CFDictionary)
+            else { return nil }
+            return UIImage(cgImage: cg)
         }
 
         override func layoutSubviews() {

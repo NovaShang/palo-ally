@@ -399,6 +399,21 @@ final class AppModel {
 
     private func makeStore(_ transport: any HostTransport, id: String) -> AppStore {
         let s = AppStore(transport: transport, clientKind: clientKind, clientVersion: clientVersion)
+        // Its downloaded files are kept apart from another computer's.
+        s.fileCacheHost = id
+        #if DEBUG
+        // `-demoDownload sequential`: downloads as before (256 KiB, one at a
+        // time), to measure against; `-demoClearDownloads YES`: an empty cache.
+        let d = UserDefaults.standard
+        if d.string(forKey: "demoDownload") == "sequential" || d.bool(forKey: "demoClearDownloads") {
+            let sequential = d.string(forKey: "demoDownload") == "sequential"
+            let clear = d.bool(forKey: "demoClearDownloads")
+            Task {
+                if sequential { await FileFetcher.shared.configure(chunkSize: 256 * 1024, parallel: 1) }
+                if clear { await FileFetcher.shared.clearCache() }
+            }
+        }
+        #endif
         s.onSynced = { [weak self] seq in self?.didSync(id, seq: seq) }
         s.onSettings = { [weak self] settings in self?.syncTheme(id, settings) }
         s.whenCommitted = { CommitWatch.shared.afterCommit($0) }

@@ -75,6 +75,13 @@ struct SettingsView: View {
                     }
                 }
 
+                // Files opened from the computer, kept on this device.
+                Section {
+                    DownloadedFilesRow()
+                } footer: {
+                    Text("打开过的电脑文件留在这台设备上，再打开不用重新下载。满了会先删最久没打开的。", tableName: "Files")
+                }
+
                 if let error {
                     Section { Text(error).foregroundStyle(.red) }
                 }

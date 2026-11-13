@@ -478,25 +478,29 @@ private struct AttachmentStrip: View {
         return a.size
     }
 
-    /// Over the inline threshold (5 MB): can't be previewed here, only shared.
+    /// Over 5 MB: opened on its own page, downloading with progress first.
     private func isBig(_ a: Attachment) -> Bool {
         (attachmentSize(a) ?? 0) > FileChunk.maxFile
     }
 
-    /// 分享 / 导出: stream it from the host to a device temp file, then the
-    /// system share sheet. `tooLarge` changes the heading.
-    private func share(_ a: Attachment, tooLarge: Bool = false) {
-        let name = fileName(a)
-        let size = attachmentSize(a)
-        switch a.kind {
-        case "artifact":
-            let path = store.artifact(id: a.id)?.mainFile ?? ""
-            shareTarget = FileShareTarget(title: tooLarge ? String(localized: "文件太大，无法在这里预览", table: "Files") : String(localized: "分享文件", table: "Files"),
-                                          name: name, size: size, source: .artifact(id: a.id, path: path))
-        default:
-            shareTarget = FileShareTarget(title: tooLarge ? String(localized: "文件太大，无法在这里预览", table: "Files") : String(localized: "分享文件", table: "Files"),
-                                          name: name, size: size, source: .media(id: a.id))
+    /// Where the attachment's file is on the computer.
+    private func remoteSource(_ a: Attachment) -> RemoteFileSource {
+        a.kind == "artifact" ? .artifact(id: a.id, path: store.artifact(id: a.id)?.mainFile ?? "") : .media(id: a.id)
+    }
+
+    /// 分享 / 导出: downloaded to the device (or found there), then the
+    /// system share sheet.
+    private func share(_ a: Attachment) {
+        if a.kind == "file", let local = store.localFileData(a.id) {
+            // Picked on this device: shared from a local copy.
+            Task {
+                if let url = try? await QuickLookPresenter.file(key: a.id, name: fileName(a), data: { local }) {
+                    shareTarget = FileShareTarget(name: fileName(a), size: Int64(local.count), source: .url(url))
+                }
+            }
+            return
         }
+        shareTarget = FileShareTarget(name: fileName(a), size: attachmentSize(a), source: .remote(remoteSource(a)))
     }
 
     private func open(_ a: Attachment) {
@@ -508,9 +512,13 @@ private struct AttachmentStrip: View {
         let inPane = isWebPage(a) || a.kind == "artifact" && model.libraryBeside
         debugLog("[open] \(a.kind) card (\(a.mediaType)) tapped in \(model.traceName) on \((model.selection ?? .palo).storageKey): layout \(model.layout), beside \(model.libraryBeside), short \(model.shortWindow) → \(inPane ? "right pane" : isMarkdown(a) ? "Markdown sheet" : "QuickLook")")
         if inPane { return model.openArtifact(a.id) }
-        // A file over the inline threshold can't be previewed here: straight
-        // to sharing it out (streamed, never read whole).
-        if isBig(a) { share(a, tooLarge: true); return }
+        // A big file: its own page, downloading with progress, then shown
+        // from the device's disk (never read whole into memory).
+        if isBig(a), store.localFileData(a.id) == nil {
+            RemoteFilePresenter.present(source: remoteSource(a), name: fileName(a), size: attachmentSize(a),
+                                        title: a.name, store: store, in: model.scene)
+            return
+        }
         guard loading == nil else { return }
         loading = a.id
         Task {
@@ -526,7 +534,7 @@ private struct AttachmentStrip: View {
             }
             // Everything else previewable in this message, so QuickLook can
             // page. Markdown stays out: QuickLook would show it as raw text.
-            let previewable = attachments.filter { !isWebPage($0) && !isMarkdown($0) }
+            let previewable = attachments.filter { !isWebPage($0) && !isMarkdown($0) && ($0.id == a.id || !isBig($0)) }
             var items: [QuickLookPresenter.Item] = []
             var start = 0
             for item in previewable {
@@ -542,17 +550,22 @@ private struct AttachmentStrip: View {
         }
     }
 
-    /// The attachment's bytes as a local file QuickLook can open.
+    /// The attachment as a local file QuickLook can open: downloaded to the
+    /// device's disk (the cache, so a second open needs nothing), a picture
+    /// already here written out as it is.
     private func localFile(for a: Attachment) async throws -> URL {
         switch a.kind {
         case "artifact":
-            let artifact = store.artifact(id: a.id)
-            return try await QuickLookPresenter.file(key: "artifact-\(a.id)", revision: artifact?.updatedAt ?? 0, name: fileName(a)) {
-                if a.isImage, let d = store.images[key(a)] { return d }
-                return try await store.readArtifact(id: a.id).data
+            if a.isImage, !isBig(a), let d = store.images[key(a)] {
+                let artifact = store.artifact(id: a.id)
+                return try await QuickLookPresenter.file(key: "artifact-\(a.id)", revision: artifact?.updatedAt ?? 0, name: fileName(a)) { d }
             }
+            return try await store.downloadFile(remoteSource(a), name: fileName(a))
         case "file":
-            return try await QuickLookPresenter.file(key: a.id, name: a.name ?? "file") { try await store.fileData(a.id) }
+            if let local = store.localFileData(a.id) {
+                return try await QuickLookPresenter.file(key: a.id, name: a.name ?? "file") { local }
+            }
+            return try await store.downloadFile(.media(id: a.id), name: fileName(a), size: a.size)
         default: // image
             let ext = a.mediaType.split(separator: "/").last.map(String.init) ?? "jpg"
             return try await QuickLookPresenter.file(key: a.id, name: a.name ?? String(localized: "图片.\(ext == "jpeg" ? "jpg" : ext)")) {

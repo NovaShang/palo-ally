@@ -1,6 +1,7 @@
 import CoreGraphics
 import CoreText
 import Foundation
+import ImageIO
 
 /// A complete in-memory host speaking design.md §5.3 over an
 /// `InMemoryTransport`. Powers demo mode, SwiftUI previews, and store tests.
@@ -34,6 +35,8 @@ public actor DemoHost {
     /// Params of the most recent request per method.
     public private(set) var lastParams: [String: JSONValue] = [:]
     private var idCounter = 0
+    /// When the demo's simulated link is free again (`fileLink`).
+    private var linkFreeAt = Date.distantPast
     /// The reply being streamed right now (sync's `streaming`).
     private var writing: SyncResult.Streaming?
     /// Allies (allies-prd §7.5): two made-up people with a few exchanges each.
@@ -673,6 +676,25 @@ public actor DemoHost {
         guard case .request(let id, let method, let params)? = WireMessage.parse(data) else { return }
         requestLog.append(method)
         lastParams[method] = params
+        // `-demoFileRTT` / `-demoFileMBps`: file reads answer as over a relay.
+        if let link = Self.fileLink, Self.fileReadMethods.contains(method) {
+            do {
+                let result = try await dispatch(method, params)
+                let bytes = Double(result["data"]?.stringValue?.utf8.count ?? 0)
+                let now = Date()
+                let start = max(now.addingTimeInterval(link.rtt / 2), linkFreeAt)
+                let done = start.addingTimeInterval(bytes / link.bytesPerSecond)
+                linkFreeAt = done
+                let after = done.addingTimeInterval(link.rtt / 2).timeIntervalSince(now)
+                Task {
+                    try? await Task.sleep(for: .seconds(after))
+                    self.reply(id, result)
+                }
+            } catch {
+                replyError(id, (error as? DemoError)?.message ?? error.localizedDescription)
+            }
+            return
+        }
         do {
             reply(id, try await dispatch(method, params))
         } catch {
@@ -681,6 +703,19 @@ public actor DemoHost {
     }
 
     struct DemoError: Error { let message: String }
+
+    static let fileReadMethods: Set<String> = [RPCMethod.filesRead, RPCMethod.artifactRead, RPCMethod.mediaRead]
+
+    /// `-demoFileRTT <ms>` (and `-demoFileMBps <MB/s>`, default 4): the
+    /// demo's file reads come back as over a relay, each after the round trip
+    /// and its bytes' time on one shared link, several in flight at once.
+    /// Unset: at once.
+    static var fileLink: (rtt: Double, bytesPerSecond: Double)? {
+        let rtt = UserDefaults.standard.double(forKey: "demoFileRTT")
+        guard rtt > 0 else { return nil }
+        let mbps = UserDefaults.standard.double(forKey: "demoFileMBps")
+        return (rtt / 1000, (mbps > 0 ? mbps : 4) * 1024 * 1024)
+    }
     private var demoModel: String?
     /// 「试试」 the demo assistant offers.
     private var demoSuggestions: [Suggestion] = [
@@ -859,7 +894,9 @@ public actor DemoHost {
             let path = p["path"]?.stringValue ?? a.mainFile
             let data = files["\(aid)/\(path)"] ?? Data()
             let offset = Int(p["offset"]?.doubleValue ?? 0)
-            let length = min(Int(p["length"]?.doubleValue ?? Double(ArtifactChunk.maxChunk)), Int(ArtifactChunk.maxChunk))
+            // Downloaded to the device (`stream`): up to 1 MiB a chunk.
+            let cap = p["stream"]?.boolValue == true ? ArtifactChunk.maxStreamChunk : ArtifactChunk.maxChunk
+            let length = min(Int(p["length"]?.doubleValue ?? Double(cap)), Int(cap))
             let start = min(offset, data.count)
             let end = min(start + length, data.count)
             let chunk = data.subdata(in: start..<end)
@@ -1703,6 +1740,9 @@ public actor DemoHost {
             ("ar9", "保险到期提醒", "理财", 300, "# 保险到期\n\n- 车险 11 月 3 日\n- 家财险 次年 2 月\n"),
         ]
         let reportPDF = Self.demoPDF(pages: 6)
+        // `-demoBigFiles YES` (or `-demoScreen big…`): a 30 MB PDF and a big
+        // picture in 成果, to try downloads with progress and the cache.
+        let big = Self.bigFiles ? [(Self.bigArtifactPDF, "drawings.pdf", "项目图纸", "file"), (Self.bigArtifactImage, "site.jpg", "现场照片", "image")] : []
         let artifacts = [
             Artifact(id: "ar1", title: "每日晨报", type: "markdown", mainFile: "briefing.md", pinned: true, folder: "日常",
                      updatedAt: now - 5 * hour, files: [ArtifactFile(path: "briefing.md", size: Int64(briefing.utf8.count)),
@@ -1719,7 +1759,11 @@ public actor DemoHost {
             // A PDF of several pages (QuickLook's preview, scrolled).
             Artifact(id: "ar10", title: "体检报告", type: "file", mainFile: "report.pdf", pinned: false, folder: "家务",
                      updatedAt: now - 40 * hour, files: [ArtifactFile(path: "report.pdf", size: Int64(reportPDF.count))]),
-        ]
+        ] + big.enumerated().map { i, b in
+            // At a fixed time: a relaunch finds them in the downloaded files.
+            Artifact(id: "ar\(11 + i)", title: b.2, type: b.3, mainFile: b.1, pinned: false, folder: "家务",
+                     updatedAt: 1_793_000_000_000 - Int64(i + 1) * hour, files: [ArtifactFile(path: b.1, size: Int64(b.0.count))])
+        }
         let files: [String: Data] = [
             "ar1/briefing.md": Data(briefing.utf8),
             "ar1/img/weather.svg": weatherSVG,
@@ -1727,7 +1771,7 @@ public actor DemoHost {
             "ar2/img/hotel.svg": hotelSVG,
             "ar3/spending.csv": Data(csv.utf8),
             "ar10/report.pdf": reportPDF,
-        ].merging(Dictionary(uniqueKeysWithValues: more.map { ("\($0.id)/\($0.id).md", Data($0.body.utf8)) })) { a, _ in a }
+        ].merging(Dictionary(uniqueKeysWithValues: big.enumerated().map { i, b in ("ar\(11 + i)/\(b.1)", b.0) })) { a, _ in a }.merging(Dictionary(uniqueKeysWithValues: more.map { ("\($0.id)/\($0.id).md", Data($0.body.utf8)) })) { a, _ in a }
         let memory: [String: (scope: MemoryScope, content: String, updatedAt: Int64)] = [
             "user.md": (.core, "# 关于我\n\n- 住在杭州，常去上海出差\n- 喜欢靠窗座位\n- 不吃香菜\n", now - 48 * hour),
             "soul.md": (.core, "# 说话方式\n\n简短、温暖，不啰嗦。重要的事情先说结论。\n", now - 72 * hour),
@@ -1742,6 +1786,87 @@ public actor DemoHost {
 }
 
 extension DemoHost {
+    /// `-demoBigFiles YES`, or a `-demoScreen` starting with "big".
+    static var bigFiles: Bool {
+        UserDefaults.standard.bool(forKey: "demoBigFiles") || (UserDefaults.standard.string(forKey: "demoScreen") ?? "").hasPrefix("big")
+    }
+
+    static let bigArtifactPDF: Data = demoHeavyPDF(megabytes: 30, title: "项目图纸")
+    static let bigArtifactImage: Data = demoHeavyJPEG(width: 7200, height: 4800)
+
+    /// Noise that doesn't compress (xorshift), a byte per sample.
+    static func noise(_ count: Int, seed: UInt64) -> Data {
+        var x = seed | 1
+        var out = Data(count: count)
+        out.withUnsafeMutableBytes { raw in
+            let p = raw.bindMemory(to: UInt8.self)
+            for i in 0..<count {
+                x ^= x << 13; x ^= x >> 7; x ^= x << 17
+                p[i] = UInt8(truncatingIfNeeded: x >> 24)
+            }
+        }
+        return out
+    }
+
+    /// A real PDF of about `megabytes`: A4 pages, each a picture of coloured
+    /// noise (it doesn't compress) under a big page number.
+    static func demoHeavyPDF(megabytes: Int, title: String) -> Data {
+        let data = NSMutableData()
+        var box = CGRect(x: 0, y: 0, width: 595, height: 842)
+        guard let consumer = CGDataConsumer(data: data as CFMutableData),
+              let ctx = CGContext(consumer: consumer, mediaBox: &box, nil) else { return Data() }
+        let side = 900
+        let perPage = side * side * 3
+        let pages = max(1, (megabytes * 1024 * 1024 + perPage - 1) / perPage)
+        let space = CGColorSpaceCreateDeviceRGB()
+        let font = CTFontCreateWithName("Helvetica-Bold" as CFString, 64, nil)
+        for n in 1...pages {
+            ctx.beginPDFPage(nil)
+            let pixels = noise(perPage, seed: UInt64(n) &* 0x9E3779B97F4A7C15)
+            if let provider = CGDataProvider(data: pixels as CFData),
+               let image = CGImage(width: side, height: side, bitsPerComponent: 8, bitsPerPixel: 24, bytesPerRow: side * 3,
+                                   space: space, bitmapInfo: CGBitmapInfo(rawValue: 0), provider: provider,
+                                   decode: nil, shouldInterpolate: false, intent: .defaultIntent) {
+                ctx.setAlpha(0.35)
+                ctx.draw(image, in: CGRect(x: 40, y: 160, width: 515, height: 515))
+                ctx.setAlpha(1)
+            }
+            let text = NSAttributedString(string: "\(title) · \(n) / \(pages)",
+                                          attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font])
+            ctx.textPosition = CGPoint(x: 60, y: 720)
+            CTLineDraw(CTLineCreateWithAttributedString(text), ctx)
+            ctx.endPDFPage()
+        }
+        ctx.closePDF()
+        return data as Data
+    }
+
+    /// A big JPEG (a gradient under noise), to show a picture far larger than the screen.
+    static func demoHeavyJPEG(width: Int, height: Int) -> Data {
+        let space = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return Data() }
+        let colors = [CGColor(red: 0.25, green: 0.64, blue: 0.48, alpha: 1), CGColor(red: 0.36, green: 0.5, blue: 0.88, alpha: 1)] as CFArray
+        if let g = CGGradient(colorsSpace: space, colors: colors, locations: [0, 1]) {
+            ctx.drawLinearGradient(g, start: .zero, end: CGPoint(x: width, y: height), options: [])
+        }
+        let side = 1200
+        let pixels = noise(side * side * 3, seed: 42)
+        if let provider = CGDataProvider(data: pixels as CFData),
+           let tile = CGImage(width: side, height: side, bitsPerComponent: 8, bitsPerPixel: 24, bytesPerRow: side * 3, space: space,
+                              bitmapInfo: CGBitmapInfo(rawValue: 0), provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) {
+            ctx.setAlpha(0.25)
+            var y = 0
+            while y < height { var x = 0; while x < width { ctx.draw(tile, in: CGRect(x: x, y: y, width: side, height: side)); x += side }; y += side }
+        }
+        guard let image = ctx.makeImage() else { return Data() }
+        let out = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(out as CFMutableData, "public.jpeg" as CFString, 1, nil) else { return Data() }
+        CGImageDestinationAddImage(dest, image, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
+        CGImageDestinationFinalize(dest)
+        return out as Data
+    }
+
     /// A real PDF of `pages` A4 pages, each with a big page number.
     static func demoPDF(pages: Int) -> Data {
         let data = NSMutableData()

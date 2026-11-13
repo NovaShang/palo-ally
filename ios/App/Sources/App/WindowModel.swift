@@ -656,11 +656,14 @@ final class WindowModel {
                                       openInLibrary: { [weak self] in self?.showInLibrary($0) })
     }
 
-    /// The demo's file over 5 MB, opened to its 文件太大 page (and its 分享/导出).
+    /// The demo's file over 5 MB, opened: downloaded with progress, then
+    /// shown (`-demoFile <path>` another of the demo project's, e.g. one
+    /// added with `-demoAddFiles`).
     private func openDemoBigFile() async {
         try? await Task.sleep(for: .seconds(1.5))
         guard let store else { return }
-        FilePagePresenter.present(FileTarget(scope: .pal("pal-site"), path: "docs/大文件示例.pdf"), store: store)
+        let path = UserDefaults.standard.string(forKey: "demoFile") ?? "docs/大文件示例.pdf"
+        FilePagePresenter.present(FileTarget(scope: .pal("pal-site"), path: path), store: store)
     }
     #endif
 

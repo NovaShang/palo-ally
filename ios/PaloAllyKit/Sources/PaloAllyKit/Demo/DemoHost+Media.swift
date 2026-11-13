@@ -46,7 +46,9 @@ extension DemoHost {
         case RPCMethod.mediaRead:
             guard let m = media[p["id"]?.stringValue ?? ""] else { return nil }
             let offset = min(Int(p["offset"]?.doubleValue ?? 0), m.data.count)
-            let end = min(m.data.count, offset + 256 * 1024)
+            // Downloaded to the device (`stream`): up to 1 MiB a chunk.
+            let cap = Int(p["stream"]?.boolValue == true ? ArtifactChunk.maxStreamChunk : ArtifactChunk.maxChunk)
+            let end = min(m.data.count, offset + min(max(1, Int(p["length"]?.doubleValue ?? Double(cap))), cap))
             return ["data": .string(m.data.subdata(in: offset..<end).base64EncodedString()), "size": .number(Double(m.data.count)),
                     "mime": .string(m.mediaType), "eof": .bool(end >= m.data.count)]
         default:

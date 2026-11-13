@@ -31,17 +31,25 @@ extension DemoHost {
         """.utf8)
     }
 
-    /// A file over 5 MB with real bytes, to demo the too-large → share flow
-    /// (over the inline cap, under the stream cap, so it streams out).
-    static func bigDemoPDF() -> Data {
-        var data = Data("%PDF-1.4\n% PaloAlly 演示大文件\n".utf8)
-        let chunk = Data(repeating: 0x78, count: 64 * 1024)
-        while data.count < 6 * 1024 * 1024 { data.append(chunk) }
-        return Data(data.prefix(6 * 1024 * 1024))
-    }
+    /// A real PDF over 5 MB (pages of incompressible pictures), to demo a big
+    /// file downloading with progress and opening.
+    static let bigDemoPDF: Data = DemoHost.demoHeavyPDF(megabytes: 6, title: "大文件示例")
+
+    /// `-demoAddFiles "<path>|<path>"`: files from this Mac, under docs/ in
+    /// the demo project (a real .docx, a video, to try their previews).
+    static let addedFiles: [String: DemoFile] = {
+        guard let list = UserDefaults.standard.string(forKey: "demoAddFiles") else { return [:] }
+        var out: [String: DemoFile] = [:]
+        for path in list.split(separator: "|").map(String.init) {
+            guard let data = try? Data(contentsOf: URL(fileURLWithPath: path), options: .mappedIfSafe) else { continue }
+            out["docs/" + (path as NSString).lastPathComponent] = DemoFile(data: data)
+        }
+        return out
+    }()
 
     /// A Pal's project (any Pal's: the demo has one kind).
-    static let projectFiles: [String: DemoFile] = [
+    static let projectFiles: [String: DemoFile] = baseProjectFiles.merging(addedFiles) { _, added in added }
+    private static let baseProjectFiles: [String: DemoFile] = [
         "README.md": DemoFile("""
         # 网站
 
@@ -98,7 +106,7 @@ extension DemoHost {
         "docs/preview.svg": DemoFile(data: DemoHost.demoSVG("首页示意", "#3FA37A")),
         "docs/home.png": DemoFile(data: DemoHost.demoPNG),
         "docs/intro.mov": DemoFile(size: 48 * 1024 * 1024),
-        "docs/大文件示例.pdf": DemoFile(data: DemoHost.bigDemoPDF()),
+        "docs/大文件示例.pdf": DemoFile(data: DemoHost.bigDemoPDF),
         ".git/HEAD": DemoFile("ref: refs/heads/main\n"),
         "node_modules/react/index.js": DemoFile("module.exports = {};\n"),
     ]
@@ -240,15 +248,19 @@ extension DemoHost {
             }
             let mime = DemoHost.mime(for: path)
             let version = JSONValue.string(demoVersion(file, abs: abs))
-            // Sharing a file out (`stream`) lifts the inline cap to the stream cap.
-            let cap: Int64 = p["stream"]?.boolValue == true ? FileStream.maxBytes : FileChunk.maxFile
-            if file.size > cap {
+            // Downloaded to the device (`stream`): any size, up to 1 MiB a chunk.
+            let stream = p["stream"]?.boolValue == true
+            if !stream, file.size > FileChunk.maxFile {
                 return ["data": "", "size": .number(Double(file.size)), "mime": .string(mime), "eof": true, "tooLarge": true, "version": version]
             }
-            let offset = min(Int(p["offset"]?.doubleValue ?? 0), file.data.count)
-            let end = min(file.data.count, offset + 256 * 1024)
-            return ["data": .string(file.data.subdata(in: offset..<end).base64EncodedString()), "size": .number(Double(file.size)),
-                    "mime": .string(mime), "eof": .bool(end >= file.data.count), "version": version]
+            let cap = Int(stream ? ArtifactChunk.maxStreamChunk : ArtifactChunk.maxChunk)
+            let length = min(max(1, Int(p["length"]?.doubleValue ?? Double(cap))), cap)
+            let offset = min(Int(p["offset"]?.doubleValue ?? 0), Int(file.size))
+            let end = min(Int(file.size), offset + length)
+            // A file known by its size only (a video): zeros of that size.
+            let bytes = file.data.isEmpty ? Data(count: end - offset) : file.data.subdata(in: offset..<end)
+            return ["data": .string(bytes.base64EncodedString()), "size": .number(Double(file.size)),
+                    "mime": .string(mime), "eof": .bool(end >= Int(file.size)), "version": version]
         // The editor saving: kept for the demo's run, over the version read
         // only (an edit from -demoFileEditAfter meanwhile is a conflict).
         case RPCMethod.filesWrite:

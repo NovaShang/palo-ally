@@ -30,6 +30,9 @@ public enum QuickLookRouting {
             || type.conforms(to: .yaml) || type.conforms(to: .xml) || type.conforms(to: .html)
     }
 
+    /// An extension whose system type is a trap (`.ts` is not a video).
+    public static func isTrap(_ ext: String) -> Bool { neverExtensions.contains(ext.lowercased()) }
+
     public static func prefersQuickLook(fileName: String) -> Bool {
         let ext = (fileName as NSString).pathExtension.lowercased()
         guard !ext.isEmpty else { return false }

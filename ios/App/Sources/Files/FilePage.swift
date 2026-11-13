@@ -4,10 +4,12 @@ import PaloAllyKit
 import SwiftUI
 import UIKit
 
-/// One file on the computer, read-only: Markdown rendered, code and text
-/// highlighted, pictures, PDFs and the rest in Quick Look (the renderer
-/// ported from Bento Term), with the system share sheet. Over 5 MB the host
-/// sends only the size: said so, nothing fetched.
+/// One file on the computer: shown as `LocalFilePreview` shows any file
+/// (the one classifier and preview 成果 uses too: Markdown rendered, code
+/// and text highlighted, web pages sandboxed, PDFs, pictures, videos, Office
+/// documents, the rest in Quick Look), with the system share sheet. Over
+/// 5 MB the host sends only the size at first: the file is then downloaded
+/// to the device with progress (`RemoteFileView`) and opened all the same.
 ///
 /// It follows the file on the computer like an editor's preview: while on
 /// screen (and the app not in the background) the host watches it
@@ -62,21 +64,26 @@ struct FilePage: View {
     @State private var askSwitch: String?
     /// ⌘E reaches both the editor and the page: once.
     @State private var lastToggle = Date.distantPast
-    /// The stream-then-share sheet, for a file too big to preview here.
+    /// The download-then-share sheet, for a big file not downloaded yet.
     @State private var shareTarget: FileShareTarget?
+    /// A big file changed on the computer: its download asks again.
+    @State private var remoteRefresh = 0
 
     enum Phase: Equatable {
         case loading
         case progress(Double)
-        case text(String, FileContentKind, URL)
-        case quickLook(URL)
-        case tooLarge(Int64)
+        /// Up to 5 MB, read as text (and editable in a pane's tab).
+        case text(String, PreviewKind, URL)
+        /// Up to 5 MB, anything else, from its local copy.
+        case file(URL, PreviewKind)
+        /// Over 5 MB: downloaded to the device's disk, then shown.
+        case remote(Int64)
         case failed(String)
     }
 
     private var fileURL: URL? {
         switch phase {
-        case .text(_, _, let url), .quickLook(let url): url
+        case .text(_, _, let url), .file(let url, _): url
         default: nil
         }
     }
@@ -84,7 +91,7 @@ struct FilePage: View {
     /// Something is shown (not loading, not failed): worth following.
     private var isLoaded: Bool {
         switch phase {
-        case .text, .quickLook, .tooLarge: true
+        case .text, .file, .remote: true
         default: false
         }
     }
@@ -101,8 +108,9 @@ struct FilePage: View {
         Follow(target: target, scope: readScope ?? target.scope, on: isLoaded && scenePhase != .background)
     }
 
+    /// Markdown and web pages can be read as their source.
     private var isMarkdown: Bool {
-        if case .text(_, .markdown, _) = phase { return true }
+        if case .text(_, let kind, _) = phase { return kind == .markdown || kind == .html }
         return false
     }
 
@@ -127,12 +135,13 @@ struct FilePage: View {
         (target.scope.kind == .palo && target.path.hasPrefix("artifacts/")) || target.path.contains("/.paloally/home/artifacts/")
     }
 
-    /// The stream-then-share sheet's target: this file, streamed from the host.
+    /// The download-then-share sheet's target: this file, from the computer.
     private func makeShareTarget() -> FileShareTarget {
-        let size: Int64? = { if case .tooLarge(let s) = phase { return s }; return nil }()
-        return FileShareTarget(title: String(localized: "文件太大，无法在这里预览", table: "Files"), name: target.name, size: size,
-                               source: .file(scope: readScope ?? target.scope, path: target.path))
+        let size: Int64? = { if case .remote(let s) = phase { return s }; return nil }()
+        return FileShareTarget(name: target.name, size: size, source: .remote(remoteSource))
     }
+
+    private var remoteSource: RemoteFileSource { .file(scope: readScope ?? target.scope, path: target.path) }
 
     @ViewBuilder var body: some View {
         if inPane {
@@ -268,28 +277,19 @@ struct FilePage: View {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         case .progress(let p):
             ProgressView(value: p).frame(maxWidth: 240).frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .text(let text, let kind, _):
+        case .text(let text, let kind, let url):
             // Unsaved text, previewed while the editor is away.
-            FileTextPreview(fileName: kind == .markdown ? FilePreviewRoute.markdownRenderName(target.name) : target.name,
-                            text: session?.previewText ?? text, raw: raw, imageSource: kind == .markdown ? images : nil)
+            LocalFilePreview(url: url, kind: kind, name: target.name, revision: revision, raw: raw,
+                             text: session?.previewText ?? text, imageSource: images, sandbox: sandbox)
                 .id(redraws)
-                .ignoresSafeArea(edges: .bottom)
-        case .quickLook(let url):
-            EmbeddedPreview(url: url, revision: revision)
-                .ignoresSafeArea(edges: .bottom)
-        case .tooLarge(let size):
-            ContentUnavailableView {
-                Label { Text("文件太大", tableName: "Files") } icon: { Image(systemName: "doc") }
-            } description: {
-                Text("这个文件有 \(Copy.byteSize(size))，超过 5 MB 的文件不在这里打开。可以在电脑上看。", tableName: "Files")
-            } actions: {
-                Button { shareTarget = makeShareTarget() } label: {
-                    Label { Text("分享 / 导出") } icon: { Image(systemName: "square.and.arrow.up") }
-                }
-                .buttonStyle(.glass)
-                .tint(.primary)
-                .accessibilityIdentifier("file-share-too-large")
+        case .file(let url, let kind):
+            LocalFilePreview(url: url, kind: kind, name: target.name, revision: revision, sandbox: sandbox)
+        case .remote(let size):
+            RemoteFileView(source: remoteSource, name: target.name, size: size, refresh: remoteRefresh) { url in
+                LocalFilePreview(url: url, kind: PreviewKind.classify(name: target.name), name: target.name,
+                                 revision: revision, raw: raw, sandbox: sandbox)
             }
+            .id(remoteSource)
         case .failed(let why):
             ContentUnavailableView {
                 Label { Text("打不开", tableName: "Files") } icon: { Image(systemName: "exclamationmark.triangle") }
@@ -319,7 +319,7 @@ struct FilePage: View {
                 // The file itself, under its own name.
                 ShareLink(item: fileURL).tint(.primary)
             }
-        } else if case .tooLarge = phase {
+        } else if case .remote = phase {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { shareTarget = makeShareTarget() } label: { Image(systemName: "square.and.arrow.up") }
                     .tint(.primary)
@@ -335,7 +335,7 @@ struct FilePage: View {
                     reloadButton
                     if let fileURL {
                         ShareLink(item: fileURL) { Label { Text("共享", tableName: "Files") } icon: { Image(systemName: "square.and.arrow.up") } }
-                    } else if case .tooLarge = phase {
+                    } else if case .remote = phase {
                         Button { shareTarget = makeShareTarget() } label: {
                             Label { Text("共享", tableName: "Files") } icon: { Image(systemName: "square.and.arrow.up") }
                         }
@@ -375,7 +375,7 @@ struct FilePage: View {
             reloadButton
             if let fileURL {
                 ShareLink(item: fileURL) { Label { Text("共享", tableName: "Files") } icon: { Image(systemName: "square.and.arrow.up") } }
-            } else if case .tooLarge = phase {
+            } else if case .remote = phase {
                 Button { shareTarget = makeShareTarget() } label: {
                     Label { Text("共享", tableName: "Files") } icon: { Image(systemName: "square.and.arrow.up") }
                 }
@@ -514,6 +514,9 @@ struct FilePage: View {
         }
     }
 
+    /// A web page's own sandbox: one per file.
+    private var sandbox: String { "file-" + FileCache.hashKey(target.id) }
+
     /// A Markdown file's relative pictures, from the same folder on the computer.
     private var images: FilePreviewWebView.ImageSource {
         let store = store
@@ -571,27 +574,28 @@ struct FilePage: View {
             }
             guard generation == readGeneration else { return }
             if r.tooLarge {
-                phase = .tooLarge(r.size)
+                // Downloaded to the device and opened (a change: asked again).
+                if case .remote = phase { remoteRefresh += 1 }
+                phase = .remote(r.size)
                 return
             }
-            var kind = FileContentKind.forName(target.name)
-            if kind == .text { kind = FileContentKind.sniff(r.data) }
-            let text = kind == .quickLook ? nil : String(decoding: r.data, as: UTF8.self)
+            let kind = PreviewKind.classify(name: target.name, head: r.data.prefix(8192))
+            let text = kind.isText ? String(decoding: r.data, as: UTF8.self) : nil
             readVersion = r.version
             plainUTF8 = text != nil && String(data: r.data, encoding: .utf8) != nil
             // Being edited: the editor hears of it (in place, or the bar).
             if let text, let version = r.version { session?.diskRead(text: text, version: version) }
             // Re-read and the same: leave it be (no re-render, no flash).
             if quietly, !force, let text, case .text(let shown, let shownKind, _) = phase, shown == text, shownKind == kind { return }
-            if quietly, !force, text == nil, case .quickLook(let shown) = phase, (try? Data(contentsOf: shown)) == r.data { return }
+            if quietly, !force, text == nil, case .file(let shown, _) = phase, (try? Data(contentsOf: shown)) == r.data { return }
             let url = try Self.save(r.data, for: target)
             if let text {
                 phase = .text(text, kind, url)
                 // Opened from the path while editing: in the editor.
                 if let editKey, sessions.startEditing.remove(editKey(target.path)) != nil, session == nil { startEditing() }
             } else {
-                if quietly, case .quickLook = phase { revision += 1 }
-                phase = .quickLook(url)
+                if quietly, case .file = phase { revision += 1 }
+                phase = .file(url, kind)
             }
             if quietly { debugLog("file page: \(target.name) re-read (\(r.data.count) bytes)") }
         } catch {

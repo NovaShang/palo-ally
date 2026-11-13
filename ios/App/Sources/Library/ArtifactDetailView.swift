@@ -14,22 +14,16 @@ struct ArtifactDetailView: View {
     /// Closes that tab.
     var close: (() -> Void)? = nil
     @State private var selectedPath: String?
+    /// The file on screen, on the device (in the downloaded files' cache).
     @State private var content: Loaded?
-    @State private var error: String?
-    /// A refresh of the file already on screen failed (shown as a small note).
-    @State private var refreshError: String?
-    /// Download progress (0…1) for files bigger than one chunk.
-    @State private var progress: Double?
     /// Markdown shown as its source text instead of rendered.
     @State private var showSource = false
-    /// The stream-then-share sheet, for a file too big to preview here or 分享/导出.
+    /// The download-then-share sheet, for 分享/导出 before the file is here.
     @State private var shareTarget: FileShareTarget?
 
     struct Loaded: Equatable {
         let path: String
-        let data: Data
         let fileURL: URL
-        let revision: Int64
     }
 
     private var artifact: Artifact? { store.artifact(id: artifactID) }
@@ -40,7 +34,6 @@ struct ArtifactDetailView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .documentCardContent()
                 .overlay(alignment: .topTrailing) { if let artifact { paneMenu(artifact).documentMenuPlacement() } }
-                .task(id: reloadKey) { await load() }
                 .fileShareSheet(item: $shareTarget)
                 .accessibilityIdentifier("artifact-tab")
         } else {
@@ -48,85 +41,47 @@ struct ArtifactDetailView: View {
         }
     }
 
-    /// Reload whenever the host rewrites the artifact ("live" artifacts).
-    private var reloadKey: String { "\(artifact?.updatedAt ?? 0)|\(selectedPath ?? "")" }
-
+    /// Any size opens here: downloaded to the device with progress (the
+    /// same downloader as the file page and the conversation's files), kept
+    /// by the item's version, so a second open, or a live item that didn't
+    /// change, needs nothing from the computer; a new version comes while the
+    /// old one stays on screen.
     private var main: some View {
         Group {
             if let artifact {
-                if isCurrentBig(artifact) {
-                    bigFile(artifact)
-                } else if let content {
-                    preview(artifact, content)
-                        .overlay(alignment: .bottom) {
-                            if let refreshError {
-                                Text(refreshError)
-                                    .font(.footnote)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 8)
-                                    .glassEffect(.regular, in: .capsule)
-                                    .padding(.bottom, 12)
-                            }
-                        }
-                } else if let error {
-                    ContentUnavailableView {
-                        Label("打不开", systemImage: "exclamationmark.triangle")
-                    } description: {
-                        Text(error)
-                    } actions: {
-                        Button("再试一次") { Task { await load() } }
-                            .buttonStyle(.glass)
-                            .tint(.primary)
-                    }
-                } else if let progress {
-                    VStack(spacing: 10) {
-                        ProgressView(value: progress)
-                            .frame(maxWidth: 240)
-                        Text("正在取… \(Int(progress * 100))%")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                } else {
-                    ProgressView("正在取…")
+                let path = currentPath(artifact)
+                let info = store.artifactFileInfo(id: artifact.id, path: path)
+                RemoteFileView(source: .artifact(id: artifact.id, path: path), name: fileName(path),
+                               size: info.flatMap { $0.size > 0 ? $0.size : nil }, version: info?.version) { url in
+                    preview(artifact, path: path, url: url)
+                        .onAppear { content = Loaded(path: path, fileURL: url) }
+                        .onChange(of: url) { content = Loaded(path: path, fileURL: url) }
                 }
+                .id(path)
             } else {
                 ContentUnavailableView("找不到了", systemImage: "questionmark.folder")
             }
         }
     }
 
-    /// A file over the inline threshold: not read into memory, shared out instead.
-    private func bigFile(_ a: Artifact) -> some View {
-        ContentUnavailableView {
-            Label("文件太大", systemImage: "doc")
-        } description: {
-            Text("这个文件有 \(Copy.byteSize(currentSize(a)))，超过 5 MB 的文件不在这里打开。")
-        } actions: {
-            Button { shareTarget = makeShareTarget(a, tooLarge: true) } label: {
-                Label("分享 / 导出", systemImage: "square.and.arrow.up")
-            }
-            .buttonStyle(.glass)
-            .tint(.primary)
-            .accessibilityIdentifier("artifact-share-too-large")
-        }
+    private func fileName(_ path: String) -> String {
+        (path as NSString).lastPathComponent.isEmpty ? "file" : (path as NSString).lastPathComponent
     }
 
-    /// The current file's size, and whether it's over the inline threshold.
+    /// The current file's size.
     private func currentSize(_ a: Artifact) -> Int64 {
         a.files.first { $0.path == currentPath(a) }?.size ?? 0
     }
 
-    private func isCurrentBig(_ a: Artifact) -> Bool {
-        currentSize(a) > FileChunk.maxFile
+    /// The download-then-share target for the current file.
+    private func makeShareTarget(_ a: Artifact) -> FileShareTarget {
+        let path = currentPath(a)
+        return FileShareTarget(name: fileName(path), size: currentSize(a), source: .remote(.artifact(id: a.id, path: path)))
     }
 
-    /// The stream-then-share target for the current file.
-    private func makeShareTarget(_ a: Artifact, tooLarge: Bool) -> FileShareTarget {
-        let path = currentPath(a)
-        let name = (path as NSString).lastPathComponent.isEmpty ? "file" : (path as NSString).lastPathComponent
-        return FileShareTarget(title: tooLarge ? String(localized: "文件太大，无法在这里预览", table: "Files") : String(localized: "分享文件", table: "Files"),
-                               name: name, size: currentSize(a), source: .artifact(id: a.id, path: path))
+    /// What is on screen is the current file (not the one before a switch).
+    private func shownURL(_ a: Artifact) -> URL? {
+        content.flatMap { $0.path == currentPath(a) ? $0.fileURL : nil }
     }
 
     private var page: some View {
@@ -160,7 +115,7 @@ struct ArtifactDetailView: View {
                         } label: {
                             Label(artifact.pinned ? String(localized: "取消置顶") : String(localized: "置顶"), systemImage: artifact.pinned ? "pin.slash" : "pin")
                         }
-                        if let content, isMarkdown(artifact, content.path) {
+                        if hasSource(artifact) {
                             Button {
                                 showSource.toggle()
                             } label: {
@@ -174,14 +129,14 @@ struct ArtifactDetailView: View {
                     .tint(.primary)
                     .accessibilityLabel("更多")
                 }
-                if let content {
+                if let url = shownURL(artifact) {
                     ToolbarItem(placement: .topBarTrailing) {
-                        ShareLink(item: content.fileURL)
+                        ShareLink(item: url)
                             .tint(.primary)
                     }
                 } else {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button { shareTarget = makeShareTarget(artifact, tooLarge: isCurrentBig(artifact)) } label: {
+                        Button { shareTarget = makeShareTarget(artifact) } label: {
                             Image(systemName: "square.and.arrow.up")
                         }
                         .tint(.primary)
@@ -193,7 +148,6 @@ struct ArtifactDetailView: View {
         // The Mac (in 成果 beside the conversation): to the column's top, back,
         // its title and one menu floating (MacPageStrip).
         .macPageTop(artifact?.title ?? "", back: { dismiss() }, trailing: artifact.map { AnyView(macMenu($0)) })
-        .task(id: reloadKey) { await load() }
         .fileShareSheet(item: $shareTarget)
     }
 
@@ -217,10 +171,10 @@ struct ArtifactDetailView: View {
     }
 
     @ViewBuilder private func menuItems(_ artifact: Artifact) -> some View {
-        if let content {
-            ShareLink(item: content.fileURL) { Label("共享", systemImage: "square.and.arrow.up") }
+        if let url = shownURL(artifact) {
+            ShareLink(item: url) { Label("共享", systemImage: "square.and.arrow.up") }
         } else {
-            Button { shareTarget = makeShareTarget(artifact, tooLarge: isCurrentBig(artifact)) } label: {
+            Button { shareTarget = makeShareTarget(artifact) } label: {
                 Label("共享", systemImage: "square.and.arrow.up")
             }
         }
@@ -229,7 +183,7 @@ struct ArtifactDetailView: View {
         } label: {
             Label(artifact.pinned ? String(localized: "取消置顶") : String(localized: "置顶"), systemImage: artifact.pinned ? "pin.slash" : "pin")
         }
-        if let content, isMarkdown(artifact, content.path) {
+        if hasSource(artifact) {
             Button {
                 showSource.toggle()
             } label: {
@@ -251,87 +205,22 @@ struct ArtifactDetailView: View {
         selectedPath ?? (a.mainFile.isEmpty ? (a.files.first?.path ?? "") : a.mainFile)
     }
 
-    /// Markdown renders in the web view ported from Bento Term.
-    private func isMarkdown(_ a: Artifact, _ path: String) -> Bool {
-        FilePreviewRoute.forFile(name: path) == .markdown || (path == a.mainFile && a.previewStyle == .markdown)
+    /// How the file opens: the one classifier the file page uses too, the
+    /// item's declared type a hint for its main file.
+    private func kind(_ a: Artifact, _ path: String) -> PreviewKind {
+        let hint: PreviewKind.Hint? = path == a.mainFile ? (a.previewStyle == .markdown ? .markdown : a.previewStyle == .html ? .html : nil) : nil
+        return PreviewKind.classify(name: path, hint: hint)
     }
 
-    @ViewBuilder
-    private func preview(_ a: Artifact, _ c: Loaded) -> some View {
-        let ext = (c.path as NSString).pathExtension.lowercased()
-        if isMarkdown(a, c.path) {
-            MarkdownPreview(fileName: c.path, text: String(decoding: c.data, as: UTF8.self), raw: showSource,
-                            imageSource: store.markdownImages(artifactID: a.id, documentPath: c.path))
-                .ignoresSafeArea(edges: .bottom)
-        } else if ext == "txt" {
-            ScrollView {
-                MarkdownText(source: String(decoding: c.data, as: UTF8.self), compact: false)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 20)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        } else if ["html", "htm"].contains(ext) || (c.path == a.mainFile && a.previewStyle == .html) {
-            SandboxedHTMLView(html: String(decoding: c.data, as: UTF8.self), artifactID: a.id,
-                              images: store.markdownImages(artifactID: a.id, documentPath: c.path))
-                .ignoresSafeArea(edges: .bottom)
-        } else {
-            EmbeddedPreview(url: c.fileURL, revision: c.revision)
-                .ignoresSafeArea(edges: .bottom)
-        }
+    /// Markdown and web pages can be read as their source.
+    private func hasSource(_ a: Artifact) -> Bool {
+        let k = kind(a, currentPath(a))
+        return k == .markdown || k == .html
     }
 
-    private func load() async {
-        guard let a = artifact else { return }
-        // A file over the inline threshold is never read into memory; the
-        // page shows 分享/导出 (streamed) instead.
-        guard !isCurrentBig(a) else {
-            content = nil
-            progress = nil
-            error = nil
-            refreshError = nil
-            return
-        }
-        let path = currentPath(a)
-        let switching = content?.path != path
-        error = nil
-        refreshError = nil
-        if switching {
-            // Don't keep showing the previous file under the new name.
-            content = nil
-            progress = nil
-        }
-        let expected = a.files.first { $0.path == path }?.size ?? 0
-        do {
-            let r = try await store.readArtifact(id: a.id, path: path) { received, total in
-                let size = max(total, expected)
-                guard size > ArtifactChunk.maxChunk, content == nil || switching else { return }
-                progress = min(1, Double(received) / Double(size))
-            }
-            // A fresh file name per load: QuickLook caches by URL, so reusing
-            // one would keep showing the old revision of a live artifact.
-            let base = FileManager.default.temporaryDirectory
-                .appendingPathComponent("artifacts", isDirectory: true)
-                .appendingPathComponent(a.id, isDirectory: true)
-            let dir = base.appendingPathComponent(UUID().uuidString, isDirectory: true)
-            let name = (path as NSString).lastPathComponent.isEmpty ? "file" : (path as NSString).lastPathComponent
-            let url = dir.appendingPathComponent(name)
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try r.data.write(to: url, options: .atomic)
-            let old = content?.fileURL.deletingLastPathComponent()
-            content = Loaded(path: path, data: r.data, fileURL: url, revision: a.updatedAt)
-            progress = nil
-            if let old, old != dir, old.deletingLastPathComponent() == base { try? FileManager.default.removeItem(at: old) }
-        } catch is CancellationError {
-            return
-        } catch {
-            progress = nil
-            let msg = Copy.error(error)
-            if content == nil {
-                self.error = msg
-            } else {
-                refreshError = String(localized: "没刷新成功：\(msg)")
-            }
-        }
+    private func preview(_ a: Artifact, path: String, url: URL) -> some View {
+        LocalFilePreview(url: url, kind: kind(a, path), name: path, revision: a.updatedAt, raw: showSource,
+                         imageSource: store.markdownImages(artifactID: a.id, documentPath: path), sandbox: a.id)
     }
 }
 
@@ -348,6 +237,17 @@ struct SandboxedHTMLView: UIViewRepresentable {
     /// The pictures published beside the page, read from the item itself
     /// (relative paths inside it only). Without one they show as stubs.
     var images: FilePreviewWebView.ImageSource?
+    /// A page too big to hold as a string (over 5 MB): loaded from its file
+    /// instead (its folder readable, still nothing from the network; its
+    /// pictures inside it, its storage not kept per item).
+    var fileURL: URL? = nil
+
+    init(html: String, artifactID: String, images: FilePreviewWebView.ImageSource? = nil, fileURL: URL? = nil) {
+        self.html = html
+        self.artifactID = artifactID
+        self.images = images
+        self.fileURL = fileURL
+    }
 
     /// Content rule lists don't support regex disjunctions: one rule per
     /// scheme, or the whole list fails to compile (and the page never loads).
@@ -358,6 +258,10 @@ struct SandboxedHTMLView: UIViewRepresentable {
      {"trigger":{"url-filter":"^blob:"},"action":{"type":"ignore-previous-rules"}},
      {"trigger":{"url-filter":"^https://[^/]*\\\\.artifact\\\\.paloally\\\\.invalid/"},"action":{"type":"ignore-previous-rules"}}]
     """
+
+    /// The same, letting the page's own file (and its folder) load.
+    static let fileRules = rules.replacingOccurrences(of: #"{"trigger":{"url-filter":"^about:"}"#,
+                                                      with: #"{"trigger":{"url-filter":"^file:"},"action":{"type":"ignore-previous-rules"}},{"trigger":{"url-filter":"^about:"}"#)
 
     /// Library pages only; never shared with anything else that browses.
     @MainActor static let dataStore = WKWebsiteDataStore(forIdentifier: UUID(uuidString: "6F1C2E1A-6A3B-4C55-9C7E-2D0B5B0A7A11")!)
@@ -382,12 +286,12 @@ struct SandboxedHTMLView: UIViewRepresentable {
         view.backgroundColor = .clear
         context.coordinator.webView = view
         context.coordinator.imageBridge.attach(view)
-        context.coordinator.load(html, baseURL: Self.origin(for: artifactID), images: images)
+        context.coordinator.load(html, baseURL: Self.origin(for: artifactID), images: images, fileURL: fileURL)
         return view
     }
 
     func updateUIView(_ view: WKWebView, context: Context) {
-        context.coordinator.load(html, baseURL: Self.origin(for: artifactID), images: images)
+        context.coordinator.load(html, baseURL: Self.origin(for: artifactID), images: images, fileURL: fileURL)
     }
 
     @MainActor
@@ -397,16 +301,26 @@ struct SandboxedHTMLView: UIViewRepresentable {
         private var ruleList: WKContentRuleList?
         let imageBridge = HTMLImageBridge()
 
-        func load(_ html: String, baseURL: URL?, images: FilePreviewWebView.ImageSource?) {
-            guard html != loaded, let webView else { return }
-            loaded = html
+        func load(_ html: String, baseURL: URL?, images: FilePreviewWebView.ImageSource?, fileURL: URL? = nil) {
+            let marker = fileURL.map { "file:" + $0.path } ?? html
+            guard marker != loaded, let webView else { return }
+            loaded = marker
             imageBridge.reset(source: images)
             Task {
+                // Never render without the network block in place.
+                if let fileURL {
+                    guard let list = try? await WKContentRuleListStore.default()
+                        .compileContentRuleList(forIdentifier: "paloally.offline.file", encodedContentRuleList: SandboxedHTMLView.fileRules)
+                    else { return }
+                    webView.configuration.userContentController.removeAllContentRuleLists()
+                    webView.configuration.userContentController.add(list)
+                    webView.loadFileURL(fileURL, allowingReadAccessTo: fileURL.deletingLastPathComponent())
+                    return
+                }
                 if ruleList == nil {
                     ruleList = try? await WKContentRuleListStore.default()
                         .compileContentRuleList(forIdentifier: "paloally.offline", encodedContentRuleList: SandboxedHTMLView.rules)
                 }
-                // Never render without the network block in place.
                 guard let ruleList else { return }
                 webView.configuration.userContentController.removeAllContentRuleLists()
                 webView.configuration.userContentController.add(ruleList)
@@ -417,6 +331,8 @@ struct SandboxedHTMLView: UIViewRepresentable {
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
             // Only the initial document load and in-page anchors.
             if action.navigationType == .other || action.request.url?.scheme == "about" { return .allow }
+            // A page loaded from its file: that file only.
+            if action.request.url?.isFileURL == true, action.navigationType != .linkActivated { return .allow }
             return .cancel
         }
     }

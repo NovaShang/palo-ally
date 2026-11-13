@@ -254,17 +254,6 @@
         }
       }
     },
-    "文件太大" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "File too large"
-          }
-        }
-      }
-    },
     "文件夹" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -415,17 +404,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This folder is empty"
-          }
-        }
-      }
-    },
-    "这个文件有 %@，超过 5 MB 的文件不在这里打开。可以在电脑上看。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This file is %@. Files over 5 MB don't open here; look at it on the computer."
           }
         }
       }
@@ -704,17 +682,6 @@
         }
       }
     },
-    "文件太大，无法在这里预览" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Too large to preview here"
-          }
-        }
-      }
-    },
     "分享文件" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -726,13 +693,134 @@
         }
       }
     },
-    "文件太大，无法分享（最多 200 MB）" : {
+    "下载" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Too large to share (200 MB at most)"
+            "value" : "Download"
+          }
+        }
+      }
+    },
+    "已停止下载" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download stopped"
+          }
+        }
+      }
+    },
+    "继续下载" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue download"
+          }
+        }
+      }
+    },
+    "正在更新" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Updating"
+          }
+        }
+      }
+    },
+    "这个文件 %@ MB，用移动网络下载吗？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file is %@ MB. Download it over cellular?"
+          }
+        }
+      }
+    },
+    "电脑上的 PaloAlly 版本较旧，发不了这么大的文件。更新它以后再试。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PaloAlly on the computer is too old to send a file this big. Update it and try again."
+          }
+        }
+      }
+    },
+    "文件很大，只显示开头 256 KB" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Large file: showing the first 256 KB only"
+          }
+        }
+      }
+    },
+    "已下载的文件" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloaded files"
+          }
+        }
+      }
+    },
+    "清除已下载的文件？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear downloaded files?"
+          }
+        }
+      }
+    },
+    "文件还在电脑上，再打开时重新下载。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The files stay on the computer and download again when you open them."
+          }
+        }
+      }
+    },
+    "打开过的电脑文件留在这台设备上，再打开不用重新下载。满了会先删最久没打开的。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer files you open are kept on this device, so they open again without downloading. When space runs out, the ones opened longest ago go first."
+          }
+        }
+      }
+    },
+    "用快速查看打开" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in Quick Look"
           }
         }
       }

@@ -319,6 +319,11 @@ public final class AppStore {
     // MARK: config
 
     public let rpc: RPCClient
+    /// Which computer this is, for the downloaded files' cache (the app sets
+    /// its id; a Pal's or session's store uses its computer's).
+    @ObservationIgnored public var fileCacheHost = ""
+    /// Downloads files to the device's disk (tests give one a cache of its own).
+    @ObservationIgnored public var fileFetcher: FileFetcher = .shared
     public let clientKind: String
     public let clientVersion: String
     public var initialHistoryLimit = 100
@@ -1421,6 +1426,9 @@ public final class AppStore {
         } while true
     }
 
+    /// A file picked on this device and sent from it: its bytes, still here.
+    public func localFileData(_ id: String) -> Data? { localFiles[id] }
+
     /// A file sent in the conversation: local bytes if it was picked here, else from the host.
     public func fileData(_ id: String) async throws -> Data {
         if let d = localFiles[id] { return d }
@@ -1447,6 +1455,14 @@ public final class AppStore {
         guard images[key] == nil, !imageLoads.contains(key) else { return }
         imageLoads.insert(key)
         defer { imageLoads.remove(key) }
+        // A big picture: downloaded to disk and shown as a small copy, never
+        // its whole bytes in memory (nor decoded at full size in the chat).
+        if let a = artifact(id: id), let info = artifactFileInfo(id: id, path: a.mainFile), info.size > FileChunk.maxFile {
+            let name = (a.mainFile as NSString).lastPathComponent
+            guard let url = try? await downloadFile(.artifact(id: id, path: a.mainFile), name: name) else { return }
+            images[key] = await Task.detached(priority: .utility) { Self.thumbnailData(of: url, maxPixels: 720) }.value
+            return
+        }
         if let r = try? await readArtifact(id: id) { images[key] = r.data }
     }
 

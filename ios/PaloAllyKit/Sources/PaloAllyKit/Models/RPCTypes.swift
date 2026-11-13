@@ -380,7 +380,11 @@ public struct MediaReadParams: Codable, Sendable {
     public var id: String
     public var offset: Int64
     public var length: Int64
-    public init(id: String, offset: Int64, length: Int64) { self.id = id; self.offset = offset; self.length = length }
+    /// Downloading it to the device: chunks up to 1 MiB. Omitted unless true.
+    public var stream: Bool?
+    public init(id: String, offset: Int64, length: Int64, stream: Bool? = nil) {
+        self.id = id; self.offset = offset; self.length = length; self.stream = stream
+    }
 }
 
 public struct MediaGetParams: Codable, Sendable {
@@ -558,8 +562,10 @@ public struct ArtifactReadParams: Codable, Sendable {
     public var path: String?
     public var offset: Int64?
     public var length: Int64?
-    public init(id: String, path: String?, offset: Int64?, length: Int64?) {
-        self.id = id; self.path = path; self.offset = offset; self.length = length
+    /// Downloading it to the device: chunks up to 1 MiB. Omitted unless true.
+    public var stream: Bool?
+    public init(id: String, path: String?, offset: Int64?, length: Int64?, stream: Bool? = nil) {
+        self.id = id; self.path = path; self.offset = offset; self.length = length; self.stream = stream
     }
 }
 
@@ -577,6 +583,8 @@ public struct ArtifactChunk: Decodable, Sendable {
     }
     /// design.md §5.3: each chunk ≤ 256 KiB.
     public static let maxChunk: Int64 = 256 * 1024
+    /// A chunk of a file downloaded to the device (`stream`): ≤ 1 MiB.
+    public static let maxStreamChunk: Int64 = 1024 * 1024
 }
 
 public struct ArtifactPinParams: Codable, Sendable {
