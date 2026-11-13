@@ -8,6 +8,13 @@ import { ensureDir, readJson, writeJson } from "./util.ts";
 
 const META = "meta.json";
 export const CHUNK = 256 * 1024;
+/**
+ * A chunk of a file the app downloads to its disk (`stream`): bigger, so a
+ * 27 MB file is 27 round trips over the relay, not 108. 1 MiB of bytes is
+ * about 1.4 MB of base64, well under the relay's and the app's message caps
+ * (32 MiB, 4 MB).
+ */
+export const STREAM_CHUNK = 1024 * 1024;
 
 interface Meta {
   title?: string;
@@ -173,7 +180,8 @@ export class ArtifactLibrary {
     return a;
   }
 
-  read(id: string, path?: string, offset = 0, length = CHUNK): { data: string; size: number; mime: string; eof: boolean } {
+  /** A chunk of one of its files (≤ 256 KiB; ≤ 1 MiB when `stream`). */
+  read(id: string, path?: string, offset = 0, length = CHUNK, stream = false): { data: string; size: number; mime: string; eof: boolean } {
     const a = this.get(id);
     if (!a) throw new Error(t("artifact.none", { id }));
     const rel = path ?? a.mainFile;
@@ -182,7 +190,7 @@ export class ArtifactLibrary {
     if (!full.startsWith(folder + sep)) throw new Error(t("artifact.fileOutside"));
     if (lstatSync(full).isSymbolicLink()) throw new Error(t("artifact.fileOutside"));
     const size = statSync(full).size;
-    const len = Math.max(0, Math.min(length, CHUNK, size - offset));
+    const len = Math.max(0, Math.min(Math.floor(Number(length) || CHUNK), stream ? STREAM_CHUNK : CHUNK, size - offset));
     const buf = Buffer.alloc(len);
     const fd = openSync(full, "r");
     try {

@@ -6,7 +6,7 @@ import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { Audit } from "../src/audit.ts";
-import { FileBrowser, MAX_READ_BYTES, MAX_STREAM_BYTES, MAX_WRITE_BYTES, cleanCandidate, parseScope } from "../src/files.ts";
+import { FileBrowser, MAX_READ_BYTES, MAX_WRITE_BYTES, cleanCandidate, parseScope } from "../src/files.ts";
 import { FileWatches, type FileChanged } from "../src/fileWatch.ts";
 import { Bus } from "../src/bus.ts";
 import { parseAllyWire } from "../src/proto/ally.ts";
@@ -162,35 +162,42 @@ describe("files", () => {
     expect(reads[2]!.tooLarge).toBe(true);
   });
 
-  test("read: over 5 MB, `stream` serves it chunk by chunk (≤ 256 KiB) up to the stream cap", () => {
+  test("read: over 5 MB, `stream` serves it chunk by chunk (≤ 1 MiB), any size", () => {
     const { files, project, audit } = world();
-    // A file over the inline cap, read for sharing: served, not refused.
+    // A file over the inline cap, downloaded to the device: served, not refused.
     const bytes = Buffer.alloc(MAX_READ_BYTES + 3);
     for (let i = 0; i < bytes.length; i++) bytes[i] = i % 251;
     writeFileSync(join(project, "big.bin"), bytes);
     const got = Buffer.alloc(bytes.length);
     let offset = 0;
+    let chunks = 0;
     while (true) {
-      const c = files.read(site, "big.bin", offset, 256 * 1024, "dev-phone", true);
+      const c = files.read(site, "big.bin", offset, 1024 * 1024, "dev-phone", true);
       expect(c.tooLarge).toBeUndefined();
       expect(c.size).toBe(bytes.length);
-      expect(Buffer.from(c.data, "base64").length).toBeLessThanOrEqual(256 * 1024);
+      const n = Buffer.from(c.data, "base64").length;
+      expect(n).toBeLessThanOrEqual(1024 * 1024);
       got.set(Buffer.from(c.data, "base64"), offset);
-      offset += Buffer.from(c.data, "base64").length;
+      offset += n;
+      chunks += 1;
       if (c.eof) break;
     }
     expect(offset).toBe(bytes.length);
     expect(got.equals(bytes)).toBe(true);
-    // A file over the stream cap: still its size only, never read whole.
-    writeFileSync(join(project, "huge.bin"), Buffer.alloc(MAX_STREAM_BYTES + 1));
-    expect(files.read(site, "huge.bin", 0, 256 * 1024, "dev-phone", true)).toEqual({
-      data: "", size: MAX_STREAM_BYTES + 1, mime: expect.any(String), eof: true, tooLarge: true, version: expect.any(String),
-    });
+    // 5 MiB + 3 bytes in 1 MiB chunks: six of them.
+    expect(chunks).toBe(6);
+    // A first chunk of 1 MiB; without `stream` a 1 MiB ask still gets 256 KiB.
+    expect(Buffer.from(files.read(site, "big.bin", 0, 1024 * 1024, "dev-phone", true).data, "base64").length).toBe(1024 * 1024);
+    writeFileSync(join(project, "mid.bin"), Buffer.alloc(2 * 1024 * 1024, 1));
+    expect(Buffer.from(files.read(site, "mid.bin", 0, 1024 * 1024).data, "base64").length).toBe(256 * 1024);
+    // A one-byte probe: the size and version, nothing more read.
+    const probe = files.read(site, "big.bin", 0, 1, "dev-phone", true);
+    expect([Buffer.from(probe.data, "base64").length, probe.size, probe.eof]).toEqual([1, bytes.length, false]);
+    expect(probe.version).toMatch(new RegExp(`:${bytes.length}$`));
     // The audit says which reads streamed.
     const reads = audit.tail(20).filter((e) => e.type === "files.read");
     expect(reads[0]!.stream).toBe(true);
-    expect(reads[0]!.tooLarge).toBeUndefined();
-    expect(reads.at(-1)!.tooLarge).toBe(true);
+    expect(reads.every((e) => e.tooLarge === undefined)).toBe(true);
   });
 
   test("write: over the version read, replaced whole (mode kept, a link stays a link), audited", () => {

@@ -115,7 +115,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
         done: !!p.done,
       });
     case "media.read":
-      return hub.media.readChunk(String(p.id ?? ""), Number(p.offset ?? 0), Number(p.length ?? 256 * 1024));
+      return hub.media.readChunk(String(p.id ?? ""), Number(p.offset ?? 0), Number(p.length ?? 256 * 1024), p.stream === true);
     case "media.get": {
       const m = hub.media.read(String(p.id ?? ""));
       if (!m) throw new Error(t("rpc.err.noImage"));
@@ -185,7 +185,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     case "artifact.list":
       return { artifacts: hub.artifacts.list() };
     case "artifact.read":
-      return hub.artifacts.read(String(p.id), p.path, Number(p.offset ?? 0), Number(p.length ?? 256 * 1024));
+      return hub.artifacts.read(String(p.id), p.path, Number(p.offset ?? 0), Number(p.length ?? 256 * 1024), p.stream === true);
     case "artifact.pin":
       return { artifact: hub.artifacts.pin(String(p.id), !!p.pinned) };
     case "memory.list":

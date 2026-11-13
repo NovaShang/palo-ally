@@ -948,6 +948,8 @@ describe("Hub: files from the app", () => {
     const att = hub.media.uploadChunk({ uploadId: first.uploadId, name: "报告.txt", offset: 6, data: b64("world"), done: true }) as any;
     expect(att).toMatchObject({ kind: "file", name: "报告.txt", size: 11, mediaType: "text/plain" });
     expect(Buffer.from(hub.media.readChunk(att.id).data, "base64").toString()).toBe("hello world");
+    // Downloaded to the app's disk (`stream`): read the same, in chunks up to 1 MiB.
+    expect(Buffer.from(hub.media.readChunk(att.id, 6, 1024 * 1024, true).data, "base64").toString()).toBe("world");
     expect(hub.media.filePath(att.id)!.includes("..")).toBe(false);
     // a stale / unknown upload id, a chunk that's too big, a non-zero first offset
     expect(() => hub.media.uploadChunk({ uploadId: first.uploadId, name: "a", offset: 11, data: "", done: true })).toThrow();

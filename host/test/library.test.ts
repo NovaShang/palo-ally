@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { ArtifactLibrary, CHUNK } from "../src/artifacts.ts";
+import { ArtifactLibrary, CHUNK, STREAM_CHUNK } from "../src/artifacts.ts";
 import { Bus } from "../src/bus.ts";
 import { MemoryView, autoMemoryDir } from "../src/memory.ts";
 import { cleanup, tmpPaths } from "./helpers.ts";
@@ -66,6 +66,12 @@ describe("ArtifactLibrary", () => {
     const b = lib.read("big", "blob.pdf", CHUNK);
     expect(b.eof).toBe(true);
     expect(Buffer.from(b.data, "base64").length).toBe(100);
+    // Downloaded to the app's disk (`stream`): up to 1 MiB a chunk.
+    writeFileSync(join(paths.artifacts, "big", "large.pdf"), Buffer.alloc(STREAM_CHUNK + 5, 3));
+    expect(Buffer.from(lib.read("big", "large.pdf", 0, STREAM_CHUNK, true).data, "base64").length).toBe(STREAM_CHUNK);
+    expect(Buffer.from(lib.read("big", "large.pdf", 0, STREAM_CHUNK).data, "base64").length).toBe(CHUNK);
+    const tail = lib.read("big", "large.pdf", STREAM_CHUNK, STREAM_CHUNK, true);
+    expect([Buffer.from(tail.data, "base64").length, tail.eof]).toEqual([5, true]);
     expect(() => lib.read("big", "../../config.json")).toThrow("不在产物文件夹里");
     expect(() => lib.read("../state", "x")).toThrow();
 

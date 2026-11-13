@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { appendFileSync, closeSync, copyFileSync, existsSync, linkSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
-import { CHUNK, mimeOf } from "./artifacts.ts";
+import { CHUNK, STREAM_CHUNK, mimeOf } from "./artifacts.ts";
 import type { Attachment } from "./types.ts";
 
 // What travels inside the conversation besides text: images the owner sends
@@ -164,11 +164,12 @@ export class MediaStore {
   }
 
   /** One chunk of a stored file (same shape as artifact.read). */
-  readChunk(id: string, offset = 0, length = CHUNK): { data: string; size: number; mime: string; eof: boolean } {
+  /** A chunk of a stored file (≤ 256 KiB; ≤ 1 MiB when `stream`, the app downloading it to its disk). */
+  readChunk(id: string, offset = 0, length = CHUNK, stream = false): { data: string; size: number; mime: string; eof: boolean } {
     const full = this.filePath(id);
     if (!full) throw new Error(t("media.noSuchFile"));
     const size = statSync(full).size;
-    const len = Math.max(0, Math.min(length, CHUNK, size - offset));
+    const len = Math.max(0, Math.min(Math.floor(Number(length) || CHUNK), stream ? STREAM_CHUNK : CHUNK, size - offset));
     const buf = Buffer.alloc(len);
     const fd = openSync(full, "r");
     try {

@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Audit } from "./audit.ts";
-import { CHUNK, mimeOf } from "./artifacts.ts";
+import { CHUNK, STREAM_CHUNK, mimeOf } from "./artifacts.ts";
 import type { Paths } from "./config.ts";
 import { t } from "./i18n/index.ts";
 import { newId, readJson, writeJson } from "./util.ts";
@@ -43,8 +43,6 @@ const SEARCH_SKIP: ReadonlySet<string> = new Set([
 ]);
 /** Bigger than this: its size and path only, never its bytes. */
 export const MAX_READ_BYTES = 5 * 1024 * 1024;
-/** A file streamed for sharing (chunked, to a device temp file) may be this big; over it, its size only. */
-export const MAX_STREAM_BYTES = 200 * 1024 * 1024;
 /** What the app's editor may write back (it edits text up to 1 MB). */
 export const MAX_WRITE_BYTES = 1024 * 1024;
 const MAX_LIST = 2000;
@@ -172,9 +170,10 @@ export class FileBrowser {
 
   /**
    * A chunk of a file, like artifact.read (≤ 256 KiB each). Over 5 MB: its
-   * size only (`tooLarge`), nothing read. `stream` (sharing a file out to
-   * the device, chunk by chunk) lifts that to 200 MB instead, still never
-   * more than 256 KiB in one chunk. The first chunk is audited.
+   * size only (`tooLarge`), nothing read. `stream` (the app downloading the
+   * file to its own disk, chunk by chunk, to open or share it) serves a file
+   * of any size, in chunks up to 1 MiB, never one blob. The first chunk is
+   * audited.
    */
   read(scope: FileScope, path: string, offset = 0, length = CHUNK, by = "app", stream = false):
     { data: string; size: number; mime: string; eof: boolean; tooLarge?: boolean; version: string } {
@@ -184,11 +183,11 @@ export class FileBrowser {
     if (!st.isFile()) throw new Error(t("files.err.notFound"));
     const mime = mimeOf(real);
     const start = Math.max(0, Math.floor(Number(offset) || 0));
-    const cap = stream ? MAX_STREAM_BYTES : MAX_READ_BYTES;
-    if (start === 0) this.d.audit.log("files.read", { scope: scopeLabel(scope), path: rel, size: st.size, by, ...(stream ? { stream: true } : {}), ...(st.size > cap ? { tooLarge: true } : {}) });
+    const tooLarge = !stream && st.size > MAX_READ_BYTES;
+    if (start === 0) this.d.audit.log("files.read", { scope: scopeLabel(scope), path: rel, size: st.size, by, ...(stream ? { stream: true } : {}), ...(tooLarge ? { tooLarge: true } : {}) });
     const version = versionOf(st);
-    if (st.size > cap) return { data: "", size: st.size, mime, eof: true, tooLarge: true, version };
-    const len = Math.max(0, Math.min(Math.floor(Number(length) || CHUNK), CHUNK, st.size - start));
+    if (tooLarge) return { data: "", size: st.size, mime, eof: true, tooLarge: true, version };
+    const len = Math.max(0, Math.min(Math.floor(Number(length) || CHUNK), stream ? STREAM_CHUNK : CHUNK, st.size - start));
     const buf = Buffer.alloc(len);
     if (len > 0) {
       const fd = openSync(real, "r");
