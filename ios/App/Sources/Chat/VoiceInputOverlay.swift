@@ -642,7 +642,9 @@ private struct VoiceWordsStage: View {
                 }
                 // Low, just above 取消 / 编辑 (the owner's ask), growing upward.
                 .frame(height: max(0, bottom - top), alignment: .bottom)
-                .position(x: layer.width / 2, y: (top + bottom) / 2 - layer.minY)
+                // Over the buttons' middle (取消 / 编辑 under them), not the
+                // column's: on the Mac the two differ (11-12).
+                .position(x: centerX(width: width), y: (top + bottom) / 2 - layer.minY)
             if case .send(let cid) = voice.exit, voice.copyOf == cid, motion,
                let row = voice.echoRow, let bubble = voice.echoBubble,
                let echo = store.messages.last(where: { $0.clientMsgId == cid }) {
@@ -663,6 +665,15 @@ private struct VoiceWordsStage: View {
             }
         }
         .frame(width: layer.width, height: layer.height, alignment: .topLeading)
+    }
+
+    /// The words' middle in this layer: above the composer's capsule (the
+    /// zones' middle), kept inside the layer.
+    private func centerX(width: CGFloat) -> CGFloat {
+        let capsule = voice.capsuleFrame
+        guard capsule.width > 0 else { return layer.width / 2 }
+        let half = width / 2 + 20
+        return min(max(capsule.midX - layer.minX, half), max(half, layer.width - half))
     }
 
     private var shownText: String {
