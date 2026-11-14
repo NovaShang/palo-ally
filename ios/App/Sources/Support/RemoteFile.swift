@@ -244,7 +244,7 @@ struct RemoteFileView<Content: View>: View {
 /// A file on the device, shown by its kind: Markdown and text in the web
 /// renderer (the start of a text over 1 MB only), web pages sandboxed, PDFs
 /// in PDFKit, pictures decoded at the size shown, videos and sound in the
-/// system's player, Office documents in Quick Look's own window on the Mac, the rest in
+/// system's player, Office documents in AppKit's previewer on the Mac, the rest in
 /// Quick Look. All from the file's URL.
 struct LocalFilePreview: View {
     let url: URL
@@ -407,19 +407,42 @@ struct MediaPlayerView: View {
     }
 }
 
-/// An Office or iWork document on the Mac: the system's full previewer,
-/// opened on its own the first time the document shows, again from the
-/// button. Quick Look embedded in a pane drew Office files blurred and still
-/// (11-12); WebKit on the Mac doesn't open them (it can't show their types:
-/// the bytes came out as text), and AppKit's Word reader fails inside the
-/// app (Cocoa error 256), so there is no page of our own to draw them in.
+/// An Office or iWork document on the Mac: AppKit's own previewer in the
+/// pane (`NativeQuickLookView`), crisp and scrolling, its text selectable.
+/// Quick Look embedded by UIKit drew Office files as one still blurred
+/// picture (11-12); WebKit on the Mac doesn't open them (it can't show their
+/// types: the bytes came out as text), and AppKit's Word reader fails inside
+/// the app (Cocoa error 256). Without the AppKit bundle: Quick Look's own
+/// window, opened on its own the first time the document shows, again from
+/// the button.
 struct OfficeDocumentView: View {
     let url: URL
     let revision: Int64
     /// Opened on its own once per file and version.
     @State private var opened: String?
+    @Environment(\.documentCard) private var card
 
     var body: some View {
+        #if targetEnvironment(macCatalyst)
+        if NativeQuickLookView.available {
+            // AppKit's view is drawn over the window: in the right pane it
+            // starts below the page's ⋯ (floating at its top corner), which
+            // it would cover. A card's ⋯ is in its header.
+            NativeQuickLookView(url: url, revision: revision)
+                .padding(.top, card == nil ? 52 : 0)
+                .background(Color(.systemBackground))
+                .task(id: "\(url.path)|\(revision)") {
+                    debugLog("[files] office: \(url.lastPathComponent) in the pane (AppKit's previewer)")
+                }
+        } else {
+            fallback
+        }
+        #else
+        fallback
+        #endif
+    }
+
+    private var fallback: some View {
         VStack(spacing: 14) {
             Image(systemName: "doc.text").font(.system(size: 40, weight: .light)).foregroundStyle(.secondary)
             Text(verbatim: url.lastPathComponent).font(.headline).lineLimit(2).multilineTextAlignment(.center)

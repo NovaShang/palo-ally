@@ -1,4 +1,6 @@
 import ImageIO
+import PaloAllyFilePreview
+import PaloAllyKit
 import PDFKit
 import QuickLook
 import SwiftUI
@@ -232,6 +234,22 @@ enum QuickLookPresenter {
         guard !items.isEmpty, let top = topController(in: scene) else { return }
         let preview = AttachmentPreviewController(items: items, start: min(max(start, 0), items.count - 1), openInLibrary: openInLibrary)
         #if targetEnvironment(macCatalyst)
+        // Office and iWork documents: Quick Look's own window on the Mac,
+        // crisp. Opened by AppKit (the bundle's QLPreviewPanel): presented by
+        // UIKit, Quick Look went to its window all the same and left our
+        // sheet behind it empty (11-14). Without the bundle, presented bare
+        // (the window is dimmed while it is open).
+        if items.allSatisfy({ PreviewKind.classify(name: $0.url.lastPathComponent) == .office }) {
+            let spec: NSDictionary = ["paths": items.map(\.url.path), "start": min(max(start, 0), items.count - 1)]
+            if let r = AppKitBundle.object?.perform(NSSelectorFromString("nativePreviewPanel:"), with: spec)?
+                .takeUnretainedValue() as? String {
+                debugLog("[ql] \(r)")
+                return
+            }
+            preview.modalPresentationStyle = .automatic
+            top.present(preview, animated: true)
+            return
+        }
         // The Mac: full screen would put the preview's own bar (and its Done)
         // under the window toolbar, leaving no way out. A large sheet with its
         // bar inside it, a visible 关闭, and Esc / ⌘W / ⌘[ to close.

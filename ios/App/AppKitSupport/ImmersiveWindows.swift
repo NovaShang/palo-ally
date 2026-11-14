@@ -44,6 +44,8 @@ final class ImmersiveWindows: NSObject {
     private static func offerSpace() {
         guard spaceMonitor == nil else { return }
         spaceMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // A document's own previewer (NativePreviews) has the keyboard: its keys are its own.
+            if MainActor.assumeIsolated({ NativePreviews.hasKeyboard(event.window) }) { return event }
             let mods = event.modifierFlags.intersection([.command, .control, .option, .shift])
             let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
             let info: [String: Any]
@@ -77,6 +79,8 @@ final class ImmersiveWindows: NSObject {
         copyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
                   event.charactersIgnoringModifiers?.lowercased() == "c" else { return event }
+            // The previewer's selection is copied by the previewer itself.
+            if MainActor.assumeIsolated({ NativePreviews.hasKeyboard(event.window) }) { return event }
             let result = NSMutableDictionary()
             MainActor.assumeIsolated {
                 NotificationCenter.default.post(name: NSNotification.Name("PaloAllyCopy"), object: nil, userInfo: ["result": result])
@@ -102,6 +106,8 @@ final class ImmersiveWindows: NSObject {
                   let frame = window.contentView?.superview else { return event }
             // An event without a window has its place on the screen.
             let at = event.window == nil ? window.convertPoint(fromScreen: event.locationInWindow) : event.locationInWindow
+            // Over a document's own previewer (NativePreviews): it scrolls itself.
+            if MainActor.assumeIsolated({ NativePreviews.covers(at, in: window) }) { return event }
             let result = NSMutableDictionary()
             MainActor.assumeIsolated {
                 NotificationCenter.default.post(name: NSNotification.Name("PaloAllyWheel"), object: nil, userInfo: [

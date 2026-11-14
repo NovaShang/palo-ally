@@ -482,6 +482,11 @@ private struct LayoutStressTest: ViewModifier {
                             c.demo("where")
                         }
                         debugLog("[nav] window \(w.windowWidth) pt")
+                    // `qlfacts`: every Office previewer AppKit draws (NativeQuickLookView), where and whether shown.
+                    case "qlfacts":
+                        #if targetEnvironment(macCatalyst)
+                        debugLog("[nav] previewers: \(AppKitBundle.nativePreviewFacts())")
+                        #endif
                     // `split`: each window's split view controllers and their inspector widths.
                     case "split":
                         func walk(_ vc: UIViewController, _ depth: Int) {
@@ -992,6 +997,7 @@ struct FreezesWhileResized: ViewModifier {
     func body(content: Content) -> some View {
         let pinned = pinned
         content
+            .environment(\.layoutHeld, pinned != nil)
             .frame(width: pinned?.width, height: pinned?.height, alignment: alignment)
             .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: alignment)
             .clipShape(SidesClip(active: pinned != nil))
