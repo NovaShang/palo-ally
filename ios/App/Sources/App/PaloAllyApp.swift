@@ -125,6 +125,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        // The Mac: SwiftUI traps on a hover hit test with no context (macOS 27 beta).
+        HoverHitTestGuard.install()
         // A paloally: link tapped in a conversation (the window clicked in is the one used last).
         InAppLinks.open = { [model] in model.handle(url: $0) }
         // Voice logs already carry "[voice]"; append the time since the press.
