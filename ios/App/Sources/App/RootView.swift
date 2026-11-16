@@ -1132,7 +1132,7 @@ private struct SplitLab: View {
 #endif
 
 
-/// The Mac: the right pane's widths set on the split view that shows it
+/// The Mac and the iPad: the right pane's widths set on the split view that shows it
 /// (`inspectorColumnWidth` never reached it there): at least 320 pt, at most
 /// what leaves the conversation 360 pt beside the sidebar, opening at
 /// `ideal`. SwiftUI puts its own back whenever it updates the pane (opening
@@ -1145,6 +1145,9 @@ struct InspectorWidth: UIViewRepresentable {
     let sidebarShown: Bool
 
     static let minimum: CGFloat = 320
+    /// The Mac and the iPad: the system's own range on an iPad let the
+    /// pane grow to about a third of the screen (11-15).
+    static var applies: Bool { Platform.isMac || UIDevice.current.userInterfaceIdiom == .pad }
     /// The conversation keeps at least this beside the pane.
     static let conversationMinimum: CGFloat = 360
 
@@ -1158,7 +1161,7 @@ struct InspectorWidth: UIViewRepresentable {
     /// Kept once the pane has stopped changing for 0.3 s: written at each
     /// step of a drag it was a round trip to the preferences a frame.
     static func remember(_ w: CGFloat) {
-        guard Platform.isMac else { return }
+        guard InspectorWidth.applies else { return }
         pendingWrite?.cancel()
         let write = DispatchWorkItem {
             guard abs(UserDefaults.standard.double(forKey: key) - w) >= 1 else { return }
@@ -1169,7 +1172,7 @@ struct InspectorWidth: UIViewRepresentable {
     }
     /// The pane's width changed: SwiftUI may have put its own widths back.
     static func check() {
-        guard Platform.isMac else { return }
+        guard InspectorWidth.applies else { return }
         NotificationCenter.default.post(name: checkNote, object: nil)
     }
 
@@ -1200,7 +1203,7 @@ struct InspectorWidth: UIViewRepresentable {
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            guard Platform.isMac, let scene = window?.windowScene else {
+            guard InspectorWidth.applies, let scene = window?.windowScene else {
                 observers.forEach(NotificationCenter.default.removeObserver)
                 observers = []
                 resize = nil
@@ -1219,7 +1222,7 @@ struct InspectorWidth: UIViewRepresentable {
 
         /// Now, and after SwiftUI's own pass over the split view.
         func applySoon(opening: Bool) {
-            guard Platform.isMac, window != nil else { return }
+            guard InspectorWidth.applies, window != nil else { return }
             apply(opening: opening)
             DispatchQueue.main.async { [weak self] in self?.apply(opening: opening) }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.apply(opening: opening) }
