@@ -230,9 +230,24 @@ private struct LayoutStressTest: ViewModifier {
                     // `window:pal:pal-site`: 在新窗口中打开; `open:workspace:ws-site`: the list's row.
                     case _ where a.hasPrefix("window:"):
                         if let c = WindowModel.Conversation(storageKey: String(a.dropFirst(7))) { openWindow(value: WindowTarget(c, host: w.activeHostID)) }
-                    // `w2.host:demo-2`: that window switches to that computer (the sidebar's switcher).
+                    // `w2.host:demo-2`: that window switches to that computer.
                     case _ where a.hasPrefix("host:"):
                         w.switchTo(String(a.dropFirst(5)))
+                    // `row:demo-2:pal:pal-dash`: that computer's row tapped in the sidebar (several computers).
+                    case _ where a.hasPrefix("row:"):
+                        let parts = a.dropFirst(4).split(separator: ":", maxSplits: 1).map(String.init)
+                        if parts.count == 2, let c = WindowModel.Conversation(storageKey: parts[1]) { w.open(c, on: parts[0]) }
+                        debugLog("[nav] \(a): window on \(w.activeHostID ?? "-") showing \(w.selection?.storageKey ?? "-")")
+                    // `fold:demo-2`: that computer's name tapped in the sidebar (its section folds or opens).
+                    case _ where a.hasPrefix("fold:"):
+                        let id = String(a.dropFirst(5))
+                        w.app.setHostCollapsed(id, !w.app.isHostCollapsed(id))
+                        debugLog("[nav] \(a): sidebar \(w.app.sidebarHostIDs.map { "\($0)\(w.app.isHostCollapsed($0) ? "(folded)" : "")" }.joined(separator: " "))")
+                    // `hostmove:demo-2:-1`: 上移 (-1) / 下移 (1) on that computer's name.
+                    case _ where a.hasPrefix("hostmove:"):
+                        let parts = a.dropFirst(9).split(separator: ":").map(String.init)
+                        if parts.count == 2, let d = Int(parts[1]) { w.app.moveHost(parts[0], by: d) }
+                        debugLog("[nav] \(a): sidebar \(w.app.sidebarHostIDs.joined(separator: " "))")
                     // `notify:demo-2`: a message notification from that computer tapped.
                     case _ where a.hasPrefix("notify:"):
                         model.app.handleNotification(userInfo: ["hostId": String(a.dropFirst(7))])
@@ -368,7 +383,7 @@ private struct LayoutStressTest: ViewModifier {
                                 queue.append(contentsOf: v.subviews)
                             }
                         }
-                    // `keys:nihao `: those keys pressed, as the keyboard does (`⌘s`: with ⌘; `\n`: Return).
+                    // `keys:nihao `: those keys pressed, as the keyboard does (`⌘s`: with ⌘, `⌥⌘2` with ⌥ too; `\n`: Return).
                     case _ where a.hasPrefix("keys:"):
                         let spec = String(a.dropFirst(5)).replacingOccurrences(of: "\\n", with: "\n")
                         let r = AppKitBundle.object?.perform(NSSelectorFromString("pressKeys:"), with: spec)?.takeUnretainedValue() as? String
@@ -828,6 +843,8 @@ private struct ConversationDetail: View {
                 }
             }
             .modifier(QuickSwitchBar(current: current))
+            // Several computers: which one this page is on.
+            .modifier(HostLabelPlacement())
             .modifier(InContentNavigationBar())
             // A folder's tree over 成果 (phones), and the files paths in replies link to.
             .modifier(FilesInConversation(current: current))

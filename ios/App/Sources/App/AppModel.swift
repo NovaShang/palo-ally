@@ -16,7 +16,9 @@ let appLog = Logger(subsystem: "com.novashang.paloally", category: "app")
 ///   -demoHostVersion <x.y.z>  the demo computer reports that version (a newer one shows the Mac app's update hint)
 ///   -demoTab <name>      management on watches (目标) | history (履历) | memory; old values tasks → history
 ///   -pairLink <url>      start pairing with this paloally:// link (automation; skips the open-URL prompt)
-///   -demoHosts <n>       demo with n assistants (2 shows 切换助理 in management)
+///   -demoHosts <n>       demo with n assistants (2: the sidebar lists both computers, each with its own
+///                        sessions; DEBUG `-demoLocalHost <n>`: the n-th stands for this Mac, default the first;
+///                        `-demoOfflineHost <n>`: the n-th never connects)
 ///   -demoState <name>    idle | busy | tasks — what the title capsule shows; quote — a reply quote in the composer;
 ///                        allies | alliesSent — an Ally's message and a draft back (sent, with `alliesSent`);
 ///                        `-demoDraftEdit YES` opens drafts in 改一下, `-demoAllyRemove YES` an Ally's page on 解除
@@ -167,6 +169,11 @@ final class AppModel {
         if let link = launch.pairLink, let url = URL(string: link) { handle(url: url) }
         #if targetEnvironment(macCatalyst)
         watchMacFront()
+        Task { [weak self] in
+            await MachineIdentity.loadName()
+            self?.localNameRevision += 1
+            debugLog("[hosts] this Mac \(MachineIdentity.local == nil ? "has no hardware id (names compared)" : "has its hardware id"); its computer \(self?.localHostID ?? "-")")
+        }
         #endif
     }
 
@@ -292,8 +299,108 @@ final class AppModel {
 
     // MARK: assistants
 
-    /// More than one assistant: the list's first row switches between them.
+    /// More than one assistant: the sidebar lists each computer in a section of its own.
     var hasSeveralHosts: Bool { hostIDs.count > 1 }
+
+    // MARK: the sidebar's computers (docs/workbench-design/multi-host-sidebar.html)
+
+    /// The owner's order of the computers in the sidebar (上移 / 下移 on a
+    /// computer's name); computers not in it follow in pairing order. Never
+    /// by recency.
+    private(set) var hostOrder: [String] = []
+    /// Computers whose section the owner folded (false: opened); none set: the default.
+    private(set) var collapsedHosts: [String: Bool] = [:]
+    /// Each computer's machine (hashed) as it last said, so this Mac's own
+    /// is known before it connects again.
+    private var machineIDs: [String: String] = [:]
+
+    /// The Mac: the computer whose host runs on this Mac (its hello's
+    /// machine id is this Mac's, `MachineIdentity`). Phones and iPads: none.
+    var localHostID: String? {
+        guard Platform.isMac else { return nil }
+        _ = localNameRevision
+        return hostIDs.first { id in
+            let name = stores[id]?.hostName ?? ""
+            return MachineIdentity.matches(machineID: stores[id]?.hostMachineID ?? machineIDs[id],
+                                           hostName: name.isEmpty ? hosts[id]?.hostLabel ?? "" : name)
+        }
+    }
+
+    /// The computers as the sidebar lists them: the owner's order, and on
+    /// the Mac this Mac's own first whatever that order says.
+    var sidebarHostIDs: [String] {
+        var ids = hostOrder.filter(hostIDs.contains) + hostIDs.filter { !hostOrder.contains($0) }
+        if let local = localHostID, let i = ids.firstIndex(of: local), i > 0 {
+            ids.remove(at: i)
+            ids.insert(local, at: 0)
+        }
+        return ids
+    }
+
+    /// Whether 上移 (-1) / 下移 (+1) can move this computer (this Mac's own stays first).
+    func canMoveHost(_ id: String, by delta: Int) -> Bool {
+        let ids = sidebarHostIDs
+        guard let i = ids.firstIndex(of: id) else { return false }
+        let j = i + delta
+        guard ids.indices.contains(j) else { return false }
+        let local = localHostID
+        return id != local && ids[j] != local
+    }
+
+    func moveHost(_ id: String, by delta: Int) {
+        guard canMoveHost(id, by: delta) else { return }
+        var ids = sidebarHostIDs
+        let i = ids.firstIndex(of: id)!
+        ids.swapAt(i, i + delta)
+        hostOrder = ids
+        saveSidebarPrefs()
+    }
+
+    /// A computer's section is folded: as the owner left it; else, the
+    /// first time, on the Mac every one but the first (this Mac's own), on
+    /// phones and iPads none.
+    func isHostCollapsed(_ id: String) -> Bool {
+        collapsedHosts[id] ?? (Platform.isMac && id != sidebarHostIDs.first)
+    }
+
+    /// The owner hasn't folded or opened this computer's section yet.
+    func hostFoldUnset(_ id: String) -> Bool { collapsedHosts[id] == nil }
+
+    func setHostCollapsed(_ id: String, _ collapsed: Bool) {
+        collapsedHosts[id] = collapsed
+        saveSidebarPrefs()
+    }
+
+    /// The demo keeps its own order and folds, apart from real computers'.
+    @ObservationIgnored private var sidebarDemo = false
+    private func sidebarKey(_ name: String) -> String { sidebarDemo ? "\(name).demo" : name }
+    /// Bumped once this Mac's name is known (`MachineIdentity.localName`, the fallback).
+    private var localNameRevision = 0
+
+    private func loadSidebarPrefs(demo: Bool) {
+        sidebarDemo = demo
+        let d = UserDefaults.standard
+        hostOrder = d.stringArray(forKey: sidebarKey("sidebarHostOrder")) ?? []
+        collapsedHosts = d.dictionary(forKey: sidebarKey("sidebarHostCollapsed")) as? [String: Bool] ?? [:]
+        // The demo's computers say who they are on every launch (`-demoLocalHost`): none kept.
+        machineIDs = demo ? [:] : d.dictionary(forKey: sidebarKey("hostMachineIDs")) as? [String: String] ?? [:]
+    }
+
+    private func saveSidebarPrefs() {
+        let d = UserDefaults.standard
+        d.set(hostOrder, forKey: sidebarKey("sidebarHostOrder"))
+        d.set(collapsedHosts, forKey: sidebarKey("sidebarHostCollapsed"))
+        d.set(machineIDs, forKey: sidebarKey("hostMachineIDs"))
+    }
+
+    /// What waits on the owner on a computer: its assistant's cards, drafts,
+    /// proposals and tasks, and every session's (a folded section's count).
+    func waitingTotal(_ id: String) -> Int {
+        guard let s = stores[id] else { return 0 }
+        let palo = s.pendingApprovals.count + s.pendingQuestions.count + s.pendingAllyDrafts.count
+            + s.pendingProposalCount + s.tasks.filter { $0.status == .needsInput }.count
+        return palo + s.pals.reduce(0) { $0 + s.palPendingCount($1.id) }
+    }
 
     /// 「Palo（家里的 Mac）」: an assistant by its name and its computer's.
     func assistantLabel(_ id: String) -> String {
@@ -439,6 +546,10 @@ final class AppModel {
     }
 
     private func didSync(_ id: String, seq: Int64) {
+        if !sidebarDemo, let m = stores[id]?.hostMachineID, machineIDs[id] != m {
+            machineIDs[id] = m
+            saveSidebarPrefs()
+        }
         if hostsOnScreen.contains(id) {
             markSeen(id)
         } else if meta.lastSeen[id] == nil {
@@ -453,15 +564,26 @@ final class AppModel {
     func startDemo() {
         tearDownStores()
         meta = HostMeta.load(demo: true)
-        let names = ["我的 MacBook", "云端"]  // i18n-ok: demo data
+        loadSidebarPrefs(demo: true)
+        let names = ["我的 MacBook", "公司的 Mac"]  // i18n-ok: demo data
+        // Which demo computer stands for this Mac (its hello says this Mac's machine).
+        var localIndex = 0
+        // DEBUG `-demoOfflineHost <n>`: the n-th demo computer never connects (a gray dot, faded rows).
+        var offlineIndex = -1
+        #if DEBUG
+        if UserDefaults.standard.integer(forKey: "demoLocalHost") > 0 { localIndex = UserDefaults.standard.integer(forKey: "demoLocalHost") - 1 }
+        offlineIndex = UserDefaults.standard.integer(forKey: "demoOfflineHost") - 1
+        #endif
+        debugLog("[hosts] demo: \(launch.demoHosts) computers, this Mac's is \(localIndex + 1), offline \(offlineIndex + 1), hardware id \(MachineIdentity.local == nil ? "unread" : "read")")
         for i in 0..<max(1, launch.demoHosts) {
             let id = "demo-\(i + 1)"
             let identities = [("Palo", "magenta"), ("小云", "blue")]  // i18n-ok: demo data
             let who = i < identities.count ? identities[i] : ("Palo", "")
             let naming = launch.screen == "naming" && i == 0
-            let host = DemoHost(speed: 1, hostName: i < names.count ? names[i] : "电脑 \(i + 1)",  // i18n-ok: demo data
-                                assistantName: naming ? "" : who.0, color: naming ? "" : who.1, pals: i == 0,
-                                version: i == 0 ? launch.demoHostVersion : nil)
+            let host = DemoHost(speed: 1, offline: i == offlineIndex, hostName: i < names.count ? names[i] : "电脑 \(i + 1)",  // i18n-ok: demo data
+                                assistantName: naming ? "" : who.0, color: naming ? "" : who.1, pals: i <= 1,
+                                version: i == 0 ? launch.demoHostVersion : nil,
+                                machineId: i == localIndex ? MachineIdentity.local : nil, office: i == 1)
             demoHosts[id] = host
             let s = makeStore(host.transport, id: id)
             stores[id] = s
@@ -484,6 +606,7 @@ final class AppModel {
 
     private func openPaired(_ list: [PairedHost]) {
         meta = HostMeta.load(demo: false)
+        loadSidebarPrefs(demo: false)
         // The theme picked before assistants had their own colors stays with the first one.
         if meta.themes.isEmpty, let first = list.first { meta.themes[first.daemonID] = AppTheme.current.rawValue }
         for host in list {

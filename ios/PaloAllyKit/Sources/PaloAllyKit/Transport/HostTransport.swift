@@ -59,6 +59,12 @@ public final class InMemoryTransport: HostTransport, @unchecked Sendable {
 
     /// Connect immediately on `start()`.
     public var autoConnect: Bool
+    /// Never connects, not on a retry either (a demo computer that is off).
+    public var unreachable: Bool {
+        get { lock.withLock { _unreachable } }
+        set { lock.withLock { _unreachable = newValue } }
+    }
+    private var _unreachable = false
 
     public init(autoConnect: Bool = true) {
         self.autoConnect = autoConnect
@@ -124,6 +130,7 @@ public final class InMemoryTransport: HostTransport, @unchecked Sendable {
     }
 
     public func simulateConnect() async {
+        guard !unreachable else { return }
         let hook = lock.withLock { () -> (@Sendable () async -> Void)? in _connected = true; return _onConnect }
         await hook?()
         continuation.yield(.connected)

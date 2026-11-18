@@ -9,136 +9,58 @@ import SwiftUI
 /// computer, the same on every device): reorder, drop one session on another
 /// to make a workspace, drag in and out of a workspace (`SidebarDragDrop`).
 /// At the foot: ＋ (新建会话, 从历史记录继续…, 新建工作区) and 设置. Every row's
-/// dot is the one StatusDot. With several computers paired, the assistant's
-/// name on the first row switches between them.
+/// dot is the one StatusDot.
+///
+/// Several computers paired (docs/workbench-design/multi-host-sidebar.html):
+/// all of them at once, a section each under its name and an online dot,
+/// folded or opened by a tap on the name (kept per computer; folded, what
+/// waits there is counted beside it). A row of any computer opens in this
+/// window, which takes that computer (its color, right pane, composer); no
+/// switching step. The Mac lists its own computer first; otherwise the
+/// owner's order (上移 / 下移 on a name), never by recency. One computer:
+/// as before, no names.
 /// Phones: one step back from a conversation, like Messages; iPads and the
 /// Mac: the sidebar.
 struct ConversationList: View {
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
-    /// 重命名 asked from a session's row (pals-prd §13).
-    @State private var renaming: Pal?
-    /// 重命名 asked from a workspace's row.
-    @State private var renamingWorkspace: Workspace?
-    @State private var workspaceName = ""
-    /// 结束 asked, and 删除工作区.
-    @State private var ending: Pal?
-    @State private var deleting: Workspace?
-    /// The workspaces opened in the list.
-    @State private var expanded: Set<String> = []
-    /// 更早的会话 opened.
-    @AppStorage("sidebarEarlierOpen") private var earlierOpen = false
-    /// What a drop failed with.
-    @State private var dropFailure: String?
+    /// Renames, 结束 and 删除 asked from a row, and on which computer.
+    @State private var actions = SidebarActions()
 
     var body: some View {
-        @Bindable var model = model
-        let tree = store.sidebarTree
-        let order = store.sessionOrder
-        let drop = { (move: SidebarDrop.Move) in run(move) }
-        // Only with a host that has workspaces (and a list to drag in).
-        let dnd = store.workspacesSupported == true
-        List(selection: $model.selection) {
-            PaloItem(waitingSessions: tree.waitingCount)
-                .tag(WindowModel.Conversation.palo)
-                .accessibilityIdentifier("row-palo")
-                .modifier(OpenInNewWindow(conversation: .palo))
-                .contextMenu { OpenInNewWindowButton(conversation: .palo) }
-
-            if store.palsSupported == true {
-                if !tree.workspaces.isEmpty {
-                    Section {
-                        ForEach(tree.workspaces) { node in
-                            WorkspaceRow(node: node, expanded: isExpanded(node)) { toggle(node) }
-                                .tag(WindowModel.Conversation.workspace(node.id))
-                                .accessibilityIdentifier("row-workspace-\(node.id)")
-                                .contextMenu { workspaceMenu(node.workspace) }
-                                .sidebarRowDrag(dnd, drags: .workspace(node.id), conversation: .workspace(node.id),
-                                                target: .workspace(node.id), tree: tree, sessionOrder: order, perform: drop)
-                            if isExpanded(node) {
-                                ForEach(node.members) { pal in
-                                    PalListRow(pal: pal, inset: true)
-                                        .tag(WindowModel.Conversation.pal(pal.id))
-                                        .accessibilityIdentifier("row-pal-\(pal.id)")
-                                        .contextMenu { sessionMenu(pal) }
-                                        .sidebarRowDrag(dnd, drags: .session(pal.id), conversation: .pal(pal.id),
-                                                        target: .member(pal.id, workspace: node.id), tree: tree, sessionOrder: order,
-                                                        perform: drop)
-                                }
-                            }
-                        }
-                    } header: {
-                        Text("工作区").textCase(nil)
-                    }
-                }
-
-                Section {
-                    ForEach(tree.sessions) { pal in
-                        PalListRow(pal: pal)
-                            .tag(WindowModel.Conversation.pal(pal.id))
-                            .accessibilityIdentifier("row-pal-\(pal.id)")
-                            .contextMenu { sessionMenu(pal) }
-                            .sidebarRowDrag(dnd, drags: .session(pal.id), conversation: .pal(pal.id), target: .session(pal.id),
-                                            tree: tree, sessionOrder: order, perform: drop)
-                    }
-                    // Put away for lack of use: one quiet row, opened in place,
-                    // so they are still there to see (and the rest of the history a tap on).
-                    if !tree.folded.isEmpty {
-                        EarlierRow(count: tree.folded.count, expanded: earlierOpen) { earlierOpen.toggle() }
-                            .accessibilityIdentifier("row-earlier")
-                        if earlierOpen {
-                            ForEach(tree.folded) { pal in
-                                PalListRow(pal: pal, inset: true)
-                                    .tag(WindowModel.Conversation.pal(pal.id))
-                                    .accessibilityIdentifier("row-pal-\(pal.id)")
-                                    .contextMenu { sessionMenu(pal) }
-                            }
-                            Button { model.historyPickerPresented = true } label: {
-                                Text("全部历史记录…")
-                                    .foregroundStyle(.secondary)
-                                    .padding(.leading, 22)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(.rect)
-                            }
-                            .buttonStyle(.borderless)
-                            .tint(.primary)
-                            .accessibilityIdentifier("row-earlier-history")
+        let several = model.hasSeveralHosts
+        ScrollViewReader { proxy in
+            List(selection: selection) {
+                if several {
+                    ForEach(model.app.sidebarHostIDs, id: \.self) { id in
+                        if let s = model.stores[id] {
+                            HostSidebarContent(hostID: id, several: true, actions: actions)
+                                .environment(s)
+                                .environment(\.sidebarHost, id)
                         }
                     }
-                } header: {
-                    // Also where a session dragged out of a workspace can land: the top.
-                    Text("会话").textCase(nil)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .sidebarRowDrag(dnd, drags: nil, conversation: nil, target: .sessionsTop, tree: tree, sessionOrder: order,
-                                        perform: drop)
-                } footer: {
-                    if store.pals.isEmpty {
-                        Text("点左下角的 ＋ 新建一个会话，或者让 Palo 帮你开。")
-                    }
+                } else {
+                    HostSidebarContent(hostID: model.activeHostID, several: false, actions: actions)
                 }
-            }
 
-            if store.alliesSupported != false {
+                // The computers and the devices paired with them: quiet, last.
                 Section {
-                    ForEach(store.allies) { ally in
-                        AllyListRow(ally: ally)
-                            .tag(WindowModel.Conversation.ally(ally.id))
-                            .accessibilityIdentifier("row-ally-\(ally.id)")
-                    }
-                } header: {
-                    Text("Allies").textCase(nil)
-                } footer: {
-                    if store.allies.isEmpty {
-                        Text("当面扫个码，你的助理就能和对方的助理互相传话、约时间。")
-                    }
+                    DevicesListRow()
+                        .tag(WindowModel.SidebarPick(host: model.activeHostID, conversation: .devices))
+                        .accessibilityIdentifier("row-devices")
                 }
             }
-
-            // The computers and the devices paired with them: quiet, last.
-            Section {
-                DevicesListRow()
-                    .tag(WindowModel.Conversation.devices)
-                    .accessibilityIdentifier("row-devices")
+            // The list is made again with each computer the window takes
+            // (MainScreen): the row just opened is brought back into view.
+            .task {
+                // A window that comes up on a computer folded only by default: its section opens.
+                if model.hasSeveralHosts, let id = model.activeHostID, model.app.hostFoldUnset(id), model.app.isHostCollapsed(id) {
+                    model.app.setHostCollapsed(id, false)
+                }
+                guard let reveal = model.sidebarReveal else { return }
+                model.sidebarReveal = nil
+                try? await Task.sleep(for: .milliseconds(50))
+                proxy.scrollTo(reveal)
             }
         }
         // The Mac's sidebar has no title of its own; phones and iPads name the app.
@@ -154,45 +76,277 @@ struct ConversationList: View {
                               history: { model.historyPickerPresented = true })
             }
         }
-        .palRename($renaming)
-        .alert("重命名工作区", isPresented: Binding(get: { renamingWorkspace != nil }, set: { if !$0 { renamingWorkspace = nil } })) {
-            TextField("名字", text: $workspaceName)
-            Button("取消", role: .cancel) {}
-            Button("好") {
-                if let w = renamingWorkspace { Task { _ = try? await store.updateWorkspace(id: w.id, name: workspaceName) } }
-            }
+        // The dialogs a row asks for, on the computer of that row.
+        .background {
+            SidebarDialogs(actions: actions)
+                .environment(actions.store ?? store)
         }
-        .confirmationDialog(Copy.spaced(String(localized: "结束「\(ending?.displayName ?? "")」？")), isPresented: Binding(get: { ending != nil }, set: { if !$0 { ending = nil } }),
-                            titleVisibility: .visible) {
-            Button("结束会话", role: .destructive) {
-                if let p = ending { Task { await end(p) } }
-            }
-        } message: {
-            Text("它会停下，之后还能从历史记录里接着聊。")
-        }
-        .confirmationDialog(Copy.spaced(String(localized: "删除工作区「\(deleting?.title(pals: store.pals) ?? "")」？")),
-                            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
-                            titleVisibility: .visible) {
-            Button("删除工作区", role: .destructive) {
-                if let w = deleting { Task { try? await store.deleteWorkspace(id: w.id) } }
-            }
-        } message: {
-            Text("里面的会话不会结束，变回普通会话。")
-        }
-        .alert(dropFailure ?? "", isPresented: Binding(get: { dropFailure != nil }, set: { if !$0 { dropFailure = nil } })) {
-            Button("好", role: .cancel) { dropFailure = nil }
-        }
-        #if DEBUG
-        .task { await demoDrops(tree: { store.sidebarTree }) }
-        #endif
         // The workspace holding the session picked is opened.
         .onChange(of: model.selection, initial: true) { _, c in
             guard case .pal(let id)? = c, let ws = store.pal(id: id)?.workspaceId else { return }
-            expanded.insert(ws)
+            model.sidebarExpanded.insert(WindowModel.SidebarPick.expandKey(host: model.activeHostID, workspace: ws))
         }
         .animation(.snappy, value: store.pals)
         .animation(.snappy, value: store.workspaces)
-        .animation(.snappy, value: expanded)
+        .animation(.snappy, value: model.sidebarExpanded)
+        .animation(.snappy, value: model.app.collapsedHosts)
+        .animation(.snappy, value: model.app.sidebarHostIDs)
+    }
+
+    /// The list's selection is the window's conversation on the window's
+    /// computer; a row of another computer's opens it there (`open(_:on:)`).
+    private var selection: Binding<WindowModel.SidebarPick?> {
+        Binding(
+            get: { model.selection.map { WindowModel.SidebarPick(host: model.activeHostID, conversation: $0) } },
+            set: { pick in
+                guard let pick else {
+                    model.selection = nil
+                    return
+                }
+                model.open(pick.conversation, on: pick.host)
+            })
+    }
+}
+
+/// What a row of the sidebar asked for, and on which computer's store.
+@MainActor @Observable
+final class SidebarActions {
+    var store: AppStore?
+    var host: String?
+    /// 重命名 asked from a session's row (pals-prd §13).
+    var renaming: Pal?
+    /// 重命名 asked from a workspace's row.
+    var renamingWorkspace: Workspace?
+    var workspaceName = ""
+    /// 结束 asked, and 删除工作区.
+    var ending: Pal?
+    var deleting: Workspace?
+    /// What a drop failed with.
+    var dropFailure: String?
+
+    func on(_ store: AppStore, host: String?) {
+        self.store = store
+        self.host = host
+    }
+}
+
+/// The alerts and confirmations for SidebarActions, on its computer's store.
+private struct SidebarDialogs: View {
+    @Bindable var actions: SidebarActions
+    @Environment(WindowModel.self) private var model
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+            .palRename($actions.renaming)
+            .alert("重命名工作区", isPresented: Binding(get: { actions.renamingWorkspace != nil },
+                                                   set: { if !$0 { actions.renamingWorkspace = nil } })) {
+                TextField("名字", text: $actions.workspaceName)
+                Button("取消", role: .cancel) {}
+                Button("好") {
+                    if let w = actions.renamingWorkspace {
+                        let name = actions.workspaceName
+                        Task { _ = try? await store.updateWorkspace(id: w.id, name: name) }
+                    }
+                }
+            }
+            .confirmationDialog(Copy.spaced(String(localized: "结束「\(actions.ending?.displayName ?? "")」？")),
+                                isPresented: Binding(get: { actions.ending != nil }, set: { if !$0 { actions.ending = nil } }),
+                                titleVisibility: .visible) {
+                Button("结束会话", role: .destructive) {
+                    if let p = actions.ending { Task { await end(p) } }
+                }
+            } message: {
+                Text("它会停下，之后还能从历史记录里接着聊。")
+            }
+            .confirmationDialog(Copy.spaced(String(localized: "删除工作区「\(actions.deleting?.title(pals: store.pals) ?? "")」？")),
+                                isPresented: Binding(get: { actions.deleting != nil }, set: { if !$0 { actions.deleting = nil } }),
+                                titleVisibility: .visible) {
+                Button("删除工作区", role: .destructive) {
+                    if let w = actions.deleting { Task { try? await store.deleteWorkspace(id: w.id) } }
+                }
+            } message: {
+                Text("里面的会话不会结束，变回普通会话。")
+            }
+            .alert(actions.dropFailure ?? "", isPresented: Binding(get: { actions.dropFailure != nil },
+                                                                   set: { if !$0 { actions.dropFailure = nil } })) {
+                Button("好", role: .cancel) { actions.dropFailure = nil }
+            }
+    }
+
+    private func end(_ p: Pal) async {
+        let host = actions.host ?? model.activeHostID
+        _ = try? await store.endSession(id: p.id)
+        // Its page has nothing to show now.
+        if model.selection == .pal(p.id) && host == model.activeHostID { model.showList() }
+    }
+}
+
+/// One computer's part of the list: with several computers its name over
+/// it (`HostHeader`), and the rows only while its section is open; with one,
+/// today's list as it was. Every row is tagged with its computer.
+private struct HostSidebarContent: View {
+    let hostID: String?
+    /// Several computers listed: a header, folding, and dimmed rows while offline.
+    let several: Bool
+    let actions: SidebarActions
+    @Environment(WindowModel.self) private var model
+    @Environment(AppStore.self) private var store
+    /// 更早的会话 opened (with several computers, per computer).
+    @AppStorage private var earlierOpen: Bool
+
+    init(hostID: String?, several: Bool, actions: SidebarActions) {
+        self.hostID = hostID
+        self.several = several
+        self.actions = actions
+        _earlierOpen = AppStorage(wrappedValue: false, several ? "sidebarEarlierOpen.\(hostID ?? "")" : "sidebarEarlierOpen")
+    }
+
+    private func pick(_ c: WindowModel.Conversation) -> WindowModel.SidebarPick {
+        WindowModel.SidebarPick(host: hostID, conversation: c)
+    }
+
+    /// The row's identifier: as before with one computer, with its computer's id with several.
+    private func rowID(_ base: String) -> String { several ? "\(base)@\(hostID ?? "")" : base }
+
+    private var collapsed: Bool { several && hostID.map(model.app.isHostCollapsed) == true }
+    private var dimmed: Bool { several && hostID.map(model.isOnline) != true }
+
+    var body: some View {
+        let tree = store.sidebarTree
+        let order = store.sessionOrder
+        let drop = { (move: SidebarDrop.Move) in run(move) }
+        // Only with a host that has workspaces (and a list to drag in).
+        let dnd = store.workspacesSupported == true
+        if several, let hostID {
+            Section {
+                if !collapsed { paloRow(tree) }
+            } header: {
+                HostHeader(hostID: hostID, collapsed: collapsed)
+            }
+        } else {
+            // One computer: the first row, as it always was.
+            paloRow(tree)
+        }
+
+        if !collapsed {
+            if store.palsSupported == true {
+                if !tree.workspaces.isEmpty {
+                    Section {
+                        ForEach(tree.workspaces) { node in
+                            WorkspaceRow(node: node, expanded: isExpanded(node)) { toggle(node) }
+                                .modifier(HostRowDim(dimmed: dimmed))
+                                .sidebarPick(pick(.workspace(node.id)))
+                                .accessibilityIdentifier(rowID("row-workspace-\(node.id)"))
+                                .contextMenu { workspaceMenu(node.workspace) }
+                                .sidebarRowDrag(dnd, drags: .workspace(node.id), conversation: .workspace(node.id),
+                                                target: .workspace(node.id), tree: tree, sessionOrder: order, perform: drop)
+                            if isExpanded(node) {
+                                ForEach(node.members) { pal in
+                                    PalListRow(pal: pal, inset: true)
+                                        .modifier(HostRowDim(dimmed: dimmed))
+                                        .sidebarPick(pick(.pal(pal.id)))
+                                        .accessibilityIdentifier(rowID("row-pal-\(pal.id)"))
+                                        .contextMenu { sessionMenu(pal) }
+                                        .sidebarRowDrag(dnd, drags: .session(pal.id), conversation: .pal(pal.id),
+                                                        target: .member(pal.id, workspace: node.id), tree: tree, sessionOrder: order,
+                                                        perform: drop)
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("工作区").textCase(nil)
+                    }
+                }
+
+                Section {
+                    ForEach(tree.sessions) { pal in
+                        PalListRow(pal: pal)
+                            .modifier(HostRowDim(dimmed: dimmed))
+                            .sidebarPick(pick(.pal(pal.id)))
+                            .accessibilityIdentifier(rowID("row-pal-\(pal.id)"))
+                            .contextMenu { sessionMenu(pal) }
+                            .sidebarRowDrag(dnd, drags: .session(pal.id), conversation: .pal(pal.id), target: .session(pal.id),
+                                            tree: tree, sessionOrder: order, perform: drop)
+                    }
+                    // Put away for lack of use: one quiet row, opened in place,
+                    // so they are still there to see (and the rest of the history a tap on).
+                    if !tree.folded.isEmpty {
+                        EarlierRow(count: tree.folded.count, expanded: earlierOpen) { earlierOpen.toggle() }
+                            .accessibilityIdentifier(rowID("row-earlier"))
+                        if earlierOpen {
+                            ForEach(tree.folded) { pal in
+                                PalListRow(pal: pal, inset: true)
+                                    .modifier(HostRowDim(dimmed: dimmed))
+                                    .sidebarPick(pick(.pal(pal.id)))
+                                    .accessibilityIdentifier(rowID("row-pal-\(pal.id)"))
+                                    .contextMenu { sessionMenu(pal) }
+                            }
+                            Button {
+                                onThisHost()
+                                model.historyPickerPresented = true
+                            } label: {
+                                Text("全部历史记录…")
+                                    .foregroundStyle(.secondary)
+                                    .padding(.leading, 22)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(.rect)
+                            }
+                            .buttonStyle(.borderless)
+                            .tint(.primary)
+                            .accessibilityIdentifier(rowID("row-earlier-history"))
+                        }
+                    }
+                } header: {
+                    // Also where a session dragged out of a workspace can land: the top.
+                    Text("会话").textCase(nil)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .sidebarRowDrag(dnd, drags: nil, conversation: nil, target: .sessionsTop, tree: tree, sessionOrder: order,
+                                        perform: drop)
+                } footer: {
+                    if store.pals.isEmpty {
+                        Text("点左下角的 ＋ 新建一个会话，或者让 Palo 帮你开。")
+                    }
+                }
+            }
+
+            // Several computers: a computer's Allies only when it has some (添加 is in ＋).
+            if store.alliesSupported != false && !(several && store.allies.isEmpty) {
+                Section {
+                    ForEach(store.allies) { ally in
+                        AllyListRow(ally: ally)
+                            .modifier(HostRowDim(dimmed: dimmed))
+                            .sidebarPick(pick(.ally(ally.id)))
+                            .accessibilityIdentifier(rowID("row-ally-\(ally.id)"))
+                    }
+                } header: {
+                    Text("Allies").textCase(nil)
+                } footer: {
+                    if store.allies.isEmpty {
+                        Text("当面扫个码，你的助理就能和对方的助理互相传话、约时间。")
+                    }
+                }
+            }
+        }
+    }
+
+    private func paloRow(_ tree: SidebarTree) -> some View {
+        PaloItem(hostID: hostID, waitingSessions: tree.waitingCount)
+            .modifier(HostRowDim(dimmed: dimmed))
+            .sidebarPick(pick(.palo))
+            .accessibilityIdentifier(rowID("row-palo"))
+            .modifier(OpenInNewWindow(conversation: .palo))
+            .contextMenu { OpenInNewWindowButton(conversation: .palo) }
+            #if DEBUG
+            .task { if !several { await demoDrops(tree: { store.sidebarTree }) } }
+            #endif
+    }
+
+    /// Something that opens on the window's own computer (a sheet): the window takes this row's first.
+    private func onThisHost() {
+        if let hostID, hostID != model.activeHostID { model.switchTo(hostID, showAssistant: false) }
     }
 
     // MARK: dropping
@@ -202,6 +356,7 @@ struct ConversationList: View {
     private func run(_ move: SidebarDrop.Move) {
         debugLog("[sidebar-drop] \(move)")
         if case .group(let target, let dragged) = move {
+            onThisHost()
             model.newWorkspace = [target, dragged]
             return
         }
@@ -212,12 +367,13 @@ struct ConversationList: View {
                 case .reorderWorkspaces(let ids): try await store.reorderWorkspaces(ids)
                 case .reorderMembers(let ws, let ids): try await store.reorderMembers(workspaceId: ws, ids)
                 case .moveSession(let id, let ws, let index):
-                    if let ws { expanded.insert(ws) }
+                    if let ws { model.sidebarExpanded.insert(expandKey(ws)) }
                     try await store.moveSession(id, to: ws, index: index)
                 case .group: break
                 }
             } catch {
-                dropFailure = Copy.error(error)
+                actions.on(store, host: hostID)
+                actions.dropFailure = Copy.error(error)
             }
         }
     }
@@ -263,24 +419,35 @@ struct ConversationList: View {
 
     // MARK: workspaces
 
-    private func isExpanded(_ node: SidebarTree.WorkspaceNode) -> Bool { expanded.contains(node.id) }
+    private func expandKey(_ workspace: String) -> String { WindowModel.SidebarPick.expandKey(host: hostID, workspace: workspace) }
+
+    private func isExpanded(_ node: SidebarTree.WorkspaceNode) -> Bool { model.sidebarExpanded.contains(expandKey(node.id)) }
 
     private func toggle(_ node: SidebarTree.WorkspaceNode) {
-        if expanded.contains(node.id) { expanded.remove(node.id) } else { expanded.insert(node.id) }
+        let key = expandKey(node.id)
+        withAnimation(.snappy) {
+            if model.sidebarExpanded.contains(key) { model.sidebarExpanded.remove(key) } else { model.sidebarExpanded.insert(key) }
+        }
     }
 
     // MARK: menus
 
     @ViewBuilder private func sessionMenu(_ pal: Pal) -> some View {
         OpenInNewWindowButton(conversation: .pal(pal.id))
-        Button("重命名", systemImage: "pencil") { renaming = pal }
-            .disabled(!store.connection.isOnline)
+        Button("重命名", systemImage: "pencil") {
+            actions.on(store, host: hostID)
+            actions.renaming = pal
+        }
+        .disabled(!store.connection.isOnline)
         if store.workspacesSupported == true {
             Menu("移到工作区", systemImage: "square.grid.2x2") {
                 ForEach(store.workspaces.filter { $0.id != pal.workspaceId }) { w in
                     Button(w.title(pals: store.pals)) { Task { try? await store.moveSession(pal.id, to: w.id) } }
                 }
-                Button("新建工作区…") { model.newWorkspace = [pal.id] }
+                Button("新建工作区…") {
+                    onThisHost()
+                    model.newWorkspace = [pal.id]
+                }
             }
             .disabled(!store.connection.isOnline)
             if pal.workspaceId != nil {
@@ -291,26 +458,99 @@ struct ConversationList: View {
             }
         }
         Divider()
-        Button("结束会话", systemImage: "stop.circle", role: .destructive) { ending = pal }
-            .disabled(!store.connection.isOnline)
+        Button("结束会话", systemImage: "stop.circle", role: .destructive) {
+            actions.on(store, host: hostID)
+            actions.ending = pal
+        }
+        .disabled(!store.connection.isOnline)
     }
 
     @ViewBuilder private func workspaceMenu(_ w: Workspace) -> some View {
         OpenInNewWindowButton(conversation: .workspace(w.id))
         Button("重命名", systemImage: "pencil") {
-            workspaceName = w.name
-            renamingWorkspace = w
+            actions.on(store, host: hostID)
+            actions.workspaceName = w.name
+            actions.renamingWorkspace = w
         }
         .disabled(!store.connection.isOnline)
-        Button("删除工作区", systemImage: "trash", role: .destructive) { deleting = w }
-            .disabled(!store.connection.isOnline)
+        Button("删除工作区", systemImage: "trash", role: .destructive) {
+            actions.on(store, host: hostID)
+            actions.deleting = w
+        }
+        .disabled(!store.connection.isOnline)
     }
+}
 
-    private func end(_ p: Pal) async {
-        _ = try? await store.endSession(id: p.id)
-        // Its page has nothing to show now.
-        if model.selection == .pal(p.id) { model.showList() }
+/// A computer's name over its section: the chevron that folds it, a dot
+/// (green online, gray not), the name; folded, what waits there on the
+/// right. Its menu: 在新窗口中打开 (iPads and the Mac), 上移 / 下移.
+private struct HostHeader: View {
+    let hostID: String
+    let collapsed: Bool
+    @Environment(WindowModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        let online = model.isOnline(hostID)
+        let name = model.displayName(hostID)
+        Button {
+            withAnimation(.snappy) { model.app.setHostCollapsed(hostID, !collapsed) }
+        } label: {
+            HStack(spacing: 6) {
+                SidebarChevron(expanded: !collapsed, small: true)
+                Circle()
+                    .fill(online ? StatusDot.color(.done) : Color(uiColor: .systemGray3))
+                    .frame(width: 7, height: 7)
+                Text(name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.primary.opacity(online ? 0.85 : 0.5))
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if collapsed {
+                    WaitingBadge(count: model.app.waitingTotal(hostID))
+                }
+            }
+            .textCase(nil)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.borderless)
+        .tint(.primary)
+        .accessibilityIdentifier("host-header-\(hostID)")
+        .accessibilityLabel(Text(verbatim: "\(name), \(online ? String(localized: "在线") : String(localized: "离线"))"))
+        .accessibilityHint(collapsed ? String(localized: "展开") : String(localized: "收起"))
+        .contextMenu {
+            if UIApplication.shared.supportsMultipleScenes {
+                Button("在新窗口中打开", systemImage: "macwindow.badge.plus") {
+                    openWindow(value: WindowTarget(.palo, host: hostID))
+                }
+            }
+            if model.app.canMoveHost(hostID, by: -1) || model.app.canMoveHost(hostID, by: 1) {
+                Button("上移", systemImage: "arrow.up") { withAnimation(.snappy) { model.app.moveHost(hostID, by: -1) } }
+                    .disabled(!model.app.canMoveHost(hostID, by: -1))
+                Button("下移", systemImage: "arrow.down") { withAnimation(.snappy) { model.app.moveHost(hostID, by: 1) } }
+                    .disabled(!model.app.canMoveHost(hostID, by: 1))
+            }
+        }
     }
+}
+
+/// An offline computer's rows, faded (they still open, on what was kept).
+private struct HostRowDim: ViewModifier {
+    let dimmed: Bool
+    func body(content: Content) -> some View { content.opacity(dimmed ? 0.5 : 1) }
+}
+
+extension View {
+    /// A sidebar row's tag, and its id for bringing it back into view.
+    func sidebarPick(_ pick: WindowModel.SidebarPick) -> some View {
+        tag(pick).id(pick)
+    }
+}
+
+extension EnvironmentValues {
+    /// The computer of the sidebar section a row is in (nil: the window's own).
+    @Entry var sidebarHost: String? = nil
 }
 
 /// The Mac: the window toolbar has the system sidebar toggle (MacToolbar);
@@ -373,46 +613,49 @@ struct WaitingBadge: View {
 /// The big orb is the orb's resting place while the sidebar is shown.
 private struct OrbHomeIfDocked: ViewModifier {
     @Environment(WindowModel.self) private var model
+    var enabled = true
 
     func body(content: Content) -> some View {
         // Phones: never. The list stays alive under Palo's page, so it would
         // keep claiming the place off screen, and the orb would fly in from
         // there, or from nowhere; Palo's page drops it from its own bar.
-        if model.layout == .phone { content } else { content.paloOrbHome() }
+        if model.layout == .phone || !enabled { content } else { content.paloOrbHome() }
     }
 }
 
 /// Palo: the orb and the name, big; under it what it did last, or how many
 /// sessions wait on the owner; what waits on the owner in its own
-/// conversation as the count.
+/// conversation as the count. With several computers, each section's own
+/// (its computer's orb, in its color).
 private struct PaloItem: View {
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
+    let hostID: String?
     /// Sessions (anywhere) waiting on the owner.
     let waitingSessions: Int
 
     var body: some View {
         let line = store.agentStatusLine
+        let own = hostID == nil || hostID == model.activeHostID
         SidebarRowLayout {
-            AssistantAvatar(theme: model.currentTheme, hostID: model.activeHostID, bleed: 1.3)
+            AssistantAvatar(theme: hostID.map(model.theme(for:)) ?? model.currentTheme, hostID: hostID ?? model.activeHostID, bleed: 1.3)
                 .frame(width: 30, height: 30)
-                .modifier(OrbHomeIfDocked())
+                // Only the window's own computer's is where its orb rests.
+                .modifier(OrbHomeIfDocked(enabled: own))
         } title: {
-            if model.hasSeveralHosts {
-                AssistantSwitcher(name: name)
-            } else {
-                Text(name)
-            }
+            Text(name)
         } subtitle: {
             Text(secondLine(line))
                 .foregroundStyle(line.kind == .offline ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
         } trailing: {
             // The count leads to what waits (the row still opens the conversation).
             WaitingBadge(count: waiting)
-                .simultaneousGesture(TapGesture().onEnded { model.showWaiting(in: store, open: true) })
+                .simultaneousGesture(TapGesture().onEnded {
+                    if !own { model.open(.palo, on: hostID) }
+                    _ = model.showWaiting(in: store, open: true)
+                })
         }
-        // Several computers: the switcher in it is a control of its own.
-        .accessibilityElement(children: model.hasSeveralHosts ? .contain : .combine)
+        .accessibilityElement(children: .combine)
     }
 
     private var name: String { store.assistantName.isEmpty ? "Palo" : store.assistantName }
@@ -483,13 +726,15 @@ private struct WorkspaceRow: View {
 /// bolder and darker.
 private struct SidebarChevron: View {
     let expanded: Bool
+    /// A computer's name over its section: a size down, as the header's text.
+    var small = false
 
     var body: some View {
         Image(systemName: "chevron.right")
-            .font(.system(size: Platform.isMac ? 14 : 11, weight: Platform.isMac ? .bold : .semibold))
+            .font(.system(size: Platform.isMac ? (small ? 11 : 14) : (small ? 10 : 11), weight: Platform.isMac ? .bold : .semibold))
             .foregroundStyle(Platform.isMac ? AnyShapeStyle(Color.primary.opacity(0.6)) : AnyShapeStyle(.secondary))
             .rotationEffect(.degrees(expanded ? 90 : 0))
-            .frame(width: Platform.isMac ? 22 : 20, height: 28)
+            .frame(width: small ? 14 : (Platform.isMac ? 22 : 20), height: small ? 20 : 28)
     }
 }
 
@@ -645,68 +890,6 @@ private struct FooterMenuStyle: ViewModifier {
                 .menuStyle(.button)
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
-        }
-    }
-}
-
-/// Several computers paired: the assistant's name with a ⌄, a system menu
-/// of every assistant (the current one ticked, a dot on one with something
-/// new or waiting) and 电脑与设备… (docs/devices-prd.md §2).
-private struct AssistantSwitcher: View {
-    @Environment(WindowModel.self) private var model
-    let name: String
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Menu {
-                ForEach(model.hostIDs, id: \.self) { id in
-                    Button {
-                        withAnimation(.snappy) { model.switchTo(id) }
-                    } label: {
-                        let label = model.assistantLabel(id)
-                        let waiting = model.pendingCount(id)
-                        let unread = model.unreadCount(id)
-                        if id == model.activeHostID {
-                            Label(label, systemImage: "checkmark")
-                        } else if waiting > 0 || unread > 0 {
-                            // A small dot, and what it is under the name.
-                            Text(label)
-                            Text(waiting > 0 ? String(localized: "\(waiting) 件等你") : String(localized: "有新消息"))
-                            Image(systemName: "circlebadge.fill")
-                        } else {
-                            Text(label)
-                        }
-                    }
-                    .accessibilityIdentifier("switch-\(id)")
-                }
-                Divider()
-                Button("电脑与设备…", systemImage: "desktopcomputer") { model.open(.devices) }
-            } label: {
-                if Platform.isMac {
-                    // The Mac draws a menu's label as a button's title, and
-                    // its own ⌄ after it (menuIndicator).
-                    Text(name).font(.body.weight(.semibold))
-                } else {
-                    HStack(spacing: 3) {
-                        Text(name).font(.body.weight(.semibold))
-                        Image(systemName: "chevron.down")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .foregroundStyle(Color.primary)
-                    .contentShape(.rect)
-                }
-            }
-            .menuIndicator(Platform.isMac ? .visible : .hidden)
-            .buttonStyle(.borderless)
-            .tint(.primary)
-            .fixedSize()
-            .accessibilityIdentifier("assistant-switcher")
-            .accessibilityLabel("\(name)，切换助理")
-            // Something new or waiting on another assistant.
-            if model.othersNeedAttention {
-                Circle().fill(StatusDot.color(.waiting)).frame(width: 6, height: 6).accessibilityHidden(true)
-            }
         }
     }
 }

@@ -103,6 +103,9 @@ public actor DemoHost {
     /// The computer name the demo host reports (a second demo host shows the
     /// assistant switcher).
     public nonisolated let hostName: String
+    /// The machine the demo computer says it runs on (`hello`'s `machineId`):
+    /// the app's own to stand for this computer, else nil.
+    public nonisolated let machineId: String?
 
     /// `sessions`: the computer has Claude Code sessions (two helpers, one in
     /// a terminal, one in the background), two of them waiting on the owner
@@ -110,11 +113,13 @@ public actor DemoHost {
     /// `pals`: instead, two Pals (one waiting on a card), a session in a
     /// terminal and one in the background to adopt (the background one
     /// asking a question), and the assistant proposes opening a Pal.
-    public init(speed: Double = 1, seeded: Bool = true, autoConnect: Bool = true, hostName: String = "我的 MacBook",
+    /// `offline`: the computer is never reached (its transport never connects, not even on a retry).
+    public init(speed: Double = 1, seeded: Bool = true, autoConnect: Bool = true, offline: Bool = false, hostName: String = "我的 MacBook",
                 assistantName: String = "Palo", color: String = "magenta", sessions withSessions: Bool = false,
-                pals withPals: Bool = false, version: String? = nil) {
+                pals withPals: Bool = false, version: String? = nil, machineId: String? = nil, office: Bool = false) {
         self.speed = speed
         self.hostName = hostName
+        self.machineId = machineId
         self.palsMode = withPals
         self.sessionsMode = withSessions && !withPals
         settings.assistantName = assistantName
@@ -122,7 +127,8 @@ public actor DemoHost {
         status.metAt = Date().epochMillis - 41 * 86_400_000
         // A newer release than the app's, to show the Mac's update hint (`-demoHostVersion`).
         if let version, !version.isEmpty { status.version = version }
-        let t = InMemoryTransport(autoConnect: autoConnect)
+        let t = InMemoryTransport(autoConnect: autoConnect && !offline)
+        t.unreachable = offline
         self.transport = t
         if seeded {
             let s = DemoHost.seed(now: Date().epochMillis)
@@ -145,7 +151,9 @@ public actor DemoHost {
                 self.messages.append(ss.proposal)
                 self.seq = ss.proposal.seq
             } else if withPals {
-                let ps = DemoHost.seedPals(now: Date().epochMillis, nextSeq: seq + 1)
+                // `office`: a second computer's own sessions (a sidebar with two of them).
+                let ps = office ? DemoHost.seedOfficePals(now: Date().epochMillis, nextSeq: seq + 1)
+                    : DemoHost.seedPals(now: Date().epochMillis, nextSeq: seq + 1)
                 self.pals = ps.pals
                 self.palLogs = ps.logs
                 self.otherSessions = ps.others
@@ -729,7 +737,9 @@ public actor DemoHost {
         switch method {
         case RPCMethod.hello:
             if let c = p["client"]?.stringValue { helloClient = c }
-            return ["hostName": .string(hostName), "version": .string(status.version), "status": try .from(status)]
+            var hello: [String: JSONValue] = ["hostName": .string(hostName), "version": .string(status.version), "status": try .from(status)]
+            if let machineId { hello["machineId"] = .string(machineId) }
+            return .object(hello)
         case RPCMethod.sync:
             let since = p["sinceSeq"]?.doubleValue.map { Int64($0) }
             let msgs: [ChatMessage]

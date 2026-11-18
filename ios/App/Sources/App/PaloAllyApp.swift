@@ -105,6 +105,17 @@ private struct PlaceCommands: Commands {
                 .keyboardShortcut("d", modifiers: .command)
             Button("向下分出新会话…") { inFront { $0.splitActivePane(horizontal: false) } }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
+            // Several computers: ⌥⌘1, ⌥⌘2… each one's assistant, in the
+            // sidebar's order (⌘1 and ⌘2 are 管理助理 and 右侧栏).
+            if app.hasSeveralHosts {
+                Divider()
+                ForEach(Array(app.sidebarHostIDs.prefix(9).enumerated()), id: \.element) { i, id in
+                    Button(String(localized: "\(app.displayName(id)) 的助理")) {
+                        inFront { $0.open(.palo, on: id) }
+                    }
+                    .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")), modifiers: [.command, .option])
+                }
+            }
         }
         // ⌘, : management with its settings page.
         CommandGroup(replacing: .appSettings) {

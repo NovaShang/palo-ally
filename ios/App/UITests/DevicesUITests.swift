@@ -2,8 +2,8 @@ import XCTest
 
 /// 电脑与设备 (docs/devices-prd.md) against the demo host on an iPhone
 /// simulator: with one computer the list's first row is just the assistant
-/// and the last row is 电脑与设备; with two, the name on the first row is a
-/// menu that switches; the page lists the computers and the devices paired
+/// and the last row is 电脑与设备; with two, each computer has a section
+/// under its name, and a row of the other one opens there; the page lists the computers and the devices paired
 /// with the current one, shows 添加设备's QR code and link, and asks in place
 /// before taking a device off (never this one).
 final class DevicesUITests: XCTestCase {
@@ -15,7 +15,7 @@ final class DevicesUITests: XCTestCase {
     func testOneComputerShowsNothingMultiHostButTheQuietLastRow() throws {
         let app = launch(["-demoScreen", "list"])
         XCTAssertTrue(app.descendants(matching: .any)["row-palo"].waitForExistence(timeout: 15), "no list")
-        XCTAssertFalse(app.buttons["assistant-switcher"].exists, "a switcher with one computer")
+        XCTAssertFalse(app.buttons["host-header-demo-1"].exists, "a computer's name with one computer")
         let devices = app.descendants(matching: .any)["row-devices"]
         devices.swipeUpUntilVisible(in: app)
         XCTAssertTrue(devices.exists, "no 电脑与设备 row")
@@ -23,23 +23,24 @@ final class DevicesUITests: XCTestCase {
     }
 
     @MainActor
-    func testSwitchingAssistantsFromTheListsTopRow() throws {
+    func testTwoComputersAreListedTogetherAndEitherOpens() throws {
         let app = launch(["-demoScreen", "list", "-demoHosts", "2"])
-        let switcher = app.buttons["assistant-switcher"]
-        XCTAssertTrue(switcher.waitForExistence(timeout: 15), "no switcher with two computers")
-        let before = switcher.label
-        switcher.tap()
-        let other = app.buttons["switch-demo-2"].exists ? app.buttons["switch-demo-2"] : app.buttons["switch-demo-1"]
-        XCTAssertTrue(other.waitForExistence(timeout: 5), "the menu doesn't list the assistants")
-        XCTAssertTrue(app.buttons["电脑与设备…"].exists, "no 电脑与设备… in the menu")
-        attach(app, "list-two-hosts-menu")
+        let first = app.buttons["host-header-demo-1"], second = app.buttons["host-header-demo-2"]
+        XCTAssertTrue(first.waitForExistence(timeout: 15) && second.exists, "no section per computer")
+        XCTAssertFalse(app.buttons["assistant-switcher"].exists, "the switcher is still there")
+        attach(app, "list-two-hosts")
+        // The other computer's assistant opens straight from its row, its name on the page.
+        let other = app.descendants(matching: .any)["row-palo@demo-2"]
+        XCTAssertTrue(other.waitForExistence(timeout: 5), "the second computer's section is folded")
         other.tap()
-        // The other assistant's conversation opens (phones), and back on the list its name is on top.
-        let back = app.navigationBars.buttons.firstMatch
-        XCTAssertTrue(back.waitForExistence(timeout: 10))
-        back.tap()
-        XCTAssertTrue(switcher.waitForExistence(timeout: 10))
-        XCTAssertNotEqual(switcher.label, before, "it didn't switch")
+        XCTAssertTrue(app.descendants(matching: .any)["host-label"].waitForExistence(timeout: 10), "no computer's name on the page")
+        // Back on the list, its name folds its section.
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(second.waitForExistence(timeout: 10))
+        second.tap()
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: other)
+        waitForExpectations(timeout: 5)
+        second.tap()
     }
 
     @MainActor
@@ -94,13 +95,9 @@ final class DevicesUITests: XCTestCase {
             app.terminate()
 
             app = launch(["-demoScreen", "list", "-demoHosts", "2", "-demoAppearance", look])
-            let switcher = app.buttons["assistant-switcher"]
-            XCTAssertTrue(switcher.waitForExistence(timeout: 15))
+            XCTAssertTrue(app.buttons["host-header-demo-2"].waitForExistence(timeout: 15))
             sleep(2)
-            switcher.tap()
-            XCTAssertTrue(app.buttons["电脑与设备…"].waitForExistence(timeout: 5))
-            sleep(1)
-            attach(app, "list-two-hosts-menu-\(look)")
+            attach(app, "list-two-hosts-\(look)")
             app.terminate()
 
             app = launch(["-demoScreen", "devices", "-demoHosts", "2", "-demoAppearance", look])

@@ -49,6 +49,7 @@ private struct SidebarRowDragDrop: ViewModifier {
     let sessionOrder: [String]?
     let perform: (SidebarDrop.Move) -> Void
     @Environment(WindowModel.self) private var model
+    @Environment(\.sidebarHost) private var sidebarHost
     @State private var height: CGFloat = 0
     static let enabled = false
 
@@ -94,7 +95,7 @@ private struct SidebarRowDragDrop: ViewModifier {
         let provider = NSItemProvider()
         // iPads: let go outside the window, it opens in a new one.
         if let conversation, UIApplication.shared.supportsMultipleScenes, !Platform.isMac {
-            provider.registerObject(WindowTarget.activity(for: conversation, host: model.activeHostID), visibility: .all)
+            provider.registerObject(WindowTarget.activity(for: conversation, host: sidebarHost ?? model.activeHostID), visibility: .all)
         }
         let data = Data(item.token.utf8)
         provider.registerDataRepresentation(forTypeIdentifier: UTType.paloAllySidebarItem.identifier, visibility: .ownProcess) { done in

@@ -301,13 +301,6 @@ struct TitleOrbDrop: View {
         AssistantAvatar(theme: model.currentTheme, live: true, hostID: model.activeHostID, interactive: true)
             .frame(width: canvas, height: canvas)
             .frame(width: size, height: size)
-            .overlay(alignment: .topTrailing) {
-                // Another assistant has something new.
-                if model.hasSeveralHosts && model.othersNeedAttention {
-                    Circle().fill(.red).frame(width: 8, height: 8)
-                        .accessibilityLabel("别的助理有新消息")
-                }
-            }
             .contentShape(Circle())
     }
 }

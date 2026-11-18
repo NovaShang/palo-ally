@@ -46,33 +46,54 @@ final class WindowModel {
     /// The window takes its assistant's color.
     var currentTheme: AppTheme { activeHostID.map(app.theme(for:)) ?? .default }
 
-    /// Replies and notices on another assistant (this window's own: none, it's on screen).
-    func unreadCount(_ id: String) -> Int { id == activeHostID ? 0 : app.unreadCount(id) }
-
-    /// Something is waiting on another assistant than this window's (the dot on the title).
-    var othersNeedAttention: Bool {
-        app.hostIDs.contains { $0 != activeHostID && (unreadCount($0) > 0 || pendingCount($0) > 0) }
-    }
-
     /// Everything on this window's assistant counts as seen.
     func markSeen() {
         if let id = activeHostID { app.markSeen(id) }
     }
 
     /// Another assistant in this window (other windows keep theirs): it
-    /// opens on its conversation (what it showed belonged to the one before).
-    func switchTo(_ id: String) {
+    /// opens on its conversation (what it showed belonged to the one before),
+    /// unless the caller opens something of its own there (`showAssistant`
+    /// false: a row of that computer's in the sidebar).
+    func switchTo(_ id: String, showAssistant: Bool = true) {
         guard app.hostIDs.contains(id) else { return }
         let changed = id != activeHostID
         if changed {
             markSeen()
             // Its pages' panes are that computer's.
             paneOpenHere = [:]
+            // What was pushed or open over the last page was the other computer's.
+            detailPath = NavigationPath()
+            detailShown = false
         }
         hostID = id
         app.use(id)
-        if changed { showAssistantConversation() }
+        if changed && showAssistant { showAssistantConversation() }
     }
+
+    /// A row of the sidebar: its conversation, on its computer (several
+    /// computers listed at once). The window takes that computer, its color,
+    /// its right pane and its composer, with no stop on its assistant.
+    func open(_ c: Conversation, on host: String?) {
+        // Jumped to from elsewhere (⌥⌘2): its section opens, to show where the window is.
+        if let host, app.hasSeveralHosts, app.isHostCollapsed(host) { app.setHostCollapsed(host, false) }
+        guard let host, host != activeHostID, app.hostIDs.contains(host) else {
+            selection = c
+            return
+        }
+        debugLog("[hosts] window \(traceName) opens \(c.storageKey) on \(host)")
+        switchTo(host, showAssistant: false)
+        // The split view is made again for that computer: the list scrolls back to the row.
+        sidebarReveal = SidebarPick(host: host, conversation: c)
+        selection = c
+        compactColumn = .detail
+    }
+
+    /// The sidebar row to bring into view once the list is made again (another computer opened).
+    var sidebarReveal: SidebarPick?
+    /// The workspaces opened in the sidebar (`SidebarPick.expandKey`), kept
+    /// while the window is open: the list is made again with each computer.
+    var sidebarExpanded: Set<String> = []
 
     /// Unpairs this window's assistant.
     func unpair() async {
@@ -128,6 +149,15 @@ final class WindowModel {
     // its Allies) and the conversation picked from it. Phones open straight
     // into the assistant's conversation with the list one step back, like
     // Messages; iPads and the Mac keep the list in a collapsible sidebar.
+
+    /// A sidebar row with several computers listed: which computer's, and which conversation.
+    struct SidebarPick: Hashable {
+        var host: String?
+        var conversation: Conversation
+
+        /// A workspace opened in the list, per computer.
+        static func expandKey(host: String?, workspace: String) -> String { "\(host ?? "")|\(workspace)" }
+    }
 
     /// What the list holds, and the detail column shows.
     enum Conversation: Hashable {

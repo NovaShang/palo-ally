@@ -329,11 +329,13 @@ final class ImmersiveWindows: NSObject {
             " ": 49, "\n": 36, "↓": 125, "↑": 126, "←": 123, "→": 124,
         ]
         var keys: [(Character, NSEvent.ModifierFlags)] = []
-        var command = false
+        var held: NSEvent.ModifierFlags = []
         for c in spec {
-            if c == "⌘" { command = true; continue }
-            keys.append((c, command ? .command : []))
-            command = false
+            if c == "⌘" { held.insert(.command); continue }
+            // `⌥⌘1`: with ⌥ too.
+            if c == "⌥" { held.insert(.option); continue }
+            keys.append((c, held))
+            held = []
         }
         for (i, (c, flags)) in keys.enumerated() {
             guard let code = codes[c] else { continue }
@@ -343,7 +345,10 @@ final class ImmersiveWindows: NSObject {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3 + Double(i) * 0.08 + Double(k) * 0.03) {
                     // A keyboard's event underneath (UIKit reads that one), queued for this app only.
                     guard let cg = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: type == .keyDown) else { return }
-                    cg.flags = flags.contains(.command) ? .maskCommand : []
+                    var cgFlags: CGEventFlags = []
+                    if flags.contains(.command) { cgFlags.insert(.maskCommand) }
+                    if flags.contains(.option) { cgFlags.insert(.maskAlternate) }
+                    cg.flags = cgFlags
                     let units = Array(chars.utf16)
                     cg.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
                     if let e = NSEvent(cgEvent: cg) { NSApplication.shared.postEvent(e, atStart: false) }

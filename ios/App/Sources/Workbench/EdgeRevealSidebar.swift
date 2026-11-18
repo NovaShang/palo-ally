@@ -9,6 +9,8 @@ final class SidebarChrome {
     static let shared = SidebarChrome()
     /// The Mac: the title bar's middle line (the traffic lights'), in the window.
     var titlebarMidY: CGFloat = 26
+    /// The Mac: where the traffic lights end, in the window (0 in full screen).
+    var leadingEnd: CGFloat = 78
 }
 
 /// The Mac: the title bar's middle line, kept for what lines up with it
@@ -32,6 +34,7 @@ struct SidebarCollapse: ViewModifier {
                 try? await Task.sleep(for: .milliseconds(delay))
                 if let c = AppKitBundle.leadingChrome() {
                     SidebarChrome.shared.titlebarMidY = c.y
+                    SidebarChrome.shared.leadingEnd = c.x
                 }
             }
         }

@@ -687,4 +687,49 @@ extension DemoHost {
                        others: others, approvals: approvals, questions: questions, proposal: proposal, recent: recent,
                        workspaces: workspaces)
     }
+
+    /// A second demo computer's sessions (`-demoHosts 2`), none of the
+    /// first's: 数据看板 at work, 合同审阅 waiting on a card, 接口迁移 done
+    /// and not looked at yet. No workspace, nothing to adopt.
+    static func seedOfficePals(now: Int64, nextSeq: Int64) -> PalSeed {
+        let min: Int64 = 60_000
+        let hour = 60 * min
+        let pals = [
+            Pal(id: "pal-dash", name: "数据看板", cwd: "/Users/demo/work/dashboard", sessionId: "6a1c3e5f-2b4d-4f6a-8c0e-1d3f5a7c9e02",
+                status: .busy, lastLine: "在跑：第 3 / 5 个查询", model: "claude-opus-5-5", createdBy: .owner,
+                activity: "在跑：第 3 / 5 个查询", updatedAt: now - min, contextPct: 41, effort: "high"),
+            Pal(id: "pal-contract", name: "合同审阅", cwd: "/Users/demo/work/contracts", sessionId: "8d2e4f6a-3c5b-4e7d-9f1a-2b4c6d8e0f13",
+                status: .waiting, lastLine: "第 7 条需要你确认要不要保留。", pending: 1, model: "claude-opus-5-5", createdBy: .palo,
+                updatedAt: now - 4 * min, contextPct: 18, effort: "medium"),
+            Pal(id: "pal-migrate", name: "接口迁移", cwd: "/Users/demo/work/api", sessionId: "1f3a5c7e-4d6b-4a8c-b0e2-3c5d7e9f1a24",
+                status: .idle, lastLine: "测试都过了，可以合并。", model: "claude-sonnet-4-5", createdBy: .owner,
+                updatedAt: now - 30 * min, finishedAt: now - 30 * min, contextPct: 55),
+        ]
+        func log(_ id: String, _ lines: [(ChatRole, String, Int64)]) -> [ChatMessage] {
+            lines.enumerated().map { i, l in
+                var m = ChatMessage(seq: Int64(i + 1), id: "\(id)-\(i + 1)", role: l.0, kind: .text, text: l.1, channel: .app, ts: now - l.2)
+                m.pal = id
+                return m
+            }
+        }
+        let logs = [
+            "pal-dash": log("pal-dash", [(.user, "把上个月的销售数据做成看板，按地区分", 2 * hour),
+                                         (.assistant, "好，先把五个查询写好，再接图表。", 2 * hour - min),
+                                         (.assistant, "在跑：第 3 / 5 个查询", min)]),
+            "pal-contract": log("pal-contract", [(.user, "帮我过一遍这份供应商合同，标出对我们不利的条款", hour),
+                                                 (.assistant, "看完了，一共 12 条，第 7 条需要你确认要不要保留。", 4 * min)]),
+            "pal-migrate": log("pal-migrate", [(.user, "把旧的接口迁到新版本，测试要全过", 3 * hour),
+                                               (.assistant, "测试都过了，可以合并。", 30 * min)]),
+        ]
+        let approvals = [
+            Approval(id: "pa-office-1", tool: "Edit", title: "改一个文件", detail: "contracts/供应商合同-审阅.md：删除第 7 条",
+                     careful: false, status: .pending, createdAt: now - 4 * min,
+                     source: CardSource(kind: .pal, id: "pal-contract", name: "合同审阅")),
+        ]
+        var proposal = ChatMessage(seq: nextSeq, id: "m\(nextSeq)", role: .assistant, kind: .text,
+                                   text: "周报草稿写好了，放在成果里。", channel: .app, ts: now - 6 * min)
+        proposal.proactive = true
+        return PalSeed(pals: pals, logs: logs, others: [], approvals: approvals, questions: [], proposal: proposal,
+                       recent: [], workspaces: [])
+    }
 }

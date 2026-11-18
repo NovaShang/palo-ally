@@ -198,6 +198,8 @@ private struct SceneReader: UIViewRepresentable {
 struct OpenInNewWindow: ViewModifier {
     let conversation: WindowModel.Conversation
     @Environment(WindowModel.self) private var model
+    /// A row of another computer's section: that computer.
+    @Environment(\.sidebarHost) private var sidebarHost
 
     func body(content: Content) -> some View {
         #if targetEnvironment(macCatalyst)
@@ -206,7 +208,7 @@ struct OpenInNewWindow: ViewModifier {
         if UIApplication.shared.supportsMultipleScenes {
             content.onDrag {
                 let provider = NSItemProvider()
-                provider.registerObject(WindowTarget.activity(for: conversation, host: model.activeHostID), visibility: .all)
+                provider.registerObject(WindowTarget.activity(for: conversation, host: sidebarHost ?? model.activeHostID), visibility: .all)
                 return provider
             }
         } else {
@@ -220,12 +222,13 @@ struct OpenInNewWindow: ViewModifier {
 struct OpenInNewWindowButton: View {
     let conversation: WindowModel.Conversation
     @Environment(WindowModel.self) private var model
+    @Environment(\.sidebarHost) private var sidebarHost
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         if UIApplication.shared.supportsMultipleScenes {
             Button("在新窗口中打开", systemImage: "macwindow.badge.plus") {
-                openWindow(value: WindowTarget(conversation, host: model.activeHostID))
+                openWindow(value: WindowTarget(conversation, host: sidebarHost ?? model.activeHostID))
             }
         }
     }
