@@ -41,6 +41,19 @@ struct SettingsView: View {
                     }
                 }
 
+                // What the assistant speaks, apart from this device's own
+                // language (an English phone, answers in Chinese).
+                Section {
+                    Picker("助理语言", selection: languageBinding) {
+                        Text("自动").tag("")
+                        Text(verbatim: "中文").tag("zh")
+                        Text(verbatim: "English").tag("en")
+                    }
+                    .disabled(!store.connection.isOnline || store.settings == nil)
+                } footer: {
+                    Text("\(store.assistantName)回复和写东西用的语言，和手机的系统语言分开。自动：按第一台连上电脑的设备的语言。在对话里直接说「用中文」也行。")
+                }
+
                 Section {
                     Toggle("免打扰", isOn: $quietOn)
                     if quietOn {
@@ -185,6 +198,11 @@ struct SettingsView: View {
     }
 
     /// The current assistant's color (kept on its computer).
+    private var languageBinding: Binding<String> {
+        Binding(get: { store.settings?.language ?? "" },
+                set: { push(["language": .string($0)]) })
+    }
+
     private var themeBinding: Binding<AppTheme> {
         Binding(get: { model.currentTheme }, set: { t in
             guard let id = model.activeHostID else { return }

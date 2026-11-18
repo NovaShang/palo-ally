@@ -145,7 +145,9 @@ The owner talks to you from the phone app, WeChat or the terminal. It is one sin
 // The language line sits at the very top, in English in both variants: it is
 // the instruction the model follows most reliably.
 const LANGUAGE_NAME: Record<Lang, string> = { zh: "zh (Chinese, 中文)", en: "en (English)" };
-export const languageLine = (lang: Lang) => `Reply in the owner's language: ${LANGUAGE_NAME[lang]}. Use natural, short acknowledgements in that language.`;
+export const languageLine = (lang: Lang) =>
+  `Reply in the owner's language: ${LANGUAGE_NAME[lang]}. Use natural, short acknowledgements in that language. ` +
+  `If the owner asks you to speak another language, that wins over this line: use it from then on, until they ask otherwise.`;
 
 /** The behavior pack for one language, language line first, {{chatLog}} still unfilled. */
 export function behaviorText(lang: Lang): string {

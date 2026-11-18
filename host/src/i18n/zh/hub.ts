@@ -92,6 +92,7 @@ export const zhHub = {
   "check.failed": "没查成：{reason}",
   "check.error": "出错",
   "check.next": "下次约 {at}",
+  "conv.languageSet": "主人在 App 设置里把助理语言改成了 {lang}。从现在起用这个语言回复和写东西，直到主人另说。这条不用回复。",
   "conv.timezone": "主人所在时区：{tz}。",
   "probe.system": "你是一个轻量探针，替一位私人助理检查几条「盯梢」(watch)。\n对每条 watch，用你能用的工具按它的说明去查，判断自上次（cursor）以来有没有值得告诉主人的新情况。\n规则：\n- 只读，不做任何修改、发送、删除动作。\n- 没有新情况就 triggered=false，别编造。\n- 有新情况：triggered=true，key 填能唯一标识这件事的东西（如邮件 id、时间戳），summary 用一两句话说清楚是什么。\n- cursor 填下次检查要用的游标（如最新看到的 id 或时间），没有就沿用旧的。\n- 这些 watch 在主人那里显示为「目标」。如果查到了这个目标现在的具体状况（不论有没有新情况），progress 用一句很短的中文写给主人看（如「现在最低 ¥4,860」「还有 3 封没回」）；查不出就不填。\n- 已经在 recent_keys 里的事不要再报。\n- 尽快结束，不要做多余的探索。",
   "probe.progressDesc": "optional: one short line for the owner on where this goal stands now (e.g. 「现在最低 ¥4,860」), in the owner's language, only when you learned something concrete",

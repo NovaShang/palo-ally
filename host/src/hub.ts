@@ -846,7 +846,14 @@ export class Hub {
     const languageChanged = next.language !== this.config.settings.language;
     this.config.settings = next;
     patchConfig(this.paths, (c) => (c.settings = next));
-    if (languageChanged) this.applyLanguage();
+    if (languageChanged) {
+      this.applyLanguage();
+      // The running conversation was told its language when it started:
+      // told again now, unseen (a housekeeping turn shows and pushes nothing).
+      if (next.language) {
+        this.conversation.enqueue({ text: t("conv.languageSet", { lang: next.language === "zh" ? "中文 (Chinese)" : "English" }), origin: "system", proactive: true, maintenance: true, label: "language" });
+      }
+    }
     if (probeChanged) this.probe.start();
     this.bus.emit("settings.updated", next);
     return next;

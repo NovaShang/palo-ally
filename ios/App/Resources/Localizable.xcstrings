@@ -640,6 +640,39 @@
         }
       }
     },
+    "助理语言" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Assistant language"
+          }
+        }
+      }
+    },
+    "自动" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatic"
+          }
+        }
+      }
+    },
+    "%@回复和写东西用的语言，和手机的系统语言分开。自动：按第一台连上电脑的设备的语言。在对话里直接说「用中文」也行。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The language %@ replies and writes in, apart from this phone’s own. Automatic: the language of the first device that connected to the computer. Saying “speak English” in a conversation works too."
+          }
+        }
+      }
+    },
     "什么时候别打扰我" : {
       "extractionState" : "manual",
       "localizations" : {
