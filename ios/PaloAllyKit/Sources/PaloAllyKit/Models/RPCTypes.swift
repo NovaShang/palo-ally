@@ -253,9 +253,12 @@ public struct HelloResult: Decodable, Sendable {
     public var status: HostStatus?
     /// The language the host will write in ("zh" or "en"); nil from an older host.
     public var language: String?
+    /// Which machine the host runs on, hashed (host/src/machine.ts); nil from an older host.
+    public var machineId: String?
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
         language = l.string("language")
+        machineId = l.string("machineId")
         hostName = l.string("hostName", or: "")
         version = l.string("version", or: "")
         status = l.expect("status", l.decode(HostStatus.self, "status"))

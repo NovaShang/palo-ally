@@ -3,6 +3,7 @@ import type { Attachment, Channel } from "./types.ts";
 import { readJson, writeJson } from "./util.ts";
 import { t } from "./i18n/index.ts";
 import { parseScope } from "./files.ts";
+import { machineId } from "./machine.ts";
 
 export interface RpcContext {
   clientId: string;
@@ -56,7 +57,8 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       if (ctx.deviceId) hub.noteDevice(ctx.deviceId, p.client);
       // The app's preferred language (BCP 47, e.g. "zh-Hans-CN"): the first one the host hears decides its language until the owner sets one.
       if (ctx.channel === "app") hub.noteLocale(p.locale);
-      return { hostName: hub.config.hostName, version: hub.status().version, status: hub.status(), language: hub.language() };
+      // `machineId`: which machine this is (hashed), so a Mac app on the same one lists it first.
+      return { hostName: hub.config.hostName, version: hub.status().version, status: hub.status(), language: hub.language(), machineId: machineId() };
     case "sync": {
       const since = typeof p.sinceSeq === "number" ? p.sinceSeq : undefined;
       // The app syncs when it comes to the foreground: an Ally's message

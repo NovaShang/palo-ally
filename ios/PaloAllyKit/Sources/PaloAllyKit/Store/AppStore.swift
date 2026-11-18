@@ -94,6 +94,12 @@ public final class AppStore {
         get { shared.hostVersion }
         set { shared.hostVersion = newValue }
     }
+    /// The machine the computer's host runs on, hashed as `MachineIdentity`
+    /// hashes the app's own (nil until its hello, or from an older host).
+    public private(set) var hostMachineID: String? {
+        get { shared.hostMachineID }
+        set { shared.hostMachineID = newValue }
+    }
     public private(set) var messages: [ChatMessage] = []
     /// Long messages from another agent the owner unfolded (`MessageFold`),
     /// by id: they stay open while the app runs.
@@ -548,6 +554,7 @@ public final class AppStore {
                 guard gen == connectGeneration else { return }
                 hostName = hello.hostName
                 hostVersion = hello.version
+                if let m = hello.machineId, !m.isEmpty { hostMachineID = m }
                 if let s = hello.status { applyStatus(s) }
                 try await performSync()
                 guard gen == connectGeneration else { return }

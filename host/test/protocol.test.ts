@@ -84,7 +84,10 @@ describe("host ↔ app protocol", () => {
     const methods: Record<string, Sample | Sample[]> = {};
     const run = async (method: string, params: unknown = {}) => (methods[method] = { params, result: await call(method, params) }).result as any;
 
-    await run("hello", { client: "ios", version: "test" });
+    const hello = await run("hello", { client: "ios", version: "test" });
+    // The machine's hash varies by machine: a made-up one in the fixture.
+    expect(hello.machineId).toMatch(/^[0-9a-f]{32}$/);
+    hello.machineId = "0123456789abcdef0123456789abcdef";
     const img = await run("media.upload", { mediaType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==" });
     const doc = await run("media.uploadChunk", { name: "说明.txt", mediaType: "text/plain", offset: 0, data: Buffer.from("hi").toString("base64"), done: true });
     await run("chat.send", {
