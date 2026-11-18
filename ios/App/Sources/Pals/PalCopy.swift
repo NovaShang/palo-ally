@@ -16,14 +16,12 @@ extension Copy {
         }
     }
 
-    /// The row's second line: 「等你 · 列表页做完了…」, 「已停 · 今天的花费到上限了」,
-    /// or just its last words.
+    /// The row's second line: what it's doing or said last (「列表页做完了…」,
+    /// 「今天的花费到上限了」); the state's icon beside it already says the
+    /// state, so its word shows only when there's nothing else (11-17).
     static func palLine(_ p: Pal) -> String {
         let line = oneLine(p.status == .stopped ? (p.note ?? p.lastLine) : (p.status == .busy ? (p.activity ?? p.lastLine) : p.lastLine))
-        switch p.status {
-        case .idle where !line.isEmpty: return line
-        default: return line.isEmpty ? palStatus(p.status) : "\(palStatus(p.status)) · \(line)"
-        }
+        return line.isEmpty ? palStatus(p.status) : line
     }
 
     /// A Pal page's subtitle: 「在忙 · ~/code/site」; stopped, why; being woken, so.
