@@ -360,6 +360,8 @@ private struct LayoutStressTest: ViewModifier {
                             debugLog("[nav] selecttext: no text with \(words)")
                         }
                     // `copymenu`: 编辑 → 拷贝, sent along the responder chain as the menu does.
+                    // `details`: the orb's details, as a click on it opens them.
+                    case "details": model.detailShown = true
                     case "copymenu":
                         let sent = UIApplication.shared.sendAction(#selector(UIResponderStandardEditActions.copy(_:)), to: nil, from: nil, for: nil)
                         debugLog("[nav] copy sent along the responder chain: \(sent ? "taken" : "nobody took it")")

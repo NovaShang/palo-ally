@@ -55,7 +55,7 @@ struct TitleCapsule: View {
             AgentDetailView()
                 .environment(model)
                 .environment(store)
-                .frame(minWidth: 360, idealWidth: 380, minHeight: 420, idealHeight: 560)
+                .frame(minWidth: 360, idealWidth: 380)
         }
         .accessibilityLabel(Text("\(name)，\(subtitle)"))
         .accessibilityHint(Text("打开详情"))
@@ -99,7 +99,7 @@ struct PageIndicator: View {
             AgentDetailView()
                 .environment(model)
                 .environment(store)
-                .frame(minWidth: 360, idealWidth: 380, minHeight: 420, idealHeight: 560)
+                .frame(minWidth: 360, idealWidth: 380)
         }
         .accessibilityLabel(Text(label))
         .accessibilityHint(Text("打开详情"))

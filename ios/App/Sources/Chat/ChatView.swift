@@ -330,7 +330,7 @@ struct ChatView: View {
                             AgentDetailView()
                                 .environment(model)
                                 .environment(store)
-                                .frame(minWidth: 360, idealWidth: 380, minHeight: 420, idealHeight: 560)
+                                .frame(minWidth: 360, idealWidth: 380)
                         }
                     }
                 }
@@ -801,7 +801,7 @@ private struct MacTopOrb: View {
                         AgentDetailView()
                             .environment(model)
                             .environment(store)
-                            .frame(minWidth: 360, idealWidth: 380, minHeight: 420, idealHeight: 560)
+                            .frame(minWidth: 360, idealWidth: 380)
                     }
                     .padding(.top, max(0, MacTitlebar.midY - d / 2))
             }

@@ -26,7 +26,7 @@ struct AgentDetailView: View {
                     SessionDetailForm(palID: id)
                 }
             }
-            .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, h in
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height + $0.contentInsets.top + $0.contentInsets.bottom } action: { _, h in
                 contentHeight = h
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -36,8 +36,12 @@ struct AgentDetailView: View {
                 }
             }
         }
-        // A popover takes its content's height (the navigation bar's 52 included), within reason.
-        .frame(height: asSheet ? nil : contentHeight.map { min(max($0 + 52, 240), 640) })
+        // A popover takes its content's height with the list's own insets
+        // (the bar above, the margin below), within reason. A fixed 52 pt for
+        // the bar left the Mac's popover short: its top and bottom were cut (11-19).
+        // The Mac's windows are tall: up to 860 pt there (Palo's details run
+        // about 700, and at 640 their top or bottom was always scrolled away).
+        .frame(height: asSheet ? nil : contentHeight.map { min(max($0, 240), Platform.isMac ? 860 : 640) })
         .accessibilityIdentifier("agent-detail")
     }
 }
