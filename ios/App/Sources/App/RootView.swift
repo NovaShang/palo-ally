@@ -865,8 +865,6 @@ private struct ConversationDetail: View {
                 }
             }
             .modifier(QuickSwitchBar(current: current))
-            // Several computers: which one this page is on.
-            .modifier(HostLabelPlacement())
             .modifier(InContentNavigationBar())
             // A folder's tree over 成果 (phones), and the files paths in replies link to.
             .modifier(FilesInConversation(current: current))
