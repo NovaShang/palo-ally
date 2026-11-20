@@ -29,31 +29,8 @@ struct SettingsView: View {
                     NavigationLink("会话水滴（试验）") { SessionDropPreview() }
                 }
                 #endif
-                Section {
-                    ThemeSwatches(selection: themeBinding)
-                } header: {
-                    Text("主题色")
-                } footer: {
-                    if model.hasSeveralHosts {
-                        Text("这是「\(store.assistantName)」的颜色；每个助理一个颜色，切换时整个 App 跟着换。")
-                    } else {
-                        Text("也是\(store.assistantName)的颜色。App 和桌面图标都会换成这个颜色。")
-                    }
-                }
-
-                // What the assistant speaks, apart from this device's own
-                // language (an English phone, answers in Chinese).
-                Section {
-                    Picker("助理语言", selection: languageBinding) {
-                        Text("自动").tag("")
-                        Text(verbatim: "中文").tag("zh")
-                        Text(verbatim: "English").tag("en")
-                    }
-                    .disabled(!store.connection.isOnline || store.settings == nil)
-                } footer: {
-                    Text("\(store.assistantName)回复和写东西用的语言，和手机的系统语言分开。自动：按第一台连上电脑的设备的语言。在对话里直接说「用中文」也行。")
-                }
-
+                // The assistant's color and language live on its 关于 page
+                // (AssistantView): they belong to it, not to the app.
                 Section {
                     Toggle("免打扰", isOn: $quietOn)
                     if quietOn {
@@ -195,22 +172,6 @@ struct SettingsView: View {
     private func copyDeviceID() {
         Clipboard.copy(VoiceInstallID.current)
         copiedDeviceID = true
-    }
-
-    /// The current assistant's color (kept on its computer).
-    private var languageBinding: Binding<String> {
-        Binding(get: { store.settings?.language ?? "" },
-                set: { push(["language": .string($0)]) })
-    }
-
-    private var themeBinding: Binding<AppTheme> {
-        Binding(get: { model.currentTheme }, set: { t in
-            guard let id = model.activeHostID else { return }
-            error = nil
-            Task {
-                do { try await model.setTheme(t, for: id) } catch { self.error = String(localized: "颜色没改成：\(Copy.error(error))") }
-            }
-        })
     }
 
     /// The global hooks switch, as the computer has it (on until it says).

@@ -1,18 +1,17 @@
 import PaloAllyKit
 import SwiftUI
 
-/// Palo's details: the session's skeleton (header, model and depth, context,
-/// its tasks then 历史任务) plus 目标, 记忆 and 设置.
-/// No end row: Palo can't be ended. No 压缩: the host has no compact method
-/// for the assistant, only its own idle compaction.
+/// Palo's details: 此刻 (docs/workbench-design/orb-panel.html). Who it is
+/// and what it's doing (with 关于 ›), what waits on the owner (等你), what
+/// runs now (在做), and at the bottom its model, thinking and context.
+/// Everything long-term (名字和颜色, 语言, 目标和定时, 记忆, 历史任务, 停下)
+/// lives on 关于 (AssistantView). No end row: Palo can't be ended.
 struct PaloDetailForm: View {
     @Environment(\.tileDetail) private var tileDetail
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
-    @State private var memoryCount: Int?
     @State private var failure: String?
-    @State private var showSettings = false
-    @State private var showIdentity = false
+    @State private var showAbout = false
     @State private var noRename = false
     @State private var unused = ""
 
@@ -32,59 +31,65 @@ struct PaloDetailForm: View {
                              line: headerLine, state: store.paloDot,
                              lineAction: store.paloDot == .waiting && !waiting.isEmpty ? { jumpToWaiting() } : nil,
                              editing: $noRename, draft: $unused,
-                             onRename: {}, onBeginRename: { showIdentity = true })
+                             onRename: {}, onBeginRename: { showAbout = true })
                     .detailBare()
-            }
-            .listSectionSpacing(.compact)
-
-            Section {
-                pickers
-                DetailContextRow(percent: store.status?.contextPct, tokens: store.status?.contextTokens,
-                                 window: store.status?.contextWindow)
-            }
-
-            let running = store.tasks.filter(\.isActive).sorted { $0.updatedAt > $1.updatedAt }
-            Section {
-                ForEach(running) { RunningHistoryRow(task: $0) }
-                NavigationLink { page(String(localized: "历史任务")) { HistorySection() } } label: {
-                    Text("历史任务")
-                }
-                .accessibilityIdentifier("detail-past-tasks")
-            } header: {
-                detailTasksHeader(running: running.count)
-            }
-
-            Section {
-                NavigationLink { page(AssistantTab.watches.title) { WatchesSection() } } label: {
-                    LabeledContent(AssistantTab.watches.title, value: goalsLine)
-                }
-                NavigationLink { page(AssistantTab.memory.title) { MemorySection() } } label: {
-                    LabeledContent(AssistantTab.memory.title,
-                                   value: memoryCount.map { $0 > 0 ? String(localized: "\($0) 条") : String(localized: "还没记下什么") } ?? "…")
-                }
-            }
-
-            Section {
-                Button { showSettings = true } label: {
+                Button { showAbout = true } label: {
                     HStack {
-                        Text("设置").foregroundStyle(.primary)
+                        Text(String(localized: "关于\(store.assistantName)")).foregroundStyle(.primary)
                         Spacer()
                         Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                     }
                     .contentShape(.rect)
                 }
-                .accessibilityIdentifier("detail-settings")
+                .tint(.primary)
+                .accessibilityIdentifier("detail-about")
+            }
+            .listSectionSpacing(.compact)
+
+            // 等你: the assistant's own items (its, a brief's, the computer's sessions').
+            let mine = store.openPending(forPal: nil)
+            if !mine.isEmpty {
+                Section {
+                    ForEach(mine) { item in
+                        PendingRow(item: item, dismiss: { model.setDetail(false, tile: tileDetail) })
+                            .listRowInsets(EdgeInsets(top: 3, leading: 8, bottom: 3, trailing: 8))
+                            .listRowBackground(Color.clear)
+                    }
+                } header: {
+                    HStack {
+                        Text(String(localized: "等你 · \(mine.count)"))
+                        Spacer()
+                        Button(String(localized: "从头过一遍")) {
+                            model.setDetail(false, tile: tileDetail)
+                            model.talk(about: mine[0], in: store)
+                        }
+                        .font(.caption.weight(.semibold))
+                        .buttonStyle(.borderless)
+                        .accessibilityIdentifier("detail-agenda")
+                    }
+                }
+            }
+
+            // 在做: what runs now.
+            let running = store.tasks.filter(\.isActive).sorted { $0.updatedAt > $1.updatedAt }
+            if !running.isEmpty {
+                Section {
+                    ForEach(running) { RunningHistoryRow(task: $0) }
+                } header: {
+                    Text(String(localized: "在做 · \(running.count)"))
+                }
+            }
+
+            // At the bottom: model · thinking · context.
+            Section {
+                pickers
+                DetailContextRow(percent: store.status?.contextPct, tokens: store.status?.contextTokens,
+                                 window: store.status?.contextWindow)
             }
         }
         .navigationTitle("")
-        .navigationDestination(isPresented: $showSettings) {
-            SettingsView().modifier(InSidebarColumn())
-        }
-        .sheet(isPresented: $showIdentity) {
-            IdentityEditor(purpose: .edit).environment(model).environment(store)
-        }
-        .task(id: model.memoryRevision) {
-            memoryCount = (try? await store.memoryFiles())?.count
+        .navigationDestination(isPresented: $showAbout) {
+            AssistantView().modifier(InSidebarColumn())
         }
         .task(id: online) {
             guard online, store.modelInfo == nil else { return }
@@ -130,17 +135,6 @@ struct PaloDetailForm: View {
         }
     }
 
-    private var goalsLine: String {
-        let n = store.watches.filter { $0.state != .done }.count
-        return n > 0 ? String(localized: "\(n) 个") : String(localized: "还没有目标")
-    }
-
-    private func page<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
-        List { content() }
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-            .modifier(InSidebarColumn())
-    }
 
     private func apply(model: String?? = .none, effort: String?? = .none) {
         failure = nil

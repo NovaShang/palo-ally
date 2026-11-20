@@ -80,17 +80,35 @@ private struct SessionDetailForm: View {
                                  onRename: { Task { await rename() } },
                                  onBeginRename: { newName = pal.displayName; editing = true })
                         .detailBare()
+                    NavigationLink {
+                        about(pal)
+                    } label: {
+                        Text(String(localized: "关于这个会话"))
+                    }
+                    .accessibilityIdentifier("detail-about")
                 }
                 .listSectionSpacing(.compact)
+                // 此刻 (docs/workbench-design/orb-panel.html): what waits on
+                // the owner from it, what runs, and its model line at the bottom.
+                let mine = store.openPending(forPal: palID)
+                if !mine.isEmpty {
+                    Section {
+                        ForEach(mine) { item in
+                            PendingRow(item: item, dismiss: { model.setDetail(false, tile: tileDetail) })
+                                .listRowInsets(EdgeInsets(top: 3, leading: 8, bottom: 3, trailing: 8))
+                                .listRowBackground(Color.clear)
+                        }
+                    } header: {
+                        Text(String(localized: "等你 · \(mine.count)"))
+                    }
+                }
+                tasks
                 Section {
                     pickers
                     DetailContextRow(percent: contextPercent(pal), tokens: detail?.contextTokens, window: detail?.contextWindow,
                                      compact: { compact() }, compacting: working == "compact",
                                      canCompact: online && working == nil && pal.status != .busy)
                 }
-                tasks
-                workspaceSection(pal)
-                end(pal)
             }
         }
         .navigationTitle("")
@@ -131,7 +149,10 @@ private struct SessionDetailForm: View {
             .disabled(!online || working != nil)
             .accessibilityIdentifier("detail-effort")
         }
-        // 权限模式: a host that can't switch it sends none (the row hides).
+    }
+
+    /// 权限模式 (on 关于): a host that can't switch it sends none (the row hides).
+    @ViewBuilder private var permissionPicker: some View {
         if let mode = detail?.permissionMode, let modes = detail?.permissionModes, !modes.isEmpty {
             Picker(selection: Binding(get: { mode }, set: { m in Task { await set(mode: m, from: mode) } })) {
                 ForEach(modes, id: \.self) { Text(PermissionModeName.label($0)).tag($0) }
@@ -157,24 +178,44 @@ private struct SessionDetailForm: View {
     /// What runs now (swipe to stop), then 历史任务.
     @ViewBuilder private var tasks: some View {
         let running = detail?.tasks ?? []
-        Section {
-            ForEach(running) { t in
-                SessionTaskRow(task: t)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button("停", role: .destructive) { stop(t) }
-                            .disabled(!online || working != nil)
-                            .accessibilityIdentifier("detail-stop-\(t.id)")
-                    }
+        if !running.isEmpty {
+            Section {
+                ForEach(running) { t in
+                    SessionTaskRow(task: t)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button("停", role: .destructive) { stop(t) }
+                                .disabled(!online || working != nil)
+                                .accessibilityIdentifier("detail-stop-\(t.id)")
+                        }
+                }
+            } header: {
+                Text(String(localized: "在做 · \(running.count)"))
             }
-            NavigationLink {
-                SessionPastTasks(tasks: detail?.pastTasks ?? [])
-            } label: {
-                Text("历史任务")
-            }
-            .accessibilityIdentifier("detail-past-tasks")
-        } header: {
-            detailTasksHeader(running: running.count)
         }
+    }
+
+    /// 关于 a session: its name and folder, workspace, permission mode,
+    /// 历史任务 and 结束 (the long-term half of what its orb used to hold).
+    private func about(_ pal: Pal) -> some View {
+        List {
+            Section {
+                LabeledContent(String(localized: "名字"), value: pal.displayName)
+                LabeledContent(String(localized: "目录"), value: CCSession.shortPath(pal.cwd))
+                permissionPicker
+            }
+            workspaceSection(pal)
+            Section {
+                NavigationLink {
+                    SessionPastTasks(tasks: detail?.pastTasks ?? [])
+                } label: {
+                    Text("历史任务")
+                }
+                .accessibilityIdentifier("detail-past-tasks")
+            }
+            end(pal)
+        }
+        .navigationTitle(String(localized: "关于这个会话"))
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     @ViewBuilder private func workspaceSection(_ pal: Pal) -> some View {

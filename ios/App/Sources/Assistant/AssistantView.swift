@@ -1,16 +1,20 @@
 import PaloAllyKit
 import SwiftUI
 
-/// The assistant's management, behind the orb in its conversation's title
-/// (pals-prd §2.3): who it is, the model, what it's helping with over time
-/// (目标), what it's doing and got done (履历), what it remembers, and 设置.
-/// Phones push it over the conversation; large screens show it as a sheet
-/// (`inSheet`, with 完成). Approvals have no tab: they're in the conversation.
+/// 关于 the assistant (docs/workbench-design/orb-panel.html): the long-term
+/// half of what its orb used to hold, and the old 助理管理 in one page. Who
+/// it is (name and color, the language it speaks), what it watches for you
+/// (目标和定时), what it remembers and has done (记忆, 历史任务), how it works
+/// (the default model and thinking), and 停下 in its header. What happens
+/// now is the orb's panel (此刻); app-only settings stay in 设置.
+/// Phones push it; large screens show it as a sheet (`inSheet`, with 完成).
 struct AssistantView: View {
     /// Shown as a sheet (large screens): it closes with 完成.
     var inSheet = false
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
+    @State private var memoryCount: Int?
+    @State private var error: String?
 
     var body: some View {
         @Bindable var model = model
@@ -21,29 +25,64 @@ struct AssistantView: View {
                     .listRowBackground(Color.clear)
             }
 
+            // 它: its color (the app's too) and the language it speaks.
+            Section {
+                ThemeSwatches(selection: themeBinding)
+                Picker("说话用的语言", selection: languageBinding) {
+                    Text("自动").tag("")
+                    Text(verbatim: "中文").tag("zh")
+                    Text(verbatim: "English").tag("en")
+                }
+                .tint(.primary)
+                .disabled(!store.connection.isOnline || store.settings == nil)
+            } header: {
+                Text("它")
+            } footer: {
+                Text("颜色也是 App 和桌面图标的颜色。语言和手机的系统语言分开；自动：按第一台连上电脑的设备的语言。")
+            }
+
+            // 它在帮你盯的, 它记得的、做过的.
+            Section {
+                NavigationLink { page(AssistantTab.watches.title) { WatchesSection() } } label: {
+                    LabeledContent(String(localized: "目标和定时"), value: goalsLine)
+                }
+                .accessibilityIdentifier("about-watches")
+                NavigationLink { page(AssistantTab.memory.title) { MemorySection() } } label: {
+                    LabeledContent(AssistantTab.memory.title,
+                                   value: memoryCount.map { $0 > 0 ? String(localized: "\($0) 条") : String(localized: "还没记下什么") } ?? "…")
+                }
+                .accessibilityIdentifier("about-memory")
+                Button { model.showHistoryPage = true } label: {
+                    HStack {
+                        Text(AssistantTab.history.title).foregroundStyle(.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                    }
+                    .contentShape(.rect)
+                }
+                .tint(.primary)
+                .accessibilityIdentifier("about-history")
+            }
+
+            // 怎么工作: the default model and thinking.
             Section {
                 ModelRow { model.showModelPicker = true }
                     .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6))
+            } header: {
+                Text("怎么工作")
             }
 
-            Section {
-                Picker("分类", selection: $model.assistantTab) {
-                    ForEach(AssistantTab.allCases, id: \.self) { tab in
-                        Text(label(for: tab)).tag(tab)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
-            }
-
-            switch model.assistantTab {
-            case .watches: WatchesSection()
-            case .history: HistorySection()
-            case .memory: MemorySection()
+            if let error {
+                Section { Text(error).font(.footnote).foregroundStyle(.red) }
             }
         }
-        .navigationTitle(store.assistantName)
+        .navigationTitle(String(localized: "关于\(store.assistantName)"))
+        .navigationDestination(isPresented: $model.showHistoryPage) {
+            page(AssistantTab.history.title) { HistorySection() }
+        }
+        .task(id: model.memoryRevision) {
+            memoryCount = (try? await store.memoryFiles())?.count
+        }
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("management")
         .sheet(isPresented: $model.showIdentityEditor) {
@@ -76,17 +115,39 @@ struct AssistantView: View {
         .navigationDestination(item: $model.openTaskID) { id in
             TaskDetailView(taskID: id).modifier(InSidebarColumn())
         }
-        .animation(.snappy, value: model.assistantTab)
     }
 
-    private func label(for tab: AssistantTab) -> String {
-        switch tab {
-        case .history:
-            let n = store.tasks.filter(\.isActive).count
-            return n > 0 ? "\(tab.title) \(n)" : tab.title
-        default:
-            return tab.title
-        }
+    private var goalsLine: String {
+        let n = store.watches.filter { $0.state != .done }.count
+        return n > 0 ? String(localized: "\(n) 个") : String(localized: "还没有目标")
+    }
+
+    private func page<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
+        List { content() }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .modifier(InSidebarColumn())
+    }
+
+    private var languageBinding: Binding<String> {
+        Binding(get: { store.settings?.language ?? "" }, set: { lang in
+            error = nil
+            Task {
+                do { try await store.updateSettings(patch: ["language": .string(lang)]) } catch {
+                    self.error = String(localized: "没改成：\(Copy.error(error))")
+                }
+            }
+        })
+    }
+
+    private var themeBinding: Binding<AppTheme> {
+        Binding(get: { model.currentTheme }, set: { t in
+            guard let id = model.activeHostID else { return }
+            error = nil
+            Task {
+                do { try await model.setTheme(t, for: id) } catch { self.error = String(localized: "颜色没改成：\(Copy.error(error))") }
+            }
+        })
     }
 }
 
