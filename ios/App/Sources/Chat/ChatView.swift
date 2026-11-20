@@ -1183,17 +1183,25 @@ struct ConversationStack: Layout {
 /// centred in the width there is, and taken once the width has rested
 /// `settle` seconds: one layout at the start of a drag, one at its end. The
 /// row being read stays put through that layout (ChatScrollCoordinator holds it).
+/// Not while the conversation comes on screen: a page made with a new split
+/// view (another computer's row opened, the app's launch) is offered a few
+/// narrow widths first (rows at 86, 130, then 370 pt on a phone, within 0.2 s), and
+/// held at the second it showed its rows squeezed into a third of the screen
+/// until the hold let go.
 @MainActor
 @Observable
 final class ColumnWidthHold {
     static let settle: TimeInterval = 0.12
     /// A change this long after the last one is a new one, taken at once.
     static let rest: TimeInterval = 0.25
+    /// Every width in this long after the first is taken at once (the page settling in).
+    static let arriving: TimeInterval = 0.5
     /// Counts the held widths let go (read by the view, so the rows are laid out again).
     private(set) var settled = 0
     @ObservationIgnored private var laidOut: CGFloat?
     @ObservationIgnored private var pending: CGFloat?
     @ObservationIgnored private var lastChange: CFTimeInterval = 0
+    @ObservationIgnored private var firstWidth: CFTimeInterval = 0
     @ObservationIgnored private var timer: Timer?
 
     func width(for proposed: CGFloat?) -> CGFloat? {
@@ -1201,6 +1209,7 @@ final class ColumnWidthHold {
         guard let p = proposed, p.isFinite, p > 1, p < 5000 else { return proposed }
         guard let w = laidOut else {
             laidOut = p
+            firstWidth = CACurrentMediaTime()
             return p
         }
         if p == pending { return w }
@@ -1212,6 +1221,12 @@ final class ColumnWidthHold {
         }
         let now = CACurrentMediaTime()
         defer { lastChange = now }
+        if now - firstWidth < Self.arriving {
+            laidOut = p
+            pending = nil
+            timer?.invalidate()
+            return p
+        }
         if pending == nil, now - lastChange > Self.rest {
             laidOut = p
             return p
