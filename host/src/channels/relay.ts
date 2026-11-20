@@ -60,6 +60,16 @@ interface Stream {
   clientId?: string;
   // an Ally's host: its units go to the ally handler, never to the RPC
   ally?: { message(text: string): void; closed(): void };
+  // A stream that isn't the relay's (a direct WebSocket, localTunnel.ts):
+  // its units go straight to it. Without it, frames on the relay socket.
+  sink?: DirectSink;
+}
+
+/** Where a direct stream's units go (localTunnel.ts). */
+export interface DirectSink {
+  tag: string; // in the hub client id, unique among direct streams ("l3")
+  send(unit: Uint8Array): void;
+  close(): void;
 }
 
 export type RelayState = "disconnected" | "connecting" | "connected";
@@ -90,6 +100,7 @@ export const relayPushTiming = { timeoutMs: 5_000, unsupportedMs: 10 * 60_000 };
 export class RelayChannel implements AllyRelay {
   private ws: WebSocket | null = null;
   private streams = new Map<number, Stream>();
+  private direct = new Set<Stream>();
   private backoff = 1000;
   /** How long a WebSocket may stay connecting before it is dropped and retried. */
   dialTimeoutMs = 20_000;
@@ -125,7 +136,7 @@ export class RelayChannel implements AllyRelay {
     const next = list.filter((d) => d.deviceId !== deviceId);
     writeJson(this.devicesPath, next);
     // Drop live streams of a revoked device, and have the relay forget it.
-    for (const s of this.streams.values()) if (s.deviceId === deviceId) this.closeStream(s.id);
+    for (const s of [...this.streams.values(), ...this.direct]) if (s.deviceId === deviceId) this.endStream(s);
     if (next.length !== list.length) void this.revokeDevice(deviceId);
     return next.length !== list.length;
   }
@@ -425,25 +436,25 @@ export class RelayChannel implements AllyRelay {
         s.secure = r.secure;
         s.deviceId = r.deviceId;
         if (isAlly) {
-          const streams = this.streams;
-          this.send(buildFrame(T_DATA, s.id, r.reply));
+          const self = this;
+          this.unitTo(s, r.reply);
           s.ally = this.hub.allies.attachInbound(r.deviceId, {
             send: (m) => this.sendSealed(s, m),
-            close: () => this.closeStream(s.id),
+            close: () => this.endStream(s),
             get open() {
-              return !!s.secure && streams.has(s.id);
+              return !!s.secure && self.isOpen(s);
             },
           });
           return;
         }
-        s.clientId = `app_${s.id}_${r.deviceId}`;
-        this.send(buildFrame(T_DATA, s.id, r.reply));
+        s.clientId = `app_${s.sink?.tag ?? s.id}_${r.deviceId}`;
+        this.unitTo(s, r.reply);
         this.hub.attach({ id: s.clientId, kind: "app", send: (m) => this.sendSealed(s, m) });
         this.touchDevice(r.deviceId);
       } catch (e) {
         const err = new TextEncoder().encode(JSON.stringify({ t: "error", error: String(e instanceof Error ? e.message : e) }));
-        this.send(buildFrame(T_DATA, s.id, new Uint8Array([0x01, ...err])));
-        this.closeStream(s.id);
+        this.unitTo(s, new Uint8Array([0x01, ...err]));
+        this.endStream(s);
       }
       return;
     }
@@ -452,7 +463,7 @@ export class RelayChannel implements AllyRelay {
       try {
         text = s.secure.opener.open(unit);
       } catch {
-        this.closeStream(s.id);
+        this.endStream(s);
         return;
       }
       s.ally.message(text);
@@ -463,15 +474,52 @@ export class RelayChannel implements AllyRelay {
       req = JSON.parse(s.secure.opener.open(unit));
     } catch {
       // Decryption failure means tampering or desync: drop the stream.
-      this.closeStream(s.id);
+      this.endStream(s);
       return;
     }
     void serveRpc(this.hub, req, { clientId: s.clientId!, deviceId: s.deviceId, channel: "app", local: false }).then((res) => this.sendSealed(s, res));
   }
 
   private sendSealed(s: Stream, msg: unknown): void {
-    if (!s.secure || !this.streams.has(s.id)) return;
-    this.send(buildFrame(T_DATA, s.id, s.secure.sealer.seal(JSON.stringify(msg))));
+    if (!s.secure || !this.isOpen(s)) return;
+    this.unitTo(s, s.secure.sealer.seal(JSON.stringify(msg)));
+  }
+
+  // A stream's units go to its own socket when it's direct, else in frames
+  // on the relay socket.
+  private unitTo(s: Stream, unit: Uint8Array): void {
+    if (s.sink) s.sink.send(unit);
+    else this.send(buildFrame(T_DATA, s.id, unit));
+  }
+
+  private endStream(s: Stream): void {
+    if (s.sink) s.sink.close();
+    else this.closeStream(s.id);
+  }
+
+  private isOpen(s: Stream): boolean {
+    return s.sink ? this.direct.has(s) : this.streams.has(s.id);
+  }
+
+  /**
+   * A stream that came straight from the app over the local network or
+   * Tailscale (localTunnel.ts), handled as a relay stream is: the same E2E
+   * handshake against the paired devices, then the RPC. `unit` takes each
+   * unit it receives; `closed` when its socket is gone.
+   */
+  openDirectStream(sink: DirectSink): { unit(u: Uint8Array): void; closed(): void } {
+    const s: Stream = { id: 0, secure: null, sink };
+    this.direct.add(s);
+    return {
+      unit: (u) => {
+        if (this.direct.has(s)) this.onStreamData(s, u);
+      },
+      closed: () => {
+        if (!this.direct.delete(s)) return;
+        if (s.clientId) this.hub.detach(s.clientId);
+        s.ally?.closed();
+      },
+    };
   }
 
   private touchDevice(deviceId: string): void {
@@ -496,6 +544,6 @@ export class RelayChannel implements AllyRelay {
   }
 
   connectedStreams(): number {
-    return [...this.streams.values()].filter((s) => s.secure).length;
+    return [...this.streams.values(), ...this.direct].filter((s) => s.secure).length;
   }
 }

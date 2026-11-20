@@ -132,6 +132,8 @@ export class Hub {
   // set by the daemon: opens the relay's pairing window for one more of the
   // owner's devices (what `paloally pair` opens) and gives back its link
   openPairing?: (ttlSec: number) => Promise<{ code: string; ttl: number; link: string }>;
+  /** Where the app may reach this computer without the relay (localTunnel.ts); set by the daemon. */
+  directEndpoints?: () => { port: number; addrs: string[] } | null;
 
   constructor(deps: HubDeps) {
     this.paths = deps.paths;

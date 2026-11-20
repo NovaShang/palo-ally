@@ -75,6 +75,8 @@ describe("host ↔ app protocol", () => {
     hub.onUnpairDevice = () => {};
     // The relay's pairing window, as `paloally pair` opens it.
     hub.openPairing = async (ttl) => ({ code: "123456", ttl, link: "paloally://pair?relay=https%3A%2F%2Frelay.example.com&daemon=d-home&code=123456&hostkey=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8" });
+    // Where the app may reach the computer without the relay (localTunnel.ts).
+    hub.directEndpoints = () => ({ port: 47820, addrs: ["127.0.0.1", "192.168.1.20", "100.101.102.103"] });
     const ctx = { clientId: "app_1_dev-x", deviceId: "dev-x", channel: "app" as const, local: false };
     const call = async (method: string, params: unknown = {}) => {
       const r = await handleRpc(hub, { method, params }, ctx);

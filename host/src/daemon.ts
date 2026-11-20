@@ -2,6 +2,7 @@ import { chmodSync } from "node:fs";
 import { t } from "./i18n/index.ts";
 import { ApnsPusher } from "./channels/apns.ts";
 import { LocalServer } from "./channels/local.ts";
+import { LocalTunnel } from "./channels/localTunnel.ts";
 import { RelayChannel, loadHostIdentity } from "./channels/relay.ts";
 import { RelayPusher } from "./channels/relayPush.ts";
 import type { Pusher } from "./router.ts";
@@ -82,6 +83,7 @@ export async function startDaemon(
   }
 
   let relay: RelayChannel | null = null;
+  let localTunnel: LocalTunnel | null = null;
   if (useRelay) {
     const { id, daemonId } = loadHostIdentity(paths.identity);
     relay = new RelayChannel(hub, config.relay.url, id, daemonId, paths.devices);
@@ -93,6 +95,17 @@ export async function startDaemon(
     // Allies pair, dial out and revoke through this connection.
     hub.allies.setRelay(relay);
     void relay.start();
+    // The app's way around the relay when it can reach this computer itself.
+    if (config.direct.enabled) {
+      try {
+        const tunnel = new LocalTunnel(relay);
+        tunnel.start(config.direct.port);
+        localTunnel = tunnel;
+        hub.directEndpoints = () => tunnel.endpoints();
+      } catch (e) {
+        console.log(`[direct] off: ${e}`);
+      }
+    }
   }
 
   const admin: AdminHandler = async (method, p) => {
@@ -106,7 +119,7 @@ export async function startDaemon(
         return { ok: relay?.removeDevice(String(p.id)) ?? false };
       case "relay.status":
         return relay
-          ? { enabled: true, state: relay.state, daemonId: relay.daemonId, lastError: relay.lastError, streams: relay.connectedStreams() }
+          ? { enabled: true, state: relay.state, daemonId: relay.daemonId, lastError: relay.lastError, streams: relay.connectedStreams(), direct: localTunnel?.endpoints() ?? null }
           : { enabled: false };
       case "push.status":
         return { health: hub.router.pushHealth(), devices: readJson<unknown[]>(paths.pushTokens, []).length };
@@ -156,6 +169,7 @@ export async function startDaemon(
     stop() {
       wechat?.stop();
       relay?.stop();
+      localTunnel?.stop();
       direct?.close();
       local.stop();
       hub.stop();

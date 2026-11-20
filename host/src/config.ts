@@ -121,6 +121,10 @@ export interface Config {
   // (~/.paloally/app), off for dev checkouts and copies (update.ts).
   update: { auto?: boolean; channel: "release" };
   relay: { enabled: boolean; url: string };
+  // The app connects straight to this computer when it can reach it (same
+  // Mac, local network, Tailscale), skipping the relay (localTunnel.ts).
+  // port: the first one tried; taken, the next free one.
+  direct: { enabled: boolean; port: number };
   wechat: { enabled: boolean; baseUrl: string };
   apns: {
     enabled: boolean;
@@ -169,6 +173,7 @@ export function defaultConfig(): Config {
     power: { alerts: true },
     update: { channel: "release" },
     relay: { enabled: true, url: "https://relay.bentoai.dev" },
+    direct: { enabled: true, port: 47820 },
     wechat: { enabled: false, baseUrl: "https://ilinkai.weixin.qq.com" },
     apns: { enabled: false, bundleId: "com.novashang.paloally" },
     browser: {

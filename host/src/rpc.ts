@@ -59,7 +59,9 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       // The app's preferred language (BCP 47, e.g. "zh-Hans-CN"): the first one the host hears decides its language until the owner sets one.
       if (ctx.channel === "app") hub.noteLocale(p.locale);
       // `machineId`: which machine this is (hashed), so a Mac app on the same one lists it first.
-      return { hostName: hub.config.hostName, version: hub.status().version, status: hub.status(), language: hub.language(), machineId: machineId() };
+      // `direct`: where the app can reach this computer without the relay (the same Mac, the local network, Tailscale).
+      const direct = hub.directEndpoints?.() ?? null;
+      return { hostName: hub.config.hostName, version: hub.status().version, status: hub.status(), language: hub.language(), machineId: machineId(), ...(direct ? { direct } : {}) };
     case "sync": {
       const since = typeof p.sinceSeq === "number" ? p.sinceSeq : undefined;
       // The app syncs when it comes to the foreground: an Ally's message
