@@ -84,6 +84,7 @@ struct PendingListView: View {
     /// The list was opened over something (the sheet): close it after 聊这件.
     var dismiss: (() -> Void)? = nil
     @State private var showSnoozed = false
+    @State private var showToday = false
 
     private var open: [PendingItem] {
         switch filter {
@@ -108,10 +109,24 @@ struct PendingListView: View {
                     sectionTitle(String(localized: "\(open.count) 件"))
                     ForEach(open) { PendingRow(item: $0, dismiss: dismiss) }
                 }
+                // Handled today: folded, so an answered item visibly leaves the
+                // list (it used to reappear just below, 11-20).
                 let today = store.pendingHandledToday
                 if !today.isEmpty && everything {
-                    sectionTitle(String(localized: "今天处理过"))
-                    ForEach(today) { PendingRow(item: $0, dismiss: dismiss) }
+                    Button {
+                        withAnimation(.snappy) { showToday.toggle() }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(String(localized: "今天处理过 · \(today.count)"))
+                            Image(systemName: showToday ? "chevron.up" : "chevron.down").font(.caption2)
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.top, 10)
+                    }
+                    .buttonStyle(.plain)
+                    if showToday { ForEach(today) { PendingRow(item: $0, dismiss: dismiss) } }
                 }
                 let snoozed = store.pendingSnoozed
                 if !snoozed.isEmpty && everything {
@@ -231,6 +246,8 @@ struct PendingRow: View {
     let item: PendingItem
     var dismiss: (() -> Void)? = nil
     @State private var error: String?
+    @State private var typing = false
+    @State private var draft = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -282,19 +299,43 @@ struct PendingRow: View {
 
     @ViewBuilder private var actions: some View {
         if item.isOpen {
-            HStack(spacing: 6) {
+            // Its options one under another, as wide as the row, wrapping:
+            // a long one reads whole (chips cut them, 11-20); 其他… for the
+            // owner's own words.
+            if let options = item.options, !options.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(options.enumerated()), id: \.offset) { _, option in
+                        Button { answer(option) } label: {
+                            Text(option)
+                                .font(.subheadline)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(Color.primary.opacity(0.08), in: .rect(cornerRadius: 10, style: .continuous))
+                                .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    // An approval is yes or no; a question or an item takes words too.
+                    if item.approvalId == nil { ownWords }
+                }
+            }
+            HStack(spacing: 10) {
                 Button(String(localized: "聊这件")) {
                     dismiss?()
                     model.talk(about: item, in: store)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Color.accentColor)
+                .controlSize(.small)
+                .buttonBorderShape(.capsule)
                 .accessibilityIdentifier("pending-talk-\(item.id)")
-                ForEach(Array(PendingCopy.rowOptions(item).enumerated()), id: \.offset) { _, option in
-                    Button(option) { answer(option) }
-                        .buttonStyle(.bordered)
-                        .tint(.primary)
-                        .lineLimit(1)
+                if item.options?.isEmpty ?? true, !typing {
+                    Button(String(localized: "直接回答")) { typing = true }
+                        .buttonStyle(.plain)
+                        .font(.footnote)
                 }
                 Spacer(minLength: 0)
                 Button(String(localized: "忽略")) { update("ignore") }
@@ -302,8 +343,7 @@ struct PendingRow: View {
                     .foregroundStyle(.secondary)
                     .font(.footnote)
             }
-            .controlSize(.small)
-            .buttonBorderShape(.capsule)
+            if item.options?.isEmpty ?? true, typing { field }
         } else if !item.isCard {
             HStack {
                 Button(String(localized: "放回")) { update("reopen") }
@@ -314,6 +354,48 @@ struct PendingRow: View {
                 Spacer(minLength: 0)
             }
         }
+    }
+
+    /// 其他…: a line to type the owner's own answer in.
+    @ViewBuilder private var ownWords: some View {
+        if typing {
+            field
+        } else {
+            Button { typing = true } label: {
+                Text(String(localized: "其他…"))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var field: some View {
+        HStack(spacing: 6) {
+            TextField(String(localized: "写你的回答"), text: $draft, axis: .vertical)
+                .lineLimit(1...4)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.primary.opacity(0.08), in: .rect(cornerRadius: 10, style: .continuous))
+                .onSubmit(sendOwn)
+            Button(action: sendOwn) { Image(systemName: "arrow.up.circle.fill").font(.title2) }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
+                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+    }
+
+    private func sendOwn() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        draft = ""
+        typing = false
+        answer(text)
     }
 
     private func answer(_ option: String) {
@@ -503,13 +585,6 @@ enum PendingCopy {
     /// The capsule's glimpse of the first item: a couple of dozen characters.
     static func short(_ title: String) -> String {
         title.count > 22 ? String(title.prefix(21)) + "…" : title
-    }
-
-    /// What fits on a row: up to three short options (the card has them all).
-    static func rowOptions(_ item: PendingItem) -> [String] {
-        guard let o = item.options, !o.isEmpty else { return [] }
-        let short = o.allSatisfy { $0.count <= 6 }
-        return Array(o.prefix(short ? 3 : 2))
     }
 }
 
