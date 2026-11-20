@@ -224,6 +224,8 @@ export interface PalsDeps {
   media?: MediaStore;
   /** The library its sessions publish into (Artifact, SendUserFile). */
   artifacts?: ArtifactLibrary;
+  /** 等你的事: a session's add_pending puts its items here. */
+  pending?: import("./pending.ts").PendingStore;
   timing?: Partial<PalsTiming>;
   now?: () => number;
   log?: (s: string) => void;
@@ -433,6 +435,7 @@ export class Pals {
       media,
       pals: this,
       ownerChannel: () => "app",
+      ...(this.d.pending ? { pending: this.d.pending } : {}),
       cwd: pal.rec.cwd,
       session: { id: pal.id, name: () => this.shownName(pal), card: (m, tool) => pal.card(m, tool), notice: (text) => pal.pushNotice(text) },
     });

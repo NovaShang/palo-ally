@@ -140,10 +140,18 @@ describe("host ↔ app protocol", () => {
     await tick(10);
     await run("approval.answer", { id: hub.approvals.listPending()[0]!.id, allow: true, remember: true });
     await hub.idle();
+    // The assistant's own question goes on the pending list (等你的事), never a blocking card.
     hub.userMessage("要问我", "app");
-    await tick(10);
-    await run("question.answer", { id: hub.questions.listPending()[0]!.id, answers: { "约哪天？": "周日", "谁一起去？": "太太, 孩子" } });
     await hub.idle();
+    expect(hub.questions.listPending()).toHaveLength(0);
+    const asked = (await run("pending.list")).items.filter((i: any) => i.status === "open");
+    expect(asked.map((i: any) => i.title).sort()).toEqual(["约哪天？", "谁一起去？"].sort());
+    const day = asked.find((i: any) => i.title === "约哪天？");
+    await run("pending.surface", { id: day.id });
+    await hub.idle();
+    await run("pending.answer", { id: day.id, answer: "周日" });
+    await hub.idle();
+    await run("pending.update", { id: asked.find((i: any) => i.title === "谁一起去？").id, action: "ignore" });
     const w = (await run("watch.add", { title: "晨报", instruction: "整理日程", at: ["08:30"] })).watch;
     hub.watches.progress(w.id, "已整理 3 条日程", { ratio: 0.5, outcome: "示例" });
     await run("watch.update", { id: w.id, patch: { enabled: false, dayOfMonth: -1 } });
@@ -231,7 +239,7 @@ describe("host ↔ app protocol", () => {
     const sessionCard = JSON.parse(JSON.stringify(hub.approvals.listPending()[0]!));
     hub.approvals.answer(hub.approvals.listPending()[0]!.id, true, "app");
     await prompt;
-    const asked = hub.sessions.onHook("PermissionRequest", {
+    const askedBySession = hub.sessions.onHook("PermissionRequest", {
       session_id: term.id,
       cwd: term.cwd,
       hook_event_name: "PermissionRequest",
@@ -240,8 +248,8 @@ describe("host ↔ app protocol", () => {
     }, sig());
     await tick(5);
     const sessionQuestion = JSON.parse(JSON.stringify(hub.questions.listPending()[0]!));
-    hub.questions.answer(hub.questions.listPending()[0]!.id, { "方案选哪个？": "B" }, "app");
-    await asked;
+    await run("question.answer", { id: hub.questions.listPending()[0]!.id, answers: { "方案选哪个？": "B" } });
+    await askedBySession;
     // one the owner didn't get to: back in the terminal
     const late = hub.sessions.onHook("PermissionRequest", { session_id: term.id, cwd: term.cwd, hook_event_name: "PermissionRequest", tool_name: "Bash", tool_input: { command: "npm test" } }, sig());
     await tick(5);
@@ -489,6 +497,9 @@ describe("host ↔ app protocol", () => {
         chat.find((m) => m.pal && m.from),
         // the owner's 「TL;DR」 ask (shown folded)
         chat.find((m) => m.tldr && !m.pal),
+        // a pending item surfaced at the bottom (聊这件), and the owner's answer to it
+        chat.find((m) => m.kind === "pending"),
+        chat.find((m) => m.role === "user" && m.pendingId),
       ]),
     );
     // the assistant's conversation gone back, and a Pal's
@@ -501,6 +512,12 @@ describe("host ↔ app protocol", () => {
     expect(palCard.source).toEqual({ kind: "pal", id: pal.id, name: "网站" });
     const questions = events.filter((e) => e.event === "question.updated").map((e) => e.data);
     sampleEvents["question.updated"] = JSON.parse(JSON.stringify([questions[0], sessionQuestion]));
+    // 等你的事: the assistant's item with options, a session's blocking one, one decided
+    const pend = events.filter((e) => e.event === "pending.updated").map((e) => e.data);
+    sampleEvents["pending.updated"] = JSON.parse(
+      JSON.stringify([pend.find((i) => i.status === "open" && i.options && !i.blocking), pend.find((i) => i.blocking && i.source.kind === "session"), pend.find((i) => i.status === "done" && i.conclusion)]),
+    );
+    expect((sampleEvents["pending.updated"] as any[]).every(Boolean)).toBe(true);
     expect(sessionCard.source).toEqual({ kind: "session", id: term.id, name: "修登录跳转" });
     expect(sessionQuestion.source).toBeDefined();
     // the computer's sessions; the Pals (a list with both, a terminal session being adopted among the others)

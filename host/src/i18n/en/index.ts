@@ -6,5 +6,6 @@ import { enCopy } from "./copy.ts";
 import { enFiles } from "./files.ts";
 import { enHub } from "./hub.ts";
 import { enPals } from "./pals.ts";
+import { enPending } from "./pending.ts";
 
-export const en: Record<keyof typeof zh, string> = { ...enCopy, ...enConfig, ...enHub, ...enAllies, ...enPals, ...enCli, ...enFiles };
+export const en: Record<keyof typeof zh, string> = { ...enCopy, ...enConfig, ...enHub, ...enAllies, ...enPals, ...enCli, ...enFiles, ...enPending };

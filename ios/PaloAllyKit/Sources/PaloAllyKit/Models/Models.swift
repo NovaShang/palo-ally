@@ -26,6 +26,9 @@ public enum ChatKind: String, TolerantStringEnum {
     /// The assistant proposes adopting a recent conversation as a Pal
     /// (pals-prd §10): a card with 接管 / 不用 (`proposal`, read as `adoption`).
     case palAdopt = "pal_adopt"
+    /// One of the owner's pending items (等你的事) surfaced at the bottom of
+    /// the conversation (`pendingId`); its card follows the item.
+    case pending
     public static let fallback = ChatKind.unknown
 }
 
@@ -131,6 +134,8 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     public var approvalId: String?
     /// kind == .question: the question the card shows.
     public var questionId: String?
+    /// kind == .pending: the item its card shows; on the owner's message, the item it answers.
+    public var pendingId: String?
     /// Not in §5.3 but accepted if the host echoes it on the broadcast
     /// `chat.message` for a user turn (lets us merge the optimistic echo
     /// before the `chat.send` response lands).
@@ -180,7 +185,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     public var delivery: Delivery = .sent
 
     enum CodingKeys: String, CodingKey {
-        case seq, id, role, kind, text, channel, ts, proactive, taskId, approvalId, questionId, clientMsgId, attachments, label, replyTo, card
+        case seq, id, role, kind, text, channel, ts, proactive, taskId, approvalId, questionId, pendingId, clientMsgId, attachments, label, replyTo, card
         case allyId, allyName, dir, entryId, author, proposal, pal, from, uuid, updatedSeq, tldr
     }
 
@@ -207,6 +212,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         taskId = l.string("taskId")
         approvalId = l.string("approvalId")
         questionId = l.string("questionId")
+        pendingId = l.string("pendingId")
         clientMsgId = l.string("clientMsgId")
         attachments = l.decode([Attachment].self, "attachments")
         label = l.string("label")
@@ -244,6 +250,7 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         try c.encodeIfPresent(taskId, forKey: .taskId)
         try c.encodeIfPresent(approvalId, forKey: .approvalId)
         try c.encodeIfPresent(questionId, forKey: .questionId)
+        try c.encodeIfPresent(pendingId, forKey: .pendingId)
         try c.encodeIfPresent(clientMsgId, forKey: .clientMsgId)
         try c.encodeIfPresent(attachments, forKey: .attachments)
         try c.encodeIfPresent(label, forKey: .label)

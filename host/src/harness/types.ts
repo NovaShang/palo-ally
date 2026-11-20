@@ -84,7 +84,7 @@ export type PermissionDecision =
   | { behavior: "deny"; message: string };
 
 /** The tools that reach the owner: the assistant has them, and so does every session (scoped to it). */
-export const DELIVERY_TOOLS = ["SendUserFile", "Artifact", "copy_to_clipboard", "notify_user", "pals_list"] as const;
+export const DELIVERY_TOOLS = ["SendUserFile", "Artifact", "copy_to_clipboard", "notify_user", "pals_list", "add_pending", "resolve_pending"] as const;
 export type DeliveryToolHandlers = Pick<ToolHandlers, (typeof DELIVERY_TOOLS)[number]>;
 
 export interface ToolHandlers {
@@ -102,6 +102,9 @@ export interface ToolHandlers {
   update_goal(args: { id: string; progress: string; state?: "tracking" | "waiting" | "done" | "paused"; ratio?: number; outcome?: string }): Promise<string>;
   remove_watch(args: { id: string }): Promise<string>;
   notify_user(args: { text: string; urgent?: boolean }): Promise<string>;
+  // 等你的事 (pending.ts): a decision for the owner, kept by the host; non-blocking.
+  add_pending(args: { title: string; context?: string; options?: string[] }): Promise<string>;
+  resolve_pending(args: { id: string; conclusion: string }): Promise<string>;
   copy_to_clipboard(args: { text: string; label?: string }): Promise<string>;
   SendUserFile(args: { files: string[]; caption?: string; status: "normal" | "proactive"; display?: "render" | "attach"; temporary?: boolean }): Promise<string>;
   Artifact(args: { file_path: string; title?: string; description?: string; files?: Record<string, string>; folder?: string }): Promise<string>;
@@ -253,7 +256,7 @@ export interface HarnessDriver {
 export const PALO_SEND_TOOL = "mcp__paloally__palo_send";
 
 /** What a session's process may call without asking the owner: palo_send and the tools that reach the owner. */
-export const SESSION_ALLOWED_TOOLS = [PALO_SEND_TOOL, ...["Artifact", "SendUserFile", "notify_user", "copy_to_clipboard", "pals_list"].map((n) => `mcp__paloally__${n}`)];
+export const SESSION_ALLOWED_TOOLS = [PALO_SEND_TOOL, ...["Artifact", "SendUserFile", "notify_user", "copy_to_clipboard", "pals_list", "add_pending", "resolve_pending"].map((n) => `mcp__paloally__${n}`)];
 
 /**
  * Claude Code's own SendUserFile delivers nowhere PaloAlly can see; the

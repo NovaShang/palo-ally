@@ -1,0 +1,31 @@
+// 等你的事 (pending.ts): the items' own words, and what the model is told about them.
+export const zhPending = {
+  "pending.decided": "已定",
+  "pending.closed": "已经结束，没等到回答",
+  "pending.skipped": "跳过了",
+  "pending.questions": "{q}（共 {n} 个问题）",
+  "pending.allow": "允许",
+  "pending.deny": "拒绝",
+  "pending.allowed": "允许了",
+  "pending.denied": "拒绝了",
+  "pending.err.none": "没有这件事",
+  "pending.err.gone": "这个提问已经结束，放不回去了",
+  "pending.err.action": "不认识的操作",
+  "pending.err.empty": "要回答点什么",
+  "pending.line.blocking": "（有会话卡着等）",
+  "pending.tool.added": "已放进主人的「等你的事」（id: {id}），现在一共 {n} 件。主人方便时会在 App 里定，定了会作为消息告诉你。先继续别的，不要等。",
+  "pending.tool.dup": "这件已经在清单里了（id: {id}），没有重复放。",
+  "pending.tool.badTitle": "title 不能为空：写一句话，说清主人要定什么。",
+  "pending.tool.resolved": "已标为已定：{conclusion}。{rest}",
+  "pending.tool.rest": "还剩 {n} 件：\n{lines}",
+  "pending.tool.none": "清单里没有别的了。",
+  "pending.ask.deferred":
+    "交给主人了：这个问题已经放进主人的「等你的事」（{ids}），他会在方便时回答，答案会作为消息送回给你。先继续：能做的先做，依赖这个答案的部分别替主人决定，也别再问一遍。",
+  "pending.answer.note": "（主人在「等你的事」里回答了 {id}「{title}」，已记为已定。要把结论写得更准就用 resolve_pending。{rest}）",
+  "pending.answer.question": "（回答的是你之前问主人的：「{q}」）",
+  "pending.answer.pal": "关于「{title}」：{answer}",
+  "pending.surface.turn":
+    "[等你的事] 主人点了「聊这件」，想现在定：\nid: {id}\n来自：{source}\n要定的：{title}\n背景：{context}\n选项：{options}\n这件的卡片已经摆在对话最底下（背景、要定什么、选项都在上面）。用一两句补上你的看法或主人还需要知道的，不要重复卡片上的字，然后等主人回答。",
+  "pending.surface.none": "（无）",
+  "pending.brief.stale": "\n\n这几件等主人定的事已经放了三天以上，这次在内容里提一句（一行就够），之后不再提：\n{lines}",
+};

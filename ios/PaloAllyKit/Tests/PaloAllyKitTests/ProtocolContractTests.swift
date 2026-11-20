@@ -108,6 +108,10 @@ private let resultTypes: [String: Check] = [
     RPCMethod.authLoginStart: strict(AuthResult.self),
     RPCMethod.authLoginCode: strict(AuthResult.self),
     RPCMethod.authLoginCancel: strict(AuthResult.self),
+    RPCMethod.pendingList: strict(PendingListResult.self),
+    RPCMethod.pendingUpdate: strict(PendingItemResult.self),
+    RPCMethod.pendingAnswer: strict(PendingItemResult.self),
+    RPCMethod.pendingSurface: strict(ChatSendResult.self),
     RPCMethod.filesList: strict(FilesListResult.self),
     RPCMethod.filesRead: strict(FileChunk.self),
     RPCMethod.filesWrite: strict(FilesWriteResult.self),
@@ -238,6 +242,7 @@ private let eventTypes: [String: Check] = [
     },
     RPCEventName.workspacesUpdated: strict(WorkspacesResult.self),
     RPCEventName.filesChanged: strict(FileChanged.self),
+    RPCEventName.pendingUpdated: strict(PendingItem.self),
     RPCEventName.workbenchUpdated: { json in
         guard let u = WorkbenchTabsUpdate(json: json) else { return ["WorkbenchTabsUpdate did not recognise the payload"] }
         return u.state == nil ? [] : strictIssues(TabsState.self, json["state"] ?? .null)

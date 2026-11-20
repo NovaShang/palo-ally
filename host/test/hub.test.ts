@@ -1187,26 +1187,34 @@ describe("Hub: AskUserQuestion", () => {
     ],
   };
 
-  test("asked from the app: a choice card + push, never a permission prompt; the answer reaches the tool", async () => {
-    const script: FakeScript = async (_t, ctx) => {
-      await ctx.useTool("AskUserQuestion", input, { ask: true });
+  test("asked from the app: it goes on the pending list and the tool is answered at once; the owner's answer comes back as a message", async () => {
+    const script: FakeScript = async (t, ctx) => {
+      if (t.includes("约个时间")) await ctx.useTool("AskUserQuestion", input, { ask: true });
+      else ctx.emit({ type: "assistant_text", text: "好，周日。", parentToolUseId: null });
     };
-    const wechat = new FakeWechat();
-    const { hub, driver, pusher, paths } = makeHub({ script, wechat });
+    const { hub, driver, paths } = makeHub({ script });
     hub.userMessage("帮我约个时间", "app");
-    await tick(10);
-    expect(hub.approvals.listPending()).toHaveLength(0);
-    const q = hub.questions.listPending()[0]!;
-    const card = hub.chat.recent(5).find((m) => m.kind === "question")!;
-    expect(card.questionId).toBe(q.id);
-    expect(card.text).toContain("约哪天？");
-    expect(pusher.pushes.some((p) => p.title === "等你回答")).toBe(true);
-    expect(wechat.proactive[0]).toContain("有个问题等你回答"); // hint only: options stay off WeChat
-    expect(wechat.replies).toHaveLength(0);
-    hub.questions.answer(q.id, { "约哪天？": "周日" }, "app");
     await hub.idle();
+    // Never a blocking card: the conversation went on.
+    expect(hub.approvals.listPending()).toHaveLength(0);
+    expect(hub.questions.listPending()).toHaveLength(0);
+    expect(hub.chat.recent(5).some((m) => m.kind === "question")).toBe(false);
     const d = driver.decisions.find((x) => x.tool === "AskUserQuestion")!.decision;
-    expect(d.behavior === "allow" && d.updatedInput).toEqual({ ...input, answers: { "约哪天？": "周日" } });
+    expect(d.behavior).toBe("deny");
+    const item = hub.pending.open()[0]!;
+    expect(item).toMatchObject({ title: "约哪天？", options: ["周六", "周日"], blocking: false, status: "open", source: { kind: "palo" } });
+    expect(item.context).toContain("周六: 上午");
+    expect(d.behavior === "deny" && d.message).toContain(item.id);
+    // The owner picks 周日 on the list: a message of theirs, quoting the item; the item decided.
+    const done = await hub.answerPending(item.id, "周日", "app");
+    expect(done).toMatchObject({ status: "done", conclusion: "周日" });
+    await hub.idle();
+    const mine = hub.chat.since(0).filter((m) => m.role === "user").at(-1)!;
+    expect(mine).toMatchObject({ text: "周日", pendingId: item.id });
+    const sent = driver.last!.sent.at(-1)!;
+    expect(sent).toContain("周日");
+    expect(sent).toContain("约哪天？");
+    expect(sent).toContain(item.id);
     cleanup(paths);
   });
 

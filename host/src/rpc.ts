@@ -35,6 +35,7 @@ export const RPC_METHODS = [
   "workspaces.list", "workspaces.create", "workspaces.update", "workspaces.move", "workspaces.delete", "workbench.order.set", "workbench.tabs.get", "workbench.tabs.set",
   "pair.invite", "device.list", "device.remove",
   "auth.login.start", "auth.login.code", "auth.login.cancel",
+  "pending.list", "pending.update", "pending.answer", "pending.surface",
   "files.list", "files.read", "files.write", "files.search", "files.resolve", "files.watch", "files.unwatch", "files.folders.list", "files.folders.browse", "files.folders.add", "files.folders.remove",
 ] as const;
 
@@ -42,7 +43,7 @@ export const RPC_EVENTS = [
   "chat.message", "chat.delta", "chat.rewound", "task.updated", "approval.updated", "question.updated", "watch.updated",
   "artifact.updated", "settings.updated", "status", "commands.updated",
   "suggestions.updated", "ally.updated", "ally.entry", "sessions.updated", "pals.updated",
-  "workspaces.updated", "workbench.updated", "files.changed",
+  "workspaces.updated", "workbench.updated", "files.changed", "pending.updated",
 ] as const;
 
 // Admin methods are reachable only on the local unix socket (the owner's own
@@ -70,6 +71,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
         tasks: hub.tasks.list(),
         approvals: hub.approvals.list(),
         questions: hub.questions.list(),
+        pending: hub.pending.list(),
         watches: hub.watches.list(),
         artifacts: hub.artifacts.list(),
         settings: hub.config.settings,
@@ -177,6 +179,21 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       const q = hub.questions.answer(String(p.id ?? ""), answers, ctx.channel, ctx.deviceId);
       if (q?.source?.kind === "pal") hub.pals.cardAnswered(q.source.id);
       return { question: q };
+    }
+    // 等你的事 (pending.ts): the owner's list of what to decide.
+    case "pending.list":
+      return { items: hub.pending.list() };
+    // ignore / reopen (撤回, 放回) / snooze
+    case "pending.update":
+      return { item: hub.pending.update(String(p.id ?? ""), String(p.action ?? ""), ctx.channel) };
+    // An option picked, or the owner's own words: a blocking question or
+    // prompt is answered as such; otherwise it goes to where the item came from.
+    case "pending.answer":
+      return { item: await hub.answerPending(String(p.id ?? ""), String(p.answer ?? ""), ctx.channel, ctx.deviceId) };
+    // 聊这件: its card at the bottom of the assistant's conversation, the assistant asked to add its view.
+    case "pending.surface": {
+      const m = hub.surfacePending(String(p.id ?? ""), ctx.channel);
+      return { id: m.id, seq: m.seq };
     }
     case "watch.add":
       return { watch: hub.watches.add(p, "user") };

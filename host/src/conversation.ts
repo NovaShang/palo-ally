@@ -103,6 +103,10 @@ export interface ConversationDeps {
   // where Claude Code keeps a session's transcript (a rewound session: has the fork been written?)
   transcriptOf?: (sessionId: string) => string | undefined;
   metric: (m: Record<string, unknown>) => void;
+  // The assistant's own AskUserQuestion goes on the owner's pending list
+  // instead of stopping the conversation: the words it's told (null: ask as
+  // before, a blocking card; a WeChat turn, where the owner answers in text).
+  deferQuestion?: (input: Record<string, unknown>) => string | null;
   /** A turn went through (null) or failed for want of Claude Code's login (what it was for). */
   onAuth?: (failed: { text: string; watchId?: string } | null) => void;
   log: (s: string) => void;
@@ -159,6 +163,12 @@ export class Conversation {
 
   get busy(): boolean {
     return this.current !== null;
+  }
+
+  /** The goal whose scheduled run is the current turn (a brief's), if it is one. */
+  currentWatch(): { id: string; label?: string } | undefined {
+    const c = this.current;
+    return c?.watchId && c.origin === "schedule" ? { id: c.watchId, label: c.label } : undefined;
   }
 
   // Nothing in flight at all (safe to restart the process).
@@ -307,7 +317,11 @@ export class Conversation {
       canUseTool: (req) => {
         const deny = this.gateTool({ toolName: req.toolName, input: req.input, agentId: req.agentId, via: "canUseTool" });
         if (deny) return Promise.resolve({ behavior: "deny", message: deny });
-        return req.toolName === ASK_TOOL ? this.d.questions.request(req) : this.d.approvals.request(req);
+        if (req.toolName === ASK_TOOL) {
+          const deferred = this.current?.origin === "wechat" ? null : (this.d.deferQuestion?.(req.input) ?? null);
+          return deferred !== null ? Promise.resolve({ behavior: "deny", message: deferred }) : this.d.questions.request(req);
+        }
+        return this.d.approvals.request(req);
       },
       toolGate: (req) => this.gateTool(req),
       mcpServers: this.d.mcpServers(),

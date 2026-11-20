@@ -5,7 +5,8 @@ import { zhCopy } from "./copy.ts";
 import { zhFiles } from "./files.ts";
 import { zhHub } from "./hub.ts";
 import { zhPals } from "./pals.ts";
+import { zhPending } from "./pending.ts";
 
 // One dictionary per area, merged here. Keys are prefixed by area, so areas
 // never collide. en/index.ts must provide every key (typed).
-export const zh = { ...zhCopy, ...zhConfig, ...zhHub, ...zhAllies, ...zhPals, ...zhCli, ...zhFiles };
+export const zh = { ...zhCopy, ...zhConfig, ...zhHub, ...zhAllies, ...zhPals, ...zhCli, ...zhFiles, ...zhPending };

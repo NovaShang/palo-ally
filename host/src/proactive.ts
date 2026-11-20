@@ -34,6 +34,8 @@ export interface ProactiveDeps {
   enqueue: (turn: Turn) => void;
   hasQueued: (pred: (t: Turn) => boolean) => boolean;
   metric: (m: Record<string, unknown>) => void;
+  /** More for a schedule run's turn (a brief: the owner's items left open for days). */
+  scheduleExtra?: (w: Watch) => string;
 }
 
 // Proactive is everything the assistant says without being asked: scheduled
@@ -51,7 +53,7 @@ export class Proactive {
     // One run of the same schedule waiting is enough.
     if (this.d.hasQueued((t) => t.label === w.title && t.origin === "schedule")) return;
     this.d.audit.log("schedule.fire", { id: w.id, title: w.title });
-    this.d.enqueue({ text: scheduleTurnText(w), origin: "schedule", proactive: true, label: w.title, watchId: w.id });
+    this.d.enqueue({ text: scheduleTurnText(w) + (this.d.scheduleExtra?.(w) ?? ""), origin: "schedule", proactive: true, label: w.title, watchId: w.id });
   }
 
   onProbeTriggers(triggers: ProbeTrigger[]): void {

@@ -24,6 +24,7 @@ export class Paths {
   get taskActivity() { return join(this.state, "task-activity"); }
   get approvals() { return join(this.state, "approvals.json"); }
   get questions() { return join(this.state, "questions.json"); }
+  get pending() { return join(this.state, "pending.json"); }
   get handoffs() { return join(this.state, "handoffs.json"); }
   get power() { return join(this.state, "power.json"); }
   get update() { return join(this.state, "update.json"); }

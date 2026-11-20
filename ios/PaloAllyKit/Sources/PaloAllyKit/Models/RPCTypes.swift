@@ -153,6 +153,14 @@ public enum RPCMethod {
     public static let authLoginCancel = "auth.login.cancel"
     public static let auth: [String] = [authLoginStart, authLoginCode, authLoginCancel]
 
+    /// 等你的事 (host/src/pending.ts): the list, the owner's hand on it
+    /// (ignore / reopen / snooze), an answer, and 聊这件.
+    public static let pendingList = "pending.list"
+    public static let pendingUpdate = "pending.update"
+    public static let pendingAnswer = "pending.answer"
+    public static let pendingSurface = "pending.surface"
+    public static let pending: [String] = [pendingList, pendingUpdate, pendingAnswer, pendingSurface]
+
     /// Files on the computer, read-only (docs/files-prd.md): a folder's
     /// children, a file in chunks, names, the paths in a reply, and the
     /// folders the owner opened from the preview pane.
@@ -181,7 +189,7 @@ public enum RPCMethod {
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister, presence,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
         suggestionsList, suggestionsDismiss, hostUpdate, pairInvite, deviceList, deviceRemove,
-    ] + allies + sessions + pals + workbench + files + auth
+    ] + allies + sessions + pals + workbench + files + auth + pending
 }
 
 public enum RPCEventName {
@@ -219,11 +227,13 @@ public enum RPCEventName {
     public static let workbench: [String] = [workspacesUpdated, workbenchUpdated]
     /// A file a preview watches changed on disk (`files.watch`).
     public static let filesChanged = "files.changed"
+    /// One item on the owner's list changed (added, decided, ignored…).
+    public static let pendingUpdated = "pending.updated"
 
     public static let all: [String] = [
         chatMessage, chatDelta, chatRewound, taskUpdated, approvalUpdated, questionUpdated, watchUpdated, artifactUpdated, settingsUpdated,
         status, commandsUpdated, suggestionsUpdated,
-    ] + allies + sessions + pals + workbench + [filesChanged]
+    ] + allies + sessions + pals + workbench + [filesChanged, pendingUpdated]
 }
 
 public struct EmptyParams: Codable, Sendable { public init() {} }
@@ -277,6 +287,8 @@ public struct SyncResult: Codable, Sendable {
     public var approvals: [Approval]?
     /// Absent on hosts that predate question cards.
     public var questions: [Question]?
+    /// 等你的事; absent on hosts that predate it.
+    public var pending: [PendingItem]?
     public var watches: [Watch]?
     public var artifacts: [Artifact]?
     public var settings: HostSettings?
@@ -319,6 +331,7 @@ public struct SyncResult: Codable, Sendable {
         tasks = l.expect("tasks", l.array(AllyTask.self, "tasks"))
         approvals = l.expect("approvals", l.array(Approval.self, "approvals"))
         questions = l.array(Question.self, "questions")
+        pending = l.array(PendingItem.self, "pending")
         watches = l.expect("watches", l.array(Watch.self, "watches"))
         artifacts = l.expect("artifacts", l.array(Artifact.self, "artifacts"))
         settings = l.expect("settings", l.decode(HostSettings.self, "settings"))

@@ -13,19 +13,20 @@ import type { HarnessDriver, HarnessEvent, ModelOption, SlashCommandInfo, ToolHa
 import { HarnessInfo } from "./harnessInfo.ts";
 import { MemoryView, autoMemoryDir } from "./memory.ts";
 import { ProbeScheduler, type ProbeTrigger } from "./probe.ts";
-import { QuestionManager, parseTextAnswer, questionText } from "./questions.ts";
+import { QuestionManager, parseItems, parseTextAnswer, questionText } from "./questions.ts";
+import { PendingStore, pendingLines } from "./pending.ts";
 import { Proactive } from "./proactive.ts";
 import { Router, type Pusher } from "./router.ts";
 import { RuntimeState } from "./runtime.ts";
 import { localizeDefaultHome, setSoulName } from "./home.ts";
-import { isLang, parseLocale, setLang, t, systemLanguage, type Lang } from "./i18n/index.ts";
-import { makeShellTools } from "./shellTools.ts";
+import { isLang, parseLocale, setLang, t, tIn, systemLanguage, type Lang } from "./i18n/index.ts";
+import { makeShellTools, restText } from "./shellTools.ts";
 import { SuggestionStore } from "./suggestions.ts";
 import { TaskTracker } from "./tasks.ts";
 import { TLDR_MARKER, isTldrAsk, tldrInstruction } from "./tldr.ts";
-import type { Attachment, Channel, ChatMessage, PairedDevice, Status, Task, Watch, ReplyTo } from "./types.ts";
+import type { Attachment, Channel, ChatMessage, PairedDevice, PendingItem, PendingSource, Status, Task, Watch, ReplyTo } from "./types.ts";
 import { MediaStore } from "./media.ts";
-import { ensureMorningBrief } from "./brief.ts";
+import { briefTitle, ensureMorningBrief, isBriefTitle } from "./brief.ts";
 import { HandoffTracker, claudeConfigDir, transcriptPath } from "./handoffs.ts";
 import { readRegistry } from "./ccSessions.ts";
 import { StallWatch, type StallWatchDeps, WATCHDOG_DEFAULTS, apiSockets, diagnoseInto, killHard } from "./stallWatch.ts";
@@ -82,6 +83,8 @@ export class Hub {
   readonly tasks: TaskTracker;
   readonly approvals: ApprovalManager;
   readonly questions: QuestionManager;
+  /** 等你的事: what the owner must decide (pending.ts). */
+  readonly pending: PendingStore;
   readonly watches: WatchStore;
   readonly artifacts: ArtifactLibrary;
   readonly media: MediaStore;
@@ -181,6 +184,7 @@ export class Hub {
       loggedIn: claudeLoggedIn,
       ...deps.auth,
     });
+    this.pending = new PendingStore(this.paths.pending, this.bus, this.audit, () => this.config.settings.assistantName || PALO_NAME);
     this.approvals = new ApprovalManager(this.paths.approvals, this.bus, this.audit, {
       taskForToolUse: (id) => (id ? this.tasks.taskIdForToolUse(id) : undefined),
       onCreated: (a) => this.proactive.onApprovalCreated(a),
@@ -245,6 +249,7 @@ export class Hub {
       },
       metric: (m) => this.metric(m),
       onAuth: (failed) => (failed ? this.auth.failed({ kind: "palo", ...failed }) : this.auth.worked()),
+      deferQuestion: (input) => this.deferQuestion(input),
       log: this.log,
     });
     this.handoffs = new HandoffTracker({
@@ -301,6 +306,12 @@ export class Hub {
       enqueue: (t) => this.conversation.enqueue(t),
       hasQueued: (p) => this.conversation.hasQueued(p),
       metric: (m) => this.metric(m),
+      // A brief mentions, once, what has waited on the owner for days.
+      scheduleExtra: (w) => {
+        if (!isBriefTitle(w.title) && !/晚报|brief/i.test(w.title)) return "";
+        const stale = this.pending.takeStale();
+        return stale.length ? t("pending.brief.stale", { lines: pendingLines(stale) }) : "";
+      },
     });
     this.probe = new ProbeScheduler({
       driver: deps.driver,
@@ -382,6 +393,7 @@ export class Hub {
       launchMode: () => this.config.pals?.launch ?? "auto",
       media: this.media,
       artifacts: this.artifacts,
+      pending: this.pending,
       models: () => this.info.loadModels(1500),
       // A Pal's palo_send joins the assistant's inbound queue (a turn of its own, behind a running one), as an Ally's message does.
       toAssistant: (from, wrapped) => this.conversation.enqueue({ text: wrapped, origin: "system", proactive: true, pal: true, label: from }),
@@ -450,6 +462,8 @@ export class Hub {
       log: (s) => this.log(s),
       now: deps.now,
     });
+    // The last process' questions and prompts are closed: so are their items.
+    this.pending.reconcile((i) => (i.questionId ? this.questions.get(i.questionId)?.status === "pending" : this.approvals.get(i.approvalId ?? "")?.status === "pending"));
   }
 
   // ---------------- lifecycle ----------------
@@ -548,6 +562,8 @@ export class Hub {
     clientMsgId?: string,
     attachments: Attachment[] = [],
     replyTo?: ReplyTo,
+    // An answer from the pending list: the item, and words for the assistant only.
+    extra: { note?: string; pendingId?: string } = {},
   ): ChatMessage | null {
     // 「TL;DR」 (the app's marker): the instruction in its place, shown folded.
     const tldr = isTldrAsk(text) && !attachments.length;
@@ -568,6 +584,7 @@ export class Hub {
       ...(replyTo && !tldr ? { replyTo } : {}),
       ...(uuid ? { uuid } : {}),
       ...(tldr ? { tldr: true } : {}),
+      ...(extra.pendingId ? { pendingId: extra.pendingId } : {}),
     });
     // The owner is here: an Ally's message shown before now has been seen.
     if (channel === "app" || channel === "cli") this.allies.ownerActive();
@@ -582,7 +599,7 @@ export class Hub {
       const m = a.kind === "image" ? this.media.read(a.id) : null;
       return m ? [{ mediaType: m.mediaType, data: m.data }] : [];
     });
-    this.conversation.sendOwner(this.ownerBody(msg), channel, wechat, images, uuid);
+    this.conversation.sendOwner(this.ownerBody(msg) + (extra.note ? `\n\n${extra.note}` : ""), channel, wechat, images, uuid);
     return msg;
   }
 
@@ -773,7 +790,109 @@ export class Hub {
   toolHandlers(): ToolHandlers {
     return makeShellTools({ tasks: this.tasks, handoffs: this.handoffs, watches: this.watches, artifacts: this.artifacts, chat: this.chat, router: this.router, audit: this.audit, wechat: this.wechat, media: this.media, allies: this.allies, pals: this.pals,
       ownerChannel: () => this.conversation.ownerChannel(), cwd: this.paths.home, timezone: () => this.config.settings.timezone,
-      pairInvite: () => this.pairInvite("assistant") });
+      pairInvite: () => this.pairInvite("assistant"), pending: this.pending, pendingOrigin: () => this.pendingOrigin() });
+  }
+
+  // ---------------- 等你的事 (pending.ts) ----------------
+
+  /** Who an item the assistant adds now comes from: a brief's run (its goal), or the assistant itself. */
+  private pendingOrigin(): { source: PendingSource; watchId?: string } {
+    const w = this.conversation.currentWatch();
+    if (w) return { source: { kind: "brief", id: w.id, name: w.label || briefTitle() }, watchId: w.id };
+    return { source: { kind: "palo", name: this.config.settings.assistantName || PALO_NAME } };
+  }
+
+  /**
+   * The assistant's own AskUserQuestion: each question becomes an item on
+   * the owner's list and the tool is answered at once, so the main
+   * conversation never stops on it; the owner's answer comes back as a
+   * message. null: malformed (it's asked as before and refused there).
+   */
+  private deferQuestion(input: Record<string, unknown>): string | null {
+    const items = parseItems(input);
+    if (!items.length) return null;
+    const origin = this.pendingOrigin();
+    const ids = items.map(
+      (q) =>
+        this.pending.add({
+          ...origin,
+          title: q.question,
+          ...(q.options.some((o) => o.description) ? { context: q.options.map((o) => (o.description ? `${o.label}: ${o.description}` : o.label)).join(t("turn.listSep")) } : {}),
+          options: q.options.map((o) => o.label),
+          question: q.question,
+          ...(!origin.watchId ? { messageId: this.lastAssistantMessageId() } : {}),
+        }).id,
+    );
+    this.audit.log("question.deferred", { ids, count: items.length });
+    return t("pending.ask.deferred", { ids: ids.join(", ") });
+  }
+
+  private lastAssistantMessageId(): string | undefined {
+    for (const m of this.chat.recent(20).reverse()) if (m.role === "assistant" && !m.pal) return m.id;
+    return undefined;
+  }
+
+  /**
+   * The owner answers an item (an option, or their own words). A blocking
+   * question or permission prompt is answered as such; a Pal's own item
+   * goes to that Pal in words; anything else (the assistant's, a brief's)
+   * reaches the assistant as the owner's message, the item marked decided.
+   */
+  async answerPending(id: string, answer: string, channel: Channel, device?: string): Promise<PendingItem> {
+    const item = this.pending.get(id);
+    if (!item) throw new Error(t("pending.err.none"));
+    const a = String(answer ?? "").trim().slice(0, 1000);
+    if (!a) throw new Error(t("pending.err.empty"));
+    if (item.status !== "open") return item;
+    if (item.questionId) {
+      const q = this.questions.get(item.questionId);
+      const first = q?.items[0];
+      if (!q || !first) throw new Error(t("pending.err.gone"));
+      this.questions.answer(q.id, { [first.question]: a }, channel, device);
+      if (q.source?.kind === "pal") this.pals.cardAnswered(q.source.id);
+      return this.pending.get(id)!;
+    }
+    if (item.approvalId) {
+      const allow = a === t("pending.allow") || a === tIn("zh", "pending.allow") || a === tIn("en", "pending.allow");
+      const ap = this.approvals.answer(item.approvalId, allow, channel, false, device);
+      if (ap?.source?.kind === "pal") this.pals.cardAnswered(ap.source.id);
+      return this.pending.get(id)!;
+    }
+    this.pending.resolve(id, a, channel);
+    if (item.source.kind === "pal" && item.source.id) {
+      await this.pals.send(item.source.id, t("pending.answer.pal", { title: item.title, answer: a }));
+      return this.pending.get(id)!;
+    }
+    const asked = this.pending.questionOf(id);
+    const note = [asked ? t("pending.answer.question", { q: asked }) : "", t("pending.answer.note", { id, title: item.title, rest: restText(this.pending) })].filter(Boolean).join("\n");
+    // The card it was surfaced on (or where it came from) is what the answer quotes.
+    const card = this.chat.recent(200).reverse().find((m) => m.kind === "pending" && m.pendingId === id);
+    const replyTo = { messageId: card?.id ?? item.messageId ?? "", excerpt: item.title };
+    this.userMessage(a, channel, undefined, undefined, [], replyTo.messageId ? replyTo : undefined, { note, pendingId: id });
+    return this.pending.get(id)!;
+  }
+
+  /**
+   * 聊这件: the item's card at the bottom of the assistant's conversation,
+   * and a turn (not shown) asking the assistant to add its view and wait for
+   * the owner's answer there.
+   */
+  surfacePending(id: string, channel: Channel): ChatMessage {
+    const item = this.pending.get(id);
+    if (!item) throw new Error(t("pending.err.none"));
+    if (item.status !== "open") this.pending.update(id, "reopen", channel);
+    const card = this.chat.add({ role: "assistant", kind: "pending", text: item.title, channel: "system", pendingId: id });
+    const none = t("pending.surface.none");
+    const turn = t("pending.surface.turn", {
+      id,
+      source: item.source.name,
+      title: item.title,
+      context: item.context ?? none,
+      options: item.options?.join(" / ") ?? none,
+    });
+    this.audit.log("pending.surfaced", { id, by: channel });
+    this.conversation.sendOwner(turn, channel === "cli" ? "cli" : "app");
+    return card;
   }
 
   /**

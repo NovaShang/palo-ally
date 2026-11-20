@@ -69,7 +69,7 @@ export function paloSendMcpServer(send: (text: string) => Promise<string>, deliv
         { text: z.string().describe("What to tell the assistant") },
         async (a) => text(await send(a.text)),
       ),
-      ...(shared ? [shared.Artifact, shared.SendUserFile, shared.notify_user, shared.copy_to_clipboard, shared.pals_list] : []),
+      ...(shared ? [shared.Artifact, shared.SendUserFile, shared.notify_user, shared.copy_to_clipboard, shared.pals_list, shared.add_pending, shared.resolve_pending] : []),
     ],
   });
 }
@@ -191,6 +191,8 @@ export function paloallyMcpServer(h: ToolHandlers) {
         async () => text(await h.pair_link()),
       ),
       shared.notify_user,
+      shared.add_pending,
+      shared.resolve_pending,
     ],
   });
 }
@@ -246,6 +248,26 @@ export function deliveryTools(h: DeliveryToolHandlers, forSession = false) {
       "主动推送一条消息给主人（手机通知；推不出去会改发微信）。只在真正要紧时用。返回的是实际送达情况：没送到就别对主人说已推送。",
       { text: z.string(), urgent: z.boolean().optional() },
       async (a) => text(await h.notify_user(a)),
+      ),
+    // 等你的事: the host keeps the list, not the model; never blocks.
+    add_pending: tool(
+      "add_pending",
+      "Put something the owner must decide on their pending list (等你的事), instead of asking and waiting. The host keeps the list and shows it in the PaloAlly app; it returns at once with the item's id, and the owner's decision comes back to you later as a message. Only for real decisions or preferences you can't proceed on without the owner; one item per decision, never the same one twice. `title`: one sentence saying what to decide, in the owner's language (「供应商合同第 7 条要不要保留」). `context`: one or two sentences of background. `options`: short answers to pick from, when there are clear ones.",
+      {
+        title: z.string().describe("One sentence: what the owner must decide"),
+        context: z.string().optional().describe("One or two sentences of background"),
+        options: z.array(z.string()).max(6).optional().describe("Short answers to pick from (2-4 is best)"),
+      },
+      async (a) => text(await h.add_pending(a)),
+      ),
+    resolve_pending: tool(
+      "resolve_pending",
+      "Mark one of the owner's pending items (等你的事) decided, with a one-line conclusion in the owner's language (「保留第 7 条」). Use it when the owner decides something on the list in conversation; an answer the owner picks in the app is marked already (calling it again only rewords the line). Returns what's left on the list.",
+      {
+        id: z.string().describe("The item's id (from add_pending, or as the host gave it)"),
+        conclusion: z.string().describe("One line: what was decided"),
+      },
+      async (a) => text(await h.resolve_pending(a)),
       ),
   };
 }

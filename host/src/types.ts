@@ -6,7 +6,7 @@ export interface ChatMessage {
   seq: number;
   id: string;
   role: "user" | "assistant" | "system";
-  kind: "text" | "task" | "approval" | "question" | "notice" | "clipboard" | "ally" | "helper" | "pal_adopt";
+  kind: "text" | "task" | "approval" | "question" | "notice" | "clipboard" | "ally" | "helper" | "pal_adopt" | "pending";
   text: string;
   channel: Channel;
   ts: number;
@@ -14,6 +14,10 @@ export interface ChatMessage {
   taskId?: string;
   approvalId?: string;
   questionId?: string; // kind "question": the choice card it shows
+  // kind "pending": one of the owner's pending items (等你的事), surfaced at
+  // the bottom of the conversation (its card follows the item's state). On
+  // the owner's own message: the item it answers.
+  pendingId?: string;
   clientMsgId?: string; // echoed for app-sent messages so clients can merge their optimistic copy
   attachments?: Attachment[]; // images the owner sent with the message
   label?: string; // kind "clipboard": what the copied text is ("地址", "验证码")
@@ -178,6 +182,40 @@ export interface Question {
   answeredBy?: string;
   source?: CardSource; // asked by a session on the computer
   note?: string; // see Approval.note
+}
+
+// ---- 等你的事: what waits for the owner (pending.ts) ----
+
+// Who put it there: the assistant ("palo"), one of the Pals, a computer
+// session (its blocking question or permission prompt), a brief (a schedule
+// goal's run), or an Ally.
+export interface PendingSource {
+  kind: "palo" | "pal" | "session" | "brief" | "ally";
+  id?: string; // the Pal's / session's / goal's / Ally's id
+  name: string;
+}
+
+export type PendingStatus = "open" | "done" | "ignored" | "snoozed";
+
+// One thing the owner has to decide, kept by the host (not remembered by the
+// model). `blocking`: a session is actually stopped waiting on it (its
+// question or permission prompt); answering the item answers that.
+export interface PendingItem {
+  id: string;
+  source: PendingSource;
+  title: string; // one sentence: what the owner must decide
+  context?: string; // a sentence or two of background
+  options?: string[]; // answers to pick from, when there are some
+  createdAt: number;
+  blocking: boolean;
+  status: PendingStatus;
+  conclusion?: string; // when done: what was decided, one line
+  resolvedAt?: number; // when it left the open list (done, ignored, snoozed)
+  messageId?: string; // the message it came from (看原文)
+  pal?: string; // …in this Pal's conversation (absent: the assistant's)
+  questionId?: string; // a blocking question (answered through it)
+  approvalId?: string; // a blocking permission prompt
+  remindedAt?: number; // open a long while: when a brief mentioned it
 }
 
 export interface Watch {

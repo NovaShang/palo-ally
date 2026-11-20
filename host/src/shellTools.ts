@@ -13,9 +13,10 @@ import type { WechatChannel } from "./channels/types.ts";
 import type { MediaStore } from "./media.ts";
 import type { Allies } from "./allies.ts";
 import type { Pals } from "./pals.ts";
+import { pendingLines, type PendingStore } from "./pending.ts";
 import { join, resolve } from "node:path";
 import { mimeOf } from "./artifacts.ts";
-import type { Attachment, Channel, ChatMessage, Watch } from "./types.ts";
+import type { Attachment, Channel, ChatMessage, PendingSource, Watch } from "./types.ts";
 import { t } from "./i18n/index.ts";
 
 /** How long notify_user waits for the delivery outcome (tests shorten it). */
@@ -41,6 +42,10 @@ export interface ShellToolDeps {
   timezone?: () => string;
   /** Opens a pairing window for one more of the owner's devices. */
   pairInvite?: () => Promise<{ link: string; expiresAt: number }>;
+  /** 等你的事: the host's list of what the owner must decide. */
+  pending?: PendingStore;
+  /** Who an item the assistant adds comes from now: itself, or a brief's run (its goal). */
+  pendingOrigin?: () => { source: PendingSource; watchId?: string };
 }
 
 // The tools the shell gives the main agent (the in-process `paloally` MCP
@@ -158,7 +163,7 @@ export interface SessionSink {
   notice: (text: string) => ChatMessage;
 }
 
-export type DeliveryDeps = Pick<ShellToolDeps, "artifacts" | "chat" | "router" | "audit" | "wechat" | "media" | "pals" | "ownerChannel" | "cwd"> & {
+export type DeliveryDeps = Pick<ShellToolDeps, "artifacts" | "chat" | "router" | "audit" | "wechat" | "media" | "pals" | "ownerChannel" | "cwd" | "pending" | "pendingOrigin"> & {
   /** Set for a session's tools; absent for the assistant's. */
   session?: SessionSink;
 };
@@ -249,5 +254,45 @@ export function makeDeliveryTools(d: DeliveryDeps): DeliveryToolHandlers {
       const r = await Promise.race([delivery, new Promise<null>((res) => setTimeout(() => res(null), notifyWait.ms))]);
       return notifyResultText(r);
     },
+    // 等你的事: the item is the host's to keep; the call never waits for the owner.
+    add_pending: async ({ title, context, options }) => {
+      const store = d.pending;
+      if (!store) return t("pending.err.none");
+      if (!String(title ?? "").trim()) return t("pending.tool.badTitle");
+      const origin = session ? { source: { kind: "pal" as const, id: session.id, name: session.name() } } : (d.pendingOrigin?.() ?? { source: { kind: "palo" as const, name: "Palo" } });
+      const before = store.open().length;
+      const item = store.add({
+        ...origin,
+        title,
+        context,
+        options,
+        ...(session ? { pal: session.id } : {}),
+        // The assistant's words the owner last saw: 看原文 goes there.
+        ...(!session && !origin.watchId ? { messageId: lastAssistantMessage(d.chat) } : {}),
+      });
+      const n = store.open().length;
+      return n === before ? t("pending.tool.dup", { id: item.id }) : t("pending.tool.added", { id: item.id, n });
+    },
+    resolve_pending: async ({ id, conclusion }) => {
+      const store = d.pending;
+      if (!store) return t("pending.err.none");
+      try {
+        const item = store.resolve(String(id ?? "").trim(), String(conclusion ?? ""), session ? `pal:${session.id}` : "assistant");
+        return t("pending.tool.resolved", { conclusion: item.conclusion ?? "", rest: restText(store) });
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    },
   };
+}
+
+/** What's still on the owner's list, for the model. */
+export function restText(store: PendingStore): string {
+  const open = store.open();
+  return open.length ? t("pending.tool.rest", { n: open.length, lines: pendingLines(open) }) : t("pending.tool.none");
+}
+
+function lastAssistantMessage(chat: ChatLog): string | undefined {
+  for (const m of chat.recent(20).reverse()) if (m.role === "assistant" && !m.pal) return m.id;
+  return undefined;
 }
