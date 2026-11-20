@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Network
 
 /// One relay tunnel connection: each WebSocket binary message is one E2E unit.
 public protocol UnitLink: Sendable {
@@ -130,7 +131,19 @@ func withTimeout<T: Sendable>(_ seconds: Double, onTimeout: (@Sendable () -> Voi
     }
 }
 
-/// E2E relay tunnel to the paired host, with automatic reconnect.
+/// E2E tunnel to the paired host, with automatic reconnect: straight to the
+/// computer when it can be reached (the same Mac, the local network,
+/// Tailscale: the addresses its `hello` told, `DirectEndpoints`), else
+/// through the cloud relay. Either way the same sealed channel.
+///
+/// Each connect first dials the direct addresses at once (`directTimeout`),
+/// the best route that completes the handshake winning, then the relay.
+/// While on the relay it tries direct again every `probeInterval` and when
+/// the network changes; once a direct link has handshaken, at a quiet moment
+/// (nothing sent or received for `quietBeforeSwitch`), the relay link is
+/// closed and the direct one taken up, a normal reconnect for the store
+/// (which re-syncs). A direct link that dies falls back to the relay at
+/// once, and the probing brings it back.
 public actor RelayTransport: HostTransport {
     public nonisolated let events: AsyncStream<TransportEvent>
     private let continuation: AsyncStream<TransportEvent>.Continuation
@@ -151,9 +164,35 @@ public actor RelayTransport: HostTransport {
     private var attempt = 0
     private var skipNextBackoff = false
 
+    // Direct links (DirectRoute.swift).
+    let directCache: DirectEndpointCache
+    let directTimeout: Double
+    let probeTimeout: Double
+    let probeInterval: Double
+    let quietBeforeSwitch: Double
+    private var direct: DirectEndpoints?
+    /// How the current link goes (nil while not connected).
+    private var route: TransportRoute?
+    /// A direct link the prober opened, taken up by the next connect.
+    private var pendingDirect: OpenedLink?
+    /// The next connect goes to the relay without trying direct (a direct link just died).
+    private var skipDirectOnce = false
+    /// When dialing direct last found nothing, and on which network: not
+    /// tried again on each reconnect until the network changes or a while passes.
+    private var directFailedAt: Double?
+    private var directFailedOnPath = 0
+    private var pathGeneration = 0
+    private var lastTraffic: Double = 0
+    private var prober: Task<Void, Never>?
+    private var proberWake: CheckedContinuation<Void, Never>?
+    private var pathMonitor: NWPathMonitor?
+    private let watchNetwork: Bool
+
     public init(host: PairedHost, identity: DeviceIdentity, linkFactory: @escaping UnitLinkFactory = WebSocketUnitLink.factory,
                 backoff: Backoff = Backoff(), handshakeTimeout: Double = 15, pingInterval: Double = 20,
-                pingTimeout: Double = 10) {
+                pingTimeout: Double = 10, directCache: DirectEndpointCache = DirectEndpointCache(),
+                directTimeout: Double = 0.8, probeTimeout: Double = 3, probeInterval: Double = 60,
+                quietBeforeSwitch: Double = 1.5, watchNetwork: Bool = true) {
         self.host = host
         self.identity = identity
         self.linkFactory = linkFactory
@@ -161,6 +200,13 @@ public actor RelayTransport: HostTransport {
         self.handshakeTimeout = handshakeTimeout
         self.pingInterval = pingInterval
         self.pingTimeout = pingTimeout
+        self.directCache = directCache
+        self.directTimeout = directTimeout
+        self.probeTimeout = probeTimeout
+        self.probeInterval = probeInterval
+        self.quietBeforeSwitch = quietBeforeSwitch
+        self.watchNetwork = watchNetwork
+        direct = directCache.load(host.daemonID)
         (events, continuation) = AsyncStream.makeStream(of: TransportEvent.self, bufferingPolicy: .unbounded)
     }
 
@@ -170,16 +216,48 @@ public actor RelayTransport: HostTransport {
         guard runTask == nil else { return }
         stopped = false
         runTask = Task { await self.runLoop() }
+        prober = Task { await self.probeLoop() }
+        if watchNetwork {
+            let monitor = NWPathMonitor()
+            monitor.pathUpdateHandler = { [weak self] _ in
+                Task { await self?.networkChanged() }
+            }
+            monitor.start(queue: .global(qos: .utility))
+            pathMonitor = monitor
+        }
     }
 
     public func stop() {
         stopped = true
         runTask?.cancel()
         runTask = nil
+        prober?.cancel()
+        prober = nil
+        wakeProber()
+        pathMonitor?.cancel()
+        pathMonitor = nil
+        pendingDirect?.link.close()
+        pendingDirect = nil
         link?.close()
         link = nil
         channel = nil
+        route = nil
         wake()
+    }
+
+    /// How the link goes now (nil while not connected).
+    public func currentRoute() -> TransportRoute? {
+        channel == nil ? nil : route
+    }
+
+    /// What the computer's `hello` said (nil: nothing, an older host). Kept
+    /// for the next launch; new ones are tried at once.
+    public func directEndpointsAdvertised(_ endpoints: DirectEndpoints?) {
+        guard let endpoints, endpoints != direct else { return }
+        direct = endpoints
+        directCache.save(endpoints, for: host.daemonID)
+        directFailedAt = nil
+        wakeProber()
     }
 
     public func reconnectNow() {
@@ -213,6 +291,7 @@ public actor RelayTransport: HostTransport {
         // then can't reorder two sends relative to their nonces.
         let unit = try ch.seal(message)
         channel = ch
+        lastTraffic = ProcessInfo.processInfo.systemUptime
         try await link.send(unit)
     }
 
@@ -235,10 +314,18 @@ public actor RelayTransport: HostTransport {
         while !stopped && !Task.isCancelled {
             skipNextBackoff = false
             let reason = await connectAndPump()
+            let wasDirect = route?.isDirect == true
             channel = nil
             link?.close()
             link = nil
+            route = nil
             if stopped { break }
+            // A direct link that died (not one the prober is replacing):
+            // straight to the relay, no waiting.
+            if wasDirect && pendingDirect == nil {
+                skipDirectOnce = true
+                skipNextBackoff = true
+            }
             continuation.yield(.disconnected(reason))
             if skipNextBackoff {
                 skipNextBackoff = false
@@ -254,26 +341,49 @@ public actor RelayTransport: HostTransport {
     /// Connects, handshakes, then pumps inbound units until the link dies.
     private func connectAndPump() async -> DisconnectReason {
         guard let hostKey = host.hostPublicKey else { return .rejected("bad host key") }
+        var opened: OpenedLink?
+        if let p = pendingDirect {
+            pendingDirect = nil
+            opened = p
+        } else if shouldTryDirect() {
+            opened = await dialDirect(timeout: directTimeout)
+            if opened == nil { noteDirectFailed() }
+        }
+        skipDirectOnce = false
+        if stopped {
+            opened?.link.close()
+            return .closed
+        }
         let l: any UnitLink
-        let handshake = ClientHandshake(identity: identity, deviceID: host.deviceID, hostKey: hostKey)
-        do {
-            let url = try host.tunnelURL(identity: identity)
-            l = try await linkFactory(url)
+        if let opened {
+            l = opened.link
             link = l
-            try await l.send(try handshake.helloUnit())
-            let welcome = try await withTimeout(handshakeTimeout, onTimeout: { l.close() }) { try await l.receive() }
-            channel = try handshake.finish(welcomeUnit: welcome)
-        } catch let e as E2EError {
-            debugLog("relay handshake failed: \(e)")
-            switch e {
-            case .rejected(let m): return .rejected(m)
-            default: return .network(e.localizedDescription)
+            channel = opened.channel
+            route = opened.route
+            debugLog("relay: direct link (\(opened.route.rawValue))")
+        } else {
+            let handshake = ClientHandshake(identity: identity, deviceID: host.deviceID, hostKey: hostKey)
+            do {
+                let url = try host.tunnelURL(identity: identity)
+                l = try await linkFactory(url)
+                link = l
+                try await l.send(try handshake.helloUnit())
+                let welcome = try await withTimeout(handshakeTimeout, onTimeout: { l.close() }) { try await l.receive() }
+                channel = try handshake.finish(welcomeUnit: welcome)
+                route = .relay
+            } catch let e as E2EError {
+                debugLog("relay handshake failed: \(e)")
+                switch e {
+                case .rejected(let m): return .rejected(m)
+                default: return .network(e.localizedDescription)
+                }
+            } catch {
+                debugLog("relay connect failed: \(error)")
+                return .network(error.localizedDescription)
             }
-        } catch {
-            debugLog("relay connect failed: \(error)")
-            return .network(error.localizedDescription)
         }
         if stopped { return .closed }
+        lastTraffic = ProcessInfo.processInfo.systemUptime
         attempt = 0
         continuation.yield(.connected)
 
@@ -301,6 +411,7 @@ public actor RelayTransport: HostTransport {
         do {
             while true {
                 let unit = try await l.receive()
+                lastTraffic = ProcessInfo.processInfo.systemUptime
                 guard let type = unit.first else { continue }
                 if type == UnitType.sealed.rawValue {
                     guard var ch = channel else { return .closed }
@@ -319,6 +430,134 @@ public actor RelayTransport: HostTransport {
         }
     }
 }
+
+// MARK: - direct links
+
+extension RelayTransport {
+    private var now: Double { ProcessInfo.processInfo.systemUptime }
+
+    private func shouldTryDirect() -> Bool {
+        guard !skipDirectOnce, let direct, !direct.candidates.isEmpty else { return false }
+        // Nothing answered a moment ago on this same network: the relay
+        // straight away; the prober keeps trying meanwhile.
+        if let at = directFailedAt, directFailedOnPath == pathGeneration, now - at < 30 { return false }
+        return true
+    }
+
+    private func noteDirectFailed() {
+        directFailedAt = now
+        directFailedOnPath = pathGeneration
+    }
+
+    /// Dials every direct address at once; the best route that completes the
+    /// handshake within `timeout` (nil: none).
+    func dialDirect(timeout: Double) async -> OpenedLink? {
+        guard let direct, let hostKey = host.hostPublicKey else { return nil }
+        let candidates = direct.candidates
+        guard !candidates.isEmpty else { return nil }
+        let race = DirectRace(ranks: candidates.map(\.route.rank))
+        for c in candidates {
+            let rank = c.route.rank
+            guard let url = try? direct.url(addr: c.addr, host: host, identity: identity) else {
+                race.finished(rank: rank, nil)
+                continue
+            }
+            let handshake = ClientHandshake(identity: identity, deviceID: host.deviceID, hostKey: hostKey)
+            let factory = linkFactory
+            let route = c.route
+            Task {
+                var opened: OpenedLink?
+                var dialed: (any UnitLink)?
+                do {
+                    // The dial itself is bounded too: a factory that hangs
+                    // mustn't hold the race up.
+                    let l = try await withTimeout(timeout) { try await factory(url) }
+                    dialed = l
+                    let welcome = try await withTimeout(timeout, onTimeout: { l.close() }) {
+                        try await l.send(try handshake.helloUnit())
+                        return try await l.receive()
+                    }
+                    opened = OpenedLink(link: l, channel: try handshake.finish(welcomeUnit: welcome), route: route)
+                } catch {
+                    dialed?.close()
+                }
+                race.finished(rank: rank, opened)
+            }
+        }
+        return await race.wait()
+    }
+
+    private func wakeProber() {
+        proberWake?.resume()
+        proberWake = nil
+    }
+
+    private func networkChanged() {
+        pathGeneration += 1
+        // A direct link over the network may be gone with it: check it now
+        // rather than at the next ping.
+        if let route, route.isDirect, route != .local, let l = link {
+            let timeout = min(pingTimeout, 3)
+            Task {
+                do { try await withTimeout(timeout) { try await l.ping() } } catch {
+                    debugLog("relay: direct link silent after a network change")
+                    l.close()
+                }
+            }
+        }
+        wakeProber()
+    }
+
+    /// Waits `probeInterval`, or less when woken (new endpoints, a network
+    /// change, stop).
+    private func probeWait() async {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            proberWake?.resume()
+            proberWake = c
+            let interval = probeInterval
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(interval))
+                await self?.wakeProber()
+            }
+        }
+    }
+
+    private func probeLoop() async {
+        while !stopped && !Task.isCancelled {
+            await probeWait()
+            if stopped || Task.isCancelled { break }
+            // Let a network change settle (addresses arrive a beat later).
+            try? await Task.sleep(for: .seconds(0.3))
+            await probeOnce()
+        }
+    }
+
+    /// On the relay with direct addresses known: dial them, and if one
+    /// handshakes, switch over at a quiet moment.
+    private func probeOnce() async {
+        guard !stopped, route == .relay, channel != nil, let direct, !direct.candidates.isEmpty else { return }
+        // A quiet moment: a reply being written or a file coming in isn't cut.
+        let waitedSince = now
+        while now - lastTraffic < quietBeforeSwitch {
+            if stopped || route != .relay || now - waitedSince > 20 { return }
+            try? await Task.sleep(for: .seconds(0.25))
+        }
+        guard let opened = await dialDirect(timeout: probeTimeout) else {
+            noteDirectFailed()
+            return
+        }
+        guard !stopped, route == .relay, let current = link, pendingDirect == nil else {
+            opened.link.close()
+            return
+        }
+        debugLog("relay: switching to the direct link (\(opened.route.rawValue))")
+        pendingDirect = opened
+        attempt = 0
+        skipNextBackoff = true
+        current.close()
+    }
+}
+
 
 /// A one-shot latch: `claim()` returns true exactly once, from any thread.
 final class ResumeOnce: @unchecked Sendable {

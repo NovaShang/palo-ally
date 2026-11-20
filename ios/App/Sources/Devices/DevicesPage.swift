@@ -185,7 +185,17 @@ struct DevicesPage: View {
 
     private func hostState(_ id: String) -> String {
         guard let s = model.stores[id] else { return String(localized: "离线") }
-        if s.displayedConnection.isOnline { return model.mode == .demo ? String(localized: "演示中") : String(localized: "在线") }
+        if s.displayedConnection.isOnline {
+            if model.mode == .demo { return String(localized: "演示中") }
+            // Online, and how: straight to the computer or through the relay.
+            switch s.connectionRoute {
+            case .local: return String(localized: "本机直连")
+            case .lan: return String(localized: "局域网直连")
+            case .tailscale: return String(localized: "Tailscale 直连")
+            case .relay: return String(localized: "经云端中转")
+            case nil: return String(localized: "在线")
+            }
+        }
         return Copy.connectionShort(s.displayedConnection)
     }
 

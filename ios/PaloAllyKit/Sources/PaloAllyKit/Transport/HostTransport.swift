@@ -44,11 +44,21 @@ public protocol HostTransport: AnyObject, Sendable {
     func reconnectNow() async
     /// Treat the link as dead (e.g. after a timeout) and reconnect right away.
     func forceReconnect() async
+    /// How the link goes now: straight to the computer or through the relay
+    /// (nil: not connected, or a transport without routes).
+    func currentRoute() async -> TransportRoute?
+    /// Where the computer says it can be reached without the relay (`hello`).
+    func directEndpointsAdvertised(_ endpoints: DirectEndpoints?) async
 }
+
 
 /// In-process transport. The "host side" is whatever sets `onSend`; it talks
 /// back with `deliver(_:)`. Used by tests and the demo host.
 public final class InMemoryTransport: HostTransport, @unchecked Sendable {
+    /// In memory: no route to speak of.
+    public func currentRoute() async -> TransportRoute? { nil }
+    public func directEndpointsAdvertised(_ endpoints: DirectEndpoints?) async {}
+
     public let events: AsyncStream<TransportEvent>
     private let continuation: AsyncStream<TransportEvent>.Continuation
     private let lock = NSLock()

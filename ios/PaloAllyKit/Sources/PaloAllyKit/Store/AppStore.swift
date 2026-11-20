@@ -100,6 +100,12 @@ public final class AppStore {
         get { shared.hostMachineID }
         set { shared.hostMachineID = newValue }
     }
+    /// How the link to the computer goes now (straight to it, or through the
+    /// relay); nil while not connected, and in the demo.
+    public private(set) var connectionRoute: TransportRoute? {
+        get { shared.connectionRoute }
+        set { shared.connectionRoute = newValue }
+    }
     public private(set) var messages: [ChatMessage] = []
     /// Long messages from another agent the owner unfolded (`MessageFold`),
     /// by id: they stay open while the app runs.
@@ -531,6 +537,7 @@ public final class AppStore {
         case .disconnected(let reason):
             breadcrumb("link disconnected")
             connectGeneration += 1
+            connectionRoute = nil
             switch reason {
             case .closed: connection = .offline(nil)
             case .network(let m): connection = .offline(m)
@@ -555,6 +562,8 @@ public final class AppStore {
                 hostName = hello.hostName
                 hostVersion = hello.version
                 if let m = hello.machineId, !m.isEmpty { hostMachineID = m }
+                await rpc.transport.directEndpointsAdvertised(hello.direct)
+                connectionRoute = await rpc.transport.currentRoute()
                 if let s = hello.status { applyStatus(s) }
                 try await performSync()
                 guard gen == connectGeneration else { return }

@@ -15,6 +15,7 @@ final class AppStoreShared {
     var hostName = ""
     var hostVersion = ""
     var hostMachineID: String?
+    var connectionRoute: TransportRoute?
     var tasks: [AllyTask] = []
     var approvals: [Approval] = []
     var questions: [Question] = []

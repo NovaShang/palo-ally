@@ -2026,6 +2026,50 @@
         }
       }
     },
+    "本机直连" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Direct, on this Mac"
+          }
+        }
+      }
+    },
+    "局域网直连" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Direct, local network"
+          }
+        }
+      }
+    },
+    "Tailscale 直连" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Direct, via Tailscale"
+          }
+        }
+      }
+    },
+    "经云端中转" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Via the cloud relay"
+          }
+        }
+      }
+    },
     "在线，还没有来往" : {
       "extractionState" : "manual",
       "localizations" : {

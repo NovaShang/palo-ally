@@ -107,6 +107,11 @@ targets:
         NSMicrophoneUsageDescription: 语音输入时需要用到麦克风，把你说的话变成文字。
         NSSpeechRecognitionUsageDescription: 用来把你说的话转成文字，发给助理。
         NSCameraUsageDescription: 扫电脑上的二维码把这台设备连上电脑，或者拍照发给助理。
+        # Straight to the computer on the same network or Tailscale, without
+        # the relay (RelayTransport): ws:// to its addresses, sealed end to end.
+        NSLocalNetworkUsageDescription: 在同一个网络里时直接连你的电脑，不绕道云端，更快。
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         CFBundleURLTypes:
           - CFBundleURLName: com.novashang.paloally.pair
             CFBundleURLSchemes:

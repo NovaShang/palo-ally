@@ -265,10 +265,14 @@ public struct HelloResult: Decodable, Sendable {
     public var language: String?
     /// Which machine the host runs on, hashed (host/src/machine.ts); nil from an older host.
     public var machineId: String?
+    /// Where the app can reach the computer without the relay (the same Mac,
+    /// the local network, Tailscale); nil from an older host or one without it.
+    public var direct: DirectEndpoints?
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
         language = l.string("language")
         machineId = l.string("machineId")
+        direct = l.decode(DirectEndpoints.self, "direct")
         hostName = l.string("hostName", or: "")
         version = l.string("version", or: "")
         status = l.expect("status", l.decode(HostStatus.self, "status"))
