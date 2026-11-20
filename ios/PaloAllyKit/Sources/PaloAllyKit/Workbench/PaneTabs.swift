@@ -24,6 +24,8 @@ extension PaneTab {
     public static let web = "web"
     /// One item of 成果, by its id (kept in `path`).
     public static let artifact = "artifact"
+    /// 等你的事: the owner's list of what to decide (one per pane).
+    public static let pending = "pending"
 
     /// A file by its absolute path (tabs from before: relative to the pane's files).
     public static func previewTab(_ path: String) -> PaneTab { PaneTab(kind: preview, path: path) }
@@ -90,6 +92,11 @@ extension TabsState {
     /// A file as a tab (its absolute path); the same path reuses its tab.
     public func openingPreview(path: String, key: String) -> TabsState {
         opening(.previewTab(path), key: key) { $0.kind == PaneTab.preview && $0.path == path }
+    }
+
+    /// 等你的事 as a tab; one per pane.
+    public func openingPending(key: String) -> TabsState {
+        opening(PaneTab(kind: PaneTab.pending), key: key) { $0.kind == PaneTab.pending }
     }
 
     /// An item of 成果 as a tab; the same item reuses its tab.
@@ -213,6 +220,7 @@ public final class PaneTabsHub {
     public func openPreview(_ key: String, path: String) { update(key) { $0.openingPreview(path: path, key: key) } }
     public func openWeb(_ key: String, url: String) { update(key) { $0.openingWeb(url: url, key: key) } }
     public func openArtifact(_ key: String, id: String) { update(key) { $0.openingArtifact(id: id, key: key) } }
+    public func openPending(_ key: String) { update(key) { $0.openingPending(key: key) } }
     public func retargetWeb(_ key: String, at index: Int, url: String) { update(key) { $0.retargetingWeb(at: index, to: url, key: key) } }
     public func retargetPreview(_ key: String, at index: Int, path: String) { update(key) { $0.retargetingPreview(at: index, to: path, key: key) } }
     public func close(_ key: String, at index: Int) { update(key) { $0.closing(at: index, key: key) } }

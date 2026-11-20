@@ -212,6 +212,26 @@ private struct LayoutStressTest: ViewModifier {
                     // `w2.pane`: that window's right pane, as its button (⌘2).
                     case "pane": if w.launch.screen == "splitLab" { w.paneCover.toggle() } else { w.togglePane() }
                     case "list": w.showList()
+                    // 等你的事: `pending` the list (as the capsule); `pending-agenda` 从头过一遍;
+                    // `pending-talk:<id>` 聊这件; `pending-answer:<id>:<option>`; `pending-ignore:<id>`;
+                    // `pending-reopen:<id>` 撤回 / 放回.
+                    case "pending": w.openPendingList()
+                    case "pending-agenda":
+                        if let store = w.store, let first = store.openPending.first { w.showPendingSheet = false; w.talk(about: first, in: store) }
+                    case _ where a.hasPrefix("pending-"):
+                        let parts = a.split(separator: ":", maxSplits: 2).map(String.init)
+                        guard parts.count >= 2, let store = w.store, let item = store.pendingItem(id: parts[1]) else {
+                            debugLog("[nav] \(a): no such item")
+                            break
+                        }
+                        switch parts[0] {
+                        case "pending-talk": w.showPendingSheet = false; w.talk(about: item, in: store)
+                        case "pending-answer" where parts.count == 3: try? await store.answerPending(item, parts[2])
+                        case "pending-ignore": try? await store.updatePending(item, action: "ignore")
+                        case "pending-reopen": try? await store.updatePending(item, action: "reopen")
+                        default: break
+                        }
+                        debugLog("[nav] \(a): \(store.openPending.count) open, \(item.id) now \(store.pendingItem(id: item.id)?.status.rawValue ?? "-")")
                     // `tldr`: the 「TL;DR」 button under the latest long reply tapped (as a tap does);
                     // `tldr-open`: the latest TL;DR ask unfolded, as a tap on its chevron.
                     case "tldr":

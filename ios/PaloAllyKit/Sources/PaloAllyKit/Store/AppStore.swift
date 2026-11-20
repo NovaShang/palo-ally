@@ -628,6 +628,7 @@ public final class AppStore {
         if let t = r.tasks { tasks = t; sortTasks() }
         if let a = r.approvals { approvals = a; sortApprovals() }
         if let q = r.questions { questions = q.sorted { $0.createdAt > $1.createdAt } }
+        if let p = r.pending { pendingItems = p }
         if let w = r.watches { watches = w }
         if let a = r.artifacts { artifacts = a }
         if let s = r.settings { settings = s }
@@ -792,6 +793,8 @@ public final class AppStore {
             if let a = try? data.decode(Approval.self) { upsert(approval: a) }
         case RPCEventName.questionUpdated:
             if let q = try? data.decode(Question.self) { upsert(question: q) }
+        case RPCEventName.pendingUpdated:
+            if let p = try? data.decode(PendingItem.self) { upsert(pending: p) }
         case RPCEventName.watchUpdated:
             switch WatchUpdate(json: data) {
             case .upsert(let w): upsert(watch: w)

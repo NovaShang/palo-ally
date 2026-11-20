@@ -48,7 +48,8 @@ extension AppStore {
     public func palPendingCount(_ id: String) -> Int {
         let here = approvals.filter { $0.isPending && $0.source?.isPal == true && $0.source?.id == id }.count
             + questions.filter { $0.isPending && $0.source?.isPal == true && $0.source?.id == id }.count
-        return max(here, pal(id: id)?.pending ?? 0)
+        // …and what it put on the owner's list (等你的事) that isn't one of those cards.
+        return max(here, pal(id: id)?.pending ?? 0) + pendingBeyondCards(forPal: id)
     }
 
     /// The cards waiting on the owner from one of the computer's other sessions.

@@ -185,6 +185,8 @@ struct RightPane: View {
                 .environment(\.libraryPalID, RightPaneScope.palID(of: scope))
                 // An item opens as its own tab, as a file from 文件 does.
                 .environment(\.libraryOpensTab) { id in model.editPane(key) { $0.openArtifact(key, id: id) } }
+        case PaneTab.pending:
+            PendingPaneView()
         case PaneTab.artifact:
             let index = state.active
             ArtifactDetailView(artifactID: tab.path ?? "", inPane: true, close: { requestClose(index) })
@@ -523,6 +525,7 @@ private struct RightPaneTabBar: View {
         case PaneTab.preview: "doc.text"
         case PaneTab.artifact: "square.stack"
         case PaneTab.web: "globe"
+        case PaneTab.pending: "tray"
         default: "questionmark.square"
         }
     }
@@ -674,6 +677,7 @@ private struct TabTitle: View {
         case PaneTab.files: Text(String(localized: "文件", table: "Files"))
         case PaneTab.preview: Text(verbatim: ((tab.path ?? "") as NSString).lastPathComponent)
         case PaneTab.artifact: ArtifactTabTitle(id: tab.path ?? "")
+        case PaneTab.pending: Text(String(localized: "等你的事"))
         case PaneTab.web:
             if let page { LiveTitle(page: page, fallback: tab.url ?? "") } else { Text(verbatim: WebAddress.label(for: tab.url ?? "")) }
         default: Text(verbatim: tab.kind)

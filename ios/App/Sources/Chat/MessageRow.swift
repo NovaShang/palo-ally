@@ -265,7 +265,7 @@ private struct AssistantMessage: View {
                 if let atts = message.attachments, !atts.isEmpty {
                     AttachmentStrip(attachments: atts)
                 }
-                if (!message.text.isEmpty || message.isStreaming) && !questionCardOnly && !adoptCardOnly {
+                if (!message.text.isEmpty || message.isStreaming) && !questionCardOnly && !adoptCardOnly && message.kind != .pending {
                     // One system text view per answer: free selection across
                     // paragraphs, like Notes / Safari. Its menu (long press,
                     // right click on a Mac) has 「引用回复」 for a selection and,
@@ -287,6 +287,10 @@ private struct AssistantMessage: View {
                 if message.kind == .question, let id = message.questionId, let question = store.question(id: id),
                    !store.settledAtComputer(question) {
                     QuestionCard(question: question)
+                }
+                // 等你的事 surfaced here (聊这件): its card follows the item.
+                if message.kind == .pending, let id = message.pendingId {
+                    PendingChatCard(id: id)
                 }
                 if message.kind == .helper, let proposal = store.helperProposal(in: message) {
                     HelperProposalCard(proposal: proposal)

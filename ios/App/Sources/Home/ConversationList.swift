@@ -703,6 +703,7 @@ private struct PaloItem: View {
     private var waiting: Int {
         store.pendingApprovals.count + store.pendingQuestions.count + store.pendingAllyDrafts.count
             + store.pendingProposalCount + store.tasks.filter { $0.status == .needsInput }.count
+            + store.pendingBeyondCards(forPal: nil) // 等你的事 that aren't one of those cards
     }
 }
 

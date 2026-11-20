@@ -18,6 +18,7 @@ final class AppStoreShared {
     var tasks: [AllyTask] = []
     var approvals: [Approval] = []
     var questions: [Question] = []
+    var pendingItems: [PendingItem] = []
     var watches: [Watch] = []
     var artifacts: [Artifact] = []
     var settings: HostSettings?

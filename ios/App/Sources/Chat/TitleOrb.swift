@@ -150,6 +150,12 @@ struct FloatingTitleOrb: View {
             SessionOrbDrop(session: session, size: d)
         } else {
             TitleOrbDrop(size: d)
+                // 等你的事: how many wait, on its shoulder (not while it listens).
+                .overlay(alignment: .topTrailing) {
+                    PendingOrbBadge(count: store.openPending.count)
+                        .offset(x: 6, y: -2)
+                        .opacity(listening > 0 ? 0 : 1)
+                }
         }
     }
 

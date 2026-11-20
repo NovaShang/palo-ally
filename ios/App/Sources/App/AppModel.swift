@@ -399,6 +399,7 @@ final class AppModel {
         guard let s = stores[id] else { return 0 }
         let palo = s.pendingApprovals.count + s.pendingQuestions.count + s.pendingAllyDrafts.count
             + s.pendingProposalCount + s.tasks.filter { $0.status == .needsInput }.count
+            + s.pendingBeyondCards(forPal: nil) // 等你的事 that aren't one of those cards
         return palo + s.pals.reduce(0) { $0 + s.palPendingCount($1.id) }
     }
 
@@ -480,6 +481,7 @@ final class AppModel {
     func pendingCount(_ id: String) -> Int {
         guard let s = stores[id] else { return 0 }
         return s.pendingApprovals.count + s.pendingQuestions.count + s.pendingAllyDrafts.count
+            + s.pendingBeyondCards(forPal: nil)
             + s.pals.reduce(0) { $0 + s.palPendingCount($1.id) }
     }
 

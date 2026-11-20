@@ -235,6 +235,9 @@ struct ChatView: View {
             } else if let bottomPanel {
                 bottomPanel
             } else {
+            VStack(spacing: 6) {
+            // 等你的事: the way in, where the thumb is (the assistant's conversation).
+            if isPalo { PendingCapsule() }
             ComposerView(draftBox: draftBox ?? ownDraft, intake: intake) { text, images, files, how in
                 switch how {
                 case .typed:
@@ -250,7 +253,12 @@ struct ChatView: View {
                 }
             }
             }
+            .animation(.snappy(duration: 0.25), value: isPalo ? store.openPending.count : 0)
+            .animation(.snappy(duration: 0.25), value: isPalo ? store.discussingPending?.id : nil)
+            }
         }
+        // Phones: 等你的事 as a sheet over the assistant's conversation.
+        .modifier(PendingSheetHost(enabled: isPalo && !inTile))
         // The live words, in the middle while holding to talk, and on their
         // way out after release: over the composer, under the orb.
         .overlay { VoiceTileGate { VoiceWordsLayer(orbPlacement: orbPlacement) } }

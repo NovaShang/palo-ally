@@ -442,6 +442,7 @@ final class WindowModel {
     /// 履历, from a task's detail.
     func showAllTasks() {
         assistantTab = .history
+        showHistoryPage = true
         openTaskID = nil
         if layout == .phone {
             var path = NavigationPath()
@@ -467,6 +468,8 @@ final class WindowModel {
     }
     /// Phones: 设置 from the list, as a sheet.
     var showSettingsSheet = false
+    /// Phones: 等你的事 as a sheet (the capsule over the composer, the orb's badge).
+    var showPendingSheet = false
 
     /// ⌘[ (and the in-page back buttons): one level back. A sheet or
     /// preview closes; then a pushed page pops; then 成果 beside the
@@ -478,6 +481,8 @@ final class WindowModel {
     }
 
     var assistantTab: AssistantTab = .watches // 目标 opens first
+    /// 关于: its 历史任务 page pushed (a task's 履历 link).
+    var showHistoryPage = false
     var showSettings = false
     /// How much room the title bar's orb takes (kept by OrbPresenceTracking).
     var orbPresence: OrbPresence = .rest
@@ -635,6 +640,7 @@ final class WindowModel {
         }
         if let t = launch.tab, let tab = AssistantTab(launchName: t) {
             assistantTab = tab
+            if tab == .history { showHistoryPage = true }
             openManagement()
         }
         #if DEBUG

@@ -15,6 +15,8 @@ public actor DemoHost {
     public private(set) var tasks: [AllyTask] = []
     public internal(set) var approvals: [Approval] = []
     public internal(set) var questions: [Question] = []
+    /// 等你的事 (host/src/pending.ts): what waits for the owner.
+    public internal(set) var pendingItems: [PendingItem] = []
     public private(set) var watches: [Watch] = []
     public private(set) var artifacts: [Artifact] = []
     public private(set) var files: [String: Data] = [:] // "<artifactId>/<path>"
@@ -172,6 +174,7 @@ public actor DemoHost {
             if m.role == .user, m.kind == .text, m.pal == nil, m.uuid == nil { m.uuid = "u-\(m.id)" }
             return m
         }
+        if seeded { pendingItems = Self.seededPending(now: Date().epochMillis, approvals: approvals, questions: questions, messages: messages, assistant: assistantName) }
         // Strong on purpose: the transport keeps its host alive (demo mode and
         // tests often only hold the store/transport).
         t.onSend = { data in await self.handle(data) }
@@ -197,6 +200,9 @@ public actor DemoHost {
     }
 
     public func emit<T: Encodable>(_ event: String, _ data: T) {
+        // A card answered or ended: its item on the list follows.
+        if event == RPCEventName.questionUpdated, let q = data as? Question { pendingFollow(question: q) }
+        if event == RPCEventName.approvalUpdated, let a = data as? Approval { pendingFollow(approval: a) }
         guard let v = try? JSONValue.from(data) else { return }
         transport.deliver(json: ["event": .string(event), "data": v])
     }
@@ -733,7 +739,7 @@ public actor DemoHost {
         Suggestion(id: "sg_4", chip: "整理下载文件夹", prompt: "把我电脑上的下载文件夹按类型整理一下，删掉重复的安装包前先问我"),
     ]
 
-    private func dispatch(_ method: String, _ p: JSONValue) async throws -> JSONValue {
+    func dispatch(_ method: String, _ p: JSONValue) async throws -> JSONValue {
         switch method {
         case RPCMethod.hello:
             if let c = p["client"]?.stringValue { helloClient = c }
@@ -749,10 +755,12 @@ public actor DemoHost {
                 msgs = Array(messages.suffix(100))
             }
             let rewound = since.map { s in rewoundLog.filter { $0.seq > s }.flatMap(\.ids) } ?? []
-            return try .from(SyncResult(seq: seq, messages: msgs, tasks: tasks, approvals: approvals, questions: questions,
-                                        watches: watches,
-                                        artifacts: artifacts, settings: settings, status: status,
-                                        streaming: writing, rewound: rewound.isEmpty ? nil : rewound))
+            var sync = SyncResult(seq: seq, messages: msgs, tasks: tasks, approvals: approvals, questions: questions,
+                                  watches: watches,
+                                  artifacts: artifacts, settings: settings, status: status,
+                                  streaming: writing, rewound: rewound.isEmpty ? nil : rewound)
+            sync.pending = pendingItems
+            return try .from(sync)
         case RPCMethod.chatSend:
             let text = p["text"]?.stringValue ?? ""
             let cid = p["clientMsgId"]?.stringValue
@@ -1182,6 +1190,7 @@ public actor DemoHost {
             emit(RPCEventName.chatMessage, messages[i])
             return result
         default:
+            if let r = try await dispatchPending(method, p) { return r }
             if let r = try dispatchMedia(method, p) { return r }
             if let r = try dispatchDevices(method, p) { return r }
             if let r = try dispatchFiles(method, p) { return r }
