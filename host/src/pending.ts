@@ -1,6 +1,6 @@
 import type { Audit } from "./audit.ts";
 import type { Bus } from "./bus.ts";
-import type { Approval, ChatMessage, PendingItem, PendingSource, Question } from "./types.ts";
+import type { Approval, ChatMessage, PendingItem, PendingLink, PendingSource, Question } from "./types.ts";
 import { newId, readJson, truncate, writeJson } from "./util.ts";
 import { t } from "./i18n/index.ts";
 
@@ -10,8 +10,11 @@ import { t } from "./i18n/index.ts";
 // assistant's own AskUserQuestion (turned into an item: the main
 // conversation never stops on a question), and from every question or
 // permission prompt a session is actually stopped on (blocking; answering
-// the item answers it). One store, kept on disk; `pending.updated` carries
-// each change to the apps.
+// the item answers it). The other cards that wait on the owner (a proposal
+// to open or take over a session, an Ally draft, a task that needs them) are
+// items too, linked to their card (`link`; pendingLinks.ts keeps them in
+// step): the list is everything that waits, and the apps' badges count it.
+// One store, kept on disk; `pending.updated` carries each change to the apps.
 
 /** Open this long: a brief mentions it once. */
 export const STALE_MS = 3 * 24 * 3600_000;
@@ -26,6 +29,7 @@ const LIST_CLOSED_MS = 3 * 24 * 3600_000;
 interface PendingRecord extends PendingItem {
   watchId?: string; // added during a brief's run: linked to the brief's card once it's posted
   question?: string; // the assistant's own question it came from (its words go back with the answer)
+  ended?: boolean; // linked: its card was settled (it can't come back)
 }
 
 export interface NewPending {
@@ -40,6 +44,7 @@ export interface NewPending {
   approvalId?: string;
   watchId?: string;
   question?: string;
+  link?: PendingLink;
 }
 
 export class PendingStore {
@@ -91,7 +96,10 @@ export class PendingStore {
   // still open is the same item (the model asking twice): that one comes back.
   add(n: NewPending): PendingItem {
     const title = truncate(n.title.trim().replace(/\s+/g, " "), 200);
-    const dup = this.items.find((i) => i.status === "open" && sameSource(i.source, n.source) && i.title === title);
+    // A card's item is one per card, whatever the owner did with it.
+    const linked = n.link ? this.linked(n.link) : undefined;
+    if (linked) return wire(linked);
+    const dup = !n.link && this.items.find((i) => i.status === "open" && !i.link && sameSource(i.source, n.source) && i.title === title);
     if (dup) return wire(dup);
     const options = (n.options ?? []).map((o) => String(o).trim()).filter(Boolean).slice(0, 6);
     const item: PendingRecord = {
@@ -109,6 +117,7 @@ export class PendingStore {
       ...(n.approvalId ? { approvalId: n.approvalId } : {}),
       ...(n.watchId ? { watchId: n.watchId } : {}),
       ...(n.question ? { question: n.question } : {}),
+      ...(n.link ? { link: { kind: n.link.kind, id: n.link.id } } : {}),
     };
     this.items.push(item);
     this.audit.log("pending.added", { id: item.id, source: item.source.kind, ...(item.source.id ? { sourceId: item.source.id } : {}), blocking: item.blocking });
@@ -140,7 +149,7 @@ export class PendingStore {
       item.resolvedAt = this.now();
     } else if (action === "reopen") {
       // A question or prompt that already ended can't come back.
-      if ((item.questionId || item.approvalId) && item.status !== "open") throw new Error(t("pending.err.gone"));
+      if (((item.questionId || item.approvalId) && item.status !== "open") || item.ended) throw new Error(t("pending.err.gone"));
       item.status = "open";
       delete item.resolvedAt;
       delete item.conclusion;
@@ -195,6 +204,64 @@ export class PendingStore {
       i.resolvedAt = this.now();
       this.changed(i);
     }
+  }
+
+  // ---- linked ones: a card that waits on the owner (pendingLinks.ts) ----
+
+  /** The item a card has (not one whose card was settled before). */
+  linked(link: PendingLink): PendingItem | undefined {
+    const i = this.items.find((x) => x.link && !x.ended && x.link.kind === link.kind && x.link.id === link.id);
+    return i ? wire(i) : undefined;
+  }
+
+  /**
+   * The card waits on the owner: its item is there (added once; its words
+   * follow the card's while it's open). The owner's ignoring it stands.
+   */
+  follow(n: NewPending & { link: PendingLink }): PendingItem {
+    const cur = this.items.find((x) => x.link && !x.ended && x.link.kind === n.link.kind && x.link.id === n.link.id);
+    if (!cur) return this.add(n);
+    if (cur.status !== "open") return wire(cur);
+    const title = truncate(n.title.trim().replace(/\s+/g, " "), 200);
+    const context = n.context?.trim() ? truncate(n.context.trim(), 600) : undefined;
+    let changed = false;
+    if (title && cur.title !== title) (cur.title = title), (changed = true);
+    if (context !== cur.context) {
+      if (context) cur.context = context;
+      else delete cur.context;
+      changed = true;
+    }
+    if (n.messageId && !cur.messageId) (cur.messageId = n.messageId), (changed = true);
+    if (changed) this.changed(cur);
+    return wire(cur);
+  }
+
+  /** The card was settled (answered on the card, expired, gone): its item closes with what became of it. */
+  settle(link: PendingLink, conclusion: string): void {
+    for (const i of this.items) {
+      if (!i.link || i.ended || i.link.kind !== link.kind || i.link.id !== link.id) continue;
+      i.ended = true;
+      if (i.status === "open" || i.status === "snoozed") {
+        i.status = "done";
+        i.conclusion = truncate(conclusion, 200);
+        i.resolvedAt = this.now();
+        this.audit.log("pending.settled", { id: i.id, link: link.kind });
+        this.changed(i);
+      } else this.persist();
+    }
+  }
+
+  /** Where a card is in the conversation, once it's there (看原文). */
+  linkMessage(link: PendingLink, messageId: string): void {
+    const i = this.items.find((x) => x.link && !x.ended && x.link.kind === link.kind && x.link.id === link.id);
+    if (!i || i.messageId) return;
+    i.messageId = messageId;
+    this.changed(i);
+  }
+
+  /** The linked items of one kind whose card is still unsettled here (for a reconcile). */
+  linkedIds(kind: PendingLink["kind"]): string[] {
+    return this.items.filter((i) => i.link?.kind === kind && !i.ended).map((i) => i.link!.id);
   }
 
   // ---- blocking ones: a session's question or permission prompt ----
@@ -290,8 +357,8 @@ function sameSource(a: PendingSource, b: PendingSource): boolean {
 
 // The item as the apps get it (no store-only fields).
 function wire(i: PendingRecord): PendingItem {
-  const { watchId: _w, question: _q, ...rest } = i;
-  return { ...rest, source: { ...rest.source } };
+  const { watchId: _w, question: _q, ended: _e, ...rest } = i;
+  return { ...rest, source: { ...rest.source }, ...(rest.link ? { link: { ...rest.link } } : {}) };
 }
 
 /** The open items as lines for the model: id, who, title. */

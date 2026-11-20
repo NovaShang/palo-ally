@@ -221,6 +221,16 @@ export class Allies {
       .map(publicEntry);
   }
 
+  /** The owner's name of an Ally (or the empty string). */
+  nameOf(id: string): string {
+    return this.get(id)?.ownerName ?? "";
+  }
+
+  /** Drafts waiting for the owner's 发送 / 不发, with whose they are (等你的事). */
+  openDrafts(): { entry: AllyEntry; name: string }[] {
+    return this.active().flatMap((a) => this.logOf(a.id).filter((e) => e.dir === "out" && e.status === "draft").map((e) => ({ entry: publicEntry(e), name: a.ownerName })));
+  }
+
   /** ally_list for the assistant. */
   toolList(): string {
     return JSON.stringify(

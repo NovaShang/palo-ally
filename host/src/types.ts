@@ -216,6 +216,15 @@ export interface PendingItem {
   questionId?: string; // a blocking question (answered through it)
   approvalId?: string; // a blocking permission prompt
   remindedAt?: number; // open a long while: when a brief mentioned it
+  link?: PendingLink; // a card it stands for (answering the item answers it; it closes with it)
+}
+
+// What else waits on the owner, each kept as an item while it does: a
+// proposal card (开吧 / 接管), an Ally draft (发送 / 不发), a task that needs
+// the owner. `id`: the proposal's, the Ally entry's, the task's.
+export interface PendingLink {
+  kind: "proposal" | "allyDraft" | "task";
+  id: string;
 }
 
 export interface Watch {

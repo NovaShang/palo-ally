@@ -517,7 +517,7 @@ describe("host ↔ app protocol", () => {
     // 等你的事: the assistant's item with options, a session's blocking one, one decided
     const pend = events.filter((e) => e.event === "pending.updated").map((e) => e.data);
     sampleEvents["pending.updated"] = JSON.parse(
-      JSON.stringify([pend.find((i) => i.status === "open" && i.options && !i.blocking), pend.find((i) => i.blocking && i.source.kind === "session"), pend.find((i) => i.status === "done" && i.conclusion)]),
+      JSON.stringify([pend.find((i) => i.status === "open" && i.options && !i.blocking && !i.link), pend.find((i) => i.blocking && i.source.kind === "session"), pend.find((i) => i.status === "done" && i.conclusion && !i.link), pend.find((i) => i.link?.kind === "proposal")]),
     );
     expect((sampleEvents["pending.updated"] as any[]).every(Boolean)).toBe(true);
     expect(sessionCard.source).toEqual({ kind: "session", id: term.id, name: "修登录跳转" });

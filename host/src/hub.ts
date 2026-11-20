@@ -15,6 +15,7 @@ import { MemoryView, autoMemoryDir } from "./memory.ts";
 import { ProbeScheduler, type ProbeTrigger } from "./probe.ts";
 import { QuestionManager, parseItems, parseTextAnswer, questionText } from "./questions.ts";
 import { PendingStore, pendingLines } from "./pending.ts";
+import { PendingLinks, linkAction } from "./pendingLinks.ts";
 import { Proactive } from "./proactive.ts";
 import { Router, type Pusher } from "./router.ts";
 import { RuntimeState } from "./runtime.ts";
@@ -24,7 +25,7 @@ import { makeShellTools, restText } from "./shellTools.ts";
 import { SuggestionStore } from "./suggestions.ts";
 import { TaskTracker } from "./tasks.ts";
 import { TLDR_MARKER, isTldrAsk, tldrInstruction } from "./tldr.ts";
-import type { Attachment, Channel, ChatMessage, PairedDevice, PendingItem, PendingSource, Status, Task, Watch, ReplyTo } from "./types.ts";
+import type { Attachment, Channel, ChatMessage, PairedDevice, PendingItem, PendingLink, PendingSource, Status, Task, Watch, ReplyTo } from "./types.ts";
 import { MediaStore } from "./media.ts";
 import { briefTitle, ensureMorningBrief, isBriefTitle } from "./brief.ts";
 import { HandoffTracker, claudeConfigDir, transcriptPath } from "./handoffs.ts";
@@ -466,6 +467,18 @@ export class Hub {
     });
     // The last process' questions and prompts are closed: so are their items.
     this.pending.reconcile((i) => (i.questionId ? this.questions.get(i.questionId)?.status === "pending" : this.approvals.get(i.approvalId ?? "")?.status === "pending"));
+    // The other cards waiting on the owner are items too (pendingLinks.ts):
+    // one for each waiting now, the ones settled meanwhile closed.
+    new PendingLinks({
+      bus: this.bus,
+      chat: this.chat,
+      pending: this.pending,
+      paloName: () => this.config.settings.assistantName || PALO_NAME,
+      allyName: (id) => this.allies.nameOf(id),
+      openDrafts: () => this.allies.openDrafts(),
+      tasks: () => this.tasks.list(),
+      palId: (key) => this.pals.get(key)?.id,
+    }).reconcile();
   }
 
   // ---------------- lifecycle ----------------
@@ -846,6 +859,7 @@ export class Hub {
     const a = String(answer ?? "").trim().slice(0, 1000);
     if (!a) throw new Error(t("pending.err.empty"));
     if (item.status !== "open") return item;
+    if (item.link) return this.answerLinked(item, item.link, a, channel);
     if (item.questionId) {
       const q = this.questions.get(item.questionId);
       const first = q?.items[0];
@@ -872,6 +886,23 @@ export class Hub {
     const replyTo = { messageId: card?.id ?? item.messageId ?? "", excerpt: item.title };
     this.userMessage(a, channel, undefined, undefined, [], replyTo.messageId ? replyTo : undefined, { note, pendingId: id });
     return this.pending.get(id)!;
+  }
+
+  // A card's item: an option does what the card's button does (its item
+  // closes as the card settles); the owner's own words go to the assistant,
+  // the card still waiting.
+  private async answerLinked(item: PendingItem, link: PendingLink, a: string, channel: Channel): Promise<PendingItem> {
+    const action = linkAction(link, a);
+    if (action && link.kind === "proposal") await this.pals.decide(link.id, action, channel);
+    else if (action && link.kind === "allyDraft") this.allies.decide(link.id, action === "send" ? "send" : "discard");
+    else {
+      const note = t("pending.answer.link", { id: item.id, title: item.title });
+      const card = this.chat.recent(200).reverse().find((m) => m.kind === "pending" && m.pendingId === item.id);
+      const at = card?.id ?? item.messageId;
+      const replyTo = at ? { messageId: at, excerpt: item.title } : undefined;
+      this.userMessage(a, channel, undefined, undefined, [], replyTo, { note, pendingId: item.id });
+    }
+    return this.pending.get(item.id)!;
   }
 
   /**
