@@ -221,35 +221,84 @@ private struct HostSidebarContent: View {
         // Only with a host that has workspaces (and a list to drag in).
         let dnd = store.workspacesSupported == true
         if several, let hostID {
-            // Several computers: the computer is the one level; its rows
-            // follow its name without 工作区 / 会话 / Allies headings (with
-            // them, three levels of small gray titles read as a jumble, 11-18).
             Section {
-                if !collapsed {
-                    paloRow(tree)
-                    if store.palsSupported == true {
-                        workspaceRows(tree, order: order, dnd: dnd, drop: drop)
-                        sessionRows(tree, order: order, dnd: dnd, drop: drop)
-                    }
-                    if store.alliesSupported != false { allyRows }
-                }
+                if !collapsed { paloRow(tree) }
             } header: {
                 HostHeader(hostID: hostID, collapsed: collapsed)
             }
         } else {
             // One computer: the first row, as it always was.
             paloRow(tree)
+        }
+
+        if !collapsed {
             if store.palsSupported == true {
                 if !tree.workspaces.isEmpty {
                     Section {
-                        workspaceRows(tree, order: order, dnd: dnd, drop: drop)
+                        ForEach(tree.workspaces) { node in
+                            WorkspaceRow(node: node, expanded: isExpanded(node)) { toggle(node) }
+                                .modifier(HostRowDim(dimmed: dimmed))
+                                .sidebarPick(pick(.workspace(node.id)))
+                                .accessibilityIdentifier(rowID("row-workspace-\(node.id)"))
+                                .contextMenu { workspaceMenu(node.workspace) }
+                                .sidebarRowDrag(dnd, drags: .workspace(node.id), conversation: .workspace(node.id),
+                                                target: .workspace(node.id), tree: tree, sessionOrder: order, perform: drop)
+                            if isExpanded(node) {
+                                ForEach(node.members) { pal in
+                                    PalListRow(pal: pal, inset: true)
+                                        .modifier(HostRowDim(dimmed: dimmed))
+                                        .sidebarPick(pick(.pal(pal.id)))
+                                        .accessibilityIdentifier(rowID("row-pal-\(pal.id)"))
+                                        .contextMenu { sessionMenu(pal) }
+                                        .sidebarRowDrag(dnd, drags: .session(pal.id), conversation: .pal(pal.id),
+                                                        target: .member(pal.id, workspace: node.id), tree: tree, sessionOrder: order,
+                                                        perform: drop)
+                                }
+                            }
+                        }
                     } header: {
                         Text("工作区").textCase(nil)
                     }
                 }
 
                 Section {
-                    sessionRows(tree, order: order, dnd: dnd, drop: drop)
+                    ForEach(tree.sessions) { pal in
+                        PalListRow(pal: pal)
+                            .modifier(HostRowDim(dimmed: dimmed))
+                            .sidebarPick(pick(.pal(pal.id)))
+                            .accessibilityIdentifier(rowID("row-pal-\(pal.id)"))
+                            .contextMenu { sessionMenu(pal) }
+                            .sidebarRowDrag(dnd, drags: .session(pal.id), conversation: .pal(pal.id), target: .session(pal.id),
+                                            tree: tree, sessionOrder: order, perform: drop)
+                    }
+                    // Put away for lack of use: one quiet row, opened in place,
+                    // so they are still there to see (and the rest of the history a tap on).
+                    if !tree.folded.isEmpty {
+                        EarlierRow(count: tree.folded.count, expanded: earlierOpen) { earlierOpen.toggle() }
+                            .accessibilityIdentifier(rowID("row-earlier"))
+                        if earlierOpen {
+                            ForEach(tree.folded) { pal in
+                                PalListRow(pal: pal, inset: true)
+                                    .modifier(HostRowDim(dimmed: dimmed))
+                                    .sidebarPick(pick(.pal(pal.id)))
+                                    .accessibilityIdentifier(rowID("row-pal-\(pal.id)"))
+                                    .contextMenu { sessionMenu(pal) }
+                            }
+                            Button {
+                                onThisHost()
+                                model.historyPickerPresented = true
+                            } label: {
+                                Text("全部历史记录…")
+                                    .foregroundStyle(.secondary)
+                                    .padding(.leading, 22)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(.rect)
+                            }
+                            .buttonStyle(.borderless)
+                            .tint(.primary)
+                            .accessibilityIdentifier(rowID("row-earlier-history"))
+                        }
+                    }
                 } header: {
                     // Also where a session dragged out of a workspace can land: the top.
                     Text("会话").textCase(nil)
@@ -263,9 +312,15 @@ private struct HostSidebarContent: View {
                 }
             }
 
-            if store.alliesSupported != false {
+            // Several computers: a computer's Allies only when it has some (添加 is in ＋).
+            if store.alliesSupported != false && !(several && store.allies.isEmpty) {
                 Section {
-                    allyRows
+                    ForEach(store.allies) { ally in
+                        AllyListRow(ally: ally)
+                            .modifier(HostRowDim(dimmed: dimmed))
+                            .sidebarPick(pick(.ally(ally.id)))
+                            .accessibilityIdentifier(rowID("row-ally-\(ally.id)"))
+                    }
                 } header: {
                     Text("Allies").textCase(nil)
                 } footer: {
@@ -274,81 +329,6 @@ private struct HostSidebarContent: View {
                     }
                 }
             }
-        }
-    }
-
-    @ViewBuilder
-    private func workspaceRows(_ tree: SidebarTree, order: [String]?, dnd: Bool, drop: @escaping (SidebarDrop.Move) -> Void) -> some View {
-        ForEach(tree.workspaces) { node in
-            WorkspaceRow(node: node, expanded: isExpanded(node)) { toggle(node) }
-                .modifier(HostRowDim(dimmed: dimmed))
-                .sidebarPick(pick(.workspace(node.id)))
-                .accessibilityIdentifier(rowID("row-workspace-\(node.id)"))
-                .contextMenu { workspaceMenu(node.workspace) }
-                .sidebarRowDrag(dnd, drags: .workspace(node.id), conversation: .workspace(node.id),
-                                target: .workspace(node.id), tree: tree, sessionOrder: order, perform: drop)
-            if isExpanded(node) {
-                ForEach(node.members) { pal in
-                    PalListRow(pal: pal, inset: true)
-                        .modifier(HostRowDim(dimmed: dimmed))
-                        .sidebarPick(pick(.pal(pal.id)))
-                        .accessibilityIdentifier(rowID("row-pal-\(pal.id)"))
-                        .contextMenu { sessionMenu(pal) }
-                        .sidebarRowDrag(dnd, drags: .session(pal.id), conversation: .pal(pal.id),
-                                        target: .member(pal.id, workspace: node.id), tree: tree, sessionOrder: order,
-                                        perform: drop)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func sessionRows(_ tree: SidebarTree, order: [String]?, dnd: Bool, drop: @escaping (SidebarDrop.Move) -> Void) -> some View {
-        ForEach(tree.sessions) { pal in
-            PalListRow(pal: pal)
-                .modifier(HostRowDim(dimmed: dimmed))
-                .sidebarPick(pick(.pal(pal.id)))
-                .accessibilityIdentifier(rowID("row-pal-\(pal.id)"))
-                .contextMenu { sessionMenu(pal) }
-                .sidebarRowDrag(dnd, drags: .session(pal.id), conversation: .pal(pal.id), target: .session(pal.id),
-                                tree: tree, sessionOrder: order, perform: drop)
-        }
-        // Put away for lack of use: one quiet row, opened in place,
-        // so they are still there to see (and the rest of the history a tap on).
-        if !tree.folded.isEmpty {
-            EarlierRow(count: tree.folded.count, expanded: earlierOpen) { earlierOpen.toggle() }
-                .accessibilityIdentifier(rowID("row-earlier"))
-            if earlierOpen {
-                ForEach(tree.folded) { pal in
-                    PalListRow(pal: pal, inset: true)
-                        .modifier(HostRowDim(dimmed: dimmed))
-                        .sidebarPick(pick(.pal(pal.id)))
-                        .accessibilityIdentifier(rowID("row-pal-\(pal.id)"))
-                        .contextMenu { sessionMenu(pal) }
-                }
-                Button {
-                    onThisHost()
-                    model.historyPickerPresented = true
-                } label: {
-                    Text("全部历史记录…")
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, 22)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.borderless)
-                .tint(.primary)
-                .accessibilityIdentifier(rowID("row-earlier-history"))
-            }
-        }
-    }
-
-    @ViewBuilder private var allyRows: some View {
-        ForEach(store.allies) { ally in
-            AllyListRow(ally: ally)
-                .modifier(HostRowDim(dimmed: dimmed))
-                .sidebarPick(pick(.ally(ally.id)))
-                .accessibilityIdentifier(rowID("row-ally-\(ally.id)"))
         }
     }
 
@@ -522,8 +502,8 @@ private struct HostHeader: View {
                     .fill(online ? StatusDot.color(.done) : Color(uiColor: .systemGray3))
                     .frame(width: 7, height: 7)
                 Text(name)
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(Color.primary.opacity(online ? 1 : 0.5))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.primary.opacity(online ? 0.85 : 0.5))
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 if collapsed {
