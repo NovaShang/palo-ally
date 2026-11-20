@@ -236,8 +236,9 @@ struct ChatView: View {
                 bottomPanel
             } else {
             VStack(spacing: 6) {
-            // 等你的事: the way in, where the thumb is (the assistant's conversation).
-            if isPalo { PendingCapsule() }
+            // 等你的事: the way in, where the thumb is, in every conversation
+            // (the list is one for the computer; only Palo's page had it, 11-20).
+            PendingCapsule()
             ComposerView(draftBox: draftBox ?? ownDraft, intake: intake) { text, images, files, how in
                 switch how {
                 case .typed:
