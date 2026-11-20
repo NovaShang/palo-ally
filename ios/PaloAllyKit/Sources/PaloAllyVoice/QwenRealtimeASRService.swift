@@ -173,6 +173,13 @@ public final class QwenRealtimeASRService: NSObject, @unchecked Sendable, Realti
             }
         }
         if case ASRError.unexpectedInitialMessage = error { return true }
+        // A socket the system dropped under us (the Mac woken from sleep, the
+        // network changed): "Socket is not connected" and its kin come as
+        // POSIX errors, not URLErrors, and the first hold then failed with no
+        // second try (11-19).
+        let ns = error as NSError
+        if ns.domain == NSPOSIXErrorDomain, [57, 54, 53, 32, 60, 61].contains(ns.code) { return true }
+        if let under = ns.userInfo[NSUnderlyingErrorKey] as? Error, (under as NSError) !== ns { return isTransient(under) }
         return false
     }
 
