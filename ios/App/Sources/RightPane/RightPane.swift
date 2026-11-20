@@ -43,7 +43,6 @@ struct RightPane: View {
                 close: { requestClose($0) },
                 unsaved: { tab in tab.kind == PaneTab.preview && FileEditSessions.shared.isDirty(editKey(tab.path ?? "")) },
                 addWeb: { model.editPane(key) { $0.openWeb(key, url: "") } },
-                closePane: { if let onClose { onClose() } else { model.editPane(key) { $0.setOpen(key, false) } } },
                 split: splitWorkspaceID == nil ? nil : { i in state.tabs.indices.contains(i) ? openInSplit(state.tabs[i]) : () },
                 drag: splitWorkspaceID == nil ? nil : tabDrag)
             content
@@ -194,7 +193,8 @@ struct RightPane: View {
                 .id(tab)
         case PaneTab.files:
             NavigationStack {
-                FileTreeScreen(scope: scope, close: { if let onClose { onClose() } else { model.editPane(key) { $0.setOpen(key, false) } } },
+                // No ✕ either: the toolbar's 右侧栏 button puts the pane away.
+                FileTreeScreen(scope: scope,
                                onOpenFile: { file in model.editPane(key) { $0.openPreview(key, path: file.absolute ?? file.path) } })
                     .modifier(InContentNavigationBar())
             }
@@ -291,7 +291,6 @@ private struct RightPaneTabBar: View {
     /// A file's tab with unsaved changes: a dot on its chip.
     let unsaved: (PaneTab) -> Bool
     let addWeb: () -> Void
-    let closePane: () -> Void
     /// 在分屏中打开 for a document's tab (a workspace's pane).
     var split: ((Int) -> Void)? = nil
     /// A document's tab dragged onto the canvas (a workspace's pane: the
@@ -319,12 +318,7 @@ private struct RightPaneTabBar: View {
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .circle)
                 .accessibilityLabel(String(localized: "新网页", table: "Files"))
-                Button(action: closePane) {
-                    Image(systemName: "xmark").frame(width: 32, height: 32).contentShape(.circle)
-                }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .circle)
-                .accessibilityLabel(String(localized: "关闭侧栏", table: "Files"))
+                // No ✕ for the pane: the toolbar's 右侧栏 button puts it away.
             }
             .font(.system(size: 13, weight: .semibold))
             .tint(.primary)

@@ -71,7 +71,7 @@ struct FileTreeScreen: View {
         .toolbar { toolbar }
         // Pushed (over 成果 on a phone-sized window): back is the page's own.
         .macPageTop(title, subtitle: root.path.map(FilePaths.abbreviated) ?? "",
-                    back: back ?? (close == nil ? { dismiss() } : nil), trailing: AnyView(macTrailing))
+                    back: back ?? (close == nil && onOpenFile == nil ? { dismiss() } : nil), trailing: AnyView(macTrailing))
         .navigationDestination(item: $opened) { FilePage(target: $0) }
         .refreshable { tree.reload() }
         .task(id: scope) {
