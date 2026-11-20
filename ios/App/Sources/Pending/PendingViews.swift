@@ -516,7 +516,7 @@ enum PendingCopy {
 // MARK: - where things go
 
 extension WindowModel {
-    /// The capsule, the orb's badge, ⌘⇧W: the list. Beside the conversation
+    /// The capsule, the orb's badge, ⌘⇧I: the list. Beside the conversation
     /// (the Mac, iPads) a tab of the right pane; phones a sheet.
     func openPendingList() {
         if libraryBeside {

@@ -91,8 +91,9 @@ private struct PlaceCommands: Commands {
             Button("右侧栏") { inFront { $0.toggleLibrary() } }
                 .keyboardShortcut("2", modifiers: .command)
             // 等你的事: the list (a tab of the right pane here).
+            // ⌘⇧I (inbox): ⌘⇧W is the Mac's own Close Window in many apps.
             Button("等你的事") { inFront { $0.openPendingList() } }
-                .keyboardShortcut("w", modifiers: [.command, .shift])
+                .keyboardShortcut("i", modifiers: [.command, .shift])
             // ⌘F searches 成果 and the conversation (nothing else here has
             // Find). It lives here: Catalyst ignores a replaced text-editing
             // group, and the system Find items are taken out below.
