@@ -175,6 +175,7 @@ public actor DemoHost {
             return m
         }
         if seeded { pendingItems = Self.seededPending(now: Date().epochMillis, approvals: approvals, questions: questions, messages: messages, assistant: assistantName) }
+        pendingItems += Self.linkedItems(messages: messages, allies: allies, allyLogs: allyLogs, tasks: tasks, assistant: assistantName)
         // Strong on purpose: the transport keeps its host alive (demo mode and
         // tests often only hold the store/transport).
         t.onSend = { data in await self.handle(data) }
@@ -205,6 +206,10 @@ public actor DemoHost {
         if event == RPCEventName.approvalUpdated, let a = data as? Approval { pendingFollow(approval: a) }
         guard let v = try? JSONValue.from(data) else { return }
         transport.deliver(json: ["event": .string(event), "data": v])
+        // A proposal card, an Ally draft or a task changed: its item on the list follows.
+        if event == RPCEventName.chatMessage || event == RPCEventName.taskUpdated || event == RPCEventName.allyEntry {
+            syncLinkedPending()
+        }
     }
 
     public func upsertTask(_ t: AllyTask) {

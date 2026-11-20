@@ -26,8 +26,8 @@ struct PendingTests {
         #expect(open.contains { $0.id == "p_meeting" && $0.options == ["改到周五", "维持周四"] })
         #expect(open.contains { $0.id == "p_flight" && $0.options == nil && $0.source.kind == .brief && $0.messageId != nil })
         #expect(store.pendingHandledToday.map(\.id) == ["p_hotel"])
-        // Cards already count themselves; only the rest is added.
-        #expect(store.pendingBeyondCards(forPal: nil) == 2)
+        // The proposal card waiting in the conversation is an item too (a link to it).
+        #expect(open.contains { $0.link?.kind == .proposal && $0.options == ["开吧", "不用"] })
     }
 
     @Test func answeringTheAssistantsItemIsTheOwnersMessageAndTheItemIsDecided() async throws {
@@ -59,5 +59,27 @@ struct PendingTests {
         #expect(store.discussingPending == nil)
         try await store.updatePending(try #require(store.pendingItem(id: "p_flight")), action: "reopen")
         #expect(await until { store.pendingItem(id: "p_flight")?.isOpen == true })
+    }
+
+    @Test func aProposalsItemAndItsCardMoveTogetherBothWays() async throws {
+        let (store, _) = await demo()
+        let item = try #require(store.openPending.first { $0.link?.kind == .proposal })
+        let id = try #require(item.link?.id)
+        // 不用 on the list: the card says so
+        try await store.answerPending(item, "不用")
+        #expect(await until { store.messages.contains { $0.proposal?.id == id && $0.proposal?.status == .discarded } })
+        #expect(store.pendingItem(id: item.id)?.status == .done)
+        #expect(!store.openPending.contains { $0.link?.kind == .proposal })
+    }
+
+    @Test func aTaskThatNeedsTheOwnerIsAnItemUntilItGoesOn() async throws {
+        let (store, host) = await demo()
+        let before = store.openPending.count
+        let now = Date().epochMillis
+        await host.upsertTask(AllyTask(id: "t-need", title: "订餐厅", summary: "几个人？", status: .needsInput, createdAt: now, updatedAt: now))
+        #expect(await until { store.openPending.count == before + 1 })
+        #expect(store.openPending.contains { $0.link == PendingLink(kind: .task, id: "t-need") && $0.title == "「订餐厅」需要你" })
+        await host.upsertTask(AllyTask(id: "t-need", title: "订餐厅", summary: "订好了", status: .done, createdAt: now, updatedAt: now + 1))
+        #expect(await until { store.openPending.count == before })
     }
 }

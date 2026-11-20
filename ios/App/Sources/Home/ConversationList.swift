@@ -648,11 +648,11 @@ private struct PaloItem: View {
             Text(secondLine(line))
                 .foregroundStyle(line.kind == .offline ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
         } trailing: {
-            // The count leads to what waits (the row still opens the conversation).
+            // The count opens the list it counts (the row still opens the conversation).
             WaitingBadge(count: waiting)
                 .simultaneousGesture(TapGesture().onEnded {
-                    if !own { model.open(.palo, on: hostID) }
-                    _ = model.showWaiting(in: store, open: true)
+                    if !own { model.open(.palo, on: hostID) } else { model.openPalo() }
+                    model.openPendingList()
                 })
         }
         .accessibilityElement(children: .combine)
@@ -678,13 +678,10 @@ private struct PaloItem: View {
         return m.role == .user ? String(localized: "你：\(text)") : text
     }
 
-    /// Cards, drafts and proposals waiting in its conversation, and tasks
-    /// that need the owner.
-    private var waiting: Int {
-        store.pendingApprovals.count + store.pendingQuestions.count + store.pendingAllyDrafts.count
-            + store.pendingProposalCount + store.tasks.filter { $0.status == .needsInput }.count
-            + store.pendingBeyondCards(forPal: nil) // 等你的事 that aren't one of those cards
-    }
+    /// What waits on the owner on this computer: the open items of 等你的事,
+    /// the list the capsule and the orb count (cards, proposals, drafts and
+    /// tasks are all items there).
+    private var waiting: Int { store.openPending.count }
 }
 
 /// A workspace: a chevron that opens it, its icon and name; on the right how
@@ -931,7 +928,7 @@ private struct AllyListRow: View {
         } subtitle: {
             Text(Copy.allyLastLine(ally, assistant: store.assistantName))
         } trailing: {
-            WaitingBadge(count: store.pendingAllyDrafts.filter { $0.allyId == ally.id }.count)
+            WaitingBadge(count: store.allyPendingCount(ally.id))
         }
         .accessibilityElement(children: .combine)
         .accessibilityValue(Copy.allyPresence(ally))

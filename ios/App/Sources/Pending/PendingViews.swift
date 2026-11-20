@@ -618,6 +618,13 @@ extension WindowModel {
             if let q = item.questionId { focusQuestionID = q } else if let a = item.approvalId { focusApprovalID = a }
             return
         }
+        // A proposal card or an Ally draft: the card itself, answered in place.
+        if item.link?.kind == .proposal || item.link?.kind == .allyDraft,
+           let mid = item.messageId, let m = store.messages.first(where: { $0.id == mid }) {
+            openPalo()
+            focusMessageSeq = m.seq
+            return
+        }
         openPalo()
         Task { try? await store.surfacePending(item) }
     }

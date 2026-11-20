@@ -43,13 +43,10 @@ extension AppStore {
         return s
     }
 
-    /// How many of a Pal's cards wait on the owner: the host's count, or the
-    /// cards here when there are more of them (one just arrived).
+    /// How many of a Pal's things wait on the owner: its open items on
+    /// 等你的事 (its questions and prompts are items too).
     public func palPendingCount(_ id: String) -> Int {
-        let here = approvals.filter { $0.isPending && $0.source?.isPal == true && $0.source?.id == id }.count
-            + questions.filter { $0.isPending && $0.source?.isPal == true && $0.source?.id == id }.count
-        // …and what it put on the owner's list (等你的事) that isn't one of those cards.
-        return max(here, pal(id: id)?.pending ?? 0) + pendingBeyondCards(forPal: id)
+        openPending(forPal: id).count
     }
 
     /// The cards waiting on the owner from one of the computer's other sessions.

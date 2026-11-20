@@ -393,14 +393,10 @@ final class AppModel {
         d.set(machineIDs, forKey: sidebarKey("hostMachineIDs"))
     }
 
-    /// What waits on the owner on a computer: its assistant's cards, drafts,
-    /// proposals and tasks, and every session's (a folded section's count).
+    /// What waits on the owner on a computer (a folded section's count): the
+    /// open items of its 等你的事, which hold everything that waits.
     func waitingTotal(_ id: String) -> Int {
-        guard let s = stores[id] else { return 0 }
-        let palo = s.pendingApprovals.count + s.pendingQuestions.count + s.pendingAllyDrafts.count
-            + s.pendingProposalCount + s.tasks.filter { $0.status == .needsInput }.count
-            + s.pendingBeyondCards(forPal: nil) // 等你的事 that aren't one of those cards
-        return palo + s.pals.reduce(0) { $0 + s.palPendingCount($1.id) }
+        stores[id]?.openPending.count ?? 0
     }
 
     /// 「Palo（家里的 Mac）」: an assistant by its name and its computer's.
@@ -476,13 +472,6 @@ final class AppModel {
     func unreadCount(_ id: String) -> Int {
         guard let s = stores[id], let seen = meta.lastSeen[id] else { return 0 }
         return s.unreadCount(after: seen)
-    }
-
-    func pendingCount(_ id: String) -> Int {
-        guard let s = stores[id] else { return 0 }
-        return s.pendingApprovals.count + s.pendingQuestions.count + s.pendingAllyDrafts.count
-            + s.pendingBeyondCards(forPal: nil)
-            + s.pals.reduce(0) { $0 + s.palPendingCount($1.id) }
     }
 
     /// The owner has seen everything on this assistant up to now (a window shows it).

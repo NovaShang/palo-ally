@@ -131,7 +131,6 @@ final class WindowModel {
     func rename(_ id: String, to name: String) { app.rename(id, to: name) }
     func theme(for id: String) -> AppTheme { app.theme(for: id) }
     func setTheme(_ theme: AppTheme, for id: String) async throws { try await app.setTheme(theme, for: id) }
-    func pendingCount(_ id: String) -> Int { app.pendingCount(id) }
     func startDemo() { app.startDemo() }
     func exitDemo() { app.exitDemo() }
     func unpair(_ id: String) async { await app.unpair(id) }

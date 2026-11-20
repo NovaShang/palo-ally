@@ -2,8 +2,10 @@ import Foundation
 
 // 等你的事 (host/src/pending.ts; docs/workbench-design/decisions-queue.html):
 // what the owner must decide, kept by the host and shared by every
-// conversation on the computer. The list's order: a session stopped on it
-// first, then the newest.
+// conversation on the computer. It holds everything that waits on the
+// owner (questions and prompts, proposal cards, Ally drafts, tasks that need
+// them), so every waiting badge is a count of its open items. The list's
+// order: a session stopped on it first, then the newest.
 extension AppStore {
     /// Every item the host lists: open, put away, and the ones closed lately.
     public internal(set) var pendingItems: [PendingItem] {
@@ -45,10 +47,9 @@ extension AppStore {
         }
     }
 
-    /// What the cards already count leaves out: items that are a question
-    /// or a prompt (blocking) are those cards. The assistant's, or a Pal's.
-    public func pendingBeyondCards(forPal id: String?) -> Int {
-        openPending(forPal: id).filter { !$0.isCard }.count
+    /// What waits on the owner from one Ally: its drafts' items.
+    public func allyPendingCount(_ id: String) -> Int {
+        openPending.filter { $0.source.kind == .ally && $0.source.id == id }.count
     }
 
     /// An item surfaced at the bottom of the conversation is being talked
