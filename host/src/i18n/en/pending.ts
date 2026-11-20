@@ -44,6 +44,7 @@ export const enPending: Record<keyof typeof zhPending, string> = {
   "pending.answer.pal": "About \"{title}\": {answer}",
   "pending.surface.turn":
     "[Pending] The owner tapped \"Talk about this\" and wants to decide it now:\nid: {id}\nFrom: {source}\nTo decide: {title}\nBackground: {context}\nOptions: {options}\nIts card is already at the bottom of the conversation (background, what to decide, the options). Add a sentence or two with your view or what the owner still needs to know, without repeating the card's words, then wait for the answer.",
+  "pending.talk.note": "(The owner is quoting {id} \"{title}\" from the pending list. Background: {context}. Options: {options}. If this settles it, close it with resolve_pending; if not, keep talking.)",
   "pending.surface.none": "(none)",
   "pending.brief.stale": "\n\nThese items have waited for the owner's decision for over three days; mention them once in this run (one line is enough), not again after:\n{lines}",
 };

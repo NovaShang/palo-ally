@@ -910,6 +910,19 @@ export class Hub {
    * and a turn (not shown) asking the assistant to add its view and wait for
    * the owner's answer there.
    */
+  /**
+   * 聊这件 quotes an item into the composer (its quote's message id is
+   * `pending:<id>`): the owner's words then come with the item, so the
+   * assistant knows which one and can close it.
+   */
+  pendingQuoteNote(replyTo?: ReplyTo): { note?: string } {
+    const id = replyTo?.messageId.startsWith("pending:") ? replyTo.messageId.slice(8) : "";
+    const item = id ? this.pending.get(id) : undefined;
+    if (!item || item.status !== "open") return {};
+    const none = t("pending.surface.none");
+    return { note: t("pending.talk.note", { id, title: item.title, context: item.context ?? none, options: item.options?.join(" / ") ?? none }) };
+  }
+
   surfacePending(id: string, channel: Channel): ChatMessage {
     const item = this.pending.get(id);
     if (!item) throw new Error(t("pending.err.none"));

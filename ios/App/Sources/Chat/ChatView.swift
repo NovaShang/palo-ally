@@ -237,7 +237,7 @@ struct ChatView: View {
             } else {
             VStack(spacing: 6) {
             // 等你的事: the way in, where the thumb is (the assistant's conversation).
-            if isPalo { PendingCapsule() }
+            if isPalo { PendingCapsule() } else if let id = store.palID { PendingCapsule(palID: id, inTile: inTile) }
             ComposerView(draftBox: draftBox ?? ownDraft, intake: intake) { text, images, files, how in
                 switch how {
                 case .typed:
@@ -253,7 +253,7 @@ struct ChatView: View {
                 }
             }
             }
-            .animation(.snappy(duration: 0.25), value: isPalo ? store.openPending.count : 0)
+            .animation(.snappy(duration: 0.25), value: isPalo ? store.openPending.count : store.openPending(forPal: store.palID).count)
             .animation(.snappy(duration: 0.25), value: isPalo ? store.discussingPending?.id : nil)
             }
         }

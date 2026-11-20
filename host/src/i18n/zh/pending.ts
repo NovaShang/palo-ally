@@ -43,6 +43,7 @@ export const zhPending = {
   "pending.answer.pal": "关于「{title}」：{answer}",
   "pending.surface.turn":
     "[等你的事] 主人点了「聊这件」，想现在定：\nid: {id}\n来自：{source}\n要定的：{title}\n背景：{context}\n选项：{options}\n这件的卡片已经摆在对话最底下（背景、要定什么、选项都在上面）。用一两句补上你的看法或主人还需要知道的，不要重复卡片上的字，然后等主人回答。",
+  "pending.talk.note": "（主人引用的是「等你的事」里的 {id}「{title}」。背景：{context}。选项：{options}。这句定下来了就用 resolve_pending 标掉；没定就接着聊。）",
   "pending.surface.none": "（无）",
   "pending.brief.stale": "\n\n这几件等主人定的事已经放了三天以上，这次在内容里提一句（一行就够），之后不再提：\n{lines}",
 };

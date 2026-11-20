@@ -3,23 +3,31 @@ import SwiftUI
 
 // 等你的事 (docs/workbench-design/decisions-queue.html): what the owner must
 // decide comes to them. A capsule over the composer opens the list (a sheet
-// on phones, a tab of the right pane on the Mac and iPads); 聊这件 has the
-// assistant put the item at the bottom of the conversation, where it's
-// answered in place; once decided its card folds to one gray line.
+// on phones, a tab of the right pane on the Mac and iPads); 聊这件 opens the
+// conversation it belongs to with the item quoted in the composer; 从头过一遍
+// has the assistant put the first at the bottom of its conversation, where
+// it's answered in place; once decided its card folds to one gray line.
 
 // MARK: - the capsule over the composer
 
 /// 「3 件等你 · 合同第 7 条…」 while something waits and nothing is being
 /// talked about at the bottom; gone otherwise.
+///
+/// In a Pal's conversation it holds that Pal's items only, and opens its
+/// details (they list them, answerable there); anything else in a tile,
+/// where the details are the tile's own, opens the list.
 struct PendingCapsule: View {
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
+    /// A Pal's conversation: its items only.
+    var palID: String? = nil
+    var inTile = false
 
     var body: some View {
-        let open = store.openPending
+        let open = palID.map { store.openPending(forPal: $0) } ?? store.openPending
         if let first = open.first, store.discussingPending == nil {
             Button {
-                model.openPendingList()
+                if palID != nil && !inTile { model.setDetail(true, tile: nil) } else { model.openPendingList() }
             } label: {
                 HStack(spacing: 7) {
                     Text(open.count > 99 ? "99+" : "\(open.count)")
@@ -183,7 +191,7 @@ struct PendingListSheet: View {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button(String(localized: "从头过一遍")) {
                                 dismiss()
-                                model.talk(about: first, in: store)
+                                model.goThrough(from: first, in: store)
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(Color.accentColor)
@@ -223,7 +231,7 @@ struct PendingPaneView: View {
                 Text(String(localized: "等你的事")).font(.headline)
                 Spacer()
                 if let first = store.openPending.first {
-                    Button(String(localized: "从头过一遍")) { model.talk(about: first, in: store) }
+                    Button(String(localized: "从头过一遍")) { model.goThrough(from: first, in: store) }
                         .buttonStyle(.borderedProminent)
                         .tint(Color.accentColor)
                         .buttonBorderShape(.capsule)
@@ -582,6 +590,12 @@ enum PendingCopy {
         return item.blocking ? String(localized: "\(name) · 卡着它 · \(age)") : "\(name) · \(age)"
     }
 
+    /// 聊这件's quote: what to decide, and its background.
+    static func quote(_ item: PendingItem) -> String {
+        let context = item.context?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return context.isEmpty ? item.title : "\(item.title)\n\(context)"
+    }
+
     /// The capsule's glimpse of the first item: a couple of dozen characters.
     static func short(_ title: String) -> String {
         title.count > 22 ? String(title.prefix(21)) + "…" : title
@@ -601,12 +615,15 @@ extension WindowModel {
         }
     }
 
-    /// 聊这件: a Pal's or a session's own goes to that conversation; one of
-    /// the assistant's own cards is brought into view; anything else the
-    /// assistant puts at the bottom of its conversation.
+    /// 聊这件: to the conversation it belongs to (a Pal's, a session's, the
+    /// assistant's) with the item quoted in the composer, the owner's words
+    /// to follow; a question, a permission prompt or one of the assistant's
+    /// cards is brought into view instead, to be answered where it is.
     func talk(about item: PendingItem, in store: AppStore) {
+        let quote = ReplyTo(messageId: "pending:\(item.id)", excerpt: PendingCopy.quote(item))
         if let pal = item.pal ?? (item.source.kind == .pal ? item.source.id : nil) {
             openPal(pal)
+            store.palStore(pal).replyDraft = quote
             return
         }
         if item.source.kind == .session, let id = item.source.id {
@@ -625,6 +642,13 @@ extension WindowModel {
             focusMessageSeq = m.seq
             return
         }
+        openPalo()
+        store.replyDraft = quote
+    }
+
+    /// 从头过一遍: the assistant puts the first item at the bottom of its
+    /// conversation, says what it thinks, and goes on from there.
+    func goThrough(from item: PendingItem, in store: AppStore) {
         openPalo()
         Task { try? await store.surfacePending(item) }
     }

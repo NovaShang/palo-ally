@@ -217,7 +217,7 @@ private struct LayoutStressTest: ViewModifier {
                     // `pending-reopen:<id>` 撤回 / 放回.
                     case "pending": w.openPendingList()
                     case "pending-agenda":
-                        if let store = w.store, let first = store.openPending.first { w.showPendingSheet = false; w.talk(about: first, in: store) }
+                        if let store = w.store, let first = store.openPending.first { w.showPendingSheet = false; w.goThrough(from: first, in: store) }
                     case _ where a.hasPrefix("pending-"):
                         let parts = a.split(separator: ":", maxSplits: 2).map(String.init)
                         guard parts.count >= 2, let store = w.store, let item = store.pendingItem(id: parts[1]) else {

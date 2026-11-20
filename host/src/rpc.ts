@@ -99,7 +99,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
         r && typeof r.messageId === "string" && typeof r.excerpt === "string" && r.excerpt.trim()
           ? { messageId: r.messageId.slice(0, 100), excerpt: r.excerpt.trim().slice(0, 300) }
           : undefined;
-      const msg = hub.userMessage(String(p.text ?? ""), ctx.channel, undefined, cid, attachments, replyTo);
+      const msg = hub.userMessage(String(p.text ?? ""), ctx.channel, undefined, cid, attachments, replyTo, hub.pendingQuoteNote(replyTo));
       if (!msg) throw new Error(t("rpc.err.empty"));
       // Sent by tapping a 「试试」 chip: it's used up.
       if (typeof p.suggestionId === "string") hub.suggestions.use(p.suggestionId);
