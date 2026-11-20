@@ -360,7 +360,9 @@ struct LocalFilePreview: View {
 
     @ViewBuilder private var htmlBody: some View {
         Group {
-            if let page = text ?? (loaded?.key == key ? loaded?.text : nil) {
+            // A new revision keeps the old page up until it's read, so the
+            // web view stays and keeps its place (it scrolls back to it).
+            if let page = text ?? loaded?.text {
                 SandboxedHTMLView(html: page, artifactID: sandbox, images: imageSource)
                     .ignoresSafeArea(edges: .bottom)
             } else {

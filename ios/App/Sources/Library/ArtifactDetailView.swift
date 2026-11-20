@@ -299,11 +299,15 @@ struct SandboxedHTMLView: UIViewRepresentable {
         weak var webView: WKWebView?
         private var loaded: String?
         private var ruleList: WKContentRuleList?
+        /// Where the page was scrolled when a new version replaced it.
+        private var restore: CGPoint?
         let imageBridge = HTMLImageBridge()
 
         func load(_ html: String, baseURL: URL?, images: FilePreviewWebView.ImageSource?, fileURL: URL? = nil) {
             let marker = fileURL.map { "file:" + $0.path } ?? html
             guard marker != loaded, let webView else { return }
+            // A new version of the page on screen: back to where it was read.
+            restore = loaded == nil ? nil : webView.scrollView.contentOffset
             loaded = marker
             imageBridge.reset(source: images)
             Task {
@@ -325,6 +329,24 @@ struct SandboxedHTMLView: UIViewRepresentable {
                 webView.configuration.userContentController.removeAllContentRuleLists()
                 webView.configuration.userContentController.add(ruleList)
                 webView.loadHTMLString(html, baseURL: baseURL)
+            }
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard let target = restore, target.y > 0 || target.x > 0 else { return }
+            restore = nil
+            // A page that builds itself with script grows after it finishes:
+            // try again as it does, for a second at most.
+            Task { @MainActor [weak webView] in
+                for _ in 0..<10 {
+                    guard let webView else { return }
+                    let sv = webView.scrollView
+                    let maxY = max(0, sv.contentSize.height - sv.bounds.height + sv.adjustedContentInset.bottom)
+                    let maxX = max(0, sv.contentSize.width - sv.bounds.width)
+                    sv.setContentOffset(CGPoint(x: min(target.x, maxX), y: min(target.y, maxY)), animated: false)
+                    if maxY >= target.y { debugLog("[html] new version, back to y \(Int(target.y))"); return }
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
             }
         }
 
