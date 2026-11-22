@@ -12,7 +12,7 @@ import SwiftUI
 @MainActor @Observable
 final class PhonePaneState {
     static let shared = PhonePaneState()
-    enum Segment: Hashable { case library, files }
+    enum Segment: Hashable { case library, backlog, files }
     var segment: Segment = .library
     /// Palo's 文件: the owner's home folder, or Palo's own.
     var paloFilesRoot: FileScope = .home
@@ -113,6 +113,10 @@ struct PhonePane: View {
                 LibraryTab()
                     .environment(\.libraryOpensModal, true)
                     .environment(\.libraryPalID, palID)
+            case .backlog:
+                // 待办: the list runs under the glass bars as the others do; rows lift on a long press to be dragged.
+                BacklogView(palID: palID, bottomClearance: 70)
+                    .id(palID ?? "palo")
             case .files:
                 NavigationStack {
                     FileTreeScreen(scope: scope, onOpenFile: { PaneModal.file($0, model: model, store: store) })
@@ -175,6 +179,13 @@ struct PhonePane: View {
                 } label: { EmptyView() }
             }
             .accessibilityIdentifier("library-grouping")
+        case .backlog:
+            Text(palID.flatMap { store.pal(id: $0) }.map { ($0.cwd as NSString).lastPathComponent } ?? String(localized: "助理的待办", table: "Files"))
+                .font(.headline)
+                .lineLimit(1)
+                .padding(.horizontal, 16)
+                .frame(height: 40)
+                .glassEffect(.regular, in: .capsule)
         case .files where scope.kind == .pal:
             Text(folderName(scope))
                 .font(.headline)
@@ -247,10 +258,13 @@ struct PhonePane: View {
             } else {
                 HStack(spacing: 0) {
                     tab(.library, title: Text("成果", tableName: "Files"), icon: "square.stack")
+                    tab(.backlog, title: Text("待办", tableName: "Files"), icon: "checklist")
                     tab(.files, title: Text("文件", tableName: "Files"), icon: "folder")
                 }
                 .padding(5)
                 .glassEffect(.regular, in: .capsule)
+                // 待办 has its own field to add one, nothing to search.
+                if state.segment != .backlog {
                 Button {
                     searching = true
                     searchFocused = true
@@ -262,6 +276,7 @@ struct PhonePane: View {
                 .glassEffect(.regular.interactive(), in: .circle)
                 .accessibilityLabel(String(localized: "搜索", table: "Files"))
                 .accessibilityIdentifier("pane-search")
+                }
             }
         }
         .padding(.horizontal, 14)
@@ -285,7 +300,7 @@ struct PhonePane: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(on ? .isSelected : [])
-        .accessibilityIdentifier(segment == .library ? "pane-tab-library" : "pane-tab-files")
+        .accessibilityIdentifier(segment == .library ? "pane-tab-library" : segment == .backlog ? "pane-tab-backlog" : "pane-tab-files")
     }
 
     private func endSearch() {

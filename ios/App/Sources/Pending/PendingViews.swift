@@ -346,6 +346,7 @@ struct PendingRow: View {
                         .font(.footnote)
                 }
                 Spacer(minLength: 0)
+                PendingLaterButton(item: item)
                 Button(String(localized: "忽略")) { update("ignore") }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
