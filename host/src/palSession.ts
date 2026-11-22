@@ -1,4 +1,3 @@
-import { settingsEffort } from "./ccEffort.ts";
 import { t as tr } from "./i18n/index.ts";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -7,12 +6,10 @@ import { askOwner } from "./ownerCards.ts";
 import { firstLine } from "./ccSessions.ts";
 import { ACTIVITY, describeActivity, friendlyError } from "./copy.ts";
 import { isAuthFailure } from "./auth.ts";
-import { readHead, readTail, transcriptPath } from "./handoffs.ts";
-import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type DeliveryToolHandlers, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
+import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type Harness, type SessionRef, type DeliveryToolHandlers, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
 import type { MediaStore } from "./media.ts";
 import { type PalLaunch, isHelperFailure, makeSpawner } from "./palLauncher.ts";
-import type { RawSessionMessage } from "./ccSessions.ts";
-import { CARD_TOOLS, type PalMapOptions, TranscriptFollower, cardKey, toPalMessages, transcriptLastLine, transcriptModel, userEntryMessage } from "./palHistory.ts";
+import { CARD_TOOLS, type PalMapOptions, cardKey, toPalMessages, transcriptLastLine } from "./palHistory.ts";
 import type { QuestionManager } from "./questions.ts";
 import { type ForkSession, type PendingRewind, beforeCompaction, chainTo, hasFileCheckpoint, leafOf, ownerText, readTranscript, rewindBusy, rewindNoFiles, rewindNotFound } from "./rewind.ts";
 import { type StallRecovery, type StallTarget, transcriptHas } from "./stallWatch.ts";
@@ -102,6 +99,8 @@ export interface PalSessionDeps {
   driver: HarnessDriver;
   approvals: ApprovalManager;
   questions: QuestionManager;
+  /** The harness it runs on: its transcript, settings and how it reads them. */
+  harness: Harness;
   claudeDir: string;
   launch: () => Promise<PalLaunch>;
   helperFailed: (why: string) => void;
@@ -175,7 +174,7 @@ export class PalSession {
   private replyTexts = new Map<string, string>(); // a reply's text so far, by its id (several blocks join)
   private emitted = new Set<string>(); // ids already sent to the app
   private calls: { name: string; id: string }[] = []; // its card tools' calls (tool_use ids) waiting for their handler
-  private follower: TranscriptFollower | null = null;
+  private follower: { start(): void; poke(): void; stop(): void } | null = null;
   // A fork's entries copied from the session it was forked from: history, not news.
   private inherited: Set<string> | null = null;
   private sleeping: Promise<void> | null = null; // being put to sleep: its process is ending
@@ -200,10 +199,11 @@ export class PalSession {
     private d: PalSessionDeps,
   ) {
     this.updatedAt = rec.lastUsedAt;
-    const tail = readTail(this.transcript, 512 * 1024);
-    this.lastLine = transcriptLastLine(tail);
+    const history = this.d.harness.history;
+    const tail = history.tail(this.ref, 512 * 1024);
+    this.lastLine = history.lastLine(tail);
     // Its model entries are written when it starts: the beginning has one too.
-    if (!rec.model) rec.model = transcriptModel([...readHead(this.transcript, 256 * 1024), ...tail]) ?? undefined;
+    if (!rec.model) rec.model = history.model([...history.head(this.ref, 256 * 1024), ...tail]) ?? undefined;
     this.model = rec.model;
   }
 
@@ -211,8 +211,14 @@ export class PalSession {
     return this.rec.id;
   }
 
+  /** Its conversation as the harness keeps it. */
+  get ref(): SessionRef {
+    return { sessionId: this.rec.sessionId, cwd: this.rec.cwd };
+  }
+
+  /** Where the harness keeps its conversation (logs and diagnostics). */
   get transcript(): string {
-    return transcriptPath(this.d.claudeDir, this.rec.cwd, this.rec.sessionId);
+    return this.d.harness.history.locate(this.ref);
   }
 
   /** Claude Code's pid while it runs. */
@@ -339,7 +345,7 @@ export class PalSession {
   }
 
   private contextWindow(): number {
-    return contextWindowFor(this.model ?? this.rec.model, this.rec.contextTokens, this.rec.contextWindow);
+    return this.d.harness.settings.contextWindow(this.model ?? this.rec.model, this.rec.contextTokens, this.rec.contextWindow);
   }
 
   /** The effort it runs at: the one chosen, else the one it was started at or Claude Code last said its turns ran at. */
@@ -392,7 +398,7 @@ export class PalSession {
     const chosen = this.rec.permissionMode;
     const running = this.running ? this.reportedMode : undefined;
     // the ones offered, then one it is in that isn't (bypassPermissions…), so it shows
-    const modes: string[] = [...PAL_MODES];
+    const modes: string[] = [...this.d.harness.settings.permissionModes];
     for (const m of [chosen, running]) if (m && !modes.includes(m)) modes.push(m);
     return {
       ...(typeof this.rec.contextTokens === "number" ? { contextTokens: this.rec.contextTokens } : {}),
@@ -538,10 +544,10 @@ export class PalSession {
     // One gone back to an earlier message is forked from its old session
     // until Claude Code has written the new one (docs/rewind-prd.md §4.1).
     const fork = this.pendingRewind();
-    const resume = !fork && existsSync(this.transcript);
+    const resume = !fork && this.d.harness.history.exists(this.ref);
     // The effort it starts at: the one chosen in PaloAlly, else what Claude
     // Code's settings give it, passed explicitly so what's shown is what runs.
-    const effort = rec.effort ?? settingsEffort(rec.model, rec.cwd, this.d.claudeDir);
+    const effort = rec.effort ?? this.d.harness.settings.defaultEffort(rec.model, rec.cwd);
     if (!rec.effort && effort && effort !== rec.appliedEffort) {
       rec.appliedEffort = effort;
       this.d.save();
@@ -591,7 +597,7 @@ export class PalSession {
         this.d.helperFailed(firstLine(why.slice(why.indexOf("PaloAlly Helper:"))));
         return this.doStart(true);
       }
-      throw new Error(startError(why));
+      throw new Error(this.d.harness.settings.startError(why));
     }
     clearTimeout(timer);
     if (this.closing || proc !== this.proc) {
@@ -609,7 +615,7 @@ export class PalSession {
       this.d.save();
     }
     this.follower?.stop();
-    this.follower = new TranscriptFollower(this.transcript, (e) => this.onTranscript(e));
+    this.follower = this.d.harness.history.follow(this.ref, (e) => this.onTranscript(e));
     this.follower.start();
     if (woke) this.d.onWoke?.(this);
     this.d.log(`pal ${rec.name}: up (pid ${rec.pid ?? "?"}, ${launch.helper ? "through PaloAlly Helper" : "direct"}${resume ? ", resumed" : fork ? ", forked" : ""}${woke ? ", woken" : ""})`);
@@ -647,7 +653,7 @@ export class PalSession {
     const now = this.d.now();
     this.failures = [...this.failures.filter((t) => now - t < FAILURE_WINDOW_MS), now];
     if (this.failures.length > MAX_FAILURES) {
-      this.stopFor("failed", tr("pals.failedRepeatedly", { n: MAX_FAILURES, why: startError(err ?? this.stderrTail) }));
+      this.stopFor("failed", tr("pals.failedRepeatedly", { n: MAX_FAILURES, why: this.d.harness.settings.startError(err ?? this.stderrTail) }));
       return;
     }
     const delays = this.d.timing.restartMs;
@@ -666,7 +672,7 @@ export class PalSession {
     // Counted like an exit: try again later, give up after a few.
     const now = this.d.now();
     this.failures = [...this.failures.filter((t) => now - t < FAILURE_WINDOW_MS), now];
-    if (this.failures.length > MAX_FAILURES) return this.stopFor("failed", startError(e instanceof Error ? e.message : String(e)));
+    if (this.failures.length > MAX_FAILURES) return this.stopFor("failed", this.d.harness.settings.startError(e instanceof Error ? e.message : String(e)));
     const delays = this.d.timing.restartMs;
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
@@ -886,7 +892,7 @@ export class PalSession {
     if (o.attachments?.length) this.d.media?.remember(uuid, { text: t, attachments: o.attachments });
     this.emitted.add(uuid);
     if (!o.silent) this.d.emit("chat.message", msg);
-    const content = o.peer ? peerWrap(o.peer, body) : body;
+    const content = o.peer ? this.d.harness.settings.peerWrap(o.peer, body) : body;
     if (!this.busy) this.workSince = this.d.now();
     this.pendingUuids.add(uuid);
     this.pendingText.set(uuid, { text: content, ...(o.from ? { from: o.from } : {}), ...(images.length ? { images } : {}) });
@@ -1227,11 +1233,7 @@ export class PalSession {
   private onTranscript(e: any): void {
     if (e?.type !== "user" || e.isSidechain) return;
     if (this.inherited?.has(String(e.uuid ?? ""))) return;
-    const m = userEntryMessage(
-      { type: "user", uuid: String(e.uuid ?? ""), message: e.message, timestamp: e.timestamp, origin: e.origin, parent_tool_use_id: null,
-        isMeta: e.isMeta, isCompactSummary: e.isCompactSummary, promptSource: e.promptSource } as RawSessionMessage,
-      { ...this.d.mapOptions(), pal: this.rec.id },
-    );
+    const m = this.d.harness.history.entryMessage(e, { ...this.d.mapOptions(), pal: this.rec.id });
     if (!m || !m.id || this.emitted.has(m.id)) return;
     this.emitted.add(m.id);
     if (this.emitted.size > 500) this.emitted.delete(this.emitted.values().next().value!);
@@ -1242,14 +1244,14 @@ export class PalSession {
   // ---------------- 回到这里重来 (docs/rewind-prd.md) ----------------
 
   private transcriptOf(sessionId: string): string {
-    return transcriptPath(this.d.claudeDir, this.rec.cwd, sessionId);
+    return this.d.harness.history.locate({ sessionId, cwd: this.rec.cwd });
   }
 
   /** A rewind whose fork Claude Code hasn't written yet (none once it has). */
   pendingRewind(): PendingRewind | undefined {
     const r = this.rec.rewind;
     if (!r) return undefined;
-    if (existsSync(this.transcript)) {
+    if (this.d.harness.history.exists(this.ref)) {
       delete this.rec.rewind;
       this.d.save();
       return undefined;

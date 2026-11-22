@@ -1,5 +1,4 @@
 import { t } from "./i18n/index.ts";
-import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { homedir } from "node:os";
@@ -19,9 +18,7 @@ import { makeDeliveryTools } from "./shellTools.ts";
 import { checkModelChoice, optionFor } from "./modelChoice.ts";
 export { optionFor };
 import { PalLauncher, type PalLaunch } from "./palLauncher.ts";
-import { pagePalMessages, toPalMessages } from "./palHistory.ts";
-import { pageFromTail } from "./transcriptTail.ts";
-import { transcriptPath } from "./handoffs.ts";
+import { pagePalMessages } from "./chatPage.ts";
 import { ownerMode } from "./harness/claude/settings.ts";
 
 export { ownerMode };
@@ -365,6 +362,7 @@ export class Pals {
       driver: this.d.driver,
       approvals: this.d.approvals,
       questions: this.d.questions,
+      harness: this.d.harness,
       claudeDir: this.d.claudeDir,
       launch: () => (this.d.launch ?? (() => this.launcher.launch()))(),
       helperFailed: (why) => (this.d.helperFailed ?? ((w) => this.launcher.markBroken(w)))(why),
@@ -885,7 +883,7 @@ export class Pals {
         if (!auto) return;
         const unique = this.uniqueName(auto, [], pal);
         // Claude Code's own title follows, so a terminal and /resume say the same (and the next start doesn't read the placeholder back).
-        if (!(await pal.renameLive(unique)) && existsSync(pal.transcript)) {
+        if (!(await pal.renameLive(unique)) && this.d.harness.history.exists(pal.ref)) {
           await this.d.harness.sessions.rename(pal.rec.sessionId, unique, pal.rec.cwd).catch((e) => this.log(`couldn't retitle ${pal.rec.name}: ${e instanceof Error ? e.message : e}`));
         }
         if (this.pals.has(pal.id)) this.setName(pal, unique, "auto");
@@ -932,7 +930,7 @@ export class Pals {
     const unique = this.uniqueName(want, [], pal);
     if (!(await pal.renameLive(unique))) {
       // No process: into its transcript, where Claude Code reads it (none yet: it starts under it).
-      if (existsSync(pal.transcript)) await this.d.harness.sessions.rename(pal.rec.sessionId, unique, pal.rec.cwd);
+      if (this.d.harness.history.exists(pal.ref)) await this.d.harness.sessions.rename(pal.rec.sessionId, unique, pal.rec.cwd);
     }
     this.setName(pal, unique, by);
     this.emitNow();
@@ -1618,31 +1616,14 @@ export class Pals {
     const pal = this.get(id);
     // Not a Pal (yet): one of the computer's other sessions, the same way.
     if (!pal) return { messages: await this.sessionHistory(String(id ?? "").trim(), before, limit) };
-    const read = this.d.readMessages ?? ((sid: string, dir: string) => getSessionMessages(sid, { dir }) as Promise<RawSessionMessage[]>);
-    let raw: RawSessionMessage[] = [];
     // Gone back to an earlier message and not spoken to since: the old
     // session's conversation up to where it was cut (docs/rewind-prd.md §4.3).
     const pending = pal.pendingRewind();
     const lim = Math.max(1, Math.min(Number(limit) || 50, 200));
-    const convert = (r: RawSessionMessage[]) => toPalMessages(r, { pal: pal.id, ...this.mapOptions(pal.rec) });
-    let messages: ChatMessage[];
-    // From the transcript's end, not all of it parsed (transcriptTail.ts):
-    // a long session's whole file took 20 s a page.
-    const path = transcriptPath(this.d.claudeDir, pal.rec.cwd, pal.rec.sessionId);
-    if (!pending && !this.d.readMessages && existsSync(path)) {
-      try {
-        messages = await pageFromTail(path, pal.rec.sessionId, pal.rec.cwd, convert, (all) => pagePalMessages(all, before, lim), before, lim);
-      } catch {
-        messages = [];
-      }
-    } else {
-      try {
-        raw = pending ? pal.conversationEntries().chain : await read(pal.rec.sessionId, pal.rec.cwd);
-      } catch {
-        raw = []; // a new Pal's transcript isn't there before its first message
-      }
-      messages = pagePalMessages(convert(raw), before, lim);
-    }
+    const map = { pal: pal.id, ...this.mapOptions(pal.rec) };
+    const pick = (all: ChatMessage[]) => pagePalMessages(all, before, lim);
+    const history = this.d.harness.history;
+    const messages = pending ? pick(history.toMessages(pal.conversationEntries().chain, map)) : await history.page(pal.ref, { map, pick, before, limit: lim });
     const streaming = before === undefined ? pal.streaming() : null;
     return { messages, ...(streaming ? { streaming } : {}) };
   }
@@ -1665,14 +1646,7 @@ export class Pals {
     const cwd = live?.cwd || (key ? await this.endedCwd(key).catch(() => undefined) : undefined);
     if (!key || !cwd) throw new Error(t("pals.noPal"));
     const lim = Math.max(1, Math.min(Number(limit) || 50, 200));
-    const convert = (r: RawSessionMessage[]) => toPalMessages(r, { pal: key, ...this.mapOptions() });
-    const path = transcriptPath(this.d.claudeDir, cwd, key);
-    if (!this.d.readMessages && existsSync(path)) {
-      return await pageFromTail(path, key, cwd, convert, (all) => pagePalMessages(all, before, lim), before, lim).catch(() => []);
-    }
-    const read = this.d.readMessages ?? ((s: string, dir: string) => getSessionMessages(s, { dir }) as Promise<RawSessionMessage[]>);
-    const raw = await read(key, cwd).catch(() => [] as RawSessionMessage[]);
-    return pagePalMessages(convert(raw), before, lim);
+    return await this.d.harness.history.page({ sessionId: key, cwd }, { map: { pal: key, ...this.mapOptions() }, pick: (all) => pagePalMessages(all, before, lim), before, limit: lim });
   }
 
   // 「X 回复了」: a turn that really ended, with its reply's first line; only
