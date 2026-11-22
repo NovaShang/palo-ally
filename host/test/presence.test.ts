@@ -137,7 +137,7 @@ describe("「回复了」 pushes", () => {
     advance(59_999);
     expect(sent).toHaveLength(1);
     advance(1);
-    expect(sent[1]).toEqual({ title: "2 个会话回复了", body: "笔记整理、日志" });
+    expect(sent[1]).toEqual({ title: "2 个 agent 回复了", body: "笔记整理、日志" });
     // only one held: its own push, when the 2 minutes are up
     advance(MIN);
     d.finished("p4", "设计", "四", 3 * MIN);
@@ -152,13 +152,13 @@ describe("「回复了」 pushes", () => {
     d.finished("p0", "零", "零", 3 * MIN);
     for (let i = 1; i <= 7; i++) d.finished(`p${i}`, `会话${i}`, "x", 3 * MIN);
     advance(2 * MIN);
-    expect(sent[1]).toEqual({ title: "7 个会话回复了", body: "会话1、会话2、会话3、会话4、会话5 等" });
+    expect(sent[1]).toEqual({ title: "7 个 agent 回复了", body: "会话1、会话2、会话3、会话4、会话5 等" });
     setLang("en");
     try {
       d.finished("a", "Site", "x", 3 * MIN);
       d.finished("b", "Notes", "x", 3 * MIN);
       advance(2 * MIN);
-      expect(sent[2]).toEqual({ title: "2 sessions replied", body: "Site, Notes" });
+      expect(sent[2]).toEqual({ title: "2 agents replied", body: "Site, Notes" });
     } finally {
       setLang("zh");
     }

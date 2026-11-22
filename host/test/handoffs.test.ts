@@ -233,7 +233,7 @@ describe("following a handoff", () => {
     handOff(s);
     s.claude.end(200);
     s.check();
-    expect(s.tasks.list()[0]).toMatchObject({ status: "stopped", summary: "对方的会话结束了，没回话" });
+    expect(s.tasks.list()[0]).toMatchObject({ status: "stopped", summary: "对方结束了，没回话" });
     expect(s.tracker.open()).toHaveLength(0);
   });
 

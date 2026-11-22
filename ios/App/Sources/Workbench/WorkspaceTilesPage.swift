@@ -53,7 +53,7 @@ struct WorkspaceTilesPage: View {
                         if model.foldedTiles[workspaceID, default: []] != ids { model.foldedTiles[workspaceID] = ids }
                     })
             } else if workspace != nil {
-                Text("这个工作区里没有会话了。")
+                Text("这个工作区里没有 agent 了。")
                     .foregroundStyle(.secondary)
                     .padding(32)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -352,11 +352,11 @@ private struct WorkspaceBar: ViewModifier {
             })
         }
         if !others.isEmpty {
-            items.append(MacMenuItem(title: String(localized: "已有的会话"), children: others.map { pal in
+            items.append(MacMenuItem(title: String(localized: "已有的 agent"), children: others.map { pal in
                 MacMenuItem(title: pal.displayName, disabled: !online) { actions.add(pal.id, placement) }
             }, inline: true))
         }
-        items.append(MacMenuItem(title: String(localized: "新开一个会话…"), image: "plus", disabled: !online) {
+        items.append(MacMenuItem(title: String(localized: "新开一个 agent…"), image: "plus", disabled: !online) {
             actions.addNew(placement)
         })
         return items
@@ -381,13 +381,13 @@ private struct AddPaneMenu: View {
                 }
             }
             if !others.isEmpty {
-                Section("已有的会话") {
+                Section("已有的 agent") {
                     ForEach(others) { pal in
                         Button(pal.displayName) { actions.add(pal.id, placement) }
                     }
                 }
             }
-            Button("新开一个会话…", systemImage: "plus") { actions.addNew(placement) }
+            Button("新开一个 agent…", systemImage: "plus") { actions.addNew(placement) }
         } label: {
             Image(systemName: "plus")
         }
@@ -438,7 +438,7 @@ private struct WorkspaceTitle: View {
             .scrollEdgeEffectHidden(true)
             .frame(maxWidth: 520)
             .fixedSize(horizontal: true, vertical: false)
-            .accessibilityLabel(Text("\(title)，\(folded.count) 个会话收在这里"))
+            .accessibilityLabel(Text("\(title)，\(folded.count) 个 agent 收在这里"))
         }
     }
 }

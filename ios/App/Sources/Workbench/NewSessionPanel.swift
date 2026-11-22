@@ -53,7 +53,7 @@ struct NewSessionPanel: View {
                     .accessibilityIdentifier("new-session-search")
                 list
             }
-            .navigationTitle("新建会话")
+            .navigationTitle("新建 agent")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.tint(.primary) }

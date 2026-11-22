@@ -938,13 +938,13 @@
         }
       }
     },
-    "会话" : {
+    "其他" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Session"
+            "value" : "Other"
           }
         }
       }
@@ -1697,13 +1697,13 @@
         }
       }
     },
-    "向下分出新会话…" : {
+    "向下分出新 agent…" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Split Down with a New Session…"
+            "value" : "Split Down with a New Agent…"
           }
         }
       }
@@ -1719,13 +1719,13 @@
         }
       }
     },
-    "向右分出新会话…" : {
+    "向右分出新 agent…" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Split Right with a New Session…"
+            "value" : "Split Right with a New Agent…"
           }
         }
       }
@@ -1917,13 +1917,13 @@
         }
       }
     },
-    "在右边分出一个会话 ⌘D" : {
+    "在右边分出一个 agent ⌘D" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Split a session off to the right ⌘D"
+            "value" : "Split an agent off to the right ⌘D"
           }
         }
       }
@@ -2863,13 +2863,13 @@
         }
       }
     },
-    "手机上处理主机上会话的确认" : {
+    "手机上处理主机上 agent 的确认" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Answer the host’s sessions’ requests on this phone"
+            "value" : "Answer the host’s agents’ requests on this phone"
           }
         }
       }
@@ -5797,17 +5797,6 @@
         }
       }
     },
-    "还没有可以继续的会话。主机上开着的 Claude Code 也会出现在这里。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nothing to continue yet. Claude Code sessions open on your host show up here too."
-          }
-        }
-      }
-    },
     "还没有对话。在下面打字，和在终端里一样。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6468,13 +6457,13 @@
         }
       }
     },
-    "%lld 个会话在等你" : {
+    "%lld 个 agent 在等你" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld sessions waiting on you"
+            "value" : "%lld agents waiting on you"
           }
         }
       }
@@ -6567,24 +6556,13 @@
         }
       }
     },
-    "里面的会话不会结束，变回普通会话。" : {
+    "里面的 agent 不会归档，变回普通 agent。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The sessions in it don't end; they become ordinary sessions."
-          }
-        }
-      }
-    },
-    "点左下角的 ＋ 新建一个会话，或者让助理帮你开。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tap ＋ at the bottom left to start a session, or ask the assistant to open one."
+            "value" : "The agents in it aren't archived; they become ordinary agents."
           }
         }
       }
@@ -6607,17 +6585,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Earlier"
-          }
-        }
-      }
-    },
-    "新建会话" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "New Session"
           }
         }
       }
@@ -6699,24 +6666,24 @@
         }
       }
     },
-    "放进去的会话" : {
+    "放进去的 agent" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sessions to include"
+            "value" : "Agents to include"
           }
         }
       }
     },
-    "先新建一个会话，再把它放进工作区。" : {
+    "先新建一个 agent，再把它放进工作区。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Start a session first, then add it to a workspace."
+            "value" : "Start an agent first, then add it to a workspace."
           }
         }
       }
@@ -6754,17 +6721,6 @@
         }
       }
     },
-    "它会回到会话里，接着上次的地方聊。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "It comes back as a session, where you left off."
-          }
-        }
-      }
-    },
     "接着聊" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6787,17 +6743,6 @@
         }
       }
     },
-    "还没有以前的会话。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No earlier sessions yet."
-          }
-        }
-      }
-    },
     "助理开的" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6805,39 +6750,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Opened by the assistant"
-          }
-        }
-      }
-    },
-    "%@已经不在会话列表里了。对话记录还在主机上。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ is no longer in your sessions. The conversation is still on your host."
-          }
-        }
-      }
-    },
-    "把%@移出会话？" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove %@ from sessions?"
-          }
-        }
-      }
-    },
-    "移出会话" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove from Sessions"
           }
         }
       }
@@ -7128,13 +7040,13 @@
         }
       }
     },
-    "%lld 个会话" : {
+    "%lld 个 agent" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld sessions"
+            "value" : "%lld agents"
           }
         }
       }
@@ -7150,35 +7062,35 @@
         }
       }
     },
-    "已有的会话" : {
+    "已有的 agent" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Existing sessions"
+            "value" : "Existing agents"
           }
         }
       }
     },
-    "新开一个会话…" : {
+    "新开一个 agent…" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "New session…"
+            "value" : "New agent…"
           }
         }
       }
     },
-    "这个工作区里没有会话了。" : {
+    "这个工作区里没有 agent 了。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "There are no sessions in this workspace."
+            "value" : "There are no agents in this workspace."
           }
         }
       }
@@ -7523,32 +7435,12 @@
         }
       }
     },
-    "更早的会话" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Earlier sessions"
-          }
-        }
-      }
-    },
     "全部历史记录…" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "All history…"
-          }
-        }
-      }
-    },
-    "更早的会话，%lld 个" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Earlier sessions, %lld"
           }
         }
       }
@@ -8241,6 +8133,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This file just changed"
+          }
+        }
+      }
+    },
+    "agent 水滴（试验）" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent drops (experimental)"
+          }
+        }
+      }
+    },
+    "%@，%lld 个 agent 收在这里" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, %lld agents folded here"
           }
         }
       }

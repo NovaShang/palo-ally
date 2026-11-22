@@ -250,13 +250,13 @@
         }
       }
     },
-    "会话" : {
+    "agent" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Session"
+            "value" : "Agent"
           }
         }
       }
@@ -356,17 +356,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "send an email"
-          }
-        }
-      }
-    },
-    "另一个会话" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Another session"
           }
         }
       }
@@ -1185,35 +1174,35 @@
         }
       }
     },
-    "新会话" : {
+    "新 agent" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "New session"
+            "value" : "New agent"
           }
         }
       }
     },
-    "停会话" : {
+    "停 agent" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "stop a session"
+            "value" : "stop an agent"
           }
         }
       }
     },
-    "重启会话" : {
+    "重启 agent" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "restart a session"
+            "value" : "restart an agent"
           }
         }
       }

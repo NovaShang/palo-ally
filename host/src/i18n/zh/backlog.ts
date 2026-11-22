@@ -7,7 +7,7 @@ export const zhBacklog = {
   "backlog.err.none": "待办里没有这件",
   "backlog.err.empty": "要写点内容",
   "backlog.err.pal": "没有这个 agent",
-  "backlog.err.blocking": "这件卡着一个会话，要现在回答",
+  "backlog.err.blocking": "这件卡着一个 agent，要现在回答",
   "backlog.line.doing": "正在做 {who}",
   "backlog.line.done": "做完了",
   "backlog.tool.added": "已记进待办，排第 {n} 件（id: {id}，{folder} 的待办）。告诉主人记好了，不用现在做。",

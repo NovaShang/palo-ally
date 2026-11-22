@@ -156,10 +156,10 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
     public var displayName: String {
         let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
         // Not named yet: the host's `session-<short id>` shows as 新会话.
-        if Self.isUnnamed(n) { return loc("新会话") }
+        if Self.isUnnamed(n) { return loc("新 agent") }
         if !n.isEmpty { return n }
         let folder = (cwd as NSString).lastPathComponent
-        return folder.isEmpty || folder == "/" ? loc("会话") : folder
+        return folder.isEmpty || folder == "/" ? loc("agent") : folder
     }
 
     /// The host's placeholder name for a session nobody has named or spoken in.

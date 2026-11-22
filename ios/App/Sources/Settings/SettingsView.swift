@@ -26,7 +26,7 @@ struct SettingsView: View {
             Form {
                 #if DEBUG
                 Section {
-                    NavigationLink("会话水滴（试验）") { SessionDropPreview() }
+                    NavigationLink("agent 水滴（试验）") { SessionDropPreview() }
                 }
                 #endif
                 // The assistant's color and language live on its 关于 page
@@ -57,7 +57,7 @@ struct SettingsView: View {
                 // prompts come to the phone while the owner is away from it.
                 if store.sessionsSupported == true || store.palsSupported == true {
                     Section {
-                        Toggle("手机上处理主机上会话的确认", isOn: hooksBinding)
+                        Toggle("手机上处理主机上 agent 的确认", isOn: hooksBinding)
                             .disabled(!store.connection.isOnline)
                             .id("session-hooks")
                     } footer: {

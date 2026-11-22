@@ -139,8 +139,8 @@ struct SessionsDecodingTests {
     }
 
     @Test func helperControlCardsInPlainWords() {
-        #expect(Friendly.tool("helper_stop") == "停会话")
-        #expect(Friendly.tool("mcp__paloally__helper_restart") == "重启会话")
+        #expect(Friendly.tool("helper_stop") == "停 agent")
+        #expect(Friendly.tool("mcp__paloally__helper_restart") == "重启 agent")
         #expect(Friendly.tool("Bash") == "运行命令")
     }
 

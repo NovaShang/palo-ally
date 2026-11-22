@@ -68,7 +68,7 @@ final class MacSmokeUITests: XCTestCase {
         let add = app.descendants(matching: .any)["sidebar-add"].firstMatch
         XCTAssertTrue(add.exists, "no ＋ in the sidebar's foot")
         add.click()
-        XCTAssertTrue(app.menuItems["新建会话"].waitForExistence(timeout: 5), "＋ didn't open its menu")
+        XCTAssertTrue(app.menuItems["新建 agent"].waitForExistence(timeout: 5), "＋ didn't open its menu")
         shot(app, "\(look)-7-add-menu")
         app.typeKey(.escape, modifierFlags: [])
 

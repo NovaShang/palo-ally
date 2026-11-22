@@ -85,7 +85,7 @@ extension DemoHost {
 
     /// 以后再说: onto the 待办 of the folder it came from, off 等你的事.
     func putOff(_ item: PendingItem) throws -> PendingItem {
-        guard !(item.blocking && item.isOpen) else { throw DemoError(message: "这件卡着一个会话，要现在回答") }
+        guard !(item.blocking && item.isOpen) else { throw DemoError(message: "这件卡着一个 agent，要现在回答") }
         let palId = item.pal ?? (item.source.kind == .pal ? item.source.id : nil)
         let folder = palId.flatMap { id in pals.first { $0.id == id }?.cwd } ?? Self.demoAssistantFolder
         addBacklog(folder: folder, text: item.title, note: item.context)

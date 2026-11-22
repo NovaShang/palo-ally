@@ -13,7 +13,7 @@ export const enPending: Record<keyof typeof zhPending, string> = {
   "pending.err.gone": "That question has ended and can't go back on the list",
   "pending.err.action": "Unknown action",
   "pending.err.empty": "Give an answer",
-  "pending.line.blocking": " (a session is stopped waiting)",
+  "pending.line.blocking": " (an agent is stopped waiting)",
   "pending.tool.added": "Put on the owner's pending list (id: {id}); {n} in all now. The owner decides in the app when convenient, and the decision comes back to you as a message. Carry on with other things; don't wait.",
   "pending.tool.dup": "That one is already on the list (id: {id}); not added twice.",
   "pending.tool.badTitle": "title can't be empty: one sentence saying what the owner must decide.",

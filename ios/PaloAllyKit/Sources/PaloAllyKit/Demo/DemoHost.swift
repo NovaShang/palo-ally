@@ -934,7 +934,7 @@ public actor DemoHost {
         // (its folder's CLAUDE.md, listed while missing, and its project memory), as the host's.
         case RPCMethod.memoryList:
             let agent = p["agent"]?.stringValue
-            if let agent, !pals.contains(where: { $0.id == agent }) { throw DemoError(message: "找不到这个会话") }
+            if let agent, !pals.contains(where: { $0.id == agent }) { throw DemoError(message: "找不到这个 agent") }
             let files = agent.map { agentMemory[$0] ?? [:] } ?? memory
             var list = files.map { MemoryFile(path: $0.key, scope: $0.value.scope, size: Int64($0.value.content.utf8.count),
                                               updatedAt: $0.value.updatedAt) }
@@ -946,7 +946,7 @@ public actor DemoHost {
         case RPCMethod.memoryRead:
             let path = p["path"]?.stringValue ?? ""
             if let agent = p["agent"]?.stringValue {
-                guard pals.contains(where: { $0.id == agent }) else { throw DemoError(message: "找不到这个会话") }
+                guard pals.contains(where: { $0.id == agent }) else { throw DemoError(message: "找不到这个 agent") }
                 if let f = agentMemory[agent]?[path] { return ["content": .string(f.content), "updatedAt": .number(Double(f.updatedAt))] }
                 guard path == "CLAUDE.md" else { throw DemoError(message: "没有这个文件") }
                 return ["content": "", "updatedAt": 0]
@@ -956,7 +956,7 @@ public actor DemoHost {
         case RPCMethod.memoryWrite:
             let path = p["path"]?.stringValue ?? ""
             let agent = p["agent"]?.stringValue
-            if let agent, !pals.contains(where: { $0.id == agent }) { throw DemoError(message: "找不到这个会话") }
+            if let agent, !pals.contains(where: { $0.id == agent }) { throw DemoError(message: "找不到这个 agent") }
             let current = agent.map { agentMemory[$0]?[path] } ?? memory[path]
             if let base = p["baseUpdatedAt"]?.doubleValue, let cur = current, cur.updatedAt > Int64(base) {
                 throw DemoError(message: agent == nil ? "这个文件刚被助理改过，请重新打开再改" : "这个文件刚被改过，请重新打开再改")

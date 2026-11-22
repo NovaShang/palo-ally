@@ -466,13 +466,13 @@ private struct PaneChoices: View {
         }
         let others = store.paneCandidates(for: workspaceID)
         if !others.isEmpty {
-            Section("已有的会话") {
+            Section("已有的 agent") {
                 ForEach(others) { pal in
                     Button(pal.displayName) { actions.add(pal.id, placement) }
                 }
             }
         }
-        Button("新开一个会话…", systemImage: "plus") { actions.addNew(placement) }
+        Button("新开一个 agent…", systemImage: "plus") { actions.addNew(placement) }
     }
 }
 

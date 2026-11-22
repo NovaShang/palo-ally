@@ -169,7 +169,7 @@ private struct SidebarDialogs: View {
                     if let w = actions.deleting { Task { try? await store.deleteWorkspace(id: w.id) } }
                 }
             } message: {
-                Text("里面的会话不会结束，变回普通会话。")
+                Text("里面的 agent 不会归档，变回普通 agent。")
             }
             .alert(actions.dropFailure ?? "", isPresented: Binding(get: { actions.dropFailure != nil },
                                                                    set: { if !$0 { actions.dropFailure = nil } })) {
@@ -651,7 +651,7 @@ private struct PaloItem: View {
     /// Sessions waiting on the owner: how many. Otherwise what it did last.
     private func secondLine(_ line: AgentStatusLine) -> String {
         if line.kind == .working || line.kind == .offline { return line.text }
-        if waitingSessions > 0 { return String(localized: "\(waitingSessions) 个会话在等你") }
+        if waitingSessions > 0 { return String(localized: "\(waitingSessions) 个 agent 在等你") }
         guard let m = lastMessage else {
             return line.kind == .needsYou ? String(localized: "等你") : line.text
         }
@@ -691,7 +691,7 @@ private struct WorkspaceRow: View {
             } title: {
                 Text(node.title.isEmpty ? String(localized: "工作区") : node.title)
             } subtitle: {
-                Text("\(node.members.count) 个会话")
+                Text("\(node.members.count) 个 agent")
             } trailing: {
                 // The count opens what it counts: the 等你 tab of the workspace's pane.
                 if node.waiting > 0 {

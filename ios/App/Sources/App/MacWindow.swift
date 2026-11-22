@@ -378,7 +378,7 @@ final class MacToolbar: NSObject, NSToolbarDelegate {
             item.image = UIImage(systemName: add ? "plus" : "ellipsis")
             item.showsIndicator = false
             item.label = add ? String(localized: "新窗格") : String(localized: "更多")
-            item.toolTip = add ? String(localized: "在右边分出一个会话 ⌘D") : nil
+            item.toolTip = add ? String(localized: "在右边分出一个 agent ⌘D") : nil
             item.visibilityPriority = .high
             if let entries = menuItems(for: id, in: model.currentMacToolbarMenus) { item.itemMenu = menu(id, entries) }
             return item

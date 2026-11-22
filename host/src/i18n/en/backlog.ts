@@ -8,7 +8,7 @@ export const enBacklog: Record<keyof typeof zhBacklog, string> = {
   "backlog.err.none": "No such item in the backlog",
   "backlog.err.empty": "Write something",
   "backlog.err.pal": "No such agent",
-  "backlog.err.blocking": "A session is stopped on this one: it needs an answer now",
+  "backlog.err.blocking": "An agent is stopped on this one: it needs an answer now",
   "backlog.line.doing": "being done {who}",
   "backlog.line.done": "done",
   "backlog.tool.added": "Added to the backlog as number {n} (id: {id}; the backlog of {folder}). Tell the owner it's noted; don't start on it now.",

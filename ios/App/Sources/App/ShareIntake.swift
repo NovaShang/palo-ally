@@ -69,7 +69,7 @@ extension AppModel {
             let detail = several ? displayName(id) : nil
             targets.append(.init(host: id, key: "palo", name: name.isEmpty ? "Palo" : name, detail: detail))
             let recent = store.pals.filter { !$0.folded }.sorted { ($0.updatedAt ?? 0) > ($1.updatedAt ?? 0) }.prefix(12)
-            sessions += recent.map { .init(host: id, key: "pal:\($0.id)", name: $0.name.isEmpty ? String(localized: "会话") : $0.name, detail: detail) }
+            sessions += recent.map { .init(host: id, key: "pal:\($0.id)", name: $0.displayName, detail: detail) }
         }
         ShareInbox.writeTargets(targets + sessions)
     }

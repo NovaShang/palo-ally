@@ -331,10 +331,10 @@ describe("adopting a session", () => {
     await t.call("pals.send", { id: "pal_seed1", text: "接着做" });
     await t.hub.idle();
     const more = bgSession(t, "第五十一个", "dddd0051-0000-4000-8000-000000000051");
-    await expect(t.call("pals.adopt", { sessionId: more })).rejects.toThrow(`已经有 ${MAX_PALS} 个会话了，先结束一个（最久没用的是「项目2」）`);
-    expect(await t.hub.toolHandlers().pal_propose({ name: "新的", dir: t.project, duty: "做事" })).toContain(`已经有 ${MAX_PALS} 个会话了`);
+    await expect(t.call("pals.adopt", { sessionId: more })).rejects.toThrow(`已经有 ${MAX_PALS} 个 agent 了，先归档一个（最久没用的是「项目2」）`);
+    expect(await t.hub.toolHandlers().pal_propose({ name: "新的", dir: t.project, duty: "做事" })).toContain(`已经有 ${MAX_PALS} 个 agent 了`);
     await t.call("pals.remove", { id: "pal_seed2" });
-    await expect(t.call("pals.adopt", { sessionId: "nope" })).rejects.toThrow("没有这个会话");
+    await expect(t.call("pals.adopt", { sessionId: "nope" })).rejects.toThrow("没有这个 agent");
     expect((await t.call("pals.adopt", { sessionId: more })).pal).toMatchObject({ name: "第五十一个", status: "idle" });
     await t.hub.pals.stopAndWait();
   });
@@ -605,7 +605,7 @@ describe("talking to a Pal", () => {
     expect((await t.call("pals.history", { id: pal.id })).streaming).toEqual({ id: "msg_live", text: "正在" });
     expect((await t.call("pals.history", { id: pal.id, before: "u3" })).streaming).toBeUndefined();
     await t.call("pals.stop", { id: pal.id });
-    await expect(t.call("pals.history", { id: "pal_nope" })).rejects.toThrow("找不到这个会话");
+    await expect(t.call("pals.history", { id: "pal_nope" })).rejects.toThrow("找不到这个 agent");
     await t.hub.pals.stopAndWait();
   });
 
@@ -845,7 +845,7 @@ describe("asleep and awake (§12)", () => {
     await sleepNow(t, pal.id);
     expect((await t.call("pals.wake", { id: pal.id })).pal).toMatchObject({ id: pal.id, status: "idle", lastWakeUsd: 0.0123 });
     expect(t.driver.pals).toHaveLength(3);
-    await expect(t.call("pals.wake", { id: "pal_nope" })).rejects.toThrow("找不到这个会话");
+    await expect(t.call("pals.wake", { id: "pal_nope" })).rejects.toThrow("找不到这个 agent");
     await t.hub.pals.stopAndWait();
   });
 
@@ -1038,7 +1038,7 @@ describe("its name follows Claude Code's title (§13)", () => {
     await t.call("pals.wake", { id: pal.id });
     expect(t.driver.pals.at(-1)!.opts.name).toBe("官网");
     expect(t.hub.pals.get(pal.id)!.rec.name).toBe("官网");
-    await expect(t.call("pals.rename", { id: "pal_nope", name: "x" })).rejects.toThrow("找不到这个会话");
+    await expect(t.call("pals.rename", { id: "pal_nope", name: "x" })).rejects.toThrow("找不到这个 agent");
     await t.hub.pals.stopAndWait();
   });
 
@@ -1074,7 +1074,7 @@ describe("back to the terminal", () => {
     const second = (await t.call("pals.adopt", { sessionId: "eeee5555-0000-4000-8000-000000000005" })).pal;
     expect(await t.call("pals.remove", { id: second.id })).toEqual({ ok: true });
     expect(t.hub.pals.list()).toEqual([]);
-    await expect(t.call("pals.remove", { id: second.id })).rejects.toThrow("找不到这个会话");
+    await expect(t.call("pals.remove", { id: second.id })).rejects.toThrow("找不到这个 agent");
     expect(JSON.parse(readFileSync(t.paths.pals, "utf8")).pals).toEqual([]);
   });
 });
@@ -1146,7 +1146,7 @@ describe("the assistant opens a Pal", () => {
     const r = await t.hub.toolHandlers().pal_propose({ name: "网站", dir: t.project, duty: "你负责主人的网站：先做列表页。" });
     expect(r).toContain("主人点「开吧」才会开");
     const card = t.hub.chat.recent(1)[0]!;
-    expect(card).toMatchObject({ kind: "helper", text: expect.stringContaining("开一个会话「网站」"), proposal: { name: "网站", cwd: t.project, status: "pending" } });
+    expect(card).toMatchObject({ kind: "helper", text: expect.stringContaining("开一个 agent「网站」"), proposal: { name: "网站", cwd: t.project, status: "pending" } });
     expect(t.driver.pals).toHaveLength(0);
     const out = await t.call("helper.decide", { proposalId: card.proposal!.id, action: "create" });
     expect(out.pal).toMatchObject({ name: "网站", cwd: t.project, createdBy: "palo" });
@@ -1192,7 +1192,7 @@ describe("the assistant opens a Pal", () => {
     await t.call("helper.decide", { proposalId: p3.proposal!.id, action: "create" });
     expect(t.hub.chat.get(p3.id)!.proposal!.status).toBe("created");
     expect(t.hub.chat.get(p3.id)!.proposal!.note).toBeUndefined();
-    expect(await tools.pal_propose({ name: "三", dir: t.project, duty: "做事" })).toContain("已经有一个叫「三」的会话");
+    expect(await tools.pal_propose({ name: "三", dir: t.project, duty: "做事" })).toContain("已经有一个叫「三」的 agent");
     await t.hub.pals.stopAndWait();
   });
 
@@ -1298,7 +1298,7 @@ describe("the owner's own sessions (workbench)", () => {
     await expect(t.call("pals.create", { cwd: t.project, name: "长".repeat(41) })).rejects.toThrow("太长");
     // its folder: anywhere that exists, but not PaloAlly's own; a workspace has to exist
     await expect(t.call("pals.create", { cwd: "/no/such/folder" })).rejects.toThrow("找不到目录");
-    await expect(t.call("pals.create", { cwd: t.paths.root })).rejects.toThrow("不能开在 Palo 自己的目录里");
+    await expect(t.call("pals.create", { cwd: t.paths.root })).rejects.toThrow("不能开在助理自己的目录里");
     await expect(t.call("pals.create", { cwd: t.project, workspaceId: "ws_000000000000" })).rejects.toThrow("找不到这个工作区");
     await expect(t.call("pals.create", {})).rejects.toThrow("要给出一个文件夹");
     // the assistant's proposal path is as it was: a duty is still needed
@@ -1410,7 +1410,7 @@ describe("the owner's own sessions (workbench)", () => {
     expect(update?.data.pals[0]).toMatchObject({ id: pal.id, attention: "idle", seenAt: r.pal.seenAt });
     // either device reads the same from the list
     expect((await t.call("pals.list")).pals[0]).toMatchObject({ attention: "idle", seenAt: r.pal.seenAt });
-    await expect(t.call("pals.seen", { id: "pal_nope" })).rejects.toThrow("找不到这个会话");
+    await expect(t.call("pals.seen", { id: "pal_nope" })).rejects.toThrow("找不到这个 agent");
     await t.hub.pals.stopAndWait();
   });
 
@@ -1503,7 +1503,7 @@ describe("the owner's own sessions (workbench)", () => {
     // what isn't there, and what makes no sense
     await expect(t.call("pals.resume", { key: "ended:22222222-0000-4000-8000-000000000000" })).rejects.toThrow("已经不在了");
     await expect(t.call("pals.resume", { key: "nonsense" })).rejects.toThrow("看不懂");
-    await expect(t.call("pals.end", { id: "pal_nope" })).rejects.toThrow("找不到这个会话");
+    await expect(t.call("pals.end", { id: "pal_nope" })).rejects.toThrow("找不到这个 agent");
     await t.hub.pals.stopAndWait();
   });
 
@@ -1601,7 +1601,7 @@ describe("the owner's own sessions (workbench)", () => {
     });
     const { pal } = await t.call("pals.create", { cwd: t.project, text: "先打个招呼" });
     await waitFor(() => t.pusher.pushes.length === 1);
-    expect(t.pusher.pushes).toEqual([expect.objectContaining({ title: "新会话 回复了", body: "收到：先打个招呼", data: expect.objectContaining({ pal: pal.id }) })]);
+    expect(t.pusher.pushes).toEqual([expect.objectContaining({ title: "新 agent 回复了", body: "收到：先打个招呼", data: expect.objectContaining({ pal: pal.id }) })]);
     await t.hub.pals.stopAndWait();
   });
 
@@ -1620,7 +1620,7 @@ describe("the owner's own sessions (workbench)", () => {
     const waits = () => t.pusher.pushes.filter((p) => p.title.endsWith("在等你"));
     await t.call("pals.send", { id: pal.id, text: "要确认" });
     await waitFor(() => t.hub.approvals.listPending().length === 1);
-    expect(waits()).toEqual([expect.objectContaining({ title: "新会话 在等你", body: "想运行：npm test", data: expect.objectContaining({ pal: pal.id }) })]);
+    expect(waits()).toEqual([expect.objectContaining({ title: "新 agent 在等你", body: "想运行：npm test", data: expect.objectContaining({ pal: pal.id }) })]);
     await t.call("approval.answer", { id: t.hub.approvals.listPending()[0]!.id, allow: true });
     await waitFor(() => find(t, pal.id).attention === "done");
     expect(waits()).toHaveLength(1);

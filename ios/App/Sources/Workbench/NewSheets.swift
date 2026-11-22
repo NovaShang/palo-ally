@@ -40,12 +40,12 @@ struct NewWorkspaceSheet: View {
                         .accessibilityAddTraits(chosen.contains(pal.id) ? .isSelected : [])
                     }
                 } header: {
-                    Text("放进去的会话")
+                    Text("放进去的 agent")
                 } footer: {
                     if let failure {
                         Text(Copy.spaced(failure)).foregroundStyle(.red)
                     } else if store.pals.isEmpty {
-                        Text("先新建一个会话，再把它放进工作区。")
+                        Text("先新建一个 agent，再把它放进工作区。")
                     }
                 }
             }

@@ -24,7 +24,7 @@ extension DemoHost {
         case RPCMethod.palsHistory:
             let id = p["id"]?.stringValue ?? ""
             // Not a Pal: one of the computer's other sessions, read the same way (one kind of agent).
-            guard let log = palLogs[id] ?? viewedSessionLog(id) else { throw DemoError(message: "找不到这个会话") }
+            guard let log = palLogs[id] ?? viewedSessionLog(id) else { throw DemoError(message: "找不到这个 agent") }
             let limit = Int(p["limit"]?.doubleValue ?? 50)
             var upTo = log.endIndex
             if let before = p["before"]?.stringValue, let i = log.firstIndex(where: { $0.id == before }) { upTo = i }
@@ -139,7 +139,7 @@ extension DemoHost {
                 guard let pal = adoptRecent(sid) else { throw DemoError(message: "这个对话已经找不到了") }
                 return ["pal": try .from(pal)]
             }
-            guard let s = otherSessions.first(where: { $0.id == sid }) else { throw DemoError(message: "这个会话已经没有了") }
+            guard let s = otherSessions.first(where: { $0.id == sid }) else { throw DemoError(message: "这个 agent 已经没有了") }
             if s.kind == .terminal {
                 // Quit in its terminal first; the demo's owner does it a few seconds later.
                 waitingAdoptions.insert(sid)
@@ -148,7 +148,7 @@ extension DemoHost {
                 return ["waiting": "exit-in-terminal"]
             }
             await pause(1.5) // `claude stop`, then resumed under the host
-            guard let pal = finishAdoption(sid) else { throw DemoError(message: "这个会话已经没有了") }
+            guard let pal = finishAdoption(sid) else { throw DemoError(message: "这个 agent 已经没有了") }
             return ["pal": try .from(pal)]
         case RPCMethod.palsRecent:
             if UserDefaults.standard.bool(forKey: "demoRecentEmpty") { return ["sessions": .array([])] }
@@ -318,7 +318,7 @@ extension DemoHost {
         await pause(1.5) // `claude stop` (a background one), then resumed under the host
         let pal: Pal?
         if otherSessions.contains(where: { $0.id == sid }) { pal = finishAdoption(sid) } else { pal = adoptRecent(sid) }
-        guard let pal else { throw DemoError(message: "找不到这个会话") }
+        guard let pal else { throw DemoError(message: "找不到这个 agent") }
         var m = palMessage(pal.id, role: .user, text: text, channel: .app)
         m.clientMsgId = clientMsgId
         appendPal(m)

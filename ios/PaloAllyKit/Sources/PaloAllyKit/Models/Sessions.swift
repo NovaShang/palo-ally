@@ -88,7 +88,7 @@ public struct CCSession: Codable, Sendable, Hashable, Identifiable {
         let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if !n.isEmpty { return n }
         let folder = (cwd as NSString).lastPathComponent
-        return folder.isEmpty || folder == "/" ? loc("会话") : folder
+        return folder.isEmpty || folder == "/" ? loc("agent") : folder
     }
 
     /// The folder for people: the home folder as 「~」.

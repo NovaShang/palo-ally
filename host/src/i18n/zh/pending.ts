@@ -12,7 +12,7 @@ export const zhPending = {
   "pending.err.gone": "这个提问已经结束，放不回去了",
   "pending.err.action": "不认识的操作",
   "pending.err.empty": "要回答点什么",
-  "pending.line.blocking": "（有会话卡着等）",
+  "pending.line.blocking": "（有 agent 卡着等）",
   "pending.tool.added": "已放进主人的「等你的事」（id: {id}），现在一共 {n} 件。主人方便时会在 App 里定，定了会作为消息告诉你。先继续别的，不要等。",
   "pending.tool.dup": "这件已经在清单里了（id: {id}），没有重复放。",
   "pending.tool.badTitle": "title 不能为空：写一句话，说清主人要定什么。",

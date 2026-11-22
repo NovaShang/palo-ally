@@ -21,7 +21,7 @@ extension Copy {
         case .helper: String(localized: "助理开的")
         case .terminal: String(localized: "终端")
         case .background: String(localized: "后台")
-        case .unknown: String(localized: "会话")
+        case .unknown: String(localized: "其他")
         }
     }
 

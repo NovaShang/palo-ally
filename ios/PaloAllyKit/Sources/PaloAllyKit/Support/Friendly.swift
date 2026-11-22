@@ -10,7 +10,7 @@ public enum Friendly {
     /// "read", and "credit" never matches "edit").
     static let toolRules: [([String], String)] = [
         // The assistant asking to stop or restart a helper (sessions-prd §6.6).
-        (["helper", "stop"], loc("停会话")), (["helper", "restart"], loc("重启会话")),
+        (["helper", "stop"], loc("停 agent")), (["helper", "restart"], loc("重启 agent")),
         (["send", "email"], loc("发邮件")), (["send", "mail"], loc("发邮件")), (["send", "message"], loc("发消息")),
         (["wechat"], loc("微信")), (["weixin"], loc("微信")),
         (["email"], loc("邮件")), (["gmail"], loc("邮件")), (["mail"], loc("邮件")),

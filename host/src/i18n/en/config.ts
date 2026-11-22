@@ -8,7 +8,7 @@ export const enConfig: Record<keyof typeof zhConfig, string> = {
   "config.probeInterval": "Check interval (minutes)",
   "config.approvalTimeout": "Approval wait (minutes)",
   "config.foldDays": "Days before folding",
-  "config.maxAwake": "Sessions awake at once",
+  "config.maxAwake": "Agents awake at once",
   "config.badWechat": "WeChat proactive messages can only be off / hint / full",
   "config.nameText": "The name must be text",
   "config.nameLong": "The name can be at most 20 characters",

@@ -149,7 +149,7 @@ describe("the computer's sessions", () => {
     expect((await handleRpc(hub, { method: "sessions.history", params: { id: "s1", limit: 10 } }, ctx)) as any).toEqual({
       messages: [{ id: "u1", ts: Date.parse("2026-10-12T10:00:00Z"), role: "owner", text: "写一下" }],
     });
-    await expect(handleRpc(hub, { method: "sessions.history", params: { id: "nope" } }, ctx)).rejects.toThrow("找不到这个会话");
+    await expect(handleRpc(hub, { method: "sessions.history", params: { id: "nope" } }, ctx)).rejects.toThrow("找不到这个 agent");
   });
 });
 

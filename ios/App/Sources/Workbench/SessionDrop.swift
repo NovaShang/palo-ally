@@ -199,7 +199,7 @@ struct SessionDropPreview: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
-        .navigationTitle("会话水滴（试验）")
+        .navigationTitle("agent 水滴（试验）")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: listening) {
             // A voice: a level that rises and falls like speech.

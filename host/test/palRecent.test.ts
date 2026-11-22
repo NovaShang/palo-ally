@@ -267,7 +267,7 @@ describe("taking an ended one over (pals.adopt)", () => {
     rmSync(gone, { recursive: true });
     await expect(t.call("pals.adopt", { sessionId: g })).rejects.toThrow("已经不在了");
     await expect(t.call("pals.adopt", { sessionId: t.ended(t.folder("x"), { transcript: false }) })).rejects.toThrow("找不到它的对话记录");
-    await expect(t.call("pals.adopt", { sessionId: "f0000000-0000-4000-8000-000000000000" })).rejects.toThrow("没有这个会话");
+    await expect(t.call("pals.adopt", { sessionId: "f0000000-0000-4000-8000-000000000000" })).rejects.toThrow("没有这个 agent");
     expect(t.driver.pals).toHaveLength(0);
   });
 });
@@ -348,7 +348,7 @@ describe("the assistant brings one back (pals_recent, pal_adopt)", () => {
 
     // no card: running now, unknown, PaloAlly's own
     expect(await tools.pal_adopt({ sessionId: c })).toContain("现在还开着");
-    expect(await tools.pal_adopt({ sessionId: "f0000000-0000-4000-8000-000000000000" })).toBe("没提：没有这个会话");
+    expect(await tools.pal_adopt({ sessionId: "f0000000-0000-4000-8000-000000000000" })).toBe("没提：没有这个 agent");
     expect(await tools.pal_adopt({ sessionId: t.ended(t.paths.home, { customTitle: "Palo" }) })).toContain("助理自己的会话");
     expect(await tools.pal_adopt({ sessionId: "" })).toContain("pals_recent");
     term.kill("SIGKILL");
@@ -449,8 +449,8 @@ describe("looking without taking over (§14)", () => {
     expect(next.messages.map((m: any) => m.text).slice(-2)).toEqual(["还没写进记录", "新的一句"]);
     // older pages as before; one it doesn't know isn't found
     expect((await t.call("pals.history", { id: sid, before: "msg_a2", limit: 1 })).messages.map((m: any) => m.id)).toEqual(["u2"]);
-    await expect(t.call("pals.history", { id: "f0000000-0000-4000-8000-000000000000" })).rejects.toThrow("找不到这个会话");
-    await expect(t.call("sessions.history", { id: "f0000000-0000-4000-8000-000000000000" })).rejects.toThrow("找不到这个会话");
+    await expect(t.call("pals.history", { id: "f0000000-0000-4000-8000-000000000000" })).rejects.toThrow("找不到这个 agent");
+    await expect(t.call("sessions.history", { id: "f0000000-0000-4000-8000-000000000000" })).rejects.toThrow("找不到这个 agent");
     await t.hub.pals.stopAndWait();
   });
 });

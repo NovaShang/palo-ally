@@ -82,7 +82,7 @@ describe("workspaces", () => {
     expect(empty).toMatchObject({ name: "空的", memberIds: [], layout: null });
     expect((await t.call("workspaces.create", {})).workspace.memberIds).toEqual([]);
     expect((await t.call("workspaces.move", { palId: c.id, workspaceId: empty.id })).workspaces.find((w: any) => w.id === empty.id).memberIds).toEqual([c.id]);
-    await expect(t.call("workspaces.create", { memberIds: ["pal_nope"] })).rejects.toThrow("找不到这个会话");
+    await expect(t.call("workspaces.create", { memberIds: ["pal_nope"] })).rejects.toThrow("找不到这个 agent");
     await expect(t.call("workspaces.create", { name: "长".repeat(41), memberIds: [a.id] })).rejects.toThrow("40");
     await expect(t.call("workspaces.update", { id: "ws_nope", name: "x" })).rejects.toThrow("找不到这个工作区");
     await expect(t.call("workspaces.delete", { id: "ws_nope" })).rejects.toThrow("找不到这个工作区");
@@ -109,7 +109,7 @@ describe("workspaces", () => {
     expect(out.map((w: any) => w.id)).toEqual([two.id]);
     expect(t.pal(a.id).workspaceId).toBeUndefined();
     expect(t.pal(b.id).workspaceId).toBe(two.id);
-    await expect(t.call("workspaces.move", { palId: "pal_nope", workspaceId: two.id })).rejects.toThrow("找不到这个会话");
+    await expect(t.call("workspaces.move", { palId: "pal_nope", workspaceId: two.id })).rejects.toThrow("找不到这个 agent");
     await expect(t.call("workspaces.move", { palId: a.id, workspaceId: "ws_nope" })).rejects.toThrow("找不到这个工作区");
     // the last one leaving does not delete the workspace
     await t.call("workspaces.move", { palId: b.id });

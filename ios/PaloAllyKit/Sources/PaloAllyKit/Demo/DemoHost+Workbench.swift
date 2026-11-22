@@ -48,12 +48,12 @@ extension DemoHost {
             return ["folders": try .from(Array(out.prefix(limit)))]
         case RPCMethod.palsSeen:
             let id = p["id"]?.stringValue ?? ""
-            guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "找不到这个会话") }
+            guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "找不到这个 agent") }
             setPal(id) { $0.seenAt = max(Date().epochMillis, $0.finishedAt ?? 0) }
             return ["pal": try .from(pals.first { $0.id == id })]
         case RPCMethod.palsEnd:
             let id = p["id"]?.stringValue ?? ""
-            guard let pal = pals.first(where: { $0.id == id }) else { throw DemoError(message: "找不到这个会话") }
+            guard let pal = pals.first(where: { $0.id == id }) else { throw DemoError(message: "找不到这个 agent") }
             palTurns[id]?.cancel()
             palTurns[id] = nil
             pals.removeAll { $0.id == id }
@@ -133,7 +133,7 @@ extension DemoHost {
             }
         case RPCMethod.palsDetail:
             let id = p["id"]?.stringValue ?? ""
-            guard let pal = pals.first(where: { $0.id == id }) else { throw DemoError(message: "找不到这个会话") }
+            guard let pal = pals.first(where: { $0.id == id }) else { throw DemoError(message: "找不到这个 agent") }
             let now = Date().epochMillis, min: Int64 = 60_000
             // One running in the one that waits on the owner; a few that ended in each.
             let running: JSONValue = pal.status == .waiting
@@ -157,7 +157,7 @@ extension DemoHost {
                     "tasks": running, "pastTasks": past]
         case RPCMethod.palsSetMode:
             let id = p["id"]?.stringValue ?? ""
-            guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "找不到这个会话") }
+            guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "找不到这个 agent") }
             guard let mode = p["mode"]?.stringValue, ["default", "auto", "acceptEdits", "plan"].contains(mode) else {
                 throw DemoError(message: "没有这种权限模式")
             }
@@ -165,14 +165,14 @@ extension DemoHost {
             return ["pal": try .from(pals.first { $0.id == id })]
         case RPCMethod.palsSetModel:
             let id = p["id"]?.stringValue ?? ""
-            guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "找不到这个会话") }
+            guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "找不到这个 agent") }
             let model = p["model"]?.stringValue, effort = p["effort"]?.stringValue
             guard model != nil || effort != nil else { throw DemoError(message: "要改的内容不能是空的") }
             setPal(id) { if let model { $0.model = model }; if let effort { $0.effort = effort } }
             return ["pal": try .from(pals.first { $0.id == id })]
         case RPCMethod.palsCompact, RPCMethod.palsStopTask, RPCMethod.palsReveal:
             let id = p["id"]?.stringValue ?? ""
-            guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "找不到这个会话") }
+            guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "找不到这个 agent") }
             if method == RPCMethod.palsStopTask { throw DemoError(message: "这个任务已经结束了") }
             return [:]
 
@@ -192,8 +192,8 @@ extension DemoHost {
             return ["sessionOrder": try .from(currentSessionOrder()), "workspaceOrder": try .from(workspaces.map(\.id))]
         case RPCMethod.workspacesCreate:
             let ids = (p["memberIds"]?.arrayValue ?? []).compactMap(\.stringValue)
-            guard !ids.isEmpty else { throw DemoError(message: "至少要有一个会话") }
-            guard ids.allSatisfy({ id in pals.contains { $0.id == id } }) else { throw DemoError(message: "找不到这个会话") }
+            guard !ids.isEmpty else { throw DemoError(message: "至少要有一个 agent") }
+            guard ids.allSatisfy({ id in pals.contains { $0.id == id } }) else { throw DemoError(message: "找不到这个 agent") }
             let name = (p["name"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard name.count <= 40 else { throw DemoError(message: "名字太长了（最多 40 个字）") }
             for id in ids { if let old = pals.first(where: { $0.id == id })?.workspaceId { removeMember(id, from: old) } }
@@ -222,7 +222,7 @@ extension DemoHost {
             return ["workspace": try .from(workspaces[i])]
         case RPCMethod.workspacesMove:
             let palID = p["palId"]?.stringValue ?? ""
-            guard let pal = pals.first(where: { $0.id == palID }) else { throw DemoError(message: "找不到这个会话") }
+            guard let pal = pals.first(where: { $0.id == palID }) else { throw DemoError(message: "找不到这个 agent") }
             let target = p["workspaceId"]?.stringValue
             if let target, !workspaces.contains(where: { $0.id == target }) { throw DemoError(message: "找不到这个工作区") }
             var changed: [String] = []

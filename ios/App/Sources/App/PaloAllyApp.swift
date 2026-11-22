@@ -61,7 +61,7 @@ private struct WindowCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("新建会话") { app.frontWindow?.newSession = true }
+            Button("新建 agent") { app.frontWindow?.newSession = true }
                 .keyboardShortcut("n", modifiers: .command)
             Button("新建工作区") { app.frontWindow?.newWorkspace = [] }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
@@ -105,9 +105,9 @@ private struct PlaceCommands: Commands {
                 .keyboardShortcut("[", modifiers: .command)
             Divider()
             // A split workspace: a new session's pane off the active one.
-            Button("向右分出新会话…") { inFront { $0.splitActivePane(horizontal: true) } }
+            Button("向右分出新 agent…") { inFront { $0.splitActivePane(horizontal: true) } }
                 .keyboardShortcut("d", modifiers: .command)
-            Button("向下分出新会话…") { inFront { $0.splitActivePane(horizontal: false) } }
+            Button("向下分出新 agent…") { inFront { $0.splitActivePane(horizontal: false) } }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
             // Several computers: ⌥⌘1, ⌥⌘2… each one's assistant, in the
             // sidebar's order (⌘1 and ⌘2 are 管理助理 and 右侧栏).
