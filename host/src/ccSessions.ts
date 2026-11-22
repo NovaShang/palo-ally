@@ -5,7 +5,7 @@ import type { AgentEntry, ClaudeCli } from "./ccCli.ts";
 import { readTail, transcriptPath } from "./handoffs.ts";
 import type { CCMessage, CCSession, CCSessionKind, CCSessionStatus } from "./types.ts";
 import { readTldr, stripTldrMarker } from "./tldr.ts";
-import { truncate } from "./util.ts";
+import { pidAlive, truncate } from "./util.ts";
 
 // What the owner sees of the Claude Code sessions on this computer
 // (docs/sessions-prd.md §6.1–6.2). Read only from what Claude Code keeps
@@ -30,15 +30,6 @@ export interface RegistryEntry {
   socketPath?: string;
   startedAt?: number;
   nameSource?: string; // "user" (named: -n, /rename) or "derived"
-}
-
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e: any) {
-    return e?.code === "EPERM";
-  }
 }
 
 export function readRegistry(dir: string, alive: (pid: number) => boolean = pidAlive): RegistryEntry[] {
@@ -504,7 +495,8 @@ export function peerBody(origin: any, content: string): string {
   return body.trim();
 }
 
-function userText(content: unknown): string | null {
+/** A user entry's text; null for a tool result. */
+export function userText(content: unknown): string | null {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return null;
   if (content.some((b: any) => b?.type === "tool_result")) return null;

@@ -30,7 +30,7 @@ import type { StallTarget } from "./stallWatch.ts";
 import type { Attachment, ChatMessage, EarlierItem, HelperProposal, Pal, PalAdoptProposal, RecentSession } from "./types.ts";
 import { isTldrAsk, tldrPrompt } from "./tldr.ts";
 import { DonePushes } from "./donePush.ts";
-import { newId, readJson, writeJson, zonedParts } from "./util.ts";
+import { expandHome, hhmm, newId, pidAlive, readJson, within, writeJson, zonedParts } from "./util.ts";
 
 // Pals (docs/pals-prd.md): Claude Code sessions the host runs itself. The
 // owner adopts one of the computer's sessions (a background one is stopped
@@ -257,24 +257,7 @@ const TIMING: PalsTiming = {
   sleepCheckMs: 30_000,
 };
 
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e: any) {
-    return e?.code === "EPERM";
-  }
-}
-
-const expandHome = (p: string) => (p === "~" ? homedir() : p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
 const shq = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
-
-function within(root: string, p: string): boolean {
-  if (!p) return false;
-  const r = resolve(root);
-  const x = resolve(p);
-  return x === r || x.startsWith(r + sep);
-}
 
 /** Claude Code's own default permission mode for the owner's sessions. */
 export function ownerMode(claudeDir: string): string {
@@ -1849,7 +1832,7 @@ export class Pals {
     const tz = this.d.settings().timezone;
     const when = (ms: number) => {
       const p = zonedParts(ms, tz);
-      return `${p.dateKey} ${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
+      return `${p.dateKey} ${hhmm(p)}`;
     };
     const shown = all.slice(0, 30);
     return JSON.stringify({

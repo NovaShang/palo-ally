@@ -2,7 +2,7 @@ import type { ProbeTrigger } from "./probe.ts";
 import type { DeliveryResult } from "./router.ts";
 import type { Approval, Question, Task, Watch } from "./types.ts";
 import { t } from "./i18n/index.ts";
-import { formatDuration, truncate, zonedParts } from "./util.ts";
+import { formatDuration, hhmm, truncate, zonedParts } from "./util.ts";
 
 // Every sentence the owner (or the model, for synthetic turns) reads from the
 // shell lives here, so the voice stays consistent and is easy to change.
@@ -131,7 +131,7 @@ export const budgetNotice = (label?: string) => t("chat.budget", { label: label 
 export function offlineNotice(gapMs: number, last: number, now: number, tz: string): string {
   const f = (ms: number) => {
     const p = zonedParts(ms, tz);
-    return `${p.month}/${p.day} ${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
+    return `${p.month}/${p.day} ${hhmm(p)}`;
   };
   return t("chat.offline", { gap: formatDuration(gapMs), from: f(last), to: f(now) });
 }

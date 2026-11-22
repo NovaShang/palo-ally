@@ -1,6 +1,6 @@
 import { t as tr } from "./i18n/index.ts";
 import { closeSync, existsSync, fstatSync, openSync, readSync, watch, type FSWatcher } from "node:fs";
-import { type RawSessionMessage, firstLine, isCompactSummaryText, peerBody } from "./ccSessions.ts";
+import { type RawSessionMessage, firstLine, isCompactSummaryText, peerBody, userText } from "./ccSessions.ts";
 import { PALO_SEND_TOOL } from "./harness/types.ts";
 import { readTldr } from "./tldr.ts";
 import type { Attachment, ChatMessage } from "./types.ts";
@@ -31,17 +31,6 @@ export interface PalMapOptions {
 
 function hasImage(content: unknown): boolean {
   return Array.isArray(content) && content.some((b: any) => b?.type === "image");
-}
-
-function userText(content: unknown): string | null {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return null;
-  if (content.some((b: any) => b?.type === "tool_result")) return null;
-  const t = content
-    .filter((b: any) => b?.type === "text" && typeof b.text === "string")
-    .map((b: any) => b.text)
-    .join("\n");
-  return t || null;
 }
 
 /** Who sent a peer message, by name: the assistant's own session shows as the assistant. */

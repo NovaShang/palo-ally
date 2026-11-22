@@ -17,7 +17,7 @@ import { type ForkSession, type PendingRewind, beforeCompaction, chainTo, hasFil
 import { type StallRecovery, type StallTarget, transcriptHas } from "./stallWatch.ts";
 import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
 import { readTldr } from "./tldr.ts";
-import { newId, truncate } from "./util.ts";
+import { newId, sleep, truncate } from "./util.ts";
 
 // One Pal (docs/pals-prd.md §4, §7): one of the owner's Claude Code
 // sessions, run by the host itself by resuming its transcript. What the owner
@@ -167,8 +167,6 @@ const STOP_SETTLE_MS = 250; // a stopped turn not ended by Claude Code by then i
 
 /** What a Pal is told after the watchdog restarted it mid-turn. */
 export const stallContinue = (): string => tr("stall.continue");
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Words from another session (the assistant's pal_send), as Claude Code shows a

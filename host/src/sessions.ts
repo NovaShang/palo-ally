@@ -1,7 +1,6 @@
 import { t } from "./i18n/index.ts";
 import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import { existsSync, statSync } from "node:fs";
-import { resolve, sep } from "node:path";
 import { transcriptPath } from "./handoffs.ts";
 import { pageFromTail } from "./transcriptTail.ts";
 import type { ApprovalManager } from "./approvals.ts";
@@ -16,7 +15,7 @@ import { describeInput, describeTool } from "./copy.ts";
 import type { QuestionManager } from "./questions.ts";
 import type { Router } from "./router.ts";
 import type { CCMessage, CCSession, CardSource, ChatMessage } from "./types.ts";
-import { newId, truncate } from "./util.ts";
+import { newId, truncate, within } from "./util.ts";
 
 // Sessions: the Mac's own Claude Code sessions that PaloAlly doesn't run
 // (docs/sessions-prd.md, as kept by docs/pals-prd.md). The list (with each
@@ -64,13 +63,6 @@ interface OpenCard {
   waitingFor: string;
   abort: AbortController;
   sawWaiting: boolean; // the registry said "waiting" since the card opened
-}
-
-function within(root: string, p: string): boolean {
-  if (!p) return false;
-  const r = resolve(root);
-  const x = resolve(p);
-  return x === r || x.startsWith(r + sep);
 }
 
 export class Sessions {
