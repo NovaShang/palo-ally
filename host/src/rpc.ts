@@ -236,17 +236,22 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return hub.artifacts.read(String(p.id), p.path, Number(p.offset ?? 0), Number(p.length ?? 256 * 1024), p.stream === true);
     case "artifact.pin":
       return { artifact: hub.artifacts.pin(String(p.id), !!p.pinned) };
-    case "memory.list":
-      return { files: hub.memory.list(), coreSize: hub.memory.coreSize() };
-    case "memory.read":
-      return { content: hub.memory.read(String(p.path)), updatedAt: hub.memory.mtime(String(p.path)) };
-    case "memory.write":
-      // Refuse to overwrite what the assistant changed while the editor was open.
-      if (typeof p.baseUpdatedAt === "number" && hub.memory.mtime(String(p.path)) > p.baseUpdatedAt + 1)
-        throw new Error(t("rpc.err.fileChanged"));
-      hub.memory.write(String(p.path), String(p.content ?? ""));
-      hub.audit.log("memory.write", { path: p.path, by: ctx.channel });
-      return { ok: true, updatedAt: hub.memory.mtime(String(p.path)) };
+    // The assistant's memory; with `agent` (a Pal's id), that agent's.
+    case "memory.list": {
+      const mem = hub.memoryOf(p.agent);
+      return { files: mem.list(), coreSize: mem.coreSize() };
+    }
+    case "memory.read": {
+      const mem = hub.memoryOf(p.agent);
+      return { content: mem.read(String(p.path)), updatedAt: mem.mtime(String(p.path)) };
+    }
+    case "memory.write": {
+      const mem = hub.memoryOf(p.agent);
+      // Refuses to overwrite what changed while the editor was open (baseUpdatedAt).
+      mem.write(String(p.path), String(p.content ?? ""), typeof p.baseUpdatedAt === "number" ? p.baseUpdatedAt : undefined);
+      hub.audit.log("memory.write", { path: p.path, ...(typeof p.agent === "string" && p.agent ? { agent: p.agent } : {}), by: ctx.channel });
+      return { ok: true, updatedAt: mem.mtime(String(p.path)) };
+    }
     case "settings.update":
       return { settings: hub.updateSettings(p.patch ?? {}) };
     case "stop":

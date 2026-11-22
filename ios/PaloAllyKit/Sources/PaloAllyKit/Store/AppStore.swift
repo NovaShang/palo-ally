@@ -1823,22 +1823,24 @@ public final class AppStore {
 
     // MARK: memory
 
-    public func memoryFiles() async throws -> [MemoryFile] {
-        let r: MemoryFilesResult = try await rpc.call(RPCMethod.memoryList, params: EmptyParams())
+    /// The assistant's memory files; with `agent` (a Pal's id), that agent's:
+    /// its folder's CLAUDE.md and Claude Code's project memory for the folder.
+    public func memoryFiles(agent: String? = nil) async throws -> [MemoryFile] {
+        let r: MemoryFilesResult = try await rpc.call(RPCMethod.memoryList, params: MemoryListParams(agent: agent))
         return r.files
     }
 
-    public func readMemory(path: String) async throws -> MemoryContentResult {
-        try await rpc.call(RPCMethod.memoryRead, params: PathParams(path: path))
+    public func readMemory(path: String, agent: String? = nil) async throws -> MemoryContentResult {
+        try await rpc.call(RPCMethod.memoryRead, params: MemoryReadParams(path: path, agent: agent))
     }
 
     /// Writes a memory file. Pass the `updatedAt` from `readMemory` as
     /// `baseUpdatedAt`; the host refuses the write if the file changed since.
     /// Returns the new `updatedAt`: the base for the next write.
     @discardableResult
-    public func writeMemory(path: String, content: String, baseUpdatedAt: Int64?) async throws -> Int64? {
+    public func writeMemory(path: String, content: String, baseUpdatedAt: Int64?, agent: String? = nil) async throws -> Int64? {
         let r: MemoryWriteResult = try await rpc.call(
-            RPCMethod.memoryWrite, params: MemoryWriteParams(path: path, content: content, baseUpdatedAt: baseUpdatedAt))
+            RPCMethod.memoryWrite, params: MemoryWriteParams(path: path, content: content, baseUpdatedAt: baseUpdatedAt, agent: agent))
         return r.updatedAt
     }
 

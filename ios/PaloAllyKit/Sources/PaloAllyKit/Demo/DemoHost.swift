@@ -21,6 +21,8 @@ public actor DemoHost {
     public private(set) var artifacts: [Artifact] = []
     public private(set) var files: [String: Data] = [:] // "<artifactId>/<path>"
     public private(set) var memory: [String: (scope: MemoryScope, content: String, updatedAt: Int64)] = [:]
+    /// An agent's memory by its id: its folder's CLAUDE.md files and its project memory.
+    public private(set) var agentMemory: [String: [String: (scope: MemoryScope, content: String, updatedAt: Int64)]] = [:]
     public private(set) var settings = HostSettings(timezone: "Asia/Shanghai", quietHours: QuietHours(start: "23:00", end: "08:00"),
                                                     probeIntervalMinutes: 10, approvalTimeoutMinutes: 30)
     public private(set) var status: HostStatus = {
@@ -144,6 +146,7 @@ public actor DemoHost {
             self.artifacts = s.artifacts
             self.files = s.files
             self.memory = s.memory
+            self.agentMemory = DemoHost.seedAgentMemory(now: Date().epochMillis)
             (self.allies, self.allyLogs) = DemoHost.seedAllies(now: Date().epochMillis)
             if withSessions {
                 let ss = DemoHost.seedSessions(now: Date().epochMillis, nextSeq: seq + 1)
@@ -927,23 +930,41 @@ public actor DemoHost {
             artifacts[i].pinned = p["pinned"]?.boolValue ?? false
             emit(RPCEventName.artifactUpdated, artifacts[i])
             return ["artifact": try .from(artifacts[i])]
+        // The assistant's memory; with `agent` (a session's id), that agent's
+        // (its folder's CLAUDE.md, listed while missing, and its project memory), as the host's.
         case RPCMethod.memoryList:
-            let list = memory.map { MemoryFile(path: $0.key, scope: $0.value.scope, size: Int64($0.value.content.utf8.count),
-                                               updatedAt: $0.value.updatedAt) }
+            let agent = p["agent"]?.stringValue
+            if let agent, !pals.contains(where: { $0.id == agent }) { throw DemoError(message: "找不到这个会话") }
+            let files = agent.map { agentMemory[$0] ?? [:] } ?? memory
+            var list = files.map { MemoryFile(path: $0.key, scope: $0.value.scope, size: Int64($0.value.content.utf8.count),
+                                              updatedAt: $0.value.updatedAt) }
                 .sorted { ($0.scope == .core ? 0 : 1, $0.path) < ($1.scope == .core ? 0 : 1, $1.path) }
+            if agent != nil, files["CLAUDE.md"] == nil {
+                list.insert(MemoryFile(path: "CLAUDE.md", scope: .core, size: 0, updatedAt: 0, missing: true), at: 0)
+            }
             return ["files": try .from(list)]
         case RPCMethod.memoryRead:
             let path = p["path"]?.stringValue ?? ""
+            if let agent = p["agent"]?.stringValue {
+                guard pals.contains(where: { $0.id == agent }) else { throw DemoError(message: "找不到这个会话") }
+                if let f = agentMemory[agent]?[path] { return ["content": .string(f.content), "updatedAt": .number(Double(f.updatedAt))] }
+                guard path == "CLAUDE.md" else { throw DemoError(message: "没有这个文件") }
+                return ["content": "", "updatedAt": 0]
+            }
             guard let f = memory[path] else { throw DemoError(message: "没有这个文件") }
             return ["content": .string(f.content), "updatedAt": .number(Double(f.updatedAt))]
         case RPCMethod.memoryWrite:
             let path = p["path"]?.stringValue ?? ""
-            if let base = p["baseUpdatedAt"]?.doubleValue, let cur = memory[path], cur.updatedAt > Int64(base) {
-                throw DemoError(message: "这个文件刚被助理改过，请重新打开再改")
+            let agent = p["agent"]?.stringValue
+            if let agent, !pals.contains(where: { $0.id == agent }) { throw DemoError(message: "找不到这个会话") }
+            let current = agent.map { agentMemory[$0]?[path] } ?? memory[path]
+            if let base = p["baseUpdatedAt"]?.doubleValue, let cur = current, cur.updatedAt > Int64(base) {
+                throw DemoError(message: agent == nil ? "这个文件刚被助理改过，请重新打开再改" : "这个文件刚被改过，请重新打开再改")
             }
-            let scope = memory[path]?.scope ?? .auto
-            let now = max(Date().epochMillis, (memory[path]?.updatedAt ?? 0) + 1)
-            memory[path] = (scope, p["content"]?.stringValue ?? "", now)
+            let scope = current?.scope ?? (path.hasPrefix("memory/") ? .auto : .core)
+            let now = max(Date().epochMillis, (current?.updatedAt ?? 0) + 1)
+            if let agent { agentMemory[agent, default: [:]][path] = (scope, p["content"]?.stringValue ?? "", now) }
+            else { memory[path] = (scope, p["content"]?.stringValue ?? "", now) }
             return ["ok": true, "updatedAt": .number(Double(now))]
         case RPCMethod.settingsUpdate:
             guard case .object(let patch)? = p["patch"] else { throw DemoError(message: "bad patch") }
@@ -1758,6 +1779,19 @@ public actor DemoHost {
 }
 
 extension DemoHost {
+    /// 网站帮手's folder has a CLAUDE.md and a project memory; the others have none yet.
+    static func seedAgentMemory(now: Int64) -> [String: [String: (scope: MemoryScope, content: String, updatedAt: Int64)]] {
+        let hour: Int64 = 3_600_000
+        return [
+            "pal-site": [
+                "CLAUDE.md": (.core, "# 官网\n\n- 用 bun，不用 npm\n- 改样式前先看 docs/style.md\n- 提交前跑 bun test\n", now - 30 * hour),
+                "memory/MEMORY.md": (.auto, "- [部署](deploy.md)\n- [测试](testing.md)\n", now - 5 * hour),
+                "memory/deploy.md": (.auto, "# 部署\n\n预览环境在 staging 分支，合并后自动发布。\n", now - 5 * hour),
+                "memory/testing.md": (.auto, "# 测试\n\n列表页的排序和分页测试容易超时，跑之前先清缓存。\n", now - 2 * hour),
+            ],
+        ]
+    }
+
     /// `-demoBigFiles YES`, or a `-demoScreen` starting with "big".
     static var bigFiles: Bool {
         UserDefaults.standard.bool(forKey: "demoBigFiles") || (UserDefaults.standard.string(forKey: "demoScreen") ?? "").hasPrefix("big")

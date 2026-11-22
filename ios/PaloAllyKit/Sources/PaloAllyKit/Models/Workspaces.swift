@@ -26,6 +26,17 @@ public enum StatusDotKind: Sendable, Hashable {
         }
     }
 
+    /// The state in a word: 在忙 / 等你 / 做完了 / 空闲 (the dot's label, a line's
+    /// fallback); the one vocabulary every list, title and details page uses.
+    public var word: String {
+        switch self {
+        case .working: loc("在忙")
+        case .waiting: loc("等你")
+        case .done: loc("做完了")
+        case .idle: loc("空闲")
+        }
+    }
+
     /// One of the computer's other sessions.
     public init(_ s: CCSessionStatus) {
         switch s {

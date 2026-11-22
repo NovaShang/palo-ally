@@ -246,6 +246,7 @@ export const zhCli = {
   "cc.why": "：{why}",
   "daemon.relayOff": "远程连接没开启（config.relay.enabled=false）",
   "memory.onlyCore": "只能读写核心文件（user.md / soul.md）或 memory/ 下的 .md 记忆",
+  "memory.onlyAgentFiles": "只能读写文件夹里的 CLAUDE.md 或 memory/ 下的 .md 记忆",
   "cmd.stop": "停下手上的事",
   "cmd.status": "看看我在忙什么",
   "wechat.notLoggedIn": "微信没登录",

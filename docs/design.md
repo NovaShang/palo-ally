@@ -212,9 +212,9 @@ ModelOption { value; displayName; description; efforts:string[] }
 | `artifact.list` | `{}` | `{artifacts}` |
 | `artifact.read` | `{id, path?, offset?, length?}` | `{data /*b64*/, size, mime, eof}`（每块 ≤ 256 KiB） |
 | `artifact.pin` | `{id, pinned}` | `{artifact}` |
-| `memory.list` | `{}` | `{files, coreSize}` |
-| `memory.read` | `{path}` | `{content, updatedAt}` |
-| `memory.write` | `{path, content, baseUpdatedAt?}` | `{ok, updatedAt}`（文件在 baseUpdatedAt 之后被改过则报错「这个文件刚被助理改过，请重新打开再改」） |
+| `memory.list` | `{agent?}` | `{files, coreSize}`（带 `agent`（Pal 的 id）：它文件夹的 CLAUDE.md（没有也列出，`missing: true`）、CLAUDE.local.md、.claude/CLAUDE.md，和 Claude Code 给这个项目记的 memory/*.md（项目按 git 仓库根算）；不带：助理的） |
+| `memory.read` | `{path, agent?}` | `{content, updatedAt}` |
+| `memory.write` | `{path, content, baseUpdatedAt?, agent?}` | `{ok, updatedAt}`（文件在 baseUpdatedAt 之后被改过则报错「这个文件刚被助理改过，请重新打开再改」；agent 的是「这个文件刚被改过…」） |
 | `settings.update` | `{patch}` | `{settings}` |
 | `stop` | `{}` | `{status}`（harness 的 interrupt + stopTask；不留阻塞状态） |
 | `push.register` / `push.unregister` | `{token, env?}` / `{token}` | `{ok}` |

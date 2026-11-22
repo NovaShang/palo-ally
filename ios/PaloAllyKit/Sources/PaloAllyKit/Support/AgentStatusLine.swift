@@ -83,6 +83,32 @@ public struct AgentStatusLine: Equatable, Sendable {
         return AgentStatusLine(kind: .idle, text: loc("空闲"))
     }
 
+    /// The dot beside the line.
+    public var dot: StatusDotKind {
+        switch kind {
+        case .needsYou: .waiting
+        case .working, .tasks: .working
+        case .offline, .idle: .idle
+        }
+    }
+
+    /// An agent's line, as the assistant's: what it is doing while it works,
+    /// else its state in words (why, when it stopped).
+    public static func of(_ pal: Pal) -> AgentStatusLine {
+        let dot = pal.dot
+        let kind: Kind = switch dot {
+        case .waiting: .needsYou
+        case .working: pal.status == .busy ? .working : .tasks
+        case .done, .idle: .idle
+        }
+        if pal.status == .busy { return AgentStatusLine(kind: kind, text: doing(pal.activity)) }
+        if pal.status == .stopped, let note = pal.note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
+            return AgentStatusLine(kind: kind, text: note)
+        }
+        if dot == .working, pal.tasksRunning > 0 { return AgentStatusLine(kind: kind, text: loc("\(pal.tasksRunning) 件事在做")) }
+        return AgentStatusLine(kind: kind, text: dot.word)
+    }
+
     /// 「在看网页…」, or 「在想…」 when the host didn't say.
     static func doing(_ activity: String?) -> String {
         let a = (activity ?? "").trimmingCharacters(in: .whitespacesAndNewlines)

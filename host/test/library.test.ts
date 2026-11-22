@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ArtifactLibrary, CHUNK, STREAM_CHUNK } from "../src/artifacts.ts";
 import { Bus } from "../src/bus.ts";
-import { MemoryView, autoMemoryDir } from "../src/memory.ts";
+import { MemoryView, agentMemoryDir, autoMemoryDir, memoryProjectRoot } from "../src/memory.ts";
 import { cleanup, tmpPaths } from "./helpers.ts";
 
 describe("ArtifactLibrary", () => {
@@ -105,6 +105,43 @@ describe("MemoryView", () => {
   test("auto memory dir matches Claude Code's project encoding", () => {
     expect(autoMemoryDir("/Users/alice/.paloally/home", "/c")).toBe("/c/projects/-Users-alice--paloally-home/memory");
     expect(autoMemoryDir("/Users/alice/code/palo-ally", "/c")).toBe("/c/projects/-Users-alice-code-palo-ally/memory");
+  });
+
+  test("an agent's project memory is keyed as Claude Code keys it: the git repository's root (a worktree's main checkout), else the folder", () => {
+    const paths = tmpPaths();
+    const root = realpathSync(paths.root);
+    const repo = join(root, "repo");
+    mkdirSync(join(repo, ".git", "worktrees", "wt"), { recursive: true });
+    mkdirSync(join(repo, "app", "src"), { recursive: true });
+    writeFileSync(join(repo, ".git", "worktrees", "wt", "commondir"), "../..\n");
+    const wt = join(root, "wt");
+    mkdirSync(join(wt, "pkg"), { recursive: true });
+    writeFileSync(join(wt, ".git"), `gitdir: ${join(repo, ".git", "worktrees", "wt")}\n`);
+    const plain = join(root, "plain");
+    mkdirSync(plain);
+    expect(memoryProjectRoot(repo)).toBe(repo);
+    expect(memoryProjectRoot(join(repo, "app", "src"))).toBe(repo);
+    expect(memoryProjectRoot(join(wt, "pkg"))).toBe(repo);
+    expect(memoryProjectRoot(plain)).toBe(plain);
+    expect(agentMemoryDir(join(wt, "pkg"), "/c")).toBe(autoMemoryDir(repo, "/c"));
+    cleanup(paths);
+  });
+
+  test("an agent's view: its CLAUDE.md files (CLAUDE.md listed while missing) and project memory, nothing else", () => {
+    const paths = tmpPaths();
+    const folder = join(paths.root, "proj");
+    mkdirSync(join(folder, ".claude"), { recursive: true });
+    const mem = MemoryView.forAgent(folder, join(paths.root, "fake-claude"));
+    expect(mem.list()).toEqual([{ path: "CLAUDE.md", scope: "core", size: 0, updatedAt: 0, missing: true }]);
+    writeFileSync(join(folder, ".claude", "CLAUDE.md"), "x");
+    mem.write("CLAUDE.md", "y", 0);
+    expect(mem.list().map((f) => [f.path, f.missing ?? false])).toEqual([["CLAUDE.md", false], [".claude/CLAUDE.md", false]]);
+    mem.write("memory/a.md", "z");
+    expect(mem.list().at(-1)).toMatchObject({ path: "memory/a.md", scope: "auto" });
+    expect(mem.coreSize()).toBe(2);
+    expect(() => mem.read("user.md")).toThrow();
+    expect(() => mem.write("../CLAUDE.md", "")).toThrow();
+    cleanup(paths);
   });
 });
 

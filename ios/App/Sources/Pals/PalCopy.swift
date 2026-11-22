@@ -6,9 +6,10 @@ extension Copy {
     /// 在忙 / 空闲 / 等你 / 正在启动 / 已停 / 睡着.
     static func palStatus(_ s: PalStatus) -> String {
         switch s {
-        case .busy: String(localized: "在忙")
-        case .idle: String(localized: "空闲")
-        case .waiting: String(localized: "等你")
+        // the dot's words (StatusDotKind.word) where the two say the same
+        case .busy: StatusDotKind.working.word
+        case .idle: StatusDotKind.idle.word
+        case .waiting: StatusDotKind.waiting.word
         case .starting: String(localized: "正在启动")
         case .stopped: String(localized: "已停")
         case .asleep: String(localized: "睡着")

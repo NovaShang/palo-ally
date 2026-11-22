@@ -650,6 +650,19 @@ public struct PathParams: Codable, Sendable {
     public init(path: String) { self.path = path }
 }
 
+/// `memory.list {agent?}`: absent, the assistant's (all an older host knows).
+public struct MemoryListParams: Codable, Sendable {
+    public var agent: String?
+    public init(agent: String? = nil) { self.agent = agent }
+}
+
+/// `memory.read {path, agent?}`.
+public struct MemoryReadParams: Codable, Sendable {
+    public var path: String
+    public var agent: String?
+    public init(path: String, agent: String? = nil) { self.path = path; self.agent = agent }
+}
+
 /// `memory.read → {content, updatedAt}`.
 public struct MemoryContentResult: Decodable, Sendable, Equatable {
     public var content: String
@@ -669,8 +682,10 @@ public struct MemoryWriteParams: Codable, Sendable {
     public var path: String
     public var content: String
     public var baseUpdatedAt: Int64?
-    public init(path: String, content: String, baseUpdatedAt: Int64? = nil) {
-        self.path = path; self.content = content; self.baseUpdatedAt = baseUpdatedAt
+    /// A Pal's id: that agent's memory (absent: the assistant's, as older apps send).
+    public var agent: String?
+    public init(path: String, content: String, baseUpdatedAt: Int64? = nil, agent: String? = nil) {
+        self.path = path; self.content = content; self.baseUpdatedAt = baseUpdatedAt; self.agent = agent
     }
 }
 

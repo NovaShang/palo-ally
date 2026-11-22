@@ -3,12 +3,13 @@ import SwiftUI
 
 /// Sessions' wording: states, kinds, context size, and who's asking on a card.
 extension Copy {
-    /// 在忙 / 空闲 / 等你 / 已停.
+    /// 在忙 / 空闲 / 等你 / 已停: the dot's words (StatusDotKind.word) where
+    /// the two say the same, as a Pal's (`palStatus`).
     static func sessionStatus(_ s: CCSessionStatus) -> String {
         switch s {
-        case .busy: String(localized: "在忙")
-        case .idle: String(localized: "空闲")
-        case .waiting: String(localized: "等你")
+        case .busy: StatusDotKind.working.word
+        case .idle: StatusDotKind.idle.word
+        case .waiting: StatusDotKind.waiting.word
         case .stopped: String(localized: "已停")
         case .unknown: String(localized: "不清楚")
         }

@@ -484,6 +484,8 @@ export interface MemoryFile {
   scope: "core" | "auto";
   size: number;
   updatedAt: number;
+  /** Listed for the owner to start (an agent's CLAUDE.md), not there yet: reads as empty. */
+  missing?: true;
 }
 
 export interface AuditEntry {
