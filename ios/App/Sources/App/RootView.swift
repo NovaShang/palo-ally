@@ -1175,12 +1175,35 @@ private struct SidesClip: Shape {
 
 /// The assistant's management as a sheet (large screens), with its own pages.
 private struct ManagementSheet: View {
+    @Environment(WindowModel.self) private var model
+
     var body: some View {
         NavigationStack {
             AssistantView(inSheet: true)
                 .modifier(InContentNavigationBar())
         }
-        .presentationSizing(.page)
+        // On the Mac a page sheet is 720 pt tall from the title bar down: in a
+        // short window (760 pt) it ran past the bottom (11-22). There it stays
+        // within the window, less the title bar and a margin (as the details
+        // popover does, AgentDetailView.tallest), and scrolls inside.
+        .presentationSizing(PageWithinWindow(tallest: tallest))
+    }
+
+    private var tallest: CGFloat? {
+        guard Platform.isMac else { return nil }
+        let window = model.scene?.effectiveGeometry.coordinateSpace.bounds.height ?? 0
+        return window > 0 ? max(240, window - 84) : nil
+    }
+}
+
+/// `.page`, at most `tallest` high.
+private struct PageWithinWindow: PresentationSizing {
+    let tallest: CGFloat?
+
+    func proposedSize(for root: PresentationSizingRoot, context: PresentationSizingContext) -> ProposedViewSize {
+        var size = PagePresentationSizing.page.proposedSize(for: root, context: context)
+        if let tallest, let height = size.height, height > tallest { size.height = tallest }
+        return size
     }
 }
 
