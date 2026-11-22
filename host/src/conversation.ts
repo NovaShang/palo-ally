@@ -255,9 +255,7 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
   // too, so the owner can go back to it: docs/rewind-prd.md §4.2).
   sendOwner(text: string, origin: Channel, wechat?: WechatReplyTarget, images?: ImageInput[], uuid: string = randomUUID()): void {
     if (this.ally?.hold({ text, origin, wechat, images, uuid })) return;
-    this.pending.add(uuid, { origin, wechat, sentAt: Date.now(), text, ...(images?.length ? { images } : {}) });
-    if (!this.current) this.beginTurn({ text, origin, proactive: false, wechat, uuids: [uuid] });
-    this.ensureSession().send(text, uuid, images);
+    this.put(uuid, text, { origin, wechat, sentAt: Date.now(), text, ...(images?.length ? { images } : {}) }, images, () => this.ensureSession());
   }
 
   /** A host-initiated turn: it waits until nothing else is in flight (TurnQueue). */

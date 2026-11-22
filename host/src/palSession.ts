@@ -603,10 +603,7 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
     const proc = this.proc;
     if (!proc || !this.host.up) throw new Error(tr("pals.restartFailed", { name: this.rec.name }));
     this.notice(tr("pals.stuckRestarted"));
-    for (const [uuid, p] of untaken) {
-      this.pending.add(uuid, p);
-      proc.send(p.text, uuid, p.images);
-    }
+    for (const [uuid, p] of untaken) this.put(uuid, p.text, p, p.images, () => proc);
     let continued = false;
     if (!untaken.length && inTurn) {
       await this.send(stallContinue(), { from: this.d.mapOptions().assistantName });
@@ -669,12 +666,11 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
     if (!o.silent) this.out.put(msg);
     const content = o.peer ? this.d.harness.settings.peerWrap(o.peer, body) : body;
     if (!this.busy) this.workSince = this.d.now();
-    this.pending.add(uuid, { text: content, ...(o.from ? { from: o.from } : {}), ...(images.length ? { images } : {}) });
     this.rec.lastUsedAt = ts;
     // The owner's own words mean they're looking at it.
     if (!o.from && !o.silent) this.rec.seenAt = ts;
     this.d.save();
-    proc.send(content, uuid, images);
+    this.put(uuid, content, { text: content, ...(o.from ? { from: o.from } : {}), ...(images.length ? { images } : {}) }, images, () => proc);
     this.windingDown = false;
     this.touch();
     return msg;

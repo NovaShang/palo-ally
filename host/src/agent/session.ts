@@ -16,7 +16,7 @@
 // (`subagentTurns`). What each does at a turn's edges (its record, its
 // pushes, what goes next) it says through the hooks below.
 import { ACTIVITY, activityBackground, describeActivity } from "../copy.ts";
-import type { HarnessEvent } from "../harness/types.ts";
+import type { HarnessEvent, ImageInput, MainSession } from "../harness/types.ts";
 import type { StallTarget } from "../stallWatch.ts";
 import type { ChatMessage } from "../types.ts";
 import { newId } from "../util.ts";
@@ -177,6 +177,16 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
     if (turn.implicit && this.flags.implicitQuiet) this.armImplicitTimer();
     this.turnBegan(turn);
     this.touched();
+  }
+
+  /**
+   * Words into its harness under `uuid`, kept as in flight until a result
+   * says they were answered. The host's turns: they open one if none is open.
+   */
+  protected put(uuid: string, text: string, meta: P, images: ImageInput[] | undefined, proc: () => MainSession): void {
+    this.pending.add(uuid, meta);
+    if (this.flags.turns === "host" && !this.current) this.beginTurn({ text, origin: meta.origin ?? "app", proactive: false, wechat: meta.wechat, uuids: [uuid] });
+    proc().send(text, uuid, images);
   }
 
   /** The turn that output with none open belongs to. */
