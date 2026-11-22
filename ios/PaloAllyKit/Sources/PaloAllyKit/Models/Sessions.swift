@@ -129,13 +129,11 @@ public struct CCMessage: Codable, Sendable, Hashable, Identifiable {
     /// peer: which session it came from. palo: 「主人」 for the owner's words
     /// from the app, else the assistant's name for its own.
     public var from: String?
-    /// The owner's 「TL;DR」 ask (`TldrAsk`), its marker taken out.
-    public var tldr: Bool?
 
-    enum CodingKeys: String, CodingKey { case id, ts, role, text, from, tldr }
+    enum CodingKeys: String, CodingKey { case id, ts, role, text, from }
 
-    public init(id: String, ts: Int64, role: CCMessageRole, text: String, from: String? = nil, tldr: Bool? = nil) {
-        self.id = id; self.ts = ts; self.role = role; self.text = text; self.from = from; self.tldr = tldr
+    public init(id: String, ts: Int64, role: CCMessageRole, text: String, from: String? = nil) {
+        self.id = id; self.ts = ts; self.role = role; self.text = text; self.from = from
     }
 
     public init(from decoder: Decoder) throws {
@@ -145,7 +143,6 @@ public struct CCMessage: Codable, Sendable, Hashable, Identifiable {
         role = l.decode(CCMessageRole.self, "role", or: .unknown)
         text = l.string("text", or: "")
         from = l.string("from")
-        tldr = l.bool("tldr")
     }
 
     /// What it says, as shown. Words sent through PaloAlly may arrive with

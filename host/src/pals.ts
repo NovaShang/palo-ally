@@ -28,7 +28,6 @@ import type { Router } from "./router.ts";
 import type { Sessions } from "./sessions.ts";
 import type { StallTarget } from "./stallWatch.ts";
 import type { Attachment, ChatMessage, EarlierItem, HelperProposal, Pal, PalAdoptProposal, RecentSession } from "./types.ts";
-import { isTldrAsk, tldrPrompt } from "./tldr.ts";
 import { DonePushes } from "./donePush.ts";
 import { newId, readJson, writeJson, zonedParts } from "./util.ts";
 
@@ -1458,9 +1457,7 @@ export class Pals {
     if (seen) return seen;
     const wasStopped = pal.rec.stoppedFor;
     this.wakingFor(pal, "owner");
-    // 「TL;DR」 (the app's marker): the instruction goes in behind it.
-    const words = isTldrAsk(String(text ?? "")) && !attachments.length ? tldrPrompt() : String(text ?? "");
-    const msg = await pal.send(words, { ...(cid ? { clientMsgId: cid } : {}), ...(attachments.length ? { attachments } : {}) }).catch((e) => {
+    const msg = await pal.send(String(text ?? ""), { ...(cid ? { clientMsgId: cid } : {}), ...(attachments.length ? { attachments } : {}) }).catch((e) => {
       this.waking.delete(pal.id);
       throw e;
     });

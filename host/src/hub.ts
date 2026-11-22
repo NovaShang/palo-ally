@@ -24,7 +24,6 @@ import { isLang, parseLocale, setLang, t, tIn, systemLanguage, type Lang } from 
 import { makeShellTools, restText } from "./shellTools.ts";
 import { SuggestionStore } from "./suggestions.ts";
 import { TaskTracker } from "./tasks.ts";
-import { TLDR_MARKER, isTldrAsk, tldrInstruction } from "./tldr.ts";
 import type { Attachment, Channel, ChatMessage, PairedDevice, PendingItem, PendingLink, PendingSource, Status, Task, Watch, ReplyTo } from "./types.ts";
 import { MediaStore } from "./media.ts";
 import { briefTitle, ensureMorningBrief, isBriefTitle } from "./brief.ts";
@@ -580,12 +579,10 @@ export class Hub {
     // An answer from the pending list: the item, and words for the assistant only.
     extra: { note?: string; pendingId?: string } = {},
   ): ChatMessage | null {
-    // 「TL;DR」 (the app's marker): the instruction in its place, shown folded.
-    const tldr = isTldrAsk(text) && !attachments.length;
-    const t = tldr ? tldrInstruction() : text.trim();
+    const t = text.trim();
     if (!t && !attachments.length) return null;
-    const cmd = attachments.length || tldr ? null : this.tryCommand(t, channel);
-    const answered = cmd === null && !tldr && channel === "wechat" && !attachments.length ? this.answerOnWechat(t) : null;
+    const cmd = attachments.length ? null : this.tryCommand(t, channel);
+    const answered = cmd === null && channel === "wechat" && !attachments.length ? this.answerOnWechat(t) : null;
     // What goes to the harness has the uuid it's kept under there, so the
     // owner can go back to it later (not a slash command: docs/rewind-prd.md §3).
     const uuid = cmd === null && answered === null && !t.startsWith("/") ? randomUUID() : undefined;
@@ -596,9 +593,8 @@ export class Hub {
       channel,
       ...(clientMsgId ? { clientMsgId } : {}),
       ...(attachments.length ? { attachments } : {}),
-      ...(replyTo && !tldr ? { replyTo } : {}),
+      ...(replyTo ? { replyTo } : {}),
       ...(uuid ? { uuid } : {}),
-      ...(tldr ? { tldr: true } : {}),
       ...(extra.pendingId ? { pendingId: extra.pendingId } : {}),
     });
     // The owner is here: an Ally's message shown before now has been seen.
@@ -619,9 +615,7 @@ export class Hub {
   }
 
   // The words an owner message goes to the harness as.
-  private ownerBody(m: Pick<ChatMessage, "text" | "channel" | "attachments" | "replyTo" | "tldr">): string {
-    // A TL;DR ask goes in behind its marker (its history shows it folded).
-    if (m.tldr) return `${TLDR_MARKER}\n${m.text}`;
+  private ownerBody(m: Pick<ChatMessage, "text" | "channel" | "attachments" | "replyTo">): string {
     const t = m.text;
     // Slash commands must reach the harness verbatim, so they get no prefix.
     const prefix = m.channel === "wechat" && !t.startsWith("/") ? "[来自微信] " : "";
@@ -679,8 +673,7 @@ export class Hub {
     this.bus.emit("chat.rewound", { id: msg.id, ids });
     this.audit.log("chat.rewind", { messageId: msg.id, seq: msg.seq, uuid: entry.uuid, from: sessionId, to, at, dropped: ids.length, ...(copy ? { copied: true } : {}), by });
     this.log(`went back to before message ${msg.id} (${ids.length} message(s) out; session ${sessionId} ${copy ? "copied" : "forked"} as ${to})`);
-    // (A TL;DR ask gives nothing back for the composer.)
-    return { text: msg.tldr ? "" : msg.text };
+    return { text: msg.text };
   }
 
   /**

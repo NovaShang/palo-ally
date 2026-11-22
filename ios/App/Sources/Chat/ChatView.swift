@@ -488,13 +488,6 @@ private struct ConversationRows: View {
             // while a stretch far back is laid out on its own).
             if atTheEnd {
                 Group {
-                // 「TL;DR」 under the latest long reply, once its turn is over.
-                if let id = store.tldrOfferID {
-                    TldrButton { scroll.willSend() }
-                        .id("tldr-\(id)")
-                        .transition(.opacity)
-                }
-
                 // Pending ones, and a session's still waiting at the computer.
                 ForEach(store.liveEndApprovals) { approval in
                     ApprovalCard(approval: approval)

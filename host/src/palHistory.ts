@@ -2,7 +2,7 @@ import { t as tr } from "./i18n/index.ts";
 import { closeSync, existsSync, fstatSync, openSync, readSync, watch, type FSWatcher } from "node:fs";
 import { type RawSessionMessage, firstLine, isCompactSummaryText, peerBody } from "./ccSessions.ts";
 import { PALO_SEND_TOOL } from "./harness/types.ts";
-import { readTldr } from "./tldr.ts";
+import { stripTldrMarker } from "./tldr.ts";
 import type { Attachment, ChatMessage } from "./types.ts";
 
 // A Pal's conversation as the app shows it (docs/pals-prd.md §4, §8): the
@@ -78,10 +78,8 @@ export function userEntryMessage(m: RawSessionMessage, o: PalMapOptions): ChatMe
     const args = /<command-args>([\s\S]*?)<\/command-args>/.exec(text)?.[1]?.trim();
     return { ...base, text: `${cmd[1]!.trim()}${args ? ` ${args}` : ""}`, channel: "app" };
   }
-  const t = text.trim();
-  // The owner's 「TL;DR」 ask (tldr.ts): folded, without its marker.
-  const asked = readTldr(t);
-  if (asked !== null) return { ...base, text: asked, channel: "app", tldr: true };
+  // (An old 「TL;DR」 ask shows without its marker.)
+  const t = stripTldrMarker(text.trim());
   // The assistant's pal_send: put in by the host the way a SendMessage reads.
   if (/^<cross-session-message[^>]*from-name="/.test(t)) return { ...base, text: peerBody(null, t), channel: "system", from: peerName(null, t, o) };
   // Sent from the app with images or files: as it was sent.

@@ -672,8 +672,7 @@ private struct PaloItem: View {
         guard let m = lastMessage else {
             return line.kind == .needsYou ? String(localized: "等你") : line.text
         }
-        // A 「TL;DR」 ask reads as that, not its instruction.
-        let text = m.isTldrAsk ? "TL;DR" : m.text.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
+        let text = m.text.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
         if text.isEmpty { return line.text }
         return m.role == .user ? String(localized: "你：\(text)") : text
     }

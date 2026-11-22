@@ -349,8 +349,6 @@ public actor DemoHost {
             // computer; `authLogin`: being signed in again, the link out.
             s.auth = AuthStatus(state: .expired, since: now - 40 * 60_000,
                                 login: name == "authLogin" ? LoginStatus(state: .waiting, startedAt: now, url: Self.demoLoginURL) : nil)
-        case "tldr":
-            seedTldrStretch()
         case "longQuote":
             // `-demoState longQuote`: a reply, then the owner's words quoting a long
             // stretch of it (folds to two lines) and, below, a short quote (doesn't).
@@ -775,8 +773,6 @@ public actor DemoHost {
             if let r = p["replyTo"], let reply = try? r.decode(ReplyTo.self) { m.replyTo = reply }
             if let atts = try attachments(p["attachments"]) { m.attachments = atts }
             if !text.hasPrefix("/") { m.uuid = "u-\(m.id)" }
-            // 「TL;DR」: kept as the host keeps it (the instruction, marked).
-            Self.keptAsTldr(&m)
             messages.append(m)
             emit(RPCEventName.chatMessage, m)
             if let sid = p["suggestionId"]?.stringValue {
@@ -1509,10 +1505,7 @@ public actor DemoHost {
         var draft: (to: String, text: String, slots: [AllySlot]?)?
         var adoptCard: RecentSession?
         let reply: String
-        if text.trimmingCharacters(in: .whitespacesAndNewlines) == TldrAsk.marker {
-            await pause(0.6)
-            reply = Self.tldrAnswer
-        } else if text.contains("跟"), text.contains("说") || text.contains("约"),
+        if text.contains("跟"), text.contains("说") || text.contains("约"),
            let to = allies.first(where: { text.contains($0.ownerName) }) ?? allies.first {
             // 「跟家人说今晚我晚点回」: a draft card, sent only when the owner says so.
             if text.contains("约") {

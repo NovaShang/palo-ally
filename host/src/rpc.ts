@@ -4,6 +4,7 @@ import { readJson, writeJson } from "./util.ts";
 import { t } from "./i18n/index.ts";
 import { parseScope } from "./files.ts";
 import { machineId } from "./machine.ts";
+import { isTldrAsk } from "./tldr.ts";
 
 export interface RpcContext {
   clientId: string;
@@ -89,6 +90,8 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       };
     }
     case "chat.send": {
+      // An older app's 「TL;DR」 (gone): nothing happens.
+      if (isTldrAsk(String(p.text ?? ""))) return { id: "", seq: 0 };
       const cid = typeof p.clientMsgId === "string" ? p.clientMsgId.slice(0, 100) : undefined;
       // A retried send (the first one did arrive) must not run twice.
       const dup = cid ? hub.chat.findByClientMsgId(cid) : undefined;
@@ -315,6 +318,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     }
     // The owner's words, with images and files as Palo takes them (media.upload / uploadChunk).
     case "pals.send":
+      if (isTldrAsk(String(p.text ?? ""))) return { id: "", seq: 0 };
       return await hub.pals.send(String(p.id ?? ""), String(p.text ?? ""), typeof p.clientMsgId === "string" ? p.clientMsgId : undefined, attachmentsOf(hub, p.attachments));
     case "pals.stop":
       await hub.pals.stopTurn(String(p.id ?? ""), ctx.channel);

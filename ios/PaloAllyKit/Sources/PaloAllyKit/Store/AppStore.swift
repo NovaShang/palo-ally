@@ -1270,8 +1270,8 @@ public final class AppStore {
         let cid = given ?? UUID().uuidString.lowercased()
         var echo = ChatMessage(seq: 0, id: "local-\(cid)", role: .user, kind: .text, text: text, channel: .app,
                                ts: Date().epochMillis, clientMsgId: cid)
-        // A 「试试」 chip starts fresh (and a 「TL;DR」); anything typed goes with the open quote.
-        if suggestionId == nil, text != TldrAsk.marker, let reply = replyDraft {
+        // A 「试试」 chip starts fresh; anything typed goes with the open quote.
+        if suggestionId == nil, let reply = replyDraft {
             echo.replyTo = reply
             replyDraft = nil
         }

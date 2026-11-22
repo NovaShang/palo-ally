@@ -16,7 +16,7 @@ import { ASK_TOOL, type QuestionManager } from "./questions.ts";
 import { type ForkSession, type PendingRewind, beforeCompaction, chainTo, hasFileCheckpoint, leafOf, ownerText, readTranscript, rewindBusy, rewindNoFiles, rewindNotFound } from "./rewind.ts";
 import { type StallRecovery, type StallTarget, transcriptHas } from "./stallWatch.ts";
 import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
-import { readTldr } from "./tldr.ts";
+import { stripTldrMarker } from "./tldr.ts";
 import { newId, truncate } from "./util.ts";
 
 // One Pal (docs/pals-prd.md §4, §7): one of the owner's Claude Code
@@ -900,18 +900,15 @@ export class PalSession {
     if (!proc || !this.up) throw new Error(tr("pals.notRunning", { name: this.rec.name }));
     const uuid = randomUUID();
     const ts = this.d.now();
-    // The owner's 「TL;DR」 ask: shown folded, without its marker.
-    const asked = o.from || o.peer ? null : readTldr(t);
     const msg: ChatMessage = {
       seq: ts,
       id: uuid,
       role: "user",
       kind: "text",
-      text: asked ?? t,
+      text: t,
       channel: o.from ? "system" : "app",
       ts,
       pal: this.rec.id,
-      ...(asked !== null ? { tldr: true } : {}),
       ...(o.clientMsgId ? { clientMsgId: o.clientMsgId } : {}),
       ...(o.from ? { from: o.from } : {}),
       ...(o.attachments?.length ? { attachments: o.attachments } : {}),
@@ -1367,8 +1364,8 @@ export class PalSession {
     this.d.save();
     this.touch();
     if (awake) await this.start().catch((e) => this.d.log(`pal ${this.rec.name}: couldn't start again: ${e instanceof Error ? e.message : e}`));
-    // (A TL;DR ask gives nothing back for the composer.)
-    return { text: readTldr(text) === null ? text.trim() : "", filesRestored: restoreFiles, dropped, from: sessionId, at, copied };
+    // (An old 「TL;DR」 ask comes back without its marker.)
+    return { text: stripTldrMarker(text.trim()), filesRestored: restoreFiles, dropped, from: sessionId, at, copied };
   }
 
   // Claude Code puts the files back (rewindFiles) in a process of its own on

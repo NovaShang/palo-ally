@@ -4,7 +4,7 @@ import { basename, join } from "node:path";
 import type { AgentEntry, ClaudeCli } from "./ccCli.ts";
 import { readTail, transcriptPath } from "./handoffs.ts";
 import type { CCMessage, CCSession, CCSessionKind, CCSessionStatus } from "./types.ts";
-import { readTldr, stripTldrMarker } from "./tldr.ts";
+import { stripTldrMarker } from "./tldr.ts";
 import { truncate } from "./util.ts";
 
 // What the owner sees of the Claude Code sessions on this computer
@@ -557,9 +557,8 @@ export function toCCMessages(raw: RawSessionMessage[], assistantName: string, pa
     }
     const t = text.trim();
     if (!t || /^(<local-command-|<system-reminder>|<command-message>|<task-notification>|Caveat: )/.test(t) || isCompactSummaryText(t)) continue;
-    // The owner's 「TL;DR」 ask (tldr.ts): folded, without its marker.
-    const asked = readTldr(t);
-    out.push({ id: m.uuid, ts, role: "owner", text: asked ?? t, ...(asked !== null ? { tldr: true } : {}) });
+    // (An old 「TL;DR」 ask shows without its marker.)
+    out.push({ id: m.uuid, ts, role: "owner", text: stripTldrMarker(t) });
   }
   return out;
 }

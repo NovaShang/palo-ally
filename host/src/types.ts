@@ -49,9 +49,6 @@ export interface ChatMessage {
   // The owner's message in the assistant's conversation: the uuid Claude Code
   // has it under. Only these can be gone back to (docs/rewind-prd.md §4.2).
   uuid?: string;
-  // The owner's 「TL;DR」 ask (tldr.ts): the app shows it folded; `text` is
-  // the instruction, without the marker it went in with.
-  tldr?: boolean;
   // Gone back to before it (回到这里重来): kept in the log, never sent to clients.
   rewound?: boolean;
   rewoundSeq?: number; // the seq the rewind took (sync tells clients that missed it)
@@ -440,7 +437,6 @@ export interface CCMessage {
   role: "owner" | "assistant" | "peer" | "palo";
   text: string;
   from?: string;
-  tldr?: boolean; // the owner's 「TL;DR」 ask (tldr.ts): shown folded
 }
 
 export type HelperProposalStatus = "pending" | "created" | "discarded" | "expired";

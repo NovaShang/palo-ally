@@ -18,9 +18,6 @@ struct MessageRow: View {
             AllyMessageRow(message: message)
         } else {
             switch message.role {
-            case .user where message.isTldrAsk:
-                // 「TL;DR」: the ask folded to one small line.
-                TldrAskRow(message: message)
             case .user:
                 UserBubble(message: message)
             case .system:

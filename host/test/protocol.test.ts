@@ -5,7 +5,6 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { RPC_EVENTS, RPC_METHODS, handleRpc } from "../src/rpc.ts";
-import { TLDR_MARKER, tldrPrompt } from "../src/tldr.ts";
 import type { FakeScript } from "./fakeDriver.ts";
 import { AllyNet } from "./allyNet.ts";
 import { checkFixture, cleanup, shape, tick } from "./helpers.ts";
@@ -126,9 +125,6 @@ describe("host ↔ app protocol", () => {
     const found = await run("chat.search", { query: "你好", limit: 5 });
     expect(found.messages.length).toBeGreaterThan(0);
     await run("chat.around", { seq: found.messages[0].seq, before: 2, after: 2 });
-    // 「TL;DR」: the app's marker, shown as a folded ask (chat.message samples).
-    const tldrSend = { text: TLDR_MARKER, clientMsgId: "c-tldr" };
-    methods["chat.send"] = [methods["chat.send"] as Sample, { params: tldrSend, result: await call("chat.send", tldrSend) }];
     await hub.idle();
     await run("commands.list");
     const models = await run("model.get");
@@ -231,8 +227,6 @@ describe("host ↔ app protocol", () => {
       { type: "assistant", uuid: "c2", timestamp: "2026-10-12T10:01:00Z", message: { role: "assistant", content: [{ type: "text", text: "找到了：跳转时把原来的地址丢了。" }] } },
       { type: "user", uuid: "c3", timestamp: "2026-10-12T10:02:00Z", message: { role: "user", content: "…" }, origin: { kind: "peer", name: "笔记整理", body: "设计稿在 notes/设计.md" } },
       { type: "user", uuid: "c4", timestamp: "2026-10-12T10:03:00Z", message: { role: "user", content: "…" }, origin: { kind: "peer", name: "Palo", body: "主人说先别管登录页" } },
-      // a 「TL;DR」 ask, as it went in (marker first)
-      { type: "user", uuid: "c5", timestamp: "2026-10-12T10:04:00Z", message: { role: "user", content: tldrPrompt() }, origin: { kind: "human" } },
     ]);
     const term = (await run("sessions.list")).sessions[0];
     const sig = () => ({ signal: new AbortController().signal, env: {} });
@@ -284,7 +278,6 @@ describe("host ↔ app protocol", () => {
       { type: "user", uuid: "p1", timestamp: "2026-10-12T11:00:00Z", message: { role: "user", content: "列表要能按日期排序" }, origin: { kind: "human" } },
       { type: "assistant", uuid: "p2", timestamp: "2026-10-12T11:00:05Z", message: { id: "msg_01", role: "assistant", content: [{ type: "text", text: "加上了。" }] } },
       { type: "user", uuid: "p3", timestamp: "2026-10-12T11:01:00Z", message: { role: "user", content: "…" }, origin: { kind: "peer", name: "Palo", body: "主人说今晚不用部署" } },
-      { type: "user", uuid: "p4", timestamp: "2026-10-12T11:02:00Z", message: { role: "user", content: tldrPrompt() }, origin: { kind: "human" } },
     ]);
     await run("pals.send", { id: pal.id, text: "把列表页做完", clientMsgId: "c-pal-1" });
     await waitFor(() => events.some((e) => e.event === "chat.message" && e.data.pal && e.data.role === "assistant"));
@@ -497,8 +490,6 @@ describe("host ↔ app protocol", () => {
         chat.find((m) => m.pal && m.role === "user" && !m.from),
         chat.find((m) => m.pal && m.role === "assistant"),
         chat.find((m) => m.pal && m.from),
-        // the owner's 「TL;DR」 ask (shown folded)
-        chat.find((m) => m.tldr && !m.pal),
         // a pending item surfaced at the bottom (聊这件), and the owner's answer to it
         chat.find((m) => m.kind === "pending"),
         chat.find((m) => m.role === "user" && m.pendingId),

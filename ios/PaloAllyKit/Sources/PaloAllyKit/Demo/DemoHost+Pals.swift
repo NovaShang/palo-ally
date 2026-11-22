@@ -42,7 +42,7 @@ extension DemoHost {
             let atts = try attachments(p["attachments"])
             guard !text.isEmpty || atts != nil else { throw DemoError(message: "要说的话不能是空的") }
             // The first words name a session nobody has named.
-            if Pal.isUnnamed(pal.name), !text.isEmpty, text != TldrAsk.marker {
+            if Pal.isUnnamed(pal.name), !text.isEmpty {
                 let first = text.replacingOccurrences(of: "\n", with: " ")
                 setPal(id) { $0.name = String(first.prefix(16)) }
             }
@@ -51,7 +51,6 @@ extension DemoHost {
             var m = palMessage(id, role: .user, text: text, channel: .app)
             m.clientMsgId = p["clientMsgId"]?.stringValue
             m.attachments = atts
-            Self.keptAsTldr(&m)
             appendPal(m)
             palTurns[id]?.cancel()
             palTurns[id] = Task { await self.palAnswers(id, to: text) }
@@ -445,12 +444,10 @@ extension DemoHost {
 
     /// The owner said something: it works on it, streams its answer, and is idle again.
     func palAnswers(_ id: String, to text: String) async {
-        let tldr = text == TldrAsk.marker
-        setPal(id) { $0.status = .busy; if !tldr { $0.lastLine = text } }
-        await pause(tldr ? 1.4 : 0.8)
+        setPal(id) { $0.status = .busy; $0.lastLine = text }
+        await pause(0.8)
         guard !Task.isCancelled else { return }
-        let reply = tldr ? Self.tldrAnswer : "好的，按你说的办。我先把要改的地方列出来，再一处一处改，改完跑一遍测试告诉你结果。"
-        await streamPal(id, reply)
+        await streamPal(id, "好的，按你说的办。我先把要改的地方列出来，再一处一处改，改完跑一遍测试告诉你结果。")
     }
 
     /// Its card was answered: it carries on, then says what came of it.
