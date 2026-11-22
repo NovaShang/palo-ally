@@ -14,6 +14,14 @@ struct AgentDetailView: View {
 
     private var asSheet: Bool { AgentDetailPlacement.usesSheet(model: model, store: store) }
 
+    /// The popover's most: 860 pt on the Mac (640 elsewhere), and on the Mac
+    /// no more than its window's height less the title bar and a margin.
+    private var tallest: CGFloat {
+        guard Platform.isMac else { return 640 }
+        let window = model.scene?.effectiveGeometry.coordinateSpace.bounds.height ?? 0
+        return window > 0 ? min(860, max(240, window - 84)) : 860
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -38,7 +46,10 @@ struct AgentDetailView: View {
         // the bar left the Mac's popover short: its top and bottom were cut (11-19).
         // The Mac's windows are tall: up to 860 pt there (Palo's details run
         // about 700, and at 640 their top or bottom was always scrolled away).
-        .frame(height: asSheet ? nil : contentHeight.map { min(max($0, 240), Platform.isMac ? 860 : 640) })
+        // On the Mac a popover is a window of its own: in a short window it
+        // ran past the bottom (设置 unfolded, 11-22), so it also stays within
+        // the window, from the title bar down, and scrolls inside.
+        .frame(height: asSheet ? nil : contentHeight.map { min(max($0, 240), tallest) })
         .accessibilityIdentifier("agent-detail")
         // 设置 folded and nothing pushed the next time it opens.
         .onDisappear { model.resetDetailPage() }
