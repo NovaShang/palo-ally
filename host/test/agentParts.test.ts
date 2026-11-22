@@ -2,6 +2,8 @@
 import { describe, expect, test } from "bun:test";
 import { StreamAssembler } from "../src/agent/streamAssembler.ts";
 import { TurnLedger } from "../src/agent/turnLedger.ts";
+import { RecordTasks } from "../src/agent/taskProjection.ts";
+import { TranscriptSink } from "../src/agent/outputSink.ts";
 
 describe("TurnLedger", () => {
   test("adds, consumes in the order asked, expires, and splits what the harness took after a stall", () => {
@@ -38,5 +40,38 @@ describe("StreamAssembler", () => {
     expect(s.take()).toEqual({ id: "m1", text: "你好" });
     expect(s.id).toBeNull();
     expect(s.current()).toBeNull();
+  });
+});
+
+describe("RecordTasks", () => {
+  test("an agent's subagents and background tasks: shown while they run, kept with its record when they end, all stopped with its process", () => {
+    const rec: { pastTasks?: import("../src/agent/taskProjection.ts").PastPalTask[] } = {};
+    let saves = 0;
+    const t = new RecordTasks(rec, { save: () => saves++, now: () => 1000 });
+    expect(t.onEvent({ type: "task_started", taskId: "a", toolUseId: "tu_a", description: "查资料", taskType: "local_agent" })).toBe(true);
+    expect(t.onEvent({ type: "task_started", taskId: "b", description: "npm test", taskType: "local_bash" })).toBe(true);
+    expect(t.wire().map((x) => x.id)).toEqual(["a"]); // a foreground command isn't a task
+    expect(t.onEvent({ type: "task_backgrounded", taskId: "b" })).toBe(true);
+    expect(t.background).toBe(1);
+    expect(t.onEvent({ type: "task_progress", taskId: "a", summary: "读到第 3 页" })).toBe(true);
+    expect(t.onEvent({ type: "task_progress", taskId: "a", summary: "读到第 3 页" })).toBe(false);
+    t.onEvent({ type: "tool_result", toolUseId: "tu_a", content: "", isError: false, parentToolUseId: null });
+    expect(rec.pastTasks?.map((p) => `${p.id}:${p.status}:${p.summary}`)).toEqual(["a:done:读到第 3 页"]);
+    t.processEnded();
+    expect(t.background).toBe(0);
+    expect(rec.pastTasks?.map((p) => `${p.id}:${p.status}`)).toEqual(["b:stopped", "a:done"]);
+    expect(saves).toBe(2);
+  });
+});
+
+describe("OutputSink", () => {
+  test("the assistant's goes into its chat log; an agent's goes out as events with its id", () => {
+    const events: { event: string; data: any }[] = [];
+    const sink = new TranscriptSink("pal_1", { emit: (event, data) => events.push({ event, data }), now: () => 5 });
+    sink.delta("m1", "你");
+    const m = sink.message({ id: "m1", role: "assistant", kind: "text", text: "你好" });
+    expect(m).toEqual({ seq: 5, ts: 5, channel: "app", id: "m1", role: "assistant", kind: "text", text: "你好", pal: "pal_1" });
+    expect(events.map((e) => e.event)).toEqual(["chat.delta", "chat.message"]);
+    expect(events[0]!.data).toEqual({ id: "m1", text: "你", pal: "pal_1" });
   });
 });

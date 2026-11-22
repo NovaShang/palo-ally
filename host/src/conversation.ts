@@ -1,15 +1,15 @@
 import { t } from "./i18n/index.ts";
 import { randomUUID } from "node:crypto";
-import { allyTurnTool, type AllyGateScope } from "./allyGate.ts";
+import type { AllyGateScope } from "./allyGate.ts";
 import type { ApprovalManager } from "./approvals.ts";
 import { ASK_TOOL, type QuestionManager } from "./questions.ts";
 import type { Audit } from "./audit.ts";
 import type { WechatChannel, WechatReplyTarget } from "./channels/types.ts";
 import type { ChatLog } from "./chat.ts";
 import type { Config, Paths } from "./config.ts";
-import { ACTIVITY, activityBackground, allyToolDenied, budgetNotice, describeActivity, friendlyError } from "./copy.ts";
+import { ACTIVITY, activityBackground, budgetNotice, describeActivity, friendlyError } from "./copy.ts";
 import { behaviorPrompt } from "./home.ts";
-import type { Harness, HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption, SlashCommandInfo, ToolGate, ToolHandlers } from "./harness/types.ts";
+import type { Harness, HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
 import type { Router } from "./router.ts";
 import type { RuntimeState } from "./runtime.ts";
 import { type PendingRewind, rewindBusy } from "./rewind.ts";
@@ -18,8 +18,14 @@ import type { TaskTracker } from "./tasks.ts";
 import type { Channel, Task } from "./types.ts";
 import type { UsageLedger } from "./usage.ts";
 import { appendJsonl, truncate } from "./util.ts";
-import { StreamAssembler } from "./agent/streamAssembler.ts";
-import { TurnLedger } from "./agent/turnLedger.ts";
+import { ChatLogSink } from "./agent/outputSink.ts";
+import { TrackerTasks } from "./agent/taskProjection.ts";
+import { AgentSession } from "./agent/session.ts";
+import { ASSISTANT_FLAGS } from "./agent/flags.ts";
+import { AllyTurn } from "./agent/allyTurn.ts";
+import { IdleCompact } from "./agent/idleCompact.ts";
+import { stripSkip } from "./agent/skip.ts";
+import { WechatRelay } from "./agent/wechatRelay.ts";
 
 export interface Turn {
   text: string; // what the model sees
@@ -36,9 +42,6 @@ export interface Turn {
 }
 
 type OwnerMessage = { origin: Channel; wechat?: WechatReplyTarget };
-type HeldMessage = { text: string; origin: Channel; wechat?: WechatReplyTarget; images?: ImageInput[]; uuid?: string };
-
-const SKIP = /^\s*\[skip\]\s*$/i;
 
 // A turn the harness started by itself is closed if it goes quiet without a result.
 export const timing = { implicitQuietMs: 90_000 };
@@ -62,17 +65,9 @@ export interface MainStallHooks {
 // one trigger: compact before the prompt cache expires, at a clean break. A
 // clean break means nothing is running or waiting and the owner has been quiet this long.
 export const COMPACT_QUIET_MS = 5 * 60_000;
-// An idle compaction that found no clean break tries again this often while the session stays idle.
-export const COMPACT_RETRY_MS = 5 * 60_000;
-
+export { COMPACT_RETRY_MS } from "./agent/idleCompact.ts";
 // stripSkip removes the "[skip]" marker a proactive turn uses to stay silent.
-export function stripSkip(text: string): string {
-  return text
-    .split(/\n{2,}/)
-    .filter((p) => !SKIP.test(p))
-    .join("\n\n")
-    .trim();
-}
+export { stripSkip };
 
 export interface ConversationDeps {
   paths: Paths;
@@ -118,44 +113,85 @@ export interface ConversationDeps {
 // Conversation is the one main conversation with the harness: it owns the CLI
 // process, decides which output belongs to whom (owner reply vs proactive),
 // and keeps proactive turns waiting until the harness is idle.
-export class Conversation {
+//
+// The assistant is an AgentSession with ASSISTANT_FLAGS: its process started
+// by the words that need it, at once (no ready wait), never asleep, no
+// holders check; its words into its chat log; its tasks the host's list.
+export class Conversation extends AgentSession<OwnerMessage & { sentAt: number; text: string; images?: ImageInput[] }, TrackerTasks, ChatLogSink> {
   model = ""; // the model the harness reports running
   permissionMode = ""; // the permission mode it reports running in (not always the configured one)
-  activity = "";
-  private session: MainSession | null = null;
   private queue: Turn[] = [];
   private current: Turn | null = null;
   private turnTexts: string[] = [];
-  // WeChat turns get each paragraph as it's written (in order), not just the end.
-  private wechatStreamed = 0;
-  private wechatChain: Promise<void> = Promise.resolve();
-  private stream = new StreamAssembler(); // the reply being streamed (its id the host's), to finalize if the turn dies
   private implicitTimer: ReturnType<typeof setTimeout> | null = null;
   private lastContextTokens = 0;
   private turnWaiters: (() => void)[] = [];
-  // Every owner message sent to the harness and not yet answered, by uuid.
-  // A turn counts as answering the owner only once its result lists the uuid.
-  private pending = new TurnLedger<OwnerMessage & { sentAt: number; text: string; images?: ImageInput[] }>();
-  private openTools = new Set<string>(); // main-thread tool calls without a result yet
-  private liveTools = new Map<string, string>(); // every tool call without a result yet (subagents' too): id → name
-  private lastEventAt = 0;
+  // (pending: every owner message sent to the harness and not yet answered,
+  // by uuid; a turn counts as answering the owner only once its result lists the uuid.)
+  private mainTools = new Set<string>(); // main-thread tool calls without a result yet
   private budgetNoticeDay = "";
-  private compactReason: string | null = null; // our /compact turn is queued or running
-  private idleTimer: ReturnType<typeof setTimeout> | null = null;
-  private idleStamp = 0; // when the last turn ended: the idle stretch the timer belongs to
-  private idleFiredFor = 0; // the stretch an idle compaction was already started for
-  // 「只说话不动手」(docs/allies-prd.md §11.1): an Ally's message is in the
-  // harness and the turn answering it hasn't finished, i.e. from sending it
-  // until a result says it consumed that message (however the harness
-  // queued it). Meanwhile every main-thread tool call goes through the gate,
-  // nothing else is sent to the harness, and the owner's words are held.
-  private allyGate: { allyId: string; uuid: string } | null = null;
-  private held: HeldMessage[] = [];
-  private gateTimer: ReturnType<typeof setTimeout> | null = null;
+  // Its pieces, by its flags: WeChat turns get each paragraph as it's written
+  // (wechat); an Ally's turn is gated and the owner's words held meanwhile
+  // (allyGate); the host compacts at a clean break before the cache expires (autoCompact).
+  private wechat: WechatRelay | null;
+  private ally: AllyTurn | null;
+  private compactor: IdleCompact | null;
   private modeChecked = false; // this process' permission mode was compared with the config
 
   constructor(private d: ConversationDeps) {
+    // (only closures here: `this` is there once super() has returned)
+    super(ASSISTANT_FLAGS, {
+      record: {},
+      out: new ChatLogSink(d.chat),
+      tasks: new TrackerTasks(d.tasks),
+      process: {
+        name: () => d.peerName?.() ?? "main",
+        save: () => {},
+        changed: () => d.statusChanged(),
+        log: (s) => d.log(s),
+        now: () => Date.now(),
+        open: () => ({ proc: this.open() }),
+        startError: (why) => why,
+      },
+    });
     this.lastContextTokens = d.runtime.data.contextTokens ?? 0;
+    this.wechat = this.flags.wechat
+      ? new WechatRelay({ channel: () => this.d.wechat, audit: () => this.d.audit, log: (s) => this.d.log(s), current: (turn) => this.current === turn })
+      : null;
+    this.ally = this.flags.allyGate
+      ? new AllyTurn({
+          audit: () => this.d.audit,
+          log: (s) => this.d.log(s),
+          scope: () => this.allyScope(),
+          busy: () => !!this.current,
+          resend: (h) => this.sendOwner(h.text, h.origin, h.wechat, h.images, h.uuid),
+          pump: () => this.pump(),
+          quietMs: () => timing.implicitQuietMs,
+        })
+      : null;
+    this.compactor = this.flags.autoCompact
+      ? new IdleCompact({
+          session: () => this.d.config().session,
+          contextTokens: () => this.lastContextTokens,
+          cleanBreak: (now) => this.cleanBreak(now),
+          audit: () => this.d.audit,
+          compact: () => this.enqueue({ text: "/compact", origin: "system", proactive: true, maintenance: true, label: "compact" }),
+        })
+      : null;
+  }
+
+  /** When the idle stretch now going began (idle compaction's). */
+  private get idleStamp(): number {
+    return this.compactor?.idleStamp ?? 0;
+  }
+
+  /** An Ally's turn is on, or the owner's words wait for one that just ended. */
+  private get allyInFlight(): boolean {
+    return !!this.ally?.inFlight;
+  }
+
+  protected changed(): void {
+    this.d.statusChanged();
   }
 
   /** The main session's context size after its last turn (or compaction). */
@@ -175,12 +211,12 @@ export class Conversation {
 
   // Nothing in flight at all (safe to restart the process).
   get quiet(): boolean {
-    return !this.current && !this.queue.length && !this.pending.size && !this.allyGate && !this.held.length;
+    return !this.current && !this.queue.length && !this.pending.size && !this.allyInFlight;
   }
 
   /** The Ally whose message the harness is handling now (its turn is gated), if any. */
   allyTurnAlly(): string | undefined {
-    return this.allyGate?.allyId;
+    return this.ally?.allyId;
   }
 
   // Resolves when the turn queue is drained (tests, CLI one-shots).
@@ -211,11 +247,7 @@ export class Conversation {
   // `uuid` is what Claude Code keeps the message under (the chat log has it
   // too, so the owner can go back to it: docs/rewind-prd.md §4.2).
   sendOwner(text: string, origin: Channel, wechat?: WechatReplyTarget, images?: ImageInput[], uuid: string = randomUUID()): void {
-    if (this.allyGate) {
-      this.held.push({ text, origin, wechat, images, uuid });
-      this.d.audit.log("ally.turn.held", { allyId: this.allyGate.allyId, origin });
-      return;
-    }
+    if (this.ally?.hold({ text, origin, wechat, images, uuid })) return;
     this.pending.add(uuid, { origin, wechat, sentAt: Date.now(), text, ...(images?.length ? { images } : {}) });
     if (!this.current) this.beginTurn({ text, origin, proactive: false, wechat, uuids: [uuid] });
     this.ensureSession().send(text, uuid, images);
@@ -228,7 +260,7 @@ export class Conversation {
 
   private pump(): void {
     this.expirePending();
-    if (this.current || this.pending.size || this.allyGate || this.held.length || !this.queue.length) {
+    if (this.current || this.pending.size || this.allyInFlight || !this.queue.length) {
       this.flushWaitersIfIdle();
       return;
     }
@@ -238,15 +270,12 @@ export class Conversation {
       const day = this.d.usage.today().day;
       if (this.budgetNoticeDay !== day) {
         this.budgetNoticeDay = day;
-        this.d.chat.add({ role: "system", kind: "notice", text: budgetNotice(turn.label), channel: "system" });
+        this.out.message({ role: "system", kind: "notice", text: budgetNotice(turn.label), channel: "system" });
       }
       return this.pump();
     }
     const uuid = randomUUID();
-    if (turn.allyId) {
-      this.allyGate = { allyId: turn.allyId, uuid };
-      this.d.audit.log("ally.turn.start", { allyId: turn.allyId });
-    }
+    if (turn.allyId) this.ally?.start(turn.allyId, uuid);
     this.beginTurn({ ...turn, uuids: [uuid] });
     this.ensureSession().send(turn.text, uuid);
   }
@@ -263,10 +292,9 @@ export class Conversation {
   private beginTurn(turn: Turn): void {
     this.current = turn;
     this.turnTexts = [];
-    this.wechatStreamed = 0;
-    if (turn.wechat && !turn.proactive) void this.d.wechat?.startTyping?.(turn.wechat);
+    this.wechat?.turnBegan(turn);
     this.stream.take();
-    this.openTools.clear();
+    this.mainTools.clear();
     this.activity = "";
     if (turn.implicit) this.armImplicitTimer();
     this.d.statusChanged();
@@ -276,7 +304,7 @@ export class Conversation {
     if (this.implicitTimer) clearTimeout(this.implicitTimer);
     this.implicitTimer = setTimeout(() => {
       // Waiting on the owner or on a running tool is not "quiet".
-      if (this.current?.implicit && (this.openTools.size || this.waitingOnOwner())) return this.armImplicitTimer();
+      if (this.current?.implicit && (this.mainTools.size || this.waitingOnOwner())) return this.armImplicitTimer();
       if (this.current?.implicit) {
         this.d.log("implicit turn went quiet without a result; closing it");
         this.endTurn(0, this.lastContextTokens);
@@ -290,18 +318,22 @@ export class Conversation {
    * offline are not replayed, so it takes this, then keeps appending deltas.
    */
   streamingReply(): { id: string; text: string } | null {
-    return this.stream.current();
+    return this.streaming();
   }
 
   ensureSession(): MainSession {
-    if (this.session && !this.session.closed) return this.session;
+    return this.host.ensure();
+  }
+
+  // Its process, as ensureSession starts it.
+  private open(): MainSession {
     const cfg = this.d.config();
     const rt = this.d.runtime.data;
     this.modeChecked = false;
     // Gone back to an earlier message (docs/rewind-prd.md §4.1): the new
     // session is forked from the old one until Claude Code has written it.
     const fork = this.pendingRewind();
-    this.session = this.d.driver.startMain({
+    return this.d.driver.startMain({
       cwd: this.d.paths.home,
       model: cfg.model,
       effort: cfg.effort,
@@ -319,7 +351,7 @@ export class Conversation {
         const deny = this.gateTool({ toolName: req.toolName, input: req.input, agentId: req.agentId, via: "canUseTool" });
         if (deny) return Promise.resolve({ behavior: "deny", message: deny });
         if (req.toolName === ASK_TOOL) {
-          const deferred = this.current?.origin === "wechat" ? null : (this.d.deferQuestion?.(req.input) ?? null);
+          const deferred = this.flags.questions !== "defer" || this.current?.origin === "wechat" ? null : (this.d.deferQuestion?.(req.input) ?? null);
           return deferred !== null ? Promise.resolve({ behavior: "deny", message: deferred }) : this.d.questions.request(req);
         }
         return this.d.approvals.request(req);
@@ -333,25 +365,24 @@ export class Conversation {
       onEvent: (e) => this.d.onEvent(e),
       stderr: (s) => appendJsonl(`${this.d.paths.logs}/harness-stderr.jsonl`, { ts: Date.now(), s: truncate(s, 2000) }),
     });
-    return this.session;
   }
 
   // Live switches on the running process (the next one starts with the saved config).
   async applyModel(model: string | undefined): Promise<void> {
     if (model) this.model = "";
-    await this.session?.setModel(model).catch((e) => this.d.log(`setModel failed: ${e}`));
+    await this.host.proc?.setModel(model).catch((e) => this.d.log(`setModel failed: ${e}`));
   }
 
   async applyEffort(effort: string | undefined): Promise<void> {
-    await this.session?.setEffort(effort).catch((e) => this.d.log(`setEffort failed: ${e}`));
+    await this.host.proc?.setEffort(effort).catch((e) => this.d.log(`setEffort failed: ${e}`));
   }
 
   // ---------------- harness events ----------------
 
   onHarnessEvent(e: HarnessEvent): void {
     this.lastEventAt = Date.now();
-    if (e.type === "tool_use") this.liveTools.set(e.id, e.name);
-    else if (e.type === "tool_result") this.liveTools.delete(e.toolUseId);
+    if (e.type === "tool_use") this.openTools.set(e.id, e.name);
+    else if (e.type === "tool_result") this.openTools.delete(e.toolUseId);
     // The harness names the owner messages a turn answers on its first frames:
     // start that turn with exactly those, instead of guessing.
     if (e.type === "answering" && !this.current) {
@@ -378,7 +409,6 @@ export class Conversation {
       this.armImplicitTimer();
     }
     const turn = this.current;
-    const { chat, tasks } = this.d;
     switch (e.type) {
       case "commands":
         this.d.onCommands(e.commands);
@@ -397,20 +427,20 @@ export class Conversation {
         if (turn && !turn.proactive) {
           if (!this.stream.id) this.stream.open(`m_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`);
           this.stream.append(e.text);
-          chat.delta(this.stream.id!, e.text);
+          this.out.delta(this.stream.id!, e.text);
           // The words themselves now show the progress.
           this.setActivity(ACTIVITY.reply);
         }
         break;
       case "assistant_text":
         if (e.parentToolUseId) {
-          tasks.onSubagentText(e.text, e.parentToolUseId);
+          this.taskView.onEvent(e);
           break;
         }
         this.turnTexts.push(e.text);
-        if (turn?.wechat && !turn.proactive) this.streamToWechat(turn, e.text);
+        if (turn?.wechat && !turn.proactive) this.wechat?.paragraph(turn, e.text);
         if (turn && !turn.proactive) {
-          chat.add({ id: this.stream.id ?? undefined, role: "assistant", kind: "text", text: e.text, channel: turn.origin });
+          this.out.message({ id: this.stream.id ?? undefined, role: "assistant", kind: "text", text: e.text, channel: turn.origin });
         }
         this.stream.take();
         break;
@@ -418,80 +448,53 @@ export class Conversation {
         if (!e.parentToolUseId) this.setActivityFor(e.name);
         break;
       case "tool_use":
-        if (!e.parentToolUseId) this.openTools.add(e.id);
-        tasks.onToolUse(e.id, e.name, e.input, e.parentToolUseId);
+        if (!e.parentToolUseId) this.mainTools.add(e.id);
+        this.taskView.onEvent(e);
         if (e.parentToolUseId) this.setActivity(activityBackground());
         else this.setActivityFor(e.name);
         break;
       case "tool_result":
-        this.openTools.delete(e.toolUseId);
-        tasks.onToolResult(e.toolUseId, e.content, e.isError, e.parentToolUseId);
+        this.mainTools.delete(e.toolUseId);
+        this.taskView.onEvent(e);
         break;
       case "task_started":
-        tasks.onTaskStarted(e.taskId, e.toolUseId, e.background);
-        break;
       case "task_progress":
-        if (e.summary) tasks.onProgress(e.taskId, e.summary);
-        break;
       case "background_tasks":
-        tasks.setLiveSet(e.taskIds);
-        break;
       case "task_backgrounded":
-        tasks.onTaskBackgrounded(e.taskId);
-        break;
       case "task_notification":
-        tasks.onTaskNotification(e.taskId, e.toolUseId, e.status, e.summary);
+        this.taskView.onEvent(e);
         break;
       case "compact": {
         // Ours (the idle trigger, in its own /compact turn) or Claude Code's native one.
-        const reason = this.current?.maintenance && this.compactReason ? this.compactReason : "native";
+        const reason = this.current?.maintenance && this.compactor?.reason ? this.compactor.reason : "native";
         this.d.metric({ type: "compact", trigger: e.trigger, reason, preTokens: e.preTokens, postTokens: e.postTokens });
         this.d.audit.log("session.compact", { reason, trigger: e.trigger, preTokens: e.preTokens, postTokens: e.postTokens });
         if (typeof e.postTokens === "number") this.lastContextTokens = e.postTokens;
         this.d.runtime.update({ contextTokens: this.lastContextTokens, lastCompactAt: Date.now() });
-        if (this.current?.maintenance) this.compactReason = null;
+        if (this.current?.maintenance && this.compactor) this.compactor.reason = null;
         break;
       }
       case "result": {
-        const gate = this.allyGate;
         // The Ally's turn is over once a result consumed its message (an
         // older CLI that doesn't list them: once our turn for it ends).
-        const gateDone = !!gate && (e.consumedUuids ? e.consumedUuids.includes(gate.uuid) : !!this.current?.uuids?.includes(gate.uuid));
+        const gateDone = !!this.ally?.doneBy(e.consumedUuids, this.current?.uuids);
         this.d.runtime.update({ sessionCostUsd: e.totalCostUsd, ...(e.contextWindow ? { contextWindow: e.contextWindow } : {}) });
         // The owner's held words go before anything queued behind this turn.
-        if (gateDone) this.endAllyGate("done");
+        if (gateDone) this.ally?.end("done");
         this.endTurn(e.costUsd, e.contextTokens, e.isError ? e.text : undefined, this.consume(e.consumedUuids), e.errorCategory);
-        if (this.allyGate) this.watchGate();
+        if (this.ally?.active) this.ally.watch();
         break;
       }
       case "error":
         this.d.log(`harness error: ${e.message}`);
-        this.session?.close();
-        this.session = null;
+        this.host.close();
         this.pending.clear();
-        this.liveTools.clear();
+        this.openTools.clear();
         // The Ally's message died with the process; the owner's held words didn't.
-        if (this.allyGate) this.endAllyGate("harness error");
+        if (this.ally?.active) this.ally.end("harness error");
         if (this.current) this.endTurn(0, this.lastContextTokens, e.message);
         break;
     }
-  }
-
-  // From wechat-agent: the owner on WeChat sees progress mid-task instead of
-  // waiting for the end. Sends are chained so paragraphs arrive in order; the
-  // typing indicator comes back between them while the turn is still going.
-  private streamToWechat(turn: Turn, raw: string): void {
-    const wechat = this.d.wechat;
-    const target = turn.wechat;
-    const text = stripSkip(raw.trim());
-    if (!wechat || !target || !text) return;
-    this.wechatStreamed++;
-    this.wechatChain = this.wechatChain.then(async () => {
-      await wechat.reply(target, text).catch((err) => this.d.log(`wechat reply failed: ${err}`));
-      this.d.audit.log("wechat.reply", { chars: text.length });
-      await wechat.stopTyping?.();
-      if (this.current === turn) void wechat.startTyping?.(target);
-    });
   }
 
   // Claude Code doesn't refuse a permission mode it can't run: it starts in
@@ -509,48 +512,14 @@ export class Conversation {
 
   // ---------------- an Ally's turn: 只说话不动手 ----------------
 
-  // gateTool is the host's rule for a tool call: in an Ally's turn, only
-  // what allyGate.ts lets through; otherwise nothing to say. A subagent's call
-  // (agentId) belongs to work the owner started earlier (this turn can't start
-  // or message one: Agent and SendMessage are denied here), so it isn't gated.
-  private gateTool: ToolGate = (req) => {
-    const g = this.allyGate;
-    if (!g || req.agentId) return null;
-    if (allyTurnTool(req.toolName, req.input ?? {}, this.allyScope()).ok) return null;
-    this.d.audit.log("ally.tool.denied", { allyId: g.allyId, tool: req.toolName, via: req.via, input: truncate(JSON.stringify(req.input ?? {}), 300) });
-    return allyToolDenied(req.toolName);
-  };
+  // The host's rule for a tool call: in an Ally's turn, only what allyGate.ts lets through.
+  private gateTool(req: Parameters<AllyTurn["gateTool"]>[0]): string | null {
+    return this.ally?.gateTool(req) ?? null;
+  }
 
   private allyScope(): AllyGateScope {
     const home = this.d.paths.home;
     return { home, memoryDir: this.d.harness.memory.autoMemoryDir(home, this.d.config().env?.CLAUDE_CONFIG_DIR || undefined) };
-  }
-
-  // endAllyGate lifts the gate and sends the owner's held words, each as it
-  // would have gone (they reach the harness after the Ally's turn is over).
-  private endAllyGate(why: string): void {
-    const g = this.allyGate;
-    if (!g) return;
-    this.allyGate = null;
-    if (this.gateTimer) clearTimeout(this.gateTimer);
-    this.gateTimer = null;
-    this.d.audit.log("ally.turn.end", { allyId: g.allyId, why, held: this.held.length });
-    for (const h of this.held.splice(0)) this.sendOwner(h.text, h.origin, h.wechat, h.images, h.uuid);
-  }
-
-  // Our turn ended but the harness hasn't said it consumed the Ally's message
-  // (it queued it behind something else). The gate stays until it does; if
-  // the harness goes quiet without ever getting to it, the gate ends.
-  private watchGate(): void {
-    if (this.gateTimer) clearTimeout(this.gateTimer);
-    this.gateTimer = setTimeout(() => {
-      if (!this.allyGate) return;
-      if (this.current) return this.watchGate();
-      this.d.log("an Ally's message got no result; its turn ends here");
-      this.endAllyGate("no result");
-      this.pump();
-    }, timing.implicitQuietMs);
-    (this.gateTimer as any).unref?.();
   }
 
   /** A permission prompt or a question is waiting for the owner. */
@@ -576,11 +545,6 @@ export class Conversation {
     if (a !== null) this.setActivity(a);
   }
 
-  private setActivity(a: string): void {
-    if (a === this.activity) return;
-    this.activity = a;
-    this.d.statusChanged();
-  }
 
   // consume settles which owner messages a result answered. When the harness
   // doesn't say (older CLIs), an owner turn is taken to have answered its own
@@ -591,7 +555,8 @@ export class Conversation {
   }
 
   private endTurn(costUsd: number, contextTokens: number, error?: string, answered: (OwnerMessage & { text?: string })[] = [], errorCategory?: string): void {
-    const { chat, router, wechat, audit } = this.d;
+    const { router } = this.d;
+    const chat = this.out;
     const turn = this.current;
     this.current = null;
     this.activity = "";
@@ -599,16 +564,16 @@ export class Conversation {
     // A stream cut off by an error/kill still gets a final message, so clients
     // don't keep a half-written bubble "typing" forever.
     const cut = this.stream.take();
-    if (cut && cut.text.trim()) chat.add({ id: cut.id, role: "assistant", kind: "text", text: cut.text, channel: turn?.origin ?? "system" });
+    if (cut && cut.text.trim()) chat.message({ id: cut.id, role: "assistant", kind: "text", text: cut.text, channel: turn?.origin ?? "system" });
+    this.mainTools.clear();
     this.openTools.clear();
-    this.liveTools.clear();
     this.d.usage.add("mainUsd", costUsd);
     if (turn?.maintenance) {
       // A /compact turn: its own result says nothing about the context (the
       // compact boundary did). If no boundary came, say so in the audit.
-      if (this.compactReason) {
-        this.d.audit.log("session.compact.failed", { reason: this.compactReason, error: error ?? "no compact boundary" });
-        this.compactReason = null;
+      if (this.compactor?.reason) {
+        this.d.audit.log("session.compact.failed", { reason: this.compactor.reason, error: error ?? "no compact boundary" });
+        this.compactor.reason = null;
       }
       this.d.statusChanged();
       if (this.pending.size === 0) this.pump();
@@ -617,13 +582,13 @@ export class Conversation {
     }
     this.lastContextTokens = contextTokens;
     this.d.runtime.update({ contextTokens, lastTurnAt: Date.now() });
-    this.armIdleCompact();
-    this.d.tasks.finalizePending();
+    this.compactor?.arm();
+    this.taskView.turnEnded();
     if (turn) {
       this.d.metric({ type: "turn", origin: turn.origin, proactive: turn.proactive, costUsd, contextTokens, error });
       // The login ran out: said once for everything (auth.ts), not after each turn.
       const noLogin = !!error && this.d.harness.auth.isFailure(error, errorCategory);
-      if (error && !noLogin) chat.add({ role: "system", kind: "notice", text: friendlyError(error, errorCategory), channel: "system" });
+      if (error && !noLogin) chat.message({ role: "system", kind: "notice", text: friendlyError(error, errorCategory), channel: "system" });
       if (noLogin) {
         const owner = answered.flatMap((m) => (m.text ? [m.text] : []));
         this.d.onAuth?.({ text: owner.length ? owner.join("\n") : turn.label ? `${turn.label}: ${turn.text}` : turn.text, ...(turn.watchId ? { watchId: turn.watchId } : {}) });
@@ -634,26 +599,18 @@ export class Conversation {
       // show it as a normal reply (no push), not as something it brought up.
       const ownerFolded = turn.proactive && answered.length > 0;
       if (ownerFolded) {
-        if (shown) chat.add({ role: "assistant", kind: "text", text: shown, channel: answered[0]!.origin });
+        if (shown) chat.message({ role: "assistant", kind: "text", text: shown, channel: answered[0]!.origin });
       } else if (turn.proactive) {
         if (shown) {
           // A schedule goal's output (晨报 and the like) shows as a card titled by the goal.
           const card = turn.watchId && turn.origin === "schedule" ? { card: { title: turn.label ?? "", goalId: turn.watchId } } : {};
-          const msg = chat.add({ role: "assistant", kind: "text", text: shown, channel: turn.origin, proactive: true, ...card });
+          const msg = chat.message({ role: "assistant", kind: "text", text: shown, channel: turn.origin, proactive: true, ...card });
           void router.proactive(msg);
         } else {
           this.d.metric({ type: "skip", origin: turn.origin, label: turn.label });
         }
       }
-      const wechatTarget = answered.find((a) => a.wechat)?.wechat ?? (turn.proactive ? undefined : turn.wechat);
-      // Already streamed paragraph by paragraph? Then nothing more to send.
-      if (wechatTarget && wechat && shown && !this.wechatStreamed) {
-        const text = shown;
-        this.wechatChain = this.wechatChain.then(() => wechat.reply(wechatTarget, text).catch((err) => this.d.log(`wechat reply failed: ${err}`)));
-        audit.log("wechat.reply", { chars: shown.length });
-      }
-      if (wechat) this.wechatChain = this.wechatChain.then(() => wechat.stopTyping?.());
-      this.wechatStreamed = 0;
+      this.wechat?.turnEnded(answered.find((a) => a.wechat)?.wechat ?? (turn.proactive ? undefined : turn.wechat), shown);
     }
     this.d.statusChanged();
     if (this.pending.size === 0) this.pump();
@@ -670,58 +627,21 @@ export class Conversation {
   // background agent or handoff in flight, nobody waiting on the owner, and the
   // owner quiet for a few minutes. Compaction never cuts into work.
   cleanBreak(now = Date.now()): boolean {
-    if (!this.quiet || this.compactReason) return false;
+    if (!this.quiet || this.compactor?.reason) return false;
     if (this.d.tasks.live().length || this.waitingOnOwner() || this.d.handoffsInFlight?.()) return false;
     return now - this.d.chat.lastUserActivity() >= COMPACT_QUIET_MS;
   }
 
-  // Idle compaction, mirroring Claude Code's own (2.1.299): once the session
-  // has been idle most of the prompt cache's one-hour life, a big context is
-  // compacted before the cache expires, so the next message doesn't re-read
-  // the whole thing at full price. Claude Code's version is server-gated and
-  // terminal-only; SDK sessions don't get it. The timer starts when a turn
-  // ends. (Size-based compaction is Claude Code's: session.compactWindowTokens.)
-  private armIdleCompact(): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    this.idleTimer = null;
-    const minutes = this.d.config().session.idleCompactMinutes;
-    this.idleStamp = Date.now();
-    if (!(minutes > 0)) return;
-    const stamp = this.idleStamp;
-    this.idleTimer = setTimeout(() => this.idleCompactFire(stamp), minutes * 60_000);
-    (this.idleTimer as any).unref?.();
-  }
-
   /** Cancel the idle timer (the host is shutting down). */
   stopIdleCompact(): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    this.idleTimer = null;
-  }
-
-  private idleCompactFire(stamp: number): void {
-    this.idleTimer = null;
-    if (this.maybeIdleCompact(stamp) === "later") {
-      this.idleTimer = setTimeout(() => this.idleCompactFire(stamp), COMPACT_RETRY_MS);
-      (this.idleTimer as any).unref?.();
-    }
+    this.compactor?.stop();
   }
 
   // Compacts (the harness' native /compact, no instructions) if the idle
   // stretch that began at `stamp` is still going, the context is big enough and
   // this is a clean break. "later": still idle but not a clean break yet.
-  maybeIdleCompact(stamp = this.idleStamp, now = Date.now()): "started" | "later" | null {
-    const s = this.d.config().session;
-    if (!(s.idleCompactMinutes > 0) || !stamp || stamp !== this.idleStamp) return null; // a newer turn began
-    if (this.idleFiredFor === stamp) return null; // once per idle stretch
-    if (now - stamp < s.idleCompactMinutes * 60_000) return null;
-    const tokens = this.lastContextTokens;
-    if (tokens < s.idleCompactMinTokens) return null;
-    if (!this.cleanBreak(now)) return "later";
-    this.idleFiredFor = stamp;
-    this.compactReason = "idle";
-    this.d.audit.log("session.compact.start", { reason: "idle", tokens });
-    this.enqueue({ text: "/compact", origin: "system", proactive: true, maintenance: true, label: "compact" });
-    return "started";
+  maybeIdleCompact(stamp?: number, now?: number): "started" | "later" | null {
+    return this.compactor?.maybe(stamp, now) ?? null;
   }
 
   // ---------------- the process stays up ----------------
@@ -732,12 +652,11 @@ export class Conversation {
   // closing used to do, kept for the tests that resume a closed session.
 
   onIdle(): void {
-    if (this.current || this.queue.length || this.allyGate || this.held.length || !this.session) return;
+    if (this.current || this.queue.length || this.allyInFlight || !this.host.proc) return;
     // Close the CLI process; the next message resumes the same conversation.
     // (Keeping the context in shape is the harness' job: it compacts on its own.)
     if (!this.d.tasks.live().length && !this.waitingOnOwner()) {
-      this.session.close();
-      this.session = null;
+      this.host.close();
       this.d.metric({ type: "idle_close", contextTokens: this.lastContextTokens });
     }
   }
@@ -757,7 +676,7 @@ export class Conversation {
 
   /** Why the conversation can't be taken back now (a turn is on), or null. */
   rewindBlocker(): string | null {
-    if (this.current || this.pending.size || this.allyGate || this.held.length || this.d.tasks.live().length) return rewindBusy();
+    if (this.current || this.pending.size || this.allyInFlight || this.d.tasks.live().length) return rewindBusy();
     return null;
   }
 
@@ -781,8 +700,7 @@ export class Conversation {
   // `written`: the new session is already on disk (a copy made before a
   // compaction, docs/rewind-prd.md §4.1): it's simply resumed.
   rewindTo(r: PendingRewind & { to: string; written?: boolean }): void {
-    this.session?.close();
-    this.session = null;
+    this.host.close();
     this.lastContextTokens = 0;
     this.d.runtime.update({ sessionId: r.to, rewind: r.written ? undefined : { from: r.from, at: r.at, cut: r.cut }, contextTokens: 0 });
     this.d.statusChanged();
@@ -793,9 +711,8 @@ export class Conversation {
    * on the same session, so it signs in afresh. False while a turn is on.
    */
   restartIdle(): boolean {
-    if (!this.session || this.current || this.pending.size || this.allyGate) return false;
-    this.session.close();
-    this.session = null;
+    if (!this.host.proc || this.current || this.pending.size || this.ally?.active) return false;
+    this.host.close();
     this.ensureSession();
     return true;
   }
@@ -809,10 +726,9 @@ export class Conversation {
       get name() {
         return h.name();
       },
-      busy: () => !!this.session && !this.session.closed && (!!this.current || this.pending.size > 0),
+      busy: () => this.host.alive && (!!this.current || this.pending.size > 0),
       waiting: () => this.waitingOnOwner(),
-      openTools: () => [...this.liveTools.values()],
-      lastActivity: () => Math.max(this.lastEventAt, this.session?.lastActivity ?? 0),
+      ...this.stallSigns(),
       pid: () => h.pid(),
       progress: () => h.progress(),
       recover: () => this.recoverStall(h),
@@ -828,9 +744,8 @@ export class Conversation {
   async recoverStall(h: Pick<MainStallHooks, "pid" | "took" | "kill">): Promise<StallRecovery> {
     const pid = h.pid();
     const turn = this.current;
-    const gate = this.allyGate;
-    const session = this.session;
-    this.session = null;
+    const gate = !!this.ally?.active;
+    const session = this.host.detach();
     session?.close();
     await h.kill(pid);
     // Nothing writes the transcript now: what's in it was taken.
@@ -838,12 +753,7 @@ export class Conversation {
     const untaken = split.untaken;
     const taken = split.taken.map(([, p]) => p);
     this.pending.clear();
-    if (gate) {
-      this.allyGate = null;
-      if (this.gateTimer) clearTimeout(this.gateTimer);
-      this.gateTimer = null;
-      this.d.audit.log("ally.turn.end", { allyId: gate.allyId, why: "stalled", held: this.held.length });
-    }
+    this.ally?.stalled();
     this.d.log(`main session stalled; resuming it (${untaken.length} message(s) to send again)`);
     // The turn it was in (or the one it had just taken the owner's words for) goes on first.
     const resumeAs: Pick<Turn, "origin" | "proactive" | "wechat" | "watchId"> | null =
@@ -874,7 +784,7 @@ export class Conversation {
       for (const [uuid, p] of untaken) this.ensureSession().send(p.text, uuid, p.images);
     }
     // The owner's words held for the Ally's turn go now, each as it would have.
-    for (const m of this.held.splice(0)) this.sendOwner(m.text, m.origin, m.wechat, m.images, m.uuid);
+    for (const m of this.ally?.takeHeld() ?? []) this.sendOwner(m.text, m.origin, m.wechat, m.images, m.uuid);
     this.pump();
     this.d.statusChanged();
     return { resent: untaken.length, continued: !!resumeAs };
@@ -888,41 +798,35 @@ export class Conversation {
     this.d.audit.log("stop", { by });
     this.queue = [];
     // As with words already sent: stopped, not carried over.
-    if (this.allyGate) {
-      this.held = [];
-      this.allyGate = null;
-      if (this.gateTimer) clearTimeout(this.gateTimer);
-    }
+    this.ally?.stop();
     this.d.approvals.denyAll(`stop:${by}`);
     this.d.questions.cancelAll(`stop:${by}`);
     for (const t of this.d.tasks.running()) {
-      if (t.sdkTaskId) void this.session?.stopTask(t.sdkTaskId).catch(() => {});
+      if (t.sdkTaskId) void this.host.proc?.stopTask(t.sdkTaskId).catch(() => {});
       this.d.tasks.markStopped(t.id);
     }
-    void this.session?.interrupt();
+    void this.host.proc?.interrupt();
     // A tool that never returns can't be interrupted: end the turn here and
     // let the next message start a fresh process (same conversation, resumed).
     if (this.current) {
       this.pending.clear();
       this.endTurn(0, this.lastContextTokens);
-      this.session?.close();
-      this.session = null;
+      this.host.close();
     }
     this.d.statusChanged();
   }
 
   async stopTask(t: Task): Promise<void> {
     if (t.sdkTaskId) {
-      await this.session?.stopTask(t.sdkTaskId).catch(() => {});
+      await this.host.proc?.stopTask(t.sdkTaskId).catch(() => {});
     } else if (t.toolUseId && this.current) {
       // A foreground subagent runs inside the current turn: stopping it means
       // interrupting that turn.
-      await this.session?.interrupt();
+      await this.host.proc?.interrupt();
     }
   }
 
   close(): void {
-    this.session?.close();
-    this.session = null;
+    this.host.close();
   }
 }

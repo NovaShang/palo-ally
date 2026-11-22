@@ -7,7 +7,7 @@ import { firstLine } from "./ccSessions.ts";
 import { ACTIVITY, describeActivity, friendlyError } from "./copy.ts";
 import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type Harness, type RewindChain, type SessionRef, type DeliveryToolHandlers, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
 import type { MediaStore } from "./media.ts";
-import { type PalLaunch, isHelperFailure, makeSpawner } from "./palLauncher.ts";
+import { type PalLaunch, makeSpawner } from "./palLauncher.ts";
 import { CARD_TOOLS, type PalMapOptions, cardKey } from "./palHistory.ts";
 import type { QuestionManager } from "./questions.ts";
 import { type PendingRewind, rewindBusy, rewindNoFiles, rewindNotFound } from "./rewind.ts";
@@ -15,8 +15,11 @@ import type { StallRecovery, StallTarget } from "./stallWatch.ts";
 import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
 import { stripTldrMarker } from "./tldr.ts";
 import { newId, sleep, truncate } from "./util.ts";
-import { StreamAssembler } from "./agent/streamAssembler.ts";
-import { TurnLedger } from "./agent/turnLedger.ts";
+import { AgentSession } from "./agent/session.ts";
+import { AGENT_FLAGS } from "./agent/flags.ts";
+import { TranscriptSink } from "./agent/outputSink.ts";
+import { HeldElsewhere, type Holder, type OpenContext, ProcessHost } from "./agent/processHost.ts";
+import { type PalTask, type PastPalTask, RecordTasks } from "./agent/taskProjection.ts";
 import { PAL_MODES, contextWindowFor, contextWindowOf } from "./harness/claude/settings.ts";
 import { peerWrap, startError } from "./harness/claude/process.ts";
 
@@ -70,31 +73,9 @@ export interface PalRecord {
   lastCompactAt?: number; // when it last compacted
 }
 
-/** A background task or subagent of a session (pals.detail.tasks). */
-export interface PalTask {
-  id: string;
-  title: string;
-  kind: "subagent" | "bg";
-  startedAt: number;
-  summary?: string;
-}
+export type { PalTask, PastPalTask };
 
-/** One of its tasks that has ended (pals.detail.pastTasks). */
-export interface PastPalTask extends PalTask {
-  endedAt: number;
-  status: "done" | "failed" | "stopped";
-}
-
-const PAST_TASKS = 30;
-
-/** Another process holding a session's transcript. */
-export interface Holder {
-  pid: number;
-  bg: boolean; // Claude Code's background service runs it
-  shortId?: string;
-}
-
-export class HeldElsewhere extends Error {}
+export { HeldElsewhere, type Holder };
 
 export interface PalSessionDeps {
   driver: HarnessDriver;
@@ -140,44 +121,27 @@ export interface PalSessionDeps {
   log: (s: string) => void;
 }
 
-const MAX_FAILURES = 5; // restarts within FAILURE_WINDOW_MS before it stays stopped
-const FAILURE_WINDOW_MS = 10 * 60_000;
 const STOP_SETTLE_MS = 250; // a stopped turn not ended by Claude Code by then is ended here
 
 /** What a Pal is told after the watchdog restarted it mid-turn. */
 export const stallContinue = (): string => tr("stall.continue");
 
-export class PalSession {
-  private proc: MainSession | null = null;
-  private up = false; // the process answered and is ours to talk to
-  private starting: Promise<void> | null = null;
-  private restartTimer: ReturnType<typeof setTimeout> | null = null;
-  private queued = false; // the host will start it in a moment (its own start)
-  private closing = false;
-  private exited: Promise<void> = Promise.resolve();
-  private stderrTail = "";
-  private failures: number[] = [];
+// An agent is an AgentSession with AGENT_FLAGS: its process started awaited,
+// brought back with backoff, never two writers, put to sleep; its words out
+// as events, its history its transcript, its tasks in its record.
+export class PalSession extends AgentSession<{ text: string; from?: string; images?: ImageInput[] }, RecordTasks, TranscriptSink> {
   private turnOpen = false;
   private workSince = 0; // when it last went from idle to busy: how long the turn that ends ran
-  private pending = new TurnLedger<{ text: string; from?: string; images?: ImageInput[] }>(); // the owner's words not yet taken, by uuid
-  private openTools = new Map<string, string>(); // tool calls without a result yet (subagents' too): id → name
-  private turnTools = new Set<string>(); // …those of its own turn: none outlives the turn's end
-  private lastEventAt = 0;
+  private turnTools = new Set<string>(); // its own turn's open tool calls: none outlives the turn's end
   private interrupted = false;
   private windingDown = false; // ended here after 停止: what's left of that turn doesn't make it busy again
   private turnEndWaiters: (() => void)[] = [];
-  private activity = "";
-  private stream = new StreamAssembler(); // the reply being streamed (its id the API message's)
   private replyTexts = new Map<string, string>(); // a reply's text so far, by its id (several blocks join)
   private emitted = new Set<string>(); // ids already sent to the app
   private calls: { name: string; id: string }[] = []; // its card tools' calls (tool_use ids) waiting for their handler
   private follower: { start(): void; poke(): void; stop(): void } | null = null;
   // A fork's entries copied from the session it was forked from: history, not news.
   private inherited: Set<string> | null = null;
-  private sleeping: Promise<void> | null = null; // being put to sleep: its process is ending
-  private upAt = 0;
-  private bgTasks = new Set<string>(); // its background tasks still running (a subagent in the background)
-  private tasks = new Map<string, PalTask & { toolUseId?: string; backgrounded: boolean }>(); // subagents and background tasks, by the harness' task id
   private compacting = false; // our /compact is going: its own result says nothing about the context
   private sendChain: Promise<unknown> = Promise.resolve(); // words go in one after another, in order
   private queuedSends = 0; // words waiting to go in (it's being woken for them)
@@ -195,6 +159,32 @@ export class PalSession {
     readonly rec: PalRecord,
     private d: PalSessionDeps,
   ) {
+    // (only closures here: `this` is there once super() has returned)
+    super(AGENT_FLAGS, {
+      record: rec,
+      out: new TranscriptSink(rec.id, { emit: (ev, data) => d.emit(ev, data), now: () => d.now() }),
+      tasks: new RecordTasks(rec, { save: () => d.save(), now: () => d.now() }),
+      process: {
+      name: () => this.rec.name,
+      save: () => this.d.save(),
+      changed: () => this.d.changed(),
+      log: (s) => this.d.log(s),
+      now: () => this.d.now(),
+      open: (ctx) => this.open(ctx),
+      onUp: (o) => this.onUp(o),
+      onDown: (why, o) => this.down(why, o.closing),
+      onStopped: () => this.d.onStopped(this),
+      holders: (own) => this.d.holders(this.rec.sessionId, own),
+      heldMessage: (pids) => tr("pals.heldElsewhere", { name: this.rec.name, pids: pids.join("、") }),
+      beforeStart: () => this.d.beforeStart?.(this) ?? Promise.resolve(),
+      launch: () => this.d.launch(),
+      helperFailed: (why) => this.d.helperFailed(why),
+      startError: (why) => this.d.harness.settings.startError(why),
+      pidAlive: (pid) => this.d.pidAlive(pid),
+      kill: (pid, sig) => this.d.kill(pid, sig),
+      timing: d.timing,
+      },
+    });
     this.updatedAt = rec.lastUsedAt;
     const history = this.d.harness.history;
     const tail = history.tail(this.ref, 512 * 1024);
@@ -220,11 +210,15 @@ export class PalSession {
 
   /** Claude Code's pid while it runs. */
   get pid(): number | undefined {
-    return this.up || this.starting ? this.rec.pid : undefined;
+    return this.host.pid;
   }
 
   get running(): boolean {
-    return this.up && !!this.proc && !this.proc.closed;
+    return this.host.running;
+  }
+
+  private get proc(): MainSession | null {
+    return this.host.proc;
   }
 
   /** How long the work that just ended ran: from when it went busy (0 if never). */
@@ -238,12 +232,13 @@ export class PalSession {
 
   /** Put to sleep: no process (its record is kept); being put to sleep counts. */
   get asleep(): boolean {
-    return this.rec.status === "asleep" && !this.up && !this.starting;
+    return this.rec.status === "asleep" && !this.host.up && !this.host.starting;
   }
 
   /** It has a process, or one is coming up: what counts towards the five awake. */
   get awake(): boolean {
-    return !this.asleep && !this.rec.stoppedFor && (this.up || !!this.starting || !!this.restartTimer || this.queued);
+    const h = this.host;
+    return !this.asleep && !this.rec.stoppedFor && (h.up || !!h.starting || h.restarting || h.queued);
   }
 
   /**
@@ -252,10 +247,10 @@ export class PalSession {
    * open. null: it isn't idle (or isn't running).
    */
   idleSince(): number | null {
-    if (!this.running || this.starting || this.sleeping) return null;
-    if (this.turnOpen || this.windingDown || this.pending.size || this.queuedSends || this.openTools.size || this.bgTasks.size) return null;
+    if (!this.running || this.host.starting || this.host.sleeping) return null;
+    if (this.turnOpen || this.windingDown || this.pending.size || this.queuedSends || this.openTools.size || this.taskView.background) return null;
     if (this.pendingCards() > 0) return null;
-    return Math.max(this.lastEventAt, this.rec.lastUsedAt, this.upAt);
+    return Math.max(this.lastEventAt, this.rec.lastUsedAt, this.host.upAt);
   }
 
   // ---------------- the list ----------------
@@ -274,7 +269,8 @@ export class PalSession {
 
   status(): PalStatus {
     if (this.rec.stoppedFor) return "stopped";
-    if (!this.up) return this.starting || this.restartTimer || this.queued ? "starting" : this.rec.status === "asleep" ? "asleep" : "stopped";
+    const h = this.host;
+    if (!h.up) return h.starting || h.restarting || h.queued ? "starting" : this.rec.status === "asleep" ? "asleep" : "stopped";
     if (this.pendingCards() > 0) return "waiting";
     return this.busy ? "busy" : "idle";
   }
@@ -322,7 +318,7 @@ export class PalSession {
       ...(this.effort() ? { effort: this.effort() } : {}),
       ...(this.mode() ? { permissionMode: this.mode() } : {}),
       ...(this.contextPct() !== undefined ? { contextPct: this.contextPct() } : {}),
-      ...(this.runningTasks().length ? { tasksRunning: this.runningTasks().length } : {}),
+      ...(this.taskView.running().length ? { tasksRunning: this.taskView.running().length } : {}),
       ...(typeof this.rec.lastWakeUsd === "number" ? { lastWakeUsd: this.rec.lastWakeUsd } : {}),
       createdBy: this.rec.createdBy,
       updatedAt: Math.round(this.updatedAt),
@@ -356,28 +352,6 @@ export class PalSession {
   }
 
   /** What pals.detail shows besides the Pal itself. */
-  /**
-   * Its tasks as the owner sees them: subagents, and shell commands running
-   * in the background. A foreground command is a step of the turn, not a task
-   * (Claude Code reports every Bash call as one), until it is backgrounded.
-   */
-  private runningTasks() {
-    return [...this.tasks.values()].filter((t) => t.kind === "subagent" || t.backgrounded);
-  }
-
-  /** A task is over: it leaves the running ones and goes on top of its history. False: not one of them. */
-  private endTask(id: string, status: PastPalTask["status"], summary?: string): boolean {
-    const t = this.tasks.get(id);
-    if (!t) return false;
-    this.tasks.delete(id);
-    if (t.kind !== "subagent" && !t.backgrounded) return false; // a foreground command: no history
-    const words = (summary && truncate(summary, 200)) || t.summary;
-    const past: PastPalTask = { id: t.id, title: t.title, kind: t.kind, startedAt: t.startedAt, endedAt: this.d.now(), status, ...(words ? { summary: words } : {}) };
-    this.rec.pastTasks = [past, ...(this.rec.pastTasks ?? []).filter((p) => p.id !== id)].slice(0, PAST_TASKS);
-    this.d.save();
-    return true;
-  }
-
   detailInfo(): {
     contextTokens?: number;
     contextWindow: number;
@@ -405,7 +379,7 @@ export class PalSession {
       permissionMode: chosen,
       ...(running ? { runningMode: running } : {}),
       permissionModes: modes,
-      tasks: this.runningTasks().map(({ id, title, kind, startedAt, summary }) => ({ id, title, kind, startedAt, ...(summary ? { summary } : {}) })),
+      tasks: this.taskView.wire(),
       pastTasks: this.rec.pastTasks ?? [],
       ...(typeof this.rec.lastCompactAt === "number" ? { lastCompactAt: this.rec.lastCompactAt } : {}),
       costTotalUsd: this.rec.costTotalUsd ?? 0,
@@ -463,7 +437,7 @@ export class PalSession {
 
   /** Stops a subagent or background task. */
   async stopTask(taskId: string): Promise<void> {
-    if (!this.tasks.has(taskId)) throw new Error(tr("pals.noTask"));
+    if (!this.taskView.has(taskId)) throw new Error(tr("pals.noTask"));
     const proc = this.proc;
     if (!proc || !this.running) throw new Error(tr("pals.cantStopTask"));
     try {
@@ -482,61 +456,17 @@ export class PalSession {
 
   /** The host starts it shortly (at its own start, a few seconds apart): it shows as starting. */
   queueStart(): void {
-    this.queued = true;
+    this.host.queueStart();
   }
 
   /** Starts (or resumes) its process; resolves once Claude Code is up. */
   start(): Promise<void> {
-    // Being put to sleep: once its process is gone, it's woken.
-    if (this.sleeping) return this.sleeping.then(() => this.start());
-    this.queued = false;
-    if (this.running) return Promise.resolve();
-    if (this.starting) return this.starting;
-    if (this.restartTimer) clearTimeout(this.restartTimer);
-    this.restartTimer = null;
-    this.closing = false;
-    this.starting = this.doStart().finally(() => {
-      this.starting = null;
-      this.d.changed();
-    });
-    this.d.changed();
-    return this.starting;
+    return this.host.start();
   }
 
-  private async doStart(retry = false): Promise<void> {
+  // Its process, as the host starts it (ProcessHost: holders checked, through PaloAlly Helper or direct).
+  private open(ctx: OpenContext): { proc: MainSession; how?: string } {
     const { rec } = this;
-    // Never two writers: a process of ours the host lost track of (it died
-    // and left Claude Code running) is stopped; anyone else's means wait.
-    let holders = await this.d.holders(rec.sessionId);
-    const orphans = holders.filter((h) => h.pid === rec.pid);
-    for (const o of orphans) {
-      this.d.log(`pal ${rec.name}: stopping its old process ${o.pid}`);
-      await this.killPid(o.pid);
-    }
-    if (orphans.length) holders = await this.d.holders(rec.sessionId);
-    if (holders.length) throw new HeldElsewhere(tr("pals.heldElsewhere", { name: rec.name, pids: holders.map((h) => h.pid).join("、") }));
-    if (this.closing) throw new Error(tr("pals.closed"));
-    // Renamed while it had no process (in a terminal, say): it starts under that name.
-    await this.d.beforeStart?.(this).catch(() => {});
-
-    const launch = await this.d.launch();
-    let exitDone!: () => void;
-    const exited = new Promise<void>((r) => (exitDone = r));
-    this.exited = Promise.resolve(); // nothing to wait for until a process is started
-    this.stderrTail = "";
-    rec.pid = undefined;
-    const spawner = makeSpawner(launch.helper, {
-      onPid: (pid) => {
-        rec.pid = pid;
-        this.d.save();
-      },
-      onExit: () => exitDone(),
-      stderr: (s) => (this.stderrTail = (this.stderrTail + s).slice(-2000)),
-    });
-    const spawn: typeof spawner = (req) => {
-      this.exited = exited;
-      return spawner(req);
-    };
     // A Pal the assistant opened has no transcript before its first message.
     // One gone back to an earlier message is forked from its old session
     // until Claude Code has written the new one (docs/rewind-prd.md §4.1).
@@ -555,7 +485,7 @@ export class PalSession {
       ...(resume ? { resumeSessionId: rec.sessionId } : { sessionId: rec.sessionId }),
       ...(fork?.at ? { fork: { fromSessionId: fork.from, at: fork.at } } : {}),
       // Its files can go back to how they were before any of the owner's messages from now on.
-      fileCheckpointing: true,
+      fileCheckpointing: this.flags.fileCheckpoints,
       model: rec.model,
       ...(effort ? { effort } : {}),
       // so a turn's cost is its own, not the session's running total
@@ -563,8 +493,8 @@ export class PalSession {
       permissionMode: rec.permissionMode,
       appendSystemPrompt: this.d.appendPrompt(),
       name: (this.spawnedAs = rec.name),
-      spawn,
-      baseEnv: launch.env,
+      spawn: ctx.spawn,
+      baseEnv: ctx.baseEnv,
       ownerOrigin: true,
       canUseTool: (req) => this.canUseTool(req),
       paloSend: async (text) => this.d.toPalo(this, text),
@@ -572,116 +502,26 @@ export class PalSession {
       onEvent: (e) => {
         if (proc === this.proc) this.onEvent(e);
       },
-      onExit: (err) => this.onExit(proc, err),
-      stderr: (s) => (this.stderrTail = (this.stderrTail + s).slice(-2000)),
+      onExit: ctx.onExit,
+      stderr: ctx.stderr,
     });
-    this.proc = proc;
-    this.up = false;
     this.reportedMode = undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        proc.ready(),
-        new Promise<never>((_, rej) => (timer = setTimeout(() => rej(new Error(tr("pals.startTimeout"))), this.d.timing.readyMs))),
-      ]);
-    } catch (e) {
-      clearTimeout(timer);
-      this.proc = null;
-      proc.close();
-      await this.waitExit();
-      const why = `${e instanceof Error ? e.message : e}\n${this.stderrTail}`;
-      if (launch.helper && !retry && isHelperFailure(why)) {
-        this.d.helperFailed(firstLine(why.slice(why.indexOf("PaloAlly Helper:"))));
-        return this.doStart(true);
-      }
-      throw new Error(this.d.harness.settings.startError(why));
-    }
-    clearTimeout(timer);
-    if (this.closing || proc !== this.proc) {
-      proc.close();
-      throw new Error(tr("pals.closed"));
-    }
-    this.up = true;
-    this.upAt = this.d.now();
-    this.priorTotal = rec.costTotalUsd;
+    return { proc, how: resume ? "resumed" : fork ? "forked" : undefined };
+  }
+
+  // Its process is up: a new running total, and (woken) the first turn's cost is what waking cost.
+  private onUp(o: { woke: boolean }): void {
+    this.priorTotal = this.rec.costTotalUsd;
     this.firstResult = true;
-    const woke = rec.status === "asleep";
-    if (woke) {
-      delete rec.status;
-      this.wakeCost = true;
-      this.d.save();
-    }
+    if (o.woke) this.wakeCost = true;
     this.follower?.stop();
     this.follower = this.d.harness.history.follow(this.ref, (e) => this.onTranscript(e));
     this.follower.start();
-    if (woke) this.d.onWoke?.(this);
-    this.d.log(`pal ${rec.name}: up (pid ${rec.pid ?? "?"}, ${launch.helper ? "through PaloAlly Helper" : "direct"}${resume ? ", resumed" : fork ? ", forked" : ""}${woke ? ", woken" : ""})`);
-  }
-
-  private async waitExit(): Promise<void> {
-    await Promise.race([this.exited, sleep(this.d.timing.exitWaitMs)]);
-    const pid = this.rec.pid;
-    if (pid && this.d.pidAlive(pid)) await this.killPid(pid);
-  }
-
-  private async killPid(pid: number): Promise<void> {
-    try {
-      this.d.kill(pid, "SIGTERM");
-    } catch {
-      return;
-    }
-    for (let i = 0; i < 30 && this.d.pidAlive(pid); i++) await sleep(100);
-    if (this.d.pidAlive(pid)) {
-      try {
-        this.d.kill(pid, "SIGKILL");
-      } catch {
-        /* gone */
-      }
-      for (let i = 0; i < 20 && this.d.pidAlive(pid); i++) await sleep(100);
-    }
-  }
-
-  // Its process ended without being asked to: back it comes (always on),
-  // unless it keeps failing.
-  private onExit(proc: MainSession, err?: string): void {
-    if (proc !== this.proc || this.closing || !this.up) return;
-    this.d.log(`pal ${this.rec.name}: its process ended (${err ?? "no error"})`);
-    this.down(tr("pals.diedUnexpected"));
-    const now = this.d.now();
-    this.failures = [...this.failures.filter((t) => now - t < FAILURE_WINDOW_MS), now];
-    if (this.failures.length > MAX_FAILURES) {
-      this.stopFor("failed", tr("pals.failedRepeatedly", { n: MAX_FAILURES, why: this.d.harness.settings.startError(err ?? this.stderrTail) }));
-      return;
-    }
-    const delays = this.d.timing.restartMs;
-    const delay = delays[Math.min(this.failures.length - 1, delays.length - 1)] ?? 2_000;
-    this.restartTimer = setTimeout(() => {
-      this.restartTimer = null;
-      this.start().catch((e) => {
-        if (e instanceof HeldElsewhere) this.stopFor("elsewhere", e.message);
-        else this.onExitRetry(e);
-      });
-    }, delay);
-    this.d.changed();
-  }
-
-  private onExitRetry(e: unknown): void {
-    // Counted like an exit: try again later, give up after a few.
-    const now = this.d.now();
-    this.failures = [...this.failures.filter((t) => now - t < FAILURE_WINDOW_MS), now];
-    if (this.failures.length > MAX_FAILURES) return this.stopFor("failed", this.d.harness.settings.startError(e instanceof Error ? e.message : String(e)));
-    const delays = this.d.timing.restartMs;
-    this.restartTimer = setTimeout(() => {
-      this.restartTimer = null;
-      this.start().catch((err) => (err instanceof HeldElsewhere ? this.stopFor("elsewhere", err.message) : this.onExitRetry(err)));
-    }, delays[Math.min(this.failures.length - 1, delays.length - 1)] ?? 2_000);
-    this.d.changed();
+    if (o.woke) this.d.onWoke?.(this);
   }
 
   // Not running any more: whatever was streaming is closed, its cards go.
-  private down(why: string): void {
-    this.up = false;
-    this.proc = null;
+  private down(why: string, closing: boolean): void {
     this.reportedMode = undefined;
     this.follower?.stop();
     this.follower = null;
@@ -691,16 +531,15 @@ export class PalSession {
     this.pending.clear();
     this.openTools.clear();
     this.turnTools.clear();
-    this.bgTasks.clear();
     // what was still running ends with its process
-    for (const id of [...this.tasks.keys()]) this.endTask(id, "stopped");
+    this.taskView.processEnded();
     this.compacting = false;
     this.wakeCost = false;
     this.activity = "";
     this.windingDown = false;
     for (const w of this.turnEndWaiters.splice(0)) w();
     this.dropCards(why);
-    if (wasBusy && !this.closing) this.notice(tr("pals.interrupted"));
+    if (wasBusy && !closing) this.notice(tr("pals.interrupted"));
   }
 
   private dropCards(by: string): void {
@@ -710,30 +549,17 @@ export class PalSession {
 
   /** Stopped for good, with a reason the list shows; the owner's words bring it back. */
   stopFor(why: NonNullable<PalRecord["stoppedFor"]>, note: string): void {
-    this.rec.stoppedFor = why;
-    this.rec.note = note;
-    this.d.save();
-    void this.shutdown().then(() => {
-      this.d.changed();
-      this.d.onStopped(this);
-    });
+    this.host.stopFor(why, note);
   }
 
   /** Stopped without a process to end (it never came up). */
   markStopped(why: NonNullable<PalRecord["stoppedFor"]>, note: string): void {
-    this.rec.stoppedFor = why;
-    this.rec.note = note;
-    this.d.save();
-    this.d.changed();
+    this.host.markStopped(why, note);
   }
 
   /** Clears a stop (the owner spoke to it, or a new day for its spending). */
   clearStop(): void {
-    if (!this.rec.stoppedFor) return;
-    this.rec.stoppedFor = undefined;
-    this.rec.note = undefined;
-    this.failures = [];
-    this.d.save();
+    this.host.clearStop();
   }
 
   /**
@@ -741,36 +567,17 @@ export class PalSession {
    * marked asleep (also across the host's restarts); the next start wakes it.
    */
   sleep(): Promise<void> {
-    if (this.sleeping) return this.sleeping;
-    this.rec.status = "asleep";
-    this.d.save();
-    this.sleeping = this.shutdown().finally(() => {
-      this.sleeping = null;
-      this.d.changed();
-    });
-    this.d.changed();
-    return this.sleeping;
+    return this.host.sleep();
   }
 
   /** Marked asleep without a process to end (the host's start, past five awake). */
   markAsleep(): void {
-    this.rec.status = "asleep";
-    this.d.save();
+    this.host.markAsleep();
   }
 
   /** Ends its process and waits until it's really gone (nothing writes its transcript after this). */
-  async shutdown(): Promise<void> {
-    this.closing = true;
-    if (this.restartTimer) clearTimeout(this.restartTimer);
-    this.restartTimer = null;
-    const starting = this.starting;
-    const proc = this.proc;
-    this.down(tr("pals.shutDown"));
-    proc?.close();
-    if (starting) await starting.catch(() => {});
-    await this.waitExit();
-    this.rec.pid = undefined;
-    this.d.save();
+  shutdown(): Promise<void> {
+    return this.host.shutdown();
   }
 
   /**
@@ -785,11 +592,6 @@ export class PalSession {
     return true;
   }
 
-  /** The reply being streamed right now (all its text so far), for a page opened mid-reply. */
-  streaming(): { id: string; text: string } | null {
-    return this.stream.current();
-  }
-
   // ---------------- the stall watchdog ----------------
 
   /** What the stall watchdog watches (stallWatch.ts). */
@@ -799,8 +601,7 @@ export class PalSession {
       name: this.rec.name,
       busy: () => this.running && this.busy,
       waiting: () => this.pendingCards() > 0,
-      openTools: () => [...this.openTools.values()],
-      lastActivity: () => Math.max(this.lastEventAt, this.proc?.lastActivity ?? 0),
+      ...this.stallSigns(),
       pid: () => this.pid,
       progress: () => this.d.harness.history.growth(this.ref),
       recover: () => this.recoverStall(),
@@ -821,7 +622,7 @@ export class PalSession {
     this.d.log(`pal ${this.rec.name}: stalled; resuming it (${untaken.length} message(s) to send again)`);
     await this.start();
     const proc = this.proc;
-    if (!proc || !this.up) throw new Error(tr("pals.restartFailed", { name: this.rec.name }));
+    if (!proc || !this.host.up) throw new Error(tr("pals.restartFailed", { name: this.rec.name }));
     this.notice(tr("pals.stuckRestarted"));
     for (const [uuid, p] of untaken) {
       this.pending.add(uuid, p);
@@ -829,7 +630,7 @@ export class PalSession {
     }
     let continued = false;
     if (!untaken.length && inTurn) {
-      await this.send(stallContinue(), { from: "PaloAlly" });
+      await this.send(stallContinue(), { from: this.d.mapOptions().assistantName });
       continued = true;
     }
     this.touch();
@@ -866,7 +667,7 @@ export class PalSession {
       throw e;
     }
     const proc = this.proc;
-    if (!proc || !this.up) throw new Error(tr("pals.notRunning", { name: this.rec.name }));
+    if (!proc || !this.host.up) throw new Error(tr("pals.notRunning", { name: this.rec.name }));
     const uuid = randomUUID();
     const ts = this.d.now();
     const msg: ChatMessage = {
@@ -886,7 +687,7 @@ export class PalSession {
     // Its page reads the transcript, which has only the bytes and the paths: kept as sent.
     if (o.attachments?.length) this.d.media?.remember(uuid, { text: t, attachments: o.attachments });
     this.emitted.add(uuid);
-    if (!o.silent) this.d.emit("chat.message", msg);
+    if (!o.silent) this.out.put(msg);
     const content = o.peer ? this.d.harness.settings.peerWrap(o.peer, body) : body;
     if (!this.busy) this.workSince = this.d.now();
     this.pending.add(uuid, { text: content, ...(o.from ? { from: o.from } : {}), ...(images.length ? { images } : {}) });
@@ -940,8 +741,7 @@ export class PalSession {
   // ---------------- what it says ----------------
 
   private chat(msg: Omit<ChatMessage, "seq" | "ts" | "pal" | "channel"> & { channel?: ChatMessage["channel"] }): void {
-    const ts = this.d.now();
-    this.d.emit("chat.message", { seq: ts, ts, channel: "app", ...msg, pal: this.rec.id });
+    this.out.message(msg);
   }
 
   /**
@@ -963,7 +763,7 @@ export class PalSession {
       ...(msg.kind === "clipboard" ? { kind: "clipboard" as const } : {}),
       ...(msg.label ? { label: msg.label } : {}),
     });
-    this.d.emit("chat.message", msg);
+    this.out.put(msg);
     this.touch();
     return msg;
   }
@@ -1017,10 +817,13 @@ export class PalSession {
     this.d.changed();
   }
 
-  private setActivity(a: string | null): void {
-    if (a === null || a === this.activity || this.windingDown) return;
-    this.activity = a;
+  protected changed(): void {
     this.d.changed();
+  }
+
+  // A stopped turn winding down doesn't say what it's doing.
+  protected override activityHeld(): boolean {
+    return this.windingDown;
   }
 
   private onEvent(e: HarnessEvent): void {
@@ -1059,10 +862,10 @@ export class PalSession {
           this.closeStream();
           this.stream.open(id);
           // a second text block of the same reply goes on after a blank line
-          if (this.replyTexts.has(id)) this.d.emit("chat.delta", { id, text: "\n\n", pal: this.rec.id });
+          if (this.replyTexts.has(id)) this.out.delta(id, "\n\n");
         }
         this.stream.append(e.text);
-        this.d.emit("chat.delta", { id, text: e.text, pal: this.rec.id });
+        this.out.delta(id, e.text);
         this.setActivity(ACTIVITY.reply);
         break;
       }
@@ -1084,50 +887,14 @@ export class PalSession {
       case "tool_result":
         this.openTools.delete(e.toolUseId);
         this.turnTools.delete(e.toolUseId);
-        // a foreground subagent ends with its tool result
-        for (const [id, t] of this.tasks) if (t.toolUseId === e.toolUseId && !t.backgrounded) this.endTask(id, e.isError ? "failed" : "done");
+        this.taskView.onEvent(e);
         break;
-      case "background_tasks": {
-        this.bgTasks = new Set(e.taskIds);
-        let gone = false;
-        for (const [id, t] of this.tasks) if (t.backgrounded && !this.bgTasks.has(id)) gone = this.endTask(id, "done") || gone;
-        if (gone) this.touch();
-        break;
-      }
-      case "task_started": {
-        const agent = e.taskType ? /agent/i.test(e.taskType) : true;
-        this.tasks.set(e.taskId, {
-          id: e.taskId,
-          title: truncate(e.description || e.taskId, 80),
-          kind: agent ? "subagent" : "bg",
-          startedAt: this.d.now(),
-          ...(e.toolUseId ? { toolUseId: e.toolUseId } : {}),
-          backgrounded: !!e.background,
-        });
-        if (e.background) this.bgTasks.add(e.taskId);
-        this.touch();
-        break;
-      }
-      case "task_progress": {
-        const t = this.tasks.get(e.taskId);
-        if (t && e.summary && t.summary !== e.summary) {
-          t.summary = truncate(e.summary, 120);
-          this.touch();
-        }
-        break;
-      }
-      case "task_backgrounded": {
-        const t = this.tasks.get(e.taskId);
-        if (t && !t.backgrounded) {
-          t.backgrounded = true;
-          this.touch(); // a command sent to the background is a task now
-        }
-        this.bgTasks.add(e.taskId);
-        break;
-      }
+      case "background_tasks":
+      case "task_started":
+      case "task_progress":
+      case "task_backgrounded":
       case "task_notification":
-        this.bgTasks.delete(e.taskId);
-        if (this.endTask(e.taskId, e.status === "completed" ? "done" : e.status, e.summary)) this.touch();
+        if (this.taskView.onEvent(e)) this.touch();
         break;
       case "compact":
         this.rec.lastCompactAt = this.d.now();
@@ -1221,7 +988,7 @@ export class PalSession {
     if (!m || !m.id || this.emitted.has(m.id)) return;
     this.emitted.add(m.id);
     if (this.emitted.size > 500) this.emitted.delete(this.emitted.values().next().value!);
-    this.d.emit("chat.message", m);
+    this.out.put(m);
     this.touch();
   }
 
@@ -1265,7 +1032,7 @@ export class PalSession {
    */
   async rewind(uuid: string, restoreFiles: boolean): Promise<{ text: string; filesRestored: boolean; dropped: string[]; from: string; at: string | null; copied: boolean }> {
     // (A turn stopped but still winding down is no matter: its process ends here.)
-    if (this.busy || this.starting || this.sleeping || this.queuedSends || this.pendingCards() > 0) throw new Error(rewindBusy());
+    if (this.busy || this.host.starting || this.host.sleeping || this.queuedSends || this.pendingCards() > 0) throw new Error(rewindBusy());
     const rw = this.d.harness.rewind;
     const conv = this.conversationEntries();
     const { sessionId, chain } = conv;
@@ -1281,7 +1048,7 @@ export class PalSession {
     if (restoreFiles && !rw.canRestoreFiles(conv, uuid)) throw new Error(rewindNoFiles());
     const held = await this.d.holders(sessionId, this.rec.pid);
     if (held.length) throw new HeldElsewhere(tr("pals.heldElsewhereRewind", { name: this.rec.name, pids: held.map((h) => h.pid).join("、") }));
-    const awake = this.running || !!this.restartTimer || this.queued;
+    const awake = this.running || this.host.restarting || this.host.queued;
     await this.shutdown();
     if (restoreFiles) {
       const r = await this.restoreFiles(sessionId, uuid);
@@ -1352,7 +1119,7 @@ export class PalSession {
       clearTimeout(timer);
       proc.close();
       if (spawned) await Promise.race([exited, sleep(this.d.timing.exitWaitMs)]);
-      if (pid && this.d.pidAlive(pid)) await this.killPid(pid);
+      if (pid && this.d.pidAlive(pid)) await this.host.killPid(pid);
     }
   }
 
