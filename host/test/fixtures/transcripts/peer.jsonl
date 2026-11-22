@@ -1,0 +1,6 @@
+{"type":"user","uuid":"u1","parentUuid":null,"timestamp":"2026-11-01T08:00:00.000Z","sessionId":"s1","message":{"role":"user","content":"先建 note.txt"},"origin":{"kind":"human"}}
+{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-11-01T08:00:01.000Z","sessionId":"s1","message":{"id":"msg_a1","role":"assistant","model":"claude-opus-5-5","content":[{"type":"text","text":"建好了"}]}}
+{"type":"user","uuid":"p1","parentUuid":"a1","timestamp":"2026-11-01T08:00:05.000Z","sessionId":"s1","message":{"role":"user","content":"<cross-session-message from=\"paloally\" from-name=\"Palo\">\n顺便看看测试\n</cross-session-message>"}}
+{"type":"assistant","uuid":"a2","parentUuid":"p1","timestamp":"2026-11-01T08:00:06.000Z","sessionId":"s1","message":{"id":"msg_a2","role":"assistant","model":"claude-opus-5-5","content":[{"type":"text","text":"看了"},{"type":"tool_use","id":"toolu_send","name":"mcp__paloally__palo_send","input":{"text":"测试都过了"}}]}}
+{"type":"user","uuid":"p2","parentUuid":"a2","timestamp":"2026-11-01T08:00:08.000Z","sessionId":"s1","message":{"role":"user","content":"另一个会话说你好"},"origin":{"kind":"peer","name":"博客改版"}}
+{"type":"assistant","uuid":"a3","parentUuid":"p2","timestamp":"2026-11-01T08:00:09.000Z","sessionId":"s1","message":{"id":"msg_a3","role":"assistant","model":"claude-opus-5-5","content":[{"type":"text","text":"你好"}]}}

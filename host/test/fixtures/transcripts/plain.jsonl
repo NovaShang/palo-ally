@@ -1,0 +1,7 @@
+{"type":"permission-mode","permissionMode":"default","sessionId":"s1"}
+{"type":"user","uuid":"u1","parentUuid":null,"timestamp":"2026-11-01T08:00:00.000Z","sessionId":"s1","message":{"role":"user","content":"帮我看看 README"},"origin":{"kind":"human"}}
+{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-11-01T08:00:01.000Z","sessionId":"s1","message":{"id":"msg_1","role":"assistant","model":"claude-opus-5-5","content":[{"type":"text","text":"看了，"}]}}
+{"type":"assistant","uuid":"a1b","parentUuid":"a1","timestamp":"2026-11-01T08:00:02.000Z","sessionId":"s1","message":{"id":"msg_1","role":"assistant","model":"claude-opus-5-5","content":[{"type":"text","text":"写得挺清楚。"}]}}
+{"type":"user","uuid":"u2","parentUuid":"a1b","timestamp":"2026-11-01T08:00:10.000Z","sessionId":"s1","message":{"role":"user","content":[{"type":"text","text":"再加一段安装说明"}]},"origin":{"kind":"human"}}
+{"type":"assistant","uuid":"a2","parentUuid":"u2","timestamp":"2026-11-01T08:00:11.000Z","sessionId":"s1","message":{"id":"msg_2","role":"assistant","model":"claude-opus-5-5","content":[{"type":"text","text":"加好了。"}]}}
+{"type":"summary","summary":"README","leafUuid":"a2"}
