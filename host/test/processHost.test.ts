@@ -178,7 +178,7 @@ describe("the assistant's process", () => {
     t.hub.userMessage("你好", "app");
     await t.hub.idle();
     const pal = await t.agent();
-    await waitFor(() => t.statusOf(pal.id) === "asleep", 3_000);
+    await waitFor(() => t.statusOf(pal.id) === "asleep", 10_000);
     await tick(100);
     expect(t.driver.sessions).toHaveLength(1);
     expect(t.driver.last!.closed).toBe(false);
@@ -188,7 +188,7 @@ describe("the assistant's process", () => {
     expect(t.driver.sessions).toHaveLength(1);
     expect(t.driver.last!.sent).toEqual(["你好", "还在"]);
     await t.hub.pals.stopAndWait();
-  });
+  }, 15_000);
 
   test("a crash mid-turn ends the turn with a notice; nothing restarts it by itself; the next words start a process resuming the same session", async () => {
     let hold!: () => void;

@@ -18,11 +18,10 @@ import type { TaskTracker } from "./tasks.ts";
 import type { Channel, Task } from "./types.ts";
 import type { UsageLedger } from "./usage.ts";
 import { appendJsonl, truncate } from "./util.ts";
-import { StreamAssembler } from "./agent/streamAssembler.ts";
-import { TurnLedger } from "./agent/turnLedger.ts";
-import { ChatLogSink, type OutputSink } from "./agent/outputSink.ts";
-import { type TaskProjection, TrackerTasks } from "./agent/taskProjection.ts";
-import { ProcessHost } from "./agent/processHost.ts";
+import { ChatLogSink } from "./agent/outputSink.ts";
+import { TrackerTasks } from "./agent/taskProjection.ts";
+import { AgentSession } from "./agent/session.ts";
+import { ASSISTANT_FLAGS } from "./agent/flags.ts";
 
 export interface Turn {
   text: string; // what the model sees
@@ -121,28 +120,25 @@ export interface ConversationDeps {
 // Conversation is the one main conversation with the harness: it owns the CLI
 // process, decides which output belongs to whom (owner reply vs proactive),
 // and keeps proactive turns waiting until the harness is idle.
-export class Conversation {
+//
+// The assistant is an AgentSession with ASSISTANT_FLAGS: its process started
+// by the words that need it, at once (no ready wait), never asleep, no
+// holders check; its words into its chat log; its tasks the host's list.
+export class Conversation extends AgentSession<OwnerMessage & { sentAt: number; text: string; images?: ImageInput[] }, TrackerTasks, ChatLogSink> {
   model = ""; // the model the harness reports running
   permissionMode = ""; // the permission mode it reports running in (not always the configured one)
-  activity = "";
-  // its process: started by the words that need it, at once (no ready wait), never asleep, no holders check
-  private host: ProcessHost;
   private queue: Turn[] = [];
   private current: Turn | null = null;
   private turnTexts: string[] = [];
   // WeChat turns get each paragraph as it's written (in order), not just the end.
   private wechatStreamed = 0;
   private wechatChain: Promise<void> = Promise.resolve();
-  private stream = new StreamAssembler(); // the reply being streamed (its id the host's), to finalize if the turn dies
   private implicitTimer: ReturnType<typeof setTimeout> | null = null;
   private lastContextTokens = 0;
   private turnWaiters: (() => void)[] = [];
-  // Every owner message sent to the harness and not yet answered, by uuid.
-  // A turn counts as answering the owner only once its result lists the uuid.
-  private pending = new TurnLedger<OwnerMessage & { sentAt: number; text: string; images?: ImageInput[] }>();
-  private openTools = new Set<string>(); // main-thread tool calls without a result yet
-  private liveTools = new Map<string, string>(); // every tool call without a result yet (subagents' too): id → name
-  private lastEventAt = 0;
+  // (pending: every owner message sent to the harness and not yet answered,
+  // by uuid; a turn counts as answering the owner only once its result lists the uuid.)
+  private mainTools = new Set<string>(); // main-thread tool calls without a result yet
   private budgetNoticeDay = "";
   private compactReason: string | null = null; // our /compact turn is queued or running
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -157,22 +153,28 @@ export class Conversation {
   private held: HeldMessage[] = [];
   private gateTimer: ReturnType<typeof setTimeout> | null = null;
   private modeChecked = false; // this process' permission mode was compared with the config
-  private out: OutputSink; // its chat log
-  private taskView: TaskProjection; // its subagents and background tasks: the host's TaskTracker
 
   constructor(private d: ConversationDeps) {
-    this.lastContextTokens = d.runtime.data.contextTokens ?? 0;
-    this.out = new ChatLogSink(d.chat);
-    this.taskView = new TrackerTasks(d.tasks);
-    this.host = new ProcessHost({ startMode: "lazy-sync", restart: "on-demand", exclusive: false, canSleep: false }, {}, {
-      name: () => this.d.peerName?.() ?? "main",
-      save: () => {},
-      changed: () => this.d.statusChanged(),
-      log: (s) => this.d.log(s),
-      now: () => Date.now(),
-      open: () => ({ proc: this.open() }),
-      startError: (why) => why,
+    // (only closures here: `this` is there once super() has returned)
+    super(ASSISTANT_FLAGS, {
+      record: {},
+      out: new ChatLogSink(d.chat),
+      tasks: new TrackerTasks(d.tasks),
+      process: {
+        name: () => d.peerName?.() ?? "main",
+        save: () => {},
+        changed: () => d.statusChanged(),
+        log: (s) => d.log(s),
+        now: () => Date.now(),
+        open: () => ({ proc: this.open() }),
+        startError: (why) => why,
+      },
     });
+    this.lastContextTokens = d.runtime.data.contextTokens ?? 0;
+  }
+
+  protected changed(): void {
+    this.d.statusChanged();
   }
 
   /** The main session's context size after its last turn (or compaction). */
@@ -283,7 +285,7 @@ export class Conversation {
     this.wechatStreamed = 0;
     if (turn.wechat && !turn.proactive) void this.d.wechat?.startTyping?.(turn.wechat);
     this.stream.take();
-    this.openTools.clear();
+    this.mainTools.clear();
     this.activity = "";
     if (turn.implicit) this.armImplicitTimer();
     this.d.statusChanged();
@@ -293,7 +295,7 @@ export class Conversation {
     if (this.implicitTimer) clearTimeout(this.implicitTimer);
     this.implicitTimer = setTimeout(() => {
       // Waiting on the owner or on a running tool is not "quiet".
-      if (this.current?.implicit && (this.openTools.size || this.waitingOnOwner())) return this.armImplicitTimer();
+      if (this.current?.implicit && (this.mainTools.size || this.waitingOnOwner())) return this.armImplicitTimer();
       if (this.current?.implicit) {
         this.d.log("implicit turn went quiet without a result; closing it");
         this.endTurn(0, this.lastContextTokens);
@@ -307,7 +309,7 @@ export class Conversation {
    * offline are not replayed, so it takes this, then keeps appending deltas.
    */
   streamingReply(): { id: string; text: string } | null {
-    return this.stream.current();
+    return this.streaming();
   }
 
   ensureSession(): MainSession {
@@ -340,7 +342,7 @@ export class Conversation {
         const deny = this.gateTool({ toolName: req.toolName, input: req.input, agentId: req.agentId, via: "canUseTool" });
         if (deny) return Promise.resolve({ behavior: "deny", message: deny });
         if (req.toolName === ASK_TOOL) {
-          const deferred = this.current?.origin === "wechat" ? null : (this.d.deferQuestion?.(req.input) ?? null);
+          const deferred = this.flags.questions !== "defer" || this.current?.origin === "wechat" ? null : (this.d.deferQuestion?.(req.input) ?? null);
           return deferred !== null ? Promise.resolve({ behavior: "deny", message: deferred }) : this.d.questions.request(req);
         }
         return this.d.approvals.request(req);
@@ -370,8 +372,8 @@ export class Conversation {
 
   onHarnessEvent(e: HarnessEvent): void {
     this.lastEventAt = Date.now();
-    if (e.type === "tool_use") this.liveTools.set(e.id, e.name);
-    else if (e.type === "tool_result") this.liveTools.delete(e.toolUseId);
+    if (e.type === "tool_use") this.openTools.set(e.id, e.name);
+    else if (e.type === "tool_result") this.openTools.delete(e.toolUseId);
     // The harness names the owner messages a turn answers on its first frames:
     // start that turn with exactly those, instead of guessing.
     if (e.type === "answering" && !this.current) {
@@ -437,13 +439,13 @@ export class Conversation {
         if (!e.parentToolUseId) this.setActivityFor(e.name);
         break;
       case "tool_use":
-        if (!e.parentToolUseId) this.openTools.add(e.id);
+        if (!e.parentToolUseId) this.mainTools.add(e.id);
         this.taskView.onEvent(e);
         if (e.parentToolUseId) this.setActivity(activityBackground());
         else this.setActivityFor(e.name);
         break;
       case "tool_result":
-        this.openTools.delete(e.toolUseId);
+        this.mainTools.delete(e.toolUseId);
         this.taskView.onEvent(e);
         break;
       case "task_started":
@@ -479,7 +481,7 @@ export class Conversation {
         this.d.log(`harness error: ${e.message}`);
         this.host.close();
         this.pending.clear();
-        this.liveTools.clear();
+        this.openTools.clear();
         // The Ally's message died with the process; the owner's held words didn't.
         if (this.allyGate) this.endAllyGate("harness error");
         if (this.current) this.endTurn(0, this.lastContextTokens, e.message);
@@ -586,11 +588,6 @@ export class Conversation {
     if (a !== null) this.setActivity(a);
   }
 
-  private setActivity(a: string): void {
-    if (a === this.activity) return;
-    this.activity = a;
-    this.d.statusChanged();
-  }
 
   // consume settles which owner messages a result answered. When the harness
   // doesn't say (older CLIs), an owner turn is taken to have answered its own
@@ -611,8 +608,8 @@ export class Conversation {
     // don't keep a half-written bubble "typing" forever.
     const cut = this.stream.take();
     if (cut && cut.text.trim()) chat.message({ id: cut.id, role: "assistant", kind: "text", text: cut.text, channel: turn?.origin ?? "system" });
+    this.mainTools.clear();
     this.openTools.clear();
-    this.liveTools.clear();
     this.d.usage.add("mainUsd", costUsd);
     if (turn?.maintenance) {
       // A /compact turn: its own result says nothing about the context (the
@@ -819,8 +816,7 @@ export class Conversation {
       },
       busy: () => this.host.alive && (!!this.current || this.pending.size > 0),
       waiting: () => this.waitingOnOwner(),
-      openTools: () => [...this.liveTools.values()],
-      lastActivity: () => Math.max(this.lastEventAt, this.host.proc?.lastActivity ?? 0),
+      ...this.stallSigns(),
       pid: () => h.pid(),
       progress: () => h.progress(),
       recover: () => this.recoverStall(h),

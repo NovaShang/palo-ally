@@ -15,8 +15,8 @@ import type { StallRecovery, StallTarget } from "./stallWatch.ts";
 import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
 import { stripTldrMarker } from "./tldr.ts";
 import { newId, sleep, truncate } from "./util.ts";
-import { StreamAssembler } from "./agent/streamAssembler.ts";
-import { TurnLedger } from "./agent/turnLedger.ts";
+import { AgentSession } from "./agent/session.ts";
+import { AGENT_FLAGS } from "./agent/flags.ts";
 import { TranscriptSink } from "./agent/outputSink.ts";
 import { HeldElsewhere, type Holder, type OpenContext, ProcessHost } from "./agent/processHost.ts";
 import { type PalTask, type PastPalTask, RecordTasks } from "./agent/taskProjection.ts";
@@ -126,28 +126,22 @@ const STOP_SETTLE_MS = 250; // a stopped turn not ended by Claude Code by then i
 /** What a Pal is told after the watchdog restarted it mid-turn. */
 export const stallContinue = (): string => tr("stall.continue");
 
-export class PalSession {
-  // its process: started awaited, brought back with backoff, never two writers, put to sleep
-  private host: ProcessHost;
+// An agent is an AgentSession with AGENT_FLAGS: its process started awaited,
+// brought back with backoff, never two writers, put to sleep; its words out
+// as events, its history its transcript, its tasks in its record.
+export class PalSession extends AgentSession<{ text: string; from?: string; images?: ImageInput[] }, RecordTasks, TranscriptSink> {
   private turnOpen = false;
   private workSince = 0; // when it last went from idle to busy: how long the turn that ends ran
-  private pending = new TurnLedger<{ text: string; from?: string; images?: ImageInput[] }>(); // the owner's words not yet taken, by uuid
-  private openTools = new Map<string, string>(); // tool calls without a result yet (subagents' too): id → name
-  private turnTools = new Set<string>(); // …those of its own turn: none outlives the turn's end
-  private lastEventAt = 0;
+  private turnTools = new Set<string>(); // its own turn's open tool calls: none outlives the turn's end
   private interrupted = false;
   private windingDown = false; // ended here after 停止: what's left of that turn doesn't make it busy again
   private turnEndWaiters: (() => void)[] = [];
-  private activity = "";
-  private stream = new StreamAssembler(); // the reply being streamed (its id the API message's)
   private replyTexts = new Map<string, string>(); // a reply's text so far, by its id (several blocks join)
   private emitted = new Set<string>(); // ids already sent to the app
   private calls: { name: string; id: string }[] = []; // its card tools' calls (tool_use ids) waiting for their handler
   private follower: { start(): void; poke(): void; stop(): void } | null = null;
   // A fork's entries copied from the session it was forked from: history, not news.
   private inherited: Set<string> | null = null;
-  private tasks: RecordTasks; // its subagents and background tasks, kept with its record
-  private out: TranscriptSink; // its words go out as events carrying its id
   private compacting = false; // our /compact is going: its own result says nothing about the context
   private sendChain: Promise<unknown> = Promise.resolve(); // words go in one after another, in order
   private queuedSends = 0; // words waiting to go in (it's being woken for them)
@@ -165,10 +159,12 @@ export class PalSession {
     readonly rec: PalRecord,
     private d: PalSessionDeps,
   ) {
-    this.updatedAt = rec.lastUsedAt;
-    this.tasks = new RecordTasks(rec, { save: () => this.d.save(), now: () => this.d.now() });
-    this.out = new TranscriptSink(rec.id, { emit: (ev, data) => this.d.emit(ev, data), now: () => this.d.now() });
-    this.host = new ProcessHost({ startMode: "awaited", restart: "backoff", exclusive: true, canSleep: true }, rec, {
+    // (only closures here: `this` is there once super() has returned)
+    super(AGENT_FLAGS, {
+      record: rec,
+      out: new TranscriptSink(rec.id, { emit: (ev, data) => d.emit(ev, data), now: () => d.now() }),
+      tasks: new RecordTasks(rec, { save: () => d.save(), now: () => d.now() }),
+      process: {
       name: () => this.rec.name,
       save: () => this.d.save(),
       changed: () => this.d.changed(),
@@ -186,8 +182,10 @@ export class PalSession {
       startError: (why) => this.d.harness.settings.startError(why),
       pidAlive: (pid) => this.d.pidAlive(pid),
       kill: (pid, sig) => this.d.kill(pid, sig),
-      timing: this.d.timing,
+      timing: d.timing,
+      },
     });
+    this.updatedAt = rec.lastUsedAt;
     const history = this.d.harness.history;
     const tail = history.tail(this.ref, 512 * 1024);
     this.lastLine = history.lastLine(tail);
@@ -250,7 +248,7 @@ export class PalSession {
    */
   idleSince(): number | null {
     if (!this.running || this.host.starting || this.host.sleeping) return null;
-    if (this.turnOpen || this.windingDown || this.pending.size || this.queuedSends || this.openTools.size || this.tasks.background) return null;
+    if (this.turnOpen || this.windingDown || this.pending.size || this.queuedSends || this.openTools.size || this.taskView.background) return null;
     if (this.pendingCards() > 0) return null;
     return Math.max(this.lastEventAt, this.rec.lastUsedAt, this.host.upAt);
   }
@@ -320,7 +318,7 @@ export class PalSession {
       ...(this.effort() ? { effort: this.effort() } : {}),
       ...(this.mode() ? { permissionMode: this.mode() } : {}),
       ...(this.contextPct() !== undefined ? { contextPct: this.contextPct() } : {}),
-      ...(this.tasks.running().length ? { tasksRunning: this.tasks.running().length } : {}),
+      ...(this.taskView.running().length ? { tasksRunning: this.taskView.running().length } : {}),
       ...(typeof this.rec.lastWakeUsd === "number" ? { lastWakeUsd: this.rec.lastWakeUsd } : {}),
       createdBy: this.rec.createdBy,
       updatedAt: Math.round(this.updatedAt),
@@ -381,7 +379,7 @@ export class PalSession {
       permissionMode: chosen,
       ...(running ? { runningMode: running } : {}),
       permissionModes: modes,
-      tasks: this.tasks.wire(),
+      tasks: this.taskView.wire(),
       pastTasks: this.rec.pastTasks ?? [],
       ...(typeof this.rec.lastCompactAt === "number" ? { lastCompactAt: this.rec.lastCompactAt } : {}),
       costTotalUsd: this.rec.costTotalUsd ?? 0,
@@ -439,7 +437,7 @@ export class PalSession {
 
   /** Stops a subagent or background task. */
   async stopTask(taskId: string): Promise<void> {
-    if (!this.tasks.has(taskId)) throw new Error(tr("pals.noTask"));
+    if (!this.taskView.has(taskId)) throw new Error(tr("pals.noTask"));
     const proc = this.proc;
     if (!proc || !this.running) throw new Error(tr("pals.cantStopTask"));
     try {
@@ -487,7 +485,7 @@ export class PalSession {
       ...(resume ? { resumeSessionId: rec.sessionId } : { sessionId: rec.sessionId }),
       ...(fork?.at ? { fork: { fromSessionId: fork.from, at: fork.at } } : {}),
       // Its files can go back to how they were before any of the owner's messages from now on.
-      fileCheckpointing: true,
+      fileCheckpointing: this.flags.fileCheckpoints,
       model: rec.model,
       ...(effort ? { effort } : {}),
       // so a turn's cost is its own, not the session's running total
@@ -534,7 +532,7 @@ export class PalSession {
     this.openTools.clear();
     this.turnTools.clear();
     // what was still running ends with its process
-    this.tasks.processEnded();
+    this.taskView.processEnded();
     this.compacting = false;
     this.wakeCost = false;
     this.activity = "";
@@ -594,11 +592,6 @@ export class PalSession {
     return true;
   }
 
-  /** The reply being streamed right now (all its text so far), for a page opened mid-reply. */
-  streaming(): { id: string; text: string } | null {
-    return this.stream.current();
-  }
-
   // ---------------- the stall watchdog ----------------
 
   /** What the stall watchdog watches (stallWatch.ts). */
@@ -608,8 +601,7 @@ export class PalSession {
       name: this.rec.name,
       busy: () => this.running && this.busy,
       waiting: () => this.pendingCards() > 0,
-      openTools: () => [...this.openTools.values()],
-      lastActivity: () => Math.max(this.lastEventAt, this.proc?.lastActivity ?? 0),
+      ...this.stallSigns(),
       pid: () => this.pid,
       progress: () => this.d.harness.history.growth(this.ref),
       recover: () => this.recoverStall(),
@@ -825,10 +817,13 @@ export class PalSession {
     this.d.changed();
   }
 
-  private setActivity(a: string | null): void {
-    if (a === null || a === this.activity || this.windingDown) return;
-    this.activity = a;
+  protected changed(): void {
     this.d.changed();
+  }
+
+  // A stopped turn winding down doesn't say what it's doing.
+  protected override activityHeld(): boolean {
+    return this.windingDown;
   }
 
   private onEvent(e: HarnessEvent): void {
@@ -892,14 +887,14 @@ export class PalSession {
       case "tool_result":
         this.openTools.delete(e.toolUseId);
         this.turnTools.delete(e.toolUseId);
-        this.tasks.onEvent(e);
+        this.taskView.onEvent(e);
         break;
       case "background_tasks":
       case "task_started":
       case "task_progress":
       case "task_backgrounded":
       case "task_notification":
-        if (this.tasks.onEvent(e)) this.touch();
+        if (this.taskView.onEvent(e)) this.touch();
         break;
       case "compact":
         this.rec.lastCompactAt = this.d.now();
