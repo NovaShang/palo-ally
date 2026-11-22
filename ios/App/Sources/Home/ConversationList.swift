@@ -669,6 +669,8 @@ private struct PaloItem: View {
 /// A workspace: a chevron that opens it, its icon and name; on the right how
 /// many of its sessions wait on the owner, else how many it holds.
 private struct WorkspaceRow: View {
+    @Environment(WindowModel.self) private var model
+    @Environment(\.sidebarHost) private var host
     let node: SidebarTree.WorkspaceNode
     let expanded: Bool
     let toggle: () -> Void
@@ -691,7 +693,14 @@ private struct WorkspaceRow: View {
             } subtitle: {
                 Text("\(node.members.count) 个会话")
             } trailing: {
-                if node.waiting > 0 { WaitingBadge(count: node.waiting) }
+                // The count opens what it counts: the 等你 tab of the workspace's pane.
+                if node.waiting > 0 {
+                    WaitingBadge(count: node.waiting)
+                        .simultaneousGesture(TapGesture().onEnded {
+                            model.open(.workspace(node.id), on: host)
+                            model.openPendingList()
+                        })
+                }
             }
         }
         .accessibilityElement(children: .combine)
@@ -780,6 +789,7 @@ private struct OtherAgentRow: View {
 private struct PalListRow: View {
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
+    @Environment(\.sidebarHost) private var host
     let pal: Pal
     /// Listed under its workspace.
     var inset = false
@@ -793,7 +803,12 @@ private struct PalListRow: View {
         } subtitle: {
             Text(Copy.palLine(pal))
         } trailing: {
+            // The count opens what it counts: the 等你 tab of its pane.
             WaitingBadge(count: store.palPendingCount(pal.id))
+                .simultaneousGesture(TapGesture().onEnded {
+                    model.open(.pal(pal.id), on: host)
+                    model.openPendingList(pal: pal.id)
+                })
         }
         .padding(.leading, inset ? 24 : 0)
         .accessibilityElement(children: .combine)

@@ -216,6 +216,26 @@ private struct LayoutStressTest: ViewModifier {
                     // `pending-talk:<id>` 聊这件; `pending-answer:<id>:<option>`; `pending-ignore:<id>`;
                     // `pending-reopen:<id>` 撤回 / 放回.
                     case "pending": w.openPendingList()
+                    // `decide-all`: every card waiting on the owner decided as its
+                    // yes (a question: each one's first option), the way its
+                    // buttons do (`AppStore.decide`): the folded cards' look.
+                    case "decide-all":
+                        guard let store = w.store else { break }
+                        for item in store.openPending {
+                            let choice: PendingChoice? = switch item.subject {
+                            case .approval: .allow(remember: false)
+                            case .proposal, .allyDraft: .accept
+                            case .question(let id):
+                                store.question(id: id).map { q in
+                                    .answers(Dictionary(q.items.compactMap { i in i.options.first.map { (i.question, $0.label) } },
+                                                        uniquingKeysWith: { a, _ in a }))
+                                }
+                            default: nil
+                            }
+                            guard let choice else { continue }
+                            do { try await store.decide(item.subject, choice) } catch { debugLog("[nav] decide-all \(item.id): \(error)") }
+                        }
+                        debugLog("[nav] decide-all: \(store.openPending.count) open")
                     case "pending-agenda":
                         if let store = w.store, let first = store.openPending.first { w.showPendingSheet = false; w.goThrough(from: first, in: store) }
                     case _ where a.hasPrefix("pending-"):

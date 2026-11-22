@@ -166,3 +166,93 @@ public struct PendingIDParams: Codable, Sendable {
     public var id: String
     public init(id: String) { self.id = id }
 }
+
+// MARK: - deciding: one way for a card in a conversation and a row of the list
+
+/// What an item stands for: the card answering it settles (and settling the
+/// card closes the item), or nothing but the item itself.
+public enum PendingSubject: Hashable, Sendable {
+    /// A permission prompt (允许 / 拒绝).
+    case approval(String)
+    /// A question card (AskUserQuestion).
+    case question(String)
+    /// The assistant's proposal: 开一个 agent (开吧) or 接管 (接管), and 不用.
+    case proposal(String)
+    /// A message to a contact (发送 / 不发).
+    case allyDraft(String)
+    /// A task that needs the owner.
+    case task(String)
+    /// An item of its own (the assistant's, a brief's, an agent's), by its id.
+    case item(String)
+}
+
+/// What the owner decided, on a card or on a row.
+public enum PendingChoice: Hashable, Sendable {
+    /// One of the item's options, or the owner's own words.
+    case option(String)
+    /// A permission prompt: 允许 (and 以后都允许), or 拒绝.
+    case allow(remember: Bool)
+    case deny
+    /// A question card's answers: question text → the label(s) or words; a
+    /// question left out is skipped (empty: the whole card).
+    case answers([String: String])
+    /// A proposal's 开吧 / 接管, a draft's 发送; and 不用 / 不发.
+    case accept
+    case decline
+    /// A draft sent with the owner's changed words (改一下 → 发送).
+    case sendEdited(String)
+    /// 忽略, and 放回 / 撤回.
+    case ignore
+    case reopen
+}
+
+/// One button of a decision: its words, what it decides, and whether it's
+/// the one in the theme color.
+public struct PendingChoiceButton: Hashable, Sendable, Identifiable {
+    public var title: String
+    public var choice: PendingChoice
+    public var primary: Bool
+    public var id: String { title }
+
+    public init(title: String, choice: PendingChoice, primary: Bool = false) {
+        self.title = title; self.choice = choice; self.primary = primary
+    }
+}
+
+extension PendingItem {
+    public var subject: PendingSubject {
+        if let approvalId { return .approval(approvalId) }
+        if let questionId { return .question(questionId) }
+        if let link, !link.id.isEmpty {
+            switch link.kind {
+            case .proposal: return .proposal(link.id)
+            case .allyDraft: return .allyDraft(link.id)
+            case .task: return .task(link.id)
+            case .unknown: break
+            }
+        }
+        return .item(id)
+    }
+
+    /// The item's options as buttons, in the order a card shows them. A
+    /// card's options (the host lists the yes first: 允许 / 拒绝, 开吧 / 不用,
+    /// 发送 / 不发) decide what the card's buttons do, the yes in the theme
+    /// color and last; anyone else's are answers, in their order.
+    public var choices: [PendingChoiceButton] {
+        let options = (options ?? []).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        let yesNo: (PendingChoice, PendingChoice)? = switch subject {
+        case .approval: (.allow(remember: false), .deny)
+        case .proposal, .allyDraft: (.accept, .decline)
+        default: nil
+        }
+        if let (yes, no) = yesNo, options.count == 2 {
+            return [PendingChoiceButton(title: options[1], choice: no),
+                    PendingChoiceButton(title: options[0], choice: yes, primary: true)]
+        }
+        return options.map { PendingChoiceButton(title: $0, choice: .option($0)) }
+    }
+
+    /// Whether the owner's own words are an answer here: anything but a
+    /// permission prompt (yes or no only).
+    public var takesWords: Bool { approvalId == nil }
+}

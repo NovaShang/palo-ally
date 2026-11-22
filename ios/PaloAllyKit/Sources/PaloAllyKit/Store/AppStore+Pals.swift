@@ -59,6 +59,12 @@ extension AppStore {
     /// The words waiting for this agent's terminal, oldest first.
     public var heldMessages: [ChatMessage] { messages.filter { $0.delivery == .held } }
 
+    /// What waits on the owner from one of the computer's other sessions:
+    /// its open items (its questions and prompts).
+    public func sessionPendingCount(_ id: String) -> Int {
+        openPending.filter { $0.source.kind == .session && $0.source.id == id }.count
+    }
+
     // MARK: loading
 
     /// After every catch-up. `pals.list` brings the Pals, the computer's

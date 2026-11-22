@@ -112,9 +112,11 @@ struct AllySlotList: View {
     }
 }
 
-/// A message to an Ally. While it's a draft: its full words, then 发送 /
-/// 改一下 (edit in place) / 不发. Once decided it stays, with its state. The
-/// same place and look as an approval card; only 发送 carries the theme color.
+/// A message to a contact, on the one card for what waits on the owner
+/// (PendingCard) while it's a draft: the contact · 发给 TA？ · its full words
+/// (改一下 edits them in place), then 不发 / 改一下 / 发送; only 发送 carries
+/// the theme color. Once decided (or one that went out directly) it folds
+/// to one line with its state; tapping it shows the words.
 struct AllyDraftCard: View {
     @Environment(AppStore.self) private var store
     let entry: AllyEntry
@@ -122,8 +124,6 @@ struct AllyDraftCard: View {
     let name: String
     /// The exchange is loaded (else only its words show, without buttons).
     var known = true
-    /// Inside a list row: the row is the card.
-    var framed = true
 
     #if DEBUG
     /// `-demoDraftEdit YES`: drafts open in 改一下 (snapshots).
@@ -132,29 +132,26 @@ struct AllyDraftCard: View {
     @State private var editing = false
     #endif
     @State private var text = ""
-    @State private var working = false
-    @State private var error: String?
+    @State private var decision = PendingDecider()
     @FocusState private var focused: Bool
 
     private var pending: Bool { known && entry.isPendingDraft }
+    private var item: PendingItem? { store.pendingItem(for: .allyDraft(entry.id)) }
+    private var who: String { name.isEmpty ? String(localized: "对方") : name }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: "paperplane")
-                    .foregroundStyle(.secondary)
-                Text(Copy.spaced(String(localized: "发给\(name.isEmpty ? String(localized: "对方") : name)")))
-                    .font(.headline)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                if !pending, known, let status = Copy.allyStatus(entry) {
-                    Text(status)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .contentTransition(.opacity)
-                }
-            }
+        Group {
+            if pending { open } else { folded }
+        }
+        .animation(.snappy, value: entry.status)
+        .animation(.snappy, value: editing)
+        .onAppear { if editing && text.isEmpty { text = entry.text } }
+        .accessibilityIdentifier("ally-draft-\(entry.id)")
+    }
 
+    private var open: some View {
+        PendingCard(header: PendingCardHeader(item: item, who: who, createdAt: entry.ts, blocking: false),
+                    title: Copy.spaced(String(localized: "发给\(who)？")), error: decision.error) {
             if editing {
                 TextField("要发的话", text: $text, axis: .vertical)
                     .lineLimit(2...10)
@@ -166,11 +163,9 @@ struct AllyDraftCard: View {
             } else {
                 Text(entry.text)
                     .font(.body)
-                    .foregroundStyle(entry.status == .rejected ? .secondary : .primary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
             if let slots = entry.slots, !slots.isEmpty {
                 AllySlotList(slots: slots)
             }
@@ -179,102 +174,72 @@ struct AllyDraftCard: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        } actions: {
+            buttons
+        }
+    }
 
-            if pending {
-                buttons
-                if let error {
-                    Text(error).font(.caption).foregroundStyle(.red)
-                }
+    /// 「✓ 已发出：今晚七点到…」, 「没发：…」; tapping shows the words whole.
+    private var folded: some View {
+        let state = known ? (Copy.allyStatus(entry) ?? "") : ""
+        let words = entry.text.replacingOccurrences(of: "\n", with: " ")
+        let line = Copy.spaced(String(localized: "发给\(who)：\(words)"))
+        return PendingFoldedLine(text: state.isEmpty ? line : "\(state) · \(line)", done: entry.status != .rejected, hasDetail: true) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(entry.text)
+                    .font(.callout)
+                    .foregroundStyle(entry.status == .rejected ? .secondary : .primary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let slots = entry.slots, !slots.isEmpty { AllySlotList(slots: slots) }
             }
         }
-        .padding(framed ? 16 : 0)
-        .background {
-            if framed {
-                RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.background.secondary)
-            }
-        }
-        .overlay {
-            if framed {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder(pending ? Color.primary.opacity(0.12) : Color.clear, lineWidth: 1)
-            }
-        }
-        .animation(.snappy, value: entry.status)
-        .animation(.snappy, value: editing)
-        .onAppear { if editing && text.isEmpty { text = entry.text } }
     }
 
     @ViewBuilder private var buttons: some View {
-        HStack(spacing: 10) {
-            if editing {
+        if editing {
+            HStack(spacing: 10) {
                 Button {
                     editing = false
-                    error = nil
+                    decision.error = nil
                 } label: {
                     Text("取消").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .tint(.secondary)
                 Button {
-                    send(text)
+                    focused = false
+                    decide(.sendEdited(text))
                 } label: {
                     Text("发送").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            } else {
-                Button {
-                    discard()
-                } label: {
-                    Text("不发").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .tint(.secondary)
-                Button {
+            }
+            .controlSize(.large)
+            .buttonBorderShape(.capsule)
+            .lineLimit(1)
+            .disabled(decision.working != nil || !store.connection.isOnline)
+        } else {
+            PendingChoiceButtons(choices: [PendingChoiceButton(title: String(localized: "不发"), choice: .decline),
+                                           PendingChoiceButton(title: String(localized: "改一下"), choice: .option("")),
+                                           PendingChoiceButton(title: String(localized: "发送"), choice: .accept, primary: true)],
+                                 working: decision.working, enabled: store.connection.isOnline) { choice in
+                if choice == .option("") {
                     text = entry.text
-                    error = nil
+                    decision.error = nil
                     editing = true
                     focused = true
-                } label: {
-                    Text("改一下").frame(maxWidth: .infinity)
+                } else {
+                    decide(choice)
                 }
-                .buttonStyle(.bordered)
-                .tint(.secondary)
-                Button {
-                    send(nil)
-                } label: {
-                    Text("发送").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
             }
-        }
-        .controlSize(.large)
-        .buttonBorderShape(.capsule)
-        .lineLimit(1)
-        .disabled(working || !store.connection.isOnline)
-    }
-
-    private func send(_ words: String?) {
-        working = true
-        error = nil
-        focused = false
-        Task {
-            do {
-                try await store.send(draft: entry, text: words)
-                editing = false
-            } catch {
-                self.error = String(localized: "没发出去：\(Copy.error(error))")
-            }
-            working = false
         }
     }
 
-    private func discard() {
-        working = true
-        error = nil
-        Task {
-            do { try await store.decide(entry, .discard) } catch { self.error = String(localized: "没改成：\(Copy.error(error))") }
-            working = false
+    private func decide(_ choice: PendingChoice) {
+        PendingDecider.run(store, .allyDraft(entry.id), choice, into: $decision) { reason in
+            choice == .decline ? String(localized: "没改成：\(reason)") : String(localized: "没发出去：\(reason)")
         }
     }
 }

@@ -32,9 +32,32 @@ public struct AgentStatusLine: Equatable, Sendable {
     public static func make(offlineText: String?, pendingApprovals: Int, pendingQuestions: Int = 0, pendingDrafts: Int = 0,
                             pendingProposals: Int = 0,
                             busy: Bool, activity: String?, tasks: [AllyTask]) -> AgentStatusLine {
+        let waiting = tasks.filter { $0.status == .needsInput }.count
+        return make(offlineText: offlineText, approvals: pendingApprovals, questions: pendingQuestions, drafts: pendingDrafts,
+                    proposals: pendingProposals, other: waiting, busy: busy, activity: activity, tasks: tasks)
+    }
+
+    /// The same, with what waits on the owner read from 等你的事: `waiting`
+    /// is the conversation's open items. What holds the agent up counts (a
+    /// question or a prompt it is stopped on, a proposal, a draft, a task
+    /// that needs the owner); an item of its own that only waits for a word
+    /// is the capsule's, not the status line's.
+    public static func make(offlineText: String?, waiting items: [PendingItem],
+                            busy: Bool, activity: String?, tasks: [AllyTask]) -> AgentStatusLine {
+        let holding = items.filter { $0.isOpen && ($0.blocking || $0.link != nil) }
+        let questions = holding.filter { $0.questionId != nil }.count
+        let approvals = holding.filter { $0.approvalId != nil }.count
+        let drafts = holding.filter { $0.link?.kind == .allyDraft }.count
+        let proposals = holding.filter { $0.link?.kind == .proposal }.count
+        return make(offlineText: offlineText, approvals: approvals, questions: questions, drafts: drafts, proposals: proposals,
+                    other: holding.count - questions - approvals - drafts - proposals, busy: busy, activity: activity, tasks: tasks)
+    }
+
+    private static func make(offlineText: String?, approvals pendingApprovals: Int, questions pendingQuestions: Int,
+                             drafts pendingDrafts: Int, proposals pendingProposals: Int, other waiting: Int,
+                             busy: Bool, activity: String?, tasks: [AllyTask]) -> AgentStatusLine {
         if let offlineText { return AgentStatusLine(kind: .offline, text: offlineText) }
 
-        let waiting = tasks.filter { $0.status == .needsInput }.count
         let needs = pendingApprovals + waiting + pendingQuestions + pendingDrafts + pendingProposals
         if needs > 0 {
             let text: String

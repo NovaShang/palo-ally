@@ -232,6 +232,20 @@ public struct SidebarTree: Sendable, Equatable {
         return tree
     }
 
+    /// The counts from 等你的事 (`open`: a Pal's open items): a workspace's is
+    /// its members' items, the tree's how many sessions have any. Every
+    /// waiting count reads the list, nothing else.
+    public func counting(_ open: (String) -> Int) -> SidebarTree {
+        var tree = self
+        var each: [String: Int] = [:]
+        for p in workspaces.flatMap(\.members) + sessions + folded { each[p.id] = open(p.id) }
+        for i in tree.workspaces.indices {
+            tree.workspaces[i].waiting = tree.workspaces[i].members.reduce(0) { $0 + (each[$1.id] ?? 0) }
+        }
+        tree.waitingCount = each.values.filter { $0 > 0 }.count
+        return tree
+    }
+
     /// The sidebar's order of ordinary sessions, ready to send back after a drag.
     public var sessionIDs: [String] { sessions.map(\.id) }
 

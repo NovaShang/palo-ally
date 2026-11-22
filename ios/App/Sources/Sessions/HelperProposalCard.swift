@@ -1,17 +1,19 @@
 import PaloAllyKit
 import SwiftUI
 
-/// The assistant proposes a helper (sessions-prd §4.4): its name, folder,
-/// what it's for and its daily limit, then 不用 / 开吧. Nothing starts until
-/// 开吧, the one button in the theme color. Once answered it stays, saying
-/// so; a started helper opens from here.
+/// The assistant proposes an agent (sessions-prd §4.4), on the one card for
+/// what waits on the owner (PendingCard): the assistant · what it proposes ·
+/// what it'd do, its name and folder, then 不用 / 开吧. Nothing starts until
+/// 开吧, the one button in the theme color. Answered, it folds to one line;
+/// a started agent opens from there.
 struct HelperProposalCard: View {
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     let proposal: HelperProposal
+    /// What the assistant said with it (the card's question).
+    var text: String = ""
 
-    @State private var working: HelperDecideAction?
-    @State private var error: String?
+    @State private var decision = PendingDecider()
 
     /// The Pal it opened (pals-prd §6), once it's on the list.
     private var openedPal: Pal? {
@@ -20,115 +22,75 @@ struct HelperProposalCard: View {
         return store.pal(sessionId: sid)
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ProposalHeader(symbol: "person.badge.plus", title: proposal.name.isEmpty ? String(localized: "会话") : proposal.name,
-                           dimmed: proposal.status == .discarded || proposal.status == .expired, state: state)
+    private var item: PendingItem? { store.pendingItem(for: .proposal(proposal.id)) }
+    private var name: String { proposal.name.isEmpty ? String(localized: "agent") : proposal.name }
 
-            VStack(alignment: .leading, spacing: 6) {
+    var body: some View {
+        Group {
+            if proposal.isPending { open } else { folded }
+        }
+        .animation(.snappy, value: proposal.status)
+        .accessibilityIdentifier("helper-proposal-\(proposal.id)")
+    }
+
+    private var open: some View {
+        PendingCard(header: PendingCardHeader(item: item, who: store.assistantName, createdAt: item?.createdAt ?? 0, blocking: false),
+                    title: ProposalWords.title(item: item, text: text, fallback: String(localized: "开一个 agent：\(name)")),
+                    background: proposal.duty.isEmpty ? nil : proposal.duty,
+                    error: decision.error) {
+            VStack(alignment: .leading, spacing: 4) {
+                ProposalFact(name: String(localized: "名字"), value: name)
                 if !proposal.cwd.isEmpty {
                     ProposalFact(name: String(localized: "目录"), value: CCSession.shortPath(proposal.cwd))
                 }
-                if !proposal.duty.isEmpty {
-                    ProposalFact(name: String(localized: "负责"), value: proposal.duty)
-                }
             }
-
-            if proposal.isPending {
-                if let note = proposal.note, !note.isEmpty {
-                    // The last 开吧 didn't start it: why, and it's still on offer.
-                    Text(note)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Text("开了以后，它是主机上的一个后台会话，随时能停。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                ProposalButtons(no: String(localized: "不用"), yes: String(localized: "开吧"), yesWorking: String(localized: "正在开…"), working: working,
-                                enabled: store.connection.isOnline, decide: decide)
-                if let error {
-                    Text(error).font(.caption).foregroundStyle(.red)
-                }
-            } else if proposal.status != .created, let note = proposal.note, !note.isEmpty {
-                // Why it didn't start.
-                ProposalNote(text: note)
-            } else if proposal.status == .created, let pal = openedPal {
-                OpenPalButton { model.openPal(pal.id) }
+            if let note = proposal.note, !note.isEmpty {
+                // The last 开吧 didn't start it: why, and it's still on offer.
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+        } actions: {
+            PendingChoiceButtons(choices: ProposalWords.buttons(yes: String(localized: "开吧")), working: decision.working,
+                                 enabled: store.connection.isOnline, pick: decide)
         }
-        .modifier(ProposalCardStyle(pending: proposal.isPending))
-        .animation(.snappy, value: proposal.status)
     }
 
-    private var state: String? {
-        switch proposal.status {
-        case .pending, .unknown: nil
+    /// 「✓ 已经开了：报销帮手 · 去看看它」, 「没开：…」, 「过期了：…」 (and why, when it says).
+    private var folded: some View {
+        let state: String = switch proposal.status {
         case .created: String(localized: "已经开了")
         case .discarded: String(localized: "没开")
-        case .expired: String(localized: "过期了")
+        default: String(localized: "过期了")
         }
+        let note = proposal.status != .created ? (proposal.note ?? "") : ""
+        return PendingFoldedLine(text: note.isEmpty ? String(localized: "\(state)：\(name)") : String(localized: "\(state)：\(name) · \(note)"),
+                                 done: proposal.status == .created,
+                                 action: openedPal.map { pal in (String(localized: "去看看它"), { model.openPal(pal.id) }) })
     }
 
-    private func decide(_ action: HelperDecideAction) {
-        working = action
-        error = nil
-        Task {
-            do {
-                try await store.decideHelper(proposal, action)
-            } catch {
-                self.error = action == .create ? String(localized: "没开成：\(Copy.error(error))") : String(localized: "没发出去：\(Copy.error(error))")
-            }
-            working = nil
+    private func decide(_ choice: PendingChoice) {
+        PendingDecider.run(store, .proposal(proposal.id), choice, into: $decision) { reason in
+            choice == .accept ? String(localized: "没开成：\(reason)") : String(localized: "没发出去：\(reason)")
         }
     }
 }
 
-// MARK: - the pieces both proposal cards are made of
+// MARK: - what both proposal cards share
 
-/// A proposal card's look: on the conversation's secondary background, with
-/// a thin outline while it waits on the owner. Content, not chrome: no glass.
-struct ProposalCardStyle: ViewModifier {
-    let pending: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .padding(16)
-            .background(.background.secondary, in: .rect(cornerRadius: 22, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder(pending ? Color.primary.opacity(0.12) : Color.clear, lineWidth: 1)
-            }
+enum ProposalWords {
+    /// What the card asks: the item's words (the assistant's line), else the card's own.
+    static func title(item: PendingItem?, text: String, fallback: String) -> String {
+        if let t = item?.title, !t.isEmpty { return t }
+        let said = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return said.isEmpty ? fallback : said
     }
-}
 
-/// A glyph, what's proposed, and once answered how it went (small, on the right).
-struct ProposalHeader: View {
-    let symbol: String
-    let title: String
-    var dimmed = false
-    let state: String?
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: symbol)
-                .foregroundStyle(.secondary)
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(dimmed ? .secondary : .primary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-            if let state {
-                Text(state)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize()
-                    .contentTransition(.opacity)
-            }
-        }
+    /// 不用, then the yes in the theme color.
+    static func buttons(yes: String) -> [PendingChoiceButton] {
+        [PendingChoiceButton(title: String(localized: "不用"), choice: .decline),
+         PendingChoiceButton(title: yes, choice: .accept, primary: true)]
     }
 }
 
@@ -148,73 +110,5 @@ struct ProposalFact: View {
                 .textSelection(.enabled)
         }
         .font(.subheadline)
-    }
-}
-
-/// No, then yes: yes is the one button in the theme color.
-struct ProposalButtons: View {
-    let no: String
-    let yes: String
-    let yesWorking: String
-    let working: HelperDecideAction?
-    let enabled: Bool
-    let decide: (HelperDecideAction) -> Void
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Button {
-                decide(.discard)
-            } label: {
-                Text(no).frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .tint(.secondary)
-            Button {
-                decide(.create)
-            } label: {
-                Text(working == .create ? yesWorking : yes).frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-        }
-        .controlSize(.large)
-        .buttonBorderShape(.capsule)
-        .disabled(working != nil || !enabled)
-    }
-}
-
-/// Why it didn't happen, in the computer's words.
-struct ProposalNote: View {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-/// 「去看看它 ›」: the Pal it became.
-struct OpenPalButton: View {
-    let open: () -> Void
-
-    var body: some View {
-        Button(action: open) {
-            Label("去看看它", systemImage: "chevron.right")
-                .labelStyle(TrailingIconLabelStyle())
-                .font(.subheadline)
-        }
-        .buttonStyle(.borderless)
-        .tint(.primary)
-    }
-}
-
-/// Words first, then the glyph: 「去看看它 ›」.
-struct TrailingIconLabelStyle: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 3) {
-            configuration.title
-            configuration.icon.font(.caption.weight(.semibold))
-        }
     }
 }

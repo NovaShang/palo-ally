@@ -67,28 +67,6 @@
         }
       }
     },
-    "%@ 想%@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ wants to %2$@"
-          }
-        }
-      }
-    },
-    "%@ 问你" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ is asking you"
-          }
-        }
-      }
-    },
     "%@代你说" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -199,6 +177,28 @@
         }
       }
     },
+    "%@：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@"
+          }
+        }
+      }
+    },
+    "%@：%@ · %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@ · %3$@"
+          }
+        }
+      }
+    },
     "上移" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -217,6 +217,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Move Down"
+          }
+        }
+      }
+    },
+    "为了「%@」" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "For “%@”"
+          }
+        }
+      }
+    },
+    "卡着它" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "holding it up"
+          }
+        }
+      }
+    },
+    "发给%@：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To %1$@: %2$@"
+          }
+        }
+      }
+    },
+    "发给%@？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send this to %@?"
           }
         }
       }
@@ -365,17 +409,6 @@
         }
       }
     },
-    "· 为了「%@」" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "· for “%@”"
-          }
-        }
-      }
-    },
     "「%@」已经连上这台主机。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -383,17 +416,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "“%@” is already connected to this host."
-          }
-        }
-      }
-    },
-    "一个会话" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A session"
           }
         }
       }
@@ -515,17 +537,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No thanks"
-          }
-        }
-      }
-    },
-    "为了「%@」 ·" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "For “%@” ·"
           }
         }
       }
@@ -658,6 +669,95 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Assistant language"
+          }
+        }
+      }
+    },
+    "已回答：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Answered: %@"
+          }
+        }
+      }
+    },
+    "开一个 agent：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start an agent: %@"
+          }
+        }
+      }
+    },
+    "想问你 %lld 个问题" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld question for you"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld questions for you"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "接过来以后，它在这里接着聊。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once taken over, it carries on here."
+          }
+        }
+      }
+    },
+    "来自%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From %@"
+          }
+        }
+      }
+    },
+    "没等到回答：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No answer came: %@"
+          }
+        }
+      }
+    },
+    "稍等…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One moment…"
           }
         }
       }
@@ -1439,17 +1539,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Use the conversation as context"
-          }
-        }
-      }
-    },
-    "发给%@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Send to %@"
           }
         }
       }
@@ -2433,17 +2522,6 @@
         }
       }
     },
-    "已回答" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Answered"
-          }
-        }
-      }
-    },
     "已复制" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2598,17 +2676,6 @@
         }
       }
     },
-    "开了以后，它是主机上的一个后台会话，随时能停。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Once started, it’s a background session on your host that you can stop any time."
-          }
-        }
-      }
-    },
     "开吧" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2759,17 +2826,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "What should I do?"
-          }
-        }
-      }
-    },
-    "想问你" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Asking you"
           }
         }
       }
@@ -4573,17 +4629,6 @@
         }
       }
     },
-    "没等到回答" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No answer"
-          }
-        }
-      }
-    },
     "没能开始登录：%@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4811,17 +4856,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Scan with another device, or open the link on it"
-          }
-        }
-      }
-    },
-    "用工具" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "use a tool"
           }
         }
       }
@@ -5707,17 +5741,6 @@
         }
       }
     },
-    "负责" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "In charge of"
-          }
-        }
-      }
-    },
     "跟%@说点什么" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5751,6 +5774,17 @@
         }
       }
     },
+    "跳过了：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skipped: %@"
+          }
+        }
+      }
+    },
     "过期了" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5769,17 +5803,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Steps"
-          }
-        }
-      }
-    },
-    "运行" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "run"
           }
         }
       }
@@ -6225,6 +6248,17 @@
         }
       }
     },
+    "这里没有等你的事" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing here is waiting on you"
+          }
+        }
+      }
+    },
     "这里还空着" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6452,17 +6486,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Retry"
-          }
-        }
-      }
-    },
-    "问过你" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Asked you"
           }
         }
       }
@@ -6980,17 +7003,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remove from Sessions"
-          }
-        }
-      }
-    },
-    "接过来以后，它会出现在会话里，在手机上接着聊。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Once taken over, it shows up in Sessions and you can keep chatting on your phone."
           }
         }
       }
@@ -7855,28 +7867,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Decided: %@"
-          }
-        }
-      }
-    },
-    "卡着「%@」" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Holding up “%@”"
-          }
-        }
-      }
-    },
-    "%@ · 卡着它 · %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ · stopped on it · %2$@"
           }
         }
       }

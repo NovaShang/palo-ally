@@ -9,39 +9,53 @@ struct PaneTabsRulesTests {
 
     @Test func theDefaultHasOnlyThePinnedTabs() {
         for key in [palo, session, PaneTabsKey.workspace("ws_a")] {
-            #expect(TabsState().normalized(key: key).tabs.map(\.kind) == ["library", "files"])
+            #expect(TabsState().normalized(key: key).tabs.map(\.kind) == ["pending", "library", "files"])
         }
     }
 
     @Test func aStateWithoutItsPinnedTabsGetsThemFirstAndKeepsTheActiveTab() {
         let s = TabsState(tabs: [.webTab("https://a.test"), PaneTab(kind: "files"), PaneTab(kind: "files")], active: 0, open: true)
         let n = s.normalized(key: session)
-        #expect(n.tabs.map(\.kind) == ["library", "files", "web"] && n.active == 2 && n.open)
+        #expect(n.tabs.map(\.kind) == ["pending", "library", "files", "web"] && n.active == 3 && n.open)
         // Out of range clamps.
-        #expect(TabsState(tabs: [PaneTab(kind: "files")], active: 9).normalized(key: session).active == 1)
+        #expect(TabsState(tabs: [PaneTab(kind: "files")], active: 9).normalized(key: session).active == 2)
         #expect(TabsState(tabs: [PaneTab(kind: "files")], active: -3).normalized(key: session).active == 0)
         // A state from when one tab was pinned: the active preview stays active, the active files tab is files.
         let old = TabsState(tabs: [PaneTab(kind: "files"), .previewTab("a.md")], active: 1)
-        #expect(old.normalized(key: session).active == 2 && old.normalized(key: session).activeTab?.path == "a.md")
+        #expect(old.normalized(key: session).active == 3 && old.normalized(key: session).activeTab?.path == "a.md")
         #expect(TabsState(tabs: [PaneTab(kind: "files")], active: 0).normalized(key: session).activeTab?.kind == "files")
+        // A state from when 等你 opened as a tab of its own after the pinned
+        // two: it moves to the head, still the shown one.
+        let before = TabsState(tabs: [PaneTab(kind: "library"), PaneTab(kind: "files"), .webTab("https://a.test"), PaneTab(kind: "pending")], active: 3)
+        let mended = before.normalized(key: session)
+        #expect(mended.tabs.map(\.kind) == ["pending", "library", "files", "web"] && mended.active == 0)
+    }
+
+    @Test func pendingIsPinnedFirstAndOpensInPlace() {
+        for key in [palo, session] {
+            let p = TabsState().openingWeb(url: "https://a.test", key: key).openingPending(key: key)
+            #expect(p.tabs.count == 4 && p.active == 0 && p.open && p.activeTab?.kind == PaneTab.pending)
+            #expect(!p.canClose(at: 0, key: key) && p.closing(at: 0, key: key) == p.normalized(key: key))
+        }
+        #expect(PaneTabsKey.pinnedKinds.first == PaneTab.pending && PaneTabsKey.pinnedCount == 3)
     }
 
     @Test func openingFilesAndLibraryShowTheirPinnedTab() {
         for key in [palo, session] {
             let f = TabsState().openingFiles(key: key)
-            #expect(f.tabs.count == 2 && f.active == 1 && f.open)
+            #expect(f.tabs.count == 3 && f.active == 2 && f.open)
             let l = f.openingLibrary(key: key)
-            #expect(l.tabs.count == 2 && l.active == 0)
+            #expect(l.tabs.count == 3 && l.active == 1)
             let w = TabsState().openingWeb(url: "https://a.test", key: key).openingFiles(key: key)
-            #expect(w.tabs.count == 3 && w.active == 1)
+            #expect(w.tabs.count == 4 && w.active == 2)
         }
     }
 
     @Test func aPreviewReusesItsTabAndTheOthersAdd() {
         let a = TabsState().openingPreview(path: "a.md", key: session).openingPreview(path: "b.md", key: session)
-        #expect(a.tabs.map(\.path) == [nil, nil, "a.md", "b.md"] && a.active == 3)
+        #expect(a.tabs.map(\.path) == [nil, nil, nil, "a.md", "b.md"] && a.active == 4)
         let again = a.openingPreview(path: "a.md", key: session)
-        #expect(again.tabs.count == 4 && again.active == 2 && again.open)
+        #expect(again.tabs.count == 5 && again.active == 3 && again.open)
     }
 
     @Test func aPreviewIsKeptByItsAbsolutePath() {
@@ -49,8 +63,8 @@ struct PaneTabsRulesTests {
         let s = TabsState().openingPreview(path: "/Users/a/site/a.md", key: ws)
             .openingPreview(path: "/Users/a/blog/a.md", key: ws)
             .openingPreview(path: "/Users/a/site/a.md", key: ws)
-        #expect(s.tabs.count == 4 && s.active == 2)
-        #expect(s.tabs[2].isAbsolutePreview && !PaneTab.previewTab("a.md").isAbsolutePreview)
+        #expect(s.tabs.count == 5 && s.active == 3)
+        #expect(s.tabs[3].isAbsolutePreview && !PaneTab.previewTab("a.md").isAbsolutePreview)
         // A tab an earlier version kept with a scope still reads (the scope is dropped).
         let old = try! JSONDecoder().decode(PaneTab.self, from: Data(#"{"kind":"preview","path":"a.md","scope":"pal:p1"}"#.utf8))
         #expect(old == PaneTab.previewTab("a.md"))
@@ -60,28 +74,29 @@ struct PaneTabsRulesTests {
         let a = TabsState().openingWeb(url: " https://a.test ", key: session).openingWeb(url: "https://b.test", key: session)
         #expect(a.tabs.compactMap(\.url) == ["https://a.test", "https://b.test"])
         let again = a.openingWeb(url: "https://a.test", key: session)
-        #expect(again.tabs.count == 4 && again.active == 2)
+        #expect(again.tabs.count == 5 && again.active == 3)
     }
 
     @Test func closingKeepsThePinnedTabsAndPicksTheNeighbour() {
         var s = TabsState().openingPreview(path: "a", key: session).openingPreview(path: "b", key: session).openingPreview(path: "c", key: session)
         #expect(s.closing(at: 0, key: session) == s.normalized(key: session))
         #expect(s.closing(at: 1, key: session) == s.normalized(key: session))
-        #expect(!s.canClose(at: 0, key: session) && !s.canClose(at: 1, key: session) && s.canClose(at: 3, key: session) && !s.canClose(at: 9, key: session))
+        #expect(s.closing(at: 2, key: session) == s.normalized(key: session))
+        #expect(!s.canClose(at: 0, key: session) && !s.canClose(at: 2, key: session) && s.canClose(at: 4, key: session) && !s.canClose(at: 9, key: session))
         // The last, active one: the one before it shows.
-        s = s.closing(at: 4, key: session)
-        #expect(s.tabs.map(\.path) == [nil, nil, "a", "b"] && s.active == 3)
+        s = s.closing(at: 5, key: session)
+        #expect(s.tabs.map(\.path) == [nil, nil, nil, "a", "b"] && s.active == 4)
         // A middle, active one: the one that moved into its place.
-        s = s.activating(2, key: session).closing(at: 2, key: session)
-        #expect(s.tabs.map(\.path) == [nil, nil, "b"] && s.active == 2)
+        s = s.activating(3, key: session).closing(at: 3, key: session)
+        #expect(s.tabs.map(\.path) == [nil, nil, nil, "b"] && s.active == 3)
         // One before the active one: the active tab stays the same tab.
         s = s.openingPreview(path: "d", key: session)
-        #expect(s.active == 3)
-        s = s.closing(at: 2, key: session)
-        #expect(s.tabs.map(\.path) == [nil, nil, "d"] && s.active == 2)
+        #expect(s.active == 4)
+        s = s.closing(at: 3, key: session)
+        #expect(s.tabs.map(\.path) == [nil, nil, nil, "d"] && s.active == 3)
         // Nothing to close at a bad index.
         #expect(s.closing(at: 7, key: session) == s)
-        #expect(TabsState().closing(at: 0, key: palo).tabs.map(\.kind) == ["library", "files"])
+        #expect(TabsState().closing(at: 0, key: palo).tabs.map(\.kind) == ["pending", "library", "files"])
     }
 
     @Test func madeByKeepsOneSessionsItems() {
@@ -117,15 +132,15 @@ struct PaneTabsHubTests {
         let key = PaneTabsKey.session("pal-site")
         hub.openWeb(key, url: "https://a.test")
         hub.openPreview(key, path: "README.md")
-        hub.activate(key, at: 2)
-        #expect(hub.state(for: key).tabs.count == 4 && hub.state(for: key).active == 2 && hub.state(for: key).open)
+        hub.activate(key, at: 3)
+        #expect(hub.state(for: key).tabs.count == 5 && hub.state(for: key).active == 3 && hub.state(for: key).open)
         let sent = await until { await host.paneTabs[key] != nil && hub.writes == 1 }
         #expect(sent)
         let kept = await host.paneTabs[key]
-        #expect(kept?.tabs.map(\.kind) == ["library", "files", "web", "preview"] && kept?.active == 2)
+        #expect(kept?.tabs.map(\.kind) == ["pending", "library", "files", "web", "preview"] && kept?.active == 3)
         // The host stamped it, and the echo changed nothing.
         try await Task.sleep(for: .milliseconds(80))
-        #expect(hub.state(for: key).updatedAt == kept?.updatedAt && hub.state(for: key).active == 2)
+        #expect(hub.state(for: key).updatedAt == kept?.updatedAt && hub.state(for: key).active == 3)
         #expect(hub.writes == 1)
     }
 
@@ -134,11 +149,11 @@ struct PaneTabsHubTests {
         let key = PaneTabsKey.workspace("ws-1")
         let theirs = TabsState(tabs: [PaneTab(kind: "files"), .webTab("https://b.test")], active: 1, open: true, updatedAt: 500)
         store.apply(event: RPCEventName.workbenchUpdated, data: ["key": .string(key), "state": try .from(theirs)] as JSONValue)
-        #expect(hub.state(for: key).tabs.count == 3 && hub.state(for: key).active == 2)
+        #expect(hub.state(for: key).tabs.count == 4 && hub.state(for: key).active == 3)
         // An older stamp is not taken.
         var older = theirs; older.updatedAt = 400; older.active = 0
         store.apply(event: RPCEventName.workbenchUpdated, data: ["key": .string(key), "state": try .from(older)] as JSONValue)
-        #expect(hub.state(for: key).active == 2)
+        #expect(hub.state(for: key).active == 3)
         store.apply(event: RPCEventName.workbenchUpdated, data: ["key": .string(key), "state": .null] as JSONValue)
         #expect(hub.state(for: key).open == false && hub.states[key] == nil)
         _ = host
@@ -168,8 +183,8 @@ struct WebAddressTests {
     @Test func retargetingChangesOnlyAWebTab() {
         let key = PaneTabsKey.session("pal_a")
         let s = TabsState().openingWeb(url: "", key: key).openingPreview(path: "a.md", key: key)
-        #expect(s.retargetingWeb(at: 2, to: " https://a.test ", key: key).tabs[2].url == "https://a.test")
-        #expect(s.retargetingWeb(at: 3, to: "https://a.test", key: key) == s)
+        #expect(s.retargetingWeb(at: 3, to: " https://a.test ", key: key).tabs[3].url == "https://a.test")
+        #expect(s.retargetingWeb(at: 4, to: "https://a.test", key: key) == s)
         #expect(s.retargetingWeb(at: 0, to: "https://a.test", key: key) == s)
     }
 }

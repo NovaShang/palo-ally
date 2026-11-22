@@ -2,7 +2,8 @@ import { settingsEffort } from "./ccEffort.ts";
 import { t as tr } from "./i18n/index.ts";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { type ApprovalManager, sessionPermission } from "./approvals.ts";
+import type { ApprovalManager } from "./approvals.ts";
+import { askOwner } from "./ownerCards.ts";
 import { firstLine } from "./ccSessions.ts";
 import { ACTIVITY, describeActivity, friendlyError } from "./copy.ts";
 import { isAuthFailure } from "./auth.ts";
@@ -12,7 +13,7 @@ import type { MediaStore } from "./media.ts";
 import { type PalLaunch, isHelperFailure, makeSpawner } from "./palLauncher.ts";
 import type { RawSessionMessage } from "./ccSessions.ts";
 import { CARD_TOOLS, type PalMapOptions, TranscriptFollower, cardKey, toPalMessages, transcriptLastLine, transcriptModel, userEntryMessage } from "./palHistory.ts";
-import { ASK_TOOL, type QuestionManager } from "./questions.ts";
+import type { QuestionManager } from "./questions.ts";
 import { type ForkSession, type PendingRewind, beforeCompaction, chainTo, hasFileCheckpoint, leafOf, ownerText, readTranscript, rewindBusy, rewindNoFiles, rewindNotFound } from "./rewind.ts";
 import { type StallRecovery, type StallTarget, transcriptHas } from "./stallWatch.ts";
 import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
@@ -1410,22 +1411,11 @@ export class PalSession {
     const source = this.source();
     // Its one tool of ours: never a card (it is also allowed up front).
     if (SESSION_ALLOWED_TOOLS.includes(req.toolName)) return { behavior: "allow", updatedInput: req.input };
-    if (req.toolName === ASK_TOOL) {
-      const asked = this.d.questions.ask(req, { source, notify: false });
-      if (!asked) return { behavior: "deny", message: tr("pals.badQuestion") };
-      this.d.changed();
-      this.d.onWaiting(this, tr("sessions.askYou", { q: asked.question.items[0]!.question }), { questionId: asked.question.id });
-      const r = await asked.result;
-      this.d.changed();
-      return r;
-    }
-    const input = req.input;
-    // The whole command, never cut short.
-    const words = sessionPermission(req.toolName, input);
-    const asked = this.d.approvals.ask(req, { source, notify: false, title: words.title, detail: words.detail });
+    const card = askOwner(this.d, req, { source, notify: false });
+    if (!card) return { behavior: "deny", message: tr("pals.badQuestion") };
     this.d.changed();
-    this.d.onWaiting(this, words.line, { approvalId: asked.approval.id });
-    const r = await asked.result;
+    this.d.onWaiting(this, card.line, card.ids);
+    const r = await card.result;
     this.d.changed();
     return r;
   }

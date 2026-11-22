@@ -359,10 +359,8 @@ extension AppStore {
         AgentStatusLine.make(
             // Only a drop the owner is shown (see displayedConnection).
             offlineText: connectionTrouble ? Copy.connectionShort(displayedConnection) : nil,
-            pendingApprovals: pendingApprovals.count,
-            pendingQuestions: pendingQuestions.count,
-            pendingDrafts: pendingAllyDrafts.count,
-            pendingProposals: pendingProposalCount,
+            // What waits on the owner: this conversation's items on 等你的事.
+            waiting: openPendingHere,
             busy: isBusy,
             activity: status?.activity,
             tasks: tasks

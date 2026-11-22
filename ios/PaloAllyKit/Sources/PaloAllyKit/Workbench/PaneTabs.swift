@@ -11,8 +11,10 @@ public enum PaneTabsKey {
     public static func session(_ id: String) -> String { "pal:" + id }
     public static func workspace(_ id: String) -> String { "ws:" + id }
 
-    /// The two tabs at the head that can't be closed, for every key: 成果, then 文件.
-    public static let pinnedKinds = [PaneTab.library, PaneTab.files]
+    /// The tabs at the head that can't be closed, for every key: 等你 (what
+    /// waits on the owner: everything in the assistant's pane, an agent's own
+    /// in its), 成果, then 文件.
+    public static let pinnedKinds = [PaneTab.pending, PaneTab.library, PaneTab.files]
     /// How many tabs are pinned.
     public static var pinnedCount: Int { pinnedKinds.count }
 }
@@ -24,7 +26,7 @@ extension PaneTab {
     public static let web = "web"
     /// One item of 成果, by its id (kept in `path`).
     public static let artifact = "artifact"
-    /// 等你的事: the owner's list of what to decide (one per pane).
+    /// 等你的事: the owner's list of what to decide (pinned, first).
     public static let pending = "pending"
 
     /// A file by its absolute path (tabs from before: relative to the pane's files).
@@ -39,9 +41,10 @@ extension PaneTab {
 }
 
 extension TabsState {
-    /// The first two tabs are 成果 and 文件, one of each, and `active` points
-    /// at a tab. States written when only one tab was pinned are mended, and
-    /// `active` keeps pointing at the same tab.
+    /// The first tabs are the pinned ones (等你, 成果, 文件), one of each, and
+    /// `active` points at a tab. States written when fewer were pinned (an
+    /// 等你 opened as a tab of its own among them) are mended, and `active`
+    /// keeps pointing at the same tab.
     public func normalized(key: String) -> TabsState {
         let pinned = PaneTabsKey.pinnedKinds
         let rest = tabs.enumerated().filter { !pinned.contains($0.element.kind) }
@@ -94,7 +97,7 @@ extension TabsState {
         opening(.previewTab(path), key: key) { $0.kind == PaneTab.preview && $0.path == path }
     }
 
-    /// 等你的事 as a tab; one per pane.
+    /// 等你的事 (pinned).
     public func openingPending(key: String) -> TabsState {
         opening(PaneTab(kind: PaneTab.pending), key: key) { $0.kind == PaneTab.pending }
     }

@@ -46,24 +46,6 @@ extension Copy {
         return parts.joined(separator: " · ")
     }
 
-    /// Who's asking on a session's approval card: 「网站帮手 想运行」 for a
-    /// command, 「网站帮手 想改文件」 and so on for other tools.
-    static func sessionAsks(_ a: Approval) -> String? {
-        guard let source = a.source, source.isSession else { return nil }
-        let name = source.name.isEmpty ? String(localized: "一个会话") : source.name
-        let tool = Friendly.tool(a.tool)
-        let verb = Friendly.runsCommand(a.tool) || tool.isEmpty ? String(localized: "运行")
-            : (tool == Friendly.unknownToolLabel ? String(localized: "用工具") : tool)
-        return spaced(String(localized: "\(name) 想\(verb)"))
-    }
-
-    /// 「数据清洗 问你」.
-    static func sessionQuestion(_ q: Question) -> String? {
-        guard let source = q.source, source.isSession else { return nil }
-        let name = source.name.isEmpty ? String(localized: "一个会话") : source.name
-        return spaced(String(localized: "\(name) 问你"))
-    }
-
     /// An expired session card: the host's note, else 「在电脑上等你」.
     static func waitsAtComputer(_ note: String?) -> String {
         let n = note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

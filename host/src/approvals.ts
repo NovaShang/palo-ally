@@ -8,9 +8,10 @@ import { newId, readJson, truncate, writeJson } from "./util.ts";
 import { t } from "./i18n/index.ts";
 
 /**
- * A session's permission card (a Pal's, or one of the computer's own sessions
- * through the hooks): its title, its detail (a command whole, never cut
- * short) and the line its 「在等你」 push says.
+ * A permission card's words (the assistant's, a Pal's, or one of the
+ * computer's own sessions through the hooks): its title, its detail (a
+ * command whole, never cut short) and the line its 「在等你」 push says.
+ * Cards are put up through ownerCards.ts (sessions) or ApprovalManager.ask.
  */
 export function sessionPermission(tool: string, input: Record<string, unknown>): { title: string; detail: string; line: string } {
   const command = tool === "Bash" && typeof input.command === "string" ? input.command : undefined;
@@ -103,11 +104,13 @@ export class ApprovalManager {
     // allow" is the harness' own rule too; a session through the hooks has none.
     const ownPrompt = !o.source || o.source.kind === "pal";
     const remember = ownPrompt && !req.defaultToNo && !req.suppressAlwaysAllowRule ? describeSuggestion(req.suggestions) : null;
+    // The same words as every card (sessionPermission), unless the caller has its own.
+    const words = sessionPermission(req.toolName, req.input);
     const approval: Approval = {
       id: newId("a_"),
       tool: o.tool ?? req.toolName,
-      title: o.title ?? describeTool(req.toolName, req.input),
-      detail: o.detail ?? describeInput(req.toolName, req.input),
+      title: o.title ?? words.title,
+      detail: o.detail ?? words.detail,
       taskId: this.hooks.taskForToolUse(req.toolUseId),
       // the harness marks prompts that must not be approved casually
       careful: !!req.defaultToNo,

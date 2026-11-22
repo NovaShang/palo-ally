@@ -217,6 +217,17 @@
         }
       }
     },
+    "不用" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No thanks"
+          }
+        }
+      }
+    },
     "中" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -246,6 +257,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Session"
+          }
+        }
+      }
+    },
+    "允许" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow"
           }
         }
       }
@@ -290,6 +312,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "delete something"
+          }
+        }
+      }
+    },
+    "发了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sent"
           }
         }
       }
@@ -389,6 +422,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Waiting for you"
+          }
+        }
+      }
+    },
+    "好" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
           }
         }
       }
@@ -499,6 +543,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "look for files"
+          }
+        }
+      }
+    },
+    "拒绝" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deny"
           }
         }
       }
@@ -932,6 +987,17 @@
         }
       }
     },
+    "跳过了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skipped"
+          }
+        }
+      }
+    },
     "运行命令" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -994,6 +1060,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "this site"
+          }
+        }
+      }
+    },
+    "这件已经不在了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This one is gone"
           }
         }
       }
