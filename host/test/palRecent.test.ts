@@ -293,7 +293,7 @@ describe("the assistant brings one back (pals_recent, pal_adopt)", () => {
     expect(card).toMatchObject({ role: "assistant", kind: "pal_adopt", channel: "system", text: expect.stringContaining("接手「首页改成两栏」（") });
     expect(card.proposal).toEqual({ id: expect.stringMatching(/^pa_/), sessionId: a, cwd: site, title: "首页改成两栏", status: "pending" });
     expect(t.driver.pals).toHaveLength(0);
-    expect(await tools.pal_adopt({ sessionId: a })).toContain("已经有一张接管它的卡片");
+    expect(await tools.pal_adopt({ sessionId: a })).toContain("已经有一张接手它的卡片");
 
     // 接管: the Pal, and the card (the same message, sent again) says so
     const before = t.events.filter((e) => e.event === "chat.message" && e.data.id === card.id).length;

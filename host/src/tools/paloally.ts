@@ -129,7 +129,7 @@ export function assistantToolSpecs(h: ToolHandlers): ToolSpec[] {
       ),
       spec(
         "pal_adopt",
-        "提议把一个已经退出的 Claude Code 对话接回来当 Pal（接着原来的上下文跑，由 Palo 托管）。只生成一张卡片「接管『标题』（目录）」，主人点「接管」才会接；立即返回，别说已经接了。",
+        "提议把一个已经退出的 Claude Code 对话接回来当 Pal（接着原来的上下文跑，由 Palo 托管）。只生成一张卡片「接手『标题』（目录）」，主人点「接手」才会接；立即返回，别说已经接了。",
         { sessionId: z.string().describe("pals_recent 给的 sessionId") },
         async (a) => h.pal_adopt(a),
       ),
