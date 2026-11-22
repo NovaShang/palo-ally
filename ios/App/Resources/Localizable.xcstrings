@@ -4848,17 +4848,6 @@
         }
       }
     },
-    "主机上开着的 Claude Code 会出现在这里。接管以后，在手机上接着聊。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Claude Code sessions open on your host show up here. Take one over to keep talking to it on your phone."
-          }
-        }
-      }
-    },
     "主机上的 Claude Code 登录过期了。在这里打开授权页，用你的 Claude 账号同意，再把页面上显示的代码粘贴回来。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6830,17 +6819,6 @@
         }
       }
     },
-    "从终端搬进来" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bring in from Terminal"
-          }
-        }
-      }
-    },
     "还没有用过的文件夹。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7789,39 +7767,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Have it sum up the recent stretch of this conversation"
-          }
-        }
-      }
-    },
-    "TL;DR：整理最近这段对话的要点" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "TL;DR: sum up the recent stretch of this conversation"
-          }
-        }
-      }
-    },
-    "TL;DR 请求，收起" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "TL;DR request, collapse"
-          }
-        }
-      }
-    },
-    "TL;DR 请求，展开看发了什么" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "TL;DR request, expand to see what was sent"
           }
         }
       }
