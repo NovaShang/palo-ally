@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backlog：排好队、轮到了再做</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#e9e9ee;color:#1c1c1e;font:13px/1.5 -apple-system,"PingFang SC",system-ui,sans-serif}
+main{max-width:1260px;margin:0 auto;padding:20px 14px 80px}
+h1{font-size:22px;margin:6px 0}h2{font-size:16px;margin:34px 0 8px}
+.sub{color:#6e6e73;font-size:14px;max-width:1000px}
+.notes{background:#fff;border-radius:16px;padding:12px 18px;font-size:14px}
+.notes li{margin:5px 0}
+.notes table{border-collapse:collapse;font-size:13px;margin:6px 0}
+.notes td,.notes th{border-bottom:.5px solid #ddd;padding:5px 12px 5px 0;text-align:left;vertical-align:top}
+.row{display:flex;gap:26px;align-items:flex-start;flex-wrap:wrap;margin-top:14px}
+.cap{font-size:12px;color:#6e6e73;margin:6px 0 0 6px;max-width:1040px}
+button{font:inherit;cursor:pointer;border:0}
+.reset{background:#fff;border-radius:10px;padding:5px 12px;box-shadow:0 0 0 .5px rgba(0,0,0,.15);margin-top:8px}
+code{background:#f2f2f5;border-radius:5px;padding:0 4px;font-size:12px}
+
+/* Mac */
+.mac{--accent:#d0569f;width:1180px;height:660px;border-radius:12px;overflow:hidden;background:#1e1e20;color:#f2f2f7;display:flex;box-shadow:0 0 0 .5px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.22);position:relative}
+.mside{width:230px;background:#2a292e;flex:none;padding:46px 8px 8px;font-size:12.5px}
+.lights{position:absolute;left:14px;top:14px;display:flex;gap:8px}
+.lights i{width:12px;height:12px;border-radius:6px;background:#ff5f57}.lights i:nth-child(2){background:#febc2e}.lights i:nth-child(3){background:#28c840}
+.sh{color:#8e8e93;font-size:11px;padding:12px 8px 4px}
+.srow{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:8px}
+.srow.sel{background:rgba(255,255,255,.1)}
+.srow .ic{width:18px;height:18px;border-radius:9px;background:#3a3a3e;flex:none;display:grid;place-items:center;font-size:10px}
+.srow .n{flex:1}
+.srow .l{color:#8e8e93;font-size:11px}
+.srow.child{padding-left:26px}
+.st{width:9px;height:9px;border-radius:5px;flex:none}
+.st.idle{background:#8e8e93}.st.busy{background:#0a84ff}.st.done{background:#30d158}
+.mmain{flex:1;position:relative;display:flex;flex-direction:column;min-width:0}
+.mtop{height:42px;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;border-bottom:.5px solid rgba(255,255,255,.06)}
+.mtop small{color:#8e8e93;font-weight:400;margin-left:6px}
+.chat{flex:1;overflow:auto;padding:14px 26px 150px;display:flex;flex-direction:column;gap:10px}
+.m{max-width:80%;color:#e5e5ea;font-size:13.5px}
+.m.me{align-self:flex-end;background:rgba(255,255,255,.14);border-radius:16px;padding:7px 12px}
+.m.sys{align-self:center;color:#8e8e93;font-size:12px;display:flex;gap:8px;align-items:center}
+.m.sys button{background:none;color:#8e8e93;text-decoration:underline;padding:0;font-size:11.5px}
+.quote{border-left:2px solid #8e8e93;padding-left:8px;color:#aeaeb2;font-size:12px;margin-bottom:4px}
+.dock{position:absolute;left:22px;right:22px;bottom:14px;display:flex;flex-direction:column;align-items:center;gap:8px}
+.next{display:flex;align-items:center;gap:8px;background:rgba(58,58,64,.94);border-radius:18px;padding:6px 8px 6px 14px;font-size:12.5px;box-shadow:0 3px 14px rgba(0,0,0,.4),inset 0 0 0 .5px rgba(255,255,255,.14);max-width:100%}
+.next .lab{color:#8e8e93;white-space:nowrap}
+.next .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:380px}
+.next .go{background:var(--accent);color:#fff;border-radius:12px;padding:3px 12px;font-weight:600;font-size:12px}
+.next .alt{background:rgba(255,255,255,.12);color:#f2f2f7;border-radius:12px;padding:3px 10px;font-size:12px}
+.comp{width:100%;height:44px;border-radius:22px;background:rgba(70,70,76,.85);display:flex;align-items:center;padding:0 6px 0 16px;color:#8e8e93;justify-content:space-between;font-size:13px}
+.comp i{width:32px;height:32px;border-radius:16px;background:var(--accent);display:block}
+.pane{width:360px;flex:none;background:#252527;border-left:.5px solid rgba(255,255,255,.08);display:flex;flex-direction:column}
+.tabs{display:flex;gap:4px;padding:10px 10px 6px;align-items:center}
+.tabs span{padding:4px 10px;border-radius:12px;font-size:12px;color:#aeaeb2}
+.tabs span.on{background:rgba(255,255,255,.12);color:#f2f2f7;font-weight:600}
+.ph{display:flex;align-items:baseline;gap:8px;padding:6px 14px 2px}
+.ph h3{margin:0;font-size:15px;flex:1}
+.ph small{color:#8e8e93;font-size:11px}
+.blist{flex:1;overflow:auto;padding:4px 10px 10px}
+.grp{color:#8e8e93;font-size:11px;padding:10px 6px 4px;display:flex;gap:6px;align-items:center}
+.grp button{background:none;color:#8e8e93;padding:0;font-size:11px}
+.bi{display:flex;gap:8px;align-items:flex-start;background:rgba(255,255,255,.06);border-radius:12px;padding:8px 10px;margin-bottom:5px;cursor:grab}
+.bi.drag{opacity:.4}
+.bi.over{box-shadow:0 -2px 0 var(--accent)}
+.bi .no{width:18px;color:#8e8e93;font-size:12px;font-variant-numeric:tabular-nums;flex:none;text-align:right;padding-top:1px}
+.bi .tx{flex:1;min-width:0}
+.bi .tt{font-size:13px}
+.bi .nt{color:#8e8e93;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bi .hd{color:#636366;font-size:14px;line-height:1;padding-top:2px}
+.bi.low{background:none;padding:5px 10px;margin-bottom:0}
+.bi.low .tt{color:#aeaeb2;font-size:12.5px}
+.bi.doing{background:rgba(10,132,255,.12);cursor:default}
+.bi.doing .who{color:#64a8ff;font-size:11px}
+.bi.fin .tt{color:#8e8e93;text-decoration:line-through}
+.sugg{margin:6px 4px;background:rgba(208,86,159,.14);border-radius:12px;padding:8px 10px;font-size:12px;color:#f2c6e2}
+.sugg button{background:rgba(255,255,255,.12);color:#f2f2f7;border-radius:10px;padding:2px 9px;font-size:11.5px;margin:6px 6px 0 0}
+.add{margin:6px 10px 12px;height:34px;border-radius:17px;background:rgba(255,255,255,.07);display:flex;align-items:center;padding:0 12px;color:#8e8e93;font-size:12.5px}
+.add input{background:none;border:0;color:#f2f2f7;font:inherit;flex:1;outline:none}
+.fresh{animation:in .35s ease-out}
+@keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* phone */
+.phone{--accent:#d0569f;width:340px;height:700px;border-radius:46px;background:#000;padding:12px;box-shadow:0 10px 30px rgba(0,0,0,.25);flex:none}
+.scr{width:100%;height:100%;border-radius:36px;background:#1c1c1e;color:#f2f2f7;overflow:hidden;position:relative}
+.pnav{padding:52px 16px 6px;display:flex;align-items:center;gap:8px}
+.pnav b{flex:1;text-align:center;font-size:15px}
+.pnav span{color:#aeaeb2;font-size:13px;min-width:40px}
+.pseg{display:flex;margin:6px 14px;background:rgba(255,255,255,.08);border-radius:9px;padding:2px}
+.pseg span{flex:1;text-align:center;padding:4px;border-radius:7px;font-size:12px;color:#aeaeb2}
+.pseg span.on{background:rgba(255,255,255,.16);color:#f2f2f7;font-weight:600}
+.scr .blist{position:absolute;top:126px;bottom:70px;left:0;right:0}
+.scr .add{position:absolute;left:0;right:0;bottom:22px;margin:0 14px}
+</style></head><body><main>
+
+<h1>Backlog：排好队、轮到了再做</h1>
+<p class="sub">「等你的事」是 AI 等你，要快；Backlog 是你想让 AI 做、还没轮到的事，有顺序、不催。每个工作区（和单独的会话）一份，Palo 自己一份放杂事。主要派给 agent 做：会话空下来时，底部提示下一件，你点「开始」它才做。</p>
+
+<div class="notes"><ul>
+<li><b>三样东西的分工</b>
+<table>
+<tr><th></th><th>方向</th><th>急不急</th><th>打扰你吗</th></tr>
+<tr><td>等你的事</td><td>AI → 你（它卡着）</td><td>尽快</td><td>横幅、角标、卡着的推送</td></tr>
+<tr><td>Backlog</td><td>你 → AI（排队）</td><td>不急，有顺序</td><td>不打扰：无角标、无推送</td></tr>
+<tr><td>提醒 / todo</td><td>到点了 → 你</td><td>有时间点</td><td>到点提醒</td></tr>
+</table></li>
+<li><b>归属</b>：侧栏一级的东西各有一份：每个工作区、每个不在工作区里的会话、Palo。顺序只在一份之内有意义。</li>
+<li><b>存法</b>：一份一个 Markdown 文件（<code>~/.paloally/backlog/&lt;工作区&gt;.md</code>），一行一件，从上到下就是顺序；正在做的标出是哪个会话，做完的打勾留在文件末尾。agent 拿到路径就能直接读写，不需要新的协议；App 读同一个文件，拖动排序就是改文件里的顺序。</li>
+<li><b>怎么加进来</b>：①在任何会话里说「这个放 backlog」，agent 写进这个工作区那一份，对话里留一行「已放进第 N 件 · 撤回」；②右侧栏 Backlog 底下直接打字；③「等你的事」里不急的事点「以后再说」挪进来（取代现在的「收起」）。</li>
+<li><b>怎么开工</b>：工作区里有会话空下来（做完一轮、没有等你的事），输入框上方出现「下一件：… · 开始 · 换一件」。点「开始」，这件就作为你的话发给这个会话，并移到「正在做」；它做完、你确认了才打勾。默认不自动接着做；以后可以给某个工作区单独打开「做完自动接下一件」。</li>
+<li><b>顺序归你</b>：拖动排序。agent 可以建议调整（Backlog 顶上一条建议，接受 / 不用），自己不能改。前三件正常显示，后面的折成一行一件的小字。</li>
+<li><b>Palo 的那份</b>：放不属于任何项目的杂事。Palo 空闲时不主动提示，晨报里带一句「backlog 第一件是…」。</li>
+<li><b>不做的</b>：截止日期、优先级字段、标签。要定时间的东西是提醒，不是 backlog。</li>
+</ul></div>
+
+<h2>Mac：工作区「官网改版」，网站帮手刚做完一轮</h2>
+<div class="row"><div>
+<div class="mac" id="mac">
+  <div class="lights"><i></i><i></i><i></i></div>
+  <div class="mside">
+    <div class="srow"><span class="ic">P</span><span class="n">Palo</span></div>
+    <div class="sh">工作区</div>
+    <div class="srow"><span class="ic">▦</span><span class="n">官网改版</span></div>
+    <div class="srow child sel"><span class="st idle" id="stSite"></span><span class="n">网站帮手</span></div>
+    <div class="srow child"><span class="st busy"></span><span class="n">博客改版</span></div>
+    <div class="sh">会话</div>
+    <div class="srow"><span class="st done"></span><span class="n">笔记整理</span></div>
+  </div>
+  <div class="mmain">
+    <div class="mtop">网站帮手<small>官网改版</small></div>
+    <div class="chat" id="chat">
+      <div class="m me">列表页能按日期排序吗</div>
+      <div class="m">加好了：表头点日期就能切换，默认最新在前。测试补了两条，构建通过。</div>
+      <div class="m me">好。顺手记一下，以后登录页要支持手机号验证码，不急</div>
+      <div class="m sys fresh">已放进「官网改版」backlog 第 4 件 <button onclick="undoAdd()">撤回</button></div>
+      <div class="m">记下了，放在 backlog 第 4 件。</div>
+    </div>
+    <div class="dock">
+      <div class="next" id="next"><span class="lab">下一件</span><span class="t" id="nextT"></span><button class="go" onclick="start()">开始</button><button class="alt" onclick="skip()">换一件</button></div>
+      <div class="comp">给网站帮手发消息…<i></i></div>
+    </div>
+  </div>
+  <div class="pane">
+    <div class="tabs"><span>成果</span><span>文件</span><span>等你的事</span><span class="on">Backlog</span></div>
+    <div class="ph"><h3>官网改版</h3><small id="cnt"></small></div>
+    <div class="sugg" id="sugg">博客改版建议把「404 页面重做」挪到第 1 件：它在改的模板也会用到。<br><button onclick="acceptSugg()">挪</button><button onclick="hideSugg()">不用</button></div>
+    <div class="blist" id="blist"></div>
+    <div class="add">＋ <input id="addIn" placeholder="加一件，回车" onkeydown="if(event.key==='Enter')addItem()"></div>
+  </div>
+</div>
+<div class="cap">拖动右侧条目排序；点「开始」看它怎么派给会话；「换一件」把提示换成下一件（顺序不变）；在右侧底下打字回车加一件。</div>
+<button class="reset" onclick="reset()">重来</button>
+</div></div>
+
+<h2>手机：工作区页里的 Backlog</h2>
+<div class="row">
+<div class="phone"><div class="scr">
+  <div class="pnav"><span>‹ 返回</span><b>官网改版</b><span></span></div>
+  <div class="pseg"><span>会话</span><span>文件</span><span class="on">Backlog</span></div>
+  <div class="blist" id="pl"></div>
+  <div class="add">＋ 加一件</div>
+</div></div>
+<div class="cap" style="max-width:420px">手机上没有右侧栏：工作区页多一个 Backlog 分段，长按拖动排序，左滑删除。「下一件」提示同样出现在会话的输入框上方。Palo 那份在 Palo 的详情页里。</div>
+</div>
+
+<h2>还没定、你可以改的</h2>
+<div class="notes"><ul>
+<li>会话空下来时的「下一件」提示：每次空闲都出现，还是你忽略一次就当天不再出现？我倾向后者。</li>
+<li>做完之后：agent 自己说「做完了」就打勾，还是要你确认？我倾向它打勾、你可以撤回，省一步。</li>
+</ul></div>
+
+<script>
+const initial=[
+ {t:"首页图片懒加载",n:"首屏 3.2 MB，大部分是图"},
+ {t:"文章页加目录",n:"长文右侧浮动目录"},
+ {t:"404 页面重做",n:""},
+ {t:"登录页支持手机号验证码",n:"不急"},
+ {t:"统一按钮圆角"},{t:"图片 alt 文案补齐"},{t:"站点地图自动生成"}];
+let items,doing,done,skipAt,dragFrom;
+function reset(){items=initial.map(x=>({...x}));doing=[{t:"博客评论区样式",who:"博客改版"}];done=[{t:"列表页按日期排序"},{t:"导航栏改成固定在顶部"}];skipAt=0;
+ document.getElementById('sugg').style.display='';document.getElementById('next').style.display='';
+ document.getElementById('stSite').className='st idle';
+ document.getElementById('chat').querySelectorAll('.added').forEach(e=>e.remove());render();}
+function esc(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+function row(it,i,cls){return `<div class="bi ${cls}" draggable="true" data-i="${i}"><span class="no">${i+1}</span><div class="tx"><div class="tt">${esc(it.t)}</div>${it.n&&cls!=='low'?`<div class="nt">${esc(it.n)}</div>`:''}</div><span class="hd">≡</span></div>`}
+function render(){
+ let h='';
+ if(doing.length){h+=`<div class="grp">正在做</div>`;doing.forEach(d=>h+=`<div class="bi doing"><span class="no">▶</span><div class="tx"><div class="tt">${esc(d.t)}</div><div class="who">${esc(d.who)}</div></div></div>`)}
+ h+=`<div class="grp">排队 · ${items.length}</div>`;
+ items.forEach((it,i)=>h+=row(it,i,i<3?'':'low'));
+ h+=`<div class="grp">做完 · ${done.length} <button>展开</button></div>`;
+ document.getElementById('blist').innerHTML=h;
+ document.getElementById('pl').innerHTML=h;
+ document.getElementById('cnt').textContent=`${items.length} 件排队`;
+ const nx=items[skipAt%Math.max(items.length,1)];
+ document.getElementById('nextT').textContent=nx?nx.t:'';
+ if(!nx)document.getElementById('next').style.display='none';
+ document.querySelectorAll('#blist .bi[draggable]').forEach(el=>{
+  el.ondragstart=e=>{dragFrom=+el.dataset.i;el.classList.add('drag')};
+  el.ondragend=()=>el.classList.remove('drag');
+  el.ondragover=e=>{e.preventDefault();el.classList.add('over')};
+  el.ondragleave=()=>el.classList.remove('over');
+  el.ondrop=e=>{e.preventDefault();const to=+el.dataset.i;const [m]=items.splice(dragFrom,1);items.splice(to,0,m);skipAt=0;render()};
+ });
+}
+function say(html,cls){const c=document.getElementById('chat');const d=document.createElement('div');d.className='m added fresh '+(cls||'');d.innerHTML=html;c.appendChild(d);c.scrollTop=c.scrollHeight}
+function start(){const i=skipAt%items.length;const [it]=items.splice(i,1);skipAt=0;doing.push({t:it.t,who:'网站帮手'});
+ document.getElementById('stSite').className='st busy';document.getElementById('next').style.display='none';
+ say(`<div class="quote">Backlog · ${esc(it.t)}${it.n?'<br>'+esc(it.n):''}</div>开始做这件`,'me');
+ setTimeout(()=>say('好，先量一下首屏图片的体积，再给 &lt;img&gt; 加 loading=lazy 和尺寸占位。'),700);render()}
+function skip(){skipAt++;render()}
+function addItem(){const v=document.getElementById('addIn').value.trim();if(!v)return;items.push({t:v});document.getElementById('addIn').value='';render()}
+function undoAdd(){const i=items.findIndex(x=>x.t.startsWith('登录页'));if(i>=0)items.splice(i,1);event.target.parentNode.innerHTML='已撤回';render()}
+function acceptSugg(){const i=items.findIndex(x=>x.t.startsWith('404'));if(i>0){const [m]=items.splice(i,1);items.unshift(m)}skipAt=0;hideSugg();render()}
+function hideSugg(){document.getElementById('sugg').style.display='none'}
+reset();
+</script>
+</main></body></html>

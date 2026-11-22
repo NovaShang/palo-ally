@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Palo 现在的结构（导航图）</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f2f2f5;color:#1c1c1e;font:13px/1.5 -apple-system,"PingFang SC",system-ui,sans-serif}
+main{max-width:1280px;margin:0 auto;padding:22px 16px 80px}
+h1{font-size:22px;margin:4px 0}h2{font-size:16px;margin:30px 0 10px}
+.sub{color:#6e6e73;font-size:14px;max-width:980px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:#3a3a3c;margin:10px 0}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px}
+.box{background:#fff;border-radius:14px;padding:12px 14px;box-shadow:0 0 0 .5px rgba(0,0,0,.08)}
+.box h3{margin:0 0 6px;font-size:14px;display:flex;gap:8px;align-items:center}
+.box h3 small{font-weight:400;color:#8e8e93;font-size:11.5px}
+ul{margin:0;padding-left:16px}
+li{margin:2px 0}
+li ul{margin-top:2px}
+.k{display:inline-block;font-size:10.5px;border-radius:6px;padding:0 6px;margin-left:4px;vertical-align:1px}
+.w{background:#ffe3e0;color:#b3261e}
+.n{background:#e5f0ff;color:#0a58ca}
+.m{background:#ececf0;color:#55555a}
+.win{background:#fff;border-radius:14px;box-shadow:0 0 0 .5px rgba(0,0,0,.08);padding:12px;display:grid;grid-template-columns:200px 1fr 250px;gap:10px;min-height:360px}
+.col{border-radius:10px;padding:10px;font-size:12.5px}
+.c1{background:#ececf0}.c2{background:#fafafa;box-shadow:inset 0 0 0 .5px #ddd}.c3{background:#f4f4f7}
+.col b{display:block;margin-bottom:4px}
+.bar{grid-column:1/4;display:flex;justify-content:space-between;background:#f7f7f9;border-radius:8px;padding:6px 10px;font-size:12px;color:#3a3a3c}
+.issues{background:#fff;border-radius:14px;padding:12px 18px;box-shadow:0 0 0 .5px rgba(0,0,0,.08)}
+.issues li{margin:6px 0}
+.issues b{color:#b3261e}
+table{border-collapse:collapse;font-size:12.5px;background:#fff;border-radius:12px;overflow:hidden}
+td,th{padding:6px 12px;border-bottom:.5px solid #e5e5ea;text-align:left;vertical-align:top}
+th{background:#f7f7f9;font-weight:600}
+</style></head><body><main>
+
+<h1>Palo 现在的结构</h1>
+<p class="sub">照着现在的代码画的（2026-11-21），不是新设计。用的是刚定的新词，括号里是界面上现在的叫法。红色标签是问题，编号对应最下面的清单。</p>
+<div class="legend"><span><i class="k w">①</i> 问题</span><span><i class="k n">新</i> 最近两周加的</span><span><i class="k m">Mac</i> 只在某个平台</span></div>
+
+<h2>一、Mac 主窗口（iPad 相同）</h2>
+<div class="win">
+  <div class="bar"><span>☰ 侧栏开关</span><span>标题：助理的水滴 / agent 的胶囊 → 点开「详情」<i class="k w">⑤</i></span><span>右侧栏开关</span></div>
+  <div class="col c1"><b>侧栏</b>
+    <ul>
+      <li>主机分组（多台主机时）</li>
+      <li>助理（Palo）· 等你角标</li>
+      <li>工作区
+        <ul><li>工作区 → 它的 agent</li></ul></li>
+      <li>会话 <i class="k w">①</i>
+        <ul><li>agent（Pal）</li><li>外部会话 <i class="k w">①</i></li><li>更早的会话 <i class="k w">⑥</i></li></ul></li>
+      <li>Allies → 好友</li>
+      <li>电脑与设备 → 主机与设备</li>
+      <li>底部：＋ 菜单、设置</li>
+    </ul>
+  </div>
+  <div class="col c2"><b>主区（选中什么显示什么）</b>
+    <ul>
+      <li><b style="display:inline">助理对话</b>
+        <ul>
+          <li>消息、回复里的路径和图片可点开</li>
+          <li>卡片：提问、权限、提议（开 agent / 接管）、好友草稿、剪贴板 <i class="k w">②</i></li>
+          <li>建议标签、TL;DR、回到这里重来</li>
+          <li>后台任务一行</li>
+          <li>「N 件等你」横幅 <i class="k n">新</i></li>
+          <li>输入框：＋（照片 / 文件 / 主机上的文件）、按住说话 <i class="k m">Mac 右键说话</i></li>
+        </ul></li>
+      <li><b style="display:inline">agent 对话</b>：同上，横幅只显示它自己的 <i class="k n">新</i></li>
+      <li><b style="display:inline">外部会话页</b>：只读，「接管」后变成 agent <i class="k w">①</i></li>
+      <li><b style="display:inline">工作区页</b>：几个 agent 对话并排的卡片 + 文档卡片 <i class="k m">Mac/iPad</i></li>
+      <li><b style="display:inline">好友对话</b></li>
+    </ul>
+  </div>
+  <div class="col c3"><b>右侧栏（标签页）</b>
+    <ul>
+      <li>成果（按时间 / 按文件夹；范围：这个会话 / 全部）<i class="k w">⑦</i></li>
+      <li>文件（文件树、搜索）</li>
+      <li>等你的事 <i class="k n">新</i></li>
+      <li>打开的东西各占一个标签：
+        <ul><li>文件预览 / 编辑</li><li>一件成果</li><li>网页</li></ul></li>
+      <li>＋ 新网页</li>
+    </ul>
+  </div>
+</div>
+
+<h2>二、点开以后的页面</h2>
+<div class="grid">
+  <div class="box"><h3>助理详情 <small>点标题的水滴</small></h3>
+    <ul>
+      <li>等你 · N（可直接回答）、从头过一遍</li>
+      <li>在做 · N</li>
+      <li>模型与思考</li>
+      <li>→ <b>关于助理</b> <i class="k w">⑤</i>
+        <ul>
+          <li>名字和颜色、说话用的语言</li>
+          <li>记忆：关于你 / 它的性格 / 随手记下的</li>
+          <li>目标和定时（盯着的事、晨报） <i class="k w">③</i></li>
+          <li>办过的事（任务记录） <i class="k w">③</i></li>
+          <li>让助理停下</li>
+        </ul></li>
+    </ul></div>
+  <div class="box"><h3>agent 详情 <small>点标题胶囊</small></h3>
+    <ul>
+      <li>改名字</li>
+      <li>等你 · N、在做 · N、历史任务</li>
+      <li>模型、权限模式、上下文（压缩）</li>
+      <li>放在哪个工作区</li>
+      <li>→ 关于这个会话 <i class="k w">⑤</i></li>
+      <li>结束这个会话</li>
+      <li>看不到它的记忆 <i class="k w">⑧</i></li>
+    </ul></div>
+  <div class="box"><h3>设置 <small>侧栏底部</small></h3>
+    <ul>
+      <li>免打扰时段</li>
+      <li>语音输入：常用词、参考对话内容</li>
+      <li>手机上处理主机 agent 的确认</li>
+      <li>会话水滴（试验）</li>
+      <li>版本、更新主机、导出调试日志、设备编号</li>
+    </ul></div>
+  <div class="box"><h3>主机与设备 <small>侧栏</small></h3>
+    <ul>
+      <li>这台主机、其他主机（连接方式：直连 / 中转）</li>
+      <li>连着的设备、改名、解除配对</li>
+      <li>添加设备（二维码）、添加另一台主机</li>
+    </ul></div>
+  <div class="box"><h3>新建 <small>侧栏 ＋</small></h3>
+    <ul>
+      <li>新建会话（选文件夹，可加到工作区）</li>
+      <li>从历史记录继续（已结束 / 收起来的 / 终端里开着 / 更早的） <i class="k w">⑥</i></li>
+      <li>新建工作区</li>
+      <li>添加好友（扫码 / 接受邀请）</li>
+    </ul></div>
+  <div class="box"><h3>等你的事 <small>横幅、角标、⌘⇧I</small></h3>
+    <ul>
+      <li>Mac / iPad：右侧栏标签；手机：底部弹出</li>
+      <li>每件：选项、其他…、直接回答、聊这件、忽略、收起</li>
+      <li>今天处理过（折叠）、已收起</li>
+    </ul></div>
+</div>
+
+<h2>三、手机</h2>
+<div class="grid">
+  <div class="box"><h3>列表 <small>= 侧栏</small></h3><ul><li>和 Mac 侧栏同样的分组</li><li>点一行进对话</li></ul></div>
+  <div class="box"><h3>对话 <small>= 主区</small></h3><ul><li>同 Mac；工作区打开是它的 agent 列表，不并排</li><li>右上角按钮 → 从右边滑进来的「侧栏页」：成果、文件、打开的文件 / 网页</li><li>详情、等你的事：底部弹出</li></ul></div>
+  <div class="box"><h3>系统入口</h3><ul><li>推送（agent 回复了、卡着的等你的事）</li><li>分享扩展：别的 App 分享进来</li><li>扫码配对 / 加好友</li></ul></div>
+</div>
+
+<h2>四、问题清单</h2>
+<div class="issues"><ol>
+<li><b>agent 分成了两种。</b>侧栏「会话」里，Palo 开的 agent 和外部会话是两种东西：外部会话只读、有单独的页面、要「接管」才能说话。按新定义它们都是 agent，区别只是能不能在这里发消息。</li>
+<li><b>等你的东西散在对话里。</b>提问、权限、提议、好友草稿各有各的卡片样式和按钮，「等你的事」又把它们收成一份列表，同一件事有两处可以回答。</li>
+<li><b>「目标和定时」「办过的事」「backlog（要做）」三个都跟「要做的事」有关</b>，放在不同地方：前两个藏在「关于助理」里，backlog 还没做。任务这个词也在这里用作「办过的事」，跟刚定的「任务 = 后台在跑的」冲突。</li>
+<li><b>工作区只是布局。</b>它没有自己的东西（没有 backlog、成果、归档），手机上打开只是一个 agent 列表。</li>
+<li><b>详情有两层。</b>助理：详情 → 关于助理；agent：详情 → 关于这个会话。先看哪层、东西放哪层，用户分不清（「此刻」和「长期」是我们内部的分法）。</li>
+<li><b>「先不看了」有三种。</b>更早的会话（不常用自动收起来）、历史记录里的「收起来的」「已结束」、等你的事里的「收起」。按新定义都该是「归档」。</li>
+<li><b>成果有两个范围。</b>右侧栏成果默认「这个会话」，可切「全部」；工作区的成果没有自己的范围。</li>
+<li><b>助理和 agent 的详情不对称。</b>都有记忆（CLAUDE.md），只有助理能看能改。</li>
+</ol></div>
+
+<h2>五、用新词对照</h2>
+<table>
+<tr><th>新词</th><th>界面上现在的叫法 / 位置</th></tr>
+<tr><td>助理</td><td>Palo（侧栏第一行、标题水滴）</td></tr>
+<tr><td>工作区</td><td>工作区（侧栏分组、并排页面）</td></tr>
+<tr><td>agent</td><td>会话、Pal、外部会话、终端里开着的</td></tr>
+<tr><td>子 agent / 任务</td><td>后台 N 个任务在跑、在做 · N</td></tr>
+<tr><td>好友</td><td>Allies、Ally 对话、Ally 草稿</td></tr>
+<tr><td>成果</td><td>成果、产出物、产物库</td></tr>
+<tr><td>主机 / 设备</td><td>电脑、电脑端、电脑与设备</td></tr>
+<tr><td>详情</td><td>详情、关于助理、关于这个会话、此刻</td></tr>
+<tr><td>归档</td><td>更早的会话、收起来的、已结束、收起</td></tr>
+</table>
+
+</main></body></html>

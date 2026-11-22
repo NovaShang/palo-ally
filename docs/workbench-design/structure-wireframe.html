@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Palo 结构线框稿</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f4f6;color:#222;font:12.5px/1.45 -apple-system,"PingFang SC",system-ui,sans-serif}
+main{max-width:1300px;margin:0 auto;padding:22px 16px 90px}
+h1{font-size:22px;margin:4px 0}h2{font-size:16px;margin:34px 0 4px}
+.sub{color:#666;font-size:14px;max-width:1000px}
+.desc{color:#555;font-size:13px;max-width:1000px;margin:2px 0 10px}
+.row{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
+.frame{background:#fff;border:1.5px solid #999;border-radius:10px;overflow:hidden;position:relative}
+.cap{font-size:12px;color:#666;margin-top:5px;max-width:600px}
+/* wire bits */
+.b{border:1px solid #bbb;border-radius:6px;background:#fafafa}
+.g{background:#e9e9ec;border-radius:5px}
+.t{height:8px;background:#d4d4d8;border-radius:4px;margin:4px 0}
+.lbl{font-size:11px;color:#777}
+.hd{font-weight:600;font-size:12px}
+.pill{display:inline-block;border:1px solid #999;border-radius:10px;padding:0 7px;font-size:11px;background:#fff}
+.pri{background:#555;color:#fff;border-color:#555}
+.n{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:9px;background:#ff9f0a;color:#000;font-size:10px;font-weight:700;margin-left:4px;vertical-align:1px}
+.note{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:9px;background:#0a84ff;color:#fff;font-size:10.5px;font-weight:700;margin-right:4px;vertical-align:-3px}
+.del{text-decoration:line-through;color:#c33}
+/* mac */
+.mac{width:1180px;height:620px;display:grid;grid-template-columns:220px 1fr 330px;grid-template-rows:34px 1fr}
+.tb{grid-column:1/4;border-bottom:1px solid #ccc;display:flex;align-items:center;justify-content:space-between;padding:0 12px;background:#f0f0f2}
+.side{border-right:1px solid #ccc;padding:8px;background:#f0f0f2;overflow:hidden}
+.side .s{font-size:10.5px;color:#888;margin:10px 4px 3px}
+.side .r{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:6px}
+.side .r.sel{background:#ddd}
+.dot{width:8px;height:8px;border-radius:4px;background:#aaa;flex:none}
+.dot.busy{background:#0a84ff}.dot.wait{background:#ff9f0a}
+.mid{position:relative;padding:12px 22px;overflow:hidden}
+.me{margin-left:auto;width:45%;background:#ececef;border-radius:12px;padding:6px 10px}
+.ai{width:70%;margin:10px 0}
+.wcard{border:1.5px solid #ff9f0a;border-radius:10px;padding:8px 10px;margin:10px 0;width:78%;background:#fffaf2}
+.wcard .opts{display:flex;gap:6px;margin-top:6px}
+.wcard .opts span{flex:1;text-align:center;border:1px solid #aaa;border-radius:7px;padding:2px;font-size:11px;background:#fff}
+.wcard .opts span.pri{background:#555;color:#fff;border-color:#555}
+.dock{position:absolute;left:22px;right:22px;bottom:12px}
+.cap1{display:flex;justify-content:center;gap:8px;margin-bottom:6px}
+.comp{height:36px;border:1px solid #aaa;border-radius:18px;background:#fff;display:flex;align-items:center;padding:0 12px;color:#999;justify-content:space-between}
+.pane{border-left:1px solid #ccc;background:#f7f7f9;padding:8px;overflow:hidden}
+.tabs{display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap}
+.tabs span{border:1px solid #bbb;border-radius:9px;padding:1px 8px;font-size:11px;background:#fff}
+.tabs span.on{background:#555;color:#fff;border-color:#555}
+.bl{display:flex;gap:6px;align-items:center;border:1px solid #ccc;border-radius:7px;padding:5px 7px;margin-bottom:4px;background:#fff}
+.bl .i{color:#888;width:14px;text-align:right}
+/* detail */
+.det{width:360px;padding:12px}
+.det .sec{font-size:10.5px;color:#888;margin:12px 0 4px}
+.det .line{display:flex;justify-content:space-between;border-bottom:1px solid #eee;padding:5px 0}
+.fold{border:1px dashed #aaa;border-radius:7px;padding:6px 8px;color:#666;margin-top:6px}
+/* phone */
+.ph{width:250px;height:500px;border-radius:30px;border:2px solid #888;padding:38px 12px 12px;position:relative;background:#fff}
+.ph .nav{display:flex;justify-content:space-between;font-size:11px;color:#777;margin-bottom:8px}
+.ph .nav b{color:#222}
+.notes{background:#fff;border-radius:12px;padding:10px 16px;border:1px solid #ddd;font-size:13px;max-width:1180px}
+.notes li{margin:4px 0}
+</style></head><body><main>
+
+<h1>Palo 结构线框稿</h1>
+<p class="sub">把这几天定下的东西放进同一个窗口里看：新的用词、一种 agent、统一的等你卡、一层详情、归档、跟着文件夹的 backlog、成果跟着你在哪儿、去掉 TL;DR。工作区和平台分工保持现状。只是线框，不代表视觉。</p>
+
+<h2>1. Mac 主窗口：在一个 agent 里</h2>
+<p class="desc">侧栏只有助理、工作区、agent、好友四类；右侧栏多一个 backlog 标签，看的是这个 agent 所在文件夹那一份。</p>
+<div class="frame mac">
+  <div class="tb"><span>☰</span><span class="hd">数据层迁移 <span class="lbl">~/code/shop · 点开详情</span></span><span>▤ 右侧栏</span></div>
+  <div class="side">
+    <div class="r"><span class="g" style="width:14px;height:14px;border-radius:7px"></span><b>助理</b><span class="n">3</span></div>
+    <div class="s">工作区</div>
+    <div class="r"><span class="lbl">▾</span>重构</div>
+    <div class="r sel" style="padding-left:20px"><span class="dot wait"></span>数据层迁移<span class="n">1</span></div>
+    <div class="r" style="padding-left:20px"><span class="dot busy"></span>接口改造</div>
+    <div class="r" style="padding-left:20px"><span class="dot"></span>测试补齐</div>
+    <div class="s">agent <span class="note">1</span></div>
+    <div class="r"><span class="dot busy"></span>羿云人脸评估</div>
+    <div class="r"><span class="dot"></span>笔记整理 <span class="lbl">终端里开着</span></div>
+    <div class="r"><span class="lbl">已归档 12</span> <span class="note">2</span></div>
+    <div class="s">好友</div>
+    <div class="r"><span class="g" style="width:14px;height:14px;border-radius:7px"></span>家人 <span class="lbl">家人朋友</span></div>
+    <div style="position:absolute;bottom:10px;left:10px;right:calc(100% - 210px);display:flex;justify-content:space-between" class="lbl"><span>＋ 新建</span><span>主机与设备 · 设置</span></div>
+  </div>
+  <div class="mid">
+    <div class="me">订单表拆分的迁移脚本先写出来</div>
+    <div class="ai"><div class="t" style="width:90%"></div><div class="t" style="width:70%"></div><div class="t" style="width:80%"></div></div>
+    <div class="wcard"><span class="lbl">数据层迁移 · 卡着它 · 2 分钟前</span> <span class="note">3</span><br><b>要不要在迁移前给 orders 表做一次全量备份？</b><div class="lbl">备份约 4 分钟，期间写入会变慢</div><div class="opts"><span class="pri">备份</span><span>不用</span><span>其他…</span></div></div>
+    <div class="lbl">后台 2 个任务在跑 ›</div>
+    <div class="dock">
+      <div class="cap1"><span class="pill">下一件：补 orders 表索引 · <b>开始</b> · 换一件</span> <span class="note">4</span></div>
+      <div class="comp">跟数据层迁移说点什么<span>🎙 ⬆</span></div>
+    </div>
+  </div>
+  <div class="pane">
+    <div class="tabs"><span>等你 1</span><span>成果</span><span class="on">待办</span><span>文件</span><span>迁移脚本.sql</span></div>
+    <div class="hd">~/code/shop 的待办 <span class="note">5</span></div>
+    <div class="lbl" style="margin:6px 0 3px">正在做</div>
+    <div class="bl" style="background:#eef5ff"><span class="i">▶</span>订单表拆分 <span class="lbl" style="margin-left:auto">数据层迁移</span></div>
+    <div class="lbl" style="margin:8px 0 3px">排队 · 5</div>
+    <div class="bl"><span class="i">1</span>补 orders 表索引<span style="margin-left:auto" class="lbl">≡</span></div>
+    <div class="bl"><span class="i">2</span>老接口加弃用提示<span style="margin-left:auto" class="lbl">接口改造 · ≡</span></div>
+    <div class="bl"><span class="i">3</span>回归测试补到 80%<span style="margin-left:auto" class="lbl">≡</span></div>
+    <div class="lbl" style="padding:3px 7px">4 删掉 legacy_cart</div>
+    <div class="lbl" style="padding:3px 7px">5 迁移手册</div>
+    <div class="lbl" style="margin-top:8px">做完 · 7 ›</div>
+    <div class="b" style="margin-top:10px;padding:6px 8px;color:#999">＋ 加一件</div>
+  </div>
+</div>
+<div class="cap">点标题的 agent 名字打开详情（见 3）。助理那一行进去是助理对话，结构相同。</div>
+
+<h2>2. 等你卡：一种样子</h2>
+<p class="desc">提问、权限、提议、好友草稿都长一样：谁 · 要定什么 · 一句背景 · 选项。对话里和「等你的事」列表里是同一张，答一处另一处同时收起。<span class="note">3</span></p>
+<div class="row">
+  <div class="frame wcard" style="width:270px;margin:0"><span class="lbl">接口改造 · 卡着它</span><br><b>允许运行 npm run migrate？</b><div class="lbl">会改本地数据库</div><div class="opts"><span>拒绝</span><span class="pri">允许</span></div></div>
+  <div class="frame wcard" style="width:270px;margin:0"><span class="lbl">助理</span><br><b>开一个 agent 专门管报销？</b><div class="lbl">~/Documents/报销 · 每周整理发票</div><div class="opts"><span>不用</span><span class="pri">开吧</span></div></div>
+  <div class="frame wcard" style="width:270px;margin:0"><span class="lbl">好友 · 家人</span><br><b>把这段话发给家人？</b><div class="lbl">「今晚七点到，路上买菜」</div><div class="opts"><span>不发</span><span class="pri">发送</span></div></div>
+  <div class="frame wcard" style="width:270px;margin:0;opacity:.6"><span class="lbl">已定：备份 · 撤回</span></div>
+</div>
+<div class="cap">最后一张是答过之后：对话里折成一行灰字。去掉了「以后再说 / 收起」之外的所有特殊按钮；「以后再说」把它挪进 backlog。</div>
+
+<h2>3. 详情：一层</h2>
+<p class="desc">上面是「现在」，下面「设置」默认折起。助理和 agent 同一个结构；助理多「定时」和「语言」，agent 多「文件夹」和「工作区」。<span class="note">6</span></p>
+<div class="row">
+  <div class="frame det">
+    <div class="hd" style="font-size:14px">数据层迁移</div><div class="lbl">~/code/shop · 工作区 重构</div>
+    <div class="sec">现在</div>
+        <div class="line"><span>后台 2 个任务</span><span class="lbl">›</span></div>
+    <div class="line"><span>上下文</span><span class="lbl">62% · 压缩</span></div>
+    <div class="sec">设置 ▾</div>
+    <div class="fold">名字 · 模型和思考 · 权限 · <b>记忆</b>（CLAUDE.md、项目记忆）<span class="note">7</span> · 工作区</div>
+    <div class="sec">记录 <span class="note">8</span></div>
+    <div class="line"><span>订单表拆分</span><span class="lbl">进行中</span></div>
+    <div class="line"><span>建临时表</span><span class="lbl">昨天 · 完成</span></div>
+    <div style="margin-top:12px" class="lbl">归档这个 agent</div>
+  </div>
+  <div class="frame det">
+    <div class="hd" style="font-size:14px">助理</div><div class="lbl">一直在 · 认识你 46 天</div>
+    <div class="sec">现在</div>
+        <div class="line"><span>后台 1 个任务</span><span class="lbl">›</span></div>
+    <div class="sec">定时</div>
+    <div class="line"><span>每日晨报</span><span class="lbl">每天 8:00</span></div>
+    <div class="line"><span>盯机票价格</span><span class="lbl">每 6 小时</span></div>
+    <div class="sec">设置 ▾</div>
+    <div class="fold">名字和颜色 · 说话的语言 · 模型和思考 · 记忆（关于你、它的性格、随手记下的）</div>
+    <div class="sec">记录</div>
+    <div class="line"><span>整理 11 月发票</span><span class="lbl">昨天 · 完成</span></div>
+    <div style="margin-top:12px" class="lbl">让助理停下</div>
+  </div>
+</div>
+
+<h2>4. 终端里还开着的 agent</h2>
+<p class="desc">没有「接管」按钮。直接打字；终端还开着时，消息排队，那边退出后自动发出、在这里接手。<span class="note">1</span></p>
+<div class="frame" style="width:600px;padding:12px">
+  <div class="hd">笔记整理 <span class="lbl">~/notes · 终端里开着</span></div>
+  <div class="ai"><div class="t" style="width:80%"></div><div class="t" style="width:60%"></div></div>
+  <div class="me" style="opacity:.6">把这周的笔记打上标签<div class="lbl">排队中：终端那边退出后发出</div></div>
+  <div class="b" style="margin-top:10px;padding:6px 10px;color:#555">终端里还开着这个 agent。在那边退出（/exit）后，这条会自动发出，之后在这里接着聊。 <span class="pill">取消这条</span></div>
+</div>
+
+<h2>5. 归档</h2>
+<p class="desc">「先不看了」只有一个词。一阵子没用自动归档；结束 = 归档；随时拿回来。<span class="note">2</span></p>
+<div class="frame" style="width:420px;padding:12px">
+  <div class="hd">已归档 · 12</div>
+  <div class="b" style="padding:4px 8px;margin:6px 0;color:#999">搜索名字或文件夹</div>
+  <div class="line" style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #eee"><span>旧官网</span><span class="lbl">~/code/site-old · 3 周没用 · 拿回来</span></div>
+  <div class="line" style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #eee"><span>报税 2025</span><span class="lbl">~/Documents/tax · 你归档的 · 拿回来</span></div>
+  <div class="line" style="display:flex;justify-content:space-between;padding:5px 0"><span>scratch</span><span class="lbl">~/tmp · 终端里开过 · 拿回来</span></div>
+</div>
+<div class="cap">「从历史记录继续」并进这里：电脑上所有 Claude Code 会话都能在这里找到。</div>
+
+<h2>6. 手机（分工不变）</h2>
+<div class="row">
+  <div class="ph"><div class="nav"><span></span><b>Palo</b><span>＋</span></div>
+    <div class="r" style="display:flex;gap:6px;padding:5px 0"><b>助理</b><span class="n">3</span></div>
+    <div class="lbl" style="margin-top:8px">工作区</div><div style="padding:4px 0">重构 <span class="lbl">3 个 agent</span> <span class="n">1</span></div>
+    <div class="lbl" style="margin-top:8px">agent</div><div style="padding:4px 0">羿云人脸评估</div><div style="padding:4px 0">笔记整理 <span class="lbl">终端里开着</span></div><div class="lbl" style="padding:4px 0">已归档 12</div>
+    <div class="lbl" style="margin-top:8px">好友</div><div style="padding:4px 0">家人</div>
+    <div class="lbl" style="position:absolute;bottom:14px">主机与设备 · 设置</div></div>
+  <div class="ph"><div class="nav"><span>‹</span><b>数据层迁移</b><span>▤</span></div>
+    <div class="me">订单表拆分…</div>
+    <div class="ai"><div class="t"></div><div class="t" style="width:70%"></div></div>
+    <div class="wcard" style="width:100%"><span class="lbl">卡着它</span><br><b>迁移前先备份？</b><div class="opts"><span class="pri">备份</span><span>不用</span></div></div>
+    <div style="position:absolute;left:12px;right:12px;bottom:12px"><div class="cap1"><span class="pill">下一件 · 补索引 · 开始</span></div><div class="comp" style="height:30px">说点什么</div></div></div>
+  <div class="ph"><div class="nav"><span>‹</span><b>▤ 侧栏页</b><span></span></div>
+    <div class="tabs"><span>等你</span><span>成果</span><span class="on">待办</span><span>文件</span></div>
+    <div class="bl"><span class="i">1</span>补 orders 表索引</div><div class="bl"><span class="i">2</span>老接口加弃用提示</div><div class="bl"><span class="i">3</span>回归测试补到 80%</div>
+    <div class="lbl">长按拖动排序</div></div>
+</div>
+
+<h2>注</h2>
+<div class="notes"><ol>
+<li>agent 只有一种：Palo 开的、终端里开的都在「agent」里；终端还开着的标一句。</li>
+<li>归档取代「更早的会话」「收起来的」「已结束」和历史记录。</li>
+<li>等你卡一种样子；对话里和右侧栏「等你」标签里是同一张。助理的「等你」看全部，agent 的只看来自它的。</li>
+<li>agent 空下来时，输入框上方提示 backlog 的下一件；点了才开始。</li>
+<li>backlog 跟着文件夹，存在主机里；同一文件夹的 agent 共用，每件可以指给某个 agent。</li>
+<li>详情一层：现在 / 设置（折起）/ 记录。</li>
+<li>agent 也能看能改自己的记忆。</li>
+<li>「办过的事」改叫「记录」；「任务」只指后台在跑的。</li>
+<li>去掉的：TL;DR、接管按钮、关于助理 / 关于这个会话两页、等你的事里的「收起」。</li>
+<li>没变的：工作区（还是一组 agent 和并排布局）、平台分工、右侧栏的标签模式。成果默认跟着你在哪儿（这里是这个 agent 的）。</li>
+</ol></div>
+</main></body></html>
