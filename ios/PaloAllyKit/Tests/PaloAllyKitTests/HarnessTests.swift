@@ -59,4 +59,20 @@ struct HarnessTests {
         store.apply(event: RPCEventName.harnessUpdated, data: ["id": "claude-code", "capabilities": ["id": "claude-code", "name": "Claude Code", "permissionModes": ["default", "plan"]]])
         #expect(store.harness.permissionModes == ["default", "plan"])
     }
+
+    @Test func detailsTakeTheirWordsAndListsFromIt() {
+        var h = HarnessCapabilities.claudeCodeFallback
+        h.models = [ModelOption(value: "default", displayName: "默认", efforts: ["low", "turbo"]), ModelOption(value: "haiku", displayName: "Haiku")]
+        h.labels = ["turbo": "Turbo"]
+        // the assistant's page before model.get has answered: the harness' models
+        let early = AgentDetail(assistant: nil, status: nil, tasks: [], harness: h)
+        #expect(early.models.map(\.id) == ["default", "haiku"])
+        #expect(early.efforts == ["low", "turbo"])
+        #expect(early.harness.effortLabel("turbo") == "Turbo")
+        // once it has: model.get's
+        let later = AgentDetail(assistant: ModelInfo(models: [ModelOption(value: "opus", displayName: "Opus")]), status: nil, tasks: [], harness: h)
+        #expect(later.models.map(\.id) == ["opus"])
+        // an older host: the built-in words, as before
+        #expect(AgentDetail(assistant: nil, status: nil, tasks: []).harness.modeLabel("acceptEdits") == PermissionModeName.label("acceptEdits"))
+    }
 }

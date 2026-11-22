@@ -25,7 +25,7 @@ struct AgentDetailForm: View {
 
     private var online: Bool { store.connection.isOnline }
     private var pal: Pal? { agent.flatMap { store.pal(id: $0) ?? palDetail?.pal } }
-    private var detail: AgentDetail? { agent == nil ? store.assistantDetail : palDetail.map(AgentDetail.init) }
+    private var detail: AgentDetail? { agent == nil ? store.assistantDetail : palDetail.map { AgentDetail($0, harness: store.harness) } }
     private var caps: AgentDetail.Capabilities { agent == nil ? .assistant : .agent }
     /// Asked again when the host says the session changed (`pals.updated`).
     private var refreshKey: String {
@@ -194,7 +194,7 @@ struct AgentDetailForm: View {
         guard let detail else { return "" }
         let name = detail.models.first { $0.id == detail.selectedModel }?.name ?? ModelName.short(detail.runningModel)
         guard let e = detail.effort, !e.isEmpty, !detail.efforts.isEmpty else { return name }
-        return String(localized: "\(name) · 思考：\(EffortName.label(e))")
+        return String(localized: "\(name) · 思考：\(detail.harness.effortLabel(e))")
     }
 
     private var nameRow: some View {
@@ -229,12 +229,12 @@ struct AgentDetailForm: View {
     /// 权限模式: a host that can't switch it sends none (the row hides).
     private func permissionPicker(_ detail: AgentDetail, mode: String) -> some View {
         Picker(selection: Binding(get: { mode }, set: { m in setMode(m, from: mode) })) {
-            ForEach(detail.permissionModes, id: \.self) { Text(PermissionModeName.label($0)).tag($0) }
+            ForEach(detail.permissionModes, id: \.self) { Text(detail.harness.modeLabel($0)).tag($0) }
         } label: {
             Text("权限模式")
             // Claude Code may run in another (auto needs a model that has it).
             if let running = detail.runningMode {
-                Text("现在实际是「\(PermissionModeName.label(running))」")
+                Text("现在实际是「\(detail.harness.modeLabel(running))」")
             }
         }
         .pickerStyle(.menu)
@@ -488,9 +488,9 @@ struct ModelPickers: View {
                 set(.none, .some(e.isEmpty ? nil : e))
             })) {
                 // 默认 (the assistant), or the one it is on when that's none of these
-                if caps.defaultChoice || current.isEmpty { Text(EffortName.label(nil)).tag("") }
-                if !current.isEmpty, !detail.efforts.contains(current) { Text(EffortName.label(current)).tag(current) }
-                ForEach(detail.efforts, id: \.self) { Text(EffortName.label($0)).tag($0) }
+                if caps.defaultChoice || current.isEmpty { Text(detail.harness.effortLabel(nil)).tag("") }
+                if !current.isEmpty, !detail.efforts.contains(current) { Text(detail.harness.effortLabel(current)).tag(current) }
+                ForEach(detail.efforts, id: \.self) { Text(detail.harness.effortLabel($0)).tag($0) }
             }
             .pickerStyle(.menu)
             .detailNeutral()

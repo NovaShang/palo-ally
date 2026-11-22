@@ -114,6 +114,8 @@ public struct AgentDetail: Sendable, Equatable {
     public var runningMode: String?
     public var permissionModes: [String]
     public var capabilities: Capabilities
+    /// What its harness can do: the words for its depths and modes, its lists when the page has none of its own.
+    public var harness: HarnessCapabilities = .claudeCodeFallback
 
     public init(models: [ModelChoice] = [], model: String? = nil, runningModel: String = "", effort: String? = nil,
                 efforts: [String] = [], contextPct: Int? = nil, contextTokens: Int? = nil, contextWindow: Int? = nil,
@@ -139,7 +141,7 @@ public struct AgentDetail: Sendable, Equatable {
     }
 
     /// `pals.detail`.
-    public init(_ d: PalDetail) {
+    public init(_ d: PalDetail, harness: HarnessCapabilities = .claudeCodeFallback) {
         let models = d.models.map(ModelChoice.init)
         let current = d.modelOption ?? d.model ?? d.pal?.model
         self.init(models: models, model: models.contains { $0.id == current } ? current : nil,
@@ -149,11 +151,13 @@ public struct AgentDetail: Sendable, Equatable {
                   permissionMode: d.permissionMode,
                   runningMode: d.runningMode.flatMap { $0 == d.permissionMode ? nil : $0 },
                   permissionModes: d.permissionModes, capabilities: .agent)
+        self.harness = harness
     }
 
     /// The assistant's: its model list (`model.get`), its status, its tasks.
-    public init(assistant info: ModelInfo?, status: HostStatus?, tasks: [AllyTask]) {
-        let models = (info?.models ?? []).map(ModelChoice.init)
+    public init(assistant info: ModelInfo?, status: HostStatus?, tasks: [AllyTask], harness: HarnessCapabilities = .claudeCodeFallback) {
+        // model.get's list; until it has come, the harness' own (the descriptor's)
+        let models = (info?.models ?? harness.models).map(ModelChoice.init)
         let saved = info?.setting
         let selected = saved.flatMap { s in models.contains { $0.id == s } ? s : nil }
         let on = selected ?? models.first?.id
@@ -163,5 +167,6 @@ public struct AgentDetail: Sendable, Equatable {
                   contextPct: status?.contextPct, contextTokens: status?.contextTokens, contextWindow: status?.contextWindow,
                   tasks: sorted.filter(\.isActive).map(AgentTask.init),
                   pastTasks: sorted.filter { !$0.isActive }.map(AgentTask.init), capabilities: .assistant)
+        self.harness = harness
     }
 }
