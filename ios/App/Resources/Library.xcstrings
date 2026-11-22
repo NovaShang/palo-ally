@@ -111,24 +111,46 @@
         }
       }
     },
-    "这个会话": {
+    "这个 agent": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This Session"
+            "value": "This Agent"
           }
         }
       }
     },
-    "这个会话还没发过成果。": {
+    "这个工作区": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This session hasn't made anything yet."
+            "value": "This Workspace"
+          }
+        }
+      }
+    },
+    "这个 agent 还没发过成果。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This agent hasn't made anything yet."
+          }
+        }
+      }
+    },
+    "这个工作区的 agent 还没发过成果。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No agent in this workspace has made anything yet."
           }
         }
       }

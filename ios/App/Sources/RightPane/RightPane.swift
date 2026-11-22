@@ -186,7 +186,7 @@ struct RightPane: View {
         switch tab.kind {
         case PaneTab.library:
             LibraryTab()
-                .environment(\.libraryPalID, RightPaneScope.palID(of: scope))
+                .environment(\.libraryScope, .pane(key: key, activeSessionID: activeSessionID, store: store))
                 // An item opens as its own tab, as a file from 文件 does.
                 .environment(\.libraryOpensTab) { id in model.editPane(key) { $0.openArtifact(key, id: id) } }
         case PaneTab.pending:
@@ -246,6 +246,47 @@ enum RightPaneScope {
 
     /// The session whose 成果 lead; nil for Palo.
     static func palID(of scope: FileScope) -> String? { scope.kind == .pal ? scope.id : nil }
+}
+
+/// What a pane's 成果 shows at first, following where the owner is:
+/// everything in the assistant's, an agent's own in its, a workspace's
+/// agents' in its (as its 等你 does); one tap shows 全部.
+enum LibraryScope: Equatable {
+    case all
+    case agent(String)
+    case workspace([String])
+
+    @MainActor
+    static func pane(key: String, activeSessionID: String?, store: AppStore) -> LibraryScope {
+        if key.hasPrefix("ws:") { return .workspace(store.workspace(id: String(key.dropFirst(3)))?.memberIds ?? []) }
+        let scope = RightPaneScope.resolve(key: key, activeSessionID: activeSessionID, store: store)
+        return RightPaneScope.palID(of: scope).map { .agent($0) } ?? .all
+    }
+
+    /// Whose items it narrows to; nil: everything.
+    var sources: Set<String>? {
+        switch self {
+        case .all: nil
+        case .agent(let id): [id]
+        case .workspace(let ids): Set(ids)
+        }
+    }
+
+    /// 这个 agent / 这个工作区, the choice beside 全部.
+    var narrowedTitle: String {
+        switch self {
+        case .workspace: String(localized: "这个工作区", table: "Library")
+        default: String(localized: "这个 agent", table: "Library")
+        }
+    }
+
+    /// When the narrowed list is empty.
+    var emptyLine: String {
+        switch self {
+        case .workspace: String(localized: "这个工作区的 agent 还没发过成果。", table: "Library")
+        default: String(localized: "这个 agent 还没发过成果。", table: "Library")
+        }
+    }
 }
 
 /// 成果: the list with its items pushed over it, or a folder's tree in its place.

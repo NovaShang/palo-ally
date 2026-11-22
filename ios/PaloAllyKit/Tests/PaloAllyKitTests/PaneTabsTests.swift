@@ -124,6 +124,9 @@ struct PaneTabsRulesTests {
         let b = Artifact(id: "2", title: "", type: "", mainFile: "", source: "palo", updatedAt: 0)
         #expect([a, b].made(by: "pal_a").map(\.id) == ["1"])
         #expect([a, b].made(by: nil).count == 2)
+        let c = Artifact(id: "3", title: "", type: "", mainFile: "", source: "pal_c", updatedAt: 0)
+        #expect([a, b, c].made(byAnyOf: ["pal_a", "pal_c"]).map(\.id) == ["1", "3"])
+        #expect([a, b, c].made(byAnyOf: nil).count == 3 && [a, b, c].made(byAnyOf: []).isEmpty)
     }
 
     @Test func activatingAndOpenAreSeparate() {

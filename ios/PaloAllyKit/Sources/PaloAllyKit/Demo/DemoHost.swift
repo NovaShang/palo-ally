@@ -1732,6 +1732,11 @@ public actor DemoHost {
             ("ar8", "装修预算", "家务", 150, "# 装修预算\n\n- 厨房 ¥18,000\n- 卫生间 ¥12,500\n"),
             ("ar9", "保险到期提醒", "理财", 300, "# 保险到期\n\n- 车险 11 月 3 日\n- 家财险 次年 2 月\n"),
         ]
+        // What two agents published (an agent's 成果 shows its own; the 官网改版 workspace, both).
+        let agents: [(id: String, title: String, source: String, hoursAgo: Int64, body: String)] = [
+            ("ar20", "首页改版要点", "pal-site", 4, "# 首页改版要点\n\n- 首屏换成三张案例图\n- 导航收成四项\n- 页脚加备案号\n"),
+            ("ar21", "博客迁移清单", "pal-blog", 20, "# 博客迁移清单\n\n- 旧文章 48 篇\n- 图片换成 webp\n- 留旧链接跳转\n"),
+        ]
         let reportPDF = Self.demoPDF(pages: 6)
         // `-demoBigFiles YES` (or `-demoScreen big…`): a 30 MB PDF and a big
         // picture in 成果, to try downloads with progress and the cache.
@@ -1747,6 +1752,9 @@ public actor DemoHost {
                      updatedAt: now - 26 * hour, files: [ArtifactFile(path: "spending.csv", size: Int64(csv.utf8.count))]),
         ] + more.map { m in
             Artifact(id: m.id, title: m.title, type: "markdown", mainFile: "\(m.id).md", folder: m.folder,
+                     updatedAt: now - m.hoursAgo * hour, files: [ArtifactFile(path: "\(m.id).md", size: Int64(m.body.utf8.count))])
+        } + agents.map { m in
+            Artifact(id: m.id, title: m.title, type: "markdown", mainFile: "\(m.id).md", source: m.source,
                      updatedAt: now - m.hoursAgo * hour, files: [ArtifactFile(path: "\(m.id).md", size: Int64(m.body.utf8.count))])
         } + [
             // A PDF of several pages (QuickLook's preview, scrolled).
@@ -1765,6 +1773,7 @@ public actor DemoHost {
             "ar3/spending.csv": Data(csv.utf8),
             "ar10/report.pdf": reportPDF,
         ].merging(Dictionary(uniqueKeysWithValues: big.enumerated().map { i, b in ("ar\(11 + i)/\(b.1)", b.0) })) { a, _ in a }.merging(Dictionary(uniqueKeysWithValues: more.map { ("\($0.id)/\($0.id).md", Data($0.body.utf8)) })) { a, _ in a }
+            .merging(Dictionary(uniqueKeysWithValues: agents.map { ("\($0.id)/\($0.id).md", Data($0.body.utf8)) })) { a, _ in a }
         let memory: [String: (scope: MemoryScope, content: String, updatedAt: Int64)] = [
             "user.md": (.core, "# 关于我\n\n- 住在杭州，常去上海出差\n- 喜欢靠窗座位\n- 不吃香菜\n", now - 48 * hour),
             "soul.md": (.core, "# 说话方式\n\n简短、温暖，不啰嗦。重要的事情先说结论。\n", now - 72 * hour),

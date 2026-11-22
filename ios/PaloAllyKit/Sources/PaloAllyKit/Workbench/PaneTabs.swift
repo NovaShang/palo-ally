@@ -293,4 +293,10 @@ extension Array where Element == Artifact {
         guard let source else { return self }
         return filter { $0.source == source }
     }
+
+    /// What any of these sessions made (a workspace's agents); everything when nil.
+    public func made(byAnyOf sources: Set<String>?) -> [Artifact] {
+        guard let sources else { return self }
+        return filter { sources.contains($0.source) }
+    }
 }

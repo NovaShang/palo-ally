@@ -15,20 +15,21 @@ struct LibraryView: View {
     /// Folders folded shut in 按文件夹 (open by default).
     @State private var folded: Set<String> = []
     @Environment(\.placesAsColumns) private var asColumn
-    /// In a session's pane: the session whose items lead, and the 这个会话 / 全部 choice.
-    @Environment(\.libraryPalID) private var palID
+    /// In an agent's or a workspace's pane: whose items show first, and the
+    /// 这个 agent (这个工作区) / 全部 choice.
+    @Environment(\.libraryScope) private var scope
     @Environment(\.libraryOpensModal) private var opensModal
     @Environment(\.libraryOpensTab) private var opensTab
     @State private var onlyThisSession = true
-    /// The phone's pane page: its glass bars hold the search, 这个会话 / 全部
+    /// The phone's pane page: its glass bars hold the search, 这个 agent / 全部
     /// and 按时间 / 按文件夹, so the list shows none of its own.
     @Environment(\.paneChrome) private var chrome
 
     private var onlyThis: Bool { chrome?.onlyThisSession ?? onlyThisSession }
-    /// The session the list is narrowed to, if any.
-    private var narrowedTo: String? { onlyThis ? palID : nil }
-    private var pinned: [Artifact] { store.pinnedArtifacts.made(by: narrowedTo) }
-    private var recent: [Artifact] { store.recentArtifacts.made(by: narrowedTo) }
+    /// The agents the list is narrowed to, if any.
+    private var narrowedTo: Set<String>? { onlyThis ? scope.sources : nil }
+    private var pinned: [Artifact] { store.pinnedArtifacts.made(byAnyOf: narrowedTo) }
+    private var recent: [Artifact] { store.recentArtifacts.made(byAnyOf: narrowedTo) }
 
     private var trimmed: String { (chrome?.query ?? query).trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -102,16 +103,16 @@ struct LibraryView: View {
     // MARK: list
 
     @ViewBuilder private var artifactList: some View {
-        if palID != nil && chrome == nil { sessionPicker }
+        if scope != .all && chrome == nil { sessionPicker }
         if store.artifacts.isEmpty {
             ContentUnavailableView("这里还空着",
                                    systemImage: "books.vertical",
                                    description: Text("助理整理出来的东西——晨报、比价、表格、文档——都会放在这里。"))
                 .listRowBackground(Color.clear)
         } else if pinned.isEmpty && recent.isEmpty && narrowedTo != nil {
-            // This session hasn't made any: one tap to everything.
+            // This agent hasn't made any: one tap to everything.
             Section {
-                Text("这个会话还没发过成果。", tableName: "Library").foregroundStyle(.secondary)
+                Text(verbatim: scope.emptyLine).foregroundStyle(.secondary)
                 Button { if let chrome { chrome.onlyThisSession = false } else { onlyThisSession = false } } label: {
                     HStack {
                         Text("看全部成果", tableName: "Library").foregroundStyle(.primary)
@@ -137,11 +138,11 @@ struct LibraryView: View {
         }
     }
 
-    /// 这个会话 / 全部, above the list in a session's pane.
+    /// 这个 agent (这个工作区) / 全部, above the list in an agent's or a workspace's pane.
     private var sessionPicker: some View {
         Section {
             Picker(selection: $onlyThisSession) {
-                Text("这个会话", tableName: "Library").tag(true)
+                Text(verbatim: scope.narrowedTitle).tag(true)
                 Text("全部", tableName: "Library").tag(false)
             } label: {
                 Text("范围", tableName: "Library")

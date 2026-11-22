@@ -21,8 +21,8 @@ final class PhonePaneState {
 extension EnvironmentValues {
     /// 成果 inside the phone's pane: an item opens as a full-screen modal, not pushed.
     @Entry var libraryOpensModal: Bool = false
-    /// The session whose items 成果 offers first (nil: Palo's, everything).
-    @Entry var libraryPalID: String? = nil
+    /// Whose items 成果 offers first (the assistant's pane: everything).
+    @Entry var libraryScope: LibraryScope = .all
     /// 成果 in the pane beside the conversation: an item opens as its own tab.
     @Entry var libraryOpensTab: ((String) -> Void)? = nil
 }
@@ -70,8 +70,8 @@ enum PaneModal {
 }
 
 /// What the phone's pane page holds in its glass bars for the list under
-/// them (`LibraryView`, `FileTreeScreen`): the search text and, in a
-/// session's 成果, 这个会话 / 全部.
+/// them (`LibraryView`, `FileTreeScreen`): the search text and, in an
+/// agent's or a workspace's 成果, 这个 agent (这个工作区) / 全部.
 @MainActor @Observable
 final class PaneChrome {
     var query = ""
@@ -85,10 +85,10 @@ extension EnvironmentValues {
 
 /// The pane as one page on a phone (docs/workbench-design/pane-phone-glass.html):
 /// the list runs to both edges under floating glass. At the top, ✕ and one
-/// capsule for what is shown (这个会话 / 全部 in a session's 成果, 按时间 /
-/// 按文件夹 in Palo's, the folder's name in 文件); at the bottom, a glass tab
-/// bar of 成果 and 文件, and a round search button that turns the bar into
-/// the search field.
+/// capsule for what is shown (这个 agent / 全部 in an agent's 成果, 按时间 /
+/// 按文件夹 in the assistant's, the folder's name in 文件); at the bottom, a
+/// glass tab bar of 等你, 成果, 待办 and 文件, and a round search button that
+/// turns the bar into the search field.
 struct PhonePane: View {
     let key: String
     var activeSessionID: String? = nil
@@ -101,6 +101,7 @@ struct PhonePane: View {
     @FocusState private var searchFocused: Bool
     @AppStorage("libraryGrouping") private var grouping: LibraryGrouping = .time
     private var state: PhonePaneState { .shared }
+    private var libraryScope: LibraryScope { .pane(key: key, activeSessionID: activeSessionID, store: store) }
 
     var body: some View {
         let resolved = RightPaneScope.resolve(key: key, activeSessionID: activeSessionID, store: store)
@@ -115,7 +116,7 @@ struct PhonePane: View {
             case .library:
                 LibraryTab()
                     .environment(\.libraryOpensModal, true)
-                    .environment(\.libraryPalID, palID)
+                    .environment(\.libraryScope, libraryScope)
             case .backlog:
                 // 待办: the list runs under the glass bars as the others do; rows lift on a long press to be dragged.
                 BacklogView(palID: palID, bottomClearance: 70)
@@ -173,10 +174,10 @@ struct PhonePane: View {
                 .padding(.horizontal, 16)
                 .frame(height: 40)
                 .glassEffect(.regular, in: .capsule)
-        case .library where palID != nil:
-            capsuleMenu(chrome.onlyThisSession ? String(localized: "这个会话", table: "Library") : String(localized: "全部", table: "Library")) {
+        case .library where libraryScope != .all:
+            capsuleMenu(chrome.onlyThisSession ? libraryScope.narrowedTitle : String(localized: "全部", table: "Library")) {
                 Picker(selection: $chrome.onlyThisSession) {
-                    Text("这个会话", tableName: "Library").tag(true)
+                    Text(verbatim: libraryScope.narrowedTitle).tag(true)
                     Text("全部", tableName: "Library").tag(false)
                 } label: { EmptyView() }
             }
