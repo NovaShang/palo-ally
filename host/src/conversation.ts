@@ -25,6 +25,7 @@ import { ASSISTANT_FLAGS } from "./agent/flags.ts";
 import { AllyTurn } from "./agent/allyTurn.ts";
 import { IdleCompact } from "./agent/idleCompact.ts";
 import { stripSkip } from "./agent/skip.ts";
+import { TurnQueue } from "./agent/turnQueue.ts";
 import { WechatRelay } from "./agent/wechatRelay.ts";
 import { type Turn, type TurnEnd, timing } from "./agent/turn.ts";
 
@@ -109,15 +110,15 @@ export interface ConversationDeps {
 export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, ChatLogSink> {
   model = ""; // the model the harness reports running
   permissionMode = ""; // the permission mode it reports running in (not always the configured one)
-  private queue: Turn[] = [];
   private lastContextTokens = 0;
-  private turnWaiters: (() => void)[] = [];
   // (pending: every owner message sent to the harness and not yet answered,
   // by uuid; a turn counts as answering the owner only once its result lists the uuid.)
-  private budgetNoticeDay = "";
-  // Its pieces, by its flags: WeChat turns get each paragraph as it's written
-  // (wechat); an Ally's turn is gated and the owner's words held meanwhile
-  // (allyGate); the host compacts at a clean break before the cache expires (autoCompact).
+  // Its pieces, by its flags: host-initiated turns wait in a queue and are
+  // shown as what they are (proactiveTurns); WeChat turns get each paragraph
+  // as it's written (wechat); an Ally's turn is gated and the owner's words
+  // held meanwhile (allyGate); the host compacts at a clean break before the
+  // cache expires (autoCompact).
+  private turnQueue: TurnQueue | null;
   private wechat: WechatRelay | null;
   private ally: AllyTurn | null;
   private compactor: IdleCompact | null;
@@ -140,6 +141,28 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
       },
     });
     this.lastContextTokens = d.runtime.data.contextTokens ?? 0;
+    this.turnQueue = this.flags.proactiveTurns
+      ? new TurnQueue({
+          busy: () => !!this.current || this.pending.size > 0 || this.allyInFlight,
+          inFlight: () => this.pending.size,
+          expire: () => this.expirePending(),
+          quiet: () => this.quiet,
+          overBudget: () => this.d.usage.over("mainUsd", this.d.config().budget.mainDailyUsd),
+          day: () => this.d.usage.today().day,
+          budgetNotice,
+          start: (turn) => {
+            const uuid = randomUUID();
+            if (turn.allyId) this.ally?.start(turn.allyId, uuid);
+            this.beginTurn({ ...turn, uuids: [uuid] });
+            this.ensureSession().send(turn.text, uuid);
+          },
+          out: () => this.out,
+          push: (msg) => void this.d.router.proactive(msg),
+          goalResult: (id, text) => this.d.onGoalResult?.(id, text),
+          metric: (m) => this.d.metric(m),
+          log: (s) => this.d.log(s),
+        })
+      : null;
     this.wechat = this.flags.wechat
       ? new WechatRelay({ channel: () => this.d.wechat, audit: () => this.d.audit, log: (s) => this.d.log(s), current: (turn) => this.current === turn })
       : null;
@@ -150,7 +173,7 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
           scope: () => this.allyScope(),
           busy: () => !!this.current,
           resend: (h) => this.sendOwner(h.text, h.origin, h.wechat, h.images, h.uuid),
-          pump: () => this.pump(),
+          pump: () => this.turnQueue?.pump(),
           quietMs: () => timing.implicitQuietMs,
         })
       : null;
@@ -196,7 +219,7 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
 
   // Nothing in flight at all (safe to restart the process).
   get quiet(): boolean {
-    return !this.current && !this.queue.length && !this.pending.size && !this.allyInFlight;
+    return !this.current && !this.turnQueue?.length && !this.pending.size && !this.allyInFlight;
   }
 
   /** The Ally whose message the harness is handling now (its turn is gated), if any. */
@@ -206,17 +229,16 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
 
   // Resolves when the turn queue is drained (tests, CLI one-shots).
   idle(): Promise<void> {
-    if (this.quiet) return Promise.resolve();
-    return new Promise((r) => this.turnWaiters.push(r));
+    return this.turnQueue?.idle() ?? Promise.resolve();
   }
 
   hasQueued(pred: (t: Turn) => boolean): boolean {
-    return this.queue.some(pred);
+    return !!this.turnQueue?.has(pred);
   }
 
   /** A turn still waiting to start, so more can be added to it. */
   findQueued(pred: (t: Turn) => boolean): Turn | undefined {
-    return this.queue.find(pred);
+    return this.turnQueue?.find(pred);
   }
 
   // ---------------- inputs ----------------
@@ -238,31 +260,9 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
     this.ensureSession().send(text, uuid, images);
   }
 
+  /** A host-initiated turn: it waits until nothing else is in flight (TurnQueue). */
   enqueue(turn: Turn): void {
-    this.queue.push(turn);
-    this.pump();
-  }
-
-  private pump(): void {
-    this.expirePending();
-    if (this.current || this.pending.size || this.allyInFlight || !this.queue.length) {
-      this.flushWaitersIfIdle();
-      return;
-    }
-    const turn = this.queue.shift()!;
-    if (turn.proactive && !turn.maintenance && !turn.pal && this.d.usage.over("mainUsd", this.d.config().budget.mainDailyUsd)) {
-      this.d.log(`proactive turn dropped: main budget used up (${turn.label ?? turn.origin})`);
-      const day = this.d.usage.today().day;
-      if (this.budgetNoticeDay !== day) {
-        this.budgetNoticeDay = day;
-        this.out.message({ role: "system", kind: "notice", text: budgetNotice(turn.label), channel: "system" });
-      }
-      return this.pump();
-    }
-    const uuid = randomUUID();
-    if (turn.allyId) this.ally?.start(turn.allyId, uuid);
-    this.beginTurn({ ...turn, uuids: [uuid] });
-    this.ensureSession().send(turn.text, uuid);
+    this.turnQueue?.add(turn);
   }
 
   // Owner messages the harness never answered (e.g. lost in a crash) stop
@@ -448,7 +448,6 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
   // context size, what it said (a reply, or what it brought up as a push, or
   // nothing for [skip]), a goal's line, WeChat, and the next queued turn.
   protected override turnEnded(turn: Turn | null, end: TurnEnd<InFlightOwner>): void {
-    const { router } = this.d;
     const chat = this.out;
     const costUsd = end.costUsd ?? 0;
     const contextTokens = end.contextTokens ?? this.lastContextTokens;
@@ -463,8 +462,7 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
         this.compactor.reason = null;
       }
       this.d.statusChanged();
-      if (this.pending.size === 0) this.pump();
-      else this.flushWaitersIfIdle();
+      this.turnQueue?.next();
       return;
     }
     this.lastContextTokens = contextTokens;
@@ -481,31 +479,11 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
         this.d.onAuth?.({ text: owner.length ? owner.join("\n") : turn.label ? `${turn.label}: ${turn.text}` : turn.text, ...(turn.watchId ? { watchId: turn.watchId } : {}) });
       } else if (!error) this.d.onAuth?.(null);
       const shown = stripSkip(this.texts.join("\n\n").trim());
-      if (turn.watchId && shown && !error) this.d.onGoalResult?.(turn.watchId, shown);
-      // The owner spoke while this proactive turn ran and it answered them too:
-      // show it as a normal reply (no push), not as something it brought up.
-      const ownerFolded = turn.proactive && answered.length > 0;
-      if (ownerFolded) {
-        if (shown) chat.message({ role: "assistant", kind: "text", text: shown, channel: answered[0]!.origin });
-      } else if (turn.proactive) {
-        if (shown) {
-          // A schedule goal's output (晨报 and the like) shows as a card titled by the goal.
-          const card = turn.watchId && turn.origin === "schedule" ? { card: { title: turn.label ?? "", goalId: turn.watchId } } : {};
-          const msg = chat.message({ role: "assistant", kind: "text", text: shown, channel: turn.origin, proactive: true, ...card });
-          void router.proactive(msg);
-        } else {
-          this.d.metric({ type: "skip", origin: turn.origin, label: turn.label });
-        }
-      }
+      this.turnQueue?.said(turn, shown, answered, error);
       this.wechat?.turnEnded(answered.find((a) => a.wechat)?.wechat ?? (turn.proactive ? undefined : turn.wechat), shown);
     }
     this.d.statusChanged();
-    if (this.pending.size === 0) this.pump();
-    else this.flushWaitersIfIdle();
-  }
-
-  private flushWaitersIfIdle(): void {
-    if (this.quiet) for (const w of this.turnWaiters.splice(0)) w();
+    this.turnQueue?.next();
   }
 
   // ---------------- compaction ----------------
@@ -539,7 +517,7 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
   // closing used to do, kept for the tests that resume a closed session.
 
   onIdle(): void {
-    if (this.current || this.queue.length || this.allyInFlight || !this.host.proc) return;
+    if (this.current || this.turnQueue?.length || this.allyInFlight || !this.host.proc) return;
     // Close the CLI process; the next message resumes the same conversation.
     // (Keeping the context in shape is the harness' job: it compacts on its own.)
     if (!this.d.tasks.live().length && !this.waitingOnOwner()) {
@@ -646,7 +624,7 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
     const resumeAs: Pick<Turn, "origin" | "proactive" | "wechat" | "watchId"> | null =
       untaken.length || gate || turn?.maintenance ? null : (turn ?? (taken.length ? { origin: taken[0]!.origin, proactive: false, wechat: taken[0]!.wechat } : null));
     if (resumeAs) {
-      this.queue.unshift({
+      this.turnQueue?.first({
         text: resumeAs.proactive ? stallContinueProactive() : stallContinue(),
         origin: resumeAs.origin,
         proactive: resumeAs.proactive,
@@ -672,7 +650,7 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
     }
     // The owner's words held for the Ally's turn go now, each as it would have.
     for (const m of this.ally?.takeHeld() ?? []) this.sendOwner(m.text, m.origin, m.wechat, m.images, m.uuid);
-    this.pump();
+    this.turnQueue?.pump();
     this.d.statusChanged();
     return { resent: untaken.length, continued: !!resumeAs };
   }
@@ -683,7 +661,7 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
   // and stopTask). Nothing stays blocked afterwards: the next message works as usual.
   stopAll(by: string): void {
     this.d.audit.log("stop", { by });
-    this.queue = [];
+    this.turnQueue?.clear();
     // As with words already sent: stopped, not carried over.
     this.ally?.stop();
     this.d.approvals.denyAll(`stop:${by}`);
