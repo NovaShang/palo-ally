@@ -187,7 +187,8 @@ struct WorkbenchStoreTests {
         #expect(store.workspacesSupported == true)
         let tree = store.sidebarTree
         #expect(tree.workspaces.map(\.title) == ["官网改版"] && tree.workspaces[0].members.map(\.id) == ["pal-site", "pal-blog"])
-        #expect(tree.workspaces[0].waiting == 1 && tree.waitingCount == 1)
+        // 网站帮手's question, and the computer's other session 问卷数据清洗 asking too.
+        #expect(tree.workspaces[0].waiting == 1 && tree.waitingCount == 2)
         // 笔记整理 finished something unseen; 照片整理 has been left alone for days.
         #expect(tree.sessions.map(\.id) == ["pal-notes"] && store.pal(id: "pal-notes")?.attention == .done)
         #expect(tree.foldedCount == 1 && store.pal(id: "pal-photos")?.folded == true)

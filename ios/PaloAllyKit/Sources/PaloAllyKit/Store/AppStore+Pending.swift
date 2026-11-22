@@ -49,12 +49,12 @@ extension AppStore {
         }
     }
 
-    /// What waits on the owner in this conversation: the assistant's own
-    /// (its, a brief's, a contact's, the computer's sessions'), one Pal's, or
-    /// one session's.
+    /// What waits on the owner in this conversation, as its badge and its
+    /// 等你 tab count it: for the assistant everything on the list (its
+    /// sidebar row's count), for an agent its own items.
     public var openPendingHere: [PendingItem] {
         switch scope {
-        case .palo: openPending(forPal: nil)
+        case .palo: openPending
         case .pal(let id): openPending(forPal: id)
         }
     }

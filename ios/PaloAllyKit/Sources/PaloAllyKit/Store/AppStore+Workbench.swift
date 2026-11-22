@@ -36,10 +36,13 @@ extension AppStore {
     }
 
     /// The sidebar's sections, in the owner's manual order; what waits on the
-    /// owner counted from 等你的事.
+    /// owner counted from 等你的事. 「N 个 agent 在等你」 counts the
+    /// computer's other sessions with items too: they are agents in the list.
     public var sidebarTree: SidebarTree {
-        SidebarTree.build(pals: pals, workspaces: workspaces, sessionOrder: sessionOrder)
+        var tree = SidebarTree.build(pals: pals, workspaces: workspaces, sessionOrder: sessionOrder)
             .counting { palPendingCount($0) }
+        tree.waitingCount += otherSessions.filter { palPendingCount($0.id) > 0 }.count
+        return tree
     }
 
     // MARK: loading

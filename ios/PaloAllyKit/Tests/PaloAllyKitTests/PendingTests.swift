@@ -162,7 +162,9 @@ struct PendingTests {
         let (store, _) = await demo()
         #expect(await until { store.pals.count == 4 })
         let tree = store.sidebarTree
+        // Agents with items: the Pals and the computer's other sessions alike.
         let withItems = store.pals.filter { store.palPendingCount($0.id) > 0 }.count
+            + store.otherSessions.filter { store.palPendingCount($0.id) > 0 }.count
         #expect(tree.waitingCount == withItems && withItems >= 1)
         for node in tree.workspaces {
             #expect(node.waiting == node.members.reduce(0) { $0 + store.palPendingCount($1.id) })

@@ -38,13 +38,13 @@ public struct AgentStatusLine: Equatable, Sendable {
     }
 
     /// The same, with what waits on the owner read from 等你的事: `waiting`
-    /// is the conversation's open items. What holds the agent up counts (a
-    /// question or a prompt it is stopped on, a proposal, a draft, a task
-    /// that needs the owner); an item of its own that only waits for a word
-    /// is the capsule's, not the status line's.
+    /// is the conversation's open items, and every one of them counts, so
+    /// the line says the number the badge and the 等你 tab say (6fcb2ad).
+    /// Its kinds only choose the words: all questions 「N 个问题等你回答」,
+    /// all prompts 「N 件等你确认」, else 「N 件事等你」.
     public static func make(offlineText: String?, waiting items: [PendingItem],
                             busy: Bool, activity: String?, tasks: [AllyTask]) -> AgentStatusLine {
-        let holding = items.filter { $0.isOpen && ($0.blocking || $0.link != nil) }
+        let holding = items.filter(\.isOpen)
         let questions = holding.filter { $0.questionId != nil }.count
         let approvals = holding.filter { $0.approvalId != nil }.count
         let drafts = holding.filter { $0.link?.kind == .allyDraft }.count

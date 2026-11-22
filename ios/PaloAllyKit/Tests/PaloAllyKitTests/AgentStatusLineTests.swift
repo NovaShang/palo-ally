@@ -32,14 +32,16 @@ struct AgentStatusLineTests {
                         status: status, questionId: question, approvalId: approval, link: link)
         }
         let line = { (items: [PendingItem]) in AgentStatusLine.make(offlineText: nil, waiting: items, busy: true, activity: "在跑命令", tasks: [task("a", .needsInput)]) }
-        // A task that needs the owner counts once, as its item; a plain item is the capsule's.
-        #expect(line([item("t", link: PendingLink(kind: .task, id: "a")), item("plain")]) == AgentStatusLine(kind: .needsYou, text: "1 件事等你"))
+        // Every open item counts, as the badge counts them: a task that needs the
+        // owner once (as its item, not again as a task), a plain item too.
+        #expect(line([item("t", link: PendingLink(kind: .task, id: "a")), item("plain")]) == AgentStatusLine(kind: .needsYou, text: "2 件事等你"))
+        #expect(line([item("plain")]) == AgentStatusLine(kind: .needsYou, text: "1 件事等你"))
         #expect(line([item("q", blocking: true, question: "q1")]).text == "等你回答")
         #expect(line([item("a", blocking: true, approval: "a1"), item("b", blocking: true, approval: "a2")]).text == "2 件等你确认")
         #expect(line([item("d", link: PendingLink(kind: .allyDraft, id: "e"))]).text == "等你点发送")
         #expect(line([item("p", link: PendingLink(kind: .proposal, id: "hp"))]).text == "等你点头")
-        // Nothing holding it up (closed, or only plain items): what it does.
-        #expect(line([item("plain"), item("x", blocking: true, approval: "a3", status: .done)]) == AgentStatusLine(kind: .working, text: "在跑命令…"))
+        // Nothing open (decided or put away): what it does.
+        #expect(line([item("x", blocking: true, approval: "a3", status: .done), item("y", status: .ignored)]) == AgentStatusLine(kind: .working, text: "在跑命令…"))
     }
 
     @Test func mainActivityThenOtherTasks() {
