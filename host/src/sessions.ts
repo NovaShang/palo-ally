@@ -3,7 +3,8 @@ import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import { existsSync, statSync } from "node:fs";
 import { transcriptPath } from "./handoffs.ts";
 import { pageFromTail } from "./transcriptTail.ts";
-import { type ApprovalManager, sessionPermission } from "./approvals.ts";
+import type { ApprovalManager } from "./approvals.ts";
+import { askOwner } from "./ownerCards.ts";
 import type { Audit } from "./audit.ts";
 import { AwayDetector } from "./away.ts";
 import { WaitingPushes } from "./waitingPush.ts";
@@ -259,27 +260,17 @@ export class Sessions {
     const opts = { source, timeoutMs: this.d.hookWaitMs ?? HOOK_WAIT_MS, timeoutNote: noteAtComputer(), abortNote: noteHandled(), abortBy: "computer", notify: false };
     const req = { toolName: tool, input, signal: abort.signal };
 
-    if (tool === "AskUserQuestion") {
-      const asked = this.d.questions.ask(req, opts);
-      if (!asked) return null;
-      card.id = asked.question.id;
-      this.open(sid, card);
-      const first = asked.question.items[0]!.question;
-      this.pushWaiting(sid, name, t("sessions.askYou", { q: first }), { questionId: asked.question.id });
-      const d = await asked.result;
-      this.close(sid, card);
+    const asked = askOwner(this.d, req, opts);
+    if (!asked) return null;
+    card.id = asked.kind === "question" ? asked.question.id : asked.approval.id;
+    this.open(sid, card);
+    this.pushWaiting(sid, name, asked.line, asked.ids);
+    const d = await asked.result;
+    this.close(sid, card);
+    if (asked.kind === "question") {
       if (asked.question.status !== "answered" || d.behavior !== "allow") return null;
       return { hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "allow", updatedInput: d.updatedInput } } };
     }
-
-    // The whole command, never cut short (PRD §8).
-    const words = sessionPermission(tool, input);
-    const asked = this.d.approvals.ask(req, { ...opts, title: words.title, detail: words.detail });
-    card.id = asked.approval.id;
-    this.open(sid, card);
-    this.pushWaiting(sid, name, words.line, { approvalId: asked.approval.id });
-    await asked.result;
-    this.close(sid, card);
     const a = asked.approval;
     if (a.status === "allowed") return { hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "allow" } } };
     if (a.status === "denied")
