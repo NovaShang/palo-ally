@@ -945,12 +945,14 @@ public struct MemoryFile: Codable, Sendable, Hashable, Identifiable {
     public var scope: MemoryScope
     public var size: Int64
     public var updatedAt: Int64
+    /// Listed for the owner to start (an agent's CLAUDE.md), not there yet.
+    public var missing: Bool
     public var id: String { path }
 
-    enum CodingKeys: String, CodingKey { case path, scope, size, updatedAt }
+    enum CodingKeys: String, CodingKey { case path, scope, size, updatedAt, missing }
 
-    public init(path: String, scope: MemoryScope, size: Int64, updatedAt: Int64) {
-        self.path = path; self.scope = scope; self.size = size; self.updatedAt = updatedAt
+    public init(path: String, scope: MemoryScope, size: Int64, updatedAt: Int64, missing: Bool = false) {
+        self.path = path; self.scope = scope; self.size = size; self.updatedAt = updatedAt; self.missing = missing
     }
 
     public init(from decoder: Decoder) throws {
@@ -959,5 +961,6 @@ public struct MemoryFile: Codable, Sendable, Hashable, Identifiable {
         scope = l.decode(MemoryScope.self, "scope", or: .unknown)
         size = l.int64("size", or: 0)
         updatedAt = l.millis("updatedAt", or: 0)
+        missing = l.bool("missing") ?? false // only on a file not there yet (and older hosts never send it)
     }
 }

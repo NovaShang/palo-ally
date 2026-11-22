@@ -16,6 +16,8 @@ import type { DeliveryToolHandlers, HarnessDriver, ModelOption } from "./harness
 import type { MediaStore } from "./media.ts";
 import type { ArtifactLibrary } from "./artifacts.ts";
 import { makeDeliveryTools } from "./shellTools.ts";
+import { checkModelChoice, optionFor } from "./modelChoice.ts";
+export { optionFor };
 import { PalLauncher, type PalLaunch } from "./palLauncher.ts";
 import { pagePalMessages, toPalMessages } from "./palHistory.ts";
 import { pageFromTail } from "./transcriptTail.ts";
@@ -128,22 +130,6 @@ export interface PalDetail {
   tasks: PalTask[];
   pastTasks: PastPalTask[];
   lastCompactAt?: number;
-}
-
-/**
- * The option a session's model is: its own value, or the alias whose full id
- * it is (an alias's [1m] has to match too).
- */
-export function optionFor(model: string | undefined, options: ModelOption[]): string | undefined {
-  if (!model) return undefined;
-  const norm = (s: string) => s.trim().toLowerCase();
-  const m = norm(model);
-  return (
-    options.find((o) => norm(o.value) === m)?.value ??
-    options.find((o) => o.resolved && norm(o.resolved) === m)?.value ??
-    // a dated id ("claude-opus-5-5-20260101[1m]") against its undated one
-    options.find((o) => o.resolved && norm(o.resolved).replace(/-\d{8}(?=\[|$)/, "") === m.replace(/-\d{8}(?=\[|$)/, ""))?.value
-  );
 }
 
 /** A model id without its window suffix: "claude-opus-5-5[1m]" → "claude-opus-5-5". */
@@ -1252,16 +1238,10 @@ export class Pals {
     const effort = typeof o.effort === "string" && o.effort ? o.effort : undefined;
     if (!model && !effort) throw new Error(t("pals.setModelNothing"));
     if (pal.rec.stoppedFor) throw new Error(t("pals.stoppedNoModel"));
-    if (effort && !["low", "medium", "high", "xhigh", "max"].includes(effort)) throw new Error(t("pals.effortBad"));
+    // The same check as the assistant's (model.set); the model it will run on is
+    // the one asked for, else the one it has (a full id matches its alias's entry).
     const models = (await this.d.models?.().catch(() => [])) ?? [];
-    if (model && models.length && !models.some((m) => m.value === model)) throw new Error(t("pals.modelUnknown", { model }));
-    if (model && !models.length && !/^[\w.\-:[\]]{1,80}$/.test(model)) throw new Error(t("pals.modelUnknown", { model }));
-    if (effort) {
-      // the model it will run on: the one asked for, else the one it has (a full id matches its alias's entry by prefix)
-      const on = model ?? pal.rec.model;
-      const entry = models.find((m) => m.value === on);
-      if (entry && !entry.efforts.includes(effort)) throw new Error(t("pals.effortUnsupported"));
-    }
+    checkModelChoice(models, { model, effort }, pal.rec.model);
     await pal.setModel({ ...(model ? { model } : {}), ...(effort ? { effort } : {}) });
     this.d.audit.log("pal.model", { pal: pal.id, model: model ?? null, effort: effort ?? null });
     this.emitNow();

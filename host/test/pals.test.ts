@@ -1972,3 +1972,73 @@ describe("pieces", () => {
     }
   });
 });
+
+describe("an agent's memory (memory.* with agent)", () => {
+  test("its folder's CLAUDE.md and Claude Code's project memory for the folder; without agent the assistant's, as old apps ask", async () => {
+    const t = setup();
+    const { pal } = await t.call("pals.create", { cwd: t.project });
+    // the assistant's, unchanged
+    expect((await t.call("memory.list")).files.map((f: any) => f.path)).toEqual(["user.md", "soul.md"]);
+    // the agent's: CLAUDE.md listed before it exists, read as empty
+    let files = (await t.call("memory.list", { agent: pal.id })).files;
+    expect(files).toEqual([{ path: "CLAUDE.md", scope: "core", size: 0, updatedAt: 0, missing: true }]);
+    expect(await t.call("memory.read", { agent: pal.id, path: "CLAUDE.md" })).toEqual({ content: "", updatedAt: 0 });
+    // the owner starts it: written in the folder itself
+    const w = await t.call("memory.write", { agent: pal.id, path: "CLAUDE.md", content: "# 规矩\n用 bun", baseUpdatedAt: 0 });
+    expect(readFileSync(join(t.project, "CLAUDE.md"), "utf8")).toBe("# 规矩\n用 bun");
+    expect(w.updatedAt).toBeGreaterThan(0);
+    // Claude Code's project memory for the folder
+    const memDir = join(t.claude.dir, "projects", t.project.replace(/[^A-Za-z0-9]/g, "-"), "memory");
+    require("node:fs").mkdirSync(memDir, { recursive: true });
+    writeFileSync(join(memDir, "MEMORY.md"), "- [测试](testing.md)");
+    writeFileSync(join(memDir, "testing.md"), "先跑 typecheck");
+    files = (await t.call("memory.list", { agent: pal.id })).files;
+    expect(files.map((f: any) => [f.path, f.scope, f.missing ?? false])).toEqual([
+      ["CLAUDE.md", "core", false],
+      ["memory/MEMORY.md", "auto", false],
+      ["memory/testing.md", "auto", false],
+    ]);
+    expect((await t.call("memory.read", { agent: pal.id, path: "memory/testing.md" })).content).toBe("先跑 typecheck");
+    // the assistant's list doesn't see them
+    expect((await t.call("memory.list")).files.map((f: any) => f.path)).toEqual(["user.md", "soul.md"]);
+    // only those files: not the assistant's core, not outside
+    await expect(t.call("memory.read", { agent: pal.id, path: "user.md" })).rejects.toThrow();
+    await expect(t.call("memory.write", { agent: pal.id, path: "memory/../../x.md", content: "" })).rejects.toThrow();
+    await expect(t.call("memory.list", { agent: "pal_nope" })).rejects.toThrow("找不到");
+  });
+
+  test("changed since the editor opened it (the agent wrote it meanwhile): refused, as the assistant's is", async () => {
+    const t = setup();
+    const { pal } = await t.call("pals.create", { cwd: t.project });
+    writeFileSync(join(t.project, "CLAUDE.md"), "v1");
+    const opened = await t.call("memory.read", { agent: pal.id, path: "CLAUDE.md" });
+    expect(opened.content).toBe("v1");
+    // the agent edits it a moment later
+    writeFileSync(join(t.project, "CLAUDE.md"), "v2 by the agent");
+    const later = Date.now() / 1000 + 5;
+    require("node:fs").utimesSync(join(t.project, "CLAUDE.md"), later, later);
+    await expect(t.call("memory.write", { agent: pal.id, path: "CLAUDE.md", content: "mine", baseUpdatedAt: opened.updatedAt })).rejects.toThrow("刚被改过");
+    expect(readFileSync(join(t.project, "CLAUDE.md"), "utf8")).toBe("v2 by the agent");
+    // reopened: its stamp is the base, and the next save goes through (and the one after, on the returned stamp)
+    const again = await t.call("memory.read", { agent: pal.id, path: "CLAUDE.md" });
+    const saved = await t.call("memory.write", { agent: pal.id, path: "CLAUDE.md", content: "mine", baseUpdatedAt: again.updatedAt });
+    await t.call("memory.write", { agent: pal.id, path: "CLAUDE.md", content: "mine 2", baseUpdatedAt: saved.updatedAt });
+    expect(readFileSync(join(t.project, "CLAUDE.md"), "utf8")).toBe("mine 2");
+    expect(t.hub.audit.tail(20).filter((e) => e.type === "memory.write").at(-1)).toMatchObject({ path: "CLAUDE.md", agent: pal.id });
+  });
+});
+
+describe("one model / depth check for the assistant and an agent", () => {
+  test("an agent's depth is checked against the model it runs on, its own when the choice names none", async () => {
+    const models = [
+      { value: "default", displayName: "Default", description: "", efforts: ["low", "medium", "high", "xhigh", "max"] },
+      { value: "haiku", displayName: "Haiku", description: "", efforts: [] },
+    ];
+    const t = setup({ pals: { models: async () => models } });
+    const { pal } = await t.call("pals.create", { cwd: t.project });
+    await t.call("pals.setModel", { id: pal.id, model: "haiku" });
+    await expect(t.call("pals.setModel", { id: pal.id, effort: "high" })).rejects.toThrow("不支持");
+    await expect(t.call("pals.setModel", { id: pal.id, model: "default", effort: "turbo" })).rejects.toThrow("不认识");
+    expect((await t.call("pals.setModel", { id: pal.id, model: "default", effort: "max" })).pal.effort).toBe("max");
+  });
+});

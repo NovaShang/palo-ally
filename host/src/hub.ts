@@ -12,6 +12,7 @@ import { activityThinking, approvalAnswerReply, questionLineHelp, statusReply, s
 import type { HarnessDriver, HarnessEvent, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
 import { HarnessInfo } from "./harnessInfo.ts";
 import { MemoryView, autoMemoryDir } from "./memory.ts";
+import { checkModelChoice } from "./modelChoice.ts";
 import { ProbeScheduler, type ProbeTrigger } from "./probe.ts";
 import { QuestionManager, parseItems, parseTextAnswer, questionText } from "./questions.ts";
 import { PendingStore, pendingLines } from "./pending.ts";
@@ -971,13 +972,8 @@ export class Hub {
   // setModel persists the choice and applies it to the running conversation.
   // `null` goes back to the default.
   async setModel(patch: { model?: string | null; effort?: string | null }): Promise<Status> {
-    const efforts = ["low", "medium", "high", "xhigh", "max"];
-    if (patch.effort != null && !efforts.includes(patch.effort)) throw new Error(t("hub.err.effort"));
-    if (patch.model != null) {
-      const known = this.info.models();
-      const ok = known.length ? known.some((m) => m.value === patch.model) : /^[\w.\-:[\]]{1,80}$/.test(patch.model);
-      if (!ok) throw new Error(t("hub.err.model", { model: patch.model }));
-    }
+    // The same check as an agent's (pals.setModel): the depth must be one its model takes.
+    checkModelChoice(this.info.models(), patch, this.config.model);
     if ("model" in patch) {
       this.config.model = patch.model || undefined;
       await this.conversation.applyModel(this.config.model);
@@ -1170,6 +1166,18 @@ export class Hub {
 
   private onProbeTriggers(t: ProbeTrigger[]): void {
     this.proactive.onProbeTriggers(t);
+  }
+
+  /**
+   * memory.list / read / write: the assistant's memory, or with `agent` (a
+   * Pal's id) that agent's: its folder's CLAUDE.md and Claude Code's project
+   * memory for the folder. Old apps send no `agent` and get the assistant's.
+   */
+  memoryOf(agent: unknown): MemoryView {
+    if (typeof agent !== "string" || !agent) return this.memory;
+    const pal = this.pals.get(agent);
+    if (!pal) throw new Error(t("pals.noPal"));
+    return MemoryView.forAgent(pal.rec.cwd, this.claudeDir);
   }
 
   // What the assistant knows about the owner, for writing 「试试」 suggestions:

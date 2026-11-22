@@ -246,6 +246,7 @@ export const enCli: Record<keyof typeof zhCli, string> = {
   "cc.why": ": {why}",
   "daemon.relayOff": "Remote connection is off (config.relay.enabled=false)",
   "memory.onlyCore": "Only the core files (user.md / soul.md) or .md memories under memory/ can be read or written",
+  "memory.onlyAgentFiles": "Only the folder's CLAUDE.md or .md memories under memory/ can be read or written",
   "cmd.stop": "Stop what I'm doing",
   "cmd.status": "See what I'm busy with",
   "wechat.notLoggedIn": "WeChat isn't logged in",

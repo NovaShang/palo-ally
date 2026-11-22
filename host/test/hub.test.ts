@@ -657,9 +657,10 @@ describe("Hub: model & effort", () => {
     const info = await hub.modelInfo();
     expect(info.models.map((m) => m.value)).toEqual(["default", "haiku"]);
     expect(info.effort).toBeNull();
-    const st = await hub.setModel({ model: "haiku", effort: "low" });
+    const st = await hub.setModel({ effort: "low" });
     expect(st.effort).toBe("low");
-    expect(driver.liveSwitches).toEqual(["model:haiku", "effort:low"]);
+    await hub.setModel({ model: "haiku" });
+    expect(driver.liveSwitches).toEqual(["effort:low", "model:haiku"]);
     expect(JSON.parse(await Bun.file(paths.config).text())).toMatchObject({ model: "haiku", effort: "low" });
     await hub.setModel({ effort: null });
     expect(hub.status().effort).toBeUndefined();
@@ -669,6 +670,23 @@ describe("Hub: model & effort", () => {
     await hub.idle();
     expect(driver.last!.opts.model).toBe("haiku");
     await expect(hub.setModel({ effort: "turbo" })).rejects.toThrow();
+    cleanup(paths);
+  });
+
+  test("a depth the model doesn't take is refused, as an agent's is (one check for both)", async () => {
+    const { hub, driver, paths } = makeHub();
+    await hub.modelInfo();
+    // haiku takes no depth: asked together, or later while on it
+    await expect(hub.setModel({ model: "haiku", effort: "low" })).rejects.toThrow("不支持");
+    await hub.setModel({ model: "haiku" });
+    await expect(hub.setModel({ effort: "high" })).rejects.toThrow("不支持");
+    expect(hub.status().effort).toBeUndefined();
+    // back to the default (the first option) with a depth it takes: fine
+    await hub.setModel({ model: null, effort: "high" });
+    expect(hub.status().effort).toBe("high");
+    // a model the harness doesn't offer
+    await expect(hub.setModel({ model: "gpt-9" })).rejects.toThrow("gpt-9");
+    expect(driver.liveSwitches.filter((s) => s.startsWith("effort:"))).toEqual(["effort:high"]);
     cleanup(paths);
   });
 
