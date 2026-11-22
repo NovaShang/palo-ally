@@ -37,7 +37,7 @@ struct PalAdoptCard: View {
 
     private var open: some View {
         PendingCard(header: PendingCardHeader(item: item, who: store.assistantName, createdAt: item?.createdAt ?? 0, blocking: false),
-                    title: Copy.spaced(String(localized: "接管「\(proposal.displayTitle)」")),
+                    title: Copy.spaced(String(localized: "接手「\(proposal.displayTitle)」")),
                     background: String(localized: "接过来以后，它在这里接着聊。"),
                     error: decision.error) {
             if !proposal.cwd.isEmpty {
@@ -51,7 +51,7 @@ struct PalAdoptCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         } actions: {
-            PendingChoiceButtons(choices: ProposalWords.buttons(yes: String(localized: "接管")), working: decision.working,
+            PendingChoiceButtons(choices: ProposalWords.buttons(yes: String(localized: "接手")), working: decision.working,
                                  enabled: store.connection.isOnline, pick: decide)
         }
     }

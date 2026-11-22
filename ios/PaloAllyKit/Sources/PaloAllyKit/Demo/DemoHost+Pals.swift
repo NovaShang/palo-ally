@@ -385,7 +385,7 @@ extension DemoHost {
     func proposeAdopting(_ r: RecentSession) {
         seq += 1
         var m = ChatMessage(seq: seq, id: "m\(seq)", role: .assistant, kind: .palAdopt,
-                            text: "接管「\(r.displayTitle)」（\(CCSession.shortPath(r.cwd))）？", channel: .system,
+                            text: "接手「\(r.displayTitle)」（\(CCSession.shortPath(r.cwd))）？", channel: .system,
                             ts: Date().epochMillis)
         m.adoption = PalAdoptProposal(id: nextID("pa"), sessionId: r.sessionId, cwd: r.cwd, title: r.title)
         messages.append(m)

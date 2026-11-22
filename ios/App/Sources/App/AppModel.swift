@@ -571,7 +571,7 @@ final class AppModel {
             let identities = [("Palo", "magenta"), ("小云", "blue")]  // i18n-ok: demo data
             let who = i < identities.count ? identities[i] : ("Palo", "")
             let naming = launch.screen == "naming" && i == 0
-            let host = DemoHost(speed: 1, offline: i == offlineIndex, hostName: i < names.count ? names[i] : "电脑 \(i + 1)",  // i18n-ok: demo data
+            let host = DemoHost(speed: 1, offline: i == offlineIndex, hostName: i < names.count ? names[i] : "主机 \(i + 1)",  // i18n-ok: demo data
                                 assistantName: naming ? "" : who.0, color: naming ? "" : who.1, pals: i <= 1,
                                 version: i == 0 ? launch.demoHostVersion : nil,
                                 machineId: i == localIndex ? MachineIdentity.local : nil, office: i == 1)

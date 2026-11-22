@@ -116,7 +116,7 @@ struct QuickSwitchStrip: View {
             }
         }
         Divider()
-        Button("结束会话", systemImage: "stop.circle", role: .destructive) { ending = pal }
+        Button("归档", systemImage: "archivebox", role: .destructive) { ending = pal }
             .disabled(!store.connection.isOnline)
     }
 
@@ -154,14 +154,14 @@ struct QuickSwitchBar: ViewModifier {
                 keyboardUp = false
             }
             .palRename($renaming)
-            .confirmationDialog(Copy.spaced(String(localized: "结束「\(ending?.displayName ?? "")」？")),
+            .confirmationDialog(Copy.spaced(String(localized: "归档「\(ending?.displayName ?? "")」？")),
                                 isPresented: Binding(get: { ending != nil }, set: { if !$0 { ending = nil } }),
                                 titleVisibility: .visible) {
-                Button("结束会话", role: .destructive) {
+                Button("归档", role: .destructive) {
                     if let p = ending { Task { await end(p) } }
                 }
             } message: {
-                Text("它会停下，之后还能从历史记录里接着聊。")
+                Text("它会停下，之后还能在已归档里拿回来。")
             }
     }
 

@@ -261,7 +261,7 @@ describe("taking an ended one over (pals.adopt)", () => {
 
   test("PaloAlly's own conversation, one whose folder is gone, and one it can't find aren't taken over", async () => {
     const t = setup();
-    await expect(t.call("pals.adopt", { sessionId: t.ended(t.paths.home, { customTitle: "Palo" }) })).rejects.toThrow("助理自己的会话");
+    await expect(t.call("pals.adopt", { sessionId: t.ended(t.paths.home, { customTitle: "Palo" }) })).rejects.toThrow("助理自己的对话");
     const gone = t.folder("gone");
     const g = t.ended(gone, { customTitle: "没了" });
     rmSync(gone, { recursive: true });
@@ -288,9 +288,9 @@ describe("the assistant brings one back (pals_recent, pal_adopt)", () => {
 
     // a card, nothing started; by its first characters too
     const said = await tools.pal_adopt({ sessionId: a.slice(0, 8) });
-    expect(said).toContain("主人点「接管」才会接，现在还没接");
+    expect(said).toContain("主人点「接手」才会接，现在还没接");
     const card = t.hub.chat.recent(1)[0]!;
-    expect(card).toMatchObject({ role: "assistant", kind: "pal_adopt", channel: "system", text: expect.stringContaining("接管「首页改成两栏」（") });
+    expect(card).toMatchObject({ role: "assistant", kind: "pal_adopt", channel: "system", text: expect.stringContaining("接手「首页改成两栏」（") });
     expect(card.proposal).toEqual({ id: expect.stringMatching(/^pa_/), sessionId: a, cwd: site, title: "首页改成两栏", status: "pending" });
     expect(t.driver.pals).toHaveLength(0);
     expect(await tools.pal_adopt({ sessionId: a })).toContain("已经有一张接管它的卡片");
@@ -349,7 +349,7 @@ describe("the assistant brings one back (pals_recent, pal_adopt)", () => {
     // no card: running now, unknown, PaloAlly's own
     expect(await tools.pal_adopt({ sessionId: c })).toContain("现在还开着");
     expect(await tools.pal_adopt({ sessionId: "f0000000-0000-4000-8000-000000000000" })).toBe("没提：没有这个 agent");
-    expect(await tools.pal_adopt({ sessionId: t.ended(t.paths.home, { customTitle: "Palo" }) })).toContain("助理自己的会话");
+    expect(await tools.pal_adopt({ sessionId: t.ended(t.paths.home, { customTitle: "Palo" }) })).toContain("助理自己的对话");
     expect(await tools.pal_adopt({ sessionId: "" })).toContain("pals_recent");
     term.kill("SIGKILL");
     await t.hub.pals.stopAndWait();
@@ -378,7 +378,7 @@ describe("the assistant brings one back (pals_recent, pal_adopt)", () => {
     // too late to 接管; the assistant can offer it again
     expect(await t.call("helper.decide", { proposalId: old.proposal!.id, action: "create" })).toEqual({});
     expect(t.hub.pals.list().map((p) => p.sessionId)).toEqual([a]);
-    expect(await tools.pal_adopt({ sessionId: b })).toContain("主人点「接管」才会接");
+    expect(await tools.pal_adopt({ sessionId: b })).toContain("主人点「接手」才会接");
     await t.hub.pals.stopAndWait();
   });
 

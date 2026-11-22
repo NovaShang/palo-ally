@@ -63,7 +63,7 @@ extension DemoHost {
                 live.append(PendingItem(id: "p_\(p.id)", source: palo, title: m.text, context: p.duty, options: ["开吧", "不用"],
                                         createdAt: m.ts, messageId: m.id, link: PendingLink(kind: .proposal, id: p.id)))
             } else if m.kind == .palAdopt, let p = m.adoption, p.isPending {
-                live.append(PendingItem(id: "p_\(p.id)", source: palo, title: m.text, options: ["接管", "不用"],
+                live.append(PendingItem(id: "p_\(p.id)", source: palo, title: m.text, options: ["接手", "不用"],
                                         createdAt: m.ts, messageId: m.id, link: PendingLink(kind: .proposal, id: p.id)))
             }
         }
@@ -111,7 +111,7 @@ extension DemoHost {
             let m = messages.first { $0.proposal?.id == link.id || $0.adoption?.id == link.id }
             switch (m?.proposal?.status, m?.adoption?.status) {
             case (.created?, _): return "开了"
-            case (_, .adopted?): return "接管了"
+            case (_, .adopted?): return "接手了"
             case (.discarded?, _), (_, .discarded?): return "不用了"
             case (.expired?, _), (_, .expired?): return "过期了"
             default: return "已经不用定了"
@@ -183,7 +183,7 @@ extension DemoHost {
             if let link = item.link {
                 // The card's button, for an option; the owner's own words go to the assistant, the card still waiting.
                 switch (link.kind, answer) {
-                case (.proposal, "开吧"), (.proposal, "接管"):
+                case (.proposal, "开吧"), (.proposal, "接手"), (.proposal, "接管"):
                     _ = try await dispatchPendingCard(RPCMethod.helperDecide, ["proposalId": .string(link.id), "action": "create"])
                 case (.proposal, "不用"):
                     _ = try await dispatchPendingCard(RPCMethod.helperDecide, ["proposalId": .string(link.id), "action": "discard"])

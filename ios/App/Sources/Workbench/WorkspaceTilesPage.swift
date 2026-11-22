@@ -236,9 +236,9 @@ struct WorkspaceTilesPage: View {
 
     @ViewBuilder private var closeConfirm: some View {
         if let id = closing, let pal = store.pal(id: id) {
-            ConfirmPanel(title: Copy.spaced(String(localized: "结束「\(pal.displayName)」？")),
-                         text: String(localized: "它会停下，之后还能从历史记录里接着聊。"),
-                         action: String(localized: "结束会话"), working: ending,
+            ConfirmPanel(title: Copy.spaced(String(localized: "归档「\(pal.displayName)」？")),
+                         text: String(localized: "它会停下，之后还能在已归档里拿回来。"),
+                         action: String(localized: "归档"), working: ending,
                          cancel: { closing = nil }, confirm: { end(id) })
                 .padding(16)
                 .frame(maxWidth: 440)

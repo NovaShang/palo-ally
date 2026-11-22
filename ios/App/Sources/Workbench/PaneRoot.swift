@@ -426,7 +426,7 @@ private struct PaneMenu: View {
             Button("移出工作区", systemImage: "rectangle.portrait.and.arrow.right") { actions.moveOut(id) }
                 .disabled(!online)
             Divider()
-            Button("结束会话…", systemImage: "stop.circle", role: .destructive) { actions.end(id) }
+            Button("归档…", systemImage: "archivebox", role: .destructive) { actions.end(id) }
                 .disabled(!online)
         } label: {
             // Frame, then the hit shape, then the glass: the whole circle takes the click.

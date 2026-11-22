@@ -1301,17 +1301,6 @@
         }
       }
     },
-    "刚结束的" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Just ended"
-          }
-        }
-      }
-    },
     "删掉" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2302,17 +2291,6 @@
         }
       }
     },
-    "它还在终端里开着。请在终端里输入 /exit 退出它，退出后自动接管。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "It’s still open in the terminal. Type /exit there to close it, and it will be taken over automatically."
-          }
-        }
-      }
-    },
     "它随手记下的" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3094,7 +3072,7 @@
         }
       }
     },
-    "接管" : {
+    "接手" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -3105,46 +3083,13 @@
         }
       }
     },
-    "接管「%@」" : {
+    "接手「%@」" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Take over “%@”"
-          }
-        }
-      }
-    },
-    "接管「%@」？" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Take over “%@”?"
-          }
-        }
-      }
-    },
-    "接管中…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Taking over…"
-          }
-        }
-      }
-    },
-    "接管后可以在这里跟它说话" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "After you take over, you can talk to it here"
           }
         }
       }
@@ -3475,17 +3420,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Last online %@"
-          }
-        }
-      }
-    },
-    "最近 30 天里没有可以接管的对话。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No conversations to take over from the last 30 days."
           }
         }
       }
@@ -3860,17 +3794,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Thinking…"
-          }
-        }
-      }
-    },
-    "正在接管…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Taking over…"
           }
         }
       }
@@ -4432,17 +4355,6 @@
       }
     },
     "没接成：%@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn’t take over: %@"
-          }
-        }
-      }
-    },
-    "没接管成：%@" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -5587,17 +5499,6 @@
         }
       }
     },
-    "请在终端里输入 /exit 退出它，退出后自动接管" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Type /exit in the terminal to close it. It will be taken over automatically"
-          }
-        }
-      }
-    },
     "请对方在 TA 的 Palo 里重新点「添加」，再扫一次新的二维码。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6501,28 +6402,6 @@
         }
       }
     },
-    "结束「%@」？" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "End “%@”?"
-          }
-        }
-      }
-    },
-    "结束会话" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "End Session"
-          }
-        }
-      }
-    },
     "它会停下，进到「以前的」里，之后还能接着聊。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7260,17 +7139,6 @@
         }
       }
     },
-    "它会停下，之后还能从历史记录里接着聊。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "It stops; you can pick it up again from history later."
-          }
-        }
-      }
-    },
     "后台 %lld 个任务在跑" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7414,13 +7282,13 @@
         }
       }
     },
-    "结束会话…" : {
+    "归档…" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "End Session…"
+            "value" : "Archive…"
           }
         }
       }

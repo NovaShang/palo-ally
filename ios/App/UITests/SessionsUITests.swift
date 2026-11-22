@@ -227,7 +227,7 @@ final class SessionsUITests: XCTestCase {
         let app = launch(["-demoState", "adopt"])
         let card = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "pal-adopt-")).firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 15), "no card")
-        XCTAssertTrue(text(app, "接管「首页改成两栏布局」").exists, "the card doesn't say what")
+        XCTAssertTrue(text(app, "接手「首页改成两栏布局」").exists, "the card doesn't say what")
         XCTAssertTrue(text(app, "~/code/site").exists, "the card doesn't say where")
         app.buttons["接管"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["已经接过来了"].waitForExistence(timeout: 10), "the card never said it was taken over")

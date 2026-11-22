@@ -6,7 +6,7 @@ import { Audit } from "../src/audit.ts";
 import { Bus } from "../src/bus.ts";
 import { ChatLog } from "../src/chat.ts";
 import { PendingStore } from "../src/pending.ts";
-import { PendingLinks } from "../src/pendingLinks.ts";
+import { linkAction, PendingLinks } from "../src/pendingLinks.ts";
 import { PROPOSAL_TTL_MS, type PalsTiming } from "../src/pals.ts";
 import { handleRpc } from "../src/rpc.ts";
 import type { AllyEntry, Task } from "../src/types.ts";
@@ -101,7 +101,10 @@ describe("proposal cards", () => {
     const proposal = { id: "pa_1", sessionId: "s1", cwd: "/w", title: "首页改版", status: "pending" as const };
     const m = chat.add({ role: "assistant", kind: "pal_adopt", text: "接管「首页改版」（/w）？", channel: "system", proposal });
     const item = pending.linked({ kind: "proposal", id: "pa_1" })!;
-    expect(item).toMatchObject({ title: "接管「首页改版」（/w）？", options: ["接管", "不用"], messageId: m.id });
+    expect(item).toMatchObject({ title: "接管「首页改版」（/w）？", options: ["接手", "不用"], messageId: m.id });
+    // 接管, the option's old word, still takes it (an item listed before the rename).
+    expect(linkAction({ kind: "proposal", id: "pa_1" }, "接管")).toBe("create");
+    expect(linkAction({ kind: "proposal", id: "pa_1" }, "接手")).toBe("create");
     chat.update(m.id, { proposal: { ...proposal, status: "failed", note: "Claude Code 没登录" } }, { resync: true });
     expect(pending.get(item.id)).toMatchObject({ status: "done", conclusion: "Claude Code 没登录" });
     cleanup(paths);

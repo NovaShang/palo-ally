@@ -171,7 +171,8 @@ function proposalOutcome(p: Proposal): string {
 export function linkAction(link: PendingLink, answer: string): "create" | "discard" | "send" | null {
   const is = (key: MsgKey) => answer === t(key) || answer === tIn("zh", key) || answer === tIn("en", key);
   if (link.kind === "proposal") {
-    if (is("pending.opt.create") || is("pending.opt.adopt")) return "create";
+    // 接管: the adopt card's option before it was called 接手 (an item listed then, answered now).
+    if (is("pending.opt.create") || is("pending.opt.adopt") || answer === "接管") return "create";
     if (is("pending.opt.no")) return "discard";
   } else if (link.kind === "allyDraft") {
     if (is("pending.opt.send")) return "send";

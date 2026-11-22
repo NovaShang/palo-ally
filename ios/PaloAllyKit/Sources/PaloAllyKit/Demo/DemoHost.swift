@@ -1498,7 +1498,7 @@ public actor DemoHost {
                           at: ["10:00"], enabled: true, createdBy: .agent)
             watches.append(w)
             emit(RPCEventName.watchUpdated, ["watch": (try? JSONValue.from(w)) ?? .null] as JSONValue)
-        } else if palsMode, text.contains("接过来") || text.contains("接管"), let found = recentMatch(text) {
+        } else if palsMode, text.contains("接过来") || text.contains("接手") || text.contains("接管"), let found = recentMatch(text) {
             // 「把 site 里那个对话接过来」: found, and a card to say yes to (pals-prd §10).
             adoptCard = found
             reply = "找到了，是 \(CCSession.shortPath(found.cwd)) 里那个。"
