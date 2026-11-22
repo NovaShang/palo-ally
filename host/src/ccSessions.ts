@@ -11,6 +11,7 @@ export { readRegistry, firstLine, isCompactSummaryText, peerBody, summarizeTrans
 export type { RawSessionMessage, RegistryEntry, TranscriptSummary };
 import type { CCSession, CCSessionKind, CCSessionStatus } from "./types.ts";
 import { stripTldrMarker } from "./tldr.ts";
+import { tools } from "./harness/vocabulary.ts";
 import { pidAlive, truncate } from "./util.ts";
 
 // What the owner sees of the Claude Code sessions on this computer
@@ -383,12 +384,13 @@ function shortWords(s: unknown): string | undefined {
 export function waitingWords(p: Record<string, any>): string {
   const tool = String(p.tool_name ?? "");
   const input = p.tool_input && typeof p.tool_input === "object" ? p.tool_input : {};
-  if (tool === "AskUserQuestion") {
+  const family = tools.classify(tool).family;
+  if (tool === tools.ask) {
     const q = Array.isArray(input.questions) ? input.questions[0]?.question : undefined;
     return truncate(t("sessions.askYou", { q: typeof q === "string" ? q : t("sessions.aQuestion") }), 80);
   }
-  if (tool === "Bash" && typeof input.command === "string") return truncate(t("sessions.wantRunShort", { cmd: input.command.split("\n")[0]! }), 80);
-  if ((tool === "Write" || tool === "Edit") && typeof input.file_path === "string") return truncate(t("sessions.wantEdit", { file: basename(input.file_path) }), 80);
+  if (family === "run" && typeof input.command === "string") return truncate(t("sessions.wantRunShort", { cmd: input.command.split("\n")[0]! }), 80);
+  if ((family === "write" || family === "edit") && typeof input.file_path === "string") return truncate(t("sessions.wantEdit", { file: basename(input.file_path) }), 80);
   return truncate(t("sessions.wantUse", { tool: tool || t("sessions.aTool") }), 80);
 }
 

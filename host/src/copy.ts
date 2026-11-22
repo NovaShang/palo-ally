@@ -1,4 +1,5 @@
 import type { ProbeTrigger } from "./probe.ts";
+import { tools } from "./harness/vocabulary.ts";
 import type { DeliveryResult } from "./router.ts";
 import type { Approval, Question, Task, Watch } from "./types.ts";
 import { t } from "./i18n/index.ts";
@@ -60,30 +61,29 @@ export const ACTIVITY = {
   get thinking() { return t("activity.thinking"); },
 };
 
-const KEEP_LINE = new Set(["AskUserQuestion", "ToolSearch", "TodoWrite", "ListAgents", "ExitPlanMode", "EnterPlanMode"]);
-
 export function describeActivity(tool: string): string | null {
-  if (KEEP_LINE.has(tool)) return null;
-  switch (tool) {
-    case "Read": case "Grep": case "Glob": case "LS": case "NotebookRead":
+  const c = tools.classify(tool);
+  switch (c.family) {
+    case "plumbing": case "quiet":
+      return null; // keeps the current line
+    case "read": case "search": case "list":
       return ACTIVITY.files;
-    case "Write": case "Edit": case "MultiEdit": case "NotebookEdit":
+    case "write": case "edit": case "multi-edit": case "notebook-edit":
       return ACTIVITY.writing;
-    case "Bash": case "BashOutput": case "KillShell": case "KillBash": case "Monitor":
+    case "run": case "run-more":
       return ACTIVITY.computer;
-    case "WebSearch": case "WebFetch":
+    case "web-search": case "web-fetch":
       return ACTIVITY.web;
-    case "Agent": case "Task": case "TaskOutput": case "TaskStop": case "TaskCreate": case "TaskUpdate":
+    case "agent": case "agent-more":
       return ACTIVITY.background;
-    case "SendMessage":
+    case "message":
       return ACTIVITY.handOff;
-    case "SendUserFile": case "Artifact":
+    case "deliver":
       return ACTIVITY.forYou;
   }
-  const m = /^mcp__(.+?)__(.+)$/.exec(tool);
-  if (!m) return ACTIVITY.generic;
-  const server = m[1]!.toLowerCase();
-  const name = m[2]!.toLowerCase();
+  if (c.family !== "mcp") return ACTIVITY.generic;
+  const server = c.server!.toLowerCase();
+  const name = c.tool!.toLowerCase();
   if (server === "paloally") {
     if (/sendus|artifact|clipboard|notify/.test(name)) return ACTIVITY.forYou;
     if (/watch|goal|report_task/.test(name)) return ACTIVITY.noting;
@@ -195,11 +195,12 @@ function nameTokens(name: string): string[] {
 }
 
 export function describeTool(tool: string, input: Record<string, unknown>): string {
-  if (tool === "Bash") return t("tool.bash");
-  if (tool === "Write") return t("tool.write");
-  if (tool === "Edit") return t("tool.edit");
-  if (tool === "Read") return t("tool.read");
-  if (tool === "WebFetch") return t("tool.webfetch", { domain: domainOf(input.url) ?? "" }).trim();
+  const family = tools.classify(tool).family;
+  if (family === "run") return t("tool.bash");
+  if (family === "write") return t("tool.write");
+  if (family === "edit") return t("tool.edit");
+  if (family === "read") return t("tool.read");
+  if (family === "web-fetch") return t("tool.webfetch", { domain: domainOf(input.url) ?? "" }).trim();
   if (tool.startsWith("mcp__")) {
     const leaf = tool.split("__").slice(2).join(" ");
     if (/browser_navigate|claude-in-chrome__navigate/.test(tool)) return t("tool.browserOpen", { domain: domainOf(input.url) ?? "" }).trim();
@@ -218,21 +219,23 @@ export function describeTool(tool: string, input: Record<string, unknown>): stri
 }
 
 export function describeInput(tool: string, input: Record<string, unknown>): string {
-  if (tool === "Bash") return truncate(String(input.command ?? ""), 4000);
-  if (tool === "Write" || tool === "Edit" || tool === "Read") return String(input.file_path ?? "");
+  const family = tools.classify(tool).family;
+  if (family === "run") return truncate(String(input.command ?? ""), 4000);
+  if (family === "write" || family === "edit" || family === "read") return String(input.file_path ?? "");
   if (input.url) return String(input.url);
   return truncate(JSON.stringify(input), 1000);
 }
 
 // Short label for one step in a task's activity list (shown in the app).
 export function activityLabel(tool: string): string {
-  if (tool === "Write" || tool === "Edit" || tool === "NotebookEdit") return t("label.write");
-  if (tool === "Read") return t("label.read");
-  if (tool === "Grep" || tool === "Glob") return t("label.find");
-  if (tool === "Bash") return t("label.bash");
-  if (tool === "WebSearch") return t("label.search");
-  if (tool === "WebFetch") return t("label.fetch");
-  if (tool === "Agent" || tool === "Task") return t("label.agent");
+  const family = tools.classify(tool).family;
+  if (family === "write" || family === "edit" || family === "notebook-edit") return t("label.write");
+  if (family === "read") return t("label.read");
+  if (family === "search") return t("label.find");
+  if (family === "run") return t("label.bash");
+  if (family === "web-search") return t("label.search");
+  if (family === "web-fetch") return t("label.fetch");
+  if (family === "agent") return t("label.agent");
   if (/browser_|claude-in-chrome/.test(tool)) return t("label.browser");
   if (tool.startsWith("mcp__paloally__")) return t("label.paloally");
   if (tool.startsWith("mcp__")) return t("label.mcp");

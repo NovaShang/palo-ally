@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { sdkRename, sdkSource } from "./directory.ts";
 import { SpendMeter } from "./spend.ts";
 import type { ChatMessage } from "../../types.ts";
+import { CLAUDE_TOOLS } from "./tools.ts";
 import { claudeLoggedIn, credentialsStamp, expectLogin, isAuthFailure } from "./auth.ts";
 import type {
   Harness,
@@ -72,6 +73,7 @@ export class ClaudeHarness implements Harness {
   readonly sessions: SessionDirectory;
   readonly settings: HarnessSettings;
   readonly memory: MemoryLocator;
+  readonly tools = CLAUDE_TOOLS;
   readonly auth: HarnessAuth = { isFailure: isAuthFailure, loggedIn: claudeLoggedIn, stamp: credentialsStamp, spawnLogin: expectLogin };
 
   constructor(private o: ClaudeHarnessOptions) {

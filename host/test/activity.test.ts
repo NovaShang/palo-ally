@@ -139,3 +139,33 @@ describe("behavior: where past conversation lives", () => {
     expect(en).toContain("search the original text before answering");
   });
 });
+
+describe("tool words read tool names from the harness (batch 7)", () => {
+  test("every activity line, card title, card detail, step label and always-allow scope is the same as before the vocabulary moved", async () => {
+    const before = await import("./fixtures/copy.before-batch7.ts");
+    const beforeCards = await import("./fixtures/approvals.before-batch7.ts");
+    const now = await import("../src/copy.ts");
+    const nowCards = await import("../src/approvals.ts");
+    const names = [
+      "Read", "Grep", "Glob", "LS", "NotebookRead", "Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "BashOutput", "KillShell", "KillBash", "Monitor",
+      "WebSearch", "WebFetch", "Agent", "Task", "TaskOutput", "TaskStop", "TaskCreate", "TaskUpdate", "SendMessage", "SendUserFile", "Artifact",
+      "AskUserQuestion", "ToolSearch", "TodoWrite", "ListAgents", "ExitPlanMode", "EnterPlanMode", "SubagentHandback", "Skill", "toString", "", "mcp__",
+      "mcp__paloally__SendUserFile", "mcp__paloally__register_watch", "mcp__paloally__ally_send", "mcp__paloally__pals_list", "mcp__gmail__search_threads",
+      "mcp__claude_ai_Google_Calendar__list_events", "mcp__playwright__browser_navigate", "mcp__playwright__browser_click", "mcp__claude-in-chrome__computer",
+      "mcp__notion__notion-create-pages", "mcp__x__deleteThing", "mcp__x__send_reply",
+    ];
+    const inputs: Record<string, unknown>[] = [{}, { command: "npm test\nnext" }, { file_path: "/a/b.ts" }, { url: "https://example.com/x" }, { element: "a long button name here and more" }];
+    for (const name of names) {
+      expect([name, now.describeActivity(name)]).toEqual([name, before.describeActivity(name)]);
+      expect([name, now.activityLabel(name)]).toEqual([name, before.activityLabel(name)]);
+      for (const input of inputs) {
+        expect([name, input, now.describeTool(name, input), now.describeInput(name, input)]).toEqual([name, input, before.describeTool(name, input), before.describeInput(name, input)]);
+        expect([name, input, nowCards.sessionPermission(name, input)]).toEqual([name, input, beforeCards.sessionPermission(name, input)]);
+      }
+      for (const ruleContent of ["", "npm run build:*", "domain:example.com", "//Users/x/**", "x *"]) {
+        const s = [{ type: "addRules", behavior: "allow", rules: [{ toolName: name, ruleContent }] }];
+        expect([name, ruleContent, nowCards.describeSuggestion(s)]).toEqual([name, ruleContent, beforeCards.describeSuggestion(s)]);
+      }
+    }
+  });
+});

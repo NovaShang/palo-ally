@@ -4,7 +4,7 @@
 // hook, which runs before auto approvals), and the turn's exact bounds.
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { allyTurnTool, isCalendarReadTool, isMemoryRead } from "../src/allyGate.ts";
@@ -462,5 +462,40 @@ describe("an Ally's turn", () => {
     release();
     await a.hub.idle();
     expect(a.ctx.driver.last!.sent.at(-1)).toBe("[定时] 晨报");
+  });
+});
+
+describe("the gate reads tool names from the harness (batch 7)", () => {
+  test("for every tool and input below, the verdict is the same as before the vocabulary moved: never looser", async () => {
+    const before = await import("./fixtures/allyGate.before-batch7.ts");
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "paloally-gate-")));
+    const memoryDir = join(home, "mem");
+    mkdirSync(memoryDir, { recursive: true });
+    const scope = { home, memoryDir };
+    const names = [
+      "Read", "Grep", "Glob", "LS", "Write", "Edit", "MultiEdit", "NotebookEdit", "NotebookRead", "Bash", "BashOutput", "KillShell", "Monitor",
+      "WebFetch", "WebSearch", "Agent", "Task", "TaskOutput", "SendMessage", "AskUserQuestion", "ToolSearch", "TodoWrite", "ExitPlanMode",
+      "SendUserFile", "Artifact", "SubagentHandback", "Skill", "CronCreate", "toString", "constructor", "__proto__", "", "read", "mcp__",
+      "mcp__paloally__ally_send", "mcp__paloally__ally_list", "mcp__paloally__notify_user", "mcp__paloally__pal_send", "mcp__paloally__register_watch",
+      "mcp__paloally__calendar_list", "mcp__google_calendar__list_events", "mcp__google_calendar__create_event", "mcp__claude_ai_Google_Calendar__get_event",
+      "mcp__claude_ai_Google_Calendar__suggest_time", "mcp__claude_ai_Google_Calendar__respond_to_event", "mcp__gcal__search", "mcp__caldav__freebusy",
+      "mcp__ms365__list-calendar-events", "mcp__ms365__send-mail", "mcp__calendar__", "mcp____list", "mcp__cal__list__send",
+    ];
+    const inputs: Record<string, unknown>[] = [
+      {},
+      { file_path: join(home, "user.md") }, { file_path: join(home, "soul.md") }, { file_path: ` ${join(memoryDir, "a.md")} ` }, { file_path: memoryDir },
+      { file_path: join(memoryDir, "..", "secret") }, { file_path: "mem/a.md" }, { file_path: "/etc/passwd" }, { file_path: 7 },
+      { path: memoryDir }, { path: memoryDir, glob: "*.md" }, { path: memoryDir, glob: "../*" }, { path: memoryDir, glob: 3 },
+      { path: memoryDir, pattern: "**/*.md" }, { path: memoryDir, pattern: "/etc/*" }, { path: memoryDir, pattern: "../x" }, { path: "/", pattern: "*" },
+      { path: join(memoryDir, "sub") }, { path: "mem" }, { command: "ls" }, { url: "https://example.com" },
+    ];
+    let n = 0;
+    for (const name of names) {
+      for (const input of inputs) {
+        expect({ name, input, v: allyTurnTool(name, input, scope) }).toEqual({ name, input, v: before.allyTurnTool(name, input, scope) });
+        n++;
+      }
+    }
+    expect(n).toBe(names.length * inputs.length);
   });
 });

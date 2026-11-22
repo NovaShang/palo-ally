@@ -467,8 +467,47 @@ export interface HarnessAuth {
   spawnLogin(dir: string): LoginProcess;
 }
 
+/**
+ * What a tool is, whatever the harness calls it: a file read, a search, a
+ * listing, a new file, an edit (a notebook's, several at once), a shell command (and the steps around one), the web, a subagent (and
+ * its bookkeeping), a message to another session, a delivery to the owner,
+ * plumbing (asking the owner, finding tools), quiet bookkeeping, an MCP
+ * server's tool, or something else.
+ */
+export type ToolFamily =
+  | "read" | "search" | "list" | "write" | "edit" | "notebook-edit" | "multi-edit" | "run" | "run-more" | "web-search" | "web-fetch"
+  | "agent" | "agent-more" | "message" | "deliver" | "plumbing" | "quiet" | "mcp" | "other";
+
+export interface ToolClass {
+  family: ToolFamily;
+  name: string; // the harness' own name for it
+  command?: string; // run: the command line
+  path?: unknown; // read / write: the file; search: where it looks (as given)
+  filter?: unknown; // search: what it filters by (as given)
+  filterIsPath?: boolean; // search: the filter is a path pattern (not a file glob)
+  url?: string; // web-fetch
+  server?: string; // mcp: its server
+  tool?: string; // mcp: its tool on that server
+}
+
+export interface ToolVocabulary {
+  ask: string; // asking the owner a question
+  subagent: ReadonlySet<string>; // starting a subagent
+  handback: string; // a subagent handing its report back
+  handbackNote: RegExp; // the harness' note that a subagent's report went to the main agent
+  selfReporting: ReadonlySet<string>; // tools whose progress shows by itself (a subagent writes its own transcript)
+  peerSend: string; // a message to another session
+  shell: string; // a shell command
+  /** A tool of one of the host's MCP servers, as the harness names it. */
+  qualified(server: string, tool: string): string;
+  classify(name: string, input?: Record<string, unknown>): ToolClass;
+  /** An always-allow rule as the app's scope words ("cmd:", "domain:", "path:", "tool:"). */
+  ruleScope(toolName: string, content: string): string;
+}
+
 export interface Harness {
   readonly id: string;
+  readonly tools: ToolVocabulary;
   readonly auth: HarnessAuth;
   /** Starts its processes and runs one-shot probes. */
   readonly driver: HarnessDriver;

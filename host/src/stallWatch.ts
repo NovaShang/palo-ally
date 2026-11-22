@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, openSync, readSync, readdirSync, closeSync, fsta
 import { join } from "node:path";
 import { t as tr } from "./i18n/index.ts";
 import { pidAlive, sleep } from "./util.ts";
+import { tools } from "./harness/vocabulary.ts";
 
 // (What it reads in a transcript is Claude Code's: harness/claude/transcript.ts.)
 export { growth, transcriptHas } from "./harness/claude/transcript.ts";
@@ -81,7 +82,7 @@ export interface StallWatchDeps {
 }
 
 // Tools whose progress shows by itself (a subagent writes its own transcript).
-const SELF_REPORTING = new Set(["Agent", "Task"]);
+const SELF_REPORTING = tools.selfReporting;
 const SOCKET_CHECK_MS = 60_000;
 const HOUR = 3600_000;
 
