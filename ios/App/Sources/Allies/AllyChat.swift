@@ -146,6 +146,7 @@ struct AllyDraftCard: View {
         .animation(.snappy, value: entry.status)
         .animation(.snappy, value: editing)
         .onAppear { if editing && text.isEmpty { text = entry.text } }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("ally-draft-\(entry.id)")
     }
 

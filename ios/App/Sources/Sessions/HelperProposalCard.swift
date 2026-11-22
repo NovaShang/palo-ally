@@ -30,6 +30,7 @@ struct HelperProposalCard: View {
             if proposal.isPending { open } else { folded }
         }
         .animation(.snappy, value: proposal.status)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("helper-proposal-\(proposal.id)")
     }
 

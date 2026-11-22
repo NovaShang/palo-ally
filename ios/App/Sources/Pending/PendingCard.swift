@@ -108,18 +108,24 @@ struct PendingFoldedLine<Detail: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Image(systemName: done ? "checkmark" : "arrow.uturn.backward")
-                    .foregroundStyle(done ? Color.green : Color.secondary)
-                Text(text)
-                    .lineLimit(expanded ? nil : 1)
-                    .truncationMode(.tail)
-                if hasDetail {
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+                // The line reads as one; its action stays a button of its own.
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: done ? "checkmark" : "arrow.uturn.backward")
+                        .foregroundStyle(done ? Color.green : Color.secondary)
+                        .accessibilityHidden(true)
+                    Text(text)
+                        .lineLimit(expanded ? nil : 1)
+                        .truncationMode(.tail)
+                    if hasDetail {
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
                 }
+                .accessibilityElement(children: .combine)
                 if let action {
-                    Text("·")
+                    Text("·").accessibilityHidden(true)
                     Button(action.title, action: action.run)
                         .buttonStyle(.plain)
                         .underline()
@@ -137,7 +143,7 @@ struct PendingFoldedLine<Detail: View>: View {
         .font(.footnote)
         .foregroundStyle(.secondary)
         .padding(.vertical, 2)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 }
 

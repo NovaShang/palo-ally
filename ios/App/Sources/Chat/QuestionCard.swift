@@ -31,6 +31,7 @@ struct QuestionCard: View {
             if question.isPending || waitsAtComputer { open } else { folded }
         }
         .animation(.snappy, value: question.status)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("question-\(question.id)")
     }
 

@@ -30,6 +30,7 @@ struct ApprovalCard: View {
             if approval.isPending || waitsAtComputer { open } else { folded }
         }
         .animation(.snappy, value: approval.status)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("approval-\(approval.id)")
     }
 

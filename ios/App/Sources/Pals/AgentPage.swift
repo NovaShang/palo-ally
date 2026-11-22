@@ -150,6 +150,7 @@ private struct AgentConversation: View {
                                         action: held > 1 ? String(localized: "取消这 \(held) 条") : String(localized: "取消这条")) {
                 Task { await store.cancelAdoption(sessionId: id) }
             }
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("agent-held"))
         }
         if live?.isOpenInTerminal == true {

@@ -296,6 +296,7 @@ struct PendingRow: View {
         Group {
             if item.isOpen { open } else { handled }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("pending-row-\(item.id)")
     }
 
@@ -362,6 +363,7 @@ struct PendingChatCard: View {
                 if item.isOpen { open(item) } else { folded(item) }
             }
             .animation(.snappy, value: item.status)
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("pending-card-\(item.id)")
         }
     }
