@@ -285,7 +285,9 @@ extension AppStore {
         let r: PalReleaseResult = try await rpc.call(RPCMethod.palsRelease, params: IDParams(id: id), timeout: 30)
         let command = r.resumeCommand.trimmingCharacters(in: .whitespacesAndNewlines)
         try? await refreshPals()
-        return command.isEmpty ? (before?.resumeCommand ?? "claude --resume") : command
+        // (An older host that gave none: the harness' own line.)
+        let sid = before.map { $0.sessionId.isEmpty ? $0.id : $0.sessionId } ?? ""
+        return command.isEmpty ? harness.terminal.resume(sid).trimmingCharacters(in: .whitespaces) : command
     }
 
     /// 移出 Pals.

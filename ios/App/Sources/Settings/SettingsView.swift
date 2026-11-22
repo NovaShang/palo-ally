@@ -55,13 +55,13 @@ struct SettingsView: View {
 
                 // The computer's Claude Code sessions (sessions-prd §6.3): their
                 // prompts come to the phone while the owner is away from it.
-                if store.sessionsSupported == true || store.palsSupported == true {
+                if (store.sessionsSupported == true || store.palsSupported == true) && store.harness.features.globalHooks {
                     Section {
                         Toggle("手机上处理主机上会话的确认", isOn: hooksBinding)
                             .disabled(!store.connection.isOnline)
                             .id("session-hooks")
                     } footer: {
-                        Text("不在电脑前时，Claude Code 要你点头的事送到手机上。")
+                        Text("不在电脑前时，\(store.harness.name) 要你点头的事送到手机上。")
                     }
                 }
 

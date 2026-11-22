@@ -153,7 +153,7 @@ private struct AgentConversation: View {
             .accessibilityIdentifier("agent-held"))
         }
         if live?.isOpenInTerminal == true {
-            return AnyView(ComposerNote(icon: "terminal", text: String(localized: "终端里还开着。发的话会等那边退出（/exit）后发出，之后在这里接着聊。"))
+            return AnyView(ComposerNote(icon: "terminal", text: String(localized: "终端里还开着。发的话会等那边退出（\(store.harness.terminal.exitCommand)）后发出，之后在这里接着聊。"))
                 .accessibilityIdentifier("agent-in-terminal"))
         }
         if live?.kind == .background, live?.isRunning == true {
@@ -259,7 +259,7 @@ struct PalRenameAlert: ViewModifier {
                 }
                 .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             } message: {
-                Text("主机上的 Claude Code 里也会是这个名字。")
+                Text("主机上的 \(store.harness.name) 里也会是这个名字。")
             }
             .alert(failure ?? "", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
                 Button("好", role: .cancel) { failure = nil }
