@@ -4,7 +4,7 @@ import XCTest
 /// The sidebar's drag and drop on the Mac, with real pointer drags, and the
 /// rows still opening on a click before and after (a drag of our own on the
 /// rows once took the clicks). The demo: 官网改版 holds 网站帮手 and 博客改版;
-/// 笔记整理 is the one ordinary session shown.
+/// 笔记整理 is the one ordinary agent shown, under the agent header.
 ///
 /// Run like MacSmokeUITests, with
 /// `-only-testing:PaloAllyUITests/MacSidebarDragUITests`; the screen must be unlocked.
@@ -26,7 +26,7 @@ final class MacSidebarDragUITests: XCTestCase {
         XCTAssertTrue(palo.waitForExistence(timeout: 30), "no Palo in the sidebar")
         sleep(2)
         let notes = row("row-pal-pal-notes"), site = row("row-pal-pal-site"), blog = row("row-pal-pal-blog")
-        let ws = row("row-workspace-ws-site"), sessionsHeader = app.staticTexts["会话"].firstMatch
+        let ws = row("row-workspace-ws-site"), sessionsHeader = app.staticTexts["agent"].firstMatch
         XCTAssertTrue(notes.exists && ws.exists && sessionsHeader.exists, "the demo's rows aren't there")
 
         // A click opens a session, and Palo again.
@@ -49,12 +49,12 @@ final class MacSidebarDragUITests: XCTestCase {
         shot(app, "3-members-reordered")
         XCTAssertLessThan(notes.frame.minY, site.frame.minY, "dragging a member above another didn't reorder them")
 
-        // Out of it: 博客改版 onto 会话.
+        // Out of it: 博客改版 onto the agent header.
         XCTAssertLessThan(blog.frame.minY, sessionsHeader.frame.minY)
         drag(blog, to: sessionsHeader, dy: 0.5)
         sleep(2)
         shot(app, "4-out-of-workspace")
-        XCTAssertGreaterThan(blog.frame.minY, sessionsHeader.frame.minY, "博客改版 didn't move out to 会话")
+        XCTAssertGreaterThan(blog.frame.minY, sessionsHeader.frame.minY, "博客改版 didn't move out to agent")
 
         // Clicks still open rows after the drags.
         blog.click()

@@ -123,12 +123,13 @@ final class FilesUITests: XCTestCase {
 
     @MainActor
     private func openPalFiles(_ app: XCUIApplication) {
-        XCTAssertTrue(app.navigationBars.staticTexts["网站帮手"].waitForExistence(timeout: 15), "the Pal's page didn't open")
-        let capsule = app.buttons["title-capsule"].firstMatch
-        XCTAssertTrue(capsule.waitForExistence(timeout: 5), "no title capsule on the Pal's page")
-        capsule.tap()
-        let files = app.buttons["detail-files"].firstMatch
-        XCTAssertTrue(files.waitForExistence(timeout: 5), "no 文件 in the details")
+        XCTAssertTrue(app.navigationBars.staticTexts["网站帮手"].waitForExistence(timeout: 15), "the agent's page didn't open")
+        // 右侧栏, then its 文件 tab.
+        let pane = app.buttons["page-files"].firstMatch
+        XCTAssertTrue(pane.waitForExistence(timeout: 5), "no 右侧栏 on the agent's page")
+        pane.tap()
+        let files = app.buttons["pane-tab-files"].firstMatch
+        XCTAssertTrue(files.waitForExistence(timeout: 5), "no 文件 tab in the pane")
         files.tap()
         XCTAssertTrue(app.descendants(matching: .any)["file-tree"].firstMatch.waitForExistence(timeout: 10), "the tree didn't open")
     }

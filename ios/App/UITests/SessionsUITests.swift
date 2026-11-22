@@ -1,12 +1,12 @@
 import XCTest
 
-/// Pals (pals-prd §4, §6) and the computer's other sessions against the demo
-/// host on an iPhone simulator, with real taps: words typed on a Pal's page
-/// land in its conversation and it answers; 交还终端 and 移出 Pals are asked
-/// in the page; a proposal's 开吧 opens a Pal whose page opens from the card;
-/// a Pal's card is on its own page, another session's in the assistant's
-/// conversation, and each goes once answered; the assistant's card proposing
-/// to take over a conversation that ended does so only on 接管.
+/// Agents (pals-prd §4, §6) and the host's other sessions against the demo
+/// host on an iPhone simulator, with real taps: words typed on an agent's page
+/// land in its conversation and it answers; another session opens as an agent
+/// like the rest; a proposal's 开吧 opens an agent whose page opens from the
+/// card; an agent's card is on its own page, another session's in the
+/// assistant's conversation, and each goes once answered; the assistant's
+/// card proposing to take over a conversation that ended does so only on 接手.
 final class SessionsUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
@@ -77,7 +77,7 @@ final class SessionsUITests: XCTestCase {
         XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "评论区再加个点赞")).count, 1)
         // Back on the list: awake now; the other one still asleep, after the awake ones.
         app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["agent"].waitForExistence(timeout: 10))
         let blog = app.descendants(matching: .any)["row-pal-pal-blog"]
         let photos = app.descendants(matching: .any)["row-pal-pal-photos"]
         XCTAssertTrue(blog.waitForExistence(timeout: 5) && photos.exists)
@@ -148,13 +148,13 @@ final class SessionsUITests: XCTestCase {
         }
     }
 
-    /// 不接管也能看 (pals-prd §14): a live session from the list opens read
-    /// only, its words, another agent's long ones folded, new lines while
-    /// it's open, 接管 at the bottom; 接管 (a terminal session: quit there
-    /// first) and its page becomes the Pal's. Another one's card is at its end.
+    /// One of the host's other sessions opens from the list as an agent like
+    /// the rest: its words, another agent's long ones folded, new lines while
+    /// it's open, and a composer (typing takes it over; a terminal's once it
+    /// is quit there, said above the composer). Another one's card is at its end.
     @MainActor
-    func testASessionOpensReadOnlyAndTakingItOverMakesItAPal() throws {
-        let app = launch(["-demoScreen", "list", "-demoTailEvery", "2", "-demoAdoptAfter", "4"])
+    func testAnotherSessionOpensFromTheListAsAnAgent() throws {
+        let app = launch(["-demoScreen", "list", "-demoTailEvery", "2"])
         let data = app.descendants(matching: .any)["row-session-cc-data"]
         XCTAssertTrue(data.waitForExistence(timeout: 15), "no other session on the list")
         data.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
@@ -166,18 +166,12 @@ final class SessionsUITests: XCTestCase {
         login.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
         XCTAssertTrue(app.navigationBars.staticTexts["修登录跳转"].waitForExistence(timeout: 10), "its page didn't open")
         XCTAssertTrue(text(app, "登录以后会跳回首页").waitForExistence(timeout: 10), "its history isn't there")
-        XCTAssertTrue(text(app, "接管后可以在这里跟它说话").exists, "no 接管 bar")
-        XCTAssertFalse(app.buttons["按住说话，轻点打字"].exists, "a composer on a read-only page")
+        XCTAssertTrue(app.buttons["按住说话，轻点打字"].firstMatch.exists, "no composer on its page")
+        XCTAssertTrue(app.descendants(matching: .any)["agent-in-terminal"].exists, "no word on the terminal it's open in")
         XCTAssertTrue(app.buttons["展开全部"].firstMatch.exists, "another agent's long words aren't folded")
         // New lines while it's open.
         XCTAssertTrue(text(app, "第 1 个测试文件跑完了").waitForExistence(timeout: 15), "nothing new came in")
-        attach(app, "session-read-only")
-        app.buttons["session-adopt"].firstMatch.tap()
-        XCTAssertTrue(text(app, "请在终端里输入 /exit").waitForExistence(timeout: 10), "not asked to quit it in the terminal")
-        attach(app, "session-waiting")
-        XCTAssertTrue(app.buttons["title-capsule"].waitForExistence(timeout: 20), "its page didn't become the Pal's")
-        XCTAssertTrue(app.navigationBars.staticTexts["修登录跳转"].exists)
-        XCTAssertTrue(app.buttons["按住说话，轻点打字"].firstMatch.exists, "no composer once it's a Pal")
+        attach(app, "session-as-agent")
     }
 
     @MainActor
@@ -191,7 +185,7 @@ final class SessionsUITests: XCTestCase {
         app.buttons["去看看它"].firstMatch.tap()
         XCTAssertTrue(app.navigationBars.staticTexts["报销帮手"].waitForExistence(timeout: 10), "the Pal's page didn't open")
         // The assistant's handover is its first words there.
-        XCTAssertTrue(text(app, "Palo 说").waitForExistence(timeout: 10), "the assistant's words aren't marked")
+        XCTAssertTrue(text(app, "Palo 发来").waitForExistence(timeout: 10), "the assistant's words aren't marked")
     }
 
     @MainActor
@@ -220,7 +214,7 @@ final class SessionsUITests: XCTestCase {
         XCTAssertFalse(app.buttons["允许"].exists)
     }
 
-    /// The assistant's pal_adopt card (pals-prd §10): nothing until 接管,
+    /// The assistant's pal_adopt card (pals-prd §10): nothing until 接手,
     /// then 已经接过来了 and the Pal's page from the card.
     @MainActor
     func testTheAssistantsAdoptCardTakesItOverOnYes() throws {
@@ -229,7 +223,7 @@ final class SessionsUITests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 15), "no card")
         XCTAssertTrue(text(app, "接手「首页改成两栏布局」").exists, "the card doesn't say what")
         XCTAssertTrue(text(app, "~/code/site").exists, "the card doesn't say where")
-        app.buttons["接管"].firstMatch.tap()
+        app.buttons["接手"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["已经接过来了"].waitForExistence(timeout: 10), "the card never said it was taken over")
         XCTAssertFalse(app.buttons["不用"].exists)
         attach(app, "card-adopted")
@@ -244,7 +238,7 @@ final class SessionsUITests: XCTestCase {
         XCTAssertTrue(no.waitForExistence(timeout: 15))
         no.tap()
         XCTAssertTrue(app.staticTexts["没接"].waitForExistence(timeout: 10), "the card never said no")
-        XCTAssertFalse(app.buttons["接管"].exists)
+        XCTAssertFalse(app.buttons["接手"].exists)
         attach(app, "card-discarded")
     }
 
@@ -252,11 +246,11 @@ final class SessionsUITests: XCTestCase {
     @MainActor
     func testAnAdoptCardThatFailsSaysWhyAndStaysOnOffer() throws {
         let app = launch(["-demoState", "adopt", "-demoAdoptError", "有别的进程开着它"])
-        let yes = app.buttons["接管"].firstMatch
+        let yes = app.buttons["接手"].firstMatch
         XCTAssertTrue(yes.waitForExistence(timeout: 15))
         yes.tap()
         XCTAssertTrue(text(app, "没接成：有别的进程开着它").waitForExistence(timeout: 10), "no reason given")
-        XCTAssertTrue(app.buttons["接管"].firstMatch.isEnabled, "not on offer again")
+        XCTAssertTrue(app.buttons["接手"].firstMatch.isEnabled, "not on offer again")
         XCTAssertFalse(app.staticTexts["已经接过来了"].exists)
         attach(app, "card-failed")
     }

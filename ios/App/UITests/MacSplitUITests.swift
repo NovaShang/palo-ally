@@ -66,7 +66,7 @@ final class MacSplitUITests: XCTestCase {
         XCTAssertTrue(menu.exists, "no ⋯ on 博客改版's pane")
         menu.click()
         XCTAssertTrue(app.menuItems["单独打开"].waitForExistence(timeout: 5), "⋯ didn't open its menu")
-        for item in ["右栏（成果 / 文件）", "重命名…", "移出工作区", "关闭这格", "结束会话…"] {
+        for item in ["右栏（成果 / 文件）", "重命名…", "移出工作区", "归档…"] {
             XCTAssertTrue(app.menuItems[item].exists, "no \(item) in the menu")
         }
         shot(app, "\(look)-5-menu")

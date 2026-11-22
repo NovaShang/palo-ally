@@ -8,33 +8,42 @@ final class LocalizationUITests: XCTestCase {
     }
 
     @MainActor
-    func testEnglishConversationAndManagement() throws {
+    func testEnglishConversationAndDetails() throws {
         let app = launch()
         let orb = app.buttons["title-orb"]
         XCTAssertTrue(orb.waitForExistence(timeout: 15), "no orb: not the assistant's conversation")
-        XCTAssertTrue(app.buttons["Library"].exists, "the 成果 button isn't Library")
-        XCTAssertFalse(app.buttons["成果"].exists, "still Chinese")
+        XCTAssertTrue(app.buttons["Right pane"].firstMatch.exists, "the 右侧栏 button isn't Right pane")
+        XCTAssertFalse(app.buttons["右侧栏"].exists, "still Chinese")
         orb.tap()
-        XCTAssertTrue(app.buttons["Goals"].waitForExistence(timeout: 5), "management isn't in English")
-        XCTAssertTrue(app.buttons["Memory"].exists)
-        XCTAssertTrue(app.buttons["Settings"].exists)
+        // The assistant's details: 设置 folded to one line, 记录 below.
+        let settings = app.descendants(matching: .any)["detail-settings"].firstMatch
+        XCTAssertTrue(settings.waitForExistence(timeout: 5), "the details didn't open")
+        XCTAssertTrue(settings.label.contains("Settings"), "the details aren't in English: \(settings.label)")
+        XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "设置")).firstMatch.exists, "still Chinese")
     }
 
     @MainActor
-    func testEnglishListAndLibrary() throws {
+    func testEnglishList() throws {
         let app = launch(["-demoScreen", "list"])
-        XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 15))
-        XCTAssertTrue(app.buttons["adopt-cc-login"].exists)
-        XCTAssertEqual(app.buttons["adopt-cc-login"].label, "Take over")
+        XCTAssertTrue(app.staticTexts["Agents"].waitForExistence(timeout: 15), "the agent header isn't Agents")
+        XCTAssertTrue(app.staticTexts["Workspaces"].exists, "the workspace header isn't Workspaces")
+        // The host's other Claude Code sessions are agents like the rest, with no button of their own.
+        XCTAssertTrue(app.descendants(matching: .any)["row-session-cc-login"].firstMatch.exists, "no terminal session in the list")
+        XCTAssertTrue(app.descendants(matching: .any)["row-archive"].firstMatch.exists, "no Archived row")
     }
 
     @MainActor
-    func testEnglishLibraryPage() throws {
+    func testEnglishLibraryTab() throws {
         let app = launch()
-        XCTAssertTrue(app.buttons["Library"].waitForExistence(timeout: 15))
-        app.buttons["Library"].tap()
-        XCTAssertTrue(app.navigationBars.staticTexts["Library"].waitForExistence(timeout: 5), "the Library page isn't titled Library")
-        XCTAssertTrue(app.staticTexts["Pin"].exists || app.staticTexts["Recently updated"].exists, "no English section titles")
+        let pane = app.buttons["Right pane"].firstMatch
+        XCTAssertTrue(pane.waitForExistence(timeout: 15))
+        // Open already on a Mac's demo window; a phone opens it as a page.
+        if !app.descendants(matching: .any)["right-pane"].firstMatch.exists { pane.tap() }
+        XCTAssertTrue(app.descendants(matching: .any)["right-pane"].firstMatch.waitForExistence(timeout: 5), "the pane didn't open")
+        // Its fixed tabs: Waiting · Library · Backlog · Files.
+        for tab in ["Waiting", "Library", "Backlog", "Files"] {
+            XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", tab)).firstMatch.exists, "no \(tab) tab")
+        }
     }
 
     @MainActor

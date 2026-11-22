@@ -101,17 +101,16 @@ final class PhoneSmokeUITests: XCTestCase {
         let site = app.descendants(matching: .any)["row-pal-pal-notes"].firstMatch
         XCTAssertTrue(site.waitForExistence(timeout: 5), "no 笔记整理 in the list")
         shot(app, "\(look)-5-list")
-        // ＋ → 从历史记录继续…
-        app.buttons["sidebar-add"].firstMatch.tap()
-        let history = app.buttons["从历史记录继续…"].firstMatch
-        XCTAssertTrue(history.waitForExistence(timeout: 3), "no 从历史记录继续… in the ＋ menu")
-        shot(app, "\(look)-5b-add-menu")
-        history.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["history-picker"].firstMatch.waitForExistence(timeout: 5), "the history list didn't open")
+        // 已归档, the agent section's last row: what was put away and the host's other conversations.
+        let archive = app.descendants(matching: .any)["row-archive"].firstMatch
+        for _ in 0..<3 where !archive.isHittable { app.swipeUp() }
+        archive.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["archive-page"].firstMatch.waitForExistence(timeout: 5), "已归档 didn't open")
         sleep(2)
-        shot(app, "\(look)-5c-history")
-        app.buttons["完成"].firstMatch.tap()
+        shot(app, "\(look)-5c-archive")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
         sleep(1)
+        for _ in 0..<3 where !site.isHittable { app.swipeDown() }
         site.tap()
         let session = app.buttons["title-capsule"]
         XCTAssertTrue(session.waitForExistence(timeout: 5), "the session's page has no indicator")
@@ -172,7 +171,7 @@ final class PhoneSmokeUITests: XCTestCase {
         XCTAssertTrue(site2.waitForExistence(timeout: 5), "tapping a chip didn't switch")
         // Long press: its menu.
         app.descendants(matching: .any)["quick-switch-pal-blog"].firstMatch.press(forDuration: 1.0)
-        XCTAssertTrue(app.buttons["结束会话"].firstMatch.waitForExistence(timeout: 3), "long press on a chip has no menu")
+        XCTAssertTrue(app.buttons["归档"].firstMatch.waitForExistence(timeout: 3), "long press on a chip has no menu")
         shot(app, "\(look)-8c-quick-switch-menu")
         app.descendants(matching: .any)["quick-switch"].firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: -8)).tap()
         sleep(1)

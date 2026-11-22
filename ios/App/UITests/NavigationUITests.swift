@@ -2,9 +2,10 @@ import XCTest
 
 /// Standard navigation (pals-prd §2, §3, §5) against the demo host on an
 /// iPhone simulator: the app opens in the assistant's conversation, back is
-/// the list, a Pal and an Ally open from it, the orb opens management, 成果
-/// is the conversation's toolbar button, 接管 adopts a session in place, and
-/// 最近的对话 adopts one that ended.
+/// the list, an agent and a 好友 open from it, the orb opens the assistant's
+/// details, 右侧栏 opens the pane (成果 among its tabs), typing to one of the
+/// host's other Claude Code sessions takes it over (a terminal's once it is
+/// quit there), and 已归档 brings back one that ended.
 final class NavigationUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
@@ -15,9 +16,9 @@ final class NavigationUITests: XCTestCase {
         let app = launch()
         XCTAssertTrue(app.buttons["title-orb"].waitForExistence(timeout: 15), "no orb: not the assistant's conversation")
         XCTAssertTrue(app.buttons["按住说话，轻点打字"].exists, "no composer")
-        XCTAssertTrue(app.buttons["成果"].exists, "no 成果 in the toolbar")
+        XCTAssertTrue(app.buttons["page-files"].exists, "no 右侧栏 in the toolbar")
         // The list is one step back, not on screen.
-        XCTAssertFalse(app.staticTexts["Pals"].exists)
+        XCTAssertFalse(app.staticTexts["agent"].exists)
     }
 
     @MainActor
@@ -25,14 +26,15 @@ final class NavigationUITests: XCTestCase {
         let app = launch()
         XCTAssertTrue(app.buttons["title-orb"].waitForExistence(timeout: 15))
         back(app)
-        XCTAssertTrue(app.staticTexts["会话"].waitForExistence(timeout: 5), "no 会话 section")
-        XCTAssertTrue(app.staticTexts["好友"].exists, "no 好友 section")
+        XCTAssertTrue(app.staticTexts["agent"].waitForExistence(timeout: 5), "no agent section")
         XCTAssertTrue(row(app, "row-palo").exists, "no row for the assistant")
-        XCTAssertTrue(row(app, "row-pal-pal-site").exists && row(app, "row-pal-pal-notes").exists)
-        // The terminal sessions to adopt moved into the ＋ menu's 从终端搬进来…; 以前的 N ends the sessions.
-        XCTAssertTrue(row(app, "row-earlier").exists, "no 以前的 under 会话")
-        // The list runs past the screen: Allies' last row is further down.
-        XCTAssertTrue(scrolledTo(app, app.buttons["添加"]), "no 添加 under 好友")
+        XCTAssertTrue(row(app, "row-pal-pal-notes").exists, "no 笔记整理 under agent")
+        // The host's other Claude Code sessions are agents like the rest; 已归档 N ends the section.
+        XCTAssertTrue(scrolledTo(app, row(app, "row-session-cc-login")), "no terminal session under agent")
+        XCTAssertTrue(scrolledTo(app, row(app, "row-archive")), "no 已归档 under agent")
+        // The list runs past the screen: 好友 is further down.
+        XCTAssertTrue(scrolledTo(app, row(app, "row-ally-al-family")), "no 好友 row")
+        XCTAssertTrue(app.staticTexts["好友"].exists, "no 好友 section")
         // And in again.
         app.swipeDown()
         row(app, "row-palo").tap()
@@ -45,52 +47,52 @@ final class NavigationUITests: XCTestCase {
         let pal = row(app, "row-pal-pal-site")
         XCTAssertTrue(pal.waitForExistence(timeout: 15))
         pal.tap()
-        XCTAssertTrue(app.navigationBars.staticTexts["网站帮手"].waitForExistence(timeout: 5), "the Pal's page didn't open")
+        XCTAssertTrue(app.navigationBars.staticTexts["网站帮手"].waitForExistence(timeout: 5), "the agent's page didn't open")
         XCTAssertTrue(app.buttons["title-capsule"].exists)
-        XCTAssertFalse(app.buttons["title-orb"].exists, "a Pal's page has no orb")
+        XCTAssertFalse(app.buttons["title-orb"].exists, "an agent's page has no orb")
         XCTAssertTrue(app.buttons["允许"].firstMatch.waitForExistence(timeout: 5), "its card isn't there")
         back(app)
-        XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["agent"].waitForExistence(timeout: 5))
     }
 
     @MainActor
-    func testAnAllyOpensFromTheList() throws {
+    func testAContactOpensFromTheList() throws {
         let app = launch(["-demoScreen", "list"])
-        XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 15))
-        // Below the Pals (asleep ones too): the list scrolls to it.
+        XCTAssertTrue(app.staticTexts["agent"].waitForExistence(timeout: 15))
+        // Below the agents: the list scrolls to it.
         let ally = row(app, "row-ally-al-family")
-        XCTAssertTrue(scrolledTo(app, ally), "no Ally row")
+        XCTAssertTrue(scrolledTo(app, ally), "no 好友 row")
         ally.tap()
-        XCTAssertTrue(app.navigationBars.staticTexts["家人"].waitForExistence(timeout: 5), "the Ally's page didn't open")
+        XCTAssertTrue(app.navigationBars.staticTexts["家人"].waitForExistence(timeout: 5), "the 好友's page didn't open")
         XCTAssertTrue(app.descendants(matching: .any)["ally-input"].exists)
         XCTAssertTrue(app.staticTexts["路上小心"].exists || app.staticTexts["收到，路上小心。"].exists, "the exchanges aren't there")
     }
 
+    /// The orb: the assistant's details as a sheet (现在, 定时, 设置 folded, 记录), 完成 back.
     @MainActor
-    func testTheOrbOpensManagement() throws {
+    func testTheOrbOpensTheAssistantsDetails() throws {
         let app = launch()
         let orb = app.buttons["title-orb"]
         XCTAssertTrue(orb.waitForExistence(timeout: 15))
         orb.tap()
-        XCTAssertTrue(app.buttons["目标"].waitForExistence(timeout: 5), "management didn't open")
-        XCTAssertTrue(app.buttons["记忆"].exists, "no 记忆 in management")
-        XCTAssertTrue(app.buttons["设置"].exists, "no 设置 in management")
-        app.buttons["设置"].tap()
-        XCTAssertTrue(app.navigationBars.staticTexts["设置"].waitForExistence(timeout: 5))
-        back(app)
-        back(app)
+        XCTAssertTrue(app.descendants(matching: .any)["agent-detail"].firstMatch.waitForExistence(timeout: 5), "the details didn't open")
+        let settings = app.descendants(matching: .any)["detail-settings"].firstMatch
+        XCTAssertTrue(settings.exists, "no 设置 in the details")
+        settings.tap()
+        XCTAssertEqual(app.descendants(matching: .any)["detail-settings"].firstMatch.value as? String, "已展开", "设置 didn't unfold")
+        app.buttons["完成"].firstMatch.tap()
         XCTAssertTrue(app.buttons["title-orb"].waitForExistence(timeout: 5), "not back in the conversation")
     }
 
     @MainActor
-    func testLibraryIsTheConversationsToolbarButton() throws {
+    func testThePaneIsTheConversationsToolbarButton() throws {
         let app = launch()
-        let library = app.buttons["成果"]
-        XCTAssertTrue(library.waitForExistence(timeout: 15))
-        library.tap()
-        // The right pane as a full page, 成果 its first tab.
+        let pane = app.buttons["page-files"]
+        XCTAssertTrue(pane.waitForExistence(timeout: 15))
+        pane.tap()
+        // The right pane as a full page: 等你 · 成果 · 待办 · 文件.
         XCTAssertTrue(app.descendants(matching: .any)["right-pane"].firstMatch.waitForExistence(timeout: 5), "the pane didn't open")
-        XCTAssertTrue(app.staticTexts["成果"].firstMatch.exists, "成果 isn't the pane's first tab")
+        XCTAssertTrue(text(app, "成果").exists, "no 成果 tab in the pane")
         app.buttons["关闭侧栏"].firstMatch.tap()
         XCTAssertTrue(app.buttons["title-orb"].waitForExistence(timeout: 5))
     }
@@ -109,97 +111,83 @@ final class NavigationUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars.staticTexts["成果"].waitForExistence(timeout: 5), "back didn't return to 成果")
     }
 
-    /// A terminal session: quit it there first. The list says so in place,
-    /// then the Pal's page opens by itself once it's done.
+    /// One still open in a terminal: before anything is typed its page says
+    /// what typing does; what's typed waits (终端那边退出后发出) until it is
+    /// quit there, then it is taken over and answers.
     @MainActor
-    func testAdoptingATerminalSessionWaitsThenOpensItsPage() throws {
-        let app = launch(["-demoScreen", "list", "-demoAdoptAfter", "4"])
-        let adopt = app.buttons["adopt-cc-login"]
-        XCTAssertTrue(adopt.waitForExistence(timeout: 15))
-        adopt.tap()
-        XCTAssertTrue(app.staticTexts["请在终端里输入 /exit 退出它，退出后自动接管"].waitForExistence(timeout: 5),
-                      "no word on quitting it in the terminal")
-        XCTAssertTrue(app.buttons["adopt-cancel-cc-login"].exists, "no 取消")
+    func testTypingToATerminalSessionWaitsUntilItIsQuitThenItAnswers() throws {
+        let app = launch(["-demoScreen", "session", "-demoSession", "cc-login", "-demoAdoptAfter", "4", "-demoKeyboard", "4:600"])
         XCTAssertTrue(app.navigationBars.staticTexts["修登录跳转"].waitForExistence(timeout: 15), "its page didn't open")
-        XCTAssertTrue(app.staticTexts["登录以后会跳回首页，应该回到原来那一页"].waitForExistence(timeout: 5)
-                      || app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "跳回首页")).firstMatch.exists,
-                      "its conversation so far isn't there")
+        XCTAssertTrue(text(app, "登录以后会跳回首页").waitForExistence(timeout: 10), "its conversation so far isn't there")
+        XCTAssertTrue(row(app, "agent-in-terminal").exists, "no word on the terminal it's open in")
+        let field = app.descendants(matching: .any)["composerField"]
+        expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: field)
+        waitForExpectations(timeout: 10)
+        field.typeText("登录后回到原来那一页")
+        app.buttons["发送"].firstMatch.tap()
+        XCTAssertTrue(row(app, "agent-held").waitForExistence(timeout: 5), "no 终端那边退出后发出 while it waits")
+        attach(app, "terminal-waiting")
+        XCTAssertTrue(text(app, "好的，按你说的办").waitForExistence(timeout: 20), "it never answered once quit")
+        XCTAssertFalse(row(app, "agent-held").exists, "still waiting after it was taken over")
     }
 
+    /// 取消这条 calls the waiting words off; the page is as it was.
     @MainActor
-    func testCancellingTheWaitLeavesItWhereItWas() throws {
-        let app = launch(["-demoScreen", "list", "-demoAdoptAfter", "0"])
-        let adopt = app.buttons["adopt-cc-login"]
-        XCTAssertTrue(adopt.waitForExistence(timeout: 15))
-        adopt.tap()
-        let cancel = app.buttons["adopt-cancel-cc-login"]
-        XCTAssertTrue(cancel.waitForExistence(timeout: 5))
+    func testCancellingAWaitingMessageCallsItOff() throws {
+        let app = launch(["-demoScreen", "session", "-demoSession", "cc-login", "-demoAdoptAfter", "0", "-demoKeyboard", "4:600"])
+        XCTAssertTrue(app.navigationBars.staticTexts["修登录跳转"].waitForExistence(timeout: 15), "its page didn't open")
+        let field = app.descendants(matching: .any)["composerField"]
+        expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: field)
+        waitForExpectations(timeout: 10)
+        field.typeText("先别动登录页")
+        app.buttons["发送"].firstMatch.tap()
+        let cancel = row(app, "agent-held-cancel")
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5), "no 取消这条")
         cancel.tap()
-        XCTAssertTrue(app.buttons["adopt-cc-login"].waitForExistence(timeout: 5), "接管 didn't come back")
-        XCTAssertFalse(app.staticTexts["请在终端里输入 /exit 退出它，退出后自动接管"].exists)
+        XCTAssertTrue(row(app, "agent-in-terminal").waitForExistence(timeout: 5), "the page isn't as it was")
+        XCTAssertFalse(row(app, "agent-held").exists, "the words still wait")
     }
 
-    /// A background session: a moment, then its page.
+    /// A background one: typing stops it and takes it over; its question came with it.
     @MainActor
-    func testAdoptingABackgroundSessionOpensItsPage() throws {
-        let app = launch(["-demoScreen", "list"])
-        let adopt = app.buttons["adopt-cc-data"]
-        XCTAssertTrue(adopt.waitForExistence(timeout: 15))
-        adopt.tap()
-        XCTAssertTrue(app.navigationBars.staticTexts["问卷数据清洗"].waitForExistence(timeout: 10), "its page didn't open")
-        // Its question came with it.
+    func testTypingToABackgroundSessionTakesItOver() throws {
+        let app = launch(["-demoScreen", "session", "-demoSession", "cc-data", "-demoKeyboard", "4:600"])
+        XCTAssertTrue(app.navigationBars.staticTexts["问卷数据清洗"].waitForExistence(timeout: 15), "its page didn't open")
         let option = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "B 用中位数补上")).firstMatch
         XCTAssertTrue(option.waitForExistence(timeout: 5), "its question isn't on its page")
+        let field = app.descendants(matching: .any)["composerField"]
+        expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: field)
+        waitForExpectations(timeout: 10)
+        field.typeText("先跑完再说")
+        app.buttons["发送"].firstMatch.tap()
+        XCTAssertTrue(text(app, "好的，按你说的办").waitForExistence(timeout: 15), "it never answered")
     }
 
-    /// 最近的对话 (pals-prd §10): a conversation that ended, asked in its
-    /// row, then its Pal's page; back on the list it's a Pal.
+    /// 已归档 (the list's last agent row): a conversation that ended, 拿回来
+    /// in its row, then its page with its conversation so far.
     @MainActor
-    func testAdoptingARecentConversationOpensItsPage() throws {
-        throw XCTSkip("以前的 resumes by 接着聊 now (workbench A1); this walk-through is rewritten with the new-session phase")
-        let app = launch(["-demoScreen", "list"])
-        let recent = row(app, "row-recent")
-        XCTAssertTrue(recent.waitForExistence(timeout: 15), "no 最近的对话 under Pals")
-        recent.tap()
-        XCTAssertTrue(app.navigationBars.staticTexts["最近的对话"].waitForExistence(timeout: 5), "the page didn't open")
-        // By folder, the folder's path under its name.
-        XCTAssertTrue(app.staticTexts["~/code/site"].waitForExistence(timeout: 10) || text(app, "~/code/site").exists,
-                      "no folder path")
-        let one = row(app, "recent-7c1e9a52-3f0b-4d8e-9a61-0b5c2e7d4f10")
-        XCTAssertTrue(one.waitForExistence(timeout: 10), "the conversation isn't listed")
-        one.tap()
-        // Its conversation, read only (§14), with 接管 at the bottom; no dialog.
+    func testBringingBackAConversationFromTheArchiveOpensItsPage() throws {
+        let app = launch(["-demoScreen", "earlier"])
+        XCTAssertTrue(row(app, "archive-page").waitForExistence(timeout: 15), "已归档 didn't open")
+        let back = row(app, "archive-back-7c1e9a52-3f0b-4d8e-9a61-0b5c2e7d4f10")
+        XCTAssertTrue(back.waitForExistence(timeout: 10), "the conversation isn't listed")
+        back.tap()
         XCTAssertTrue(app.navigationBars.staticTexts["首页改成两栏布局"].waitForExistence(timeout: 10), "its page didn't open")
+        XCTAssertTrue(app.buttons["title-capsule"].exists, "not an agent's page")
         XCTAssertTrue(text(app, "两栏改好了").waitForExistence(timeout: 10), "its conversation so far isn't there")
-        XCTAssertTrue(text(app, "接管后可以在这里跟它说话").exists, "no 接管 bar")
-        XCTAssertFalse(app.buttons["title-capsule"].exists, "a Pal's page before it was taken over")
-        XCTAssertEqual(app.alerts.count, 0)
-        XCTAssertEqual(app.sheets.count, 0)
-        app.buttons["session-adopt"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["title-capsule"].waitForExistence(timeout: 15), "its Pal's page didn't open")
-        XCTAssertTrue(app.navigationBars.staticTexts["首页改成两栏布局"].exists)
-        XCTAssertTrue(text(app, "两栏改好了").waitForExistence(timeout: 10), "its conversation so far isn't there")
-        back(app)
-        XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "首页改成两栏布局")).firstMatch.exists,
-                      "it isn't a Pal on the list")
     }
 
-    /// When the computer can't, the row says why in plain words, and 好 puts it back.
+    /// When the host can't, the row says why in plain words and stays.
     @MainActor
-    func testARecentConversationThatCantBeAdoptedSaysWhy() throws {
-        let app = launch(["-demoScreen", "recent", "-demoAdoptError", "已经开着 5 个 Pal 了，最久没用的是「笔记整理」"])
-        let one = row(app, "recent-e4a7c3d9-1b6f-4e2a-b8c5-9d0e7f3a2c61")
-        XCTAssertTrue(one.waitForExistence(timeout: 15))
-        one.tap()
-        let adopt = app.buttons["session-adopt"].firstMatch
-        XCTAssertTrue(adopt.waitForExistence(timeout: 10), "no 接管 on its page")
-        adopt.tap()
-        XCTAssertTrue(text(app, "没接管成：已经开着 5 个 Pal 了").waitForExistence(timeout: 10), "no reason given")
-        attach(app, "recent-failed")
-        app.buttons["好"].firstMatch.tap()
-        XCTAssertTrue(adopt.waitForExistence(timeout: 5), "接管 didn't come back")
-        XCTAssertFalse(app.buttons["title-capsule"].exists, "it became a Pal after all")
+    func testAConversationThatCantBeBroughtBackSaysWhy() throws {
+        let app = launch(["-demoScreen", "earlier", "-demoAdoptError", "已经开着 5 个 agent 了，先归档一个"])
+        let back = row(app, "archive-back-e4a7c3d9-1b6f-4e2a-b8c5-9d0e7f3a2c61")
+        XCTAssertTrue(back.waitForExistence(timeout: 15))
+        back.tap()
+        XCTAssertTrue(text(app, "没能拿回来：已经开着 5 个 agent 了").waitForExistence(timeout: 10), "no reason given")
+        attach(app, "archive-failed")
+        XCTAssertTrue(back.waitForExistence(timeout: 5), "拿回来 didn't come back")
+        XCTAssertFalse(app.buttons["title-capsule"].exists, "it was brought back after all")
     }
 
     // MARK: -

@@ -46,8 +46,8 @@ final class AlliesUITests: XCTestCase {
     func testRemovingAnAllyAsksInPlaceThenTakesThemOff() throws {
         let app = launch(["-demoScreen", "list"])
         let row = app.descendants(matching: .any)["row-ally-al-family"]
-        // Below the Pals (asleep ones too): the list scrolls to it.
-        XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 15), "not on the list")
+        // Below the agents: the list scrolls to it.
+        XCTAssertTrue(app.staticTexts["agent"].waitForExistence(timeout: 15), "not on the list")
         for _ in 0..<4 where !row.exists { app.swipeUp() }
         XCTAssertTrue(row.waitForExistence(timeout: 5), "no row for 家人")
         row.tap()
@@ -61,7 +61,7 @@ final class AlliesUITests: XCTestCase {
         XCTAssertEqual(app.sheets.count, 0)
         app.buttons["解除"].firstMatch.tap()
         // Back on the list, without them.
-        XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 10) || app.staticTexts["好友"].exists, "not back on the list")
+        XCTAssertTrue(app.staticTexts["agent"].waitForExistence(timeout: 10) || app.staticTexts["好友"].exists, "not back on the list")
         let lin = app.descendants(matching: .any)["row-ally-al-lin"]
         for _ in 0..<4 where !lin.exists { app.swipeUp() }
         XCTAssertTrue(lin.waitForExistence(timeout: 5))
@@ -127,7 +127,7 @@ final class AlliesUITests: XCTestCase {
         let row = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
                                                                        "row-ally-", "小周")).firstMatch
         // The list runs past the screen: the newest Ally is further down.
-        XCTAssertTrue(app.staticTexts["好友"].waitForExistence(timeout: 10) || app.staticTexts["Pals"].exists, "not back on the list")
+        XCTAssertTrue(app.staticTexts["好友"].waitForExistence(timeout: 10) || app.staticTexts["agent"].exists, "not back on the list")
         for _ in 0..<4 where !row.exists { app.swipeUp() }
         XCTAssertTrue(row.waitForExistence(timeout: 10), "not on the list")
         XCTAssertTrue(row.label.contains("家人朋友"), "tag missing: \(row.label)")
