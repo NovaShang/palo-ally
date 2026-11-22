@@ -151,7 +151,7 @@ describe("Updater", () => {
     const notes: string[] = [];
     const audits: string[] = [];
     confirmUpdate(s.paths, { note: (t) => notes.push(t), audit: (t) => audits.push(t) });
-    expect(notes).toEqual(["电脑上的 PaloAlly 已更新到 0.1.1"]);
+    expect(notes).toEqual(["主机上的 Palo 已更新到 0.1.1"]);
     expect(audits).toEqual(["host.update"]);
     expect(s.state()).toMatchObject({ pending: null, last: { from: "0.1.0", to: "0.1.1", ok: true } });
   });

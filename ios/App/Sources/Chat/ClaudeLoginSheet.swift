@@ -28,7 +28,7 @@ struct ClaudeLoginSheet: View {
                     }
                 } else {
                     Section {
-                        Text("电脑上的 Claude Code 登录过期了。在这里打开授权页，用你的 Claude 账号同意，再把页面上显示的代码粘贴回来。")
+                        Text("主机上的 Claude Code 登录过期了。在这里打开授权页，用你的 Claude 账号同意，再把页面上显示的代码粘贴回来。")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -45,7 +45,7 @@ struct ClaudeLoginSheet: View {
                         } else {
                             HStack(spacing: 8) {
                                 ProgressView().controlSize(.small)
-                                Text("正在电脑上准备登录…").foregroundStyle(.secondary)
+                                Text("正在主机上准备登录…").foregroundStyle(.secondary)
                             }
                         }
                     }

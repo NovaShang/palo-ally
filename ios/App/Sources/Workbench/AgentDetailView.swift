@@ -208,7 +208,7 @@ private struct SessionDetailForm: View {
                 NavigationLink {
                     SessionPastTasks(tasks: detail?.pastTasks ?? [])
                 } label: {
-                    Text("历史任务")
+                    Text("记录")
                 }
                 .accessibilityIdentifier("detail-past-tasks")
             }
@@ -383,13 +383,13 @@ private struct SessionPastTasks: View {
     var body: some View {
         List {
             if tasks.isEmpty {
-                ContentUnavailableView("还没有做完的任务", systemImage: "checklist",
+                ContentUnavailableView("还没有记录", systemImage: "checklist",
                                        description: Text("它开的子 agent 和后台任务做完后会记在这里。"))
             } else {
                 ForEach(tasks) { SessionTaskRow(task: $0) }
             }
         }
-        .navigationTitle("历史任务")
+        .navigationTitle("记录")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

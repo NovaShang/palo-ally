@@ -177,7 +177,7 @@ public struct AllyInfo: Codable, Sendable, Hashable, Identifiable {
         let o = ownerName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !o.isEmpty { return o }
         let a = assistantName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return a.isEmpty ? "Ally" : a
+        return a.isEmpty ? loc("好友") : a
     }
 
     /// 「家人的助理」: how their messages are labelled.

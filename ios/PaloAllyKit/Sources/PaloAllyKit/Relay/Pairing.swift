@@ -145,17 +145,17 @@ public enum PairingError: Error, LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .invalidCode: return loc("配对码应该是 6 位数字")
-        case .wrongHost: return loc("回应的电脑和二维码上的对不上，在电脑上重新生成一个再扫")
+        case .wrongHost: return loc("回应的主机和二维码上的对不上，在主机上重新生成一个再扫")
         case .network: return loc("网络好像不太通，稍后再试试")
         case .rejected(let status, let message):
             switch status {
             case 401: return loc("配对码不对，再核对一下")
             case 429: return loc("试错太多次了，等一分钟再来")
-            case 503: return loc("电脑那边好像没开着，先打开它再试")
-            case 400 where message.contains("no pairing window"): return loc("配对码过期了，在电脑上重新生成一个")
+            case 503: return loc("主机那边好像没开着，先打开它再试")
+            case 400 where message.contains("no pairing window"): return loc("配对码过期了，在主机上重新生成一个")
             default: return loc("没能连上（\(message)）")
             }
-        case .malformedResponse: return loc("电脑那边的回复看不懂，可能需要更新一下")
+        case .malformedResponse: return loc("主机那边的回复看不懂，可能需要更新一下")
         }
     }
 }

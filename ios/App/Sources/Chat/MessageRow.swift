@@ -95,7 +95,7 @@ private struct UserBubble: View {
                     .modifier(VoiceEchoSlot(cid: message.clientMsgId, bubble: true))
                 }
                 if message.channel == .wechat || message.channel == .cli {
-                    Label(message.channel == .wechat ? String(localized: "来自微信") : String(localized: "来自电脑"), systemImage: message.channel == .wechat ? "message" : "laptopcomputer")
+                    Label(message.channel == .wechat ? String(localized: "来自微信") : String(localized: "来自主机"), systemImage: message.channel == .wechat ? "message" : "laptopcomputer")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -641,7 +641,7 @@ private struct FileCard: View {
 
     private var detail: String {
         var parts: [String] = []
-        if attachment.kind == "artifact" { parts.append(String(localized: "在产出物库")) }
+        if attachment.kind == "artifact" { parts.append(String(localized: "在成果里")) }
         if let s = attachment.size { parts.append(ByteCountFormatter.string(fromByteCount: s, countStyle: .file)) }
         return parts.isEmpty ? String(localized: "点开查看") : parts.joined(separator: " · ")
     }

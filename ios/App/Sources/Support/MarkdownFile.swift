@@ -76,8 +76,8 @@ struct MarkdownFileSheet: View {
                             Image(systemName: "books.vertical")
                         }
                         .tint(.primary)
-                        .accessibilityLabel("在产出物库中查看")
-                        .help("在产出物库中查看")
+                        .accessibilityLabel("在成果中查看")
+                        .help("在成果中查看")
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {

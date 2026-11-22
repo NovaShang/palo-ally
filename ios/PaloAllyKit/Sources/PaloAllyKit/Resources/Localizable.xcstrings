@@ -349,13 +349,13 @@
         }
       }
     },
-    "回应的电脑和二维码上的对不上，在电脑上重新生成一个再扫" : {
+    "回应的主机和二维码上的对不上，在主机上重新生成一个再扫" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The computer that answered isn’t the one in the QR code. Make a new code on your computer and scan again."
+            "value" : "The host that answered isn’t the one in the QR code. Make a new code on your host and scan again."
           }
         }
       }
@@ -690,68 +690,68 @@
         }
       }
     },
-    "电脑上的 PaloAlly 版本太旧，需要更新一下" : {
+    "主机上的 Palo 版本太旧，需要更新一下" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PaloAlly on your computer is out of date. Update it."
+            "value" : "Palo on your host is out of date. Update it."
           }
         }
       }
     },
-    "电脑的空间不够了" : {
+    "主机的空间不够了" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your computer is out of space."
+            "value" : "Your host is out of space."
           }
         }
       }
     },
-    "电脑那边出了点问题，稍后再试" : {
+    "主机那边出了点问题，稍后再试" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Something went wrong on your computer. Try again in a bit."
+            "value" : "Something went wrong on your host. Try again in a bit."
           }
         }
       }
     },
-    "电脑那边好像没开着，先打开它再试" : {
+    "主机那边好像没开着，先打开它再试" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your computer seems to be off. Turn it on and try again."
+            "value" : "Your host seems to be off. Turn it on and try again."
           }
         }
       }
     },
-    "电脑那边没有权限做这个" : {
+    "主机那边没有权限做这个" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your computer doesn’t have permission to do that."
+            "value" : "Your host doesn’t have permission to do that."
           }
         }
       }
     },
-    "电脑那边的回复看不懂，可能需要更新一下" : {
+    "主机那边的回复看不懂，可能需要更新一下" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Couldn’t understand your computer’s reply. It may need an update."
+            "value" : "Couldn’t understand your host’s reply. It may need an update."
           }
         }
       }
@@ -1075,13 +1075,13 @@
         }
       }
     },
-    "配对码过期了，在电脑上重新生成一个" : {
+    "配对码过期了，在主机上重新生成一个" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The pairing code has expired. Make a new one on your computer."
+            "value" : "The pairing code has expired. Make a new one on your host."
           }
         }
       }
@@ -1214,6 +1214,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Deny unless allowed"
+          }
+        }
+      }
+    },
+    "好友" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contact"
           }
         }
       }

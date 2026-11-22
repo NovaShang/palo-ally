@@ -181,9 +181,10 @@ extension AppStore {
     }
 
     /// The host's mark for a card that ended because the owner answered in
-    /// the terminal (`decidedBy` "computer", 「已在电脑上处理」).
+    /// the terminal (`decidedBy` "computer", 「已在主机上处理」; an older host
+    /// said 「已在电脑上处理」).
     nonisolated static func handledAtComputer(by: String?, note: String?) -> Bool {
-        by == "computer" || note == "已在电脑上处理"  // i18n-ok: the host's own words
+        by == "computer" || note == "已在主机上处理" || note == "已在电脑上处理"  // i18n-ok: the host's own words
     }
 
     /// Settled at the computer, not here: it leaves the conversation (§5).

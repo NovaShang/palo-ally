@@ -17,7 +17,7 @@ extension Copy {
     /// Palo 开的 / 终端 / 后台.
     static func sessionKind(_ k: CCSessionKind) -> String {
         switch k {
-        case .helper: String(localized: "Palo 开的")
+        case .helper: String(localized: "助理开的")
         case .terminal: String(localized: "终端")
         case .background: String(localized: "后台")
         case .unknown: String(localized: "会话")
@@ -67,6 +67,6 @@ extension Copy {
     /// An expired session card: the host's note, else 「在电脑上等你」.
     static func waitsAtComputer(_ note: String?) -> String {
         let n = note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return n.isEmpty ? String(localized: "在电脑上等你") : n
+        return n.isEmpty ? String(localized: "在主机上等你") : n
     }
 }

@@ -11,7 +11,7 @@ struct HistorySection: View {
         let finished = store.tasks.filter { !$0.isActive }.sorted { $0.updatedAt > $1.updatedAt }
         if store.tasks.isEmpty {
             Section {
-                ContentUnavailableView("还没有办过的事", systemImage: "checklist",
+                ContentUnavailableView("还没有记录", systemImage: "checklist",
                                        description: Text("在对话里交代一件事，它在做和做完的都会记在这里。"))
             }
         }

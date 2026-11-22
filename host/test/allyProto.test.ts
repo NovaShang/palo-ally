@@ -55,7 +55,7 @@ describe("ally protocol", () => {
     const back = parseAllyInvite(link);
     expect(back).toMatchObject({ relay: "https://relay.bentoai.dev", daemonId: "pa-1", code: "123456", name: "家人 A", exp: 99 });
     expect(Buffer.from(back.hostKey).equals(Buffer.from(hostKey))).toBe(true);
-    expect(() => parseAllyInvite("paloally://pair?relay=x")).toThrow("不是 Ally 邀请");
+    expect(() => parseAllyInvite("paloally://pair?relay=x")).toThrow("不是好友邀请");
     expect(() => parseAllyInvite(link.replace("code=123456", "code=12"))).toThrow("不完整");
     expect(() => parseAllyInvite(`paloally://ally?relay=http%3A%2F%2Fevil.example&daemon=pa-1&code=123456&hostkey=${b64url(hostKey)}`)).toThrow("不完整");
     expect(allowedRelay("http://127.0.0.1:8789")).toBe(true);

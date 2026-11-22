@@ -187,7 +187,7 @@ struct PhonePane: View {
             capsuleMenu(folderName(scope)) {
                 Picker(selection: $state.paloFilesRoot) {
                     Text("用户目录", tableName: "Files").tag(FileScope.home)
-                    Text("Palo 的文件", tableName: "Files").tag(FileScope.palo)
+                    Text("助理的文件", tableName: "Files").tag(FileScope.palo)
                 } label: { EmptyView() }
             }
             .accessibilityIdentifier("files-root")
@@ -215,7 +215,7 @@ struct PhonePane: View {
         switch scope.kind {
         case .pal: return scope.id.flatMap { store.pal(id: $0) }.map { ($0.cwd as NSString).lastPathComponent } ?? ""
         case .home: return String(localized: "用户目录", table: "Files")
-        default: return String(localized: "Palo 的文件", table: "Files")
+        default: return String(localized: "助理的文件", table: "Files")
         }
     }
 

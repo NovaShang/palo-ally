@@ -106,8 +106,8 @@ final class FilesUITests: XCTestCase {
         let plus = app.buttons["添加照片或文件"].firstMatch
         XCTAssertTrue(plus.waitForExistence(timeout: 15), "no [+] on the composer")
         plus.tap()
-        let item = app.buttons["电脑上的文件"]
-        XCTAssertTrue(item.waitForExistence(timeout: 5), "no 电脑上的文件 in [+]")
+        let item = app.buttons["主机上的文件"]
+        XCTAssertTrue(item.waitForExistence(timeout: 5), "no 主机上的文件 in [+]")
         item.tap()
         let readme = app.buttons["pick-row-README.md"]
         XCTAssertTrue(readme.waitForExistence(timeout: 10), "the picker doesn't start in the Pal's folder")

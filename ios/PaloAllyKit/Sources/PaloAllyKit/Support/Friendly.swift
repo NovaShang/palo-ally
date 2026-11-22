@@ -103,20 +103,20 @@ public enum Friendly {
     public static func remote(_ m: String) -> String {
         let lower = m.lowercased()
         if lower.contains("enoent") { return loc("找不到这个文件") }
-        if lower.contains("eacces") || lower.contains("eperm") { return loc("电脑那边没有权限做这个") }
-        if lower.contains("enospc") { return loc("电脑的空间不够了") }
+        if lower.contains("eacces") || lower.contains("eperm") { return loc("主机那边没有权限做这个") }
+        if lower.contains("enospc") { return loc("主机的空间不够了") }
         if lower.contains("eisdir") { return loc("这是个文件夹，不是文件") }
         if lower.contains("etimedout") { return loc("等太久了，稍后再试") }
         if lower.contains("e2big") { return loc("文件太大了") }
-        if lower.contains("unknown method") { return loc("电脑上的 PaloAlly 版本太旧，需要更新一下") }
+        if lower.contains("unknown method") { return loc("主机上的 Palo 版本太旧，需要更新一下") }
         if lower.contains("no such file") { return loc("找不到这个文件") }
-        if lower.contains("permission denied") { return loc("电脑那边没有权限做这个") }
+        if lower.contains("permission denied") { return loc("主机那边没有权限做这个") }
         if lower.contains("timeout") || lower.contains("timed out") { return loc("等太久了，稍后再试") }
         if isHostSentence(m) { return m }
         if lower.contains("not found") { return loc("找不到这个文件") }
         if lower.contains("too large") { return loc("文件太大了") }
         if containsCJK(m) && !looksTechnical(m) { return m }
-        return loc("电脑那边出了点问题，稍后再试")
+        return loc("主机那边出了点问题，稍后再试")
     }
 
     /// An English sentence in the host's own words ("No such task", "The

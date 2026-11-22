@@ -36,6 +36,6 @@ test("every pals, sessions, handoff and rewind key has English without Chinese",
 });
 
 test("params fill in", () => {
-  expect(tIn("en", "handoff.askBody", { title: "Fix", peer: "web" })).toBe('"Fix" is waiting for your answer in web. Check that computer.');
+  expect(tIn("en", "handoff.askBody", { title: "Fix", peer: "web" })).toBe('"Fix" is waiting for your answer in web. Check that host.');
   expect(tIn("zh", "pals.noPal")).toBe("找不到这个会话");
 });

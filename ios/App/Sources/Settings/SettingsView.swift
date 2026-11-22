@@ -57,7 +57,7 @@ struct SettingsView: View {
                 // prompts come to the phone while the owner is away from it.
                 if store.sessionsSupported == true || store.palsSupported == true {
                     Section {
-                        Toggle("手机上处理电脑会话的确认", isOn: hooksBinding)
+                        Toggle("手机上处理主机上会话的确认", isOn: hooksBinding)
                             .disabled(!store.connection.isOnline)
                             .id("session-hooks")
                     } footer: {
@@ -69,7 +69,7 @@ struct SettingsView: View {
                 Section {
                     DownloadedFilesRow()
                 } footer: {
-                    Text("打开过的电脑文件留在这台设备上，再打开不用重新下载。满了会先删最久没打开的。", tableName: "Files")
+                    Text("打开过的主机文件留在这台设备上，再打开不用重新下载。满了会先删最久没打开的。", tableName: "Files")
                 }
 
                 if let error {
@@ -87,7 +87,7 @@ struct SettingsView: View {
                     }
                     .tint(.primary)
                     if !store.hostVersion.isEmpty {
-                        LabeledContent("电脑上的版本", value: store.hostVersion)
+                        LabeledContent("主机上的版本", value: store.hostVersion)
                         if let newer = MacUpdate.newerVersion(app: model.clientVersion, host: store.hostVersion) {
                             Button { openURL(MacUpdate.downloadURL) } label: {
                                 Text("有新版本 \(newer) · 下载")
@@ -100,7 +100,7 @@ struct SettingsView: View {
                             Task { await checkHostUpdate() }
                         } label: {
                             HStack {
-                                Text(checkingUpdate ? String(localized: "正在检查…") : String(localized: "立即更新电脑上的 PaloAlly"))
+                                Text(checkingUpdate ? String(localized: "正在检查…") : String(localized: "立即更新主机上的 Palo"))
                                 Spacer()
                                 if checkingUpdate { ProgressView() }
                             }
@@ -196,7 +196,7 @@ struct SettingsView: View {
             switch r.status {
             case "latest": hostUpdate = String(localized: "已经是最新版（\(r.current)）")
             case "staged", "updating": let latest = r.latest ?? ""
-                hostUpdate = String(localized: "新版本 \(latest) 已下好，电脑手头的事一完就换上，会自动重启")
+                hostUpdate = String(localized: "新版本 \(latest) 已下好，主机手头的事一完就换上，会自动重启")
             default: hostUpdate = r.detail ?? r.status
             }
         } catch {

@@ -31,13 +31,13 @@ struct PairingView: View {
                             .foregroundStyle(.primary)
                             .frame(width: 100, height: 100)
                             .glassEffect(.regular, in: .circle)
-                        Text(adding ? String(localized: "添加另一台电脑") : (model.mode == .paired ? String(localized: "换一台电脑") : String(localized: "你好，我是 PaloAlly")))
+                        Text(adding ? String(localized: "添加另一台主机") : (model.mode == .paired ? String(localized: "换一台主机") : String(localized: "你好，我是 Palo")))
                             .font(.title.bold())
                         Text(adding
-                             ? String(localized: "每台电脑上是一个独立的助理。连上之后，点对话顶部的名字就能切换。")
+                             ? String(localized: "每台主机上是一个独立的助理。连上之后，点对话顶部的名字就能切换。")
                              : (model.mode == .paired
-                                ? String(localized: "连上新的电脑后，这台设备就和「\(currentHostLabel)」断开。")
-                                : String(localized: "住在你电脑上的私人助理。把这台设备和电脑连起来，随时找我办事。")))
+                                ? String(localized: "连上新的主机后，这台设备就和「\(currentHostLabel)」断开。")
+                                : String(localized: "住在你电脑上的私人助理，那台电脑叫主机。把这台设备和主机连起来，随时找我办事。")))
                             .font(.body)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -45,9 +45,9 @@ struct PairingView: View {
                     .padding(.top, 24)
 
                     VStack(alignment: .leading, spacing: 12) {
-                        step(1, String(localized: "在电脑上运行 paloally pair，会出现二维码和链接；或者在已经连上的设备上跟助理说「连一台新设备」。"))
+                        step(1, String(localized: "在主机上运行 paloally pair，会出现二维码和链接；或者在已经连上的设备上跟助理说「连一台新设备」。"))
                         step(2, QRScannerView.isAvailable ? String(localized: "用这台设备扫二维码，或者在这台设备上点开链接。") : String(localized: "在这台设备上点开链接，或者把它复制过来。"))
-                        step(3, String(localized: "连上之后，数据只在你的电脑和这台设备之间加密传送。"))
+                        step(3, String(localized: "连上之后，数据只在你的主机和这台设备之间加密传送。"))
                     }
                     .padding(18)
                     .background(.background.secondary, in: .rect(cornerRadius: 22, style: .continuous))
@@ -135,7 +135,7 @@ struct PairingView: View {
             .onAppear(perform: takePendingLink)
             // A link can also arrive while this screen is already showing.
             .onChange(of: model.pendingPairingLink) { takePendingLink() }
-            .confirmationDialog("添加这台电脑？", isPresented: $confirmAdd, titleVisibility: .visible) {
+            .confirmationDialog("添加这台主机？", isPresented: $confirmAdd, titleVisibility: .visible) {
                 Button("添加") { submit() }
                 if model.mode == .paired {
                     Button("换掉「\(currentHostLabel)」") { model.pairingIntent = .replace; submit() }
@@ -146,14 +146,14 @@ struct PairingView: View {
                 }
             } message: {
                 Text(model.mode == .paired
-                     ? String(localized: "收到一个配对链接。添加后两台电脑的助理都在这里，点对话顶部的名字切换。")
-                     : String(localized: "收到一个配对链接。添加后离开演示，连上那台电脑上的助理。"))
+                     ? String(localized: "收到一个配对链接。添加后两台主机的助理都在这里，点对话顶部的名字切换。")
+                     : String(localized: "收到一个配对链接。添加后离开演示，连上那台主机上的助理。"))
             }
         }
     }
 
     private var currentHostLabel: String {
-        model.activeHostID.map(model.displayName) ?? String(localized: "现在的电脑")
+        model.activeHostID.map(model.displayName) ?? String(localized: "现在的主机")
     }
 
     private func takePendingLink() {
@@ -187,7 +187,7 @@ struct PairingView: View {
         // Someone's Ally invite, not a computer's pairing link.
         if AllyInviteLink.isAllyLink(linkText) {
             guard model.mode != .unpaired else {
-                error = String(localized: "这是加 Ally 的二维码。先把这台设备和你自己的电脑连上，再扫它。")
+                error = String(localized: "这是加好友的二维码。先把这台设备和你自己的主机连上，再扫它。")
                 return
             }
             model.allyInvite = PendingAllyInvite(link: linkText.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -200,7 +200,7 @@ struct PairingView: View {
             if !typed.isEmpty { link.code = typed }
             guard PairingLink.isValidCode(link.code) else {
                 showManual = true
-                error = String(localized: "还差 6 位配对码，看一下电脑屏幕")
+                error = String(localized: "还差 6 位配对码，看一下主机屏幕")
                 return
             }
             working = true

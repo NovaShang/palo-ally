@@ -30,11 +30,11 @@ struct QRScannerSheet: View {
                         .ignoresSafeArea()
                 } else {
                     ContentUnavailableView("没法使用相机", systemImage: "camera",
-                                           description: Text("请在「设置」里允许 PaloAlly 使用相机，或者改用粘贴链接。"))
+                                           description: Text("请在「设置」里允许 Palo 使用相机，或者改用粘贴链接。"))
                 }
                 #endif
             }
-            .navigationTitle("扫一扫电脑上的二维码")
+            .navigationTitle("扫一扫主机上的二维码")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }

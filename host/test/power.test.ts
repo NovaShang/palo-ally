@@ -71,10 +71,10 @@ describe("PowerWatcher", () => {
     const t = watcher([ac(100), batt(76), batt(70), batt(29), batt(28), batt(14), batt(10), ac(11), batt(50)]);
     t.tick(9);
     expect(t.alerts).toEqual([
-      { text: "电脑拔电了（剩 76%）。没电我就会掉线，记得插上。", urgent: false },
+      { text: "主机拔电了（剩 76%）。没电我就会掉线，记得插上。", urgent: false },
       { text: "电量 29%，记得插电。", urgent: false },
       { text: "电量只剩 14%，快没电了。", urgent: true },
-      { text: "电脑拔电了（剩 50%）。没电我就会掉线，记得插上。", urgent: false },
+      { text: "主机拔电了（剩 50%）。没电我就会掉线，记得插上。", urgent: false },
     ]);
     expect(t.notes).toEqual(["已接上电源。"]);
     expect(t.audits.filter((a) => a.type === "power.change").map((a) => a.data.onAC)).toEqual([true, false, true, false]);
@@ -84,12 +84,12 @@ describe("PowerWatcher", () => {
     const t = watcher([ac(30), batt(20), batt(18), batt(13)]);
     t.tick(4);
     expect(t.alerts).toEqual([
-      { text: "电脑拔电了，电量 20%，记得插电。", urgent: false },
+      { text: "主机拔电了，电量 20%，记得插电。", urgent: false },
       { text: "电量只剩 13%，快没电了。", urgent: true },
     ]);
     const u = watcher([ac(30), batt(9)]);
     u.tick(2);
-    expect(u.alerts).toEqual([{ text: "电脑拔电了，电量只剩 9%，快没电了。", urgent: true }]);
+    expect(u.alerts).toEqual([{ text: "主机拔电了，电量只剩 9%，快没电了。", urgent: true }]);
   });
 
   test("a restart doesn't repeat what was already said", () => {
@@ -143,7 +143,7 @@ describe("power heads-ups through the hub", () => {
     await Bun.sleep(20);
     expect(pusher.pushes.map((p) => p.body)).toEqual(["电量只剩 12%，快没电了。"]);
     const texts = hub.chat.since(0).map((m) => m.text);
-    expect(texts).toContain("电脑拔电了（剩 76%）。没电我就会掉线，记得插上。");
+    expect(texts).toContain("主机拔电了（剩 76%）。没电我就会掉线，记得插上。");
     expect(texts).toContain("电量只剩 12%，快没电了。");
     hub.stop();
   });

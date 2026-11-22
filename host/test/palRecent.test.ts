@@ -261,7 +261,7 @@ describe("taking an ended one over (pals.adopt)", () => {
 
   test("PaloAlly's own conversation, one whose folder is gone, and one it can't find aren't taken over", async () => {
     const t = setup();
-    await expect(t.call("pals.adopt", { sessionId: t.ended(t.paths.home, { customTitle: "Palo" }) })).rejects.toThrow("PaloAlly 自己的会话");
+    await expect(t.call("pals.adopt", { sessionId: t.ended(t.paths.home, { customTitle: "Palo" }) })).rejects.toThrow("助理自己的会话");
     const gone = t.folder("gone");
     const g = t.ended(gone, { customTitle: "没了" });
     rmSync(gone, { recursive: true });
@@ -349,7 +349,7 @@ describe("the assistant brings one back (pals_recent, pal_adopt)", () => {
     // no card: running now, unknown, PaloAlly's own
     expect(await tools.pal_adopt({ sessionId: c })).toContain("现在还开着");
     expect(await tools.pal_adopt({ sessionId: "f0000000-0000-4000-8000-000000000000" })).toBe("没提：没有这个会话");
-    expect(await tools.pal_adopt({ sessionId: t.ended(t.paths.home, { customTitle: "Palo" }) })).toContain("PaloAlly 自己的会话");
+    expect(await tools.pal_adopt({ sessionId: t.ended(t.paths.home, { customTitle: "Palo" }) })).toContain("助理自己的会话");
     expect(await tools.pal_adopt({ sessionId: "" })).toContain("pals_recent");
     term.kill("SIGKILL");
     await t.hub.pals.stopAndWait();

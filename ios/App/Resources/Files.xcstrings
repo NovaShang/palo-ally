@@ -320,13 +320,13 @@
         }
       }
     },
-    "电脑上的文件" : {
+    "主机上的文件" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "File on the Computer"
+            "value" : "Files on the Host"
           }
         }
       }
@@ -474,13 +474,13 @@
         }
       }
     },
-    "Palo 的文件" : {
+    "助理的文件" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Palo's Files"
+            "value" : "Assistant's Files"
           }
         }
       }
@@ -572,24 +572,24 @@
         }
       }
     },
-    "文件在电脑上被改了" : {
+    "文件在主机上被改了" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The file changed on the computer"
+            "value" : "The file changed on the host"
           }
         }
       }
     },
-    "载入电脑上的版本" : {
+    "载入主机上的版本" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Load the Computer’s Version"
+            "value" : "Load the Host’s Version"
           }
         }
       }
@@ -748,13 +748,13 @@
         }
       }
     },
-    "电脑上的 PaloAlly 版本较旧，发不了这么大的文件。更新它以后再试。" : {
+    "主机上的 Palo 版本较旧，发不了这么大的文件。更新它以后再试。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PaloAlly on the computer is too old to send a file this big. Update it and try again."
+            "value" : "Palo on the host is too old to send a file this big. Update it and try again."
           }
         }
       }
@@ -792,24 +792,24 @@
         }
       }
     },
-    "文件还在电脑上，再打开时重新下载。" : {
+    "文件还在主机上，再打开时重新下载。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The files stay on the computer and download again when you open them."
+            "value" : "The files stay on the host and download again when you open them."
           }
         }
       }
     },
-    "打开过的电脑文件留在这台设备上，再打开不用重新下载。满了会先删最久没打开的。" : {
+    "打开过的主机文件留在这台设备上，再打开不用重新下载。满了会先删最久没打开的。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Computer files you open are kept on this device, so they open again without downloading. When space runs out, the ones opened longest ago go first."
+            "value" : "Host files you open are kept on this device, so they open again without downloading. When space runs out, the ones opened longest ago go first."
           }
         }
       }

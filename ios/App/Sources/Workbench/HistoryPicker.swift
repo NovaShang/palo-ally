@@ -127,14 +127,14 @@ struct HistoryPicker: View {
                     if let loadError {
                         line(String(localized: "没读到：\(loadError)"))
                     } else if !store.connection.isOnline {
-                        line(String(localized: "连上电脑以后才能看到。"))
+                        line(String(localized: "连上主机以后才能看到。"))
                     } else if store.earlierSupported == false {
-                        line(String(localized: "电脑上的 PaloAlly 还不能列出这些，更新以后再来看。"))
+                        line(String(localized: "主机上的 Palo 还不能列出这些，更新以后再来看。"))
                     } else {
                         ProgressView()
                     }
                 } else if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    line(String(localized: "还没有可以继续的会话。电脑上开着的 Claude Code 也会出现在这里。"))
+                    line(String(localized: "还没有可以继续的会话。主机上开着的 Claude Code 也会出现在这里。"))
                 } else {
                     line(String(localized: "没有找到「\(query.trimmingCharacters(in: .whitespacesAndNewlines))」"))
                 }

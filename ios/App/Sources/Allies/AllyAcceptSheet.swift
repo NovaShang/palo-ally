@@ -20,7 +20,6 @@ struct AllyAcceptSheet: View {
 
     private enum Phase: Equatable { case asking, working, added(AllyInfo), failed(String) }
     @State private var phase = Phase.asking
-    @State private var kind = AllyKind.family
     @State private var trust = AllyTrust.review
 
     private var invite: AllyInviteLink? { pending.parsed }
@@ -33,7 +32,7 @@ struct AllyAcceptSheet: View {
                     if let invite {
                         content(invite)
                     } else {
-                        problem(String(localized: "这个链接不完整"), String(localized: "请对方在 TA 的 PaloAlly 里重新点「添加」，再扫一次新的二维码。"))
+                        problem(String(localized: "这个链接不完整"), String(localized: "请对方在 TA 的 Palo 里重新点「添加」，再扫一次新的二维码。"))
                     }
                 }
                 .padding(.horizontal, 24)
@@ -41,7 +40,7 @@ struct AllyAcceptSheet: View {
                 .frame(maxWidth: 480)
                 .frame(maxWidth: .infinity)
             }
-            .navigationTitle("添加 Ally")
+            .navigationTitle("添加好友")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -97,7 +96,7 @@ struct AllyAcceptSheet: View {
     @ViewBuilder
     private func question(_ invite: AllyInviteLink) -> some View {
         VStack(spacing: 8) {
-            Text("加「\(label)」为 Ally？")
+            Text("加「\(label)」为好友？")
                 .font(.title3.weight(.semibold))
                 .multilineTextAlignment(.center)
             Text(Copy.spaced(String(localized: "加好以后，\(store.assistantName)和 TA 的助理可以互相传话、约时间，你也能直接跟 TA 说。")))
@@ -108,20 +107,6 @@ struct AllyAcceptSheet: View {
                 Text("加到「\(store.assistantName)」").font(.footnote).foregroundStyle(.secondary)
             }
         }
-
-        VStack(alignment: .leading, spacing: 8) {
-            Text("标为").font(.footnote).foregroundStyle(.secondary)
-            Picker("标为", selection: $kind) {
-                Text("家人朋友").tag(AllyKind.family)
-                Text("我的").tag(AllyKind.mine)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            Text(kind == .mine ? String(localized: "你自己的另一台电脑。") : String(localized: "别人的助理，比如家里人、朋友。"))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-        }
-        .disabled(phase == .working)
 
         VStack(alignment: .leading, spacing: 8) {
             Text(Copy.spaced(String(localized: "\(store.assistantName)怎么回 TA"))).font(.footnote).foregroundStyle(.secondary)
@@ -141,7 +126,7 @@ struct AllyAcceptSheet: View {
             Button {
                 Task { await accept(invite) }
             } label: {
-                Text(phase == .working ? String(localized: "正在加…") : String(localized: "加为 Ally")).frame(maxWidth: .infinity)
+                Text(phase == .working ? String(localized: "正在加…") : String(localized: "加为好友")).frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.capsule)
@@ -151,7 +136,7 @@ struct AllyAcceptSheet: View {
             if phase == .working {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("正在和对方的电脑互相认识，一般几秒钟…")
+                    Text("正在和对方的主机互相认识，一般几秒钟…")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -161,7 +146,7 @@ struct AllyAcceptSheet: View {
                     .foregroundStyle(.red)
                     .multilineTextAlignment(.center)
             } else if !store.connection.isOnline {
-                Text("还没连上你的电脑，连上就能加。")
+                Text("还没连上你的主机，连上就能加。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -186,10 +171,11 @@ struct AllyAcceptSheet: View {
         }
         phase = .working
         do {
-            if let ally = try await store.acceptAlly(link: invite.link, kind: kind, trust: trust) {
+            // 好友 are other people: the old 「我的」 isn't offered any more.
+            if let ally = try await store.acceptAlly(link: invite.link, kind: .family, trust: trust) {
                 withAnimation(.snappy) { phase = .added(ally) }
             } else {
-                phase = .failed(String(localized: "没加上：电脑没说加好了没有，等一下看看列表里有没有 TA。"))
+                phase = .failed(String(localized: "没加上：主机没说加好了没有，等一下看看列表里有没有 TA。"))
             }
         } catch {
             phase = .failed(String(localized: "没加上：\(Copy.error(error))"))

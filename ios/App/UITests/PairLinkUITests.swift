@@ -37,13 +37,13 @@ final class PairLinkUITests: XCTestCase {
 
     @MainActor
     private func confirmShows(in app: XCUIApplication) throws {
-        XCTAssertTrue(app.staticTexts["添加这台电脑？"].waitForExistence(timeout: 15), "no 「添加这台电脑？」")
+        XCTAssertTrue(app.staticTexts["添加这台主机？"].waitForExistence(timeout: 15), "no 「添加这台主机？」")
         XCTAssertTrue(app.buttons["添加"].exists, "no 添加")
         // Not now: the pairing screen goes too, nothing was paired. (The
         // dialog is a popover whose cancel is a tap outside it.)
         let notNow = app.buttons["不用"].firstMatch
         if notNow.isHittable { notNow.tap() } else { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.92)).tap() }
-        XCTAssertFalse(app.staticTexts["添加这台电脑？"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.staticTexts["添加这台主机？"].waitForExistence(timeout: 2))
         XCTAssertFalse(app.buttons["取消"].waitForExistence(timeout: 3), "the pairing screen stayed")
     }
 }

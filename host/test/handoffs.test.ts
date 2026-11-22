@@ -171,10 +171,10 @@ describe("following a handoff", () => {
     s.claude.session(200, "peer-sess", "builder", "/work/app", "waiting", { waitingFor: "input needed" });
     s.claude.write("/work/app", "peer-sess", [assistantTool("AskUserQuestion", "q9", { questions: [{ question: "发 v0.1.2 吗？" }] }, t0 + 2000)]);
     s.check();
-    expect(s.tasks.list()[0]).toMatchObject({ status: "needs_input", summary: "在电脑上等你：发 v0.1.2 吗？" });
+    expect(s.tasks.list()[0]).toMatchObject({ status: "needs_input", summary: "在主机上等你：发 v0.1.2 吗？" });
     expect(s.notes).toHaveLength(1);
     expect(s.notes[0]!.title).toBe("转交的事在等你回答");
-    expect(s.notes[0]!.body).toBe("「转交给 builder 的事」在 builder 那边等你回答，去那台电脑上看一下。");
+    expect(s.notes[0]!.body).toBe("「转交给 builder 的事」在 builder 那边等你回答，去那台主机上看一下。");
     s.check(); // same question: no second push
     expect(s.notes).toHaveLength(1);
   });

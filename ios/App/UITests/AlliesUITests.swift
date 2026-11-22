@@ -61,11 +61,11 @@ final class AlliesUITests: XCTestCase {
         XCTAssertEqual(app.sheets.count, 0)
         app.buttons["解除"].firstMatch.tap()
         // Back on the list, without them.
-        XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 10) || app.staticTexts["Allies"].exists, "not back on the list")
+        XCTAssertTrue(app.staticTexts["Pals"].waitForExistence(timeout: 10) || app.staticTexts["好友"].exists, "not back on the list")
         let lin = app.descendants(matching: .any)["row-ally-al-lin"]
         for _ in 0..<4 where !lin.exists { app.swipeUp() }
         XCTAssertTrue(lin.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Allies"].exists)
+        XCTAssertTrue(app.staticTexts["好友"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["row-ally-al-family"].exists)
     }
 
@@ -102,8 +102,8 @@ final class AlliesUITests: XCTestCase {
     }
 
     /// An invite opened from outside (`-pairLink` goes through the same
-    /// handler as the system Camera's open): confirm with 我的, then they're
-    /// on the list with that tag.
+    /// handler as the system Camera's open): confirm, then they're on the
+    /// list as 家人朋友 (there's no 「我的」 to pick any more).
     @MainActor
     func testAcceptingAnInviteAddsThemWithTheirTag() throws {
         var c = URLComponents()
@@ -118,20 +118,19 @@ final class AlliesUITests: XCTestCase {
             URLQueryItem(name: "exp", value: String(Int64(Date().timeIntervalSince1970 * 1000) + 600_000)),
         ]
         let app = launch(["-pairLink", c.url!.absoluteString])
-        XCTAssertTrue(app.staticTexts["加「小周的助理」为 Ally？"].waitForExistence(timeout: 15), "no confirm sheet")
-        app.buttons["我的"].tap()
-        app.buttons["加为 Ally"].tap()
+        XCTAssertTrue(app.staticTexts["加「小周的助理」为好友？"].waitForExistence(timeout: 15), "no confirm sheet")
+        app.buttons["加为好友"].tap()
         XCTAssertTrue(app.staticTexts["加好了"].waitForExistence(timeout: 15), "never said it was added")
         app.buttons["完成"].tap()
-        // Back to the list: they're under Allies.
+        // Back to the list: they're under 好友.
         app.navigationBars.buttons.element(boundBy: 0).tap()
         let row = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
                                                                        "row-ally-", "小周")).firstMatch
         // The list runs past the screen: the newest Ally is further down.
-        XCTAssertTrue(app.staticTexts["Allies"].waitForExistence(timeout: 10) || app.staticTexts["Pals"].exists, "not back on the list")
+        XCTAssertTrue(app.staticTexts["好友"].waitForExistence(timeout: 10) || app.staticTexts["Pals"].exists, "not back on the list")
         for _ in 0..<4 where !row.exists { app.swipeUp() }
         XCTAssertTrue(row.waitForExistence(timeout: 10), "not on the list")
-        XCTAssertTrue(row.label.contains("我的"), "tag missing: \(row.label)")
+        XCTAssertTrue(row.label.contains("家人朋友"), "tag missing: \(row.label)")
     }
 
     @MainActor

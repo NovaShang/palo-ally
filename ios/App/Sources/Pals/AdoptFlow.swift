@@ -82,7 +82,7 @@ struct OtherSessionRow: View {
                 .tint(.primary)
                 .disabled(!store.connection.isOnline)
                 .accessibilityIdentifier("adopt-\(session.id)")
-                .accessibilityHint("让 PaloAlly 接着跑它，在手机上跟它说话")
+                .accessibilityHint("让 Palo 接着跑它，在手机上跟它说话")
         }
     }
 

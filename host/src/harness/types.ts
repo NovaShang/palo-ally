@@ -263,7 +263,7 @@ export const SESSION_ALLOWED_TOOLS = [PALO_SEND_TOOL, ...["Artifact", "SendUserF
  * session uses ours. (SendMessage stays.) Claude Code's Artifact stays on
  * too (10-30): it is claude.ai's (a page published there with a link, data
  * it keeps, comments; claude.ai/artifact links read), not a copy of ours,
- * which keeps a result in the owner's 产出物库. Each tool's description says
+ * which keeps a result in the owner's 成果 (library). Each tool's description says
  * which to use.
  */
 export const SESSION_DISALLOWED = ["SendUserFile"];

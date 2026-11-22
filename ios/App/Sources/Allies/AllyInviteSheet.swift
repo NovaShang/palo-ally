@@ -43,7 +43,7 @@ struct AllyInviteSheet: View {
                                 }
                             }
                         }
-                        Text("对方扫了以后，在 TA 的 PaloAlly 里点一下确认，你们的助理就能互相传话、约时间了。")
+                        Text("对方扫了以后，在 TA 的 Palo 里点一下确认，你们的助理就能互相传话、约时间了。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -67,7 +67,7 @@ struct AllyInviteSheet: View {
                 .frame(maxWidth: 480)
                 .frame(maxWidth: .infinity)
             }
-            .navigationTitle("添加 Ally")
+            .navigationTitle("添加好友")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -129,7 +129,7 @@ struct AllyInviteSheet: View {
                 .foregroundStyle(.green)
             Text("加好了")
                 .font(.title3.weight(.semibold))
-            Text("\(ally.assistantLabel)已经在你的 Allies 里了。")
+            Text("\(ally.assistantLabel)已经是你的好友了。")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -141,7 +141,7 @@ struct AllyInviteSheet: View {
     private func expiryLine(now: Date) -> String {
         guard let invite, invite.expiresAt > 0 else {
             if loading { return String(localized: "正在生成…") }
-            return store.connection.isOnline ? " " : String(localized: "还没连上你的电脑，连上就生成")
+            return store.connection.isOnline ? " " : String(localized: "还没连上你的主机，连上就生成")
         }
         let left = Double(invite.expiresAt - now.epochMillis) / 1000
         if left <= 0 { return String(localized: "这个二维码过期了") }

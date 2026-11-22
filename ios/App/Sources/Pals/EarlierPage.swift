@@ -125,7 +125,7 @@ struct EarlierPage: View {
         if shown {
             Group {
                 if store.earlierSupported == false {
-                    line(String(localized: "电脑上的 PaloAlly 还不能列出这些，更新以后再来看。"))
+                    line(String(localized: "主机上的 Palo 还不能列出这些，更新以后再来看。"))
                 } else if store.earlierItems == nil {
                     if let loadError {
                         VStack(spacing: 12) {
@@ -136,7 +136,7 @@ struct EarlierPage: View {
                                 .tint(.primary)
                         }
                     } else if !store.connection.isOnline {
-                        line(String(localized: "连上电脑以后才能看到。"))
+                        line(String(localized: "连上主机以后才能看到。"))
                     } else {
                         ProgressView()
                     }

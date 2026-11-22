@@ -42,7 +42,7 @@ struct HelperProposalCard: View {
                         .foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    Text("开了以后，它是电脑上的一个后台会话，随时能停。")
+                    Text("开了以后，它是主机上的一个后台会话，随时能停。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
