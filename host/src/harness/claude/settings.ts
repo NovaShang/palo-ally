@@ -54,3 +54,40 @@ export function settingsEffort(model: string | undefined, cwd: string | undefine
   }
   return undefined;
 }
+
+/**
+ * The permission modes the owner can switch a session to (pals.setMode).
+ * Not bypassPermissions (it skips every check, and a process not started with
+ * it can't be switched into it) nor dontAsk (it refuses what isn't
+ * pre-approved, with no prompt to the phone); a session already in one of
+ * those still shows it.
+ */
+export const PAL_MODES = ["default", "auto", "acceptEdits", "plan"] as const;
+
+/** The context window of a model (its id carries "[1m]" when it's the long one). */
+export function contextWindowOf(model?: string): number {
+  return model && /\[1m\]/i.test(model) ? 1_000_000 : 200_000;
+}
+
+/**
+ * The window to measure a context against: what Claude Code reported, else
+ * the guess from the model's id; a context already past the guess means the
+ * long window (a model whose id doesn't say so).
+ */
+export function contextWindowFor(model: string | undefined, tokens: number | undefined, reported?: number): number {
+  if (reported && reported > 0) return reported;
+  const guess = contextWindowOf(model);
+  return (tokens ?? 0) > guess ? 1_000_000 : guess;
+}
+
+/** Claude Code's own default permission mode for the owner's sessions. */
+export function ownerMode(claudeDir: string): string {
+  try {
+    const s = JSON.parse(readFileSync(join(claudeDir, "settings.json"), "utf8"));
+    const m = s?.permissions?.defaultMode;
+    if (typeof m === "string" && m) return m;
+  } catch {
+    /* none */
+  }
+  return "default";
+}

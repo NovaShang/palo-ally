@@ -1,5 +1,5 @@
 import { t } from "./i18n/index.ts";
-import { forkSession as sdkForkSession, getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
+import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { homedir } from "node:os";
@@ -8,7 +8,7 @@ import type { ApprovalManager } from "./approvals.ts";
 import type { Audit } from "./audit.ts";
 import type { Bus } from "./bus.ts";
 import type { ClaudeCli } from "./ccCli.ts";
-import { type RawSessionMessage, type RegistryEntry, readRegistry } from "./ccSessions.ts";
+import type { RawSessionMessage, RegistryEntry } from "./ccSessions.ts";
 import { SpendMeter } from "./ccSpend.ts";
 import type { ChatLog } from "./chat.ts";
 import type { Paths, Settings } from "./config.ts";
@@ -22,8 +22,11 @@ import { PalLauncher, type PalLaunch } from "./palLauncher.ts";
 import { pagePalMessages, toPalMessages } from "./palHistory.ts";
 import { pageFromTail } from "./transcriptTail.ts";
 import { transcriptPath } from "./handoffs.ts";
+import { ownerMode } from "./harness/claude/settings.ts";
+
+export { ownerMode };
 import type { ForkSession } from "./rewind.ts";
-import { RECENT_MAX, type RecentEntry, RecentSessions, type RecentSource, folderMatch, ownRoots, palNameFor, palTitle, recentWire, sdkRename, sdkSource, shortName } from "./palRecent.ts";
+import { RECENT_MAX, type RecentEntry, RecentSessions, type RecentSource, folderMatch, ownRoots, palNameFor, palTitle, recentWire, shortName } from "./palRecent.ts";
 import { HeldElsewhere, type Holder, PAL_MODES, type PalRecord, type PalTask, type PastPalTask, PalSession, peerWrap } from "./palSession.ts";
 import type { QuestionManager } from "./questions.ts";
 import type { Router } from "./router.ts";
@@ -179,6 +182,8 @@ interface Adoptee {
 }
 
 export interface PalsDeps {
+  /** The harness its sessions run on (Claude Code): its sessions, transcripts and settings. */
+  harness: import("./harness/types.ts").Harness;
   /** A Pal's turn went through (true) or failed for want of Claude Code's login (false). */
   onAuth?: (pal: { id: string; name: string }, ok: boolean) => void;
   paths: Paths;
@@ -199,6 +204,7 @@ export interface PalsDeps {
   helperFailed?: (why: string) => void;
   helperApp?: () => string | undefined;
   launchMode?: () => "auto" | "helper" | "direct";
+  /** (Tests: the harness' parts, which the Hub gives the harness. Pals reads them through d.harness.) */
   readMessages?: (sessionId: string, dir: string) => Promise<RawSessionMessage[]>;
   /** A workspace exists (pals.create's workspaceId); without it no workspace does. */
   workspaceExists?: (id: string) => boolean;
@@ -269,19 +275,6 @@ const TIMING: PalsTiming = {
   sleepCheckMs: 30_000,
 };
 
-const shq = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
-
-/** Claude Code's own default permission mode for the owner's sessions. */
-export function ownerMode(claudeDir: string): string {
-  try {
-    const s = JSON.parse(readFileSync(join(claudeDir, "settings.json"), "utf8"));
-    const m = s?.permissions?.defaultMode;
-    if (typeof m === "string" && m) return m;
-  } catch {
-    /* none */
-  }
-  return "default";
-}
 
 interface Waiting {
   sessionId: string;
@@ -335,7 +328,7 @@ export class Pals {
         rec.note = undefined;
       }
     }
-    this.source = d.recentSource ?? sdkSource(d.claudeDir);
+    this.source = d.harness.sessions.recent;
     this.recentList = new RecentSessions({
       claudeDir: d.claudeDir,
       roots: () => ownRoots(d.paths.root),
@@ -360,7 +353,7 @@ export class Pals {
   }
 
   private registry(): RegistryEntry[] {
-    return this.d.registry?.() ?? readRegistry(join(this.d.claudeDir, "sessions"));
+    return this.d.harness.sessions.live();
   }
 
   private alive(pid: number): boolean {
@@ -456,7 +449,7 @@ export class Pals {
   }
 
   private get forkSession(): ForkSession {
-    return this.d.forkSession ?? ((sid, o) => sdkForkSession(sid, o));
+    return async (sid, o) => ({ sessionId: await this.d.harness.rewind.copy({ sessionId: sid, cwd: o.dir }, o.upToMessageId, o.title ?? "") });
   }
 
   // ---------------- lifecycle ----------------
@@ -893,7 +886,7 @@ export class Pals {
         const unique = this.uniqueName(auto, [], pal);
         // Claude Code's own title follows, so a terminal and /resume say the same (and the next start doesn't read the placeholder back).
         if (!(await pal.renameLive(unique)) && existsSync(pal.transcript)) {
-          await (this.d.renameSession ?? sdkRename(this.d.claudeDir))(pal.rec.sessionId, unique, pal.rec.cwd).catch((e) => this.log(`couldn't retitle ${pal.rec.name}: ${e instanceof Error ? e.message : e}`));
+          await this.d.harness.sessions.rename(pal.rec.sessionId, unique, pal.rec.cwd).catch((e) => this.log(`couldn't retitle ${pal.rec.name}: ${e instanceof Error ? e.message : e}`));
         }
         if (this.pals.has(pal.id)) this.setName(pal, unique, "auto");
         return;
@@ -939,7 +932,7 @@ export class Pals {
     const unique = this.uniqueName(want, [], pal);
     if (!(await pal.renameLive(unique))) {
       // No process: into its transcript, where Claude Code reads it (none yet: it starts under it).
-      if (existsSync(pal.transcript)) await (this.d.renameSession ?? sdkRename(this.d.claudeDir))(pal.rec.sessionId, unique, pal.rec.cwd);
+      if (existsSync(pal.transcript)) await this.d.harness.sessions.rename(pal.rec.sessionId, unique, pal.rec.cwd);
     }
     this.setName(pal, unique, by);
     this.emitNow();
@@ -1059,7 +1052,7 @@ export class Pals {
       createdBy: "owner",
       createdAt: now,
       lastUsedAt: now,
-      permissionMode: this.d.palMode?.() ?? ownerMode(this.d.claudeDir),
+      permissionMode: this.d.palMode?.() ?? this.d.harness.settings.defaultPermissionMode(),
       ...(model ? { model } : {}),
     };
     const pal = this.add(rec);
@@ -1181,7 +1174,7 @@ export class Pals {
     this.drop(pal, true);
     this.d.audit.log("pal.released", { pal: pal.id, session: sid ?? "", name: pal.rec.name, by, ...(pending ? { rewound: pending.from } : {}) });
     this.emitNow();
-    return { resumeCommand: sid ? `cd ${shq(pal.rec.cwd)} && claude --resume ${sid}` : `cd ${shq(pal.rec.cwd)} && claude` };
+    return { resumeCommand: this.d.harness.sessions.resumeCommand(pal.rec.cwd, sid) };
   }
 
   /** pals.remove: out of the Pals; its transcript stays where Claude Code keeps it. */
@@ -1236,7 +1229,7 @@ export class Pals {
       createdBy: "owner",
       createdAt: now,
       lastUsedAt: now,
-      permissionMode: this.d.palMode?.() ?? ownerMode(this.d.claudeDir),
+      permissionMode: this.d.palMode?.() ?? this.d.harness.settings.defaultPermissionMode(),
       ...(given ? {} : { autoNamed: true }),
       ...(workspaceId ? { workspaceId } : {}),
       ...(model ? { model } : {}),
@@ -1879,7 +1872,7 @@ export class Pals {
       createdBy: "palo",
       createdAt: now,
       lastUsedAt: now,
-      permissionMode: this.d.palMode?.() ?? ownerMode(this.d.claudeDir),
+      permissionMode: this.d.palMode?.() ?? this.d.harness.settings.defaultPermissionMode(),
       duty: o.duty,
       ...(model ? { model } : {}),
     };

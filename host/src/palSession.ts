@@ -19,6 +19,11 @@ import { type StallRecovery, type StallTarget, transcriptHas } from "./stallWatc
 import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
 import { stripTldrMarker } from "./tldr.ts";
 import { newId, sleep, truncate } from "./util.ts";
+import { PAL_MODES, contextWindowFor, contextWindowOf } from "./harness/claude/settings.ts";
+import { peerWrap, startError } from "./harness/claude/process.ts";
+
+// (Claude Code's own: harness/claude/; kept here for the modules and tests that import them from here.)
+export { PAL_MODES, contextWindowFor, contextWindowOf, peerWrap, startError };
 
 // One Pal (docs/pals-prd.md §4, §7): one of the owner's Claude Code
 // sessions, run by the host itself by resuming its transcript. What the owner
@@ -84,31 +89,6 @@ export interface PastPalTask extends PalTask {
 
 const PAST_TASKS = 30;
 
-/**
- * The permission modes the owner can switch a session to (pals.setMode).
- * Not bypassPermissions (it skips every check, and a process not started with
- * it can't be switched into it) nor dontAsk (it refuses what isn't
- * pre-approved, with no prompt to the phone); a session already in one of
- * those still shows it.
- */
-export const PAL_MODES = ["default", "auto", "acceptEdits", "plan"] as const;
-
-/** The context window of a model (its id carries "[1m]" when it's the long one). */
-export function contextWindowOf(model?: string): number {
-  return model && /\[1m\]/i.test(model) ? 1_000_000 : 200_000;
-}
-
-/**
- * The window to measure a context against: what Claude Code reported, else
- * the guess from the model's id; a context already past the guess means the
- * long window (a model whose id doesn't say so).
- */
-export function contextWindowFor(model: string | undefined, tokens: number | undefined, reported?: number): number {
-  if (reported && reported > 0) return reported;
-  const guess = contextWindowOf(model);
-  return (tokens ?? 0) > guess ? 1_000_000 : guess;
-}
-
 /** Another process holding a session's transcript. */
 export interface Holder {
   pid: number;
@@ -168,17 +148,6 @@ const STOP_SETTLE_MS = 250; // a stopped turn not ended by Claude Code by then i
 
 /** What a Pal is told after the watchdog restarted it mid-turn. */
 export const stallContinue = (): string => tr("stall.continue");
-
-/**
- * Words from another session (the assistant's pal_send), as Claude Code shows a
- * SendMessage. `from` is the sender's name, not a socket: Claude Code tells a
- * session to reply by copying `from`, and the assistant's socket changes every
- * time the host restarts, so only its name keeps working.
- */
-export function peerWrap(name: string, text: string): string {
-  const n = name.replace(/"/g, "");
-  return `<cross-session-message from="${n}" from-name="${n}">\n${text}\n</cross-session-message>`;
-}
 
 export class PalSession {
   private proc: MainSession | null = null;
@@ -1421,15 +1390,3 @@ export class PalSession {
   }
 }
 
-// Claude Code's reason, in a line the owner can read.
-export function startError(raw: string): string {
-  const s = String(raw ?? "");
-  if (/running in the background|session_held_by_background/i.test(s)) return tr("pals.errBackground");
-  if (/No conversation found|not found.*session|session.*not found/i.test(s)) return tr("pals.noTranscript");
-  if (/not logged in|authentication|401/i.test(s)) return tr("pals.errNotLoggedIn");
-  const line = s
-    .split("\n")
-    .map((l) => l.trim())
-    .find((l) => l && !/^at /.test(l));
-  return truncate(line?.replace(/^Error:\s*/, "") ?? tr("pals.errNoStart"), 160);
-}

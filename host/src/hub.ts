@@ -36,7 +36,7 @@ import { PowerWatcher, type PowerReading, readPower } from "./power.ts";
 import { Updater, type UpdaterDeps } from "./update.ts";
 import { type Usage, UsageLedger } from "./usage.ts";
 import { randomUUID } from "node:crypto";
-import { forkSession as sdkForkSession } from "@anthropic-ai/claude-agent-sdk";
+import { ClaudeHarness } from "./harness/claude/index.ts";
 import { type ForkSession, rewindNotFound, beforeCompaction, chainTo, findEntry, forkedUuids, leafOf, matchOwnerEntry, readTranscript } from "./rewind.ts";
 import { contextWindowFor } from "./palSession.ts";
 import { appendJsonl, readJson, writeJson } from "./util.ts";
@@ -119,6 +119,8 @@ export class Hub {
   private readonly wechat: WechatChannel | null;
   private readonly log: (s: string) => void;
   private readonly claudeDir: string;
+  /** The harness the assistant and every agent run on (Claude Code). */
+  readonly harness: ClaudeHarness;
   private readonly forkSession: ForkSession;
   private clients = new Map<string, { conn: ClientConn; off: () => void }>();
   /** Which connections' apps are in front right now: no pushes while one is (presence.ts). */
@@ -229,8 +231,18 @@ export class Hub {
       () => {}, // the process stays up once started (conversation.ts)
     );
     const claudeDir = deps.sessions?.claudeDir ?? deps.claudeDir ?? claudeConfigDir();
+    // The harness (Claude Code): its processes, its transcripts, its sessions and settings.
+    this.harness = new ClaudeHarness({
+      driver: deps.driver,
+      configDir: claudeDir,
+      forkSession: deps.forkSession ?? deps.pals?.forkSession,
+      readMessages: deps.pals?.readMessages,
+      recentSource: deps.pals?.recentSource,
+      renameSession: deps.pals?.renameSession,
+      registry: deps.pals?.registry,
+    });
     this.claudeDir = claudeDir;
-    this.forkSession = deps.forkSession ?? ((sid, o) => sdkForkSession(sid, o));
+    this.forkSession = this.harness.forkSession;
     this.conversation = new Conversation({
       paths: this.paths,
       config: () => this.config,
@@ -391,6 +403,7 @@ export class Hub {
     // Pals: Claude Code sessions the host runs itself (docs/pals-prd.md).
     this.pals = new Pals({
       paths: this.paths,
+      harness: this.harness,
       claudeDir: deps.sessions?.claudeDir ?? deps.claudeDir ?? claudeConfigDir(),
       bus: this.bus,
       chat: this.chat,
