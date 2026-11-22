@@ -8,7 +8,6 @@ import type { WechatChannel, WechatReplyTarget } from "./channels/types.ts";
 import type { ChatLog } from "./chat.ts";
 import type { Config, Paths } from "./config.ts";
 import { ACTIVITY, activityBackground, allyToolDenied, budgetNotice, describeActivity, friendlyError } from "./copy.ts";
-import { isAuthFailure } from "./auth.ts";
 import { behaviorPrompt } from "./home.ts";
 import type { Harness, HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption, SlashCommandInfo, ToolGate, ToolHandlers } from "./harness/types.ts";
 import type { Router } from "./router.ts";
@@ -633,7 +632,7 @@ export class Conversation {
     if (turn) {
       this.d.metric({ type: "turn", origin: turn.origin, proactive: turn.proactive, costUsd, contextTokens, error });
       // The login ran out: said once for everything (auth.ts), not after each turn.
-      const noLogin = !!error && isAuthFailure(error, errorCategory);
+      const noLogin = !!error && this.d.harness.auth.isFailure(error, errorCategory);
       if (error && !noLogin) chat.add({ role: "system", kind: "notice", text: friendlyError(error, errorCategory), channel: "system" });
       if (noLogin) {
         const owner = answered.flatMap((m) => (m.text ? [m.text] : []));

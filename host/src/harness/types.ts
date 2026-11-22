@@ -448,8 +448,28 @@ export interface MemoryLocator {
   readonly projectFiles: readonly string[];
 }
 
+/** The login process as AuthWatch drives it: lines out, a code in, an exit code. */
+export interface LoginProcess {
+  onLine(f: (line: string) => void): void;
+  onExit(f: (code: number) => void): void;
+  write(line: string): void;
+  kill(): void;
+}
+
+export interface HarnessAuth {
+  /** What a failed turn or probe said means the login ran out. */
+  isFailure(text?: string, category?: string): boolean;
+  /** Whether it says it is logged in now. */
+  loggedIn(): Promise<boolean>;
+  /** When its stored login last changed (never the secret), or null. */
+  stamp(): Promise<string | null>;
+  /** Its own sign-in, driven for the phone (a link out, a code back); `dir` is where it may write what it needs. */
+  spawnLogin(dir: string): LoginProcess;
+}
+
 export interface Harness {
   readonly id: string;
+  readonly auth: HarnessAuth;
   /** Starts its processes and runs one-shot probes. */
   readonly driver: HarnessDriver;
   readonly history: HistoryStore;

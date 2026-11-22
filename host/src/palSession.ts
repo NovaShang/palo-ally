@@ -5,7 +5,6 @@ import type { ApprovalManager } from "./approvals.ts";
 import { askOwner } from "./ownerCards.ts";
 import { firstLine } from "./ccSessions.ts";
 import { ACTIVITY, describeActivity, friendlyError } from "./copy.ts";
-import { isAuthFailure } from "./auth.ts";
 import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type Harness, type RewindChain, type SessionRef, type DeliveryToolHandlers, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
 import type { MediaStore } from "./media.ts";
 import { type PalLaunch, isHelperFailure, makeSpawner } from "./palLauncher.ts";
@@ -1174,7 +1173,7 @@ export class PalSession {
         this.turnTools.clear();
         if (e.isError && !stopped && !e.startupFailure) this.notice(friendlyError(e.text, e.errorCategory));
         if (!e.isError) this.d.onAuth?.(this, true);
-        else if (!stopped && isAuthFailure(e.text, e.errorCategory)) this.d.onAuth?.(this, false);
+        else if (!stopped && this.d.harness.auth.isFailure(e.text, e.errorCategory)) this.d.onAuth?.(this, false);
         this.noteCost(e.costUsd, e.totalCostUsd);
         // (our /compact turn's result says nothing about the context: the compact boundary did)
         if (!this.compacting && !e.isError && Number.isFinite(e.contextTokens) && e.contextTokens > 0) this.rec.contextTokens = e.contextTokens;

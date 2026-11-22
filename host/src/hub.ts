@@ -1,5 +1,5 @@
 import { Allies, type AlliesDeps } from "./allies.ts";
-import { AuthWatch, type AuthDeps, type Missed, claudeLoggedIn, credentialsStamp } from "./auth.ts";
+import { AuthWatch, type AuthDeps, type Missed } from "./auth.ts";
 import { ApprovalManager } from "./approvals.ts";
 import { ArtifactLibrary } from "./artifacts.ts";
 import { Audit } from "./audit.ts";
@@ -199,8 +199,9 @@ export class Hub {
       changed: () => this.emitStatus(),
       audit: (type, data) => this.audit.log(type, data),
       log: (s) => this.log(s),
-      stamp: credentialsStamp,
-      loggedIn: claudeLoggedIn,
+      stamp: () => this.harness.auth.stamp(),
+      loggedIn: () => this.harness.auth.loggedIn(),
+      spawnLogin: () => this.harness.auth.spawnLogin(this.paths.state),
       ...deps.auth,
     });
     this.pending = new PendingStore(this.paths.pending, this.bus, this.audit, () => this.config.settings.assistantName || PALO_NAME);
