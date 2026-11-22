@@ -106,6 +106,7 @@ public struct AgentStatusLine: Equatable, Sendable {
             return AgentStatusLine(kind: kind, text: note)
         }
         if dot == .working, pal.tasksRunning > 0 { return AgentStatusLine(kind: kind, text: loc("\(pal.tasksRunning) 件事在做")) }
+        if dot == .idle, pal.status == .asleep { return AgentStatusLine(kind: kind, text: loc("睡着")) }
         return AgentStatusLine(kind: kind, text: dot.word)
     }
 
