@@ -206,8 +206,15 @@ describe("the assistant's turns", () => {
     await t.hub.idle();
     expect(t.hub.chat.since(before)).toEqual([]);
     expect(t.pusher.pushes).toHaveLength(1);
+    // a goal's run: its words are the goal's line, and a card titled by it
+    const goal = t.hub.watches.add({ title: "房租", instruction: "看看房租", at: ["08:30"] }, "user");
+    t.hub.conversation.enqueue({ text: "[定时] 一", origin: "schedule", proactive: true, label: "房租", watchId: goal.id });
+    await t.hub.idle();
+    expect(t.hub.watches.get(goal.id)!.progress).toBe("今天没事。");
+    expect(t.hub.chat.recent(1)[0]!.card).toEqual({ title: "房租", goalId: goal.id });
 
     // the owner's words folded into a host-initiated turn
+    const pushed = t.pusher.pushes.length;
     const s = t.driver.last!;
     t.driver.script = async () => new Promise<void>(() => {});
     t.hub.conversation.enqueue({ text: "[定时] 三", origin: "schedule", proactive: true });
@@ -217,7 +224,7 @@ describe("the assistant's turns", () => {
     s.opts.onEvent(result(s.sessionId, [s.sentUuids.at(-2)!, owner.uuid!]));
     expect(t.hub.chat.recent(1)[0]).toMatchObject({ text: "一起答了", channel: "cli" });
     expect(t.hub.chat.recent(1)[0]!.proactive).toBeFalsy();
-    expect(t.pusher.pushes).toHaveLength(1);
+    expect(t.pusher.pushes).toHaveLength(pushed);
   });
 
   test("an Ally's turn the harness queued behind another: the gate stays until a result consumes its message; then the owner's held words go, as their own turn", async () => {
