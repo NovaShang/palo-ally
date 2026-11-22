@@ -204,6 +204,8 @@ public enum PendingChoice: Hashable, Sendable {
     /// 忽略, and 放回 / 撤回.
     case ignore
     case reopen
+    /// 以后再说: onto the 待办 of the folder it came from (`AppStore.canPutOff`).
+    case later
 }
 
 /// One button of a decision: its words, what it decides, and whether it's

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { Paths } from "./config.ts";
-import { getLang, type Lang } from "./i18n/index.ts";
+import { getLang, tIn, type Lang } from "./i18n/index.ts";
 import { ensureDir } from "./util.ts";
 
 // The behavior pack (PRD §7.3 行为包): how the main agent should use the
@@ -167,7 +167,7 @@ export const languageLine = (lang: Lang) =>
 
 /** The behavior pack for one language, language line first, {{chatLog}} still unfilled. */
 export function behaviorText(lang: Lang): string {
-  return `${languageLine(lang)}\n\n${BEHAVIORS[lang]}`;
+  return `${languageLine(lang)}\n\n${BEHAVIORS[lang]}\n\n${tIn(lang, "backlog.prompt")}`;
 }
 
 // The behavior pack with this install's paths filled in, in the owner's language.

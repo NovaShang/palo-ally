@@ -63,6 +63,8 @@ public actor DemoHost {
     /// The owner's order of the sessions in no workspace (workbench.order.set).
     var manualSessionOrder: [String] = []
     var paneTabs: [String: TabsState] = [:]
+    /// 待办, by folder (DemoHost+Backlog.swift).
+    var backlogs: [String: Backlog] = DemoHost.seededBacklogs(now: Date().epochMillis)
     /// A Pal's turn being written, to stop (`pals.stop`).
     var palTurns: [String: Task<Void, Never>] = [:]
     /// Sessions asked to be adopted that wait to be quit in their terminal.
@@ -1184,6 +1186,7 @@ public actor DemoHost {
             return result
         default:
             if let r = try await dispatchPending(method, p) { return r }
+            if let r = try dispatchBacklog(method, p) { return r }
             if let r = try dispatchMedia(method, p) { return r }
             if let r = try dispatchDevices(method, p) { return r }
             if let r = try dispatchFiles(method, p) { return r }

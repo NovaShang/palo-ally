@@ -38,6 +38,7 @@ export const RPC_METHODS = [
   "pair.invite", "device.list", "device.remove",
   "auth.login.start", "auth.login.code", "auth.login.cancel",
   "pending.list", "pending.update", "pending.answer", "pending.surface",
+  "backlog.list", "backlog.add", "backlog.move", "backlog.assign", "backlog.start", "backlog.done", "backlog.remove",
   "files.list", "files.read", "files.write", "files.search", "files.resolve", "files.watch", "files.unwatch", "files.folders.list", "files.folders.browse", "files.folders.add", "files.folders.remove",
 ] as const;
 
@@ -45,7 +46,7 @@ export const RPC_EVENTS = [
   "chat.message", "chat.delta", "chat.rewound", "task.updated", "approval.updated", "question.updated", "watch.updated",
   "artifact.updated", "settings.updated", "status", "commands.updated",
   "suggestions.updated", "ally.updated", "ally.entry", "sessions.updated", "pals.updated",
-  "workspaces.updated", "workbench.updated", "files.changed", "pending.updated",
+  "workspaces.updated", "workbench.updated", "files.changed", "pending.updated", "backlog.updated",
 ] as const;
 
 // Admin methods are reachable only on the local unix socket (the owner's own
@@ -189,9 +190,31 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     // 等你的事 (pending.ts): the owner's list of what to decide.
     case "pending.list":
       return { items: hub.pending.list() };
-    // ignore / reopen (撤回, 放回) / snooze
+    // ignore / reopen (撤回, 放回) / snooze; later (以后再说): into its folder's 待办
     case "pending.update":
+      if (p.action === "later") return { item: hub.laterPending(String(p.id ?? ""), ctx.channel) };
       return { item: hub.pending.update(String(p.id ?? ""), String(p.action ?? ""), ctx.channel) };
+    // 待办 (backlog.ts): a folder's list (`pal`: that agent's folder; `folder`; neither: the assistant's).
+    case "backlog.list":
+      return { backlog: hub.backlog.list(hub.backlogFolder(p)) };
+    case "backlog.add": {
+      const r = hub.backlog.add(hub.backlogFolder(p), { text: String(p.text ?? ""), note: typeof p.note === "string" ? p.note : undefined, top: p.top === true }, ctx.channel);
+      return { item: r.item, backlog: r.backlog };
+    }
+    // `to`: its place in the queue, 0 at the top.
+    case "backlog.move":
+      return { backlog: hub.backlog.move(hub.backlogFolder(p), String(p.id ?? ""), Number(p.to ?? 0), ctx.channel) };
+    // `agent`: one of the folder's agents, or null for anyone.
+    case "backlog.assign":
+      return { backlog: hub.backlog.assign(hub.backlogFolder(p), String(p.id ?? ""), typeof p.agent === "string" && p.agent ? p.agent : null, ctx.channel) };
+    // Being done now, by `agent` (it was sent to it as the owner's words).
+    case "backlog.start":
+      return { backlog: hub.backlog.start(hub.backlogFolder(p), String(p.id ?? ""), typeof p.agent === "string" && p.agent ? p.agent : undefined, ctx.channel) };
+    // `done: false` puts it back in the queue.
+    case "backlog.done":
+      return { backlog: hub.backlog.done(hub.backlogFolder(p), String(p.id ?? ""), p.done !== false, ctx.channel).backlog };
+    case "backlog.remove":
+      return { backlog: hub.backlog.remove(hub.backlogFolder(p), String(p.id ?? ""), ctx.channel) };
     // An option picked, or the owner's own words: a blocking question or
     // prompt is answered as such; otherwise it goes to where the item came from.
     case "pending.answer":

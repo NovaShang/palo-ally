@@ -236,6 +236,35 @@ private struct LayoutStressTest: ViewModifier {
                             do { try await store.decide(item.subject, choice) } catch { debugLog("[nav] decide-all \(item.id): \(error)") }
                         }
                         debugLog("[nav] decide-all: \(store.openPending.count) open")
+                    // 待办: `backlog` its tab in the pane; `backlog-move:<id>:<to>` an item dragged to a
+                    // place in the queue (of the page's agent, or the assistant's); `backlog-later:<pending id>`
+                    // 以后再说 on an item of 等你的事; `backlog-next:start|skip|dismiss` 下一件's 开始 / 换一件 / ✕.
+                    case "backlog": w.openInPane { $0.openBacklog($1) }
+                    case _ where a.hasPrefix("backlog-"):
+                        let parts = a.split(separator: ":").map(String.init)
+                        guard let store = w.store else { break }
+                        let pal: String? = if case .pal(let id)? = w.selection { id } else { nil }
+                        switch parts[0] {
+                        case "backlog-move" where parts.count == 3:
+                            if let item = store.backlog(forPal: pal)?.items.first(where: { $0.id == parts[1] }), let to = Int(parts[2]) {
+                                try? await store.moveBacklog(item, to: to, forPal: pal)
+                            }
+                        case "backlog-later" where parts.count == 2:
+                            if let item = store.pendingItem(id: parts[1]) { try? await store.decide(item, .later) }
+                        case "backlog-next" where parts.count == 2:
+                            if let pal {
+                                switch parts[1] {
+                                case "skip": store.skipNextBacklog(forPal: pal)
+                                case "start":
+                                    if let item = store.nextBacklog(forPal: pal) {
+                                        store.startBacklog(item, by: pal, words: String(localized: "开始做待办里的这件", table: "Files"))
+                                    }
+                                default: store.dismissNextBacklog(forPal: pal)
+                                }
+                            }
+                        default: break
+                        }
+                        debugLog("[nav] \(a): \(store.backlog(forPal: pal)?.items.map { "\($0.state.rawValue.prefix(1)):\($0.id)" }.joined(separator: " ") ?? "-")")
                     case "pending-agenda":
                         if let store = w.store, let first = store.openPending.first { w.showPendingSheet = false; w.goThrough(from: first, in: store) }
                     case _ where a.hasPrefix("pending-"):

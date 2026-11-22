@@ -4,8 +4,8 @@ import SwiftUI
 
 /// The pane at the right of a session, a workspace or Palo (workbench-prd §7):
 /// a row of tabs on glass, and the tab's page under it. The first tabs are
-/// pinned, 等你 (with its count), 成果 and 文件; files and web pages open as
-/// tabs after them. Which tabs are open, which shows, and whether the pane is
+/// pinned, 等你 (with its count), 成果, 待办 and 文件; files and web pages
+/// open as tabs after them. Which tabs are open, which shows, and whether the pane is
 /// open is kept on the computer per `key` (`PaneTabsKey`), so every device
 /// shows the same one; whether it is open is each window's own once it has
 /// opened or closed it (`WindowModel.editPane`).
@@ -191,6 +191,9 @@ struct RightPane: View {
                 .environment(\.libraryOpensTab) { id in model.editPane(key) { $0.openArtifact(key, id: id) } }
         case PaneTab.pending:
             PendingPaneView(filter: pendingFilter)
+        case PaneTab.backlog:
+            BacklogView(palID: RightPaneScope.palID(of: scope))
+                .id(RightPaneScope.palID(of: scope) ?? "palo")
         case PaneTab.artifact:
             let index = state.active
             ArtifactDetailView(artifactID: tab.path ?? "", inPane: true, close: { requestClose(index) })
@@ -536,6 +539,7 @@ private struct RightPaneTabBar: View {
         case PaneTab.artifact: "square.stack"
         case PaneTab.web: "globe"
         case PaneTab.pending: "tray"
+        case PaneTab.backlog: "checklist"
         default: "questionmark.square"
         }
     }
@@ -688,6 +692,7 @@ private struct TabTitle: View {
         case PaneTab.preview: Text(verbatim: ((tab.path ?? "") as NSString).lastPathComponent)
         case PaneTab.artifact: ArtifactTabTitle(id: tab.path ?? "")
         case PaneTab.pending: Text(String(localized: "等你", table: "Files"))
+        case PaneTab.backlog: Text(String(localized: "待办", table: "Files"))
         case PaneTab.web:
             if let page { LiveTitle(page: page, fallback: tab.url ?? "") } else { Text(verbatim: WebAddress.label(for: tab.url ?? "")) }
         default: Text(verbatim: tab.kind)

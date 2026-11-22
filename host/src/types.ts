@@ -517,3 +517,27 @@ export interface TabsState {
   open: boolean;
   updatedAt: number;
 }
+
+// 待办 (backlog.ts): what the owner wants done and hasn't got to yet, one
+// list per folder, shared by the agents working in it. `pal`: who is doing
+// it (doing), or who it's meant for (queued); `palName` its name now.
+export type BacklogState = "queued" | "doing" | "done";
+
+export interface BacklogItem {
+  id: string;
+  text: string; // one line: what to do
+  note?: string; // a few lines more
+  state: BacklogState;
+  pal?: string;
+  palName?: string;
+  addedAt?: number;
+  doneAt?: number;
+}
+
+// A folder's list, in order: being done, the queue (top first), the done ones.
+export interface Backlog {
+  folder: string; // absolute
+  name: string; // the folder's name
+  assistant?: boolean; // the assistant's own folder
+  items: BacklogItem[];
+}

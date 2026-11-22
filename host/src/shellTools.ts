@@ -14,6 +14,7 @@ import type { MediaStore } from "./media.ts";
 import type { Allies } from "./allies.ts";
 import type { Pals } from "./pals.ts";
 import { pendingLines, type PendingStore } from "./pending.ts";
+import { backlogFolder, backlogLines, type BacklogStore } from "./backlog.ts";
 import { join, resolve } from "node:path";
 import { mimeOf } from "./artifacts.ts";
 import type { Attachment, Channel, ChatMessage, PendingSource, Watch } from "./types.ts";
@@ -46,6 +47,8 @@ export interface ShellToolDeps {
   pending?: PendingStore;
   /** Who an item the assistant adds comes from now: itself, or a brief's run (its goal). */
   pendingOrigin?: () => { source: PendingSource; watchId?: string };
+  /** 待办: the folders' lists (its own folder's is `cwd`'s). */
+  backlog?: BacklogStore;
 }
 
 // The tools the shell gives the main agent (the in-process `paloally` MCP
@@ -160,7 +163,7 @@ export interface SessionSink {
   notice: (text: string) => ChatMessage;
 }
 
-export type DeliveryDeps = Pick<ShellToolDeps, "artifacts" | "chat" | "router" | "audit" | "wechat" | "media" | "pals" | "ownerChannel" | "cwd" | "pending" | "pendingOrigin"> & {
+export type DeliveryDeps = Pick<ShellToolDeps, "artifacts" | "chat" | "router" | "audit" | "wechat" | "media" | "pals" | "ownerChannel" | "cwd" | "pending" | "pendingOrigin" | "backlog"> & {
   /** Set for a session's tools; absent for the assistant's. */
   session?: SessionSink;
 };
@@ -170,6 +173,7 @@ export function makeDeliveryTools(d: DeliveryDeps): DeliveryToolHandlers {
   const source = session?.id ?? "palo";
   const pushTitle = () => (session ? { title: session.name() } : {});
   const post = (tool: string, m: Omit<ChatMessage, "seq" | "id" | "ts">): ChatMessage => (session ? session.card(m, tool) : d.chat.add(m));
+  const by = session ? `pal:${session.id}` : "assistant";
   return {
     // Modelled on Claude Code's own SendUserFile (same parameters, plus
     // `temporary`): each file is kept in the library unless the assistant is
@@ -276,6 +280,34 @@ export function makeDeliveryTools(d: DeliveryDeps): DeliveryToolHandlers {
       try {
         const item = store.resolve(String(id ?? "").trim(), String(conclusion ?? ""), session ? `pal:${session.id}` : "assistant");
         return t("pending.tool.resolved", { conclusion: item.conclusion ?? "", rest: restText(store) });
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    },
+    // 待办: the list of the folder it works in, unless another is named.
+    backlog_add: async ({ text, note, folder }) => {
+      const store = d.backlog;
+      if (!store) return t("backlog.err.none");
+      const f = backlogFolder(folder?.trim() || d.cwd);
+      try {
+        const r = store.add(f, { text, note }, by);
+        return t("backlog.tool.added", { n: r.n, id: r.item.id, folder: f });
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    },
+    backlog_list: async ({ folder }) => {
+      const store = d.backlog;
+      if (!store) return t("backlog.err.none");
+      const b = store.list(backlogFolder(folder?.trim() || d.cwd));
+      return b.items.length ? t("backlog.tool.list", { folder: b.folder, lines: backlogLines(b) }) : t("backlog.tool.none", { folder: b.folder });
+    },
+    backlog_done: async ({ id, folder }) => {
+      const store = d.backlog;
+      if (!store) return t("backlog.err.none");
+      try {
+        const r = store.done(backlogFolder(folder?.trim() || d.cwd), String(id ?? "").trim(), true, by);
+        return t("backlog.tool.done", { text: r.item.text, n: r.backlog.items.filter((i) => i.state === "queued").length });
       } catch (e) {
         return e instanceof Error ? e.message : String(e);
       }

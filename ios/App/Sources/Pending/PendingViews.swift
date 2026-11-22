@@ -282,7 +282,8 @@ struct PendingPaneView: View {
 /// One item, as the same card the conversation shows (PendingCard): who ·
 /// what to decide · its background, its options (a card's own buttons for
 /// a prompt, a proposal or a draft), 其他… for the owner's words; then
-/// 聊这件 and 忽略. Handled, one gray line with 放回.
+/// 聊这件, 以后再说 (when it can wait in a 待办) and 忽略. Handled, one gray
+/// line with 放回.
 struct PendingRow: View {
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
@@ -322,6 +323,7 @@ struct PendingRow: View {
                 .buttonBorderShape(.capsule)
                 .accessibilityIdentifier("pending-talk-\(item.id)")
                 Spacer(minLength: 0)
+                PendingLaterButton(item: item) { decide(.later) }
                 Button(String(localized: "忽略")) { decide(.ignore) }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)

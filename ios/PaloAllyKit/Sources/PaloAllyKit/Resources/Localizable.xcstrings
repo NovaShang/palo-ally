@@ -1305,6 +1305,17 @@
           }
         }
       }
+    },
+    "放进待办了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moved to the backlog"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

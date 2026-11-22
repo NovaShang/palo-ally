@@ -102,6 +102,10 @@ extension AppStore {
             guard let item else { return }
             try await updatePending(item, action: choice == .ignore ? "ignore" : "reopen")
             return
+        case .later:
+            guard let item else { return }
+            try await laterPending(item, conclusion: Self.conclusion(of: .later, item: item))
+            return
         default: break
         }
         let before = item
@@ -174,7 +178,7 @@ extension AppStore {
         case .answers(let a): return a.isEmpty ? nil : a.sorted { $0.key < $1.key }.map(\.value).joined(separator: "、")
         case .allow, .deny, .accept, .decline:
             return item.choices.first { $0.choice == choice || (choice == .allow(remember: true) && $0.choice == .allow(remember: false)) }?.title
-        case .sendEdited, .ignore, .reopen: return nil
+        case .sendEdited, .ignore, .reopen, .later: return nil
         }
     }
 
@@ -188,6 +192,7 @@ extension AppStore {
         case .accept: return loc("好")
         case .decline: return loc("不用")
         case .sendEdited: return loc("发了")
+        case .later: return loc("放进待办了")
         default: return ""
         }
     }

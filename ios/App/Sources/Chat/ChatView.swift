@@ -240,6 +240,8 @@ struct ChatView: View {
             VStack(spacing: 6) {
             // 等你的事: the way in, where the thumb is (the assistant's conversation).
             if isPalo { PendingCapsule() } else if let id = store.palID { PendingCapsule(palID: id, inTile: inTile) }
+            // 下一件: an agent free again, its folder's 待办 has something for it.
+            if !isPalo, let id = store.palID { NextUpBar(palID: id) { scroll.willSend() } }
             if let aboveComposer { aboveComposer }
             ComposerView(draftBox: draftBox ?? ownDraft, intake: intake) { text, images, files, how in
                 switch how {

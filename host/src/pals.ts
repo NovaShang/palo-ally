@@ -80,7 +80,7 @@ function endedItem(e: EndedSession): EarlierItem {
 
 // What a Pal is told about where it runs, on top of Claude Code's own prompt.
 export const PAL_PROMPT = (paloName: string) =>
-  t("pals.prompt", { paloName });
+  `${t("pals.prompt", { paloName })}\n\n${t("backlog.prompt")}`;
 
 interface PalFile {
   pals: PalRecord[];
@@ -250,6 +250,8 @@ export interface PalsDeps {
   artifacts?: ArtifactLibrary;
   /** 等你的事: a session's add_pending puts its items here. */
   pending?: import("./pending.ts").PendingStore;
+  /** 待办: a session's backlog tools work on its folder's list. */
+  backlog?: import("./backlog.ts").BacklogStore;
   timing?: Partial<PalsTiming>;
   now?: () => number;
   log?: (s: string) => void;
@@ -443,6 +445,7 @@ export class Pals {
       pals: this,
       ownerChannel: () => "app",
       ...(this.d.pending ? { pending: this.d.pending } : {}),
+      ...(this.d.backlog ? { backlog: this.d.backlog } : {}),
       cwd: pal.rec.cwd,
       session: { id: pal.id, name: () => this.shownName(pal), card: (m, tool) => pal.card(m, tool), notice: (text) => pal.pushNotice(text) },
     });

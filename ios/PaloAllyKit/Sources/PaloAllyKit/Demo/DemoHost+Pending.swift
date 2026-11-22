@@ -167,6 +167,7 @@ extension DemoHost {
             switch p["action"]?.stringValue {
             case "ignore": item.status = .ignored; item.resolvedAt = Date().epochMillis
             case "snooze": item.status = .snoozed; item.resolvedAt = Date().epochMillis
+            case "later": item = try putOff(item)
             case "reopen":
                 guard !item.isCard || item.isOpen else { throw DemoError(message: "这个提问已经结束，放不回去了") }
                 item.status = .open; item.resolvedAt = nil; item.conclusion = nil

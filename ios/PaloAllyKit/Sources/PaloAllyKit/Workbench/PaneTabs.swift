@@ -13,8 +13,8 @@ public enum PaneTabsKey {
 
     /// The tabs at the head that can't be closed, for every key: 等你 (what
     /// waits on the owner: everything in the assistant's pane, an agent's own
-    /// in its), 成果, then 文件.
-    public static let pinnedKinds = [PaneTab.pending, PaneTab.library, PaneTab.files]
+    /// in its), 成果, 待办 (the folder's list), then 文件.
+    public static let pinnedKinds = [PaneTab.pending, PaneTab.library, PaneTab.backlog, PaneTab.files]
     /// How many tabs are pinned.
     public static var pinnedCount: Int { pinnedKinds.count }
 }
@@ -28,6 +28,8 @@ extension PaneTab {
     public static let artifact = "artifact"
     /// 等你的事: the owner's list of what to decide (pinned, first).
     public static let pending = "pending"
+    /// 待办: the list of the folder the pane is for (pinned).
+    public static let backlog = "backlog"
 
     /// A file by its absolute path (tabs from before: relative to the pane's files).
     public static func previewTab(_ path: String) -> PaneTab { PaneTab(kind: preview, path: path) }
@@ -41,10 +43,12 @@ extension PaneTab {
 }
 
 extension TabsState {
-    /// The first tabs are the pinned ones (等你, 成果, 文件), one of each, and
-    /// `active` points at a tab. States written when fewer were pinned (an
-    /// 等你 opened as a tab of its own among them) are mended, and `active`
-    /// keeps pointing at the same tab.
+    /// The first tabs are the pinned ones (等你, 成果, 待办, 文件), one of each,
+    /// and `active` points at a tab. States written when fewer were pinned
+    /// (only 成果; 成果 and 文件 with an 等你 opened as a tab of its own among
+    /// the rest; 等你, 成果 and 文件; 成果, 待办 and 文件) are mended the same
+    /// way: every pinned kind is taken out wherever it was, the pinned ones put
+    /// in front in order, and `active` keeps pointing at the same tab.
     public func normalized(key: String) -> TabsState {
         let pinned = PaneTabsKey.pinnedKinds
         let rest = tabs.enumerated().filter { !pinned.contains($0.element.kind) }
@@ -95,6 +99,11 @@ extension TabsState {
     /// A file as a tab (its absolute path); the same path reuses its tab.
     public func openingPreview(path: String, key: String) -> TabsState {
         opening(.previewTab(path), key: key) { $0.kind == PaneTab.preview && $0.path == path }
+    }
+
+    /// 待办 (pinned).
+    public func openingBacklog(key: String) -> TabsState {
+        opening(PaneTab(kind: PaneTab.backlog), key: key) { $0.kind == PaneTab.backlog }
     }
 
     /// 等你的事 (pinned).
@@ -220,6 +229,7 @@ public final class PaneTabsHub {
 
     public func openFiles(_ key: String) { update(key) { $0.openingFiles(key: key) } }
     public func openLibrary(_ key: String) { update(key) { $0.openingLibrary(key: key) } }
+    public func openBacklog(_ key: String) { update(key) { $0.openingBacklog(key: key) } }
     public func openPreview(_ key: String, path: String) { update(key) { $0.openingPreview(path: path, key: key) } }
     public func openWeb(_ key: String, url: String) { update(key) { $0.openingWeb(url: url, key: key) } }
     public func openArtifact(_ key: String, id: String) { update(key) { $0.openingArtifact(id: id, key: key) } }
