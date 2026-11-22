@@ -321,6 +321,10 @@ export interface HistoryStore {
   /** The stall watchdog: did the session take the message sent under `uuid`; a signature of how far it has written. */
   took(ref: SessionRef, uuid: string): boolean;
   growth(ref: SessionRef): string;
+  /** How big it is where it is kept (null: not there). */
+  size(ref: SessionRef): number | null;
+  /** What the session spent on `day` (YYYY-MM-DD in `tz`), its subagents' too. */
+  spentOn(ref: SessionRef, day: string, tz: string): number;
   /** Where it is kept: for logs and diagnostics only, never parsed above harness/. */
   locate(ref: SessionRef): string;
 }
@@ -388,11 +392,31 @@ export interface LiveSession {
   nameSource?: string;
 }
 
+/** One of its conversations as its own list has it (Claude Code: the SDK's SDKSessionInfo). */
+export interface SessionInfo {
+  sessionId: string;
+  summary: string;
+  lastModified: number;
+  fileSize?: number;
+  customTitle?: string;
+  firstPrompt?: string;
+  gitBranch?: string;
+  cwd?: string;
+  tag?: string;
+  createdAt?: number;
+}
+
+/** Where the sessions come from (the SDK; tests give their own). */
+export interface RecentSource {
+  list(o: { limit: number; includeProgrammatic: boolean }): Promise<SessionInfo[]>;
+  info(sessionId: string, dir?: string): Promise<SessionInfo | undefined>;
+}
+
 export interface SessionDirectory {
   /** The harness' own live sessions on this computer. */
   live(): LiveSession[];
   /** Its ended conversations (listing, one's info) and retitling one without a process. */
-  recent: import("../palRecent.ts").RecentSource;
+  recent: RecentSource;
   rename(sessionId: string, title: string, cwd: string): Promise<void>;
   /** The line that resumes a session in a terminal (no session: a fresh one in the folder). */
   resumeCommand(cwd: string, sessionId: string | null): string;

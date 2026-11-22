@@ -1,9 +1,8 @@
 import { t } from "./i18n/index.ts";
-import { getSessionInfo, listSessions, renameSession, type SDKSessionInfo } from "@anthropic-ai/claude-agent-sdk";
+import type { RecentSource, SessionInfo as SDKSessionInfo, SessionRef } from "./harness/types.ts";
 import { realpathSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
-import { claudeConfigDir, transcriptPath } from "./handoffs.ts";
 import type { RecentSession } from "./types.ts";
 import { expandHome, within } from "./util.ts";
 
@@ -24,11 +23,9 @@ const CACHE_MS = 5_000;
 const SEARCH_SCAN = 5_000; // a search looks at every transcript (as many as this)
 const SEARCH_CACHE_MS = 60_000;
 
-/** Where the sessions come from (the SDK; tests give their own). */
-export interface RecentSource {
-  list(o: { limit: number; includeProgrammatic: boolean }): Promise<SDKSessionInfo[]>;
-  info(sessionId: string, dir?: string): Promise<SDKSessionInfo | undefined>;
-}
+// (Where the sessions come from: the harness' own list, harness/types.ts.)
+export type { RecentSource } from "./harness/types.ts";
+export { sdkRename, sdkSource } from "./harness/claude/directory.ts";
 
 /** A listed session, with its custom title (a Pal's name comes from it). */
 export interface RecentEntry extends RecentSession {
@@ -37,7 +34,8 @@ export interface RecentEntry extends RecentSession {
 }
 
 export interface RecentDeps {
-  claudeDir: string;
+  /** How big a session's stored conversation is (null: none where the harness keeps that folder's). */
+  stored: (ref: SessionRef) => number | null;
   /** PaloAlly's own folders (its root, Palo's home, probes). */
   roots: () => string[];
   /** Pals the owner took out of the list (released or removed). */
@@ -45,24 +43,6 @@ export interface RecentDeps {
   source?: RecentSource;
   now?: () => number;
   log?: (s: string) => void;
-}
-
-// The SDK reads Claude Code's own folder (CLAUDE_CONFIG_DIR or ~/.claude);
-// for any other (a test's), there's nothing it could list.
-/** Retitles a session that has no process (the SDK's renameSession): only in this computer's own Claude Code folder. */
-export function sdkRename(claudeDir: string): (sessionId: string, title: string, dir: string) => Promise<void> {
-  return async (sid, title, dir) => {
-    if (resolve(claudeDir) !== resolve(claudeConfigDir())) return;
-    await renameSession(sid, title, { dir });
-  };
-}
-
-export function sdkSource(claudeDir: string): RecentSource {
-  const same = () => resolve(claudeDir) === resolve(claudeConfigDir());
-  return {
-    list: async (o) => (same() ? listSessions(o) : []),
-    info: async (sid, dir) => (same() ? getSessionInfo(sid, dir ? { dir } : {}) : undefined),
-  };
 }
 
 function realOr(p: string): string {
@@ -146,7 +126,7 @@ export class RecentSessions {
   private readonly source: RecentSource;
 
   constructor(private d: RecentDeps) {
-    this.source = d.source ?? sdkSource(d.claudeDir);
+    this.source = d.source!;
   }
 
   private now(): number {
@@ -229,14 +209,8 @@ export class RecentSessions {
     if (!dir) return t("pals.folderGone", { cwd });
     // Where a Pal resumes it from: elsewhere (a worktree's, a moved folder's)
     // it would start afresh instead.
-    let size = 0;
-    try {
-      const st = statSync(transcriptPath(this.d.claudeDir, cwd, i.sessionId));
-      if (!st.isFile()) return t("pals.noTranscript");
-      size = st.size;
-    } catch {
-      return t("pals.noTranscript");
-    }
+    const size = this.d.stored({ sessionId: i.sessionId, cwd });
+    if (size === null) return t("pals.noTranscript");
     const custom = oneLine(i.customTitle);
     const summary = oneLine(i.summary);
     const generated = summary && summary !== custom && summary !== oneLine(i.firstPrompt) ? summary : "";

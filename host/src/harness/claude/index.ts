@@ -1,7 +1,8 @@
 import { forkSession as sdkForkSession, getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { type RecentSource, sdkRename, sdkSource } from "../../palRecent.ts";
+import { sdkRename, sdkSource } from "./directory.ts";
+import { SpendMeter } from "./spend.ts";
 import type { ChatMessage } from "../../types.ts";
 import type {
   Harness,
@@ -13,6 +14,7 @@ import type {
   LiveSession,
   MemoryLocator,
   PendingRewindPoint,
+  RecentSource,
   RewindChain,
   RewindPoint,
   Rewinder,
@@ -91,6 +93,7 @@ export class ClaudeHarness implements Harness {
 
   private makeHistory(): HistoryStore {
     const path = (ref: SessionRef) => this.transcript(ref);
+    const meter = new SpendMeter(this.configDir);
     const read = this.o.readMessages ?? ((sid: string, dir: string) => getSessionMessages(sid, { dir }) as Promise<RawSessionMessage[]>);
     return {
       exists: (ref) => existsSync(path(ref)),
@@ -130,6 +133,15 @@ export class ClaudeHarness implements Harness {
       },
       took: (ref, uuid) => transcriptHas(path(ref), uuid),
       growth: (ref) => growth(path(ref)),
+      size: (ref) => {
+        try {
+          const st = statSync(path(ref));
+          return st.isFile() ? st.size : null;
+        } catch {
+          return null;
+        }
+      },
+      spentOn: (ref, day, tz) => meter.spentOn(ref.cwd, ref.sessionId, day, tz),
       locate: (ref) => path(ref),
     };
   }

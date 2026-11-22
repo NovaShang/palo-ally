@@ -8,7 +8,6 @@ import type { Audit } from "./audit.ts";
 import type { Bus } from "./bus.ts";
 import type { ClaudeCli } from "./ccCli.ts";
 import type { RawSessionMessage, RegistryEntry } from "./ccSessions.ts";
-import { SpendMeter } from "./ccSpend.ts";
 import type { ChatLog } from "./chat.ts";
 import type { Paths, Settings } from "./config.ts";
 import type { DeliveryToolHandlers, HarnessDriver, ModelOption } from "./harness/types.ts";
@@ -287,7 +286,6 @@ export class Pals {
   private pals = new Map<string, PalSession>();
   private waiting = new Map<string, Waiting>();
   private readonly timing: PalsTiming;
-  private readonly meter: SpendMeter;
   private readonly launcher: PalLauncher;
   private readonly recentList: RecentSessions;
   private readonly source: RecentSource;
@@ -310,7 +308,6 @@ export class Pals {
 
   constructor(private d: PalsDeps) {
     this.timing = { ...TIMING, ...d.timing };
-    this.meter = new SpendMeter(d.claudeDir);
     this.launcher = new PalLauncher({ root: d.paths.root, helperApp: d.helperApp, mode: d.launchMode, log: (s) => this.log(s) });
     const saved = readJson<Partial<PalFile>>(d.paths.pals, {});
     const list = <T>(v: T[] | undefined): T[] => (Array.isArray(v) ? v : []);
@@ -327,7 +324,7 @@ export class Pals {
     }
     this.source = d.harness.sessions.recent;
     this.recentList = new RecentSessions({
-      claudeDir: d.claudeDir,
+      stored: (ref) => d.harness.history.size(ref),
       roots: () => ownRoots(d.paths.root),
       formerPals: () => [...this.data.former, ...this.data.ended],
       source: this.source,
@@ -1673,7 +1670,7 @@ export class Pals {
 
   spentToday(pal: PalSession): number {
     const tz = this.d.settings().timezone;
-    return this.meter.spentOn(pal.rec.cwd, pal.rec.sessionId, this.today(), tz);
+    return this.d.harness.history.spentOn(pal.ref, this.today(), tz);
   }
 
   // ---------------- the assistant opens a Pal (docs/pals-prd.md §6) ----------------
