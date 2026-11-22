@@ -750,7 +750,7 @@ describe("asleep and awake (§12)", () => {
     await waitFor(() => statusOf(t, pal.id) === "idle");
     await tick(400);
     expect(statusOf(t, pal.id)).toBe("idle");
-    (t.hub.pals.get(pal.id) as any).onEvent({ type: "task_notification", taskId: "bg1", status: "completed", summary: "好了" });
+    t.hub.pals.get(pal.id)!.onHarnessEvent({ type: "task_notification", taskId: "bg1", status: "completed", summary: "好了" });
     await waitFor(() => statusOf(t, pal.id) === "asleep", 2_000);
     expect(t.driver.pals).toHaveLength(3);
     await t.hub.pals.stopAndWait();

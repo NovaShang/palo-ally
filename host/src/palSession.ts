@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import type { ApprovalManager } from "./approvals.ts";
 import { askOwner } from "./ownerCards.ts";
 import { firstLine } from "./ccSessions.ts";
-import { ACTIVITY, describeActivity, friendlyError } from "./copy.ts";
+import { ACTIVITY, friendlyError } from "./copy.ts";
 import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type Harness, type RewindChain, type SessionRef, type DeliveryToolHandlers, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
 import type { MediaStore } from "./media.ts";
 import { type PalLaunch, makeSpawner } from "./palLauncher.ts";
@@ -15,7 +15,7 @@ import type { StallRecovery, StallTarget } from "./stallWatch.ts";
 import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
 import { stripTldrMarker } from "./tldr.ts";
 import { newId, sleep, truncate } from "./util.ts";
-import { AgentSession } from "./agent/session.ts";
+import { AgentSession, type ResultEvent } from "./agent/session.ts";
 import { AGENT_FLAGS } from "./agent/flags.ts";
 import { TranscriptSink } from "./agent/outputSink.ts";
 import { HeldElsewhere, type Holder, type OpenContext, ProcessHost } from "./agent/processHost.ts";
@@ -130,14 +130,6 @@ export const stallContinue = (): string => tr("stall.continue");
 // brought back with backoff, never two writers, put to sleep; its words out
 // as events, its history its transcript, its tasks in its record.
 export class PalSession extends AgentSession<{ text: string; from?: string; images?: ImageInput[] }, RecordTasks, TranscriptSink> {
-  private turnOpen = false;
-  private workSince = 0; // when it last went from idle to busy: how long the turn that ends ran
-  private turnTools = new Set<string>(); // its own turn's open tool calls: none outlives the turn's end
-  private interrupted = false;
-  private windingDown = false; // ended here after 停止: what's left of that turn doesn't make it busy again
-  private turnEndWaiters: (() => void)[] = [];
-  private replyTexts = new Map<string, string>(); // a reply's text so far, by its id (several blocks join)
-  private emitted = new Set<string>(); // ids already sent to the app
   private calls: { name: string; id: string }[] = []; // its card tools' calls (tool_use ids) waiting for their handler
   private follower: { start(): void; poke(): void; stop(): void } | null = null;
   // A fork's entries copied from the session it was forked from: history, not news.
@@ -221,15 +213,6 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
     return this.host.proc;
   }
 
-  /** How long the work that just ended ran: from when it went busy (0 if never). */
-  workedMs(): number {
-    return this.workSince ? Math.max(0, this.d.now() - this.workSince) : 0;
-  }
-
-  get busy(): boolean {
-    return this.turnOpen || this.pending.size > 0;
-  }
-
   /** Put to sleep: no process (its record is kept); being put to sleep counts. */
   get asleep(): boolean {
     return this.rec.status === "asleep" && !this.host.up && !this.host.starting;
@@ -248,7 +231,7 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
    */
   idleSince(): number | null {
     if (!this.running || this.host.starting || this.host.sleeping) return null;
-    if (this.turnOpen || this.windingDown || this.pending.size || this.queuedSends || this.openTools.size || this.taskView.background) return null;
+    if (this.current || this.windingDown || this.pending.size || this.queuedSends || this.openTools.size || this.taskView.background) return null;
     if (this.pendingCards() > 0) return null;
     return Math.max(this.lastEventAt, this.rec.lastUsedAt, this.host.upAt);
   }
@@ -265,6 +248,11 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
 
   pendingCards(): number {
     return this.d.approvals.listPending().filter((a) => this.mine(a.source)).length + this.d.questions.listPending().filter((q) => this.mine(q.source)).length;
+  }
+
+  /** A card of its own waits on the owner. */
+  waitingOnOwner(): boolean {
+    return this.pendingCards() > 0;
   }
 
   status(): PalStatus {
@@ -500,7 +488,7 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
       paloSend: async (text) => this.d.toPalo(this, text),
       ...(this.d.tools?.(this) ? { sessionTools: this.d.tools(this)! } : {}),
       onEvent: (e) => {
-        if (proc === this.proc) this.onEvent(e);
+        if (proc === this.proc) this.onHarnessEvent(e);
       },
       onExit: ctx.onExit,
       stderr: ctx.stderr,
@@ -525,19 +513,10 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
     this.reportedMode = undefined;
     this.follower?.stop();
     this.follower = null;
-    this.closeStream();
     const wasBusy = this.busy;
-    this.turnOpen = false;
-    this.pending.clear();
-    this.openTools.clear();
-    this.turnTools.clear();
-    // what was still running ends with its process
-    this.taskView.processEnded();
+    this.processDown();
     this.compacting = false;
     this.wakeCost = false;
-    this.activity = "";
-    this.windingDown = false;
-    for (const w of this.turnEndWaiters.splice(0)) w();
     this.dropCards(why);
     if (wasBusy && !closing) this.notice(tr("pals.interrupted"));
   }
@@ -614,7 +593,7 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
    * ids, so the app shows them once); a turn it was in is asked to go on.
    */
   async recoverStall(): Promise<StallRecovery> {
-    const inTurn = this.turnOpen || this.pending.size > 0;
+    const inTurn = this.busy;
     const pending = this.pending.entries();
     await this.shutdown();
     // Nothing writes its transcript now: what's in it was taken.
@@ -729,10 +708,11 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
     const proc = this.proc;
     if (!this.busy || !proc) return;
     this.interrupted = true;
-    const ended = new Promise<void>((r) => this.turnEndWaiters.push(r));
+    const ended = this.turnEnds();
     void proc.interrupt();
     await Promise.race([ended, sleep(STOP_SETTLE_MS)]);
     if (this.interrupted && this.busy && proc === this.proc) {
+      this.pending.clear();
       this.endTurn();
       this.windingDown = true;
     }
@@ -778,31 +758,6 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
     this.chat({ id: newId("m_"), role: "system", kind: "notice", text, channel: "system" });
   }
 
-  private beginTurn(): void {
-    if (this.turnOpen || this.windingDown) return;
-    if (!this.busy) this.workSince = this.d.now();
-    this.turnOpen = true;
-    this.activity = "";
-    this.touch();
-  }
-
-  private endTurn(): void {
-    this.closeStream();
-    this.turnOpen = false;
-    this.pending.clear();
-    this.interrupted = false;
-    this.activity = "";
-    for (const w of this.turnEndWaiters.splice(0)) w();
-    this.touch();
-  }
-
-  // A reply cut off mid-stream still gets its final message, so the app
-  // doesn't keep a half-written bubble open.
-  private closeStream(): void {
-    const s = this.stream.take();
-    if (s && s.text.trim() && !this.replyTexts.has(s.id)) this.chat({ id: s.id, role: "assistant", kind: "text", text: s.text });
-  }
-
   // The mode its process says it runs in. Claude Code may run in another than
   // the one asked for (auto needs a model that has it), and leaves plan mode
   // when its plan is approved: then that's the one it wakes in next time too.
@@ -821,13 +776,16 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
     this.d.changed();
   }
 
-  // A stopped turn winding down doesn't say what it's doing.
-  protected override activityHeld(): boolean {
-    return this.windingDown;
+  protected override touched(): void {
+    this.touch();
   }
 
-  private onEvent(e: HarnessEvent): void {
-    this.lastEventAt = this.d.now();
+  protected override now(): number {
+    return this.d.now();
+  }
+
+  // What an agent keeps of the harness' events besides its turns (agent/session.ts).
+  protected override sessionEvent(e: HarnessEvent): void {
     switch (e.type) {
       case "effort":
         if (e.level !== this.rec.appliedEffort) {
@@ -850,51 +808,8 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
           this.d.save();
         }
         if (e.permissionMode) this.noteMode(e.permissionMode);
-        this.windingDown = false; // a new turn
-        this.beginTurn();
         // A turn it started by itself is often another session's message: show it.
         setTimeout(() => this.follower?.poke(), 300).unref?.();
-        break;
-      case "text_delta": {
-        this.beginTurn();
-        const id = e.messageId ?? this.stream.id ?? newId("m_");
-        if (id !== this.stream.id) {
-          this.closeStream();
-          this.stream.open(id);
-          // a second text block of the same reply goes on after a blank line
-          if (this.replyTexts.has(id)) this.out.delta(id, "\n\n");
-        }
-        this.stream.append(e.text);
-        this.out.delta(id, e.text);
-        this.setActivity(ACTIVITY.reply);
-        break;
-      }
-      case "assistant_text": {
-        if (e.parentToolUseId) break;
-        this.beginTurn();
-        const id = e.messageId ?? this.stream.id ?? newId("m_");
-        const before = this.replyTexts.get(id);
-        const text = before ? `${before}\n\n${e.text}` : e.text;
-        this.replyTexts.set(id, text);
-        if (this.replyTexts.size > 50) this.replyTexts.delete(this.replyTexts.keys().next().value!);
-        this.emitted.add(id);
-        this.chat({ id, role: "assistant", kind: "text", text });
-        if (id === this.stream.id) this.stream.take();
-        this.lastLine = firstLine(e.text) || this.lastLine;
-        this.touch();
-        break;
-      }
-      case "tool_result":
-        this.openTools.delete(e.toolUseId);
-        this.turnTools.delete(e.toolUseId);
-        this.taskView.onEvent(e);
-        break;
-      case "background_tasks":
-      case "task_started":
-      case "task_progress":
-      case "task_backgrounded":
-      case "task_notification":
-        if (this.taskView.onEvent(e)) this.touch();
         break;
       case "compact":
         this.rec.lastCompactAt = this.d.now();
@@ -905,55 +820,49 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
         break;
       case "tool_start":
       case "tool_use":
-        if (e.type === "tool_use") this.openTools.set(e.id, e.name);
         if (e.type === "tool_use" && CARD_TOOLS.has(e.name)) this.calls.push({ name: e.name, id: e.id });
         if (this.calls.length > 20) this.calls.shift();
         if (e.parentToolUseId) break;
-        if (e.type === "tool_use") this.turnTools.add(e.id);
-        this.beginTurn();
         // Its words to the assistant show in its own conversation, as it said them.
         if (e.type === "tool_use" && e.name === PALO_SEND_TOOL && typeof e.input?.text === "string" && e.input.text.trim()) {
           this.emitted.add(e.id);
           this.chat({ id: e.id, role: "assistant", kind: "text", text: e.input.text.trim() });
         }
-        this.setActivity(describeActivity(e.name));
         break;
-      case "result": {
-        const stopped = this.interrupted || this.windingDown; // its error is the stop, not news
-        this.windingDown = false;
-        this.pending.consume(e.consumedUuids ?? this.pending.uuids());
-        // its own tool calls end with the turn (a stopped one may not say so)
-        for (const id of this.turnTools) this.openTools.delete(id);
-        this.turnTools.clear();
-        if (e.isError && !stopped && !e.startupFailure) this.notice(friendlyError(e.text, e.errorCategory));
-        if (!e.isError) this.d.onAuth?.(this, true);
-        else if (!stopped && this.d.harness.auth.isFailure(e.text, e.errorCategory)) this.d.onAuth?.(this, false);
-        this.noteCost(e.costUsd, e.totalCostUsd);
-        // (our /compact turn's result says nothing about the context: the compact boundary did)
-        if (!this.compacting && !e.isError && Number.isFinite(e.contextTokens) && e.contextTokens > 0) this.rec.contextTokens = e.contextTokens;
-        if (e.contextWindow) this.rec.contextWindow = e.contextWindow;
-        this.compacting = false;
-        this.rec.lastUsedAt = this.d.now();
-        if (this.pending.size) {
-          this.closeStream();
-          this.turnOpen = false;
-          this.touch();
-        } else {
-          // A turn that really ended (not stopped, not failed): the owner has something to look at.
-          if (!stopped && !e.isError) {
-            this.rec.finishedAt = this.d.now();
-            this.d.save();
-          }
-          this.endTurn();
-        }
-        this.follower?.poke();
-        this.d.onTurnEnd(this, !this.pending.size && !stopped && !e.isError);
-        break;
-      }
       case "error":
         this.d.log(`pal ${this.rec.name}: ${e.message}`);
         break;
     }
+  }
+
+  // Its last words are its line in the list.
+  protected override said(_turn: unknown, text: string): void {
+    this.lastLine = firstLine(text) || this.lastLine;
+    this.touch();
+  }
+
+  protected override resultIn(e: ResultEvent, _turn: unknown, stopped: boolean): void {
+    // (a stopped turn's error is the stop, not news)
+    if (e.isError && !stopped && !e.startupFailure) this.notice(friendlyError(e.text, e.errorCategory));
+    if (!e.isError) this.d.onAuth?.(this, true);
+    else if (!stopped && this.d.harness.auth.isFailure(e.text, e.errorCategory)) this.d.onAuth?.(this, false);
+    this.noteCost(e.costUsd, e.totalCostUsd);
+    // (our /compact turn's result says nothing about the context: the compact boundary did)
+    if (!this.compacting && !e.isError && Number.isFinite(e.contextTokens) && e.contextTokens > 0) this.rec.contextTokens = e.contextTokens;
+    if (e.contextWindow) this.rec.contextWindow = e.contextWindow;
+    this.compacting = false;
+    this.rec.lastUsedAt = this.d.now();
+  }
+
+  protected override resultDone(e: ResultEvent, stopped: boolean): void {
+    const finished = !this.pending.size && !stopped && !e.isError;
+    // A turn that really ended (not stopped, not failed): the owner has something to look at.
+    if (finished) {
+      this.rec.finishedAt = this.d.now();
+      this.d.save();
+    }
+    this.follower?.poke();
+    this.d.onTurnEnd(this, finished);
   }
 
   // A turn's cost: Claude Code's running total less what it was before. A

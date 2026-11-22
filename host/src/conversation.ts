@@ -7,7 +7,7 @@ import type { Audit } from "./audit.ts";
 import type { WechatChannel, WechatReplyTarget } from "./channels/types.ts";
 import type { ChatLog } from "./chat.ts";
 import type { Config, Paths } from "./config.ts";
-import { ACTIVITY, activityBackground, budgetNotice, describeActivity, friendlyError } from "./copy.ts";
+import { budgetNotice, friendlyError } from "./copy.ts";
 import { behaviorPrompt } from "./home.ts";
 import type { Harness, HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
 import type { Router } from "./router.ts";
@@ -20,31 +20,20 @@ import type { UsageLedger } from "./usage.ts";
 import { appendJsonl, truncate } from "./util.ts";
 import { ChatLogSink } from "./agent/outputSink.ts";
 import { TrackerTasks } from "./agent/taskProjection.ts";
-import { AgentSession } from "./agent/session.ts";
+import { AgentSession, type ResultEvent } from "./agent/session.ts";
 import { ASSISTANT_FLAGS } from "./agent/flags.ts";
 import { AllyTurn } from "./agent/allyTurn.ts";
 import { IdleCompact } from "./agent/idleCompact.ts";
 import { stripSkip } from "./agent/skip.ts";
 import { WechatRelay } from "./agent/wechatRelay.ts";
+import { type Turn, type TurnEnd, timing } from "./agent/turn.ts";
 
-export interface Turn {
-  text: string; // what the model sees
-  origin: Channel;
-  proactive: boolean; // output is filtered for [skip] and routed as a push
-  wechat?: WechatReplyTarget;
-  implicit?: boolean; // harness started a turn on its own (e.g. a background task finished)
-  label?: string;
-  uuids?: string[]; // user messages this turn answers
-  watchId?: string; // a schedule run: its reply becomes the goal's progress line
-  maintenance?: boolean; // housekeeping for the harness (native /compact): nothing shown, nothing pushed
-  allyId?: string; // an Ally's message: more from the same Ally joins it while it waits
-  pal?: boolean; // a Pal's palo_send: answers work already asked for, so the proactive budget doesn't drop it
-}
+export type { Turn };
+// A turn the harness started by itself is closed if it goes quiet without a result.
+export { timing };
 
 type OwnerMessage = { origin: Channel; wechat?: WechatReplyTarget };
-
-// A turn the harness started by itself is closed if it goes quiet without a result.
-export const timing = { implicitQuietMs: 90_000 };
+type InFlightOwner = OwnerMessage & { sentAt: number; text: string; images?: ImageInput[] };
 
 // What the assistant is told after the watchdog restarted it mid-turn.
 export const stallContinue = (): string => t("stall.continue");
@@ -117,18 +106,14 @@ export interface ConversationDeps {
 // The assistant is an AgentSession with ASSISTANT_FLAGS: its process started
 // by the words that need it, at once (no ready wait), never asleep, no
 // holders check; its words into its chat log; its tasks the host's list.
-export class Conversation extends AgentSession<OwnerMessage & { sentAt: number; text: string; images?: ImageInput[] }, TrackerTasks, ChatLogSink> {
+export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, ChatLogSink> {
   model = ""; // the model the harness reports running
   permissionMode = ""; // the permission mode it reports running in (not always the configured one)
   private queue: Turn[] = [];
-  private current: Turn | null = null;
-  private turnTexts: string[] = [];
-  private implicitTimer: ReturnType<typeof setTimeout> | null = null;
   private lastContextTokens = 0;
   private turnWaiters: (() => void)[] = [];
   // (pending: every owner message sent to the harness and not yet answered,
   // by uuid; a turn counts as answering the owner only once its result lists the uuid.)
-  private mainTools = new Set<string>(); // main-thread tool calls without a result yet
   private budgetNoticeDay = "";
   // Its pieces, by its flags: WeChat turns get each paragraph as it's written
   // (wechat); an Ally's turn is gated and the owner's words held meanwhile
@@ -194,13 +179,13 @@ export class Conversation extends AgentSession<OwnerMessage & { sentAt: number; 
     this.d.statusChanged();
   }
 
+  protected override log(s: string): void {
+    this.d.log(s);
+  }
+
   /** The main session's context size after its last turn (or compaction). */
   get contextTokens(): number {
     return this.lastContextTokens;
-  }
-
-  get busy(): boolean {
-    return this.current !== null;
   }
 
   /** The goal whose scheduled run is the current turn (a brief's), if it is one. */
@@ -289,27 +274,9 @@ export class Conversation extends AgentSession<OwnerMessage & { sentAt: number; 
     this.pending.expire((u, p) => p.sentAt < cutoff && !this.current?.uuids?.includes(u));
   }
 
-  private beginTurn(turn: Turn): void {
-    this.current = turn;
-    this.turnTexts = [];
+  // A WeChat turn shows typing.
+  protected override turnBegan(turn: Turn): void {
     this.wechat?.turnBegan(turn);
-    this.stream.take();
-    this.mainTools.clear();
-    this.activity = "";
-    if (turn.implicit) this.armImplicitTimer();
-    this.d.statusChanged();
-  }
-
-  private armImplicitTimer(): void {
-    if (this.implicitTimer) clearTimeout(this.implicitTimer);
-    this.implicitTimer = setTimeout(() => {
-      // Waiting on the owner or on a running tool is not "quiet".
-      if (this.current?.implicit && (this.mainTools.size || this.waitingOnOwner())) return this.armImplicitTimer();
-      if (this.current?.implicit) {
-        this.d.log("implicit turn went quiet without a result; closing it");
-        this.endTurn(0, this.lastContextTokens);
-      }
-    }, timing.implicitQuietMs);
   }
 
   /**
@@ -379,36 +346,8 @@ export class Conversation extends AgentSession<OwnerMessage & { sentAt: number; 
 
   // ---------------- harness events ----------------
 
-  onHarnessEvent(e: HarnessEvent): void {
-    this.lastEventAt = Date.now();
-    if (e.type === "tool_use") this.openTools.set(e.id, e.name);
-    else if (e.type === "tool_result") this.openTools.delete(e.toolUseId);
-    // The harness names the owner messages a turn answers on its first frames:
-    // start that turn with exactly those, instead of guessing.
-    if (e.type === "answering" && !this.current) {
-      const mine = e.uuids.filter((u) => this.pending.has(u));
-      if (mine.length) {
-        const first = this.pending.get(mine[0]!)!;
-        const wechat = mine.map((u) => this.pending.get(u)!.wechat).find(Boolean);
-        this.beginTurn({ text: "", origin: first.origin, proactive: false, wechat, uuids: mine });
-      }
-      return;
-    }
-    if (e.type === "answering") return;
-    if (!this.current && (e.type === "text_delta" || e.type === "assistant_text" || e.type === "tool_use" || e.type === "tool_start")) {
-      if (this.pending.size) {
-        // The harness is now answering owner messages it had queued.
-        const [first] = this.pending.values();
-        const wechat = this.pending.values().find((x) => x.wechat)?.wechat;
-        this.beginTurn({ text: "", origin: first!.origin, proactive: false, wechat, uuids: this.pending.uuids() });
-      } else {
-        // The harness started a turn on its own (e.g. a background task finished).
-        this.beginTurn({ text: "", origin: "system", proactive: true, implicit: true });
-      }
-    } else if (this.current?.implicit) {
-      this.armImplicitTimer();
-    }
-    const turn = this.current;
+  // What the assistant keeps of the harness' events besides its turns (agent/session.ts).
+  protected override sessionEvent(e: HarnessEvent): void {
     switch (e.type) {
       case "commands":
         this.d.onCommands(e.commands);
@@ -423,47 +362,6 @@ export class Conversation extends AgentSession<OwnerMessage & { sentAt: number; 
         if (this.d.runtime.data.sessionId !== e.sessionId) this.d.runtime.update({ sessionId: e.sessionId });
         this.d.statusChanged();
         break;
-      case "text_delta":
-        if (turn && !turn.proactive) {
-          if (!this.stream.id) this.stream.open(`m_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`);
-          this.stream.append(e.text);
-          this.out.delta(this.stream.id!, e.text);
-          // The words themselves now show the progress.
-          this.setActivity(ACTIVITY.reply);
-        }
-        break;
-      case "assistant_text":
-        if (e.parentToolUseId) {
-          this.taskView.onEvent(e);
-          break;
-        }
-        this.turnTexts.push(e.text);
-        if (turn?.wechat && !turn.proactive) this.wechat?.paragraph(turn, e.text);
-        if (turn && !turn.proactive) {
-          this.out.message({ id: this.stream.id ?? undefined, role: "assistant", kind: "text", text: e.text, channel: turn.origin });
-        }
-        this.stream.take();
-        break;
-      case "tool_start":
-        if (!e.parentToolUseId) this.setActivityFor(e.name);
-        break;
-      case "tool_use":
-        if (!e.parentToolUseId) this.mainTools.add(e.id);
-        this.taskView.onEvent(e);
-        if (e.parentToolUseId) this.setActivity(activityBackground());
-        else this.setActivityFor(e.name);
-        break;
-      case "tool_result":
-        this.mainTools.delete(e.toolUseId);
-        this.taskView.onEvent(e);
-        break;
-      case "task_started":
-      case "task_progress":
-      case "background_tasks":
-      case "task_backgrounded":
-      case "task_notification":
-        this.taskView.onEvent(e);
-        break;
       case "compact": {
         // Ours (the idle trigger, in its own /compact turn) or Claude Code's native one.
         const reason = this.current?.maintenance && this.compactor?.reason ? this.compactor.reason : "native";
@@ -474,17 +372,6 @@ export class Conversation extends AgentSession<OwnerMessage & { sentAt: number; 
         if (this.current?.maintenance && this.compactor) this.compactor.reason = null;
         break;
       }
-      case "result": {
-        // The Ally's turn is over once a result consumed its message (an
-        // older CLI that doesn't list them: once our turn for it ends).
-        const gateDone = !!this.ally?.doneBy(e.consumedUuids, this.current?.uuids);
-        this.d.runtime.update({ sessionCostUsd: e.totalCostUsd, ...(e.contextWindow ? { contextWindow: e.contextWindow } : {}) });
-        // The owner's held words go before anything queued behind this turn.
-        if (gateDone) this.ally?.end("done");
-        this.endTurn(e.costUsd, e.contextTokens, e.isError ? e.text : undefined, this.consume(e.consumedUuids), e.errorCategory);
-        if (this.ally?.active) this.ally.watch();
-        break;
-      }
       case "error":
         this.d.log(`harness error: ${e.message}`);
         this.host.close();
@@ -492,9 +379,27 @@ export class Conversation extends AgentSession<OwnerMessage & { sentAt: number; 
         this.openTools.clear();
         // The Ally's message died with the process; the owner's held words didn't.
         if (this.ally?.active) this.ally.end("harness error");
-        if (this.current) this.endTurn(0, this.lastContextTokens, e.message);
+        if (this.current) this.endTurn({ error: e.message });
         break;
     }
+  }
+
+  // A WeChat turn gets each paragraph as it's written.
+  protected override said(turn: Turn | null, text: string): void {
+    if (turn?.wechat && !turn.proactive) this.wechat?.paragraph(turn, text);
+  }
+
+  protected override resultIn(e: ResultEvent, turn: Turn | null): void {
+    // The Ally's turn is over once a result consumed its message (an
+    // older CLI that doesn't list them: once our turn for it ends).
+    const gateDone = !!this.ally?.doneBy(e.consumedUuids, turn?.uuids);
+    this.d.runtime.update({ sessionCostUsd: e.totalCostUsd, ...(e.contextWindow ? { contextWindow: e.contextWindow } : {}) });
+    // The owner's held words go before anything queued behind this turn.
+    if (gateDone) this.ally?.end("done");
+  }
+
+  protected override resultDone(): void {
+    if (this.ally?.active) this.ally.watch();
   }
 
   // Claude Code doesn't refuse a permission mode it can't run: it starts in
@@ -539,34 +444,16 @@ export class Conversation extends AgentSession<OwnerMessage & { sentAt: number; 
     return o === "wechat" || o === "cli" ? o : "app";
   }
 
-  /** The status line for a main-thread tool; some tools keep the current one. */
-  private setActivityFor(tool: string): void {
-    const a = describeActivity(tool);
-    if (a !== null) this.setActivity(a);
-  }
-
-
-  // consume settles which owner messages a result answered. When the harness
-  // doesn't say (older CLIs), an owner turn is taken to have answered its own
-  // messages; a proactive/implicit turn answered none.
-  private consume(listed?: string[]): OwnerMessage[] {
-    const ids = listed ?? (this.current && !this.current.proactive ? this.current.uuids ?? [] : []);
-    return this.pending.consume(ids);
-  }
-
-  private endTurn(costUsd: number, contextTokens: number, error?: string, answered: (OwnerMessage & { text?: string })[] = [], errorCategory?: string): void {
+  // A turn is over (its result, an error, a stop, gone quiet): its cost, its
+  // context size, what it said (a reply, or what it brought up as a push, or
+  // nothing for [skip]), a goal's line, WeChat, and the next queued turn.
+  protected override turnEnded(turn: Turn | null, end: TurnEnd<InFlightOwner>): void {
     const { router } = this.d;
     const chat = this.out;
-    const turn = this.current;
-    this.current = null;
-    this.activity = "";
-    if (this.implicitTimer) clearTimeout(this.implicitTimer);
-    // A stream cut off by an error/kill still gets a final message, so clients
-    // don't keep a half-written bubble "typing" forever.
-    const cut = this.stream.take();
-    if (cut && cut.text.trim()) chat.message({ id: cut.id, role: "assistant", kind: "text", text: cut.text, channel: turn?.origin ?? "system" });
-    this.mainTools.clear();
-    this.openTools.clear();
+    const costUsd = end.costUsd ?? 0;
+    const contextTokens = end.contextTokens ?? this.lastContextTokens;
+    const { error, errorCategory } = end;
+    const answered = end.answered ?? [];
     this.d.usage.add("mainUsd", costUsd);
     if (turn?.maintenance) {
       // A /compact turn: its own result says nothing about the context (the
@@ -593,7 +480,7 @@ export class Conversation extends AgentSession<OwnerMessage & { sentAt: number; 
         const owner = answered.flatMap((m) => (m.text ? [m.text] : []));
         this.d.onAuth?.({ text: owner.length ? owner.join("\n") : turn.label ? `${turn.label}: ${turn.text}` : turn.text, ...(turn.watchId ? { watchId: turn.watchId } : {}) });
       } else if (!error) this.d.onAuth?.(null);
-      const shown = stripSkip(this.turnTexts.join("\n\n").trim());
+      const shown = stripSkip(this.texts.join("\n\n").trim());
       if (turn.watchId && shown && !error) this.d.onGoalResult?.(turn.watchId, shown);
       // The owner spoke while this proactive turn ran and it answered them too:
       // show it as a normal reply (no push), not as something it brought up.
@@ -770,7 +657,7 @@ export class Conversation extends AgentSession<OwnerMessage & { sentAt: number; 
     }
     const now = Date.now();
     for (const [uuid, p] of untaken) this.pending.add(uuid, { ...p, sentAt: now });
-    if (turn) this.endTurn(0, this.lastContextTokens);
+    if (turn) this.endTurn();
     if (untaken.length) {
       if (!this.current) {
         this.beginTurn({
@@ -810,7 +697,7 @@ export class Conversation extends AgentSession<OwnerMessage & { sentAt: number; 
     // let the next message start a fresh process (same conversation, resumed).
     if (this.current) {
       this.pending.clear();
-      this.endTurn(0, this.lastContextTokens);
+      this.endTurn();
       this.host.close();
     }
     this.d.statusChanged();
