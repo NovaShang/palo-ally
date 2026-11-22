@@ -160,24 +160,6 @@ struct SessionsDecodingTests {
         #expect(CCSession.shortPath("/opt/work") == "/opt/work")
     }
 
-    @Test func historyPagesMergeInOrder() {
-        func m(_ id: String, _ ts: Int64) -> CCMessage { CCMessage(id: id, ts: ts, role: .assistant, text: id) }
-        let latest = [m("c", 3), m("d", 4)]
-        let older = [m("a", 1), m("b", 2)]
-        #expect(AppStore.merge(latest, older, older: true).map(\.id) == ["a", "b", "c", "d"])
-        // The newest page again, with one more and one changed: no duplicates.
-        var changed = m("d", 4)
-        changed.text = "改过"
-        let again = AppStore.merge(older + latest, [changed, m("e", 5)], older: false)
-        #expect(again.map(\.id) == ["a", "b", "c", "d", "e"] && again[3].text == "改过")
-        // A page with one id twice keeps one line, the later copy.
-        var twice = m("c", 3)
-        twice.text = "后来的"
-        #expect(AppStore.merge([], [m("c", 3), twice], older: false).map(\.text) == ["后来的"])
-        // Equal times keep the order they came in.
-        #expect(AppStore.merge([m("x", 1)], [m("y", 1)], older: false).map(\.id) == ["x", "y"])
-    }
-
     @Test func helperControlCardsInPlainWords() {
         #expect(Friendly.tool("helper_stop") == "停会话")
         #expect(Friendly.tool("mcp__paloally__helper_restart") == "重启会话")
@@ -227,32 +209,6 @@ struct SessionsStoreTests {
         #expect(await !host.requestLog.contains("sessions.list"))
         #expect(store.otherSessions.isEmpty && store.sessionHooksEnabled == true)
         #expect(store.sessions.isEmpty && store.liveEndQuestions.isEmpty && store.pendingHelperProposals.isEmpty)
-    }
-
-    @Test func historyLoadsAndPagesBack() async throws {
-        let (store, _) = await demoStore()
-        let page = try await store.loadSessionHistory(id: "cc-site")
-        #expect(page.count == 39)
-        #expect(store.sessionHistoryHasMore["cc-site"] == false)
-        _ = try await store.loadSessionHistory(id: "cc-site", limit: 10)
-        // A fresh store, smaller pages: the newest first, then older ones.
-        let (small, host) = await demoStore()
-        _ = try await small.loadSessionHistory(id: "cc-site", limit: 10)
-        #expect(small.sessionHistory("cc-site").count == 10)
-        #expect(small.sessionHistory("cc-site").last?.text.contains("跑一下构建") == true)
-        #expect(small.sessionHistoryHasMore["cc-site"] == true)
-        let oldest = try #require(small.sessionHistory("cc-site").first)
-        _ = try await small.loadSessionHistory(id: "cc-site", before: oldest.id, limit: 10)
-        #expect(small.sessionHistory("cc-site").count == 20)
-        #expect(await host.lastParams["sessions.history"] == ["id": "cc-site", "before": .string(oldest.id), "limit": 10])
-        for _ in 0..<3 {
-            _ = try await small.loadSessionHistory(id: "cc-site", before: small.sessionHistory("cc-site").first?.id, limit: 10)
-        }
-        #expect(small.sessionHistory("cc-site").count == 39)
-        #expect(small.sessionHistoryHasMore["cc-site"] == false)
-        let ts = small.sessionHistory("cc-site").map(\.ts)
-        #expect(ts == ts.sorted())
-        #expect(small.sessionHistory("cc-site").map(\.id) == store.sessionHistory("cc-site").map(\.id))
     }
 
     @Test func theHooksSwitch() async throws {

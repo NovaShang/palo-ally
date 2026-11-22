@@ -36,11 +36,8 @@ final class AppStoreShared {
     var sessions: [CCSession] = []
     var sessionsSupported: Bool?
     var sessionHooksEnabled: Bool?
-    var sessionHistories: [String: [CCMessage]] = [:]
-    var sessionHistoryHasMore: [String: Bool] = [:]
     var helperDecisions: [String: HelperProposalStatus] = [:]
     var helperSessions: [String: String] = [:]
-    var watchedSessions: [String: Int] = [:]
 
     var pals: [Pal] = []
     var otherSessions: [CCSession] = []

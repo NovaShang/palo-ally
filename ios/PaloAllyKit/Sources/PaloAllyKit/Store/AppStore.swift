@@ -246,16 +246,6 @@ public final class AppStore {
         get { shared.sessionHooksEnabled }
         set { shared.sessionHooksEnabled = newValue }
     }
-    /// Each session's conversation held here, oldest first.
-    public internal(set) var sessionHistories: [String: [CCMessage]] {
-        get { shared.sessionHistories }
-        set { shared.sessionHistories = newValue }
-    }
-    /// The oldest page held for that session was full: there may be more.
-    public internal(set) var sessionHistoryHasMore: [String: Bool] {
-        get { shared.sessionHistoryHasMore }
-        set { shared.sessionHistoryHasMore = newValue }
-    }
     /// The owner's answers to helper proposals, until the host's copy says so.
     public internal(set) var helperDecisions: [String: HelperProposalStatus] {
         get { shared.helperDecisions }
@@ -265,12 +255,6 @@ public final class AppStore {
     public internal(set) var helperSessions: [String: String] {
         get { shared.helperSessions }
         set { shared.helperSessions = newValue }
-    }
-    /// Session pages on screen (id → how many): their conversation follows
-    /// `sessions.updated`.
-    var watchedSessions: [String: Int] {
-        get { shared.watchedSessions }
-        set { shared.watchedSessions = newValue }
     }
 
     // Pals (AppStore+Pals.swift).

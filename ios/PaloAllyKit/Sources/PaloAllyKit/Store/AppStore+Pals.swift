@@ -72,7 +72,6 @@ extension AppStore {
             return
         }
         try? await refreshWorkspaces()
-        for id in watchedSessions.keys { _ = try? await loadSessionHistory(id: id) }
     }
 
     public func refreshPals() async throws {

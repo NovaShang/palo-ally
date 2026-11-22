@@ -1,54 +1,6 @@
 import PaloAllyKit
 import SwiftUI
 
-/// 从终端搬进来… (the sidebar's ＋ menu): the computer's other live Claude
-/// Code sessions, each with 接管. Adopting happens in place: a moment's wait,
-/// or (a terminal session) the line asking the owner to quit it there, with
-/// 取消. Tapping a row looks at its conversation, read only (pals-prd §14).
-struct AdoptFlowSheet: View {
-    @Environment(WindowModel.self) private var model
-    @Environment(AppStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            List {
-                ForEach(store.otherSessions) { session in
-                    OtherSessionRow(session: session)
-                        .contentShape(.rect)
-                        .onTapGesture {
-                            dismiss()
-                            model.openSession(session.id)
-                        }
-                }
-            }
-            .overlay {
-                if store.otherSessions.isEmpty {
-                    Text("电脑上开着的 Claude Code 会出现在这里。接管以后，在手机上接着聊。")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(32)
-                        .accessibilityIdentifier("adopt-empty")
-                }
-            }
-            .navigationTitle("从终端搬进来")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { dismiss() }
-                }
-            }
-            .animation(.snappy, value: store.otherSessions)
-            .animation(.snappy, value: store.adoptions)
-        }
-        #if targetEnvironment(macCatalyst)
-        .frame(minWidth: 420, minHeight: 360)
-        #endif
-        .accessibilityIdentifier("adopt-flow")
-    }
-}
-
 /// One of the computer's other live sessions: dimmer, with its state, and
 /// 接管. Adopting it happens in place: a moment's wait, or (a terminal
 /// session) the line asking the owner to quit it there, with 取消.

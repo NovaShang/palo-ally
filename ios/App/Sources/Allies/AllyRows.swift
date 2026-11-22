@@ -1,36 +1,6 @@
 import PaloAllyKit
 import SwiftUI
 
-/// One Ally: who, the tag, the last exchange, and a dot while they're online
-/// (no time: the room goes to the two lines).
-struct AllyRow: View {
-    let ally: AllyInfo
-    /// The owner's assistant, for its words on the last line.
-    var assistant = ""
-
-    var body: some View {
-        HStack(spacing: 12) {
-            AllyAvatar(ally: ally, size: 40)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(ally.displayName)
-                        .font(.body.weight(.medium))
-                        .lineLimit(1)
-                    AllyKindTag(kind: ally.kind)
-                    Spacer(minLength: 4)
-                }
-                Text(Copy.allyLastLine(ally, assistant: assistant))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-        }
-        .padding(.vertical, 3)
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(Copy.allyPresence(ally))
-    }
-}
-
 /// The round initial standing in for a photo, with a green dot while they're online.
 struct AllyAvatar: View {
     let ally: AllyInfo

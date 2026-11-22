@@ -10,9 +10,6 @@ extension AppStore {
 
     public func session(id: String) -> CCSession? { sessions.first { $0.id == id } }
 
-    /// One session's conversation held here, oldest first.
-    public func sessionHistory(_ id: String) -> [CCMessage] { sessionHistories[id] ?? [] }
-
     /// A session's read-only store (pals-prd §14): its conversation in the
     /// conversation view, its cards at the end. Made on first use and kept
     /// while the app runs. Its page asks for what's new every few seconds.
@@ -48,7 +45,6 @@ extension AppStore {
             }
             return
         }
-        for id in watchedSessions.keys { _ = try? await loadSessionHistory(id: id) }
     }
 
     public func refreshSessions() async throws {
@@ -58,71 +54,22 @@ extension AppStore {
         sessionsSupported = true
     }
 
-    /// One page of a session's conversation (the newest, or the one before
-    /// message `before`), merged into what's held.
-    @discardableResult
-    public func loadSessionHistory(id: String, before: String? = nil, limit: Int = 50) async throws -> [CCMessage] {
-        let r: SessionMessagesResult = try await rpc.call(RPCMethod.sessionsHistory,
-                                                          params: SessionHistoryParams(id: id, before: before, limit: limit))
-        let held = sessionHistories[id] ?? []
-        let known = Set(held.map(\.id))
-        let added = r.messages.contains { !known.contains($0.id) }
-        sessionHistories[id] = Self.merge(held, r.messages, older: before != nil)
-        if before != nil {
-            sessionHistoryHasMore[id] = added && r.messages.count >= limit
-        } else if held.isEmpty {
-            sessionHistoryHasMore[id] = r.messages.count >= limit
-        }
-        return r.messages
-    }
-
-    /// The page goes in front (an older page) or at the end; a message held
-    /// already takes the page's copy. Oldest first by time, the arrival order
-    /// kept among equal times.
-    nonisolated static func merge(_ held: [CCMessage], _ page: [CCMessage], older: Bool) -> [CCMessage] {
-        // One line per id (the page's last copy): the list is keyed by id.
-        var seen: Set<String> = []
-        let page = page.reversed().filter { seen.insert($0.id).inserted }.reversed()
-        let pageIDs = Set(page.map(\.id))
-        let rest = held.filter { !pageIDs.contains($0.id) }
-        let joined = older ? page + rest : rest + page
-        return joined.enumerated().sorted { a, b in
-            a.element.ts != b.element.ts ? a.element.ts < b.element.ts : a.offset < b.offset
-        }.map(\.element)
-    }
-
-    /// A session page came on screen: its conversation follows the host's
-    /// updates until it goes.
-    public func watchSession(_ id: String) {
-        watchedSessions[id, default: 0] += 1
-    }
-
-    public func unwatchSession(_ id: String) {
-        guard let n = watchedSessions[id] else { return }
-        watchedSessions[id] = n > 1 ? n - 1 : nil
-    }
-
     // MARK: changes from the host
 
     func apply(sessionsUpdate u: SessionsUpdate) {
         switch u {
         case .list(let list):
-            let before = Dictionary(sessions.map { ($0.id, $0.updatedAt) }, uniquingKeysWith: { a, _ in a })
             setSessions(list)
             sessionsSupported = true
-            for s in list where watchedSessions[s.id] != nil && before[s.id] != s.updatedAt { reloadHistory(s.id) }
         case .upsert(let s):
             upsert(session: s)
             sessionsSupported = true
-            if watchedSessions[s.id] != nil { reloadHistory(s.id) }
         case .removed(let id):
             sessions.removeAll { $0.id == id }
-        case .changed(let id):
+        case .changed:
             refetchComputerSessions()
-            if watchedSessions[id] != nil { reloadHistory(id) }
         case .refetch:
             refetchComputerSessions()
-            for id in watchedSessions.keys { reloadHistory(id) }
         }
     }
 
@@ -143,10 +90,6 @@ extension AppStore {
     private func setSessions(_ list: [CCSession]) {
         let ordered = CCSession.listOrder(list)
         if ordered != sessions { sessions = ordered }
-    }
-
-    private func reloadHistory(_ id: String) {
-        Task { _ = try? await self.loadSessionHistory(id: id) }
     }
 
     // MARK: helpers
