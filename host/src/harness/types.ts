@@ -129,6 +129,14 @@ export interface ToolHandlers {
   pair_link(): Promise<string>;
 }
 
+/** One of PaloAlly's own tools, harness-neutral: the adapter offers it the harness' way (Claude Code: an MCP tool). */
+export interface ToolSpec {
+  name: string;
+  description: string;
+  schema: import("zod").ZodRawShape; // its parameters
+  run(args: any): Promise<string>; // what the model is told back
+}
+
 export interface ImageInput {
   mediaType: string;
   data: string; // base64
