@@ -513,8 +513,49 @@ export interface ToolVocabulary {
   ruleScope(toolName: string, content: string): string;
 }
 
+/**
+ * What a harness can do, for the app (docs/harness-adapter-design.md §3): its
+ * name, how its login works, its models, thinking depths and permission modes,
+ * which features it has, the terminal commands copy names, and its project
+ * instruction file. hello carries one per harness (`harnesses`), and
+ * `harness.updated` a new one when its models change. An app that doesn't
+ * get it (an older host) uses the same lists built in.
+ */
+export interface HarnessCapabilities {
+  id: string;
+  name: string; // shown where the app says which tool runs an agent
+  commandPrefix: string | null; // slash commands; null: none
+  login: { kind: "oauth-code" | "api-key" | "none"; account: string; fromPhone: boolean };
+  models: ModelOption[]; // as model.get lists them; the first is the default
+  efforts: string[]; // thinking depths, lowest first
+  permissionModes: string[]; // the ones the owner can switch an agent to
+  labels: Record<string, string>; // words for ids the app may not know (in the host's language)
+  features: {
+    rewind: boolean;
+    restoreFiles: boolean;
+    compact: boolean;
+    autoCompact: boolean;
+    takeOverTerminal: boolean;
+    handBackToTerminal: boolean;
+    rename: boolean;
+    subagents: boolean;
+    backgroundTasks: boolean;
+    images: boolean;
+    files: boolean;
+    questions: { multiSelect: boolean; maxOptions: number };
+    liveModelSwitch: boolean;
+    liveModeSwitch: boolean;
+    projectMemory: boolean;
+    globalHooks: boolean;
+  };
+  terminal: { exitCommand: string; resumeCommand: string; newCommand: string }; // {sessionId} is filled in
+  memory: { projectFile: string };
+}
+
 export interface Harness {
   readonly id: string;
+  /** What it can do (the models as last listed by its processes). */
+  capabilities(models: ModelOption[]): HarnessCapabilities;
   readonly tools: ToolVocabulary;
   readonly auth: HarnessAuth;
   /** Starts its processes and runs one-shot probes. */

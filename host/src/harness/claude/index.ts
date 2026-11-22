@@ -9,6 +9,8 @@ import { claudeLoggedIn, credentialsStamp, expectLogin, isAuthFailure } from "./
 import type {
   Harness,
   HarnessAuth,
+  HarnessCapabilities,
+  ModelOption,
   HarnessDriver,
   HarnessEntry,
   HistoryMapOptions,
@@ -94,6 +96,39 @@ export class ClaudeHarness implements Harness {
   /** The SDK's forkSession (or the test's). */
   get forkSession(): ForkSession {
     return this.o.forkSession ?? ((sid, f) => sdkForkSession(sid, f));
+  }
+
+  capabilities(models: ModelOption[]): HarnessCapabilities {
+    return {
+      id: this.id,
+      name: "Claude Code",
+      commandPrefix: "/",
+      login: { kind: "oauth-code", account: "Claude", fromPhone: true },
+      models,
+      efforts: [...this.settings.efforts],
+      permissionModes: [...this.settings.permissionModes],
+      labels: {},
+      features: {
+        rewind: true,
+        restoreFiles: true,
+        compact: true,
+        autoCompact: true,
+        takeOverTerminal: true,
+        handBackToTerminal: true,
+        rename: true,
+        subagents: true,
+        backgroundTasks: true,
+        images: true,
+        files: true,
+        questions: { multiSelect: true, maxOptions: 4 },
+        liveModelSwitch: true,
+        liveModeSwitch: true,
+        projectMemory: true,
+        globalHooks: true,
+      },
+      terminal: { exitCommand: "/exit", resumeCommand: "claude --resume {sessionId}", newCommand: "claude" },
+      memory: { projectFile: "CLAUDE.md" },
+    };
   }
 
   private makeHistory(): HistoryStore {

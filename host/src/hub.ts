@@ -37,8 +37,8 @@ import { Updater, type UpdaterDeps } from "./update.ts";
 import { type Usage, UsageLedger } from "./usage.ts";
 import { randomUUID } from "node:crypto";
 import { ClaudeHarness } from "./harness/claude/index.ts";
+import type { HarnessCapabilities } from "./harness/types.ts";
 import { type ForkSession, rewindNotFound } from "./rewind.ts";
-import { contextWindowFor } from "./palSession.ts";
 import { appendJsonl, readJson, writeJson } from "./util.ts";
 import { WatchStore } from "./watches.ts";
 import { Sessions, type SessionsDeps } from "./sessions.ts";
@@ -262,7 +262,12 @@ export class Hub {
       mcpServers: () => this.extraMcpServers(),
       onEvent: (e) => this.onHarnessEvent(e),
       onCommands: (c) => this.info.saveCommands(c),
-      onModels: (m) => this.info.saveModels(m),
+      onModels: (m) => {
+        const before = JSON.stringify(this.info.models());
+        this.info.saveModels(m);
+        // The app's descriptor follows (old apps ignore the event).
+        if (JSON.stringify(m) !== before) this.bus.emit("harness.updated", { id: this.harness.id, capabilities: this.harness.capabilities(m) });
+      },
       onTerminalCommands: (n) => this.info.setTerminalCommands(n),
       statusChanged: () => this.emitStatus(),
       // Pals reach the assistant (and it them) by this name with SendMessage.
@@ -584,7 +589,7 @@ export class Hub {
     const auth = this.auth.status();
     const model = this.conversation.model || this.config.model || "";
     const tokens = this.conversation.contextTokens;
-    const window = contextWindowFor(model, tokens, this.runtime.data.contextWindow);
+    const window = this.harness.settings.contextWindow(model, tokens, this.runtime.data.contextWindow);
     return {
       online: true,
       busy,
@@ -1040,6 +1045,11 @@ export class Hub {
 
   loadCommands(timeoutMs?: number): Promise<SlashCommandInfo[]> {
     return this.info.loadCommands(timeoutMs);
+  }
+
+  /** What each harness can do, by id (hello's `harnesses`). */
+  harnesses(): Record<string, HarnessCapabilities> {
+    return { [this.harness.id]: this.harness.capabilities(this.info.models()) };
   }
 
   async modelInfo(timeoutMs?: number): Promise<{ model: string; setting: string | null; effort: string | null; models: ModelOption[] }> {

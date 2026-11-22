@@ -215,6 +215,8 @@ public enum RPCEventName {
     public static let settingsUpdated = "settings.updated"
     public static let status = "status"
     public static let commandsUpdated = "commands.updated"
+    /// A harness' capability descriptor changed (its models).
+    public static let harnessUpdated = "harness.updated"
     public static let suggestionsUpdated = "suggestions.updated"
     /// The Ally list or someone's online state changed.
     public static let allyUpdated = "ally.updated"
@@ -245,7 +247,7 @@ public enum RPCEventName {
     public static let all: [String] = [
         chatMessage, chatDelta, chatRewound, taskUpdated, approvalUpdated, questionUpdated, watchUpdated, artifactUpdated, settingsUpdated,
         status, commandsUpdated, suggestionsUpdated,
-    ] + allies + sessions + pals + workbench + [filesChanged, pendingUpdated, backlogUpdated]
+    ] + allies + sessions + pals + workbench + [filesChanged, pendingUpdated, backlogUpdated, harnessUpdated]
 }
 
 public struct EmptyParams: Codable, Sendable { public init() {} }
@@ -280,8 +282,14 @@ public struct HelloResult: Decodable, Sendable {
     /// Where the app can reach the computer without the relay (the same Mac,
     /// the local network, Tailscale); nil from an older host or one without it.
     public var direct: DirectEndpoints?
+    /// What each harness can do, by id; nil from an older host (the app then uses `HarnessCapabilities.claudeCodeFallback`).
+    public var harnesses: [String: HarnessCapabilities]?
+    /// The assistant's harness (an id in `harnesses`); nil from an older host.
+    public var harness: String?
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
+        harnesses = l.decode([String: HarnessCapabilities].self, "harnesses")
+        harness = l.string("harness")
         language = l.string("language")
         machineId = l.string("machineId")
         direct = l.decode(DirectEndpoints.self, "direct")

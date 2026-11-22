@@ -81,6 +81,8 @@ public struct ModelInfo: Decodable, Sendable, Hashable {
 
 /// Plain-language names for effort levels.
 public enum EffortName {
+    /// The depths the app has its own words for.
+    public static let known: Set<String> = ["low", "medium", "high", "xhigh", "max"]
     public static func label(_ e: String?) -> String {
         switch e {
         case "low": loc("浅")
@@ -95,6 +97,8 @@ public enum EffortName {
 
 /// Plain-language names for Claude Code's permission modes.
 public enum PermissionModeName {
+    /// The modes the app has its own words for.
+    public static let known: Set<String> = ["default", "auto", "acceptEdits", "plan", "bypassPermissions", "dontAsk"]
     public static func label(_ m: String?) -> String {
         switch m {
         case "default": loc("普通")

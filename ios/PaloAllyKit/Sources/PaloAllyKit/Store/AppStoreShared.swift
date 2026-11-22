@@ -35,6 +35,10 @@ final class AppStoreShared {
     var settings: HostSettings?
     var commands: [SlashCommand] = []
     var modelInfo: ModelInfo?
+    /// What each harness on this computer can do, by id (hello, harness.updated); empty from an older host.
+    var harnesses: [String: HarnessCapabilities] = [:]
+    /// The assistant's harness id (hello); nil from an older host.
+    var assistantHarness: String?
     var copiedClipboardIDs: Set<String> = []
 
     var allies: [AllyInfo] = []
