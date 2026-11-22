@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
+import { projectDirName } from "./paths.ts";
 
 // Where Claude Code keeps memory: a folder's instruction files and its per-project auto memory.
 
@@ -9,9 +10,9 @@ import { dirname, join, resolve, sep } from "node:path";
 export const AGENT_CORE_FILES = ["CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md"];
 
 // autoMemoryDir mirrors Claude Code's per-project auto memory location:
-// <config dir>/projects/<cwd with non-alphanumerics → '-'>/memory.
+// <config dir>/projects/<cwd, links resolved, with non-alphanumerics → '-'>/memory.
 export function autoMemoryDir(cwd: string, configDir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude")): string {
-  return join(configDir, "projects", resolve(cwd).replace(/[^A-Za-z0-9]/g, "-"), "memory");
+  return join(configDir, "projects", projectDirName(cwd), "memory");
 }
 
 /**
