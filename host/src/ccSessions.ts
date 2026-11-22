@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, statSync, watch, type FSWatcher 
 import { basename, join } from "node:path";
 import type { AgentEntry, ClaudeCli } from "./ccCli.ts";
 import { readTail, transcriptPath } from "./handoffs.ts";
-import type { CCMessage, CCSession, CCSessionKind, CCSessionStatus } from "./types.ts";
+import type { CCSession, CCSessionKind, CCSessionStatus } from "./types.ts";
 import { stripTldrMarker } from "./tldr.ts";
 import { pidAlive, truncate } from "./util.ts";
 
@@ -93,6 +93,8 @@ export interface SessionWatchDeps {
   isOwn: (s: { sessionId: string; name: string; cwd: string; entrypoint?: string }) => boolean;
   /** pals.adopt waits for this one to quit in its terminal. */
   adopting?: (sessionId: string) => boolean;
+  /** The owner's words waiting for it to quit in its terminal (they go in once it's taken over). */
+  queued?: (sessionId: string) => CCSession["queued"];
   /** A session's open card on the phone, if any: it's waiting on the owner. */
   waitingCard: (sessionId: string) => string | undefined;
   onChange: (sessions: CCSession[]) => void;
@@ -387,6 +389,7 @@ export class SessionWatch {
       status = raw === "busy" || raw === "shell" ? "busy" : raw === "waiting" ? "waiting" : raw === "stopped" ? "stopped" : "idle";
       if (status === "waiting") waitingFor = (hookNewer ? r.hook!.waitingFor : r.reg?.waitingFor) ?? r.hook?.waitingFor;
     }
+    const queued = this.d.queued?.(r.sessionId);
     const updatedAt = Math.max(r.reg?.at ?? 0, r.hook?.at ?? 0, r.lastLineAt ?? 0, r.transcript?.mtime ?? 0, r.startedAt ?? 0) || this.now();
     return {
       id: r.sessionId,
@@ -399,6 +402,7 @@ export class SessionWatch {
       ...(r.contextTokens ? { contextTokens: r.contextTokens } : {}),
       updatedAt: Math.round(updatedAt),
       ...(this.d.adopting?.(r.sessionId) ? { adopting: true } : {}),
+      ...(queued ? { queued } : {}),
     };
   }
 
@@ -468,7 +472,7 @@ export function summarizeTranscript(entries: any[]): TranscriptSummary {
   return out;
 }
 
-// ---- history (getSessionMessages → what the app shows) ----
+// ---- transcript entries (what palHistory.ts reads them with) ----
 
 /** Claude Code's summary after compacting, by its opening words. */
 export function isCompactSummaryText(text: string): boolean {
@@ -505,65 +509,4 @@ export function userText(content: unknown): string | null {
     .map((b: any) => b.text)
     .join("\n");
   return t || null;
-}
-
-/**
- * Turns a session's messages into what the app shows (CCMessage), oldest
- * first. Words from the assistant's own session (SendMessage, by its name)
- * are "palo"; other sessions' are "peer".
- */
-export function toCCMessages(raw: RawSessionMessage[], assistantName: string, paloName = "Palo"): CCMessage[] {
-  const out: CCMessage[] = [];
-  for (const m of raw) {
-    if (m.parent_tool_use_id) continue; // a subagent's
-    const ts = Date.parse(m.timestamp ?? "") || 0;
-    const content = m.message?.content;
-    if (m.type === "assistant") {
-      if (!Array.isArray(content)) continue;
-      const text = content
-        .filter((b: any) => b?.type === "text" && typeof b.text === "string")
-        .map((b: any) => b.text)
-        .join("\n\n")
-        .trim();
-      if (text && m.message?.model !== "<synthetic>") out.push({ id: m.uuid, ts, role: "assistant", text });
-      continue;
-    }
-    if (m.type !== "user" || (m as any).isCompactSummary || (m as any).isMeta || (m as any).promptSource === "system") continue;
-    const text = userText(content);
-    if (text === null) continue;
-    const origin = m.origin;
-    if (origin?.kind === "peer") {
-      const from = typeof origin.name === "string" ? origin.name : "";
-      const body = peerBody(origin, text);
-      if (from && from === paloName) out.push({ id: m.uuid, ts, role: "palo", text: body, from: assistantName });
-      else out.push({ id: m.uuid, ts, role: "peer", text: body, ...(from ? { from } : {}) });
-      continue;
-    }
-    // Only what the owner typed; Claude Code's own notices and reminders aren't.
-    if (origin && origin.kind !== "human") continue;
-    const cmd = /^<command-name>(.*?)<\/command-name>/s.exec(text.trim());
-    if (cmd) {
-      const args = /<command-args>([\s\S]*?)<\/command-args>/.exec(text)?.[1]?.trim();
-      out.push({ id: m.uuid, ts, role: "owner", text: `${cmd[1]!.trim()}${args ? ` ${args}` : ""}` });
-      continue;
-    }
-    const t = text.trim();
-    if (!t || /^(<local-command-|<system-reminder>|<command-message>|<task-notification>|Caveat: )/.test(t) || isCompactSummaryText(t)) continue;
-    // (An old 「TL;DR」 ask shows without its marker.)
-    out.push({ id: m.uuid, ts, role: "owner", text: stripTldrMarker(t) });
-  }
-  return out;
-}
-
-/** A page of messages: the `limit` before message `before` (or the newest), oldest first. */
-export function pageMessages(all: CCMessage[], before: string | number | undefined, limit: number): CCMessage[] {
-  let end = all.length;
-  if (typeof before === "string" && before) {
-    const i = all.findIndex((m) => m.id === before);
-    if (i >= 0) end = i;
-  } else if (typeof before === "number" && Number.isFinite(before)) {
-    end = all.findIndex((m) => m.ts >= before);
-    if (end < 0) end = all.length;
-  }
-  return all.slice(Math.max(0, end - limit), end);
 }

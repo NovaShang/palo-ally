@@ -19,10 +19,12 @@ extension DemoHost {
         switch method {
         case RPCMethod.palsList:
             normalizePals()
-            return ["pals": try .from(pals), "others": try .from(otherSessions), "hooks": .bool(hooksEnabled)]
+            return ["pals": try .from(pals), "others": try .from(otherSessions), "hooks": .bool(hooksEnabled),
+                    "archived": .number(Double(archivedCount()))]
         case RPCMethod.palsHistory:
             let id = p["id"]?.stringValue ?? ""
-            guard let log = palLogs[id] else { throw DemoError(message: "没有这个 Pal") }
+            // Not a Pal: one of the computer's other sessions, read the same way (one kind of agent).
+            guard let log = palLogs[id] ?? viewedSessionLog(id) else { throw DemoError(message: "找不到这个会话") }
             let limit = Int(p["limit"]?.doubleValue ?? 50)
             var upTo = log.endIndex
             if let before = p["before"]?.stringValue, let i = log.firstIndex(where: { $0.id == before }) { upTo = i }
@@ -34,9 +36,13 @@ extension DemoHost {
             }
             return out
         case RPCMethod.palsSend:
-            let id = p["id"]?.stringValue ?? ""
+            let ref = p["id"]?.stringValue ?? ""
             let text = (p["text"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let pal = pals.first(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Pal") }
+            // To a session that isn't a Pal: taken over, as the host does (a terminal's waits to be quit there).
+            guard let pal = pals.first(where: { $0.id == ref || $0.sessionId == ref }) else {
+                return try await sendToSession(ref, text: text, clientMsgId: p["clientMsgId"]?.stringValue)
+            }
+            let id = pal.id
             guard pal.status != .stopped else { throw DemoError(message: "\(pal.displayName)停了") }
             // Images and files go with the words, as Palo takes them (pals-prd §15).
             let atts = try attachments(p["attachments"])
@@ -114,13 +120,14 @@ extension DemoHost {
         case RPCMethod.palsAdopt:
             let sid = p["sessionId"]?.stringValue ?? ""
             if p["cancel"]?.boolValue == true {
-                // The owner stopped waiting: so does the demo's computer.
+                // The owner stopped waiting: so does the demo's computer, and the words waiting for it go (取消这条).
+                let dropped = otherSessions.first { $0.id == sid }?.queued?.count ?? 0
                 guard waitingAdoptions.remove(sid) != nil else {
                     if let pal = pals.first(where: { $0.sessionId == sid }) { return ["cancelled": false, "pal": try .from(pal)] }
                     return ["cancelled": false]
                 }
-                setOther(sid) { $0.adopting = nil }
-                return ["cancelled": true]
+                setOther(sid) { $0.adopting = nil; $0.queued = nil }
+                return dropped > 0 ? ["cancelled": true, "dropped": .number(Double(dropped))] : ["cancelled": true]
             }
             // Already a Pal: the same one.
             if let pal = pals.first(where: { $0.sessionId == sid }) { return ["pal": try .from(pal)] }
@@ -137,15 +144,7 @@ extension DemoHost {
                 // Quit in its terminal first; the demo's owner does it a few seconds later.
                 waitingAdoptions.insert(sid)
                 setOther(sid) { $0.adopting = true }
-                let after = UserDefaults.standard.object(forKey: "demoAdoptAfter") != nil
-                    ? UserDefaults.standard.double(forKey: "demoAdoptAfter") : 6
-                if after > 0 {
-                    Task {
-                        await self.pause(after)
-                        guard self.waitingAdoptions.contains(sid) else { return }
-                        self.finishAdoption(sid)
-                    }
-                }
+                quitLater(sid)
                 return ["waiting": "exit-in-terminal"]
             }
             await pause(1.5) // `claude stop`, then resumed under the host
@@ -188,7 +187,13 @@ extension DemoHost {
         normalizePals()
         emit(RPCEventName.palsUpdated, ["pals": (try? JSONValue.from(pals)) ?? .array([]),
                                         "others": (try? JSONValue.from(otherSessions)) ?? .array([]),
-                                        "hooks": .bool(hooksEnabled)] as JSONValue)
+                                        "hooks": .bool(hooksEnabled),
+                                        "archived": .number(Double(archivedCount()))] as JSONValue)
+    }
+
+    /// 已归档 N, as the host counts it: put away for lack of use, and archived by the owner.
+    func archivedCount() -> Int {
+        pals.filter(\.folded).count + endedItems.filter { e in !pals.contains { $0.sessionId == e.sessionId } }.count
     }
 
     /// What the host works out: the dot's state, and who has been left alone
@@ -255,6 +260,7 @@ extension DemoHost {
     func finishAdoption(_ sid: String) -> Pal? {
         waitingAdoptions.remove(sid)
         guard let s = otherSessions.first(where: { $0.id == sid }) else { return nil }
+        let waited = s.queued ?? []
         otherSessions.removeAll { $0.id == sid }
         let id = "pal-\(nextID("p"))"
         let pal = Pal(id: id, name: s.name, cwd: s.cwd, sessionId: s.id, status: s.status == .waiting ? .waiting : .idle,
@@ -280,7 +286,62 @@ extension DemoHost {
             emit(RPCEventName.approvalUpdated, approvals[i])
         }
         setPal(id) { _ in }
+        // What the owner said while its terminal held it goes in now, in order.
+        for q in waited {
+            var m = palMessage(id, role: .user, text: q.text, channel: .app)
+            m.clientMsgId = q.clientMsgId
+            appendPal(m)
+        }
+        if let last = waited.last {
+            palTurns[id] = Task { await self.palAnswers(id, to: last.text) }
+        }
         return pals.first { $0.id == id }
+    }
+
+    /// `pals.send` to a session that isn't a Pal (one kind of agent): a
+    /// terminal's waits until it's quit there (`-demoAdoptAfter`, 0 never;
+    /// `-demoQuit <session id>` quits it now), then it is taken over and the
+    /// words go in; a background one or one that ended is taken over at once.
+    func sendToSession(_ sid: String, text: String, clientMsgId: String?) async throws -> JSONValue {
+        guard !text.isEmpty else { throw DemoError(message: "要说的话不能是空的") }
+        if let s = otherSessions.first(where: { $0.id == sid }), s.isOpenInTerminal {
+            if let cid = clientMsgId, let q = s.queued?.first(where: { $0.clientMsgId == cid }) {
+                return ["id": .string(q.id), "seq": 0, "queued": true]
+            }
+            let q = QueuedMessage(id: nextID("q"), text: text, clientMsgId: clientMsgId, at: Date().epochMillis)
+            let first = !waitingAdoptions.contains(sid)
+            waitingAdoptions.insert(sid)
+            setOther(sid) { $0.adopting = true; $0.queued = ($0.queued ?? []) + [q] }
+            if first { quitLater(sid) }
+            return ["id": .string(q.id), "seq": 0, "queued": true]
+        }
+        await pause(1.5) // `claude stop` (a background one), then resumed under the host
+        let pal: Pal?
+        if otherSessions.contains(where: { $0.id == sid }) { pal = finishAdoption(sid) } else { pal = adoptRecent(sid) }
+        guard let pal else { throw DemoError(message: "找不到这个会话") }
+        var m = palMessage(pal.id, role: .user, text: text, channel: .app)
+        m.clientMsgId = clientMsgId
+        appendPal(m)
+        palTurns[pal.id] = Task { await self.palAnswers(pal.id, to: text) }
+        return ["id": .string(m.id), "seq": .number(Double(m.seq)), "pal": .string(pal.id)]
+    }
+
+    /// The demo's owner quits a terminal session a few seconds after being asked (`-demoAdoptAfter <s>`, default 6; 0 never).
+    func quitLater(_ sid: String) {
+        let after = UserDefaults.standard.object(forKey: "demoAdoptAfter") != nil
+            ? UserDefaults.standard.double(forKey: "demoAdoptAfter") : 6
+        guard after > 0 else { return }
+        Task {
+            await self.pause(after)
+            guard self.waitingAdoptions.contains(sid) else { return }
+            self.finishAdoption(sid)
+        }
+    }
+
+    /// The terminal holding a session quits now (demo action `quit:<session id>`).
+    public func quitTerminal(_ sid: String) {
+        guard waitingAdoptions.contains(sid) else { return }
+        finishAdoption(sid)
     }
 
     // MARK: recent conversations (§10)
@@ -383,27 +444,32 @@ extension DemoHost {
 
     // MARK: looking without taking over (§14)
 
-    /// A session that isn't a Pal, as `sessions.history` reads it: one of the
+    /// A session that isn't a Pal, as `pals.history` reads it: one of the
     /// others (the busy one adds a line every few seconds while it's looked
-    /// at), or a conversation that ended lately.
-    func viewedSessionLog(_ id: String) -> [CCMessage]? {
+    /// at), or a conversation that ended lately. Its messages carry its
+    /// session id as their agent.
+    func viewedSessionLog(_ id: String) -> [ChatMessage]? {
         if let log = viewedLogs[id] { return log }
         let now = Date().epochMillis
-        var lines: [(CCMessageRole, String, String?)]
+        var lines: [(role: ChatRole, text: String, from: String?)]
         if let s = otherSessions.first(where: { $0.id == id }) {
-            lines = sessionLines(for: s).map { ($0.role == .user ? .owner : .assistant, $0.text, nil) }
+            lines = sessionLines(for: s).map { ($0.role, $0.text, nil) }
             if s.id == "cc-login" {
-                lines.insert((.peer, "你好，我是笔记整理。登录页的文案在 notes/产品/登录.md 里，主人上周改过一版：按钮叫「继续」，不叫「下一步」；忘记密码的链接放在输入框下面，不放在按钮旁边；错误提示用一句话说清楚哪里不对，不要只写「出错了」。改完跳转以后，顺手把这几处也对一下。", "笔记整理"), at: 1)
+                lines.insert((.user, "你好，我是笔记整理。登录页的文案在 notes/产品/登录.md 里，主人上周改过一版：按钮叫「继续」，不叫「下一步」；忘记密码的链接放在输入框下面，不放在按钮旁边；错误提示用一句话说清楚哪里不对，不要只写「出错了」。改完跳转以后，顺手把这几处也对一下。", "笔记整理"), at: 1)
             }
         } else if let r = recentSessions.first(where: { $0.sessionId == id }) {
-            lines = (DemoHost.recentLines[id] ?? [(.user, r.title), (.assistant, "好，我先看一下相关的文件。")])
-                .map { ($0.0 == .user ? .owner : .assistant, $0.1, nil) }
+            lines = (DemoHost.recentLines[id] ?? [(.user, r.title), (.assistant, "好，我先看一下相关的文件。")]).map { ($0.0, $0.1, nil) }
         } else {
             return nil
         }
-        let log = lines.enumerated().map { i, l in
-            CCMessage(id: "\(id)-v\(i + 1)", ts: now - Int64(60_000 * (lines.count - i)), role: l.0, text: l.1, from: l.2)
+        func line(_ n: String, _ ts: Int64, _ role: ChatRole, _ text: String, from: String? = nil) -> ChatMessage {
+            var m = ChatMessage(seq: ts, id: "\(id)-\(n)", role: role, kind: .text, text: text,
+                                channel: from != nil ? .system : .app, ts: ts)
+            m.pal = id
+            m.from = from
+            return m
         }
+        let log = lines.enumerated().map { i, l in line("v\(i + 1)", now - Int64(60_000 * (lines.count - i)), l.role, l.text, from: l.from) }
         viewedLogs[id] = log
         if otherSessions.first(where: { $0.id == id })?.status == .busy, !viewedTails.contains(id) {
             viewedTails.insert(id)
@@ -413,8 +479,7 @@ extension DemoHost {
                 for n in 1...6 {
                     await self.pause(after)
                     guard self.otherSessions.contains(where: { $0.id == id }) else { return }
-                    self.viewedLogs[id, default: []].append(CCMessage(id: "\(id)-t\(n)", ts: Date().epochMillis, role: .assistant,
-                                                                      text: "第 \(n) 个测试文件跑完了，都通过。"))
+                    self.viewedLogs[id, default: []].append(line("t\(n)", Date().epochMillis, .assistant, "第 \(n) 个测试文件跑完了，都通过。"))
                 }
             }
         }

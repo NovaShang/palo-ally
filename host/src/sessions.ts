@@ -1,8 +1,4 @@
 import { t } from "./i18n/index.ts";
-import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
-import { existsSync, statSync } from "node:fs";
-import { transcriptPath } from "./handoffs.ts";
-import { pageFromTail } from "./transcriptTail.ts";
 import { type ApprovalManager, sessionPermission } from "./approvals.ts";
 import type { Audit } from "./audit.ts";
 import { AwayDetector } from "./away.ts";
@@ -10,11 +6,11 @@ import { WaitingPushes } from "./waitingPush.ts";
 import type { Bus } from "./bus.ts";
 import { type ClaudeCli, RealClaudeCli } from "./ccCli.ts";
 import { HookInstaller, HookServer, type HookContext } from "./ccHooks.ts";
-import { type RawSessionMessage, SessionWatch, pageMessages, toCCMessages, waitingWords } from "./ccSessions.ts";
+import { SessionWatch, waitingWords } from "./ccSessions.ts";
 import type { Paths, Settings } from "./config.ts";
 import type { QuestionManager } from "./questions.ts";
 import type { Router } from "./router.ts";
-import type { CCMessage, CCSession, CardSource } from "./types.ts";
+import type { CCSession, CardSource, ChatMessage } from "./types.ts";
 import { within } from "./util.ts";
 
 // Sessions: the Mac's own Claude Code sessions that PaloAlly doesn't run
@@ -23,6 +19,15 @@ import { within } from "./util.ts";
 // questions on the phone while the owner is away from the computer, through
 // PaloAlly's global hooks. Pals, the sessions the host runs itself, are
 // pals.ts; they aren't in this list.
+
+/** A line of a session as app versions before one kind of agent read it (sessions.history). */
+export interface LegacyLine {
+  id: string;
+  ts: number;
+  role: "owner" | "assistant" | "peer" | "palo";
+  text: string;
+  from?: string;
+}
 
 /** How long a session's card waits on the phone: a little under the hook's 300 s. */
 export const HOOK_WAIT_MS = 290_000;
@@ -44,13 +49,10 @@ export interface SessionsDeps {
   isPal?: (sessionId: string) => boolean;
   /** pals.adopt is waiting for this one to quit in its terminal. */
   adopting?: (sessionId: string) => boolean;
-  /** The assistant's SendMessage name: its words in a conversation show as the assistant's. */
-  paloName?: () => string;
+  /** The owner's words waiting for it to quit there. */
+  queued?: (sessionId: string) => CCSession["queued"];
   cli?: ClaudeCli;
   away?: AwayDetector;
-  readMessages?: (sessionId: string, dir: string) => Promise<RawSessionMessage[]>;
-  /** A conversation that ended (pals-prd §14): its folder, from Claude Code's own record (getSessionInfo). */
-  endedCwd?: (sessionId: string) => Promise<string | undefined>;
   hookWaitMs?: number;
   bun?: string; // the bun the hook runs on
   now?: () => number;
@@ -83,6 +85,7 @@ export class Sessions {
       cli: this.cli,
       isOwn: (s) => this.isOwn(s),
       adopting: (id) => d.adopting?.(id) ?? false,
+      queued: (id) => d.queued?.(id),
       waitingCard: (id) => {
         const open = this.cards.get(id);
         return open?.size ? [...open.values()].at(-1)!.waitingFor : undefined;
@@ -148,52 +151,20 @@ export class Sessions {
   }
 
   /**
-   * sessions.history: one of the computer's sessions, read only (pals-prd
-   * §14): a live one, or a conversation that ended (its folder from Claude
-   * Code's record). An open page asks again every few seconds for what's
-   * new; a transcript that hasn't changed since (size and time) isn't read
-   * again. Reading never writes to it or holds it.
+   * sessions.history, for app versions that showed these sessions on a page
+   * of their own (pals-prd §14): the conversation pals.history reads (one
+   * reader for every agent), in the shape those versions read.
    */
-  async history(id: string, before?: string | number, limit = 50): Promise<CCMessage[]> {
-    const r = this.watch.get(id) ?? this.watch.find(id);
-    let sid = r?.sessionId;
-    let cwd = r?.cwd;
-    if (!sid || !cwd) {
-      const key = String(id ?? "").trim();
-      const ended = key ? await this.d.endedCwd?.(key).catch(() => undefined) : undefined;
-      if (!ended) throw new Error(t("pals.noSession"));
-      sid = key;
-      cwd = ended;
+  static legacyLines(messages: ChatMessage[], assistantName: string): LegacyLine[] {
+    const out: LegacyLine[] = [];
+    for (const m of messages) {
+      if (m.kind !== "text" || !m.text) continue;
+      if (m.role === "assistant") out.push({ id: m.id, ts: m.ts, role: "assistant", text: m.text });
+      else if (m.role !== "user") continue;
+      else if (m.from) out.push({ id: m.id, ts: m.ts, role: m.from === assistantName ? "palo" : "peer", text: m.text, from: m.from });
+      else out.push({ id: m.id, ts: m.ts, role: "owner", text: m.text });
     }
-    const lim = Math.max(1, Math.min(Number(limit) || 50, 200));
-    // From the transcript's end, not all of it parsed (transcriptTail.ts).
-    const path = transcriptPath(this.d.claudeDir, cwd, sid);
-    if (!this.d.readMessages && existsSync(path)) {
-      const name = this.d.settings().assistantName || "Palo";
-      const palo = this.d.paloName?.() ?? "Palo";
-      return pageFromTail(path, sid, cwd, (r) => toCCMessages(r, name, palo), (all) => pageMessages(all, before, lim), before, lim);
-    }
-    const all = await this.readAll(sid, cwd);
-    return pageMessages(all, before, lim);
-  }
-
-  private lastRead: { key: string; stamp: string; messages: CCMessage[] } | null = null;
-
-  private async readAll(sid: string, cwd: string): Promise<CCMessage[]> {
-    const name = this.d.settings().assistantName || "Palo";
-    const key = `${sid}\n${cwd}\n${name}`;
-    let stamp = "";
-    try {
-      const st = statSync(transcriptPath(this.d.claudeDir, cwd, sid));
-      stamp = `${st.size}:${st.mtimeMs}`;
-    } catch {
-      /* not there (or not where Claude Code keeps it): read as asked */
-    }
-    if (stamp && this.lastRead?.key === key && this.lastRead.stamp === stamp) return this.lastRead.messages;
-    const read = this.d.readMessages ?? ((s: string, dir: string) => getSessionMessages(s, { dir }) as Promise<RawSessionMessage[]>);
-    const messages = toCCMessages(await read(sid, cwd), name, this.d.paloName?.() ?? "Palo");
-    this.lastRead = stamp ? { key, stamp, messages } : null;
-    return messages;
+    return out;
   }
 
   // ---------------- the global hooks ----------------

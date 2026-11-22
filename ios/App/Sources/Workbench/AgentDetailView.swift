@@ -249,12 +249,12 @@ private struct SessionDetailForm: View {
     @ViewBuilder private func end(_ pal: Pal) -> some View {
         Section {
             if confirmEnd {
-                ConfirmPanel(title: Copy.spaced(String(localized: "结束「\(pal.displayName)」？")),
-                             text: String(localized: "它会停下，之后还能从历史记录里接着聊。"),
-                             action: String(localized: "结束会话"), working: working == "end", glass: false,
+                ConfirmPanel(title: Copy.spaced(String(localized: "归档「\(pal.displayName)」？")),
+                             text: String(localized: "它会停下，之后还能在已归档里拿回来。"),
+                             action: String(localized: "归档"), working: working == "end", glass: false,
                              cancel: { confirmEnd = false }, confirm: { endSession() })
             } else {
-                Button("结束这个会话", role: .destructive) { confirmEnd = true }
+                Button("归档这个 agent", role: .destructive) { confirmEnd = true }
                     .frame(maxWidth: .infinity)
                     .disabled(!online)
                     .accessibilityIdentifier("detail-end")

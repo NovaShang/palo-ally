@@ -157,7 +157,7 @@ struct PalsStoreTests {
         #expect(store.listedPals.filter(\.isAsleep).map(\.name) == ["博客改版", "照片整理"])
         #expect(store.otherSessions.map(\.name) == ["修登录跳转", "问卷数据清洗"])
         #expect(store.palPendingCount("pal-site") == 1 && store.palPendingCount("pal-notes") == 0)
-        #expect(store.sessionPendingCount("cc-data") == 1)
+        #expect(store.palPendingCount("cc-data") == 1) // an agent not taken over yet: its items on its row
     }
 
     @Test func aPalsCardIsOnItsPageNotTheAssistants() async throws {
@@ -481,36 +481,84 @@ struct PalsRenameTests {
     }
 }
 
-/// Looking at a session without taking it over (pals-prd §14): its
-/// conversation in a read-only store, what's new on the next look, its
-/// cards at its end, another agent's long words folded.
+/// One kind of agent: one of the computer's sessions that isn't a Pal has
+/// an agent's store like a Pal's (its conversation by `pals.history`, its
+/// cards at its end); typing to it takes it over (a terminal's waits to be
+/// quit there, and can be called off); 已归档 finds any conversation.
 @MainActor
-@Suite("Sessions looked at", .serialized)
-struct SessionViewTests {
-    @Test func aLiveSessionsConversationReadOnlyWithItsCards() async throws {
+@Suite("One kind of agent", .serialized)
+struct OneKindOfAgentTests {
+    @Test func aSessionThatIsntAPalReadsAsAnAgentWithItsCards() async throws {
         let host = DemoHost(speed: 0, pals: true)
         let store = AppStore(transport: host.transport)
         store.start()
         #expect(await until { store.pals.count == 4 && store.otherSessions.count == 2 })
-        let login = store.sessionStore("cc-login")
-        #expect(store.sessionStore("cc-login") === login && login.viewedSessionID == "cc-login" && login.palID == nil)
+        let login = store.palStore("cc-login")
+        #expect(store.palStore("cc-login") === login && login.palID == "cc-login" && store.pal(id: "cc-login") == nil)
         #expect(await until { login.hasSynced && login.messages.count >= 4 })
-        #expect(await host.lastParams["sessions.history"]?["id"] == "cc-login")
+        #expect(await host.lastParams["pals.history"]?["id"] == "cc-login")
         let first = try #require(login.messages.first)
-        #expect(first.role == .user && first.channel == .cli && first.text.contains("登录以后会跳回首页"))
+        #expect(first.role == .user && first.text.contains("登录以后会跳回首页"))
         let peer = try #require(login.messages.first { $0.from == "笔记整理" })
         #expect(login.folds(peer) && !login.folds(first))
         // the next look has what it said since
         let before = login.messages.count
-        await login.reloadSessionPage()
+        try? await Task.sleep(for: .milliseconds(50))
+        await login.reloadPalHistory()
         #expect(login.messages.count > before && login.messages.last?.text.contains("测试文件跑完了") == true)
         #expect(Set(login.messages.map(\.id)).count == login.messages.count)
-        // its cards at its end (the other one's question isn't here; it stays with the assistant's too)
-        let data = store.sessionStore("cc-data")
+        // its cards at its end, and on its row (the other one's question isn't here)
+        let data = store.palStore("cc-data")
         #expect(await until { data.hasSynced })
         #expect(data.liveEndQuestions.map(\.id) == ["sq1"] && login.liveEndQuestions.isEmpty)
-        #expect(store.liveEndQuestions.map(\.id) == ["sq1"])
         #expect(!store.messages.contains { $0.text.contains("登录以后会跳回首页") })
+        // nothing taken over by looking, and nothing to go back to in it
+        #expect(store.pal(sessionId: "cc-login") == nil && !login.canRewind(to: first))
+    }
+
+    @Test func wordsToATerminalSessionWaitForItToQuitThenItIsTakenOver() async throws {
+        UserDefaults.standard.set(0, forKey: "demoAdoptAfter")
+        defer { UserDefaults.standard.removeObject(forKey: "demoAdoptAfter") }
+        let host = DemoHost(speed: 0, pals: true)
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { store.otherSessions.count == 2 })
+        let login = store.palStore("cc-login")
+        #expect(await until { login.hasSynced })
+        login.send("顺手把注册页也看看")
+        // held with the host: no Pal yet, the list says what waits
+        #expect(await until { login.heldMessages.count == 1 })
+        #expect(await until { store.otherSession("cc-login")?.queued?.map(\.text) == ["顺手把注册页也看看"] })
+        #expect(store.waitsForExit(try #require(store.otherSession("cc-login"))) && store.pal(sessionId: "cc-login") == nil)
+        // 取消这条
+        await store.cancelAdoption(sessionId: "cc-login")
+        #expect(login.heldMessages.isEmpty)
+        #expect(await until { store.otherSession("cc-login")?.queued == nil && store.otherSession("cc-login")?.adopting == nil })
+        // again, and this time it's quit in the terminal
+        login.send("改完跑一下测试")
+        #expect(await until { store.otherSession("cc-login")?.queued?.count == 1 })
+        await host.quitTerminal("cc-login")
+        let pal = try #require(await until { store.pal(sessionId: "cc-login") != nil } ? store.pal(sessionId: "cc-login") : nil)
+        #expect(store.otherSession("cc-login") == nil)
+        let page = store.palStore(pal.id)
+        #expect(await until { page.messages.contains { $0.role == .user && $0.text == "改完跑一下测试" } })
+        #expect(!page.messages.contains { $0.text == "顺手把注册页也看看" })
+        // the waiting words left the session's own store too
+        #expect(await until { login.heldMessages.isEmpty })
+    }
+
+    @Test func wordsToABackgroundSessionTakeItOverAtOnce() async throws {
+        let host = DemoHost(speed: 0, pals: true)
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { store.otherSessions.count == 2 })
+        let data = store.palStore("cc-data")
+        data.send("缺的那 37 份先删掉")
+        #expect(await until { store.pal(sessionId: "cc-data") != nil })
+        #expect(await until { data.messages.first { $0.text == "缺的那 37 份先删掉" }?.delivery == .sent })
+        #expect(data.heldMessages.isEmpty)
+        let pal = try #require(store.pal(sessionId: "cc-data"))
+        #expect(await until { store.palStore(pal.id).messages.contains { $0.text == "缺的那 37 份先删掉" } })
     }
 
     @Test func aConversationThatEndedReadsToo() async throws {
@@ -521,10 +569,24 @@ struct SessionViewTests {
         try await store.refreshRecent()
         let id = "7c1e9a52-3f0b-4d8e-9a61-0b5c2e7d4f10"
         #expect(store.viewedSession(id)?.name == "首页改成两栏布局" && store.viewedSession(id)?.live == nil)
-        let page = store.sessionStore(id)
+        let page = store.palStore(id)
         #expect(await until { page.messages.count == 3 })
         #expect(page.messages.last?.text.contains("两栏改好了") == true)
         // nothing taken over by looking
         #expect(store.pal(sessionId: id) == nil)
+    }
+
+    @Test func theArchiveCountsAndFindsAnyConversation() async throws {
+        let host = DemoHost(speed: 0, pals: true)
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { store.pals.count == 4 && store.archivedCount != nil })
+        #expect(store.archivedTotal == store.pals.filter(\.folded).count)
+        let found = try await store.searchArchive("报税")
+        #expect(found.map(\.sessionId) == ["old-tax"])
+        try await store.refreshEarlier()
+        #expect(store.earlierItems?.contains { $0.sessionId == "old-tax" } == false)
+        let pal = try await store.resume(try #require(found.first))
+        #expect(pal.sessionId == "old-tax")
     }
 }

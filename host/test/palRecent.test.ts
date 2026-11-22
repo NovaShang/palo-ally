@@ -66,7 +66,7 @@ function setup(o: { spawn?: boolean; extraHolders?: () => RegistryEntry[]; now?:
   const src = fakeSource();
   const ctx = makeHub({
     config: testConfig((c) => (c.settings.maxAwake = 5)), // the test below counts to five awake
-    sessions: { claudeDir: claude.dir, cli, away: new AwayDetector(() => null, Date.now, () => false), readMessages },
+    sessions: { claudeDir: claude.dir, cli, away: new AwayDetector(() => null, Date.now, () => false) },
     pals: {
       readMessages,
       timing: FAST,
@@ -404,8 +404,28 @@ describe("the assistant brings one back (pals_recent, pal_adopt)", () => {
   });
 });
 
+describe("已归档's search", () => {
+  test("pals.earlier with a query finds any Claude Code conversation on the computer (older than 30 days too) by title, folder or id; one found can be brought back", async () => {
+    const t = setup();
+    const site = t.folder("site");
+    const tax = t.folder("tax-2025");
+    const recent = t.ended(site, { customTitle: "首页改成两栏", ago: HOUR });
+    const old = t.ended(tax, { customTitle: "报税清单", ago: 90 * 24 * HOUR });
+    expect((await t.call("pals.earlier")).items.map((i: any) => i.sessionId)).toEqual([recent]);
+    expect((await t.call("pals.earlier", { query: "报税" })).items.map((i: any) => [i.kind, i.sessionId, i.name])).toEqual([["recent", old, "报税清单"]]);
+    expect((await t.call("pals.earlier", { query: "TAX-2025" })).items.map((i: any) => i.sessionId)).toEqual([old]);
+    expect((await t.call("pals.earlier", { query: old.slice(0, 8) })).items.map((i: any) => i.sessionId)).toEqual([old]);
+    expect((await t.call("pals.earlier", { query: "两栏" })).items.map((i: any) => i.sessionId)).toEqual([recent]);
+    expect((await t.call("pals.earlier", { query: "没有这个" })).items).toEqual([]);
+    const { pal } = await t.call("pals.resume", { key: `recent:${old}` });
+    expect(pal).toMatchObject({ sessionId: old, cwd: tax });
+    expect((await t.call("pals.earlier", { query: "报税" })).items).toEqual([]);
+    await t.hub.pals.stopAndWait();
+  });
+});
+
 describe("looking without taking over (§14)", () => {
-  test("sessions.history reads a conversation that ended (its folder from Claude Code's record) without taking it over or writing to it; an open page asking again sees what was added, and an unchanged transcript isn't read again", async () => {
+  test("a conversation that ended reads as an agent's (pals.history; its folder from Claude Code's record) without taking it over or writing to it; asking again sees what was added; older apps get it in their shape", async () => {
     const t = setup();
     const site = t.folder("site");
     const sid = t.ended(site, { customTitle: "首页改成两栏" });
@@ -416,23 +436,21 @@ describe("looking without taking over (§14)", () => {
         : { type: "assistant", uuid, timestamp: "2026-10-12T09:01:00Z", message: { id: `msg_${uuid}`, role: "assistant", content: [{ type: "text", text }] } };
     t.raw.set(sid, [line("u1", "user", "把首页改成两栏"), line("a1", "assistant", "两栏的样式好了。")]);
     const before = readFileSync(path, "utf8");
-    const first = await t.call("sessions.history", { id: sid });
-    expect(first.messages.map((m: any) => [m.role, m.text])).toEqual([["owner", "把首页改成两栏"], ["assistant", "两栏的样式好了。"]]);
+    const first = await t.call("pals.history", { id: sid });
+    expect(first.messages.map((m: any) => [m.role, m.text, m.pal])).toEqual([["user", "把首页改成两栏", sid], ["assistant", "两栏的样式好了。", sid]]);
+    expect((await t.call("sessions.history", { id: sid })).messages.map((m: any) => [m.role, m.text])).toEqual([["owner", "把首页改成两栏"], ["assistant", "两栏的样式好了。"]]);
     // nothing taken over, nothing written
     expect(t.hub.pals.list()).toEqual([]);
     expect(t.driver.pals).toHaveLength(0);
     expect(readFileSync(path, "utf8")).toBe(before);
-    // the transcript didn't change: not read again (what the reader would say now isn't asked)
-    t.raw.set(sid, [...t.raw.get(sid)!, line("u2", "user", "还没写进记录")]);
-    expect((await t.call("sessions.history", { id: sid })).messages).toHaveLength(2);
     // Claude Code wrote more (a live one going on): the next look has it
-    appendFileSync(path, JSON.stringify(line("u2", "user", "还没写进记录")) + "\n");
-    t.raw.set(sid, [...t.raw.get(sid)!, line("a2", "assistant", "新的一句")]);
-    const next = await t.call("sessions.history", { id: sid });
+    t.raw.set(sid, [...t.raw.get(sid)!, line("u2", "user", "还没写进记录"), line("a2", "assistant", "新的一句")]);
+    const next = await t.call("pals.history", { id: sid });
     expect(next.messages.map((m: any) => m.text).slice(-2)).toEqual(["还没写进记录", "新的一句"]);
     // older pages as before; one it doesn't know isn't found
-    expect((await t.call("sessions.history", { id: sid, before: "a2", limit: 1 })).messages.map((m: any) => m.id)).toEqual(["u2"]);
-    await expect(t.call("sessions.history", { id: "f0000000-0000-4000-8000-000000000000" })).rejects.toThrow("没有这个会话");
+    expect((await t.call("pals.history", { id: sid, before: "msg_a2", limit: 1 })).messages.map((m: any) => m.id)).toEqual(["u2"]);
+    await expect(t.call("pals.history", { id: "f0000000-0000-4000-8000-000000000000" })).rejects.toThrow("找不到这个会话");
+    await expect(t.call("sessions.history", { id: "f0000000-0000-4000-8000-000000000000" })).rejects.toThrow("找不到这个会话");
     await t.hub.pals.stopAndWait();
   });
 });

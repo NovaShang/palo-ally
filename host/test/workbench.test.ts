@@ -36,7 +36,7 @@ function setup(o: { maxAwake?: number; paths?: ReturnType<typeof tmpPaths>; clau
   const ctx = makeHub({
     paths,
     config,
-    sessions: { claudeDir: claude.dir, cli, away: new AwayDetector(() => null, Date.now, () => false), readMessages: async () => [] },
+    sessions: { claudeDir: claude.dir, cli, away: new AwayDetector(() => null, Date.now, () => false) },
     pals: { readMessages: async () => [], timing: { ...FAST, sleepCheckMs: 30 }, ...o.pals },
   });
   ctx.driver.spawnPals = false;

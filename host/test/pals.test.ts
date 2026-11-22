@@ -67,7 +67,7 @@ function setup(o: { maxAwake?: number; foldDays?: number; spawn?: boolean; timin
   const ctx = makeHub({
     paths,
     config,
-    sessions: { claudeDir: claude.dir, cli, away: new AwayDetector(() => null, Date.now, () => false), readMessages },
+    sessions: { claudeDir: claude.dir, cli, away: new AwayDetector(() => null, Date.now, () => false) },
     pals: { readMessages, timing: { ...FAST, ...o.timing }, ...o.pals },
   });
   ctx.driver.spawnPals = o.spawn ?? false;
@@ -167,6 +167,103 @@ describe("adopting a session", () => {
     const { pal } = await t.call("pals.adopt", { sessionId: bg });
     expect(await t.call("pals.adopt", { sessionId: bg, cancel: true })).toEqual({ cancelled: false, pal: expect.objectContaining({ id: pal.id }) });
     expect(t.hub.pals.list()).toHaveLength(1);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("one kind of agent: words to a session that isn't a Pal take it over (no 接管 step) and go in; a background one is stopped first", async () => {
+    const t = setup();
+    const sid = bgSession(t);
+    const r = await t.call("pals.send", { id: sid, text: "把列表页的分页也做了", clientMsgId: "c-1" });
+    expect(r.pal).toMatch(/^pal_/);
+    expect(r.seq).toBeGreaterThan(0);
+    expect(r.queued).toBeUndefined();
+    expect(t.cli.calls).toEqual([`stop ${sid.slice(0, 8)}`]);
+    await waitFor(() => t.driver.pals[0]?.sent.length === 1);
+    expect(t.driver.pals[0]!.sent).toEqual(["把列表页的分页也做了"]);
+    expect(t.hub.pals.list()).toEqual([expect.objectContaining({ id: r.pal, sessionId: sid })]);
+    // the same words again (a retry) go in once, to the Pal it is now
+    expect((await t.call("pals.send", { id: sid, text: "把列表页的分页也做了", clientMsgId: "c-1" })).id).toBe(r.id);
+    expect(t.driver.pals[0]!.sent).toHaveLength(1);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("still open in a terminal: the words wait (never a second process on its transcript), the list shows them, and once it's quit there it's taken over and they go in, in order", async () => {
+    const t = setup();
+    const term = liveProcess();
+    const sid = "bbbb2222-0000-4000-8000-000000000012";
+    t.claude.register({ sessionId: sid, name: "修登录", cwd: t.project, pid: term.pid });
+    t.claude.transcript(t.project, sid, [assistantEntry("登录跳转修好了。")]);
+    // its conversation reads before anything is taken over
+    t.raw.set(sid, [{ type: "assistant", uuid: "a1", timestamp: "2026-10-12T09:01:00Z", message: { id: "msg_a1", role: "assistant", content: [{ type: "text", text: "登录跳转修好了。" }] } }]);
+    expect((await t.call("pals.history", { id: sid })).messages.map((m: any) => [m.role, m.text, m.pal])).toEqual([["assistant", "登录跳转修好了。", sid]]);
+    const first = await t.call("pals.send", { id: sid, text: "顺手把注册页也看看", clientMsgId: "c-a" });
+    expect(first).toEqual({ id: expect.stringMatching(/^q_/), seq: 0, queued: true });
+    const second = await t.call("pals.send", { id: sid, text: "改完跑一下测试", clientMsgId: "c-b" });
+    expect(second.queued).toBe(true);
+    // a retry of the first is the first
+    expect(await t.call("pals.send", { id: sid, text: "顺手把注册页也看看", clientMsgId: "c-a" })).toEqual(first);
+    await tick(200);
+    expect(t.driver.pals).toHaveLength(0);
+    expect(t.hub.pals.list()).toEqual([]);
+    const listed = (await t.call("pals.list")).others.find((s: any) => s.id === sid);
+    expect(listed).toMatchObject({ adopting: true, kind: "terminal" });
+    expect(listed.queued.map((q: any) => [q.text, q.clientMsgId])).toEqual([["顺手把注册页也看看", "c-a"], ["改完跑一下测试", "c-b"]]);
+    // kept over a restart
+    expect(JSON.parse(readFileSync(t.paths.pals, "utf8")).queued[0].messages).toHaveLength(2);
+    // the owner types /exit in the terminal
+    term.kill("SIGTERM");
+    await exited(term);
+    await waitFor(() => t.driver.pals[0]?.sent.length === 2, 5_000);
+    expect(t.driver.pals[0]!.sent).toEqual(["顺手把注册页也看看", "改完跑一下测试"]);
+    expect(t.driver.pals).toHaveLength(1);
+    expect(t.hub.pals.list()[0]).toMatchObject({ sessionId: sid, name: "修登录" });
+    await waitFor(() => !t.lastList().others.some((s: any) => s.id === sid));
+    expect(JSON.parse(readFileSync(t.paths.pals, "utf8")).queued).toEqual([]);
+    expect(t.hub.audit.tail(30).filter((e) => e.type === "pal.send_queued")).toHaveLength(2);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("取消这条: the waiting words are called off with the wait; quitting the terminal later takes nothing over and sends nothing", async () => {
+    const t = setup();
+    const term = liveProcess();
+    const sid = "bbbb2222-0000-4000-8000-000000000013";
+    t.claude.register({ sessionId: sid, name: "修登录", cwd: t.project, pid: term.pid });
+    t.claude.transcript(t.project, sid, [assistantEntry("登录跳转修好了。")]);
+    expect((await t.call("pals.send", { id: sid, text: "顺手把注册页也看看" })).queued).toBe(true);
+    await waitFor(() => t.lastList()?.others.find((s: any) => s.id === sid)?.queued?.length === 1);
+    expect(await t.call("pals.adopt", { sessionId: sid, cancel: true })).toEqual({ cancelled: true, dropped: 1 });
+    await waitFor(() => t.lastList()?.others.find((s: any) => s.id === sid)?.queued === undefined);
+    expect(t.lastList().others.find((s: any) => s.id === sid).adopting).toBeUndefined();
+    expect(JSON.parse(readFileSync(t.paths.pals, "utf8")).queued).toEqual([]);
+    term.kill("SIGTERM");
+    await exited(term);
+    t.claude.unregister(sid);
+    await tick(300);
+    expect(t.hub.pals.list()).toEqual([]);
+    expect(t.driver.pals).toHaveLength(0);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("words that waited when the host stopped wait again at its next start, and go in once the terminal is quit", async () => {
+    const term = liveProcess();
+    const sid = "bbbb2222-0000-4000-8000-000000000014";
+    let project = "";
+    const t = setup({
+      seed: (paths) => {
+        project = realpathSync(mkdtempSync(join(tmpdir(), "paloally-pal-")));
+        writeFileSync(paths.pals, JSON.stringify({ pals: [], queued: [{ sessionId: sid, messages: [{ id: "q_1", text: "接着做", at: Date.now() }] }] }));
+      },
+    });
+    t.claude.register({ sessionId: sid, name: "修登录", cwd: project, pid: term.pid });
+    t.claude.transcript(project, sid, [assistantEntry("登录跳转修好了。")]);
+    // (the setup started the Pals before the session was registered: as a restart would, once the registry is read)
+    (t.hub.pals as any).takeOverFor(sid, "queued");
+    await waitFor(() => t.hub.pals.adopting(sid));
+    expect(t.driver.pals).toHaveLength(0);
+    term.kill("SIGTERM");
+    await exited(term);
+    await waitFor(() => t.driver.pals[0]?.sent.length === 1, 5_000);
+    expect(t.driver.pals[0]!.sent).toEqual(["接着做"]);
     await t.hub.pals.stopAndWait();
   });
 

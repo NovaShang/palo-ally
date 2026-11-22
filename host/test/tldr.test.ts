@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { firstLine, summarizeTranscript, toCCMessages } from "../src/ccSessions.ts";
-import { transcriptLastLine } from "../src/palHistory.ts";
+import { firstLine, summarizeTranscript } from "../src/ccSessions.ts";
+import { toPalMessages, transcriptLastLine } from "../src/palHistory.ts";
 import { handleRpc } from "../src/rpc.ts";
 import { TLDR_MARKER, isTldrAsk, stripTldrMarker } from "../src/tldr.ts";
 import { cleanup, makeHub, tick } from "./helpers.ts";
@@ -27,14 +27,14 @@ describe("what 「TL;DR」 left behind", () => {
     expect(summarizeTranscript(echoed).lastLine).toBe("定了周六中午");
   });
 
-  test("an old ask in a session read on its own (sessions.history) is the owner's words without the marker", () => {
+  test("an old ask in a session's conversation (pals.history) is the owner's words without the marker", () => {
     const raw = [
       { type: "user", uuid: "1", timestamp: "2026-10-12T10:00:00Z", message: { role: "user", content: "列表要能按日期排序" }, origin: { kind: "human" } },
       { type: "user", uuid: "2", timestamp: "2026-10-12T10:01:00Z", message: { role: "user", content: oldAsk }, origin: { kind: "human" } },
     ];
-    expect(toCCMessages(raw as any, "帕帕", "Palo")).toEqual([
-      { id: "1", ts: Date.parse("2026-10-12T10:00:00Z"), role: "owner", text: "列表要能按日期排序" },
-      { id: "2", ts: Date.parse("2026-10-12T10:01:00Z"), role: "owner", text: "（主人点了「TL;DR」）请把这段对话最近的一段写成要点给我看。" },
+    expect(toPalMessages(raw as any, { pal: "s1", assistantName: "帕帕", paloName: "Palo" }).map((m) => [m.id, m.role, m.text])).toEqual([
+      ["1", "user", "列表要能按日期排序"],
+      ["2", "user", "（主人点了「TL;DR」）请把这段对话最近的一段写成要点给我看。"],
     ]);
   });
 

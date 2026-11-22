@@ -40,8 +40,11 @@ public struct CCSession: Codable, Sendable, Hashable, Identifiable {
     /// Asked to become a Pal (`pals.adopt`): the host waits for it to be quit
     /// in its terminal. Hosts without Pals don't say.
     public var adopting: Bool?
+    /// What the owner said to it while a terminal holds it (`pals.send`):
+    /// it goes in, in order, once it's quit there and taken over.
+    public var queued: [QueuedMessage]?
 
-    enum CodingKeys: String, CodingKey { case id, name, cwd, kind, status, waitingFor, lastLine, contextTokens, updatedAt, adopting }
+    enum CodingKeys: String, CodingKey { case id, name, cwd, kind, status, waitingFor, lastLine, contextTokens, updatedAt, adopting, queued }
 
     public init(id: String, name: String, cwd: String, kind: CCSessionKind, status: CCSessionStatus,
                 waitingFor: String? = nil, lastLine: String? = nil, contextTokens: Int? = nil, updatedAt: Int64) {
@@ -61,9 +64,12 @@ public struct CCSession: Codable, Sendable, Hashable, Identifiable {
         contextTokens = l.int("contextTokens")
         updatedAt = l.millis("updatedAt", or: 0)
         adopting = l.bool("adopting")
+        queued = l.array(QueuedMessage.self, "queued")
     }
 
     public var isHelper: Bool { kind == .helper }
+    /// Still open in a terminal: words to it wait until it's quit there (终端里开着).
+    public var isOpenInTerminal: Bool { kind == .terminal && isRunning }
     /// Running: it can be stopped, and it hears what's sent to it.
     public var isRunning: Bool { status == .busy || status == .idle || status == .waiting }
     /// A background job the terminal can attach to (`claude attach`).
@@ -106,53 +112,28 @@ public struct CCSession: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
-/// Who said a line in a session (§6.2 `origin`).
-public enum CCMessageRole: String, TolerantStringEnum {
-    /// The owner, typing at the computer.
-    case owner
-    /// The session itself.
-    case assistant
-    /// Another session (SendMessage between sessions); `from` names it.
-    case peer
-    /// Sent through PaloAlly: the owner's words from the app, or Palo's.
-    case palo
-    case unknown
-    public static let fallback = CCMessageRole.unknown
-}
-
-/// One line of a session's conversation.
-public struct CCMessage: Codable, Sendable, Hashable, Identifiable {
+/// A message waiting for a terminal to let go of its session (`CCSession.queued`).
+public struct QueuedMessage: Codable, Sendable, Hashable, Identifiable {
     public var id: String
-    public var ts: Int64
-    public var role: CCMessageRole
     public var text: String
-    /// peer: which session it came from. palo: 「主人」 for the owner's words
-    /// from the app, else the assistant's name for its own.
-    public var from: String?
+    public var clientMsgId: String?
+    public var at: Int64
+    /// How many images and files go with it.
+    public var attachments: Int?
 
-    enum CodingKeys: String, CodingKey { case id, ts, role, text, from }
+    enum CodingKeys: String, CodingKey { case id, text, clientMsgId, at, attachments }
 
-    public init(id: String, ts: Int64, role: CCMessageRole, text: String, from: String? = nil) {
-        self.id = id; self.ts = ts; self.role = role; self.text = text; self.from = from
+    public init(id: String, text: String, clientMsgId: String? = nil, at: Int64, attachments: Int? = nil) {
+        self.id = id; self.text = text; self.clientMsgId = clientMsgId; self.at = at; self.attachments = attachments
     }
 
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
         id = l.string("id", or: UUID().uuidString)
-        ts = l.millis("ts", or: 0)
-        role = l.decode(CCMessageRole.self, "role", or: .unknown)
         text = l.string("text", or: "")
-        from = l.string("from")
-    }
-
-    /// What it says, as shown. Words sent through PaloAlly may arrive with
-    /// the 「主人：」 or 「主人的助理：」 the host puts in front for the session (§6.4).
-    public var shownText: String {
-        guard role == .palo else { return text }
-        for prefix in ["主人的助理：", "主人：", "主人:"] where text.hasPrefix(prefix) {  // i18n-ok: the host's own words
-            return String(text.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
-        }
-        return text
+        clientMsgId = l.string("clientMsgId")
+        at = l.millis("at", or: 0)
+        attachments = l.int("attachments")
     }
 }
 
@@ -273,27 +254,5 @@ public enum SessionsUpdate: Sendable {
         }
         if let id = json["id"]?.stringValue ?? json["sessionId"]?.stringValue { self = .changed(id); return }
         self = .refetch
-    }
-}
-
-extension ChatMessage {
-    /// A line of one of the computer's sessions as the conversation view
-    /// shows it (its read-only page, pals-prd §14): the owner's words typed
-    /// at the computer, the session's replies, another session's words (and
-    /// the assistant's) under their name, as on a Pal's page. `seq` is its
-    /// time (only for order).
-    public init(session m: CCMessage, sessionID: String) {
-        let seq = max(1, m.ts)
-        switch m.role {
-        case .assistant, .unknown:
-            self.init(seq: seq, id: m.id, role: .assistant, kind: .text, text: m.text, channel: .app, ts: m.ts)
-        case .owner:
-            self.init(seq: seq, id: m.id, role: .user, kind: .text, text: m.text, channel: .cli, ts: m.ts)
-        case .palo where (m.from ?? "主人") == "主人":  // i18n-ok: the host's own words
-            self.init(seq: seq, id: m.id, role: .user, kind: .text, text: m.shownText, channel: .app, ts: m.ts)
-        case .palo, .peer:
-            self.init(seq: seq, id: m.id, role: .user, kind: .text, text: m.shownText, channel: .system, ts: m.ts)
-            from = m.from?.isEmpty == false ? m.from : loc("另一个会话")
-        }
     }
 }

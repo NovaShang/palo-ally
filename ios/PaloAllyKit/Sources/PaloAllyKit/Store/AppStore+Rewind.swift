@@ -16,8 +16,8 @@ extension AppStore {
         switch scope {
         case .palo: return m.pal == nil && !(m.uuid ?? "").isEmpty
         // A Pal: not the assistant's words to it, nor another session's.
-        case .pal: return (m.from ?? "").isEmpty && m.channel != .system
-        case .session: return false
+        // (One of the computer's sessions not taken over yet: never.)
+        case .pal(let id): return pal(id: id) != nil && (m.from ?? "").isEmpty && m.channel != .system
         }
     }
 

@@ -44,10 +44,9 @@ public actor DemoHost {
     /// Allies (allies-prd §7.5): two made-up people with a few exchanges each.
     public private(set) var allies: [AllyInfo] = []
     public private(set) var allyLogs: [String: [AllyEntry]] = [:]
-    /// Sessions (sessions-prd §7): the computer's Claude Code sessions and
-    /// their conversations (with `sessions: true`; otherwise none).
+    /// Sessions (sessions-prd §7): the computer's Claude Code sessions (with
+    /// `sessions: true`, a host from before Pals; otherwise none).
     public private(set) var sessions: [CCSession] = []
-    public private(set) var sessionLogs: [String: [CCMessage]] = [:]
     public private(set) var hooksEnabled = true
     /// Pals (pals-prd §8): the Claude Code sessions it hosts, each one's
     /// conversation, and the computer's other live sessions to adopt (with
@@ -76,7 +75,7 @@ public actor DemoHost {
     var palSeqFloor: [String: Int64] = [:]
     /// The computer's sessions looked at without taking them over (§14), and
     /// the live one that's still going (a line now and then).
-    var viewedLogs: [String: [CCMessage]] = [:]
+    var viewedLogs: [String: [ChatMessage]] = [:]
     var viewedTails: Set<String> = []
     /// Images and files sent from the app (media.upload / uploadChunk), by id;
     /// uploads still coming in, by upload id.
@@ -147,7 +146,6 @@ public actor DemoHost {
             if withSessions {
                 let ss = DemoHost.seedSessions(now: Date().epochMillis, nextSeq: seq + 1)
                 self.sessions = ss.sessions
-                self.sessionLogs = ss.logs
                 self.approvals += ss.approvals
                 self.questions += ss.questions
                 self.messages.append(ss.proposal)
@@ -1133,12 +1131,8 @@ public actor DemoHost {
         case RPCMethod.sessionsList:
             return ["sessions": try .from(sessions), "hooks": .bool(hooksEnabled)]
         case RPCMethod.sessionsHistory:
-            let id = p["id"]?.stringValue ?? ""
-            guard let log = sessionLogs[id] ?? (palsMode ? viewedSessionLog(id) : nil) else { throw DemoError(message: "没有这个会话") }
-            let limit = Int(p["limit"]?.doubleValue ?? 50)
-            var upTo = log.endIndex
-            if let before = p["before"]?.stringValue, let i = log.firstIndex(where: { $0.id == before }) { upTo = i }
-            return ["messages": try .from(Array(log[..<upTo].suffix(limit)))]
+            // Kept by the host for app versions with a read-only session page; this one reads pals.history.
+            return ["messages": .array([])]
         case RPCMethod.sessionsHooks:
             hooksEnabled = p["enabled"]?.boolValue ?? hooksEnabled
             return ["enabled": .bool(hooksEnabled)]
@@ -1176,8 +1170,6 @@ public actor DemoHost {
                 let s = CCSession(id: nextID("cc"), name: proposal.name, cwd: proposal.cwd, kind: .helper, status: .busy,
                                   lastLine: "在看交接说明…", contextTokens: 12_000, updatedAt: Date().epochMillis)
                 sessions.append(s)
-                sessionLogs[s.id] = [CCMessage(id: nextID("cm"), ts: Date().epochMillis, role: .palo,
-                                               text: "你好，我是 \(settings.assistantName)。\(proposal.duty)", from: settings.assistantName)]
                 emitSessions()
                 proposal.status = .created
                 proposal.sessionId = s.id
@@ -1399,7 +1391,6 @@ public actor DemoHost {
 
     struct SessionSeed {
         var sessions: [CCSession]
-        var logs: [String: [CCMessage]]
         var approvals: [Approval]
         var questions: [Question]
         /// The assistant's helper proposal in the conversation.
@@ -1422,44 +1413,6 @@ public actor DemoHost {
             CCSession(id: "cc-data", name: "问卷数据清洗", cwd: "/Users/demo/code/survey", kind: .background, status: .waiting,
                       waitingFor: "问你缺的数据怎么处理", lastLine: "1,200 份问卷里有 37 份没填收入。",
                       contextTokens: 310_000, updatedAt: now - 5 * min),
-        ]
-        var n = 0
-        func line(_ role: CCMessageRole, _ text: String, ago: Int64, from: String? = nil) -> CCMessage {
-            n += 1
-            // Not the shape of nextID's ("cm-1"), so later lines never share an id.
-            return CCMessage(id: "seed-cm\(n)", ts: now - ago, role: role, text: text, from: from)
-        }
-        // 网站帮手: a day of work before today's, so there is an older page.
-        var site: [CCMessage] = [
-            line(.palo, "你好，我是 Palo。主人的网站在 ~/code/site，接下来由你专门负责：先做列表页，再做详情页。每天花费不超过 5 美元。",
-                 ago: 26 * hour, from: "Palo"),
-            line(.assistant, "收到。我先看一下项目结构和现有的页面。", ago: 26 * hour - min),
-        ]
-        for i in 1...30 {
-            site.append(line(.assistant, "第 \(i) 处样式调好了：间距统一成 8 的倍数，字号跟设计稿对齐。", ago: 25 * hour - Int64(i) * 2 * min))
-        }
-        site += [
-            line(.assistant, "看完了：列表页还是空的，路由已经配好。我从数据接口开始接。", ago: 3 * hour),
-            line(.owner, "列表要能按日期排序", ago: 2 * hour + 30 * min),
-            line(.assistant, "好的，加上了按日期排序，默认最新的在前。", ago: 2 * hour + 28 * min),
-            line(.peer, "网站帮手你好，主人的笔记里有一份列表页的设计稿，在 notes/设计/列表页.md。", ago: 2 * hour, from: "笔记整理"),
-            line(.assistant, "谢谢，我按那份设计稿调一下间距和字号。", ago: 2 * hour - min),
-            line(.palo, "先别管登录页，把列表页做完", ago: 40 * min, from: "主人"),
-            line(.assistant, "明白，登录页先放着。列表页做完了，跑一下构建看看有没有报错。", ago: min),
-        ]
-        let notes = [
-            line(.palo, "你好，我是 Palo。主人的笔记在 ~/Documents/notes，请每周把新笔记归类、补上标签。", ago: 5 * 24 * hour, from: "Palo"),
-            line(.assistant, "好的，我先把现有的分类看一遍。", ago: 5 * 24 * hour - min),
-            line(.assistant, "这周的 12 篇笔记都归好类了，标签也补上了。", ago: 40 * min),
-        ]
-        let login = [
-            line(.owner, "登录以后会跳回首页，应该回到原来那一页", ago: 30 * min),
-            line(.assistant, "找到了：跳转时把原来的地址丢了。我改成登录前先记下来。", ago: 25 * min),
-            line(.assistant, "在跑登录相关的测试，还剩 3 个文件。", ago: 2 * min),
-        ]
-        let data = [
-            line(.owner, "把问卷数据清洗一下，输出一份干净的表", ago: hour),
-            line(.assistant, "1,200 份问卷里有 37 份没填收入。", ago: 6 * min),
         ]
         let approvals = [
             Approval(id: "sa1", tool: "Bash", title: "在主机上运行一条命令",
@@ -1485,8 +1438,7 @@ public actor DemoHost {
                                    text: "报销单每周都要理一遍，要不要开一个帮手专门管？", channel: .app, ts: now - 3 * min)
         proposal.proposal = HelperProposal(id: "hp1", name: "报销帮手", cwd: "/Users/demo/Documents/报销",
                                            duty: "每周把下载文件夹里的发票整理进报销表，缺的告诉你。")
-        return SessionSeed(sessions: sessions, logs: ["cc-site": site, "cc-notes": notes, "cc-login": login, "cc-data": data],
-                           approvals: approvals, questions: questions, proposal: proposal)
+        return SessionSeed(sessions: sessions, approvals: approvals, questions: questions, proposal: proposal)
     }
 
     // MARK: canned replies

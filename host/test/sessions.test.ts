@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AwayDetector } from "../src/away.ts";
-import { pageMessages, toCCMessages } from "../src/ccSessions.ts";
 import { handleRpc } from "../src/rpc.ts";
 import type { SessionsDeps } from "../src/sessions.ts";
 import { DEAD_PID, FakeClaudeDir, FakeCli, assistantEntry } from "./fakeClaude.ts";
@@ -23,10 +22,10 @@ function setup(o: { away?: boolean; sessions?: Partial<SessionsDeps> } = {}) {
       claudeDir: claude.dir,
       cli,
       away: new AwayDetector(() => null, Date.now, () => away),
-      readMessages: async (sid) => raw.get(sid) ?? [],
       hookWaitMs: 5_000,
       ...o.sessions,
     },
+    pals: { readMessages: async (sid) => raw.get(sid) ?? [] },
   });
   const project = realpathSync(mkdtempSync(join(tmpdir(), "paloally-project-")));
   const signal = () => new AbortController();
@@ -94,7 +93,10 @@ describe("the computer's sessions", () => {
     expect(hub.sessions.list()[0]).toMatchObject({ name: "后台的", kind: "background", status: "idle", contextTokens: 46_941 });
   });
 
-  test("a conversation: the owner, the session, other sessions, and the assistant's words; pages by message id", () => {
+  test("a session that isn't a Pal reads as an agent's conversation (pals.history, one reader); older apps get it in their shape (sessions.history)", async () => {
+    const { hub, claude, raw: store } = setup();
+    claude.register({ sessionId: "s2", name: "写文档", cwd: "/w/docs" });
+    await hub.sessions.watch.refresh();
     const raw = [
       { type: "user", uuid: "1", timestamp: "2026-10-12T10:00:00Z", message: { role: "user", content: "列表要能按日期排序" }, origin: { kind: "human" } },
       { type: "assistant", uuid: "2", timestamp: "2026-10-12T10:00:05Z", message: { role: "assistant", content: [{ type: "thinking", thinking: "" }] } },
@@ -113,19 +115,29 @@ describe("the computer's sessions", () => {
       { type: "user", uuid: "9", timestamp: "2026-10-12T10:04:01Z", message: { role: "user", content: "<local-command-stdout>Compacted</local-command-stdout>" } },
       { type: "user", uuid: "10", timestamp: "2026-10-12T10:05:00Z", message: { role: "user", content: "后台任务完成" }, origin: { kind: "task-notification" } },
     ];
-    const msgs = toCCMessages(raw as any, "帕帕", "Palo");
-    expect(msgs.map((m) => [m.id, m.role, m.text, m.from])).toEqual([
-      ["1", "owner", "列表要能按日期排序", undefined],
-      ["3", "assistant", "加上了。", undefined],
+    store.set("s2", raw);
+    const ctx = { clientId: "c", channel: "app" as const, local: false };
+    const call = async (method: string, params: unknown) => JSON.parse(JSON.stringify(await handleRpc(hub, { method, params }, ctx)));
+    const page = (await call("pals.history", { id: "s2" })).messages;
+    expect(page.map((m: any) => [m.id, m.role, m.text, m.from ?? null, m.pal])).toEqual([
+      ["1", "user", "列表要能按日期排序", null, "s2"],
+      ["3", "assistant", "加上了。", null, "s2"],
+      ["5", "user", "设计稿在 notes/设计.md", "笔记整理", "s2"],
+      ["6", "user", "先别管登录页，把列表页做完", "PaloAlly", "s2"],
+      ["7", "user", "主人说今晚不用部署", "Palo", "s2"],
+      ["8", "user", "/compact", null, "s2"],
+    ]);
+    expect((await call("pals.history", { id: "s2", before: "7", limit: 2 })).messages.map((m: any) => m.id)).toEqual(["5", "6"]);
+    const old = (await call("sessions.history", { id: "s2" })).messages;
+    expect(old.map((m: any) => [m.id, m.role, m.text, m.from ?? null])).toEqual([
+      ["1", "owner", "列表要能按日期排序", null],
+      ["3", "assistant", "加上了。", null],
       ["5", "peer", "设计稿在 notes/设计.md", "笔记整理"],
       ["6", "peer", "先别管登录页，把列表页做完", "PaloAlly"],
-      ["7", "palo", "主人说今晚不用部署", "帕帕"],
-      ["8", "owner", "/compact", undefined],
+      ["7", "palo", "主人说今晚不用部署", "Palo"],
+      ["8", "owner", "/compact", null],
     ]);
-    expect(msgs[0]!.ts).toBe(Date.parse("2026-10-12T10:00:00Z"));
-    expect(pageMessages(msgs, undefined, 2).map((m) => m.id)).toEqual(["7", "8"]);
-    expect(pageMessages(msgs, "7", 2).map((m) => m.id)).toEqual(["5", "6"]);
-    expect(pageMessages(msgs, "1", 2)).toEqual([]);
+    expect(old[0].ts).toBe(Date.parse("2026-10-12T10:00:00Z"));
   });
 
   test("sessions.history reads the session's own transcript through the SDK, by its folder", async () => {
@@ -137,7 +149,7 @@ describe("the computer's sessions", () => {
     expect((await handleRpc(hub, { method: "sessions.history", params: { id: "s1", limit: 10 } }, ctx)) as any).toEqual({
       messages: [{ id: "u1", ts: Date.parse("2026-10-12T10:00:00Z"), role: "owner", text: "写一下" }],
     });
-    await expect(handleRpc(hub, { method: "sessions.history", params: { id: "nope" } }, ctx)).rejects.toThrow("没有这个会话");
+    await expect(handleRpc(hub, { method: "sessions.history", params: { id: "nope" } }, ctx)).rejects.toThrow("找不到这个会话");
   });
 });
 

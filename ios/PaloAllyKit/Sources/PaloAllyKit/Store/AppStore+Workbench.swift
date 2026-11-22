@@ -58,7 +58,7 @@ extension AppStore {
         }
     }
 
-    /// `pals.earlier`: 以前的.
+    /// `pals.earlier`: 已归档.
     public func refreshEarlier(limit: Int = 200) async throws {
         if let parent { return try await parent.refreshEarlier(limit: limit) }
         do {
@@ -70,6 +70,15 @@ extension AppStore {
             if isUnknownMethod(error) { earlierSupported = false }
             throw error
         }
+    }
+
+    /// 已归档's search: every Claude Code conversation on the computer whose
+    /// title, folder or id has `query` (the host looks past the last 30 days).
+    public func searchArchive(_ query: String, limit: Int = 200) async throws -> [EarlierItem] {
+        if let parent { return try await parent.searchArchive(query, limit: limit) }
+        // Reading every record on disk takes a moment the first time.
+        let r: EarlierResult = try await rpc.call(RPCMethod.palsEarlier, params: EarlierParams(limit: limit, query: query), timeout: 60)
+        return r.items
     }
 
     /// `pals.folders`: folders to start a session in, the latest first.

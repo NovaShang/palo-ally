@@ -365,7 +365,7 @@ function palSetup(o: { forks?: (claudeDir: string) => ReturnType<typeof fakeFork
   const cli = new FakeCli(claude);
   clis.push(cli);
   const t = makeHub({
-    sessions: { claudeDir: claude.dir, cli, away: new AwayDetector(() => null, Date.now, () => false), readMessages: async () => [] },
+    sessions: { claudeDir: claude.dir, cli, away: new AwayDetector(() => null, Date.now, () => false) },
     pals: { timing: FAST, readMessages: async (sid, dir) => readTranscript(transcriptPath(claude.dir, dir, sid)), ...(forks ? { forkSession: forks.fork } : {}) },
   });
   t.driver.palScript = async (text, ctx) => ctx.emit({ type: "assistant_text", text: `收到：${text}`, parentToolUseId: null, messageId: "msg_live" });

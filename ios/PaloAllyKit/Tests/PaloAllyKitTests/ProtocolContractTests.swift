@@ -132,7 +132,8 @@ private let resultTypes: [String: Check] = [
     RPCMethod.allySay: strict(AllyEntryResult.self),
     RPCMethod.allyTrust: strict(AllyResult.self),
     RPCMethod.sessionsList: strict(SessionsResult.self),
-    RPCMethod.sessionsHistory: strict(SessionMessagesResult.self),
+    // Kept by the host for app versions with a read-only session page; this client reads pals.history.
+    RPCMethod.sessionsHistory: { json in json["messages"] == nil ? ["no \"messages\""] : [] },
     RPCMethod.sessionsHooks: strict(SessionHooksResult.self),
     RPCMethod.helperDecide: strict(HelperDecideResult.self),
     RPCMethod.palsList: strict(PalsResult.self),

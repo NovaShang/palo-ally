@@ -3,7 +3,7 @@ import SwiftUI
 
 /// A workspace's page (workbench-prd §5.3, docs/workbench-design/split-final.html):
 /// its sessions tiled on one canvas, flat panes with hairlines between them.
-/// Each pane is the session's own page (`PalPage`, minus its chrome) under a
+/// Each pane is the session's own page (`AgentPage`, minus its chrome) under a
 /// slim header, in a view graph of its own (`PaneRoot`). Every pane looks the
 /// same: the current one (where the keyboard and the right pane go) is only
 /// remembered. The layout is kept on the computer.

@@ -93,6 +93,8 @@ struct PendingListView: View {
     var dismiss: (() -> Void)? = nil
     @State private var showSnoozed = false
     @State private var showToday = false
+    /// 已收起: hidden until 以后再说 replaces it.
+    static let showsSnoozed = false
 
     private var open: [PendingItem] {
         switch filter {
@@ -136,8 +138,9 @@ struct PendingListView: View {
                     .buttonStyle(.plain)
                     if showToday { ForEach(today) { PendingRow(item: $0, dismiss: dismiss) } }
                 }
+                // 已收起 is hidden for now (one word for "not now": 以后再说, which puts it in 待办, comes later).
                 let snoozed = store.pendingSnoozed
-                if !snoozed.isEmpty && everything {
+                if Self.showsSnoozed && !snoozed.isEmpty && everything {
                     Button {
                         withAnimation(.snappy) { showSnoozed.toggle() }
                     } label: {

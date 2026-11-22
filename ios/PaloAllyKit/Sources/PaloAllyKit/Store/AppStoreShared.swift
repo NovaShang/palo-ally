@@ -55,6 +55,8 @@ final class AppStoreShared {
     var workspacesSupported: Bool?
     var earlierItems: [EarlierItem]?
     var earlierSupported: Bool?
+    /// 已归档 N as the host counts it (`pals.list`'s `archived`).
+    var archivedCount: Int?
 
     /// Each Pal asked for alone (`AppStore.singlePal`), kept in step with `pals`.
     @ObservationIgnored private var palSlots: [String: PalSlot] = [:]

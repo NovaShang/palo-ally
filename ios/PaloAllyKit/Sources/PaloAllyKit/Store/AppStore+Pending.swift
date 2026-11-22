@@ -38,12 +38,14 @@ extension AppStore {
 
     public func pendingItem(id: String) -> PendingItem? { pendingItems.first { $0.id == id } }
 
-    /// The open items of one agent: the assistant's own (its, a brief's, an
-    /// Ally's and the computer's sessions'), or one Pal's.
+    /// The open items of one agent: the assistant's own (its, a brief's and
+    /// an Ally's), or one agent's: a Pal's, or one of the computer's other
+    /// sessions' (by its session id; asked through the hooks).
     public func openPending(forPal id: String?) -> [PendingItem] {
         openPending.filter { item in
-            if let id { return item.source.kind == .pal && item.source.id == id }
-            return item.source.kind != .pal
+            let agent = item.source.kind == .pal || item.source.kind == .session
+            if let id { return agent && item.source.id == id }
+            return !agent
         }
     }
 

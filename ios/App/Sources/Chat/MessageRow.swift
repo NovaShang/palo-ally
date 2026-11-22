@@ -53,6 +53,12 @@ private struct UserBubble: View {
                         .foregroundStyle(.red)
                 }
                 .accessibilityLabel("没发出去，点一下重发")
+            } else if message.delivery == .held {
+                // Waits for a terminal to quit its session (the line over the composer says so).
+                Image(systemName: "clock")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(String(localized: "终端那边退出后发出"))
             } else if message.delivery == .sending || (message.delivery == .queued && !store.connectionTrouble) {
                 // Queued during a short drop looks like sending: the reconnect
                 // (usually a moment away) sends it.
@@ -101,7 +107,7 @@ private struct UserBubble: View {
                 }
             }
         }
-        .opacity(message.delivery == .sending || message.delivery == .queued ? 0.75 : 1)
+        .opacity(message.delivery == .sending || message.delivery == .queued || message.delivery == .held ? 0.75 : 1)
         // Spoken: unseen while its words fly into it.
         .modifier(VoiceEchoSlot(cid: message.clientMsgId))
     }

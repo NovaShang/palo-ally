@@ -43,17 +43,21 @@ extension AppStore {
         return s
     }
 
-    /// How many of a Pal's things wait on the owner: its open items on
-    /// 等你的事 (its questions and prompts are items too).
+    /// How many of an agent's things wait on the owner: its open items on
+    /// 等你的事 (its questions and prompts are items too). A Pal's id, or
+    /// the session id of one of the computer's other sessions.
     public func palPendingCount(_ id: String) -> Int {
         openPending(forPal: id).count
     }
 
-    /// The cards waiting on the owner from one of the computer's other sessions.
-    public func sessionPendingCount(_ id: String) -> Int {
-        approvals.filter { $0.isPending && $0.source?.isSession == true && $0.source?.id == id }.count
-            + questions.filter { $0.isPending && $0.source?.isSession == true && $0.source?.id == id }.count
-    }
+    /// One of the computer's other sessions (an agent not taken over yet), by its session id.
+    public func otherSession(_ id: String) -> CCSession? { otherSessions.first { $0.id == id } }
+
+    /// 已归档 N: as the host counts it, else (an older host) the ones put away for lack of use.
+    public var archivedTotal: Int { archivedCount ?? pals.filter(\.folded).count }
+
+    /// The words waiting for this agent's terminal, oldest first.
+    public var heldMessages: [ChatMessage] { messages.filter { $0.delivery == .held } }
 
     // MARK: loading
 
@@ -79,6 +83,7 @@ extension AppStore {
         let r: PalsResult = try await rpc.call(RPCMethod.palsList, params: EmptyParams())
         setPals(r.pals, others: r.others)
         if let hooks = r.hooks { sessionHooksEnabled = hooks }
+        if let n = r.archived { archivedCount = n }
         palsSupported = true
     }
 
@@ -90,6 +95,7 @@ extension AppStore {
         case .list(let r, let hasOthers):
             setPals(r.pals, others: hasOthers ? r.others : nil)
             if let hooks = r.hooks { sessionHooksEnabled = hooks }
+            if let n = r.archived { archivedCount = n }
             palsSupported = true
         case .upsert(let p):
             var list = pals
@@ -122,10 +128,14 @@ extension AppStore {
                 if adoptions[s.id] == .waitingForExit { adoptions[s.id] = nil }
                 cancelledWaits.remove(s.id)
             }
+            // An agent's page open on one of them: the words waiting for its terminal, as the host has them.
+            for s in rest { palStores[s.id]?.applyQueued(s.queued ?? []) }
         } else if otherSessions.contains(where: { s in list.contains { $0.sessionId == s.id } }) {
             otherSessions.removeAll { s in list.contains { $0.sessionId == s.id } }
         }
         for p in list {
+            // An agent's page opened on its session before it was taken over: what waited there went in.
+            if let before = palStores[p.sessionId], !before.heldMessages.isEmpty { before.dropHeld() }
             guard let page = palStores[p.id] else { continue }
             page.applyPal(p)
             // A page opened before its Pal was on the list: its conversation now.
@@ -192,6 +202,8 @@ extension AppStore {
     /// quitting it later adopts nothing. Should the host not hear it (offline),
     /// this device still doesn't open it when it's adopted.
     public func cancelAdoption(sessionId: String) async {
+        // 取消这条: the words waiting for it go at once.
+        palStores[sessionId]?.dropHeld()
         if let parent { return await parent.cancelAdoption(sessionId: sessionId) }
         adoptions[sessionId] = nil
         cancelledWaits.insert(sessionId)

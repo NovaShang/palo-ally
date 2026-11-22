@@ -5,6 +5,7 @@ import { t } from "./i18n/index.ts";
 import { parseScope } from "./files.ts";
 import { machineId } from "./machine.ts";
 import { isTldrAsk } from "./tldr.ts";
+import { Sessions } from "./sessions.ts";
 
 export interface RpcContext {
   clientId: string;
@@ -288,9 +289,11 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     // The computer's Claude Code sessions the host doesn't run (docs/sessions-prd.md §7).
     case "sessions.list":
       return { sessions: await hub.sessions.listFresh(), hooks: hub.sessions.hooksEnabled() };
+    // App versions with a read-only page for these: pals.history, in their shape.
     case "sessions.history": {
       const before = typeof p.before === "string" || typeof p.before === "number" ? p.before : undefined;
-      return { messages: await hub.sessions.history(String(p.id ?? ""), before, Number(p.limit ?? 50)) };
+      const r = await hub.pals.history(String(p.id ?? ""), before, Number(p.limit ?? 50));
+      return { messages: Sessions.legacyLines(r.messages, hub.config.settings.assistantName || "Palo") };
     }
     case "sessions.hooks":
       // No `enabled`: only says whether they're on.
@@ -359,7 +362,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     case "pals.reveal":
       return await hub.pals.reveal(String(p.id ?? ""), p.kind);
     case "pals.earlier":
-      return await hub.pals.earlier({ limit: p.limit, folder: typeof p.folder === "string" ? p.folder : undefined });
+      return await hub.pals.earlier({ limit: p.limit, folder: typeof p.folder === "string" ? p.folder : undefined, query: typeof p.query === "string" ? p.query : undefined });
     case "workspaces.list":
       return { workspaces: hub.workbench.list(), sessionOrder: hub.workbench.sessionOrder() };
     case "workspaces.create":

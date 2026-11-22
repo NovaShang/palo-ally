@@ -379,6 +379,8 @@ export interface CCSession {
   updatedAt: number;
   // pals.adopt is waiting for it to quit in its terminal (/exit), then it becomes a Pal
   adopting?: boolean;
+  // the owner's words sent to it meanwhile (pals.send): they go in once it's taken over
+  queued?: { id: string; text: string; clientMsgId?: string; at: number; attachments?: number }[];
 }
 
 // ---- Pals (docs/pals-prd.md §8) ----

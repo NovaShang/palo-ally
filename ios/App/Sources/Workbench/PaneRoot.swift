@@ -129,7 +129,7 @@ private struct PaneContent: View {
         #if DEBUG || PERF_HARNESS
         let _ = PerfProbe.count("PaneContent")
         #endif
-        PalPage(palID: id, inTile: true)
+        AgentPage(agent: .pal(id), inTile: true)
             .environment(\.tile, TileContext(id: id, isActive: model.activeTile(in: workspaceID) == id))
             .environment(\.tileDetail, details.binding(id))
             // Each session keeps its own unsent words, here and on its own page.

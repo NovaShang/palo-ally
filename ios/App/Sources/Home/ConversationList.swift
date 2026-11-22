@@ -3,12 +3,14 @@ import SwiftUI
 
 /// The list (workbench-prd §4): Palo on top, big, with what it did last or
 /// how many sessions wait on the owner; 工作区, each opening to its sessions
-/// ("N 等你" on the row), with a ＋; 会话, the ordinary ones by latest
-/// activity; Allies, with 添加; and, quietly, 电脑与设备. Workspaces and
+/// ("N 等你" on the row), with a ＋; agent, one kind of row for the ordinary
+/// ones by latest activity and the computer's other Claude Code sessions
+/// (终端里开着 on one still open in a terminal), then 已归档 N; 好友, with
+/// 添加; and, quietly, 主机与设备. Workspaces and
 /// sessions are in the owner's own order, which a drag changes (kept on the
 /// computer, the same on every device): reorder, drop one session on another
 /// to make a workspace, drag in and out of a workspace (`SidebarDragDrop`).
-/// At the foot: ＋ (新建会话, 从历史记录继续…, 新建工作区) and 设置. Every row's
+/// At the foot: ＋ (新建 agent, 新建工作区, 添加好友) and 设置. Every row's
 /// dot is the one StatusDot.
 ///
 /// Several computers paired (docs/workbench-design/multi-host-sidebar.html):
@@ -72,8 +74,7 @@ struct ConversationList: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 MacUpdateHint()
-                SidebarFooter(newSession: { model.newSession = true }, newWorkspace: { model.newWorkspace = [] },
-                              history: { model.historyPickerPresented = true })
+                SidebarFooter(newSession: { model.newSession = true }, newWorkspace: { model.newWorkspace = [] })
             }
         }
         // The dialogs a row asks for, on the computer of that row.
@@ -118,7 +119,7 @@ final class SidebarActions {
     /// 重命名 asked from a workspace's row.
     var renamingWorkspace: Workspace?
     var workspaceName = ""
-    /// 结束 asked, and 删除工作区.
+    /// 归档 asked, and 删除工作区.
     var ending: Pal?
     var deleting: Workspace?
     /// What a drop failed with.
@@ -152,14 +153,14 @@ private struct SidebarDialogs: View {
                     }
                 }
             }
-            .confirmationDialog(Copy.spaced(String(localized: "结束「\(actions.ending?.displayName ?? "")」？")),
+            .confirmationDialog(Copy.spaced(String(localized: "归档「\(actions.ending?.displayName ?? "")」？")),
                                 isPresented: Binding(get: { actions.ending != nil }, set: { if !$0 { actions.ending = nil } }),
                                 titleVisibility: .visible) {
-                Button("结束会话", role: .destructive) {
+                Button("归档", role: .destructive) {
                     if let p = actions.ending { Task { await end(p) } }
                 }
             } message: {
-                Text("它会停下，之后还能从历史记录里接着聊。")
+                Text("它会停下，之后还能在已归档里拿回来。")
             }
             .confirmationDialog(Copy.spaced(String(localized: "删除工作区「\(actions.deleting?.title(pals: store.pals) ?? "")」？")),
                                 isPresented: Binding(get: { actions.deleting != nil }, set: { if !$0 { actions.deleting = nil } }),
@@ -194,14 +195,10 @@ private struct HostSidebarContent: View {
     let actions: SidebarActions
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
-    /// 更早的会话 opened (with several computers, per computer).
-    @AppStorage private var earlierOpen: Bool
-
     init(hostID: String?, several: Bool, actions: SidebarActions) {
         self.hostID = hostID
         self.several = several
         self.actions = actions
-        _earlierOpen = AppStorage(wrappedValue: false, several ? "sidebarEarlierOpen.\(hostID ?? "")" : "sidebarEarlierOpen")
     }
 
     private func pick(_ c: WindowModel.Conversation) -> WindowModel.SidebarPick {
@@ -271,43 +268,29 @@ private struct HostSidebarContent: View {
                             .sidebarRowDrag(dnd, drags: .session(pal.id), conversation: .pal(pal.id), target: .session(pal.id),
                                             tree: tree, sessionOrder: order, perform: drop)
                     }
-                    // Put away for lack of use: one quiet row, opened in place,
-                    // so they are still there to see (and the rest of the history a tap on).
-                    if !tree.folded.isEmpty {
-                        EarlierRow(count: tree.folded.count, expanded: earlierOpen) { earlierOpen.toggle() }
-                            .accessibilityIdentifier(rowID("row-earlier"))
-                        if earlierOpen {
-                            ForEach(tree.folded) { pal in
-                                PalListRow(pal: pal, inset: true)
-                                    .modifier(HostRowDim(dimmed: dimmed))
-                                    .sidebarPick(pick(.pal(pal.id)))
-                                    .accessibilityIdentifier(rowID("row-pal-\(pal.id)"))
-                                    .contextMenu { sessionMenu(pal) }
-                            }
-                            Button {
-                                onThisHost()
-                                model.historyPickerPresented = true
-                            } label: {
-                                Text("全部历史记录…")
-                                    .foregroundStyle(.secondary)
-                                    .padding(.leading, 22)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(.rect)
-                            }
-                            .buttonStyle(.borderless)
-                            .tint(.primary)
-                            .accessibilityIdentifier(rowID("row-earlier-history"))
-                        }
+                    // The computer's other Claude Code sessions: agents like the rest
+                    // (typing to one takes it over). Not draggable until then.
+                    ForEach(store.otherSessions) { session in
+                        OtherAgentRow(session: session)
+                            .modifier(HostRowDim(dimmed: dimmed))
+                            .sidebarPick(pick(.session(session.id)))
+                            .accessibilityIdentifier(rowID("row-session-\(session.id)"))
+                            .contextMenu { OpenInNewWindowButton(conversation: .session(session.id)) }
                     }
+                    // Put away (archived, or a while unused) and every conversation on the computer: one quiet row.
+                    ArchiveRow(count: store.archivedTotal)
+                        .modifier(HostRowDim(dimmed: dimmed))
+                        .sidebarPick(pick(.earlier))
+                        .accessibilityIdentifier(rowID("row-archive"))
                 } header: {
                     // Also where a session dragged out of a workspace can land: the top.
-                    Text("会话").textCase(nil)
+                    Text("agent").textCase(nil)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .sidebarRowDrag(dnd, drags: nil, conversation: nil, target: .sessionsTop, tree: tree, sessionOrder: order,
                                         perform: drop)
                 } footer: {
-                    if store.pals.isEmpty {
-                        Text("点左下角的 ＋ 新建一个会话，或者让助理帮你开。")
+                    if store.pals.isEmpty && store.otherSessions.isEmpty {
+                        Text("点左下角的 ＋ 新建一个 agent，或者让助理帮你开。")
                     }
                 }
             }
@@ -458,7 +441,7 @@ private struct HostSidebarContent: View {
             }
         }
         Divider()
-        Button("结束会话", systemImage: "stop.circle", role: .destructive) {
+        Button("归档", systemImage: "archivebox", role: .destructive) {
             actions.on(store, host: hostID)
             actions.ending = pal
         }
@@ -735,28 +718,60 @@ private struct SidebarChevron: View {
     }
 }
 
-/// 更早的会话 N: the sessions put away for lack of use, opened in place.
-private struct EarlierRow: View {
+/// 已归档 N: the agents put away (archived, or a while unused), with every
+/// Claude Code conversation on the computer to find; opens 已归档.
+private struct ArchiveRow: View {
     let count: Int
-    let expanded: Bool
-    let toggle: () -> Void
 
     var body: some View {
-        Button(action: toggle) {
-            HStack(spacing: 2) {
-                SidebarChevron(expanded: expanded)
-                Text("更早的会话")
-                Spacer(minLength: 8)
-                Text("\(count)").monospacedDigit()
+        SidebarRowLayout {
+            Image(systemName: "archivebox")
+                .font(.system(size: 15))
+                .foregroundStyle(.secondary)
+        } title: {
+            Text("已归档").foregroundStyle(.secondary)
+        } subtitle: {
+            EmptyView()
+        } trailing: {
+            if count > 0 {
+                Text("\(count)").monospacedDigit().foregroundStyle(.secondary)
             }
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(.rect)
         }
-        .buttonStyle(.borderless)
-        .tint(.primary)
-        .accessibilityLabel(String(localized: "更早的会话，\(count) 个"))
-        .accessibilityHint(expanded ? String(localized: "收起") : String(localized: "展开"))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(count > 0 ? String(localized: "已归档，\(count) 个") : String(localized: "已归档"))
+    }
+}
+
+/// One of the computer's other Claude Code sessions, as an agent's row: its
+/// state, its name, and under it 终端里开着 (still open in a terminal: what's
+/// typed to it waits until it's quit there) or what it said last; on the
+/// right what waits on the owner.
+private struct OtherAgentRow: View {
+    @Environment(AppStore.self) private var store
+    let session: CCSession
+
+    var body: some View {
+        SidebarRowLayout {
+            // The same state glyph a Pal's row has.
+            SessionIndicator(session, size: 28, glyphOnly: true)
+        } title: {
+            Text(session.displayName)
+        } subtitle: {
+            Text(line)
+        } trailing: {
+            WaitingBadge(count: store.palPendingCount(session.id))
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(Copy.sessionStatus(session.status))
+    }
+
+    private var line: String {
+        let last = Copy.sessionLine(session)
+        if session.isOpenInTerminal {
+            let open = String(localized: "终端里开着")
+            return last.isEmpty ? open : "\(open) · \(last)"
+        }
+        return last.isEmpty ? Copy.sessionStatus(session.status) : last
     }
 }
 
@@ -827,16 +842,11 @@ private struct SidebarFooter: View {
     @Environment(AppStore.self) private var store
     let newSession: () -> Void
     let newWorkspace: () -> Void
-    let history: () -> Void
 
     var body: some View {
         HStack {
             Menu {
-                Button("新建会话", systemImage: "square.and.pencil", action: newSession)
-                if store.palsSupported == true {
-                    Button("从历史记录继续…", systemImage: "clock.arrow.circlepath", action: history)
-                        .accessibilityIdentifier("history-continue")
-                }
+                Button("新建 agent", systemImage: "square.and.pencil", action: newSession)
                 Button("新建工作区", systemImage: "square.grid.2x2", action: newWorkspace)
                 if store.alliesSupported != false {
                     Button("添加好友…", systemImage: "person.badge.plus") { model.showAllyInvite = true }

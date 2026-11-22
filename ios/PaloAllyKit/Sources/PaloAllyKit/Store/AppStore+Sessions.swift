@@ -10,25 +10,15 @@ extension AppStore {
 
     public func session(id: String) -> CCSession? { sessions.first { $0.id == id } }
 
-    /// A session's read-only store (pals-prd §14): its conversation in the
-    /// conversation view, its cards at the end. Made on first use and kept
-    /// while the app runs. Its page asks for what's new every few seconds.
-    public func sessionStore(_ id: String) -> AppStore {
-        if let parent { return parent.sessionStore(id) }
-        if let s = sessionStores[id] { return s }
-        let s = AppStore(session: id, parent: self)
-        sessionStores[id] = s
-        preparePalStore?(s)
-        if connection.isOnline { Task { await s.reloadSessionPage() } }
-        return s
-    }
-
-    /// One of the computer's sessions by id: a live one, else one that ended lately.
+    /// One of the computer's sessions that isn't a Pal, by id (an agent's
+    /// page before it's taken over): a live one, else one that ended (from
+    /// the recent ones or 已归档).
     public func viewedSession(_ id: String) -> (name: String, cwd: String, live: CCSession?)? {
         if let s = otherSessions.first(where: { $0.id == id }) ?? sessions.first(where: { $0.id == id }) {
-            return (s.name, s.cwd, s)
+            return (s.displayName, s.cwd, s)
         }
         if let r = recentSessions?.first(where: { $0.sessionId == id }) { return (r.displayTitle, r.cwd, nil) }
+        if let e = earlierItems?.first(where: { $0.sessionId == id }) { return (e.displayTitle, e.cwd, nil) }
         return nil
     }
 

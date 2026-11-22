@@ -89,8 +89,25 @@ interface PalFile {
   adoptions: (PalAdoptProposal & { createdAt: number; messageId?: string })[];
   // Pals the owner took out of the list (交还终端 / 移出): listed again among the recent ones
   former: { sessionId: string; cwd: string; at: number }[];
-  // Sessions the owner ended (pals.end): 以前的, resumable; the newest 200
+  // Sessions the owner archived (pals.end): 已归档, resumable; the newest 200
   ended: EndedSession[];
+  // What the owner sent to a session still open in a terminal: it goes in
+  // once that process quits and the session is taken over (kept over a restart).
+  queued: QueuedTo[];
+}
+
+/** A message waiting for a terminal to let go of its session. */
+export interface QueuedSend {
+  id: string;
+  text: string;
+  clientMsgId?: string;
+  attachments?: Attachment[];
+  at: number;
+}
+
+interface QueuedTo {
+  sessionId: string;
+  messages: QueuedSend[];
 }
 
 interface EndedSession {
@@ -158,6 +175,14 @@ function defaultReveal(kind: "finder" | "terminal", cwd: string): Promise<void> 
   if (process.platform !== "darwin") return Promise.reject(new NoDesktop());
   const args = kind === "finder" ? [cwd] : ["-a", "Terminal", cwd];
   return new Promise((ok, fail) => execFile("open", args, (err) => (err ? fail(err) : ok())));
+}
+
+/** pals.send's answer: the message's id and place; `queued`: it waits for a terminal to quit; `pal`: the session it was taken over as. */
+export interface SendResult {
+  id: string;
+  seq: number;
+  queued?: true;
+  pal?: string;
 }
 
 /** A session to adopt: its id, the Pal's name and its folder. */
@@ -311,7 +336,7 @@ export class Pals {
     this.launcher = new PalLauncher({ root: d.paths.root, helperApp: d.helperApp, mode: d.launchMode, log: (s) => this.log(s) });
     const saved = readJson<Partial<PalFile>>(d.paths.pals, {});
     const list = <T>(v: T[] | undefined): T[] => (Array.isArray(v) ? v : []);
-    this.data = { pals: list(saved.pals), proposals: list(saved.proposals), adoptions: list(saved.adoptions), former: list(saved.former), ended: list(saved.ended) };
+    this.data = { pals: list(saved.pals), proposals: list(saved.proposals), adoptions: list(saved.adoptions), former: list(saved.former), ended: list(saved.ended), queued: list(saved.queued) };
     // Pals no longer have a daily spending limit (2026-10-19, the owner): an
     // old record's limit goes, and one stopped for it carries on.
     for (const rec of this.data.pals as (Omit<PalRecord, "stoppedFor"> & { dailyUsd?: number; budgetDay?: string; stoppedFor?: string })[]) {
@@ -431,12 +456,12 @@ export class Pals {
     return this.d.settings().assistantName || "Palo";
   }
 
-  private mapOptions(rec: PalRecord) {
+  private mapOptions(rec?: PalRecord) {
     const media = this.d.media;
     return {
       assistantName: this.assistantName(),
       paloName: this.paloName(),
-      ...(rec.duty ? { duty: rec.duty } : {}),
+      ...(rec?.duty ? { duty: rec.duty } : {}),
       ...(media ? { recall: (uuid: string) => media.recall(uuid) } : {}),
     };
   }
@@ -481,6 +506,9 @@ export class Pals {
     this.expireProposals();
     this.proposalTimer = setInterval(() => this.expireProposals(), PROPOSAL_CHECK_MS);
     (this.proposalTimer as any).unref?.();
+    // Words that waited for a terminal before the host stopped: waited for again
+    // (or sent at once, if that terminal quit meanwhile).
+    for (const q of [...this.data.queued]) this.takeOverFor(q.sessionId, "queued");
     this.emitSoon();
   }
 
@@ -659,7 +687,15 @@ export class Pals {
   }
 
   payload(others = this.d.sessions.list()) {
-    return { pals: this.list(), others, hooks: this.d.sessions.hooksEnabled(), helper: this.helper };
+    return { pals: this.list(), others, hooks: this.d.sessions.hooksEnabled(), helper: this.helper, archived: this.archivedCount() };
+  }
+
+  /** 已归档 N: the sessions put away for lack of use and those the owner archived (the list has every other conversation besides). */
+  archivedCount(): number {
+    let n = 0;
+    for (const p of this.pals.values()) if (p.folded()) n++;
+    for (const e of this.data.ended) if (!this.isPal(e.sessionId)) n++;
+    return n;
   }
 
   /** pals.list: read the computer's sessions again first. */
@@ -686,7 +722,12 @@ export class Pals {
     return all.filter((e) => !taken.has(e.sessionId) && match(e.cwd)).slice(0, limit);
   }
 
-  /** A conversation that ended (sessions.history, §14): its folder, when it's one pals.recent would list. */
+  private async searchEntries(query: string): Promise<RecentEntry[]> {
+    const taken = this.takenIds();
+    return (await this.recentList.search(query)).filter((e) => !taken.has(e.sessionId));
+  }
+
+  /** A conversation that ended (pals.history, §14): its folder, when it's one pals.recent would list. */
   async endedCwd(sessionId: string): Promise<string | undefined> {
     const found = await this.recentList.find(sessionId);
     return typeof found === "string" ? undefined : found.cwd;
@@ -1047,6 +1088,8 @@ export class Pals {
       if (card.sessionId === s.id && (card.status === "pending" || card.status === "failed")) this.settleAdopt(card.id, { status: "adopted", palId: rec.id, note: undefined });
     this.emitNow();
     this.balanceSoon();
+    // What the owner said to it while a terminal held it goes in now.
+    if (this.queueOf(s.id)) void this.flushQueue(s.id, pal);
     return pal;
   }
 
@@ -1056,18 +1099,22 @@ export class Pals {
    * adopts nothing. `cancelled` says whether it was waiting; one that became a
    * Pal already comes back as that Pal.
    */
-  cancelAdopt(sessionId: string, by: string): { cancelled: boolean; pal?: Pal } {
+  cancelAdopt(sessionId: string, by: string): { cancelled: boolean; pal?: Pal; dropped?: number } {
     const sid = String(sessionId ?? "").trim();
     const w = this.waiting.get(sid);
+    // The words waiting for it are called off with the wait (取消这条).
+    const dropped = sid ? this.dropQueue(sid).length : 0;
+    const extra = dropped ? { dropped } : {};
     if (!w) {
       const pal = sid ? this.get(sid) : undefined;
-      return pal && pal.rec.sessionId === sid ? { cancelled: false, pal: pal.toWire() } : { cancelled: false };
+      if (dropped) this.d.audit.log("pal.send_queued_cancelled", { session: sid, dropped, by });
+      return pal && pal.rec.sessionId === sid ? { cancelled: false, pal: pal.toWire(), ...extra } : { cancelled: dropped > 0, ...extra };
     }
     if (w.timer) clearTimeout(w.timer);
     this.waiting.delete(sid);
-    this.d.audit.log("pal.adopt_cancelled", { session: sid, name: w.session.name, by });
+    this.d.audit.log("pal.adopt_cancelled", { session: sid, name: w.session.name, by, ...extra });
     this.emitNow();
-    return { cancelled: true };
+    return { cancelled: true, ...extra };
   }
 
   // A terminal session: once its process is gone (the owner typed /exit),
@@ -1080,7 +1127,8 @@ export class Pals {
       w.timer = null;
       if (this.waiting.get(sessionId) !== w) return;
       if (w.pids.some((p) => this.alive(p))) {
-        if (this.now() - w.since > this.timing.adoptWaitMs) {
+        // (Words waiting for it wait as long as the terminal is open.)
+        if (this.now() - w.since > this.timing.adoptWaitMs && !this.queueOf(sessionId)) {
           this.waiting.delete(sessionId);
           this.emitSoon();
           this.notice(t("pals.adoptWaited", { min: Math.round(this.timing.adoptWaitMs / 60_000), name: session.name }));
@@ -1103,7 +1151,8 @@ export class Pals {
       } catch (e) {
         const why = e instanceof Error ? e.message : String(e);
         this.d.audit.log("pal.adopt_failed", { session: sessionId, why });
-        this.notice(t("pals.adoptFailed", { name: session.name, why }));
+        const n = this.dropQueue(sessionId).length;
+        this.notice(n ? t("pals.queuedNotSent", { n, why }) : t("pals.adoptFailed", { name: session.name, why }));
       }
       this.emitSoon();
     };
@@ -1338,13 +1387,15 @@ export class Pals {
    * of use, and the conversations that ended on the computer lately, newest
    * first, one line per session (folded over ended over recent).
    */
-  async earlier(o: { limit?: number; folder?: string } = {}): Promise<{ items: EarlierItem[] }> {
+  async earlier(o: { limit?: number; folder?: string; query?: string } = {}): Promise<{ items: EarlierItem[] }> {
     const limit = Math.max(1, Math.min(Math.floor(Number(o.limit)) || 50, 200));
     const match = folderMatch(o.folder);
+    const query = String(o.query ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+    const has = (i: EarlierItem) => !query || [i.name, i.cwd, i.sessionId].some((x) => x.toLowerCase().includes(query));
     const items: EarlierItem[] = [];
     const seen = new Set<string>();
     const push = (i: EarlierItem) => {
-      if (seen.has(i.sessionId) || !match(i.cwd)) return;
+      if (seen.has(i.sessionId) || !match(i.cwd) || !has(i)) return;
       seen.add(i.sessionId);
       items.push(i);
     };
@@ -1353,7 +1404,9 @@ export class Pals {
       push({ kind: "folded", key: `folded:${p.id}`, id: p.id, sessionId: p.rec.sessionId, name: p.rec.name, cwd: p.rec.cwd, at: p.rec.lastUsedAt });
     }
     for (const e of this.data.ended) if (!this.isPal(e.sessionId)) push(endedItem(e));
-    for (const e of await this.recentEntries({ limit: RECENT_MAX }).catch(() => [])) push({ kind: "recent", key: `recent:${e.sessionId}`, sessionId: e.sessionId, name: e.title, cwd: e.cwd, at: e.lastModified });
+    // With a query: every Claude Code conversation on the computer (已归档's search), else the last 30 days'.
+    const recent = query ? await this.searchEntries(query).catch(() => []) : await this.recentEntries({ limit: RECENT_MAX }).catch(() => []);
+    for (const e of recent) push({ kind: "recent", key: `recent:${e.sessionId}`, sessionId: e.sessionId, name: e.title, cwd: e.cwd, at: e.lastModified });
     return { items: items.sort((a, b) => b.at - a.at).slice(0, limit) };
   }
 
@@ -1433,8 +1486,10 @@ export class Pals {
    * comes meanwhile goes in after, in order). A retried send (same
    * clientMsgId) goes in once.
    */
-  async send(id: string, text: string, clientMsgId?: string, attachments: Attachment[] = []): Promise<{ id: string; seq: number }> {
-    const pal = this.mustGet(id);
+  async send(id: string, text: string, clientMsgId?: string, attachments: Attachment[] = []): Promise<SendResult> {
+    const pal = this.get(id);
+    // Not a Pal: one of the computer's other sessions, taken over to be spoken to.
+    if (!pal) return this.sendToSession(String(id ?? "").trim(), text, clientMsgId, attachments);
     const cid = clientMsgId ? String(clientMsgId).slice(0, 100) : undefined;
     const seen = cid ? this.sent.get(pal.id)?.get(cid) : undefined;
     if (seen) return seen;
@@ -1455,6 +1510,96 @@ export class Pals {
     }
     this.d.audit.log("pal.send", { pal: pal.id, name: pal.rec.name, chars: msg.text.length, ...(attachments.length ? { attachments: attachments.length } : {}) });
     return out;
+  }
+
+  // ---------------- words for a session that isn't a Pal yet ----------------
+
+  /**
+   * pals.send to one of the computer's other sessions (a terminal's, a
+   * background one, a conversation that ended): there is one kind of agent,
+   * so it is taken over (pals.adopt) and the words go in. Still open in a
+   * terminal, the words wait (`queued`) until that process quits, then it is
+   * taken over and they go in, in order; the owner can call them off
+   * (pals.adopt {cancel}). Never two writers: nothing is sent while another
+   * process holds its transcript.
+   */
+  private async sendToSession(sid: string, text: string, clientMsgId: string | undefined, attachments: Attachment[]): Promise<SendResult> {
+    if (!sid) throw new Error(t("pals.noPal"));
+    const cid = clientMsgId ? String(clientMsgId).slice(0, 100) : undefined;
+    // The same words again (a retry): waiting once.
+    const have = cid ? this.queueOf(sid)?.messages.find((m) => m.clientMsgId === cid) : undefined;
+    if (have) return { id: have.id, seq: 0, queued: true };
+    const r = this.waiting.has(sid) ? ({ waiting: "exit-in-terminal" } as const) : await this.adopt(sid, "app");
+    if ("pal" in r) {
+      const out = await this.send(r.pal.id, text, cid, attachments);
+      return { ...out, pal: r.pal.id };
+    }
+    // Taken over meanwhile after all (the terminal quit just now): straight in.
+    const now = this.pal(sid);
+    if (now && !this.waiting.has(sid)) return { ...(await this.send(now.id, text, cid, attachments)), pal: now.id };
+    return this.enqueue(sid, String(text ?? ""), cid, attachments);
+  }
+
+  /** The Pal resuming a session, by its session id. */
+  private pal(sessionId: string): PalSession | undefined {
+    return [...this.pals.values()].find((p) => p.rec.sessionId === sessionId);
+  }
+
+  private queueOf(sessionId: string): QueuedTo | undefined {
+    return this.data.queued.find((q) => q.sessionId === sessionId);
+  }
+
+  /** What waits for a terminal to quit, as the list shows it on the session. */
+  queuedFor(sessionId: string): { id: string; text: string; clientMsgId?: string; at: number; attachments?: number }[] | undefined {
+    const q = this.queueOf(sessionId);
+    if (!q?.messages.length) return undefined;
+    return q.messages.map((m) => ({ id: m.id, text: m.text, ...(m.clientMsgId ? { clientMsgId: m.clientMsgId } : {}), at: m.at, ...(m.attachments?.length ? { attachments: m.attachments.length } : {}) }));
+  }
+
+  private enqueue(sid: string, text: string, cid: string | undefined, attachments: Attachment[]): SendResult {
+    const m: QueuedSend = { id: newId("q_"), text, ...(cid ? { clientMsgId: cid } : {}), ...(attachments.length ? { attachments } : {}), at: this.now() };
+    const q = this.queueOf(sid);
+    if (q) q.messages.push(m);
+    else this.data.queued.push({ sessionId: sid, messages: [m] });
+    this.save();
+    this.d.audit.log("pal.send_queued", { session: sid, chars: text.length, waiting: this.queueOf(sid)!.messages.length });
+    this.d.sessions.watch.emitIfChanged();
+    this.emitSoon();
+    return { id: m.id, seq: 0, queued: true };
+  }
+
+  /** The waiting words leave (sent, called off, or no longer possible): how many there were. */
+  private dropQueue(sid: string): QueuedSend[] {
+    const q = this.queueOf(sid);
+    if (!q) return [];
+    this.data.queued = this.data.queued.filter((x) => x !== q);
+    this.save();
+    this.d.sessions.watch.emitIfChanged();
+    this.emitSoon();
+    return q.messages;
+  }
+
+  /** Taken over: what waited for it goes in, in order. */
+  private async flushQueue(sid: string, pal: PalSession): Promise<void> {
+    const messages = this.dropQueue(sid);
+    for (const m of messages) {
+      try {
+        await this.send(pal.id, m.text, m.clientMsgId, m.attachments ?? []);
+      } catch (e) {
+        const why = e instanceof Error ? e.message : String(e);
+        this.d.audit.log("pal.send_queued_failed", { pal: pal.id, session: sid, why });
+        this.notice(t("pals.queuedFailed", { name: pal.rec.name, why }));
+      }
+    }
+  }
+
+  /** A queue kept over a restart: its session is taken over again (waiting for the terminal if it's still open). */
+  private takeOverFor(sid: string, by: string): void {
+    void this.adopt(sid, by).catch((e) => {
+      const why = e instanceof Error ? e.message : String(e);
+      const n = this.dropQueue(sid).length;
+      if (n) this.notice(t("pals.queuedNotSent", { n, why }));
+    });
   }
 
   // ---------------- 回到这里重来 (docs/rewind-prd.md) ----------------
@@ -1494,7 +1639,9 @@ export class Pals {
    * whose later chat.delta events append to it).
    */
   async history(id: string, before?: string | number, limit = 50): Promise<{ messages: ChatMessage[]; streaming?: { id: string; text: string } }> {
-    const pal = this.mustGet(id);
+    const pal = this.get(id);
+    // Not a Pal (yet): one of the computer's other sessions, the same way.
+    if (!pal) return { messages: await this.sessionHistory(String(id ?? "").trim(), before, limit) };
     const read = this.d.readMessages ?? ((sid: string, dir: string) => getSessionMessages(sid, { dir }) as Promise<RawSessionMessage[]>);
     let raw: RawSessionMessage[] = [];
     // Gone back to an earlier message and not spoken to since: the old
@@ -1522,6 +1669,34 @@ export class Pals {
     }
     const streaming = before === undefined ? pal.streaming() : null;
     return { messages, ...(streaming ? { streaming } : {}) };
+  }
+
+  /**
+   * The conversation of one of the computer's sessions that isn't a Pal: a
+   * live one, or a conversation that ended (its folder from Claude Code's own
+   * record). Read only: never written or held. Its messages carry the session
+   * id as their `pal`, the agent the app shows them in until it's taken over.
+   */
+  private async sessionHistory(sid: string, before: string | number | undefined, limit: number): Promise<ChatMessage[]> {
+    const look = () => (sid ? (this.d.sessions.watch.get(sid) ?? this.d.sessions.watch.find(sid)) : undefined);
+    let live = look();
+    // (One that opened a moment ago: the registry is read again.)
+    if (sid && !live?.cwd) {
+      await this.d.sessions.watch.refresh();
+      live = look();
+    }
+    const key = live?.sessionId ?? sid;
+    const cwd = live?.cwd || (key ? await this.endedCwd(key).catch(() => undefined) : undefined);
+    if (!key || !cwd) throw new Error(t("pals.noPal"));
+    const lim = Math.max(1, Math.min(Number(limit) || 50, 200));
+    const convert = (r: RawSessionMessage[]) => toPalMessages(r, { pal: key, ...this.mapOptions() });
+    const path = transcriptPath(this.d.claudeDir, cwd, key);
+    if (!this.d.readMessages && existsSync(path)) {
+      return await pageFromTail(path, key, cwd, convert, (all) => pagePalMessages(all, before, lim), before, lim).catch(() => []);
+    }
+    const read = this.d.readMessages ?? ((s: string, dir: string) => getSessionMessages(s, { dir }) as Promise<RawSessionMessage[]>);
+    const raw = await read(key, cwd).catch(() => [] as RawSessionMessage[]);
+    return pagePalMessages(convert(raw), before, lim);
   }
 
   // 「X 回复了」: a turn that really ended, with its reply's first line; only

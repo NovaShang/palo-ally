@@ -83,6 +83,12 @@ extension DemoHost {
             if let folder = p["folder"]?.stringValue, !folder.isEmpty {
                 items = items.filter { $0.cwd == folder || $0.cwd.hasSuffix("/" + folder) }
             }
+            // 已归档's search: every conversation on the computer, older ones too (as the host's).
+            if let q = p["query"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !q.isEmpty {
+                let older = DemoHost.olderConversations(now: Date().epochMillis)
+                    .filter { o in !sids.contains(o.sessionId) && !pals.contains { $0.sessionId == o.sessionId } }
+                items = (items + older).filter { [$0.name, $0.cwd, $0.sessionId].contains { $0.lowercased().contains(q) } }
+            }
             items.sort { $0.at > $1.at }
             let limit = min(200, max(1, Int(p["limit"]?.doubleValue ?? 50)))
             return ["items": try .from(Array(items.prefix(limit)))]
@@ -99,6 +105,11 @@ extension DemoHost {
             case "recent":
                 await pause(1.0)
                 if let why = UserDefaults.standard.string(forKey: "demoAdoptError"), !why.isEmpty { throw DemoError(message: why) }
+                // One the search found from before the last 30 days.
+                if !recentSessions.contains(where: { $0.sessionId == rest }),
+                   let o = DemoHost.olderConversations(now: Date().epochMillis).first(where: { $0.sessionId == rest }) {
+                    recentSessions.append(RecentSession(sessionId: o.sessionId, cwd: o.cwd, title: o.name, lastModified: o.at))
+                }
                 guard let pal = adoptRecent(rest) else { throw DemoError(message: "这一项已经不在了") }
                 return ["pal": try .from(pal)]
             case "ended":
@@ -275,5 +286,18 @@ extension DemoHost {
     func setPalQuiet(_ id: String, _ change: (inout Pal) -> Void) {
         guard let i = pals.firstIndex(where: { $0.id == id }) else { return }
         change(&pals[i])
+    }
+}
+
+extension DemoHost {
+    /// Claude Code conversations from before the last 30 days: only a search of 已归档 finds them.
+    static func olderConversations(now: Int64) -> [EarlierItem] {
+        let day: Int64 = 86_400_000
+        return [
+            EarlierItem(kind: .recent, key: "recent:old-tax", sessionId: "old-tax", name: "报税 2025",
+                        cwd: "/Users/demo/Documents/tax", at: now - 64 * day),
+            EarlierItem(kind: .recent, key: "recent:old-site", sessionId: "old-site", name: "旧官网改版",
+                        cwd: "/Users/demo/code/site-old", at: now - 90 * day),
+        ]
     }
 }

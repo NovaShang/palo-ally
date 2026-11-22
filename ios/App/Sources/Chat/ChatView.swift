@@ -16,6 +16,8 @@ struct ChatView: View {
     static let macTopMargin: CGFloat = 6
     /// Shown in place of the composer while it's there (a Pal's 交还终端 / 移出).
     var bottomPanel: AnyView? = nil
+    /// A quiet line over the composer (an agent still open in a terminal: what typing does, what waits).
+    var aboveComposer: AnyView? = nil
     /// The Mac: what a Pal's or a session's page shows in its strip at the
     /// top (no navigation bar there, MacPageStrip): the status line and the menu.
     var pageTop: PageTop? = nil
@@ -70,7 +72,7 @@ struct ChatView: View {
     private var macPage: Bool { Platform.barInWindowToolbar && !isPalo && !inTile }
     private var title: String {
         isPalo ? store.assistantName
-            : store.palID.flatMap { store.singlePalName(id: $0) } ?? store.viewedSessionID.flatMap { store.viewedSession($0)?.name } ?? ""
+            : store.palID.flatMap { store.singlePalName(id: $0) ?? store.viewedSession($0)?.name } ?? ""
     }
 
     var body: some View {
@@ -238,6 +240,7 @@ struct ChatView: View {
             VStack(spacing: 6) {
             // 等你的事: the way in, where the thumb is (the assistant's conversation).
             if isPalo { PendingCapsule() } else if let id = store.palID { PendingCapsule(palID: id, inTile: inTile) }
+            if let aboveComposer { aboveComposer }
             ComposerView(draftBox: draftBox ?? ownDraft, intake: intake) { text, images, files, how in
                 switch how {
                 case .typed:

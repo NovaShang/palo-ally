@@ -21,6 +21,8 @@ export const RECENT_DAYS = 30;
 export const RECENT_MAX = 50;
 const SCAN = 150; // the newest transcripts looked at
 const CACHE_MS = 5_000;
+const SEARCH_SCAN = 5_000; // a search looks at every transcript (as many as this)
+const SEARCH_CACHE_MS = 60_000;
 
 /** Where the sessions come from (the SDK; tests give their own). */
 export interface RecentSource {
@@ -154,6 +156,7 @@ export class RecentSessions {
   /** The next look reads the transcripts again (a Pal left the list). */
   invalidate(): void {
     this.cache = null;
+    this.everything = null;
   }
 
   /** Every conversation that ended in the last 30 days and could be resumed, newest first (cached a few seconds). */
@@ -163,11 +166,31 @@ export class RecentSessions {
     return this.loading;
   }
 
-  private async load(): Promise<RecentEntry[]> {
-    const since = this.now() - RECENT_DAYS * 86400_000;
+  private everything: { at: number; entries: RecentEntry[] } | null = null;
+  private searching: Promise<RecentEntry[]> | null = null;
+
+  /**
+   * 已归档's search: every conversation Claude Code keeps on this computer
+   * (not only the last 30 days), whose title, folder or id has `query`,
+   * newest first. The whole list is read once a minute at most.
+   */
+  async search(query: string): Promise<RecentEntry[]> {
+    const q = oneLine(query).toLowerCase();
+    if (!q) return [];
+    if (!this.everything || this.now() - this.everything.at >= SEARCH_CACHE_MS) {
+      this.searching ??= this.load(SEARCH_SCAN, 0)
+        .then((entries) => (this.everything = { at: this.now(), entries }).entries)
+        .finally(() => (this.searching = null));
+      await this.searching;
+    }
+    return (this.everything?.entries ?? []).filter((e) => [e.title, e.cwd, e.customTitle ?? "", e.generatedTitle ?? "", e.sessionId].some((x) => x.toLowerCase().includes(q)));
+  }
+
+  private async load(scan = SCAN, since = this.now() - RECENT_DAYS * 86400_000): Promise<RecentEntry[]> {
+    const cached = scan === SCAN;
     let infos: SDKSessionInfo[] = [];
     try {
-      infos = await this.source.list({ limit: SCAN, includeProgrammatic: false });
+      infos = await this.source.list({ limit: scan, includeProgrammatic: false });
     } catch (e) {
       this.d.log?.(`recent: listSessions failed: ${e instanceof Error ? e.message : e}`);
     }
@@ -188,7 +211,7 @@ export class RecentSessions {
       if (typeof e !== "string") out.push(e);
     }
     out.sort((a, b) => b.lastModified - a.lastModified);
-    this.cache = { at: this.now(), entries: out };
+    if (cached) this.cache = { at: this.now(), entries: out };
     return out;
   }
 

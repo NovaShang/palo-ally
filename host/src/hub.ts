@@ -372,8 +372,7 @@ export class Hub {
       mainSessionId: () => this.runtime.data.sessionId,
       isPal: (sessionId) => this.pals?.isPal(sessionId) ?? false,
       adopting: (sessionId) => this.pals?.adopting(sessionId) ?? false,
-      endedCwd: async (sessionId) => this.pals?.endedCwd(sessionId),
-      paloName: () => PALO_NAME,
+      queued: (sessionId) => this.pals?.queuedFor(sessionId),
       log: this.log,
       ...deps.sessions,
     });
@@ -400,7 +399,6 @@ export class Hub {
       // A Pal's palo_send joins the assistant's inbound queue (a turn of its own, behind a running one), as an Ally's message does.
       toAssistant: (from, wrapped) => this.conversation.enqueue({ text: wrapped, origin: "system", proactive: true, pal: true, label: from }),
       onAuth: (pal, ok) => (ok ? this.auth.worked() : this.auth.failed({ kind: "pal", ...pal })),
-      ...(deps.sessions?.readMessages ? { readMessages: deps.sessions.readMessages } : {}),
       workspaceExists: (id) => this.workbench?.exists(id) ?? false,
       shownIds: () => this.workbench?.shownIds() ?? new Set<string>(),
       workspaceJoin: (workspaceId, palId) => this.workbench?.join(workspaceId, palId),

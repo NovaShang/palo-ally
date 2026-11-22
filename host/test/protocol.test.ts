@@ -60,9 +60,9 @@ describe("host ↔ app protocol", () => {
         claudeDir: claude.dir,
         cli,
         away: new AwayDetector(() => null, Date.now, () => true),
-        readMessages: async (sid) => histories.get(sid) ?? [],
       },
       pals: {
+        readMessages: async (sid) => histories.get(sid) ?? [],
         models: async () => [{ value: "opus", displayName: "Opus", description: "", efforts: ["low", "high", "max"] }],
         reveal: async () => {}, // never opens a real window
         recentSource: { list: async () => ended, info: async (sid) => ended.find((i) => i.sessionId === sid) },
@@ -286,7 +286,11 @@ describe("host ↔ app protocol", () => {
     const shot = await call("media.upload", { mediaType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==" });
     const spec = await call("media.uploadChunk", { name: "列表.md", mediaType: "text/markdown", offset: 0, data: Buffer.from("按日期排序").toString("base64"), done: true });
     const withFiles = { id: pal.id, text: "照这张图和这份说明改", clientMsgId: "c-pal-2", attachments: [shot.id, spec.id] };
-    methods["pals.send"] = [plainSend, { params: withFiles, result: await call("pals.send", withFiles) }];
+    // To a session still open in its terminal: taken over once it's quit there; meanwhile the words wait (queued).
+    const toTerminal = { id: term.id, text: "顺手把注册页也看看", clientMsgId: "c-term-1" };
+    const queuedSend = { params: toTerminal, result: await call("pals.send", toTerminal) };
+    expect((queuedSend.result as any).queued).toBe(true);
+    methods["pals.send"] = [plainSend, { params: withFiles, result: await call("pals.send", withFiles) }, queuedSend];
     await waitFor(() => events.some((e) => e.event === "chat.message" && e.data.pal && e.data.clientMsgId === "c-pal-2"));
     await run("pals.history", { id: pal.id, limit: 50 });
     void hub.pals.send(pal.id, "要确认");
@@ -341,7 +345,7 @@ describe("host ↔ app protocol", () => {
     // has two samples, adopting and cancelling.
     const adopted = methods["pals.adopt"]!;
     const cancelled = { params: { sessionId: term.id, cancel: true }, result: await call("pals.adopt", { sessionId: term.id, cancel: true }) };
-    expect(cancelled.result).toEqual({ cancelled: true });
+    expect(cancelled.result).toEqual({ cancelled: true, dropped: 1 }); // the words that waited for it go too
     methods["pals.adopt"] = [adopted as Sample, cancelled];
     // The owner names it (§13): Claude Code's title for the session changes too.
     expect((await run("pals.rename", { id: pal.id, name: "网站改版" })).pal.name).toBe("网站改版");

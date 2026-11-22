@@ -32,7 +32,7 @@ function setup(opts: { claude?: FakeClaudeDir; paths?: ReturnType<typeof tmpPath
   const ctx = makeHub({
     paths: opts.paths ?? tmpPaths(),
     script: opts.script,
-    sessions: { claudeDir: claude.dir, cli, away: new AwayDetector(() => null, Date.now, () => false), readMessages: async () => [] },
+    sessions: { claudeDir: claude.dir, cli, away: new AwayDetector(() => null, Date.now, () => false) },
     pals: { readMessages: async () => [], timing: FAST },
   });
   ctx.hub.pals.start();

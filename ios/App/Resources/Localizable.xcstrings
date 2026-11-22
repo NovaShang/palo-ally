@@ -8078,6 +8078,270 @@
           }
         }
       }
+    },
+    "agent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agents"
+          }
+        }
+      }
+    },
+    "新建 agent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Agent"
+          }
+        }
+      }
+    },
+    "归档" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archive"
+          }
+        }
+      }
+    },
+    "归档「%@」？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archive “%@”?"
+          }
+        }
+      }
+    },
+    "它会停下，之后还能在已归档里拿回来。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It stops. You can bring it back from Archived later."
+          }
+        }
+      }
+    },
+    "归档这个 agent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archive This Agent"
+          }
+        }
+      }
+    },
+    "已归档" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archived"
+          }
+        }
+      }
+    },
+    "已归档，%lld 个" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archived, %lld"
+          }
+        }
+      }
+    },
+    "终端里开着" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in a terminal"
+          }
+        }
+      }
+    },
+    "终端里开着 · %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in a terminal · %@"
+          }
+        }
+      }
+    },
+    "终端那边退出后发出" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sends once the terminal exits"
+          }
+        }
+      }
+    },
+    "取消这条" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel it"
+          }
+        }
+      }
+    },
+    "取消这 %lld 条" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel these %lld"
+          }
+        }
+      }
+    },
+    "终端里还开着。发的话会等那边退出（/exit）后发出，之后在这里接着聊。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Still open in a terminal. What you send waits until it exits there (/exit), then the conversation carries on here."
+          }
+        }
+      }
+    },
+    "在后台跑着。发一句话会先停下它，在这里接着跑。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Running in the background. Sending a message stops it there and it carries on here."
+          }
+        }
+      }
+    },
+    "%@已经不在 agent 里了。对话记录还在主机上。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is no longer among your agents. The conversation is still on the host."
+          }
+        }
+      }
+    },
+    "你归档的" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archived by you"
+          }
+        }
+      }
+    },
+    "一阵子没用" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unused for a while"
+          }
+        }
+      }
+    },
+    "终端里开过" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From the terminal"
+          }
+        }
+      }
+    },
+    "拿回来" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bring Back"
+          }
+        }
+      }
+    },
+    "没能拿回来：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't bring it back: %@"
+          }
+        }
+      }
+    },
+    "搜索名字或文件夹" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search names or folders"
+          }
+        }
+      }
+    },
+    "还没有归档的 agent。归档的、一阵子没用的，和主机上的 Claude Code 对话都会在这里。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No archived agents yet. Ones you archive, ones unused for a while, and the Claude Code conversations on the host show up here."
+          }
+        }
+      }
+    },
+    "点左下角的 ＋ 新建一个 agent，或者让助理帮你开。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap ＋ at the bottom left to start an agent, or ask your assistant to."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

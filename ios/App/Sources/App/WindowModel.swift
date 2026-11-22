@@ -252,8 +252,6 @@ final class WindowModel {
     var paneOpenHere: [String: Bool] = [:]
     /// The inspector's content is on screen (its onAppear/onDisappear), for the debug log.
     @ObservationIgnored var inspectorShown = false
-    /// 从历史记录继续… is open: the ＋ menu sets it, `.historyPicker()` shows the sheet.
-    var historyPickerPresented = false
     /// 新建工作区 asked (⌘⇧N, ＋, a session's 并排…): with these sessions chosen.
     var newWorkspace: [String]?
     /// The quick-switch strip's last move went forward (the next page slides in from the right).
@@ -621,7 +619,7 @@ final class WindowModel {
             }
         case "allyInvite": showList(); showAllyInvite = true
         case "allyAccept": allyInvite = PendingAllyInvite(link: Self.demoAllyInviteLink())
-        // `-demoSession <id>`: one of the computer's sessions, read only (default the first).
+        // `-demoSession <id>`: one of the computer's sessions that isn't a Pal, as an agent (default the first).
         case "session":
             Task { @MainActor in
                 for _ in 0..<40 where store?.otherSessions.isEmpty ?? true { try? await Task.sleep(for: .milliseconds(100)) }

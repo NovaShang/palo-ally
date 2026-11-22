@@ -425,10 +425,17 @@ public struct MediaData: Decodable, Sendable {
 public struct ChatSendResult: Decodable, Sendable {
     public var id: String
     public var seq: Int64
+    /// `pals.send` to a session still open in a terminal: it waits until
+    /// that's quit (`seq` 0 meanwhile).
+    public var queued: Bool?
+    /// `pals.send` to a session that wasn't a Pal: the Pal it was taken over as.
+    public var pal: String?
     public init(from decoder: Decoder) throws {
         let l = try Lenient(decoder)
         id = l.string("id", or: "")
         seq = l.int64("seq", or: 0)
+        queued = l.bool("queued")
+        pal = l.string("pal")
     }
 }
 
@@ -873,22 +880,6 @@ public struct SessionsResult: Decodable, Sendable {
         sessions = l.array(CCSession.self, "sessions", or: [])
         hooks = l.bool("hooks") ?? l.bool("hooksEnabled")
     }
-}
-
-/// `sessions.history {id, before?, limit?}`: one session's conversation, the
-/// newest page, or the page before the message `before` (its id).
-public struct SessionHistoryParams: Codable, Sendable {
-    public var id: String
-    public var before: String?
-    public var limit: Int?
-    public init(id: String, before: String? = nil, limit: Int? = nil) { self.id = id; self.before = before; self.limit = limit }
-}
-
-/// `sessions.history → {messages}`, oldest first.
-public struct SessionMessagesResult: Decodable, Sendable {
-    public var messages: [CCMessage]
-    public init(messages: [CCMessage]) { self.messages = messages }
-    public init(from decoder: Decoder) throws { messages = try Lenient(decoder).array(CCMessage.self, "messages", or: []) }
 }
 
 /// `sessions.hooks {enabled}` → `{enabled}`: the global hooks switch.

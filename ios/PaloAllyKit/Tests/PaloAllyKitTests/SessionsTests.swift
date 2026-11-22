@@ -31,26 +31,6 @@ struct SessionsDecodingTests {
         #expect(odd.kind == .unknown && odd.status == .unknown && oddIssues.count == 2 && !odd.isRunning)
     }
 
-    @Test func messagesOfEveryRole() throws {
-        let (r, issues) = try decode(SessionMessagesResult.self, """
-        {"messages":[
-          {"id":"1","ts":1,"role":"owner","text":"列表要能按日期排序"},
-          {"id":"2","ts":2,"role":"assistant","text":"好的"},
-          {"id":"3","ts":3,"role":"peer","text":"设计稿在这","from":"笔记整理"},
-          {"id":"4","ts":4,"role":"palo","text":"主人：先别管登录页"},
-          {"id":"5","ts":5,"role":"palo","text":"你好，我是 Palo。","from":"Palo"},
-          {"id":"6","ts":6,"role":"palo","text":"详情页也做了吧","from":"主人"}]}
-        """)
-        #expect(issues.isEmpty)
-        #expect(r.messages.map(\.role) == [.owner, .assistant, .peer, .palo, .palo, .palo])
-        #expect(r.messages[5].from == "主人" && r.messages[5].shownText == "详情页也做了吧")
-        #expect(r.messages[2].from == "笔记整理")
-        // The 「主人：」 the host puts in front for the session isn't shown.
-        #expect(r.messages[3].shownText == "先别管登录页")
-        #expect(r.messages[4].shownText == "你好，我是 Palo。")
-        #expect(r.messages[0].shownText == "列表要能按日期排序")
-    }
-
     @Test func cardsCarryTheirSourceAndNote() throws {
         let (a, issues) = try decode(Approval.self, """
         {"id":"a1","tool":"Bash","title":"在电脑上运行一条命令","detail":"npm run build","careful":false,"status":"expired",
@@ -125,8 +105,6 @@ struct SessionsDecodingTests {
         let (pal, i6) = try decode(HelperDecideResult.self, #"{"pal":{"id":"p","name":"报销帮手","cwd":"/","sessionId":"s","status":"idle","pending":0,"createdBy":"palo","updatedAt":1}}"#)
         #expect(i6.isEmpty && pal.pal?.createdBy == .palo)
 
-        #expect(try JSONValue.from(SessionHistoryParams(id: "s")) == ["id": "s"])
-        #expect(try JSONValue.from(SessionHistoryParams(id: "s", before: "m9", limit: 50)) == ["id": "s", "before": "m9", "limit": 50])
         #expect(try JSONValue.from(SessionHooksParams(enabled: false)) == ["enabled": false])
         #expect(try JSONValue.from(HelperDecideParams(proposalId: "hp1", action: .create)) == ["proposalId": "hp1", "action": "create"])
     }

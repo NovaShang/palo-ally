@@ -119,6 +119,9 @@ public struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         case sending, sent, failed
         /// Couldn't go out because we're offline; resent automatically on reconnect.
         case queued
+        /// With the host, waiting for a terminal to quit the session (one kind
+        /// of agent): it goes in once it's taken over.
+        case held
     }
 
     /// 0 means "no seq yet" (optimistic echo or an in-flight stream).

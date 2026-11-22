@@ -327,7 +327,9 @@ public struct EarlierGroup: Sendable, Hashable, Identifiable {
 public struct EarlierParams: Codable, Sendable {
     public var limit: Int?
     public var folder: String?
-    public init(limit: Int? = nil, folder: String? = nil) { self.limit = limit; self.folder = folder }
+    /// 已归档's search: every Claude Code conversation on the computer whose title, folder or id has it.
+    public var query: String?
+    public init(limit: Int? = nil, folder: String? = nil, query: String? = nil) { self.limit = limit; self.folder = folder; self.query = query }
 }
 
 /// `pals.earlier → {items}`.

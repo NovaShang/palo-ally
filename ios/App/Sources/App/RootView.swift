@@ -492,6 +492,22 @@ private struct LayoutStressTest: ViewModifier {
                             return w.selection ?? .palo
                         }()
                         w.draftBox(page).text += String(a.dropFirst(5))
+                    // `agent:cc-login`: one of the computer's sessions that isn't a Pal, opened as an agent (its row tapped).
+                    case _ where a.hasPrefix("agent:"):
+                        w.openSession(String(a.dropFirst(6)))
+                    // `archive`: 已归档, as its row in the sidebar.
+                    case "archive":
+                        w.open(.earlier)
+                    // `say:字`: sent in the open agent's conversation (its composer's send).
+                    case _ where a.hasPrefix("say:"):
+                        guard let store = w.store else { break }
+                        switch w.selection {
+                        case .pal(let id)?, .session(let id)?: store.palStore(id).send(String(a.dropFirst(4)))
+                        default: store.send(String(a.dropFirst(4)))
+                        }
+                    // `quit:cc-login`: the demo's terminal holding that session quits (/exit).
+                    case _ where a.hasPrefix("quit:"):
+                        if let id = w.activeHostID, let host = model.app.demoHost(id) { await host.quitTerminal(String(a.dropFirst(5))) }
                     // `web:http://localhost:8765/a.html`: a page opened in the right pane, as a link in a reply does.
                     case _ where a.hasPrefix("web:"):
                         if let url = URL(string: String(a.dropFirst(4))) { w.openWebInPane(url) }
@@ -706,8 +722,6 @@ struct MainScreen: View {
         // Everything on screen counts as seen (drives the other assistants' unread dots).
         .onChange(of: store.lastSeq) { model.markSeen() }
         // Large screens: the assistant's management over everything.
-        // ＋ → 从历史记录继续…
-        .historyPicker()
         .sheet(isPresented: $model.showManagement) {
             ManagementSheet()
                 .environment(model)
@@ -835,7 +849,7 @@ private struct ConversationDetail: View {
                 case .palo:
                     ChatView()
                 case .pal(let id):
-                    PalPage(palID: id).id("pal-\(id)")
+                    AgentPage(agent: .pal(id)).id("pal-\(id)")
                         // Switched from the quick-switch strip: the pages slide.
                         .transition(.asymmetric(
                             insertion: .move(edge: model.quickSwitchForward ? .trailing : .leading),
@@ -850,9 +864,10 @@ private struct ConversationDetail: View {
                         WorkspaceTilesPage(workspaceID: id).id("workspace-\(id)")
                     }
                 case .earlier:
-                    EarlierPage()
+                    ArchivePage()
                 case .session(let id):
-                    SessionPage(sessionID: id).id("session-\(id)")
+                    // One of the computer's sessions that isn't a Pal: an agent all the same.
+                    AgentPage(agent: .session(id)).id("session-\(id)")
                 case .devices:
                     DevicesPage()
                 }

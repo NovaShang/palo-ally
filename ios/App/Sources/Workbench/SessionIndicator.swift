@@ -33,6 +33,12 @@ struct SessionIndicator: View {
         self.glyphOnly = glyphOnly
     }
 
+    /// One of the computer's other sessions (an agent not taken over yet).
+    init(_ session: CCSession, size: CGFloat = 38, glyphOnly: Bool = false) {
+        self.init(state: StatusDotKind(session.status), size: size)
+        self.glyphOnly = glyphOnly
+    }
+
     var body: some View {
         Group {
             if glyphOnly { flatGlyph } else { dropWithMark }

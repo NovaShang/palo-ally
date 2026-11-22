@@ -180,9 +180,12 @@ public struct PalsResult: Decodable, Sendable {
     public var pals: [Pal]
     public var others: [CCSession]
     public var hooks: Bool?
+    /// 已归档 N: those put away for lack of use and those the owner archived.
+    /// Hosts from before one kind of agent don't say.
+    public var archived: Int?
 
-    public init(pals: [Pal], others: [CCSession] = [], hooks: Bool? = nil) {
-        self.pals = pals; self.others = others; self.hooks = hooks
+    public init(pals: [Pal], others: [CCSession] = [], hooks: Bool? = nil, archived: Int? = nil) {
+        self.pals = pals; self.others = others; self.hooks = hooks; self.archived = archived
     }
 
     public init(from decoder: Decoder) throws {
@@ -190,6 +193,7 @@ public struct PalsResult: Decodable, Sendable {
         pals = l.array(Pal.self, "pals", or: [])
         others = l.array(CCSession.self, "others", or: [])
         hooks = l.expect("hooks", l.bool("hooks"))
+        archived = l.int("archived")
     }
 }
 
