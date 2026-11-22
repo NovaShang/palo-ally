@@ -100,13 +100,16 @@ export interface ConversationDeps {
   log: (s: string) => void;
 }
 
-// Conversation is the one main conversation with the harness: it owns the CLI
-// process, decides which output belongs to whom (owner reply vs proactive),
-// and keeps proactive turns waiting until the harness is idle.
-//
-// The assistant is an AgentSession with ASSISTANT_FLAGS: its process started
-// by the words that need it, at once (no ready wait), never asleep, no
-// holders check; its words into its chat log; its tasks the host's list.
+// Conversation is the assistant: the one main conversation with the harness.
+// It is an AgentSession (agent/session.ts: its process, its turns, its
+// replies) with ASSISTANT_FLAGS: its process started by the words that need
+// it, at once (no ready wait), never asleep, no holders check; its turns made
+// by the host (which owner messages each answers, one the harness starts on
+// its own, closed when it goes quiet), its replies one message per text block
+// under ids of the host's, into its chat log; its tasks the host's list. What
+// only the assistant has plugs in by its flags: host-initiated turns
+// (turnQueue.ts), WeChat (wechatRelay.ts), an Ally's gated turn
+// (allyTurn.ts), idle compaction (idleCompact.ts).
 export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, ChatLogSink> {
   model = ""; // the model the harness reports running
   permissionMode = ""; // the permission mode it reports running in (not always the configured one)

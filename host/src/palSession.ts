@@ -126,9 +126,11 @@ const STOP_SETTLE_MS = 250; // a stopped turn not ended by Claude Code by then i
 /** What a Pal is told after the watchdog restarted it mid-turn. */
 export const stallContinue = (): string => tr("stall.continue");
 
-// An agent is an AgentSession with AGENT_FLAGS: its process started awaited,
-// brought back with backoff, never two writers, put to sleep; its words out
-// as events, its history its transcript, its tasks in its record.
+// An agent is an AgentSession (agent/session.ts: its process, its turns, its
+// replies) with AGENT_FLAGS: its process started awaited, brought back with
+// backoff, never two writers, put to sleep; its turns the harness' own, its
+// replies under the API message's id with a message's text blocks joined,
+// out as events; its history its transcript, its tasks in its record.
 export class PalSession extends AgentSession<{ text: string; from?: string; images?: ImageInput[] }, RecordTasks, TranscriptSink> {
   private calls: { name: string; id: string }[] = []; // its card tools' calls (tool_use ids) waiting for their handler
   private follower: { start(): void; poke(): void; stop(): void } | null = null;
