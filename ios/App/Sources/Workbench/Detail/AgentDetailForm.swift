@@ -135,7 +135,7 @@ struct AgentDetailForm: View {
                     }
             }
             DetailContextRow(percent: detail?.contextFill, tokens: detail?.contextTokens, window: detail?.contextWindow,
-                             compact: caps.compact ? { compact() } : nil, compacting: working == "compact",
+                             compact: caps.compact && store.harness.features.compact ? { compact() } : nil, compacting: working == "compact",
                              canCompact: online && working == nil && pal?.status != .busy)
         } header: {
             let n = detail?.tasks.count ?? 0
@@ -210,7 +210,8 @@ struct AgentDetailForm: View {
             .contentShape(.rect)
         }
         .tint(.primary)
-        .disabled(agent != nil && !online)
+        // (An agent's name is its harness' title for it: only a harness that renames.)
+        .disabled(agent != nil && (!online || !store.harness.features.rename))
         .accessibilityIdentifier("detail-name")
     }
 

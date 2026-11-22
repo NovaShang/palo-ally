@@ -75,4 +75,14 @@ struct HarnessTests {
         // an older host: the built-in words, as before
         #expect(AgentDetail(assistant: nil, status: nil, tasks: []).harness.modeLabel("acceptEdits") == PermissionModeName.label("acceptEdits"))
     }
+
+    @Test func aHarnessWithoutRewindOffersNone() async {
+        let host = DemoHost(speed: 0, pals: false)
+        let store = AppStore(transport: host.transport)
+        store.start()
+        _ = await until { store.connection == .online && store.messages.contains { store.canRewind(to: $0) } }
+        #expect(store.messages.contains { store.canRewind(to: $0) })
+        store.apply(event: RPCEventName.harnessUpdated, data: ["id": "claude-code", "capabilities": ["id": "claude-code", "name": "X", "features": ["rewind": false]]])
+        #expect(!store.messages.contains { store.canRewind(to: $0) })
+    }
 }
