@@ -170,7 +170,20 @@ export class HookInstaller {
       const ours = (Array.isArray(s.hooks?.[ev]) ? s.hooks[ev] : []).flatMap((g: any) => (Array.isArray(g?.hooks) ? g.hooks.filter(isPaloAllyHook) : []));
       return ours.length === 1 && ours[0].command === hookCommand(this.o.paths, ev) && ours[0].timeout === timeout;
     });
-    if (!current) this.install();
+    if (current) return;
+    // Entries that run another host's hook script (a second host on this
+    // computer, e.g. a test instance with its own PALOALLY_HOME) belong to that
+    // host while its script is there: taking them over would cut it off from
+    // its sessions. A script that's gone is taken over.
+    const own = shq(join(this.o.paths.bin, "cc-hook"));
+    const others = Object.keys(HOOK_EVENTS)
+      .flatMap((ev) => (Array.isArray(s.hooks?.[ev]) ? s.hooks[ev] : []).flatMap((g: any) => (Array.isArray(g?.hooks) ? g.hooks.filter(isPaloAllyHook) : [])))
+      .map((h: any) => String(h.command ?? ""))
+      .filter((c: string) => !c.startsWith(own))
+      .map((c: string) => /^'([^']+)'/.exec(c)?.[1])
+      .filter((p): p is string => !!p);
+    if (others.length > 0 && others.every((p) => existsSync(p))) return;
+    this.install();
   }
 
   /** (Re)writes the hook scripts; their content follows this host's version. */

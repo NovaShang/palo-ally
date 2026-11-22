@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync, lstatSync } from "node:fs";
+import { existsSync, rmSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync, lstatSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -79,6 +79,21 @@ describe("global hook install", () => {
     inst.uninstall();
     expect(readFileSync(file, "utf8")).toBe(original);
     expect(inst.installed()).toBe(false);
+  });
+
+  test("a second host on the computer doesn't take over the hooks of a host whose script is there", () => {
+    const live = setup();
+    live.inst.install();
+    const liveFile = readFileSync(live.file, "utf8");
+    // a test instance with its own home, the same Claude Code settings
+    const other = new HookInstaller({ paths: tmpPaths(), claudeDir: live.claudeDir });
+    other.refresh();
+    expect(readFileSync(live.file, "utf8")).toBe(liveFile);
+    // once the first host's script is gone, the hooks are taken over
+    rmSync(live.paths.bin, { recursive: true, force: true });
+    other.refresh();
+    expect(readFileSync(live.file, "utf8")).not.toBe(liveFile);
+    expect(readFileSync(live.file, "utf8")).toContain(join((other as any).o.paths.bin, "cc-hook"));
   });
 
   test("a change the owner made meanwhile is kept; only PaloAlly's entries go", () => {
