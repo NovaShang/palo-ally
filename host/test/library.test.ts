@@ -72,7 +72,7 @@ describe("ArtifactLibrary", () => {
     expect(Buffer.from(lib.read("big", "large.pdf", 0, STREAM_CHUNK).data, "base64").length).toBe(CHUNK);
     const tail = lib.read("big", "large.pdf", STREAM_CHUNK, STREAM_CHUNK, true);
     expect([Buffer.from(tail.data, "base64").length, tail.eof]).toEqual([5, true]);
-    expect(() => lib.read("big", "../../config.json")).toThrow("不在产物文件夹里");
+    expect(() => lib.read("big", "../../config.json")).toThrow("不在成果文件夹里");
     expect(() => lib.read("../state", "x")).toThrow();
 
     lib.watch(60_000);

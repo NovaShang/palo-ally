@@ -208,7 +208,7 @@ extension DemoHost {
         for w in watchedFiles.values {
             guard let abs = w["abs"]?.stringValue, let current = try? demoFile(w) else { continue }
             var text = String(decoding: current.file.data, as: UTF8.self)
-            text += "\n## 刚改的\n\n这一段是演示里文件在电脑上被改了以后自己出现的。\n"
+            text += "\n## 刚改的\n\n这一段是演示里文件在主机上被改了以后自己出现的。\n"
             let mtime = Date().epochMillis
             editedFiles[abs] = (DemoFile(text), mtime)
             guard !Self.noFileWatch else { continue }
@@ -366,7 +366,7 @@ extension DemoHost {
             var path = p["path"]?.stringValue ?? ""
             if path.hasPrefix("~") { path = Self.demoHome + path.dropFirst(1) }
             guard path != "/", path != Self.demoHome, path != "/Users", path.hasPrefix(Self.demoHome + "/") else {
-                throw DemoError(message: "选一个具体的文件夹，不能是整个磁盘、整个个人文件夹或 PaloAlly 自己的文件夹")
+                throw DemoError(message: "选一个具体的文件夹，不能是整个磁盘、整个个人文件夹或 Palo 自己的文件夹")
             }
             if let had = ownerFolders.first(where: { $0.path == path }) { return ["folder": try .from(had)] }
             let folder = OwnerFolder(id: nextID("fld"), path: path, name: (path as NSString).lastPathComponent, addedAt: Date().epochMillis)

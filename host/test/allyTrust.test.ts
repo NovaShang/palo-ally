@@ -15,7 +15,7 @@ import { waitFor } from "./relayClient.ts";
 const app = { clientId: "app_1", deviceId: "dev-x", channel: "app" as const, local: false };
 const rpc = (h: NetHost, method: string, params: unknown = {}) => handleRpc(h.hub, { method, params }, app) as Promise<any>;
 const peerOf = (h: NetHost) => h.hub.allies.list()[0]!;
-const turns = (h: NetHost) => h.ctx.driver.sessions.flatMap((s) => s.sent).filter((t) => t.startsWith("[Ally]"));
+const turns = (h: NetHost) => h.ctx.driver.sessions.flatMap((s) => s.sent).filter((t) => t.startsWith("[好友]"));
 
 const scratches: string[] = [];
 afterAll(() => {
@@ -69,7 +69,7 @@ describe("trust levels", () => {
     await rpc(a, "ally.trust", { id: toB.id, trust: "review" });
     await waitFor(() => peerOf(b).theirTrust === "review");
     await expect(rpc(a, "ally.trust", { id: toB.id, trust: "sometimes" })).rejects.toThrow("档位");
-    await expect(rpc(a, "ally.trust", { id: "al_nope", trust: "review" })).rejects.toThrow("没有这个 Ally");
+    await expect(rpc(a, "ally.trust", { id: "al_nope", trust: "review" })).rejects.toThrow("没有这个好友");
     expect(a.hub.audit.tail(50).filter((e) => e.type === "ally.trust").map((e) => e.trust)).toEqual(["converse", "review"]);
   });
 
@@ -140,7 +140,7 @@ describe("能对话", () => {
     const net = new AllyNet();
     const results: string[] = [];
     const script: FakeScript = async (t, ctx) => {
-      if (!t.startsWith("[Ally]")) return;
+      if (!t.startsWith("[好友]")) return;
       const from = /ally_send\(to="([^"]+)"/.exec(t)![1]!;
       results.push(await ctx.opts.tools.ally_send({ to: from, text: "周六下午可以" }));
       results.push(await ctx.opts.tools.ally_send({ to: "家人C", text: "家人B说周六去公园" }));
@@ -189,7 +189,7 @@ describe("能对话", () => {
     const ran: string[] = [];
     const answers: string[] = [];
     const script: FakeScript = async (t, ctx) => {
-      if (!t.startsWith("[Ally]")) return;
+      if (!t.startsWith("[好友]")) return;
       for (const [name, input] of tried) {
         await ctx.useTool(name, input, {
           ask: name === "Bash",
@@ -278,10 +278,10 @@ describe("the owner's own words", () => {
     expect(b.hub.allies.log(peerOf(b).id).at(-1)).toMatchObject({ text: "到家说一声", author: "owner" });
     await expect(rpc(a, "ally.say", { id: peerOf(a).id, text: "  " })).rejects.toThrow("没有要发的话");
     await expect(rpc(a, "ally.say", { id: peerOf(a).id, text: "长".repeat(1400) })).rejects.toThrow("太长了");
-    await expect(rpc(a, "ally.say", { id: "al_nope", text: "x" })).rejects.toThrow("没有这个 Ally");
+    await expect(rpc(a, "ally.say", { id: "al_nope", text: "x" })).rejects.toThrow("没有这个好友");
     await rpc(a, "ally.remove", { id: peerOf(a).id });
     const removed = (a.hub.allies as any).allies[0].id;
-    await expect(rpc(a, "ally.say", { id: removed, text: "x" })).rejects.toThrow("已经不是 Ally");
+    await expect(rpc(a, "ally.say", { id: removed, text: "x" })).rejects.toThrow("已经不是好友");
   });
 
   test("saying something in the app counts as having seen what came in", async () => {

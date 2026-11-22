@@ -255,7 +255,7 @@ describe("host ↔ app protocol", () => {
     // one the owner didn't get to: back in the terminal
     const late = hub.sessions.onHook("PermissionRequest", { session_id: term.id, cwd: term.cwd, hook_event_name: "PermissionRequest", tool_name: "Bash", tool_input: { command: "npm test" } }, sig());
     await tick(5);
-    (hub.approvals as any).settle(hub.approvals.listPending()[0]!.id, "expired", "timeout", undefined, "在电脑上等你");
+    (hub.approvals as any).settle(hub.approvals.listPending()[0]!.id, "expired", "timeout", undefined, "在主机上等你");
     await late;
     await run("sessions.history", { id: term.id, limit: 50 });
     await run("sessions.hooks", { enabled: true });

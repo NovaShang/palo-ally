@@ -276,7 +276,7 @@ describe("an Ally's turn", () => {
     const effects: string[] = [];
     const results: { denied: boolean[]; allowed: boolean[]; secondLock?: any } = { denied: [], allowed: [] };
     a.ctx.driver.script = async (t, ctx) => {
-      if (!t.startsWith("[Ally]")) return;
+      if (!t.startsWith("[好友]")) return;
       results.denied = await tryAll(ctx, attacks(scratch, a, memoryDir), effects);
       results.allowed = await tryAll(ctx, allowedInTurn(memoryDir, a), effects);
       // the second lock: the permission prompt itself refuses too
@@ -318,7 +318,7 @@ describe("an Ally's turn", () => {
     const effects: string[] = [];
     let n = 0;
     a.ctx.driver.script = async (t, ctx) => {
-      if (t.startsWith("[Ally]")) {
+      if (t.startsWith("[好友]")) {
         await tryAll(ctx, [["Bash", { command: `touch ${scratch}/in-ally-turn` }]], effects);
         return;
       }
@@ -359,7 +359,7 @@ describe("an Ally's turn", () => {
     const waiting = new Promise<void>((r) => (release = r));
     const outcomes: Record<string, boolean> = {};
     a.ctx.driver.script = async (t, ctx) => {
-      if (t.startsWith("[Ally]")) {
+      if (t.startsWith("[好友]")) {
         await waiting;
         // still the Ally's turn after the owner spoke: still gated
         outcomes.allyAfterOwner = await ctx.useTool("Bash", { command: `touch ${scratch}/ally` }, { run: () => spawnSync("/bin/sh", ["-c", `touch ${scratch}/ally`]) });
@@ -386,7 +386,7 @@ describe("an Ally's turn", () => {
     expect(existsSync(join(scratch, "ally"))).toBe(false);
     expect(existsSync(join(scratch, "owner"))).toBe(true);
     const sent = a.ctx.driver.last!.sent;
-    expect(sent.findIndex((t) => t.includes("帮我建个文件"))).toBeGreaterThan(sent.findIndex((t) => t.startsWith("[Ally]")));
+    expect(sent.findIndex((t) => t.includes("帮我建个文件"))).toBeGreaterThan(sent.findIndex((t) => t.startsWith("[好友]")));
     // answered as the owner's reply, not as something pushed
     expect(a.hub.chat.recent(3).find((m) => m.text === "建好了")).toMatchObject({ role: "assistant", channel: "app" });
   });
@@ -395,7 +395,7 @@ describe("an Ally's turn", () => {
     const scratch = scratchDir("stop");
     const { a, b } = setup(scratch);
     a.ctx.driver.script = async (t, ctx) => {
-      if (t.startsWith("[Ally]")) await ctx.interrupted;
+      if (t.startsWith("[好友]")) await ctx.interrupted;
     };
     await befriend(a, b);
     await a.hub.idle();
@@ -418,7 +418,7 @@ describe("an Ally's turn", () => {
         await new Promise<void>((r) => (release = r));
         return;
       }
-      if (!t.startsWith("[Ally]")) return;
+      if (!t.startsWith("[好友]")) return;
       // the harness first finishes something it started on its own (a
       // result that consumed no message), then gets to the Ally's words
       ctx.emit({ type: "result", isError: false, text: "", costUsd: 0, totalCostUsd: 0, contextTokens: 1, sessionId: "s", consumedUuids: [] });
@@ -437,7 +437,7 @@ describe("an Ally's turn", () => {
     await waitFor(() => a.hub.allies.log(a.hub.allies.list()[0]!.id).length === 2);
     release();
     await a.hub.idle();
-    expect(a.ctx.driver.last!.sent.filter((t) => t.startsWith("[Ally]"))).toHaveLength(1);
+    expect(a.ctx.driver.last!.sent.filter((t) => t.startsWith("[好友]"))).toHaveLength(1);
     expect(outcomes).toEqual([false, true]);
     expect(a.hub.conversation.allyTurnAlly()).toBeUndefined();
     const ends = a.hub.audit.tail(100).filter((e) => e.type === "ally.turn.end");
@@ -450,7 +450,7 @@ describe("an Ally's turn", () => {
     let release!: () => void;
     const waiting = new Promise<void>((r) => (release = r));
     a.ctx.driver.script = async (t) => {
-      if (t.startsWith("[Ally]")) await waiting;
+      if (t.startsWith("[好友]")) await waiting;
     };
     await befriend(a, b);
     await a.hub.idle();

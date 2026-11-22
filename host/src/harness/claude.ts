@@ -65,7 +65,7 @@ export function paloSendMcpServer(send: (text: string) => Promise<string>, deliv
     tools: [
       tool(
         "palo_send",
-        "Send a message to the owner's assistant (the session that manages the Pals). Use this to reply to the assistant, report back, or ask it for something; it is delivered by PaloAlly directly and works even after the assistant restarts. Write it complete: the assistant can't see this conversation.",
+        "Send a message to the owner's assistant (the session that manages the Pals). Use this to reply to the assistant, report back, or ask it for something; it is delivered by Palo directly and works even after the assistant restarts. Write it complete: the assistant can't see this conversation.",
         { text: z.string().describe("What to tell the assistant") },
         async (a) => text(await send(a.text)),
       ),
@@ -132,15 +132,15 @@ export function paloallyMcpServer(h: ToolHandlers) {
       shared.copy_to_clipboard,
       tool(
         "ally_list",
-        "列出主人的 Ally（别人的助理，或主人自己另一台电脑上的助理）：id、对方主人的称呼、助理名、标签（家人朋友 / 我的）、现在是否在线，以及主人给的档位：「能对话」（你的回话直接发出）或「每句要你看」（你的回话先成草稿卡片）。",
+        "列出主人的好友（别人的助理；以前加的也可能是主人自己另一台主机上的助理）：id、对方主人的称呼、助理名、标签（家人朋友 / 我的）、现在是否在线，以及主人给的档位：「能对话」（你的回话直接发出）或「每句要你看」（你的回话先成草稿卡片）。",
         {},
         async () => text(await h.ally_list()),
       ),
       tool(
         "ally_send",
-        "给一个 Ally 传话。主人给它的档位是「能对话」时直接发出（不用主人点头，每句都留记录）；是「每句要你看」时只生成草稿卡片，主人点「发送」才会发出，主人也可以改或不发。处理某个 Ally 来话的那一轮里，只有回给这个 Ally 的话可能直接发出，给别的 Ally 的一律是草稿。发给 Ally 的每句话都必须用它。立即返回：按返回的说法告诉主人，草稿别说成已经发出去了。",
+        "给一个好友传话。主人给它的档位是「能对话」时直接发出（不用主人点头，每句都留记录）；是「每句要你看」时只生成草稿卡片，主人点「发送」才会发出，主人也可以改或不发。处理某个好友来话的那一轮里，只有回给这个好友的话可能直接发出，给别的好友的一律是草稿。发给好友的每句话都必须用它。立即返回：按返回的说法告诉主人，草稿别说成已经发出去了。",
         {
-          to: z.string().describe("Ally 的 id，或对方主人的称呼"),
+          to: z.string().describe("好友的 id，或对方主人的称呼"),
           text: z.string().describe("要传的原话，像主人自己会说的那样；不超过 4 KB"),
           urgent: z.boolean().optional().describe("真的急才标：对方会立刻收到推送"),
           slots: z
@@ -163,7 +163,7 @@ export function paloallyMcpServer(h: ToolHandlers) {
       ),
       tool(
         "pal_propose",
-        "提议开一个 Pal：一个专门负责某个长期项目的 Claude Code 会话，由 PaloAlly 托管，闲着时会睡下、有事时叫醒。只生成一张卡片，主人点「开吧」才会开；立即返回，别说已经开了。",
+        "提议开一个 Pal：一个专门负责某个长期项目的 Claude Code 会话，由 Palo 托管，闲着时会睡下、有事时叫醒。只生成一张卡片，主人点「开吧」才会开；立即返回，别说已经开了。",
 
         {
           name: z.string().describe("Pal 的名字，主人一看就懂，如「网站」；也是你以后 pal_send 给它用的名字"),
@@ -174,19 +174,19 @@ export function paloallyMcpServer(h: ToolHandlers) {
       ),
       tool(
         "pals_recent",
-        "列出这台电脑上最近 30 天里已经退出了的 Claude Code 对话（最新的在前）：sessionId、目录、标题、最后活动时间。正开着的会话和已经是 Pal 的不在这里（看 pals_list）。主人要把以前的某个对话接回来时用它查。",
+        "列出这台主机上最近 30 天里已经退出了的 Claude Code 对话（最新的在前）：sessionId、目录、标题、最后活动时间。正开着的会话和已经是 Pal 的不在这里（看 pals_list）。主人要把以前的某个对话接回来时用它查。",
         { folder: z.string().optional().describe("只看某个目录里的：绝对路径、~/ 开头的路径，或目录名（如 site）") },
         async (a) => text(await h.pals_recent(a)),
       ),
       tool(
         "pal_adopt",
-        "提议把一个已经退出的 Claude Code 对话接回来当 Pal（接着原来的上下文跑，由 PaloAlly 托管）。只生成一张卡片「接管『标题』（目录）」，主人点「接管」才会接；立即返回，别说已经接了。",
+        "提议把一个已经退出的 Claude Code 对话接回来当 Pal（接着原来的上下文跑，由 Palo 托管）。只生成一张卡片「接管『标题』（目录）」，主人点「接管」才会接；立即返回，别说已经接了。",
         { sessionId: z.string().describe("pals_recent 给的 sessionId") },
         async (a) => text(await h.pal_adopt(a)),
       ),
       tool(
         "pair_link",
-        "给主人的一台新设备（另一台 Mac、iPad 或手机）拿一个配对链接：打开这台电脑的配对窗口（5 分钟内有效，只能连一台），返回 paloally://pair 链接。主人在新设备上点开它，PaloAlly App 会自己打开并连上这台电脑。只在主人要连新设备时用。",
+        "给主人的一台新设备（另一台 Mac、iPad 或手机）拿一个配对链接：打开这台主机的配对窗口（5 分钟内有效，只能连一台），返回 paloally://pair 链接。主人在新设备上点开它，Palo App 会自己打开并连上这台主机。只在主人要连新设备时用。",
         {},
         async () => text(await h.pair_link()),
       ),
@@ -218,7 +218,7 @@ export function deliveryTools(h: DeliveryToolHandlers, forSession = false) {
       ),
     Artifact: tool(
       "Artifact",
-      "Publish a page or document the user will keep and come back to — a report, a dashboard, a write-up (HTML, Markdown, PDF, or any file) — into the user's library (产出物库), with a card in the conversation. Publishing the same file_path again updates the same artifact (periodic ones like a morning brief: overwrite the file and publish again). A multi-file artifact passes its other files through `files`, mapping each published path (relative, as the main file references it) to a source file.\n\nThis is the default for keeping a result: it stays private on the user's computer and shows in the PaloAlly app. Claude Code's own Artifact tool (no mcp__ prefix) is claude.ai's: use it when the user wants a claude.ai link (to share or open on the web), a page that stores data or takes comments, or when reading a claude.ai/artifact link.",
+      "Publish a page or document the user will keep and come back to — a report, a dashboard, a write-up (HTML, Markdown, PDF, or any file) — into the user's library (成果), with a card in the conversation. Publishing the same file_path again updates the same artifact (periodic ones like a morning brief: overwrite the file and publish again). A multi-file artifact passes its other files through `files`, mapping each published path (relative, as the main file references it) to a source file.\n\nThis is the default for keeping a result: it stays private on the user's host and shows in the Palo app. Claude Code's own Artifact tool (no mcp__ prefix) is claude.ai's: use it when the user wants a claude.ai link (to share or open on the web), a page that stores data or takes comments, or when reading a claude.ai/artifact link.",
       {
         file_path: z.string().describe("The main file to publish (absolute or relative to cwd)."),
         title: z.string().optional().describe("A short name for it."),
@@ -239,7 +239,7 @@ export function deliveryTools(h: DeliveryToolHandlers, forSession = false) {
       ),
     pals_list: tool(
       "pals_list",
-      "列出主人的 Pal（这台电脑上由 PaloAlly 托管的 Claude Code 会话：id、现在的名字、目录、状态、最后一句；status 为 asleep 的是睡着了，进程关着；名字会变，以这里为准），以及电脑上其他还开着的 Claude Code 会话。要给某个 Pal 派活或问它进展，用 pal_send 发给它的 id 或名字。",
+      "列出主人的 Pal（这台主机上由 Palo 托管的 Claude Code 会话：id、现在的名字、目录、状态、最后一句；status 为 asleep 的是睡着了，进程关着；名字会变，以这里为准），以及这台主机上其他还开着的 Claude Code 会话。要给某个 Pal 派活或问它进展，用 pal_send 发给它的 id 或名字。",
       {},
       async () => text(await h.pals_list()),
       ),
@@ -252,7 +252,7 @@ export function deliveryTools(h: DeliveryToolHandlers, forSession = false) {
     // 等你的事: the host keeps the list, not the model; never blocks.
     add_pending: tool(
       "add_pending",
-      "Put something the owner must decide on their pending list (等你的事), instead of asking and waiting. The host keeps the list and shows it in the PaloAlly app; it returns at once with the item's id, and the owner's decision comes back to you later as a message. Only for real decisions or preferences you can't proceed on without the owner; one item per decision, never the same one twice. `title`: one sentence saying what to decide, in the owner's language (「供应商合同第 7 条要不要保留」). `context`: one or two sentences of background. `options`: short answers to pick from, when there are clear ones.",
+      "Put something the owner must decide on their pending list (等你的事), instead of asking and waiting. The host keeps the list and shows it in the Palo app; it returns at once with the item's id, and the owner's decision comes back to you later as a message. Only for real decisions or preferences you can't proceed on without the owner; one item per decision, never the same one twice. `title`: one sentence saying what to decide, in the owner's language (「供应商合同第 7 条要不要保留」). `context`: one or two sentences of background. `options`: short answers to pick from, when there are clear ones.",
       {
         title: z.string().describe("One sentence: what the owner must decide"),
         context: z.string().optional().describe("One or two sentences of background"),

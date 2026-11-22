@@ -903,7 +903,7 @@ describe("Hub: files to the owner (SendUserFile / Artifact)", () => {
     writeFileSync(`${paths.home}/report.pdf`, "%PDF-1.4 x");
 
     // kept: relative path, two files, one card each, both in the library
-    expect(await h.SendUserFile({ files: ["chart.png", "report.pdf"], caption: "周报", status: "normal" })).toContain("产出物库");
+    expect(await h.SendUserFile({ files: ["chart.png", "report.pdf"], caption: "周报", status: "normal" })).toContain("成果");
     const card = hub.chat.since(0).at(-1)!;
     expect(card.text).toBe("周报");
     expect(card.attachments!.map((a) => a.kind)).toEqual(["artifact", "artifact"]);

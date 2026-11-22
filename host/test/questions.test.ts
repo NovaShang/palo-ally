@@ -177,7 +177,7 @@ describe("QuestionManager", () => {
     expect(again.list().map((q) => [q.source?.kind ?? "own", q.note ?? null]).sort()).toEqual([
       ["own", null],
       ["pal", null],
-      ["session", "在电脑上等你"],
+      ["session", "在主机上等你"],
     ]);
     m.cancelAll("test");
     m.cancelFor("s1", "test");

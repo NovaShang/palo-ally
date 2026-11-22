@@ -319,7 +319,7 @@ public actor DemoHost {
                 approvals[i].status = .expired
                 approvals[i].decidedAt = now
                 approvals[i].decidedBy = "timeout"
-                approvals[i].note = "在电脑上等你"
+                approvals[i].note = "在主机上等你"
                 emit(RPCEventName.approvalUpdated, approvals[i])
             }
         case "sessionSettle":
@@ -331,7 +331,7 @@ public actor DemoHost {
                     approvals[i].status = .expired
                     approvals[i].decidedAt = Date().epochMillis
                     approvals[i].decidedBy = "computer"
-                    approvals[i].note = "已在电脑上处理"
+                    approvals[i].note = "已在主机上处理"
                     emit(RPCEventName.approvalUpdated, approvals[i])
                     setSession("cc-site") { $0.status = .busy; $0.waitingFor = nil }
                 }
@@ -1073,7 +1073,7 @@ public actor DemoHost {
             return ["ally": try .from(a)]
         case RPCMethod.allyRemove:
             let id = p["id"]?.stringValue ?? ""
-            guard allies.contains(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Ally") }
+            guard allies.contains(where: { $0.id == id }) else { throw DemoError(message: "没有这个好友") }
             allies.removeAll { $0.id == id }
             emitAllies()
             return ["ok": true]
@@ -1110,7 +1110,7 @@ public actor DemoHost {
         case RPCMethod.allySay:
             let id = p["id"]?.stringValue ?? ""
             let text = (p["text"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let ally = allies.first(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Ally") }
+            guard let ally = allies.first(where: { $0.id == id }) else { throw DemoError(message: "没有这个好友") }
             guard !text.isEmpty else { throw DemoError(message: "要说的话不能是空的") }
             let e = AllyEntry(id: nextID("ae"), allyId: id, dir: .outgoing, ts: Date().epochMillis, text: text,
                               status: ally.online ? .sent : .queued, author: .owner)
@@ -1127,7 +1127,7 @@ public actor DemoHost {
             return ["entry": try .from(e)]
         case RPCMethod.allyTrust:
             let id = p["id"]?.stringValue ?? ""
-            guard let i = allies.firstIndex(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Ally") }
+            guard let i = allies.firstIndex(where: { $0.id == id }) else { throw DemoError(message: "没有这个好友") }
             guard let t = p["trust"]?.stringValue.flatMap(AllyTrust.init(rawValue:)), t != .unknown else {
                 throw DemoError(message: "看不懂这个档位")
             }
@@ -1237,14 +1237,14 @@ public actor DemoHost {
             approvals[i].status = .expired
             approvals[i].decidedAt = now
             approvals[i].decidedBy = "computer"
-            approvals[i].note = "已在电脑上处理"
+            approvals[i].note = "已在主机上处理"
             emit(RPCEventName.approvalUpdated, approvals[i])
         }
         for i in questions.indices where questions[i].source?.isSession == true && questions[i].isPending {
             questions[i].status = .expired
             questions[i].answeredAt = now
             questions[i].answeredBy = "computer"
-            questions[i].note = "已在电脑上处理"
+            questions[i].note = "已在主机上处理"
             emit(RPCEventName.questionUpdated, questions[i])
         }
         for s in sessions where s.status == .waiting { setSession(s.id) { $0.status = .busy; $0.waitingFor = nil } }
@@ -1466,7 +1466,7 @@ public actor DemoHost {
             line(.assistant, "1,200 份问卷里有 37 份没填收入。", ago: 6 * min),
         ]
         let approvals = [
-            Approval(id: "sa1", tool: "Bash", title: "在电脑上运行一条命令",
+            Approval(id: "sa1", tool: "Bash", title: "在主机上运行一条命令",
                      detail: """
                      npm run build && \\
                        npm run test -- --coverage --reporter=dot && \\

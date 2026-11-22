@@ -158,7 +158,7 @@ describe("a session's prompts on the phone", () => {
     const out = hook("PermissionRequest", bash);
     await tick(5);
     const card = hub.approvals.listPending()[0]!;
-    expect(card).toMatchObject({ tool: "Bash", title: "在电脑上运行一条命令", detail: bash.tool_input.command, source: { kind: "session", id: "s1", name: "网站帮手" } });
+    expect(card).toMatchObject({ tool: "Bash", title: "在主机上运行一条命令", detail: bash.tool_input.command, source: { kind: "session", id: "s1", name: "网站帮手" } });
     expect(card.suggestedScope).toBeUndefined();
     expect(hub.sessions.list()[0]).toMatchObject({ status: "waiting" });
     // no chat card: it waits at the conversation's end in the app
@@ -179,11 +179,11 @@ describe("a session's prompts on the phone", () => {
     expect(await out).toEqual({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "deny", message: "主人在手机上拒绝了" } } });
   });
 
-  test("no answer in time: the hook prints nothing (the terminal keeps asking) and the card says 在电脑上等你", async () => {
+  test("no answer in time: the hook prints nothing (the terminal keeps asking) and the card says 在主机上等你", async () => {
     const { hub, hook } = setup({ sessions: { hookWaitMs: 50 } });
     const out = await hook("PermissionRequest", bash);
     expect(out).toBeNull();
-    expect(hub.approvals.list()[0]).toMatchObject({ status: "expired", note: "在电脑上等你" });
+    expect(hub.approvals.list()[0]).toMatchObject({ status: "expired", note: "在主机上等你" });
     expect(hub.sessions.list()[0]).toMatchObject({ status: "waiting" });
   });
 
@@ -195,14 +195,14 @@ describe("a session's prompts on the phone", () => {
     await tick(5);
     ac.abort();
     expect(await a).toBeNull();
-    expect(hub.approvals.list()[0]).toMatchObject({ status: "expired", note: "已在电脑上处理", decidedBy: "computer" });
+    expect(hub.approvals.list()[0]).toMatchObject({ status: "expired", note: "已在主机上处理", decidedBy: "computer" });
     expect(hub.sessions.list()[0]!.status).toBe("busy");
     // it went on: PostToolUse / Stop
     const b = hook("PermissionRequest", bash);
     await tick(5);
     await hook("Stop", { session_id: "s1", last_assistant_message: "好了" });
     expect(await b).toBeNull();
-    expect(hub.approvals.list()[0]).toMatchObject({ status: "expired", note: "已在电脑上处理" });
+    expect(hub.approvals.list()[0]).toMatchObject({ status: "expired", note: "已在主机上处理" });
     // the registry: waiting, then not any more
     claude.register({ sessionId: "s1", name: "网站帮手", cwd: "/w/site", status: "busy" });
     await hub.sessions.watch.refresh();

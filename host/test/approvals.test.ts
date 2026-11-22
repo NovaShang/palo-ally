@@ -35,7 +35,7 @@ describe("ApprovalManager (relay only)", () => {
     const p = m.request(req("Bash", { command: "git status" }, { suggestions: bashRule }));
     const a = m.listPending()[0]!;
     expect(a.taskId).toBe("t_1");
-    expect(a.title).toBe("在电脑上运行一条命令");
+    expect(a.title).toBe("在主机上运行一条命令");
     expect(a.suggestedScope).toBe("cmd:git status");
     expect(a.careful).toBe(false);
     m.answer(a.id, true, "app", true);

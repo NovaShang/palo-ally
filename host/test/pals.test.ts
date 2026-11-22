@@ -450,7 +450,7 @@ describe("talking to a Pal", () => {
     await t.call("pals.send", { id: pal.id, text: "构建" });
     await waitFor(() => t.hub.approvals.listPending().length === 1);
     const card = t.hub.approvals.listPending()[0]!;
-    expect(card).toMatchObject({ tool: "Bash", title: "在电脑上运行一条命令", detail: "npm run build && npm test -- --coverage", source: { kind: "pal", id: pal.id, name: "网站" }, suggestedScope: "cmd:npm run build" });
+    expect(card).toMatchObject({ tool: "Bash", title: "在主机上运行一条命令", detail: "npm run build && npm test -- --coverage", source: { kind: "pal", id: pal.id, name: "网站" }, suggestedScope: "cmd:npm run build" });
     // not in the assistant's conversation; the Pal waits
     expect(t.hub.chat.recent(5).some((m) => m.approvalId === card.id)).toBe(false);
     expect(t.hub.pals.list()[0]).toMatchObject({ status: "waiting", pending: 1 });
@@ -1210,7 +1210,7 @@ describe("the owner's own sessions (workbench)", () => {
     await expect(t.call("pals.create", { cwd: t.project, name: "长".repeat(41) })).rejects.toThrow("太长");
     // its folder: anywhere that exists, but not PaloAlly's own; a workspace has to exist
     await expect(t.call("pals.create", { cwd: "/no/such/folder" })).rejects.toThrow("找不到目录");
-    await expect(t.call("pals.create", { cwd: t.paths.root })).rejects.toThrow("不能开在 PaloAlly 自己的目录里");
+    await expect(t.call("pals.create", { cwd: t.paths.root })).rejects.toThrow("不能开在 Palo 自己的目录里");
     await expect(t.call("pals.create", { cwd: t.project, workspaceId: "ws_000000000000" })).rejects.toThrow("找不到这个工作区");
     await expect(t.call("pals.create", {})).rejects.toThrow("要给出一个文件夹");
     // the assistant's proposal path is as it was: a duty is still needed

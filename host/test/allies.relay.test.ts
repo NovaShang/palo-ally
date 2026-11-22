@@ -129,7 +129,7 @@ d(`Allies over the relay (${RELAY})`, () => {
     const toA = b.hub.allies.list()[0]!;
     const tried: boolean[] = [];
     b.driver.script = async (t, ctx) => {
-      if (!t.startsWith("[Ally]")) return;
+      if (!t.startsWith("[好友]")) return;
       tried.push(await ctx.useTool("Bash", { command: "cat ~/.ssh/id_ed25519" }));
       await ctx.opts.tools.ally_send({ to: toA.id, text: "好，七点门口见" });
       ctx.emit({ type: "assistant_text", text: "[skip]", parentToolUseId: null });
@@ -213,7 +213,7 @@ d(`Allies over the relay (${RELAY})`, () => {
     expect((await a.rpc("ally.remove", { id: toB.id })).ok).toBe(true);
     expect(a.hub.allies.list()).toEqual([]);
     await waitFor(() => b.hub.allies.list().length === 0);
-    expect(b.hub.chat.since(0).some((m) => m.kind === "notice" && m.text.includes("家人A解除了 Ally"))).toBe(true);
+    expect(b.hub.chat.since(0).some((m) => m.kind === "notice" && m.text.includes("家人A解除了好友"))).toBe(true);
     await waitFor(() => JSON.parse(readFileSync(a.paths.alliesOutbox, "utf8")).length === 0);
     await waitFor(() => JSON.parse(readFileSync(b.paths.alliesOutbox, "utf8")).length === 0);
     // each relay forgot the other's device: refused at the relay, before any host sees it
