@@ -657,7 +657,7 @@ describe("always on", () => {
     const dead = t.hub.pals as any;
     clearInterval(dead.guardTimer);
     clearInterval(dead.dayTimer);
-    for (const p of dead.pals.values()) p.closing = true; // what happens to its processes is no longer its business
+    for (const p of dead.pals.values()) p.host.isClosing = true; // what happens to its processes is no longer its business
     const { Pals } = await import("../src/pals.ts");
     const again = new Pals({ ...(t.hub.pals as any).d, timing: FAST });
     again.start();

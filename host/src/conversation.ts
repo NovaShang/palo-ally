@@ -22,6 +22,7 @@ import { StreamAssembler } from "./agent/streamAssembler.ts";
 import { TurnLedger } from "./agent/turnLedger.ts";
 import { ChatLogSink, type OutputSink } from "./agent/outputSink.ts";
 import { type TaskProjection, TrackerTasks } from "./agent/taskProjection.ts";
+import { ProcessHost } from "./agent/processHost.ts";
 
 export interface Turn {
   text: string; // what the model sees
@@ -124,7 +125,8 @@ export class Conversation {
   model = ""; // the model the harness reports running
   permissionMode = ""; // the permission mode it reports running in (not always the configured one)
   activity = "";
-  private session: MainSession | null = null;
+  // its process: started by the words that need it, at once (no ready wait), never asleep, no holders check
+  private host: ProcessHost;
   private queue: Turn[] = [];
   private current: Turn | null = null;
   private turnTexts: string[] = [];
@@ -162,6 +164,15 @@ export class Conversation {
     this.lastContextTokens = d.runtime.data.contextTokens ?? 0;
     this.out = new ChatLogSink(d.chat);
     this.taskView = new TrackerTasks(d.tasks);
+    this.host = new ProcessHost({ startMode: "lazy-sync", restart: "on-demand", exclusive: false, canSleep: false }, {}, {
+      name: () => this.d.peerName?.() ?? "main",
+      save: () => {},
+      changed: () => this.d.statusChanged(),
+      log: (s) => this.d.log(s),
+      now: () => Date.now(),
+      open: () => ({ proc: this.open() }),
+      startError: (why) => why,
+    });
   }
 
   /** The main session's context size after its last turn (or compaction). */
@@ -300,14 +311,18 @@ export class Conversation {
   }
 
   ensureSession(): MainSession {
-    if (this.session && !this.session.closed) return this.session;
+    return this.host.ensure();
+  }
+
+  // Its process, as ensureSession starts it.
+  private open(): MainSession {
     const cfg = this.d.config();
     const rt = this.d.runtime.data;
     this.modeChecked = false;
     // Gone back to an earlier message (docs/rewind-prd.md §4.1): the new
     // session is forked from the old one until Claude Code has written it.
     const fork = this.pendingRewind();
-    this.session = this.d.driver.startMain({
+    return this.d.driver.startMain({
       cwd: this.d.paths.home,
       model: cfg.model,
       effort: cfg.effort,
@@ -339,17 +354,16 @@ export class Conversation {
       onEvent: (e) => this.d.onEvent(e),
       stderr: (s) => appendJsonl(`${this.d.paths.logs}/harness-stderr.jsonl`, { ts: Date.now(), s: truncate(s, 2000) }),
     });
-    return this.session;
   }
 
   // Live switches on the running process (the next one starts with the saved config).
   async applyModel(model: string | undefined): Promise<void> {
     if (model) this.model = "";
-    await this.session?.setModel(model).catch((e) => this.d.log(`setModel failed: ${e}`));
+    await this.host.proc?.setModel(model).catch((e) => this.d.log(`setModel failed: ${e}`));
   }
 
   async applyEffort(effort: string | undefined): Promise<void> {
-    await this.session?.setEffort(effort).catch((e) => this.d.log(`setEffort failed: ${e}`));
+    await this.host.proc?.setEffort(effort).catch((e) => this.d.log(`setEffort failed: ${e}`));
   }
 
   // ---------------- harness events ----------------
@@ -463,8 +477,7 @@ export class Conversation {
       }
       case "error":
         this.d.log(`harness error: ${e.message}`);
-        this.session?.close();
-        this.session = null;
+        this.host.close();
         this.pending.clear();
         this.liveTools.clear();
         // The Ally's message died with the process; the owner's held words didn't.
@@ -730,12 +743,11 @@ export class Conversation {
   // closing used to do, kept for the tests that resume a closed session.
 
   onIdle(): void {
-    if (this.current || this.queue.length || this.allyGate || this.held.length || !this.session) return;
+    if (this.current || this.queue.length || this.allyGate || this.held.length || !this.host.proc) return;
     // Close the CLI process; the next message resumes the same conversation.
     // (Keeping the context in shape is the harness' job: it compacts on its own.)
     if (!this.d.tasks.live().length && !this.waitingOnOwner()) {
-      this.session.close();
-      this.session = null;
+      this.host.close();
       this.d.metric({ type: "idle_close", contextTokens: this.lastContextTokens });
     }
   }
@@ -779,8 +791,7 @@ export class Conversation {
   // `written`: the new session is already on disk (a copy made before a
   // compaction, docs/rewind-prd.md §4.1): it's simply resumed.
   rewindTo(r: PendingRewind & { to: string; written?: boolean }): void {
-    this.session?.close();
-    this.session = null;
+    this.host.close();
     this.lastContextTokens = 0;
     this.d.runtime.update({ sessionId: r.to, rewind: r.written ? undefined : { from: r.from, at: r.at, cut: r.cut }, contextTokens: 0 });
     this.d.statusChanged();
@@ -791,9 +802,8 @@ export class Conversation {
    * on the same session, so it signs in afresh. False while a turn is on.
    */
   restartIdle(): boolean {
-    if (!this.session || this.current || this.pending.size || this.allyGate) return false;
-    this.session.close();
-    this.session = null;
+    if (!this.host.proc || this.current || this.pending.size || this.allyGate) return false;
+    this.host.close();
     this.ensureSession();
     return true;
   }
@@ -807,10 +817,10 @@ export class Conversation {
       get name() {
         return h.name();
       },
-      busy: () => !!this.session && !this.session.closed && (!!this.current || this.pending.size > 0),
+      busy: () => this.host.alive && (!!this.current || this.pending.size > 0),
       waiting: () => this.waitingOnOwner(),
       openTools: () => [...this.liveTools.values()],
-      lastActivity: () => Math.max(this.lastEventAt, this.session?.lastActivity ?? 0),
+      lastActivity: () => Math.max(this.lastEventAt, this.host.proc?.lastActivity ?? 0),
       pid: () => h.pid(),
       progress: () => h.progress(),
       recover: () => this.recoverStall(h),
@@ -827,8 +837,7 @@ export class Conversation {
     const pid = h.pid();
     const turn = this.current;
     const gate = this.allyGate;
-    const session = this.session;
-    this.session = null;
+    const session = this.host.detach();
     session?.close();
     await h.kill(pid);
     // Nothing writes the transcript now: what's in it was taken.
@@ -894,33 +903,31 @@ export class Conversation {
     this.d.approvals.denyAll(`stop:${by}`);
     this.d.questions.cancelAll(`stop:${by}`);
     for (const t of this.d.tasks.running()) {
-      if (t.sdkTaskId) void this.session?.stopTask(t.sdkTaskId).catch(() => {});
+      if (t.sdkTaskId) void this.host.proc?.stopTask(t.sdkTaskId).catch(() => {});
       this.d.tasks.markStopped(t.id);
     }
-    void this.session?.interrupt();
+    void this.host.proc?.interrupt();
     // A tool that never returns can't be interrupted: end the turn here and
     // let the next message start a fresh process (same conversation, resumed).
     if (this.current) {
       this.pending.clear();
       this.endTurn(0, this.lastContextTokens);
-      this.session?.close();
-      this.session = null;
+      this.host.close();
     }
     this.d.statusChanged();
   }
 
   async stopTask(t: Task): Promise<void> {
     if (t.sdkTaskId) {
-      await this.session?.stopTask(t.sdkTaskId).catch(() => {});
+      await this.host.proc?.stopTask(t.sdkTaskId).catch(() => {});
     } else if (t.toolUseId && this.current) {
       // A foreground subagent runs inside the current turn: stopping it means
       // interrupting that turn.
-      await this.session?.interrupt();
+      await this.host.proc?.interrupt();
     }
   }
 
   close(): void {
-    this.session?.close();
-    this.session = null;
+    this.host.close();
   }
 }
