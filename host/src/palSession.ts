@@ -638,7 +638,7 @@ export class PalSession {
     }
     let continued = false;
     if (!untaken.length && inTurn) {
-      await this.send(stallContinue(), { from: "PaloAlly" });
+      await this.send(stallContinue(), { from: this.d.mapOptions().assistantName });
       continued = true;
     }
     this.touch();
