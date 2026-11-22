@@ -20,6 +20,8 @@ import type { UsageLedger } from "./usage.ts";
 import { appendJsonl, truncate } from "./util.ts";
 import { StreamAssembler } from "./agent/streamAssembler.ts";
 import { TurnLedger } from "./agent/turnLedger.ts";
+import { ChatLogSink, type OutputSink } from "./agent/outputSink.ts";
+import { type TaskProjection, TrackerTasks } from "./agent/taskProjection.ts";
 
 export interface Turn {
   text: string; // what the model sees
@@ -153,9 +155,13 @@ export class Conversation {
   private held: HeldMessage[] = [];
   private gateTimer: ReturnType<typeof setTimeout> | null = null;
   private modeChecked = false; // this process' permission mode was compared with the config
+  private out: OutputSink; // its chat log
+  private taskView: TaskProjection; // its subagents and background tasks: the host's TaskTracker
 
   constructor(private d: ConversationDeps) {
     this.lastContextTokens = d.runtime.data.contextTokens ?? 0;
+    this.out = new ChatLogSink(d.chat);
+    this.taskView = new TrackerTasks(d.tasks);
   }
 
   /** The main session's context size after its last turn (or compaction). */
@@ -238,7 +244,7 @@ export class Conversation {
       const day = this.d.usage.today().day;
       if (this.budgetNoticeDay !== day) {
         this.budgetNoticeDay = day;
-        this.d.chat.add({ role: "system", kind: "notice", text: budgetNotice(turn.label), channel: "system" });
+        this.out.message({ role: "system", kind: "notice", text: budgetNotice(turn.label), channel: "system" });
       }
       return this.pump();
     }
@@ -378,7 +384,6 @@ export class Conversation {
       this.armImplicitTimer();
     }
     const turn = this.current;
-    const { chat, tasks } = this.d;
     switch (e.type) {
       case "commands":
         this.d.onCommands(e.commands);
@@ -397,20 +402,20 @@ export class Conversation {
         if (turn && !turn.proactive) {
           if (!this.stream.id) this.stream.open(`m_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`);
           this.stream.append(e.text);
-          chat.delta(this.stream.id!, e.text);
+          this.out.delta(this.stream.id!, e.text);
           // The words themselves now show the progress.
           this.setActivity(ACTIVITY.reply);
         }
         break;
       case "assistant_text":
         if (e.parentToolUseId) {
-          tasks.onSubagentText(e.text, e.parentToolUseId);
+          this.taskView.onEvent(e);
           break;
         }
         this.turnTexts.push(e.text);
         if (turn?.wechat && !turn.proactive) this.streamToWechat(turn, e.text);
         if (turn && !turn.proactive) {
-          chat.add({ id: this.stream.id ?? undefined, role: "assistant", kind: "text", text: e.text, channel: turn.origin });
+          this.out.message({ id: this.stream.id ?? undefined, role: "assistant", kind: "text", text: e.text, channel: turn.origin });
         }
         this.stream.take();
         break;
@@ -419,28 +424,20 @@ export class Conversation {
         break;
       case "tool_use":
         if (!e.parentToolUseId) this.openTools.add(e.id);
-        tasks.onToolUse(e.id, e.name, e.input, e.parentToolUseId);
+        this.taskView.onEvent(e);
         if (e.parentToolUseId) this.setActivity(activityBackground());
         else this.setActivityFor(e.name);
         break;
       case "tool_result":
         this.openTools.delete(e.toolUseId);
-        tasks.onToolResult(e.toolUseId, e.content, e.isError, e.parentToolUseId);
+        this.taskView.onEvent(e);
         break;
       case "task_started":
-        tasks.onTaskStarted(e.taskId, e.toolUseId, e.background);
-        break;
       case "task_progress":
-        if (e.summary) tasks.onProgress(e.taskId, e.summary);
-        break;
       case "background_tasks":
-        tasks.setLiveSet(e.taskIds);
-        break;
       case "task_backgrounded":
-        tasks.onTaskBackgrounded(e.taskId);
-        break;
       case "task_notification":
-        tasks.onTaskNotification(e.taskId, e.toolUseId, e.status, e.summary);
+        this.taskView.onEvent(e);
         break;
       case "compact": {
         // Ours (the idle trigger, in its own /compact turn) or Claude Code's native one.
@@ -591,7 +588,8 @@ export class Conversation {
   }
 
   private endTurn(costUsd: number, contextTokens: number, error?: string, answered: (OwnerMessage & { text?: string })[] = [], errorCategory?: string): void {
-    const { chat, router, wechat, audit } = this.d;
+    const { router, wechat, audit } = this.d;
+    const chat = this.out;
     const turn = this.current;
     this.current = null;
     this.activity = "";
@@ -599,7 +597,7 @@ export class Conversation {
     // A stream cut off by an error/kill still gets a final message, so clients
     // don't keep a half-written bubble "typing" forever.
     const cut = this.stream.take();
-    if (cut && cut.text.trim()) chat.add({ id: cut.id, role: "assistant", kind: "text", text: cut.text, channel: turn?.origin ?? "system" });
+    if (cut && cut.text.trim()) chat.message({ id: cut.id, role: "assistant", kind: "text", text: cut.text, channel: turn?.origin ?? "system" });
     this.openTools.clear();
     this.liveTools.clear();
     this.d.usage.add("mainUsd", costUsd);
@@ -618,12 +616,12 @@ export class Conversation {
     this.lastContextTokens = contextTokens;
     this.d.runtime.update({ contextTokens, lastTurnAt: Date.now() });
     this.armIdleCompact();
-    this.d.tasks.finalizePending();
+    this.taskView.turnEnded();
     if (turn) {
       this.d.metric({ type: "turn", origin: turn.origin, proactive: turn.proactive, costUsd, contextTokens, error });
       // The login ran out: said once for everything (auth.ts), not after each turn.
       const noLogin = !!error && this.d.harness.auth.isFailure(error, errorCategory);
-      if (error && !noLogin) chat.add({ role: "system", kind: "notice", text: friendlyError(error, errorCategory), channel: "system" });
+      if (error && !noLogin) chat.message({ role: "system", kind: "notice", text: friendlyError(error, errorCategory), channel: "system" });
       if (noLogin) {
         const owner = answered.flatMap((m) => (m.text ? [m.text] : []));
         this.d.onAuth?.({ text: owner.length ? owner.join("\n") : turn.label ? `${turn.label}: ${turn.text}` : turn.text, ...(turn.watchId ? { watchId: turn.watchId } : {}) });
@@ -634,12 +632,12 @@ export class Conversation {
       // show it as a normal reply (no push), not as something it brought up.
       const ownerFolded = turn.proactive && answered.length > 0;
       if (ownerFolded) {
-        if (shown) chat.add({ role: "assistant", kind: "text", text: shown, channel: answered[0]!.origin });
+        if (shown) chat.message({ role: "assistant", kind: "text", text: shown, channel: answered[0]!.origin });
       } else if (turn.proactive) {
         if (shown) {
           // A schedule goal's output (晨报 and the like) shows as a card titled by the goal.
           const card = turn.watchId && turn.origin === "schedule" ? { card: { title: turn.label ?? "", goalId: turn.watchId } } : {};
-          const msg = chat.add({ role: "assistant", kind: "text", text: shown, channel: turn.origin, proactive: true, ...card });
+          const msg = chat.message({ role: "assistant", kind: "text", text: shown, channel: turn.origin, proactive: true, ...card });
           void router.proactive(msg);
         } else {
           this.d.metric({ type: "skip", origin: turn.origin, label: turn.label });

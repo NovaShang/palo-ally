@@ -17,6 +17,8 @@ import { stripTldrMarker } from "./tldr.ts";
 import { newId, sleep, truncate } from "./util.ts";
 import { StreamAssembler } from "./agent/streamAssembler.ts";
 import { TurnLedger } from "./agent/turnLedger.ts";
+import { TranscriptSink } from "./agent/outputSink.ts";
+import { type PalTask, type PastPalTask, RecordTasks } from "./agent/taskProjection.ts";
 import { PAL_MODES, contextWindowFor, contextWindowOf } from "./harness/claude/settings.ts";
 import { peerWrap, startError } from "./harness/claude/process.ts";
 
@@ -70,22 +72,7 @@ export interface PalRecord {
   lastCompactAt?: number; // when it last compacted
 }
 
-/** A background task or subagent of a session (pals.detail.tasks). */
-export interface PalTask {
-  id: string;
-  title: string;
-  kind: "subagent" | "bg";
-  startedAt: number;
-  summary?: string;
-}
-
-/** One of its tasks that has ended (pals.detail.pastTasks). */
-export interface PastPalTask extends PalTask {
-  endedAt: number;
-  status: "done" | "failed" | "stopped";
-}
-
-const PAST_TASKS = 30;
+export type { PalTask, PastPalTask };
 
 /** Another process holding a session's transcript. */
 export interface Holder {
@@ -176,8 +163,8 @@ export class PalSession {
   private inherited: Set<string> | null = null;
   private sleeping: Promise<void> | null = null; // being put to sleep: its process is ending
   private upAt = 0;
-  private bgTasks = new Set<string>(); // its background tasks still running (a subagent in the background)
-  private tasks = new Map<string, PalTask & { toolUseId?: string; backgrounded: boolean }>(); // subagents and background tasks, by the harness' task id
+  private tasks: RecordTasks; // its subagents and background tasks, kept with its record
+  private out: TranscriptSink; // its words go out as events carrying its id
   private compacting = false; // our /compact is going: its own result says nothing about the context
   private sendChain: Promise<unknown> = Promise.resolve(); // words go in one after another, in order
   private queuedSends = 0; // words waiting to go in (it's being woken for them)
@@ -196,6 +183,8 @@ export class PalSession {
     private d: PalSessionDeps,
   ) {
     this.updatedAt = rec.lastUsedAt;
+    this.tasks = new RecordTasks(rec, { save: () => this.d.save(), now: () => this.d.now() });
+    this.out = new TranscriptSink(rec.id, { emit: (ev, data) => this.d.emit(ev, data), now: () => this.d.now() });
     const history = this.d.harness.history;
     const tail = history.tail(this.ref, 512 * 1024);
     this.lastLine = history.lastLine(tail);
@@ -253,7 +242,7 @@ export class PalSession {
    */
   idleSince(): number | null {
     if (!this.running || this.starting || this.sleeping) return null;
-    if (this.turnOpen || this.windingDown || this.pending.size || this.queuedSends || this.openTools.size || this.bgTasks.size) return null;
+    if (this.turnOpen || this.windingDown || this.pending.size || this.queuedSends || this.openTools.size || this.tasks.background) return null;
     if (this.pendingCards() > 0) return null;
     return Math.max(this.lastEventAt, this.rec.lastUsedAt, this.upAt);
   }
@@ -322,7 +311,7 @@ export class PalSession {
       ...(this.effort() ? { effort: this.effort() } : {}),
       ...(this.mode() ? { permissionMode: this.mode() } : {}),
       ...(this.contextPct() !== undefined ? { contextPct: this.contextPct() } : {}),
-      ...(this.runningTasks().length ? { tasksRunning: this.runningTasks().length } : {}),
+      ...(this.tasks.running().length ? { tasksRunning: this.tasks.running().length } : {}),
       ...(typeof this.rec.lastWakeUsd === "number" ? { lastWakeUsd: this.rec.lastWakeUsd } : {}),
       createdBy: this.rec.createdBy,
       updatedAt: Math.round(this.updatedAt),
@@ -356,28 +345,6 @@ export class PalSession {
   }
 
   /** What pals.detail shows besides the Pal itself. */
-  /**
-   * Its tasks as the owner sees them: subagents, and shell commands running
-   * in the background. A foreground command is a step of the turn, not a task
-   * (Claude Code reports every Bash call as one), until it is backgrounded.
-   */
-  private runningTasks() {
-    return [...this.tasks.values()].filter((t) => t.kind === "subagent" || t.backgrounded);
-  }
-
-  /** A task is over: it leaves the running ones and goes on top of its history. False: not one of them. */
-  private endTask(id: string, status: PastPalTask["status"], summary?: string): boolean {
-    const t = this.tasks.get(id);
-    if (!t) return false;
-    this.tasks.delete(id);
-    if (t.kind !== "subagent" && !t.backgrounded) return false; // a foreground command: no history
-    const words = (summary && truncate(summary, 200)) || t.summary;
-    const past: PastPalTask = { id: t.id, title: t.title, kind: t.kind, startedAt: t.startedAt, endedAt: this.d.now(), status, ...(words ? { summary: words } : {}) };
-    this.rec.pastTasks = [past, ...(this.rec.pastTasks ?? []).filter((p) => p.id !== id)].slice(0, PAST_TASKS);
-    this.d.save();
-    return true;
-  }
-
   detailInfo(): {
     contextTokens?: number;
     contextWindow: number;
@@ -405,7 +372,7 @@ export class PalSession {
       permissionMode: chosen,
       ...(running ? { runningMode: running } : {}),
       permissionModes: modes,
-      tasks: this.runningTasks().map(({ id, title, kind, startedAt, summary }) => ({ id, title, kind, startedAt, ...(summary ? { summary } : {}) })),
+      tasks: this.tasks.wire(),
       pastTasks: this.rec.pastTasks ?? [],
       ...(typeof this.rec.lastCompactAt === "number" ? { lastCompactAt: this.rec.lastCompactAt } : {}),
       costTotalUsd: this.rec.costTotalUsd ?? 0,
@@ -691,9 +658,8 @@ export class PalSession {
     this.pending.clear();
     this.openTools.clear();
     this.turnTools.clear();
-    this.bgTasks.clear();
     // what was still running ends with its process
-    for (const id of [...this.tasks.keys()]) this.endTask(id, "stopped");
+    this.tasks.processEnded();
     this.compacting = false;
     this.wakeCost = false;
     this.activity = "";
@@ -886,7 +852,7 @@ export class PalSession {
     // Its page reads the transcript, which has only the bytes and the paths: kept as sent.
     if (o.attachments?.length) this.d.media?.remember(uuid, { text: t, attachments: o.attachments });
     this.emitted.add(uuid);
-    if (!o.silent) this.d.emit("chat.message", msg);
+    if (!o.silent) this.out.put(msg);
     const content = o.peer ? this.d.harness.settings.peerWrap(o.peer, body) : body;
     if (!this.busy) this.workSince = this.d.now();
     this.pending.add(uuid, { text: content, ...(o.from ? { from: o.from } : {}), ...(images.length ? { images } : {}) });
@@ -940,8 +906,7 @@ export class PalSession {
   // ---------------- what it says ----------------
 
   private chat(msg: Omit<ChatMessage, "seq" | "ts" | "pal" | "channel"> & { channel?: ChatMessage["channel"] }): void {
-    const ts = this.d.now();
-    this.d.emit("chat.message", { seq: ts, ts, channel: "app", ...msg, pal: this.rec.id });
+    this.out.message(msg);
   }
 
   /**
@@ -963,7 +928,7 @@ export class PalSession {
       ...(msg.kind === "clipboard" ? { kind: "clipboard" as const } : {}),
       ...(msg.label ? { label: msg.label } : {}),
     });
-    this.d.emit("chat.message", msg);
+    this.out.put(msg);
     this.touch();
     return msg;
   }
@@ -1059,10 +1024,10 @@ export class PalSession {
           this.closeStream();
           this.stream.open(id);
           // a second text block of the same reply goes on after a blank line
-          if (this.replyTexts.has(id)) this.d.emit("chat.delta", { id, text: "\n\n", pal: this.rec.id });
+          if (this.replyTexts.has(id)) this.out.delta(id, "\n\n");
         }
         this.stream.append(e.text);
-        this.d.emit("chat.delta", { id, text: e.text, pal: this.rec.id });
+        this.out.delta(id, e.text);
         this.setActivity(ACTIVITY.reply);
         break;
       }
@@ -1084,50 +1049,14 @@ export class PalSession {
       case "tool_result":
         this.openTools.delete(e.toolUseId);
         this.turnTools.delete(e.toolUseId);
-        // a foreground subagent ends with its tool result
-        for (const [id, t] of this.tasks) if (t.toolUseId === e.toolUseId && !t.backgrounded) this.endTask(id, e.isError ? "failed" : "done");
+        this.tasks.onEvent(e);
         break;
-      case "background_tasks": {
-        this.bgTasks = new Set(e.taskIds);
-        let gone = false;
-        for (const [id, t] of this.tasks) if (t.backgrounded && !this.bgTasks.has(id)) gone = this.endTask(id, "done") || gone;
-        if (gone) this.touch();
-        break;
-      }
-      case "task_started": {
-        const agent = e.taskType ? /agent/i.test(e.taskType) : true;
-        this.tasks.set(e.taskId, {
-          id: e.taskId,
-          title: truncate(e.description || e.taskId, 80),
-          kind: agent ? "subagent" : "bg",
-          startedAt: this.d.now(),
-          ...(e.toolUseId ? { toolUseId: e.toolUseId } : {}),
-          backgrounded: !!e.background,
-        });
-        if (e.background) this.bgTasks.add(e.taskId);
-        this.touch();
-        break;
-      }
-      case "task_progress": {
-        const t = this.tasks.get(e.taskId);
-        if (t && e.summary && t.summary !== e.summary) {
-          t.summary = truncate(e.summary, 120);
-          this.touch();
-        }
-        break;
-      }
-      case "task_backgrounded": {
-        const t = this.tasks.get(e.taskId);
-        if (t && !t.backgrounded) {
-          t.backgrounded = true;
-          this.touch(); // a command sent to the background is a task now
-        }
-        this.bgTasks.add(e.taskId);
-        break;
-      }
+      case "background_tasks":
+      case "task_started":
+      case "task_progress":
+      case "task_backgrounded":
       case "task_notification":
-        this.bgTasks.delete(e.taskId);
-        if (this.endTask(e.taskId, e.status === "completed" ? "done" : e.status, e.summary)) this.touch();
+        if (this.tasks.onEvent(e)) this.touch();
         break;
       case "compact":
         this.rec.lastCompactAt = this.d.now();
@@ -1221,7 +1150,7 @@ export class PalSession {
     if (!m || !m.id || this.emitted.has(m.id)) return;
     this.emitted.add(m.id);
     if (this.emitted.size > 500) this.emitted.delete(this.emitted.values().next().value!);
-    this.d.emit("chat.message", m);
+    this.out.put(m);
     this.touch();
   }
 
