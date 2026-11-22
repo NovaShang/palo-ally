@@ -1529,7 +1529,7 @@ describe("the owner's own sessions (workbench)", () => {
     expect(waits()).toHaveLength(1);
     // named, the push says its name
     await t.call("pals.rename", { id: pal.id, name: "官网" });
-    (t.hub.pals as any).lastPush.clear();
+    (t.hub.pals as any).waitingPushes.clear();
     await t.call("pals.send", { id: pal.id, text: "要确认" });
     await waitFor(() => t.hub.approvals.listPending().length === 1);
     expect(t.pusher.pushes.at(-1)!.title).toBe("官网 在等你");

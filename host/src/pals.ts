@@ -29,7 +29,8 @@ import type { Sessions } from "./sessions.ts";
 import type { StallTarget } from "./stallWatch.ts";
 import type { Attachment, ChatMessage, EarlierItem, HelperProposal, Pal, PalAdoptProposal, RecentSession } from "./types.ts";
 import { DonePushes } from "./donePush.ts";
-import { newId, readJson, writeJson, zonedParts } from "./util.ts";
+import { WaitingPushes } from "./waitingPush.ts";
+import { expandHome, hhmm, newId, pidAlive, readJson, within, writeJson, zonedParts } from "./util.ts";
 
 // Pals (docs/pals-prd.md): Claude Code sessions the host runs itself. The
 // owner adopts one of the computer's sessions (a background one is stopped
@@ -57,7 +58,6 @@ export const MAX_PALS = 50;
 export const DEFAULT_MAX_AWAKE = 8;
 /** The assistant's own session name: Pals see its SendMessages as from it, and answer it there. */
 export const PALO_NAME = "Palo";
-const PUSH_EVERY_MS = 10 * 60_000;
 
 // A session's auto-name: Claude Code's summary of it when that isn't just its first words, else those.
 function autoTitle(info: { summary?: string; firstPrompt?: string } | undefined): string {
@@ -256,24 +256,7 @@ const TIMING: PalsTiming = {
   sleepCheckMs: 30_000,
 };
 
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e: any) {
-    return e?.code === "EPERM";
-  }
-}
-
-const expandHome = (p: string) => (p === "~" ? homedir() : p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
 const shq = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
-
-function within(root: string, p: string): boolean {
-  if (!p) return false;
-  const r = resolve(root);
-  const x = resolve(p);
-  return x === r || x.startsWith(r + sep);
-}
 
 /** Claude Code's own default permission mode for the owner's sessions. */
 export function ownerMode(claudeDir: string): string {
@@ -307,7 +290,7 @@ export class Pals {
   private readonly source: RecentSource;
   private naming = new Map<string, Promise<void>>(); // titles being read back, by Pal
   private adopts = new Map<string, Promise<{ pal: Pal } | { waiting: "exit-in-terminal" }>>(); // in flight, by session id
-  private lastPush = new Map<string, number>();
+  private readonly waitingPushes = new WaitingPushes({ now: () => this.now(), router: { proactive: (m, o) => this.d.router.proactive(m, o) } });
   private retried = new Map<string, number>(); // a Pal open elsewhere: when it was last tried again
   private sent = new Map<string, Map<string, { id: string; seq: number }>>(); // per Pal: clientMsgId → reply
   private lastEmitted = "";
@@ -947,7 +930,7 @@ export class Pals {
     this.pals.delete(pal.id);
     this.data.pals = this.data.pals.filter((r) => r.id !== pal.id);
     this.sent.delete(pal.id);
-    this.lastPush.delete(pal.id);
+    this.waitingPushes.forget(pal.id);
     if (out) {
       // Gone back and not spoken to since: the old session is the one there is.
       const sessionId = pal.pendingRewind()?.from ?? pal.rec.sessionId;
@@ -1556,24 +1539,9 @@ export class Pals {
     },
   });
 
-  // 「X 在等你」: at most once per Pal every 10 minutes.
+  // 「X 在等你」: at most once per Pal every 10 minutes (waitingPush.ts).
   private pushWaiting(pal: PalSession, body: string, ids: { approvalId?: string; questionId?: string }): void {
-    const now = this.now();
-    if (now - (this.lastPush.get(pal.id) ?? 0) < PUSH_EVERY_MS) return;
-    this.lastPush.set(pal.id, now);
-    const msg: ChatMessage = {
-      seq: 0,
-      id: newId("m_"),
-      role: "assistant",
-      kind: ids.questionId ? "question" : "approval",
-      text: body,
-      channel: "system",
-      ts: now,
-      pal: pal.id,
-      ...(ids.approvalId ? { approvalId: ids.approvalId } : {}),
-      ...(ids.questionId ? { questionId: ids.questionId } : {}),
-    };
-    void this.d.router.proactive(msg, { title: t("pals.waitingTitle", { name: this.shownName(pal) }) }).catch(() => {});
+    this.waitingPushes.push(pal.id, () => t("pals.waitingTitle", { name: this.shownName(pal) }), body, { ...ids, pal: pal.id });
   }
 
   // ---------------- spending (shown in a Pal's details; no limit) ----------------
@@ -1846,7 +1814,7 @@ export class Pals {
     const tz = this.d.settings().timezone;
     const when = (ms: number) => {
       const p = zonedParts(ms, tz);
-      return `${p.dateKey} ${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
+      return `${p.dateKey} ${hhmm(p)}`;
     };
     const shown = all.slice(0, 30);
     return JSON.stringify({

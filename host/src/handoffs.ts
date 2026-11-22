@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import type { Audit } from "./audit.ts";
 import { PALO_SEND_TOOL } from "./harness/types.ts";
 import type { TaskTracker } from "./tasks.ts";
-import { newId, readJson, truncate, writeJson } from "./util.ts";
+import { newId, pidAlive, readJson, truncate, writeJson } from "./util.ts";
 
 // HandoffTracker: 任务交出去了，外壳负责盯进度 (PRD §6.2).
 //
@@ -38,15 +38,6 @@ export function claudeConfigDir(): string {
 
 export function transcriptPath(claudeDir: string, cwd: string, sessionId: string): string {
   return join(claudeDir, "projects", resolve(cwd).replace(/[^A-Za-z0-9]/g, "-"), `${sessionId}.jsonl`);
-}
-
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e: any) {
-    return e?.code === "EPERM";
-  }
 }
 
 // SessionRegistry reads Claude Code's own list of live sessions on this machine.

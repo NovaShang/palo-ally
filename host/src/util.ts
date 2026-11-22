@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, appendFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join, resolve, sep } from "node:path";
 import { getLang, t } from "./i18n/index.ts";
 
 export function newId(prefix = ""): string {
@@ -60,6 +61,29 @@ export function readJsonl<T>(path: string): T[] {
   return out;
 }
 
+export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** The process is there (EPERM: it is, only not ours to signal). */
+export function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e: any) {
+    return e?.code === "EPERM";
+  }
+}
+
+/** `~` and `~/…` as the owner's home. */
+export const expandHome = (p: string): string => (p === "~" ? homedir() : p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
+
+/** `p` is `root` or under it. */
+export function within(root: string, p: string): boolean {
+  if (!root || !p) return false;
+  const r = resolve(root);
+  const x = resolve(p);
+  return x === r || x.startsWith(r + sep);
+}
+
 export function truncate(s: string, max: number): string {
   if (s.length <= max) return s;
   return s.slice(0, max - 1) + "…";
@@ -111,6 +135,9 @@ export function zonedParts(ms: number, timeZone: string): ZonedParts {
     dateKey: `${parts.year}-${parts.month}-${parts.day}`,
   };
 }
+
+/** HH:MM of a zoned time. */
+export const hhmm = (p: Pick<ZonedParts, "hour" | "minute">): string => `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
 
 export function parseHHMM(s: string): number | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());

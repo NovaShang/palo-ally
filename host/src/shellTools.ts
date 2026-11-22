@@ -8,7 +8,7 @@ import type { TaskTracker } from "./tasks.ts";
 import type { HandoffTracker } from "./handoffs.ts";
 import { scheduleText, type WatchStore } from "./watches.ts";
 import { nextRunAt } from "./probe.ts";
-import { zonedParts } from "./util.ts";
+import { hhmm, zonedParts } from "./util.ts";
 import type { WechatChannel } from "./channels/types.ts";
 import type { MediaStore } from "./media.ts";
 import type { Allies } from "./allies.ts";
@@ -140,10 +140,7 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
 // One line on how a check watch is doing: when it last ran, how that went,
 // and when it runs next. Skips and errors show here instead of going quiet.
 function checkHealth(w: Watch, tz: string, now = Date.now()): string {
-  const at = (ms: number) => {
-    const p = zonedParts(ms, tz);
-    return `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
-  };
+  const at = (ms: number) => hhmm(zonedParts(ms, tz));
   if (!w.enabled) return t("goal.paused");
   const last = w.lastCheckedAt ? t("check.last", { at: at(w.lastCheckedAt) }) : t("check.never");
   const result = w.lastResult ? (w.lastResult.ok ? t("check.ok") : t("check.failed", { reason: w.lastResult.reason ?? t("check.error") })) : "";

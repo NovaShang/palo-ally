@@ -1,22 +1,21 @@
 import { t } from "./i18n/index.ts";
 import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import { existsSync, statSync } from "node:fs";
-import { resolve, sep } from "node:path";
 import { transcriptPath } from "./handoffs.ts";
 import { pageFromTail } from "./transcriptTail.ts";
-import type { ApprovalManager } from "./approvals.ts";
+import { type ApprovalManager, sessionPermission } from "./approvals.ts";
 import type { Audit } from "./audit.ts";
 import { AwayDetector } from "./away.ts";
+import { WaitingPushes } from "./waitingPush.ts";
 import type { Bus } from "./bus.ts";
 import { type ClaudeCli, RealClaudeCli } from "./ccCli.ts";
 import { HookInstaller, HookServer, type HookContext } from "./ccHooks.ts";
-import { type RawSessionMessage, SessionWatch, firstLine, pageMessages, toCCMessages, waitingWords } from "./ccSessions.ts";
+import { type RawSessionMessage, SessionWatch, pageMessages, toCCMessages, waitingWords } from "./ccSessions.ts";
 import type { Paths, Settings } from "./config.ts";
-import { describeInput, describeTool } from "./copy.ts";
 import type { QuestionManager } from "./questions.ts";
 import type { Router } from "./router.ts";
-import type { CCMessage, CCSession, CardSource, ChatMessage } from "./types.ts";
-import { newId, truncate } from "./util.ts";
+import type { CCMessage, CCSession, CardSource } from "./types.ts";
+import { within } from "./util.ts";
 
 // Sessions: the Mac's own Claude Code sessions that PaloAlly doesn't run
 // (docs/sessions-prd.md, as kept by docs/pals-prd.md). The list (with each
@@ -27,7 +26,6 @@ import { newId, truncate } from "./util.ts";
 
 /** How long a session's card waits on the phone: a little under the hook's 300 s. */
 export const HOOK_WAIT_MS = 290_000;
-const PUSH_EVERY_MS = 10 * 60_000;
 const noteAtComputer = (): string => t("sessions.atComputer");
 const noteHandled = (): string => t("sessions.handled");
 
@@ -66,13 +64,6 @@ interface OpenCard {
   sawWaiting: boolean; // the registry said "waiting" since the card opened
 }
 
-function within(root: string, p: string): boolean {
-  if (!p) return false;
-  const r = resolve(root);
-  const x = resolve(p);
-  return x === r || x.startsWith(r + sep);
-}
-
 export class Sessions {
   readonly watch: SessionWatch;
   readonly installer: HookInstaller;
@@ -80,7 +71,7 @@ export class Sessions {
   readonly cli: ClaudeCli;
   private readonly server: HookServer;
   private cards = new Map<string, Map<string, OpenCard>>(); // session id → its open cards
-  private lastPush = new Map<string, number>();
+  private readonly waitingPushes = new WaitingPushes({ now: () => this.now(), router: { proactive: (m, o) => this.d.router.proactive(m, o) } });
   private started = false;
 
   constructor(private d: SessionsDeps) {
@@ -274,7 +265,7 @@ export class Sessions {
       card.id = asked.question.id;
       this.open(sid, card);
       const first = asked.question.items[0]!.question;
-      this.pushWaiting(sid, name, t("sessions.askYou", { q: first }), { questionId: asked.question.id, kind: "question" });
+      this.pushWaiting(sid, name, t("sessions.askYou", { q: first }), { questionId: asked.question.id });
       const d = await asked.result;
       this.close(sid, card);
       if (asked.question.status !== "answered" || d.behavior !== "allow") return null;
@@ -282,12 +273,11 @@ export class Sessions {
     }
 
     // The whole command, never cut short (PRD §8).
-    const detail = tool === "Bash" && typeof input.command === "string" ? truncate(input.command, 100_000) : describeInput(tool, input);
-    const asked = this.d.approvals.ask(req, { ...opts, title: describeTool(tool, input), detail });
+    const words = sessionPermission(tool, input);
+    const asked = this.d.approvals.ask(req, { ...opts, title: words.title, detail: words.detail });
     card.id = asked.approval.id;
     this.open(sid, card);
-    const what = tool === "Bash" && typeof input.command === "string" ? t("sessions.wantRun", { cmd: firstLine(input.command) }) : asked.approval.title;
-    this.pushWaiting(sid, name, what, { approvalId: asked.approval.id, kind: "approval" });
+    this.pushWaiting(sid, name, words.line, { approvalId: asked.approval.id });
     await asked.result;
     this.close(sid, card);
     const a = asked.approval;
@@ -331,22 +321,8 @@ export class Sessions {
     if (status === "gone" || [...open.values()].some((c) => c.sawWaiting)) this.dismiss(sid);
   }
 
-  // 「X 在等你」: at most once per session every 10 minutes.
-  private pushWaiting(sid: string, name: string, body: string, ids: { approvalId?: string; questionId?: string; kind: "approval" | "question" }): void {
-    const now = this.now();
-    if (now - (this.lastPush.get(sid) ?? 0) < PUSH_EVERY_MS) return;
-    this.lastPush.set(sid, now);
-    const msg: ChatMessage = {
-      seq: 0,
-      id: newId("m_"),
-      role: "assistant",
-      kind: ids.kind,
-      text: body,
-      channel: "system",
-      ts: now,
-      ...(ids.approvalId ? { approvalId: ids.approvalId } : {}),
-      ...(ids.questionId ? { questionId: ids.questionId } : {}),
-    };
-    void this.d.router.proactive(msg, { title: t("sessions.waitingTitle", { name }) }).catch(() => {});
+  // 「X 在等你」: at most once per session every 10 minutes (waitingPush.ts).
+  private pushWaiting(sid: string, name: string, body: string, ids: { approvalId?: string; questionId?: string }): void {
+    this.waitingPushes.push(sid, () => t("sessions.waitingTitle", { name }), body, ids);
   }
 }

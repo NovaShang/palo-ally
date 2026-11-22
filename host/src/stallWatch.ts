@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, openSync, readSync, readdirSync, closeSync, fstatSync, statSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { t as tr } from "./i18n/index.ts";
+import { pidAlive, sleep } from "./util.ts";
 
 // The stall watchdog: a Claude Code process the host runs (the assistant's
 // own, every Pal) that froze mid-work is ended and resumed, without waiting
@@ -251,33 +252,22 @@ export function transcriptHas(path: string | undefined, uuid: string, maxBytes =
   }
 }
 
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e: any) {
-    return e?.code === "EPERM";
-  }
-}
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 /** SIGTERM, then SIGKILL: a frozen Claude Code never runs its SIGTERM handler. */
 export async function killHard(pid: number | undefined, waitMs = 3_000): Promise<void> {
-  if (!pid || !alive(pid)) return;
+  if (!pid || !pidAlive(pid)) return;
   try {
     process.kill(pid, "SIGTERM");
   } catch {
     return;
   }
-  for (let i = 0; i < waitMs / 100 && alive(pid); i++) await sleep(100);
-  if (!alive(pid)) return;
+  for (let i = 0; i < waitMs / 100 && pidAlive(pid); i++) await sleep(100);
+  if (!pidAlive(pid)) return;
   try {
     process.kill(pid, "SIGKILL");
   } catch {
     return;
   }
-  for (let i = 0; i < 30 && alive(pid); i++) await sleep(100);
+  for (let i = 0; i < 30 && pidAlive(pid); i++) await sleep(100);
 }
 
 function run(cmd: string, args: string[], timeoutMs: number): Promise<string> {

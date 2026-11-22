@@ -2,9 +2,9 @@ import { settingsEffort } from "./ccEffort.ts";
 import { t as tr } from "./i18n/index.ts";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import type { ApprovalManager } from "./approvals.ts";
+import { type ApprovalManager, sessionPermission } from "./approvals.ts";
 import { firstLine } from "./ccSessions.ts";
-import { ACTIVITY, describeActivity, describeInput, describeTool, friendlyError } from "./copy.ts";
+import { ACTIVITY, describeActivity, friendlyError } from "./copy.ts";
 import { isAuthFailure } from "./auth.ts";
 import { readHead, readTail, transcriptPath } from "./handoffs.ts";
 import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type DeliveryToolHandlers, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
@@ -17,7 +17,7 @@ import { type ForkSession, type PendingRewind, beforeCompaction, chainTo, hasFil
 import { type StallRecovery, type StallTarget, transcriptHas } from "./stallWatch.ts";
 import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
 import { stripTldrMarker } from "./tldr.ts";
-import { newId, truncate } from "./util.ts";
+import { newId, sleep, truncate } from "./util.ts";
 
 // One Pal (docs/pals-prd.md §4, §7): one of the owner's Claude Code
 // sessions, run by the host itself by resuming its transcript. What the owner
@@ -167,8 +167,6 @@ const STOP_SETTLE_MS = 250; // a stopped turn not ended by Claude Code by then i
 
 /** What a Pal is told after the watchdog restarted it mid-turn. */
 export const stallContinue = (): string => tr("stall.continue");
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Words from another session (the assistant's pal_send), as Claude Code shows a
@@ -1423,11 +1421,10 @@ export class PalSession {
     }
     const input = req.input;
     // The whole command, never cut short.
-    const detail = req.toolName === "Bash" && typeof input.command === "string" ? truncate(input.command, 100_000) : describeInput(req.toolName, input);
-    const asked = this.d.approvals.ask(req, { source, notify: false, title: describeTool(req.toolName, input), detail });
+    const words = sessionPermission(req.toolName, input);
+    const asked = this.d.approvals.ask(req, { source, notify: false, title: words.title, detail: words.detail });
     this.d.changed();
-    const what = req.toolName === "Bash" && typeof input.command === "string" ? tr("sessions.wantRun", { cmd: firstLine(input.command) }) : asked.approval.title;
-    this.d.onWaiting(this, what, { approvalId: asked.approval.id });
+    this.d.onWaiting(this, words.line, { approvalId: asked.approval.id });
     const r = await asked.result;
     this.d.changed();
     return r;

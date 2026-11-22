@@ -5,6 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
 import { claudeConfigDir, transcriptPath } from "./handoffs.ts";
 import type { RecentSession } from "./types.ts";
+import { expandHome, within } from "./util.ts";
 
 // 接管最近的对话 (docs/pals-prd.md §10): the Claude Code conversations on this
 // computer that ended lately, from the SDK's listSessions (it reads the first
@@ -60,13 +61,6 @@ export function sdkSource(claudeDir: string): RecentSource {
     list: async (o) => (same() ? listSessions(o) : []),
     info: async (sid, dir) => (same() ? getSessionInfo(sid, dir ? { dir } : {}) : undefined),
   };
-}
-
-function within(root: string, p: string): boolean {
-  if (!root || !p) return false;
-  const r = resolve(root);
-  const x = resolve(p);
-  return x === r || x.startsWith(r + sep);
 }
 
 function realOr(p: string): string {
@@ -261,7 +255,7 @@ export function folderMatch(folder?: string): (cwd: string) => boolean {
   const f = String(folder ?? "").trim();
   if (!f) return () => true;
   if (f.startsWith("/") || f.startsWith("~")) {
-    const p = f === "~" ? homedir() : f.startsWith("~/") ? join(homedir(), f.slice(2)) : f;
+    const p = expandHome(f);
     const roots = [resolve(p), realOr(p)];
     return (cwd) => roots.some((r) => within(r, cwd));
   }
