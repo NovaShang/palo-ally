@@ -69,7 +69,7 @@ describe("the assistant's turns", () => {
     const b = t.hub.userMessage("一", "app")!;
     const c = t.hub.userMessage("二", "cli")!;
     expect(t.driver.last!.sent).toEqual(["慢慢来", "一", "二"]);
-    expect(t.driver.last!.sentUuids).toEqual([a.uuid, b.uuid, c.uuid]);
+    expect(t.driver.last!.sentUuids).toEqual([a.uuid!, b.uuid!, c.uuid!]);
     expect(t.hub.status().busy).toBe(true);
     release();
     await t.hub.idle();
