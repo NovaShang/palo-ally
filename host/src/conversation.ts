@@ -18,6 +18,8 @@ import type { TaskTracker } from "./tasks.ts";
 import type { Channel, Task } from "./types.ts";
 import type { UsageLedger } from "./usage.ts";
 import { appendJsonl, truncate } from "./util.ts";
+import { StreamAssembler } from "./agent/streamAssembler.ts";
+import { TurnLedger } from "./agent/turnLedger.ts";
 
 export interface Turn {
   text: string; // what the model sees
@@ -127,14 +129,13 @@ export class Conversation {
   // WeChat turns get each paragraph as it's written (in order), not just the end.
   private wechatStreamed = 0;
   private wechatChain: Promise<void> = Promise.resolve();
-  private deltaId: string | null = null;
-  private deltaText = ""; // streamed text of the current delta id, to finalize if the turn dies
+  private stream = new StreamAssembler(); // the reply being streamed (its id the host's), to finalize if the turn dies
   private implicitTimer: ReturnType<typeof setTimeout> | null = null;
   private lastContextTokens = 0;
   private turnWaiters: (() => void)[] = [];
   // Every owner message sent to the harness and not yet answered, by uuid.
   // A turn counts as answering the owner only once its result lists the uuid.
-  private pending = new Map<string, OwnerMessage & { sentAt: number; text: string; images?: ImageInput[] }>();
+  private pending = new TurnLedger<OwnerMessage & { sentAt: number; text: string; images?: ImageInput[] }>();
   private openTools = new Set<string>(); // main-thread tool calls without a result yet
   private liveTools = new Map<string, string>(); // every tool call without a result yet (subagents' too): id → name
   private lastEventAt = 0;
@@ -215,7 +216,7 @@ export class Conversation {
       this.d.audit.log("ally.turn.held", { allyId: this.allyGate.allyId, origin });
       return;
     }
-    this.pending.set(uuid, { origin, wechat, sentAt: Date.now(), text, ...(images?.length ? { images } : {}) });
+    this.pending.add(uuid, { origin, wechat, sentAt: Date.now(), text, ...(images?.length ? { images } : {}) });
     if (!this.current) this.beginTurn({ text, origin, proactive: false, wechat, uuids: [uuid] });
     this.ensureSession().send(text, uuid, images);
   }
@@ -256,7 +257,7 @@ export class Conversation {
   private expirePending(): void {
     const stall = this.d.config().watchdog?.stallMinutes ?? WATCHDOG_DEFAULTS.stallMinutes;
     const cutoff = Date.now() - Math.max(10, 2 * stall) * 60_000;
-    for (const [u, p] of this.pending) if (p.sentAt < cutoff && !this.current?.uuids?.includes(u)) this.pending.delete(u);
+    this.pending.expire((u, p) => p.sentAt < cutoff && !this.current?.uuids?.includes(u));
   }
 
   private beginTurn(turn: Turn): void {
@@ -264,8 +265,7 @@ export class Conversation {
     this.turnTexts = [];
     this.wechatStreamed = 0;
     if (turn.wechat && !turn.proactive) void this.d.wechat?.startTyping?.(turn.wechat);
-    this.deltaId = null;
-    this.deltaText = "";
+    this.stream.take();
     this.openTools.clear();
     this.activity = "";
     if (turn.implicit) this.armImplicitTimer();
@@ -290,7 +290,7 @@ export class Conversation {
    * offline are not replayed, so it takes this, then keeps appending deltas.
    */
   streamingReply(): { id: string; text: string } | null {
-    return this.deltaId && this.deltaText ? { id: this.deltaId, text: this.deltaText } : null;
+    return this.stream.current();
   }
 
   ensureSession(): MainSession {
@@ -368,8 +368,8 @@ export class Conversation {
       if (this.pending.size) {
         // The harness is now answering owner messages it had queued.
         const [first] = this.pending.values();
-        const wechat = [...this.pending.values()].find((x) => x.wechat)?.wechat;
-        this.beginTurn({ text: "", origin: first!.origin, proactive: false, wechat, uuids: [...this.pending.keys()] });
+        const wechat = this.pending.values().find((x) => x.wechat)?.wechat;
+        this.beginTurn({ text: "", origin: first!.origin, proactive: false, wechat, uuids: this.pending.uuids() });
       } else {
         // The harness started a turn on its own (e.g. a background task finished).
         this.beginTurn({ text: "", origin: "system", proactive: true, implicit: true });
@@ -395,9 +395,9 @@ export class Conversation {
         break;
       case "text_delta":
         if (turn && !turn.proactive) {
-          if (!this.deltaId) this.deltaId = `m_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-          this.deltaText += e.text;
-          chat.delta(this.deltaId, e.text);
+          if (!this.stream.id) this.stream.open(`m_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`);
+          this.stream.append(e.text);
+          chat.delta(this.stream.id!, e.text);
           // The words themselves now show the progress.
           this.setActivity(ACTIVITY.reply);
         }
@@ -410,10 +410,9 @@ export class Conversation {
         this.turnTexts.push(e.text);
         if (turn?.wechat && !turn.proactive) this.streamToWechat(turn, e.text);
         if (turn && !turn.proactive) {
-          chat.add({ id: this.deltaId ?? undefined, role: "assistant", kind: "text", text: e.text, channel: turn.origin });
+          chat.add({ id: this.stream.id ?? undefined, role: "assistant", kind: "text", text: e.text, channel: turn.origin });
         }
-        this.deltaId = null;
-        this.deltaText = "";
+        this.stream.take();
         break;
       case "tool_start":
         if (!e.parentToolUseId) this.setActivityFor(e.name);
@@ -588,13 +587,7 @@ export class Conversation {
   // messages; a proactive/implicit turn answered none.
   private consume(listed?: string[]): OwnerMessage[] {
     const ids = listed ?? (this.current && !this.current.proactive ? this.current.uuids ?? [] : []);
-    const answered: OwnerMessage[] = [];
-    for (const u of ids) {
-      const p = this.pending.get(u);
-      if (p) answered.push(p);
-      this.pending.delete(u);
-    }
-    return answered;
+    return this.pending.consume(ids);
   }
 
   private endTurn(costUsd: number, contextTokens: number, error?: string, answered: (OwnerMessage & { text?: string })[] = [], errorCategory?: string): void {
@@ -605,11 +598,8 @@ export class Conversation {
     if (this.implicitTimer) clearTimeout(this.implicitTimer);
     // A stream cut off by an error/kill still gets a final message, so clients
     // don't keep a half-written bubble "typing" forever.
-    if (this.deltaId) {
-      if (this.deltaText.trim()) chat.add({ id: this.deltaId, role: "assistant", kind: "text", text: this.deltaText, channel: turn?.origin ?? "system" });
-      this.deltaId = null;
-      this.deltaText = "";
-    }
+    const cut = this.stream.take();
+    if (cut && cut.text.trim()) chat.add({ id: cut.id, role: "assistant", kind: "text", text: cut.text, channel: turn?.origin ?? "system" });
     this.openTools.clear();
     this.liveTools.clear();
     this.d.usage.add("mainUsd", costUsd);
@@ -844,9 +834,9 @@ export class Conversation {
     session?.close();
     await h.kill(pid);
     // Nothing writes the transcript now: what's in it was taken.
-    const sent = [...this.pending];
-    const untaken = sent.filter(([uuid]) => !h.took(uuid));
-    const taken = sent.filter(([uuid]) => !untaken.some(([u]) => u === uuid)).map(([, p]) => p);
+    const split = this.pending.split((uuid) => h.took(uuid));
+    const untaken = split.untaken;
+    const taken = split.taken.map(([, p]) => p);
     this.pending.clear();
     if (gate) {
       this.allyGate = null;
@@ -869,7 +859,7 @@ export class Conversation {
       });
     }
     const now = Date.now();
-    for (const [uuid, p] of untaken) this.pending.set(uuid, { ...p, sentAt: now });
+    for (const [uuid, p] of untaken) this.pending.add(uuid, { ...p, sentAt: now });
     if (turn) this.endTurn(0, this.lastContextTokens);
     if (untaken.length) {
       if (!this.current) {

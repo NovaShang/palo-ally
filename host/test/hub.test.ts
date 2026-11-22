@@ -868,8 +868,8 @@ describe("Hub: harness says which messages a turn answers", () => {
     await hub.idle();
     const s = driver.last!;
     // two owner messages in flight; the harness answers only the second first
-    (hub as any).conversation.pending.set("u-a", { origin: "app", sentAt: Date.now() });
-    (hub as any).conversation.pending.set("u-b", { origin: "wechat", wechat: { userId: "x", contextToken: "y" }, sentAt: Date.now() });
+    (hub as any).conversation.pending.add("u-a", { origin: "app", sentAt: Date.now() });
+    (hub as any).conversation.pending.add("u-b", { origin: "wechat", wechat: { userId: "x", contextToken: "y" }, sentAt: Date.now() });
     s.opts.onEvent({ type: "answering", uuids: ["u-b"] });
     expect((hub as any).conversation.current.uuids).toEqual(["u-b"]);
     expect((hub as any).conversation.current.origin).toBe("wechat");

@@ -15,6 +15,8 @@ import type { StallRecovery, StallTarget } from "./stallWatch.ts";
 import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
 import { stripTldrMarker } from "./tldr.ts";
 import { newId, sleep, truncate } from "./util.ts";
+import { StreamAssembler } from "./agent/streamAssembler.ts";
+import { TurnLedger } from "./agent/turnLedger.ts";
 import { PAL_MODES, contextWindowFor, contextWindowOf } from "./harness/claude/settings.ts";
 import { peerWrap, startError } from "./harness/claude/process.ts";
 
@@ -157,8 +159,7 @@ export class PalSession {
   private failures: number[] = [];
   private turnOpen = false;
   private workSince = 0; // when it last went from idle to busy: how long the turn that ends ran
-  private pendingUuids = new Set<string>();
-  private pendingText = new Map<string, { text: string; from?: string; images?: ImageInput[] }>(); // the owner's words not yet taken, by uuid
+  private pending = new TurnLedger<{ text: string; from?: string; images?: ImageInput[] }>(); // the owner's words not yet taken, by uuid
   private openTools = new Map<string, string>(); // tool calls without a result yet (subagents' too): id → name
   private turnTools = new Set<string>(); // …those of its own turn: none outlives the turn's end
   private lastEventAt = 0;
@@ -166,8 +167,7 @@ export class PalSession {
   private windingDown = false; // ended here after 停止: what's left of that turn doesn't make it busy again
   private turnEndWaiters: (() => void)[] = [];
   private activity = "";
-  private streamId: string | null = null;
-  private streamText = "";
+  private stream = new StreamAssembler(); // the reply being streamed (its id the API message's)
   private replyTexts = new Map<string, string>(); // a reply's text so far, by its id (several blocks join)
   private emitted = new Set<string>(); // ids already sent to the app
   private calls: { name: string; id: string }[] = []; // its card tools' calls (tool_use ids) waiting for their handler
@@ -233,7 +233,7 @@ export class PalSession {
   }
 
   get busy(): boolean {
-    return this.turnOpen || this.pendingUuids.size > 0;
+    return this.turnOpen || this.pending.size > 0;
   }
 
   /** Put to sleep: no process (its record is kept); being put to sleep counts. */
@@ -253,7 +253,7 @@ export class PalSession {
    */
   idleSince(): number | null {
     if (!this.running || this.starting || this.sleeping) return null;
-    if (this.turnOpen || this.windingDown || this.pendingUuids.size || this.queuedSends || this.openTools.size || this.bgTasks.size) return null;
+    if (this.turnOpen || this.windingDown || this.pending.size || this.queuedSends || this.openTools.size || this.bgTasks.size) return null;
     if (this.pendingCards() > 0) return null;
     return Math.max(this.lastEventAt, this.rec.lastUsedAt, this.upAt);
   }
@@ -688,8 +688,7 @@ export class PalSession {
     this.closeStream();
     const wasBusy = this.busy;
     this.turnOpen = false;
-    this.pendingUuids.clear();
-    this.pendingText.clear();
+    this.pending.clear();
     this.openTools.clear();
     this.turnTools.clear();
     this.bgTasks.clear();
@@ -788,7 +787,7 @@ export class PalSession {
 
   /** The reply being streamed right now (all its text so far), for a page opened mid-reply. */
   streaming(): { id: string; text: string } | null {
-    return this.streamId && this.streamText ? { id: this.streamId, text: this.streamText } : null;
+    return this.stream.current();
   }
 
   // ---------------- the stall watchdog ----------------
@@ -814,8 +813,8 @@ export class PalSession {
    * ids, so the app shows them once); a turn it was in is asked to go on.
    */
   async recoverStall(): Promise<StallRecovery> {
-    const inTurn = this.turnOpen || this.pendingUuids.size > 0;
-    const pending = [...this.pendingText];
+    const inTurn = this.turnOpen || this.pending.size > 0;
+    const pending = this.pending.entries();
     await this.shutdown();
     // Nothing writes its transcript now: what's in it was taken.
     const untaken = pending.filter(([uuid]) => !this.d.harness.history.took(this.ref, uuid));
@@ -825,8 +824,7 @@ export class PalSession {
     if (!proc || !this.up) throw new Error(tr("pals.restartFailed", { name: this.rec.name }));
     this.notice(tr("pals.stuckRestarted"));
     for (const [uuid, p] of untaken) {
-      this.pendingUuids.add(uuid);
-      this.pendingText.set(uuid, p);
+      this.pending.add(uuid, p);
       proc.send(p.text, uuid, p.images);
     }
     let continued = false;
@@ -891,8 +889,7 @@ export class PalSession {
     if (!o.silent) this.d.emit("chat.message", msg);
     const content = o.peer ? this.d.harness.settings.peerWrap(o.peer, body) : body;
     if (!this.busy) this.workSince = this.d.now();
-    this.pendingUuids.add(uuid);
-    this.pendingText.set(uuid, { text: content, ...(o.from ? { from: o.from } : {}), ...(images.length ? { images } : {}) });
+    this.pending.add(uuid, { text: content, ...(o.from ? { from: o.from } : {}), ...(images.length ? { images } : {}) });
     this.rec.lastUsedAt = ts;
     // The owner's own words mean they're looking at it.
     if (!o.from && !o.silent) this.rec.seenAt = ts;
@@ -992,8 +989,7 @@ export class PalSession {
   private endTurn(): void {
     this.closeStream();
     this.turnOpen = false;
-    this.pendingUuids.clear();
-    this.pendingText.clear();
+    this.pending.clear();
     this.interrupted = false;
     this.activity = "";
     for (const w of this.turnEndWaiters.splice(0)) w();
@@ -1003,11 +999,8 @@ export class PalSession {
   // A reply cut off mid-stream still gets its final message, so the app
   // doesn't keep a half-written bubble open.
   private closeStream(): void {
-    if (this.streamId && this.streamText.trim() && !this.replyTexts.has(this.streamId)) {
-      this.chat({ id: this.streamId, role: "assistant", kind: "text", text: this.streamText });
-    }
-    this.streamId = null;
-    this.streamText = "";
+    const s = this.stream.take();
+    if (s && s.text.trim() && !this.replyTexts.has(s.id)) this.chat({ id: s.id, role: "assistant", kind: "text", text: s.text });
   }
 
   // The mode its process says it runs in. Claude Code may run in another than
@@ -1061,14 +1054,14 @@ export class PalSession {
         break;
       case "text_delta": {
         this.beginTurn();
-        const id = e.messageId ?? this.streamId ?? newId("m_");
-        if (id !== this.streamId) {
+        const id = e.messageId ?? this.stream.id ?? newId("m_");
+        if (id !== this.stream.id) {
           this.closeStream();
-          this.streamId = id;
+          this.stream.open(id);
           // a second text block of the same reply goes on after a blank line
           if (this.replyTexts.has(id)) this.d.emit("chat.delta", { id, text: "\n\n", pal: this.rec.id });
         }
-        this.streamText += e.text;
+        this.stream.append(e.text);
         this.d.emit("chat.delta", { id, text: e.text, pal: this.rec.id });
         this.setActivity(ACTIVITY.reply);
         break;
@@ -1076,17 +1069,14 @@ export class PalSession {
       case "assistant_text": {
         if (e.parentToolUseId) break;
         this.beginTurn();
-        const id = e.messageId ?? this.streamId ?? newId("m_");
+        const id = e.messageId ?? this.stream.id ?? newId("m_");
         const before = this.replyTexts.get(id);
         const text = before ? `${before}\n\n${e.text}` : e.text;
         this.replyTexts.set(id, text);
         if (this.replyTexts.size > 50) this.replyTexts.delete(this.replyTexts.keys().next().value!);
         this.emitted.add(id);
         this.chat({ id, role: "assistant", kind: "text", text });
-        if (id === this.streamId) {
-          this.streamId = null;
-          this.streamText = "";
-        }
+        if (id === this.stream.id) this.stream.take();
         this.lastLine = firstLine(e.text) || this.lastLine;
         this.touch();
         break;
@@ -1164,10 +1154,7 @@ export class PalSession {
       case "result": {
         const stopped = this.interrupted || this.windingDown; // its error is the stop, not news
         this.windingDown = false;
-        for (const u of e.consumedUuids ?? [...this.pendingUuids]) {
-          this.pendingUuids.delete(u);
-          this.pendingText.delete(u);
-        }
+        this.pending.consume(e.consumedUuids ?? this.pending.uuids());
         // its own tool calls end with the turn (a stopped one may not say so)
         for (const id of this.turnTools) this.openTools.delete(id);
         this.turnTools.clear();
@@ -1180,7 +1167,7 @@ export class PalSession {
         if (e.contextWindow) this.rec.contextWindow = e.contextWindow;
         this.compacting = false;
         this.rec.lastUsedAt = this.d.now();
-        if (this.pendingUuids.size) {
+        if (this.pending.size) {
           this.closeStream();
           this.turnOpen = false;
           this.touch();
@@ -1193,7 +1180,7 @@ export class PalSession {
           this.endTurn();
         }
         this.follower?.poke();
-        this.d.onTurnEnd(this, !this.pendingUuids.size && !stopped && !e.isError);
+        this.d.onTurnEnd(this, !this.pending.size && !stopped && !e.isError);
         break;
       }
       case "error":
