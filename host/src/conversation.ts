@@ -1,6 +1,5 @@
 import { t } from "./i18n/index.ts";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
 import { allyTurnTool, type AllyGateScope } from "./allyGate.ts";
 import type { ApprovalManager } from "./approvals.ts";
 import { ASK_TOOL, type QuestionManager } from "./questions.ts";
@@ -100,8 +99,8 @@ export interface ConversationDeps {
   onGoalResult?: (watchId: string, text: string) => void;
   // work handed to another session the assistant is waiting on
   handoffsInFlight?: () => boolean;
-  // where Claude Code keeps a session's transcript (a rewound session: has the fork been written?)
-  transcriptOf?: (sessionId: string) => string | undefined;
+  // a rewound session: has the harness written the fork yet?
+  written?: (sessionId: string) => boolean;
   metric: (m: Record<string, unknown>) => void;
   // The assistant's own AskUserQuestion goes on the owner's pending list
   // instead of stopping the conversation: the words it's told (null: ask as
@@ -757,8 +756,7 @@ export class Conversation {
   private pendingRewind(): PendingRewind | undefined {
     const rt = this.d.runtime.data;
     if (!rt.rewind) return undefined;
-    const path = rt.sessionId ? this.d.transcriptOf?.(rt.sessionId) : undefined;
-    if (path && existsSync(path)) {
+    if (rt.sessionId && this.d.written?.(rt.sessionId)) {
       this.d.runtime.update({ rewind: undefined });
       return undefined;
     }

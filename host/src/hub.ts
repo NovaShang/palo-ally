@@ -37,7 +37,7 @@ import { Updater, type UpdaterDeps } from "./update.ts";
 import { type Usage, UsageLedger } from "./usage.ts";
 import { randomUUID } from "node:crypto";
 import { ClaudeHarness } from "./harness/claude/index.ts";
-import { type ForkSession, rewindNotFound, beforeCompaction, chainTo, findEntry, forkedUuids, leafOf, matchOwnerEntry, readTranscript } from "./rewind.ts";
+import { type ForkSession, rewindNotFound } from "./rewind.ts";
 import { contextWindowFor } from "./palSession.ts";
 import { appendJsonl, readJson, writeJson } from "./util.ts";
 import { WatchStore } from "./watches.ts";
@@ -266,7 +266,7 @@ export class Hub {
       // Pals reach the assistant (and it them) by this name with SendMessage.
       peerName: () => PALO_NAME,
       handoffsInFlight: () => this.handoffs.inFlight(),
-      transcriptOf: (sid) => transcriptPath(claudeDir, this.paths.home, sid),
+      written: (sid) => this.harness.history.exists({ sessionId: sid, cwd: this.paths.home }),
       onGoalResult: (id, text) => {
         const w = this.watches.get(id);
         // The assistant may have set a better line itself during this run.
@@ -677,26 +677,27 @@ export class Hub {
     if (busy) throw new Error(busy);
     const { sessionId, pending } = this.conversation.rewindSource();
     if (!sessionId) throw new Error(rewindNotFound());
-    const entries = readTranscript(transcriptPath(this.claudeDir, this.paths.home, sessionId));
+    const rw = this.harness.rewind;
+    const home = this.paths.home;
     // The conversation as it stands (an earlier rewind not yet followed by a message: what it kept).
-    const chain = chainTo(entries, pending ? pending.at : leafOf(entries));
+    const chain = rw.chain({ sessionId, cwd: home }, pending);
     const used = new Set(this.chat.recent(2000).flatMap((m) => (m.uuid && m.id !== msg.id ? [m.uuid] : [])));
     // By its uuid; failing that (kept before it had one), by its words and time.
-    const entry = (msg.uuid ? findEntry(chain, msg.uuid) : undefined) ?? matchOwnerEntry(chain, this.ownerBody(msg), msg.ts, used);
+    const entry = rw.find(chain, { ...(msg.uuid ? { uuid: msg.uuid } : {}), words: this.ownerBody(msg), ts: msg.ts, used });
     if (!entry) throw new Error(rewindNotFound());
-    const at = typeof entry.parentUuid === "string" ? entry.parentUuid : typeof entry.logicalParentUuid === "string" ? entry.logicalParentUuid : null;
+    const at = entry.at;
     let to: string = randomUUID();
     // Before the last compaction: copied into a new session up to there
     // (new uuids, which the log then keeps for the messages it kept).
-    const copy = beforeCompaction(chain, at);
-    if (copy) to = (await this.forkSession(sessionId, { dir: this.paths.home, upToMessageId: at!, title: PALO_NAME })).sessionId;
+    const copy = rw.needsCopy(chain, entry);
+    if (copy) to = await rw.copy({ sessionId, cwd: home }, at!, PALO_NAME);
     // (The conversation may have moved meanwhile.)
     const late = this.conversation.rewindBlocker();
     if (late) throw new Error(late);
     this.conversation.rewindTo({ from: sessionId, at, cut: entry.uuid, to, written: copy });
     const ids = this.chat.rewind(msg.seq);
     if (copy) {
-      const moved = forkedUuids(readTranscript(transcriptPath(this.claudeDir, this.paths.home, to)));
+      const moved = rw.renamed({ sessionId: to, cwd: home });
       this.chat.setUuids(new Map(this.chat.recent(5000).flatMap((m) => (m.uuid && moved.has(m.uuid) ? [[m.id, moved.get(m.uuid)!] as [string, string]] : []))));
     }
     this.bus.emit("chat.rewound", { id: msg.id, ids });
@@ -713,18 +714,19 @@ export class Hub {
   backfillOwnerUuids(): number {
     const { sessionId, pending } = this.conversation.rewindSource();
     if (!sessionId || pending) return 0;
-    const entries = readTranscript(transcriptPath(this.claudeDir, this.paths.home, sessionId), ['"type":"user"']);
-    if (!entries.length) return 0;
+    const rw = this.harness.rewind;
+    const owner = rw.ownerChain({ sessionId, cwd: this.paths.home });
+    if (!owner.entries.length) return 0;
     const recent = this.chat.recent(5000);
     const used = new Set(recent.flatMap((m) => (m.uuid ? [m.uuid] : [])));
-    const first = Date.parse(entries[0]?.timestamp ?? "") || 0;
+    const first = owner.startedAt ?? 0;
     const todo = recent
       .filter((m) => m.role === "user" && m.kind === "text" && !m.pal && !m.uuid && !m.text.startsWith("/") && m.ts >= first - 60_000 && ["app", "cli", "wechat"].includes(m.channel))
       .reverse()
       .slice(0, 300);
     let n = 0;
     for (const m of todo) {
-      const e = matchOwnerEntry(entries, this.ownerBody(m), m.ts, used);
+      const e = rw.find(owner, { words: this.ownerBody(m), ts: m.ts, used });
       if (!e) continue;
       used.add(e.uuid);
       this.chat.update(m.id, { uuid: e.uuid });

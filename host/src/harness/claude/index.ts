@@ -52,6 +52,11 @@ export interface ClaudeHarnessOptions {
   registry?: () => RegistryEntry[];
 }
 
+const startedAt = (entries: HarnessEntry[]): { startedAt?: number } => {
+  const t = Date.parse(entries[0]?.timestamp ?? "");
+  return Number.isFinite(t) ? { startedAt: t } : {};
+};
+
 const shq = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
 
 export class ClaudeHarness implements Harness {
@@ -140,7 +145,11 @@ export class ClaudeHarness implements Harness {
       chain: (ref, pending?: PendingRewindPoint) => {
         const sessionId = pending ? pending.from : ref.sessionId;
         const entries = readTranscript(this.transcript({ sessionId, cwd: ref.cwd }));
-        return { sessionId, entries, chain: chainTo(entries, pending ? pending.at : leafOf(entries)) };
+        return { sessionId, entries, chain: chainTo(entries, pending ? pending.at : leafOf(entries)), ...startedAt(entries) };
+      },
+      ownerChain: (ref) => {
+        const entries = readTranscript(this.transcript(ref), ['"type":"user"']);
+        return { sessionId: ref.sessionId, entries, chain: entries, ...startedAt(entries) };
       },
       find: (chain, by) => {
         let e: HarnessEntry | undefined;
@@ -156,12 +165,6 @@ export class ClaudeHarness implements Harness {
       ownerWords: (e) => ownerText(e),
       dropped: (chain, p, map: HistoryMapOptions) => toPalMessages(chain.chain.slice(p.index) as RawSessionMessage[], map).map((m: ChatMessage) => m.id),
     };
-  }
-
-  /** The owner's entries of a session only (a long transcript: just its user lines), to match older messages by their words. */
-  ownerChain(ref: SessionRef): RewindChain {
-    const entries = readTranscript(this.transcript(ref), ['"type":"user"']);
-    return { sessionId: ref.sessionId, entries, chain: entries };
   }
 
   private makeDirectory(): SessionDirectory {

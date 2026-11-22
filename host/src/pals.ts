@@ -389,7 +389,6 @@ export class Pals {
       },
       pidAlive: (pid) => this.alive(pid),
       kill: this.d.kill ?? ((pid, sig) => process.kill(pid, sig)),
-      forkSession: this.forkSession,
       ...(this.d.media ? { media: this.d.media } : {}),
       timing: this.timing,
       foldDays: () => this.d.settings().foldDays,
@@ -446,9 +445,6 @@ export class Pals {
     };
   }
 
-  private get forkSession(): ForkSession {
-    return async (sid, o) => ({ sessionId: await this.d.harness.rewind.copy({ sessionId: sid, cwd: o.dir }, o.upToMessageId, o.title ?? "") });
-  }
 
   // ---------------- lifecycle ----------------
 
@@ -1161,9 +1157,9 @@ export class Pals {
     let sid: string | null = pal.rec.sessionId;
     if (pending) {
       sid = pending.at
-        ? (await this.forkSession(pending.from, { dir: pal.rec.cwd, upToMessageId: pending.at, title: pal.rec.name }).catch((e) => {
+        ? await this.d.harness.rewind.copy({ sessionId: pending.from, cwd: pal.rec.cwd }, pending.at, pal.rec.name).catch((e) => {
             throw new Error(t("pals.handBackFailed", { why: e instanceof Error ? e.message : String(e) }));
-          })).sessionId
+          })
         : null;
     }
     await pal.shutdown();

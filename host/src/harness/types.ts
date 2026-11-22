@@ -337,6 +337,7 @@ export interface RewindChain {
   sessionId: string;
   entries: HarnessEntry[];
   chain: HarnessEntry[];
+  startedAt?: number; // when its first entry was written
 }
 
 /** One of the owner's messages in it, to go back to just before. */
@@ -350,6 +351,8 @@ export interface RewindPoint {
 export interface Rewinder {
   /** The conversation as it stands: the session's own, or (gone back and not spoken to since) the old one up to where it was cut. */
   chain(ref: SessionRef, pending?: PendingRewindPoint): RewindChain;
+  /** Only the owner's entries of a session (a long one: just those lines), to match older messages by their words. */
+  ownerChain(ref: SessionRef): RewindChain;
   /** Its entry for a message: by the id it was sent under (`exact`: only that entry), else by its words near `ts`. */
   find(chain: RewindChain, by: { uuid?: string; exact?: boolean; words?: string; ts?: number; used?: Set<string> }): RewindPoint | null;
   /** The ids of every entry kept up to `at` in the session (a fork's inherited entries). */

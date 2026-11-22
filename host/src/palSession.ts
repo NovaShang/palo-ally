@@ -6,12 +6,12 @@ import { askOwner } from "./ownerCards.ts";
 import { firstLine } from "./ccSessions.ts";
 import { ACTIVITY, describeActivity, friendlyError } from "./copy.ts";
 import { isAuthFailure } from "./auth.ts";
-import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type Harness, type SessionRef, type DeliveryToolHandlers, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
+import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type Harness, type RewindChain, type SessionRef, type DeliveryToolHandlers, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
 import type { MediaStore } from "./media.ts";
 import { type PalLaunch, isHelperFailure, makeSpawner } from "./palLauncher.ts";
-import { CARD_TOOLS, type PalMapOptions, cardKey, toPalMessages, transcriptLastLine } from "./palHistory.ts";
+import { CARD_TOOLS, type PalMapOptions, cardKey } from "./palHistory.ts";
 import type { QuestionManager } from "./questions.ts";
-import { type ForkSession, type PendingRewind, beforeCompaction, chainTo, hasFileCheckpoint, leafOf, ownerText, readTranscript, rewindBusy, rewindNoFiles, rewindNotFound } from "./rewind.ts";
+import { type PendingRewind, rewindBusy, rewindNoFiles, rewindNotFound } from "./rewind.ts";
 import { type StallRecovery, type StallTarget, transcriptHas } from "./stallWatch.ts";
 import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
 import { stripTldrMarker } from "./tldr.ts";
@@ -130,8 +130,6 @@ export interface PalSessionDeps {
   onStopped: (pal: PalSession) => void;
   pidAlive: (pid: number) => boolean;
   kill: (pid: number, signal: NodeJS.Signals) => void;
-  /** Copies a session up to one entry as a new one (a rewind past a compaction). */
-  forkSession: ForkSession;
   /** What the owner attaches: images as Palo gets them, files put where the Pal reads them. */
   media?: Pick<MediaStore, "read" | "inbox" | "remember" | "recall">;
   timing: { readyMs: number; restartMs: number[]; exitWaitMs: number };
@@ -552,7 +550,7 @@ export class PalSession {
       rec.appliedEffort = effort;
       this.d.save();
     }
-    this.inherited = fork ? new Set(chainTo(readTranscript(this.transcriptOf(fork.from)), fork.at).map((e) => e.uuid)) : null;
+    this.inherited = fork ? this.d.harness.rewind.keptIds({ sessionId: fork.from, cwd: rec.cwd }, fork.at) : null;
     const proc: MainSession = this.d.driver.startPal({
       cwd: rec.cwd,
       ...(resume ? { resumeSessionId: rec.sessionId } : { sessionId: rec.sessionId }),
@@ -1243,10 +1241,6 @@ export class PalSession {
 
   // ---------------- 回到这里重来 (docs/rewind-prd.md) ----------------
 
-  private transcriptOf(sessionId: string): string {
-    return this.d.harness.history.locate({ sessionId, cwd: this.rec.cwd });
-  }
-
   /** A rewind whose fork Claude Code hasn't written yet (none once it has). */
   pendingRewind(): PendingRewind | undefined {
     const r = this.rec.rewind;
@@ -1264,16 +1258,14 @@ export class PalSession {
    * (the last entry's line of parents), or, gone back and not spoken to
    * since, the old session's up to where it was cut. Oldest first.
    */
-  conversationEntries(): { sessionId: string; entries: any[]; chain: any[]; pending?: PendingRewind } {
+  conversationEntries(): RewindChain & { pending?: PendingRewind } {
     const pending = this.pendingRewind();
-    const sessionId = pending ? pending.from : this.rec.sessionId;
-    const entries = readTranscript(this.transcriptOf(sessionId));
-    return { sessionId, entries, chain: chainTo(entries, pending ? pending.at : leafOf(entries)), ...(pending ? { pending } : {}) };
+    return { ...this.d.harness.rewind.chain(this.ref, pending), ...(pending ? { pending } : {}) };
   }
 
   /** Whether its files can go back to how they were before the owner's message `uuid`. */
   canRestoreFiles(uuid: string): boolean {
-    return hasFileCheckpoint(this.conversationEntries().entries, uuid);
+    return this.d.harness.rewind.canRestoreFiles(this.conversationEntries(), uuid);
   }
 
   /**
@@ -1288,17 +1280,19 @@ export class PalSession {
   async rewind(uuid: string, restoreFiles: boolean): Promise<{ text: string; filesRestored: boolean; dropped: string[]; from: string; at: string | null; copied: boolean }> {
     // (A turn stopped but still winding down is no matter: its process ends here.)
     if (this.busy || this.starting || this.sleeping || this.queuedSends || this.pendingCards() > 0) throw new Error(rewindBusy());
-    const { sessionId, entries, chain } = this.conversationEntries();
-    const i = chain.findIndex((e) => e.uuid === uuid);
-    if (i < 0) throw new Error(rewindNotFound());
-    const entry = chain[i];
+    const rw = this.d.harness.rewind;
+    const conv = this.conversationEntries();
+    const { sessionId, chain } = conv;
+    const point = rw.find(conv, { uuid, exact: true });
+    if (!point) throw new Error(rewindNotFound());
+    const i = point.index;
     // Sent from the app with images or files: its words as typed, without the files' paths.
     const sent = this.d.media?.recall(uuid);
-    const text = sent ? sent.text : ownerText(entry);
+    const text = sent ? sent.text : point.text;
     // The owner's own words only: not the assistant's (pal_send), not another session's.
-    if (text === null || /^\s*<cross-session-message/.test(text) || (this.rec.duty && i === chain.findIndex((e) => ownerText(e) !== null) && text.trim() === this.rec.duty.trim()))
+    if (text === null || /^\s*<cross-session-message/.test(text) || (this.rec.duty && i === chain.findIndex((e) => rw.ownerWords(e) !== null) && text.trim() === this.rec.duty.trim()))
       throw new Error(tr("pals.notYourMessage"));
-    if (restoreFiles && !hasFileCheckpoint(entries, uuid)) throw new Error(rewindNoFiles());
+    if (restoreFiles && !rw.canRestoreFiles(conv, uuid)) throw new Error(rewindNoFiles());
     const held = await this.d.holders(sessionId, this.rec.pid);
     if (held.length) throw new HeldElsewhere(tr("pals.heldElsewhereRewind", { name: this.rec.name, pids: held.map((h) => h.pid).join("、") }));
     const awake = this.running || !!this.restartTimer || this.queued;
@@ -1311,14 +1305,14 @@ export class PalSession {
         throw new Error(rewindNoFiles());
       }
     }
-    const dropped = toPalMessages(chain.slice(i), { ...this.d.mapOptions(), pal: this.rec.id }).map((m) => m.id);
-    const at = typeof entry.parentUuid === "string" ? entry.parentUuid : typeof entry.logicalParentUuid === "string" ? entry.logicalParentUuid : null;
+    const dropped = rw.dropped(conv, point, { ...this.d.mapOptions(), pal: this.rec.id });
+    const at = point.at;
     // Before its last compaction: copied into a new session up to there now
     // (new uuids); otherwise forked by its next process.
-    const copied = beforeCompaction(chain, at);
+    const copied = rw.needsCopy(conv, point);
     if (copied) {
       try {
-        this.rec.sessionId = (await this.d.forkSession(sessionId, { dir: this.rec.cwd, upToMessageId: at!, title: this.rec.name })).sessionId;
+        this.rec.sessionId = await rw.copy({ sessionId, cwd: this.rec.cwd }, at!, this.rec.name);
       } catch (e) {
         if (awake) await this.start().catch(() => {});
         throw new Error(tr("pals.rewindFailed", { why: e instanceof Error ? e.message : String(e) }));
@@ -1329,7 +1323,7 @@ export class PalSession {
       this.rec.sessionId = randomUUID();
     }
     this.rec.formerSessions = [...(this.rec.formerSessions ?? []).filter((x) => x !== sessionId), sessionId].slice(-20);
-    this.lastLine = transcriptLastLine(chain.slice(0, i));
+    this.lastLine = this.d.harness.history.lastLine(chain.slice(0, i));
     this.rec.lastUsedAt = this.d.now();
     this.d.save();
     this.touch();

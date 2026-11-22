@@ -86,8 +86,8 @@ describe("reading the transcript", () => {
 
 // ---------------- the assistant's conversation ----------------
 
-function palo(script?: FakeScript, paths = tmpPaths()) {
-  const t = makeHub({ script, paths });
+function palo(script?: FakeScript, paths = tmpPaths(), sameClaudeDir?: string) {
+  const t = makeHub({ script, paths, ...(sameClaudeDir ? { sessions: { claudeDir: sameClaudeDir } } : {}) });
   const claudeDir = (t.hub as any).claudeDir as string;
   const call = async (method: string, params: unknown = {}) => JSON.parse(JSON.stringify((await handleRpc(t.hub, { method, params }, app)) ?? null));
   const transcript = (sid: string, entries: unknown[]) => {
@@ -209,7 +209,7 @@ describe("the assistant's conversation", () => {
   test("a compaction after the point: Claude Code resumes only from its last compaction, so the conversation up to the point is copied into a new session (new uuids, which the log takes up)", async () => {
     const t = palo();
     const forks = fakeForks(t.claudeDir);
-    (t.hub as any).forkSession = forks.fork;
+    (t.hub.harness as any).o.forkSession = forks.fork; // the SDK's forkSession, in the test's folder
     const msgs: ChatMessage[] = [];
     for (const text of ["第一句", "第二句", "第三句"]) {
       msgs.push(t.hub.userMessage(text, "app")!);
@@ -295,9 +295,7 @@ describe("the assistant's conversation", () => {
     const to = t.hub.status().sessionId!;
     t.hub.stop();
 
-    const t2 = palo(undefined, paths);
-    (t2.hub as any).claudeDir = t.claudeDir; // the same computer
-    (t2.hub.conversation as any).d.transcriptOf = (s: string) => transcriptPath(t.claudeDir, paths.home, s);
+    const t2 = palo(undefined, paths, t.claudeDir); // the same computer
     expect(t2.hub.status().sessionId).toBe(to);
     // a second rewind before any message: still on what the first one kept
     await expect(t2.call("chat.rewind", { messageId: msgs[1]!.id })).rejects.toThrow("已经撤回了");
@@ -308,8 +306,7 @@ describe("the assistant's conversation", () => {
 
     // Claude Code wrote the fork with its first message
     t.transcript(to, [...written([msgs[0]!]), user("n1", "a0", "第二句（改）", 30)]);
-    const t3 = palo(undefined, paths);
-    (t3.hub.conversation as any).d.transcriptOf = (s: string) => transcriptPath(t.claudeDir, paths.home, s);
+    const t3 = palo(undefined, paths, t.claudeDir);
     t3.hub.userMessage("接着", "app");
     await t3.hub.idle();
     expect(t3.driver.last!.opts).toMatchObject({ resumeSessionId: to });
