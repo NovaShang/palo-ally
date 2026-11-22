@@ -306,7 +306,7 @@ describe("the assistant brings one back (pals_recent, pal_adopt)", () => {
     expect((await t.call("helper.decide", { proposalId: card.proposal!.id, action: "create" })).pal.id).toBe(pal.id);
     expect(t.driver.pals).toHaveLength(1);
     // it's a Pal now, not a recent one
-    expect(await tools.pal_adopt({ sessionId: a })).toContain("已经是会话「首页改成两栏」");
+    expect(await tools.pal_adopt({ sessionId: a })).toContain("已经是 agent「首页改成两栏」");
     expect(JSON.parse(await tools.pals_recent({})).sessions.map((s: any) => s.title)).toEqual(["旅行清单"]);
     expect(t.hub.audit.tail(20).map((e) => e.type)).toEqual(expect.arrayContaining(["pal.adopt_proposed", "pal.adopt_accepted"]));
     await t.hub.pals.stopAndWait();
