@@ -103,7 +103,7 @@ struct LibraryView: View {
     // MARK: list
 
     @ViewBuilder private var artifactList: some View {
-        if scope != .all && chrome == nil { sessionPicker }
+        if chrome == nil && (scope != .all || showsGrouping) { controls }
         if store.artifacts.isEmpty {
             ContentUnavailableView("这里还空着",
                                    systemImage: "books.vertical",
@@ -124,8 +124,6 @@ struct LibraryView: View {
                 .tint(.primary)
                 .accessibilityIdentifier("library-show-all")
             }
-        } else if chrome == nil {
-            groupingPicker
         }
         if !pinned.isEmpty {
             Section("置顶") {
@@ -138,40 +136,49 @@ struct LibraryView: View {
         }
     }
 
-    /// 这个 agent (这个工作区) / 全部, above the list in an agent's or a workspace's pane.
-    private var sessionPicker: some View {
-        Section {
-            Picker(selection: $onlyThisSession) {
-                Text(verbatim: scope.narrowedTitle).tag(true)
-                Text("全部", tableName: "Library").tag(false)
-            } label: {
-                Text("范围", tableName: "Library")
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .accessibilityIdentifier("library-source")
-        }
-        .listRowBackground(Color.clear)
-        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-        .listSectionMargins(.top, 0)
+    /// 按时间 / 按文件夹: when there is a list to arrange (not when this
+    /// agent's is empty and only 看全部成果 shows).
+    private var showsGrouping: Bool {
+        !store.artifacts.isEmpty && !(pinned.isEmpty && recent.isEmpty && narrowedTo != nil)
     }
 
-    /// One segmented control, in the page's own first row; it scrolls away with the list.
-    private var groupingPicker: some View {
+    /// The page's own first row, scrolling away with the list: in an agent's
+    /// or a workspace's pane 这个 agent (这个工作区) / 全部 as a small menu,
+    /// then 按时间 / 按文件夹 segmented, on one line.
+    private var controls: some View {
         Section {
-            Picker(selection: $grouping) {
-                Text("按时间", tableName: "Library").tag(LibraryGrouping.time)
-                Text("按文件夹", tableName: "Library").tag(LibraryGrouping.folder)
-            } label: {
-                Text("整理方式", tableName: "Library")
+            HStack(spacing: 10) {
+                if scope != .all {
+                    Picker(selection: $onlyThisSession) {
+                        Text(verbatim: scope.narrowedTitle).tag(true)
+                        Text("全部", tableName: "Library").tag(false)
+                    } label: {
+                        Text("范围", tableName: "Library")
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                    .tint(.primary)
+                    .accessibilityIdentifier("library-source")
+                }
+                if showsGrouping {
+                    Picker(selection: $grouping) {
+                        Text("按时间", tableName: "Library").tag(LibraryGrouping.time)
+                        Text("按文件夹", tableName: "Library").tag(LibraryGrouping.folder)
+                    } label: {
+                        Text("整理方式", tableName: "Library")
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .accessibilityIdentifier("library-grouping")
+                } else {
+                    Spacer(minLength: 0)
+                }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .accessibilityIdentifier("library-grouping")
         }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-        // A headerless first section still gets a section's gap above it: none, so the picker sits as the first row.
+        // A headerless first section still gets a section's gap above it: none, so the row sits first.
         .listSectionMargins(.top, 0)
     }
 
