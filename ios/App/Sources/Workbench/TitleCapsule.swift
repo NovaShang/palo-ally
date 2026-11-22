@@ -137,14 +137,12 @@ extension AppStore {
     /// Palo's subagents running now, for its indicator.
     var paloTasksRunning: Int { tasks.filter { $0.status == .running }.count }
 
-    /// Palo's state for its indicator: waiting on the owner, working, or idle.
+    /// Palo's state for its indicator: its line's dot (waiting on the owner,
+    /// working, its subagents still running after its turn), working too
+    /// while it is still at something the line doesn't show.
     var paloDot: StatusDotKind {
-        switch agentStatusLine.kind {
-        case .needsYou: .waiting
-        // Its subagents still running after its turn: still at work.
-        case .working, .tasks: .working
-        default: assistantWorking ? .working : .idle
-        }
+        let dot = agentStatusLine.dot
+        return dot == .idle && assistantWorking ? .working : dot
     }
 }
 
@@ -168,15 +166,13 @@ private struct PaloOrbHomeIfNeeded: ViewModifier {
     }
 }
 
-/// Palo's capsule: its name and what it is doing; the same shape as a session's.
+/// Palo's capsule: its name and its line (the one its details and the list
+/// say); the same shape as a session's.
 struct PaloTitleCapsule: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
-        let working = store.assistantWorking
-        let dot: StatusDotKind = working ? .working : .idle
-        TitleCapsule(name: store.assistantName, dot: dot,
-                     subtitle: working ? (store.status?.activity ?? StatusDot.label(.working)) : StatusDot.label(.idle))
+        TitleCapsule(name: store.assistantName, dot: store.paloDot, subtitle: store.agentStatusLine.text)
     }
 }
 

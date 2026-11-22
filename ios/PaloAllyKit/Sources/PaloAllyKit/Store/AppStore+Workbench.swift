@@ -328,6 +328,16 @@ extension AppStore {
         return d
     }
 
+    /// The assistant's details in the page's one shape.
+    public var assistantDetail: AgentDetail { AgentDetail(assistant: modelInfo, status: status, tasks: tasks) }
+
+    /// The details page's one model setter: the assistant's (`model.set`,
+    /// where `.some(nil)` goes back to the default) or an agent's (`pals.setModel`).
+    public func setAgentModel(_ agent: String?, model: String?? = .none, effort: String?? = .none) async throws {
+        guard let agent else { return try await setModel(model, effort: effort) }
+        try await setSessionModel(id: agent, model: model ?? nil, effort: effort ?? nil)
+    }
+
     /// `pals.setModel`: a model and/or thinking depth, for the next turn.
     @discardableResult
     public func setSessionModel(id: String, model: String? = nil, effort: String? = nil) async throws -> Pal? {

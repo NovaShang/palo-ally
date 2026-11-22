@@ -141,7 +141,7 @@ private final class SoloEngine {
 struct SessionDropPreview: View {
     @State private var listening = false
     @State private var level: Float = 0
-    private let states: [(StatusDotKind, String)] = [(.working, "在干"), (.waiting, "等你"), (.done, "做完了"), (.idle, "闲着")]
+    private let states: [(StatusDotKind, String)] = [StatusDotKind.working, .waiting, .done, .idle].map { ($0, $0.word) }
 
     var body: some View {
         List {

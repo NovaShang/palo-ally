@@ -1,7 +1,12 @@
 import PaloAllyKit
 import SwiftUI
 
+/// What it remembers, to read and edit: the assistant's (关于你, 它的性格, what
+/// it noted down), or with `agent` that agent's (its folder's CLAUDE.md, and
+/// what its harness noted down for the folder).
 struct MemorySection: View {
+    /// A Pal's id; nil: the assistant.
+    var agent: String? = nil
     @Environment(AppStore.self) private var store
     @Environment(WindowModel.self) private var model
     @State private var files: [MemoryFile] = []
@@ -19,21 +24,21 @@ struct MemorySection: View {
             } else if files.isEmpty {
                 Section {
                     ContentUnavailableView("还没记下什么", systemImage: "brain",
-                                           description: Text("聊得越多，它越了解你。"))
+                                           description: agent == nil ? Text("聊得越多，它越了解你。") : Text("它在这个文件夹里干活时会记下要点。"))
                 }
             }
             if !core.isEmpty {
                 Section {
-                    ForEach(core) { MemoryRow(file: $0, onSaved: reload) }
+                    ForEach(core) { MemoryRow(file: $0, agent: agent, onSaved: reload) }
                 } header: {
-                    Text("关于你，它一直记着")
+                    agent == nil ? Text("关于你，它一直记着") : Text("文件夹里的说明")
                 } footer: {
                     Text("这些每次都会带上，越短越好。")
                 }
             }
             if !auto.isEmpty {
                 Section("它随手记下的") {
-                    ForEach(auto) { MemoryRow(file: $0, onSaved: reload) }
+                    ForEach(auto) { MemoryRow(file: $0, agent: agent, onSaved: reload) }
                 }
             }
         }
@@ -48,7 +53,7 @@ struct MemorySection: View {
         loading = true
         defer { loading = false }
         do {
-            files = try await store.memoryFiles()
+            files = try await store.memoryFiles(agent: agent)
             error = nil
         } catch {
             self.error = Copy.error(error)
@@ -58,32 +63,30 @@ struct MemorySection: View {
 
 private struct MemoryRow: View {
     let file: MemoryFile
+    var agent: String?
     let onSaved: () -> Void
 
     var body: some View {
         NavigationLink {
-            MemoryEditorView(file: file, onSaved: onSaved)
+            MemoryEditorView(file: file, agent: agent, onSaved: onSaved)
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: file.scope == .core ? "heart.text.square" : "note.text")
+                Image(systemName: file.scope == .core ? (agent == nil ? "heart.text.square" : "doc.text") : "note.text")
                     .foregroundStyle(.secondary)
                     .frame(width: 26)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(Self.displayName(file.path))
-                    Text("\(Copy.byteSize(file.size)) · \(Copy.relative(file.updatedAt))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(MemoryRowName.name(file.path, agent: agent, short: true))
+                    Group {
+                        if file.missing {
+                            Text("还没有，点一下写")
+                        } else {
+                            Text("\(Copy.byteSize(file.size)) · \(Copy.relative(file.updatedAt))")
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
             }
-        }
-    }
-
-    static func displayName(_ path: String) -> String {
-        switch (path as NSString).lastPathComponent {
-        case "user.md": String(localized: "关于你")
-        case "soul.md": String(localized: "它的性格")
-        case "MEMORY.md": String(localized: "记忆目录")
-        default: ((path as NSString).lastPathComponent as NSString).deletingPathExtension
         }
     }
 }
@@ -92,6 +95,8 @@ struct MemoryEditorView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     let file: MemoryFile
+    /// A Pal's id: one of that agent's files.
+    var agent: String? = nil
     var onSaved: () -> Void = {}
     @State private var text = ""
     @State private var original = ""
@@ -126,7 +131,7 @@ struct MemoryEditorView: View {
                     .padding(.horizontal, 12)
             }
         }
-        .navigationTitle(MemoryRowName.name(file.path))
+        .navigationTitle(MemoryRowName.name(file.path, agent: agent))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
@@ -134,7 +139,7 @@ struct MemoryEditorView: View {
                     .disabled(text == original || saving || loading || loadError != nil || conflict)
             }
         }
-        .alert("这个文件刚被助理改过", isPresented: $conflict) {
+        .alert(agent == nil ? Text("这个文件刚被助理改过") : Text("这个文件刚被改过"), isPresented: $conflict) {
             Button("重新打开") { Task { await load() } }
             Button("先留着我的", role: .cancel) {}
         } message: {
@@ -158,7 +163,7 @@ struct MemoryEditorView: View {
         loadError = nil
         message = nil
         do {
-            let r = try await store.readMemory(path: file.path)
+            let r = try await store.readMemory(path: file.path, agent: agent)
             text = r.content
             original = r.content
             baseUpdatedAt = r.updatedAt
@@ -168,8 +173,6 @@ struct MemoryEditorView: View {
         loading = false
     }
 
-    static let conflictMessage = String(localized: "这个文件刚被助理改过，请重新打开再改")
-
     private func save() {
         saving = true
         message = nil
@@ -177,11 +180,11 @@ struct MemoryEditorView: View {
             do {
                 // The returned stamp is the base for the next save, so it
                 // isn't refused as a conflict with ourselves.
-                baseUpdatedAt = try await store.writeMemory(path: file.path, content: text, baseUpdatedAt: baseUpdatedAt)
+                baseUpdatedAt = try await store.writeMemory(path: file.path, content: text, baseUpdatedAt: baseUpdatedAt, agent: agent)
                 original = text
                 message = String(localized: "存好了")
                 onSaved()
-            } catch RPCError.remote(let m) where m.contains("刚被助理改过") || m.contains("just changed this file") {  // i18n-ok: the host's own words, in either language
+            } catch RPCError.remote(let m) where (m.contains("刚被") && m.contains("改过")) || m.contains("just changed") {  // i18n-ok: the host's own words (the assistant's or an agent's), in either language
                 conflict = true
             } catch {
                 message = String(localized: "没存上：\(Copy.error(error))")
@@ -192,12 +195,18 @@ struct MemoryEditorView: View {
 }
 
 private enum MemoryRowName {
-    static func name(_ path: String) -> String {
-        switch (path as NSString).lastPathComponent {
-        case "user.md": String(localized: "关于你")
-        case "soul.md": String(localized: "它的性格")
-        case "MEMORY.md": String(localized: "记忆目录")
-        default: (path as NSString).lastPathComponent
+    /// The assistant's core files by what they are; an agent's folder files as
+    /// they're called (CLAUDE.md, .claude/CLAUDE.md); a note by its name
+    /// (`short`: without .md, in the list).
+    static func name(_ path: String, agent: String?, short: Bool = false) -> String {
+        let file = (path as NSString).lastPathComponent
+        switch file {
+        case "user.md" where agent == nil: return String(localized: "关于你")
+        case "soul.md" where agent == nil: return String(localized: "它的性格")
+        case "MEMORY.md": return String(localized: "记忆目录")
+        default:
+            if !path.hasPrefix("memory/") { return path }
+            return short ? (file as NSString).deletingPathExtension : file
         }
     }
 }

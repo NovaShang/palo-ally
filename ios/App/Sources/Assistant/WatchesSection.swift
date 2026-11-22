@@ -1,12 +1,14 @@
 import PaloAllyKit
 import SwiftUI
 
-/// 目标: what the assistant is helping with over time. Each one shows a short
-/// progress line and a state; underneath it's still a watch (a probe check or
-/// a schedule). New goals are asked for in plain words — the assistant sets
-/// them up — rather than through a form.
+/// 定时 on the assistant's details: what it is helping with over time. Each
+/// one shows a short progress line and a state; underneath it's still a watch
+/// (a probe check or a schedule). New ones are asked for in plain words (the
+/// assistant sets them up) rather than through a form.
 struct WatchesSection: View {
     @Environment(AppStore.self) private var store
+    /// How many show on the details page before 全部定时.
+    static let shown = 3
 
     /// Needs-you first, then the ones moving, then paused, then done.
     private var goals: [Watch] {
@@ -25,27 +27,56 @@ struct WatchesSection: View {
         }
     }
 
+    /// 定时: the first few (needs-you first), the whole list a row away, then
+    /// 想让它帮你盯着什么？, and the ideas a row away.
     var body: some View {
         Section {
-            AskForGoal()
-            if store.watches.isEmpty {
-                ContentUnavailableView("还没有目标", systemImage: "scope",
-                                       description: Text("告诉它你想长期盯住或推进的事，比如「回国机票降价了告诉我」「每天早上给我一份晨报」。"))
-            }
-            ForEach(goals) { w in
+            ForEach(goals.prefix(Self.shown)) { GoalLink(goal: $0) }
+            if goals.count > Self.shown {
                 NavigationLink {
-                    GoalDetail(id: w.id)
+                    List {
+                        Section { ForEach(goals) { GoalLink(goal: $0) } }
+                    }
+                    .navigationTitle("定时")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .modifier(InSidebarColumn())
                 } label: {
-                    GoalRow(goal: w)
+                    Text("全部定时 · \(goals.count)")
                 }
+                .accessibilityIdentifier("detail-timers")
             }
+            AskForGoal()
+            if !store.suggestions.isEmpty {
+                NavigationLink {
+                    List { MoreIdeasSection() }
+                        .navigationTitle("还可以让它…")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .modifier(InSidebarColumn())
+                } label: {
+                    LabeledContent(String(localized: "还可以让它…"), value: String(localized: "\(store.suggestions.count) 个"))
+                }
+                .accessibilityIdentifier("detail-ideas")
+            }
+        } header: {
+            Text("定时")
         } footer: {
-            if !store.watches.isEmpty {
-                Text("它会定期替你查看或推进，有进展会更新在这里；需要你的时候会标出来。")
+            if store.watches.isEmpty {
+                Text("告诉它你想长期盯住或推进的事，比如「回国机票降价了告诉我」「每天早上给我一份晨报」。")
             }
         }
+    }
+}
 
-        MoreIdeasSection()
+/// One of them, opening its page.
+private struct GoalLink: View {
+    let goal: Watch
+
+    var body: some View {
+        NavigationLink {
+            GoalDetail(id: goal.id)
+        } label: {
+            GoalRow(goal: goal)
+        }
     }
 }
 
@@ -54,14 +85,21 @@ struct WatchesSection: View {
 private struct MoreIdeasSection: View {
     @Environment(AppStore.self) private var store
     @Environment(WindowModel.self) private var model
+    @Environment(\.tileDetail) private var tileDetail
+
+    /// Sent: back to the conversation, from management or the details.
+    private func use(_ s: Suggestion) {
+        store.use(s)
+        model.closeManagement()
+        model.setDetail(false, tile: tileDetail)
+    }
 
     var body: some View {
         if !store.suggestions.isEmpty {
             Section("还可以让它…") {
                 ForEach(store.suggestions) { s in
                     Button {
-                        store.use(s)
-                        model.closeManagement()
+                        use(s)
                     } label: {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(s.chip).font(.body).foregroundStyle(.primary)
@@ -81,10 +119,7 @@ private struct MoreIdeasSection: View {
                         Button("不再显示") { withAnimation(.snappy) { store.dismiss(s) } }.tint(.gray)
                     }
                     .contextMenu {
-                        Button("发给它", systemImage: "paperplane") {
-                            store.use(s)
-                            model.closeManagement()
-                        }
+                        Button("发给它", systemImage: "paperplane") { use(s) }
                         Button("不再显示", systemImage: "eye.slash") { withAnimation(.snappy) { store.dismiss(s) } }
                     }
                     .accessibilityHint("发给它")

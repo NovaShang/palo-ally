@@ -92,6 +92,17 @@
         }
       }
     },
+    "%lld 件事在做" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld running"
+          }
+        }
+      }
+    },
     "%lld 件事在做 · %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -250,6 +261,17 @@
         }
       }
     },
+    "做完了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        }
+      }
+    },
     "写文件" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -367,6 +389,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Working on: %@"
+          }
+        }
+      }
+    },
+    "在忙" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Busy"
           }
         }
       }
@@ -785,6 +818,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Idle"
+          }
+        }
+      }
+    },
+    "等你" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for you"
           }
         }
       }

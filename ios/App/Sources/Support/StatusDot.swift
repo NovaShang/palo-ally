@@ -43,15 +43,8 @@ struct StatusDot: View {
         }
     }
 
-    /// 在干 / 等你 / 做完了 / 闲着.
-    static func label(_ kind: StatusDotKind) -> String {
-        switch kind {
-        case .working: String(localized: "在干")
-        case .waiting: String(localized: "等你")
-        case .done: String(localized: "做完了")
-        case .idle: String(localized: "闲着")
-        }
-    }
+    /// 在忙 / 等你 / 做完了 / 空闲: the Kit's one vocabulary (`StatusDotKind.word`).
+    static func label(_ kind: StatusDotKind) -> String { kind.word }
 }
 
 extension Color {

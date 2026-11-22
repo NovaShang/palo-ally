@@ -375,6 +375,10 @@ private struct LayoutStressTest: ViewModifier {
                     // `copymenu`: 编辑 → 拷贝, sent along the responder chain as the menu does.
                     // `details`: the orb's details, as a click on it opens them.
                     case "details": model.detailShown = true
+                    // `detail-settings`: the details page's 设置 unfolded, as tapping it does.
+                    case "detail-settings": w.detailSettingsOpen = true
+                    // `detail-memory`: its 记忆 page, as tapping 设置 → 记忆 does.
+                    case "detail-memory": w.detailMemoryOpen = true
                     case "copymenu":
                         let sent = UIApplication.shared.sendAction(#selector(UIResponderStandardEditActions.copy(_:)), to: nil, from: nil, for: nil)
                         debugLog("[nav] copy sent along the responder chain: \(sent ? "taken" : "nobody took it")")
