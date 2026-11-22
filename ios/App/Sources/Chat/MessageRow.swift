@@ -74,8 +74,10 @@ private struct UserBubble: View {
             }
             VStack(alignment: .trailing, spacing: 4) {
                 // In a Pal's conversation: the assistant's words to it (pals-prd §4).
+                // The host's own words (a stalled turn nudged on) came as from
+                // "PaloAlly", the app's old name: they read as the assistant's.
                 if let from = message.from?.trimmingCharacters(in: .whitespaces), !from.isEmpty, store.scope != .palo {
-                    Label(Copy.assistantSays(from == "palo" ? store.assistantName : from), systemImage: "sparkles")
+                    Label(Copy.assistantSays(from == "palo" || from == "PaloAlly" ? store.assistantName : from), systemImage: "sparkles")
                         .labelStyle(QuietLabelStyle())
                 }
                 if let reply = message.replyTo {
