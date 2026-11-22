@@ -443,9 +443,10 @@ export class Hub {
       log: this.log,
     });
     // The stall watchdog: the assistant's own process and every Pal's.
-    const mainTranscript = () => {
+    // Its conversation as the harness keeps it (none before its first turn).
+    const mainRef = () => {
       const sid = this.runtime.data.sessionId;
-      return sid ? transcriptPath(claudeDir, this.paths.home, sid) : undefined;
+      return sid ? { sessionId: sid, cwd: this.paths.home } : undefined;
     };
     const mainPid = () => {
       const sid = this.runtime.data.sessionId;
@@ -461,7 +462,14 @@ export class Hub {
         this.conversation.stallTarget({
           name: () => this.config.settings.assistantName || PALO_NAME,
           pid: mainPid,
-          transcript: mainTranscript,
+          progress: () => {
+            const ref = mainRef();
+            return ref ? this.harness.history.growth(ref) : "";
+          },
+          took: (uuid) => {
+            const ref = mainRef();
+            return !!ref && this.harness.history.took(ref, uuid);
+          },
           kill: (pid) => killHard(pid),
         }),
         ...this.pals.stallTargets(),

@@ -20,7 +20,7 @@ function setup(over: Partial<StallTarget> & { sockets?: { total: number; establi
     openTools: () => [],
     lastActivity: () => 0,
     pid: () => 4242,
-    transcript: () => transcript,
+    progress: () => growth(transcript),
     recover: async () => {
       recovers++;
       return { resent: 1, continued: false };

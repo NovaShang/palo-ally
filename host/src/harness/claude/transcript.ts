@@ -1,4 +1,5 @@
-import { closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, openSync, readdirSync, readSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { PALO_SEND_TOOL } from "../types.ts";
 import { stripTldrMarker } from "../../tldr.ts";
 import { truncate } from "../../util.ts";
@@ -183,4 +184,48 @@ export function userText(content: unknown): string | null {
     .map((b: any) => b.text)
     .join("\n");
   return t || null;
+}
+
+// ---- the stall watchdog's signs (stallWatch.ts) ----
+
+/** How much its transcript and its subagents' transcripts have grown (a signature, compared tick to tick). */
+export function growth(transcript: string | undefined): string {
+  if (!transcript) return "";
+  let main = "-";
+  try {
+    const st = statSync(transcript);
+    main = `${st.size}:${Math.round(st.mtimeMs)}`;
+  } catch {
+    /* none yet */
+  }
+  let sub = 0;
+  const dir = join(transcript.replace(/\.jsonl$/, ""), "subagents");
+  try {
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith(".jsonl")) continue;
+      try {
+        sub += statSync(join(dir, f)).size;
+      } catch {
+        /* gone */
+      }
+    }
+  } catch {
+    /* no subagents */
+  }
+  return `${main}|${sub}`;
+}
+
+/** Whether the transcript (its last `maxBytes`) mentions this message uuid: the session took that message. */
+export function transcriptHas(path: string | undefined, uuid: string, maxBytes = 8 * 1024 * 1024): boolean {
+  if (!path || !existsSync(path)) return false;
+  const fd = openSync(path, "r");
+  try {
+    const size = fstatSync(fd).size;
+    const start = Math.max(0, size - maxBytes);
+    const buf = Buffer.alloc(size - start);
+    readSync(fd, buf, 0, buf.length, start);
+    return buf.toString("utf8").includes(uuid);
+  } finally {
+    closeSync(fd);
+  }
 }

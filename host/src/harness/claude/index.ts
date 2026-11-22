@@ -2,7 +2,6 @@ import { forkSession as sdkForkSession, getSessionMessages } from "@anthropic-ai
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { type RecentSource, sdkRename, sdkSource } from "../../palRecent.ts";
-import { growth, transcriptHas } from "../../stallWatch.ts";
 import type { ChatMessage } from "../../types.ts";
 import type {
   Harness,
@@ -29,7 +28,7 @@ import { readRegistry, type RegistryEntry } from "./registry.ts";
 import { type ForkSession, beforeCompaction, chainTo, findEntry, forkedUuids, hasFileCheckpoint, leafOf, matchOwnerEntry, ownerText, readTranscript } from "./rewind.ts";
 import { PAL_MODES, contextWindowFor, ownerMode, settingsEffort } from "./settings.ts";
 import { pageFromTail } from "./tail.ts";
-import { type RawSessionMessage, readHead, readTail } from "./transcript.ts";
+import { type RawSessionMessage, growth, readHead, readTail, transcriptHas } from "./transcript.ts";
 
 // Claude Code as PaloAlly's harness (docs/harness-adapter-design.md §2): the
 // parts under harness/claude/ put together behind the Harness interface.

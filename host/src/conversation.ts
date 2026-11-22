@@ -15,7 +15,7 @@ import { autoMemoryDir } from "./memory.ts";
 import type { Router } from "./router.ts";
 import type { RuntimeState } from "./runtime.ts";
 import { type PendingRewind, rewindBusy } from "./rewind.ts";
-import { type StallRecovery, type StallTarget, WATCHDOG_DEFAULTS, transcriptHas } from "./stallWatch.ts";
+import { type StallRecovery, type StallTarget, WATCHDOG_DEFAULTS } from "./stallWatch.ts";
 import type { TaskTracker } from "./tasks.ts";
 import type { Channel, Task } from "./types.ts";
 import type { UsageLedger } from "./usage.ts";
@@ -51,7 +51,9 @@ const stallContinueProactive = (): string => t("stall.continueProactive");
 export interface MainStallHooks {
   name: () => string;
   pid: () => number | undefined;
-  transcript: () => string | undefined;
+  /** How far it has written its conversation (the harness says); whether it took the message sent under `uuid`. */
+  progress: () => string;
+  took: (uuid: string) => boolean;
   kill: (pid: number | undefined) => Promise<void>;
 }
 
@@ -822,7 +824,7 @@ export class Conversation {
       openTools: () => [...this.liveTools.values()],
       lastActivity: () => Math.max(this.lastEventAt, this.session?.lastActivity ?? 0),
       pid: () => h.pid(),
-      transcript: () => h.transcript(),
+      progress: () => h.progress(),
       recover: () => this.recoverStall(h),
     };
   }
@@ -833,7 +835,7 @@ export class Conversation {
    * again; a turn it was in is asked to go on, as the same kind of turn. An
    * Ally's turn isn't: its message died with the process, as after a crash.
    */
-  async recoverStall(h: Pick<MainStallHooks, "pid" | "transcript" | "kill">): Promise<StallRecovery> {
+  async recoverStall(h: Pick<MainStallHooks, "pid" | "took" | "kill">): Promise<StallRecovery> {
     const pid = h.pid();
     const turn = this.current;
     const gate = this.allyGate;
@@ -842,9 +844,8 @@ export class Conversation {
     session?.close();
     await h.kill(pid);
     // Nothing writes the transcript now: what's in it was taken.
-    const path = h.transcript();
     const sent = [...this.pending];
-    const untaken = sent.filter(([uuid]) => !transcriptHas(path, uuid));
+    const untaken = sent.filter(([uuid]) => !h.took(uuid));
     const taken = sent.filter(([uuid]) => !untaken.some(([u]) => u === uuid)).map(([, p]) => p);
     this.pending.clear();
     if (gate) {

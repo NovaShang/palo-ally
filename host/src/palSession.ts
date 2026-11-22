@@ -12,7 +12,7 @@ import { type PalLaunch, isHelperFailure, makeSpawner } from "./palLauncher.ts";
 import { CARD_TOOLS, type PalMapOptions, cardKey } from "./palHistory.ts";
 import type { QuestionManager } from "./questions.ts";
 import { type PendingRewind, rewindBusy, rewindNoFiles, rewindNotFound } from "./rewind.ts";
-import { type StallRecovery, type StallTarget, transcriptHas } from "./stallWatch.ts";
+import type { StallRecovery, StallTarget } from "./stallWatch.ts";
 import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
 import { stripTldrMarker } from "./tldr.ts";
 import { newId, sleep, truncate } from "./util.ts";
@@ -804,7 +804,7 @@ export class PalSession {
       openTools: () => [...this.openTools.values()],
       lastActivity: () => Math.max(this.lastEventAt, this.proc?.lastActivity ?? 0),
       pid: () => this.pid,
-      transcript: () => this.transcript,
+      progress: () => this.d.harness.history.growth(this.ref),
       recover: () => this.recoverStall(),
     };
   }
@@ -819,7 +819,7 @@ export class PalSession {
     const pending = [...this.pendingText];
     await this.shutdown();
     // Nothing writes its transcript now: what's in it was taken.
-    const untaken = pending.filter(([uuid]) => !transcriptHas(this.transcript, uuid));
+    const untaken = pending.filter(([uuid]) => !this.d.harness.history.took(this.ref, uuid));
     this.d.log(`pal ${this.rec.name}: stalled; resuming it (${untaken.length} message(s) to send again)`);
     await this.start();
     const proc = this.proc;
