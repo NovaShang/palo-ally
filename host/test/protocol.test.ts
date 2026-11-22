@@ -150,6 +150,11 @@ describe("host ↔ app protocol", () => {
     await run("pending.answer", { id: day.id, answer: "周日" });
     await hub.idle();
     await run("pending.update", { id: asked.find((i: any) => i.title === "谁一起去？").id, action: "ignore" });
+    // 以后再说: into the assistant's 待办, the item decided as moved there.
+    const notNow = hub.pending.add({ source: { kind: "palo", name: "Palo" }, title: "官网要不要加暗色模式", context: "不急，下个月再说也行。" });
+    const laterParams = { id: notNow.id, action: "later" };
+    methods["pending.update"] = [methods["pending.update"] as Sample, { params: laterParams, result: await call("pending.update", laterParams) }];
+    expect(((methods["pending.update"] as Sample[])[1]!.result as any).item).toMatchObject({ status: "done" });
     const w = (await run("watch.add", { title: "晨报", instruction: "整理日程", at: ["08:30"] })).watch;
     hub.watches.progress(w.id, "已整理 3 条日程", { ratio: 0.5, outcome: "示例" });
     await run("watch.update", { id: w.id, patch: { enabled: false, dayOfMonth: -1 } });
@@ -295,6 +300,17 @@ describe("host ↔ app protocol", () => {
     hub.approvals.answer(palCard.id, true, "app");
     await waitFor(() => hub.pals.list().every((p) => p.status === "idle"));
     await run("pals.stop", { id: pal.id });
+    // 待办 (backlog.ts): the assistant's own list, and an agent's (its folder's).
+    const b1 = (await run("backlog.add", { text: "首页图片懒加载", note: "首屏 3.2 MB，大部分是图" })).item;
+    const b2 = (await call("backlog.add", { text: "文章页加目录" })).item;
+    await run("backlog.move", { id: b2.id, to: 0 });
+    expect((await run("backlog.list", {})).backlog.items.map((i: any) => i.text)).toEqual(["文章页加目录", "官网要不要加暗色模式", "首页图片懒加载"]);
+    const s1 = (await call("backlog.add", { pal: pal.id, text: "列表页按日期排序" })).item;
+    const s2 = (await call("backlog.add", { pal: pal.id, text: "404 页面重做" })).item;
+    await run("backlog.assign", { pal: pal.id, id: s2.id, agent: pal.id });
+    expect((await run("backlog.start", { pal: pal.id, id: s1.id, agent: pal.id })).backlog.items[0]).toMatchObject({ state: "doing", pal: pal.id, palName: "网站" });
+    expect((await run("backlog.done", { pal: pal.id, id: s1.id })).backlog.items.at(-1)).toMatchObject({ state: "done" });
+    await run("backlog.remove", { id: b1.id });
     // 回到这里重来 in the Pal: whether its files can go back, and going back with them
     claude.transcript(site, bgId, [
       { type: "user", uuid: "p1", parentUuid: null, timestamp: "2026-10-12T11:00:00Z", message: { role: "user", content: "列表要能按日期排序" }, origin: { kind: "human" } },
@@ -519,6 +535,9 @@ describe("host ↔ app protocol", () => {
     // the workspaces' list with one workspace laid out, and a tab state written
     sampleEvents["workspaces.updated"] = events.filter((e) => e.event === "workspaces.updated" && e.data.workspaces[0]?.layout).at(-1)!.data;
     sampleEvents["workbench.updated"] = events.filter((e) => e.event === "workbench.updated" && e.data.state).at(-1)!.data;
+    // 待办: an agent's list with one being done, one meant for it and one done
+    const lists = events.filter((e) => e.event === "backlog.updated").map((e) => e.data);
+    sampleEvents["backlog.updated"] = JSON.parse(JSON.stringify([lists.find((b) => b.items.some((i: any) => i.state === "doing")), lists.at(-1)]));
     // commands.updated fires when the harness reports its list
     expect(Object.keys(sampleEvents).sort()).toEqual([...RPC_EVENTS].sort());
 

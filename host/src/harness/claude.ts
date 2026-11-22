@@ -69,7 +69,7 @@ export function paloSendMcpServer(send: (text: string) => Promise<string>, deliv
         { text: z.string().describe("What to tell the assistant") },
         async (a) => text(await send(a.text)),
       ),
-      ...(shared ? [shared.Artifact, shared.SendUserFile, shared.notify_user, shared.copy_to_clipboard, shared.pals_list, shared.add_pending, shared.resolve_pending] : []),
+      ...(shared ? [shared.Artifact, shared.SendUserFile, shared.notify_user, shared.copy_to_clipboard, shared.pals_list, shared.add_pending, shared.resolve_pending, shared.backlog_add, shared.backlog_list, shared.backlog_done] : []),
     ],
   });
 }
@@ -193,6 +193,9 @@ export function paloallyMcpServer(h: ToolHandlers) {
       shared.notify_user,
       shared.add_pending,
       shared.resolve_pending,
+      shared.backlog_add,
+      shared.backlog_list,
+      shared.backlog_done,
     ],
   });
 }
@@ -268,6 +271,32 @@ export function deliveryTools(h: DeliveryToolHandlers, forSession = false) {
         conclusion: z.string().describe("One line: what was decided"),
       },
       async (a) => text(await h.resolve_pending(a)),
+      ),
+    // 待办: the folder's list, kept by the host; the owner orders it and starts its items.
+    backlog_add: tool(
+      "backlog_add",
+      "Put something on the backlog (待办) of the folder you work in: what the owner wants done later, not now. Use it when the owner says to put something in the backlog / 待办 or to remember it for later; don't start on it. The host keeps the list (shared by the agents in this folder) and the owner orders and starts its items in the Palo app. `text`: one line saying what to do, in the owner's language. `note`: a few lines of detail, optional. `folder`: another folder's backlog (absolute path), only when the owner names one.",
+      {
+        text: z.string().describe("One line: what to do"),
+        note: z.string().optional().describe("A few lines of detail"),
+        folder: z.string().optional().describe("Absolute path of another folder whose backlog this goes on (default: yours)"),
+      },
+      async (a) => text(await h.backlog_add(a)),
+      ),
+    backlog_list: tool(
+      "backlog_list",
+      "See the backlog (待办) of the folder you work in: the items being done (and by whom), the queue in the owner's order, the done ones; each with its id.",
+      { folder: z.string().optional().describe("Absolute path of another folder (default: yours)") },
+      async (a) => text(await h.backlog_list(a)),
+      ),
+    backlog_done: tool(
+      "backlog_done",
+      "Mark an item of the backlog (待办) done, once you have finished it (id from backlog_list). The owner can still put it back.",
+      {
+        id: z.string().describe("The item's id"),
+        folder: z.string().optional().describe("Absolute path of another folder (default: yours)"),
+      },
+      async (a) => text(await h.backlog_done(a)),
       ),
   };
 }

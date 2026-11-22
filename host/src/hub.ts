@@ -16,6 +16,7 @@ import { ProbeScheduler, type ProbeTrigger } from "./probe.ts";
 import { QuestionManager, parseItems, parseTextAnswer, questionText } from "./questions.ts";
 import { PendingStore, pendingLines } from "./pending.ts";
 import { PendingLinks, linkAction } from "./pendingLinks.ts";
+import { BacklogStore, backlogFolder } from "./backlog.ts";
 import { Proactive } from "./proactive.ts";
 import { Router, type Pusher } from "./router.ts";
 import { RuntimeState } from "./runtime.ts";
@@ -85,6 +86,8 @@ export class Hub {
   readonly questions: QuestionManager;
   /** 等你的事: what the owner must decide (pending.ts). */
   readonly pending: PendingStore;
+  /** 待办: what the owner wants done later, one list per folder (backlog.ts). */
+  readonly backlog: BacklogStore;
   readonly watches: WatchStore;
   readonly artifacts: ArtifactLibrary;
   readonly media: MediaStore;
@@ -187,6 +190,14 @@ export class Hub {
       ...deps.auth,
     });
     this.pending = new PendingStore(this.paths.pending, this.bus, this.audit, () => this.config.settings.assistantName || PALO_NAME);
+    this.backlog = new BacklogStore({
+      dir: this.paths.backlog,
+      bus: this.bus,
+      audit: this.audit,
+      assistantFolder: () => this.paths.home,
+      palName: (id) => this.pals?.list().find((p) => p.id === id)?.name,
+      now: deps.now,
+    });
     this.approvals = new ApprovalManager(this.paths.approvals, this.bus, this.audit, {
       taskForToolUse: (id) => (id ? this.tasks.taskIdForToolUse(id) : undefined),
       onCreated: (a) => this.proactive.onApprovalCreated(a),
@@ -396,6 +407,7 @@ export class Hub {
       media: this.media,
       artifacts: this.artifacts,
       pending: this.pending,
+      backlog: this.backlog,
       models: () => this.info.loadModels(1500),
       // A Pal's palo_send joins the assistant's inbound queue (a turn of its own, behind a running one), as an Ally's message does.
       toAssistant: (from, wrapped) => this.conversation.enqueue({ text: wrapped, origin: "system", proactive: true, pal: true, label: from }),
@@ -496,7 +508,11 @@ export class Hub {
       setTimeout(() => this.suggestions.maybeRefresh("start"), 30_000);
       this.suggestionTimer = setInterval(() => this.suggestions.maybeRefresh("daily"), 3600_000);
     }
-    if (opts.watchArtifacts !== false) this.artifacts.watch();
+    if (opts.watchArtifacts !== false) {
+      this.artifacts.watch();
+      // 待办 edited by hand (or by an agent's own file tools): the apps follow.
+      this.backlog.watch();
+    }
     this.allies.start();
     this.auth.start();
     if (opts.probe !== false) {
@@ -535,6 +551,7 @@ export class Hub {
     this.conversation.stopIdleCompact();
     if (this.suggestionTimer) clearInterval(this.suggestionTimer);
     this.artifacts.stop();
+    this.backlog.close();
     this.fileWatches.stop();
     this.conversation.close();
     for (const c of this.clients.values()) c.off();
@@ -798,7 +815,44 @@ export class Hub {
   toolHandlers(): ToolHandlers {
     return makeShellTools({ tasks: this.tasks, handoffs: this.handoffs, watches: this.watches, artifacts: this.artifacts, chat: this.chat, router: this.router, audit: this.audit, wechat: this.wechat, media: this.media, allies: this.allies, pals: this.pals,
       ownerChannel: () => this.conversation.ownerChannel(), cwd: this.paths.home, timezone: () => this.config.settings.timezone,
-      pairInvite: () => this.pairInvite("assistant"), pending: this.pending, pendingOrigin: () => this.pendingOrigin() });
+      pairInvite: () => this.pairInvite("assistant"), pending: this.pending, pendingOrigin: () => this.pendingOrigin(), backlog: this.backlog });
+  }
+
+  // ---------------- 待办 (backlog.ts) ----------------
+
+  /** Whose list an RPC means: an agent's (its folder), a folder's, or the assistant's own. */
+  backlogFolder(p: { pal?: unknown; folder?: unknown }): string {
+    if (typeof p.pal === "string" && p.pal) {
+      const pal = this.pals.list().find((x) => x.id === p.pal);
+      if (!pal) throw new Error(t("backlog.err.pal"));
+      return backlogFolder(pal.cwd);
+    }
+    if (typeof p.folder === "string" && p.folder.trim()) return backlogFolder(p.folder);
+    return backlogFolder(this.paths.home);
+  }
+
+  /**
+   * 以后再说 on an item of 等你的事: it goes on the 待办 of the folder it came
+   * from (an agent's; the assistant's for the rest) and leaves the list,
+   * decided as moved there. A question or prompt a session is stopped on
+   * can't wait: it's answered now.
+   */
+  laterPending(id: string, by: string): PendingItem {
+    const item = this.pending.get(id);
+    if (!item) throw new Error(t("pending.err.none"));
+    if (item.blocking && item.status === "open") throw new Error(t("backlog.err.blocking"));
+    const palId = item.pal ?? (item.source.kind === "pal" ? item.source.id : undefined);
+    const pal = palId ? this.pals.list().find((p) => p.id === palId) : undefined;
+    const folder = backlogFolder(pal?.cwd ?? this.paths.home);
+    this.backlog.add(folder, { text: item.title, note: item.context }, by);
+    return this.pending.resolve(id, t("backlog.later"), by);
+  }
+
+  /** The owner quoting an item of a 待办 (`backlog:<id>`): the assistant is told which, to mark it done. */
+  backlogQuoteNote(replyTo: ReplyTo): { note?: string } {
+    const id = replyTo.messageId.slice(8);
+    const item = this.backlog.get(this.backlogFolder({}), id);
+    return item ? { note: t("backlog.quote.note", { id, text: item.text }) } : {};
   }
 
   // ---------------- 等你的事 (pending.ts) ----------------
@@ -909,6 +963,7 @@ export class Hub {
    * assistant knows which one and can close it.
    */
   pendingQuoteNote(replyTo?: ReplyTo): { note?: string } {
+    if (replyTo?.messageId.startsWith("backlog:")) return this.backlogQuoteNote(replyTo);
     const id = replyTo?.messageId.startsWith("pending:") ? replyTo.messageId.slice(8) : "";
     const item = id ? this.pending.get(id) : undefined;
     if (!item || item.status !== "open") return {};

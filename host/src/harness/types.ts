@@ -83,8 +83,11 @@ export type PermissionDecision =
   | { behavior: "allow"; updatedInput?: Record<string, unknown>; updatedPermissions?: unknown[] }
   | { behavior: "deny"; message: string };
 
+/** 待办 (backlog.ts): the folder's list, for the assistant and every session alike. */
+export const BACKLOG_TOOLS = ["backlog_add", "backlog_list", "backlog_done"] as const;
+
 /** The tools that reach the owner: the assistant has them, and so does every session (scoped to it). */
-export const DELIVERY_TOOLS = ["SendUserFile", "Artifact", "copy_to_clipboard", "notify_user", "pals_list", "add_pending", "resolve_pending"] as const;
+export const DELIVERY_TOOLS = ["SendUserFile", "Artifact", "copy_to_clipboard", "notify_user", "pals_list", "add_pending", "resolve_pending", ...BACKLOG_TOOLS] as const;
 export type DeliveryToolHandlers = Pick<ToolHandlers, (typeof DELIVERY_TOOLS)[number]>;
 
 export interface ToolHandlers {
@@ -105,6 +108,10 @@ export interface ToolHandlers {
   // 等你的事 (pending.ts): a decision for the owner, kept by the host; non-blocking.
   add_pending(args: { title: string; context?: string; options?: string[] }): Promise<string>;
   resolve_pending(args: { id: string; conclusion: string }): Promise<string>;
+  // 待办 (backlog.ts): the list of the folder it works in (or another, by path).
+  backlog_add(args: { text: string; note?: string; folder?: string }): Promise<string>;
+  backlog_list(args: { folder?: string }): Promise<string>;
+  backlog_done(args: { id: string; folder?: string }): Promise<string>;
   copy_to_clipboard(args: { text: string; label?: string }): Promise<string>;
   SendUserFile(args: { files: string[]; caption?: string; status: "normal" | "proactive"; display?: "render" | "attach"; temporary?: boolean }): Promise<string>;
   Artifact(args: { file_path: string; title?: string; description?: string; files?: Record<string, string>; folder?: string }): Promise<string>;
@@ -256,7 +263,7 @@ export interface HarnessDriver {
 export const PALO_SEND_TOOL = "mcp__paloally__palo_send";
 
 /** What a session's process may call without asking the owner: palo_send and the tools that reach the owner. */
-export const SESSION_ALLOWED_TOOLS = [PALO_SEND_TOOL, ...["Artifact", "SendUserFile", "notify_user", "copy_to_clipboard", "pals_list", "add_pending", "resolve_pending"].map((n) => `mcp__paloally__${n}`)];
+export const SESSION_ALLOWED_TOOLS = [PALO_SEND_TOOL, ...["Artifact", "SendUserFile", "notify_user", "copy_to_clipboard", "pals_list", "add_pending", "resolve_pending", ...BACKLOG_TOOLS].map((n) => `mcp__paloally__${n}`)];
 
 /**
  * Claude Code's own SendUserFile delivers nowhere PaloAlly can see; the

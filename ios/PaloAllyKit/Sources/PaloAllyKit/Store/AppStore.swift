@@ -788,6 +788,8 @@ public final class AppStore {
             if let q = try? data.decode(Question.self) { upsert(question: q) }
         case RPCEventName.pendingUpdated:
             if let p = try? data.decode(PendingItem.self) { upsert(pending: p) }
+        case RPCEventName.backlogUpdated:
+            if let b = try? data.decode(Backlog.self) { apply(backlog: b) }
         case RPCEventName.watchUpdated:
             switch WatchUpdate(json: data) {
             case .upsert(let w): upsert(watch: w)

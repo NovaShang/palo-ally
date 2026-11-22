@@ -60,7 +60,7 @@ describe("palo_send: a Pal answers the assistant through the host", () => {
     const sdk = sessionOptions(opts as MainSessionOptions);
     expect(Object.keys(sdk.mcpServers!)).toEqual(["paloally"]);
     const server: any = (sdk.mcpServers as any).paloally.instance;
-    expect(Object.keys(server._registeredTools)).toEqual(["palo_send", "Artifact", "SendUserFile", "notify_user", "copy_to_clipboard", "pals_list", "add_pending", "resolve_pending"]);
+    expect(Object.keys(server._registeredTools)).toEqual(["palo_send", "Artifact", "SendUserFile", "notify_user", "copy_to_clipboard", "pals_list", "add_pending", "resolve_pending", "backlog_add", "backlog_list", "backlog_done"]);
     expect(sdk.allowedTools).toEqual(SESSION_ALLOWED_TOOLS);
     // the assistant's own session has the full set and no such tool
     const main: any = sessionOptions({ ...(opts as any), tools: {} as any, paloSend: undefined });
@@ -178,7 +178,7 @@ describe("a session's tools that reach the owner", () => {
     await adopt(t);
     const sdk: any = sessionOptions(palOpts(t) as MainSessionOptions);
     const names = Object.keys(sdk.mcpServers.paloally.instance._registeredTools);
-    expect(names.sort()).toEqual(["Artifact", "SendUserFile", "add_pending", "copy_to_clipboard", "notify_user", "palo_send", "pals_list", "resolve_pending"]);
+    expect(names.sort()).toEqual(["Artifact", "SendUserFile", "add_pending", "backlog_add", "backlog_done", "backlog_list", "copy_to_clipboard", "notify_user", "palo_send", "pals_list", "resolve_pending"]);
     for (const m of MANAGER) expect(names).not.toContain(m);
     expect(sdk.allowedTools.sort()).toEqual(names.map((n) => `mcp__paloally__${n}`).sort());
     // claude.ai's Artifact stays on (it isn't a copy of ours); SendUserFile is ours only.
@@ -192,6 +192,7 @@ describe("a session's tools that reach the owner", () => {
     expect(Object.keys(main.mcpServers.paloally.instance._registeredTools)).toEqual([
       "report_task", "register_watch", "list_watches", "remove_watch", "update_goal", "SendUserFile", "Artifact", "copy_to_clipboard",
       "ally_list", "ally_send", "pals_list", "pal_send", "pal_propose", "pals_recent", "pal_adopt", "pair_link", "notify_user", "add_pending", "resolve_pending",
+      "backlog_add", "backlog_list", "backlog_done",
     ]);
     expect(main.disallowedTools).toEqual(["CronCreate", "CronDelete", "CronList", "ScheduleWakeup"]);
     await t.hub.pals.stopAndWait();

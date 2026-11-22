@@ -161,6 +161,16 @@ public enum RPCMethod {
     public static let pendingSurface = "pending.surface"
     public static let pending: [String] = [pendingList, pendingUpdate, pendingAnswer, pendingSurface]
 
+    /// 待办 (host/src/backlog.ts): a folder's list, and the owner's hand on it.
+    public static let backlogList = "backlog.list"
+    public static let backlogAdd = "backlog.add"
+    public static let backlogMove = "backlog.move"
+    public static let backlogAssign = "backlog.assign"
+    public static let backlogStart = "backlog.start"
+    public static let backlogDone = "backlog.done"
+    public static let backlogRemove = "backlog.remove"
+    public static let backlog: [String] = [backlogList, backlogAdd, backlogMove, backlogAssign, backlogStart, backlogDone, backlogRemove]
+
     /// Files on the computer, read-only (docs/files-prd.md): a folder's
     /// children, a file in chunks, names, the paths in a reply, and the
     /// folders the owner opened from the preview pane.
@@ -189,7 +199,7 @@ public enum RPCMethod {
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister, presence,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
         suggestionsList, suggestionsDismiss, hostUpdate, pairInvite, deviceList, deviceRemove,
-    ] + allies + sessions + pals + workbench + files + auth + pending
+    ] + allies + sessions + pals + workbench + files + auth + pending + backlog
 }
 
 public enum RPCEventName {
@@ -229,11 +239,13 @@ public enum RPCEventName {
     public static let filesChanged = "files.changed"
     /// One item on the owner's list changed (added, decided, ignored…).
     public static let pendingUpdated = "pending.updated"
+    /// A folder's 待办 changed (the whole list).
+    public static let backlogUpdated = "backlog.updated"
 
     public static let all: [String] = [
         chatMessage, chatDelta, chatRewound, taskUpdated, approvalUpdated, questionUpdated, watchUpdated, artifactUpdated, settingsUpdated,
         status, commandsUpdated, suggestionsUpdated,
-    ] + allies + sessions + pals + workbench + [filesChanged, pendingUpdated]
+    ] + allies + sessions + pals + workbench + [filesChanged, pendingUpdated, backlogUpdated]
 }
 
 public struct EmptyParams: Codable, Sendable { public init() {} }

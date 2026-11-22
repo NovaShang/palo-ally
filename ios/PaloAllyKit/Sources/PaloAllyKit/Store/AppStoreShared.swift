@@ -20,6 +20,16 @@ final class AppStoreShared {
     var approvals: [Approval] = []
     var questions: [Question] = []
     var pendingItems: [PendingItem] = []
+    /// 待办, by folder (AppStore+Backlog.swift).
+    var backlogs: [String: Backlog] = [:]
+    /// Whose list is which folder's: "palo" or a Pal's id.
+    var backlogFolders: [String: String] = [:]
+    /// The host answers backlog.*; nil until asked.
+    var backlogSupported: Bool?
+    /// 下一件: how many times 换一件 was pressed, per agent.
+    var backlogSkips: [String: Int] = [:]
+    /// 下一件 put away: the day it was, per agent (also kept on the device).
+    var backlogDismissed: [String: String] = [:]
     var watches: [Watch] = []
     var artifacts: [Artifact] = []
     var settings: HostSettings?
