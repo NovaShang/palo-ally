@@ -1,8 +1,14 @@
 import { t } from "./i18n/index.ts";
-import { existsSync, readdirSync, readFileSync, statSync, watch, type FSWatcher } from "node:fs";
+import { existsSync, statSync, watch, type FSWatcher } from "node:fs";
 import { basename, join } from "node:path";
-import type { AgentEntry, ClaudeCli } from "./ccCli.ts";
-import { readTail, transcriptPath } from "./handoffs.ts";
+import type { AgentEntry, ClaudeCli } from "./harness/claude/cli.ts";
+import { transcriptPath } from "./harness/claude/paths.ts";
+import { type RegistryEntry, readRegistry } from "./harness/claude/registry.ts";
+import { type RawSessionMessage, type TranscriptSummary, firstLine, isCompactSummaryText, peerBody, readTail, summarizeTranscript, userText } from "./harness/claude/transcript.ts";
+
+// (Moved under harness/claude/; kept here for the modules and tests that import them from here.)
+export { readRegistry, firstLine, isCompactSummaryText, peerBody, summarizeTranscript, userText };
+export type { RawSessionMessage, RegistryEntry, TranscriptSummary };
 import type { CCSession, CCSessionKind, CCSessionStatus } from "./types.ts";
 import { stripTldrMarker } from "./tldr.ts";
 import { pidAlive, truncate } from "./util.ts";
@@ -15,53 +21,6 @@ import { pidAlive, truncate } from "./util.ts";
 // the registry is read again every 10 seconds for anything they missed.
 // The background-session fields `state` / `detail` are written by the model
 // and go stale, so they are never used.
-
-export interface RegistryEntry {
-  pid: number;
-  sessionId: string;
-  name: string;
-  cwd: string;
-  kind: string; // "interactive" | "bg"
-  entrypoint?: string; // "cli" | "sdk-ts"
-  status: string; // busy | idle | waiting | shell
-  waitingFor?: string;
-  statusAt?: number;
-  jobId?: string;
-  socketPath?: string;
-  startedAt?: number;
-  nameSource?: string; // "user" (named: -n, /rename) or "derived"
-}
-
-export function readRegistry(dir: string, alive: (pid: number) => boolean = pidAlive): RegistryEntry[] {
-  if (!existsSync(dir)) return [];
-  const out: RegistryEntry[] = [];
-  for (const f of readdirSync(dir)) {
-    if (!/^\d+\.json$/.test(f)) continue;
-    try {
-      const o = JSON.parse(readFileSync(join(dir, f), "utf8"));
-      const pid = Number(o.pid);
-      if (!pid || typeof o.sessionId !== "string" || !alive(pid)) continue;
-      out.push({
-        pid,
-        sessionId: o.sessionId,
-        name: typeof o.name === "string" ? o.name : "",
-        cwd: typeof o.cwd === "string" ? o.cwd : "",
-        kind: typeof o.kind === "string" ? o.kind : "interactive",
-        entrypoint: typeof o.entrypoint === "string" ? o.entrypoint : undefined,
-        status: typeof o.status === "string" ? o.status : "idle",
-        waitingFor: typeof o.waitingFor === "string" && o.waitingFor ? o.waitingFor : undefined,
-        statusAt: typeof o.statusUpdatedAt === "number" ? o.statusUpdatedAt : typeof o.updatedAt === "number" ? o.updatedAt : undefined,
-        jobId: typeof o.jobId === "string" ? o.jobId : undefined,
-        socketPath: typeof o.messagingSocketPath === "string" ? o.messagingSocketPath : undefined,
-        startedAt: typeof o.startedAt === "number" ? o.startedAt : undefined,
-        nameSource: typeof o.nameSource === "string" ? o.nameSource : undefined,
-      });
-    } catch {
-      // a file mid-write; the next read gets it
-    }
-  }
-  return out;
-}
 
 // One session as the host keeps it.
 export interface SessionRecord {
@@ -415,17 +374,6 @@ export class SessionWatch {
   }
 }
 
-// ---- transcripts ----
-
-export function firstLine(s: string): string {
-  const line =
-    stripTldrMarker(s)
-      .split("\n")
-      .map((l) => l.trim())
-      .find((l) => l && !/^```/.test(l)) ?? "";
-  return truncate(line.replace(/^[#>*\-\s]+/, "").replace(/\*\*/g, ""), 120);
-}
-
 function shortWords(s: unknown): string | undefined {
   return typeof s === "string" && s.trim() ? truncate(s.trim(), 80) : undefined;
 }
@@ -444,69 +392,3 @@ export function waitingWords(p: Record<string, any>): string {
   return truncate(t("sessions.wantUse", { tool: tool || t("sessions.aTool") }), 80);
 }
 
-export interface TranscriptSummary {
-  lastLine?: string;
-  lastLineAt?: number;
-  contextTokens?: number;
-}
-
-/** The session's last words and its context size, from transcript entries. */
-export function summarizeTranscript(entries: any[]): TranscriptSummary {
-  const out: TranscriptSummary = {};
-  for (const e of entries) {
-    if (e?.isSidechain || e?.type !== "assistant") continue;
-    const m = e.message;
-    const at = Date.parse(e.timestamp ?? "") || undefined;
-    for (const b of Array.isArray(m?.content) ? m.content : []) {
-      if (b?.type === "text" && typeof b.text === "string" && b.text.trim()) {
-        out.lastLine = firstLine(b.text);
-        out.lastLineAt = at;
-      }
-    }
-    const u = m?.usage;
-    if (u && m?.model !== "<synthetic>") {
-      const t = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
-      if (t > 0) out.contextTokens = t;
-    }
-  }
-  return out;
-}
-
-// ---- transcript entries (what palHistory.ts reads them with) ----
-
-/** Claude Code's summary after compacting, by its opening words. */
-export function isCompactSummaryText(text: string): boolean {
-  return text.trimStart().startsWith("This session is being continued from a previous conversation");
-}
-
-export interface RawSessionMessage {
-  type: string;
-  uuid: string;
-  message?: any;
-  timestamp?: string;
-  origin?: any;
-  parent_tool_use_id?: string | null;
-}
-
-// A peer message's own words: the SDK keeps them as `origin.body`; older
-// entries only have them inside the <cross-session-message> wrapper.
-export function peerBody(origin: any, content: string): string {
-  if (typeof origin?.body === "string") return origin.body;
-  const m = /<cross-session-message[^>]*>\n?([\s\S]*?)\n?<\/cross-session-message>/.exec(content);
-  let body = m?.[1] ?? content;
-  const inner = /<\\?agent-message[^>]*>\n?([\s\S]*?)\n?<\\?\/agent-message>/.exec(body);
-  if (inner) body = inner[1]!;
-  return body.trim();
-}
-
-/** A user entry's text; null for a tool result. */
-export function userText(content: unknown): string | null {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return null;
-  if (content.some((b: any) => b?.type === "tool_result")) return null;
-  const t = content
-    .filter((b: any) => b?.type === "text" && typeof b.text === "string")
-    .map((b: any) => b.text)
-    .join("\n");
-  return t || null;
-}
