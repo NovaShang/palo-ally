@@ -2,9 +2,25 @@ import type { Audit } from "./audit.ts";
 import type { Bus } from "./bus.ts";
 import type { PermissionDecision, PermissionRequest } from "./harness/types.ts";
 import type { Approval, CardSource } from "./types.ts";
+import { firstLine } from "./ccSessions.ts";
 import { describeInput, describeTool } from "./copy.ts";
-import { newId, readJson, writeJson } from "./util.ts";
+import { newId, readJson, truncate, writeJson } from "./util.ts";
 import { t } from "./i18n/index.ts";
+
+/**
+ * A session's permission card (a Pal's, or one of the computer's own sessions
+ * through the hooks): its title, its detail (a command whole, never cut
+ * short) and the line its 「在等你」 push says.
+ */
+export function sessionPermission(tool: string, input: Record<string, unknown>): { title: string; detail: string; line: string } {
+  const command = tool === "Bash" && typeof input.command === "string" ? input.command : undefined;
+  const title = describeTool(tool, input);
+  return {
+    title,
+    detail: command !== undefined ? truncate(command, 100_000) : describeInput(tool, input),
+    line: command !== undefined ? t("sessions.wantRun", { cmd: firstLine(command) }) : title,
+  };
+}
 
 // Safety is the harness' job (PRD revision 2026-10-04: "全部依赖 harness").
 // Claude Code decides what runs, what is denied, and what needs the owner;
