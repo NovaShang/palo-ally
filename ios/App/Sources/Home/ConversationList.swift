@@ -639,6 +639,8 @@ private struct PaloItem: View {
                 })
         }
         .accessibilityElement(children: .combine)
+        // Activated (VoiceOver, UI tests), the row opens the conversation, not its count.
+        .accessibilityActivationPoint(.center)
     }
 
     private var name: String { store.assistantName.isEmpty ? "Palo" : store.assistantName }
@@ -704,6 +706,8 @@ private struct WorkspaceRow: View {
             }
         }
         .accessibilityElement(children: .combine)
+        // Activated, the row opens the workspace (its arrow is the 展开 action), not the arrow or the count.
+        .accessibilityActivationPoint(.center)
         .accessibilityAction(named: toggleLabel, toggle)
     }
 
@@ -812,6 +816,8 @@ private struct PalListRow: View {
         }
         .padding(.leading, inset ? 24 : 0)
         .accessibilityElement(children: .combine)
+        // Activated, the row opens the agent, not its count.
+        .accessibilityActivationPoint(.center)
         .accessibilityValue(StatusDot.label(pal.dot))
     }
 }
