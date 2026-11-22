@@ -407,14 +407,14 @@ struct FileConflictBar: View {
     private var title: some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-            Text("文件在电脑上被改了", tableName: "Files")
+            Text("文件在主机上被改了", tableName: "Files")
                 .font(.system(size: 13, weight: .medium))
                 .fixedSize()
         }
     }
 
     @ViewBuilder private var buttons: some View {
-        Button(action: loadTheirs) { Text("载入电脑上的版本", tableName: "Files").fixedSize() }
+        Button(action: loadTheirs) { Text("载入主机上的版本", tableName: "Files").fixedSize() }
             .buttonStyle(.bordered)
             .accessibilityIdentifier("conflict-load")
         Button(action: useMine) { Text("用我的覆盖", tableName: "Files").fixedSize() }

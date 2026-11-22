@@ -120,7 +120,7 @@ enum Copy {
         case .connecting: String(localized: "正在连接…")
         case .syncing: String(localized: "正在同步…")
         case .online: String(localized: "在线")
-        case .offline: String(localized: "连不上电脑，正在重试…")
+        case .offline: String(localized: "连不上主机，正在重试…")
         case .rejected: String(localized: "这台设备需要重新配对")
         }
     }
@@ -132,7 +132,7 @@ enum Copy {
         case .connecting: String(localized: "连接中…")
         case .syncing: String(localized: "同步中…")
         case .online: String(localized: "在线")
-        case .offline: String(localized: "连不上电脑")
+        case .offline: String(localized: "连不上主机")
         case .rejected: String(localized: "需要重新配对")
         }
     }

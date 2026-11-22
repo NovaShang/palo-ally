@@ -866,7 +866,7 @@ struct StatusBanner: View {
                         .buttonStyle(.glassProminent)
                 }
             } else if store.connectionTrouble {
-                banner(icon: "wifi.exclamationmark", tint: .secondary, text: String(localized: "连不上电脑，正在重试…")) {
+                banner(icon: "wifi.exclamationmark", tint: .secondary, text: String(localized: "连不上主机，正在重试…")) {
                     Button("重试") { store.reconnectNow() }
                         .buttonStyle(.glass)
                         .tint(.primary)

@@ -7,13 +7,13 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在同一个网络里时直接连你的电脑，不绕道云端，更快。"
+            "value": "在同一个网络里时直接连你的主机，不绕道云端，更快。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connects straight to your computer when you're on the same network, faster than going through the cloud."
+            "value": "Connects straight to your host when you're on the same network, faster than going through the cloud."
           }
         }
       }
@@ -58,13 +58,13 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "扫电脑上的二维码把这台设备连上电脑，或者拍照发给助理。"
+            "value": "扫主机上的二维码把这台设备连上主机，或者拍照发给助理。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scan the QR code on your computer to connect this device, or take a photo to send to your assistant."
+            "value": "Scan the QR code on your host to connect this device, or take a photo to send to your assistant."
           }
         }
       }

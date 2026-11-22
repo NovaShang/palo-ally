@@ -122,13 +122,13 @@
         }
       }
     },
-    "%@已经在你的 Allies 里了。" : {
+    "%@已经是你的好友了。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ is already in your Allies."
+            "value" : "%@ is already in your contacts."
           }
         }
       }
@@ -354,28 +354,6 @@
         }
       }
     },
-    "PaloAlly 不再管它，它会停下。对话记录还在电脑上。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PaloAlly will stop managing it, and it will stop. The conversation stays on your computer."
-          }
-        }
-      }
-    },
-    "PaloAlly 会关掉它。你在电脑的终端里运行一行命令，就从刚才的地方接着用，对话一字不丢。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PaloAlly will close it. Run one command in your computer’s terminal to pick up where you left off, with the whole conversation intact."
-          }
-        }
-      }
-    },
     "TA 的助理叫%@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -398,13 +376,13 @@
         }
       }
     },
-    "「%@」已经连上这台电脑。" : {
+    "「%@」已经连上这台主机。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“%@” is already connected to this computer."
+            "value" : "“%@” is already connected to this host."
           }
         }
       }
@@ -596,13 +574,13 @@
         }
       }
     },
-    "之后要重新配对才能连回来。那台电脑上的对话和记忆不受影响。" : {
+    "之后要重新配对才能连回来。那台主机上的对话和记忆不受影响。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You’ll need to pair again to reconnect. Conversations and memory on that computer aren’t affected."
+            "value" : "You’ll need to pair again to reconnect. Conversations and memory on that host aren’t affected."
           }
         }
       }
@@ -662,17 +640,6 @@
         }
       }
     },
-    "产出物" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Items"
-          }
-        }
-      }
-    },
     "什么时候做" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -702,17 +669,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Automatic"
-          }
-        }
-      }
-    },
-    "%@回复和写东西用的语言，和手机的系统语言分开。自动：按第一台连上电脑的设备的语言。在对话里直接说「用中文」也行。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The language %@ replies and writes in, apart from this phone’s own. Automatic: the language of the first device that connected to the computer. Saying “speak English” in a conversation works too."
           }
         }
       }
@@ -915,24 +871,24 @@
         }
       }
     },
-    "住在你电脑上的私人助理。把这台设备和电脑连起来，随时找我办事。" : {
+    "住在你电脑上的私人助理，那台电脑叫主机。把这台设备和主机连起来，随时找我办事。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A personal assistant that lives on your computer. Connect this device to it and ask me for anything, any time."
+            "value" : "A personal assistant that lives on your computer, called the host. Connect this device to the host and ask me for anything, any time."
           }
         }
       }
     },
-    "你好，我是 PaloAlly" : {
+    "你好，我是 Palo" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hi, I’m PaloAlly"
+            "value" : "Hi, I’m Palo"
           }
         }
       }
@@ -944,17 +900,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "How your assistant replies to them"
-          }
-        }
-      }
-    },
-    "你自己的另一台电脑。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Another computer of your own."
           }
         }
       }
@@ -1311,17 +1256,6 @@
         }
       }
     },
-    "别人的助理，比如家里人、朋友。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Someone else’s assistant, such as family or a friend."
-          }
-        }
-      }
-    },
     "别的助理有新消息" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1388,13 +1322,13 @@
         }
       }
     },
-    "加「%@」为 Ally？" : {
+    "加「%@」为好友？" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add “%@” as an Ally?"
+            "value" : "Add “%@” as a contact?"
           }
         }
       }
@@ -1410,13 +1344,13 @@
         }
       }
     },
-    "加为 Ally" : {
+    "加为好友" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add as Ally"
+            "value" : "Add Contact"
           }
         }
       }
@@ -1586,13 +1520,13 @@
         }
       }
     },
-    "只改这台设备上看到的名字，比如「家里的 Mac」「云端」。留空就用电脑自己的名字。" : {
+    "只改这台设备上看到的名字，比如「家里的 Mac」「云端」。留空就用主机自己的名字。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Only changes the name you see on this device, like “Home Mac” or “Cloud”. Leave empty to use the computer’s own name."
+            "value" : "Only changes the name you see on this device, like “Home Mac” or “Cloud”. Leave empty to use the host’s own name."
           }
         }
       }
@@ -1725,17 +1659,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tell it what you want kept an eye on or moved forward, like “Tell me when flights home get cheaper” or “Give me a briefing every morning”."
-          }
-        }
-      }
-    },
-    "和 Palo 说话" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Talk to Palo"
           }
         }
       }
@@ -1883,7 +1806,7 @@
         }
       }
     },
-    "在产出物库" : {
+    "在成果里" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -1894,7 +1817,7 @@
         }
       }
     },
-    "在产出物库中查看" : {
+    "在成果中查看" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -1971,35 +1894,24 @@
         }
       }
     },
-    "在电脑上等你" : {
+    "在主机上等你" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Waiting for you at the computer"
+            "value" : "Waiting for you on the host"
           }
         }
       }
     },
-    "在电脑上运行 paloally pair，会出现二维码和链接；或者在已经连上的设备上跟助理说「连一台新设备」。" : {
+    "在主机上运行 paloally pair，会出现二维码和链接；或者在已经连上的设备上跟助理说「连一台新设备」。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "On your computer, run paloally pair. A QR code and a link appear. Or, on a device that’s already connected, tell the assistant “connect a new device”."
-          }
-        }
-      }
-    },
-    "在电脑的终端里运行这一行，就从刚才的地方接着跟它说。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Run this line in your computer’s terminal to pick up where you left off."
+            "value" : "On your host, run paloally pair. A QR code and a link appear. Or, on a device that’s already connected, tell the assistant “connect a new device”."
           }
         }
       }
@@ -2400,13 +2312,13 @@
         }
       }
     },
-    "对方扫了以后，在 TA 的 PaloAlly 里点一下确认，你们的助理就能互相传话、约时间了。" : {
+    "对方扫了以后，在 TA 的 Palo 里点一下确认，你们的助理就能互相传话、约时间了。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "After they scan it, they confirm in their PaloAlly, and your assistants can pass messages and set up times."
+            "value" : "After they scan it, they confirm in their Palo, and your assistants can pass messages and set up times."
           }
         }
       }
@@ -2462,17 +2374,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show all %lld rows"
-          }
-        }
-      }
-    },
-    "履历" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "History"
           }
         }
       }
@@ -2697,13 +2598,13 @@
         }
       }
     },
-    "开了以后，它是电脑上的一个后台会话，随时能停。" : {
+    "开了以后，它是主机上的一个后台会话，随时能停。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Once started, it’s a background session on your computer that you can stop any time."
+            "value" : "Once started, it’s a background session on your host that you can stop any time."
           }
         }
       }
@@ -2950,13 +2851,13 @@
         }
       }
     },
-    "手机上处理电脑会话的确认" : {
+    "手机上处理主机上会话的确认" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Answer computer sessions’ requests on this phone"
+            "value" : "Answer the host’s sessions’ requests on this phone"
           }
         }
       }
@@ -2994,13 +2895,13 @@
         }
       }
     },
-    "扫一扫电脑上的二维码" : {
+    "扫一扫主机上的二维码" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scan the QR code on your computer"
+            "value" : "Scan the QR code on your host"
           }
         }
       }
@@ -3115,24 +3016,24 @@
         }
       }
     },
-    "按电脑那边的时区。" : {
+    "按主机那边的时区。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uses your computer’s time zone."
+            "value" : "Uses your host’s time zone."
           }
         }
       }
     },
-    "按电脑那边的时区。小月没有这天时，就在月底那天做。" : {
+    "按主机那边的时区。小月没有这天时，就在月底那天做。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uses your computer’s time zone. In shorter months without this day, it runs on the last day."
+            "value" : "Uses your host’s time zone. In shorter months without this day, it runs on the last day."
           }
         }
       }
@@ -3148,13 +3049,13 @@
         }
       }
     },
-    "换一台电脑" : {
+    "换一台主机" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Switch computer"
+            "value" : "Switch host"
           }
         }
       }
@@ -3247,17 +3148,6 @@
         }
       }
     },
-    "搜索产出物和对话" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Search Library and conversations"
-          }
-        }
-      }
-    },
     "搜索成果和对话" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3291,24 +3181,24 @@
         }
       }
     },
-    "收到一个配对链接。添加后两台电脑的助理都在这里，点对话顶部的名字切换。" : {
+    "收到一个配对链接。添加后两台主机的助理都在这里，点对话顶部的名字切换。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You received a pairing link. Once added, both computers’ assistants are here; tap the name at the top of a conversation to switch."
+            "value" : "You received a pairing link. Once added, both hosts’ assistants are here; tap the name at the top of a conversation to switch."
           }
         }
       }
     },
-    "收到一个配对链接。添加后离开演示，连上那台电脑上的助理。" : {
+    "收到一个配对链接。添加后离开演示，连上那台主机上的助理。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You received a pairing link. Adding it leaves the demo and connects to the assistant on that computer."
+            "value" : "You received a pairing link. Adding it leaves the demo and connects to the assistant on that host."
           }
         }
       }
@@ -3390,13 +3280,13 @@
         }
       }
     },
-    "新版本 %@ 已下好，电脑手头的事一完就换上，会自动重启" : {
+    "新版本 %@ 已下好，主机手头的事一完就换上，会自动重启" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Version %@ is downloaded. Your computer will switch to it when it’s done with what it’s doing, and restart by itself."
+            "value" : "Version %@ is downloaded. Your host will switch to it when it’s done with what it’s doing, and restart by itself."
           }
         }
       }
@@ -3709,13 +3599,13 @@
         }
       }
     },
-    "来自电脑" : {
+    "来自主机" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "From computer"
+            "value" : "From host"
           }
         }
       }
@@ -3782,17 +3672,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "View source"
-          }
-        }
-      }
-    },
-    "标为" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mark as"
           }
         }
       }
@@ -3940,13 +3819,13 @@
         }
       }
     },
-    "正在和对方的电脑互相认识，一般几秒钟…" : {
+    "正在和对方的主机互相认识，一般几秒钟…" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Getting acquainted with their computer. This usually takes a few seconds…"
+            "value" : "Getting acquainted with their host. This usually takes a few seconds…"
           }
         }
       }
@@ -4028,13 +3907,13 @@
         }
       }
     },
-    "正在电脑上准备登录…" : {
+    "正在主机上准备登录…" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Getting the login ready on the computer…"
+            "value" : "Getting the login ready on the host…"
           }
         }
       }
@@ -4265,24 +4144,24 @@
         }
       }
     },
-    "每台电脑上是一个独立的助理。连上之后，点对话顶部的名字就能切换。" : {
+    "每台主机上是一个独立的助理。连上之后，点对话顶部的名字就能切换。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Each computer has its own assistant. Once connected, tap the name at the top of a conversation to switch."
+            "value" : "Each host has its own assistant. Once connected, tap the name at the top of a conversation to switch."
           }
         }
       }
     },
-    "每台电脑上是一个独立的助理：各自的对话、记忆和任务。" : {
+    "每台主机上是一个独立的助理：各自的对话、记忆和任务。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Each computer has its own assistant, with its own conversations, memory and tasks."
+            "value" : "Each host has its own assistant, with its own conversations, memory and tasks."
           }
         }
       }
@@ -4441,13 +4320,13 @@
         }
       }
     },
-    "没加上：电脑没说加好了没有，等一下看看列表里有没有 TA。" : {
+    "没加上：主机没说加好了没有，等一下看看列表里有没有 TA。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Not added: your computer didn’t say whether it worked. Check the list in a moment."
+            "value" : "Not added: your host didn’t say whether it worked. Check the list in a moment."
           }
         }
       }
@@ -4771,24 +4650,24 @@
         }
       }
     },
-    "添加 Ally" : {
+    "添加好友" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add an Ally"
+            "value" : "Add Contact"
           }
         }
       }
     },
-    "添加另一台电脑" : {
+    "添加另一台主机" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add another computer"
+            "value" : "Add another host"
           }
         }
       }
@@ -4815,13 +4694,13 @@
         }
       }
     },
-    "添加这台电脑？" : {
+    "添加这台主机？" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add this computer?"
+            "value" : "Add this host?"
           }
         }
       }
@@ -4903,13 +4782,13 @@
         }
       }
     },
-    "现在的电脑" : {
+    "现在的主机" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "this computer"
+            "value" : "this host"
           }
         }
       }
@@ -4958,101 +4837,90 @@
         }
       }
     },
-    "电脑" : {
+    "主机" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Computer"
+            "value" : "Host"
           }
         }
       }
     },
-    "电脑上开着的 Claude Code 会出现在这里。接管以后，在手机上接着跟它说。" : {
+    "主机上开着的 Claude Code 会出现在这里。接管以后，在手机上接着聊。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Claude Code sessions open on your computer show up here. Take one over to keep talking to it on your phone."
+            "value" : "Claude Code sessions open on your host show up here. Take one over to keep talking to it on your phone."
           }
         }
       }
     },
-    "电脑上的 Claude Code 登录过期了。在这里打开授权页，用你的 Claude 账号同意，再把页面上显示的代码粘贴回来。" : {
+    "主机上的 Claude Code 登录过期了。在这里打开授权页，用你的 Claude 账号同意，再把页面上显示的代码粘贴回来。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Claude Code's login on the computer has expired. Open the authorization page here, approve with your Claude account, then paste back the code the page shows."
+            "value" : "Claude Code's login on the host has expired. Open the authorization page here, approve with your Claude account, then paste back the code the page shows."
           }
         }
       }
     },
-    "电脑上的 Claude Code 里也会是这个名字。" : {
+    "主机上的 Claude Code 里也会是这个名字。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "It’ll have this name in Claude Code on your computer too."
+            "value" : "It’ll have this name in Claude Code on your host too."
           }
         }
       }
     },
-    "电脑上的 PaloAlly 更新以后，这里能看到连着它的设备。" : {
+    "主机上的 Palo 更新以后，这里能看到连着它的设备。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Once PaloAlly on your computer is updated, the devices connected to it show up here."
+            "value" : "Once Palo on your host is updated, the devices connected to it show up here."
           }
         }
       }
     },
-    "电脑上的 PaloAlly 还不能列出这些，更新以后再来看。" : {
+    "主机上的 Palo 还不能列出这些，更新以后再来看。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PaloAlly on your computer can’t list these yet. Update it and check back."
+            "value" : "Palo on your host can’t list these yet. Update it and check back."
           }
         }
       }
     },
-    "电脑上的版本" : {
+    "主机上的版本" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Version on your computer"
+            "value" : "Version on your host"
           }
         }
       }
     },
-    "电脑与设备" : {
+    "主机与设备" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Computers & devices"
-          }
-        }
-      }
-    },
-    "电脑与设备…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Computers & devices…"
+            "value" : "Hosts & devices"
           }
         }
       }
@@ -5244,13 +5112,13 @@
         }
       }
     },
-    "立即更新电脑上的 PaloAlly" : {
+    "立即更新主机上的 Palo" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Update PaloAlly on your computer now"
+            "value" : "Update Palo on your host now"
           }
         }
       }
@@ -5321,7 +5189,7 @@
         }
       }
     },
-    "管理它：目标、履历、记忆和设置" : {
+    "管理它：目标、记录、记忆和设置" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -5608,13 +5476,13 @@
         }
       }
     },
-    "让 PaloAlly 接着跑它，在手机上跟它说话" : {
+    "让 Palo 接着跑它，在手机上跟它说话" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Let PaloAlly keep it running, and talk to it from your phone"
+            "value" : "Let Palo keep it running, and talk to it from your phone"
           }
         }
       }
@@ -5784,13 +5652,13 @@
         }
       }
     },
-    "请在「设置」里允许 PaloAlly 使用相机，或者改用粘贴链接。" : {
+    "请在「设置」里允许 Palo 使用相机，或者改用粘贴链接。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Allow PaloAlly to use the camera in Settings, or paste the link instead."
+            "value" : "Allow Palo to use the camera in Settings, or paste the link instead."
           }
         }
       }
@@ -5806,13 +5674,13 @@
         }
       }
     },
-    "请对方在 TA 的 PaloAlly 里重新点「添加」，再扫一次新的二维码。" : {
+    "请对方在 TA 的 Palo 里重新点「添加」，再扫一次新的二维码。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ask them to tap “Add” again in their PaloAlly, then scan the new QR code."
+            "value" : "Ask them to tap “Add” again in their Palo, then scan the new QR code."
           }
         }
       }
@@ -5983,13 +5851,13 @@
         }
       }
     },
-    "还差 6 位配对码，看一下电脑屏幕" : {
+    "还差 6 位配对码，看一下主机屏幕" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The 6-digit pairing code is missing. Check your computer’s screen."
+            "value" : "The 6-digit pairing code is missing. Check your host’s screen."
           }
         }
       }
@@ -6005,24 +5873,24 @@
         }
       }
     },
-    "还没有办过的事" : {
+    "还没有记录" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nothing done yet"
+            "value" : "Nothing here yet"
           }
         }
       }
     },
-    "还没有可以继续的会话。电脑上开着的 Claude Code 也会出现在这里。" : {
+    "还没有可以继续的会话。主机上开着的 Claude Code 也会出现在这里。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nothing to continue yet. Claude Code sessions open on your computer show up here too."
+            "value" : "Nothing to continue yet. Claude Code sessions open on your host show up here too."
           }
         }
       }
@@ -6115,24 +5983,24 @@
         }
       }
     },
-    "还没连上你的电脑，连上就生成" : {
+    "还没连上你的主机，连上就生成" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Not connected to your computer yet. It will be made once connected."
+            "value" : "Not connected to your host yet. It will be made once connected."
           }
         }
       }
     },
-    "还没连上你的电脑，连上就能加。" : {
+    "还没连上你的主机，连上就能加。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Not connected to your computer yet. You can add once connected."
+            "value" : "Not connected to your host yet. You can add once connected."
           }
         }
       }
@@ -6291,13 +6159,13 @@
         }
       }
     },
-    "这台电脑是「%@」。" : {
+    "这台主机是「%@」。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This computer is “%@”."
+            "value" : "This host is “%@”."
           }
         }
       }
@@ -6346,13 +6214,13 @@
         }
       }
     },
-    "这是加 Ally 的二维码。先把这台设备和你自己的电脑连上，再扫它。" : {
+    "这是加好友的二维码。先把这台设备和你自己的主机连上，再扫它。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This is a QR code for adding an Ally. Connect this device to your own computer first, then scan it."
+            "value" : "This is a QR code for adding a contact. Connect this device to your own host first, then scan it."
           }
         }
       }
@@ -6379,13 +6247,13 @@
         }
       }
     },
-    "连上之后，数据只在你的电脑和这台设备之间加密传送。" : {
+    "连上之后，数据只在你的主机和这台设备之间加密传送。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Once connected, data is encrypted and goes only between your computer and this device."
+            "value" : "Once connected, data is encrypted and goes only between your host and this device."
           }
         }
       }
@@ -6401,46 +6269,46 @@
         }
       }
     },
-    "连上新的电脑后，这台设备就和「%@」断开。" : {
+    "连上新的主机后，这台设备就和「%@」断开。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Once the new computer is connected, this device disconnects from “%@”."
+            "value" : "Once the new host is connected, this device disconnects from “%@”."
           }
         }
       }
     },
-    "连上电脑以后才能看到。" : {
+    "连上主机以后才能看到。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Connect to your computer to see these."
+            "value" : "Connect to your host to see these."
           }
         }
       }
     },
-    "连不上电脑" : {
+    "连不上主机" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Can’t reach computer"
+            "value" : "Can’t reach host"
           }
         }
       }
     },
-    "连不上电脑，正在重试…" : {
+    "连不上主机，正在重试…" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Can’t reach your computer. Retrying…"
+            "value" : "Can’t reach your host. Retrying…"
           }
         }
       }
@@ -6467,13 +6335,13 @@
         }
       }
     },
-    "连着这台电脑的设备" : {
+    "连着这台主机的设备" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Devices connected to this computer"
+            "value" : "Devices connected to this host"
           }
         }
       }
@@ -6863,13 +6731,13 @@
         }
       }
     },
-    "点左下角的 ＋ 新建一个会话，或者让 Palo 帮你开。" : {
+    "点左下角的 ＋ 新建一个会话，或者让助理帮你开。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tap ＋ at the bottom left to start a session, or ask Palo to open one."
+            "value" : "Tap ＋ at the bottom left to start a session, or ask the assistant to open one."
           }
         }
       }
@@ -7094,24 +6962,24 @@
         }
       }
     },
-    "Palo 开的" : {
+    "助理开的" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Opened by Palo"
+            "value" : "Opened by the assistant"
           }
         }
       }
     },
-    "%@已经不在会话列表里了。对话记录还在电脑上。" : {
+    "%@已经不在会话列表里了。对话记录还在主机上。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ is no longer in your sessions. The conversation is still on your computer."
+            "value" : "%@ is no longer in your sessions. The conversation is still on your host."
           }
         }
       }
@@ -7622,13 +7490,13 @@
         }
       }
     },
-    "历史任务" : {
+    "记录" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Past Tasks"
+            "value" : "History"
           }
         }
       }
@@ -7662,17 +7530,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not known yet"
-          }
-        }
-      }
-    },
-    "还没有做完的任务" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No finished tasks yet"
           }
         }
       }
@@ -7732,13 +7589,13 @@
         }
       }
     },
-    "添加 Ally…" : {
+    "添加好友…" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add Ally…"
+            "value" : "Add Contact…"
           }
         }
       }
@@ -7826,7 +7683,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Right Pane (Results / Files)"
+            "value" : "Right Pane (Library / Files)"
           }
         }
       }
@@ -8255,13 +8112,24 @@
         }
       }
     },
-    "颜色也是 App 和桌面图标的颜色。语言和手机的系统语言分开；自动：按第一台连上电脑的设备的语言。" : {
+    "颜色也是 App 和桌面图标的颜色。语言和手机的系统语言分开；自动：按第一台连上主机的设备的语言。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The color is also the app's and its icon's. The language is separate from the phone's; Automatic follows the first device that connected to the computer."
+            "value" : "The color is also the app's and its icon's. The language is separate from the phone's; Automatic follows the first device that connected to the host."
+          }
+        }
+      }
+    },
+    "好友" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contacts"
           }
         }
       }

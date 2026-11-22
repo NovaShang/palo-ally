@@ -80,7 +80,7 @@ struct ComputerFilePicker: View {
             Divider()
             list
         }
-        .navigationTitle(Text("电脑上的文件", tableName: "Files"))
+        .navigationTitle(Text("主机上的文件", tableName: "Files"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {

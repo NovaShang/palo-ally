@@ -91,7 +91,7 @@ private struct PalConversation: View {
             guard gone else { return nil }
             let name = pal?.displayName ?? String(localized: "它")
             content = AnyView(
-                NoticePanel(text: Copy.spaced(String(localized: "\(name)已经不在会话列表里了。对话记录还在电脑上。")), action: String(localized: "回到列表")) {
+                NoticePanel(text: Copy.spaced(String(localized: "\(name)已经不在会话列表里了。对话记录还在主机上。")), action: String(localized: "回到列表")) {
                     model.showList()
                 })
         case .notice(let why):
@@ -141,7 +141,7 @@ struct PalRenameAlert: ViewModifier {
                 }
                 .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             } message: {
-                Text("电脑上的 Claude Code 里也会是这个名字。")
+                Text("主机上的 Claude Code 里也会是这个名字。")
             }
             .alert(failure ?? "", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
                 Button("好", role: .cancel) { failure = nil }

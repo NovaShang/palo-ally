@@ -26,13 +26,13 @@ final class NavigationUITests: XCTestCase {
         XCTAssertTrue(app.buttons["title-orb"].waitForExistence(timeout: 15))
         back(app)
         XCTAssertTrue(app.staticTexts["会话"].waitForExistence(timeout: 5), "no 会话 section")
-        XCTAssertTrue(app.staticTexts["Allies"].exists, "no Allies section")
+        XCTAssertTrue(app.staticTexts["好友"].exists, "no 好友 section")
         XCTAssertTrue(row(app, "row-palo").exists, "no row for the assistant")
         XCTAssertTrue(row(app, "row-pal-pal-site").exists && row(app, "row-pal-pal-notes").exists)
         // The terminal sessions to adopt moved into the ＋ menu's 从终端搬进来…; 以前的 N ends the sessions.
         XCTAssertTrue(row(app, "row-earlier").exists, "no 以前的 under 会话")
         // The list runs past the screen: Allies' last row is further down.
-        XCTAssertTrue(scrolledTo(app, app.buttons["添加"]), "no 添加 under Allies")
+        XCTAssertTrue(scrolledTo(app, app.buttons["添加"]), "no 添加 under 好友")
         // And in again.
         app.swipeDown()
         row(app, "row-palo").tap()

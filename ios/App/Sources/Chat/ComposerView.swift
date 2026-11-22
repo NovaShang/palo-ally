@@ -472,7 +472,7 @@ struct ComposerView: View {
             Button("照片", systemImage: "photo.on.rectangle") { showPhotos = true }
             Button("文件", systemImage: "doc") { showFiles = true }
             Button { showComputerFiles = true } label: {
-                Label { Text("电脑上的文件", tableName: "Files") } icon: { Image(systemName: "desktopcomputer") }
+                Label { Text("主机上的文件", tableName: "Files") } icon: { Image(systemName: "desktopcomputer") }
             }
         } label: {
             Image(systemName: "plus")

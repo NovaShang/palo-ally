@@ -348,11 +348,11 @@ private final class AttachmentPreviewController: QLPreviewController, QLPreviewC
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         guard libraryButton == nil, items.contains(where: { $0.artifactID != nil }) else { return }
-        let button = UIBarButtonItem(title: String(localized: "在产出物库中查看"), image: UIImage(systemName: "books.vertical"), primaryAction: UIAction { [weak self] _ in
+        let button = UIBarButtonItem(title: String(localized: "在成果中查看"), image: UIImage(systemName: "books.vertical"), primaryAction: UIAction { [weak self] _ in
             guard let self, let id = self.items[safe: self.currentPreviewItemIndex]?.artifactID else { return }
             self.dismiss(animated: true) { self.openInLibrary(id) }
         })
-        button.accessibilityLabel = String(localized: "在产出物库中查看")
+        button.accessibilityLabel = String(localized: "在成果中查看")
         libraryButton = button
         barItem.leftBarButtonItems = (barItem.leftBarButtonItems ?? []) + [button]
         updateLibraryButton()

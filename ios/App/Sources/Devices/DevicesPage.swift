@@ -33,7 +33,7 @@ struct DevicesPage: View {
                     hostRow(id)
                     if confirmUnpair == id {
                         ConfirmPanel(title: String(localized: "解除和「\(model.displayName(id))」的配对？"),
-                                     text: String(localized: "之后要重新配对才能连回来。那台电脑上的对话和记忆不受影响。"),
+                                     text: String(localized: "之后要重新配对才能连回来。那台主机上的对话和记忆不受影响。"),
                                      action: String(localized: "解除配对"), working: unpairing == id, glass: false,
                                      cancel: { confirmUnpair = nil },
                                      confirm: { Task { await unpair(id) } })
@@ -47,7 +47,7 @@ struct DevicesPage: View {
                     Button {
                         model.startPairing(.add)
                     } label: {
-                        Label { Text("添加另一台电脑").foregroundStyle(Color.primary) } icon: { Image(systemName: "plus").foregroundStyle(Color.primary) }
+                        Label { Text("添加另一台主机").foregroundStyle(Color.primary) } icon: { Image(systemName: "plus").foregroundStyle(Color.primary) }
                     }
                     .tint(.primary)
                     .accessibilityIdentifier("add-computer")
@@ -56,7 +56,7 @@ struct DevicesPage: View {
                 Text("我的助理")
             } footer: {
                 if !model.hasSeveralHosts {
-                    Text("每台电脑上是一个独立的助理：各自的对话、记忆和任务。")
+                    Text("每台主机上是一个独立的助理：各自的对话、记忆和任务。")
                 }
             }
 
@@ -87,10 +87,10 @@ struct DevicesPage: View {
                 .disabled(!store.connection.isOnline)
                 .accessibilityIdentifier("add-device")
             } header: {
-                Text("连着这台电脑的设备")
+                Text("连着这台主机的设备")
             } footer: {
                 if model.hasSeveralHosts {
-                    Text("这台电脑是「\(activeName)」。")
+                    Text("这台主机是「\(activeName)」。")
                 }
             }
 
@@ -98,9 +98,9 @@ struct DevicesPage: View {
                 Section { Text(problem).foregroundStyle(.red) }
             }
         }
-        .navigationTitle("电脑与设备")
+        .navigationTitle("主机与设备")
         .navigationBarTitleDisplayMode(.inline)
-        .macPageTop(String(localized: "电脑与设备"), inRow: true)
+        .macPageTop(String(localized: "主机与设备"), inRow: true)
         .animation(.snappy, value: confirmUnpair)
         .animation(.snappy, value: confirmRemove)
         .animation(.snappy, value: devices)
@@ -117,7 +117,7 @@ struct DevicesPage: View {
                 renaming = nil
             }
         } message: {
-            Text("只改这台设备上看到的名字，比如「家里的 Mac」「云端」。留空就用电脑自己的名字。")
+            Text("只改这台设备上看到的名字，比如「家里的 Mac」「云端」。留空就用主机自己的名字。")
         }
         #if DEBUG
         // `-demoDevicesInvite YES`: opens on 添加设备 (snapshots).
@@ -259,7 +259,7 @@ struct DevicesPage: View {
             devicesError = nil
         } catch {
             // An older computer doesn't list them.
-            devicesError = String(localized: "电脑上的 PaloAlly 更新以后，这里能看到连着它的设备。")
+            devicesError = String(localized: "主机上的 Palo 更新以后，这里能看到连着它的设备。")
         }
         loaded = true
     }
@@ -439,7 +439,7 @@ struct DeviceInviteSheet: View {
                 .foregroundStyle(.green)
             Text("加好了")
                 .font(.title3.weight(.semibold))
-            Text("「\(d.label)」已经连上这台电脑。")
+            Text("「\(d.label)」已经连上这台主机。")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -451,7 +451,7 @@ struct DeviceInviteSheet: View {
     private func expiryLine(now: Date) -> String {
         guard let invite, invite.expiresAt > 0 else {
             if loading { return String(localized: "正在生成…") }
-            return store.connection.isOnline ? " " : String(localized: "还没连上你的电脑，连上就生成")
+            return store.connection.isOnline ? " " : String(localized: "还没连上你的主机，连上就生成")
         }
         let left = Int((Double(invite.expiresAt - now.epochMillis) / 1000).rounded(.up))
         if left <= 0 { return String(localized: "这个二维码过期了") }

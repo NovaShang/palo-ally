@@ -348,7 +348,7 @@ private struct TitleOrbAccessibility: ViewModifier {
     func body(content: Content) -> some View {
         content
             .accessibilityLabel("\(store.assistantName)：\(store.agentStatusLine.text)")
-            .accessibilityHint("管理它：目标、履历、记忆和设置")
+            .accessibilityHint("管理它：目标、记录、记忆和设置")
             .accessibilityIdentifier("title-orb")
     }
 }

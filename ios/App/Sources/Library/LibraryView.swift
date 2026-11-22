@@ -76,7 +76,7 @@ struct LibraryView: View {
             list.safeAreaInset(edge: .top, spacing: 0) {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("搜索产出物和对话", text: $query)
+                    TextField("搜索成果和对话", text: $query)
                         .textFieldStyle(.plain)
                         .focused($fieldFocused)
                     if !query.isEmpty {
@@ -95,7 +95,7 @@ struct LibraryView: View {
             }
         } else {
             list.searchable(text: $query, isPresented: $searchActive,
-                            placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索产出物和对话")
+                            placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索成果和对话")
         }
     }
 
@@ -250,7 +250,7 @@ struct LibraryView: View {
     @ViewBuilder private var searchResults: some View {
         let artifacts = matchingArtifacts
         if !artifacts.isEmpty {
-            Section("产出物") {
+            Section("成果") {
                 ForEach(artifacts) { row($0) }
             }
         }

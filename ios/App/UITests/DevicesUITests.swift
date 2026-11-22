@@ -18,7 +18,7 @@ final class DevicesUITests: XCTestCase {
         XCTAssertFalse(app.buttons["host-header-demo-1"].exists, "a computer's name with one computer")
         let devices = app.descendants(matching: .any)["row-devices"]
         devices.swipeUpUntilVisible(in: app)
-        XCTAssertTrue(devices.exists, "no 电脑与设备 row")
+        XCTAssertTrue(devices.exists, "no 主机与设备 row")
         attach(app, "list-one-host")
     }
 
@@ -46,9 +46,9 @@ final class DevicesUITests: XCTestCase {
     @MainActor
     func testTheDevicesPageAddsWithACodeAndAsksBeforeRemoving() throws {
         let app = launch(["-demoScreen", "devices"])
-        XCTAssertTrue(app.navigationBars.staticTexts["电脑与设备"].waitForExistence(timeout: 15), "the page didn't open")
+        XCTAssertTrue(app.navigationBars.staticTexts["主机与设备"].waitForExistence(timeout: 15), "the page didn't open")
         XCTAssertTrue(text(app, "我的助理").exists)
-        XCTAssertTrue(text(app, "连着这台电脑的设备").exists)
+        XCTAssertTrue(text(app, "连着这台主机的设备").exists)
         let ipad = app.descendants(matching: .any)["device-dev-ipad"]
         XCTAssertTrue(ipad.waitForExistence(timeout: 10), "the devices didn't load")
         XCTAssertTrue(app.descendants(matching: .any)["device-dev-this"].label.contains("这台"), "this device isn't marked")

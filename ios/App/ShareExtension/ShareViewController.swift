@@ -112,7 +112,7 @@ final class ShareModel {
         let text = (texts + [note.trimmingCharacters(in: .whitespacesAndNewlines)]).filter { !$0.isEmpty }.joined(separator: "\n")
         Task {
             guard let (id, folder) = ShareInbox.newShareFolder() else {
-                problem = String(localized: "先打开一次 PaloAlly 再分享")
+                problem = String(localized: "先打开一次 Palo 再分享")
                 sending = false
                 return
             }
@@ -216,10 +216,10 @@ struct ShareSheet: View {
                     TextField("说点什么（可选）", text: $model.note, axis: .vertical).lineLimit(1...5)
                 } footer: {
                     if let p = model.problem { Text(p).foregroundStyle(.red) }
-                    else { Text("会放进 PaloAlly 的输入框，你看过再发。") }
+                    else { Text("会放进 Palo 的输入框，你看过再发。") }
                 }
             }
-            .navigationTitle("PaloAlly")
+            .navigationTitle("Palo")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

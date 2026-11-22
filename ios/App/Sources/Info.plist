@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>zh-Hans</string>
 	<key>CFBundleDisplayName</key>
-	<string>PaloAlly</string>
+	<string>Palo</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -41,9 +41,9 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>扫电脑上的二维码把这台设备连上电脑，或者拍照发给助理。</string>
+	<string>扫主机上的二维码把这台设备连上主机，或者拍照发给助理。</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>在同一个网络里时直接连你的电脑，不绕道云端，更快。</string>
+	<string>在同一个网络里时直接连你的主机，不绕道云端，更快。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>语音输入时需要用到麦克风，把你说的话变成文字。</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
@@ -91,7 +91,7 @@
 				<string>public.data</string>
 			</array>
 			<key>UTTypeDescription</key>
-			<string>PaloAlly sidebar item</string>
+			<string>Palo sidebar item</string>
 			<key>UTTypeIdentifier</key>
 			<string>com.novashang.paloally.sidebar-item</string>
 		</dict>

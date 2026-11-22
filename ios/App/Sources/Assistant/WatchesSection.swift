@@ -356,8 +356,8 @@ struct WatchEditor: View {
                     Text(cadence == .monthly ? String(localized: "那天几点") : String(localized: "每天几点"))
                 } footer: {
                     Text(cadence == .monthly && (day == -1 || day > 28)
-                         ? String(localized: "按电脑那边的时区。小月没有这天时，就在月底那天做。")
-                         : String(localized: "按电脑那边的时区。"))
+                         ? String(localized: "按主机那边的时区。小月没有这天时，就在月底那天做。")
+                         : String(localized: "按主机那边的时区。"))
                 }
             } else {
                 Section("多久看一次") { intervalStepper }

@@ -230,7 +230,7 @@ struct RemoteFileView<Content: View>: View {
         } catch is CancellationError {
             if stopped, shown == nil { phase = .stopped }
         } catch is FileStreamTooLarge {
-            phase = .failed(String(localized: "电脑上的 PaloAlly 版本较旧，发不了这么大的文件。更新它以后再试。", table: "Files"))
+            phase = .failed(String(localized: "主机上的 Palo 版本较旧，发不了这么大的文件。更新它以后再试。", table: "Files"))
         } catch {
             guard !Task.isCancelled else { return }
             debugLog("[files] \(name): download failed: \(error)")
@@ -566,7 +566,7 @@ struct DownloadedFilesRow: View {
                 }
             } label: { Text("清除", tableName: "Files") }
         } message: {
-            Text("文件还在电脑上，再打开时重新下载。", tableName: "Files")
+            Text("文件还在主机上，再打开时重新下载。", tableName: "Files")
         }
     }
 }

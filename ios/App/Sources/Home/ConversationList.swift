@@ -64,7 +64,7 @@ struct ConversationList: View {
             }
         }
         // The Mac's sidebar has no title of its own; phones and iPads name the app.
-        .navigationTitle(Platform.barInWindowToolbar ? "" : "PaloAlly")
+        .navigationTitle(Platform.barInWindowToolbar ? "" : "Palo")
         .toolbar(Platform.barInWindowToolbar ? .hidden : .automatic, for: .navigationBar)
         .modifier(MacSidebarToggle())
         .modifier(MacSidebarLook())
@@ -307,7 +307,7 @@ private struct HostSidebarContent: View {
                                         perform: drop)
                 } footer: {
                     if store.pals.isEmpty {
-                        Text("点左下角的 ＋ 新建一个会话，或者让 Palo 帮你开。")
+                        Text("点左下角的 ＋ 新建一个会话，或者让助理帮你开。")
                     }
                 }
             }
@@ -322,7 +322,7 @@ private struct HostSidebarContent: View {
                             .accessibilityIdentifier(rowID("row-ally-\(ally.id)"))
                     }
                 } header: {
-                    Text("Allies").textCase(nil)
+                    Text("好友").textCase(nil)
                 } footer: {
                     if store.allies.isEmpty {
                         Text("当面扫个码，你的助理就能和对方的助理互相传话、约时间。")
@@ -840,7 +840,7 @@ private struct SidebarFooter: View {
                 }
                 Button("新建工作区", systemImage: "square.grid.2x2", action: newWorkspace)
                 if store.alliesSupported != false {
-                    Button("添加 Ally…", systemImage: "person.badge.plus") { model.showAllyInvite = true }
+                    Button("添加好友…", systemImage: "person.badge.plus") { model.showAllyInvite = true }
                 }
             } label: {
                 Image(systemName: "plus")
@@ -902,7 +902,7 @@ private struct DevicesListRow: View {
                 .font(.system(size: 16))
                 .foregroundStyle(.secondary)
         } title: {
-            Text("电脑与设备")
+            Text("主机与设备")
         } subtitle: {
             Text(model.pairedHost?.hostLabel ?? "")
         } trailing: {

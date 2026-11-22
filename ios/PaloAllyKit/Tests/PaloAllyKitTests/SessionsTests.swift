@@ -54,11 +54,11 @@ struct SessionsDecodingTests {
     @Test func cardsCarryTheirSourceAndNote() throws {
         let (a, issues) = try decode(Approval.self, """
         {"id":"a1","tool":"Bash","title":"在电脑上运行一条命令","detail":"npm run build","careful":false,"status":"expired",
-         "createdAt":1,"suggestedScope":"cmd:npm run build","source":{"kind":"session","id":"s1","name":"网站帮手"},"note":"在电脑上等你"}
+         "createdAt":1,"suggestedScope":"cmd:npm run build","source":{"kind":"session","id":"s1","name":"网站帮手"},"note":"在主机上等你"}
         """)
         #expect(issues.isEmpty)
         #expect(a.source == CardSource(id: "s1", name: "网站帮手") && a.source?.isSession == true)
-        #expect(a.status == .expired && a.note == "在电脑上等你")
+        #expect(a.status == .expired && a.note == "在主机上等你")
         // A session's prompt never offers "always allow".
         #expect(!a.canRemember)
         var own = a
@@ -75,13 +75,13 @@ struct SessionsDecodingTests {
         handled.decidedBy = "computer"
         handled.note = "已在电脑上处理"
         #expect(AppStore.handledAtComputer(by: handled.decidedBy, note: handled.note))
-        #expect(!AppStore.handledAtComputer(by: "timeout", note: "在电脑上等你"))
+        #expect(!AppStore.handledAtComputer(by: "timeout", note: "在主机上等你"))
         // A source missing its name is reported.
         let (_, srcIssues) = try decode(CardSource.self, #"{"kind":"session","id":"s1"}"#)
         #expect(srcIssues.contains { $0.contains("name") })
         // Encoded and back (the demo host and fixtures encode cards).
         let again = try JSONValue.from(a).decode(Approval.self)
-        #expect(again.source == a.source && again.note == "在电脑上等你")
+        #expect(again.source == a.source && again.note == "在主机上等你")
         let qAgain = try JSONValue.from(q).decode(Question.self)
         #expect(qAgain.source == q.source)
     }
@@ -281,7 +281,7 @@ struct SessionsStoreTests {
         await host.applyScenario("sessionExpired")
         #expect(await until { store.approval(id: "sa1")?.status == .expired })
         let card = try #require(store.approval(id: "sa1"))
-        #expect(card.note == "在电脑上等你" && !card.isPending)
+        #expect(card.note == "在主机上等你" && !card.isPending)
         // Still at the live end, as 「在电脑上等你」.
         #expect(store.liveEndApprovals.map(\.id).contains("sa1"))
         #expect(store.waitsAtComputer(card) && !store.settledAtComputer(card))

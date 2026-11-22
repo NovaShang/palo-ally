@@ -98,7 +98,7 @@ struct FileShareSheet: View {
                     progress = (got, total)
                 }
             } catch is FileStreamTooLarge {
-                failure = String(localized: "电脑上的 PaloAlly 版本较旧，发不了这么大的文件。更新它以后再试。", table: "Files")
+                failure = String(localized: "主机上的 Palo 版本较旧，发不了这么大的文件。更新它以后再试。", table: "Files")
             } catch is CancellationError {
                 dismiss()
             } catch {

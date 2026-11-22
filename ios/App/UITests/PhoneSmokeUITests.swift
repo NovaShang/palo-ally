@@ -77,7 +77,7 @@ final class PhoneSmokeUITests: XCTestCase {
         let root = app.descendants(matching: .any)["files-root"].firstMatch
         XCTAssertTrue(root.exists, "Palo's 文件 has no folder capsule")
         root.tap()
-        let palos = app.buttons["Palo 的文件"].firstMatch
+        let palos = app.buttons["助理的文件"].firstMatch
         XCTAssertTrue(palos.waitForExistence(timeout: 3), "the capsule's menu has no Palo 的文件")
         palos.tap()
         sleep(2)

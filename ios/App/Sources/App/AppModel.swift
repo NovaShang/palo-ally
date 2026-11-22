@@ -72,7 +72,7 @@ enum AssistantTab: String, CaseIterable, Hashable {
     var title: String {
         switch self {
         case .watches: String(localized: "目标")
-        case .history: String(localized: "履历")
+        case .history: String(localized: "记录")
         case .memory: String(localized: "记忆")
         }
     }
@@ -412,7 +412,7 @@ final class AppModel {
         if let n = meta.names[id], !n.isEmpty { return n }
         if let s = stores[id], !s.hostName.isEmpty { return s.hostName }
         if let h = hosts[id], !h.hostLabel.isEmpty { return h.hostLabel }
-        return String(localized: "电脑")
+        return String(localized: "主机")
     }
 
     func rename(_ id: String, to name: String) {
