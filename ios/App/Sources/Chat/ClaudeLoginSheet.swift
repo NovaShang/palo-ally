@@ -28,7 +28,8 @@ struct ClaudeLoginSheet: View {
                     }
                 } else {
                     Section {
-                        Text("主机上的 Claude Code 登录过期了。在这里打开授权页，用你的 Claude 账号同意，再把页面上显示的代码粘贴回来。")
+                        // The harness' name and whose account it signs in with (its descriptor; Claude Code's on an older host).
+                        Text("主机上的 \(store.harness.name) 登录过期了。在这里打开授权页，用你的 \(store.harness.login.account) 账号同意，再把页面上显示的代码粘贴回来。")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }

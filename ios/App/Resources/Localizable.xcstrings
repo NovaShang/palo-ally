@@ -365,13 +365,13 @@
         }
       }
     },
-    "Claude Code 登录过期了，事情都停下了" : {
+    "%@ 登录过期了，事情都停下了" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Claude Code's login expired; everything has stopped"
+            "value" : "%@'s login expired; everything has stopped"
           }
         }
       }
@@ -4783,13 +4783,13 @@
         }
       }
     },
-    "主机上的 Claude Code 登录过期了。在这里打开授权页，用你的 Claude 账号同意，再把页面上显示的代码粘贴回来。" : {
+    "主机上的 %@ 登录过期了。在这里打开授权页，用你的 %@ 账号同意，再把页面上显示的代码粘贴回来。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Claude Code's login on the host has expired. Open the authorization page here, approve with your Claude account, then paste back the code the page shows."
+            "value" : "%1$@'s login on the host has expired. Open the authorization page here, approve with your %2$@ account, then paste back the code the page shows."
           }
         }
       }
