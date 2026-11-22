@@ -11,7 +11,7 @@ import { Conversation } from "./conversation.ts";
 import { activityThinking, approvalAnswerReply, questionLineHelp, statusReply, stopReply } from "./copy.ts";
 import type { HarnessDriver, HarnessEvent, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
 import { HarnessInfo } from "./harnessInfo.ts";
-import { MemoryView, autoMemoryDir } from "./memory.ts";
+import { MemoryView } from "./memory.ts";
 import { checkModelChoice } from "./modelChoice.ts";
 import { ProbeScheduler, type ProbeTrigger } from "./probe.ts";
 import { QuestionManager, parseItems, parseTextAnswer, questionText } from "./questions.ts";
@@ -158,7 +158,18 @@ export class Hub {
     this.watches = new WatchStore(this.paths.watches, this.bus);
     this.artifacts = new ArtifactLibrary(this.paths.artifacts, this.bus);
     this.media = new MediaStore(this.paths.media);
-    this.memory = new MemoryView(this.paths.home, autoMemoryDir(this.paths.home));
+    const claudeDir = deps.sessions?.claudeDir ?? deps.claudeDir ?? claudeConfigDir();
+    // The harness (Claude Code): its processes, its transcripts, its sessions and settings.
+    this.harness = new ClaudeHarness({
+      driver: deps.driver,
+      configDir: claudeDir,
+      forkSession: deps.forkSession ?? deps.pals?.forkSession,
+      readMessages: deps.pals?.readMessages,
+      recentSource: deps.pals?.recentSource,
+      renameSession: deps.pals?.renameSession,
+      registry: deps.pals?.registry,
+    });
+    this.memory = new MemoryView(this.paths.home, this.harness.memory.autoMemoryDir(this.paths.home));
     this.router = new Router(
       () => this.config.settings,
       deps.pushers ?? [],
@@ -230,23 +241,13 @@ export class Hub {
       () => void this.conversation.ensureSession(),
       () => {}, // the process stays up once started (conversation.ts)
     );
-    const claudeDir = deps.sessions?.claudeDir ?? deps.claudeDir ?? claudeConfigDir();
-    // The harness (Claude Code): its processes, its transcripts, its sessions and settings.
-    this.harness = new ClaudeHarness({
-      driver: deps.driver,
-      configDir: claudeDir,
-      forkSession: deps.forkSession ?? deps.pals?.forkSession,
-      readMessages: deps.pals?.readMessages,
-      recentSource: deps.pals?.recentSource,
-      renameSession: deps.pals?.renameSession,
-      registry: deps.pals?.registry,
-    });
     this.claudeDir = claudeDir;
     this.forkSession = this.harness.forkSession;
     this.conversation = new Conversation({
       paths: this.paths,
       config: () => this.config,
       driver: deps.driver,
+      harness: this.harness,
       runtime: this.runtime,
       chat: this.chat,
       tasks: this.tasks,
@@ -1253,7 +1254,7 @@ export class Hub {
     if (typeof agent !== "string" || !agent) return this.memory;
     const pal = this.pals.get(agent);
     if (!pal) throw new Error(t("pals.noPal"));
-    return MemoryView.forAgent(pal.rec.cwd, this.claudeDir);
+    return MemoryView.forAgent(pal.rec.cwd, this.harness.memory);
   }
 
   // What the assistant knows about the owner, for writing 「试试」 suggestions:

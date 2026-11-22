@@ -10,8 +10,7 @@ import type { Config, Paths } from "./config.ts";
 import { ACTIVITY, activityBackground, allyToolDenied, budgetNotice, describeActivity, friendlyError } from "./copy.ts";
 import { isAuthFailure } from "./auth.ts";
 import { behaviorPrompt } from "./home.ts";
-import type { HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption, SlashCommandInfo, ToolGate, ToolHandlers } from "./harness/types.ts";
-import { autoMemoryDir } from "./memory.ts";
+import type { Harness, HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption, SlashCommandInfo, ToolGate, ToolHandlers } from "./harness/types.ts";
 import type { Router } from "./router.ts";
 import type { RuntimeState } from "./runtime.ts";
 import { type PendingRewind, rewindBusy } from "./rewind.ts";
@@ -78,6 +77,8 @@ export interface ConversationDeps {
   paths: Paths;
   config: () => Config;
   driver: HarnessDriver;
+  /** The harness it runs on (where its memory is, …). */
+  harness: Harness;
   runtime: RuntimeState;
   chat: ChatLog;
   tasks: TaskTracker;
@@ -524,7 +525,7 @@ export class Conversation {
 
   private allyScope(): AllyGateScope {
     const home = this.d.paths.home;
-    return { home, memoryDir: autoMemoryDir(home, this.d.config().env?.CLAUDE_CONFIG_DIR || undefined) };
+    return { home, memoryDir: this.d.harness.memory.autoMemoryDir(home, this.d.config().env?.CLAUDE_CONFIG_DIR || undefined) };
   }
 
   // endAllyGate lifts the gate and sends the owner's held words, each as it

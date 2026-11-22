@@ -22,7 +22,7 @@ import type {
   SessionRef,
 } from "../types.ts";
 import { EFFORTS } from "../../modelChoice.ts";
-import { AGENT_CORE_FILES, agentMemoryDir, autoMemoryDir } from "../../memory.ts";
+import { AGENT_CORE_FILES, agentMemoryDir, autoMemoryDir } from "./memory.ts";
 import { TranscriptFollower, toPalMessages, transcriptLastLine, transcriptModel, userEntryMessage } from "./history.ts";
 import { claudeConfigDir, transcriptPath } from "./paths.ts";
 import { peerWrap, startError } from "./process.ts";

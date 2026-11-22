@@ -3,7 +3,7 @@ import { mkdirSync, realpathSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ArtifactLibrary, CHUNK, STREAM_CHUNK } from "../src/artifacts.ts";
 import { Bus } from "../src/bus.ts";
-import { MemoryView, agentMemoryDir, autoMemoryDir, memoryProjectRoot } from "../src/memory.ts";
+import { AGENT_CORE_FILES, MemoryView, agentMemoryDir, autoMemoryDir, memoryProjectRoot } from "../src/memory.ts";
 import { cleanup, tmpPaths } from "./helpers.ts";
 
 describe("ArtifactLibrary", () => {
@@ -131,7 +131,7 @@ describe("MemoryView", () => {
     const paths = tmpPaths();
     const folder = join(paths.root, "proj");
     mkdirSync(join(folder, ".claude"), { recursive: true });
-    const mem = MemoryView.forAgent(folder, join(paths.root, "fake-claude"));
+    const mem = MemoryView.forAgent(folder, { autoMemoryDir, agentMemoryDir: (c) => agentMemoryDir(c, join(paths.root, "fake-claude")), projectFiles: AGENT_CORE_FILES });
     expect(mem.list()).toEqual([{ path: "CLAUDE.md", scope: "core", size: 0, updatedAt: 0, missing: true }]);
     writeFileSync(join(folder, ".claude", "CLAUDE.md"), "x");
     mem.write("CLAUDE.md", "y", 0);
