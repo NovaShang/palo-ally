@@ -1,18 +1,18 @@
 import PaloAllyKit
 import SwiftUI
 
-/// "Needs your OK" card. Shown inline in the chat and in the 审批 tab. One
-/// from a Claude Code session on the computer says so on top (「网站帮手
-/// 想运行」); once it waited past the hook's limit it stays, untappable, as
-/// 「在电脑上等你」 until it's settled there.
+/// A permission prompt, on the one card for what waits on the owner
+/// (PendingCard): who asks · what it wants to do · why, the command or what
+/// it touches, then 拒绝 / 允许 (and 以后都允许 when the harness offers a
+/// rule). A session's card that waited past the hook's limit stays,
+/// untappable, as 「在电脑上等你」 until it's settled there. Decided, it
+/// folds to one line; tapping it shows what it was.
 struct ApprovalCard: View {
-    @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     let approval: Approval
-    /// The source label opens that session's page (not on the page itself).
+    /// Kept for the callers (the session's page no longer differs).
     var linksSource = true
-    @State private var working = false
-    @State private var error: String?
+    @State private var decision = PendingDecider()
     @State private var expanded = false
     /// The detail's height as shown, and as it would be whole: folded when
     /// the whole is taller.
@@ -21,52 +21,78 @@ struct ApprovalCard: View {
 
     /// A session's card that expired here: the session asks at the computer now.
     private var waitsAtComputer: Bool { store.waitsAtComputer(approval) }
-    private var fromSession: Bool { approval.source?.isSession == true }
-    /// A session's long command folds to this many lines until 展开.
+    private var item: PendingItem? { store.pendingItem(for: .approval(approval.id)) }
+    /// A long command folds to this many lines until 展开.
     private static let foldedLines = 6
-    /// A session's command: its label already says 「X 想运行」, so no title
-    /// row repeats it (unless the harness marked it as needing care).
-    private var sessionCommand: Bool {
-        fromSession && !approval.careful && Friendly.runsCommand(approval.tool) && (approval.isPending || waitsAtComputer)
-    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let asks = Copy.sessionAsks(approval) {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    SessionSourceLabel(text: asks, sessionID: linksSource ? approval.source?.id : nil)
-                    Spacer(minLength: 4)
-                    if approval.isPending {
-                        Text(Copy.relative(approval.createdAt))
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-            }
-            if !sessionCommand {
-                HStack(spacing: 8) {
-                    Image(systemName: approval.careful ? "exclamationmark.shield.fill" : "hand.raised.fill")
-                        .foregroundStyle(approval.careful ? Color.orange : Color.secondary)
-                    Text(approval.title.isEmpty ? String(localized: "需要你点个头") : approval.title)
-                        .font(.headline)
-                    Spacer(minLength: 0)
-                    if !approval.isPending && !waitsAtComputer {
-                        Text(Copy.approvalStatus(approval.status))
-                            .font(.caption)
-                            .foregroundStyle(statusColor)
-                    }
-                }
-            }
+        Group {
+            if approval.isPending || waitsAtComputer { open } else { folded }
+        }
+        .animation(.snappy, value: approval.status)
+        .accessibilityIdentifier("approval-\(approval.id)")
+    }
 
-            if !approval.detail.isEmpty {
+    private var header: PendingCardHeader {
+        PendingCardHeader(item: item, who: approval.source?.name ?? store.assistantName, createdAt: approval.createdAt, blocking: true)
+    }
+
+    private var open: some View {
+        PendingCard(header: header, title: title, background: background, error: decision.error) {
+            detail
+            if let taskId = approval.taskId, let task = store.task(id: taskId) {
+                Text("为了「\(task.title)」")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+            if approval.careful {
+                Label("这一步需要你仔细看一下。", systemImage: "exclamationmark.shield")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        } actions: {
+            if waitsAtComputer {
+                Label(Copy.waitsAtComputer(approval.note), systemImage: "laptopcomputer")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(spacing: 6) {
+                    PendingChoiceButtons(choices: [PendingChoiceButton(title: String(localized: "拒绝"), choice: .deny),
+                                                   PendingChoiceButton(title: String(localized: "允许"), choice: .allow(remember: false), primary: true)],
+                                         working: decision.working, pick: decide)
+                    if approval.canRemember {
+                        Button { decide(.allow(remember: true)) } label: {
+                            Text(rememberTitle).font(.footnote).frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderless)
+                        .tint(.secondary)
+                        .disabled(decision.working != nil)
+                    }
+                }
+            }
+        }
+    }
+
+    /// What it wants: the harness' words for the tool.
+    private var title: String { approval.title.isEmpty ? String(localized: "需要你点个头") : approval.title }
+
+    /// Why, when the harness says.
+    private var background: String? {
+        let reason = approval.reason?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return reason.isEmpty ? nil : reason
+    }
+
+    /// The command whole (folded when long, 展开全部), or what it touches.
+    @ViewBuilder private var detail: some View {
+        if !approval.detail.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(approval.detail)
                     .font(detailFont)
-                    .foregroundStyle(sessionCommand && approval.isPending ? .primary : .secondary)
+                    .foregroundStyle(.primary)
                     .textSelection(.enabled)
-                    // While pending show everything: the tail of a long
-                    // command is often the part that matters. A session's
-                    // long command folds, with 展开 to see it whole.
-                    .lineLimit(expanded ? nil : (approval.isPending ? (fromSession ? Self.foldedLines : nil) : 3))
+                    // The tail of a long command is often the part that matters: 展开 shows it.
+                    .lineLimit(expanded ? nil : Self.foldedLines)
                     .fixedSize(horizontal: false, vertical: true)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shownHeight = $0 }
                     .background(alignment: .topLeading) {
@@ -84,90 +110,25 @@ struct ApprovalCard: View {
                         .tint(.secondary)
                 }
             }
-
-            // A session's command needs no tool line: its label says it,
-            // with the time.
-            if !sessionCommand {
-                HStack(spacing: 6) {
-                    let tool = Copy.tool(approval.tool)
-                    if !tool.isEmpty { Text(tool) }
-                    if let taskId = approval.taskId, let task = store.task(id: taskId) {
-                        Text("· 为了「\(task.title)」")
-                    }
-                    if approval.isPending && !fromSession { Text("· \(Copy.relative(approval.createdAt))") }
-                }
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-            }
-
-            if waitsAtComputer {
-                Label(Copy.waitsAtComputer(approval.note), systemImage: "laptopcomputer")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            } else if approval.isPending {
-                if let reason = approval.reason, !reason.isEmpty {
-                    Text(reason)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                }
-                if approval.careful {
-                    Label("这一步需要你仔细看一下。", systemImage: "info.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                HStack(spacing: 10) {
-                    Button {
-                        answer(allow: false)
-                    } label: {
-                        Text("拒绝").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.secondary) // lighter than 允许; only the primary action carries the theme color
-
-                    Button {
-                        answer(allow: true)
-                    } label: {
-                        Text("允许").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                .controlSize(.large)
-                .buttonBorderShape(.capsule)
-                .disabled(working)
-
-                if approval.canRemember {
-                    Button {
-                        answer(allow: true, remember: true)
-                    } label: {
-                        Text(rememberTitle)
-                            .font(.footnote)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderless)
-                    .tint(.secondary)
-                    .disabled(working)
-                }
-                if let error {
-                    Text(error).font(.caption).foregroundStyle(.red)
-                }
-            }
         }
-        .padding(16)
-        .background(.background.secondary, in: .rect(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(approval.isPending ? Color.primary.opacity(0.12) : Color.clear, lineWidth: 1)
+    }
+
+    /// Decided: 「✓ 已允许：运行一条命令」; tapping shows the command.
+    private var folded: some View {
+        PendingFoldedLine(text: String(localized: "\(Copy.approvalStatus(approval.status))：\(title)"), done: approval.status == .allowed,
+                          hasDetail: !approval.detail.isEmpty) {
+            Text(approval.detail)
+                .font(detailFont)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .animation(.snappy, value: approval.status)
     }
 
     /// Folded now, or unfolded by the owner: 展开全部 / 收起.
     private var foldable: Bool { expanded || wholeHeight > shownHeight + 1 }
 
-    /// A session's command in a code face, smaller so more of it fits a line.
-    private var detailFont: Font { fromSession ? .footnote.monospaced() : .callout }
+    /// A command in a code face, smaller so more of it fits a line.
+    private var detailFont: Font { Friendly.runsCommand(approval.tool) ? .footnote.monospaced() : .callout }
 
     private var rememberTitle: String {
         if let scope = approval.friendlyScope {
@@ -176,24 +137,7 @@ struct ApprovalCard: View {
         return String(localized: "以后这类都允许")
     }
 
-    private var statusColor: Color {
-        switch approval.status {
-        case .allowed: .green
-        case .denied, .expired: .secondary
-        default: .secondary
-        }
-    }
-
-    private func answer(allow: Bool, remember: Bool = false) {
-        working = true
-        error = nil
-        Task {
-            do {
-                try await store.answer(approval, allow: allow, remember: remember)
-            } catch {
-                self.error = String(localized: "没发出去：\(Friendly.message(error))")
-            }
-            working = false
-        }
+    private func decide(_ choice: PendingChoice) {
+        PendingDecider.run(store, .approval(approval.id), choice, into: $decision)
     }
 }

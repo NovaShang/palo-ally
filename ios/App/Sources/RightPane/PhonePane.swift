@@ -4,7 +4,7 @@ import SafariServices
 import SwiftUI
 
 // The phone's right pane (workbench-prd §7): no tabs. One page with a
-// segmented 成果 / 文件 control; anything opened from it, or from a path or
+// segmented 等你 / 成果 / 文件 control; anything opened from it, or from a path or
 // link in a reply, is a full-screen modal that closes back to where it came
 // from. Nothing is remembered.
 
@@ -12,7 +12,7 @@ import SwiftUI
 @MainActor @Observable
 final class PhonePaneState {
     static let shared = PhonePaneState()
-    enum Segment: Hashable { case library, files }
+    enum Segment: Hashable { case pending, library, files }
     var segment: Segment = .library
     /// Palo's 文件: the owner's home folder, or Palo's own.
     var paloFilesRoot: FileScope = .home
@@ -109,6 +109,9 @@ struct PhonePane: View {
         let palID = RightPaneScope.palID(of: resolved)
         Group {
             switch state.segment {
+            case .pending:
+                // Everything in the assistant's, an agent's own in its.
+                PendingListView(filter: .pane(key: key, activeSessionID: activeSessionID, store: store), dismiss: onClose)
             case .library:
                 LibraryTab()
                     .environment(\.libraryOpensModal, true)
@@ -159,6 +162,13 @@ struct PhonePane: View {
 
     @ViewBuilder private func capsule(palID: String?, scope: FileScope) -> some View {
         switch state.segment {
+        case .pending:
+            Text(palID.flatMap { store.pal(id: $0)?.name }.map { String(localized: "来自\($0)") } ?? String(localized: "等你的事"))
+                .font(.headline)
+                .lineLimit(1)
+                .padding(.horizontal, 16)
+                .frame(height: 40)
+                .glassEffect(.regular, in: .capsule)
         case .library where palID != nil:
             capsuleMenu(chrome.onlyThisSession ? String(localized: "这个会话", table: "Library") : String(localized: "全部", table: "Library")) {
                 Picker(selection: $chrome.onlyThisSession) {
@@ -246,22 +256,26 @@ struct PhonePane: View {
                 .accessibilityLabel(String(localized: "取消搜索", table: "Files"))
             } else {
                 HStack(spacing: 0) {
+                    tab(.pending, title: Text("等你", tableName: "Files"), icon: "tray", count: pendingCount)
                     tab(.library, title: Text("成果", tableName: "Files"), icon: "square.stack")
                     tab(.files, title: Text("文件", tableName: "Files"), icon: "folder")
                 }
                 .padding(5)
                 .glassEffect(.regular, in: .capsule)
-                Button {
-                    searching = true
-                    searchFocused = true
-                } label: {
-                    Image(systemName: "magnifyingglass").font(.system(size: 19, weight: .medium))
-                        .frame(width: 62, height: 62).contentShape(.circle)
+                // 等你 has nothing to search.
+                if state.segment != .pending {
+                    Button {
+                        searching = true
+                        searchFocused = true
+                    } label: {
+                        Image(systemName: "magnifyingglass").font(.system(size: 19, weight: .medium))
+                            .frame(width: 62, height: 62).contentShape(.circle)
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .accessibilityLabel(String(localized: "搜索", table: "Files"))
+                    .accessibilityIdentifier("pane-search")
                 }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .circle)
-                .accessibilityLabel(String(localized: "搜索", table: "Files"))
-                .accessibilityIdentifier("pane-search")
             }
         }
         .padding(.horizontal, 14)
@@ -269,13 +283,29 @@ struct PhonePane: View {
         .animation(.snappy, value: searching)
     }
 
-    private func tab(_ segment: PhonePaneState.Segment, title: Text, icon: String) -> some View {
+    /// 等你's count on its tab: this pane's (the assistant's: all; an agent's: its own).
+    private var pendingCount: Int {
+        PendingFilter.pane(key: key, activeSessionID: activeSessionID, store: store).items(in: store).count
+    }
+
+    private func tab(_ segment: PhonePaneState.Segment, title: Text, icon: String, count: Int = 0) -> some View {
         let on = state.segment == segment
         return Button {
             state.segment = segment
         } label: {
             VStack(spacing: 2) {
                 Image(systemName: icon).font(.system(size: 19))
+                    .overlay(alignment: .topTrailing) {
+                        if count > 0 {
+                            Text(count > 9 ? "9+" : "\(count)")
+                                .font(.system(size: 10, weight: .bold).monospacedDigit())
+                                .foregroundStyle(.black.opacity(0.85))
+                                .padding(.horizontal, 4)
+                                .frame(minWidth: 16, minHeight: 16)
+                                .background(StatusDot.color(.waiting), in: .capsule)
+                                .offset(x: 10, y: -6)
+                        }
+                    }
                 title.font(.caption2.weight(on ? .semibold : .regular))
             }
             .foregroundStyle(on ? Color.primary : .secondary)
@@ -285,7 +315,7 @@ struct PhonePane: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(on ? .isSelected : [])
-        .accessibilityIdentifier(segment == .library ? "pane-tab-library" : "pane-tab-files")
+        .accessibilityIdentifier(segment == .pending ? "pane-tab-pending" : segment == .library ? "pane-tab-library" : "pane-tab-files")
     }
 
     private func endSearch() {

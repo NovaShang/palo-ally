@@ -177,6 +177,17 @@
         }
       }
     },
+    "等你" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting"
+          }
+        }
+      }
+    },
     "重新载入" : {
       "extractionState" : "manual",
       "localizations" : {

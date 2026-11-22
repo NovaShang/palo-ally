@@ -2,19 +2,18 @@ import PaloAllyKit
 import SwiftUI
 
 /// The assistant proposes taking over a conversation that ended on the
-/// computer (pals-prd §10, `pal_adopt`): 接管「标题」 and its folder, then
-/// 不用 / 接管. Nothing is adopted until 接管, the one button in the theme
-/// color. The helper proposal's card, in look and in how it answers
-/// (`helper.decide`); once answered it stays, saying so, and the Pal it
-/// became opens from here. One the computer couldn't take over says why and
-/// stays on offer.
+/// computer (pals-prd §10, `pal_adopt`), on the one card for what waits on
+/// the owner (PendingCard): 接管「标题」 and its folder, then 不用 / 接管.
+/// Nothing is adopted until 接管, the one button in the theme color; it
+/// answers as the helper proposal does (`helper.decide`). One the computer
+/// couldn't take over says why and stays on offer. Answered, it folds to one
+/// line; the agent it became opens from there.
 struct PalAdoptCard: View {
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     let proposal: PalAdoptProposal
 
-    @State private var working: HelperDecideAction?
-    @State private var error: String?
+    @State private var decision = PendingDecider()
 
     /// The Pal it became, once it's on the list.
     private var adoptedPal: Pal? {
@@ -22,73 +21,58 @@ struct PalAdoptCard: View {
         return proposal.status == .adopted ? store.pal(sessionId: proposal.sessionId) : nil
     }
 
+    private var item: PendingItem? { store.pendingItem(for: .proposal(proposal.id)) }
+
+    /// Waiting for 接管 / 不用, or tapped and not taken over (it can be again).
+    private var onOffer: Bool { proposal.status == .pending || proposal.status == .failed }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ProposalHeader(symbol: "clock.arrow.circlepath", title: Copy.spaced(String(localized: "接管「\(proposal.displayTitle)」")),
-                           dimmed: proposal.status == .discarded || proposal.status == .expired, state: state)
-
-            if !proposal.cwd.isEmpty {
-                ProposalFact(name: String(localized: "目录"), value: proposal.shortCwd)
-            }
-
-            switch proposal.status {
-            case .pending, .failed:
-                if proposal.status == .failed, let note = proposal.note, !note.isEmpty {
-                    // The last 接管 didn't work: why, and it's still on offer.
-                    Text(Copy.spaced(String(localized: "没接成：\(note)")))
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Text("接过来以后，它会出现在会话里，在手机上接着聊。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                ProposalButtons(no: String(localized: "不用"), yes: String(localized: "接管"), yesWorking: String(localized: "接管中…"), working: working,
-                                enabled: store.connection.isOnline, decide: decide)
-                if let error {
-                    Text(error).font(.caption).foregroundStyle(.red)
-                }
-            case .adopted:
-                if let pal = adoptedPal {
-                    OpenPalButton { model.openPal(pal.id) }
-                }
-            case .discarded, .expired, .unknown:
-                // Why it wasn't adopted, when the computer says.
-                if let note = proposal.note, !note.isEmpty {
-                    ProposalNote(text: note)
-                }
-            }
+        Group {
+            if onOffer { open } else { folded }
         }
-        .modifier(ProposalCardStyle(pending: onOffer))
         .animation(.snappy, value: proposal.status)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("pal-adopt-\(proposal.id)")
     }
 
-    /// Waiting for 接管 / 不用, or tapped and not taken over (it can be again).
-    private var onOffer: Bool { proposal.status == .pending || proposal.status == .failed }
-
-    private var state: String? {
-        switch proposal.status {
-        case .pending, .failed, .unknown: nil
-        case .adopted: String(localized: "已经接过来了")
-        case .discarded: String(localized: "没接")
-        case .expired: String(localized: "过期了")
+    private var open: some View {
+        PendingCard(header: PendingCardHeader(item: item, who: store.assistantName, createdAt: item?.createdAt ?? 0, blocking: false),
+                    title: Copy.spaced(String(localized: "接管「\(proposal.displayTitle)」")),
+                    background: String(localized: "接过来以后，它在这里接着聊。"),
+                    error: decision.error) {
+            if !proposal.cwd.isEmpty {
+                ProposalFact(name: String(localized: "目录"), value: proposal.shortCwd)
+            }
+            if proposal.status == .failed, let note = proposal.note, !note.isEmpty {
+                // The last 接管 didn't work: why, and it's still on offer.
+                Text(Copy.spaced(String(localized: "没接成：\(note)")))
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } actions: {
+            PendingChoiceButtons(choices: ProposalWords.buttons(yes: String(localized: "接管")), working: decision.working,
+                                 enabled: store.connection.isOnline, pick: decide)
         }
     }
 
-    private func decide(_ action: HelperDecideAction) {
-        working = action
-        error = nil
-        Task {
-            do {
-                try await store.decideAdopt(proposal, action)
-            } catch {
-                self.error = action == .create ? String(localized: "没接成：\(Copy.error(error))") : String(localized: "没发出去：\(Copy.error(error))")
-            }
-            working = nil
+    /// 「✓ 已经接过来了：标题 · 去看看它」, 「没接：…」, 「过期了：…」.
+    private var folded: some View {
+        let state: String = switch proposal.status {
+        case .adopted: String(localized: "已经接过来了")
+        case .discarded: String(localized: "没接")
+        default: String(localized: "过期了")
+        }
+        let note = proposal.status != .adopted ? (proposal.note ?? "") : ""
+        let title = proposal.displayTitle
+        return PendingFoldedLine(text: Copy.spaced(note.isEmpty ? String(localized: "\(state)：\(title)") : String(localized: "\(state)：\(title) · \(note)")),
+                                 done: proposal.status == .adopted,
+                                 action: adoptedPal.map { pal in (String(localized: "去看看它"), { model.openPal(pal.id) }) })
+    }
+
+    private func decide(_ choice: PendingChoice) {
+        PendingDecider.run(store, .proposal(proposal.id), choice, into: $decision) { reason in
+            choice == .accept ? String(localized: "没接成：\(reason)") : String(localized: "没发出去：\(reason)")
         }
     }
 }

@@ -3,8 +3,9 @@ import PaloAllyKit
 import SwiftUI
 
 /// The pane at the right of a session, a workspace or Palo (workbench-prd §7):
-/// a row of tabs on glass, and the tab's page under it. The first two tabs
-/// are pinned, 成果 and 文件; files and web pages open as tabs after them. Which tabs are open, which shows, and whether the pane is
+/// a row of tabs on glass, and the tab's page under it. The first tabs are
+/// pinned, 等你 (with its count), 成果 and 文件; files and web pages open as
+/// tabs after them. Which tabs are open, which shows, and whether the pane is
 /// open is kept on the computer per `key` (`PaneTabsKey`), so every device
 /// shows the same one; whether it is open is each window's own once it has
 /// opened or closed it (`WindowModel.editPane`).
@@ -29,6 +30,9 @@ struct RightPane: View {
     private var hub: PaneTabsHub { PaneTabsHub.shared(for: store) }
     private var state: TabsState { hub.state(for: key) }
 
+    /// Whose items 等你 lists: everything in the assistant's pane, an agent's own in its.
+    private var pendingFilter: PendingFilter { .pane(key: key, activeSessionID: activeSessionID, store: store) }
+
     /// Where the files tab and previews read from.
     private var scope: FileScope { RightPaneScope.resolve(key: key, activeSessionID: activeSessionID, store: store) }
 
@@ -39,6 +43,7 @@ struct RightPane: View {
         VStack(spacing: 0) {
             RightPaneTabBar(
                 tabs: state.tabs, active: state.active, key: key, pages: pageByTab,
+                pendingCount: pendingFilter.items(in: store).count,
                 select: { hub.activate(key, at: $0) },
                 close: { requestClose($0) },
                 unsaved: { tab in tab.kind == PaneTab.preview && FileEditSessions.shared.isDirty(editKey(tab.path ?? "")) },
@@ -185,7 +190,7 @@ struct RightPane: View {
                 // An item opens as its own tab, as a file from 文件 does.
                 .environment(\.libraryOpensTab) { id in model.editPane(key) { $0.openArtifact(key, id: id) } }
         case PaneTab.pending:
-            PendingPaneView()
+            PendingPaneView(filter: pendingFilter)
         case PaneTab.artifact:
             let index = state.active
             ArtifactDetailView(artifactID: tab.path ?? "", inPane: true, close: { requestClose(index) })
@@ -286,6 +291,8 @@ private struct RightPaneTabBar: View {
     let active: Int
     let key: String
     let pages: [Int: WebTabPage]
+    /// 等你's count, on its chip.
+    var pendingCount = 0
     let select: (Int) -> Void
     let close: (Int) -> Void
     /// A file's tab with unsaved changes: a dot on its chip.
@@ -364,6 +371,15 @@ private struct RightPaneTabBar: View {
                     Image(systemName: icon(tab)).font(.system(size: 11)).foregroundStyle(.secondary)
                     TabTitle(tab: tab, page: page)
                         .lineLimit(1)
+                    if tab.kind == PaneTab.pending, pendingCount > 0 {
+                        Text(pendingCount > 99 ? "99+" : "\(pendingCount)")
+                            .font(.caption2.weight(.bold).monospacedDigit())
+                            .foregroundStyle(.black.opacity(0.85))
+                            .padding(.horizontal, 5)
+                            .frame(minWidth: 16, minHeight: 16)
+                            .background(StatusDot.color(.waiting), in: .capsule)
+                            .accessibilityLabel(String(localized: "\(pendingCount) 件等你"))
+                    }
                     if unsaved {
                         Circle()
                             .fill(.primary.opacity(0.55))
@@ -671,7 +687,7 @@ private struct TabTitle: View {
         case PaneTab.files: Text(String(localized: "文件", table: "Files"))
         case PaneTab.preview: Text(verbatim: ((tab.path ?? "") as NSString).lastPathComponent)
         case PaneTab.artifact: ArtifactTabTitle(id: tab.path ?? "")
-        case PaneTab.pending: Text(String(localized: "等你的事"))
+        case PaneTab.pending: Text(String(localized: "等你", table: "Files"))
         case PaneTab.web:
             if let page { LiveTitle(page: page, fallback: tab.url ?? "") } else { Text(verbatim: WebAddress.label(for: tab.url ?? "")) }
         default: Text(verbatim: tab.kind)

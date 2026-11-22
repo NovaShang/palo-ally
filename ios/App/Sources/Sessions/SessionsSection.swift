@@ -15,16 +15,3 @@ struct SessionKindTag: View {
     }
 }
 
-/// 「问卷数据清洗 问你」 on top of a card from one of the computer's other
-/// sessions (not a Pal: those have no page; 接管 in the list makes one).
-struct SessionSourceLabel: View {
-    let text: String
-    /// Kept for the callers; the label doesn't open anything.
-    let sessionID: String?
-
-    var body: some View {
-        Label(text, systemImage: "terminal")
-            .labelStyle(QuietLabelStyle())
-            .lineLimit(1)
-    }
-}

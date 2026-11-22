@@ -35,11 +35,12 @@ extension AppStore {
         set { shared.sessionOrder = newValue }
     }
 
-    /// The sidebar's sections, in the owner's manual order.
-    public var sidebarTree: SidebarTree { SidebarTree.build(pals: pals, workspaces: workspaces, sessionOrder: sessionOrder) }
-
-    /// Sessions waiting on the owner, anywhere.
-    public var waitingSessionCount: Int { pals.filter { $0.attention == .waiting }.count }
+    /// The sidebar's sections, in the owner's manual order; what waits on the
+    /// owner counted from 等你的事.
+    public var sidebarTree: SidebarTree {
+        SidebarTree.build(pals: pals, workspaces: workspaces, sessionOrder: sessionOrder)
+            .counting { palPendingCount($0) }
+    }
 
     // MARK: loading
 

@@ -1,64 +1,80 @@
 import PaloAllyKit
 import SwiftUI
 
-/// The assistant asks the owner to choose (Claude Code's AskUserQuestion):
-/// each question with its options, single or multi select, plus 「其他…」 for
-/// the owner's own words. Any question can be left out, and 跳过 skips the
-/// card: the asker is told in words that those went unanswered. Plain
-/// in-content controls; only 发送 carries the theme color. Once answered it
-/// folds into a short summary.
+/// The assistant, an agent or a session asks the owner to choose (Claude
+/// Code's AskUserQuestion), on the one card for what waits on the owner
+/// (PendingCard): who asks · the question (or how many) · its header, then
+/// each question with its options, single or multi select, plus 「其他…」
+/// for the owner's own words. Any question can be left out, and 跳过 skips
+/// the card: the asker is told in words that those went unanswered. Only
+/// 发送 carries the theme color. Answered, it folds to one line; tapping it
+/// shows the answers.
 struct QuestionCard: View {
     @Environment(AppStore.self) private var store
     let question: Question
-    /// A session's card: its label opens that session's page (not on the page itself).
+    /// Kept for the callers (the session's page no longer differs).
     var linksSource = true
 
     /// A session's question that expired here: the session asks at the computer now.
     private var waitsAtComputer: Bool { store.waitsAtComputer(question) }
+    private var item: PendingItem? { store.pendingItem(for: .question(question.id)) }
 
     /// Per question (by index): chosen option labels, and the 「其他」 text.
     @State private var picked: [Int: Set<String>] = [:]
     @State private var otherOn: [Int: Bool] = [:]
     @State private var otherText: [Int: String] = [:]
-    @State private var working = false
-    @State private var error: String?
+    @State private var decision = PendingDecider()
     @FocusState private var focusedOther: Int?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if let asks = Copy.sessionQuestion(question) {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    SessionSourceLabel(text: asks, sessionID: linksSource ? question.source?.id : nil)
-                    Spacer(minLength: 4)
-                    if question.isPending {
-                        Text(Copy.relative(question.createdAt))
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-            }
-            // A session's label already says 「X 问你」 while it asks.
-            if !(question.source?.isSession == true && (question.isPending || waitsAtComputer)) {
-                HStack(spacing: 8) {
-                    Image(systemName: "questionmark.bubble")
-                        .foregroundStyle(.secondary)
-                    Text(question.isPending ? String(localized: "想问你") : String(localized: "问过你"))
-                        .font(.headline)
-                    Spacer(minLength: 0)
-                    if !question.isPending {
-                        Text(question.status != .answered ? String(localized: "没等到回答")
-                             : (question.answers ?? [:]).isEmpty ? String(localized: "跳过了") : String(localized: "已回答"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
+        Group {
+            if question.isPending || waitsAtComputer { open } else { folded }
+        }
+        .animation(.snappy, value: question.status)
+        .accessibilityIdentifier("question-\(question.id)")
+    }
 
-            if question.isPending {
-                ForEach(Array(question.items.enumerated()), id: \.offset) { i, item in
-                    itemPicker(i, item)
+    private var header: PendingCardHeader {
+        PendingCardHeader(item: item, who: question.source?.name ?? store.assistantName, createdAt: question.createdAt, blocking: true)
+    }
+
+    /// One question: it is the title (its header the background); several: how many.
+    private var one: Bool { question.items.count == 1 }
+    private var title: String {
+        if one { return question.items.first?.question ?? "" }
+        return String(localized: "想问你 \(question.items.count) 个问题")
+    }
+
+    private var background: String? {
+        guard one, let item = question.items.first else { return nil }
+        let header = item.header ?? ""
+        if item.multiSelect { return header.isEmpty ? String(localized: "可多选") : String(localized: "\(header) · 可多选") }
+        return header.isEmpty ? nil : header
+    }
+
+    private var open: some View {
+        PendingCard(header: header, title: title, background: background, error: decision.error) {
+            if waitsAtComputer {
+                asked
+            } else {
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(Array(question.items.enumerated()), id: \.offset) { i, item in
+                        itemPicker(i, item)
+                    }
                 }
-                if question.source?.isSession != true { meta }
+                if let taskId = question.taskId, let task = store.task(id: taskId) {
+                    Text("为了「\(task.title)」")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+        } actions: {
+            if waitsAtComputer {
+                Label(Copy.waitsAtComputer(question.note), systemImage: "laptopcomputer")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
                 HStack(spacing: 10) {
                     Button {
                         send(skippingAll: true)
@@ -77,26 +93,22 @@ struct QuestionCard: View {
                 }
                 .buttonBorderShape(.capsule)
                 .controlSize(.large)
-                .disabled(working)
-                if let error {
-                    Text(error).font(.caption).foregroundStyle(.red)
-                }
-            } else if waitsAtComputer {
-                asked
-                Label(Copy.waitsAtComputer(question.note), systemImage: "laptopcomputer")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            } else {
-                summary
+                .disabled(decision.working != nil)
             }
         }
-        .padding(16)
-        .background(.background.secondary, in: .rect(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(question.isPending ? Color.primary.opacity(0.12) : Color.clear, lineWidth: 1)
-        }
-        .animation(.snappy, value: question.status)
+    }
+
+    /// Answered: 「✓ 已回答：四个人；日料, 粤菜」; tapping shows each question with its answer.
+    private var folded: some View {
+        PendingFoldedLine(text: foldedText, done: question.status == .answered && !(question.answers ?? [:]).isEmpty,
+                          hasDetail: true) { summary }
+    }
+
+    private var foldedText: String {
+        guard question.status == .answered else { return String(localized: "没等到回答：\(title)") }
+        let answers = question.items.compactMap { question.answers?[$0.question] }.filter { !$0.isEmpty }
+        if answers.isEmpty { return String(localized: "跳过了：\(title)") }
+        return String(localized: "已回答：\(answers.joined(separator: "；"))")
     }
 
     // MARK: one question
@@ -104,16 +116,19 @@ struct QuestionCard: View {
     @ViewBuilder
     private func itemPicker(_ i: Int, _ item: QuestionItem) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let header = item.header, !header.isEmpty {
-                Text(item.multiSelect ? String(localized: "\(header) · 可多选") : header)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else if item.multiSelect {
-                Text("可多选").font(.caption).foregroundStyle(.secondary)
+            // One question: the card's title and background already say it.
+            if !one {
+                if let header = item.header, !header.isEmpty {
+                    Text(item.multiSelect ? String(localized: "\(header) · 可多选") : header)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if item.multiSelect {
+                    Text("可多选").font(.caption).foregroundStyle(.secondary)
+                }
+                Text(item.question)
+                    .font(.body.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text(item.question)
-                .font(.body.weight(.semibold))
-                .fixedSize(horizontal: false, vertical: true)
             VStack(spacing: 2) {
                 ForEach(item.options, id: \.label) { option in
                     optionRow(i, item, option)
@@ -176,18 +191,6 @@ struct QuestionCard: View {
                     .padding(.leading, 34)
             }
         }
-    }
-
-    private var meta: some View {
-        HStack(spacing: 6) {
-            if let taskId = question.taskId, let task = store.task(id: taskId) {
-                Text("为了「\(task.title)」 ·")
-            }
-            Text(Copy.relative(question.createdAt))
-        }
-        .font(.caption)
-        .foregroundStyle(.tertiary)
-        .lineLimit(1)
     }
 
     // MARK: waiting at the computer
@@ -271,7 +274,7 @@ struct QuestionCard: View {
 
     /// 发送, or what it leaves out when some questions are unanswered.
     private var sendTitle: String {
-        if working { return String(localized: "发送中…") }
+        if decision.working != nil { return String(localized: "发送中…") }
         let left = question.items.count - answeredCount
         return answeredCount > 0 && left > 0 ? String(localized: "发送，跳过 \(left) 题") : String(localized: "发送")
     }
@@ -285,16 +288,7 @@ struct QuestionCard: View {
             }
             guard !answers.isEmpty else { return }
         }
-        working = true
-        error = nil
         focusedOther = nil
-        Task {
-            do {
-                try await store.answer(question, answers: answers)
-            } catch {
-                self.error = String(localized: "没发出去：\(Friendly.message(error))")
-            }
-            working = false
-        }
+        PendingDecider.run(store, .question(question.id), .answers(answers), into: $decision)
     }
 }

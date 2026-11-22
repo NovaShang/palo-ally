@@ -49,10 +49,10 @@ extension AppStore {
         openPending(forPal: id).count
     }
 
-    /// The cards waiting on the owner from one of the computer's other sessions.
+    /// What waits on the owner from one of the computer's other sessions:
+    /// its open items (its questions and prompts).
     public func sessionPendingCount(_ id: String) -> Int {
-        approvals.filter { $0.isPending && $0.source?.isSession == true && $0.source?.id == id }.count
-            + questions.filter { $0.isPending && $0.source?.isSession == true && $0.source?.id == id }.count
+        openPending.filter { $0.source.kind == .session && $0.source.id == id }.count
     }
 
     // MARK: loading

@@ -313,7 +313,7 @@ final class ImmersiveWindows: NSObject {
     }
 
     /// Keys pressed one by one, as the keyboard does: letters, digits,
-    /// space, ↑↓←→; `\n` Return; `⌘x` that key with ⌘. Queued for the app,
+    /// space, ↑↓←→; `\n` Return; `⌘x` that key with ⌘ (`⌥`, `⇧` too). Queued for the app,
     /// a key every 80 ms, the app brought in front first. An input method
     /// doesn't compose them (they come in as the letters): `compose:` for that.
     @objc func pressKeys(_ spec: String) -> String {
@@ -332,15 +332,16 @@ final class ImmersiveWindows: NSObject {
         var held: NSEvent.ModifierFlags = []
         for c in spec {
             if c == "⌘" { held.insert(.command); continue }
-            // `⌥⌘1`: with ⌥ too.
+            // `⌥⌘1`: with ⌥ too; `⇧⌘i`: with ⇧.
             if c == "⌥" { held.insert(.option); continue }
+            if c == "⇧" { held.insert(.shift); continue }
             keys.append((c, held))
             held = []
         }
         for (i, (c, flags)) in keys.enumerated() {
             guard let code = codes[c] else { continue }
             let arrows: [Character: Int] = ["↑": 0xF700, "↓": 0xF701, "←": 0xF702, "→": 0xF703]
-            let chars = c == "\n" ? "\r" : arrows[c].map { String(UnicodeScalar($0)!) } ?? String(c)
+            let chars = c == "\n" ? "\r" : arrows[c].map { String(UnicodeScalar($0)!) } ?? (flags.contains(.shift) ? String(c).uppercased() : String(c))
             for (k, type) in [NSEvent.EventType.keyDown, .keyUp].enumerated() {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3 + Double(i) * 0.08 + Double(k) * 0.03) {
                     // A keyboard's event underneath (UIKit reads that one), queued for this app only.
@@ -348,6 +349,7 @@ final class ImmersiveWindows: NSObject {
                     var cgFlags: CGEventFlags = []
                     if flags.contains(.command) { cgFlags.insert(.maskCommand) }
                     if flags.contains(.option) { cgFlags.insert(.maskAlternate) }
+                    if flags.contains(.shift) { cgFlags.insert(.maskShift) }
                     cg.flags = cgFlags
                     let units = Array(chars.utf16)
                     cg.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)

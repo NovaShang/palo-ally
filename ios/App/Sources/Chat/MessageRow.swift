@@ -290,7 +290,7 @@ private struct AssistantMessage: View {
                     PendingChatCard(id: id)
                 }
                 if message.kind == .helper, let proposal = store.helperProposal(in: message) {
-                    HelperProposalCard(proposal: proposal)
+                    HelperProposalCard(proposal: proposal, text: message.text)
                 }
                 if let proposal = store.adoptProposal(in: message) {
                     PalAdoptCard(proposal: proposal)
@@ -318,10 +318,10 @@ private struct AssistantMessage: View {
             && message.questionId.flatMap { store.question(id: $0) }.map { !store.settledAtComputer($0) } == true
     }
 
-    /// A `pal_adopt` card says it all (接管「标题」 and its folder): the
-    /// host's line above it would only repeat it.
+    /// A proposal card says it all (its question, 接管「标题」, the folder):
+    /// the host's line above it would only repeat it.
     private var adoptCardOnly: Bool {
-        message.kind == .palAdopt && message.adoption != nil
+        (message.kind == .palAdopt && message.adoption != nil) || (message.kind == .helper && message.proposal != nil)
     }
 
     private var proactiveLabel: String {
