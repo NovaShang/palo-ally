@@ -1,0 +1,4 @@
+{"type":"user","uuid":"u1-copy","parentUuid":null,"timestamp":"2026-11-01T08:00:00.000Z","sessionId":"s1","message":{"role":"user","content":"第一句"},"origin":{"kind":"human"},"forkedFrom":{"sessionId":"s0","messageUuid":"u1"}}
+{"type":"assistant","uuid":"a1-copy","parentUuid":"u1-copy","timestamp":"2026-11-01T08:00:01.000Z","sessionId":"s1","message":{"id":"msg_a1","role":"assistant","model":"claude-opus-5-5","content":[{"type":"text","text":"好"}]},"forkedFrom":{"sessionId":"s0","messageUuid":"a1"}}
+{"type":"user","uuid":"u4","parentUuid":"a1-copy","timestamp":"2026-11-01T08:00:40.000Z","sessionId":"s1","message":{"role":"user","content":"改过的第二句"},"origin":{"kind":"human"}}
+{"type":"assistant","uuid":"a4","parentUuid":"u4","timestamp":"2026-11-01T08:00:41.000Z","sessionId":"s1","message":{"id":"msg_a4","role":"assistant","model":"claude-opus-5-5","content":[{"type":"text","text":"这次这样"}]}}

@@ -542,6 +542,9 @@ describe("host ↔ app protocol", () => {
     // 待办: an agent's list with one being done, one meant for it and one done
     const lists = events.filter((e) => e.event === "backlog.updated").map((e) => e.data);
     sampleEvents["backlog.updated"] = JSON.parse(JSON.stringify([lists.find((b) => b.items.some((i: any) => i.state === "doing")), lists.at(-1)]));
+    // the harness' descriptor, again when its models change (hello carries the first)
+    sampleEvents["harness.updated"] = events.find((e) => e.event === "harness.updated")!.data;
+    expect(hello.harnesses[hello.harness]).toMatchObject({ id: "claude-code", name: "Claude Code", permissionModes: ["default", "auto", "acceptEdits", "plan"] });
     // commands.updated fires when the harness reports its list
     expect(Object.keys(sampleEvents).sort()).toEqual([...RPC_EVENTS].sort());
 

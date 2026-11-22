@@ -129,6 +129,14 @@ export interface ToolHandlers {
   pair_link(): Promise<string>;
 }
 
+/** One of PaloAlly's own tools, harness-neutral: the adapter offers it the harness' way (Claude Code: an MCP tool). */
+export interface ToolSpec {
+  name: string;
+  description: string;
+  schema: import("zod").ZodRawShape; // its parameters
+  run(args: any): Promise<string>; // what the model is told back
+}
+
 export interface ImageInput {
   mediaType: string;
   data: string; // base64
@@ -274,3 +282,287 @@ export const SESSION_ALLOWED_TOOLS = [PALO_SEND_TOOL, ...["Artifact", "SendUserF
  * which to use.
  */
 export const SESSION_DISALLOWED = ["SendUserFile"];
+
+// ---------------- the harness adapter (docs/harness-adapter-design.md §2) ----------------
+//
+// Everything one coding harness keeps for itself, behind one interface: its
+// processes (the driver above), its conversations on disk, going back in one,
+// its own list of sessions, its settings, where its memory lives, its login and
+// what its tool names mean. Claude Code's is harness/claude/ (ClaudeHarness);
+// nothing above harness/ reads a transcript or calls the SDK.
+
+/** One conversation the harness keeps: its id and the folder it runs in. */
+export interface SessionRef {
+  sessionId: string;
+  cwd: string;
+}
+
+/** How an agent's conversation is shown (an agent's id, the assistant's names, what the owner sent with attachments). */
+export interface HistoryMapOptions {
+  pal: string;
+  assistantName: string;
+  paloName: string;
+  duty?: string;
+  recall?: (uuid: string) => { text: string; attachments: import("../types.ts").Attachment[]; kind?: "clipboard"; label?: string } | undefined;
+}
+
+/** A conversation's entries as the harness wrote them (opaque above harness/: only its own functions read them). */
+export type HarnessEntry = Record<string, any>;
+
+export interface HistoryStore {
+  /** The session's conversation has been written (it has run a turn). */
+  exists(ref: SessionRef): boolean;
+  /** A page of its conversation as the app shows it: `pick` chooses the page from all it read (from the end when it's long). */
+  page(ref: SessionRef, o: { map: HistoryMapOptions; pick: (all: import("../types.ts").ChatMessage[]) => import("../types.ts").ChatMessage[]; before?: string | number; limit: number }): Promise<import("../types.ts").ChatMessage[]>;
+  /** Entries as the app shows them. */
+  toMessages(entries: HarnessEntry[], map: HistoryMapOptions): import("../types.ts").ChatMessage[];
+  /** The last entries (about `bytes` of them) and the first. */
+  tail(ref: SessionRef, bytes?: number): HarnessEntry[];
+  head(ref: SessionRef, bytes?: number): HarnessEntry[];
+  /** The model it last ran on and its last words, from some of its entries. */
+  model(entries: HarnessEntry[]): string | null;
+  lastLine(entries: HarnessEntry[]): string | undefined;
+  /** Follows what is written to it from now on (lines that reach it without passing through the host). */
+  follow(ref: SessionRef, onEntry: (e: HarnessEntry) => void): { start(): void; poke(): void; stop(): void };
+  /** One followed entry as the app shows it (null: nothing to show). */
+  entryMessage(e: HarnessEntry, map: HistoryMapOptions): import("../types.ts").ChatMessage | null;
+  /** The stall watchdog: did the session take the message sent under `uuid`; a signature of how far it has written. */
+  took(ref: SessionRef, uuid: string): boolean;
+  growth(ref: SessionRef): string;
+  /** How big it is where it is kept (null: not there). */
+  size(ref: SessionRef): number | null;
+  /** What the session spent on `day` (YYYY-MM-DD in `tz`), its subagents' too. */
+  spentOn(ref: SessionRef, day: string, tz: string): number;
+  /** Where it is kept: for logs and diagnostics only, never parsed above harness/. */
+  locate(ref: SessionRef): string;
+}
+
+/** Where a rewound session goes on from (kept until the fork has been written). */
+export interface PendingRewindPoint {
+  from: string;
+  at: string | null;
+  cut: string;
+}
+
+/** A conversation as it stands, as rewind reads it. */
+export interface RewindChain {
+  sessionId: string;
+  entries: HarnessEntry[];
+  chain: HarnessEntry[];
+  startedAt?: number; // when its first entry was written
+}
+
+/** One of the owner's messages in it, to go back to just before. */
+export interface RewindPoint {
+  uuid: string; // the entry's id
+  index: number; // where it is in the chain
+  at: string | null; // the last entry kept (null: nothing is)
+  text: string | null; // the owner's words in it (null: not the owner's)
+}
+
+export interface Rewinder {
+  /** The conversation as it stands: the session's own, or (gone back and not spoken to since) the old one up to where it was cut. */
+  chain(ref: SessionRef, pending?: PendingRewindPoint): RewindChain;
+  /** Only the owner's entries of a session (a long one: just those lines), to match older messages by their words. */
+  ownerChain(ref: SessionRef): RewindChain;
+  /** Its entry for a message: by the id it was sent under (`exact`: only that entry), else by its words near `ts`. */
+  find(chain: RewindChain, by: { uuid?: string; exact?: boolean; words?: string; ts?: number; used?: Set<string> }): RewindPoint | null;
+  /** The ids of every entry kept up to `at` in the session (a fork's inherited entries). */
+  keptIds(ref: SessionRef, at: string | null): Set<string>;
+  /** Going back to this point can't be a fork (it's before the last compaction): it is copied now. */
+  needsCopy(chain: RewindChain, point: RewindPoint): boolean;
+  /** Copies the session up to `at` as a new one; its id. */
+  copy(ref: SessionRef, at: string, title: string): Promise<string>;
+  /** In a copy: each copied entry's new id, by the id it had. */
+  renamed(ref: SessionRef): Map<string, string>;
+  /** Files were kept as they were right before this message. */
+  canRestoreFiles(chain: RewindChain, uuid: string): boolean;
+  /** The words of an owner's entry (null: not the owner's). */
+  ownerWords(e: HarnessEntry): string | null;
+  /** The messages (by app id) that leave the conversation going back to `point`. */
+  dropped(chain: RewindChain, point: RewindPoint, map: HistoryMapOptions): string[];
+}
+
+/** A session process of the harness' alive on this computer (Claude Code's registry). */
+export interface LiveSession {
+  pid: number;
+  sessionId: string;
+  name: string;
+  cwd: string;
+  kind: string;
+  entrypoint?: string;
+  status: string;
+  waitingFor?: string;
+  statusAt?: number;
+  jobId?: string;
+  socketPath?: string;
+  startedAt?: number;
+  nameSource?: string;
+}
+
+/** One of its conversations as its own list has it (Claude Code: the SDK's SDKSessionInfo). */
+export interface SessionInfo {
+  sessionId: string;
+  summary: string;
+  lastModified: number;
+  fileSize?: number;
+  customTitle?: string;
+  firstPrompt?: string;
+  gitBranch?: string;
+  cwd?: string;
+  tag?: string;
+  createdAt?: number;
+}
+
+/** Where the sessions come from (the SDK; tests give their own). */
+export interface RecentSource {
+  list(o: { limit: number; includeProgrammatic: boolean }): Promise<SessionInfo[]>;
+  info(sessionId: string, dir?: string): Promise<SessionInfo | undefined>;
+}
+
+export interface SessionDirectory {
+  /** The harness' own live sessions on this computer. */
+  live(): LiveSession[];
+  /** Its ended conversations (listing, one's info) and retitling one without a process. */
+  recent: RecentSource;
+  rename(sessionId: string, title: string, cwd: string): Promise<void>;
+  /** The line that resumes a session in a terminal (no session: a fresh one in the folder). */
+  resumeCommand(cwd: string, sessionId: string | null): string;
+}
+
+export interface HarnessSettings {
+  /** The effort a session starts at when none is chosen (the harness' own settings). */
+  defaultEffort(model: string | undefined, cwd: string): string | undefined;
+  /** The permission mode the owner's sessions start in by default. */
+  defaultPermissionMode(): string;
+  /** The permission modes the owner can switch a session to. */
+  readonly permissionModes: readonly string[];
+  /** Effort ids, lowest first. */
+  readonly efforts: readonly string[];
+  /** The context window to measure a context against. */
+  contextWindow(model: string | undefined, tokens?: number, reported?: number): number;
+  /** Why a session didn't start, in a line the owner reads. */
+  startError(raw: string): string;
+  /** Another session's words, as the harness shows a message from it. */
+  peerWrap(name: string, text: string): string;
+}
+
+export interface MemoryLocator {
+  /** The harness' own memory for a folder (Claude Code's auto memory). */
+  autoMemoryDir(cwd: string, configDir?: string): string;
+  /** An agent's memory folder for its working folder. */
+  agentMemoryDir(cwd: string): string;
+  /** The instruction files of a folder it reads (CLAUDE.md…), relative. */
+  readonly projectFiles: readonly string[];
+}
+
+/** The login process as AuthWatch drives it: lines out, a code in, an exit code. */
+export interface LoginProcess {
+  onLine(f: (line: string) => void): void;
+  onExit(f: (code: number) => void): void;
+  write(line: string): void;
+  kill(): void;
+}
+
+export interface HarnessAuth {
+  /** What a failed turn or probe said means the login ran out. */
+  isFailure(text?: string, category?: string): boolean;
+  /** Whether it says it is logged in now. */
+  loggedIn(): Promise<boolean>;
+  /** When its stored login last changed (never the secret), or null. */
+  stamp(): Promise<string | null>;
+  /** Its own sign-in, driven for the phone (a link out, a code back); `dir` is where it may write what it needs. */
+  spawnLogin(dir: string): LoginProcess;
+}
+
+/**
+ * What a tool is, whatever the harness calls it: a file read, a search, a
+ * listing, a new file, an edit (a notebook's, several at once), a shell command (and the steps around one), the web, a subagent (and
+ * its bookkeeping), a message to another session, a delivery to the owner,
+ * plumbing (asking the owner, finding tools), quiet bookkeeping, an MCP
+ * server's tool, or something else.
+ */
+export type ToolFamily =
+  | "read" | "search" | "list" | "write" | "edit" | "notebook-edit" | "multi-edit" | "run" | "run-more" | "web-search" | "web-fetch"
+  | "agent" | "agent-more" | "message" | "deliver" | "plumbing" | "quiet" | "mcp" | "other";
+
+export interface ToolClass {
+  family: ToolFamily;
+  name: string; // the harness' own name for it
+  command?: string; // run: the command line
+  path?: unknown; // read / write: the file; search: where it looks (as given)
+  filter?: unknown; // search: what it filters by (as given)
+  filterIsPath?: boolean; // search: the filter is a path pattern (not a file glob)
+  url?: string; // web-fetch
+  server?: string; // mcp: its server
+  tool?: string; // mcp: its tool on that server
+}
+
+export interface ToolVocabulary {
+  ask: string; // asking the owner a question
+  subagent: ReadonlySet<string>; // starting a subagent
+  handback: string; // a subagent handing its report back
+  handbackNote: RegExp; // the harness' note that a subagent's report went to the main agent
+  selfReporting: ReadonlySet<string>; // tools whose progress shows by itself (a subagent writes its own transcript)
+  peerSend: string; // a message to another session
+  shell: string; // a shell command
+  /** A tool of one of the host's MCP servers, as the harness names it. */
+  qualified(server: string, tool: string): string;
+  classify(name: string, input?: Record<string, unknown>): ToolClass;
+  /** An always-allow rule as the app's scope words ("cmd:", "domain:", "path:", "tool:"). */
+  ruleScope(toolName: string, content: string): string;
+}
+
+/**
+ * What a harness can do, for the app (docs/harness-adapter-design.md §3): its
+ * name, how its login works, its models, thinking depths and permission modes,
+ * which features it has, the terminal commands copy names, and its project
+ * instruction file. hello carries one per harness (`harnesses`), and
+ * `harness.updated` a new one when its models change. An app that doesn't
+ * get it (an older host) uses the same lists built in.
+ */
+export interface HarnessCapabilities {
+  id: string;
+  name: string; // shown where the app says which tool runs an agent
+  commandPrefix: string | null; // slash commands; null: none
+  login: { kind: "oauth-code" | "api-key" | "none"; account: string; fromPhone: boolean };
+  models: ModelOption[]; // as model.get lists them; the first is the default
+  efforts: string[]; // thinking depths, lowest first
+  permissionModes: string[]; // the ones the owner can switch an agent to
+  labels: Record<string, string>; // words for ids the app may not know (in the host's language)
+  features: {
+    rewind: boolean;
+    restoreFiles: boolean;
+    compact: boolean;
+    autoCompact: boolean;
+    takeOverTerminal: boolean;
+    handBackToTerminal: boolean;
+    rename: boolean;
+    subagents: boolean;
+    backgroundTasks: boolean;
+    images: boolean;
+    files: boolean;
+    questions: { multiSelect: boolean; maxOptions: number };
+    liveModelSwitch: boolean;
+    liveModeSwitch: boolean;
+    projectMemory: boolean;
+    globalHooks: boolean;
+  };
+  terminal: { exitCommand: string; resumeCommand: string; newCommand: string }; // {sessionId} is filled in
+  memory: { projectFile: string };
+}
+
+export interface Harness {
+  readonly id: string;
+  /** What it can do (the models as last listed by its processes). */
+  capabilities(models: ModelOption[]): HarnessCapabilities;
+  readonly tools: ToolVocabulary;
+  readonly auth: HarnessAuth;
+  /** Starts its processes and runs one-shot probes. */
+  readonly driver: HarnessDriver;
+  readonly history: HistoryStore;
+  readonly rewind: Rewinder;
+  readonly sessions: SessionDirectory;
+  readonly settings: HarnessSettings;
+  readonly memory: MemoryLocator;
+}

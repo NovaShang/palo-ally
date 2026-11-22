@@ -1,4 +1,3 @@
-import { settingsEffort } from "./ccEffort.ts";
 import { t as tr } from "./i18n/index.ts";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -6,19 +5,23 @@ import type { ApprovalManager } from "./approvals.ts";
 import { askOwner } from "./ownerCards.ts";
 import { firstLine } from "./ccSessions.ts";
 import { ACTIVITY, describeActivity, friendlyError } from "./copy.ts";
-import { isAuthFailure } from "./auth.ts";
-import { readHead, readTail, transcriptPath } from "./handoffs.ts";
-import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type DeliveryToolHandlers, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
+import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type Harness, type RewindChain, type SessionRef, type DeliveryToolHandlers, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
 import type { MediaStore } from "./media.ts";
 import { type PalLaunch, isHelperFailure, makeSpawner } from "./palLauncher.ts";
-import type { RawSessionMessage } from "./ccSessions.ts";
-import { CARD_TOOLS, type PalMapOptions, TranscriptFollower, cardKey, toPalMessages, transcriptLastLine, transcriptModel, userEntryMessage } from "./palHistory.ts";
+import { CARD_TOOLS, type PalMapOptions, cardKey } from "./palHistory.ts";
 import type { QuestionManager } from "./questions.ts";
-import { type ForkSession, type PendingRewind, beforeCompaction, chainTo, hasFileCheckpoint, leafOf, ownerText, readTranscript, rewindBusy, rewindNoFiles, rewindNotFound } from "./rewind.ts";
-import { type StallRecovery, type StallTarget, transcriptHas } from "./stallWatch.ts";
+import { type PendingRewind, rewindBusy, rewindNoFiles, rewindNotFound } from "./rewind.ts";
+import type { StallRecovery, StallTarget } from "./stallWatch.ts";
 import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
 import { stripTldrMarker } from "./tldr.ts";
 import { newId, sleep, truncate } from "./util.ts";
+import { StreamAssembler } from "./agent/streamAssembler.ts";
+import { TurnLedger } from "./agent/turnLedger.ts";
+import { PAL_MODES, contextWindowFor, contextWindowOf } from "./harness/claude/settings.ts";
+import { peerWrap, startError } from "./harness/claude/process.ts";
+
+// (Claude Code's own: harness/claude/; kept here for the modules and tests that import them from here.)
+export { PAL_MODES, contextWindowFor, contextWindowOf, peerWrap, startError };
 
 // One Pal (docs/pals-prd.md §4, §7): one of the owner's Claude Code
 // sessions, run by the host itself by resuming its transcript. What the owner
@@ -84,31 +87,6 @@ export interface PastPalTask extends PalTask {
 
 const PAST_TASKS = 30;
 
-/**
- * The permission modes the owner can switch a session to (pals.setMode).
- * Not bypassPermissions (it skips every check, and a process not started with
- * it can't be switched into it) nor dontAsk (it refuses what isn't
- * pre-approved, with no prompt to the phone); a session already in one of
- * those still shows it.
- */
-export const PAL_MODES = ["default", "auto", "acceptEdits", "plan"] as const;
-
-/** The context window of a model (its id carries "[1m]" when it's the long one). */
-export function contextWindowOf(model?: string): number {
-  return model && /\[1m\]/i.test(model) ? 1_000_000 : 200_000;
-}
-
-/**
- * The window to measure a context against: what Claude Code reported, else
- * the guess from the model's id; a context already past the guess means the
- * long window (a model whose id doesn't say so).
- */
-export function contextWindowFor(model: string | undefined, tokens: number | undefined, reported?: number): number {
-  if (reported && reported > 0) return reported;
-  const guess = contextWindowOf(model);
-  return (tokens ?? 0) > guess ? 1_000_000 : guess;
-}
-
 /** Another process holding a session's transcript. */
 export interface Holder {
   pid: number;
@@ -122,6 +100,8 @@ export interface PalSessionDeps {
   driver: HarnessDriver;
   approvals: ApprovalManager;
   questions: QuestionManager;
+  /** The harness it runs on: its transcript, settings and how it reads them. */
+  harness: Harness;
   claudeDir: string;
   launch: () => Promise<PalLaunch>;
   helperFailed: (why: string) => void;
@@ -151,8 +131,6 @@ export interface PalSessionDeps {
   onStopped: (pal: PalSession) => void;
   pidAlive: (pid: number) => boolean;
   kill: (pid: number, signal: NodeJS.Signals) => void;
-  /** Copies a session up to one entry as a new one (a rewind past a compaction). */
-  forkSession: ForkSession;
   /** What the owner attaches: images as Palo gets them, files put where the Pal reads them. */
   media?: Pick<MediaStore, "read" | "inbox" | "remember" | "recall">;
   timing: { readyMs: number; restartMs: number[]; exitWaitMs: number };
@@ -169,17 +147,6 @@ const STOP_SETTLE_MS = 250; // a stopped turn not ended by Claude Code by then i
 /** What a Pal is told after the watchdog restarted it mid-turn. */
 export const stallContinue = (): string => tr("stall.continue");
 
-/**
- * Words from another session (the assistant's pal_send), as Claude Code shows a
- * SendMessage. `from` is the sender's name, not a socket: Claude Code tells a
- * session to reply by copying `from`, and the assistant's socket changes every
- * time the host restarts, so only its name keeps working.
- */
-export function peerWrap(name: string, text: string): string {
-  const n = name.replace(/"/g, "");
-  return `<cross-session-message from="${n}" from-name="${n}">\n${text}\n</cross-session-message>`;
-}
-
 export class PalSession {
   private proc: MainSession | null = null;
   private up = false; // the process answered and is ours to talk to
@@ -192,8 +159,7 @@ export class PalSession {
   private failures: number[] = [];
   private turnOpen = false;
   private workSince = 0; // when it last went from idle to busy: how long the turn that ends ran
-  private pendingUuids = new Set<string>();
-  private pendingText = new Map<string, { text: string; from?: string; images?: ImageInput[] }>(); // the owner's words not yet taken, by uuid
+  private pending = new TurnLedger<{ text: string; from?: string; images?: ImageInput[] }>(); // the owner's words not yet taken, by uuid
   private openTools = new Map<string, string>(); // tool calls without a result yet (subagents' too): id → name
   private turnTools = new Set<string>(); // …those of its own turn: none outlives the turn's end
   private lastEventAt = 0;
@@ -201,12 +167,11 @@ export class PalSession {
   private windingDown = false; // ended here after 停止: what's left of that turn doesn't make it busy again
   private turnEndWaiters: (() => void)[] = [];
   private activity = "";
-  private streamId: string | null = null;
-  private streamText = "";
+  private stream = new StreamAssembler(); // the reply being streamed (its id the API message's)
   private replyTexts = new Map<string, string>(); // a reply's text so far, by its id (several blocks join)
   private emitted = new Set<string>(); // ids already sent to the app
   private calls: { name: string; id: string }[] = []; // its card tools' calls (tool_use ids) waiting for their handler
-  private follower: TranscriptFollower | null = null;
+  private follower: { start(): void; poke(): void; stop(): void } | null = null;
   // A fork's entries copied from the session it was forked from: history, not news.
   private inherited: Set<string> | null = null;
   private sleeping: Promise<void> | null = null; // being put to sleep: its process is ending
@@ -231,10 +196,11 @@ export class PalSession {
     private d: PalSessionDeps,
   ) {
     this.updatedAt = rec.lastUsedAt;
-    const tail = readTail(this.transcript, 512 * 1024);
-    this.lastLine = transcriptLastLine(tail);
+    const history = this.d.harness.history;
+    const tail = history.tail(this.ref, 512 * 1024);
+    this.lastLine = history.lastLine(tail);
     // Its model entries are written when it starts: the beginning has one too.
-    if (!rec.model) rec.model = transcriptModel([...readHead(this.transcript, 256 * 1024), ...tail]) ?? undefined;
+    if (!rec.model) rec.model = history.model([...history.head(this.ref, 256 * 1024), ...tail]) ?? undefined;
     this.model = rec.model;
   }
 
@@ -242,8 +208,14 @@ export class PalSession {
     return this.rec.id;
   }
 
+  /** Its conversation as the harness keeps it. */
+  get ref(): SessionRef {
+    return { sessionId: this.rec.sessionId, cwd: this.rec.cwd };
+  }
+
+  /** Where the harness keeps its conversation (logs and diagnostics). */
   get transcript(): string {
-    return transcriptPath(this.d.claudeDir, this.rec.cwd, this.rec.sessionId);
+    return this.d.harness.history.locate(this.ref);
   }
 
   /** Claude Code's pid while it runs. */
@@ -261,7 +233,7 @@ export class PalSession {
   }
 
   get busy(): boolean {
-    return this.turnOpen || this.pendingUuids.size > 0;
+    return this.turnOpen || this.pending.size > 0;
   }
 
   /** Put to sleep: no process (its record is kept); being put to sleep counts. */
@@ -281,7 +253,7 @@ export class PalSession {
    */
   idleSince(): number | null {
     if (!this.running || this.starting || this.sleeping) return null;
-    if (this.turnOpen || this.windingDown || this.pendingUuids.size || this.queuedSends || this.openTools.size || this.bgTasks.size) return null;
+    if (this.turnOpen || this.windingDown || this.pending.size || this.queuedSends || this.openTools.size || this.bgTasks.size) return null;
     if (this.pendingCards() > 0) return null;
     return Math.max(this.lastEventAt, this.rec.lastUsedAt, this.upAt);
   }
@@ -370,7 +342,7 @@ export class PalSession {
   }
 
   private contextWindow(): number {
-    return contextWindowFor(this.model ?? this.rec.model, this.rec.contextTokens, this.rec.contextWindow);
+    return this.d.harness.settings.contextWindow(this.model ?? this.rec.model, this.rec.contextTokens, this.rec.contextWindow);
   }
 
   /** The effort it runs at: the one chosen, else the one it was started at or Claude Code last said its turns ran at. */
@@ -423,7 +395,7 @@ export class PalSession {
     const chosen = this.rec.permissionMode;
     const running = this.running ? this.reportedMode : undefined;
     // the ones offered, then one it is in that isn't (bypassPermissions…), so it shows
-    const modes: string[] = [...PAL_MODES];
+    const modes: string[] = [...this.d.harness.settings.permissionModes];
     for (const m of [chosen, running]) if (m && !modes.includes(m)) modes.push(m);
     return {
       ...(typeof this.rec.contextTokens === "number" ? { contextTokens: this.rec.contextTokens } : {}),
@@ -569,15 +541,15 @@ export class PalSession {
     // One gone back to an earlier message is forked from its old session
     // until Claude Code has written the new one (docs/rewind-prd.md §4.1).
     const fork = this.pendingRewind();
-    const resume = !fork && existsSync(this.transcript);
+    const resume = !fork && this.d.harness.history.exists(this.ref);
     // The effort it starts at: the one chosen in PaloAlly, else what Claude
     // Code's settings give it, passed explicitly so what's shown is what runs.
-    const effort = rec.effort ?? settingsEffort(rec.model, rec.cwd, this.d.claudeDir);
+    const effort = rec.effort ?? this.d.harness.settings.defaultEffort(rec.model, rec.cwd);
     if (!rec.effort && effort && effort !== rec.appliedEffort) {
       rec.appliedEffort = effort;
       this.d.save();
     }
-    this.inherited = fork ? new Set(chainTo(readTranscript(this.transcriptOf(fork.from)), fork.at).map((e) => e.uuid)) : null;
+    this.inherited = fork ? this.d.harness.rewind.keptIds({ sessionId: fork.from, cwd: rec.cwd }, fork.at) : null;
     const proc: MainSession = this.d.driver.startPal({
       cwd: rec.cwd,
       ...(resume ? { resumeSessionId: rec.sessionId } : { sessionId: rec.sessionId }),
@@ -622,7 +594,7 @@ export class PalSession {
         this.d.helperFailed(firstLine(why.slice(why.indexOf("PaloAlly Helper:"))));
         return this.doStart(true);
       }
-      throw new Error(startError(why));
+      throw new Error(this.d.harness.settings.startError(why));
     }
     clearTimeout(timer);
     if (this.closing || proc !== this.proc) {
@@ -640,7 +612,7 @@ export class PalSession {
       this.d.save();
     }
     this.follower?.stop();
-    this.follower = new TranscriptFollower(this.transcript, (e) => this.onTranscript(e));
+    this.follower = this.d.harness.history.follow(this.ref, (e) => this.onTranscript(e));
     this.follower.start();
     if (woke) this.d.onWoke?.(this);
     this.d.log(`pal ${rec.name}: up (pid ${rec.pid ?? "?"}, ${launch.helper ? "through PaloAlly Helper" : "direct"}${resume ? ", resumed" : fork ? ", forked" : ""}${woke ? ", woken" : ""})`);
@@ -678,7 +650,7 @@ export class PalSession {
     const now = this.d.now();
     this.failures = [...this.failures.filter((t) => now - t < FAILURE_WINDOW_MS), now];
     if (this.failures.length > MAX_FAILURES) {
-      this.stopFor("failed", tr("pals.failedRepeatedly", { n: MAX_FAILURES, why: startError(err ?? this.stderrTail) }));
+      this.stopFor("failed", tr("pals.failedRepeatedly", { n: MAX_FAILURES, why: this.d.harness.settings.startError(err ?? this.stderrTail) }));
       return;
     }
     const delays = this.d.timing.restartMs;
@@ -697,7 +669,7 @@ export class PalSession {
     // Counted like an exit: try again later, give up after a few.
     const now = this.d.now();
     this.failures = [...this.failures.filter((t) => now - t < FAILURE_WINDOW_MS), now];
-    if (this.failures.length > MAX_FAILURES) return this.stopFor("failed", startError(e instanceof Error ? e.message : String(e)));
+    if (this.failures.length > MAX_FAILURES) return this.stopFor("failed", this.d.harness.settings.startError(e instanceof Error ? e.message : String(e)));
     const delays = this.d.timing.restartMs;
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
@@ -716,8 +688,7 @@ export class PalSession {
     this.closeStream();
     const wasBusy = this.busy;
     this.turnOpen = false;
-    this.pendingUuids.clear();
-    this.pendingText.clear();
+    this.pending.clear();
     this.openTools.clear();
     this.turnTools.clear();
     this.bgTasks.clear();
@@ -816,7 +787,7 @@ export class PalSession {
 
   /** The reply being streamed right now (all its text so far), for a page opened mid-reply. */
   streaming(): { id: string; text: string } | null {
-    return this.streamId && this.streamText ? { id: this.streamId, text: this.streamText } : null;
+    return this.stream.current();
   }
 
   // ---------------- the stall watchdog ----------------
@@ -831,7 +802,7 @@ export class PalSession {
       openTools: () => [...this.openTools.values()],
       lastActivity: () => Math.max(this.lastEventAt, this.proc?.lastActivity ?? 0),
       pid: () => this.pid,
-      transcript: () => this.transcript,
+      progress: () => this.d.harness.history.growth(this.ref),
       recover: () => this.recoverStall(),
     };
   }
@@ -842,19 +813,18 @@ export class PalSession {
    * ids, so the app shows them once); a turn it was in is asked to go on.
    */
   async recoverStall(): Promise<StallRecovery> {
-    const inTurn = this.turnOpen || this.pendingUuids.size > 0;
-    const pending = [...this.pendingText];
+    const inTurn = this.turnOpen || this.pending.size > 0;
+    const pending = this.pending.entries();
     await this.shutdown();
     // Nothing writes its transcript now: what's in it was taken.
-    const untaken = pending.filter(([uuid]) => !transcriptHas(this.transcript, uuid));
+    const untaken = pending.filter(([uuid]) => !this.d.harness.history.took(this.ref, uuid));
     this.d.log(`pal ${this.rec.name}: stalled; resuming it (${untaken.length} message(s) to send again)`);
     await this.start();
     const proc = this.proc;
     if (!proc || !this.up) throw new Error(tr("pals.restartFailed", { name: this.rec.name }));
     this.notice(tr("pals.stuckRestarted"));
     for (const [uuid, p] of untaken) {
-      this.pendingUuids.add(uuid);
-      this.pendingText.set(uuid, p);
+      this.pending.add(uuid, p);
       proc.send(p.text, uuid, p.images);
     }
     let continued = false;
@@ -917,10 +887,9 @@ export class PalSession {
     if (o.attachments?.length) this.d.media?.remember(uuid, { text: t, attachments: o.attachments });
     this.emitted.add(uuid);
     if (!o.silent) this.d.emit("chat.message", msg);
-    const content = o.peer ? peerWrap(o.peer, body) : body;
+    const content = o.peer ? this.d.harness.settings.peerWrap(o.peer, body) : body;
     if (!this.busy) this.workSince = this.d.now();
-    this.pendingUuids.add(uuid);
-    this.pendingText.set(uuid, { text: content, ...(o.from ? { from: o.from } : {}), ...(images.length ? { images } : {}) });
+    this.pending.add(uuid, { text: content, ...(o.from ? { from: o.from } : {}), ...(images.length ? { images } : {}) });
     this.rec.lastUsedAt = ts;
     // The owner's own words mean they're looking at it.
     if (!o.from && !o.silent) this.rec.seenAt = ts;
@@ -1020,8 +989,7 @@ export class PalSession {
   private endTurn(): void {
     this.closeStream();
     this.turnOpen = false;
-    this.pendingUuids.clear();
-    this.pendingText.clear();
+    this.pending.clear();
     this.interrupted = false;
     this.activity = "";
     for (const w of this.turnEndWaiters.splice(0)) w();
@@ -1031,11 +999,8 @@ export class PalSession {
   // A reply cut off mid-stream still gets its final message, so the app
   // doesn't keep a half-written bubble open.
   private closeStream(): void {
-    if (this.streamId && this.streamText.trim() && !this.replyTexts.has(this.streamId)) {
-      this.chat({ id: this.streamId, role: "assistant", kind: "text", text: this.streamText });
-    }
-    this.streamId = null;
-    this.streamText = "";
+    const s = this.stream.take();
+    if (s && s.text.trim() && !this.replyTexts.has(s.id)) this.chat({ id: s.id, role: "assistant", kind: "text", text: s.text });
   }
 
   // The mode its process says it runs in. Claude Code may run in another than
@@ -1089,14 +1054,14 @@ export class PalSession {
         break;
       case "text_delta": {
         this.beginTurn();
-        const id = e.messageId ?? this.streamId ?? newId("m_");
-        if (id !== this.streamId) {
+        const id = e.messageId ?? this.stream.id ?? newId("m_");
+        if (id !== this.stream.id) {
           this.closeStream();
-          this.streamId = id;
+          this.stream.open(id);
           // a second text block of the same reply goes on after a blank line
           if (this.replyTexts.has(id)) this.d.emit("chat.delta", { id, text: "\n\n", pal: this.rec.id });
         }
-        this.streamText += e.text;
+        this.stream.append(e.text);
         this.d.emit("chat.delta", { id, text: e.text, pal: this.rec.id });
         this.setActivity(ACTIVITY.reply);
         break;
@@ -1104,17 +1069,14 @@ export class PalSession {
       case "assistant_text": {
         if (e.parentToolUseId) break;
         this.beginTurn();
-        const id = e.messageId ?? this.streamId ?? newId("m_");
+        const id = e.messageId ?? this.stream.id ?? newId("m_");
         const before = this.replyTexts.get(id);
         const text = before ? `${before}\n\n${e.text}` : e.text;
         this.replyTexts.set(id, text);
         if (this.replyTexts.size > 50) this.replyTexts.delete(this.replyTexts.keys().next().value!);
         this.emitted.add(id);
         this.chat({ id, role: "assistant", kind: "text", text });
-        if (id === this.streamId) {
-          this.streamId = null;
-          this.streamText = "";
-        }
+        if (id === this.stream.id) this.stream.take();
         this.lastLine = firstLine(e.text) || this.lastLine;
         this.touch();
         break;
@@ -1192,23 +1154,20 @@ export class PalSession {
       case "result": {
         const stopped = this.interrupted || this.windingDown; // its error is the stop, not news
         this.windingDown = false;
-        for (const u of e.consumedUuids ?? [...this.pendingUuids]) {
-          this.pendingUuids.delete(u);
-          this.pendingText.delete(u);
-        }
+        this.pending.consume(e.consumedUuids ?? this.pending.uuids());
         // its own tool calls end with the turn (a stopped one may not say so)
         for (const id of this.turnTools) this.openTools.delete(id);
         this.turnTools.clear();
         if (e.isError && !stopped && !e.startupFailure) this.notice(friendlyError(e.text, e.errorCategory));
         if (!e.isError) this.d.onAuth?.(this, true);
-        else if (!stopped && isAuthFailure(e.text, e.errorCategory)) this.d.onAuth?.(this, false);
+        else if (!stopped && this.d.harness.auth.isFailure(e.text, e.errorCategory)) this.d.onAuth?.(this, false);
         this.noteCost(e.costUsd, e.totalCostUsd);
         // (our /compact turn's result says nothing about the context: the compact boundary did)
         if (!this.compacting && !e.isError && Number.isFinite(e.contextTokens) && e.contextTokens > 0) this.rec.contextTokens = e.contextTokens;
         if (e.contextWindow) this.rec.contextWindow = e.contextWindow;
         this.compacting = false;
         this.rec.lastUsedAt = this.d.now();
-        if (this.pendingUuids.size) {
+        if (this.pending.size) {
           this.closeStream();
           this.turnOpen = false;
           this.touch();
@@ -1221,7 +1180,7 @@ export class PalSession {
           this.endTurn();
         }
         this.follower?.poke();
-        this.d.onTurnEnd(this, !this.pendingUuids.size && !stopped && !e.isError);
+        this.d.onTurnEnd(this, !this.pending.size && !stopped && !e.isError);
         break;
       }
       case "error":
@@ -1258,11 +1217,7 @@ export class PalSession {
   private onTranscript(e: any): void {
     if (e?.type !== "user" || e.isSidechain) return;
     if (this.inherited?.has(String(e.uuid ?? ""))) return;
-    const m = userEntryMessage(
-      { type: "user", uuid: String(e.uuid ?? ""), message: e.message, timestamp: e.timestamp, origin: e.origin, parent_tool_use_id: null,
-        isMeta: e.isMeta, isCompactSummary: e.isCompactSummary, promptSource: e.promptSource } as RawSessionMessage,
-      { ...this.d.mapOptions(), pal: this.rec.id },
-    );
+    const m = this.d.harness.history.entryMessage(e, { ...this.d.mapOptions(), pal: this.rec.id });
     if (!m || !m.id || this.emitted.has(m.id)) return;
     this.emitted.add(m.id);
     if (this.emitted.size > 500) this.emitted.delete(this.emitted.values().next().value!);
@@ -1272,15 +1227,11 @@ export class PalSession {
 
   // ---------------- 回到这里重来 (docs/rewind-prd.md) ----------------
 
-  private transcriptOf(sessionId: string): string {
-    return transcriptPath(this.d.claudeDir, this.rec.cwd, sessionId);
-  }
-
   /** A rewind whose fork Claude Code hasn't written yet (none once it has). */
   pendingRewind(): PendingRewind | undefined {
     const r = this.rec.rewind;
     if (!r) return undefined;
-    if (existsSync(this.transcript)) {
+    if (this.d.harness.history.exists(this.ref)) {
       delete this.rec.rewind;
       this.d.save();
       return undefined;
@@ -1293,16 +1244,14 @@ export class PalSession {
    * (the last entry's line of parents), or, gone back and not spoken to
    * since, the old session's up to where it was cut. Oldest first.
    */
-  conversationEntries(): { sessionId: string; entries: any[]; chain: any[]; pending?: PendingRewind } {
+  conversationEntries(): RewindChain & { pending?: PendingRewind } {
     const pending = this.pendingRewind();
-    const sessionId = pending ? pending.from : this.rec.sessionId;
-    const entries = readTranscript(this.transcriptOf(sessionId));
-    return { sessionId, entries, chain: chainTo(entries, pending ? pending.at : leafOf(entries)), ...(pending ? { pending } : {}) };
+    return { ...this.d.harness.rewind.chain(this.ref, pending), ...(pending ? { pending } : {}) };
   }
 
   /** Whether its files can go back to how they were before the owner's message `uuid`. */
   canRestoreFiles(uuid: string): boolean {
-    return hasFileCheckpoint(this.conversationEntries().entries, uuid);
+    return this.d.harness.rewind.canRestoreFiles(this.conversationEntries(), uuid);
   }
 
   /**
@@ -1317,17 +1266,19 @@ export class PalSession {
   async rewind(uuid: string, restoreFiles: boolean): Promise<{ text: string; filesRestored: boolean; dropped: string[]; from: string; at: string | null; copied: boolean }> {
     // (A turn stopped but still winding down is no matter: its process ends here.)
     if (this.busy || this.starting || this.sleeping || this.queuedSends || this.pendingCards() > 0) throw new Error(rewindBusy());
-    const { sessionId, entries, chain } = this.conversationEntries();
-    const i = chain.findIndex((e) => e.uuid === uuid);
-    if (i < 0) throw new Error(rewindNotFound());
-    const entry = chain[i];
+    const rw = this.d.harness.rewind;
+    const conv = this.conversationEntries();
+    const { sessionId, chain } = conv;
+    const point = rw.find(conv, { uuid, exact: true });
+    if (!point) throw new Error(rewindNotFound());
+    const i = point.index;
     // Sent from the app with images or files: its words as typed, without the files' paths.
     const sent = this.d.media?.recall(uuid);
-    const text = sent ? sent.text : ownerText(entry);
+    const text = sent ? sent.text : point.text;
     // The owner's own words only: not the assistant's (pal_send), not another session's.
-    if (text === null || /^\s*<cross-session-message/.test(text) || (this.rec.duty && i === chain.findIndex((e) => ownerText(e) !== null) && text.trim() === this.rec.duty.trim()))
+    if (text === null || /^\s*<cross-session-message/.test(text) || (this.rec.duty && i === chain.findIndex((e) => rw.ownerWords(e) !== null) && text.trim() === this.rec.duty.trim()))
       throw new Error(tr("pals.notYourMessage"));
-    if (restoreFiles && !hasFileCheckpoint(entries, uuid)) throw new Error(rewindNoFiles());
+    if (restoreFiles && !rw.canRestoreFiles(conv, uuid)) throw new Error(rewindNoFiles());
     const held = await this.d.holders(sessionId, this.rec.pid);
     if (held.length) throw new HeldElsewhere(tr("pals.heldElsewhereRewind", { name: this.rec.name, pids: held.map((h) => h.pid).join("、") }));
     const awake = this.running || !!this.restartTimer || this.queued;
@@ -1340,14 +1291,14 @@ export class PalSession {
         throw new Error(rewindNoFiles());
       }
     }
-    const dropped = toPalMessages(chain.slice(i), { ...this.d.mapOptions(), pal: this.rec.id }).map((m) => m.id);
-    const at = typeof entry.parentUuid === "string" ? entry.parentUuid : typeof entry.logicalParentUuid === "string" ? entry.logicalParentUuid : null;
+    const dropped = rw.dropped(conv, point, { ...this.d.mapOptions(), pal: this.rec.id });
+    const at = point.at;
     // Before its last compaction: copied into a new session up to there now
     // (new uuids); otherwise forked by its next process.
-    const copied = beforeCompaction(chain, at);
+    const copied = rw.needsCopy(conv, point);
     if (copied) {
       try {
-        this.rec.sessionId = (await this.d.forkSession(sessionId, { dir: this.rec.cwd, upToMessageId: at!, title: this.rec.name })).sessionId;
+        this.rec.sessionId = await rw.copy({ sessionId, cwd: this.rec.cwd }, at!, this.rec.name);
       } catch (e) {
         if (awake) await this.start().catch(() => {});
         throw new Error(tr("pals.rewindFailed", { why: e instanceof Error ? e.message : String(e) }));
@@ -1358,7 +1309,7 @@ export class PalSession {
       this.rec.sessionId = randomUUID();
     }
     this.rec.formerSessions = [...(this.rec.formerSessions ?? []).filter((x) => x !== sessionId), sessionId].slice(-20);
-    this.lastLine = transcriptLastLine(chain.slice(0, i));
+    this.lastLine = this.d.harness.history.lastLine(chain.slice(0, i));
     this.rec.lastUsedAt = this.d.now();
     this.d.save();
     this.touch();
@@ -1421,15 +1372,3 @@ export class PalSession {
   }
 }
 
-// Claude Code's reason, in a line the owner can read.
-export function startError(raw: string): string {
-  const s = String(raw ?? "");
-  if (/running in the background|session_held_by_background/i.test(s)) return tr("pals.errBackground");
-  if (/No conversation found|not found.*session|session.*not found/i.test(s)) return tr("pals.noTranscript");
-  if (/not logged in|authentication|401/i.test(s)) return tr("pals.errNotLoggedIn");
-  const line = s
-    .split("\n")
-    .map((l) => l.trim())
-    .find((l) => l && !/^at /.test(l));
-  return truncate(line?.replace(/^Error:\s*/, "") ?? tr("pals.errNoStart"), 160);
-}

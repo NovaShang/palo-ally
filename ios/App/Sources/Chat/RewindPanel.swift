@@ -32,7 +32,7 @@ struct RewindPanel: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if store.palID != nil {
+            if store.palID != nil, store.harness.features.restoreFiles {
                 if canRestore == true {
                     Toggle("代码也恢复到那时", isOn: $restoreFiles)
                         .font(.subheadline)

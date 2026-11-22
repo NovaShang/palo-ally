@@ -11,7 +11,7 @@ extension AppStore {
     /// sent and known to the host. In the assistant's conversation only
     /// those it has a uuid for (older ones it couldn't match aren't).
     public func canRewind(to m: ChatMessage) -> Bool {
-        guard m.role == .user, m.kind == .text, m.seq > 0, m.delivery == .sent, !m.isStreaming,
+        guard harness.features.rewind, m.role == .user, m.kind == .text, m.seq > 0, m.delivery == .sent, !m.isStreaming,
               !m.id.hasPrefix("local-"), !m.text.isEmpty else { return false }
         switch scope {
         case .palo: return m.pal == nil && !(m.uuid ?? "").isEmpty

@@ -1,7 +1,9 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { cleanSessionEnv, findClaude, loginEnv } from "./ccCli.ts";
+import type { LoginProcess } from "./harness/types.ts";
+import { claudeLoggedIn, credentialsStamp, expectLogin, isAuthFailure } from "./harness/claude/auth.ts";
+
+// (Claude Code's own: harness/claude/auth.ts; kept here for the modules and tests that import them from here.)
+export { claudeLoggedIn, credentialsStamp, isAuthFailure };
+export type { LoginProcess };
 import type { AuthStatus, LoginStatus } from "./types.ts";
 import { readJson, writeJson } from "./util.ts";
 
@@ -15,15 +17,6 @@ import { readJson, writeJson } from "./util.ts";
 //
 // The code the owner pastes goes straight to that process's terminal: never
 // into the chat, the audit or a log.
-
-/** What a failed turn or probe said, by the SDK's error kind or, failing that, its words. */
-export function isAuthFailure(text?: string, category?: string): boolean {
-  if (category === "authentication_failed") return true;
-  return !!text && AUTH_WORDS.test(text);
-}
-
-const AUTH_WORDS =
-  /authentication_failed|authentication_error|failed to authenticate|oauth (session|token) (has )?expired|could not be refreshed|please run \/login|not logged in|invalid (api|x-api) key/i;
 
 /** What failed while the login was out, to resume once it's back. */
 export interface Missed {
@@ -64,14 +57,6 @@ export interface AuthDeps {
   spawnLogin?: () => LoginProcess;
   pollMs?: number;
   loginTimeoutMs?: number;
-}
-
-/** The login process as AuthWatch drives it: lines out, a code in, an exit code. */
-export interface LoginProcess {
-  onLine(f: (line: string) => void): void;
-  onExit(f: (code: number) => void): void;
-  write(line: string): void;
-  kill(): void;
 }
 
 const empty = (): Missed => ({ palo: [], pals: {}, schedules: [] });
@@ -298,113 +283,3 @@ export class AuthWatch {
   }
 }
 
-// ---------------- the real thing (macOS) ----------------
-
-// `claude auth login` under expect (part of macOS): its link out as
-// "URL …", each code typed in with Enter, "INVALID" when it wasn't taken;
-// it exits with the login's own status. The link is the hyperlink it prints.
-const LOGIN_EXP = `log_user 0
-set timeout 60
-spawn -noecho [lindex $argv 0] auth login
-expect {
-  -re {(https://[^\\s\\x07\\x1b]+/oauth/authorize[^\\s\\x07\\x1b]+)} { puts "URL $expect_out(1,string)"; flush stdout }
-  timeout { puts "ERR no link"; flush stdout; exit 2 }
-  eof { puts "ERR ended"; flush stdout; exit 3 }
-}
-while {1} {
-  set timeout -1
-  if {[gets stdin code] < 0} { exit 4 }
-  send -- $code
-  sleep 0.3
-  send -- "\\r"
-  set timeout 90
-  expect {
-    -re {Invalid code} { puts "INVALID"; flush stdout }
-    eof { break }
-    timeout { puts "ERR no answer"; flush stdout; exit 5 }
-  }
-}
-lassign [wait] pid spawnid oserr status
-exit $status
-`;
-
-function expectLogin(scriptDir: string): LoginProcess {
-  const script = join(scriptDir, "claude-login.exp");
-  writeFileSync(script, LOGIN_EXP);
-  const lines: ((l: string) => void)[] = [];
-  const exits: ((c: number) => void)[] = [];
-  let proc: ChildProcess | null = null;
-  let buf = "";
-  let done = false;
-  const exit = (c: number) => {
-    if (done) return;
-    done = true;
-    for (const f of exits) f(c);
-  };
-  void (async () => {
-    const env = cleanSessionEnv({ ...(await loginEnv()), BROWSER: "/usr/bin/true" });
-    const bin = findClaude(env);
-    if (!bin || process.platform !== "darwin") {
-      for (const f of lines) f(bin ? "ERR only on macOS" : "ERR claude not found");
-      return exit(1);
-    }
-    proc = spawn("/usr/bin/expect", ["-f", script, bin], { env, stdio: ["pipe", "pipe", "ignore"] });
-    proc.stdout!.on("data", (d: Buffer) => {
-      buf += d.toString("utf8");
-      let i: number;
-      while ((i = buf.indexOf("\n")) >= 0) {
-        const line = buf.slice(0, i).replace(/\r$/, "");
-        buf = buf.slice(i + 1);
-        for (const f of lines) f(line);
-      }
-    });
-    proc.on("exit", (code) => exit(code ?? 1));
-    proc.on("error", () => exit(1));
-  })();
-  return {
-    onLine: (f) => void lines.push(f),
-    onExit: (f) => void exits.push(f),
-    write: (line) => void proc?.stdin?.write(line + "\n"),
-    kill: () => {
-      try {
-        proc?.kill("SIGKILL");
-      } catch {
-        /* gone */
-      }
-    },
-  };
-}
-
-/** When Claude Code's stored login last changed: the keychain item's date (macOS), never the secret. */
-export async function credentialsStamp(): Promise<string | null> {
-  if (process.platform !== "darwin") return null;
-  return new Promise((resolve) => {
-    const p = spawn("/usr/bin/security", ["find-generic-password", "-s", "Claude Code-credentials"], { stdio: ["ignore", "pipe", "ignore"] });
-    let out = "";
-    p.stdout.on("data", (d: Buffer) => (out += d.toString("utf8")));
-    p.on("exit", () => resolve(/"mdat"<timedate>=\S+\s+"([^"\\]+)/.exec(out)?.[1] ?? null));
-    p.on("error", () => resolve(null));
-  });
-}
-
-/** `claude auth status`: logged in or not. */
-export async function claudeLoggedIn(): Promise<boolean> {
-  const env = cleanSessionEnv(await loginEnv());
-  const bin = findClaude(env);
-  if (!bin) return false;
-  return new Promise((resolve) => {
-    const p = spawn(bin, ["auth", "status"], { env, stdio: ["ignore", "pipe", "ignore"] });
-    let out = "";
-    p.stdout.on("data", (d: Buffer) => (out += d.toString("utf8")));
-    const timer = setTimeout(() => p.kill("SIGKILL"), 20_000);
-    p.on("exit", () => {
-      clearTimeout(timer);
-      try {
-        resolve(JSON.parse(out).loggedIn === true);
-      } catch {
-        resolve(/"loggedIn":\s*true/.test(out));
-      }
-    });
-    p.on("error", () => resolve(false));
-  });
-}

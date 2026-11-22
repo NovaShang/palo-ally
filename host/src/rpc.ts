@@ -46,7 +46,7 @@ export const RPC_EVENTS = [
   "chat.message", "chat.delta", "chat.rewound", "task.updated", "approval.updated", "question.updated", "watch.updated",
   "artifact.updated", "settings.updated", "status", "commands.updated",
   "suggestions.updated", "ally.updated", "ally.entry", "sessions.updated", "pals.updated",
-  "workspaces.updated", "workbench.updated", "files.changed", "pending.updated", "backlog.updated",
+  "workspaces.updated", "workbench.updated", "files.changed", "pending.updated", "backlog.updated", "harness.updated",
 ] as const;
 
 // Admin methods are reachable only on the local unix socket (the owner's own
@@ -64,7 +64,8 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       // `machineId`: which machine this is (hashed), so a Mac app on the same one lists it first.
       // `direct`: where the app can reach this computer without the relay (the same Mac, the local network, Tailscale).
       const direct = hub.directEndpoints?.() ?? null;
-      return { hostName: hub.config.hostName, version: hub.status().version, status: hub.status(), language: hub.language(), machineId: machineId(), ...(direct ? { direct } : {}) };
+      // `harnesses`: what each harness can do (the app falls back to its own lists without it); `harness`: the assistant's.
+      return { hostName: hub.config.hostName, version: hub.status().version, status: hub.status(), language: hub.language(), machineId: machineId(), ...(direct ? { direct } : {}), harnesses: hub.harnesses(), harness: hub.harness.id };
     case "sync": {
       const since = typeof p.sinceSeq === "number" ? p.sinceSeq : undefined;
       // The app syncs when it comes to the foreground: an Ally's message

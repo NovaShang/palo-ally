@@ -2,15 +2,16 @@ import { join } from "node:path";
 import { t } from "./i18n/index.ts";
 import type { Bus } from "./bus.ts";
 import { activityLabel } from "./copy.ts";
+import { tools } from "./harness/vocabulary.ts";
 import type { Task, TaskActivity, TaskStatus } from "./types.ts";
 import { appendJsonl, newId, readJson, readJsonl, truncate, writeJson } from "./util.ts";
 
-const SUBAGENT_TOOLS = new Set(["Agent", "Task"]); // Task was renamed Agent in CC v2.1.63; accept both
+const SUBAGENT_TOOLS = tools.subagent;
 // report_task without a known id attaches to the newest unreported row this recent.
 const LINK_WINDOW_MS = 10 * 60_000;
 const REPORT_FIRST_WINDOW_MS = 2 * 60_000;
 // The harness' note that a subagent's report went to the main agent (not a result).
-const HANDBACK_NOTE = /SubagentHandback|report was delivered to you|agent's report was delivered/i;
+const HANDBACK_NOTE = tools.handbackNote;
 const TERMINAL: TaskStatus[] = ["done", "failed", "stopped"];
 
 export type TaskTransition = "accepted" | "finished";
@@ -66,7 +67,7 @@ export class TaskTracker {
       if (!taskId) return;
       this.toolUseToTask.set(id, taskId); // nested calls (incl. nested subagents) roll up to the root task
       // The subagent hands its final report back through this tool: that's the result.
-      if (name === "SubagentHandback") {
+      if (name === tools.handback) {
         const report = Object.values(input).find((v) => typeof v === "string" && v.trim()) as string | undefined;
         if (report) this.lastWords.set(taskId, report.trim());
       }

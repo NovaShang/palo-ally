@@ -1,0 +1,7 @@
+{"type":"user","uuid":"u1","parentUuid":null,"timestamp":"2026-11-01T08:00:00.000Z","sessionId":"s1","message":{"role":"user","content":"派个子 agent 查一下"},"origin":{"kind":"human"}}
+{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-11-01T08:00:01.000Z","sessionId":"s1","message":{"id":"msg_a1","role":"assistant","model":"claude-opus-5-5","content":[{"type":"tool_use","id":"toolu_task","name":"Agent","input":{"description":"查资料","prompt":"查"}}]}}
+{"type":"user","uuid":"s1u","parentUuid":null,"isSidechain":true,"timestamp":"2026-11-01T08:00:02.000Z","message":{"role":"user","content":"查"}}
+{"type":"assistant","uuid":"s1a","parentUuid":"s1u","isSidechain":true,"timestamp":"2026-11-01T08:00:03.000Z","message":{"id":"msg_side","role":"assistant","model":"claude-haiku-4-5","content":[{"type":"text","text":"查到了"}]}}
+{"type":"user","uuid":"t1","parentUuid":"a1","timestamp":"2026-11-01T08:00:04.000Z","sessionId":"s1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_task","content":"查到了"}]},"origin":{"kind":"human"},"toolUseResult":{}}
+{"type":"assistant","uuid":"a2","parentUuid":"t1","timestamp":"2026-11-01T08:00:05.000Z","sessionId":"s1","message":{"id":"msg_a2","role":"assistant","model":"claude-opus-5-5","content":[{"type":"text","text":"子 agent 查到了。"}]}}
+{"type":"user","uuid":"meta","parentUuid":"a2","timestamp":"2026-11-01T08:00:06.000Z","sessionId":"s1","message":{"role":"user","content":"<system-reminder>x</system-reminder>"},"origin":{"kind":"human"},"isMeta":true}

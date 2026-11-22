@@ -751,6 +751,8 @@ public actor DemoHost {
             if let c = p["client"]?.stringValue { helloClient = c }
             var hello: [String: JSONValue] = ["hostName": .string(hostName), "version": .string(status.version), "status": try .from(status)]
             if let machineId { hello["machineId"] = .string(machineId) }
+            hello["harnesses"] = ["claude-code": Self.claudeCode]
+            hello["harness"] = "claude-code"
             return .object(hello)
         case RPCMethod.sync:
             let since = p["sinceSeq"]?.doubleValue.map { Int64($0) }
@@ -1030,11 +1032,7 @@ public actor DemoHost {
                 "model": .string(status.model.isEmpty ? "claude-opus-5-5[1m]" : status.model),
                 "setting": demoModel.map { .string($0) } ?? .null,
                 "effort": status.effort.map { .string($0) } ?? .null,
-                "models": .array([
-                    ["value": "default", "displayName": "默认（推荐）", "description": "Opus 5.5", "efforts": ["low", "medium", "high", "xhigh", "max"]],
-                    ["value": "sonnet", "displayName": "Sonnet", "description": "Sonnet 5 · 日常够用", "efforts": ["low", "medium", "high", "xhigh", "max"]],
-                    ["value": "haiku", "displayName": "Haiku", "description": "Haiku 4.5 · 最快", "efforts": []],
-                ]),
+                "models": Self.claudeCodeModels,
             ]
         case RPCMethod.modelSet:
             if let m = p["model"] {

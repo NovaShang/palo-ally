@@ -156,6 +156,12 @@ public final class AppStore {
         get { shared.modelInfo }
         set { shared.modelInfo = newValue }
     }
+    /// What the harness this conversation runs on can do (the host's descriptor;
+    /// an older host's: the lists the app had built in). One harness per computer
+    /// today: the assistant and every agent run on it.
+    public var harness: HarnessCapabilities {
+        shared.harnesses[shared.assistantHarness ?? HarnessCapabilities.claudeCodeFallback.id] ?? shared.harnesses.values.first ?? .claudeCodeFallback
+    }
     /// Highest contiguous chat seq we hold — the `sync{sinceSeq}` cursor.
     public private(set) var lastSeq: Int64 = 0
     /// A Pal's store: the Pal's state as last applied (`applyPal`).
@@ -544,6 +550,8 @@ public final class AppStore {
                 hostName = hello.hostName
                 hostVersion = hello.version
                 if let m = hello.machineId, !m.isEmpty { hostMachineID = m }
+                shared.harnesses = hello.harnesses ?? [:]
+                shared.assistantHarness = hello.harness
                 await rpc.transport.directEndpointsAdvertised(hello.direct)
                 connectionRoute = await rpc.transport.currentRoute()
                 if let s = hello.status { applyStatus(s) }
@@ -795,6 +803,8 @@ public final class AppStore {
             if let s = try? (data["settings"] ?? data).decode(HostSettings.self) { settings = s }
         case RPCEventName.commandsUpdated:
             if let r = try? data.decode(CommandsResult.self) { commands = r.commands }
+        case RPCEventName.harnessUpdated:
+            if let u = try? data.decode(HarnessUpdate.self), !u.id.isEmpty { shared.harnesses[u.id] = u.capabilities }
         case RPCEventName.suggestionsUpdated:
             if let r = try? data.decode(SuggestionsResult.self) { suggestions = r.suggestions }
         case RPCEventName.allyUpdated:

@@ -1,5 +1,5 @@
 import { Allies, type AlliesDeps } from "./allies.ts";
-import { AuthWatch, type AuthDeps, type Missed, claudeLoggedIn, credentialsStamp } from "./auth.ts";
+import { AuthWatch, type AuthDeps, type Missed } from "./auth.ts";
 import { ApprovalManager } from "./approvals.ts";
 import { ArtifactLibrary } from "./artifacts.ts";
 import { Audit } from "./audit.ts";
@@ -11,7 +11,7 @@ import { Conversation } from "./conversation.ts";
 import { activityThinking, approvalAnswerReply, questionLineHelp, statusReply, stopReply } from "./copy.ts";
 import type { HarnessDriver, HarnessEvent, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
 import { HarnessInfo } from "./harnessInfo.ts";
-import { MemoryView, autoMemoryDir } from "./memory.ts";
+import { MemoryView } from "./memory.ts";
 import { checkModelChoice } from "./modelChoice.ts";
 import { ProbeScheduler, type ProbeTrigger } from "./probe.ts";
 import { QuestionManager, parseItems, parseTextAnswer, questionText } from "./questions.ts";
@@ -36,9 +36,9 @@ import { PowerWatcher, type PowerReading, readPower } from "./power.ts";
 import { Updater, type UpdaterDeps } from "./update.ts";
 import { type Usage, UsageLedger } from "./usage.ts";
 import { randomUUID } from "node:crypto";
-import { forkSession as sdkForkSession } from "@anthropic-ai/claude-agent-sdk";
-import { type ForkSession, rewindNotFound, beforeCompaction, chainTo, findEntry, forkedUuids, leafOf, matchOwnerEntry, readTranscript } from "./rewind.ts";
-import { contextWindowFor } from "./palSession.ts";
+import { ClaudeHarness } from "./harness/claude/index.ts";
+import type { HarnessCapabilities } from "./harness/types.ts";
+import { type ForkSession, rewindNotFound } from "./rewind.ts";
 import { appendJsonl, readJson, writeJson } from "./util.ts";
 import { WatchStore } from "./watches.ts";
 import { Sessions, type SessionsDeps } from "./sessions.ts";
@@ -119,6 +119,8 @@ export class Hub {
   private readonly wechat: WechatChannel | null;
   private readonly log: (s: string) => void;
   private readonly claudeDir: string;
+  /** The harness the assistant and every agent run on (Claude Code). */
+  readonly harness: ClaudeHarness;
   private readonly forkSession: ForkSession;
   private clients = new Map<string, { conn: ClientConn; off: () => void }>();
   /** Which connections' apps are in front right now: no pushes while one is (presence.ts). */
@@ -156,7 +158,18 @@ export class Hub {
     this.watches = new WatchStore(this.paths.watches, this.bus);
     this.artifacts = new ArtifactLibrary(this.paths.artifacts, this.bus);
     this.media = new MediaStore(this.paths.media);
-    this.memory = new MemoryView(this.paths.home, autoMemoryDir(this.paths.home));
+    const claudeDir = deps.sessions?.claudeDir ?? deps.claudeDir ?? claudeConfigDir();
+    // The harness (Claude Code): its processes, its transcripts, its sessions and settings.
+    this.harness = new ClaudeHarness({
+      driver: deps.driver,
+      configDir: claudeDir,
+      forkSession: deps.forkSession ?? deps.pals?.forkSession,
+      readMessages: deps.pals?.readMessages,
+      recentSource: deps.pals?.recentSource,
+      renameSession: deps.pals?.renameSession,
+      registry: deps.pals?.registry,
+    });
+    this.memory = new MemoryView(this.paths.home, this.harness.memory.autoMemoryDir(this.paths.home));
     this.router = new Router(
       () => this.config.settings,
       deps.pushers ?? [],
@@ -186,8 +199,9 @@ export class Hub {
       changed: () => this.emitStatus(),
       audit: (type, data) => this.audit.log(type, data),
       log: (s) => this.log(s),
-      stamp: credentialsStamp,
-      loggedIn: claudeLoggedIn,
+      stamp: () => this.harness.auth.stamp(),
+      loggedIn: () => this.harness.auth.loggedIn(),
+      spawnLogin: () => this.harness.auth.spawnLogin(this.paths.state),
       ...deps.auth,
     });
     this.pending = new PendingStore(this.paths.pending, this.bus, this.audit, () => this.config.settings.assistantName || PALO_NAME);
@@ -228,13 +242,13 @@ export class Hub {
       () => void this.conversation.ensureSession(),
       () => {}, // the process stays up once started (conversation.ts)
     );
-    const claudeDir = deps.sessions?.claudeDir ?? deps.claudeDir ?? claudeConfigDir();
     this.claudeDir = claudeDir;
-    this.forkSession = deps.forkSession ?? ((sid, o) => sdkForkSession(sid, o));
+    this.forkSession = this.harness.forkSession;
     this.conversation = new Conversation({
       paths: this.paths,
       config: () => this.config,
       driver: deps.driver,
+      harness: this.harness,
       runtime: this.runtime,
       chat: this.chat,
       tasks: this.tasks,
@@ -248,13 +262,18 @@ export class Hub {
       mcpServers: () => this.extraMcpServers(),
       onEvent: (e) => this.onHarnessEvent(e),
       onCommands: (c) => this.info.saveCommands(c),
-      onModels: (m) => this.info.saveModels(m),
+      onModels: (m) => {
+        const before = JSON.stringify(this.info.models());
+        this.info.saveModels(m);
+        // The app's descriptor follows (old apps ignore the event).
+        if (JSON.stringify(m) !== before) this.bus.emit("harness.updated", { id: this.harness.id, capabilities: this.harness.capabilities(m) });
+      },
       onTerminalCommands: (n) => this.info.setTerminalCommands(n),
       statusChanged: () => this.emitStatus(),
       // Pals reach the assistant (and it them) by this name with SendMessage.
       peerName: () => PALO_NAME,
       handoffsInFlight: () => this.handoffs.inFlight(),
-      transcriptOf: (sid) => transcriptPath(claudeDir, this.paths.home, sid),
+      written: (sid) => this.harness.history.exists({ sessionId: sid, cwd: this.paths.home }),
       onGoalResult: (id, text) => {
         const w = this.watches.get(id);
         // The assistant may have set a better line itself during this run.
@@ -391,6 +410,7 @@ export class Hub {
     // Pals: Claude Code sessions the host runs itself (docs/pals-prd.md).
     this.pals = new Pals({
       paths: this.paths,
+      harness: this.harness,
       claudeDir: deps.sessions?.claudeDir ?? deps.claudeDir ?? claudeConfigDir(),
       bus: this.bus,
       chat: this.chat,
@@ -430,9 +450,10 @@ export class Hub {
       log: this.log,
     });
     // The stall watchdog: the assistant's own process and every Pal's.
-    const mainTranscript = () => {
+    // Its conversation as the harness keeps it (none before its first turn).
+    const mainRef = () => {
       const sid = this.runtime.data.sessionId;
-      return sid ? transcriptPath(claudeDir, this.paths.home, sid) : undefined;
+      return sid ? { sessionId: sid, cwd: this.paths.home } : undefined;
     };
     const mainPid = () => {
       const sid = this.runtime.data.sessionId;
@@ -448,7 +469,14 @@ export class Hub {
         this.conversation.stallTarget({
           name: () => this.config.settings.assistantName || PALO_NAME,
           pid: mainPid,
-          transcript: mainTranscript,
+          progress: () => {
+            const ref = mainRef();
+            return ref ? this.harness.history.growth(ref) : "";
+          },
+          took: (uuid) => {
+            const ref = mainRef();
+            return !!ref && this.harness.history.took(ref, uuid);
+          },
           kill: (pid) => killHard(pid),
         }),
         ...this.pals.stallTargets(),
@@ -561,7 +589,7 @@ export class Hub {
     const auth = this.auth.status();
     const model = this.conversation.model || this.config.model || "";
     const tokens = this.conversation.contextTokens;
-    const window = contextWindowFor(model, tokens, this.runtime.data.contextWindow);
+    const window = this.harness.settings.contextWindow(model, tokens, this.runtime.data.contextWindow);
     return {
       online: true,
       busy,
@@ -664,26 +692,27 @@ export class Hub {
     if (busy) throw new Error(busy);
     const { sessionId, pending } = this.conversation.rewindSource();
     if (!sessionId) throw new Error(rewindNotFound());
-    const entries = readTranscript(transcriptPath(this.claudeDir, this.paths.home, sessionId));
+    const rw = this.harness.rewind;
+    const home = this.paths.home;
     // The conversation as it stands (an earlier rewind not yet followed by a message: what it kept).
-    const chain = chainTo(entries, pending ? pending.at : leafOf(entries));
+    const chain = rw.chain({ sessionId, cwd: home }, pending);
     const used = new Set(this.chat.recent(2000).flatMap((m) => (m.uuid && m.id !== msg.id ? [m.uuid] : [])));
     // By its uuid; failing that (kept before it had one), by its words and time.
-    const entry = (msg.uuid ? findEntry(chain, msg.uuid) : undefined) ?? matchOwnerEntry(chain, this.ownerBody(msg), msg.ts, used);
+    const entry = rw.find(chain, { ...(msg.uuid ? { uuid: msg.uuid } : {}), words: this.ownerBody(msg), ts: msg.ts, used });
     if (!entry) throw new Error(rewindNotFound());
-    const at = typeof entry.parentUuid === "string" ? entry.parentUuid : typeof entry.logicalParentUuid === "string" ? entry.logicalParentUuid : null;
+    const at = entry.at;
     let to: string = randomUUID();
     // Before the last compaction: copied into a new session up to there
     // (new uuids, which the log then keeps for the messages it kept).
-    const copy = beforeCompaction(chain, at);
-    if (copy) to = (await this.forkSession(sessionId, { dir: this.paths.home, upToMessageId: at!, title: PALO_NAME })).sessionId;
+    const copy = rw.needsCopy(chain, entry);
+    if (copy) to = await rw.copy({ sessionId, cwd: home }, at!, PALO_NAME);
     // (The conversation may have moved meanwhile.)
     const late = this.conversation.rewindBlocker();
     if (late) throw new Error(late);
     this.conversation.rewindTo({ from: sessionId, at, cut: entry.uuid, to, written: copy });
     const ids = this.chat.rewind(msg.seq);
     if (copy) {
-      const moved = forkedUuids(readTranscript(transcriptPath(this.claudeDir, this.paths.home, to)));
+      const moved = rw.renamed({ sessionId: to, cwd: home });
       this.chat.setUuids(new Map(this.chat.recent(5000).flatMap((m) => (m.uuid && moved.has(m.uuid) ? [[m.id, moved.get(m.uuid)!] as [string, string]] : []))));
     }
     this.bus.emit("chat.rewound", { id: msg.id, ids });
@@ -700,18 +729,19 @@ export class Hub {
   backfillOwnerUuids(): number {
     const { sessionId, pending } = this.conversation.rewindSource();
     if (!sessionId || pending) return 0;
-    const entries = readTranscript(transcriptPath(this.claudeDir, this.paths.home, sessionId), ['"type":"user"']);
-    if (!entries.length) return 0;
+    const rw = this.harness.rewind;
+    const owner = rw.ownerChain({ sessionId, cwd: this.paths.home });
+    if (!owner.entries.length) return 0;
     const recent = this.chat.recent(5000);
     const used = new Set(recent.flatMap((m) => (m.uuid ? [m.uuid] : [])));
-    const first = Date.parse(entries[0]?.timestamp ?? "") || 0;
+    const first = owner.startedAt ?? 0;
     const todo = recent
       .filter((m) => m.role === "user" && m.kind === "text" && !m.pal && !m.uuid && !m.text.startsWith("/") && m.ts >= first - 60_000 && ["app", "cli", "wechat"].includes(m.channel))
       .reverse()
       .slice(0, 300);
     let n = 0;
     for (const m of todo) {
-      const e = matchOwnerEntry(entries, this.ownerBody(m), m.ts, used);
+      const e = rw.find(owner, { words: this.ownerBody(m), ts: m.ts, used });
       if (!e) continue;
       used.add(e.uuid);
       this.chat.update(m.id, { uuid: e.uuid });
@@ -1017,6 +1047,11 @@ export class Hub {
     return this.info.loadCommands(timeoutMs);
   }
 
+  /** What each harness can do, by id (hello's `harnesses`). */
+  harnesses(): Record<string, HarnessCapabilities> {
+    return { [this.harness.id]: this.harness.capabilities(this.info.models()) };
+  }
+
   async modelInfo(timeoutMs?: number): Promise<{ model: string; setting: string | null; effort: string | null; models: ModelOption[] }> {
     const models = await this.info.loadModels(timeoutMs);
     return { model: this.status().model, setting: this.config.model ?? null, effort: this.config.effort ?? null, models };
@@ -1230,7 +1265,7 @@ export class Hub {
     if (typeof agent !== "string" || !agent) return this.memory;
     const pal = this.pals.get(agent);
     if (!pal) throw new Error(t("pals.noPal"));
-    return MemoryView.forAgent(pal.rec.cwd, this.claudeDir);
+    return MemoryView.forAgent(pal.rec.cwd, this.harness.memory);
   }
 
   // What the assistant knows about the owner, for writing 「试试」 suggestions:

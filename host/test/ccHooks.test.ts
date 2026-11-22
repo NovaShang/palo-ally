@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HOOK_EVENTS, HookInstaller, HookServer, isPaloAllyHook } from "../src/ccHooks.ts";
 import { tmpPaths } from "./helpers.ts";
+import { HookInstaller as InstallerBefore } from "./fixtures/ccHooks.before-batch7.ts";
+import { HookInstaller as InstallerNow } from "../src/harness/claude/hooks.ts";
 
 function setup() {
   const paths = tmpPaths();
@@ -79,6 +81,29 @@ describe("global hook install", () => {
     inst.uninstall();
     expect(readFileSync(file, "utf8")).toBe(original);
     expect(inst.installed()).toBe(false);
+  });
+
+  test("moved under harness/claude/: on the owner's settings, installed by the installer from before the move and removed by today's (and the other way), the file comes back byte for byte; both write the same entries and the same scripts", () => {
+    for (const [first, second] of [[InstallerBefore, InstallerNow], [InstallerNow, InstallerBefore]] as const) {
+      const { paths, claudeDir, file } = setup();
+      const original = JSON.stringify(OWNER, null, 4) + "\n";
+      writeFileSync(file, original);
+      new first({ paths, claudeDir }).install();
+      const installed = readFileSync(file, "utf8");
+      const scripts = ["cc-hook", "cc-hook.mjs"].filter((f) => existsSync(join(paths.bin, f))).map((f) => readFileSync(join(paths.bin, f), "utf8"));
+      expect(new second({ paths, claudeDir }).installed()).toBe(true);
+      // the other one sees nothing to change
+      new second({ paths, claudeDir }).refresh();
+      expect(readFileSync(file, "utf8")).toBe(installed);
+      new second({ paths, claudeDir }).uninstall();
+      expect(readFileSync(file, "utf8")).toBe(original);
+      // the other way round writes the very same file and scripts
+      new second({ paths, claudeDir }).install();
+      expect(readFileSync(file, "utf8")).toBe(installed);
+      expect(["cc-hook", "cc-hook.mjs"].filter((f) => existsSync(join(paths.bin, f))).map((f) => readFileSync(join(paths.bin, f), "utf8"))).toEqual(scripts);
+      new first({ paths, claudeDir }).uninstall();
+      expect(readFileSync(file, "utf8")).toBe(original);
+    }
   });
 
   test("a second host on the computer doesn't take over the hooks of a host whose script is there", () => {

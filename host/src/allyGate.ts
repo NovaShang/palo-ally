@@ -1,5 +1,6 @@
 import { realpathSync } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
+import { tools } from "./harness/vocabulary.ts";
 
 // 「只说话不动手」(docs/allies-prd.md §11.1): while the assistant handles an
 // Ally's message, the host lets through only the tools for talking back and
@@ -42,9 +43,9 @@ export interface AllyGateScope {
 
 export type AllyToolVerdict = { ok: true; kind: "ally" | "calendar" | "memory" | "plumbing" | "owner" } | { ok: false };
 
-const ALLY_TOOLS = new Set(["mcp__paloally__ally_send", "mcp__paloally__ally_list"]);
-const PLUMBING = new Set(["AskUserQuestion", "ToolSearch"]);
-const TELL_OWNER = "mcp__paloally__notify_user";
+// (Tool names are the harness': harness/vocabulary.ts.)
+const ALLY_TOOLS = new Set([tools.qualified("paloally", "ally_send"), tools.qualified("paloally", "ally_list")]);
+const TELL_OWNER = tools.qualified("paloally", "notify_user");
 const CORE = ["user.md", "soul.md"];
 
 const CALENDAR_WORDS = new Set(["calendar", "calendars", "cal", "gcal", "ical", "caldav"]);
@@ -67,10 +68,10 @@ export function toolWords(name: string): string[] {
 
 /** A read-only calendar tool, by name (rule 2 above). */
 export function isCalendarReadTool(name: string): boolean {
-  const m = /^mcp__(.+?)__(.+)$/.exec(name);
-  if (!m || m[1] === "paloally") return false;
-  const server = toolWords(m[1]!);
-  const tool = toolWords(m[2]!);
+  const c = tools.classify(name);
+  if (c.family !== "mcp" || !c.server || !c.tool || c.server === "paloally") return false;
+  const server = toolWords(c.server);
+  const tool = toolWords(c.tool);
   const all = [...server, ...tool];
   if (!all.some((w) => CALENDAR_WORDS.has(w))) return false;
   if (all.some((w) => WRITE_WORDS.has(w))) return false;
@@ -96,16 +97,18 @@ function inside(path: string, dir: string): boolean {
 export function isMemoryRead(name: string, input: Record<string, unknown>, scope: AllyGateScope): boolean {
   const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
   const noDots = (v: unknown) => v === undefined || (typeof v === "string" && !v.includes(".."));
-  if (name === "Read") {
-    const file = str(input.file_path);
+  const c = tools.classify(name, input);
+  if (c.family === "read") {
+    const file = str(c.path);
     if (!file || !isAbsolute(file)) return false;
     if (CORE.some((c) => real(file) === real(join(scope.home, c)))) return true;
     return inside(file, scope.memoryDir) && real(file) !== real(scope.memoryDir);
   }
-  if (name === "Grep" || name === "Glob") {
-    const path = str(input.path);
+  if (c.family === "search") {
+    const path = str(c.path);
     if (!path || !isAbsolute(path) || !inside(path, scope.memoryDir)) return false;
-    return name === "Grep" ? noDots(input.glob) : noDots(input.pattern) && !isAbsolute(String(input.pattern ?? ""));
+    // a file glob (Grep's) without "..", or a path pattern (Glob's) that is also relative
+    return c.filterIsPath ? noDots(c.filter) && !isAbsolute(String(c.filter ?? "")) : noDots(c.filter);
   }
   return false;
 }
@@ -113,7 +116,7 @@ export function isMemoryRead(name: string, input: Record<string, unknown>, scope
 /** Whether a tool may run in a turn an Ally's message started. */
 export function allyTurnTool(name: string, input: Record<string, unknown>, scope: AllyGateScope): AllyToolVerdict {
   if (ALLY_TOOLS.has(name)) return { ok: true, kind: "ally" };
-  if (PLUMBING.has(name)) return { ok: true, kind: "plumbing" };
+  if (tools.classify(name).family === "plumbing") return { ok: true, kind: "plumbing" };
   if (name === TELL_OWNER) return { ok: true, kind: "owner" };
   if (isCalendarReadTool(name)) return { ok: true, kind: "calendar" };
   if (isMemoryRead(name, input ?? {}, scope)) return { ok: true, kind: "memory" };

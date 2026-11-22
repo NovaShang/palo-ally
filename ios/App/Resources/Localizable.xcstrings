@@ -365,13 +365,13 @@
         }
       }
     },
-    "Claude Code 登录过期了，事情都停下了" : {
+    "%@ 登录过期了，事情都停下了" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Claude Code's login expired; everything has stopped"
+            "value" : "%@'s login expired; everything has stopped"
           }
         }
       }
@@ -497,13 +497,13 @@
         }
       }
     },
-    "不在电脑前时，Claude Code 要你点头的事送到手机上。" : {
+    "不在电脑前时，%@ 要你点头的事送到手机上。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "When you’re away from your computer, Claude Code’s requests for your OK come to your phone."
+            "value" : "When you’re away from your computer, %@’s requests for your OK come to your phone."
           }
         }
       }
@@ -4695,24 +4695,24 @@
         }
       }
     },
-    "主机上的 Claude Code 登录过期了。在这里打开授权页，用你的 Claude 账号同意，再把页面上显示的代码粘贴回来。" : {
+    "主机上的 %@ 登录过期了。在这里打开授权页，用你的 %@ 账号同意，再把页面上显示的代码粘贴回来。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Claude Code's login on the host has expired. Open the authorization page here, approve with your Claude account, then paste back the code the page shows."
+            "value" : "%1$@'s login on the host has expired. Open the authorization page here, approve with your %2$@ account, then paste back the code the page shows."
           }
         }
       }
     },
-    "主机上的 Claude Code 里也会是这个名字。" : {
+    "主机上的 %@ 里也会是这个名字。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "It’ll have this name in Claude Code on your host too."
+            "value" : "It’ll have this name in %@ on your host too."
           }
         }
       }
@@ -7697,13 +7697,13 @@
         }
       }
     },
-    "终端里还开着。发的话会等那边退出（/exit）后发出，之后在这里接着聊。" : {
+    "终端里还开着。发的话会等那边退出（%@）后发出，之后在这里接着聊。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Still open in a terminal. What you send waits until it exits there (/exit), then the conversation carries on here."
+            "value" : "Still open in a terminal. What you send waits until it exits there (%@), then the conversation carries on here."
           }
         }
       }

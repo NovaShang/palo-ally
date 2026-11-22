@@ -1,4 +1,5 @@
 import type { Audit } from "./audit.ts";
+import { tools } from "./harness/vocabulary.ts";
 import type { Bus } from "./bus.ts";
 import type { PermissionDecision, PermissionRequest } from "./harness/types.ts";
 import type { AskOptions } from "./approvals.ts";
@@ -13,7 +14,7 @@ import { t } from "./i18n/index.ts";
 // carries it to wherever the owner is and hands the answers back; first
 // answer wins.
 
-export const ASK_TOOL = "AskUserQuestion";
+export const ASK_TOOL = tools.ask;
 
 interface Pending {
   question: Question;

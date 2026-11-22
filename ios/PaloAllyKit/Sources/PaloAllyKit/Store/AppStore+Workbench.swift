@@ -342,7 +342,7 @@ extension AppStore {
     }
 
     /// The assistant's details in the page's one shape.
-    public var assistantDetail: AgentDetail { AgentDetail(assistant: modelInfo, status: status, tasks: tasks) }
+    public var assistantDetail: AgentDetail { AgentDetail(assistant: modelInfo, status: status, tasks: tasks, harness: harness) }
 
     /// The details page's one model setter: the assistant's (`model.set`,
     /// where `.some(nil)` goes back to the default) or an agent's (`pals.setModel`).

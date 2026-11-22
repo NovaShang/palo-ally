@@ -4,6 +4,7 @@ import type { PermissionDecision, PermissionRequest } from "./harness/types.ts";
 import type { Approval, CardSource } from "./types.ts";
 import { firstLine } from "./ccSessions.ts";
 import { describeInput, describeTool } from "./copy.ts";
+import { tools } from "./harness/vocabulary.ts";
 import { newId, readJson, truncate, writeJson } from "./util.ts";
 import { t } from "./i18n/index.ts";
 
@@ -14,7 +15,7 @@ import { t } from "./i18n/index.ts";
  * Cards are put up through ownerCards.ts (sessions) or ApprovalManager.ask.
  */
 export function sessionPermission(tool: string, input: Record<string, unknown>): { title: string; detail: string; line: string } {
-  const command = tool === "Bash" && typeof input.command === "string" ? input.command : undefined;
+  const command = tools.classify(tool).family === "run" && typeof input.command === "string" ? input.command : undefined;
   const title = describeTool(tool, input);
   return {
     title,
@@ -201,11 +202,7 @@ export function describeSuggestion(suggestions: unknown[] | undefined): string |
     if (u.type === "addDirectories" && u.directories?.[0]) return `path:${u.directories[0]}`;
     if (u.type !== "addRules" || u.behavior !== "allow" || !u.rules?.length) continue;
     const r = u.rules[0]!;
-    const c = r.ruleContent ?? "";
-    if (r.toolName === "Bash" && c) return `cmd:${c.replace(/:\*$/, "").replace(/\s*\*$/, "")}`;
-    if (c.startsWith("domain:")) return c;
-    if (/^(Read|Write|Edit|NotebookEdit|Glob|Grep)$/.test(r.toolName) && c) return `path:${c.replace(/\/\*\*$/, "").replace(/^\/\//, "/")}`;
-    return `tool:${r.toolName}`;
+    return tools.ruleScope(r.toolName, r.ruleContent ?? "");
   }
   return null;
 }

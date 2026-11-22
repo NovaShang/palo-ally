@@ -3,6 +3,10 @@ import { existsSync, mkdirSync, openSync, readSync, readdirSync, closeSync, fsta
 import { join } from "node:path";
 import { t as tr } from "./i18n/index.ts";
 import { pidAlive, sleep } from "./util.ts";
+import { tools } from "./harness/vocabulary.ts";
+
+// (What it reads in a transcript is Claude Code's: harness/claude/transcript.ts.)
+export { growth, transcriptHas } from "./harness/claude/transcript.ts";
 
 // The stall watchdog: a Claude Code process the host runs (the assistant's
 // own, every Pal) that froze mid-work is ended and resumed, without waiting
@@ -37,8 +41,8 @@ export interface StallTarget {
   /** When it last said anything on its SDK stream (ms). */
   lastActivity(): number;
   pid(): number | undefined;
-  /** Its transcript file, if it has one yet. */
-  transcript(): string | undefined;
+  /** How far it has written its conversation (a signature, compared tick to tick: the harness' own record of progress). */
+  progress(): string;
   /** Ends the stuck process, resumes the session and carries on. */
   recover(): Promise<StallRecovery>;
 }
@@ -78,7 +82,7 @@ export interface StallWatchDeps {
 }
 
 // Tools whose progress shows by itself (a subagent writes its own transcript).
-const SELF_REPORTING = new Set(["Agent", "Task"]);
+const SELF_REPORTING = tools.selfReporting;
 const SOCKET_CHECK_MS = 60_000;
 const HOUR = 3600_000;
 
@@ -146,7 +150,7 @@ export class StallWatch {
       s.busySince = null;
       return;
     }
-    const sig = growth(t.transcript());
+    const sig = t.progress();
     const activity = t.lastActivity();
     if (s.busySince === null) {
       s.busySince = now;
@@ -207,48 +211,6 @@ export class StallWatch {
       s.recovering = false;
       s.busySince = null;
     }
-  }
-}
-
-/** How much its transcript and its subagents' transcripts have grown (a signature, compared tick to tick). */
-export function growth(transcript: string | undefined): string {
-  if (!transcript) return "";
-  let main = "-";
-  try {
-    const st = statSync(transcript);
-    main = `${st.size}:${Math.round(st.mtimeMs)}`;
-  } catch {
-    /* none yet */
-  }
-  let sub = 0;
-  const dir = join(transcript.replace(/\.jsonl$/, ""), "subagents");
-  try {
-    for (const f of readdirSync(dir)) {
-      if (!f.endsWith(".jsonl")) continue;
-      try {
-        sub += statSync(join(dir, f)).size;
-      } catch {
-        /* gone */
-      }
-    }
-  } catch {
-    /* no subagents */
-  }
-  return `${main}|${sub}`;
-}
-
-/** Whether the transcript (its last `maxBytes`) mentions this message uuid: the session took that message. */
-export function transcriptHas(path: string | undefined, uuid: string, maxBytes = 8 * 1024 * 1024): boolean {
-  if (!path || !existsSync(path)) return false;
-  const fd = openSync(path, "r");
-  try {
-    const size = fstatSync(fd).size;
-    const start = Math.max(0, size - maxBytes);
-    const buf = Buffer.alloc(size - start);
-    readSync(fd, buf, 0, buf.length, start);
-    return buf.toString("utf8").includes(uuid);
-  } finally {
-    closeSync(fd);
   }
 }
 

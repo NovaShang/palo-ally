@@ -1,10 +1,15 @@
 import { t } from "./i18n/index.ts";
-import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Audit } from "./audit.ts";
-import { PALO_SEND_TOOL } from "./harness/types.ts";
 import type { TaskTracker } from "./tasks.ts";
+import { claudeConfigDir, transcriptPath } from "./harness/claude/paths.ts";
+import { type PeerSession, SessionRegistry } from "./harness/claude/registry.ts";
+import { HOME_TO, type TailSummary, readHead, readTail, summarizeTail, tailLine as firstLine } from "./harness/claude/transcript.ts";
+
+// (Moved under harness/claude/; kept here for the modules and tests that import them from here.)
+export { claudeConfigDir, transcriptPath, SessionRegistry, readHead, readTail, summarizeTail };
+export type { PeerSession, TailSummary };
 import { newId, pidAlive, readJson, truncate, writeJson } from "./util.ts";
 
 // HandoffTracker: 任务交出去了，外壳负责盯进度 (PRD §6.2).
@@ -21,169 +26,6 @@ import { newId, pidAlive, readJson, truncate, writeJson } from "./util.ts";
 // assistant (the peer messages it; it asks with its choice card); if a peer
 // asks in its own terminal anyway, the owner gets a push to go answer there.
 
-export interface PeerSession {
-  pid: number;
-  sessionId: string;
-  name: string;
-  cwd: string;
-  status: string; // busy | idle | shell | waiting (Claude Code's own)
-  waitingFor?: string;
-  statusUpdatedAt?: number;
-  tmux?: string;
-}
-
-export function claudeConfigDir(): string {
-  return process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
-}
-
-export function transcriptPath(claudeDir: string, cwd: string, sessionId: string): string {
-  return join(claudeDir, "projects", resolve(cwd).replace(/[^A-Za-z0-9]/g, "-"), `${sessionId}.jsonl`);
-}
-
-// SessionRegistry reads Claude Code's own list of live sessions on this machine.
-export class SessionRegistry {
-  constructor(
-    private dir: string,
-    private alive: (pid: number) => boolean = pidAlive,
-  ) {}
-
-  list(): PeerSession[] {
-    if (!existsSync(this.dir)) return [];
-    const out: PeerSession[] = [];
-    for (const f of readdirSync(this.dir)) {
-      if (!/^\d+\.json$/.test(f)) continue;
-      try {
-        const o = JSON.parse(readFileSync(join(this.dir, f), "utf8"));
-        const pid = Number(o.pid);
-        if (!pid || !o.sessionId || !this.alive(pid)) continue;
-        out.push({
-          pid,
-          sessionId: String(o.sessionId),
-          name: String(o.name ?? ""),
-          cwd: String(o.cwd ?? ""),
-          status: String(o.status ?? "idle"),
-          waitingFor: typeof o.waitingFor === "string" ? o.waitingFor : undefined,
-          statusUpdatedAt: typeof o.statusUpdatedAt === "number" ? o.statusUpdatedAt : undefined,
-          tmux: typeof o.tmux === "string" ? o.tmux : undefined,
-        });
-      } catch {
-        // a file mid-write; next check
-      }
-    }
-    return out;
-  }
-
-  // A SendMessage `to`: a name (optionally "name [ref]") or "uds:<socket>".
-  resolve(to: string, list = this.list()): PeerSession | undefined {
-    const t = to.trim();
-    const uds = /^uds:.*\/(\d+)\.sock$/.exec(t);
-    if (uds) return list.find((s) => s.pid === Number(uds[1]));
-    const name = t.replace(/\s*\[[^\]]*\]\s*$/, "");
-    return list.find((s) => s.name === name);
-  }
-}
-
-// ---- transcript tail ----
-
-export interface TailSummary {
-  lastText?: string; // the session's latest words (first line)
-  lastActivityAt?: number;
-  pendingQuestion?: { id: string; text: string }; // an AskUserQuestion with no answer yet
-  replies: { to: string; text: string; at: number }[]; // its SendMessage calls
-  apiError?: string;
-}
-
-export function readTail(path: string, maxBytes = 256 * 1024): any[] {
-  if (!existsSync(path)) return [];
-  const fd = openSync(path, "r");
-  try {
-    const size = fstatSync(fd).size;
-    const start = Math.max(0, size - maxBytes);
-    const buf = Buffer.alloc(size - start);
-    readSync(fd, buf, 0, buf.length, start);
-    const lines = buf.toString("utf8").split("\n");
-    if (start > 0) lines.shift(); // a partial first line
-    const out: any[] = [];
-    for (const l of lines) {
-      if (!l.trim()) continue;
-      try {
-        out.push(JSON.parse(l));
-      } catch {
-        // a line still being written
-      }
-    }
-    return out;
-  } finally {
-    closeSync(fd);
-  }
-}
-
-/** The entries in a transcript's first `maxBytes`. */
-export function readHead(path: string, maxBytes = 256 * 1024): any[] {
-  if (!existsSync(path)) return [];
-  const fd = openSync(path, "r");
-  try {
-    const buf = Buffer.alloc(Math.min(maxBytes, fstatSync(fd).size));
-    readSync(fd, buf, 0, buf.length, 0);
-    const lines = buf.toString("utf8").split("\n");
-    if (buf.length === maxBytes) lines.pop(); // a partial last line
-    const out: any[] = [];
-    for (const l of lines) {
-      if (!l.trim()) continue;
-      try {
-        out.push(JSON.parse(l));
-      } catch {
-        // a line still being written
-      }
-    }
-    return out;
-  } finally {
-    closeSync(fd);
-  }
-}
-
-// A Pal's palo_send has no `to`: it always means the assistant.
-const HOME_TO = "palo_send:assistant";
-
-export function summarizeTail(entries: any[]): TailSummary {
-  const out: TailSummary = { replies: [] };
-  const answered = new Set<string>();
-  let ask: { id: string; text: string } | undefined;
-  for (const e of entries) {
-    const at = Date.parse(e.timestamp ?? "") || undefined;
-    if (at && (!out.lastActivityAt || at > out.lastActivityAt)) out.lastActivityAt = at;
-    if (e.isSidechain) continue;
-    const content = e.message?.content;
-    if (e.type === "assistant" && Array.isArray(content)) {
-      for (const b of content) {
-        if (b?.type === "text" && b.text?.trim()) out.lastText = firstLine(b.text);
-        if (b?.type === "tool_use" && b.name === "AskUserQuestion") {
-          const q = Array.isArray(b.input?.questions) ? b.input.questions[0] : undefined;
-          ask = { id: String(b.id), text: firstLine(String(q?.question ?? "")) };
-        }
-        // Its palo_send is a reply to the assistant (docs/pals-prd.md §16): `to` reads as "home".
-        if (b?.type === "tool_use" && b.name === PALO_SEND_TOOL && typeof b.input?.text === "string") {
-          out.replies.push({ to: HOME_TO, text: b.input.text, at: at ?? 0 });
-        }
-        if (b?.type === "tool_use" && b.name === "SendMessage" && typeof b.input?.to === "string") {
-          out.replies.push({ to: b.input.to, text: String(b.input.message ?? ""), at: at ?? 0 });
-        }
-      }
-      if (e.isApiErrorMessage || e.error) out.apiError = firstLine(String(content.find((b: any) => b?.type === "text")?.text ?? e.error ?? ""));
-    } else if (e.type === "user" && Array.isArray(content)) {
-      for (const b of content) if (b?.type === "tool_result" && b.tool_use_id) answered.add(String(b.tool_use_id));
-      // a new owner prompt after an error means it went on
-      if (content.some((b: any) => b?.type === "text")) out.apiError = undefined;
-    }
-  }
-  if (ask && !answered.has(ask.id)) out.pendingQuestion = ask;
-  return out;
-}
-
-function firstLine(s: string): string {
-  const line = s.split("\n").map((l) => l.trim()).find((l) => l && !/^```/.test(l)) ?? "";
-  return truncate(line.replace(/^[#>*\-\s]+/, "").replace(/\*\*/g, ""), 120);
-}
 
 // ---- what counts as a handoff ----
 

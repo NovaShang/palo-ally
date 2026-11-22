@@ -170,8 +170,8 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
     /// The folder for people: the home folder as 「~」.
     public var shortCwd: String { CCSession.shortPath(cwd) }
 
-    /// The line that opens its record in a terminal, when the host gave none.
-    public var resumeCommand: String { "claude --resume \(sessionId.isEmpty ? id : sessionId)" }
+    /// The line that opens its record in a terminal, when the host gave none (Claude Code's; `AppStore.harness.terminal` says the harness' own).
+    public var resumeCommand: String { HarnessCapabilities.claudeCodeFallback.terminal.resume(sessionId.isEmpty ? id : sessionId) }
 }
 
 /// `pals.list → {pals, others, hooks}`: the Pals, the computer's other live

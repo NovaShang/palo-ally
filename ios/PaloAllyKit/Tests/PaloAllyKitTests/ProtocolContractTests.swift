@@ -221,6 +221,7 @@ private let eventTypes: [String: Check] = [
     RPCEventName.settingsUpdated: { strictIssues(HostSettings.self, $0["settings"] ?? $0) },
     RPCEventName.status: { strictIssues(HostStatus.self, $0["status"] ?? $0) },
     RPCEventName.commandsUpdated: strict(CommandsResult.self),
+    RPCEventName.harnessUpdated: strict(HarnessUpdate.self),
     RPCEventName.suggestionsUpdated: strict(SuggestionsResult.self),
     RPCEventName.allyUpdated: { json in
         switch AllyUpdate(json: json) {
