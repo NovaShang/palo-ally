@@ -131,9 +131,12 @@ final class PhoneSmokeUITests: XCTestCase {
         app.descendants(matching: .any)["agent-detail"].firstMatch.swipeUp()
         sleep(1)
         shot(app, "\(look)-7b-session-details-full")
-        // Its depth can be chosen, by its full name.
+        // Its depth can be chosen, by its full name, under 设置 (folded to one line).
+        let settings = app.descendants(matching: .any)["detail-settings"].firstMatch
+        XCTAssertTrue(settings.waitForExistence(timeout: 3), "the session's details have no 设置")
+        settings.tap()
         let effort = app.descendants(matching: .any)["detail-effort"].firstMatch
-        XCTAssertTrue(effort.exists, "the session's details have no 思考深度")
+        XCTAssertTrue(effort.waitForExistence(timeout: 3), "the session's details have no 思考深度")
         effort.tap()
         let deep = app.buttons["深"].firstMatch
         XCTAssertTrue(deep.waitForExistence(timeout: 3), "思考深度's menu didn't open with its full names")
@@ -146,15 +149,14 @@ final class PhoneSmokeUITests: XCTestCase {
 
         // A session in a workspace: the strip of its sessions above the composer.
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        // The phone opens a workspace as the list of its sessions.
+        // The phone opens a workspace at the session last shown in it (else its first).
         let wsRow = app.descendants(matching: .any)["row-workspace-ws-site"].firstMatch
         XCTAssertTrue(wsRow.waitForExistence(timeout: 5), "no workspace in the list")
         wsRow.tap()
-        let siteRow = app.descendants(matching: .any)["workspace-member-pal-site"].firstMatch
-        XCTAssertTrue(siteRow.waitForExistence(timeout: 5), "the workspace's page doesn't list its sessions")
-        siteRow.tap()
         let strip = app.descendants(matching: .any)["quick-switch"].firstMatch
         XCTAssertTrue(strip.waitForExistence(timeout: 5), "a session in a workspace has no quick-switch strip")
+        app.descendants(matching: .any)["quick-switch-pal-site"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars.staticTexts["网站帮手"].waitForExistence(timeout: 5), "the workspace didn't open at a session")
         sleep(1)
         shot(app, "\(look)-8-quick-switch")
         // A tap on a chip goes to its session.
@@ -196,7 +198,11 @@ final class PhoneSmokeUITests: XCTestCase {
         let press = app.buttons["按住说话，轻点打字"].firstMatch
         XCTAssertTrue(press.waitForExistence(timeout: 5), "no composer")
         press.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "tapping the composer brought no keyboard")
+        // The field takes the keyboard (the on-screen one, unless the
+        // simulator has its hardware keyboard connected).
+        let field = app.descendants(matching: .any)["composerField"].firstMatch
+        expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: field)
+        waitForExpectations(timeout: 10)
         sleep(1)
         app.typeText(text)
         let typed = app.descendants(matching: .any)
@@ -207,7 +213,7 @@ final class PhoneSmokeUITests: XCTestCase {
     @MainActor
     private func dismissKeyboard(_ app: XCUIApplication) {
         // Clear the draft, then put the keyboard away by tapping the conversation.
-        for _ in 0..<4 { app.keys["delete"].firstMatch.tap() }
+        app.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 4))
         app.swipeDown()
         sleep(1)
     }

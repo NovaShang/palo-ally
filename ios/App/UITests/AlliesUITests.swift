@@ -17,8 +17,8 @@ final class AlliesUITests: XCTestCase {
         let send = app.buttons["发送"].firstMatch
         XCTAssertTrue(send.waitForExistence(timeout: 10), "no 发送 on the draft card")
         send.tap()
-        // Online: delivered, then seen, and the buttons are gone.
-        XCTAssertTrue(app.staticTexts["对方已看到"].waitForExistence(timeout: 15), "the card never said it was seen")
+        // Online: delivered, then seen (the folded line starts with its state), and the buttons are gone.
+        XCTAssertTrue(text(app, "对方已看到").waitForExistence(timeout: 15), "the card never said it was seen")
         XCTAssertFalse(app.buttons["改一下"].exists)
         XCTAssertFalse(app.buttons["不发"].exists)
     }
@@ -38,8 +38,8 @@ final class AlliesUITests: XCTestCase {
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count))
         field.typeText("周六下午三点见")
         app.buttons["发送"].firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["周六下午三点见"].waitForExistence(timeout: 10), "the card doesn't show the new words")
-        XCTAssertTrue(app.staticTexts["对方已看到"].waitForExistence(timeout: 15))
+        XCTAssertTrue(text(app, "周六下午三点见").waitForExistence(timeout: 10), "the card doesn't show the new words")
+        XCTAssertTrue(text(app, "对方已看到").waitForExistence(timeout: 15))
     }
 
     @MainActor
@@ -83,8 +83,9 @@ final class AlliesUITests: XCTestCase {
         app.buttons["发送"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["今晚吃面"].waitForExistence(timeout: 5), "the words don't show")
         XCTAssertFalse(app.buttons["改一下"].exists, "a card where none should be")
-        XCTAssertTrue(app.staticTexts["对方已看到"].waitForExistence(timeout: 15), "no state under the words")
-        XCTAssertTrue(app.staticTexts["好的，收到。"].waitForExistence(timeout: 10), "their answer didn't come")
+        // Under them: the time, then the state.
+        XCTAssertTrue(text(app, "对方已看到").waitForExistence(timeout: 15), "no state under the words")
+        XCTAssertTrue(text(app, "好的，收到。").waitForExistence(timeout: 10), "their answer didn't come")
     }
 
     /// ⋯ changes how the owner's assistant answers them, and the page says it.
@@ -131,6 +132,11 @@ final class AlliesUITests: XCTestCase {
         for _ in 0..<4 where !row.exists { app.swipeUp() }
         XCTAssertTrue(row.waitForExistence(timeout: 10), "not on the list")
         XCTAssertTrue(row.label.contains("家人朋友"), "tag missing: \(row.label)")
+    }
+
+    @MainActor
+    private func text(_ app: XCUIApplication, _ s: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", s)).firstMatch
     }
 
     @MainActor

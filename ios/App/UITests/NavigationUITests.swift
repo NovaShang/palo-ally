@@ -44,8 +44,12 @@ final class NavigationUITests: XCTestCase {
     @MainActor
     func testAPalOpensFromTheList() throws {
         let app = launch(["-demoScreen", "list"])
+        // 网站帮手 is in the 官网改版 workspace: its arrow unfolds it in the list.
+        let workspace = row(app, "row-workspace-ws-site")
+        XCTAssertTrue(workspace.waitForExistence(timeout: 15), "no workspace in the list")
+        workspace.coordinate(withNormalizedOffset: CGVector(dx: 0.07, dy: 0.5)).tap()
         let pal = row(app, "row-pal-pal-site")
-        XCTAssertTrue(pal.waitForExistence(timeout: 15))
+        XCTAssertTrue(pal.waitForExistence(timeout: 5), "the workspace didn't unfold to its agents")
         pal.tap()
         XCTAssertTrue(app.navigationBars.staticTexts["网站帮手"].waitForExistence(timeout: 5), "the agent's page didn't open")
         XCTAssertTrue(app.buttons["title-capsule"].exists)
@@ -75,8 +79,11 @@ final class NavigationUITests: XCTestCase {
         let orb = app.buttons["title-orb"]
         XCTAssertTrue(orb.waitForExistence(timeout: 15))
         orb.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["agent-detail"].firstMatch.waitForExistence(timeout: 5), "the details didn't open")
+        let detail = app.descendants(matching: .any)["agent-detail"].firstMatch
+        XCTAssertTrue(detail.waitForExistence(timeout: 5), "the details didn't open")
+        // 设置 is under 现在 and 定时: below a half-height sheet's fold.
         let settings = app.descendants(matching: .any)["detail-settings"].firstMatch
+        for _ in 0..<4 where !settings.isHittable { detail.swipeUp() }
         XCTAssertTrue(settings.exists, "no 设置 in the details")
         settings.tap()
         XCTAssertEqual(app.descendants(matching: .any)["detail-settings"].firstMatch.value as? String, "已展开", "设置 didn't unfold")
@@ -97,7 +104,8 @@ final class NavigationUITests: XCTestCase {
         XCTAssertTrue(app.buttons["title-orb"].waitForExistence(timeout: 5))
     }
 
-    /// A Markdown item in 成果 opens rendered, and back is the list again.
+    /// A Markdown item in 成果 opens rendered (a full-screen page over the
+    /// phone's pane page), and closing it is the list again.
     @MainActor
     func testAMarkdownItemOpensFromTheLibrary() throws {
         let app = launch(["-demoScreen", "library"])
@@ -108,7 +116,8 @@ final class NavigationUITests: XCTestCase {
         let heading = app.webViews.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "今日晨报")).firstMatch
         XCTAssertTrue(heading.waitForExistence(timeout: 10), "the Markdown wasn't rendered")
         back(app)
-        XCTAssertTrue(app.navigationBars.staticTexts["成果"].waitForExistence(timeout: 5), "back didn't return to 成果")
+        XCTAssertTrue(app.descendants(matching: .any)["right-pane"].firstMatch.waitForExistence(timeout: 5), "closing didn't return to the pane")
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "closing didn't return to 成果")
     }
 
     /// One still open in a terminal: before anything is typed its page says

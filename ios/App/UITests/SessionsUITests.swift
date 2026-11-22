@@ -57,13 +57,12 @@ final class SessionsUITests: XCTestCase {
     }
 
     /// An asleep Pal (pals-prd §12): its history is there; words for it say
-    /// 「正在叫醒…」 until it's up, then it answers; back on the list it's awake.
+    /// 「正在叫醒…」 until it's up, then it answers.
     @MainActor
     func testWordsForAnAsleepPalWakeItAndItAnswers() throws {
         let app = launch(["-demoScreen", "pal", "-demoPal", "pal-blog", "-demoKeyboard", "4:600", "-demoWakeAfter", "6"])
         XCTAssertTrue(app.navigationBars.staticTexts["博客改版"].waitForExistence(timeout: 15), "the Pal's page didn't open")
         XCTAssertTrue(text(app, "评论区的样式改好了").waitForExistence(timeout: 10), "its history isn't there")
-        XCTAssertTrue(text(app, "睡着 · 上次叫醒约 $0.04").exists, "the page doesn't say it's asleep")
         attach(app, "asleep-pal")
         let field = app.descendants(matching: .any)["composerField"]
         expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: field)
@@ -75,15 +74,12 @@ final class SessionsUITests: XCTestCase {
         XCTAssertTrue(text(app, "好的，按你说的办").waitForExistence(timeout: 20), "the woken Pal never answered")
         XCTAssertFalse(text(app, "正在叫醒").exists)
         XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "评论区再加个点赞")).count, 1)
-        // Back on the list: awake now; the other one still asleep, after the awake ones.
+        // Back on the list: under the 官网改版 workspace, unfolded as the one
+        // picked is in it (the one-word state no longer tells asleep from
+        // idle; 照片整理, asleep for days, is in 已归档).
         app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["agent"].waitForExistence(timeout: 10))
-        let blog = app.descendants(matching: .any)["row-pal-pal-blog"]
-        let photos = app.descendants(matching: .any)["row-pal-pal-photos"]
-        XCTAssertTrue(blog.waitForExistence(timeout: 5) && photos.exists)
-        XCTAssertFalse(blog.label.contains("睡着"), "it still shows asleep")
-        XCTAssertTrue(photos.label.contains("睡着"), "the asleep one doesn't say so")
-        XCTAssertLessThan(blog.frame.minY, photos.frame.minY)
+        XCTAssertTrue(app.descendants(matching: .any)["row-workspace-ws-site"].firstMatch.waitForExistence(timeout: 10), "not back on the list")
+        XCTAssertTrue(app.descendants(matching: .any)["row-pal-pal-blog"].firstMatch.waitForExistence(timeout: 5), "not in its workspace")
         attach(app, "list-after-wake")
     }
 
@@ -107,16 +103,16 @@ final class SessionsUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["读书笔记"].firstMatch.waitForExistence(timeout: 5), "the page's title didn't change")
         let done = app.buttons["完成"].firstMatch
         if done.exists { done.tap() }
-        // From the list: the row's menu.
+        // From the list: the row's menu, on the same agent.
         app.navigationBars.buttons.firstMatch.tap()
-        let row = app.descendants(matching: .any)["row-pal-pal-site"]
+        let row = app.descendants(matching: .any)["row-pal-pal-notes"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.descendants(matching: .any)["row-pal-pal-notes"].label.contains("读书笔记"))
+        XCTAssertTrue(row.label.contains("读书笔记"), row.label)
         row.press(forDuration: 1.0)
         app.buttons["重命名"].firstMatch.tap()
         let again = app.alerts.textFields.firstMatch
         XCTAssertTrue(again.waitForExistence(timeout: 5))
-        XCTAssertEqual(again.value as? String, "网站帮手")
+        XCTAssertEqual(again.value as? String, "读书笔记")
         again.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 12))
         again.typeText("官网")
         app.alerts.buttons["好"].tap()
@@ -180,7 +176,7 @@ final class SessionsUITests: XCTestCase {
         let yes = app.buttons["开吧"].firstMatch
         XCTAssertTrue(yes.waitForExistence(timeout: 15), "no 开吧 on the proposal")
         yes.tap()
-        XCTAssertTrue(app.staticTexts["已经开了"].waitForExistence(timeout: 10), "the card never said it started")
+        XCTAssertTrue(text(app, "已经开了：").waitForExistence(timeout: 10), "the card never said it started")
         XCTAssertFalse(app.buttons["不用"].exists)
         app.buttons["去看看它"].firstMatch.tap()
         XCTAssertTrue(app.navigationBars.staticTexts["报销帮手"].waitForExistence(timeout: 10), "the Pal's page didn't open")
@@ -191,8 +187,8 @@ final class SessionsUITests: XCTestCase {
     @MainActor
     func testEachCardWaitsWhereItBelongsAndGoesOnceAnswered() throws {
         let app = launch(["-demoState", "sessions"])
-        // Another session's question: in the assistant's conversation.
-        let asks = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "问卷数据清洗 问你")).firstMatch
+        // Another session's question: in the assistant's conversation, the card's first line naming it.
+        let asks = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "问卷数据清洗 · ")).firstMatch
         XCTAssertTrue(asks.waitForExistence(timeout: 15), "no source on the session's card")
         // The Pal's card isn't here.
         XCTAssertFalse(text(app, "npm run build").exists)
@@ -201,10 +197,14 @@ final class SessionsUITests: XCTestCase {
         expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: asks)
         waitForExpectations(timeout: 10)
 
-        // The Pal's card: on its page, with its count on the list.
+        // The Pal's card: on its page, with its count on the list (in the
+        // 官网改版 workspace, unfolded by its arrow).
         app.navigationBars.buttons.element(boundBy: 0).tap()
+        let workspace = app.descendants(matching: .any)["row-workspace-ws-site"].firstMatch
+        XCTAssertTrue(workspace.waitForExistence(timeout: 10), "no workspace in the list")
+        workspace.coordinate(withNormalizedOffset: CGVector(dx: 0.07, dy: 0.5)).tap()
         let row = app.descendants(matching: .any)["row-pal-pal-site"]
-        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "the workspace didn't unfold to its agents")
         XCTAssertTrue(row.label.contains("1 件等你"), row.label)
         row.tap()
         let allow = app.buttons["允许"].firstMatch
@@ -224,7 +224,7 @@ final class SessionsUITests: XCTestCase {
         XCTAssertTrue(text(app, "接手「首页改成两栏布局」").exists, "the card doesn't say what")
         XCTAssertTrue(text(app, "~/code/site").exists, "the card doesn't say where")
         app.buttons["接手"].firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["已经接过来了"].waitForExistence(timeout: 10), "the card never said it was taken over")
+        XCTAssertTrue(text(app, "已经接过来了：").waitForExistence(timeout: 10), "the card never said it was taken over")
         XCTAssertFalse(app.buttons["不用"].exists)
         attach(app, "card-adopted")
         app.buttons["去看看它"].firstMatch.tap()
@@ -237,7 +237,7 @@ final class SessionsUITests: XCTestCase {
         let no = app.buttons["不用"].firstMatch
         XCTAssertTrue(no.waitForExistence(timeout: 15))
         no.tap()
-        XCTAssertTrue(app.staticTexts["没接"].waitForExistence(timeout: 10), "the card never said no")
+        XCTAssertTrue(text(app, "没接：").waitForExistence(timeout: 10), "the card never said no")
         XCTAssertFalse(app.buttons["接手"].exists)
         attach(app, "card-discarded")
     }
@@ -251,7 +251,7 @@ final class SessionsUITests: XCTestCase {
         yes.tap()
         XCTAssertTrue(text(app, "没接成：有别的进程开着它").waitForExistence(timeout: 10), "no reason given")
         XCTAssertTrue(app.buttons["接手"].firstMatch.isEnabled, "not on offer again")
-        XCTAssertFalse(app.staticTexts["已经接过来了"].exists)
+        XCTAssertFalse(text(app, "已经接过来了").exists)
         attach(app, "card-failed")
     }
 

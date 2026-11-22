@@ -1,10 +1,10 @@
 import XCTest
 
 /// Files on the computer (docs/files-prd.md) against the demo host on an
-/// iPhone simulator, with real taps: a Pal's ⋯ → 文件 opens its folder's
+/// iPhone simulator, with real taps: an agent's 右侧栏 → 文件 opens its folder's
 /// tree, a Markdown file renders and back returns to the tree; a long press
 /// inserts a file's path into that Pal's composer; a path in a Pal's reply
-/// is a link that opens the file; 成果 → 打开文件夹… shows the folder's tree;
+/// is a link that opens the file; the assistant's 文件 is the home folder;
 /// the composer's 电脑上的文件 puts a `[文件] <path>` line in the message.
 final class FilesUITests: XCTestCase {
     override func setUp() {
@@ -28,7 +28,10 @@ final class FilesUITests: XCTestCase {
         // A folder opens in place; search finds a file deep down.
         app.buttons["file-row-src"].firstMatch.tap()
         XCTAssertTrue(app.buttons["file-row-src/app.ts"].waitForExistence(timeout: 5), "src didn't open")
-        let search = app.searchFields.firstMatch
+        // The pane page's round search button turns its bar into the field.
+        app.buttons["pane-search"].firstMatch.tap()
+        let search = app.descendants(matching: .any)["pane-search-field"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5), "no search field")
         search.tap()
         search.typeText("useItems")
         XCTAssertTrue(text(app, "src/hooks").waitForExistence(timeout: 5), "search found nothing")
@@ -77,27 +80,35 @@ final class FilesUITests: XCTestCase {
         XCTAssertTrue(link.waitForExistence(timeout: 5), "closing didn't return to the conversation")
     }
 
+    /// The assistant's 文件 (成果 no longer lists opened folders, 6ef9058):
+    /// the owner's home folder, a folder opening in place and a Markdown file
+    /// from it; its capsule switches to the assistant's own files.
     @MainActor
-    func testOpenFolderShowsItsTreeAndRemembersIt() throws {
-        let app = launch(["-demoScreen", "library"])
-        let open = app.buttons["open-folder"]
-        for _ in 0..<5 where !open.isHittable { app.swipeUp() }
-        XCTAssertTrue(open.waitForExistence(timeout: 10), "no 打开文件夹… in 成果")
-        open.tap()
-        let code = app.buttons["folder-row-code"]
-        XCTAssertTrue(code.waitForExistence(timeout: 10), "the picker doesn't start at the home folder")
-        attach(app, "folder-picker-home")
+    func testTheAssistantsFilesAreTheHomeFolder() throws {
+        let app = launch([])
+        let pane = app.buttons["page-files"].firstMatch
+        XCTAssertTrue(pane.waitForExistence(timeout: 15), "no 右侧栏 in the assistant's conversation")
+        pane.tap()
+        let files = app.buttons["pane-tab-files"].firstMatch
+        XCTAssertTrue(files.waitForExistence(timeout: 5), "no 文件 tab in the pane")
+        files.tap()
+        let code = app.buttons["file-row-code"].firstMatch
+        XCTAssertTrue(code.waitForExistence(timeout: 10), "文件 doesn't start at the home folder")
+        attach(app, "home-folder")
         code.tap()
-        app.buttons["folder-row-blog"].tap()
-        let confirm = app.buttons["open-this-folder"]
-        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
-        XCTAssertTrue(confirm.label.contains("blog"), "the button doesn't name the folder: \(confirm.label)")
-        attach(app, "folder-picker-blog")
-        confirm.tap()
-        XCTAssertTrue(app.buttons["file-row-README.md"].waitForExistence(timeout: 10), "the folder's tree didn't show")
-        attach(app, "folder-tree")
-        app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(app.buttons["owner-folder-blog"].waitForExistence(timeout: 5), "the folder isn't remembered in 成果")
+        let blog = app.buttons["file-row-code/blog"].firstMatch
+        XCTAssertTrue(blog.waitForExistence(timeout: 5), "code didn't open")
+        blog.tap()
+        let readme = app.buttons["file-row-code/blog/README.md"].firstMatch
+        XCTAssertTrue(readme.waitForExistence(timeout: 5), "blog didn't open")
+        attach(app, "home-folder-blog")
+        // The capsule: the assistant's own files instead.
+        let root = app.descendants(matching: .any)["files-root"].firstMatch
+        XCTAssertTrue(root.exists, "no folder capsule")
+        root.tap()
+        app.buttons["助理的文件"].firstMatch.tap()
+        XCTAssertTrue(code.waitForNonExistence(timeout: 5), "still the home folder")
+        attach(app, "assistant-files")
     }
 
     @MainActor
