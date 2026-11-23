@@ -62,7 +62,7 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
       if (followed) d.tasks.adoptReportId(id, followed.taskId);
       const t = d.tasks.report(id, summary, status, title);
       d.audit.log("report_task", { id, status, summary, ...(peer ? { peer } : {}) });
-      const linked = peer && d.handoffs && !followed ? `；${d.handoffs.link(t.id, peer, summary)}` : "";
+      const linked = peer && d.handoffs && !followed ? `；${d.handoffs.link(t.id, peer)}` : "";
       return `ok: ${t.id} ${t.status}${linked}`;
     },
     register_watch: async ({ id, title, instruction, interval_minutes, at, day_of_month, kind }) => {

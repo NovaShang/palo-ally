@@ -1,10 +1,9 @@
 import { t } from "./i18n/index.ts";
 import type { Audit } from "./audit.ts";
 import type { Bus } from "./bus.ts";
-import { firstLine } from "./harness/claude/transcript.ts";
 import type { TaskTracker } from "./tasks.ts";
 import type { Pal } from "./types.ts";
-import { newId, readJson, truncate, writeJson } from "./util.ts";
+import { newId, readJson, writeJson } from "./util.ts";
 
 // (Moved under harness/claude/; kept here for agentContract.test.ts.)
 export { transcriptPath } from "./harness/claude/paths.ts";
@@ -49,8 +48,7 @@ export interface Handoff {
   id: string;
   taskId: string;
   /** Who has it: the agent's id (`sessionId` alone in a file from before: it's looked up at start). */
-  peer: { name: string; pal?: string; sessionId?: string; cwd?: string };
-  request: string; // first line of what was asked
+  peer: { name: string; pal?: string; sessionId?: string };
   createdAt: number;
   state: HandoffState;
   lastLine: string;
@@ -138,7 +136,7 @@ export class HandoffTracker {
       // neutral title, never the first line of an (often English) message.
       const title = t("handoff.title", { name: pal.name });
       const task = this.d.tasks.openPeer(title, t("handoff.waitStart"), pal.name);
-      this.handoffs.push(this.newHandoff(task.id, pal, firstLine(text)));
+      this.handoffs.push(this.newHandoff(task.id, pal));
       this.save();
       this.d.audit.log("handoff.opened", { taskId: task.id, peer: pal.name, title });
       return;
@@ -166,7 +164,7 @@ export class HandoffTracker {
 
   // report_task(peer=…): the assistant links a row to an agent explicitly.
   // Another session's row only says whose it is: it's the assistant's to end.
-  link(taskId: string, to: string, request = ""): string {
+  link(taskId: string, to: string): string {
     const pal = this.agent(to);
     if (!pal) {
       this.d.tasks.setPeer(taskId, to);
@@ -176,19 +174,18 @@ export class HandoffTracker {
     const h = this.forTask(taskId);
     if (h) h.peer = peerRef(pal);
     else {
-      this.handoffs.push(this.newHandoff(taskId, pal, request));
+      this.handoffs.push(this.newHandoff(taskId, pal));
       this.d.audit.log("handoff.linked", { taskId, peer: pal.name });
     }
     this.save();
     return t("handoff.following", { name: pal.name });
   }
 
-  private newHandoff(taskId: string, pal: Pal, request: string): Handoff {
+  private newHandoff(taskId: string, pal: Pal): Handoff {
     return {
       id: newId("h_"),
       taskId,
       peer: peerRef(pal),
-      request: truncate(request, 120),
       createdAt: this.now(),
       state: "working",
       lastLine: "",
@@ -338,5 +335,5 @@ export class HandoffTracker {
 }
 
 function peerRef(p: Pal): Handoff["peer"] {
-  return { name: p.name, pal: p.id, sessionId: p.sessionId, cwd: p.cwd };
+  return { name: p.name, pal: p.id, sessionId: p.sessionId };
 }
