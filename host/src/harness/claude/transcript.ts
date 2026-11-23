@@ -1,6 +1,5 @@
 import { closeSync, existsSync, fstatSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { PALO_SEND_TOOL } from "../types.ts";
 import { stripTldrMarker } from "../../tldr.ts";
 import { truncate } from "../../util.ts";
 
@@ -17,15 +16,7 @@ export function firstLine(s: string): string {
   return truncate(line.replace(/^[#>*\-\s]+/, "").replace(/\*\*/g, ""), 120);
 }
 
-// ---- a transcript's tail (what HandoffTracker reads) ----
-
-export interface TailSummary {
-  lastText?: string; // the session's latest words (first line)
-  lastActivityAt?: number;
-  pendingQuestion?: { id: string; text: string }; // an AskUserQuestion with no answer yet
-  replies: { to: string; text: string; at: number }[]; // its SendMessage calls
-  apiError?: string;
-}
+// ---- a transcript's tail and head ----
 
 export function readTail(path: string, maxBytes = 256 * 1024): any[] {
   if (!existsSync(path)) return [];
@@ -74,49 +65,6 @@ export function readHead(path: string, maxBytes = 256 * 1024): any[] {
   } finally {
     closeSync(fd);
   }
-}
-
-// A Pal's palo_send has no `to`: it always means the assistant.
-export const HOME_TO = "palo_send:assistant";
-
-export function summarizeTail(entries: any[]): TailSummary {
-  const out: TailSummary = { replies: [] };
-  const answered = new Set<string>();
-  let ask: { id: string; text: string } | undefined;
-  for (const e of entries) {
-    const at = Date.parse(e.timestamp ?? "") || undefined;
-    if (at && (!out.lastActivityAt || at > out.lastActivityAt)) out.lastActivityAt = at;
-    if (e.isSidechain) continue;
-    const content = e.message?.content;
-    if (e.type === "assistant" && Array.isArray(content)) {
-      for (const b of content) {
-        if (b?.type === "text" && b.text?.trim()) out.lastText = tailLine(b.text);
-        if (b?.type === "tool_use" && b.name === "AskUserQuestion") {
-          const q = Array.isArray(b.input?.questions) ? b.input.questions[0] : undefined;
-          ask = { id: String(b.id), text: tailLine(String(q?.question ?? "")) };
-        }
-        // Its palo_send is a reply to the assistant (docs/pals-prd.md §16): `to` reads as "home".
-        if (b?.type === "tool_use" && b.name === PALO_SEND_TOOL && typeof b.input?.text === "string") {
-          out.replies.push({ to: HOME_TO, text: b.input.text, at: at ?? 0 });
-        }
-        if (b?.type === "tool_use" && b.name === "SendMessage" && typeof b.input?.to === "string") {
-          out.replies.push({ to: b.input.to, text: String(b.input.message ?? ""), at: at ?? 0 });
-        }
-      }
-      if (e.isApiErrorMessage || e.error) out.apiError = tailLine(String(content.find((b: any) => b?.type === "text")?.text ?? e.error ?? ""));
-    } else if (e.type === "user" && Array.isArray(content)) {
-      for (const b of content) if (b?.type === "tool_result" && b.tool_use_id) answered.add(String(b.tool_use_id));
-      // a new owner prompt after an error means it went on
-      if (content.some((b: any) => b?.type === "text")) out.apiError = undefined;
-    }
-  }
-  if (ask && !answered.has(ask.id)) out.pendingQuestion = ask;
-  return out;
-}
-
-export function tailLine(s: string): string {
-  const line = s.split("\n").map((l) => l.trim()).find((l) => l && !/^```/.test(l)) ?? "";
-  return truncate(line.replace(/^[#>*\-\s]+/, "").replace(/\*\*/g, ""), 120);
 }
 
 export interface TranscriptSummary {

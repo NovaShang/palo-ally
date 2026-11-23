@@ -5,60 +5,6 @@ import { pidAlive } from "../../util.ts";
 // Claude Code's registry of live sessions on this computer (<config>/sessions/<pid>.json),
 // read, never written.
 
-export interface PeerSession {
-  pid: number;
-  sessionId: string;
-  name: string;
-  cwd: string;
-  status: string; // busy | idle | shell | waiting (Claude Code's own)
-  waitingFor?: string;
-  statusUpdatedAt?: number;
-  tmux?: string;
-}
-
-// SessionRegistry reads Claude Code's own list of live sessions on this machine.
-export class SessionRegistry {
-  constructor(
-    private dir: string,
-    private alive: (pid: number) => boolean = pidAlive,
-  ) {}
-
-  list(): PeerSession[] {
-    if (!existsSync(this.dir)) return [];
-    const out: PeerSession[] = [];
-    for (const f of readdirSync(this.dir)) {
-      if (!/^\d+\.json$/.test(f)) continue;
-      try {
-        const o = JSON.parse(readFileSync(join(this.dir, f), "utf8"));
-        const pid = Number(o.pid);
-        if (!pid || !o.sessionId || !this.alive(pid)) continue;
-        out.push({
-          pid,
-          sessionId: String(o.sessionId),
-          name: String(o.name ?? ""),
-          cwd: String(o.cwd ?? ""),
-          status: String(o.status ?? "idle"),
-          waitingFor: typeof o.waitingFor === "string" ? o.waitingFor : undefined,
-          statusUpdatedAt: typeof o.statusUpdatedAt === "number" ? o.statusUpdatedAt : undefined,
-          tmux: typeof o.tmux === "string" ? o.tmux : undefined,
-        });
-      } catch {
-        // a file mid-write; next check
-      }
-    }
-    return out;
-  }
-
-  // A SendMessage `to`: a name (optionally "name [ref]") or "uds:<socket>".
-  resolve(to: string, list = this.list()): PeerSession | undefined {
-    const t = to.trim();
-    const uds = /^uds:.*\/(\d+)\.sock$/.exec(t);
-    if (uds) return list.find((s) => s.pid === Number(uds[1]));
-    const name = t.replace(/\s*\[[^\]]*\]\s*$/, "");
-    return list.find((s) => s.name === name);
-  }
-}
-
 export interface RegistryEntry {
   pid: number;
   sessionId: string;
