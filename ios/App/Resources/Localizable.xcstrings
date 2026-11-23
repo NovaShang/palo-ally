@@ -6688,6 +6688,28 @@
         }
       }
     },
+    "立刻处理" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Handle Now"
+          }
+        }
+      }
+    },
+    "%lld 条没读到" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld unread"
+          }
+        }
+      }
+    },
     "停止" : {
       "extractionState" : "manual",
       "localizations" : {

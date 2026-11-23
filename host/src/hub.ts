@@ -576,6 +576,7 @@ export class Hub {
       online: true,
       busy,
       activity: busy ? this.conversation.activity || activityThinking() : undefined,
+      ...(busy && this.conversation.waiting() ? { waiting: this.conversation.waiting() } : {}),
       model,
       effort: this.config.effort,
       sessionId: this.runtime.data.sessionId,

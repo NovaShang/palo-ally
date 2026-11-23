@@ -23,6 +23,8 @@ export type HarnessEvent =
   | { type: "answering"; uuids: string[] }
   | { type: "task_progress"; taskId: string; toolUseId?: string; summary?: string }
   | { type: "task_backgrounded"; taskId: string }
+  // Where a message put in stands with the harness: waiting for a step to end, being read, answered (or never to be).
+  | { type: "words"; uuid: string; state: "queued" | "read" | "done" }
   | { type: "task_notification"; taskId: string; toolUseId?: string; status: "completed" | "failed" | "stopped"; summary: string }
   | { type: "compact"; trigger: string; preTokens: number; postTokens?: number }
   | {
@@ -213,6 +215,8 @@ export interface MainSession {
   // or folds it into that turn; `uuid` lets the result say which it answered.
   send(text: string, uuid: string, images?: ImageInput[]): void;
   interrupt(): Promise<void>;
+  // The steps running in the foreground (commands, subagents) go on in the background.
+  backgroundSteps?(): Promise<void>;
   stopTask(taskId: string): Promise<void>;
   // live switches; take effect from the next model call
   setModel(model?: string): Promise<void>;

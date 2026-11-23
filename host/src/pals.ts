@@ -1847,6 +1847,13 @@ export class Pals {
     this.d.audit.log("pal.stop", { pal: pal.id, name: pal.rec.name, by });
   }
 
+  /** pals.handleNow: what holds its turn goes on in the background, so words waiting are read now. */
+  async handleNow(id: string, by: string): Promise<void> {
+    const pal = this.mustGet(id);
+    this.d.audit.log("pal.handle_now", { pal: pal.id, name: pal.rec.name, by });
+    await pal.handleNow();
+  }
+
   /**
    * pals.history: its conversation from its transcript, a page at a time; the
    * newest page also has the reply being written right now (`streaming`,

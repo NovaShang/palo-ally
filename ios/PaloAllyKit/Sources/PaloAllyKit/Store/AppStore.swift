@@ -1607,13 +1607,14 @@ public final class AppStore {
     /// its whole turn (also while a card waits on the owner), idle once the
     /// turn is over, which finishes any reply still being written.
     func applyPal(_ p: Pal) {
-        guard scope != .palo, p.status != palState || (p.inTurn && p.activity != status?.activity) else { return }
+        guard scope != .palo, p.status != palState || (p.inTurn && (p.activity != status?.activity || p.waiting != status?.waiting)) else { return }
         // Coming up from asleep is being woken: 「正在叫醒…」 until it's up.
         let waking = p.status == .starting && (palState == .asleep || palWaking)
         palWaking = waking
         palState = p.status
         var s = status ?? HostStatus(online: true, busy: false, model: p.model ?? "")
         s.busy = p.inTurn || waking
+        s.waiting = p.waiting
         s.activity = waking ? Self.wakingActivity
             : p.status == .waiting ? loc("在等你") : (p.status == .starting ? loc("正在启动") : p.activity)
         if let m = p.model, !m.isEmpty { s.model = m }
@@ -1897,6 +1898,15 @@ public final class AppStore {
         }
         let r: StatusResult = try await rpc.call(RPCMethod.stop, params: EmptyParams())
         if let s = r.status { applyStatus(s) }
+    }
+
+    /// 立刻处理: what holds its turn goes on in the background, and it reads the words waiting.
+    public func handleNow() async throws {
+        if let palID {
+            _ = try await rpc.call(RPCMethod.palsHandleNow, params: IDParams(id: palID), as: OKResult.self)
+        } else {
+            _ = try await rpc.call(RPCMethod.chatHandleNow, params: EmptyParams(), as: OKResult.self)
+        }
     }
 
     // MARK: Claude Code's login

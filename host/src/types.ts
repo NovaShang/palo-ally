@@ -295,10 +295,17 @@ export interface PairedDevice {
   current: boolean;
 }
 
+/** Words put in while a step runs, not read yet; `canHandleNow`: 立刻处理 (chat.handleNow, pals.handleNow) would have them read. */
+export interface WaitingWords {
+  count: number;
+  canHandleNow: boolean;
+}
+
 export interface Status {
   online: boolean;
   busy: boolean;
   activity?: string; // what it is doing right now, in plain words (only while busy)
+  waiting?: WaitingWords; // busy: the owner's words it hasn't read yet
   model: string; // the model actually running (reported by the harness)
   effort?: string; // chosen effort level; absent = the model's default
   sessionId?: string;
@@ -397,6 +404,7 @@ export interface Pal {
   sessionId: string; // Claude Code's (claude --resume <sessionId>)
   status: PalStatus;
   activity?: string; // busy: what it's doing, in plain words
+  waiting?: WaitingWords; // busy: words it hasn't read yet
   note?: string; // stopped: why (spending limit, couldn't start, open somewhere else)
   lastLine?: string;
   pending: number; // its cards waiting on the owner

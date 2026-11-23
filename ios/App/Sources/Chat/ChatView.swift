@@ -514,7 +514,9 @@ private struct ConversationRows: View {
 
                 if showsBusyIndicator {
                     ThinkingIndicator(activity: busyActivity, justSent: store.awaitingReply && store.status?.busy != true,
-                                      stop: store.status?.busy == true ? { Task { try? await store.stop() } } : nil)
+                                      stop: store.status?.busy == true ? { Task { try? await store.stop() } } : nil,
+                                      waiting: store.status?.busy == true ? store.status?.waiting : nil,
+                                      handleNow: { try await store.handleNow() })
                         .id("thinking")
                 } else if backgroundRunning > 0 && store.connection.isOnline {
                     // Its turn is over but tasks still run: say so, or it looks stuck.
@@ -914,8 +916,16 @@ struct ThinkingIndicator: View {
     var justSent = false
     /// While it works: 停止 at the end of the conversation (the composer keeps its mic).
     var stop: (() -> Void)? = nil
+    /// Words it hasn't read yet: said here once they've waited a little, with
+    /// 立刻处理 when what holds it can go on in the background.
+    var waiting: WaitingWords? = nil
+    var handleNow: (() async throws -> Void)? = nil
     @State private var slow = false
     @State private var stopping = false
+    /// They've waited long enough to say so (a short step ends before).
+    @State private var waited = false
+    @State private var handling = false
+    @State private var problem: String?
 
     private var text: String {
         if let activity { return activity }
@@ -923,42 +933,102 @@ struct ThinkingIndicator: View {
         return String(localized: "正在想…")
     }
 
+    private var unread: Int { waited ? (waiting?.count ?? 0) : 0 }
+    private var canHandle: Bool { unread > 0 && waiting?.canHandleNow == true && handleNow != nil }
+
     var body: some View {
         #if DEBUG || PERF_HARNESS
         let _ = PerfProbe.count("ThinkingIndicator")
         #endif
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
-            Text(text)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .contentTransition(.opacity)
-            Spacer(minLength: 8)
-            if let stop {
-                Button {
-                    stopping = true
-                    stop()
-                } label: {
-                    Label(stopping ? String(localized: "正在停…") : String(localized: "停止"), systemImage: "stop.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .contentShape(.capsule)
+            Group {
+                if let problem {
+                    Text(problem)
+                } else if unread > 0 {
+                    Text("\(text) · \(Text("\(unread) 条没读到").foregroundStyle(.primary))")
+                } else {
+                    Text(text)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.primary)
-                .glassEffect(.regular.interactive(), in: .capsule)
-                .disabled(stopping)
-                .accessibilityIdentifier("chat-stop")
+            }
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .lineLimit(unread > 0 ? 1 : nil)
+            .truncationMode(.middle)
+            .contentTransition(.opacity)
+            Spacer(minLength: 8)
+            if canHandle {
+                // Side by side with their words, else 停止 its sign only.
+                ViewThatFits(in: .horizontal) {
+                    buttons(stopWords: true)
+                    buttons(stopWords: false)
+                }
+                .layoutPriority(1)
                 .transition(.opacity)
+            } else if stop != nil {
+                stopButton(words: true).fixedSize().transition(.opacity)
             }
         }
         // In-content: just the spinner and words, no container.
         .padding(.vertical, 4)
+        .animation(.snappy, value: canHandle)
         .task {
             try? await Task.sleep(for: .seconds(2))
             withAnimation { slow = true }
         }
+        .task(id: (waiting?.count ?? 0) > 0) {
+            guard (waiting?.count ?? 0) > 0 else { waited = false; handling = false; problem = nil; return }
+            try? await Task.sleep(for: .seconds(3))
+            if !Task.isCancelled { withAnimation { waited = true } }
+        }
+    }
+
+    private func buttons(stopWords: Bool) -> some View {
+        HStack(spacing: 8) {
+            pill(handling ? String(localized: "正在处理…") : String(localized: "立刻处理"), "arrow.turn.down.left") { runHandle() }
+                .disabled(handling)
+                .accessibilityIdentifier("chat-handle-now")
+            if stop != nil { stopButton(words: stopWords) }
+        }
+        .fixedSize()
+    }
+
+    private func runHandle() {
+        guard let handleNow else { return }
+        handling = true
+        problem = nil
+        Task {
+            do { try await handleNow() } catch {
+                handling = false
+                withAnimation { problem = Friendly.message(error) }
+                try? await Task.sleep(for: .seconds(5))
+                withAnimation { problem = nil }
+            }
+        }
+    }
+
+    private func stopButton(words: Bool) -> some View {
+        pill(stopping ? String(localized: "正在停…") : String(localized: "停止"), "stop.fill", words: words) {
+            stopping = true
+            stop?()
+        }
+        .disabled(stopping)
+        .accessibilityIdentifier("chat-stop")
+    }
+
+    private func pill(_ title: String, _ icon: String, words: Bool = true, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Group {
+                if words { Label(title, systemImage: icon) } else { Image(systemName: icon).accessibilityLabel(title) }
+            }
+            .font(.subheadline.weight(.semibold))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.primary)
+        .glassEffect(.regular.interactive(), in: .capsule)
     }
 }
 

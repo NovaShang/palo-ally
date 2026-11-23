@@ -124,6 +124,11 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
   const out: HarnessEvent[] = [];
   const m = msg as any;
   switch (m.type) {
+    case "command_lifecycle": {
+      const state = m.state === "queued" ? "queued" : m.state === "started" ? "read" : "done";
+      if (typeof m.command_uuid === "string") out.push({ type: "words", uuid: m.command_uuid, state });
+      break;
+    }
     case "system":
       if (m.subtype === "init")
         out.push({
@@ -441,6 +446,10 @@ class ClaudeMainSession implements MainSession {
 
   async interrupt(): Promise<void> {
     await this.q.interrupt().catch(() => {});
+  }
+
+  async backgroundSteps(): Promise<void> {
+    await this.q.backgroundTasks();
   }
 
   async stopTask(taskId: string): Promise<void> {

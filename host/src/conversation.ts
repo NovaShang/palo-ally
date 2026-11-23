@@ -375,6 +375,7 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
         this.d.log(`harness error: ${e.message}`);
         this.host.close();
         this.pending.clear();
+        this.forgetWaiting();
         this.openTools.clear();
         // The Ally's message died with the process; the owner's held words didn't.
         if (this.ally?.active) this.ally.end("harness error");

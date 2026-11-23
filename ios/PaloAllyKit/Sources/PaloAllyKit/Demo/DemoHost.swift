@@ -69,6 +69,8 @@ public actor DemoHost {
     var backlogs: [String: Backlog] = DemoHost.seededBacklogs(now: Date().epochMillis)
     /// A Pal's turn being written, to stop (`pals.stop`).
     var palTurns: [String: Task<Void, Never>] = [:]
+    /// Turns a step holds (「跑测试」, 「查网页」), by Pal: whether it can go on in the background.
+    var heldTurns: [String: Bool] = [:]
     /// Sessions asked to be adopted that wait to be quit in their terminal.
     var waitingAdoptions: Set<String> = []
     /// Each Pal's reply being written (`pals.history`'s `streaming`).
@@ -997,9 +999,14 @@ public actor DemoHost {
             if status.auth?.state == .ok { status.auth = nil }
             emit(RPCEventName.status, status)
             return ["auth": try status.auth.map { try JSONValue.from($0) } ?? .null]
+        case RPCMethod.chatHandleNow:
+            status.waiting = nil
+            emit(RPCEventName.status, status)
+            return ["ok": true]
         case RPCMethod.stop:
             status.busy = false
             status.activity = nil
+            status.waiting = nil
             for t in tasks where t.isActive {
                 var s = t; s.status = .stopped; s.updatedAt = Date().epochMillis; upsertTask(s)
             }

@@ -73,6 +73,7 @@ export type InFlight = { text: string; images?: ImageInput[]; origin?: Turn["ori
 /** What it's told after the watchdog restarted it mid-turn. */
 export const stallContinue = (): string => tr("stall.continue");
 
+const HANDLE_NOW_MS = 5_000; // 立刻处理: how long what holds the turn may take to go to the background
 const STOP_SETTLE_MS = 250; // a stopped turn not ended by the harness by then is ended here (stop "settle")
 
 /** A model and/or thinking depth for its next turns: the ones asked for (null: back to the default). */
@@ -110,6 +111,11 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
   protected current: Turn | null = null;
   /** The open turn's own tool calls (the main thread's) without a result yet. */
   protected readonly turnTools = new Set<string>();
+  /** Messages put in that wait for a step of the open turn to end (uuid → since when). */
+  private readonly waitingWords = new Map<string, number>();
+  /** The harness' tasks for tool calls in the foreground that can go on in the background: task → tool call. */
+  private readonly frontTasks = new Map<string, string>();
+  private movedWaiters: (() => void)[] = [];
   /** The open turn's text blocks, as written. */
   protected texts: string[] = [];
   /** 停止 was asked during the open turn. */
@@ -402,6 +408,7 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
     // what was in flight went with the process; else it's still here.)
     const { taken, untaken } = this.pending.split((uuid) => !!this.ref && this.harness.history.took(this.ref, uuid), awaited ? before : undefined);
     if (!awaited) this.pending.clear();
+    if (!awaited) this.forgetWaiting();
     this.frozenEnded();
     this.log(`${this.who().label} stalled; resuming it (${untaken.length} message(s) to send again)`);
     let proc: MainSession | null = null;
@@ -578,6 +585,7 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
   private cutTurn(): void {
     if (!this.busy) return;
     this.pending.clear();
+    this.forgetWaiting();
     this.endTurn();
     if (this.flags.stop === "cut") this.host.close();
     else this.windingDown = true;
@@ -604,11 +612,69 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
     this.pending.clear();
     this.openTools.clear();
     this.turnTools.clear();
+    this.forgetWaiting();
     // what was still running ends with its process
     this.taskView.processEnded();
     this.activity = "";
     this.windingDown = false;
     for (const w of this.turnEndWaiters.splice(0)) w();
+  }
+
+  // ---------------- 立刻处理 ----------------
+  //
+  // Words that come while a step runs are read when it ends. When every step
+  // that holds the turn is one the harness can let go on in the background (a
+  // command, a subagent; not an MCP tool), the owner can have that done, so
+  // they are read now and nothing is lost.
+
+  /** The owner's words it hasn't read yet, and whether 立刻处理 would have them read. */
+  waiting(): { count: number; canHandleNow: boolean } | undefined {
+    if (!this.waitingWords.size || !this.current) return undefined;
+    return { count: this.waitingWords.size, canHandleNow: this.movable() };
+  }
+
+  private movable(): boolean {
+    if (!this.turnTools.size || !this.host.proc?.backgroundSteps) return false;
+    const front = new Set(this.frontTasks.values());
+    for (const id of this.turnTools) if (!front.has(id)) return false;
+    return true;
+  }
+
+  /** 立刻处理: what holds the turn goes on in the background. Says so when it couldn't. */
+  async handleNow(): Promise<void> {
+    const proc = this.host.proc;
+    if (!this.waitingWords.size) return; // read meanwhile
+    if (!proc?.backgroundSteps || !this.movable()) throw new Error(tr("session.cantHandleNow"));
+    const held = [...this.turnTools];
+    // (What it answers doesn't say whether anything moved: the steps ending does.)
+    await proc.backgroundSteps();
+    const until = this.now() + HANDLE_NOW_MS;
+    while (held.some((id) => this.turnTools.has(id)) && this.waitingWords.size && this.now() < until) {
+      await Promise.race([new Promise<void>((r) => this.movedWaiters.push(r)), sleep(100)]);
+    }
+    if (held.some((id) => this.turnTools.has(id)) && this.waitingWords.size) throw new Error(tr("session.cantHandleNow"));
+  }
+
+  private trackWaiting(e: HarnessEvent): void {
+    const before = JSON.stringify(this.waiting() ?? null);
+    if (e.type === "words") {
+      if (e.state === "queued" && this.pending.has(e.uuid) && this.current) this.waitingWords.set(e.uuid, this.now());
+      else if (e.state !== "queued") this.waitingWords.delete(e.uuid);
+    } else if (e.type === "task_started" && e.toolUseId && e.background !== true) this.frontTasks.set(e.taskId, e.toolUseId);
+    else if (e.type === "task_backgrounded" || e.type === "task_notification") this.frontTasks.delete(e.taskId);
+    else if (e.type === "tool_result" && !e.parentToolUseId) {
+      for (const [task, tool] of this.frontTasks) if (tool === e.toolUseId) this.frontTasks.delete(task);
+    } else if (e.type === "result") {
+      for (const u of e.consumedUuids ?? []) this.waitingWords.delete(u);
+    } else return;
+    if (JSON.stringify(this.waiting() ?? null) !== before) this.touched();
+    for (const w of this.movedWaiters.splice(0)) w();
+  }
+
+  protected forgetWaiting(): void {
+    this.waitingWords.clear();
+    this.frontTasks.clear();
+    for (const w of this.movedWaiters.splice(0)) w();
   }
 
   // ---------------- harness events ----------------
@@ -617,6 +683,8 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
     this.lastEventAt = this.now();
     if (e.type === "tool_use") this.openTools.set(e.id, e.name);
     else if (e.type === "tool_result") this.openTools.delete(e.toolUseId);
+    this.trackWaiting(e);
+    if (e.type === "words") return;
     if (e.type === "answering") {
       // The harness names the owner messages a turn answers on its first
       // frames: the host's turn starts with exactly those, instead of guessing.

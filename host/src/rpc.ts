@@ -32,7 +32,7 @@ export const RPC_METHODS = [
   "ally.list", "ally.invite", "ally.accept", "ally.remove", "ally.log", "ally.draft.decide", "ally.say", "ally.trust",
   "sessions.list", "sessions.history", "sessions.hooks", "helper.decide",
   "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop", "pals.recent", "pals.wake", "pals.rename", "pals.rewind",
-  "pals.openTerminal", "pals.terminalCommand",
+  "pals.openTerminal", "pals.terminalCommand", "chat.handleNow", "pals.handleNow",
   "pals.create", "pals.folders", "pals.seen", "pals.end", "pals.earlier", "pals.resume",
   "pals.detail", "pals.setModel", "pals.setMode", "pals.compact", "pals.stopTask", "pals.reveal",
   "workspaces.list", "workspaces.create", "workspaces.update", "workspaces.move", "workspaces.delete", "workbench.order.set", "workbench.tabs.get", "workbench.tabs.set",
@@ -353,6 +353,13 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
     case "pals.send":
       if (isTldrAsk(String(p.text ?? ""))) return { id: "", seq: 0 };
       return await hub.pals.send(String(p.id ?? ""), String(p.text ?? ""), typeof p.clientMsgId === "string" ? p.clientMsgId : undefined, attachmentsOf(hub, p.attachments));
+    case "chat.handleNow":
+      hub.audit.log("chat.handle_now", { by: ctx.channel });
+      await hub.conversation.handleNow();
+      return { ok: true };
+    case "pals.handleNow":
+      await hub.pals.handleNow(String(p.id ?? ""), ctx.channel);
+      return { ok: true };
     case "pals.stop":
       await hub.pals.stopTurn(String(p.id ?? ""), ctx.channel);
       return { ok: true };

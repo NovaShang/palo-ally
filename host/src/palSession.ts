@@ -296,6 +296,7 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
       sessionId: this.rec.sessionId,
       status,
       ...(status === "busy" ? { activity: this.activity || ACTIVITY.thinking } : {}),
+      ...(status === "busy" && this.waiting() ? { waiting: this.waiting() } : {}),
       ...(status === "stopped" && this.rec.note ? { note: this.rec.note } : {}),
       ...(this.lastLine ? { lastLine: this.lastLine } : {}),
       pending: this.pendingCards(),

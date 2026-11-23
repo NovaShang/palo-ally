@@ -838,17 +838,36 @@ public struct HostSettings: Codable, Sendable, Hashable {
 
 // MARK: - Status
 
+/// The owner's words an agent hasn't read yet, put in while a step of its turn runs.
+public struct WaitingWords: Codable, Sendable, Hashable {
+    public var count: Int
+    /// 立刻处理 would have them read: what holds its turn can go on in the background.
+    public var canHandleNow: Bool
+
+    public init(count: Int, canHandleNow: Bool) { self.count = count; self.canHandleNow = canHandleNow }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        count = l.int("count", or: 0)
+        canHandleNow = l.bool("canHandleNow", or: false)
+    }
+
+    enum CodingKeys: String, CodingKey { case count, canHandleNow }
+}
+
 public struct HostStatus: Codable, Sendable, Hashable {
     public var online: Bool
     public var busy: Bool
     /// What it is doing right now in plain words ("正在写文件"), only while busy.
     public var activity: String?
+    /// Busy: the owner's words it hasn't read yet.
+    public var waiting: WaitingWords?
     public var model: String
     public var sessionId: String?
     public var wechat: WechatState
     public var version: String
 
-    enum CodingKeys: String, CodingKey { case online, busy, activity, model, effort, sessionId, wechat, version, metAt, auth, contextTokens, contextWindow, contextPct }
+    enum CodingKeys: String, CodingKey { case online, busy, activity, waiting, model, effort, sessionId, wechat, version, metAt, auth, contextTokens, contextWindow, contextPct }
 
     public var effort: String?
     /// When the owner first talked to it (ms), for 「认识你 N 天」.
@@ -871,6 +890,7 @@ public struct HostStatus: Codable, Sendable, Hashable {
         online = l.bool("online", or: true)
         busy = l.bool("busy", or: false)
         activity = l.string("activity")
+        waiting = l.decode(WaitingWords.self, "waiting")
         model = l.string("model", or: "")
         effort = l.string("effort")
         sessionId = l.string("sessionId")

@@ -52,6 +52,8 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
     public var createdBy: PalCreator
     /// Busy: what it's doing, in plain words.
     public var activity: String?
+    /// Busy: words it hasn't read yet.
+    public var waiting: WaitingWords?
     /// Stopped: why (its spending limit, it couldn't start, it's open elsewhere).
     public var note: String?
     public var updatedAt: Int64?
@@ -84,7 +86,7 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id, name, cwd, sessionId, status, lastLine, pending, model, lastWakeUsd, createdBy, activity, note, updatedAt
         case attention, finishedAt, seenAt, contextPct, workspaceId, effort, permissionMode, folded, tasksRunning
-        case openInTerminal, queued
+        case openInTerminal, queued, waiting
     }
 
     public init(id: String, name: String, cwd: String, sessionId: String, status: PalStatus, lastLine: String? = nil,
@@ -122,6 +124,7 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
         lastWakeUsd = l.double("lastWakeUsd")
         createdBy = l.decode(PalCreator.self, "createdBy", or: .unknown)
         activity = l.string("activity")
+        waiting = l.decode(WaitingWords.self, "waiting")
         note = l.string("note")
         updatedAt = l.millis("updatedAt")
         finishedAt = l.millis("finishedAt")

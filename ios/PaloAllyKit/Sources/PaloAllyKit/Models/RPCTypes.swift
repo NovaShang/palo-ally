@@ -31,6 +31,7 @@ public enum RPCMethod {
     /// The stop button: interrupts whatever the assistant is doing. Nothing
     /// stays blocked afterwards; the next message works as usual.
     public static let stop = "stop"
+    public static let chatHandleNow = "chat.handleNow"
     public static let pushRegister = "push.register"
     public static let pushUnregister = "push.unregister"
     /// The app is in front (`active`, said again every minute) or left it:
@@ -92,6 +93,7 @@ public enum RPCMethod {
     public static let palsHistory = "pals.history"
     public static let palsSend = "pals.send"
     public static let palsStop = "pals.stop"
+    public static let palsHandleNow = "pals.handleNow"
     /// The computer's conversations that have ended lately, to adopt (§10).
     public static let palsRecent = "pals.recent"
     /// An asleep Pal resumed (§12); `pals.send` wakes one too.
@@ -122,7 +124,7 @@ public enum RPCMethod {
     public static let palsEarlier = "pals.earlier"
     public static let palsResume = "pals.resume"
 
-    public static let pals: [String] = [palsList, palsAdopt, palsRelease, palsRemove, palsHistory, palsSend, palsStop,
+    public static let pals: [String] = [palsList, palsAdopt, palsRelease, palsRemove, palsHistory, palsSend, palsStop, palsHandleNow,
                                         palsRecent, palsWake, palsRename, palsRewind,
                                         palsCreate, palsFolders, palsDetail, palsSetModel, palsSetMode, palsCompact, palsStopTask,
                                         palsSeen, palsEnd, palsReveal, palsOpenTerminal, palsTerminalCommand, palsEarlier, palsResume]
@@ -199,7 +201,7 @@ public enum RPCMethod {
     public static let all: [String] = [
         hello, sync, chatSend, chatHistory, chatSearch, chatAround, chatRewind, commandsList, modelGet, modelSet, taskGet, taskStop,
         approvalAnswer, questionAnswer, watchAdd, watchUpdate, watchRemove, artifactList, artifactRead, artifactPin,
-        memoryList, memoryRead, memoryWrite, settingsUpdate, stop, pushRegister, pushUnregister, presence,
+        memoryList, memoryRead, memoryWrite, settingsUpdate, stop, chatHandleNow, pushRegister, pushUnregister, presence,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
         suggestionsList, suggestionsDismiss, hostUpdate, pairInvite, deviceList, deviceRemove,
     ] + allies + sessions + pals + workbench + files + auth + pending + backlog

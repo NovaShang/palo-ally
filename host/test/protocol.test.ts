@@ -302,6 +302,8 @@ describe("host ↔ app protocol", () => {
     const palCard = JSON.parse(JSON.stringify(hub.approvals.listPending()[0]!));
     hub.approvals.answer(palCard.id, true, "app");
     await waitFor(() => hub.pals.list().every((p) => p.status === "idle"));
+    await run("chat.handleNow"); // nothing waits: nothing to do
+    await run("pals.handleNow", { id: pal.id });
     await run("pals.stop", { id: pal.id });
     // 待办 (backlog.ts): the assistant's own list, and an agent's (its folder's).
     const b1 = (await run("backlog.add", { text: "首页图片懒加载", note: "首屏 3.2 MB，大部分是图" })).item;

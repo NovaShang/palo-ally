@@ -69,9 +69,27 @@ extension DemoHost {
             m.clientMsgId = p["clientMsgId"]?.stringValue
             m.attachments = atts
             appendPal(m)
+            // A command holds its turn (「跑测试」, or an MCP tool: 「查网页」): words meanwhile wait for it, as the host says.
+            if let held = heldTurns[id] {
+                setPal(id) { $0.waiting = WaitingWords(count: ($0.waiting?.count ?? 0) + 1, canHandleNow: held) }
+                return ["id": .string(m.id), "seq": .number(Double(m.seq))]
+            }
             palTurns[id]?.cancel()
+            if text == "跑测试" || text == "查网页" {
+                heldTurns[id] = text == "跑测试"
+                setPal(id) { $0.status = .busy; $0.activity = text == "跑测试" ? "在跑 npm test" : "在看网页"; $0.lastLine = text }
+                return ["id": .string(m.id), "seq": .number(Double(m.seq))]
+            }
             palTurns[id] = Task { await self.palAnswers(id, to: text) }
             return ["id": .string(m.id), "seq": .number(Double(m.seq))]
+        case RPCMethod.palsHandleNow:
+            let id = p["id"]?.stringValue ?? ""
+            guard heldTurns[id] == true else { throw DemoError(message: "它正在做的这一步转不了后台，要等这一步做完，或者先停止") }
+            await pause(0.6)
+            heldTurns[id] = nil
+            setPal(id) { $0.waiting = nil; $0.tasksRunning = 1; $0.activity = nil }
+            palTurns[id] = Task { await self.streamPal(id, "先看你这句：好，首页改回去。测试在后台接着跑，跑完告诉你。") }
+            return ["ok": true]
         case RPCMethod.palsWake:
             let id = p["id"]?.stringValue ?? ""
             guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Pal") }
@@ -126,7 +144,8 @@ extension DemoHost {
             guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Pal") }
             palTurns[id]?.cancel()
             palTurns[id] = nil
-            setPal(id) { $0.status = .idle }
+            heldTurns[id] = nil
+            setPal(id) { $0.status = .idle; $0.waiting = nil }
             return ["ok": true]
         case RPCMethod.palsAdopt:
             let sid = p["sessionId"]?.stringValue ?? ""
