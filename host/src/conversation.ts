@@ -20,7 +20,7 @@ import type { UsageLedger } from "./usage.ts";
 import { appendJsonl, truncate } from "./util.ts";
 import { ChatLogSink } from "./agent/outputSink.ts";
 import { TrackerTasks } from "./agent/taskProjection.ts";
-import { AgentSession, type ModelChoice, type ResultEvent } from "./agent/session.ts";
+import { AgentSession, type ModelChoice, type ResultEvent, stallContinue } from "./agent/session.ts";
 import { ASSISTANT_FLAGS } from "./agent/flags.ts";
 import { AllyTurn } from "./agent/allyTurn.ts";
 import { IdleCompact } from "./agent/idleCompact.ts";
@@ -35,8 +35,8 @@ export { timing };
 
 type InFlightOwner = { origin: Channel; wechat?: WechatReplyTarget; sentAt?: number; text: string; images?: ImageInput[] };
 
-// What the assistant is told after the watchdog restarted it mid-turn.
-export const stallContinue = (): string => t("stall.continue");
+// What the assistant is told after the watchdog restarted it mid-turn (its own turn; a host-initiated one).
+export { stallContinue };
 const stallContinueProactive = (): string => t("stall.continueProactive");
 
 // Compaction (PRD §6.1): Claude Code compacts natively when the context nears

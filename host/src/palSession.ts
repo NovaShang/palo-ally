@@ -14,7 +14,7 @@ import type { PendingRewind } from "./rewind.ts";
 import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
 import { stripTldrMarker } from "./tldr.ts";
 import { newId, sleep, truncate } from "./util.ts";
-import { AgentSession, type ModelChoice, type ResultEvent, type WentBack } from "./agent/session.ts";
+import { AgentSession, type ModelChoice, type ResultEvent, type WentBack, stallContinue } from "./agent/session.ts";
 import { AGENT_FLAGS } from "./agent/flags.ts";
 import { TranscriptSink } from "./agent/outputSink.ts";
 import { HeldElsewhere, type Holder, type OpenContext, ProcessHost } from "./agent/processHost.ts";
@@ -120,8 +120,7 @@ export interface PalSessionDeps {
   log: (s: string) => void;
 }
 
-/** What a Pal is told after the watchdog restarted it mid-turn. */
-export const stallContinue = (): string => tr("stall.continue");
+export { stallContinue };
 
 // An agent is an AgentSession (agent/session.ts: its process, its turns, its
 // replies) with AGENT_FLAGS: its process started awaited, brought back with

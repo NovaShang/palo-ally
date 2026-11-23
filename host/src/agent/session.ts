@@ -13,8 +13,12 @@
 // (`replyIds`), whether a reply's text blocks are one message or several
 // (`textBlocks`), whether a turn the harness started on its own closes when it
 // goes quiet (`implicitQuiet`), whether a subagent's output is the session's
-// (`subagentTurns`). What each does at a turn's edges (its record, its
-// pushes, what goes next) it says through the hooks below.
+// (`subagentTurns`). What's done to a session is written once too: 停止
+// (stopWork, flag `stop`), a frozen process ended and resumed (recoverStall),
+// 回到这里重来 (goBack) and its model and depth (setModel); where they differ
+// by how its process is started, `startMode` says. What each does at the
+// edges of a turn or of these (its record, its cards, its pushes, what goes
+// next) it says through the hooks below.
 import { randomUUID } from "node:crypto";
 import { ACTIVITY, activityBackground, describeActivity } from "../copy.ts";
 import type { FilesRewound, Harness, HarnessEvent, ImageInput, MainSession, RewindChain, RewindPoint, Rewinder, SessionRef } from "../harness/types.ts";
@@ -65,6 +69,9 @@ export interface SessionParts<T extends TaskProjection, S extends OutputSink> {
 
 /** What it keeps with each of the owner's messages in flight: the words, and where they came from (the host's turns read it). */
 export type InFlight = { text: string; images?: ImageInput[]; origin?: Turn["origin"]; wechat?: Turn["wechat"]; sentAt?: number };
+
+/** What it's told after the watchdog restarted it mid-turn. */
+export const stallContinue = (): string => tr("stall.continue");
 
 const STOP_SETTLE_MS = 250; // a stopped turn not ended by the harness by then is ended here (stop "settle")
 
