@@ -59,9 +59,8 @@ export class TurnLedger<T> {
     for (const [u, p] of this.m) if (stale(u, p)) this.m.delete(u);
   }
 
-  /** After its process ended mid-work: which the harness took (its transcript has them) and which it never did. */
-  split(took: (uuid: string) => boolean): { taken: [string, T][]; untaken: [string, T][] } {
-    const all = this.entries();
+  /** After its process ended mid-work: which (of these; all it holds) the harness took (its transcript has them) and which it never did. */
+  split(took: (uuid: string) => boolean, all = this.entries()): { taken: [string, T][]; untaken: [string, T][] } {
     const untaken = all.filter(([u]) => !took(u));
     return { taken: all.filter(([u]) => !untaken.some(([x]) => x === u)), untaken };
   }

@@ -13,13 +13,20 @@
 // (`replyIds`), whether a reply's text blocks are one message or several
 // (`textBlocks`), whether a turn the harness started on its own closes when it
 // goes quiet (`implicitQuiet`), whether a subagent's output is the session's
-// (`subagentTurns`). What each does at a turn's edges (its record, its
-// pushes, what goes next) it says through the hooks below.
+// (`subagentTurns`). What's done to a session is written once too: 停止
+// (stopWork, flag `stop`), a frozen process ended and resumed (recoverStall),
+// 回到这里重来 (goBack) and its model and depth (setModel); where they differ
+// by how its process is started, `startMode` says. What each does at the
+// edges of a turn or of these (its record, its cards, its pushes, what goes
+// next) it says through the hooks below.
+import { randomUUID } from "node:crypto";
 import { ACTIVITY, activityBackground, describeActivity } from "../copy.ts";
-import type { HarnessEvent, ImageInput, MainSession } from "../harness/types.ts";
-import type { StallTarget } from "../stallWatch.ts";
+import type { FilesRewound, Harness, HarnessEvent, ImageInput, MainSession, RewindChain, RewindPoint, Rewinder, SessionRef } from "../harness/types.ts";
+import { t as tr } from "../i18n/index.ts";
+import { type PendingRewind, rewindBusy, rewindNoFiles, rewindNotFound } from "../rewind.ts";
+import type { StallRecovery, StallTarget } from "../stallWatch.ts";
 import type { ChatMessage } from "../types.ts";
-import { newId } from "../util.ts";
+import { newId, sleep } from "../util.ts";
 import type { AgentFlags } from "./flags.ts";
 import type { OutputSink } from "./outputSink.ts";
 import { ProcessHost, type ProcessHostDeps, type ProcessRecord } from "./processHost.ts";
@@ -28,16 +35,51 @@ import type { TaskProjection } from "./taskProjection.ts";
 import { type Turn, type TurnEnd, timing } from "./turn.ts";
 import { TurnLedger } from "./turnLedger.ts";
 
+/** The harness session it goes on in, as its record keeps it (the assistant's runtime.json, an agent's pals.json). */
+export interface KeptSession {
+  sessionId?: string;
+  // 回到这里重来 (docs/rewind-prd.md §4.1): sessionId is a fork of `from` that
+  // the harness hasn't written yet; each start forks it until it has.
+  rewind?: PendingRewind;
+}
+
+/** 回到这里重来, done: the conversation it was and the message it went back to, and the session it goes on in. */
+export interface WentBack {
+  conv: RewindChain;
+  point: RewindPoint;
+  from: string;
+  to: string;
+  copied: boolean; // `to` is a copy made now (the point is before the last compaction), not a fork to be made
+}
+
 export interface SessionParts<T extends TaskProjection, S extends OutputSink> {
   /** What of its process is kept with its record (an agent's PalRecord; the assistant keeps none). */
   record: ProcessRecord;
   process: ProcessHostDeps;
+  /** The harness it runs on. */
+  harness: Harness;
+  kept: KeptSession;
+  /** Writes what's kept. */
+  keep: () => void;
+  /** The folder it works in (its conversation is kept under it). */
+  cwd: () => string;
   out: S;
   tasks: T;
 }
 
 /** What it keeps with each of the owner's messages in flight: the words, and where they came from (the host's turns read it). */
-export type InFlight = { text?: string; origin?: Turn["origin"]; wechat?: Turn["wechat"] };
+export type InFlight = { text: string; images?: ImageInput[]; origin?: Turn["origin"]; wechat?: Turn["wechat"]; sentAt?: number };
+
+/** What it's told after the watchdog restarted it mid-turn. */
+export const stallContinue = (): string => tr("stall.continue");
+
+const STOP_SETTLE_MS = 250; // a stopped turn not ended by the harness by then is ended here (stop "settle")
+
+/** A model and/or thinking depth for its next turns: the ones asked for (null: back to the default). */
+export interface ModelChoice {
+  model?: string | null;
+  effort?: string | null;
+}
 
 export type ResultEvent = Extract<HarnessEvent, { type: "result" }>;
 
@@ -48,6 +90,11 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
   protected readonly pending = new TurnLedger<P>();
   /** The reply being streamed. */
   protected readonly stream = new StreamAssembler();
+  protected readonly harness: Harness;
+  private readonly kept: KeptSession;
+  private readonly keep: () => void;
+  private readonly cwd: () => string;
+  private readonly sessionName: () => string;
   /** Where its words go: the assistant's chat log, or events carrying an agent's id. */
   protected readonly out: S;
   /** Its subagents and background tasks. */
@@ -83,11 +130,25 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
     parts: SessionParts<T, S>,
   ) {
     this.host = new ProcessHost(flags, parts.record, parts.process);
+    this.harness = parts.harness;
+    this.kept = parts.kept;
+    this.keep = parts.keep;
+    this.sessionName = parts.process.name;
+    this.cwd = parts.cwd;
     this.out = parts.out;
     this.taskView = parts.tasks;
   }
 
+  /** Its conversation as the harness keeps it (none before its first turn). */
+  get ref(): SessionRef | undefined {
+    const { sessionId } = this.kept;
+    return sessionId ? { sessionId, cwd: this.cwd() } : undefined;
+  }
+
   // ---------------- what each says about itself ----------------
+
+  /** What the watchdog knows it by, as the owner does, and in the log. */
+  protected abstract who(): { key: string; name: string; label: string };
 
   /** What it shows changed (the assistant's status line, an agent's line in the list). */
   protected abstract changed(): void;
@@ -101,7 +162,7 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
     return Date.now();
   }
 
-  protected log(_s: string): void {}
+  protected abstract log(s: string): void;
 
   /** A permission prompt or a question of its own is waiting for the owner. */
   abstract waitingOnOwner(): boolean;
@@ -121,6 +182,56 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
   /** A turn is over: what each does with it (its cost and record, pushes, what goes next). */
   protected turnEnded(_turn: Turn | null, _end: TurnEnd<P>): void {
     this.touched();
+  }
+
+  /** 停止: what of it waits is dropped (its open cards answered no, what's queued). */
+  protected dropWaiting(_by: string): void {}
+
+  /** A frozen process is about to be ended: whether what it was doing is asked to go on. */
+  protected abstract goesOn(): boolean;
+
+  /** A frozen process ended: what died with it. */
+  protected frozenEnded(): void {}
+
+  /** Its process is up again after it froze (awaited). */
+  protected restarted(): void {}
+
+  /** It's asked to go on with `turn`, or with the words it had `taken` and not opened a turn for yet. False: there's nothing to go on with. */
+  protected abstract goOn(turn: Turn | null, taken: P[]): boolean | Promise<boolean>;
+
+  /** Back at work after its process froze: what waited meanwhile. */
+  protected recovered(): void {}
+
+  /** Something else of it than a turn or words in flight keeps it from going back (回到这里重来). */
+  protected abstract occupied(): boolean;
+
+  /** Refuses a message it can't go back to (besides one that isn't there). */
+  protected refusePoint(_conv: RewindChain, _point: RewindPoint): void {}
+
+  /** Refuses to go back while another process holds the session (exclusive). */
+  protected refuseHeld(_sessionId: string): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /** Its files as they were before the message `uuid` of the session (fileCheckpoints). */
+  protected filesBack(_sessionId: string, _uuid: string): Promise<FilesRewound> {
+    return Promise.resolve({ canRewind: false });
+  }
+
+  /** Why it couldn't be copied, as the owner is told. */
+  protected copyFailed(e: unknown): unknown {
+    return e;
+  }
+
+  /** It has gone back: what each keeps besides the session it goes on in (written right after). */
+  protected wentBack(_w: WentBack): void {}
+
+  /** A model and/or depth was chosen: kept where its record is (config.json, an agent's record). */
+  protected abstract choose(o: ModelChoice): void;
+
+  /** Its process didn't take a live switch. */
+  protected switchFailed(_what: string, e: unknown): void {
+    throw e;
   }
 
   /** A result has settled its turn. */
@@ -159,14 +270,6 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
     return this.workSince ? Math.max(0, this.now() - this.workSince) : 0;
   }
 
-  /** What the stall watchdog reads the same way for both: its open tool calls and its last sign of life. */
-  protected stallSigns(): Pick<StallTarget, "openTools" | "lastActivity"> {
-    return {
-      openTools: () => [...this.openTools.values()],
-      lastActivity: () => Math.max(this.lastEventAt, this.host.proc?.lastActivity ?? 0),
-    };
-  }
-
   // ---------------- its turns ----------------
 
   protected beginTurn(turn: Turn): void {
@@ -180,13 +283,22 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
   }
 
   /**
-   * Words into its harness under `uuid`, kept as in flight until a result
-   * says they were answered. The host's turns: they open one if none is open.
+   * Words into its harness, each under its uuid, kept as in flight until a
+   * result says they were answered. The host's turns: they open one for them
+   * if none is open (`turnText`: what it says it's about).
    */
-  protected put(uuid: string, text: string, meta: P, images: ImageInput[] | undefined, proc: () => MainSession): void {
-    this.pending.add(uuid, meta);
-    if (this.flags.turns === "host" && !this.current) this.beginTurn({ text, origin: meta.origin ?? "app", proactive: false, wechat: meta.wechat, uuids: [uuid] });
-    proc().send(text, uuid, images);
+  protected put(words: [uuid: string, meta: P][], proc: () => MainSession, turnText = ""): void {
+    for (const [uuid, meta] of words) this.pending.add(uuid, { ...meta, sentAt: this.now() });
+    if (this.flags.turns === "host" && !this.current) {
+      this.beginTurn({
+        text: turnText,
+        origin: words[0]![1].origin ?? "app",
+        proactive: false,
+        wechat: words.map(([, p]) => p.wechat).find(Boolean),
+        uuids: words.map(([u]) => u),
+      });
+    }
+    for (const [uuid, p] of words) proc().send(p.text, uuid, p.images);
   }
 
   /** The turn that output with none open belongs to. */
@@ -252,8 +364,227 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
     this.turnEnded(turn, end);
   }
 
+  // ---------------- the stall watchdog (stallWatch.ts) ----------------
+
+  /** What the stall watchdog watches. */
+  stallTarget(): StallTarget {
+    const { key } = this.who();
+    const name = () => this.who().name;
+    return {
+      key,
+      get name() {
+        return name();
+      },
+      busy: () => this.host.running && (this.current !== null || this.pending.size > 0),
+      waiting: () => this.waitingOnOwner(),
+      openTools: () => [...this.openTools.values()],
+      lastActivity: () => Math.max(this.lastEventAt, this.host.proc?.lastActivity ?? 0),
+      pid: () => this.host.pid,
+      progress: () => (this.ref ? this.harness.history.growth(this.ref) : ""),
+      recover: () => this.recoverStall(),
+    };
+  }
+
+  /**
+   * Its process froze mid-work: it's ended (killed if it must be) and the
+   * same session resumes. The owner's words it never took go in again (same
+   * ids, so the app shows them once); if there are none, the turn it was in
+   * is asked to go on (how: goOn). A process started awaited is started here;
+   * one started by the words that need it, by those.
+   */
+  protected async recoverStall(): Promise<StallRecovery> {
+    const awaited = this.flags.startMode === "awaited";
+    const turn = this.current;
+    const goes = this.goesOn();
+    const before = this.pending.entries();
+    await this.host.endFrozen();
+    // Nothing writes its transcript now: what's in it was taken. (Awaited,
+    // what was in flight went with the process; else it's still here.)
+    const { taken, untaken } = this.pending.split((uuid) => !!this.ref && this.harness.history.took(this.ref, uuid), awaited ? before : undefined);
+    if (!awaited) this.pending.clear();
+    this.frozenEnded();
+    this.log(`${this.who().label} stalled; resuming it (${untaken.length} message(s) to send again)`);
+    let proc: MainSession | null = null;
+    if (awaited) {
+      await this.host.start();
+      proc = this.host.proc;
+      if (!proc || !this.host.up) throw new Error(tr("pals.restartFailed", { name: this.who().name }));
+      this.restarted();
+    }
+    let continued = false;
+    if (goes && !untaken.length) {
+      const asked = this.goOn(turn, taken.map(([, p]) => p));
+      continued = typeof asked === "boolean" ? asked : await asked;
+    }
+    if (!awaited) {
+      // (in flight again before its turn ends, so nothing queued goes first)
+      for (const [uuid, p] of untaken) this.pending.add(uuid, { ...p, sentAt: this.now() });
+      if (turn) this.endTurn();
+    }
+    if (untaken.length) this.put(untaken, () => proc ?? this.host.ensure());
+    this.recovered();
+    this.touched();
+    return { resent: untaken.length, continued };
+  }
+
+  // ---------------- model and thinking depth ----------------
+
+  /**
+   * Model and/or effort for its next turns (checked already: modelChoice.ts).
+   * Running: switched live (a turn in progress keeps its own). Not running:
+   * only kept, it isn't started; both apply when it next starts.
+   */
+  async setModel(o: ModelChoice): Promise<void> {
+    this.choose(o);
+    const proc = this.host.running ? this.host.proc : null;
+    if (proc && "model" in o) await proc.setModel(o.model || undefined).catch((e) => this.switchFailed("setModel", e));
+    if (proc && "effort" in o) await proc.setEffort(o.effort || undefined).catch((e) => this.switchFailed("setEffort", e));
+    this.touched();
+  }
+
+  // ---------------- 回到这里重来 (docs/rewind-prd.md) ----------------
+
+  /** A rewind whose fork the harness hasn't written yet (none once it has). */
+  pendingRewind(): PendingRewind | undefined {
+    const r = this.kept.rewind;
+    if (r && this.ref && this.harness.history.exists(this.ref)) {
+      delete this.kept.rewind;
+      this.keep();
+      return undefined;
+    }
+    return r;
+  }
+
+  /**
+   * Its conversation as it stands, as the harness keeps it: the session's
+   * own, or, gone back and not spoken to since, the old session's up to where
+   * it was cut. Oldest first.
+   */
+  conversationEntries(): RewindChain & { pending?: PendingRewind } {
+    const ref = this.ref;
+    if (!ref) throw new Error(rewindNotFound());
+    const pending = this.pendingRewind();
+    return { ...this.harness.rewind.chain(ref, pending), ...(pending ? { pending } : {}) };
+  }
+
+  /**
+   * Which session its process starts on: the one it's in, resumed; gone back
+   * and not written since, a new one forked from the old one after the last
+   * entry kept (none: a fresh one); one it has no transcript of yet, that one.
+   */
+  protected startOn(pending = this.pendingRewind()): { resumeSessionId?: string; sessionId?: string; fork?: { fromSessionId: string; at: string } } {
+    const { sessionId } = this.kept;
+    // (an agent's session has its id before the harness has written any of it)
+    const known = this.flags.history === "chatLog" || (!!this.ref && this.harness.history.exists(this.ref));
+    if (!pending && known) return { resumeSessionId: sessionId };
+    return { sessionId, ...(pending?.at ? { fork: { fromSessionId: pending.from, at: pending.at } } : {}) };
+  }
+
+  private cantGoBackNow(): boolean {
+    return this.current !== null || this.pending.size > 0 || !!this.host.starting || !!this.host.sleeping || this.occupied();
+  }
+
+  /**
+   * Goes back to just before one of the owner's messages: its process ends
+   * and the next one is a new session, forked from the entry before that
+   * message (past the last compaction, where the harness can't fork: a copy
+   * made here), the old one left as it is; its files go back too if asked
+   * (fileCheckpoints). Refused while it's at work. A process started awaited
+   * ends first, and comes back if it was up; one started by the words that
+   * need it goes on until the new session is there, unless words came meanwhile.
+   * `done` is called the moment it has gone back, before anything else can happen.
+   */
+  async goBack(by: Parameters<Rewinder["find"]>[1], o: { restoreFiles?: boolean; done?: (w: WentBack) => void } = {}): Promise<WentBack> {
+    // (A turn stopped but still winding down is no matter: its process ends here.)
+    if (this.cantGoBackNow()) throw new Error(rewindBusy());
+    const rw = this.harness.rewind;
+    const conv = this.conversationEntries();
+    const { sessionId } = conv;
+    const point = rw.find(conv, by);
+    if (!point) throw new Error(rewindNotFound());
+    this.refusePoint(conv, point);
+    if (o.restoreFiles && !(this.flags.fileCheckpoints && rw.canRestoreFiles(conv, point.uuid))) throw new Error(rewindNoFiles());
+    if (this.flags.exclusive) await this.refuseHeld(sessionId);
+    const awaited = this.flags.startMode === "awaited";
+    const awake = awaited && (this.host.running || this.host.restarting || this.host.queued);
+    const backUp = () => this.host.start().catch((e) => this.log(`${this.who().label} couldn't start again: ${e instanceof Error ? e.message : e}`));
+    if (awaited) await this.host.shutdown();
+    if (o.restoreFiles) {
+      const r = await this.filesBack(sessionId, point.uuid);
+      if (!r.canRewind) {
+        this.log(`${this.who().label} files not restored (${r.error ?? "no reason"})`);
+        if (awake) await backUp();
+        throw new Error(rewindNoFiles());
+      }
+    }
+    let to: string = randomUUID();
+    const copied = rw.needsCopy(conv, point);
+    if (copied) {
+      try {
+        to = await rw.copy({ sessionId, cwd: this.cwd() }, point.at!, this.sessionName());
+      } catch (e) {
+        if (awake) await backUp();
+        throw this.copyFailed(e);
+      }
+    }
+    if (!awaited) {
+      // (The conversation may have moved meanwhile.)
+      if (this.cantGoBackNow()) throw new Error(rewindBusy());
+      this.host.close();
+    }
+    if (copied) delete this.kept.rewind;
+    else this.kept.rewind = { from: sessionId, at: point.at, cut: point.uuid };
+    this.kept.sessionId = to;
+    const w = { conv, point, from: sessionId, to, copied };
+    this.wentBack(w);
+    this.keep();
+    this.touched();
+    o.done?.(w);
+    if (awake) await backUp();
+    return w;
+  }
+
+  // ---------------- 停止 ----------------
+
+  /**
+   * Ends what it's doing: what waits is dropped, the harness interrupted, its
+   * turn ended and the owner's words in flight with it. How is its flag
+   * (`stop`): "cut" is over when this returns, a process that can't be
+   * interrupted (a tool that never returns) closed; "settle" gives the harness
+   * a moment to end it itself.
+   */
+  protected stopWork(by: string): void | Promise<void> {
+    const settle = this.flags.stop === "settle";
+    this.dropWaiting(by);
+    const proc = this.host.proc;
+    if (settle) {
+      this.changed();
+      if (!this.busy || !proc) return;
+      this.interrupted = true;
+    }
+    const ended = settle ? this.turnEnds() : null;
+    void proc?.interrupt();
+    if (!ended) {
+      this.cutTurn();
+      this.changed();
+      return;
+    }
+    return Promise.race([ended, sleep(STOP_SETTLE_MS)]).then(() => {
+      if (this.interrupted && proc === this.host.proc) this.cutTurn();
+    });
+  }
+
+  // The stopped turn ends here: nothing stays blocked, the next words work as usual.
+  private cutTurn(): void {
+    if (!this.busy) return;
+    this.pending.clear();
+    this.endTurn();
+    if (this.flags.stop === "cut") this.host.close();
+    else this.windingDown = true;
+  }
+
   /** Resolves when the open turn ends (or its process does). */
-  protected turnEnds(): Promise<void> {
+  private turnEnds(): Promise<void> {
     return new Promise<void>((r) => this.turnEndWaiters.push(r));
   }
 

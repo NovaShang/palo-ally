@@ -6,21 +6,21 @@ import { ASK_TOOL, type QuestionManager } from "./questions.ts";
 import type { Audit } from "./audit.ts";
 import type { WechatChannel, WechatReplyTarget } from "./channels/types.ts";
 import type { ChatLog } from "./chat.ts";
-import type { Config, Paths } from "./config.ts";
+import { type Config, type Paths, patchConfig } from "./config.ts";
 import { budgetNotice, friendlyError } from "./copy.ts";
 import { behaviorPrompt } from "./home.ts";
 import type { Harness, HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
+import { PALO_NAME } from "./pals.ts";
 import type { Router } from "./router.ts";
 import type { RuntimeState } from "./runtime.ts";
-import { type PendingRewind, rewindBusy } from "./rewind.ts";
-import { type StallRecovery, type StallTarget, WATCHDOG_DEFAULTS } from "./stallWatch.ts";
+import { WATCHDOG_DEFAULTS, killHard } from "./stallWatch.ts";
 import type { TaskTracker } from "./tasks.ts";
 import type { Channel, Task } from "./types.ts";
 import type { UsageLedger } from "./usage.ts";
 import { appendJsonl, truncate } from "./util.ts";
 import { ChatLogSink } from "./agent/outputSink.ts";
 import { TrackerTasks } from "./agent/taskProjection.ts";
-import { AgentSession, type ResultEvent } from "./agent/session.ts";
+import { AgentSession, type ModelChoice, type ResultEvent, stallContinue } from "./agent/session.ts";
 import { ASSISTANT_FLAGS } from "./agent/flags.ts";
 import { AllyTurn } from "./agent/allyTurn.ts";
 import { IdleCompact } from "./agent/idleCompact.ts";
@@ -33,22 +33,11 @@ export type { Turn };
 // A turn the harness started by itself is closed if it goes quiet without a result.
 export { timing };
 
-type OwnerMessage = { origin: Channel; wechat?: WechatReplyTarget };
-type InFlightOwner = OwnerMessage & { sentAt: number; text: string; images?: ImageInput[] };
+type InFlightOwner = { origin: Channel; wechat?: WechatReplyTarget; sentAt?: number; text: string; images?: ImageInput[] };
 
-// What the assistant is told after the watchdog restarted it mid-turn.
-export const stallContinue = (): string => t("stall.continue");
+// What the assistant is told after the watchdog restarted it mid-turn (its own turn; a host-initiated one).
+export { stallContinue };
 const stallContinueProactive = (): string => t("stall.continueProactive");
-
-/** Where the stall watchdog finds the assistant's process and transcript (the hub knows). */
-export interface MainStallHooks {
-  name: () => string;
-  pid: () => number | undefined;
-  /** How far it has written its conversation (the harness says); whether it took the message sent under `uuid`. */
-  progress: () => string;
-  took: (uuid: string) => boolean;
-  kill: (pid: number | undefined) => Promise<void>;
-}
 
 // Compaction (PRD §6.1): Claude Code compacts natively when the context nears
 // session.compactWindowTokens (passed as its autoCompactWindow). The host adds
@@ -84,12 +73,12 @@ export interface ConversationDeps {
   statusChanged: () => void;
   // the session's name, which other sessions SendMessage it by
   peerName?: () => string;
+  /** Its process' pid, as Claude Code registered it (the stall watchdog's). */
+  pid?: () => number | undefined;
   // a schedule run answered: record it as the goal's progress line
   onGoalResult?: (watchId: string, text: string) => void;
   // work handed to another session the assistant is waiting on
   handoffsInFlight?: () => boolean;
-  // a rewound session: has the harness written the fork yet?
-  written?: (sessionId: string) => boolean;
   metric: (m: Record<string, unknown>) => void;
   // The assistant's own AskUserQuestion goes on the owner's pending list
   // instead of stopping the conversation: the words it's told (null: ask as
@@ -141,7 +130,13 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
         now: () => Date.now(),
         open: () => ({ proc: this.open() }),
         startError: (why) => why,
+        pid: () => d.pid?.(),
+        killFrozen: (pid) => killHard(pid),
       },
+      harness: d.harness,
+      kept: d.runtime.data,
+      keep: () => d.runtime.update({}),
+      cwd: () => d.paths.home,
     });
     this.lastContextTokens = d.runtime.data.contextTokens ?? 0;
     this.turnQueue = this.flags.proactiveTurns
@@ -201,11 +196,15 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
     return !!this.ally?.inFlight;
   }
 
+  protected who(): { key: string; name: string; label: string } {
+    return { key: "main", name: this.d.config().settings.assistantName || PALO_NAME, label: "main session" };
+  }
+
   protected changed(): void {
     this.d.statusChanged();
   }
 
-  protected override log(s: string): void {
+  protected log(s: string): void {
     this.d.log(s);
   }
 
@@ -258,7 +257,7 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
   // too, so the owner can go back to it: docs/rewind-prd.md §4.2).
   sendOwner(text: string, origin: Channel, wechat?: WechatReplyTarget, images?: ImageInput[], uuid: string = randomUUID()): void {
     if (this.ally?.hold({ text, origin, wechat, images, uuid })) return;
-    this.put(uuid, text, { origin, wechat, sentAt: Date.now(), text, ...(images?.length ? { images } : {}) }, images, () => this.ensureSession());
+    this.put([[uuid, { origin, wechat, text, ...(images?.length ? { images } : {}) }]], () => this.ensureSession(), text);
   }
 
   /** A host-initiated turn: it waits until nothing else is in flight (TurnQueue). */
@@ -272,7 +271,7 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
   private expirePending(): void {
     const stall = this.d.config().watchdog?.stallMinutes ?? WATCHDOG_DEFAULTS.stallMinutes;
     const cutoff = Date.now() - Math.max(10, 2 * stall) * 60_000;
-    this.pending.expire((u, p) => p.sentAt < cutoff && !this.current?.uuids?.includes(u));
+    this.pending.expire((u, p) => (p.sentAt ?? 0) < cutoff && !this.current?.uuids?.includes(u));
   }
 
   // A WeChat turn shows typing.
@@ -298,16 +297,11 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
     const cfg = this.d.config();
     const rt = this.d.runtime.data;
     this.modeChecked = false;
-    // Gone back to an earlier message (docs/rewind-prd.md §4.1): the new
-    // session is forked from the old one until Claude Code has written it.
-    const fork = this.pendingRewind();
     return this.d.driver.startMain({
       cwd: this.d.paths.home,
       model: cfg.model,
       effort: cfg.effort,
-      ...(fork
-        ? { sessionId: rt.sessionId, ...(fork.at ? { fork: { fromSessionId: fork.from, at: fork.at } } : {}) }
-        : { resumeSessionId: rt.sessionId }),
+      ...this.startOn(),
       priorCostUsd: rt.sessionId ? rt.sessionCostUsd : undefined,
       permissionMode: cfg.permissionMode,
       appendSystemPrompt: behaviorPrompt(this.d.paths) + `\n\n${t("conv.timezone", { tz: cfg.settings.timezone })}`,
@@ -335,14 +329,23 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
     });
   }
 
-  // Live switches on the running process (the next one starts with the saved config).
-  async applyModel(model: string | undefined): Promise<void> {
-    if (model) this.model = "";
-    await this.host.proc?.setModel(model).catch((e) => this.d.log(`setModel failed: ${e}`));
+  // Its model and effort (agent/session.ts) are the config's; a process that
+  // doesn't take the switch isn't news: the next one starts with them.
+  protected choose(o: ModelChoice): void {
+    const cfg = this.d.config();
+    if ("model" in o) {
+      cfg.model = o.model || undefined;
+      if (cfg.model) this.model = "";
+    }
+    if ("effort" in o) cfg.effort = (o.effort || undefined) as Config["effort"];
+    patchConfig(this.d.paths, (c) => {
+      c.model = cfg.model;
+      c.effort = cfg.effort;
+    });
   }
 
-  async applyEffort(effort: string | undefined): Promise<void> {
-    await this.host.proc?.setEffort(effort).catch((e) => this.d.log(`setEffort failed: ${e}`));
+  protected override switchFailed(what: string, e: unknown): void {
+    this.d.log(`${what} failed: ${e}`);
   }
 
   // ---------------- harness events ----------------
@@ -527,49 +530,16 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
     }
   }
 
-  // ---------------- 回到这里重来 (docs/rewind-prd.md) ----------------
+  // ---------------- 回到这里重来 (agent/session.ts) ----------------
 
-  /** A rewind whose fork Claude Code hasn't written yet (none once it has). */
-  private pendingRewind(): PendingRewind | undefined {
-    const rt = this.d.runtime.data;
-    if (!rt.rewind) return undefined;
-    if (rt.sessionId && this.d.written?.(rt.sessionId)) {
-      this.d.runtime.update({ rewind: undefined });
-      return undefined;
-    }
-    return rt.rewind;
+  protected occupied(): boolean {
+    return this.allyInFlight || this.d.tasks.live().length > 0;
   }
 
-  /** Why the conversation can't be taken back now (a turn is on), or null. */
-  rewindBlocker(): string | null {
-    if (this.current || this.pending.size || this.allyInFlight || this.d.tasks.live().length) return rewindBusy();
-    return null;
-  }
-
-  /**
-   * The session whose transcript has the conversation as it stands: the
-   * current one, or (a rewind not followed by a message yet) the one it
-   * will be forked from, with that rewind.
-   */
-  rewindSource(): { sessionId?: string; pending?: PendingRewind } {
-    const pending = this.pendingRewind();
-    return pending ? { sessionId: pending.from, pending } : { sessionId: this.d.runtime.data.sessionId };
-  }
-
-  /**
-   * Goes back to just before the owner's message `cut`: the process ends,
-   * and the next one is a new session (`to`) forked from `from` after the
-   * entry `at` (none: a fresh one). The context size is unknown until it
-   * has run a turn.
-   */
-  //
-  // `written`: the new session is already on disk (a copy made before a
-  // compaction, docs/rewind-prd.md §4.1): it's simply resumed.
-  rewindTo(r: PendingRewind & { to: string; written?: boolean }): void {
-    this.host.close();
+  // The context size is unknown until the new session has run a turn.
+  protected override wentBack(): void {
     this.lastContextTokens = 0;
-    this.d.runtime.update({ sessionId: r.to, rewind: r.written ? undefined : { from: r.from, at: r.at, cut: r.cut }, contextTokens: 0 });
-    this.d.statusChanged();
+    this.d.runtime.data.contextTokens = 0;
   }
 
   /**
@@ -585,85 +555,50 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
 
   // ---------------- the stall watchdog ----------------
 
-  /** What the stall watchdog watches (stallWatch.ts): the assistant's own process. */
-  stallTarget(h: MainStallHooks): StallTarget {
-    return {
-      key: "main",
-      get name() {
-        return h.name();
-      },
-      busy: () => this.host.alive && (!!this.current || this.pending.size > 0),
-      waiting: () => this.waitingOnOwner(),
-      ...this.stallSigns(),
-      pid: () => h.pid(),
-      progress: () => h.progress(),
-      recover: () => this.recoverStall(h),
-    };
+  // Its turn goes on as the same kind of turn (agent/session.ts). An Ally's
+  // turn doesn't: its message died with the process, as after a crash; nor the
+  // host's own /compact.
+  protected goesOn(): boolean {
+    return !this.ally?.active && !this.current?.maintenance;
   }
 
-  /**
-   * The process froze mid-work: it's ended (killed if it must be) and the
-   * next one resumes the same session. The owner's words it never took go in
-   * again; a turn it was in is asked to go on, as the same kind of turn. An
-   * Ally's turn isn't: its message died with the process, as after a crash.
-   */
-  async recoverStall(h: Pick<MainStallHooks, "pid" | "took" | "kill">): Promise<StallRecovery> {
-    const pid = h.pid();
-    const turn = this.current;
-    const gate = !!this.ally?.active;
-    const session = this.host.detach();
-    session?.close();
-    await h.kill(pid);
-    // Nothing writes the transcript now: what's in it was taken.
-    const split = this.pending.split((uuid) => h.took(uuid));
-    const untaken = split.untaken;
-    const taken = split.taken.map(([, p]) => p);
-    this.pending.clear();
+  protected override frozenEnded(): void {
     this.ally?.stalled();
-    this.d.log(`main session stalled; resuming it (${untaken.length} message(s) to send again)`);
+  }
+
+  protected goOn(turn: Turn | null, taken: InFlightOwner[]): boolean {
     // The turn it was in (or the one it had just taken the owner's words for) goes on first.
-    const resumeAs: Pick<Turn, "origin" | "proactive" | "wechat" | "watchId"> | null =
-      untaken.length || gate || turn?.maintenance ? null : (turn ?? (taken.length ? { origin: taken[0]!.origin, proactive: false, wechat: taken[0]!.wechat } : null));
-    if (resumeAs) {
-      this.turnQueue?.first({
-        text: resumeAs.proactive ? stallContinueProactive() : stallContinue(),
-        origin: resumeAs.origin,
-        proactive: resumeAs.proactive,
-        wechat: resumeAs.wechat,
-        label: "resume",
-        ...(resumeAs.watchId ? { watchId: resumeAs.watchId } : {}),
-      });
-    }
-    const now = Date.now();
-    for (const [uuid, p] of untaken) this.pending.add(uuid, { ...p, sentAt: now });
-    if (turn) this.endTurn();
-    if (untaken.length) {
-      if (!this.current) {
-        this.beginTurn({
-          text: "",
-          origin: untaken[0]![1].origin,
-          proactive: false,
-          wechat: untaken.map(([, p]) => p.wechat).find(Boolean),
-          uuids: untaken.map(([u]) => u),
-        });
-      }
-      for (const [uuid, p] of untaken) this.ensureSession().send(p.text, uuid, p.images);
-    }
+    const as: Pick<Turn, "origin" | "proactive" | "wechat" | "watchId"> | null = turn ?? (taken.length ? { origin: taken[0]!.origin, proactive: false, wechat: taken[0]!.wechat } : null);
+    if (!as) return false;
+    this.turnQueue?.first({
+      text: as.proactive ? stallContinueProactive() : stallContinue(),
+      origin: as.origin,
+      proactive: as.proactive,
+      wechat: as.wechat,
+      label: "resume",
+      ...(as.watchId ? { watchId: as.watchId } : {}),
+    });
+    return true;
+  }
+
+  protected override recovered(): void {
     // The owner's words held for the Ally's turn go now, each as it would have.
     for (const m of this.ally?.takeHeld() ?? []) this.sendOwner(m.text, m.origin, m.wechat, m.images, m.uuid);
     this.turnQueue?.pump();
-    this.d.statusChanged();
-    return { resent: untaken.length, continued: !!resumeAs };
   }
 
   // ---------------- stop ----------------
 
-  // stopAll interrupts what the harness is doing right now (its own interrupt
-  // and stopTask). Nothing stays blocked afterwards: the next message works as usual.
+  /** 停止 (agent/session.ts): over when this returns; the next message works as usual. */
   stopAll(by: string): void {
+    void this.stopWork(by);
+  }
+
+  // Its queue, an Ally's turn (as with words already sent: stopped, not
+  // carried over), its own cards, and its background tasks.
+  protected override dropWaiting(by: string): void {
     this.d.audit.log("stop", { by });
     this.turnQueue?.clear();
-    // As with words already sent: stopped, not carried over.
     this.ally?.stop();
     this.d.approvals.denyAll(`stop:${by}`);
     this.d.questions.cancelAll(`stop:${by}`);
@@ -671,15 +606,6 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
       if (t.sdkTaskId) void this.host.proc?.stopTask(t.sdkTaskId).catch(() => {});
       this.d.tasks.markStopped(t.id);
     }
-    void this.host.proc?.interrupt();
-    // A tool that never returns can't be interrupted: end the turn here and
-    // let the next message start a fresh process (same conversation, resumed).
-    if (this.current) {
-      this.pending.clear();
-      this.endTurn();
-      this.host.close();
-    }
-    this.d.statusChanged();
   }
 
   async stopTask(t: Task): Promise<void> {

@@ -72,6 +72,11 @@ export interface ProcessHostDeps {
   onDown?: (why: string, o: { closing: boolean }) => void;
   /** It stopped by itself for good (couldn't start again, or opened elsewhere). */
   onStopped?: () => void;
+  // lazy-sync mode (awaited: the host starts its process itself, so it has the pid)
+  /** Its process' pid, as far as the host can tell. */
+  pid?: () => number | undefined;
+  /** Ends a process that froze, whatever it takes. */
+  killFrozen?: (pid: number | undefined) => Promise<void>;
   // awaited mode
   /** Live processes holding its session, other than `own` (exclusive). */
   holders?: (own?: number) => Promise<Holder[]>;
@@ -148,6 +153,7 @@ export class ProcessHost {
 
   /** The harness' pid while it runs. */
   get pid(): number | undefined {
+    if (this.flags.startMode === "lazy-sync") return this.d.pid?.();
     return this.isUp || this.startingP ? this.rec.pid : undefined;
   }
 
@@ -158,6 +164,16 @@ export class ProcessHost {
 
   get running(): boolean {
     return this.flags.startMode === "lazy-sync" ? this.alive : this.isUp && this.alive;
+  }
+
+  /** Its process froze: ended, killed if it must be. Nothing of it writes the transcript once this resolves. */
+  async endFrozen(): Promise<void> {
+    if (this.flags.startMode === "awaited") return this.shutdown();
+    const pid = this.pid;
+    const p = this.p;
+    this.p = null;
+    p?.close();
+    await this.d.killFrozen?.(pid);
   }
 
   // ---------------- lazy-sync: started by the words that need it ----------------
@@ -173,13 +189,6 @@ export class ProcessHost {
   close(): void {
     this.p?.close();
     this.p = null;
-  }
-
-  /** Lets go of the process without ending it yet (the caller ends it, killing it if it must). */
-  detach(): MainSession | null {
-    const p = this.p;
-    this.p = null;
-    return p;
   }
 
   // ---------------- awaited: start, ready, holders, backoff ----------------
