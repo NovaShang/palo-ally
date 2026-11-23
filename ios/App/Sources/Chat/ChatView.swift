@@ -940,33 +940,26 @@ struct ThinkingIndicator: View {
         #if DEBUG || PERF_HARNESS
         let _ = PerfProbe.count("ThinkingIndicator")
         #endif
-        HStack(spacing: 8) {
-            ProgressView().controlSize(.small)
-            Group {
-                if let problem {
-                    Text(problem)
-                } else if unread > 0 {
-                    Text("\(text) · \(Text("\(unread) 条没读到").foregroundStyle(.primary))")
-                } else {
-                    Text(text)
-                }
-            }
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .lineLimit(unread > 0 ? 1 : nil)
-            .truncationMode(.middle)
-            .contentTransition(.opacity)
-            Spacer(minLength: 8)
-            if canHandle {
-                // Side by side with their words, else 停止 its sign only.
+        Group {
+            if canHandle && problem == nil {
+                // What gives way first in a narrow pane: what it's doing, then 停止's word.
                 ViewThatFits(in: .horizontal) {
-                    buttons(stopWords: true)
-                    buttons(stopWords: false)
+                    row { Text("\(text) · \(unreadText)").fixedSize() } trailing: { buttons(stopWords: true) }
+                    row { unreadText.fixedSize() } trailing: { buttons(stopWords: true) }
+                    row { unreadText.fixedSize() } trailing: { buttons(stopWords: false) }
                 }
-                .layoutPriority(1)
-                .transition(.opacity)
-            } else if stop != nil {
-                stopButton(words: true).fixedSize().transition(.opacity)
+            } else {
+                row {
+                    if let problem { Text(problem) }
+                    else if unread > 0 {
+                        ViewThatFits(in: .horizontal) {
+                            Text("\(text) · \(unreadText)").fixedSize()
+                            unreadText.fixedSize()
+                        }
+                    } else { Text(text) }
+                } trailing: {
+                    if stop != nil { stopButton(words: true).fixedSize().transition(.opacity) }
+                }
             }
         }
         // In-content: just the spinner and words, no container.
@@ -980,6 +973,20 @@ struct ThinkingIndicator: View {
             guard (waiting?.count ?? 0) > 0 else { waited = false; handling = false; problem = nil; return }
             try? await Task.sleep(for: .seconds(3))
             if !Task.isCancelled { withAnimation { waited = true } }
+        }
+    }
+
+    private var unreadText: Text { Text("\(unread) 条没读到").foregroundStyle(.primary) }
+
+    private func row<W: View, T: View>(@ViewBuilder words: () -> W, @ViewBuilder trailing: () -> T) -> some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            words()
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .contentTransition(.opacity)
+            Spacer(minLength: 8)
+            trailing()
         }
     }
 
