@@ -14,7 +14,7 @@ import type { PendingRewind } from "./rewind.ts";
 import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
 import { stripTldrMarker } from "./tldr.ts";
 import { newId, sleep, truncate } from "./util.ts";
-import { AgentSession, type ResultEvent, type WentBack } from "./agent/session.ts";
+import { AgentSession, type ModelChoice, type ResultEvent, type WentBack } from "./agent/session.ts";
 import { AGENT_FLAGS } from "./agent/flags.ts";
 import { TranscriptSink } from "./agent/outputSink.ts";
 import { HeldElsewhere, type Holder, type OpenContext, ProcessHost } from "./agent/processHost.ts";
@@ -377,24 +377,11 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
     };
   }
 
-  /**
-   * Model and/or effort for its next turns. Running: switched live (a turn in
-   * progress keeps its own). Asleep: only the record changes, it isn't woken;
-   * both apply when it next starts.
-   */
-  async setModel(o: { model?: string; effort?: string }): Promise<void> {
-    if (o.model !== undefined) {
-      this.rec.model = o.model;
-      this.model = o.model;
-    }
-    if (o.effort !== undefined) this.rec.effort = o.effort;
+  // Its model and effort (agent/session.ts) are its record's.
+  protected choose(o: ModelChoice): void {
+    if (o.model) this.model = this.rec.model = o.model;
+    if (o.effort) this.rec.effort = o.effort;
     this.d.save();
-    const proc = this.proc;
-    if (proc && this.running) {
-      if (o.model !== undefined) await proc.setModel(o.model);
-      if (o.effort !== undefined) await proc.setEffort(o.effort);
-    }
-    this.touch();
   }
 
   /**

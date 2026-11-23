@@ -68,6 +68,12 @@ export type InFlight = { text: string; images?: ImageInput[]; origin?: Turn["ori
 
 const STOP_SETTLE_MS = 250; // a stopped turn not ended by the harness by then is ended here (stop "settle")
 
+/** A model and/or thinking depth for its next turns: the ones asked for (null: back to the default). */
+export interface ModelChoice {
+  model?: string | null;
+  effort?: string | null;
+}
+
 export type ResultEvent = Extract<HarnessEvent, { type: "result" }>;
 
 export abstract class AgentSession<P extends InFlight, T extends TaskProjection = TaskProjection, S extends OutputSink = OutputSink> {
@@ -212,6 +218,14 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
 
   /** It has gone back: what each keeps besides the session it goes on in (written right after). */
   protected wentBack(_w: WentBack): void {}
+
+  /** A model and/or depth was chosen: kept where its record is (config.json, an agent's record). */
+  protected abstract choose(o: ModelChoice): void;
+
+  /** Its process didn't take a live switch. */
+  protected switchFailed(_what: string, e: unknown): void {
+    throw e;
+  }
 
   /** A result has settled its turn. */
   protected resultDone(_e: ResultEvent, _stopped: boolean): void {}
@@ -404,6 +418,21 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
     this.recovered();
     this.touched();
     return { resent: untaken.length, continued };
+  }
+
+  // ---------------- model and thinking depth ----------------
+
+  /**
+   * Model and/or effort for its next turns (checked already: modelChoice.ts).
+   * Running: switched live (a turn in progress keeps its own). Not running:
+   * only kept, it isn't started; both apply when it next starts.
+   */
+  async setModel(o: ModelChoice): Promise<void> {
+    this.choose(o);
+    const proc = this.host.running ? this.host.proc : null;
+    if (proc && "model" in o) await proc.setModel(o.model || undefined).catch((e) => this.switchFailed("setModel", e));
+    if (proc && "effort" in o) await proc.setEffort(o.effort || undefined).catch((e) => this.switchFailed("setEffort", e));
+    this.touched();
   }
 
   // ---------------- 回到这里重来 (docs/rewind-prd.md) ----------------

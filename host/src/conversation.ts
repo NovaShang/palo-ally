@@ -6,7 +6,7 @@ import { ASK_TOOL, type QuestionManager } from "./questions.ts";
 import type { Audit } from "./audit.ts";
 import type { WechatChannel, WechatReplyTarget } from "./channels/types.ts";
 import type { ChatLog } from "./chat.ts";
-import type { Config, Paths } from "./config.ts";
+import { type Config, type Paths, patchConfig } from "./config.ts";
 import { budgetNotice, friendlyError } from "./copy.ts";
 import { behaviorPrompt } from "./home.ts";
 import type { Harness, HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
@@ -20,7 +20,7 @@ import type { UsageLedger } from "./usage.ts";
 import { appendJsonl, truncate } from "./util.ts";
 import { ChatLogSink } from "./agent/outputSink.ts";
 import { TrackerTasks } from "./agent/taskProjection.ts";
-import { AgentSession, type ResultEvent } from "./agent/session.ts";
+import { AgentSession, type ModelChoice, type ResultEvent } from "./agent/session.ts";
 import { ASSISTANT_FLAGS } from "./agent/flags.ts";
 import { AllyTurn } from "./agent/allyTurn.ts";
 import { IdleCompact } from "./agent/idleCompact.ts";
@@ -329,14 +329,23 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
     });
   }
 
-  // Live switches on the running process (the next one starts with the saved config).
-  async applyModel(model: string | undefined): Promise<void> {
-    if (model) this.model = "";
-    await this.host.proc?.setModel(model).catch((e) => this.d.log(`setModel failed: ${e}`));
+  // Its model and effort (agent/session.ts) are the config's; a process that
+  // doesn't take the switch isn't news: the next one starts with them.
+  protected choose(o: ModelChoice): void {
+    const cfg = this.d.config();
+    if ("model" in o) {
+      cfg.model = o.model || undefined;
+      if (cfg.model) this.model = "";
+    }
+    if ("effort" in o) cfg.effort = (o.effort || undefined) as Config["effort"];
+    patchConfig(this.d.paths, (c) => {
+      c.model = cfg.model;
+      c.effort = cfg.effort;
+    });
   }
 
-  async applyEffort(effort: string | undefined): Promise<void> {
-    await this.host.proc?.setEffort(effort).catch((e) => this.d.log(`setEffort failed: ${e}`));
+  protected override switchFailed(what: string, e: unknown): void {
+    this.d.log(`${what} failed: ${e}`);
   }
 
   // ---------------- harness events ----------------

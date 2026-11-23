@@ -1026,20 +1026,8 @@ export class Hub {
   async setModel(patch: { model?: string | null; effort?: string | null }): Promise<Status> {
     // The same check as an agent's (pals.setModel): the depth must be one its model takes.
     checkModelChoice(this.info.models(), patch, this.config.model);
-    if ("model" in patch) {
-      this.config.model = patch.model || undefined;
-      await this.conversation.applyModel(this.config.model);
-    }
-    if ("effort" in patch) {
-      this.config.effort = (patch.effort || undefined) as Config["effort"];
-      await this.conversation.applyEffort(this.config.effort);
-    }
-    patchConfig(this.paths, (c) => {
-      c.model = this.config.model;
-      c.effort = this.config.effort;
-    });
+    await this.conversation.setModel(patch);
     this.audit.log("model.set", { model: this.config.model ?? "default", effort: this.config.effort ?? "default" });
-    this.emitStatus();
     return this.status();
   }
 
