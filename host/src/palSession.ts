@@ -5,16 +5,16 @@ import type { ApprovalManager } from "./approvals.ts";
 import { askOwner } from "./ownerCards.ts";
 import { firstLine } from "./ccSessions.ts";
 import { ACTIVITY, friendlyError } from "./copy.ts";
-import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type Harness, type RewindChain, type SessionRef, type DeliveryToolHandlers, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
+import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type Harness, type RewindChain, type RewindPoint, type SessionRef, type DeliveryToolHandlers, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
 import type { MediaStore } from "./media.ts";
 import { type PalLaunch, makeSpawner } from "./palLauncher.ts";
 import { CARD_TOOLS, type PalMapOptions, cardKey } from "./palHistory.ts";
 import type { QuestionManager } from "./questions.ts";
-import { type PendingRewind, rewindBusy, rewindNoFiles, rewindNotFound } from "./rewind.ts";
+import type { PendingRewind } from "./rewind.ts";
 import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
 import { stripTldrMarker } from "./tldr.ts";
 import { newId, sleep, truncate } from "./util.ts";
-import { AgentSession, type ResultEvent } from "./agent/session.ts";
+import { AgentSession, type ResultEvent, type WentBack } from "./agent/session.ts";
 import { AGENT_FLAGS } from "./agent/flags.ts";
 import { TranscriptSink } from "./agent/outputSink.ts";
 import { HeldElsewhere, type Holder, type OpenContext, ProcessHost } from "./agent/processHost.ts";
@@ -177,6 +177,7 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
       },
       harness: d.harness,
       kept: rec,
+      keep: () => d.save(),
       cwd: () => rec.cwd,
     });
     this.updatedAt = rec.lastUsedAt;
@@ -461,7 +462,7 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
     // One gone back to an earlier message is forked from its old session
     // until Claude Code has written the new one (docs/rewind-prd.md §4.1).
     const fork = this.pendingRewind();
-    const resume = !fork && this.d.harness.history.exists(this.ref);
+    const on = this.startOn(fork);
     // The effort it starts at: the one chosen in PaloAlly, else what Claude
     // Code's settings give it, passed explicitly so what's shown is what runs.
     const effort = rec.effort ?? this.d.harness.settings.defaultEffort(rec.model, rec.cwd);
@@ -472,8 +473,7 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
     this.inherited = fork ? this.d.harness.rewind.keptIds({ sessionId: fork.from, cwd: rec.cwd }, fork.at) : null;
     const proc: MainSession = this.d.driver.startPal({
       cwd: rec.cwd,
-      ...(resume ? { resumeSessionId: rec.sessionId } : { sessionId: rec.sessionId }),
-      ...(fork?.at ? { fork: { fromSessionId: fork.from, at: fork.at } } : {}),
+      ...on,
       // Its files can go back to how they were before any of the owner's messages from now on.
       fileCheckpointing: this.flags.fileCheckpoints,
       model: rec.model,
@@ -496,7 +496,7 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
       stderr: ctx.stderr,
     });
     this.reportedMode = undefined;
-    return { proc, how: resume ? "resumed" : fork ? "forked" : undefined };
+    return { proc, how: on.resumeSessionId ? "resumed" : fork ? "forked" : undefined };
   }
 
   // Its process is up: a new running total, and (woken) the first turn's cost is what waking cost.
@@ -870,29 +870,7 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
     this.touch();
   }
 
-  // ---------------- 回到这里重来 (docs/rewind-prd.md) ----------------
-
-  /** A rewind whose fork Claude Code hasn't written yet (none once it has). */
-  pendingRewind(): PendingRewind | undefined {
-    const r = this.rec.rewind;
-    if (!r) return undefined;
-    if (this.d.harness.history.exists(this.ref)) {
-      delete this.rec.rewind;
-      this.d.save();
-      return undefined;
-    }
-    return r;
-  }
-
-  /**
-   * Its conversation as it stands, from the transcript: the session's own
-   * (the last entry's line of parents), or, gone back and not spoken to
-   * since, the old session's up to where it was cut. Oldest first.
-   */
-  conversationEntries(): RewindChain & { pending?: PendingRewind } {
-    const pending = this.pendingRewind();
-    return { ...this.d.harness.rewind.chain(this.ref, pending), ...(pending ? { pending } : {}) };
-  }
+  // ---------------- 回到这里重来 (agent/session.ts) ----------------
 
   /** Whether its files can go back to how they were before the owner's message `uuid`. */
   canRestoreFiles(uuid: string): boolean {
@@ -901,71 +879,55 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
 
   /**
    * Goes back to just before the owner's message `uuid` (in its current
-   * conversation): its process ends, its files go back too if asked (Claude
-   * Code's own checkpoints, through a process on the old session that says
-   * nothing), and its next process is a new session forked from the entry
-   * before that message. One that was awake comes back at once; one asleep
-   * stays asleep. Refused while a turn is on. Returns the message's words and
-   * the ids of the messages that left the conversation.
+   * conversation; its files too if asked: Claude Code's own checkpoints,
+   * through a process on the old session that says nothing). One that was
+   * awake comes back at once; one asleep stays asleep. Returns the message's
+   * words and the ids of the messages that left the conversation.
    */
   async rewind(uuid: string, restoreFiles: boolean): Promise<{ text: string; filesRestored: boolean; dropped: string[]; from: string; at: string | null; copied: boolean }> {
-    // (A turn stopped but still winding down is no matter: its process ends here.)
-    if (this.busy || this.host.starting || this.host.sleeping || this.queuedSends || this.pendingCards() > 0) throw new Error(rewindBusy());
+    const { conv, point, from, copied } = await this.goBack({ uuid, exact: true }, { restoreFiles });
+    const dropped = this.d.harness.rewind.dropped(conv, point, { ...this.d.mapOptions(), pal: this.rec.id });
+    // (An old 「TL;DR」 ask comes back without its marker.)
+    return { text: stripTldrMarker(this.wordsAt(point)!.trim()), filesRestored: restoreFiles, dropped, from, at: point.at, copied };
+  }
+
+  // Sent from the app with images or files: its words as typed, without the files' paths.
+  private wordsAt(point: RewindPoint): string | null {
+    const sent = this.d.media?.recall(point.uuid);
+    return sent ? sent.text : point.text;
+  }
+
+  protected occupied(): boolean {
+    return this.queuedSends > 0 || this.pendingCards() > 0;
+  }
+
+  // The owner's own words only: not the assistant's (pal_send), not another session's.
+  protected override refusePoint({ chain }: RewindChain, point: RewindPoint): void {
+    const text = this.wordsAt(point);
     const rw = this.d.harness.rewind;
-    const conv = this.conversationEntries();
-    const { sessionId, chain } = conv;
-    const point = rw.find(conv, { uuid, exact: true });
-    if (!point) throw new Error(rewindNotFound());
-    const i = point.index;
-    // Sent from the app with images or files: its words as typed, without the files' paths.
-    const sent = this.d.media?.recall(uuid);
-    const text = sent ? sent.text : point.text;
-    // The owner's own words only: not the assistant's (pal_send), not another session's.
-    if (text === null || /^\s*<cross-session-message/.test(text) || (this.rec.duty && i === chain.findIndex((e) => rw.ownerWords(e) !== null) && text.trim() === this.rec.duty.trim()))
+    if (text === null || /^\s*<cross-session-message/.test(text) || (this.rec.duty && point.index === chain.findIndex((e) => rw.ownerWords(e) !== null) && text.trim() === this.rec.duty.trim()))
       throw new Error(tr("pals.notYourMessage"));
-    if (restoreFiles && !rw.canRestoreFiles(conv, uuid)) throw new Error(rewindNoFiles());
+  }
+
+  protected override async refuseHeld(sessionId: string): Promise<void> {
     const held = await this.d.holders(sessionId, this.rec.pid);
     if (held.length) throw new HeldElsewhere(tr("pals.heldElsewhereRewind", { name: this.rec.name, pids: held.map((h) => h.pid).join("、") }));
-    const awake = this.running || this.host.restarting || this.host.queued;
-    await this.shutdown();
-    if (restoreFiles) {
-      const r = await this.restoreFiles(sessionId, uuid);
-      if (!r.canRewind) {
-        this.d.log(`pal ${this.rec.name}: files not restored (${r.error ?? "no reason"})`);
-        if (awake) await this.start().catch((e) => this.d.log(`pal ${this.rec.name}: couldn't start again: ${e instanceof Error ? e.message : e}`));
-        throw new Error(rewindNoFiles());
-      }
-    }
-    const dropped = rw.dropped(conv, point, { ...this.d.mapOptions(), pal: this.rec.id });
-    const at = point.at;
-    // Before its last compaction: copied into a new session up to there now
-    // (new uuids); otherwise forked by its next process.
-    const copied = rw.needsCopy(conv, point);
-    if (copied) {
-      try {
-        this.rec.sessionId = await rw.copy({ sessionId, cwd: this.rec.cwd }, at!, this.rec.name);
-      } catch (e) {
-        if (awake) await this.start().catch(() => {});
-        throw new Error(tr("pals.rewindFailed", { why: e instanceof Error ? e.message : String(e) }));
-      }
-      delete this.rec.rewind;
-    } else {
-      this.rec.rewind = { from: sessionId, at, cut: uuid };
-      this.rec.sessionId = randomUUID();
-    }
-    this.rec.formerSessions = [...(this.rec.formerSessions ?? []).filter((x) => x !== sessionId), sessionId].slice(-20);
-    this.lastLine = this.d.harness.history.lastLine(chain.slice(0, i));
+  }
+
+  protected override copyFailed(e: unknown): unknown {
+    return new Error(tr("pals.rewindFailed", { why: e instanceof Error ? e.message : String(e) }));
+  }
+
+  // The session it was forked from is its own too; its line in the list is back to what was said before.
+  protected override wentBack({ conv, point, from }: WentBack): void {
+    this.rec.formerSessions = [...(this.rec.formerSessions ?? []).filter((x) => x !== from), from].slice(-20);
+    this.lastLine = this.d.harness.history.lastLine(conv.chain.slice(0, point.index));
     this.rec.lastUsedAt = this.d.now();
-    this.d.save();
-    this.touch();
-    if (awake) await this.start().catch((e) => this.d.log(`pal ${this.rec.name}: couldn't start again: ${e instanceof Error ? e.message : e}`));
-    // (An old 「TL;DR」 ask comes back without its marker.)
-    return { text: stripTldrMarker(text.trim()), filesRestored: restoreFiles, dropped, from: sessionId, at, copied };
   }
 
   // Claude Code puts the files back (rewindFiles) in a process of its own on
   // the old session: it's only asked that, never spoken to.
-  private async restoreFiles(sessionId: string, uuid: string): Promise<FilesRewound> {
+  protected override async filesBack(sessionId: string, uuid: string): Promise<FilesRewound> {
     const launch = await this.d.launch();
     let exitDone!: () => void;
     const exited = new Promise<void>((r) => (exitDone = r));

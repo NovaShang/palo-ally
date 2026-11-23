@@ -15,9 +15,11 @@
 // goes quiet (`implicitQuiet`), whether a subagent's output is the session's
 // (`subagentTurns`). What each does at a turn's edges (its record, its
 // pushes, what goes next) it says through the hooks below.
+import { randomUUID } from "node:crypto";
 import { ACTIVITY, activityBackground, describeActivity } from "../copy.ts";
-import type { Harness, HarnessEvent, ImageInput, MainSession, SessionRef } from "../harness/types.ts";
+import type { FilesRewound, Harness, HarnessEvent, ImageInput, MainSession, RewindChain, RewindPoint, Rewinder, SessionRef } from "../harness/types.ts";
 import { t as tr } from "../i18n/index.ts";
+import { type PendingRewind, rewindBusy, rewindNoFiles, rewindNotFound } from "../rewind.ts";
 import type { StallRecovery, StallTarget } from "../stallWatch.ts";
 import type { ChatMessage } from "../types.ts";
 import { newId, sleep } from "../util.ts";
@@ -32,6 +34,18 @@ import { TurnLedger } from "./turnLedger.ts";
 /** The harness session it goes on in, as its record keeps it (the assistant's runtime.json, an agent's pals.json). */
 export interface KeptSession {
   sessionId?: string;
+  // 回到这里重来 (docs/rewind-prd.md §4.1): sessionId is a fork of `from` that
+  // the harness hasn't written yet; each start forks it until it has.
+  rewind?: PendingRewind;
+}
+
+/** 回到这里重来, done: the conversation it was and the message it went back to, and the session it goes on in. */
+export interface WentBack {
+  conv: RewindChain;
+  point: RewindPoint;
+  from: string;
+  to: string;
+  copied: boolean; // `to` is a copy made now (the point is before the last compaction), not a fork to be made
 }
 
 export interface SessionParts<T extends TaskProjection, S extends OutputSink> {
@@ -41,6 +55,8 @@ export interface SessionParts<T extends TaskProjection, S extends OutputSink> {
   /** The harness it runs on. */
   harness: Harness;
   kept: KeptSession;
+  /** Writes what's kept. */
+  keep: () => void;
   /** The folder it works in (its conversation is kept under it). */
   cwd: () => string;
   out: S;
@@ -63,7 +79,9 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
   protected readonly stream = new StreamAssembler();
   protected readonly harness: Harness;
   private readonly kept: KeptSession;
+  private readonly keep: () => void;
   private readonly cwd: () => string;
+  private readonly sessionName: () => string;
   /** Where its words go: the assistant's chat log, or events carrying an agent's id. */
   protected readonly out: S;
   /** Its subagents and background tasks. */
@@ -101,6 +119,8 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
     this.host = new ProcessHost(flags, parts.record, parts.process);
     this.harness = parts.harness;
     this.kept = parts.kept;
+    this.keep = parts.keep;
+    this.sessionName = parts.process.name;
     this.cwd = parts.cwd;
     this.out = parts.out;
     this.taskView = parts.tasks;
@@ -168,6 +188,30 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
 
   /** Back at work after its process froze: what waited meanwhile. */
   protected recovered(): void {}
+
+  /** Something else of it than a turn or words in flight keeps it from going back (回到这里重来). */
+  protected abstract occupied(): boolean;
+
+  /** Refuses a message it can't go back to (besides one that isn't there). */
+  protected refusePoint(_conv: RewindChain, _point: RewindPoint): void {}
+
+  /** Refuses to go back while another process holds the session (exclusive). */
+  protected refuseHeld(_sessionId: string): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /** Its files as they were before the message `uuid` of the session (fileCheckpoints). */
+  protected filesBack(_sessionId: string, _uuid: string): Promise<FilesRewound> {
+    return Promise.resolve({ canRewind: false });
+  }
+
+  /** Why it couldn't be copied, as the owner is told. */
+  protected copyFailed(e: unknown): unknown {
+    return e;
+  }
+
+  /** It has gone back: what each keeps besides the session it goes on in (written right after). */
+  protected wentBack(_w: WentBack): void {}
 
   /** A result has settled its turn. */
   protected resultDone(_e: ResultEvent, _stopped: boolean): void {}
@@ -360,6 +404,108 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
     this.recovered();
     this.touched();
     return { resent: untaken.length, continued };
+  }
+
+  // ---------------- 回到这里重来 (docs/rewind-prd.md) ----------------
+
+  /** A rewind whose fork the harness hasn't written yet (none once it has). */
+  pendingRewind(): PendingRewind | undefined {
+    const r = this.kept.rewind;
+    if (r && this.ref && this.harness.history.exists(this.ref)) {
+      delete this.kept.rewind;
+      this.keep();
+      return undefined;
+    }
+    return r;
+  }
+
+  /**
+   * Its conversation as it stands, as the harness keeps it: the session's
+   * own, or, gone back and not spoken to since, the old session's up to where
+   * it was cut. Oldest first.
+   */
+  conversationEntries(): RewindChain & { pending?: PendingRewind } {
+    const ref = this.ref;
+    if (!ref) throw new Error(rewindNotFound());
+    const pending = this.pendingRewind();
+    return { ...this.harness.rewind.chain(ref, pending), ...(pending ? { pending } : {}) };
+  }
+
+  /**
+   * Which session its process starts on: the one it's in, resumed; gone back
+   * and not written since, a new one forked from the old one after the last
+   * entry kept (none: a fresh one); one it has no transcript of yet, that one.
+   */
+  protected startOn(pending = this.pendingRewind()): { resumeSessionId?: string; sessionId?: string; fork?: { fromSessionId: string; at: string } } {
+    const { sessionId } = this.kept;
+    // (an agent's session has its id before the harness has written any of it)
+    const known = this.flags.history === "chatLog" || (!!this.ref && this.harness.history.exists(this.ref));
+    if (!pending && known) return { resumeSessionId: sessionId };
+    return { sessionId, ...(pending?.at ? { fork: { fromSessionId: pending.from, at: pending.at } } : {}) };
+  }
+
+  private cantGoBackNow(): boolean {
+    return this.current !== null || this.pending.size > 0 || !!this.host.starting || !!this.host.sleeping || this.occupied();
+  }
+
+  /**
+   * Goes back to just before one of the owner's messages: its process ends
+   * and the next one is a new session, forked from the entry before that
+   * message (past the last compaction, where the harness can't fork: a copy
+   * made here), the old one left as it is; its files go back too if asked
+   * (fileCheckpoints). Refused while it's at work. A process started awaited
+   * ends first, and comes back if it was up; one started by the words that
+   * need it goes on until the new session is there, unless words came meanwhile.
+   * `done` is called the moment it has gone back, before anything else can happen.
+   */
+  async goBack(by: Parameters<Rewinder["find"]>[1], o: { restoreFiles?: boolean; done?: (w: WentBack) => void } = {}): Promise<WentBack> {
+    // (A turn stopped but still winding down is no matter: its process ends here.)
+    if (this.cantGoBackNow()) throw new Error(rewindBusy());
+    const rw = this.harness.rewind;
+    const conv = this.conversationEntries();
+    const { sessionId } = conv;
+    const point = rw.find(conv, by);
+    if (!point) throw new Error(rewindNotFound());
+    this.refusePoint(conv, point);
+    if (o.restoreFiles && !(this.flags.fileCheckpoints && rw.canRestoreFiles(conv, point.uuid))) throw new Error(rewindNoFiles());
+    if (this.flags.exclusive) await this.refuseHeld(sessionId);
+    const awaited = this.flags.startMode === "awaited";
+    const awake = awaited && (this.host.running || this.host.restarting || this.host.queued);
+    const backUp = () => this.host.start().catch((e) => this.log(`${this.who().label} couldn't start again: ${e instanceof Error ? e.message : e}`));
+    if (awaited) await this.host.shutdown();
+    if (o.restoreFiles) {
+      const r = await this.filesBack(sessionId, point.uuid);
+      if (!r.canRewind) {
+        this.log(`${this.who().label} files not restored (${r.error ?? "no reason"})`);
+        if (awake) await backUp();
+        throw new Error(rewindNoFiles());
+      }
+    }
+    let to: string = randomUUID();
+    const copied = rw.needsCopy(conv, point);
+    if (copied) {
+      try {
+        to = await rw.copy({ sessionId, cwd: this.cwd() }, point.at!, this.sessionName());
+      } catch (e) {
+        if (awake) await backUp();
+        throw this.copyFailed(e);
+      }
+    }
+    if (!awaited) {
+      // (The conversation may have moved meanwhile.)
+      if (this.cantGoBackNow()) throw new Error(rewindBusy());
+      this.host.close();
+    }
+    if (copied) delete this.kept.rewind;
+    else this.kept.rewind = { from: sessionId, at: point.at, cut: point.uuid };
+    this.kept.sessionId = to;
+    const w = { conv, point, from: sessionId, to, copied };
+    this.wentBack(w);
+    this.keep();
+    this.touched();
+    o.done?.(w);
+    if (awake) await backUp();
+    return w;
   }
 
   // ---------------- 停止 ----------------

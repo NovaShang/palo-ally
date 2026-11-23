@@ -37,8 +37,9 @@ import { Updater, type UpdaterDeps } from "./update.ts";
 import { type Usage, UsageLedger } from "./usage.ts";
 import { randomUUID } from "node:crypto";
 import { ClaudeHarness } from "./harness/claude/index.ts";
+import type { WentBack } from "./agent/session.ts";
 import type { HarnessCapabilities } from "./harness/types.ts";
-import { type ForkSession, rewindNotFound } from "./rewind.ts";
+import type { ForkSession } from "./rewind.ts";
 import { appendJsonl, readJson, writeJson } from "./util.ts";
 import { WatchStore } from "./watches.ts";
 import { Sessions, type SessionsDeps } from "./sessions.ts";
@@ -282,7 +283,6 @@ export class Hub {
         }
       },
       handoffsInFlight: () => this.handoffs.inFlight(),
-      written: (sid) => this.harness.history.exists({ sessionId: sid, cwd: this.paths.home }),
       onGoalResult: (id, text) => {
         const w = this.watches.get(id);
         // The assistant may have set a better line itself during this run.
@@ -668,36 +668,20 @@ export class Hub {
     const msg = this.chat.get(String(messageId ?? ""));
     if (!msg || msg.pal || msg.role !== "user" || msg.kind !== "text") throw new Error(t("hub.err.rewindNo"));
     if (msg.rewound) throw new Error(t("hub.err.rewound"));
-    const busy = this.conversation.rewindBlocker();
-    if (busy) throw new Error(busy);
-    const { sessionId, pending } = this.conversation.rewindSource();
-    if (!sessionId) throw new Error(rewindNotFound());
-    const rw = this.harness.rewind;
-    const home = this.paths.home;
-    // The conversation as it stands (an earlier rewind not yet followed by a message: what it kept).
-    const chain = rw.chain({ sessionId, cwd: home }, pending);
     const used = new Set(this.chat.recent(2000).flatMap((m) => (m.uuid && m.id !== msg.id ? [m.uuid] : [])));
+    const done = ({ point, from, to, copied }: WentBack) => {
+      const ids = this.chat.rewind(msg.seq);
+      if (copied) {
+        // The copy's entries have new uuids, which the log keeps for the messages it kept.
+        const moved = this.harness.rewind.renamed({ sessionId: to, cwd: this.paths.home });
+        this.chat.setUuids(new Map(this.chat.recent(5000).flatMap((m) => (m.uuid && moved.has(m.uuid) ? [[m.id, moved.get(m.uuid)!] as [string, string]] : []))));
+      }
+      this.bus.emit("chat.rewound", { id: msg.id, ids });
+      this.audit.log("chat.rewind", { messageId: msg.id, seq: msg.seq, uuid: point.uuid, from, to, at: point.at, dropped: ids.length, ...(copied ? { copied: true } : {}), by });
+      this.log(`went back to before message ${msg.id} (${ids.length} message(s) out; session ${from} ${copied ? "copied" : "forked"} as ${to})`);
+    };
     // By its uuid; failing that (kept before it had one), by its words and time.
-    const entry = rw.find(chain, { ...(msg.uuid ? { uuid: msg.uuid } : {}), words: this.ownerBody(msg), ts: msg.ts, used });
-    if (!entry) throw new Error(rewindNotFound());
-    const at = entry.at;
-    let to: string = randomUUID();
-    // Before the last compaction: copied into a new session up to there
-    // (new uuids, which the log then keeps for the messages it kept).
-    const copy = rw.needsCopy(chain, entry);
-    if (copy) to = await rw.copy({ sessionId, cwd: home }, at!, PALO_NAME);
-    // (The conversation may have moved meanwhile.)
-    const late = this.conversation.rewindBlocker();
-    if (late) throw new Error(late);
-    this.conversation.rewindTo({ from: sessionId, at, cut: entry.uuid, to, written: copy });
-    const ids = this.chat.rewind(msg.seq);
-    if (copy) {
-      const moved = rw.renamed({ sessionId: to, cwd: home });
-      this.chat.setUuids(new Map(this.chat.recent(5000).flatMap((m) => (m.uuid && moved.has(m.uuid) ? [[m.id, moved.get(m.uuid)!] as [string, string]] : []))));
-    }
-    this.bus.emit("chat.rewound", { id: msg.id, ids });
-    this.audit.log("chat.rewind", { messageId: msg.id, seq: msg.seq, uuid: entry.uuid, from: sessionId, to, at, dropped: ids.length, ...(copy ? { copied: true } : {}), by });
-    this.log(`went back to before message ${msg.id} (${ids.length} message(s) out; session ${sessionId} ${copy ? "copied" : "forked"} as ${to})`);
+    await this.conversation.goBack({ ...(msg.uuid ? { uuid: msg.uuid } : {}), words: this.ownerBody(msg), ts: msg.ts, used }, { done });
     return { text: msg.text };
   }
 
@@ -707,10 +691,10 @@ export class Hub {
    * they can be gone back to too. Returns how many it matched.
    */
   backfillOwnerUuids(): number {
-    const { sessionId, pending } = this.conversation.rewindSource();
-    if (!sessionId || pending) return 0;
+    const ref = this.conversation.ref;
+    if (!ref || this.conversation.pendingRewind()) return 0;
     const rw = this.harness.rewind;
-    const owner = rw.ownerChain({ sessionId, cwd: this.paths.home });
+    const owner = rw.ownerChain(ref);
     if (!owner.entries.length) return 0;
     const recent = this.chat.recent(5000);
     const used = new Set(recent.flatMap((m) => (m.uuid ? [m.uuid] : [])));

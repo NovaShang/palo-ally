@@ -13,7 +13,6 @@ import type { Harness, HarnessDriver, HarnessEvent, ImageInput, MainSession, Mod
 import { PALO_NAME } from "./pals.ts";
 import type { Router } from "./router.ts";
 import type { RuntimeState } from "./runtime.ts";
-import { type PendingRewind, rewindBusy } from "./rewind.ts";
 import { WATCHDOG_DEFAULTS, killHard } from "./stallWatch.ts";
 import type { TaskTracker } from "./tasks.ts";
 import type { Channel, Task } from "./types.ts";
@@ -80,8 +79,6 @@ export interface ConversationDeps {
   onGoalResult?: (watchId: string, text: string) => void;
   // work handed to another session the assistant is waiting on
   handoffsInFlight?: () => boolean;
-  // a rewound session: has the harness written the fork yet?
-  written?: (sessionId: string) => boolean;
   metric: (m: Record<string, unknown>) => void;
   // The assistant's own AskUserQuestion goes on the owner's pending list
   // instead of stopping the conversation: the words it's told (null: ask as
@@ -138,6 +135,7 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
       },
       harness: d.harness,
       kept: d.runtime.data,
+      keep: () => d.runtime.update({}),
       cwd: () => d.paths.home,
     });
     this.lastContextTokens = d.runtime.data.contextTokens ?? 0;
@@ -299,16 +297,11 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
     const cfg = this.d.config();
     const rt = this.d.runtime.data;
     this.modeChecked = false;
-    // Gone back to an earlier message (docs/rewind-prd.md §4.1): the new
-    // session is forked from the old one until Claude Code has written it.
-    const fork = this.pendingRewind();
     return this.d.driver.startMain({
       cwd: this.d.paths.home,
       model: cfg.model,
       effort: cfg.effort,
-      ...(fork
-        ? { sessionId: rt.sessionId, ...(fork.at ? { fork: { fromSessionId: fork.from, at: fork.at } } : {}) }
-        : { resumeSessionId: rt.sessionId }),
+      ...this.startOn(),
       priorCostUsd: rt.sessionId ? rt.sessionCostUsd : undefined,
       permissionMode: cfg.permissionMode,
       appendSystemPrompt: behaviorPrompt(this.d.paths) + `\n\n${t("conv.timezone", { tz: cfg.settings.timezone })}`,
@@ -528,49 +521,16 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
     }
   }
 
-  // ---------------- 回到这里重来 (docs/rewind-prd.md) ----------------
+  // ---------------- 回到这里重来 (agent/session.ts) ----------------
 
-  /** A rewind whose fork Claude Code hasn't written yet (none once it has). */
-  private pendingRewind(): PendingRewind | undefined {
-    const rt = this.d.runtime.data;
-    if (!rt.rewind) return undefined;
-    if (rt.sessionId && this.d.written?.(rt.sessionId)) {
-      this.d.runtime.update({ rewind: undefined });
-      return undefined;
-    }
-    return rt.rewind;
+  protected occupied(): boolean {
+    return this.allyInFlight || this.d.tasks.live().length > 0;
   }
 
-  /** Why the conversation can't be taken back now (a turn is on), or null. */
-  rewindBlocker(): string | null {
-    if (this.current || this.pending.size || this.allyInFlight || this.d.tasks.live().length) return rewindBusy();
-    return null;
-  }
-
-  /**
-   * The session whose transcript has the conversation as it stands: the
-   * current one, or (a rewind not followed by a message yet) the one it
-   * will be forked from, with that rewind.
-   */
-  rewindSource(): { sessionId?: string; pending?: PendingRewind } {
-    const pending = this.pendingRewind();
-    return pending ? { sessionId: pending.from, pending } : { sessionId: this.d.runtime.data.sessionId };
-  }
-
-  /**
-   * Goes back to just before the owner's message `cut`: the process ends,
-   * and the next one is a new session (`to`) forked from `from` after the
-   * entry `at` (none: a fresh one). The context size is unknown until it
-   * has run a turn.
-   */
-  //
-  // `written`: the new session is already on disk (a copy made before a
-  // compaction, docs/rewind-prd.md §4.1): it's simply resumed.
-  rewindTo(r: PendingRewind & { to: string; written?: boolean }): void {
-    this.host.close();
+  // The context size is unknown until the new session has run a turn.
+  protected override wentBack(): void {
     this.lastContextTokens = 0;
-    this.d.runtime.update({ sessionId: r.to, rewind: r.written ? undefined : { from: r.from, at: r.at, cut: r.cut }, contextTokens: 0 });
-    this.d.statusChanged();
+    this.d.runtime.data.contextTokens = 0;
   }
 
   /**
