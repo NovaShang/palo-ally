@@ -26,7 +26,7 @@ import { AwayDetector } from "../src/away.ts";
 import { RealClaudeCli, findClaude, loginEnv, parseBackgrounded } from "../src/ccCli.ts";
 import { readRegistry } from "../src/ccSessions.ts";
 import { SpendMeter } from "../src/ccSpend.ts";
-import { claudeConfigDir, transcriptPath } from "../src/handoffs.ts";
+import { claudeConfigDir, transcriptPath } from "../src/harness/claude/paths.ts";
 import { ClaudeCodeDriver } from "../src/harness/claude.ts";
 import { Hub } from "../src/hub.ts";
 import { HELPER_APP, findHelper, helperCandidates } from "../src/palLauncher.ts";

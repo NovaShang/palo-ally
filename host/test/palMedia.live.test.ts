@@ -16,7 +16,7 @@ import { deflateSync } from "node:zlib";
 import { AwayDetector } from "../src/away.ts";
 import { RealClaudeCli } from "../src/ccCli.ts";
 import { usageUsd } from "../src/ccSpend.ts";
-import { claudeConfigDir } from "../src/handoffs.ts";
+import { claudeConfigDir } from "../src/harness/claude/paths.ts";
 import { ClaudeCodeDriver } from "../src/harness/claude.ts";
 import { Hub } from "../src/hub.ts";
 import { FakeDriver } from "./fakeDriver.ts";

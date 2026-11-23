@@ -4,7 +4,7 @@ import { appendFileSync, chmodSync, existsSync, mkdtempSync, readFileSync, realp
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AwayDetector } from "../src/away.ts";
-import { transcriptPath } from "../src/handoffs.ts";
+import { transcriptPath } from "../src/harness/claude/paths.ts";
 import { findHelper, makeSpawner } from "../src/palLauncher.ts";
 import { pagePalMessages, toPalMessages, transcriptLastLine, transcriptModel } from "../src/palHistory.ts";
 import { MAX_PALS, optionFor, PALO_NAME, PROPOSAL_TTL_MS, type PalsDeps, type PalsTiming } from "../src/pals.ts";

@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AwayDetector } from "../src/away.ts";
-import { transcriptPath } from "../src/handoffs.ts";
+import { transcriptPath } from "../src/harness/claude/paths.ts";
 import type { PalsTiming } from "../src/pals.ts";
 import { chainTo, findEntry, hasFileCheckpoint, matchOwnerEntry, ownerText, readTranscript, rewindBusy, rewindNoFiles, rewindNotFound } from "../src/rewind.ts";
 import { handleRpc } from "../src/rpc.ts";

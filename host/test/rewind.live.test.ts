@@ -17,7 +17,7 @@ import { join, resolve } from "node:path";
 import { AwayDetector } from "../src/away.ts";
 import { RealClaudeCli } from "../src/ccCli.ts";
 import { usageUsd } from "../src/ccSpend.ts";
-import { claudeConfigDir, transcriptPath } from "../src/handoffs.ts";
+import { claudeConfigDir, transcriptPath } from "../src/harness/claude/paths.ts";
 import { ClaudeCodeDriver } from "../src/harness/claude.ts";
 import { Hub } from "../src/hub.ts";
 import { FakeDriver } from "./fakeDriver.ts";
