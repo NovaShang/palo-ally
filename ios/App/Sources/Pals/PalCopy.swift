@@ -21,6 +21,10 @@ extension Copy {
     /// 「今天的花费到上限了」); the state's icon beside it already says the
     /// state, so its word shows only when there's nothing else (11-17).
     static func palLine(_ p: Pal) -> String {
+        if p.openInTerminal {
+            let open = String(localized: "终端里开着"), last = oneLine(p.lastLine)
+            return last.isEmpty ? open : "\(open) · \(last)"
+        }
         let line = oneLine(p.status == .stopped ? (p.note ?? p.lastLine) : (p.status == .busy ? (p.activity ?? p.lastLine) : p.lastLine))
         return line.isEmpty ? palStatus(p.status) : line
     }
@@ -28,6 +32,7 @@ extension Copy {
     /// A Pal page's subtitle: 「在忙 · ~/code/site」; stopped, why; being woken, so.
     static func palSubtitle(_ p: Pal, waking: Bool = false) -> String {
         if waking { return String(localized: "正在叫醒…") }
+        if p.openInTerminal { return String(localized: "终端里开着 · \(p.shortCwd)") }
         let second: String
         switch p.status {
         case .stopped: second = oneLine(p.note).nonEmpty ?? p.shortCwd

@@ -75,10 +75,16 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
     /// Not touched for a few days and in no workspace: it's listed under
     /// 以前的, not among the sessions.
     public var folded: Bool
+    /// Its session is open in a terminal (opened there by the owner, or with
+    /// 在终端打开): it has no process here meanwhile, and comes back once that quits.
+    public var openInTerminal = false
+    /// What the owner said to it meanwhile: it goes in, in order, once it's back.
+    public var queued: [QueuedMessage]?
 
     enum CodingKeys: String, CodingKey {
         case id, name, cwd, sessionId, status, lastLine, pending, model, lastWakeUsd, createdBy, activity, note, updatedAt
         case attention, finishedAt, seenAt, contextPct, workspaceId, effort, permissionMode, folded, tasksRunning
+        case openInTerminal, queued
     }
 
     public init(id: String, name: String, cwd: String, sessionId: String, status: PalStatus, lastLine: String? = nil,
@@ -126,6 +132,8 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
         effort = l.string("effort")
         permissionMode = l.string("permissionMode")
         folded = l.bool("folded") ?? false
+        openInTerminal = l.bool("openInTerminal") ?? false
+        queued = l.array(QueuedMessage.self, "queued")
         // New fields a host from before the workbench lacks: worked out, not reported as missing.
         if let a = l.decode(PalAttention.self, "attention"), a != .unknown {
             attention = a
@@ -136,6 +144,10 @@ public struct Pal: Codable, Sendable, Hashable, Identifiable {
 
     /// In a turn: working, or stopped in it on a card the owner must answer.
     public var inTurn: Bool { status == .busy || status == .waiting }
+
+    /// It has something on that opening it in a terminal would end: a turn, a
+    /// card on the owner, background tasks, or it's coming up.
+    public var isOccupied: Bool { inTurn || status == .starting || tasksRunning > 0 }
 
     /// Asleep (§12): no process; words for it wake it first.
     public var isAsleep: Bool { status == .asleep }
@@ -183,9 +195,11 @@ public struct PalsResult: Decodable, Sendable {
     /// 已归档 N: those put away for lack of use and those the owner archived.
     /// Hosts from before one kind of agent don't say.
     public var archived: Int?
+    /// The host can open a Pal in a terminal and give the line for it (在终端打开). Older hosts don't say.
+    public var terminal: Bool?
 
-    public init(pals: [Pal], others: [CCSession] = [], hooks: Bool? = nil, archived: Int? = nil) {
-        self.pals = pals; self.others = others; self.hooks = hooks; self.archived = archived
+    public init(pals: [Pal], others: [CCSession] = [], hooks: Bool? = nil, archived: Int? = nil, terminal: Bool? = nil) {
+        self.pals = pals; self.others = others; self.hooks = hooks; self.archived = archived; self.terminal = terminal
     }
 
     public init(from decoder: Decoder) throws {
@@ -194,6 +208,7 @@ public struct PalsResult: Decodable, Sendable {
         others = l.array(CCSession.self, "others", or: [])
         hooks = l.expect("hooks", l.bool("hooks"))
         archived = l.int("archived")
+        terminal = l.bool("terminal")
     }
 }
 
@@ -263,6 +278,24 @@ public struct PalReleaseResult: Decodable, Sendable {
     public init(resumeCommand: String) { self.resumeCommand = resumeCommand }
     public init(from decoder: Decoder) throws {
         resumeCommand = try Lenient(decoder).string("resumeCommand", or: "")
+    }
+}
+
+/// `pals.openTerminal {id, force?}` → `{pal}`: its session in the owner's
+/// terminal on the computer; `force` when it has something on (`isOccupied`).
+public struct PalOpenTerminalParams: Codable, Sendable {
+    public var id: String
+    public var force: Bool?
+    public init(id: String, force: Bool? = nil) { self.id = id; self.force = force }
+}
+
+/// `pals.terminalCommand → {command}`: the line that resumes it in a terminal, to copy.
+public struct PalTerminalCommandResult: Decodable, Sendable {
+    public var command: String
+    public init(command: String) { self.command = command }
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        command = l.expect("command", l.string("command")) ?? ""
     }
 }
 

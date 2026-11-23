@@ -558,7 +558,10 @@ private struct LayoutStressTest: ViewModifier {
                         case .pal(let id)?, .session(let id)?: store.palStore(id).send(String(a.dropFirst(4)))
                         default: store.send(String(a.dropFirst(4)))
                         }
-                    // `quit:cc-login`: the demo's terminal holding that session quits (/exit).
+                    // `terminal:pal-blog`: 在终端打开 (or 复制终端命令) in that agent's menu in the sidebar, as a click on it does.
+                    case _ where a.hasPrefix("terminal:"):
+                        NotificationCenter.default.post(name: AgentTerminal.demoAsk, object: String(a.dropFirst(9)))
+                    // `quit:cc-login`: the demo's terminal holding that session (or `quit:pal-blog`: that agent's) quits (/exit).
                     case _ where a.hasPrefix("quit:"):
                         if let id = w.activeHostID, let host = model.app.demoHost(id) { await host.quitTerminal(String(a.dropFirst(5))) }
                     // `web:http://localhost:8765/a.html`: a page opened in the right pane, as a link in a reply does.

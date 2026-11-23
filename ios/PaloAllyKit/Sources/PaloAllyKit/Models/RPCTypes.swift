@@ -116,13 +116,16 @@ public enum RPCMethod {
     public static let palsSeen = "pals.seen"
     public static let palsEnd = "pals.end"
     public static let palsReveal = "pals.reveal"
+    /// 在终端打开: in the owner's terminal on the computer, or the line for it to copy.
+    public static let palsOpenTerminal = "pals.openTerminal"
+    public static let palsTerminalCommand = "pals.terminalCommand"
     public static let palsEarlier = "pals.earlier"
     public static let palsResume = "pals.resume"
 
     public static let pals: [String] = [palsList, palsAdopt, palsRelease, palsRemove, palsHistory, palsSend, palsStop,
                                         palsRecent, palsWake, palsRename, palsRewind,
                                         palsCreate, palsFolders, palsDetail, palsSetModel, palsSetMode, palsCompact, palsStopTask,
-                                        palsSeen, palsEnd, palsReveal, palsEarlier, palsResume]
+                                        palsSeen, palsEnd, palsReveal, palsOpenTerminal, palsTerminalCommand, palsEarlier, palsResume]
 
     /// Workspaces (workbench-rpc §3) and the browser pane's tabs.
     public static let workspacesList = "workspaces.list"

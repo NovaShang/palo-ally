@@ -35,6 +35,7 @@ import { readRegistry, type RegistryEntry } from "./registry.ts";
 import { type ForkSession, beforeCompaction, chainTo, findEntry, forkedUuids, hasFileCheckpoint, leafOf, matchOwnerEntry, ownerText, readTranscript } from "./rewind.ts";
 import { PAL_MODES, contextWindowFor, ownerMode, settingsEffort } from "./settings.ts";
 import { pageFromTail } from "./tail.ts";
+import { TERMINAL_UNSET } from "./cli.ts";
 import { type RawSessionMessage, growth, readHead, readTail, transcriptHas } from "./transcript.ts";
 
 // Claude Code as PaloAlly's harness (docs/harness-adapter-design.md §2): the
@@ -63,6 +64,8 @@ const startedAt = (entries: HarnessEntry[]): { startedAt?: number } => {
   return Number.isFinite(t) ? { startedAt: t } : {};
 };
 
+const opens = (sid: string, written: boolean) => `claude ${written ? "--resume" : "--session-id"} ${sid}`;
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const shq = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
 
 export class ClaudeHarness implements Harness {
@@ -223,7 +226,16 @@ export class ClaudeHarness implements Harness {
       live: (): LiveSession[] => this.o.registry?.() ?? readRegistry(join(this.configDir, "sessions")),
       recent: this.o.recentSource ?? sdkSource(this.configDir),
       rename: (sid, title, cwd) => (this.o.renameSession ?? sdkRename(this.configDir))(sid, title, cwd),
-      resumeCommand: (cwd, sid) => (sid ? `cd ${shq(cwd)} && claude --resume ${sid}` : `cd ${shq(cwd)} && claude`),
+      terminalRun: (sid, written) => {
+        if (!SESSION_ID.test(sid)) throw new Error(`not a Claude Code session id: ${sid}`);
+        const dir = process.env.CLAUDE_CONFIG_DIR;
+        return {
+          command: opens(sid, written),
+          unset: TERMINAL_UNSET,
+          ...(dir ? { env: { CLAUDE_CONFIG_DIR: dir } } : {}),
+        };
+      },
+      resumeCommand: (cwd, sid, written = true) => `cd ${shq(cwd)} && ${sid ? opens(sid, written) : "claude"}`,
     };
   }
 

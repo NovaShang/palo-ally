@@ -29,6 +29,7 @@ import type { Router } from "./router.ts";
 import type { Sessions } from "./sessions.ts";
 import type { StallTarget } from "./stallWatch.ts";
 import type { Attachment, ChatMessage, EarlierItem, HelperProposal, Pal, PalAdoptProposal, RecentSession } from "./types.ts";
+import { NoDesktop, defaultOpenTerminal, loginShell, removeTerminalFile, sweepTerminalFiles, terminalFile, terminalScript, writeTerminalFile } from "./terminal.ts";
 import { DonePushes } from "./donePush.ts";
 import { WaitingPushes } from "./waitingPush.ts";
 import { expandHome, hhmm, newId, pidAlive, readJson, within, writeJson, zonedParts } from "./util.ts";
@@ -49,6 +50,9 @@ import { expandHome, hhmm, newId, pidAlive, readJson, within, writeJson, zonedPa
 // Its name follows Claude Code's title for the session (§13): read back
 // after each turn and before each start, and pals.rename retitles it there.
 // The assistant reaches it by id or any of its names (pal_send).
+// 在终端打开 (pals.openTerminal) hands one to the owner's own terminal: the
+// host's process ends first, then the terminal resumes the session; it comes
+// back when that quits. Words for it meanwhile wait, as for other sessions'.
 // A conversation that ended on the computer lately can be taken over too
 // (§10): listed by pals.recent, resumed directly by pals.adopt, or proposed
 // by the assistant on a card the owner answers.
@@ -153,8 +157,6 @@ function baseModel(model: string | undefined): string | undefined {
   return model?.replace(/\[[^\]]*\]$/, "");
 }
 
-class NoDesktop extends Error {}
-
 /** macOS: `open <folder>` is Finder; `open -a Terminal <folder>` is a new Terminal window cd'd there. */
 function defaultReveal(kind: "finder" | "terminal", cwd: string): Promise<void> {
   if (process.platform !== "darwin") return Promise.reject(new NoDesktop());
@@ -220,6 +222,8 @@ export interface PalsDeps {
   models?: () => Promise<ModelOption[]>;
   /** Opens a session's folder on this computer (default: macOS `open`). */
   reveal?: (kind: "finder" | "terminal", cwd: string) => Promise<void>;
+  /** Starts a .command file in the owner's terminal (default: macOS `open`). */
+  openTerminal?: (file: string) => Promise<void>;
   /** A Pal's permission mode; default: the owner's own default for Claude Code. */
   palMode?: () => string;
   /** A Pal's model; default: what its transcript last ran on (a new one: the owner's default). */
@@ -256,6 +260,7 @@ export interface PalsTiming {
   startStaggerMs: number; // between Pals coming back at the host's start
   sleepIdleMs: number; // idle this long, an awake Pal is put to sleep
   sleepCheckMs: number; // how often that's looked at
+  terminalMs: number; // a terminal it was opened in has this long to take its session (在终端打开)
 }
 
 const TIMING: PalsTiming = {
@@ -269,6 +274,7 @@ const TIMING: PalsTiming = {
   startStaggerMs: 1_500,
   sleepIdleMs: 20 * 60_000,
   sleepCheckMs: 30_000,
+  terminalMs: 60_000,
 };
 
 
@@ -303,6 +309,8 @@ export class Pals {
   private balanceTimer: ReturnType<typeof setTimeout> | null = null;
   private waking = new Set<string>(); // asleep Pals being woken (said once)
   private startTimers: ReturnType<typeof setTimeout>[] = [];
+  private openTimers = new Set<ReturnType<typeof setTimeout>>();
+  private handing = new Set<string>(); // being opened in a terminal, or come back from one that never took its session
   private offBus: (() => void) | null = null;
   private started = false;
 
@@ -363,7 +371,12 @@ export class Pals {
       claudeDir: this.d.claudeDir,
       launch: () => (this.d.launch ?? (() => this.launcher.launch()))(),
       helperFailed: (why) => (this.d.helperFailed ?? ((w) => this.launcher.markBroken(w)))(why),
-      holders: (sid, own) => this.holders(sid, own),
+      holders: (sid, own) => {
+        // About to be taken by a terminal that isn't in Claude Code's registry yet: nothing of ours starts on it.
+        if (this.opening(rec)) throw new HeldElsewhere(t("pals.terminalOpening", { name: rec.name }));
+        return this.holders(sid, own);
+      },
+      wireExtra: (pal) => this.wireExtra(pal),
       emit: (event, data) => this.d.bus.emit(event, data),
       changed: () => this.emitSoon(),
       save: () => this.save(),
@@ -456,6 +469,8 @@ export class Pals {
     this.offBus = this.d.bus.on((event) => {
       if (event === "sessions.updated") this.emitSoon();
     });
+    // One opened in a terminal whose time ran out while the host was down: looked at as any other.
+    for (const pal of this.pals.values()) if (!this.opening(pal.rec)) delete pal.rec.terminalUntil;
     // Every one that was up comes back (even ones that couldn't start before).
     let i = 0;
     const back = [...this.pals.values()]
@@ -464,6 +479,11 @@ export class Pals {
     const awakeMax = this.maxAwake();
     for (const pal of back.slice(awakeMax)) pal.markAsleep();
     for (const pal of back.slice(0, awakeMax)) {
+      // Opened in a terminal right before the host stopped: that has its time still (guard).
+      if (this.opening(pal.rec)) {
+        this.watchOpening(pal);
+        continue;
+      }
       pal.clearStop();
       pal.queueStart();
       const t = setTimeout(() => void this.bringBack(pal, "start"), i++ * this.timing.startStaggerMs);
@@ -481,7 +501,13 @@ export class Pals {
     (this.proposalTimer as any).unref?.();
     // Words that waited for a terminal before the host stopped: waited for again
     // (or sent at once, if that terminal quit meanwhile).
-    for (const q of [...this.data.queued]) this.takeOverFor(q.sessionId, "queued");
+    // (A Pal's own go in when it is back: one asleep is woken for them.)
+    for (const q of [...this.data.queued]) {
+      const pal = this.pal(q.sessionId);
+      if (!pal) this.takeOverFor(q.sessionId, "queued");
+      else if (pal.asleep && !pal.rec.stoppedFor) void this.bringBack(pal, "queued");
+    }
+    sweepTerminalFiles(this.d.paths.run, this.timing.terminalMs, this.now());
     this.emitSoon();
   }
 
@@ -499,6 +525,8 @@ export class Pals {
     if (this.emitTimer) clearTimeout(this.emitTimer);
     for (const w of this.waiting.values()) if (w.timer) clearTimeout(w.timer);
     this.waiting.clear();
+    for (const t of this.openTimers) clearTimeout(t);
+    this.openTimers.clear();
     this.donePushes.stop();
     for (const pal of this.pals.values()) void pal.shutdown();
   }
@@ -514,8 +542,11 @@ export class Pals {
     try {
       await pal.start();
       this.d.audit.log("pal.resumed", { pal: pal.id, name: pal.rec.name, why });
+      this.flushWaiting(pal);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      // (Being opened in a terminal meanwhile.)
+      if (this.handing.has(pal.id) || this.opening(pal.rec)) return;
       this.log(`couldn't bring back ${pal.rec.name}: ${msg}`);
       if (e instanceof HeldElsewhere) pal.stopFor("elsewhere", msg);
       else pal.stopFor("failed", t("pals.resumeFailed", { msg }));
@@ -600,6 +631,7 @@ export class Pals {
     this.save();
     this.emitSoon();
     this.balanceSoon();
+    this.flushWaiting(pal);
     return pal.toWire();
   }
 
@@ -660,7 +692,7 @@ export class Pals {
   }
 
   payload(others = this.d.sessions.list()) {
-    return { pals: this.list(), others, hooks: this.d.sessions.hooksEnabled(), helper: this.helper, archived: this.archivedCount() };
+    return { pals: this.list(), others, hooks: this.d.sessions.hooksEnabled(), helper: this.helper, archived: this.archivedCount(), terminal: true };
   }
 
   /** 已归档 N: the sessions put away for lack of use and those the owner archived (the list has every other conversation besides). */
@@ -792,11 +824,16 @@ export class Pals {
     for (const pal of this.pals.values()) {
       const held = entries.filter((e) => e.sessionId === pal.rec.sessionId);
       if (pal.rec.stoppedFor === "elsewhere") {
+        if (this.handing.has(pal.id)) continue;
+        if (pal.rec.terminalUntil !== undefined) {
+          this.checkOpening(pal, held.length > 0);
+          continue;
+        }
         if (held.length || now - (this.retried.get(pal.id) ?? 0) < 30_000) continue;
         this.retried.set(pal.id, now);
         pal.clearStop();
-        // One that was asleep (woken while open elsewhere) goes back to sleep.
-        if (pal.rec.status === "asleep") this.emitSoon();
+        // One that was asleep (woken while open elsewhere) goes back to sleep, unless words wait for it.
+        if (pal.rec.status === "asleep" && !this.queueOf(pal.rec.sessionId)) this.emitSoon();
         else void this.bringBack(pal, "free again");
         continue;
       }
@@ -1137,6 +1174,183 @@ export class Pals {
     this.d.chat.add({ role: "system", kind: "notice", text, channel: "system" });
   }
 
+  // ---------------- 在终端打开 ----------------
+
+  /** A terminal opened for it has some time left to take its session. */
+  private opening(rec: PalRecord): boolean {
+    return rec.terminalUntil !== undefined && this.now() < rec.terminalUntil;
+  }
+
+  private wireExtra(pal: PalSession): Partial<Pal> {
+    const queued = this.queuedFor(pal.rec.sessionId);
+    return { ...(pal.rec.stoppedFor === "elsewhere" ? { openInTerminal: true as const } : {}), ...(queued ? { queued } : {}) };
+  }
+
+  private requireFree(pal: PalSession): void {
+    const { name } = pal.rec;
+    const w = pal.toWire();
+    if (w.status === "waiting") throw new Error(t("pals.terminalWaiting", { name }));
+    if (w.status === "busy" || w.status === "starting") throw new Error(t("pals.terminalBusy", { name }));
+    if ((w.tasksRunning ?? 0) > 0) throw new Error(t("pals.terminalTasks", { name, n: w.tasksRunning ?? 0 }));
+  }
+
+  private requireFolder(cwd: string): void {
+    let isDir = false;
+    try {
+      isDir = statSync(cwd).isDirectory();
+    } catch {
+      isDir = false;
+    }
+    if (!isDir) throw new Error(t("pals.folderGone", { cwd }));
+  }
+
+  /** pals.terminalCommand: the line that resumes it in a terminal, to copy. Nothing is stopped: it steps aside once the line is run. */
+  terminalCommand(id: string): { command: string } {
+    const pal = this.mustGet(id);
+    // Gone back and not spoken to since: there is no session yet that has just what's kept.
+    if (pal.pendingRewind()?.at) throw new Error(t("pals.terminalRewound"));
+    return { command: this.d.harness.sessions.resumeCommand(pal.rec.cwd, pal.rec.sessionId, this.d.harness.history.exists(pal.ref)) };
+  }
+
+  /**
+   * pals.openTerminal: its session in the owner's own terminal on this
+   * computer. The host's process ends first; the agent stays on the list as
+   * open in a terminal, and comes back when that quits (guard). The terminal
+   * has a minute to turn up in Claude Code's registry; until then nothing of
+   * ours starts on the session, and if it doesn't, the agent is brought back.
+   * One that's working, waits on the owner or has tasks running is left alone
+   * unless `force`.
+   */
+  async openTerminal(id: string, o: { force?: boolean; by: string }): Promise<{ pal: Pal }> {
+    const pal = this.mustGet(id);
+    const { name } = pal.rec;
+    if (this.handing.has(pal.id) || pal.rec.stoppedFor === "elsewhere") throw new Error(t("pals.terminalAlready", { name }));
+    if (o.force !== true) this.requireFree(pal);
+    this.requireFolder(pal.rec.cwd);
+    this.d.harness.sessions.terminalRun(pal.rec.sessionId, true); // (an id it wouldn't open: said before anything ends)
+    if (!this.d.openTerminal && process.platform !== "darwin") throw new Error(t("pals.revealNoDesktop"));
+    this.handing.add(pal.id);
+    try {
+      return { pal: await this.handToTerminal(pal, o) };
+    } finally {
+      this.handing.delete(pal.id);
+      this.emitSoon();
+    }
+  }
+
+  private async handToTerminal(pal: PalSession, o: { force?: boolean; by: string }): Promise<Pal> {
+    const { rec } = pal;
+    const held = await this.holders(rec.sessionId, rec.pid);
+    if (held.length) throw new Error(t("pals.terminalAlready", { name: rec.name }));
+    // Gone back (回到这里重来) and not spoken to since: what's kept is copied
+    // into a session of its own first, as release does (a terminal resumes a
+    // session whole), while the process is still there if that fails. Gone
+    // back to the very first message nothing is kept: a fresh session, under
+    // the id the record has.
+    const pending = pal.pendingRewind();
+    const copy = pending?.at
+      ? await this.d.harness.rewind.copy({ sessionId: pending.from, cwd: rec.cwd }, pending.at, rec.name).catch((e) => {
+          throw new Error(t("pals.terminalFailed", { why: e instanceof Error ? e.message : String(e) }));
+        })
+      : undefined;
+    // (It may have been spoken to since.)
+    if (o.force !== true) this.requireFree(pal);
+    const asleep = pal.asleep;
+    const failed = rec.stoppedFor === "failed";
+    rec.terminalUntil = this.now() + this.timing.terminalMs + this.timing.exitWaitMs;
+    this.retried.delete(pal.id);
+    pal.markStopped("elsewhere", t("pals.terminalNote"));
+    await pal.shutdown();
+    // Archived meanwhile.
+    if (!this.pals.has(pal.id)) return pal.toWire();
+    // (Spoken to meanwhile after all: its own session has it now.)
+    if (copy && pal.pendingRewind()) {
+      rec.formerSessions = [...(rec.formerSessions ?? []), rec.sessionId].slice(-20);
+      const waiting = this.queueOf(rec.sessionId);
+      if (waiting) waiting.sessionId = copy;
+      rec.sessionId = copy;
+      delete rec.rewind;
+    }
+    const file = terminalFile(this.d.paths.run, pal.id);
+    try {
+      const run = this.d.harness.sessions.terminalRun(rec.sessionId, this.d.harness.history.exists(pal.ref));
+      writeTerminalFile(file, terminalScript(rec.cwd, run, { shell: loginShell() }), this.d.paths.run);
+      rec.terminalUntil = this.now() + this.timing.terminalMs;
+      this.save();
+      this.emitNow();
+      await (this.d.openTerminal ?? defaultOpenTerminal)(file);
+    } catch (e) {
+      // No terminal: it's back as it was.
+      removeTerminalFile(file);
+      delete rec.terminalUntil;
+      pal.clearStop();
+      this.save();
+      if (!asleep && !failed) void this.bringBack(pal, "no terminal");
+      else this.flushWaiting(pal);
+      throw e instanceof NoDesktop ? new Error(t("pals.revealNoDesktop")) : new Error(t("pals.terminalFailed", { why: e instanceof Error ? e.message : String(e) }));
+    }
+    this.d.audit.log("pal.terminal", { pal: pal.id, session: rec.sessionId, name: rec.name, by: o.by, ...(o.force ? { force: true } : {}), ...(pending ? { rewound: pending.from } : {}) });
+    this.log(`${rec.name} is opened in a terminal`);
+    this.watchOpening(pal);
+    return pal.toWire();
+  }
+
+  // Looked at often while a terminal is opening it: one quit again before the guard's next look was still there.
+  private watchOpening(pal: PalSession): void {
+    const t = setTimeout(() => {
+      this.openTimers.delete(t);
+      if (!this.started || !this.pals.has(pal.id) || pal.rec.terminalUntil === undefined) return;
+      this.checkOpening(pal, this.registry().some((e) => e.sessionId === pal.rec.sessionId));
+      if (pal.rec.terminalUntil !== undefined) this.watchOpening(pal);
+    }, this.timing.exitPollMs);
+    this.openTimers.add(t);
+    (t as any).unref?.();
+  }
+
+  // Once the terminal's process is there, it's as any other session open in one; its time up without it, the agent is back.
+  private checkOpening(pal: PalSession, held: boolean): void {
+    if (this.handing.has(pal.id)) return;
+    if (held) {
+      delete pal.rec.terminalUntil;
+      this.save();
+    } else if (!this.opening(pal.rec)) void this.giveBack(pal);
+  }
+
+  // The terminal's time is up and Claude Code's registry never had its
+  // process: the agent comes back, and what's said so. (The .command file
+  // goes: a terminal that starts late finds nothing to run.)
+  private async giveBack(pal: PalSession): Promise<void> {
+    if (this.handing.has(pal.id)) return;
+    this.handing.add(pal.id);
+    try {
+      removeTerminalFile(terminalFile(this.d.paths.run, pal.id));
+      const held = await this.holders(pal.rec.sessionId);
+      if (!this.pals.has(pal.id)) return;
+      delete pal.rec.terminalUntil;
+      this.save();
+      if (held.length) return;
+      this.d.audit.log("pal.terminal_gave_up", { pal: pal.id, name: pal.rec.name });
+      this.notice(t("pals.terminalGaveUp", { name: this.shownName(pal) }));
+      pal.clearStop();
+      if (pal.rec.status === "asleep" && !this.queueOf(pal.rec.sessionId)) this.emitSoon();
+      else await this.bringBack(pal, "no terminal");
+    } finally {
+      this.handing.delete(pal.id);
+      this.emitSoon();
+    }
+  }
+
+  /** It is back from the terminal: what the owner said to it meanwhile goes in, in order. */
+  private flushWaiting(pal: PalSession): void {
+    if (this.queueOf(pal.rec.sessionId)) void this.flushQueue(pal.rec.sessionId, pal);
+  }
+
+  /** Put away by the owner: words still waiting for its terminal aren't sent, and that's said. */
+  private dropWaiting(pal: PalSession): void {
+    const n = this.dropQueue(pal.rec.sessionId).length;
+    if (n) this.notice(t("pals.queuedNotSent", { n, why: t("pals.queuedPutAway", { name: this.shownName(pal) }) }));
+  }
+
   // ---------------- 交还终端 / 移出 ----------------
 
   /** pals.release: the host's process ends; the owner picks it up in a terminal. */
@@ -1162,6 +1376,7 @@ export class Pals {
     await pal.shutdown();
     // (Spoken to meanwhile after all: its own session has it now.)
     if (pending && !pal.pendingRewind()) sid = pal.rec.sessionId;
+    this.dropWaiting(pal);
     this.drop(pal, true);
     this.d.audit.log("pal.released", { pal: pal.id, session: sid ?? "", name: pal.rec.name, by, ...(pending ? { rewound: pending.from } : {}) });
     this.emitNow();
@@ -1172,6 +1387,7 @@ export class Pals {
   async remove(id: string, by: string): Promise<void> {
     const pal = this.mustGet(id);
     await pal.shutdown();
+    this.dropWaiting(pal);
     this.drop(pal, true);
     this.d.audit.log("pal.removed", { pal: pal.id, session: pal.rec.sessionId, name: pal.rec.name, by });
     this.emitNow();
@@ -1229,6 +1445,11 @@ export class Pals {
     if (workspaceId) this.d.workspaceJoin?.(workspaceId, id);
     const text = String(o.text ?? "").trim();
     const failed = (e: unknown) => {
+      // Opened in a terminal while it was coming up: its first words wait for that.
+      if (this.handing.has(id) || this.opening(rec)) {
+        if (text) this.enqueue(rec.sessionId, text, undefined, []);
+        return;
+      }
       const msg = e instanceof Error ? e.message : String(e);
       this.log(`couldn't start ${rec.name}: ${msg}`);
       pal.stopFor("failed", t("pals.resumeFailed", { msg }));
@@ -1318,13 +1539,7 @@ export class Pals {
   async reveal(id: string, kind: unknown): Promise<Record<string, never>> {
     const pal = this.mustGet(id);
     if (kind !== "finder" && kind !== "terminal") throw new Error(t("pals.revealKind"));
-    let isDir = false;
-    try {
-      isDir = statSync(pal.rec.cwd).isDirectory();
-    } catch {
-      isDir = false;
-    }
-    if (!isDir) throw new Error(t("pals.folderGone", { cwd: pal.rec.cwd }));
+    this.requireFolder(pal.rec.cwd);
     try {
       await (this.d.reveal ?? defaultReveal)(kind, pal.rec.cwd);
     } catch (e) {
@@ -1340,6 +1555,7 @@ export class Pals {
     // Gone back and not spoken to since: the old session is the one there is.
     const sessionId = pal.pendingRewind()?.from ?? pal.rec.sessionId;
     const item: EndedSession = { sessionId, name: pal.rec.name, cwd: pal.rec.cwd, at: this.now(), ...(pal.rec.workspaceId ? { workspaceId: pal.rec.workspaceId } : {}) };
+    this.dropWaiting(pal);
     this.drop(pal);
     this.data.ended = [...this.data.ended.filter((e) => e.sessionId !== sessionId), item].slice(-ENDED_MAX);
     this.save();
@@ -1451,7 +1667,8 @@ export class Pals {
   /**
    * pals.send: the owner's words, as typed. One asleep is woken first (what
    * comes meanwhile goes in after, in order). A retried send (same
-   * clientMsgId) goes in once.
+   * clientMsgId) goes in once. One open in a terminal: they wait (`queued`)
+   * until that quits, as for a session that isn't a Pal.
    */
   async send(id: string, text: string, clientMsgId?: string, attachments: Attachment[] = []): Promise<SendResult> {
     const pal = this.get(id);
@@ -1460,12 +1677,25 @@ export class Pals {
     const cid = clientMsgId ? String(clientMsgId).slice(0, 100) : undefined;
     const seen = cid ? this.sent.get(pal.id)?.get(cid) : undefined;
     if (seen) return seen;
+    const sid = pal.rec.sessionId;
+    const words = String(text ?? "");
+    if (!words.trim() && !attachments.length) throw new Error(t("pals.emptyMessage"));
+    const have = cid ? this.queueOf(sid)?.messages.find((m) => m.clientMsgId === cid) : undefined;
+    if (have) return { id: have.id, seq: 0, queued: true };
+    if (this.outside(pal)) return this.enqueue(sid, words, cid, attachments);
+    // Back a moment ago: what waited goes first.
+    if (this.queueOf(sid)) await this.flushQueue(sid, pal);
     const wasStopped = pal.rec.stoppedFor;
     this.wakingFor(pal, "owner");
-    const msg = await pal.send(String(text ?? ""), { ...(cid ? { clientMsgId: cid } : {}), ...(attachments.length ? { attachments } : {}) }).catch((e) => {
+    let msg: ChatMessage;
+    try {
+      msg = await pal.send(words, { ...(cid ? { clientMsgId: cid } : {}), ...(attachments.length ? { attachments } : {}) });
+    } catch (e) {
       this.waking.delete(pal.id);
+      // Opened in a terminal just now (or the list doesn't say so yet): they wait for it.
+      if (e instanceof HeldElsewhere || this.outside(pal)) return this.enqueue(pal.rec.sessionId, words, cid, attachments);
       throw e;
-    });
+    }
     this.balanceSoon();
     if (wasStopped) this.d.audit.log("pal.resumed", { pal: pal.id, name: pal.rec.name, why: "owner" });
     const out = { id: msg.id, seq: msg.seq };
@@ -1477,6 +1707,17 @@ export class Pals {
     }
     this.d.audit.log("pal.send", { pal: pal.id, name: pal.rec.name, chars: msg.text.length, ...(attachments.length ? { attachments: attachments.length } : {}) });
     return out;
+  }
+
+  /** Open in a terminal (or about to be): stopped for it, and it still is, as far as Claude Code's registry says. */
+  private outside(pal: PalSession): boolean {
+    if (pal.rec.stoppedFor !== "elsewhere") return false;
+    if (this.handing.has(pal.id) || this.opening(pal.rec)) return true;
+    try {
+      return this.registry().some((e) => e.sessionId === pal.rec.sessionId && e.pid !== pal.pid);
+    } catch {
+      return false;
+    }
   }
 
   // ---------------- words for a session that isn't a Pal yet ----------------

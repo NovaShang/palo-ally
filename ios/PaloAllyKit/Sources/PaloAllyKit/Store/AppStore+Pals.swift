@@ -22,6 +22,8 @@ extension AppStore {
     public func singlePalTasksRunning(id: String) -> Int { shared.palSlot(id).tasksRunning }
     public func singlePalAttention(id: String) -> PalAttention? { shared.palSlot(id).attention }
 
+    public func singlePalOpenInTerminal(id: String) -> Bool { shared.palSlot(id).openInTerminal }
+
     /// The Pals as the list shows them: awake ones first, then those asleep
     /// (§12), each the most lately used first.
     public var listedPals: [Pal] { Pal.listed(pals) }
@@ -38,7 +40,10 @@ extension AppStore {
         let s = AppStore(pal: id, parent: self)
         palStores[id] = s
         preparePalStore?(s)
-        if let p = pal(id: id) { s.applyPal(p) }
+        if let p = pal(id: id) {
+            s.applyPal(p)
+            s.applyQueued(p.queued ?? [])
+        }
         if connection.isOnline { Task { await s.reloadPalHistory() } }
         return s
     }
@@ -90,6 +95,7 @@ extension AppStore {
         setPals(r.pals, others: r.others)
         if let hooks = r.hooks { sessionHooksEnabled = hooks }
         if let n = r.archived { archivedCount = n }
+        terminalSupported = r.terminal == true
         palsSupported = true
     }
 
@@ -102,6 +108,7 @@ extension AppStore {
             setPals(r.pals, others: hasOthers ? r.others : nil)
             if let hooks = r.hooks { sessionHooksEnabled = hooks }
             if let n = r.archived { archivedCount = n }
+            terminalSupported = r.terminal == true
             palsSupported = true
         case .upsert(let p):
             var list = pals
@@ -118,6 +125,7 @@ extension AppStore {
     /// The list as the host has it; each Pal's store takes its state, and a
     /// session waiting to be adopted that is a Pal now is done.
     func setPals(_ list: [Pal], others: [CCSession]?) {
+        let waitedBefore = Dictionary(pals.map { ($0.id, $0.queued ?? []) }, uniquingKeysWith: { a, _ in a })
         if list != pals { pals = list }
         // A recent conversation adopted (here, from a card, or on another device) is a Pal now.
         if let recent = recentSessions, recent.contains(where: { s in list.contains { $0.sessionId == s.sessionId } }) {
@@ -144,6 +152,9 @@ extension AppStore {
             if let before = palStores[p.sessionId], !before.heldMessages.isEmpty { before.dropHeld() }
             guard let page = palStores[p.id] else { continue }
             page.applyPal(p)
+            // Open in a terminal: the words waiting for it, as the host has them.
+            let waiting = p.queued ?? []
+            if waiting != waitedBefore[p.id] ?? [] { page.applyQueued(waiting) }
             // A page opened before its Pal was on the list: its conversation now.
             if !page.hasSynced, connection.isOnline { Task { await page.reloadPalHistory() } }
         }
@@ -217,6 +228,15 @@ extension AppStore {
                                 as: PalAdoptResult.self)
     }
 
+    /// 取消这条, for an agent open in a terminal: the words waiting for that go.
+    public func cancelWaiting(palId id: String) async {
+        if let parent { return await parent.cancelWaiting(palId: id) }
+        guard let p = pal(id: id) else { return }
+        palStores[id]?.dropHeld()
+        _ = try? await rpc.call(RPCMethod.palsAdopt, params: PalAdoptParams(sessionId: p.sessionId, cancel: true),
+                                as: PalAdoptResult.self)
+    }
+
     /// A session waits to be quit in its terminal before it's adopted: asked
     /// from this device, or (the host says) from another.
     public func waitsForExit(_ s: CCSession) -> Bool {
@@ -243,6 +263,29 @@ extension AppStore {
             setPals(list, others: nil)
         }
         return r.pal
+    }
+
+    // MARK: 在终端打开
+
+    /// Its session in the owner's terminal on the computer: its process here
+    /// ends first, and it comes back once that quits. `force` when it has
+    /// something on (`Pal.isOccupied`; the host refuses otherwise).
+    @discardableResult
+    public func openInTerminal(id: String, force: Bool = false) async throws -> Pal? {
+        if let parent { return try await parent.openInTerminal(id: id, force: force) }
+        // Its process is waited for (killed if it must be).
+        let r: PalWakeResult = try await rpc.call(RPCMethod.palsOpenTerminal,
+                                                  params: PalOpenTerminalParams(id: id, force: force ? true : nil), timeout: 45)
+        if let p = r.pal { upsert(pal: p) }
+        return r.pal
+    }
+
+    /// The line that resumes it in a terminal, to copy; nothing is stopped.
+    public func terminalCommand(id: String) async throws -> String {
+        if let parent { return try await parent.terminalCommand(id: id) }
+        let r: PalTerminalCommandResult = try await rpc.call(RPCMethod.palsTerminalCommand, params: IDParams(id: id))
+        guard !r.command.isEmpty else { throw RPCError.badResponse }
+        return r.command
     }
 
     // MARK: naming (§13)

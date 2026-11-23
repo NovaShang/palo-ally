@@ -25,6 +25,7 @@ struct QuickSwitchStrip: View {
     /// while the keyboard is up, and the rename alert's field brings it up.
     @Binding var renaming: Pal?
     @Binding var ending: Pal?
+    @Binding var inTerminal: Pal?
     @State private var width: CGFloat = 0
 
     var body: some View {
@@ -100,6 +101,7 @@ struct QuickSwitchStrip: View {
     @ViewBuilder private func menu(_ pal: Pal) -> some View {
         Button("重命名", systemImage: "pencil") { renaming = pal }
             .disabled(!store.connection.isOnline)
+        AgentTerminalButton(id: pal.id) { inTerminal = pal }
         if store.workspacesSupported == true {
             Menu("移到工作区", systemImage: "square.grid.2x2") {
                 ForEach(store.workspaces.filter { $0.id != pal.workspaceId }) { w in
@@ -134,6 +136,7 @@ struct QuickSwitchBar: ViewModifier {
     @State private var keyboardUp = false
     @State private var renaming: Pal?
     @State private var ending: Pal?
+    @State private var inTerminal: Pal?
 
     private var members: [String] {
         guard case .pal(let id) = current else { return [] }
@@ -144,7 +147,7 @@ struct QuickSwitchBar: ViewModifier {
         content
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if model.layout == .phone, !keyboardUp, case .pal(let id) = current, !members.isEmpty {
-                    QuickSwitchStrip(current: id, members: members, renaming: $renaming, ending: $ending)
+                    QuickSwitchStrip(current: id, members: members, renaming: $renaming, ending: $ending, inTerminal: $inTerminal)
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
@@ -154,6 +157,7 @@ struct QuickSwitchBar: ViewModifier {
                 keyboardUp = false
             }
             .palRename($renaming)
+            .agentTerminal($inTerminal)
             .confirmationDialog(Copy.spaced(String(localized: "归档「\(ending?.displayName ?? "")」？")),
                                 isPresented: Binding(get: { ending != nil }, set: { if !$0 { ending = nil } }),
                                 titleVisibility: .visible) {

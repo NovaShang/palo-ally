@@ -193,6 +193,12 @@
 {"id":"r8","result":{}}
 ```
 
+### `pals.openTerminal` / `pals.terminalCommand`
+
+在终端打开。`pals.openTerminal {id, force?}` → `{pal}`：主机先结束自己这边的进程，再在这台 Mac 的默认终端里接着这个对话（`claude --resume`）。在忙、等主人或后台有任务时不带 `force` 会拒绝。终端开着时 `pal` 是 `status: "stopped"`、`openInTerminal: true`（带 `note`），`pals.send` 的话排队（返回 `queued: true`，列在 `pal.queued`，用 `pals.adopt {sessionId, cancel: true}` 取消）；终端退出后它自己回来，排队的话依次发出。约 60 秒内终端没接上，它回来并留一条提示。
+
+`pals.terminalCommand {id}` → `{command}`：要复制的那一行，不停任何东西。`pals.list` / `pals.updated` 带 `terminal: true` 表示主机会这两个。
+
 ### `pals.folders`
 
 新建会话时「最近的文件夹」候选。由会话的 `cwd`、已结束的会话和 `pals.recent` 去重得来，按最近使用排序，不含 PaloAlly 自己的目录。选「其他文件夹」时用 `files.folders.browse`。

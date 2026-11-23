@@ -170,6 +170,8 @@ private let resultTypes: [String: Check] = [
     RPCMethod.palsSeen: strict(PalWakeResult.self),
     RPCMethod.palsEnd: strict(PalEndResult.self),
     RPCMethod.palsReveal: strict(EmptyResult.self),
+    RPCMethod.palsOpenTerminal: strict(PalWakeResult.self),
+    RPCMethod.palsTerminalCommand: strict(PalTerminalCommandResult.self),
     RPCMethod.palsEarlier: strict(EarlierResult.self),
     RPCMethod.palsResume: strict(PalWakeResult.self),
     RPCMethod.workspacesList: strict(WorkspacesResult.self),

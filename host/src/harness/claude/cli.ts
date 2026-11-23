@@ -38,6 +38,13 @@ export interface ClaudeCli {
 const SESSION_VARS =
   /^(CLAUDECODE|CLAUDE_CODE_(ENTRYPOINT|SESSION_ID|SESSION_ATTENDED|CHILD_SESSION|MESSAGING_.*|BRIDGE_.*|EXECPATH|SSE_PORT)|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_JOB_DIR|CLAUDE_AGENT_SDK_.*|CLAUDE_PROJECT_DIR|CLAUDE_ENV_FILE|PALOALLY_.*)$/;
 
+/**
+ * Not handed to a terminal the host opens (在终端打开): every CLAUDE_CODE_* of
+ * the host's too; the owner's own come back with their login shell. (ERE.)
+ */
+export const TERMINAL_UNSET =
+  "PALOALLY_[A-Za-z0-9_]*|CLAUDECODE|CLAUDE_CODE_[A-Za-z0-9_]*|CLAUDE_AGENT_SDK_[A-Za-z0-9_]*|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_JOB_DIR|CLAUDE_PROJECT_DIR|CLAUDE_ENV_FILE";
+
 /** The environment without a running session's own variables (CLAUDE_CONFIG_DIR stays). */
 export function cleanSessionEnv(env: Record<string, string | undefined>): Record<string, string> {
   const out: Record<string, string> = {};

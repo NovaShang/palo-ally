@@ -116,6 +116,8 @@ final class SidebarActions {
     var host: String?
     /// 重命名 asked from a session's row (pals-prd §13).
     var renaming: Pal?
+    /// 在终端打开 (or copying the line for it) asked from a session's row.
+    var inTerminal: Pal?
     /// 重命名 asked from a workspace's row.
     var renamingWorkspace: Workspace?
     var workspaceName = ""
@@ -142,6 +144,12 @@ private struct SidebarDialogs: View {
             .frame(width: 0, height: 0)
             .accessibilityHidden(true)
             .palRename($actions.renaming)
+            .agentTerminal($actions.inTerminal)
+            #if DEBUG
+            .onReceive(NotificationCenter.default.publisher(for: AgentTerminal.demoAsk)) { n in
+                if let id = n.object as? String, let pal = store.pal(id: id) { actions.inTerminal = pal }
+            }
+            #endif
             .alert("重命名工作区", isPresented: Binding(get: { actions.renamingWorkspace != nil },
                                                    set: { if !$0 { actions.renamingWorkspace = nil } })) {
                 TextField("名字", text: $actions.workspaceName)
@@ -422,6 +430,10 @@ private struct HostSidebarContent: View {
             actions.renaming = pal
         }
         .disabled(!store.connection.isOnline)
+        AgentTerminalButton(id: pal.id) {
+            actions.on(store, host: hostID)
+            actions.inTerminal = pal
+        }
         if store.workspacesSupported == true {
             Menu("移到工作区", systemImage: "square.grid.2x2") {
                 ForEach(store.workspaces.filter { $0.id != pal.workspaceId }) { w in

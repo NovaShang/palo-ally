@@ -20,7 +20,7 @@ extension DemoHost {
         case RPCMethod.palsList:
             normalizePals()
             return ["pals": try .from(pals), "others": try .from(otherSessions), "hooks": .bool(hooksEnabled),
-                    "archived": .number(Double(archivedCount()))]
+                    "archived": .number(Double(archivedCount())), "terminal": true]
         case RPCMethod.palsHistory:
             let id = p["id"]?.stringValue ?? ""
             // Not a Pal: one of the computer's other sessions, read the same way (one kind of agent).
@@ -43,6 +43,17 @@ extension DemoHost {
                 return try await sendToSession(ref, text: text, clientMsgId: p["clientMsgId"]?.stringValue)
             }
             let id = pal.id
+            // Open in a terminal: the words wait until it's quit there, as for a session that isn't a Pal.
+            if pal.openInTerminal {
+                guard !text.isEmpty else { throw DemoError(message: "要说的话不能是空的") }
+                let cid = p["clientMsgId"]?.stringValue
+                if let cid, let q = pal.queued?.first(where: { $0.clientMsgId == cid }) {
+                    return ["id": .string(q.id), "seq": 0, "queued": true]
+                }
+                let q = QueuedMessage(id: nextID("q"), text: text, clientMsgId: cid, at: Date().epochMillis)
+                setPal(id) { $0.queued = ($0.queued ?? []) + [q] }
+                return ["id": .string(q.id), "seq": 0, "queued": true]
+            }
             guard pal.status != .stopped else { throw DemoError(message: "\(pal.displayName)停了") }
             // Images and files go with the words, as Palo takes them (pals-prd §15).
             let atts = try attachments(p["attachments"])
@@ -122,6 +133,11 @@ extension DemoHost {
             if p["cancel"]?.boolValue == true {
                 // The owner stopped waiting: so does the demo's computer, and the words waiting for it go (取消这条).
                 let dropped = otherSessions.first { $0.id == sid }?.queued?.count ?? 0
+                // An agent of its own, open in a terminal: the words waiting for that go.
+                if let pal = pals.first(where: { $0.sessionId == sid }), let n = pal.queued?.count {
+                    setPal(pal.id) { $0.queued = nil }
+                    return ["cancelled": false, "pal": try .from(pals.first { $0.id == pal.id }), "dropped": .number(Double(n))]
+                }
                 guard waitingAdoptions.remove(sid) != nil else {
                     if let pal = pals.first(where: { $0.sessionId == sid }) { return ["cancelled": false, "pal": try .from(pal)] }
                     return ["cancelled": false]
@@ -165,9 +181,41 @@ extension DemoHost {
             palTurns[id]?.cancel()
             pals.removeAll { $0.id == id }
             emitPals()
-            // As the host gives it: into its folder, then resume its record.
-            let folder = pal.cwd.contains(" ") ? "'\(pal.cwd)'" : pal.cwd
-            return ["resumeCommand": .string("cd \(folder) && claude --resume \(pal.sessionId)")]
+            return ["resumeCommand": .string(terminalLine(pal))]
+        case RPCMethod.palsTerminalCommand:
+            let id = p["id"]?.stringValue ?? ""
+            guard let pal = pals.first(where: { $0.id == id }) else { throw DemoError(message: "找不到这个 agent") }
+            return ["command": .string(terminalLine(pal))]
+        case RPCMethod.palsOpenTerminal:
+            // As the host's: its process ends, then it's open in a terminal
+            // until that quits (`-demoTerminalFor <s>`, default 12; 0 never).
+            let id = p["id"]?.stringValue ?? ""
+            guard let pal = pals.first(where: { $0.id == id }) else { throw DemoError(message: "找不到这个 agent") }
+            guard !pal.openInTerminal else { throw DemoError(message: "「\(pal.displayName)」已经在终端里开着") }
+            if p["force"]?.boolValue != true {
+                if pal.status == .waiting { throw DemoError(message: "「\(pal.displayName)」正等你点头，在终端打开会取消它") }
+                if pal.status == .busy || pal.status == .starting { throw DemoError(message: "「\(pal.displayName)」正在干活，在终端打开会让它停下") }
+                if pal.tasksRunning > 0 { throw DemoError(message: "「\(pal.displayName)」后台还有 \(pal.tasksRunning) 个任务在跑，在终端打开会让它们停下") }
+            }
+            await pause(0.4)
+            palTurns[id]?.cancel()
+            palTurns[id] = nil
+            palWriting[id] = nil
+            for j in approvals.indices where approvals[j].source?.id == id && approvals[j].status == .pending {
+                approvals[j].status = .denied
+                approvals[j].decidedAt = Date().epochMillis
+                approvals[j].decidedBy = "terminal"
+                emit(RPCEventName.approvalUpdated, approvals[j])
+            }
+            setPal(id) {
+                $0.status = .stopped
+                $0.note = "在终端里开着，那边退出后会自己接上"
+                $0.activity = nil
+                $0.tasksRunning = 0
+                $0.openInTerminal = true
+            }
+            quitTerminalLater(id)
+            return ["pal": try .from(pals.first { $0.id == id })]
         case RPCMethod.palsRemove:
             let id = p["id"]?.stringValue ?? ""
             guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "没有这个 Pal") }
@@ -180,6 +228,36 @@ extension DemoHost {
         }
     }
 
+    /// As the host gives it: into its folder, then resume its record.
+    func terminalLine(_ pal: Pal) -> String {
+        let folder = pal.cwd.contains(" ") ? "'\(pal.cwd)'" : pal.cwd
+        return "cd \(folder) && claude --resume \(pal.sessionId)"
+    }
+
+    /// The demo's owner quits the agent's terminal after a while.
+    func quitTerminalLater(_ id: String) {
+        let after = UserDefaults.standard.object(forKey: "demoTerminalFor") != nil
+            ? UserDefaults.standard.double(forKey: "demoTerminalFor") : 12
+        guard after > 0 else { return }
+        Task {
+            await self.pause(after)
+            self.palBack(id)
+        }
+    }
+
+    /// An agent's terminal is quit: it's back, and what was said to it goes in.
+    private func palBack(_ id: String) {
+        guard let pal = pals.first(where: { $0.id == id }), pal.openInTerminal else { return }
+        let waited = pal.queued ?? []
+        setPal(id) { $0.openInTerminal = false; $0.queued = nil; $0.note = nil; $0.status = .idle }
+        for q in waited {
+            var m = palMessage(id, role: .user, text: q.text, channel: .app)
+            m.clientMsgId = q.clientMsgId
+            appendPal(m)
+        }
+        if let last = waited.last { palTurns[id] = Task { await self.palAnswers(id, to: last.text) } }
+    }
+
     // MARK: changes
 
     /// The whole list, as `pals.list` gives it.
@@ -188,7 +266,8 @@ extension DemoHost {
         emit(RPCEventName.palsUpdated, ["pals": (try? JSONValue.from(pals)) ?? .array([]),
                                         "others": (try? JSONValue.from(otherSessions)) ?? .array([]),
                                         "hooks": .bool(hooksEnabled),
-                                        "archived": .number(Double(archivedCount()))] as JSONValue)
+                                        "archived": .number(Double(archivedCount())),
+                                        "terminal": true] as JSONValue)
     }
 
     /// 已归档 N, as the host counts it: put away for lack of use, and archived by the owner.
@@ -338,8 +417,9 @@ extension DemoHost {
         }
     }
 
-    /// The terminal holding a session quits now (demo action `quit:<session id>`).
+    /// The terminal holding a session (or an agent opened in one, by its id) quits now (demo action `quit:<id>`).
     public func quitTerminal(_ sid: String) {
+        palBack(sid)
         guard waitingAdoptions.contains(sid) else { return }
         finishAdoption(sid)
     }

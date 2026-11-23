@@ -414,6 +414,8 @@ export interface Pal {
   effort?: string; // chosen effort level; absent = the model's default
   permissionMode?: string; // the permission mode it runs in: what Claude Code reports while it runs, else the one it starts in
   folded: boolean; // not stored: outside any workspace and unused for longer than settings.foldDays
+  openInTerminal?: true; // stopped because its session is open in a terminal (or about to be, 在终端打开); it comes back once that quits
+  queued?: CCSession["queued"]; // the owner's words sent to it meanwhile: they go in, in order, once it's back
 }
 
 export type PalAttention = "working" | "waiting" | "done" | "idle";

@@ -429,8 +429,14 @@ export interface SessionDirectory {
   /** Its ended conversations (listing, one's info) and retitling one without a process. */
   recent: RecentSource;
   rename(sessionId: string, title: string, cwd: string): Promise<void>;
-  /** The line that resumes a session in a terminal (no session: a fresh one in the folder). */
-  resumeCommand(cwd: string, sessionId: string | null): string;
+  /** The line that resumes a session in a terminal (no session: a fresh one in the folder; nothing `written` yet: one under that id). */
+  resumeCommand(cwd: string, sessionId: string | null, written?: boolean): string;
+  /**
+   * What a terminal runs, in the session's folder, to open it (在终端打开): the
+   * session resumed, or (nothing `written` yet) a fresh one under that id.
+   * Throws on an id that isn't one of its own.
+   */
+  terminalRun(sessionId: string, written: boolean): import("../terminal.ts").TerminalRun;
 }
 
 export interface HarnessSettings {

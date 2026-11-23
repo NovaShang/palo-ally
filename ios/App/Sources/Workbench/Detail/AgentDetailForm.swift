@@ -21,6 +21,8 @@ struct AgentDetailForm: View {
     @State private var working: String?
     @State private var confirmEnd = false
     @State private var confirmStop = false
+    @State private var inTerminal: Pal?
+    @State private var copiedTerminal = false
     @State private var memoryCount: Int?
 
     private var online: Bool { store.connection.isOnline }
@@ -304,11 +306,37 @@ struct AgentDetailForm: View {
         }
     }
 
-    // MARK: 归档 / 让助理停下
+    // MARK: 在终端打开, 归档 / 让助理停下
+
+    /// Its session in a terminal on this Mac, or the line for it to copy.
+    @ViewBuilder private func terminalRow(_ pal: Pal) -> some View {
+        if store.terminalSupported, !pal.openInTerminal {
+            Button { inTerminal = pal } label: {
+                if AgentTerminal.opensHere(store) {
+                    Text("在终端打开")
+                } else {
+                    Text(copiedTerminal ? String(localized: "已复制") : String(localized: "复制终端命令"))
+                }
+            }
+            .tint(.primary)
+            .frame(maxWidth: .infinity)
+            // (The line under it spans the card: the words are in its middle.)
+            .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
+            .disabled(!online)
+            .accessibilityIdentifier("detail-terminal")
+            .agentTerminal($inTerminal) { copiedTerminal = true }
+            .task(id: copiedTerminal) {
+                guard copiedTerminal else { return }
+                try? await Task.sleep(for: .seconds(1.5))
+                copiedTerminal = false
+            }
+        }
+    }
 
     @ViewBuilder private var bottom: some View {
         Section {
             if caps.archive, let pal {
+                terminalRow(pal)
                 if confirmEnd {
                     ConfirmPanel(title: Copy.spaced(String(localized: "归档「\(pal.displayName)」？")),
                                  text: String(localized: "它会停下，之后还能在已归档里拿回来。"),
