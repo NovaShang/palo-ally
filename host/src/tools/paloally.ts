@@ -41,7 +41,7 @@ export function assistantToolSpecs(h: ToolHandlers): ToolSpec[] {
           peer: z
             .string()
             .optional()
-            .describe("这件事交给了本机另一个 Claude Code 会话时，填它的名字（SendMessage 的 to）：外壳会自己定期去看它的进展、它在等主人时推送提醒。用 SendMessage 交代任务时外壳通常会自动跟进，这里只在要改标题或手动关联时用"),
+            .describe("这件事交给了 Pal（pal_send）时，填它的名字：外壳会跟着它的状态更新这一行。用 pal_send 派活时外壳会自动开一行并跟进，这里只在要改标题或手动关联时用。交给不是 Pal 的 Claude Code 会话（SendMessage）也可以填它的名字，但外壳不跟进，它回话后你自己把这一行改成 done"),
         },
         async (a) => h.report_task(a),
       ),

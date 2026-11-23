@@ -321,7 +321,7 @@ export interface ToolVocabulary {
 |---|---|---|
 | `harness/claude.ts` (driver, `mapMessage`, `sessionOptions`, `probeOptions`, MCP server builders) | `harness/claude/process.ts`, `harness/claude/events.ts`, `harness/claude/mcp.ts` | MCP builders take `ToolSpec[]` instead of `ToolHandlers`; tool texts move to `host/src/tools/` (host-owned, harness-neutral) |
 | `harness/types.ts` | stays; gains `Harness`, `StartOptions`, `UserInput`, sub-interfaces | `MainSession` renamed `HarnessProcess` (alias kept one release) |
-| `handoffs.ts`: `claudeConfigDir`, `transcriptPath`, `readTail`, `readHead`, `SessionRegistry` | `harness/claude/paths.ts`, `harness/claude/transcript.ts`, `harness/claude/registry.ts` | **B2** deletes most of the rest of handoffs.ts |
+| `handoffs.ts`: `claudeConfigDir`, `transcriptPath`, `readTail`, `readHead`, `SessionRegistry` | `harness/claude/paths.ts`, `harness/claude/transcript.ts` | done 2026-11-23: `SessionRegistry` and `summarizeTail` are gone; handoffs.ts follows agents by their own events |
 | `ccSessions.ts`: `readRegistry`, `RegistryEntry`, `summarizeTranscript`, `peerBody`, `userText`, `isCompactSummaryText` | `harness/claude/registry.ts`, `harness/claude/transcript.ts` | **B2** deletes `toCCMessages`, `CCMessage`, `pageMessages`; the `SessionWatch` list logic stays host-side over `sessions.live()` |
 | `palHistory.ts` (`toPalMessages`, `userEntryMessage`, `TranscriptFollower`, `transcriptModel`, `transcriptLastLine`) | `harness/claude/history.ts` | `pagePalMessages` and `CARD_TOOLS`/`cardKey` stay host-side (`chatPage.ts`) |
 | `transcriptTail.ts` (tail window over `getSessionMessages`) | `harness/claude/history.ts` | |

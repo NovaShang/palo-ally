@@ -311,7 +311,7 @@ Palo 提议，你点头，主机新开一个会话，第一条消息是 Palo 写
 - Pal 调用时，主机把话包成 `<cross-session-message from="<Pal 名字>" from-name="<Pal 名字>">…</cross-session-message>`（和原生 SendMessage 的样子一样，与 `pal_send` 送给 Pal 的包法相同），作为助理的一条入站消息排进它的队列：和 Ally 来的消息、任务通知同一条路，助理正在跑一轮时排在后面，不插进那一轮，也不丢，按顺序各成一轮；助理的进程没在跑时，这条消息会把它拉起来。结果字符串按主机语言告诉 Pal 送到了还是为什么没送到。
 - `from` 写 Pal 当前的名字，助理用 `pal_send` 按这个名字就能再回它，不用任何 uds 地址。
 - 提示词：Pal 的（`pals.prompt`）写明回助理用 `palo_send`，给电脑上其他会话发话 SendMessage 照旧；助理的（`BEHAVIORS`）写明 Pal 的话以 `from-name=<Pal>` 到来，用 `pal_send` 按这个名字回。
-- 显示：Pal 的对话页把它发出去的话显示成它自己说的（实时一条，读历史时从记录里的 `palo_send` 调用读回，id 同为工具调用 id，不会重复）。跟进 Pal 的交办（handoffs）把 `palo_send` 和发给助理的 SendMessage 一样当作它的回话。
+- 显示：Pal 的对话页把它发出去的话显示成它自己说的（实时一条，读历史时从记录里的 `palo_send` 调用读回，id 同为工具调用 id，不会重复）。跟进 Pal 的交办（handoffs）把 `palo_send` 当作它的回话。
 - 「只说话不动手」（allyGate）不受影响：Pal 的话不是 Ally 的一轮；Ally 的一轮正在跑时，它排在后面等那一轮结束。
 
 原生 SendMessage 仍在，只是 Pal 回助理不再靠它。
