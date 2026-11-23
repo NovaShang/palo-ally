@@ -9,6 +9,8 @@ final class PaneActions {
     var openPane: (String) -> Void = { _ in }
     var openAlone: (String) -> Void = { _ in }
     var rename: (String) -> Void = { _ in }
+    /// 在终端打开 (or copying the line for it).
+    var openTerminal: (String) -> Void = { _ in }
     var moveOut: (String) -> Void = { _ in }
     var closePane: (String) -> Void = { _ in }
     var end: (String) -> Void = { _ in }
@@ -421,6 +423,7 @@ private struct PaneMenu: View {
             Divider()
             Button("右栏（成果 / 文件）", systemImage: "sidebar.trailing") { actions.openPane(id) }
             Button("单独打开", systemImage: "arrow.up.left.and.arrow.down.right") { actions.openAlone(id) }
+            AgentTerminalButton(id: id) { actions.openTerminal(id) }
             Button("重命名…", systemImage: "pencil") { actions.rename(id) }
                 .disabled(!online)
             Button("移出工作区", systemImage: "rectangle.portrait.and.arrow.right") { actions.moveOut(id) }

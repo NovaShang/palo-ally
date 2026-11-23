@@ -52,6 +52,7 @@ export interface PalRecord {
   duty?: string; // one the assistant opened: its handover, the first message
   stoppedFor?: "failed" | "elsewhere";
   note?: string; // why it's stopped
+  terminalUntil?: number; // 在终端打开: the terminal it was opened in has until then to take its session; it isn't started before
   pid?: number; // Claude Code's pid while the host runs it (an orphan after the host died)
   status?: "asleep"; // put to sleep (§12): no process until it's woken; absent = awake
   formerNames?: string[]; // what it was called before (§13): the assistant may still say one
@@ -102,6 +103,8 @@ export interface PalSessionDeps {
   /** A turn ended (its spending is checked). */
   /** A turn is over; `finished`: it really ended (not stopped, not failed, nothing queued). */
   onTurnEnd: (pal: PalSession, finished?: boolean) => void;
+  /** What the list shows of it besides (Pals knows: open in a terminal, words waiting for that). */
+  wireExtra?: (pal: PalSession) => Partial<Pal>;
   /** A turn went through (true) or failed for want of Claude Code's login (false). */
   onAuth?: (pal: PalSession, ok: boolean) => void;
   /** It was asleep and is up again. */
@@ -317,6 +320,7 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
       ...(this.rec.seenAt !== undefined ? { seenAt: Math.round(this.rec.seenAt) } : {}),
       ...(this.rec.workspaceId ? { workspaceId: this.rec.workspaceId } : {}),
       folded: this.folded(),
+      ...this.d.wireExtra?.(this),
     };
   }
 

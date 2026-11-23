@@ -71,6 +71,8 @@ final class AppStoreShared {
     var earlierSupported: Bool?
     /// 已归档 N as the host counts it (`pals.list`'s `archived`).
     var archivedCount: Int?
+    /// The host opens Pals in a terminal (`pals.list`'s `terminal`).
+    var terminalSupported = false
 
     /// Each Pal asked for alone (`AppStore.singlePal`), kept in step with `pals`.
     @ObservationIgnored private var palSlots: [String: PalSlot] = [:]
@@ -106,6 +108,7 @@ final class PalSlot {
     private(set) var status: PalStatus?
     private(set) var tasksRunning = 0
     private(set) var attention: PalAttention?
+    private(set) var openInTerminal = false
 
     init(_ pal: Pal?) {
         self.pal = pal
@@ -113,6 +116,7 @@ final class PalSlot {
         status = pal?.status
         tasksRunning = pal?.tasksRunning ?? 0
         attention = pal?.attention
+        openInTerminal = pal?.openInTerminal ?? false
     }
 
     func update(_ p: Pal?) {
@@ -121,6 +125,7 @@ final class PalSlot {
         if status != p?.status { status = p?.status }
         if tasksRunning != p?.tasksRunning ?? 0 { tasksRunning = p?.tasksRunning ?? 0 }
         if attention != p?.attention { attention = p?.attention }
+        if openInTerminal != p?.openInTerminal ?? false { openInTerminal = p?.openInTerminal ?? false }
     }
 }
 

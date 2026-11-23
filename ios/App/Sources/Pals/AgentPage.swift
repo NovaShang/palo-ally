@@ -13,6 +13,7 @@ import SwiftUI
 /// one still open in a terminal is said so above the composer, and what's
 /// typed waits until it's quit there (「终端那边退出后发出 · 取消这条」).
 /// Once it's a Pal (here, from a card, on another device) its page opens.
+/// A Pal opened in a terminal (在终端打开) says the same until that quits.
 struct AgentPage: View {
     enum Agent: Hashable {
         /// A Pal, by its id.
@@ -65,6 +66,10 @@ private struct AgentConversation: View {
     private var session: (name: String, cwd: String, live: CCSession?)? { external ? store.viewedSession(id) : nil }
     /// No longer on the list (archived here or elsewhere, or gone at the computer).
     private var gone: Bool { !external && store.singlePalName(id: id) == nil && store.palsSupported == true }
+    /// A Pal whose session is open in a terminal (在终端打开, or by hand).
+    private var inTerminal: Bool { !external && store.singlePalOpenInTerminal(id: id) }
+    /// The host doesn't run it now.
+    private var outside: Bool { external || inTerminal }
     /// Words sent to it asleep: it's being woken (§12).
     private var waking: Bool { store.status?.busy == true && store.status?.activity == AppStore.wakingActivity }
 
@@ -72,7 +77,7 @@ private struct AgentConversation: View {
         #if DEBUG || PERF_HARNESS
         let _ = PerfProbe.count("AgentConversation")
         #endif
-        ChatView(bottomPanel: bottom, aboveComposer: external ? terminalLine : nil,
+        ChatView(bottomPanel: bottom, aboveComposer: terminalLine,
                  pageTop: inTile ? nil : .init(subtitle: subtitle, dot: dot, capsule: !external),
                  inTile: inTile)
             .navigationSubtitle(external ? subtitle : "")
@@ -88,9 +93,9 @@ private struct AgentConversation: View {
             .onChange(of: external ? nil : store.singlePalAttention(id: id), initial: true) { _, a in
                 if a == .done { store.markSeen(id: id) }
             }
-            // Not a Pal: what it says while the page is open (the host doesn't run it, so nothing streams).
-            .task(id: external && store.connection.isOnline) {
-                guard external, store.connection.isOnline else { return }
+            // Not a Pal, or open in a terminal: what it says while the page is open (the host doesn't run it, so nothing streams).
+            .task(id: outside && store.connection.isOnline) {
+                guard outside, store.connection.isOnline else { return }
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(3))
                     guard !Task.isCancelled else { return }
@@ -138,7 +143,7 @@ private struct AgentConversation: View {
         return pal.map { Copy.palSubtitle($0, waking: waking) } ?? ""
     }
 
-    // MARK: above the composer (one that isn't a Pal)
+    // MARK: above the composer (one the host doesn't run now)
 
     /// Still open in a terminal: what typing does, before anything is typed;
     /// what's typed waits until it's quit there, and can be called off.
@@ -148,12 +153,14 @@ private struct AgentConversation: View {
         if held > 0 {
             return AnyView(ComposerNote(icon: "clock", text: String(localized: "终端那边退出后发出"),
                                         action: held > 1 ? String(localized: "取消这 \(held) 条") : String(localized: "取消这条")) {
-                Task { await store.cancelAdoption(sessionId: id) }
+                Task {
+                    if external { await store.cancelAdoption(sessionId: id) } else { await store.cancelWaiting(palId: id) }
+                }
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("agent-held"))
         }
-        if live?.isOpenInTerminal == true {
+        if live?.isOpenInTerminal == true || inTerminal {
             return AnyView(ComposerNote(icon: "terminal", text: String(localized: "终端里还开着。发的话会等那边退出（\(store.harness.terminal.exitCommand)）后发出，之后在这里接着聊。"))
                 .accessibilityIdentifier("agent-in-terminal"))
         }

@@ -25,6 +25,7 @@ struct WorkspaceTilesPage: View {
     @State private var ending = false
     @State private var failure: String?
     @State private var renaming: Pal?
+    @State private var inTerminal: Pal?
     /// The layout just kept, shown until the stored one catches up.
     @State private var pending: LayoutTree.Node?
     /// Where a document's tab dragged out of the right pane lands.
@@ -67,6 +68,7 @@ struct WorkspaceTilesPage: View {
         .safeAreaInset(edge: .top, spacing: 0) { StatusBanner() }
         .overlay(alignment: .bottom) { closeConfirm }
         .palRename($renaming)
+        .agentTerminal($inTerminal)
         .onAppear(perform: setUpActions)
         .onAppear {
             documentDrop.handle = canvas
@@ -137,6 +139,7 @@ struct WorkspaceTilesPage: View {
         }
         actions.openAlone = { model.openPal($0) }
         actions.rename = { id in renaming = store.singlePal(id: id) }
+        actions.openTerminal = { id in inTerminal = store.singlePal(id: id) }
         actions.moveOut = { takeOut($0) }
         actions.closePane = { takeOut($0) }
         actions.end = { closing = $0 }

@@ -75,8 +75,8 @@ export function makeHub(
   const claudeDir = mkdtempSync(join(tmpdir(), "paloally-claude-"));
   created.push(claudeDir);
   const sessions: Partial<SessionsDeps> = { claudeDir, cli: new FakeCli(), ...opts.sessions };
-  // Pals start directly (no PaloAlly Helper) from a plain environment.
-  const pals: Partial<PalsDeps> = { launch: async () => ({ helper: null, env: { PATH: process.env.PATH ?? "/usr/bin:/bin" } }), usesHelper: () => false, ...opts.pals };
+  // Pals start directly (no PaloAlly Helper) from a plain environment, and no real terminal is ever opened.
+  const pals: Partial<PalsDeps> = { launch: async () => ({ helper: null, env: { PATH: process.env.PATH ?? "/usr/bin:/bin" } }), usesHelper: () => false, openTerminal: async () => {}, ...opts.pals };
   // Never this computer's login: no keychain, no `claude auth`, a pretend login process.
   const logins: FakeLogin[] = [];
   const auth: Partial<AuthDeps> = { stamp: async () => null, loggedIn: async () => true, spawnLogin: () => (logins.push(new FakeLogin()), logins.at(-1)!), ...opts.auth };

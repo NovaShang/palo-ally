@@ -287,18 +287,18 @@ describe("adopting a session", () => {
     await waitFor(() => t.hub.pals.list()[0]!.status === "stopped", 3_000);
     await exited(own);
     expect(t.hub.pals.list()[0]!.note).toContain("在别处打开了");
-    // its words don't start a second process while the terminal holds it
-    await expect(t.call("pals.send", { id: pal.id, text: "在吗" })).rejects.toThrow("在别处开着");
+    // its words don't start a second process while the terminal holds it: they wait for it
+    expect(await t.call("pals.send", { id: pal.id, text: "在吗" })).toMatchObject({ queued: true });
     expect(t.driver.pals).toHaveLength(1);
-    expect(t.hub.pals.list()[0]).toMatchObject({ status: "stopped", note: expect.stringContaining("在别处开着") });
+    expect(t.hub.pals.list()[0]).toMatchObject({ status: "stopped", openInTerminal: true, queued: [{ text: "在吗" }] });
     // the terminal quits: it comes back by itself
     term.kill("SIGKILL");
     await exited(term);
     t.claude.unregister(sid);
-    await waitFor(() => t.hub.pals.list()[0]!.status === "idle", 3_000);
-    expect(t.driver.pals).toHaveLength(2);
-    await t.call("pals.send", { id: pal.id, text: "在吗" });
-    expect(t.driver.pals).toHaveLength(2);
+    await waitFor(() => t.driver.pals.length === 2 && t.driver.pals[1]!.sent.length === 1, 3_000);
+    expect(t.driver.pals[1]!.sent).toEqual(["在吗"]);
+    expect(t.hub.pals.list()[0]!.openInTerminal).toBeUndefined();
+    expect(t.hub.pals.list()[0]!.queued).toBeUndefined();
     expect(t.hub.audit.tail(30).some((e) => e.type === "pal.elsewhere")).toBe(true);
     await t.hub.pals.stopAndWait();
   });

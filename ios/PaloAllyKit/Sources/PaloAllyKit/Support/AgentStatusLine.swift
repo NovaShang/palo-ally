@@ -102,6 +102,7 @@ public struct AgentStatusLine: Equatable, Sendable {
         case .done, .idle: .idle
         }
         if pal.status == .busy { return AgentStatusLine(kind: kind, text: doing(pal.activity)) }
+        if pal.openInTerminal { return AgentStatusLine(kind: kind, text: loc("终端里开着")) }
         if pal.status == .stopped, let note = pal.note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
             return AgentStatusLine(kind: kind, text: note)
         }

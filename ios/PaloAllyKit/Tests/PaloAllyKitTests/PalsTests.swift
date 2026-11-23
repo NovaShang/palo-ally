@@ -547,6 +547,55 @@ struct OneKindOfAgentTests {
         #expect(await until { login.heldMessages.isEmpty })
     }
 
+    @Test func anAgentOpenedInATerminalSaysSoAndWordsForItWait() async throws {
+        UserDefaults.standard.set(0, forKey: "demoTerminalFor")
+        defer { UserDefaults.standard.removeObject(forKey: "demoTerminalFor") }
+        let host = DemoHost(speed: 0, pals: true)
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { !store.pals.isEmpty && store.terminalSupported })
+        // One that has something on is asked about first (force).
+        if let busy = store.pals.first(where: \.isOccupied) {
+            await #expect(throws: (any Error).self) { try await store.openInTerminal(id: busy.id) }
+            #expect(store.pal(id: busy.id)?.openInTerminal == false)
+        }
+        let pal = try #require(store.pals.first { !$0.isOccupied })
+        #expect(try await store.terminalCommand(id: pal.id).hasSuffix("claude --resume \(pal.sessionId)"))
+        #expect(store.pal(id: pal.id)?.openInTerminal == false)
+        let page = store.palStore(pal.id)
+        #expect(await until { page.hasSynced })
+        let opened = try #require(try await store.openInTerminal(id: pal.id))
+        #expect(opened.openInTerminal && opened.status == .stopped && store.singlePalOpenInTerminal(id: pal.id))
+        #expect(AgentStatusLine.of(opened).kind == .idle)
+        page.send("顺便看看")
+        #expect(await until { page.heldMessages.map(\.text) == ["顺便看看"] })
+        #expect(await until { store.pal(id: pal.id)?.queued?.count == 1 })
+        // 取消这条
+        await page.cancelWaiting(palId: pal.id)
+        #expect(page.heldMessages.isEmpty)
+        #expect(await until { store.pal(id: pal.id)?.queued == nil })
+        // Sent again.
+        page.send("还是看看")
+        #expect(await until { store.pal(id: pal.id)?.queued?.count == 1 })
+        // (As the list has them: one the page hasn't, from another device, shows too.)
+        page.dropHeld()
+        page.applyQueued(try #require(store.pal(id: pal.id)?.queued))
+        #expect(page.heldMessages.map(\.text) == ["还是看看"])
+        // Quit there: it's back, and the words go in.
+        await host.quitTerminal(pal.id)
+        #expect(await until { store.pal(id: pal.id)?.openInTerminal == false && page.heldMessages.isEmpty })
+        #expect(await until { page.messages.filter { $0.role == .user && $0.text == "还是看看" && $0.seq > 0 }.count == 1 })
+        #expect(!page.messages.contains { $0.text == "顺便看看" })
+    }
+
+    @Test func aHostThatCantOpenTerminalsDoesntOfferIt() throws {
+        func decodePals(_ json: String) throws -> PalsResult { try JSONDecoder().decode(PalsResult.self, from: Data(json.utf8)) }
+        let old = try decodePals(#"{"pals":[{"id":"p1","name":"a","cwd":"/x","sessionId":"s","status":"stopped","pending":0,"createdBy":"owner"}],"others":[],"hooks":false}"#)
+        #expect(old.terminal == nil && old.pals[0].openInTerminal == false && old.pals[0].queued == nil)
+        let now = try decodePals(#"{"pals":[{"id":"p1","name":"a","cwd":"/x","sessionId":"s","status":"stopped","pending":0,"createdBy":"owner","openInTerminal":true,"queued":[{"id":"q_1","text":"在吗","at":1,"clientMsgId":"c"}]}],"others":[],"hooks":false,"terminal":true}"#)
+        #expect(now.terminal == true && now.pals[0].openInTerminal && now.pals[0].queued?.first?.text == "在吗")
+    }
+
     @Test func wordsToABackgroundSessionTakeItOverAtOnce() async throws {
         let host = DemoHost(speed: 0, pals: true)
         let store = AppStore(transport: host.transport)

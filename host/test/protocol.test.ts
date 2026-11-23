@@ -428,6 +428,11 @@ describe("host ↔ app protocol", () => {
     await waitFor(() => (hub.pals.get(made.id) as any).detailInfo().tasks.length === 1, 3_000);
     await run("pals.stopTask", { id: made.id, taskId: "t_9c1" });
     await run("pals.reveal", { id: made.id, kind: "finder" });
+    // 在终端打开: the line to copy; then its session in a terminal (pretended).
+    claude.transcript(project, made.sessionId, [{ type: "user", uuid: "w1", timestamp: "2026-10-12T08:00:00Z", message: { role: "user", content: "把安装说明写完" }, origin: { kind: "human" } }]);
+    expect((await run("pals.terminalCommand", { id: made.id })).command).toContain(`claude --resume ${made.sessionId}`);
+    await waitFor(() => hub.pals.list().find((p) => p.id === made.id)?.status === "idle", 3_000);
+    await run("pals.openTerminal", { id: made.id, force: true });
     const endedPal = (await run("pals.end", { id: made.id })).earlier;
     expect(endedPal).toMatchObject({ kind: "ended", key: `ended:${made.sessionId}`, sessionId: made.sessionId, cwd: project });
     const earlier = (await run("pals.earlier", { limit: 20 })).items as { kind: string; key: string }[];

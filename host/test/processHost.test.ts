@@ -139,7 +139,8 @@ describe("an agent's process", () => {
     const n = t.driver.pals.length;
     const term = liveProcess();
     t.claude.register({ sessionId: pal.sessionId, name: pal.name, cwd: t.project, pid: term.pid! });
-    await expect(t.call("pals.send", { id: pal.id, text: "在吗" })).rejects.toThrow("在别处开着");
+    // (the words wait for it: pals.send queues them)
+    expect(await t.call("pals.send", { id: pal.id, text: "先来的" })).toMatchObject({ queued: true });
     expect(t.driver.pals).toHaveLength(n);
     expect(t.hub.pals.list().find((p) => p.id === pal.id)).toMatchObject({ status: "stopped", note: expect.stringContaining("在别处开着") });
     term.kill("SIGKILL");
@@ -147,7 +148,7 @@ describe("an agent's process", () => {
     await t.call("pals.send", { id: pal.id, text: "在吗" });
     await waitFor(() => t.statusOf(pal.id) === "idle", 3_000);
     expect(t.driver.pals).toHaveLength(n + 1);
-    expect(t.driver.pals.at(-1)!.sent).toEqual(["在吗"]);
+    expect(t.driver.pals.at(-1)!.sent).toEqual(["先来的", "在吗"]);
     await t.hub.pals.stopAndWait();
   });
 

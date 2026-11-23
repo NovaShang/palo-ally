@@ -277,6 +277,11 @@ public final class AppStore {
         get { shared.archivedCount }
         set { shared.archivedCount = newValue }
     }
+    /// The host can open a Pal in a terminal, or give the line for it (在终端打开); an older one can't.
+    public internal(set) var terminalSupported: Bool {
+        get { shared.terminalSupported }
+        set { shared.terminalSupported = newValue }
+    }
     /// nil until the host has answered `pals.list`; false for a host that
     /// doesn't know Pals yet, which hides them.
     public internal(set) var palsSupported: Bool? {

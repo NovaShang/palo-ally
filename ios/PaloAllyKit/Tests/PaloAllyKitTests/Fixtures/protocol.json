@@ -1453,7 +1453,8 @@
         ],
         "hooks": false,
         "helper": false,
-        "archived": 0
+        "archived": 0,
+        "terminal": true
       }
     },
     "pals.adopt": [
@@ -2335,6 +2336,43 @@
         "kind": "finder"
       },
       "result": {}
+    },
+    "pals.terminalCommand": {
+      "params": {
+        "id": "pal_8308b7d9a392"
+      },
+      "result": {
+        "command": "cd /Users/someone/code/site && claude --resume 30cf4134-28dc-4d2a-9e9a-c9604d002eff"
+      }
+    },
+    "pals.openTerminal": {
+      "params": {
+        "id": "pal_8308b7d9a392",
+        "force": true
+      },
+      "result": {
+        "pal": {
+          "id": "pal_8308b7d9a392",
+          "name": "session-8308b7",
+          "cwd": "/Users/someone/code/site",
+          "sessionId": "30cf4134-28dc-4d2a-9e9a-c9604d002eff",
+          "status": "stopped",
+          "note": "在终端里开着，那边退出后会自己接上",
+          "lastLine": "好，列表页这就做。",
+          "pending": 0,
+          "model": "fake-model",
+          "effort": "high",
+          "permissionMode": "acceptEdits",
+          "contextPct": 1,
+          "createdBy": "owner",
+          "updatedAt": 1795471187662,
+          "attention": "idle",
+          "finishedAt": 1795471187662,
+          "seenAt": 1795471187661,
+          "folded": false,
+          "openInTerminal": true
+        }
+      }
     },
     "pals.end": {
       "params": {
@@ -3549,7 +3587,8 @@
       ],
       "hooks": false,
       "helper": false,
-      "archived": 0
+      "archived": 0,
+      "terminal": true
     },
     "workspaces.updated": {
       "workspaces": [

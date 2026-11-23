@@ -844,6 +844,17 @@
         }
       }
     },
+    "终端里开着" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in a terminal"
+          }
+        }
+      }
+    },
     "等你回答" : {
       "extractionState" : "manual",
       "localizations" : {

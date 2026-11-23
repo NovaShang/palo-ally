@@ -7642,6 +7642,61 @@
         }
       }
     },
+    "在终端打开" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in Terminal"
+          }
+        }
+      }
+    },
+    "复制终端命令" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Terminal Command"
+          }
+        }
+      }
+    },
+    "在终端打开「%@」？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open “%@” in Terminal?"
+          }
+        }
+      }
+    },
+    "它手上的事会停下，到终端里可以接着做。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What it's doing stops; you can carry on in the terminal."
+          }
+        }
+      }
+    },
+    "打开" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open"
+          }
+        }
+      }
+    },
     "终端里开着" : {
       "extractionState" : "manual",
       "localizations" : {

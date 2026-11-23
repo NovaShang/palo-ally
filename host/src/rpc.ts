@@ -32,6 +32,7 @@ export const RPC_METHODS = [
   "ally.list", "ally.invite", "ally.accept", "ally.remove", "ally.log", "ally.draft.decide", "ally.say", "ally.trust",
   "sessions.list", "sessions.history", "sessions.hooks", "helper.decide",
   "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop", "pals.recent", "pals.wake", "pals.rename", "pals.rewind",
+  "pals.openTerminal", "pals.terminalCommand",
   "pals.create", "pals.folders", "pals.seen", "pals.end", "pals.earlier", "pals.resume",
   "pals.detail", "pals.setModel", "pals.setMode", "pals.compact", "pals.stopTask", "pals.reveal",
   "workspaces.list", "workspaces.create", "workspaces.update", "workspaces.move", "workspaces.delete", "workbench.order.set", "workbench.tabs.get", "workbench.tabs.set",
@@ -390,6 +391,11 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return await hub.pals.stopTask(String(p.id ?? ""), String(p.taskId ?? ""));
     case "pals.reveal":
       return await hub.pals.reveal(String(p.id ?? ""), p.kind);
+    // 在终端打开: its session in the owner's terminal on this computer (its process here ends first), or the line for it to copy.
+    case "pals.openTerminal":
+      return await hub.pals.openTerminal(String(p.id ?? ""), { force: p.force === true, by: ctx.channel });
+    case "pals.terminalCommand":
+      return hub.pals.terminalCommand(String(p.id ?? ""));
     case "pals.earlier":
       return await hub.pals.earlier({ limit: p.limit, folder: typeof p.folder === "string" ? p.folder : undefined, query: typeof p.query === "string" ? p.query : undefined });
     case "workspaces.list":
