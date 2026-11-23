@@ -42,6 +42,13 @@ export interface AgentFlags extends ProcessFlags {
   textBlocks: "split" | "joined";
   /** A turn the harness started on its own is closed when it goes quiet without a result. */
   implicitQuiet: boolean;
+  /**
+   * 停止. "cut": its turn ends at once and its process is closed (the next
+   * words start another). "settle": it's interrupted; Claude Code ends the
+   * turn with its result, or, slower than a moment, the host does, the
+   * process kept and what's left of that turn not making it busy again.
+   */
+  stop: "cut" | "settle";
   /** A subagent's output is the session's: it opens a turn, shows as background work, and its open tool calls end with the turn. */
   subagentTurns: boolean;
 }
@@ -64,6 +71,7 @@ export const ASSISTANT_FLAGS: AgentFlags = {
   replyIds: "host",
   textBlocks: "split",
   implicitQuiet: true,
+  stop: "cut",
   subagentTurns: true,
 };
 
@@ -85,5 +93,6 @@ export const AGENT_FLAGS: AgentFlags = {
   replyIds: "api",
   textBlocks: "joined",
   implicitQuiet: false,
+  stop: "settle",
   subagentTurns: false,
 };

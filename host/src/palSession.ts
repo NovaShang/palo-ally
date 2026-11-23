@@ -121,8 +121,6 @@ export interface PalSessionDeps {
   log: (s: string) => void;
 }
 
-const STOP_SETTLE_MS = 250; // a stopped turn not ended by Claude Code by then is ended here
-
 /** What a Pal is told after the watchdog restarted it mid-turn. */
 export const stallContinue = (): string => tr("stall.continue");
 
@@ -695,25 +693,15 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
   }
 
   /**
-   * 停止: ends the current turn; its open cards are answered no. The list
-   * shows it stopped within a moment: Claude Code ends a stopped turn with
-   * its result at once, and one it's slower to wind down (a tool that takes
-   * a while to stop) is ended here, its late events not making it busy again.
+   * 停止 (agent/session.ts): ends the current turn; its open cards are
+   * answered no. The list shows it stopped within a moment.
    */
   async interrupt(by: string): Promise<void> {
+    await this.stopWork(by);
+  }
+
+  protected override dropWaiting(by: string): void {
     this.dropCards(`stop:${by}`);
-    this.d.changed();
-    const proc = this.proc;
-    if (!this.busy || !proc) return;
-    this.interrupted = true;
-    const ended = this.turnEnds();
-    void proc.interrupt();
-    await Promise.race([ended, sleep(STOP_SETTLE_MS)]);
-    if (this.interrupted && this.busy && proc === this.proc) {
-      this.pending.clear();
-      this.endTurn();
-      this.windingDown = true;
-    }
   }
 
   // ---------------- what it says ----------------

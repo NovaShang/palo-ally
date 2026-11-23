@@ -658,12 +658,16 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
 
   // ---------------- stop ----------------
 
-  // stopAll interrupts what the harness is doing right now (its own interrupt
-  // and stopTask). Nothing stays blocked afterwards: the next message works as usual.
+  /** 停止 (agent/session.ts): over when this returns; the next message works as usual. */
   stopAll(by: string): void {
+    void this.stopWork(by);
+  }
+
+  // Its queue, an Ally's turn (as with words already sent: stopped, not
+  // carried over), its own cards, and its background tasks.
+  protected override dropWaiting(by: string): void {
     this.d.audit.log("stop", { by });
     this.turnQueue?.clear();
-    // As with words already sent: stopped, not carried over.
     this.ally?.stop();
     this.d.approvals.denyAll(`stop:${by}`);
     this.d.questions.cancelAll(`stop:${by}`);
@@ -671,15 +675,6 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
       if (t.sdkTaskId) void this.host.proc?.stopTask(t.sdkTaskId).catch(() => {});
       this.d.tasks.markStopped(t.id);
     }
-    void this.host.proc?.interrupt();
-    // A tool that never returns can't be interrupted: end the turn here and
-    // let the next message start a fresh process (same conversation, resumed).
-    if (this.current) {
-      this.pending.clear();
-      this.endTurn();
-      this.host.close();
-    }
-    this.d.statusChanged();
   }
 
   async stopTask(t: Task): Promise<void> {

@@ -19,7 +19,7 @@ import { ACTIVITY, activityBackground, describeActivity } from "../copy.ts";
 import type { HarnessEvent, ImageInput, MainSession } from "../harness/types.ts";
 import type { StallTarget } from "../stallWatch.ts";
 import type { ChatMessage } from "../types.ts";
-import { newId } from "../util.ts";
+import { newId, sleep } from "../util.ts";
 import type { AgentFlags } from "./flags.ts";
 import type { OutputSink } from "./outputSink.ts";
 import { ProcessHost, type ProcessHostDeps, type ProcessRecord } from "./processHost.ts";
@@ -38,6 +38,8 @@ export interface SessionParts<T extends TaskProjection, S extends OutputSink> {
 
 /** What it keeps with each of the owner's messages in flight: the words, and where they came from (the host's turns read it). */
 export type InFlight = { text?: string; origin?: Turn["origin"]; wechat?: Turn["wechat"] };
+
+const STOP_SETTLE_MS = 250; // a stopped turn not ended by the harness by then is ended here (stop "settle")
 
 export type ResultEvent = Extract<HarnessEvent, { type: "result" }>;
 
@@ -122,6 +124,9 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
   protected turnEnded(_turn: Turn | null, _end: TurnEnd<P>): void {
     this.touched();
   }
+
+  /** 停止: what of it waits is dropped (its open cards answered no, what's queued). */
+  protected dropWaiting(_by: string): void {}
 
   /** A result has settled its turn. */
   protected resultDone(_e: ResultEvent, _stopped: boolean): void {}
@@ -252,8 +257,47 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
     this.turnEnded(turn, end);
   }
 
+  // ---------------- 停止 ----------------
+
+  /**
+   * Ends what it's doing: what waits is dropped, the harness interrupted, its
+   * turn ended and the owner's words in flight with it. How is its flag
+   * (`stop`): "cut" is over when this returns, a process that can't be
+   * interrupted (a tool that never returns) closed; "settle" gives the harness
+   * a moment to end it itself.
+   */
+  protected stopWork(by: string): void | Promise<void> {
+    const settle = this.flags.stop === "settle";
+    this.dropWaiting(by);
+    const proc = this.host.proc;
+    if (settle) {
+      this.changed();
+      if (!this.busy || !proc) return;
+      this.interrupted = true;
+    }
+    const ended = settle ? this.turnEnds() : null;
+    void proc?.interrupt();
+    if (!ended) {
+      this.cutTurn();
+      this.changed();
+      return;
+    }
+    return Promise.race([ended, sleep(STOP_SETTLE_MS)]).then(() => {
+      if (this.interrupted && proc === this.host.proc) this.cutTurn();
+    });
+  }
+
+  // The stopped turn ends here: nothing stays blocked, the next words work as usual.
+  private cutTurn(): void {
+    if (!this.busy) return;
+    this.pending.clear();
+    this.endTurn();
+    if (this.flags.stop === "cut") this.host.close();
+    else this.windingDown = true;
+  }
+
   /** Resolves when the open turn ends (or its process does). */
-  protected turnEnds(): Promise<void> {
+  private turnEnds(): Promise<void> {
     return new Promise<void>((r) => this.turnEndWaiters.push(r));
   }
 
