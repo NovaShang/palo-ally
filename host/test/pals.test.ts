@@ -1507,6 +1507,60 @@ describe("the owner's own sessions (workbench)", () => {
     await t.hub.pals.stopAndWait();
   });
 
+  test("pal_archive: the assistant puts one away as 归档 does; one that's working, waits or is named wrongly is left alone, force goes through", async () => {
+    let release = () => {};
+    const held = new Promise<void>((r) => (release = r));
+    const t = setup({
+      palScript: async (text, ctx) => {
+        if (text === "忙") await Promise.race([held, ctx.interrupted]);
+        ctx.emit({ type: "result", subtype: "success", isError: false, result: "ok", costUsd: 0, usage: { input_tokens: 1, output_tokens: 1 } } as any);
+      },
+    });
+    const { pal } = await t.call("pals.create", { cwd: t.project, name: "官网", text: "做首页" });
+    const { pal: other } = await t.call("pals.create", { cwd: t.project, name: "笔记", text: "整理" });
+    await waitFor(() => t.hub.pals.list().every((p) => p.status === "idle"));
+    expect(await t.hub.pals.toolArchive({ name: "没有这个" })).toContain("没归档");
+    expect(await t.hub.pals.toolArchive({ name: "" })).toContain("没归档");
+    // a name it had before doesn't do: another may go by it
+    await t.call("pals.rename", { id: pal.id, name: "官网改版" });
+    expect(await t.hub.pals.toolArchive({ name: "官网" })).toContain("没归档");
+    expect(t.hub.pals.list()).toHaveLength(2);
+    // by its name now
+    expect(await t.hub.pals.toolArchive({ name: "官网改版" })).toContain("「官网改版」已归档");
+    expect(t.hub.pals.list().map((p) => p.name)).toEqual(["笔记"]);
+    expect((await t.call("pals.earlier")).items).toMatchObject([{ kind: "ended", name: "官网改版", sessionId: pal.sessionId }]);
+    expect(t.hub.audit.tail(10).find((e) => e.type === "pal.ended")).toMatchObject({ pal: pal.id, by: "assistant" });
+    // working: left alone, then force
+    await t.call("pals.send", { id: other.id, text: "忙" });
+    await waitFor(() => t.hub.pals.list()[0]!.status === "busy");
+    expect(await t.hub.pals.toolArchive({ name: other.id })).toContain("正在干活");
+    expect(await t.hub.pals.toolArchive({ name: other.id, force: "yes" as any })).toContain("正在干活");
+    expect(t.hub.pals.list()).toHaveLength(1);
+    expect(await t.hub.pals.toolArchive({ name: other.id, force: true })).toContain("已归档");
+    expect(t.hub.pals.list()).toEqual([]);
+    release();
+    // and the owner brings it back
+    expect((await t.call("pals.resume", { key: `ended:${pal.sessionId}` })).pal).toMatchObject({ name: "官网改版", sessionId: pal.sessionId });
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("pal_rename: the assistant names one as the owner would; a bad name says why and changes nothing", async () => {
+    const t = setup();
+    const { pal } = await t.call("pals.create", { cwd: t.project, name: "官网", text: "做首页" });
+    const { pal: other } = await t.call("pals.create", { cwd: t.project, name: "笔记", text: "整理" });
+    await waitFor(() => t.hub.pals.list().every((p) => p.status === "idle"));
+    expect(await t.hub.pals.toolRename({ name: "官网", newName: "  官网  改版 " })).toBe("「官网」现在叫「官网 改版」。");
+    expect(t.hub.pals.get(pal.id)!.rec.name).toBe("官网 改版");
+    expect(t.hub.audit.tail(10).find((e) => e.type === "pal.renamed")).toMatchObject({ pal: pal.id, from: "官网", to: "官网 改版", by: "assistant" });
+    // another's name gets a number, and the answer says which
+    expect(await t.hub.pals.toolRename({ name: other.id, newName: "官网 改版" })).toBe(`「笔记」现在叫「${t.hub.pals.get(other.id)!.rec.name}」。`);
+    expect(t.hub.pals.get(other.id)!.rec.name).not.toBe("官网 改版");
+    for (const bad of ["", "   ", "长".repeat(41), undefined as any]) expect(await t.hub.pals.toolRename({ name: pal.id, newName: bad })).toContain("没给「官网 改版」改名");
+    expect(await t.hub.pals.toolRename({ name: "官网", newName: "x" })).toContain("没改名"); // a name it had before
+    expect(t.hub.pals.get(pal.id)!.rec.name).toBe("官网 改版");
+    await t.hub.pals.stopAndWait();
+  });
+
   test("ended keeps the newest 200 and one line per session; a session open in a terminal can't be resumed", async () => {
     const t = setup();
     const data = (t.hub.pals as any).data;

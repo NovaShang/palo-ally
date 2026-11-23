@@ -12,7 +12,7 @@ describe("PaloAlly's tools", () => {
     const mine = assistantToolSpecs(handlers).map((s) => s.name);
     expect(mine).toEqual([
       "report_task", "register_watch", "list_watches", "remove_watch", "update_goal", "SendUserFile", "Artifact", "copy_to_clipboard", "ally_list", "ally_send", "pals_list",
-      "pal_send", "pal_propose", "pals_recent", "pal_adopt", "pair_link", "notify_user", "add_pending", "resolve_pending", "backlog_add", "backlog_list", "backlog_done",
+      "pal_send", "pal_propose", "pals_recent", "pal_adopt", "pal_archive", "pal_rename", "pair_link", "notify_user", "add_pending", "resolve_pending", "backlog_add", "backlog_list", "backlog_done",
     ]);
     for (const n of DELIVERY_TOOLS) expect(mine).toContain(n);
     const theirs = sessionToolSpecs(async (t) => `sent:${t}`, handlers).map((s) => s.name);

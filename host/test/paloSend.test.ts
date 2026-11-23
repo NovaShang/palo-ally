@@ -171,7 +171,7 @@ describe("palo_send: a Pal answers the assistant through the host", () => {
 });
 
 describe("a session's tools that reach the owner", () => {
-  const MANAGER = ["pal_propose", "pal_adopt", "pals_recent", "pal_send", "register_watch", "list_watches", "remove_watch", "update_goal", "report_task", "ally_list", "ally_send", "pair_link"];
+  const MANAGER = ["pal_propose", "pal_adopt", "pal_archive", "pal_rename", "pals_recent", "pal_send", "register_watch", "list_watches", "remove_watch", "update_goal", "report_task", "ally_list", "ally_send", "pair_link"];
 
   test("exactly the intended tools, pre-approved; the built-in SendUserFile is off, claude.ai's Artifact and SendMessage stay; Palo's list is unchanged", async () => {
     const t = setup();
@@ -191,10 +191,16 @@ describe("a session's tools that reach the owner", () => {
     const main: any = sessionOptions({ ...(palOpts(t) as any), tools: {} as any, paloSend: undefined, sessionTools: undefined });
     expect(Object.keys(main.mcpServers.paloally.instance._registeredTools)).toEqual([
       "report_task", "register_watch", "list_watches", "remove_watch", "update_goal", "SendUserFile", "Artifact", "copy_to_clipboard",
-      "ally_list", "ally_send", "pals_list", "pal_send", "pal_propose", "pals_recent", "pal_adopt", "pair_link", "notify_user", "add_pending", "resolve_pending",
+      "ally_list", "ally_send", "pals_list", "pal_send", "pal_propose", "pals_recent", "pal_adopt", "pal_archive", "pal_rename", "pair_link", "notify_user", "add_pending", "resolve_pending",
       "backlog_add", "backlog_list", "backlog_done",
     ]);
     expect(main.disallowedTools).toEqual(["CronCreate", "CronDelete", "CronList", "ScheduleWakeup"]);
+    // Claude Code's own Artifact is off in sessions started through the SDK; the host turns it on for the assistant (the owner's environment wins), not for a Pal.
+    const mainOpts = { ...(palOpts(t) as any), tools: {} as any, paloSend: undefined, sessionTools: undefined };
+    expect((sessionOptions({ ...mainOpts, baseEnv: {} }) as any).env).toMatchObject({ CLAUDE_CODE_ARTIFACT: "1", CLAUDE_CODE_ARTIFACT_AUTO_OPEN: "0" });
+    expect((sessionOptions({ ...mainOpts, baseEnv: { CLAUDE_CODE_ARTIFACT: "0" } }) as any).env.CLAUDE_CODE_ARTIFACT).toBe("0");
+    expect(main.allowedTools ?? []).not.toContain("Artifact");
+    expect((sessionOptions({ ...(palOpts(t) as any), baseEnv: {} }) as any).env.CLAUDE_CODE_ARTIFACT).toBeUndefined();
     await t.hub.pals.stopAndWait();
   });
 

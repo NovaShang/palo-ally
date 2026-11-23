@@ -1987,6 +1987,49 @@ export class Pals {
     return t("pals.paloSendOk", { name: to });
   }
 
+  /**
+   * The Pal a tool that changes it names: by id, session id or its name now.
+   * Not by a name it had before (pal_send takes those): another may go by
+   * it, and words to the wrong one can be taken back, this less easily.
+   */
+  private named(key: unknown): PalSession | undefined {
+    const k = String(key ?? "").trim();
+    const pal = k ? this.get(k) : undefined;
+    return pal && (pal.id === k || pal.rec.sessionId === k || pal.rec.name.toLowerCase() === k.toLowerCase()) ? pal : undefined;
+  }
+
+  /** pal_archive: 归档, as in the app (pals.end). One that's working, waits on the owner or has tasks running is left alone unless `force`. */
+  async toolArchive(a: { name: string; force?: boolean }): Promise<string> {
+    const pal = this.named(a?.name);
+    if (!pal) return t("pals.archiveNoPal", { name: String(a?.name ?? "").trim() });
+    const { name } = pal.rec;
+    const w = pal.toWire();
+    if (a?.force !== true) {
+      if (w.status === "waiting") return t("pals.archiveWaiting", { name });
+      if (w.status === "busy" || w.status === "starting") return t("pals.archiveBusy", { name });
+      if ((w.tasksRunning ?? 0) > 0) return t("pals.archiveTasks", { name, n: w.tasksRunning ?? 0 });
+    }
+    try {
+      await this.end(pal.id, "assistant");
+    } catch (e) {
+      return t("pals.archiveFailed", { name, why: e instanceof Error ? e.message : String(e) });
+    }
+    return t("pals.archiveOk", { name });
+  }
+
+  /** pal_rename: as the owner's rename in the app (pals.rename). */
+  async toolRename(a: { name: string; newName: string }): Promise<string> {
+    const pal = this.named(a?.name);
+    if (!pal) return t("pals.renameNoPal", { name: String(a?.name ?? "").trim() });
+    const from = pal.rec.name;
+    try {
+      const now = await this.rename(pal.id, a?.newName, "assistant");
+      return t("pals.renameOk", { from, to: now.name });
+    } catch (e) {
+      return t("pals.renameFailed", { name: from, why: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   async toolList(): Promise<string> {
     const others = await this.d.sessions.listFresh().catch(() => this.d.sessions.list());
     return JSON.stringify({

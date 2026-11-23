@@ -125,6 +125,8 @@ export function makeShellTools(d: ShellToolDeps): ToolHandlers {
     pal_send: async (a) => (d.pals ? await d.pals.toolSend(a) : t("tool.noPals")),
     pals_recent: async (a) => (d.pals ? await d.pals.toolRecent(a) : "{}"),
     pal_adopt: async (a) => (d.pals ? await d.pals.proposeAdopt(a) : t("tool.noPals")),
+    pal_archive: async (a) => (d.pals ? await d.pals.toolArchive(a) : t("tool.noPals")),
+    pal_rename: async (a) => (d.pals ? await d.pals.toolRename(a) : t("tool.noPals")),
     // A new device of the owner's: the assistant hands the link over in the
     // conversation; clicked on that device, the app opens and pairs.
     pair_link: async () => {

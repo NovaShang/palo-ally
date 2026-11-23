@@ -134,6 +134,24 @@ export function assistantToolSpecs(h: ToolHandlers): ToolSpec[] {
         async (a) => h.pal_adopt(a),
       ),
       spec(
+        "pal_archive",
+        "把一个 Pal 归档，跟主人在 App 里点「归档」一样：它停下，移出列表，放进「已归档」，之后还能拿回来；文件和对话都不删。只在主人明确要关掉、移除、归档某个 Pal 时用，不要自己决定。它正在干活、等主人点头或后台有任务时不会归档，会告诉你它在做什么：先问主人，主人说照样归档再带 force 调一次。",
+        {
+          name: z.string().describe("Pal 的 id 或现在的名字（pals_list 里的 id / name）"),
+          force: z.boolean().optional().describe("它正忙也归档，手上的事会断。只在主人知道它正忙、仍要归档时用"),
+        },
+        async (a) => h.pal_archive(a),
+      ),
+      spec(
+        "pal_rename",
+        "给一个 Pal 改名，跟主人在 App 里改名一样（Claude Code 里的会话标题也跟着改）。只在主人要改名时用。重名会自动加数字，最后叫什么以返回的为准。",
+        {
+          name: z.string().describe("Pal 的 id 或现在的名字（pals_list 里的 id / name）"),
+          newName: z.string().describe("新名字，最多 40 个字"),
+        },
+        async (a) => h.pal_rename(a),
+      ),
+      spec(
         "pair_link",
         "给主人的一台新设备（另一台 Mac、iPad 或手机）拿一个配对链接：打开这台主机的配对窗口（5 分钟内有效，只能连一台），返回 paloally://pair 链接。主人在新设备上点开它，Palo App 会自己打开并连上这台主机。只在主人要连新设备时用。",
         {},
