@@ -133,7 +133,7 @@ describe("a new device", () => {
 
   test("so are putting a Pal away, renaming one, and claude.ai's Artifact (publishing, its data, its comments)", () => {
     const scope = { home: "/nowhere/home", memoryDir: "/nowhere/memory" };
-    for (const n of ["mcp__paloally__pal_archive", "mcp__paloally__pal_rename", "Artifact", "ArtifactData", "ArtifactComments"]) expect(allyTurnTool(n, {}, scope)).toEqual({ ok: false });
+    for (const n of ["mcp__paloally__pal_archive", "mcp__paloally__pal_rename", "Artifact", "ArtifactData", "ArtifactComments", "mcp__claude-artifacts__publish_files", "mcp__claude-artifacts__list_artifacts"]) expect(allyTurnTool(n, {}, scope)).toEqual({ ok: false });
   });
 });
 

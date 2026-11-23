@@ -56,12 +56,15 @@ export const OWN_SESSION_ENV = { PALOALLY_SESSION: "1" } as const;
 // link, data it keeps, comments; claude.ai/artifact links read) off in
 // sessions started through the SDK, as the host starts its own; this turns it
 // on for the assistant. Not for a Pal: its tools add 10-12 thousand tokens to
-// the prompt, on every call (measured on 2.1.322). It only lifts that default: the account's plan, the organization's
-// policy, enableArtifact: false and CLAUDE_CODE_DISABLE_ARTIFACT still turn it
-// off. The variable isn't in Claude Code's docs (read from 2.1.322), so a new
-// version can drop it: check the init event's tools after an SDK update. A
-// published page's link is in the conversation, so no browser is opened on
-// the host. The owner's own environment wins over both.
+// the prompt, on every call (measured on 2.1.322). It only lifts that
+// default: the account's plan, the organization's policy, enableArtifact:
+// false and CLAUDE_CODE_DISABLE_ARTIFACT still turn it off. On some accounts
+// Claude Code swaps the tool, a few seconds in, for an MCP server of its own,
+// claude-artifacts (the same pages, data and comments). The variable isn't in
+// Claude Code's docs (read from 2.1.322), so a new version can drop it: check
+// the init event's tools after an SDK update. A published page's link is in
+// the conversation, so no browser is opened on the host. The owner's own
+// environment wins over both.
 export const CLAUDE_ARTIFACT_ENV = { CLAUDE_CODE_ARTIFACT: "1", CLAUDE_CODE_ARTIFACT_AUTO_OPEN: "0" } as const;
 
 // PaloAlly's tools (host/src/tools/, harness-neutral) as Claude Code takes
