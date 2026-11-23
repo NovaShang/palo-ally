@@ -5,9 +5,6 @@ import type { TaskTracker } from "./tasks.ts";
 import type { Pal } from "./types.ts";
 import { newId, readJson, writeJson } from "./util.ts";
 
-// (Moved under harness/claude/; kept here for agentContract.test.ts.)
-export { transcriptPath } from "./harness/claude/paths.ts";
-
 // HandoffTracker: 任务交出去了，外壳负责盯进度 (PRD §6.2).
 //
 // When the assistant gives an agent work (pal_send), the owner sees it move

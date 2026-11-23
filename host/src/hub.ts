@@ -9,7 +9,7 @@ import { ChatLog } from "./chat.ts";
 import { type Config, type Paths, type Settings, VERSION, patchConfig, validateSettings } from "./config.ts";
 import { Conversation } from "./conversation.ts";
 import { activityThinking, approvalAnswerReply, questionLineHelp, statusReply, stopReply } from "./copy.ts";
-import type { HarnessDriver, HarnessEvent, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
+import type { HarnessDriver, HarnessEvent, ModelOption, SlashCommandInfo, ToolHandlers, HarnessCapabilities } from "./harness/types.ts";
 import { HarnessInfo } from "./harnessInfo.ts";
 import { MemoryView } from "./memory.ts";
 import { checkModelChoice } from "./modelChoice.ts";
@@ -31,7 +31,7 @@ import { MediaStore } from "./media.ts";
 import { briefTitle, ensureMorningBrief, isBriefTitle } from "./brief.ts";
 import { HandoffTracker } from "./handoffs.ts";
 import { claudeConfigDir } from "./harness/claude/paths.ts";
-import { readRegistry } from "./ccSessions.ts";
+import { readRegistry } from "./harness/claude/registry.ts";
 import { StallWatch, type StallWatchDeps, WATCHDOG_DEFAULTS, apiSockets, diagnoseInto } from "./stallWatch.ts";
 import { PowerWatcher, type PowerReading, readPower } from "./power.ts";
 import { Updater, type UpdaterDeps } from "./update.ts";
@@ -39,8 +39,7 @@ import { type Usage, UsageLedger } from "./usage.ts";
 import { randomUUID } from "node:crypto";
 import { ClaudeHarness } from "./harness/claude/index.ts";
 import type { WentBack } from "./agent/session.ts";
-import type { HarnessCapabilities } from "./harness/types.ts";
-import type { ForkSession } from "./rewind.ts";
+import type { ForkSession } from "./harness/claude/rewind.ts";
 import { appendJsonl, readJson, writeJson } from "./util.ts";
 import { WatchStore } from "./watches.ts";
 import { Sessions, type SessionsDeps } from "./sessions.ts";
@@ -50,8 +49,6 @@ import { FileBrowser } from "./files.ts";
 import { FileWatches } from "./fileWatch.ts";
 import { Presence } from "./presence.ts";
 
-export type { ClientConn, WechatChannel, WechatReplyTarget } from "./channels/types.ts";
-export { timing } from "./conversation.ts";
 
 /** How long a pairing link from pair_link / pair.invite works (the relay's longest window). */
 export const PAIR_INVITE_TTL_SEC = 300;

@@ -29,14 +29,11 @@ import { TurnQueue } from "./agent/turnQueue.ts";
 import { WechatRelay } from "./agent/wechatRelay.ts";
 import { type Turn, type TurnEnd, timing } from "./agent/turn.ts";
 
-export type { Turn };
 // A turn the harness started by itself is closed if it goes quiet without a result.
-export { timing };
 
 type InFlightOwner = { origin: Channel; wechat?: WechatReplyTarget; sentAt?: number; text: string; images?: ImageInput[] };
 
 // What the assistant is told after the watchdog restarted it mid-turn (its own turn; a host-initiated one).
-export { stallContinue };
 const stallContinueProactive = (): string => t("stall.continueProactive");
 
 // Compaction (PRD §6.1): Claude Code compacts natively when the context nears
@@ -44,9 +41,7 @@ const stallContinueProactive = (): string => t("stall.continueProactive");
 // one trigger: compact before the prompt cache expires, at a clean break. A
 // clean break means nothing is running or waiting and the owner has been quiet this long.
 export const COMPACT_QUIET_MS = 5 * 60_000;
-export { COMPACT_RETRY_MS } from "./agent/idleCompact.ts";
 // stripSkip removes the "[skip]" marker a proactive turn uses to stay silent.
-export { stripSkip };
 
 export interface ConversationDeps {
   paths: Paths;

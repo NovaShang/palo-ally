@@ -1,14 +1,11 @@
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { t } from "./i18n/index.ts";
-import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import type { MemoryFile } from "./types.ts";
 import { ensureDir } from "./util.ts";
 import type { MemoryLocator } from "./harness/types.ts";
-import { AGENT_CORE_FILES, agentMemoryDir, autoMemoryDir, memoryProjectRoot } from "./harness/claude/memory.ts";
 
 // (Where Claude Code keeps memory: harness/claude/memory.ts.)
-export { AGENT_CORE_FILES, agentMemoryDir, autoMemoryDir, memoryProjectRoot };
 
 // Core files are small and injected through CLAUDE.md (one injection path).
 export const CORE_FILES = ["user.md", "soul.md"];

@@ -3,7 +3,8 @@ import { mkdirSync, realpathSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ArtifactLibrary, CHUNK, STREAM_CHUNK } from "../src/artifacts.ts";
 import { Bus } from "../src/bus.ts";
-import { AGENT_CORE_FILES, MemoryView, agentMemoryDir, autoMemoryDir, memoryProjectRoot } from "../src/memory.ts";
+import { AGENT_CORE_FILES, agentMemoryDir, autoMemoryDir, memoryProjectRoot } from "../src/harness/claude/memory.ts";
+import { MemoryView } from "../src/memory.ts";
 import { cleanup, tmpPaths } from "./helpers.ts";
 
 describe("ArtifactLibrary", () => {

@@ -7,9 +7,10 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { transcriptPath } from "../src/handoffs.ts";
+import { transcriptPath } from "../src/harness/claude/paths.ts";
 import { t as tr } from "../src/i18n/index.ts";
-import { chainTo, readTranscript, rewindBusy, rewindNoFiles, rewindNotFound } from "../src/rewind.ts";
+import { chainTo, readTranscript } from "../src/harness/claude/rewind.ts";
+import { rewindBusy, rewindNoFiles, rewindNotFound } from "../src/rewind.ts";
 import type { ChatMessage } from "../src/types.ts";
 import { both, cleanupBoth, result } from "./bothRuntimes.ts";
 import type { FakeScript } from "./fakeDriver.ts";

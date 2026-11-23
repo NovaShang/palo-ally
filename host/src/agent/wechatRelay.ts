@@ -5,7 +5,7 @@
 // turn whose words weren't streamed gets them in one reply at its end.
 import type { Audit } from "../audit.ts";
 import type { WechatChannel, WechatReplyTarget } from "../channels/types.ts";
-import type { Turn } from "../conversation.ts";
+import type { Turn } from "./turn.ts";
 import { stripSkip } from "./skip.ts";
 
 export class WechatRelay {

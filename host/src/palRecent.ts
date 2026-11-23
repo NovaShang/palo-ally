@@ -24,8 +24,6 @@ const SEARCH_SCAN = 5_000; // a search looks at every transcript (as many as thi
 const SEARCH_CACHE_MS = 60_000;
 
 // (Where the sessions come from: the harness' own list, harness/types.ts.)
-export type { RecentSource } from "./harness/types.ts";
-export { sdkRename, sdkSource } from "./harness/claude/directory.ts";
 
 /** A listed session, with its custom title (a Pal's name comes from it). */
 export interface RecentEntry extends RecentSession {

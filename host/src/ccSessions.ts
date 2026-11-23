@@ -1,18 +1,14 @@
 import { t } from "./i18n/index.ts";
-import { existsSync, statSync, watch, type FSWatcher } from "node:fs";
+import { statSync, watch, type FSWatcher } from "node:fs";
 import { basename, join } from "node:path";
 import type { AgentEntry, ClaudeCli } from "./harness/claude/cli.ts";
 import { transcriptPath } from "./harness/claude/paths.ts";
 import { type RegistryEntry, readRegistry } from "./harness/claude/registry.ts";
-import { type RawSessionMessage, type TranscriptSummary, firstLine, isCompactSummaryText, peerBody, readTail, summarizeTranscript, userText } from "./harness/claude/transcript.ts";
+import { firstLine, readTail, summarizeTranscript } from "./harness/claude/transcript.ts";
 
-// (Moved under harness/claude/; kept here for the modules and tests that import them from here.)
-export { readRegistry, firstLine, isCompactSummaryText, peerBody, summarizeTranscript, userText };
-export type { RawSessionMessage, RegistryEntry, TranscriptSummary };
 import type { CCSession, CCSessionKind, CCSessionStatus } from "./types.ts";
-import { stripTldrMarker } from "./tldr.ts";
 import { tools } from "./harness/vocabulary.ts";
-import { pidAlive, truncate } from "./util.ts";
+import { truncate } from "./util.ts";
 
 // What the owner sees of the Claude Code sessions on this computer
 // (docs/sessions-prd.md §6.1–6.2). Read only from what Claude Code keeps

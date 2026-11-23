@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { allyTurnTool, isCalendarReadTool, isMemoryRead } from "../src/allyGate.ts";
 import { sessionOptions } from "../src/harness/claude.ts";
 import type { MainSessionOptions } from "../src/harness/types.ts";
-import { autoMemoryDir } from "../src/memory.ts";
+import { autoMemoryDir } from "../src/harness/claude/memory.ts";
 import { AllyNet, type NetHost, befriend } from "./allyNet.ts";
 import type { FakeCtx, FakeScript } from "./fakeDriver.ts";
 import { tick } from "./helpers.ts";

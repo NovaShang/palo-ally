@@ -2,14 +2,13 @@
 // real Hub, check the method list matches the implementation, and write the
 // samples to the Swift test fixtures (decoded strictly on the client side).
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, mkdtempSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { RPC_EVENTS, RPC_METHODS, handleRpc } from "../src/rpc.ts";
 import type { FakeScript } from "./fakeDriver.ts";
 import { AllyNet } from "./allyNet.ts";
 import { checkFixture, cleanup, shape, tick } from "./helpers.ts";
 import { waitFor } from "./relayClient.ts";
-import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { AwayDetector } from "../src/away.ts";
 import { FakeClaudeDir, FakeCli, assistantEntry } from "./fakeClaude.ts";

@@ -2,14 +2,10 @@ import { chmodSync, existsSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
 import { LineReader } from "./channels/local.ts";
 import { ensureDir } from "./util.ts";
-import { HOOK_ACK_MS, HOOK_EVENTS, HookInstaller, type HookInstallerOptions, hookCommand, isPaloAllyHook } from "./harness/claude/hooks.ts";
 
-// PaloAlly's global Claude Code hooks (docs/sessions-prd.md §6.3): writing
-// them into Claude Code's settings and the hook script are Claude Code's own
-// (harness/claude/hooks.ts, kept here for the modules and tests that import
-// them from here); the host's end of the hook socket is here.
-export { HOOK_ACK_MS, HOOK_EVENTS, HookInstaller, hookCommand, isPaloAllyHook };
-export type { HookInstallerOptions };
+// PaloAlly's global Claude Code hooks (docs/sessions-prd.md §6.3): the host's
+// end of the hook socket. Writing them into Claude Code's settings and the
+// hook script are Claude Code's own (harness/claude/hooks.ts).
 
 // ---------------- the host's end of the hook socket ----------------
 

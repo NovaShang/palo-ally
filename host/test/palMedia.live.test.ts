@@ -14,8 +14,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { join, resolve } from "node:path";
 import { deflateSync } from "node:zlib";
 import { AwayDetector } from "../src/away.ts";
-import { RealClaudeCli } from "../src/ccCli.ts";
-import { usageUsd } from "../src/ccSpend.ts";
+import { RealClaudeCli } from "../src/harness/claude/cli.ts";
+import { usageUsd } from "../src/harness/claude/spend.ts";
 import { claudeConfigDir } from "../src/harness/claude/paths.ts";
 import { ClaudeCodeDriver } from "../src/harness/claude.ts";
 import { Hub } from "../src/hub.ts";

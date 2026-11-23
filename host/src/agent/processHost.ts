@@ -17,7 +17,7 @@
 // What the process is started with, and what the session does when it comes
 // up or goes down, are the session's (open, onUp, onDown).
 import { t as tr } from "../i18n/index.ts";
-import { firstLine } from "../ccSessions.ts";
+import { firstLine } from "../harness/claude/transcript.ts";
 import type { MainSession, Spawner } from "../harness/types.ts";
 import { type PalLaunch, isHelperFailure, makeSpawner } from "../palLauncher.ts";
 import { sleep } from "../util.ts";

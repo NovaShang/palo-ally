@@ -8,7 +8,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { transcriptPath } from "../src/handoffs.ts";
+import { transcriptPath } from "../src/harness/claude/paths.ts";
 import { t as tr } from "../src/i18n/index.ts";
 import { both, cleanupBoth, result } from "./bothRuntimes.ts";
 import type { FakeScript } from "./fakeDriver.ts";

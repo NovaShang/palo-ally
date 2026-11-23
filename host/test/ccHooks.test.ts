@@ -4,10 +4,10 @@ import { existsSync, rmSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, 
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { HOOK_EVENTS, HookInstaller, HookServer, isPaloAllyHook } from "../src/ccHooks.ts";
+import { HOOK_EVENTS, HookInstaller, isPaloAllyHook, HookInstaller as InstallerNow } from "../src/harness/claude/hooks.ts";
+import { HookServer } from "../src/ccHooks.ts";
 import { tmpPaths } from "./helpers.ts";
 import { HookInstaller as InstallerBefore } from "./fixtures/ccHooks.before-batch7.ts";
-import { HookInstaller as InstallerNow } from "../src/harness/claude/hooks.ts";
 
 function setup() {
   const paths = tmpPaths();

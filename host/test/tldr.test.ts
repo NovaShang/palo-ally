@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { firstLine, summarizeTranscript } from "../src/ccSessions.ts";
-import { toPalMessages, transcriptLastLine } from "../src/palHistory.ts";
+import { firstLine, summarizeTranscript } from "../src/harness/claude/transcript.ts";
+import { toPalMessages, transcriptLastLine } from "../src/harness/claude/history.ts";
 import { handleRpc } from "../src/rpc.ts";
 import { TLDR_MARKER, isTldrAsk, stripTldrMarker } from "../src/tldr.ts";
 import { cleanup, makeHub, tick } from "./helpers.ts";

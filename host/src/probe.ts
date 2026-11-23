@@ -1,4 +1,4 @@
-import { isAuthFailure } from "./auth.ts";
+import { isAuthFailure } from "./harness/claude/auth.ts";
 import { t } from "./i18n/index.ts";
 import type { HarnessDriver } from "./harness/types.ts";
 import type { Watch } from "./types.ts";

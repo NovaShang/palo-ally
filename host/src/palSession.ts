@@ -1,29 +1,24 @@
 import { t as tr } from "./i18n/index.ts";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
 import type { ApprovalManager } from "./approvals.ts";
 import { askOwner } from "./ownerCards.ts";
-import { firstLine } from "./ccSessions.ts";
+import { firstLine } from "./harness/claude/transcript.ts";
 import { ACTIVITY, friendlyError } from "./copy.ts";
 import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type Harness, type RewindChain, type RewindPoint, type SessionRef, type DeliveryToolHandlers, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
 import type { MediaStore } from "./media.ts";
 import { type PalLaunch, makeSpawner } from "./palLauncher.ts";
-import { CARD_TOOLS, type PalMapOptions, cardKey } from "./palHistory.ts";
+import { CARD_TOOLS, type PalMapOptions, cardKey } from "./harness/claude/history.ts";
 import type { QuestionManager } from "./questions.ts";
 import type { PendingRewind } from "./rewind.ts";
 import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
 import { stripTldrMarker } from "./tldr.ts";
-import { newId, sleep, truncate } from "./util.ts";
+import { newId, sleep } from "./util.ts";
 import { AgentSession, type ModelChoice, type ResultEvent, type WentBack, stallContinue } from "./agent/session.ts";
 import { AGENT_FLAGS } from "./agent/flags.ts";
 import { TranscriptSink } from "./agent/outputSink.ts";
-import { HeldElsewhere, type Holder, type OpenContext, ProcessHost } from "./agent/processHost.ts";
+import { HeldElsewhere, type Holder, type OpenContext } from "./agent/processHost.ts";
 import { type PalTask, type PastPalTask, RecordTasks } from "./agent/taskProjection.ts";
-import { PAL_MODES, contextWindowFor, contextWindowOf } from "./harness/claude/settings.ts";
-import { peerWrap, startError } from "./harness/claude/process.ts";
 
-// (Claude Code's own: harness/claude/; kept here for the modules and tests that import them from here.)
-export { PAL_MODES, contextWindowFor, contextWindowOf, peerWrap, startError };
 
 // One Pal (docs/pals-prd.md §4, §7): one of the owner's Claude Code
 // sessions, run by the host itself by resuming its transcript. What the owner
@@ -73,9 +68,7 @@ export interface PalRecord {
   lastCompactAt?: number; // when it last compacted
 }
 
-export type { PalTask, PastPalTask };
 
-export { HeldElsewhere, type Holder };
 
 export interface PalSessionDeps {
   driver: HarnessDriver;
@@ -123,7 +116,6 @@ export interface PalSessionDeps {
   log: (s: string) => void;
 }
 
-export { stallContinue };
 
 // An agent is an AgentSession (agent/session.ts: its process, its turns, its
 // replies) with AGENT_FLAGS: its process started awaited, brought back with
@@ -824,7 +816,8 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
     const finished = !this.pending.size && !stopped && !e.isError;
     // A turn that really ended (not stopped, not failed): the owner has something to look at.
     if (finished) {
-      this.rec.finishedAt = this.d.now();
+      // After the last look, even in the same millisecond (a turn that ends as it's asked).
+      this.rec.finishedAt = Math.max(this.d.now(), (this.rec.seenAt ?? 0) + 1);
       this.d.save();
     }
     this.follower?.poke();

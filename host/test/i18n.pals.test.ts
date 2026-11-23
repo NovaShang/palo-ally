@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { setLang, tIn, DICTIONARIES } from "../src/i18n/index.ts";
 import { PAL_PROMPT } from "../src/pals.ts";
-import { startError, stallContinue } from "../src/palSession.ts";
+import { startError } from "../src/harness/claude/process.ts";
+import { stallContinue, stallContinue as convStall } from "../src/agent/session.ts";
 import { rewindBusy, rewindNoFiles, rewindNotFound } from "../src/rewind.ts";
-import { stallContinue as convStall } from "../src/conversation.ts";
 
 const CJK = /[一-鿿]/;
 

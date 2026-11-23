@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type StallTarget, StallWatch, WATCHDOG_DEFAULTS, growth, parseApiSockets, transcriptHas } from "../src/stallWatch.ts";
+import { type StallTarget, StallWatch, WATCHDOG_DEFAULTS, parseApiSockets } from "../src/stallWatch.ts";
+import { growth, transcriptHas } from "../src/harness/claude/transcript.ts";
 
 function setup(over: Partial<StallTarget> & { sockets?: { total: number; established: number } } = {}) {
   let now = 1_000_000;

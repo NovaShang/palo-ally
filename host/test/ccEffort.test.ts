@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { canonicalModel, settingsEffort } from "../src/ccEffort.ts";
+import { canonicalModel, settingsEffort } from "../src/harness/claude/settings.ts";
 
 function settings(dir: string, name: string, data: unknown) {
   mkdirSync(join(dir, ".claude"), { recursive: true });

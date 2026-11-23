@@ -3,7 +3,7 @@ import type { Audit } from "../../src/audit.ts";
 import type { Bus } from "../../src/bus.ts";
 import type { PermissionDecision, PermissionRequest } from "../../src/harness/types.ts";
 import type { Approval, CardSource } from "../../src/types.ts";
-import { firstLine } from "../../src/ccSessions.ts";
+import { firstLine } from "../../src/harness/claude/transcript.ts";
 import { describeInput, describeTool } from "./copy.before-batch7.ts";
 import { newId, readJson, truncate, writeJson } from "../../src/util.ts";
 import { t } from "../../src/i18n/index.ts";

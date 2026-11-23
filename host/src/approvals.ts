@@ -2,7 +2,7 @@ import type { Audit } from "./audit.ts";
 import type { Bus } from "./bus.ts";
 import type { PermissionDecision, PermissionRequest } from "./harness/types.ts";
 import type { Approval, CardSource } from "./types.ts";
-import { firstLine } from "./ccSessions.ts";
+import { firstLine } from "./harness/claude/transcript.ts";
 import { describeInput, describeTool } from "./copy.ts";
 import { tools } from "./harness/vocabulary.ts";
 import { newId, readJson, truncate, writeJson } from "./util.ts";

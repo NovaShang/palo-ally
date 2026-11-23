@@ -1,4 +1,5 @@
-import type { AuthDeps, LoginProcess } from "../src/auth.ts";
+import type { AuthDeps } from "../src/auth.ts";
+import type { LoginProcess, HarnessDriver } from "../src/harness/types.ts";
 import { afterAll } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,12 +7,12 @@ import { dirname, join } from "node:path";
 import { defaultConfig, Paths, type Config } from "../src/config.ts";
 import { FakeDriver, type FakeScript } from "./fakeDriver.ts";
 import { scaffoldHome } from "../src/home.ts";
-import { Hub, type WechatChannel } from "../src/hub.ts";
+import { Hub } from "../src/hub.ts";
+import { type WechatChannel } from "../src/channels/types.ts";
 import type { Pusher } from "../src/router.ts";
 import type { AlliesDeps } from "../src/allies.ts";
 import type { SessionsDeps } from "../src/sessions.ts";
 import type { PalsDeps } from "../src/pals.ts";
-import type { HarnessDriver } from "../src/harness/types.ts";
 import { FakeCli } from "./fakeClaude.ts";
 
 const created: string[] = [];

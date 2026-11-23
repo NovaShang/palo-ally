@@ -2,7 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { loginEnv } from "./ccCli.ts";
+import { loginEnv } from "./harness/claude/cli.ts";
 import type { Spawner } from "./harness/types.ts";
 
 // How a Pal's Claude Code process starts (docs/pals-prd.md §7.3): through

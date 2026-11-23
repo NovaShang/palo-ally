@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { AuthWatch, isAuthFailure } from "../src/auth.ts";
+import { AuthWatch } from "../src/auth.ts";
+import { isAuthFailure } from "../src/harness/claude/auth.ts";
 import { FakeLogin, cleanup, makeHub, tick, tmpPaths } from "./helpers.ts";
 
 // Claude Code's login running out: noticed at the first failure, the owner

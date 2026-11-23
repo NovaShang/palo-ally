@@ -6,7 +6,6 @@ import { pidAlive, sleep } from "./util.ts";
 import { tools } from "./harness/vocabulary.ts";
 
 // (What it reads in a transcript is Claude Code's: harness/claude/transcript.ts.)
-export { growth, transcriptHas } from "./harness/claude/transcript.ts";
 
 // The stall watchdog: a Claude Code process the host runs (the assistant's
 // own, every Pal) that froze mid-work is ended and resumed, without waiting

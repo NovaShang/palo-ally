@@ -19,5 +19,3 @@ export const rewindNoFiles = (): string => t("rewind.noFiles");
 export const rewindNotFound = (): string => t("rewind.notFound");
 
 // (What it reads in a transcript is Claude Code's: harness/claude/rewind.ts.)
-export { beforeCompaction, chainTo, findEntry, forkedUuids, hasFileCheckpoint, leafOf, matchOwnerEntry, ownerText, readTranscript } from "./harness/claude/rewind.ts";
-export type { ForkSession } from "./harness/claude/rewind.ts";

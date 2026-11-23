@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
-import type { WechatChannel, WechatReplyTarget } from "../src/hub.ts";
+import type { WechatChannel, WechatReplyTarget } from "../src/channels/types.ts";
 import { handleRpc } from "../src/rpc.ts";
 import type { FakeScript } from "./fakeDriver.ts";
 import type { ChatMessage } from "../src/types.ts";
@@ -489,7 +489,7 @@ describe("Hub: talking while it works", () => {
   });
 
   test("a harness-started turn that goes quiet is closed, so nothing gets stuck", async () => {
-    const { timing } = await import("../src/hub.ts");
+    const { timing } = await import("../src/agent/turn.ts");
     timing.implicitQuietMs = 30;
     const { hub, driver, paths } = makeHub();
     hub.userMessage("hi", "app");

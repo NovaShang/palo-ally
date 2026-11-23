@@ -23,9 +23,9 @@ import { getSessionInfo, query, type SDKUserMessage } from "@anthropic-ai/claude
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { AwayDetector } from "../src/away.ts";
-import { RealClaudeCli, findClaude, loginEnv, parseBackgrounded } from "../src/ccCli.ts";
-import { readRegistry } from "../src/ccSessions.ts";
-import { SpendMeter } from "../src/ccSpend.ts";
+import { RealClaudeCli, findClaude, loginEnv, parseBackgrounded } from "../src/harness/claude/cli.ts";
+import { readRegistry } from "../src/harness/claude/registry.ts";
+import { SpendMeter } from "../src/harness/claude/spend.ts";
 import { claudeConfigDir, transcriptPath } from "../src/harness/claude/paths.ts";
 import { ClaudeCodeDriver } from "../src/harness/claude.ts";
 import { Hub } from "../src/hub.ts";

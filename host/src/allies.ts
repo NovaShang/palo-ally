@@ -8,7 +8,7 @@ import { type AllyConn, type AllyConnHandlers, type AllyTarget, type DialFn, typ
 import type { RelayState } from "./channels/relay.ts";
 import type { ChatLog } from "./chat.ts";
 import { type Paths, type Settings, VERSION } from "./config.ts";
-import type { Turn } from "./conversation.ts";
+import type { Turn } from "./agent/turn.ts";
 import {
   allyByeNotice,
   allyDraftedText,

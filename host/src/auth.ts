@@ -1,9 +1,6 @@
 import type { LoginProcess } from "./harness/types.ts";
-import { claudeLoggedIn, credentialsStamp, expectLogin, isAuthFailure } from "./harness/claude/auth.ts";
+import { expectLogin } from "./harness/claude/auth.ts";
 
-// (Claude Code's own: harness/claude/auth.ts; kept here for the modules and tests that import them from here.)
-export { claudeLoggedIn, credentialsStamp, isAuthFailure };
-export type { LoginProcess };
 import type { AuthStatus, LoginStatus } from "./types.ts";
 import { readJson, writeJson } from "./util.ts";
 

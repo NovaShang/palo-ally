@@ -1,7 +1,7 @@
 import type { Audit } from "./audit.ts";
 import type { ChatLog } from "./chat.ts";
 import type { Settings } from "./config.ts";
-import type { Turn } from "./conversation.ts";
+import type { Turn } from "./agent/turn.ts";
 import {
   pushTitleApproval,
   pushTitleBack,
