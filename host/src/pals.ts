@@ -1212,7 +1212,7 @@ export class Pals {
     const pal = this.mustGet(id);
     // Gone back and not spoken to since: there is no session yet that has just what's kept.
     if (pal.pendingRewind()?.at) throw new Error(t("pals.terminalRewound"));
-    return { command: this.d.harness.sessions.resumeCommand(pal.rec.cwd, pal.rec.sessionId, this.d.harness.history.exists(pal.ref)) };
+    return { command: this.d.harness.sessions.resumeCommand(pal.rec.cwd, pal.rec.sessionId, this.d.harness.history.exists(pal.ref), pal.openAs()) };
   }
 
   /**
@@ -1276,7 +1276,7 @@ export class Pals {
     }
     const file = terminalFile(this.d.paths.run, pal.id);
     try {
-      const run = this.d.harness.sessions.terminalRun(rec.sessionId, this.d.harness.history.exists(pal.ref));
+      const run = this.d.harness.sessions.terminalRun(rec.sessionId, this.d.harness.history.exists(pal.ref), pal.openAs());
       writeTerminalFile(file, terminalScript(rec.cwd, run, { shell: loginShell() }), this.d.paths.run);
       rec.terminalUntil = this.now() + this.timing.terminalMs;
       this.save();

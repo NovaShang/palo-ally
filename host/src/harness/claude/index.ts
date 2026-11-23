@@ -23,6 +23,7 @@ import type {
   RewindChain,
   RewindPoint,
   Rewinder,
+  OpenAs,
   SessionDirectory,
   SessionRef,
 } from "../types.ts";
@@ -64,7 +65,12 @@ const startedAt = (entries: HarnessEntry[]): { startedAt?: number } => {
   return Number.isFinite(t) ? { startedAt: t } : {};
 };
 
-const opens = (sid: string, written: boolean) => `claude ${written ? "--resume" : "--session-id"} ${sid}`;
+// What it goes on with in the terminal: without these it would run on the
+// owner's defaults there. Quoted (a model's name can have [1m], which a shell
+// reads as a pattern); one that doesn't look like a name is left out.
+const asFlags = (as?: OpenAs) =>
+  [as?.model && /^[\w.:/@[\]-]+$/.test(as.model) ? ` --model ${shq(as.model)}` : "", as?.effort && /^[a-z]+$/.test(as.effort) ? ` --effort ${as.effort}` : ""].join("");
+const opens = (sid: string, written: boolean, as?: OpenAs) => `claude ${written ? "--resume" : "--session-id"} ${sid}${asFlags(as)}`;
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const shq = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
 
@@ -226,16 +232,16 @@ export class ClaudeHarness implements Harness {
       live: (): LiveSession[] => this.o.registry?.() ?? readRegistry(join(this.configDir, "sessions")),
       recent: this.o.recentSource ?? sdkSource(this.configDir),
       rename: (sid, title, cwd) => (this.o.renameSession ?? sdkRename(this.configDir))(sid, title, cwd),
-      terminalRun: (sid, written) => {
+      terminalRun: (sid, written, as) => {
         if (!SESSION_ID.test(sid)) throw new Error(`not a Claude Code session id: ${sid}`);
         const dir = process.env.CLAUDE_CONFIG_DIR;
         return {
-          command: opens(sid, written),
+          command: opens(sid, written, as),
           unset: TERMINAL_UNSET,
           ...(dir ? { env: { CLAUDE_CONFIG_DIR: dir } } : {}),
         };
       },
-      resumeCommand: (cwd, sid, written = true) => `cd ${shq(cwd)} && ${sid ? opens(sid, written) : "claude"}`,
+      resumeCommand: (cwd, sid, written = true, as) => `cd ${shq(cwd)} && ${sid ? opens(sid, written, as) : "claude"}`,
     };
   }
 

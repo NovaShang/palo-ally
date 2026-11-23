@@ -423,6 +423,12 @@ export interface RecentSource {
   info(sessionId: string, dir?: string): Promise<SessionInfo | undefined>;
 }
 
+/** The model and thinking depth a session goes on with when it's opened elsewhere. */
+export interface OpenAs {
+  model?: string;
+  effort?: string;
+}
+
 export interface SessionDirectory {
   /** The harness' own live sessions on this computer. */
   live(): LiveSession[];
@@ -430,13 +436,13 @@ export interface SessionDirectory {
   recent: RecentSource;
   rename(sessionId: string, title: string, cwd: string): Promise<void>;
   /** The line that resumes a session in a terminal (no session: a fresh one in the folder; nothing `written` yet: one under that id). */
-  resumeCommand(cwd: string, sessionId: string | null, written?: boolean): string;
+  resumeCommand(cwd: string, sessionId: string | null, written?: boolean, as?: OpenAs): string;
   /**
    * What a terminal runs, in the session's folder, to open it (在终端打开): the
    * session resumed, or (nothing `written` yet) a fresh one under that id.
    * Throws on an id that isn't one of its own.
    */
-  terminalRun(sessionId: string, written: boolean): import("../terminal.ts").TerminalRun;
+  terminalRun(sessionId: string, written: boolean, as?: OpenAs): import("../terminal.ts").TerminalRun;
 }
 
 export interface HarnessSettings {

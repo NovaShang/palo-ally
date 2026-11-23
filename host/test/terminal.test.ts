@@ -121,7 +121,7 @@ describe("opening an agent in a terminal", () => {
     expect(t.opened).toHaveLength(1);
     expect(t.opened[0]).toMatchObject({ ownAlive: false, mode: 0o700, claims: "stopped" });
     expect(t.opened[0]!.file).toBe(join(t.paths.run, `terminal-${pal.id}.command`));
-    expect(t.opened[0]!.script).toContain(`claude --resume ${SID}`);
+    expect(t.opened[0]!.script).toContain(`claude --resume ${SID} --model claude-haiku-4-5-20251001`);
     await exited(own);
     expect(t.audit("pal.terminal")).toEqual([expect.objectContaining({ pal: pal.id, session: SID, by: "app" })]);
     // nothing of ours starts while the terminal comes up: the owner's words wait, the assistant's and a wake are refused
@@ -428,13 +428,13 @@ describe("gone back and not spoken to since", () => {
     await quit(t, term, COPY);
     await waitFor(() => t.pal().status === "idle");
     expect(t.driver.pals.at(-1)!.opts).toMatchObject({ resumeSessionId: COPY });
-    expect((await t.call("pals.terminalCommand", { id: pal.id })).command).toBe(`cd ${t.project} && claude --resume ${COPY}`);
+    expect((await t.call("pals.terminalCommand", { id: pal.id })).command).toBe(`cd ${t.project} && claude --resume ${COPY} --model claude-haiku-4-5`);
     await t.hub.pals.stopAndWait();
   });
 
   test("gone back to its very first message: a fresh claude under the id the record has, so the agent follows what's said there", async () => {
     const { t, pal, calls, fork } = await rewound("p1");
-    expect((await t.call("pals.terminalCommand", { id: pal.id })).command).toBe(`cd ${t.project} && claude --session-id ${fork}`);
+    expect((await t.call("pals.terminalCommand", { id: pal.id })).command).toBe(`cd ${t.project} && claude --session-id ${fork} --model claude-haiku-4-5`);
     await t.call("pals.openTerminal", { id: pal.id });
     expect(calls).toEqual([]);
     expect(t.opened[0]!.script).toContain(`claude --session-id ${fork}`);
@@ -463,7 +463,7 @@ describe("pals.terminalCommand", () => {
     const t = setup({ project: tempDir("有 空格'引号 && x-") });
     const pal = await agent(t);
     const { command } = await t.call("pals.terminalCommand", { id: pal.id });
-    expect(command).toBe(`cd '${t.project.replace(/'/g, `'\\''`)}' && claude --resume ${SID}`);
+    expect(command).toBe(`cd '${t.project.replace(/'/g, `'\\''`)}' && claude --resume ${SID} --model claude-haiku-4-5-20251001`);
     expect(t.pal().status).toBe("idle");
     expect((await t.call("pals.list")).terminal).toBe(true);
     // what a shell makes of it is the folder
@@ -471,7 +471,7 @@ describe("pals.terminalCommand", () => {
     writeFileSync(join(bin, "claude"), '#!/bin/sh\npwd\necho "$@"\n');
     chmodSync(join(bin, "claude"), 0o755);
     const r = spawnSync("/bin/zsh", ["-c", command], { env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" });
-    expect(r.stdout.split("\n").slice(0, 2)).toEqual([t.project, `--resume ${SID}`]);
+    expect(r.stdout.split("\n").slice(0, 2)).toEqual([t.project, `--resume ${SID} --model claude-haiku-4-5-20251001`]);
     await t.hub.pals.stopAndWait();
   });
 });
@@ -498,7 +498,9 @@ describe("the .command file", () => {
       const dir = home();
       const cwd = join(tempDir(), `有 空格 'q' "dq" $HOME \`id\` \\back; && 文件夹`);
       mkdirSync(cwd);
-      const run = { command: `claude --resume ${SID}`, unset: TERMINAL_UNSET };
+      // (the model and depth it has here, whatever its name is to a shell)
+      const run = makeHub().hub.harness.sessions.terminalRun(SID, true, { model: "claude-opus-5-5[1m]", effort: "high" });
+      expect(run.unset).toBe(TERMINAL_UNSET);
       const runDir = join(tempDir(), "run dir");
       const file = terminalFile(runDir, "pal_ab12");
       writeTerminalFile(file, terminalScript(cwd, run, { shell }), runDir);
@@ -516,7 +518,7 @@ describe("the .command file", () => {
       });
       expect(r.error).toBeUndefined();
       expect(existsSync(join(dir, "out"))).toBe(true);
-      expect(readFileSync(join(dir, "out"), "utf8")).toBe(`${cwd}\n--resume ${SID}\n`);
+      expect(readFileSync(join(dir, "out"), "utf8")).toBe(`${cwd}\n--resume ${SID} --model claude-opus-5-5[1m] --effort high\n`);
       const env = readFileSync(join(dir, "env"), "utf8").split("\n").map((l) => l.split("=")[0]);
       for (const v of ["PALOALLY_SESSION", "PALOALLY_HOME", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_ARTIFACT", "CLAUDE_AGENT_SDK_VERSION"]) expect(env).not.toContain(v);
       expect(env).toContain("CLAUDE_CONFIG_DIR");
@@ -526,6 +528,13 @@ describe("the .command file", () => {
       expect(existsSync(file)).toBe(false);
     });
   }
+
+  test("a model or depth that doesn't look like one is left out of the line", () => {
+    const { sessions } = makeHub().hub.harness;
+    expect(sessions.terminalRun(SID, true, { model: "x; rm -rf ~", effort: "high --foo" }).command).toBe(`claude --resume ${SID}`);
+    expect(sessions.terminalRun(SID, true, { model: "a'b", effort: "" }).command).toBe(`claude --resume ${SID}`);
+    expect(sessions.terminalRun(SID, true).command).toBe(`claude --resume ${SID}`);
+  });
 
   test("a folder that's gone by then: it says so and starts nothing", () => {
     const dir = home();

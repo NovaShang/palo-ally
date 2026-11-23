@@ -340,6 +340,13 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
     return this.rec.effort ?? this.rec.appliedEffort;
   }
 
+  /** What it goes on with in a terminal (在终端打开): the model and depth it has here. */
+  openAs(): { model?: string; effort?: string } {
+    const model = this.model ?? this.rec.model;
+    const effort = this.effort();
+    return { ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
+  }
+
   /** The permission mode it runs in: what its process last said while it runs, else the one it starts in. */
   private mode(): string {
     return (this.running && this.reportedMode) || this.rec.permissionMode;
