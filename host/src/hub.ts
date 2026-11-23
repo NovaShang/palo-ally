@@ -26,10 +26,11 @@ import { isLang, parseLocale, setLang, t, tIn, systemLanguage, type Lang } from 
 import { makeShellTools, restText } from "./shellTools.ts";
 import { SuggestionStore } from "./suggestions.ts";
 import { TaskTracker } from "./tasks.ts";
-import type { Attachment, Channel, ChatMessage, PairedDevice, PendingItem, PendingLink, PendingSource, Status, Task, Watch, ReplyTo } from "./types.ts";
+import type { Attachment, CardSource, Channel, ChatMessage, PairedDevice, PendingItem, PendingLink, PendingSource, Status, Task, Watch, ReplyTo } from "./types.ts";
 import { MediaStore } from "./media.ts";
 import { briefTitle, ensureMorningBrief, isBriefTitle } from "./brief.ts";
-import { HandoffTracker, claudeConfigDir, transcriptPath } from "./handoffs.ts";
+import { HandoffTracker } from "./handoffs.ts";
+import { claudeConfigDir } from "./harness/claude/paths.ts";
 import { readRegistry } from "./ccSessions.ts";
 import { StallWatch, type StallWatchDeps, WATCHDOG_DEFAULTS, apiSockets, diagnoseInto, killHard } from "./stallWatch.ts";
 import { PowerWatcher, type PowerReading, readPower } from "./power.ts";
@@ -287,24 +288,25 @@ export class Hub {
     });
     this.handoffs = new HandoffTracker({
       path: this.paths.handoffs,
-      claudeDir: deps.claudeDir ?? claudeConfigDir(),
-      homeCwd: () => this.paths.home,
-      selfSessionId: () => this.runtime.data.sessionId,
       tasks: this.tasks,
+      bus: this.bus,
+      agent: (key) => this.pals.get(key)?.toWire(),
+      waitsFor: (pal) => {
+        const mine = (x: { source?: CardSource }) => x.source?.kind === "pal" && x.source.id === pal;
+        return this.questions.listPending().find(mine)?.items[0]?.question ?? this.approvals.listPending().find(mine)?.title;
+      },
       notify: (taskId, title, body) => {
         const msg = this.chat.add({ role: "assistant", kind: "task", text: body, channel: "system", taskId, proactive: true });
         void this.router.proactive(msg, { title });
       },
+      // (What it says about an agent's palo_send is a turn of the host's: channel "system".)
       assistantSpokeAt: () => {
         for (const m of this.chat.recent(50).reverse()) {
-          if (m.role === "assistant" && m.kind === "text" && m.channel !== "system") return m.ts;
+          if (m.role === "assistant" && m.kind === "text" && !m.pal) return m.ts;
         }
         return 0;
       },
       audit: this.audit,
-      // A Pal's prompts reach the phone by themselves: nothing to chase.
-      isPal: (sessionId) => this.pals.isPal(sessionId),
-      log: (s) => this.log(s),
     });
     this.power = new PowerWatcher({
       path: this.paths.power,
@@ -431,6 +433,9 @@ export class Hub {
       models: () => this.info.loadModels(1500),
       // A Pal's palo_send joins the assistant's inbound queue (a turn of its own, behind a running one), as an Ally's message does.
       toAssistant: (from, wrapped) => this.conversation.enqueue({ text: wrapped, origin: "system", proactive: true, pal: true, label: from }),
+      // Work handed to an agent, and what it says back, as they go through the host.
+      onSent: (pal, text) => this.handoffs.sent(pal, text),
+      onReply: (pal, text) => this.handoffs.replied(pal, text),
       onAuth: (pal, ok) => (ok ? this.auth.worked() : this.auth.failed({ kind: "pal", ...pal })),
       workspaceExists: (id) => this.workbench?.exists(id) ?? false,
       shownIds: () => this.workbench?.shownIds() ?? new Set<string>(),
@@ -543,8 +548,8 @@ export class Hub {
     this.allies.start();
     this.auth.start();
     if (opts.probe !== false) {
-      // Work handed to other sessions: the host follows it itself.
-      this.handoffs.startTimer();
+      // Work handed to agents: the host follows it itself.
+      this.handoffs.start();
       // The host laptop on battery: a heads-up before it dies and takes the assistant offline.
       this.power.start();
       // New official release: staged in the background, switched to at a clean break.
@@ -790,11 +795,6 @@ export class Hub {
   // Exposed so it can be traced/wrapped; the conversation routes every harness event here.
   onHarnessEvent(e: HarnessEvent): void {
     if (e.type === "init") this.suggestions.setConnectors(e.tools);
-    // The assistant handing work to another session (main thread only).
-    if (e.type === "tool_use" && !e.parentToolUseId && e.name === "SendMessage") this.handoffs.onSend(e.id, e.input);
-    // …or to a Pal with pal_send (asleep or awake), followed the same way.
-    if (e.type === "tool_use" && !e.parentToolUseId && e.name === "mcp__paloally__pal_send") this.handoffs.onSend(e.id, { to: e.input.name, message: e.input.text });
-    if (e.type === "tool_result" && !e.parentToolUseId) this.handoffs.onSendResult(e.toolUseId, e.content, e.isError);
     this.conversation.onHarnessEvent(e);
   }
 

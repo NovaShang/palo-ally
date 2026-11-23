@@ -93,7 +93,7 @@ export interface Task {
   // internal linkage (not needed by clients but harmless)
   toolUseId?: string;
   sdkTaskId?: string;
-  peer?: string; // handed to another Claude Code session (its name); the host follows it
+  peer?: string; // handed to an agent (its name), which the host follows; or to another Claude Code session, which it does not
 }
 
 export interface TaskActivity {

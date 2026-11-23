@@ -255,7 +255,7 @@ export class TaskTracker {
     return this.tasks.filter((t) => !TERMINAL.includes(t.status));
   }
 
-  // ---- work handed to another session (HandoffTracker drives these) ----
+  // ---- work handed to an agent (HandoffTracker drives these) ----
 
   openPeer(title: string, summary: string, peer: string): Task {
     const now = Date.now();
@@ -288,7 +288,7 @@ export class TaskTracker {
   }
 
   // On restart the harness process that ran these is gone. Work handed to
-  // another session isn't: that session keeps going and the host keeps following it.
+  // another session isn't: an agent carries on and the host follows it.
   orphanRunning(): Task[] {
     const orphaned = this.running().filter((t) => !t.peer);
     for (const o of orphaned) this.finish(o, "stopped", o.summary || t("task.interrupted"));

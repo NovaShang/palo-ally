@@ -227,6 +227,9 @@ export interface PalsDeps {
   paloName?: () => string;
   /** A Pal's palo_send: the words (already wrapped as from that Pal) go into the assistant's session like any other inbound message (§16). */
   toAssistant?: (from: string, wrapped: string) => void;
+  /** The assistant's pal_send reached an agent, an agent's palo_send the assistant (handoffs.ts follows them). */
+  onSent?: (pal: Pal, text: string) => void;
+  onReply?: (pal: Pal, text: string) => void;
   registry?: () => RegistryEntry[];
   pidAlive?: (pid: number) => boolean;
   kill?: (pid: number, signal: NodeJS.Signals) => void;
@@ -1964,6 +1967,7 @@ export class Pals {
     }
     this.balanceSoon();
     this.d.audit.log("pal.send", { pal: pal.id, name: pal.rec.name, chars: text.length, by: "assistant" });
+    this.d.onSent?.(pal.toWire(), text);
     return t("pals.sendOk", { name: pal.rec.name, woke: wasAsleep ? t("pals.sendWoke") : "" });
   }
 
@@ -1984,6 +1988,7 @@ export class Pals {
       return t("pals.paloSendFailed", { name: to, why: e instanceof Error ? e.message : String(e) });
     }
     this.d.audit.log("pal.palo_send", { pal: pal.id, name: pal.rec.name, chars: body.length });
+    this.d.onReply?.(pal.toWire(), body);
     return t("pals.paloSendOk", { name: to });
   }
 

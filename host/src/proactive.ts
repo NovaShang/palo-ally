@@ -68,9 +68,9 @@ export class Proactive {
       this.d.chat.add({ role: "assistant", kind: "task", text: taskReceiptText(t), channel: "system", taskId: t.id });
       return;
     }
-    // Work handed to another session: the assistant relays the result in its
+    // Work handed to an agent (or another session): the assistant relays the result in its
     // own words (and the handoff tracker nudges if it doesn't). No card here,
-    // which would show the peer's raw text.
+    // which would show its raw text.
     if (t.peer) return;
     const msg = this.d.chat.add({ role: "assistant", kind: "task", text: taskResultText(t), channel: "system", taskId: t.id, proactive: t.status !== "stopped" });
     if (t.status !== "stopped") void this.d.router.proactive(msg, { title: t.title });

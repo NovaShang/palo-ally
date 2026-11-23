@@ -6,7 +6,6 @@ import { AwayDetector } from "../src/away.ts";
 import { allyTurnTool } from "../src/allyGate.ts";
 import { sessionOptions } from "../src/harness/claude.ts";
 import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type MainSessionOptions } from "../src/harness/types.ts";
-import { summarizeTail } from "../src/handoffs.ts";
 import { toPalMessages } from "../src/palHistory.ts";
 import type { PalsTiming } from "../src/pals.ts";
 import { peerWrap } from "../src/palSession.ts";
@@ -155,12 +154,6 @@ describe("palo_send: a Pal answers the assistant through the host", () => {
     const msgs = toPalMessages(entries as any, { pal: pal.id, assistantName: "Palo", paloName: "Palo" });
     expect(msgs.map((m) => [m.id, m.role, m.text])).toEqual([["msg_1", "assistant", "好，我告诉它"], ["toolu_p1", "assistant", "做完了"]]);
     await t.hub.pals.stopAndWait();
-  });
-
-  test("handoff tracking reads it as a reply to the assistant", () => {
-    const tail = summarizeTail([{ type: "assistant", timestamp: "2026-10-18T10:00:00Z", message: { content: [{ type: "tool_use", id: "x", name: PALO_SEND_TOOL, input: { text: "做完了" } }] } }]);
-    expect(tail.replies).toHaveLength(1);
-    expect(tail.replies[0]).toMatchObject({ text: "做完了" });
   });
 
   test("the prompts tell each side which tool to use", () => {

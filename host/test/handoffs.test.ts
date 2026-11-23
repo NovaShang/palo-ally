@@ -1,56 +1,35 @@
-import { describe, expect, test } from "bun:test";
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { Audit } from "../src/audit.ts";
 import { Bus } from "../src/bus.ts";
-import { HandoffTracker, SessionRegistry, isQuestion, isRequest, summarizeTail, transcriptPath } from "../src/handoffs.ts";
+import { type Handoff, HandoffTracker, isQuestion, isRequest } from "../src/handoffs.ts";
 import { TaskTracker } from "../src/tasks.ts";
-import { readJsonl } from "../src/util.ts";
+import type { Pal } from "../src/types.ts";
 import { loadConfig } from "../src/config.ts";
 import { sessionOptions } from "../src/harness/claude.ts";
+import type { PalsTiming } from "../src/pals.ts";
+import { FakeClaudeDir, FakeCli, assistantEntry } from "./fakeClaude.ts";
 import { makeHub, testConfig, tick, tmpPaths } from "./helpers.ts";
+import { waitFor } from "./relayClient.ts";
 
-const HOME = "/tmp/paloally-home-test";
+const dirs: FakeClaudeDir[] = [];
+const temps: string[] = [];
+afterAll(() => {
+  dirs.forEach((d) => d.cleanup());
+  for (const t of temps) rmSync(t, { recursive: true, force: true });
+});
+const temp = (name: string) => {
+  const d = realpathSync(mkdtempSync(join(tmpdir(), name)));
+  temps.push(d);
+  return d;
+};
 
-function ts(ms: number) {
-  return new Date(ms).toISOString();
-}
-function assistantText(text: string, at: number) {
-  return { type: "assistant", timestamp: ts(at), message: { content: [{ type: "text", text }] } };
-}
-function assistantTool(name: string, id: string, input: unknown, at: number) {
-  return { type: "assistant", timestamp: ts(at), message: { content: [{ type: "tool_use", id, name, input }] } };
-}
-function toolResult(id: string, at: number) {
-  return { type: "user", timestamp: ts(at), message: { content: [{ type: "tool_result", tool_use_id: id, content: "ok" }] } };
-}
-
-// A fake ~/.claude: the session registry and transcripts, like Claude Code writes them.
-function fakeClaude() {
-  const dir = mkdtempSync(join(tmpdir(), "paloally-claude-"));
-  mkdirSync(join(dir, "sessions"), { recursive: true });
-  const alive = new Set<number>();
-  const registry = new SessionRegistry(join(dir, "sessions"), (pid) => alive.has(pid));
-  const session = (pid: number, sessionId: string, name: string, cwd: string, status = "busy", extra: Record<string, unknown> = {}) => {
-    alive.add(pid);
-    writeFileSync(join(dir, "sessions", `${pid}.json`), JSON.stringify({ pid, sessionId, name, cwd, status, statusUpdatedAt: Date.now(), ...extra }));
-  };
-  const end = (pid: number) => {
-    alive.delete(pid);
-    rmSync(join(dir, "sessions", `${pid}.json`), { force: true });
-  };
-  const write = (cwd: string, sessionId: string, entries: unknown[]) => {
-    const p = transcriptPath(dir, cwd, sessionId);
-    mkdirSync(dirname(p), { recursive: true });
-    appendFileSync(p, entries.map((e) => JSON.stringify(e)).join("\n") + "\n");
-  };
-  return { dir, registry, session, end, write };
-}
-
-function setup() {
-  const claude = fakeClaude();
-  const state = mkdtempSync(join(tmpdir(), "paloally-state-"));
+// The tracker over agents whose list lines are set by hand (what Pals puts in pals.updated).
+function setup(saved?: unknown) {
+  const state = temp("paloally-state-");
+  if (saved) writeFileSync(join(state, "handoffs.json"), JSON.stringify(saved));
   const bus = new Bus();
   const transitions: string[] = [];
   const tasks = new TaskTracker(join(state, "tasks.json"), join(state, "act"), bus, (t, k) => transitions.push(`${k}:${t.status}`));
@@ -58,45 +37,55 @@ function setup() {
   const notes: { title: string; body: string }[] = [];
   let now = Date.now();
   let spokeAt = 0;
+  const agents = new Map<string, Pal>();
   const make = () =>
     new HandoffTracker({
       path: join(state, "handoffs.json"),
-      claudeDir: claude.dir,
-      homeCwd: () => HOME,
-      selfSessionId: () => "home-sess",
       tasks,
+      bus,
+      agent: (key) => [...agents.values()].find((p) => p.id === key || p.sessionId === key || p.name === key),
+      waitsFor: () => "发 v0.1.2 吗？",
       notify: (_id, title, body) => notes.push({ title, body }),
       assistantSpokeAt: () => spokeAt,
       audit,
-      log: () => {},
       now: () => now,
-      registry: claude.registry,
     });
   const tracker = make();
-  // the assistant itself, as a registered session
-  claude.session(100, "home-sess", "home-ab", HOME, "idle");
-  claude.session(200, "peer-sess", "builder", "/work/app", "busy", { tmux: "bento:@1.%2" });
+  // what the agent is doing now, as its line in the list says
+  const is = (status: Pal["status"], o: Partial<Pal> = {}) => {
+    const p: Pal = { id: "pal_1", name: "builder", cwd: "/work/app", sessionId: "peer-sess", pending: 0, createdBy: "owner", updatedAt: now, ...(agents.get("pal_1") ?? {}), tasksRunning: undefined, note: undefined, ...o, status } as Pal;
+    agents.set("pal_1", p);
+    bus.emit("pals.updated", { pals: [p] });
+  };
+  is("idle", { lastLine: "上次的事" });
   return {
-    claude,
+    state,
     tasks,
     tracker,
     make,
     notes,
     transitions,
+    agents,
+    is,
+    agent: () => agents.get("pal_1")!,
+    row: () => tasks.list()[0]!,
+    // pal_send went in: it's at work from that moment
+    send: (text = "请帮我修一下发布流程，好了告诉我") => {
+      is("busy");
+      tracker.sent(agents.get("pal_1")!, text);
+    },
+    reply: (text: string) => {
+      now += 1000;
+      tracker.replied(agents.get("pal_1")!, text);
+    },
+    archive: () => {
+      agents.clear();
+      bus.emit("pals.updated", { pals: [] });
+    },
     advance: (ms: number) => (now += ms),
     assistantSpeaks: () => (spokeAt = now),
-    now: () => now,
-    // run a full check right now, whatever the schedule says
-    check: (t = tracker) => {
-      for (const h of t.open()) h.nextCheckAt = 0;
-      t.tick();
-    },
+    stored: () => JSON.parse(readFileSync(join(state, "handoffs.json"), "utf8")) as { handoffs: Handoff[] },
   };
-}
-
-function handOff(s: ReturnType<typeof setup>, message = "请帮我修一下发布流程，好了告诉我", to = "builder") {
-  s.tracker.onSend("tu_1", { to, message });
-  s.tracker.onSendResult("tu_1", '{"success":true}', false);
 }
 
 describe("what counts as a handoff", () => {
@@ -114,109 +103,59 @@ describe("what counts as a handoff", () => {
   });
 });
 
-describe("reading Claude Code's own state", () => {
-  test("the registry resolves names, name [ref] and uds addresses", () => {
-    const c = fakeClaude();
-    c.session(42, "s42", "worker", "/w");
-    expect(c.registry.resolve("worker")?.sessionId).toBe("s42");
-    expect(c.registry.resolve("worker [3fa9c1]")?.sessionId).toBe("s42");
-    expect(c.registry.resolve("uds:/tmp/cc-socks/42.sock")?.sessionId).toBe("s42");
-    expect(c.registry.resolve("nobody")).toBeUndefined();
-    c.end(42);
-    expect(c.registry.resolve("worker")).toBeUndefined();
-  });
-
-  test("the transcript tail: latest words, an open question, replies", () => {
-    const t0 = Date.now();
-    const tail = summarizeTail([
-      assistantText("先看一下现在的发布脚本。", t0),
-      assistantTool("AskUserQuestion", "q1", { questions: [{ question: "用哪个版本号？" }] }, t0 + 1),
-      assistantTool("SendMessage", "s1", { to: "home-ab", message: "测好了，修复已经提交。" }, t0 + 2),
-    ]);
-    expect(tail.lastText).toBe("先看一下现在的发布脚本。");
-    expect(tail.pendingQuestion?.text).toBe("用哪个版本号？");
-    expect(tail.replies).toEqual([{ to: "home-ab", text: "测好了，修复已经提交。", at: t0 + 2 }]);
-    // once answered, the question isn't pending any more
-    expect(summarizeTail([assistantTool("AskUserQuestion", "q1", { questions: [{ question: "x" }] }, t0), toolResult("q1", t0 + 1)]).pendingQuestion).toBeUndefined();
-  });
-});
-
-describe("following a handoff", () => {
-  test("a request to a peer opens a row; an ack or a message to the assistant itself doesn't", () => {
+describe("following work handed to an agent", () => {
+  test("a request opens a row; an ack doesn't", () => {
     const s = setup();
-    s.tracker.onSend("tu_a", { to: "builder", message: "Thanks!" });
-    s.tracker.onSendResult("tu_a", '{"success":true}', false);
-    s.tracker.onSend("tu_b", { to: "home-ab", message: "请帮我看一下" });
-    s.tracker.onSendResult("tu_b", '{"success":true}', false);
+    s.send("Thanks!");
     expect(s.tasks.list()).toHaveLength(0);
-    handOff(s);
-    const [task] = s.tasks.list();
+    s.send();
     // a neutral title until the assistant names it (never the raw message)
-    expect(task).toMatchObject({ status: "running", peer: "builder", title: "转交给 builder 的事" });
+    expect(s.row()).toMatchObject({ status: "running", peer: "builder", title: "转交给 builder 的事" });
     expect(s.tracker.open()).toHaveLength(1);
-    // a failed send opens nothing
-    s.tracker.onSend("tu_c", { to: "builder", message: "请再帮我看一下" });
-    s.tracker.onSendResult("tu_c", "error", true);
+    expect(s.tracker.inFlight()).toBe(true);
+    // more work for the same agent is the same row
+    s.send("再帮我看一下图标");
     expect(s.tasks.list()).toHaveLength(1);
   });
 
-  test("busy → the row shows its latest words; waiting → needs_input and one push", () => {
+  test("busy: its latest words (not ones from before); waiting: needs_input with what it asks, and no push of the host's own", () => {
     const s = setup();
-    handOff(s);
-    const t0 = s.now();
-    s.claude.write("/work/app", "peer-sess", [assistantText("正在改 release-mac.yml", t0 + 1000)]);
-    s.check();
-    expect(s.tasks.list()[0]).toMatchObject({ status: "running", summary: "正在改 release-mac.yml" });
-
-    s.claude.session(200, "peer-sess", "builder", "/work/app", "waiting", { waitingFor: "input needed" });
-    s.claude.write("/work/app", "peer-sess", [assistantTool("AskUserQuestion", "q9", { questions: [{ question: "发 v0.1.2 吗？" }] }, t0 + 2000)]);
-    s.check();
-    expect(s.tasks.list()[0]).toMatchObject({ status: "needs_input", summary: "在主机上等你：发 v0.1.2 吗？" });
-    expect(s.notes).toHaveLength(1);
-    expect(s.notes[0]!.title).toBe("转交的事在等你回答");
-    expect(s.notes[0]!.body).toBe("「转交给 builder 的事」在 builder 那边等你回答，去那台主机上看一下。");
-    s.check(); // same question: no second push
-    expect(s.notes).toHaveLength(1);
+    s.send();
+    s.is("busy");
+    expect(s.row()).toMatchObject({ status: "running", summary: "在办" });
+    s.is("busy", { lastLine: "正在改 release-mac.yml" });
+    expect(s.row()).toMatchObject({ status: "running", summary: "正在改 release-mac.yml" });
+    s.is("waiting");
+    expect(s.row()).toMatchObject({ status: "needs_input", summary: "在 App 里等你：发 v0.1.2 吗？" });
+    s.is("busy");
+    expect(s.row().status).toBe("running");
+    expect(s.notes).toHaveLength(0); // its card has its own push
   });
 
-  test("a question relayed through the assistant shows as asking, without a push of its own", () => {
+  test("it reports back, and once its turn is over the row is done, without its raw words; the assistant relays it", () => {
     const s = setup();
-    handOff(s);
-    s.claude.session(200, "peer-sess", "builder", "/work/app", "idle");
-    s.claude.write("/work/app", "peer-sess", [assistantTool("SendMessage", "m1", { to: "home-ab", message: "要不要把 dev 数据库一起迁移？" }, s.now() + 1000)]);
-    s.check();
-    expect(s.tasks.list()[0]).toMatchObject({ status: "needs_input", summary: "在问你，助理会转告" });
-    expect(s.notes).toHaveLength(0);
-    // the assistant relays the owner's answer: it's working again
-    s.tracker.onSend("tu_2", { to: "builder", message: "迁移，谢谢" });
-    s.tracker.onSendResult("tu_2", '{"success":true}', false);
-    expect(s.tasks.list()[0]!.status).toBe("running");
-  });
-
-  test("it reports back and goes idle: done, without the peer's raw words; the assistant relays it", () => {
-    const s = setup();
-    handOff(s);
-    s.claude.session(200, "peer-sess", "builder", "/work/app", "idle");
-    s.claude.write("/work/app", "peer-sess", [assistantTool("SendMessage", "m1", { to: "uds:/tmp/cc-socks/100.sock", message: "Installed: the latest build is on his iPhone." }, s.now() + 1000)]);
-    s.check();
-    expect(s.tasks.list()[0]).toMatchObject({ status: "done", summary: "办好了" });
-    expect(s.transitions).toContain("finished:done");
-    expect(s.tracker.open()).toHaveLength(0);
-    expect(s.notes).toHaveLength(0);
-    // the assistant tells the owner itself: no fallback line
-    s.advance(60_000);
+    s.send();
+    s.reply("Installed: the latest build is on his iPhone.");
+    expect(s.row()).toMatchObject({ status: "running", summary: "回话了，还在办" });
+    // the assistant may tell the owner while the agent's turn still winds down
+    s.advance(1000);
     s.assistantSpeaks();
+    s.advance(1000);
+    s.is("idle");
+    expect(s.row()).toMatchObject({ status: "done", summary: "办好了" });
+    expect(s.transitions).toEqual(["finished:done"]);
+    expect(s.tracker.open()).toHaveLength(0);
     s.advance(10 * 60_000);
     s.tracker.tick();
     expect(s.notes).toHaveLength(0);
   });
 
-  test("a finished handoff nobody relayed: one short Chinese line after 5 minutes", () => {
+  test("a finished handoff nobody relayed: one short line after 5 minutes", () => {
     const s = setup();
-    handOff(s);
-    s.claude.session(200, "peer-sess", "builder", "/work/app", "idle");
-    s.claude.write("/work/app", "peer-sess", [assistantTool("SendMessage", "m1", { to: "home-ab", message: "Done: shipped v0.1.2." }, s.now() + 1000)]);
-    s.check();
+    s.assistantSpeaks(); // before its reply: not about it
+    s.send();
+    s.reply("Done: shipped v0.1.2.");
+    s.is("idle");
     s.advance(4 * 60_000);
     s.tracker.tick();
     expect(s.notes).toHaveLength(0);
@@ -228,54 +167,264 @@ describe("following a handoff", () => {
     expect(s.notes).toHaveLength(1);
   });
 
-  test("the session ends without a word: stopped, quietly", () => {
+  test("a question through the assistant: asking, also after its turn and asleep, until it's answered", () => {
     const s = setup();
-    handOff(s);
-    s.claude.end(200);
-    s.check();
-    expect(s.tasks.list()[0]).toMatchObject({ status: "stopped", summary: "对方结束了，没回话" });
-    expect(s.tracker.open()).toHaveLength(0);
+    s.send();
+    s.reply("要不要把 dev 数据库一起迁移？");
+    expect(s.row()).toMatchObject({ status: "needs_input", summary: "在问你，助理会转告" });
+    expect(s.tracker.inFlight()).toBe(true);
+    s.is("idle");
+    s.is("asleep");
+    expect(s.row()).toMatchObject({ status: "needs_input", summary: "在问你，助理会转告" });
+    expect(s.tracker.inFlight()).toBe(false); // the owner's to answer: nothing held back for it
+    // the assistant relays the owner's answer: it's working again, and done only when it says so
+    s.send("迁移");
+    expect(s.row().status).toBe("running");
+    s.is("idle");
+    expect(s.row()).toMatchObject({ status: "running", summary: "对方停下了，还没回话" });
+    s.is("busy");
+    s.reply("迁完了。");
+    s.is("idle");
+    expect(s.row().status).toBe("done");
+    expect(s.notes).toHaveLength(0);
   });
 
-  test("idle with no reply: noted after a while, given up after a day", () => {
+  test("a question answered by the owner in the agent's own page: at work again without the assistant", () => {
     const s = setup();
-    handOff(s);
-    s.claude.session(200, "peer-sess", "builder", "/work/app", "idle");
-    s.check();
-    expect(s.tasks.list()[0]!.status).toBe("running");
-    s.advance(3 * 3600_000);
-    s.check();
-    expect(s.tasks.list()[0]!.summary).toBe("对方停下了，还没回话");
-    expect(s.tracker.inFlight()).toBe(false); // idle handoffs don't hold back compaction
-    s.advance(25 * 3600_000);
-    s.check();
-    expect(s.tasks.list()[0]!.status).toBe("stopped");
+    s.send();
+    s.reply("用蓝色还是绿色？");
+    s.is("idle");
+    s.is("busy");
+    expect(s.row().status).toBe("running");
+    s.reply("改好了。");
+    s.is("idle");
+    expect(s.row().status).toBe("done");
+  });
+
+  test("its turn ends without a reply: said so; its background tasks count as work; asleep, it's settled", () => {
+    const s = setup();
+    s.send();
+    s.is("idle", { tasksRunning: 1 });
+    expect(s.row()).toMatchObject({ status: "running", summary: "在办" });
+    expect(s.tracker.inFlight()).toBe(true);
+    s.is("idle");
+    expect(s.row()).toMatchObject({ status: "running", summary: "对方停下了，还没回话" });
+    expect(s.tracker.inFlight()).toBe(false); // doesn't hold back compaction
+    s.is("busy", { lastLine: "接着做" }); // it goes on by itself
+    expect(s.row().summary).toBe("接着做");
+    s.is("idle");
+    s.is("asleep");
+    expect(s.row()).toMatchObject({ status: "stopped", summary: "对方停下了，还没回话" });
+    expect(s.tracker.open()).toHaveLength(0);
+    s.advance(60 * 60_000);
+    s.tracker.tick();
+    expect(s.notes).toHaveLength(0);
+  });
+
+  test("a reply with a background task left running is still done", () => {
+    const s = setup();
+    s.send();
+    s.reply("好了，预览服务还开着。");
+    s.is("idle", { tasksRunning: 1 });
+    expect(s.row().status).toBe("done");
+  });
+
+  test("more work after a reply: done only when that is reported too; a thank-you changes nothing", () => {
+    const s = setup();
+    s.send();
+    s.reply("收到，开始改。");
+    s.tracker.sent(s.agent(), "请把图标也改一下");
+    s.is("idle");
+    expect(s.row()).toMatchObject({ status: "running", summary: "对方停下了，还没回话" });
+    s.is("busy");
+    s.reply("都改好了。");
+    s.tracker.sent(s.agent(), "谢谢");
+    s.is("idle");
+    expect(s.row().status).toBe("done");
+  });
+
+  test("asked or stopped a day with nothing more: no longer followed", () => {
+    const s = setup();
+    s.send();
+    s.reply("选哪个方案？");
+    s.is("asleep");
+    s.advance(23 * 3600_000);
+    s.tracker.tick();
+    expect(s.row().status).toBe("needs_input");
+    s.advance(2 * 3600_000);
+    s.tracker.tick();
+    expect(s.row()).toMatchObject({ status: "stopped", summary: "对方很久没动静，不再跟进" });
+  });
+
+  test("archived, or stopped for good, without a word: stopped, quietly; between two processes it isn't", () => {
+    const s = setup();
+    s.send();
+    s.is("stopped"); // being restarted: no reason given
+    s.is("starting");
+    expect(s.row().status).toBe("running");
+    s.is("busy");
+    s.archive();
+    expect(s.row()).toMatchObject({ status: "stopped", summary: "对方结束了，没回话" });
+    expect(s.tracker.open()).toHaveLength(0);
+
+    const e = setup();
+    e.send();
+    e.is("stopped", { note: "在终端里打开了" });
+    expect(e.row()).toMatchObject({ status: "stopped", summary: "对方结束了，没回话" });
+    expect(e.notes).toHaveLength(0);
   });
 
   test("the owner dismissing the row stops following it", () => {
     const s = setup();
-    handOff(s);
-    s.tasks.markStopped(s.tasks.list()[0]!.id);
-    s.check();
+    s.send();
+    s.tasks.markStopped(s.row().id);
+    s.is("busy");
     expect(s.tracker.open()).toHaveLength(0);
   });
 
-  test("survives an assistant restart: the row isn't marked interrupted and tracking goes on", () => {
+  test("survives the host's restart: the row isn't marked interrupted and it's followed on", () => {
     const s = setup();
-    handOff(s);
-    const orphaned = s.tasks.orphanRunning();
-    expect(orphaned).toHaveLength(0);
+    s.send();
+    expect(s.tasks.orphanRunning()).toHaveLength(0);
+    s.tracker.stop();
     const again = s.make();
+    again.start();
     expect(again.open()).toHaveLength(1);
     expect(again.inFlight()).toBe(true);
+    s.is("stopped");
+    s.is("starting");
+    s.is("idle");
+    expect(s.row()).toMatchObject({ status: "running", summary: "对方停下了，还没回话" }); // its turn was cut off
+    again.stop();
   });
 
-  test("report_task(peer) links a row to a session explicitly", () => {
+  test("report_task(peer): an agent's row is followed; another session's only says whose it is, and is the assistant's to end", () => {
     const s = setup();
     const t = s.tasks.report("ci", "配 CI", "running", "Mac 发版");
-    expect(s.tracker.link(t.id, "builder")).toContain("ok");
+    expect(s.tracker.link(t.id, "builder [3fa9c1]")).toBe("ok: 跟进 builder");
     expect(s.tasks.get(t.id)!.peer).toBe("builder");
-    expect(s.tracker.link(t.id, "nobody")).toContain("找不到");
+    expect(s.tracker.forPeer("builder")?.taskId).toBe(t.id);
+
+    const o = s.tasks.report("web", "改首页", "running", "改首页");
+    expect(s.tracker.link(o.id, "终端里那个")).toContain("不是 agent");
+    expect(s.tasks.get(o.id)!.peer).toBe("终端里那个");
+    expect(s.tracker.open()).toHaveLength(1);
+    expect(s.tasks.orphanRunning()).toHaveLength(0); // a host restart doesn't cut it off
+    s.tasks.report("web", "改好了", "done");
+    expect(s.tasks.get(o.id)!.status).toBe("done");
+  });
+
+  test("a state file from before: an agent's hand-off goes on, another session's ends, older rows are left alone", () => {
+    const old = { id: "h_1", taskId: "", request: "x", createdAt: Date.now(), state: "working", lastLine: "", checkedAt: 0, nextCheckAt: 0, seen: { size: 1 } };
+    const s = setup({
+      handoffs: [
+        { ...old, taskId: "a", peer: { name: "builder", pid: 200, sessionId: "peer-sess", cwd: "/work/app" } },
+        { ...old, id: "h_2", taskId: "b", peer: { name: "web", pid: 201, sessionId: "term-sess", cwd: "/work/web", tmux: "x" } },
+        { ...old, id: "h_3", taskId: "c", peer: { name: "old", sessionId: "gone" }, state: "closed" },
+      ],
+      homePids: [100],
+    });
+    const rows = ["builder", "web"].map((n) => s.tasks.openPeer(`转交给 ${n} 的事`, "在办", n));
+    const closed = s.tasks.openPeer("早先的事", "在办", "old");
+    s.tasks.settlePeer(closed.id, "done", "办好了");
+    const t2 = s.tracker;
+    t2.open().forEach((h, i) => (h.taskId = rows[i]!.id));
+    t2.start();
+    expect(t2.open().map((h) => h.peer.pal)).toEqual(["pal_1"]);
+    expect(s.tasks.get(rows[1]!.id)).toMatchObject({ status: "stopped", summary: "对方不是 agent，不再跟进" });
+    s.is("busy");
+    s.reply("做完了。");
+    s.is("idle");
+    expect(s.tasks.get(rows[0]!.id)!.status).toBe("done");
+    expect(s.tasks.get(closed.id)).toMatchObject({ status: "done", peer: "old" });
+    expect(s.stored().handoffs).toHaveLength(3);
+    expect(s.notes).toHaveLength(0);
+    t2.stop();
+  });
+});
+
+describe("in a host: the assistant's pal_send, the agent's own events and its palo_send", () => {
+  const FAST: Partial<PalsTiming> = { readyMs: 2_000, restartMs: [30, 30, 30], exitWaitMs: 1_000, exitPollMs: 50, stopWaitMs: 400, guardMs: 50, startStaggerMs: 5 };
+  const SID = "dddd1111-0000-4000-8000-000000000001";
+
+  async function host() {
+    const claude = new FakeClaudeDir();
+    dirs.push(claude);
+    const cli = new FakeCli(claude);
+    const project = temp("paloally-pal-");
+    const t = makeHub({ sessions: { claudeDir: claude.dir, cli }, pals: { readMessages: async () => [], timing: FAST } });
+    t.hub.pals.start();
+    cli.bg({ sessionId: SID, name: "网站", cwd: project });
+    claude.transcript(project, SID, [assistantEntry("列表页做好了。")]);
+    const r = await t.hub.pals.adopt(SID, "test");
+    if (!("pal" in r)) throw new Error("not adopted");
+    return { ...t, pal: r.pal, send: (text: string) => t.hub.toolHandlers().pal_send({ name: "网站", text }), rows: () => t.hub.tasks.list() };
+  }
+
+  test("the row appears when the words go in, follows the agent's work and its card, and is done once it has replied and stopped", async () => {
+    const t = await host();
+    let go!: () => void;
+    t.driver.palScript = async (_text, ctx) => {
+      await tick(20);
+      ctx.emit({ type: "assistant_text", text: "先看一下登录页。", parentToolUseId: null });
+      await new Promise<void>((r) => (go = r));
+      void ctx.opts.canUseTool({ toolName: "AskUserQuestion", input: { questions: [{ question: "用哪张图？", header: "图", options: [{ label: "A", description: "a" }, { label: "B", description: "b" }] }] }, toolUseId: "tu_q", signal: new AbortController().signal } as any);
+      await new Promise<void>((r) => (go = r));
+      await ctx.opts.paloSend!("登录页改好了。");
+      await new Promise<void>((r) => (go = r));
+    };
+    expect(await t.send("请把登录页改好，好了告诉我")).toContain("网站");
+    expect(t.rows()).toHaveLength(1);
+    expect(t.rows()[0]).toMatchObject({ status: "running", peer: "网站", title: "转交给 网站 的事" });
+    // the assistant names it
+    await t.hub.toolHandlers().report_task({ id: "login", summary: "改登录页", status: "running", title: "改登录页", peer: "网站" });
+    expect(t.rows()).toHaveLength(1);
+    await waitFor(() => t.rows()[0]!.summary === "先看一下登录页。");
+    expect(t.hub.conversation.cleanBreak(Date.now() + 3600_000)).toBe(false);
+    go();
+    await waitFor(() => t.rows()[0]!.status === "needs_input");
+    expect(t.rows()[0]!.summary).toBe("在 App 里等你：用哪张图？");
+    t.hub.questions.answer(t.hub.questions.listPending()[0]!.id, { "用哪张图？": ["A"] } as any, "app");
+    await waitFor(() => t.rows()[0]!.status === "running");
+    go();
+    await waitFor(() => t.rows()[0]!.summary === "回话了，还在办");
+    go();
+    await waitFor(() => t.rows()[0]!.status === "done");
+    expect(t.rows()[0]).toMatchObject({ title: "改登录页", summary: "办好了", peer: "网站" });
+    // its words reached the assistant, whose relay counts as having told the owner
+    await t.hub.idle();
+    (t.hub.handoffs as any).relayFallbacks(Date.now() + 6 * 60_000);
+    expect(t.hub.chat.recent(20).some((m) => m.kind === "task")).toBe(false);
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("the assistant skips the reply: the host's one line, with the row's title", async () => {
+    const t = await host();
+    t.driver.script = async (_text, ctx) => ctx.emit({ type: "assistant_text", text: "[skip]", parentToolUseId: null });
+    t.driver.palScript = async (_text, ctx) => {
+      await tick(20);
+      await ctx.opts.paloSend!("改好了。");
+    };
+    await t.send("请把登录页改好");
+    await waitFor(() => t.rows()[0]!.status === "done");
+    await t.hub.idle();
+    (t.hub.handoffs as any).relayFallbacks(Date.now() + 6 * 60_000);
+    await waitFor(() => t.pusher.pushes.some((p) => p.title === "转交的事办完了"));
+    expect(t.hub.chat.recent(5).at(-1)).toMatchObject({ kind: "task", text: "转交的事办完了：转交给 网站 的事" });
+    await t.hub.pals.stopAndWait();
+  });
+
+  test("SendMessage to another session opens no row, and nothing follows it", async () => {
+    const t = await host();
+    t.driver.script = async (_text, ctx) => {
+      await ctx.useTool("SendMessage", { to: "网站", message: "请帮我看一下" });
+      ctx.emit({ type: "assistant_text", text: "发了", parentToolUseId: null });
+    };
+    t.hub.userMessage("问问它", "app");
+    await t.hub.idle();
+    expect(t.rows()).toHaveLength(0);
+    expect(t.hub.handoffs.open()).toHaveLength(0);
+    await t.hub.pals.stopAndWait();
   });
 });
 
@@ -441,6 +590,3 @@ describe("native compaction at clean breaks", () => {
     await hub.idle();
   });
 });
-
-// keep readJsonl referenced for local debugging of audit files
-void readJsonl;
