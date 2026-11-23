@@ -11,7 +11,6 @@ import { type PalLaunch, makeSpawner } from "./palLauncher.ts";
 import { CARD_TOOLS, type PalMapOptions, cardKey } from "./palHistory.ts";
 import type { QuestionManager } from "./questions.ts";
 import { type PendingRewind, rewindBusy, rewindNoFiles, rewindNotFound } from "./rewind.ts";
-import type { StallRecovery, StallTarget } from "./stallWatch.ts";
 import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
 import { stripTldrMarker } from "./tldr.ts";
 import { newId, sleep, truncate } from "./util.ts";
@@ -129,7 +128,7 @@ export const stallContinue = (): string => tr("stall.continue");
 // backoff, never two writers, put to sleep; its turns the harness' own, its
 // replies under the API message's id with a message's text blocks joined,
 // out as events; its history its transcript, its tasks in its record.
-export class PalSession extends AgentSession<{ text: string; from?: string; images?: ImageInput[] }, RecordTasks, TranscriptSink> {
+export class PalSession extends AgentSession<{ text: string; from?: string; images?: ImageInput[]; sentAt?: number }, RecordTasks, TranscriptSink> {
   private calls: { name: string; id: string }[] = []; // its card tools' calls (tool_use ids) waiting for their handler
   private follower: { start(): void; poke(): void; stop(): void } | null = null;
   // A fork's entries copied from the session it was forked from: history, not news.
@@ -176,6 +175,9 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
       kill: (pid, sig) => this.d.kill(pid, sig),
       timing: d.timing,
       },
+      harness: d.harness,
+      kept: rec,
+      cwd: () => rec.cwd,
     });
     this.updatedAt = rec.lastUsedAt;
     const history = this.d.harness.history;
@@ -191,7 +193,7 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
   }
 
   /** Its conversation as the harness keeps it. */
-  get ref(): SessionRef {
+  override get ref(): SessionRef {
     return { sessionId: this.rec.sessionId, cwd: this.rec.cwd };
   }
 
@@ -573,44 +575,17 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
 
   // ---------------- the stall watchdog ----------------
 
-  /** What the stall watchdog watches (stallWatch.ts). */
-  stallTarget(): StallTarget {
-    return {
-      key: this.rec.id,
-      name: this.rec.name,
-      busy: () => this.running && this.busy,
-      waiting: () => this.pendingCards() > 0,
-      ...this.stallSigns(),
-      pid: () => this.pid,
-      progress: () => this.d.harness.history.growth(this.ref),
-      recover: () => this.recoverStall(),
-    };
+  // Its turn goes on (agent/session.ts): it's told to, as by the assistant, in its conversation.
+  protected goesOn(): boolean {
+    return this.busy;
   }
 
-  /**
-   * Its process froze mid-work: it's ended (killed if it must be) and the
-   * same session resumes. The owner's words it never took go in again (same
-   * ids, so the app shows them once); a turn it was in is asked to go on.
-   */
-  async recoverStall(): Promise<StallRecovery> {
-    const inTurn = this.busy;
-    const pending = this.pending.entries();
-    await this.shutdown();
-    // Nothing writes its transcript now: what's in it was taken.
-    const untaken = pending.filter(([uuid]) => !this.d.harness.history.took(this.ref, uuid));
-    this.d.log(`pal ${this.rec.name}: stalled; resuming it (${untaken.length} message(s) to send again)`);
-    await this.start();
-    const proc = this.proc;
-    if (!proc || !this.host.up) throw new Error(tr("pals.restartFailed", { name: this.rec.name }));
+  protected override restarted(): void {
     this.notice(tr("pals.stuckRestarted"));
-    for (const [uuid, p] of untaken) this.put(uuid, p.text, p, p.images, () => proc);
-    let continued = false;
-    if (!untaken.length && inTurn) {
-      await this.send(stallContinue(), { from: this.d.mapOptions().assistantName });
-      continued = true;
-    }
-    this.touch();
-    return { resent: untaken.length, continued };
+  }
+
+  protected goOn(): Promise<boolean> {
+    return this.send(stallContinue(), { from: this.d.mapOptions().assistantName }).then(() => true);
   }
 
   // ---------------- the owner's words ----------------
@@ -670,7 +645,7 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
     // The owner's own words mean they're looking at it.
     if (!o.from && !o.silent) this.rec.seenAt = ts;
     this.d.save();
-    this.put(uuid, content, { text: content, ...(o.from ? { from: o.from } : {}), ...(images.length ? { images } : {}) }, images, () => proc);
+    this.put([[uuid, { text: content, ...(o.from ? { from: o.from } : {}), ...(images.length ? { images } : {}) }]], () => proc);
     this.windingDown = false;
     this.touch();
     return msg;
@@ -758,8 +733,16 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
     this.d.changed();
   }
 
+  protected who(): { key: string; name: string; label: string } {
+    return { key: this.rec.id, name: this.rec.name, label: `pal ${this.rec.name}:` };
+  }
+
   protected changed(): void {
     this.d.changed();
+  }
+
+  protected log(s: string): void {
+    this.d.log(s);
   }
 
   protected override touched(): void {

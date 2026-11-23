@@ -31,7 +31,7 @@ import { MediaStore } from "./media.ts";
 import { briefTitle, ensureMorningBrief, isBriefTitle } from "./brief.ts";
 import { HandoffTracker, claudeConfigDir, transcriptPath } from "./handoffs.ts";
 import { readRegistry } from "./ccSessions.ts";
-import { StallWatch, type StallWatchDeps, WATCHDOG_DEFAULTS, apiSockets, diagnoseInto, killHard } from "./stallWatch.ts";
+import { StallWatch, type StallWatchDeps, WATCHDOG_DEFAULTS, apiSockets, diagnoseInto } from "./stallWatch.ts";
 import { PowerWatcher, type PowerReading, readPower } from "./power.ts";
 import { Updater, type UpdaterDeps } from "./update.ts";
 import { type Usage, UsageLedger } from "./usage.ts";
@@ -272,6 +272,15 @@ export class Hub {
       statusChanged: () => this.emitStatus(),
       // Pals reach the assistant (and it them) by this name with SendMessage.
       peerName: () => PALO_NAME,
+      pid: () => {
+        const sid = this.runtime.data.sessionId;
+        if (!sid) return undefined;
+        try {
+          return readRegistry(`${claudeDir}/sessions`).find((e) => e.sessionId === sid)?.pid;
+        } catch {
+          return undefined;
+        }
+      },
       handoffsInFlight: () => this.handoffs.inFlight(),
       written: (sid) => this.harness.history.exists({ sessionId: sid, cwd: this.paths.home }),
       onGoalResult: (id, text) => {
@@ -450,37 +459,8 @@ export class Hub {
       log: this.log,
     });
     // The stall watchdog: the assistant's own process and every Pal's.
-    // Its conversation as the harness keeps it (none before its first turn).
-    const mainRef = () => {
-      const sid = this.runtime.data.sessionId;
-      return sid ? { sessionId: sid, cwd: this.paths.home } : undefined;
-    };
-    const mainPid = () => {
-      const sid = this.runtime.data.sessionId;
-      if (!sid) return undefined;
-      try {
-        return readRegistry(`${claudeDir}/sessions`).find((e) => e.sessionId === sid)?.pid;
-      } catch {
-        return undefined;
-      }
-    };
     this.stallWatch = new StallWatch({
-      targets: () => [
-        this.conversation.stallTarget({
-          name: () => this.config.settings.assistantName || PALO_NAME,
-          pid: mainPid,
-          progress: () => {
-            const ref = mainRef();
-            return ref ? this.harness.history.growth(ref) : "";
-          },
-          took: (uuid) => {
-            const ref = mainRef();
-            return !!ref && this.harness.history.took(ref, uuid);
-          },
-          kill: (pid) => killHard(pid),
-        }),
-        ...this.pals.stallTargets(),
-      ],
+      targets: () => [this.conversation.stallTarget(), ...this.pals.stallTargets()],
       config: () => ({ ...WATCHDOG_DEFAULTS, ...this.config.watchdog }),
       notify: (text) => {
         const msg = this.chat.add({ role: "assistant", kind: "notice", text, channel: "system", proactive: true });
