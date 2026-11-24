@@ -34,6 +34,8 @@ struct DetailTiles: View {
     /// How many files it remembers (nil: not known yet), and that its host keeps none for it.
     @State private var memoryCount: Int?
     @State private var noMemory = false
+    /// The home indicator's, under the scroll.
+    @State private var bottomInset: CGFloat = 0
 
     private var online: Bool { store.connection.isOnline }
     private var pal: Pal? { agent.flatMap { store.pal(id: $0) ?? palDetail?.pal } }
@@ -48,6 +50,8 @@ struct DetailTiles: View {
         #endif
         return model.layout == .phone
     }
+
+    private var inSheet: Bool { phoneSized && model.detailShown }
 
     private var detail: AgentDetail? {
         var d: AgentDetail?
@@ -71,8 +75,10 @@ struct DetailTiles: View {
     var body: some View {
         ScrollView {
             tiles
-                .padding(metrics.padding)
-                .padding(.top, phoneSized && model.detailShown ? 10 : 0)
+                .padding([.horizontal, .top], metrics.padding)
+                .padding(.top, inSheet ? 10 : 0)
+                // The home indicator's room under 归档 is room enough.
+                .padding(.bottom, inSheet ? max(2, metrics.padding - bottomInset) : metrics.padding)
                 .frame(maxWidth: 440)
                 .frame(maxWidth: .infinity)
         }
@@ -80,6 +86,10 @@ struct DetailTiles: View {
         .scrollIndicators(.hidden)
         .onScrollGeometryChange(for: CGSize.self) { CGSize(width: $0.contentInsets.top + $0.contentInsets.bottom, height: $0.contentSize.height) } action: { _, s in
             onHeight(s.height, s.width)
+        }
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentInsets.bottom } action: { _, b in
+            // (Not the keyboard.)
+            if b < 60 { bottomInset = b }
         }
         .environment(\.detailMetrics, metrics)
         .navigationTitle("")

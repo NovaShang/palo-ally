@@ -132,6 +132,7 @@ struct MemoryEditorView: View {
                     .padding(.horizontal, 12)
             }
         }
+        .detailGround()
         .navigationTitle(MemoryRowName.name(file.path, agent: agent))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

@@ -100,21 +100,39 @@ private struct DetailGround: ViewModifier {
     @Environment(\.detailOnGlass) private var onGlass
 
     func body(content: Content) -> some View {
-        if onGlass {
-            content.containerBackground(.clear, for: .navigation)
-        } else {
-            content.background(Color(.systemGroupedBackground).ignoresSafeArea())
+        // One ground that fades: it must be there by the time the sheet is
+        // up (the system's white under it), and the page stays the same one.
+        content.containerBackground(for: .navigation) {
+            Color(.systemGroupedBackground)
+                .opacity(onGlass ? 0 : 1)
+                .animation(.easeOut(duration: 0.15), value: onGlass)
+                .ignoresSafeArea()
         }
+    }
+}
+
+/// How much larger than the drawing the owner's text is.
+struct DetailScale: DynamicProperty {
+    @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
+
+    var value: CGFloat {
+        #if DEBUG
+        // `-demoDetailType YES`: the largest (a Mac doesn't scale; snapshots).
+        if UserDefaults.standard.bool(forKey: "demoDetailType") { return 53.0 / 17 }
+        #endif
+        return scale
     }
 }
 
 private struct DetailFont: ViewModifier {
     let size: CGFloat
     let weight: Font.Weight
-    @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
+    private var scale = DetailScale()
+
+    init(size: CGFloat, weight: Font.Weight) { self.size = size; self.weight = weight }
 
     func body(content: Content) -> some View {
-        content.font(.system(size: size * scale, weight: weight))
+        content.font(.system(size: size * scale.value, weight: weight))
     }
 }
 
@@ -157,42 +175,63 @@ struct SquareTileLabel: View {
     var count: Int = 0
     var waiting = false
     @Environment(\.detailMetrics) private var metrics
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private let scale = DetailScale()
+
+    init(symbol: String, name: String, count: Int = 0, waiting: Bool = false) {
+        self.symbol = symbol; self.name = name; self.count = count; self.waiting = waiting
+    }
+
+    /// With large text the count is beside the name: alone in its corner it is lost.
+    private var large: Bool { typeSize.isAccessibilitySize }
 
     var body: some View {
+        let icon = min(metrics.icon * scale.value, 34)
         VStack(spacing: 7) {
             Image(systemName: symbol)
-                .detailFont(metrics.icon, .medium)
-                .frame(height: metrics.icon + 4)
+                .font(.system(size: icon, weight: .medium))
+                .frame(minHeight: icon + 4)
                 .accessibilityHidden(true)
-            Text(name)
-                .detailFont(metrics.square, .medium)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+            HStack(spacing: 6) {
+                Text(name)
+                    .detailFont(metrics.square, .medium)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                if large { badge }
+            }
         }
         .padding(.horizontal, 6)
-        .padding(.vertical, 8)
+        .padding(.vertical, large ? 14 : 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .topTrailing) {
-            if count > 0 {
-                if waiting {
-                    Text(verbatim: "\(count)")
-                        .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 4)
-                        .frame(minWidth: 17, minHeight: 17)
-                        .background(StatusDot.color(.waiting), in: .capsule)
-                        .padding(6)
-                } else {
-                    Text(verbatim: "\(count)")
-                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 8)
-                        .padding(.trailing, 10)
-                }
+            if !large {
+                badge
+                    .padding(.top, waiting ? 6 : 8)
+                    .padding(.trailing, waiting ? 6 : 10)
             }
         }
         .foregroundStyle(.primary)
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder private var badge: some View {
+        if count > 0 {
+            if waiting {
+                let side = 17 * scale.value
+                Text(verbatim: "\(count)")
+                    .monospacedDigit()
+                    .detailFont(10, .semibold)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 4)
+                    .frame(minWidth: side, minHeight: side)
+                    .background(StatusDot.color(.waiting), in: .capsule)
+            } else {
+                Text(verbatim: "\(count)")
+                    .monospacedDigit()
+                    .detailFont(11, .semibold)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 }
 

@@ -83,7 +83,15 @@ private struct DetailTaskRow: View {
     let stop: (AgentTask) -> Void
     @Environment(\.detailMetrics) private var metrics
     @State private var hovered = false
-    @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private let scale = DetailScale()
+
+    init(task: AgentTask, canStop: Bool, open: ((AgentTask) -> Void)?, stop: @escaping (AgentTask) -> Void) {
+        self.task = task; self.canStop = canStop; self.open = open; self.stop = stop
+    }
+
+    /// A line of each, two with large text.
+    private var lines: Int { typeSize.isAccessibilitySize ? 2 : 1 }
 
     private var title: String { task.title.isEmpty ? String(localized: "一件事") : task.title }
 
@@ -100,7 +108,7 @@ private struct DetailTaskRow: View {
                     }
                     .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(title).detailFont(metrics.row, .semibold).lineLimit(1)
+                        Text(title).detailFont(metrics.row, .semibold).lineLimit(lines)
                         line
                     }
                     Spacer(minLength: 0)
@@ -141,7 +149,7 @@ private struct DetailTaskRow: View {
         let said = task.summary?.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
         let words = !said.isEmpty ? said : task.needsYou ? String(localized: "需要你") : AgentTaskRow.kindWord(task)
         return RunningLine(since: task.startedAt > 0 ? task.startedAt.msDate : nil, words: words, timeFirst: !said.isEmpty,
-                           size: metrics.line, textScale: scale)
+                           size: metrics.line * scale.value, lines: lines)
     }
 }
 
@@ -152,14 +160,15 @@ private struct RunningLine: UIViewRepresentable {
     let words: String
     let timeFirst: Bool
     let size: CGFloat
-    let textScale: CGFloat
+    let lines: Int
 
-    private var font: UIFont { .systemFont(ofSize: size * textScale) }
+    private var font: UIFont { .systemFont(ofSize: size) }
 
     func makeUIView(context: Context) -> Ticking { Ticking() }
 
     func updateUIView(_ view: Ticking, context: Context) {
         view.label.font = font
+        view.label.numberOfLines = lines
         view.line = { [since, words, timeFirst] in
             guard let since else { return words }
             let time = Self.time(since)
@@ -169,7 +178,7 @@ private struct RunningLine: UIViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: Ticking, context: Context) -> CGSize? {
-        CGSize(width: proposal.width ?? 200, height: ceil(font.lineHeight))
+        CGSize(width: proposal.width ?? 200, height: ceil(font.lineHeight * CGFloat(lines)))
     }
 
     static func time(_ since: Date, now: Date = Date()) -> String {

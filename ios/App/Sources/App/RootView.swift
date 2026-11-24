@@ -194,7 +194,7 @@ private struct LayoutStressTest: ViewModifier {
             // The first window runs them; `wN.` steps act on the N-th window.
             if let actions = d.string(forKey: "demoActions") {
                 try? await Task.sleep(for: .seconds(d.double(forKey: "demoActionsDelay") > 0 ? d.double(forKey: "demoActionsDelay") : 4))
-                guard model.app.windows.first === model else { return }
+                guard model.app.windows.first === model else { debugLog("[nav] demo actions: not the first of \(model.app.windows.count) windows"); return }
                 if PerfProbe.on { debugLog("[perfstep] start | \(PerfProbe.takeStep())") }
                 for step in actions.split(separator: ",").map(String.init) {
                     guard model.store != nil else { break }
@@ -435,7 +435,19 @@ private struct LayoutStressTest: ViewModifier {
                         }
                     // `copymenu`: 编辑 → 拷贝, sent along the responder chain as the menu does.
                     // `details`: the orb's details, as a click on it opens them.
-                    case "details": model.detailShown = true
+                    // (A phone may still be getting to its page: again until the sheet is up.)
+                    case "details":
+                        for attempt in 1...4 {
+                            model.detailShown = true
+                            guard AgentDetailPlacement.usesSheet(model: model) else { break }
+                            try? await Task.sleep(for: .seconds(1))
+                            let up = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow?.rootViewController }
+                                .contains { $0.presentedViewController != nil }
+                            debugLog("[details] try \(attempt): flag \(model.detailShown), sheet \(up ? "up" : "not up"), selection \(String(describing: model.selection)) column \(model.compactColumn)")
+                            if up { break }
+                            model.detailShown = false
+                            try? await Task.sleep(for: .seconds(0.4))
+                        }
                     // `detail-settings`, `detail-memory`, `detail-history`, `detail-goals`: its pages, as tapping their tiles does.
                     case "detail-settings": w.detailPage = .settings
                     case "detail-memory": w.detailPage = .memory

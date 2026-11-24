@@ -12,6 +12,9 @@ struct AgentDetailView: View {
     @Environment(AppStore.self) private var store
     /// The tiles' height, so the popover or the sheet fits them (nil: not measured yet).
     @State private var height: CGFloat?
+    /// The phone's sheet is as high as the screen: no glass round the tiles
+    /// then (the system fills it in), so they stand on gray.
+    @State private var full = false
 
     static var width: CGFloat {
         #if DEBUG
@@ -57,6 +60,11 @@ struct AgentDetailView: View {
                 }
             }
             .toolbarVisibility(.hidden, for: .navigationBar)
+        }
+        .environment(\.detailOnGlass, !(asSheet && (full || pushed)))
+        .onGeometryChange(for: CGFloat.self) { $0.size.height + $0.safeAreaInsets.top + $0.safeAreaInsets.bottom } action: { h in
+            let window = model.scene?.effectiveGeometry.coordinateSpace.bounds.height ?? 0
+            full = window > 0 && h > window * 0.85
         }
         #if DEBUG
         .modifier(DemoTypeSize())
