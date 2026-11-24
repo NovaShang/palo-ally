@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Claude 账号与用量</title>
+<title>Claude 用量</title>
 <style>
 *{box-sizing:border-box}
 :root{--accent:#CF53A6;--orange:#FF9F0A;--red:#FF453A;--green:#30D158;--blue:#0A85FF;--idle:#8E8E93}
@@ -139,30 +139,28 @@ svg{display:block}
 .st .fr .foot{bottom:14px}.st small{font-size:12.5px;color:#57575c;display:block;margin-top:5px;line-height:1.45}
 </style></head><body><main>
 
-<h1>Claude 账号与用量</h1>
-<p>左边栏底部中间加一项，一直看得见，直接写最紧的那条额度还剩多少。点开是一页「Claude 账号」：还剩多少、什么时候重置、会不会用完，下面是账号和登录。登录过期时，同一页最上面就是「重新登录」。</p>
-<p class="cap">稿子里的账号、数字、agent 都是编的。下面这个可以点：切状态，点底部那一项开页面，点「重新登录」「换个账号」「退出登录」。</p>
+<h1>Claude 用量</h1>
+<p>左侧栏加一项「Claude 用量」，在「主机与设备」上面，第二行直接写最紧的那条额度还剩多少。点开是一页：还剩多少、什么时候重置、会不会用完，下面是账号和登录。登录过期时，同一页最上面就是「重新登录」。</p>
+<p class="cap">稿子里的账号、数字、agent 都是编的。下面这个可以点：切状态，点「Claude 用量」开页面，点「重新登录」「换个账号」「退出登录」。</p>
 
 <div class="tabs" id="tabs"></div>
 <div class="row" id="live"></div>
 
-<h2>要你定的（4 件）</h2>
-<p class="cap">第一步（入口、页面、重新登录、换账号）我估约 6 小时，另加选上的下面几项。</p>
+<h2>要你定的（2 件）</h2>
+<p class="cap">入口、页面、重新登录、换账号、退出登录，我估约 8 小时。</p>
 <div class="dec">
-<div><b>1. 放在哪</b>我选底栏中间（＋ 和设置之间）。它一直在，列表多长都看得见，也不占行。另一种是列表最后加一行，在「主机与设备」上面，样子最统一，但 agent 一多就要滚到底才看得见。两种在上面都能切。</div>
-<div><b>2. 额度用完后，恢复时自动接着做</b>我建议做。现在 agent 停了就停了，还会提示「模型那边太忙了」，说得不对。登录过期那套「记下没做完的，恢复后接着做」可以直接用在这里。大约多 2 小时。</div>
-<div><b>3. 「本周谁用得多」</b>我建议第二步再做。Claude 不给每个 agent 的用量，只能从对话记录估算占比，第一次扫描量大。第 5 节有图，不做也不影响这页。</div>
-<div><b>4. 退出登录</b>我建议做，放最后一行，先问再退。它会让所有东西停下，平时用不到，但换电脑、交还电脑时需要。主机上要新写，约 1.5 小时。</div>
+<div><b>1. 入口放在哪</b>按你说的画成左侧栏的一行，样子和别的行一样。缺点是 agent 多了要滚到底才看得见。另一种是底栏 ＋ 和设置之间的胶囊，一直看得见，也不占行。两种在上面都能切。</div>
+<div><b>2. 额度用完，恢复时自动接着做</b>我建议做，约多 2 小时。现在 agent 停了就停了，还会写「模型那边太忙了」，说得不对。</div>
 </div>
+<p class="cap">我替你定了两件：退出登录这次就做，放最后一行，先问再退；「本周谁用得多」先不做，Claude 不给每个 agent 的用量，只能估。</p>
 
 <h2>1. 入口</h2>
-<p>名字不写「用量」两个字，直接写答案：「本周剩 43%」。圆环是已用的比例，和指示器外圈同一套颜色：平时灰，用到 80% 橙，95% 红。取已用比例最高的那条，所以它说的总是最先碰到的。</p>
-<ul><li>＋ 和设置之间本来就空着，用的是同一种玻璃、同样高度（Mac 34，手机 48）。Mac 的「有新版本」提示已经用过这种胶囊，不是新样式。</li>
-<li>不放在最上面：它一天看几次，不该压过 Palo 和工作区。不放进设置：藏起来就等于没有。</li>
-<li>底栏换成系统的软边（标题栏已经这么用）：行滑到它下面会淡掉。现在「主机与设备」滑到 ＋ 下面会叠在一起，这样也一并没了。</li>
-<li>它的页面开着时，这一项变成和选中行一样的灰。</li></ul>
+<p>一行，标题「Claude 用量」，下面直接写答案：「本周剩 43%」。圆环是已用的比例，和指示器外圈同一套颜色：平时灰，用到 80% 橙，95% 红。取已用比例最高的那条，所以它说的总是最先碰到的。</p>
+<ul><li>紧挨着「主机与设备」：都是管这台电脑的，一天看几次，不压过 Palo 和工作区。</li>
+<li>它的页面开着时，这一行选中，和别的行一样。</li>
+<li>底栏那种：＋ 和设置之间的空处，同一种玻璃、同样高度（Mac 34，手机 48）。要把底栏换成系统软边，行滑到下面会淡掉，Mac 上还没试过。</li></ul>
 <div class="row" id="entry"></div>
-<h3>各种状态下这一项怎么写</h3>
+<h3>各种状态下这一行怎么写</h3>
 <div class="strip" id="pills"></div>
 
 <h2>2. 页面</h2>
@@ -217,7 +215,7 @@ svg{display:block}
 <h3>拿不到的</h3>
 <ul><li>具体多少条、多少 token，Claude 只给百分比。</li>
 <li>Max 是哪一档、每天用了多少、每个 agent 占额度的真实比例。</li>
-<li>这个方法名字里就写着「实验，别依赖」，SDK 升级可能没了或改了。没了就退到只显示账号和登录，入口写「Claude 账号」。</li></ul>
+<li>这个方法名字里就写着「实验，别依赖」，SDK 升级可能没了或改了。没了就退到只显示账号和登录，这一行不写剩多少。</li></ul>
 </main>
 
 <script>
@@ -259,7 +257,7 @@ hit:[lim('5 小时',100,63,'18:40 重置，还有 1 小时 52 分',''),...WK]};
 const COMP=[lim('5 小时',31,36,'20:00 重置，还有 3 小时 12 分','按平均速度够用到重置'),lim('本周',88,83,'明天 22:00 重置，还有 1 天 5 小时','按平均速度明天 12 点左右用完',1)];
 const ST={ok:'平时',near:'快用完',hit:'用完了',loading:'还没读到',stale:'主机离线',expired:'登录过期',api:'API 密钥',diff:'两台，两个账号',same:'两台，同一账号'};
 function pillOf(s){return{
- ok:[57,'本周剩 43%'],near:[84,'5 小时剩 16%'],hit:[100,'5 小时用完，18:40 恢复'],loading:[0,'<span class="mute">用量</span>'],stale:[57,'<span class="mute">本周剩 43% · 3 小时前</span>'],
+ ok:[57,'本周剩 43%'],near:[84,'5 小时剩 16%'],hit:[100,'5 小时用完，18:40 恢复'],loading:[0,'正在读取…'],stale:[57,'<span class="mute">本周剩 43% · 3 小时前</span>'],
  expired:['!','登录过期'],api:['k','API 密钥'],diff:[88,'公司 · 本周剩 12%'],same:[57,'本周剩 43%']}[s];}
 function pill(s,sel,z){const[p,t]=pillOf(s);const ic=p==='!'?I.alert('#FF9F0A'):p==='k'?I.key:(s==='stale'?`<span style="opacity:.5">${ring(p,z)}</span>`:ring(p,z));return `<button class="pill${sel?' sel':''}" data-go="page">${ic}<span>${t}</span></button>`;}
 
@@ -314,15 +312,15 @@ function rows(s,o,ph){
  +G('agent',row(glyph(hit||ex?'idle':'done'),'笔记整理',sub('这周的 12 篇笔记都归好类了，标签也补上了。'))+row(glyph(hit||ex?'idle':'work'),'修登录跳转','终端里开着 · 在跑登录相关的测试，还剩 3 个')+row(glyph('wait'),'问卷数据清洗','问你缺的数据怎么处理',{b:1})+row(I.box,'已归档',null,{q:1,n:1}))
  +G('好友',row('<span class="av">家<i style="position:absolute;right:0;bottom:0;width:6px;height:6px;border-radius:3px;background:#30D158;box-shadow:0 0 0 1.5px var(--side)"></i></span>','家人<span class="tag">家人朋友</span>','Palo：收到，路上小心。')+row('<span class="av">小</span>','小林<span class="tag">家人朋友</span>','Palo：明天的资料发你邮箱了，记得看一下。'))
  +(ph?`<div class="grp">${last}</div>`:'<div style="height:14px"></div>'+last);}
-function mac(o){const s=o.s||'ok',p=o.page;
+function mac(o){o={place:'row',...o};const s=o.s||'ok',p=o.page;if(o.place==='row'&&o.end===undefined)o.end=1;
  const foot=`<div class="foot"><div class="circ" style="left:13px;top:0;width:34px;height:34px">${I.plus(15)}</div>${o.place==='row'?'':pill(s,p,15)}<div class="circ" style="right:13px;top:0;width:34px;height:34px">${I.gear(18)}</div></div>`;
  return `<div class="mac ${o.d?'D':'L'}${o.side?' sideonly':''}"${o.h?` style="height:${o.h}px"`:''}><div class="side"><div class="lights"><i></i><i></i><i></i></div><div class="circ" style="left:95px;top:7px;width:38px;height:38px">${I.side}</div><div class="list${o.end?' end':''}">${rows(s,o,0)}</div><div class="fade"></div>${o.end?'<div style="position:absolute;top:0;left:0;right:0;height:74px;z-index:2;background:linear-gradient(var(--side) 55%,transparent)"></div>':''}${foot}</div>
- <div class="mainarea${p?' page':''}"><div class="circ" style="right:7px;top:7px;width:38px;height:38px">${I.pane}</div>${p?`<div class="mt">Claude 账号</div><div class="scroll"><div class="content">${page(s,o.ui)}</div></div>${sheetHTML(o.ui)}`
+ <div class="mainarea${p?' page':''}"><div class="circ" style="right:7px;top:7px;width:38px;height:38px">${I.pane}</div>${p?`<div class="mt">Claude 用量</div><div class="scroll"><div class="content">${page(s,o.ui)}</div></div>${sheetHTML(o.ui)}`
  :`<div class="bubbles"><span>明白，登录页先放着。列表页做完了，跑一下构建看看有没有报错。</span><span class="me">跑测试</span><span class="me">先把首页改回去</span></div><div class="comp">按住说话，轻点打字</div>`}</div></div>`;}
 const sb='<div class="sb"><span>16:48</span><svg width="66" height="16" viewBox="0 0 66 16" fill="currentColor"><path d="M1 12h3v3H1zM6 9h3v6H6zM11 6h3v9h-3zM16 3h3v12h-3zM34 13l-3-3a4 4 0 0 1 6 0zM28 7.500l-1.700-1.700a10.500 10.500 0 0 1 15.400 0L40 7.500a8 8 0 0 0-12 0z"/><rect x="46" y="3" width="17" height="10" rx="3"/></svg></div>';
-function ph(o){const s=o.s||'ok',T=`<div class="ph ${o.d?'D':'L'}">${sb}`;
+function ph(o){o={place:'row',...o};if(o.place==='row'&&o.shift===undefined)o.shift=1;const s=o.s||'ok',T=`<div class="ph ${o.d?'D':'L'}">${sb}`;
  if(!o.page)return T+`<div class="big">Palo</div><div class="list" style="${o.shift?`top:auto;bottom:100px`:''}">${rows(s,o,1)}</div>${o.shift?'<div style="position:absolute;top:0;left:0;right:0;height:60px;background:var(--page)"></div>'+sb:''}<div class="fade"></div><div class="foot"><div class="circ" style="left:14px;top:0;width:48px;height:48px">${I.plus(19)}</div>${o.place==='row'?'':pill(s,0,19)}<div class="circ" style="right:14px;top:0;width:48px;height:48px">${I.gear(22)}</div></div><div class="home"></div></div>`;
- return T+`<div class="nav">Claude 账号</div><button class="circ" data-go="list" style="left:16px;top:62px;width:44px;height:44px">${I.back(20)}</button><div class="scroll"><div class="content">${page(s,o.ui)}</div></div>${sheetHTML(o.ui)}<div class="home"></div></div>`;}
+ return T+`<div class="nav">Claude 用量</div><button class="circ" data-go="list" style="left:16px;top:62px;width:44px;height:44px">${I.back(20)}</button><div class="scroll"><div class="content">${page(s,o.ui)}</div></div>${sheetHTML(o.ui)}<div class="home"></div></div>`;}
 
 /* ---------- zoom ---------- */
 const vw=()=>document.documentElement.clientWidth;
@@ -332,9 +330,9 @@ const fig=(html,w,cap,max)=>`<figure style="max-width:100%"><div class="scale" s
 const $=id=>document.getElementById(id);
 
 /* ---------- live ---------- */
-const L={s:'ok',d:0,place:'foot',page:1,phpage:1,ui:{}};
+const L={s:'ok',d:0,place:'row',page:1,phpage:1,ui:{}};
 function live(){
- $('tabs').innerHTML=Object.entries(ST).map(([k,v])=>`<button data-s="${k}" class="${L.s===k?'on':''}">${v}</button>`).join('')+`<span class="gap"></span><button data-d="0" class="${L.d?'':'on'}">浅色</button><button data-d="1" class="${L.d?'on':''}">深色</button><span class="gap"></span><button data-p="foot" class="${L.place==='foot'?'on':''}">入口在底栏</button><button data-p="row" class="${L.place==='row'?'on':''}">入口是一行</button>`;
+ $('tabs').innerHTML=Object.entries(ST).map(([k,v])=>`<button data-s="${k}" class="${L.s===k?'on':''}">${v}</button>`).join('')+`<span class="gap"></span><button data-d="0" class="${L.d?'':'on'}">浅色</button><button data-d="1" class="${L.d?'on':''}">深色</button><span class="gap"></span><button data-p="row" class="${L.place==='row'?'on':''}">入口是一行</button><button data-p="foot" class="${L.place==='foot'?'on':''}">入口在底栏</button>`;
  const w=vw()>=1200,avail=Math.min(1280,vw())-48;const mz=w?(avail-30)/(1200+402*.87+0):zm(1200);
  $('live').style.flexWrap=w?'nowrap':'wrap-reverse';
  $('live').innerHTML=`<div class="scale" style="padding:2px"><div style="zoom:${w?mz:zm(1200)}">${mac({...L,end:L.place==='row'})}</div></div><div style="zoom:${w?mz*.87:zm(402)}">${ph({...L,page:L.phpage,shift:L.place==='row'})}</div>`;
@@ -354,10 +352,10 @@ document.addEventListener('click',e=>{
 
 /* ---------- static ---------- */
 function stat(){
- $('entry').innerHTML=fig(mac({side:1}),310,'底栏中间（我选这个），Mac')+fig(mac({side:1,d:1}),310,'同一个，深色')+fig(mac({side:1,place:'row',end:1}),310,'另一种：列表最后一行。图里已经滚到底')
-  +fig(ph({}),402,'底栏中间，手机',.87)+fig(ph({place:'row',shift:1}),402,'另一种，手机，已经滚到底',.87);
- const note={ok:'灰环是已用的 57%',near:'用到 80% 变橙',hit:'变红，写几点恢复',loading:'第一次打开，只写「用量」',stale:'写是多久以前的',expired:'点开就能登录',api:'没有套餐额度，点开是账号说明',diff:'写最紧的那台',same:'只算一次'};
- $('pills').innerHTML=Object.keys(ST).map((k,i)=>`<div class="st"><div class="fr ${i%2&&0?'D':'L'}"><div class="foot"><div class="circ" style="left:13px;top:0;width:34px;height:34px">${I.plus(15)}</div>${pill(k,0,15)}<div class="circ" style="right:13px;top:0;width:34px;height:34px">${I.gear(18)}</div></div></div><small><b>${ST[k]}</b>：${note[k]}</small></div>`).join('');
+ $('entry').innerHTML=fig(mac({side:1,end:1}),310,'左侧栏的一行，Mac')+fig(mac({side:1,d:1,end:1}),310,'同一个，深色')+fig(mac({side:1,place:'foot',end:0}),310,'另一种：底栏中间')
+  +fig(ph({shift:1}),402,'左侧栏的一行，手机，已经滚到底',.87)+fig(ph({place:'foot',shift:0}),402,'另一种，手机',.87);
+ const note={ok:'灰环是已用的 57%',near:'用到 80% 变橙',hit:'变红，写几点恢复',loading:'第一次打开，第二行写正在读取',stale:'写是多久以前的',expired:'点开就能登录',api:'没有套餐额度，点开是账号说明',diff:'写最紧的那台',same:'只算一次'};
+ $('pills').innerHTML=Object.keys(ST).map(k=>`<div class="st"><div class="fr mac L sideonly" style="width:310px;height:62px"><div class="side" style="position:absolute;inset:0;width:auto"><div style="position:absolute;top:6px;left:10px;right:10px">${listRowUsage(k,0)}</div></div></div><small><b>${ST[k]}</b>：${note[k]}</small></div>`).join('');
  $('pmac').innerHTML=Z(mac({page:1}),1200);$('pmacd').innerHTML=Z(mac({page:1,d:1,s:'near'}),1200);
  $('pph').innerHTML=fig(ph({page:1}),402,'手机，平时',.87)+fig(ph({page:1,d:1,s:'near'}),402,'手机，深色，5 小时额度用到 84%',.87);
  $('states').innerHTML=[['near','用到 80% 起，条和圆环变橙；多一行「额外用量」，说用完以后会停下还是按量计费，不写钱。'],['hit','最上面说几点恢复、谁停着。到点自己接着做是第 2 件要你定的。只有某个模型用完时写「只影响 Opus，别的模型还能用」，开着额外用量时写「现在按量计费」。'],['loading','只有第一次会这样。之后每次打开先给上次的数。'],['stale','数变淡，写是几点的，登录按钮不能点。在线但没拿到新数也是这样，标题写「没拿到新的数」。'],['expired','最上面就是重新登录，全页唯一的主题色按钮。对话里那条横幅不变。'],['api','Bedrock、Vertex 也是这样：没有套餐额度，说清楚，不给不起作用的登录按钮。订阅账号但登录缺权限时，写「这次登录看不到额度，重新登录试试」。'],['diff','按主机分开，紧的排前面。'],['same','额度只写一次，登录每台各一份。']].map(([k,c])=>fig(ph({page:1,s:k}),402,`<b>${ST[k]}</b>。${c}`,.7)).join('');
