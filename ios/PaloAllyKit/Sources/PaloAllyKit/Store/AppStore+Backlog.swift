@@ -8,6 +8,17 @@ import Foundation
 // 下一件: an agent that finished its turn with nothing waiting on the owner
 // is offered the first item in line for it; 换一件 steps past it, and
 // putting the offer away keeps it away from that agent for the rest of the day.
+/// New words for an item, until the host has them: whose list, and what changed (nil: as it is; an empty note: none).
+struct BacklogEdit {
+    var owner: String?
+    var folder: String?
+    var text: String?
+    var note: String?
+    /// Grows with each change; the host's answer to an older one doesn't end it.
+    var revision = 0
+    var sending = false
+}
+
 extension AppStore {
     /// "palo" or a Pal's id: whose list.
     private func backlogOwner(_ pal: String?) -> String { pal ?? "palo" }
@@ -28,10 +39,23 @@ extension AppStore {
     }
 
     func apply(backlog b: Backlog) {
+        // What was typed here and the host hasn't taken yet stands over the list it sends.
+        let b = withEdits(b)
         if shared.backlogs[b.folder] != b { shared.backlogs[b.folder] = b }
         if b.assistant == true, shared.backlogFolders["palo"] != b.folder { shared.backlogFolders["palo"] = b.folder }
         // An agent in that folder whose list wasn't asked for yet: it's this one.
         for p in pals where p.cwd == b.folder && shared.backlogFolders[p.id] == nil { shared.backlogFolders[p.id] = b.folder }
+    }
+
+    private func withEdits(_ b: Backlog) -> Backlog {
+        guard !shared.backlogEdits.isEmpty else { return b }
+        var b = b
+        for i in b.items.indices {
+            guard let e = shared.backlogEdits[b.items[i].id], e.folder == nil || e.folder == b.folder else { continue }
+            if let t = e.text { b.items[i].text = t }
+            if let n = e.note { b.items[i].note = n.isEmpty ? nil : n }
+        }
+        return b
     }
 
     private func remember(_ b: Backlog, for pal: String?) {
@@ -45,6 +69,7 @@ extension AppStore {
             let r: BacklogResult = try await rpc.call(RPCMethod.backlogList, params: BacklogParams(pal: pal))
             if shared.backlogSupported != true { shared.backlogSupported = true }
             if let b = r.backlog { remember(b, for: pal) }
+            resendBacklogEdits()
         } catch {
             if case .remote(let m)? = error as? RPCError, m.lowercased().contains("unknown method") { shared.backlogSupported = false }
         }
@@ -53,11 +78,57 @@ extension AppStore {
     // MARK: the owner's hand
 
     /// A new item at the end of the queue.
-    public func addBacklog(_ text: String, note: String? = nil, forPal pal: String?) async throws {
+    @discardableResult
+    public func addBacklog(_ text: String, note: String? = nil, forPal pal: String?) async throws -> BacklogItem? {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else { return }
+        guard !t.isEmpty else { return nil }
         let r: BacklogResult = try await rpc.call(RPCMethod.backlogAdd, params: BacklogParams(pal: pal, text: t, note: note))
         if let b = r.backlog { remember(b, for: pal) }
+        return r.item
+    }
+
+    /// Its words or its note, changed in place (nil: as it is; an empty note
+    /// takes it away). Shown at once; sent now, or again once the computer is
+    /// reached, and until then no list from the host puts the old words back.
+    public func editBacklog(id: String, text: String? = nil, note: String? = nil, forPal pal: String?) {
+        let text = text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text?.isEmpty != true, text != nil || note != nil else { return }
+        var e = shared.backlogEdits[id] ?? BacklogEdit(owner: pal, folder: shared.backlogFolders[backlogOwner(pal)])
+        if let text { e.text = text }
+        if let note { e.note = note.trimmingCharacters(in: .whitespacesAndNewlines) }
+        e.revision += 1
+        shared.backlogEdits[id] = e
+        if let b = backlog(forPal: pal) { apply(backlog: b) }
+        sendBacklogEdit(id)
+    }
+
+    /// What the host hasn't taken, once it's reached again.
+    func resendBacklogEdits() {
+        for id in shared.backlogEdits.keys { sendBacklogEdit(id) }
+    }
+
+    /// One item's words at a time, the newest until the host has them.
+    private func sendBacklogEdit(_ id: String) {
+        guard shared.backlogEdits[id]?.sending == false else { return }
+        shared.backlogEdits[id]?.sending = true
+        Task {
+            while let e = shared.backlogEdits[id] {
+                do {
+                    let r: BacklogResult = try await rpc.call(RPCMethod.backlogUpdate, params: BacklogParams(pal: e.owner, id: id, text: e.text, note: e.note))
+                    if shared.backlogEdits[id]?.revision == e.revision { shared.backlogEdits[id] = nil }
+                    if let b = r.backlog { remember(b, for: e.owner) }
+                } catch {
+                    // Refused (it's gone from the list): nothing to send. Not reached: kept.
+                    if case .remote? = error as? RPCError {
+                        shared.backlogEdits[id] = nil
+                        await loadBacklog(forPal: e.owner)
+                    } else {
+                        shared.backlogEdits[id]?.sending = false
+                    }
+                    return
+                }
+            }
+        }
     }
 
     /// Dragged to place `to` of the queue (0 = top).
@@ -104,25 +175,57 @@ extension AppStore {
         }, RPCMethod.backlogRemove, BacklogParams(pal: pal, id: item.id))
     }
 
+    /// 撤回 of 做完了: `item` as it was (queued or being done), at its place in the queue.
+    public func undoDoneBacklog(_ item: BacklogItem, place: Int, forPal pal: String?) async throws {
+        guard item.state == .doing else { return try await moveBacklog(item, to: place, forPal: pal) }
+        try await change(pal, optimistic: { $0.starting(item.id, by: item.pal, name: item.palName) },
+                         RPCMethod.backlogStart, BacklogParams(pal: pal, id: item.id, agent: item.pal))
+    }
+
+    /// 撤回 of a removal: `item` as it was, at its place among the ones in its state.
+    public func restoreBacklog(_ item: BacklogItem, place: Int, forPal pal: String?) async throws {
+        do {
+            try await change(pal, optimistic: { $0.restoring(item, to: place) },
+                             RPCMethod.backlogRestore, BacklogParams(pal: pal, to: place, item: item))
+        } catch {
+            guard case .remote(let m)? = error as? RPCError, m.lowercased().contains("unknown method") else { throw error }
+            // A host from before it: the same words again, in the same place, for the same agent.
+            guard let again = try await addBacklog(item.text, note: item.note, forPal: pal) else { return }
+            switch item.state {
+            case .done:
+                try await doneBacklog(again, forPal: pal)
+            case .doing:
+                try await change(pal, optimistic: { $0.starting(again.id, by: item.pal, name: item.palName) },
+                                 RPCMethod.backlogStart, BacklogParams(pal: pal, id: again.id, agent: item.pal))
+            default:
+                try await moveBacklog(again, to: place, forPal: pal)
+                if let agent = item.pal { try await assignBacklog(again, to: agent, forPal: pal) }
+            }
+        }
+    }
+
     /// 开始: the item goes to `agent` (or the assistant, nil) as the
     /// owner's words, quoting it, and is being done by it from now on.
-    /// `words`: what the owner says under the quote (开始做这件).
-    public func startBacklog(_ item: BacklogItem, by agent: String?, words: String) {
+    /// `owner`: whose list it's on (nil: the assistant's), which needn't be
+    /// the agent's own folder's. `words`: what the owner says under the quote (开始做这件).
+    public func startBacklog(_ item: BacklogItem, by agent: String?, forPal owner: String?, words: String) {
         let target = agent.map { palStore($0) } ?? (parent ?? self)
         if let agent { shared.backlogSkips[agent] = 0 }
-        Task {
-            // Marked first: when the agent looks at its list, it's there as its own.
-            if let b = try? await self.startCall(item, agent: agent) { self.remember(b, for: agent) }
-        }
+        // Marked first: when the agent looks at its list, it's there as its own.
+        markBacklogStarted(item, by: agent, forPal: owner)
         let saved = target.replyDraft
         target.replyDraft = ReplyTo(messageId: "backlog:\(item.id)", excerpt: Self.backlogQuote(item))
         target.send(words)
         target.replyDraft = saved
     }
 
-    private func startCall(_ item: BacklogItem, agent: String?) async throws -> Backlog? {
-        let r: BacklogResult = try await rpc.call(RPCMethod.backlogStart, params: BacklogParams(pal: agent, id: item.id, agent: agent))
-        return r.backlog
+    /// Being done by `agent` (the assistant, nil), its words on their way some other way (a new agent's first message).
+    public func markBacklogStarted(_ item: BacklogItem, by agent: String?, forPal owner: String?) {
+        let name = agent.flatMap { pal(id: $0)?.displayName }
+        Task {
+            try? await change(owner, optimistic: { $0.starting(item.id, by: agent, name: name) },
+                              RPCMethod.backlogStart, BacklogParams(pal: owner, id: item.id, agent: agent))
+        }
     }
 
     /// What 开始 quotes: the item and its note.

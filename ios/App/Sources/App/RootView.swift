@@ -257,7 +257,7 @@ private struct LayoutStressTest: ViewModifier {
                                 case "skip": store.skipNextBacklog(forPal: pal)
                                 case "start":
                                     if let item = store.nextBacklog(forPal: pal) {
-                                        store.startBacklog(item, by: pal, words: String(localized: "开始做待办里的这件", table: "Files"))
+                                        store.startBacklog(item, by: pal, forPal: pal, words: String(localized: "开始做待办里的这件", table: "Files"))
                                     }
                                 default: store.dismissNextBacklog(forPal: pal)
                                 }

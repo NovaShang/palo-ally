@@ -55,10 +55,12 @@ public struct Backlog: Codable, Sendable, Hashable {
     public var name: String
     /// The assistant's own folder.
     public var assistant: Bool?
+    /// The host takes new words for an item (`backlog.update`); one from before it doesn't say.
+    public var editable: Bool?
     public var items: [BacklogItem]
 
-    public init(folder: String, name: String, assistant: Bool? = nil, items: [BacklogItem]) {
-        self.folder = folder; self.name = name; self.assistant = assistant; self.items = items
+    public init(folder: String, name: String, assistant: Bool? = nil, editable: Bool? = nil, items: [BacklogItem]) {
+        self.folder = folder; self.name = name; self.assistant = assistant; self.editable = editable; self.items = items
     }
 
     public init(from decoder: Decoder) throws {
@@ -66,6 +68,7 @@ public struct Backlog: Codable, Sendable, Hashable {
         folder = l.string("folder", or: "")
         name = l.string("name", or: "")
         assistant = l.bool("assistant")
+        editable = l.bool("editable")
         items = l.array(BacklogItem.self, "items", or: [])
     }
 
@@ -90,6 +93,44 @@ public struct Backlog: Codable, Sendable, Hashable {
         let index = place < queue.count ? queue[place] : (b.items.firstIndex { $0.state == .done } ?? b.items.count)
         b.items.insert(item, at: index)
         return b
+    }
+
+    /// The list once an item is being done by `agent` (nil: the assistant).
+    public func starting(_ id: String, by agent: String?, name: String? = nil) -> Backlog {
+        var b = self
+        guard let at = b.items.firstIndex(where: { $0.id == id }) else { return b }
+        var item = b.items.remove(at: at)
+        item.state = .doing
+        item.doneAt = nil
+        item.pal = agent
+        item.palName = name
+        b.items.insert(item, at: b.items.firstIndex { $0.state != .doing } ?? b.items.count)
+        return b
+    }
+
+    /// The list with a removed item back, at place `to` among the ones in its state.
+    public func restoring(_ item: BacklogItem, to: Int) -> Backlog {
+        var b = self
+        guard !b.items.contains(where: { $0.id == item.id }) else { return b }
+        let same = b.items.indices.filter { b.items[$0].state == item.state }
+        if to < same.count {
+            b.items.insert(item, at: same[max(0, to)])
+        } else if let last = same.last {
+            b.items.insert(item, at: last + 1)
+        } else {
+            switch item.state {
+            case .doing: b.items.insert(item, at: 0)
+            case .done: b.items.append(item)
+            default: b.items.insert(item, at: b.items.firstIndex { $0.state == .done } ?? b.items.count)
+            }
+        }
+        return b
+    }
+
+    /// An item's place among the ones in its state (what `moving` and `restoring` take).
+    public func place(of id: String) -> Int? {
+        guard let item = items.first(where: { $0.id == id }) else { return nil }
+        return items.filter { $0.state == item.state }.firstIndex { $0.id == id }
     }
 
     /// The next item an agent is offered (下一件): the first in line that is
@@ -125,11 +166,13 @@ public struct BacklogParams: Codable, Sendable {
     public var agent: String?
     /// backlog.done: false puts it back in the queue.
     public var done: Bool?
+    /// backlog.restore: the item as it was.
+    public var item: BacklogItem?
 
     public init(pal: String? = nil, folder: String? = nil, id: String? = nil, text: String? = nil, note: String? = nil,
-                top: Bool? = nil, to: Int? = nil, agent: String? = nil, done: Bool? = nil) {
+                top: Bool? = nil, to: Int? = nil, agent: String? = nil, done: Bool? = nil, item: BacklogItem? = nil) {
         self.pal = pal; self.folder = folder; self.id = id; self.text = text; self.note = note; self.top = top
-        self.to = to; self.agent = agent; self.done = done
+        self.to = to; self.agent = agent; self.done = done; self.item = item
     }
 
     /// backlog.assign sends `agent: null` to make it anyone's again.
@@ -144,5 +187,6 @@ public struct BacklogParams: Codable, Sendable {
         try c.encodeIfPresent(to, forKey: .to)
         try c.encode(agent, forKey: .agent)
         try c.encodeIfPresent(done, forKey: .done)
+        try c.encodeIfPresent(item, forKey: .item)
     }
 }

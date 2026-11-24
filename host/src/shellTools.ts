@@ -304,6 +304,32 @@ export function makeDeliveryTools(d: DeliveryDeps): DeliveryToolHandlers {
       const b = store.list(backlogFolder(folder?.trim() || d.cwd));
       return b.items.length ? t("backlog.tool.list", { folder: b.folder, lines: backlogLines(b) }) : t("backlog.tool.none", { folder: b.folder });
     },
+    // Being done by whoever calls it: a session as itself, the assistant as no one's.
+    backlog_start: async ({ id, folder }) => {
+      const store = d.backlog;
+      if (!store) return t("backlog.err.none");
+      const f = backlogFolder(folder?.trim() || d.cwd);
+      const key = String(id ?? "").trim();
+      try {
+        const now = store.list(f).items.find((i) => i.id === key);
+        if (now?.state === "doing" && now.pal !== session?.id) return t("backlog.tool.taken", { text: now.text, who: now.palName || t("backlog.assistant") });
+        store.start(f, key, session?.id ?? null, by);
+        return t("backlog.tool.started", { text: now?.text ?? "" });
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    },
+    backlog_edit: async ({ id, text, note, folder }) => {
+      const store = d.backlog;
+      if (!store) return t("backlog.err.none");
+      if (text === undefined && note === undefined) return t("backlog.err.empty");
+      try {
+        const r = store.update(backlogFolder(folder?.trim() || d.cwd), String(id ?? "").trim(), { text, note }, by);
+        return t("backlog.tool.edited", { text: r.item.text });
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    },
     backlog_done: async ({ id, folder }) => {
       const store = d.backlog;
       if (!store) return t("backlog.err.none");

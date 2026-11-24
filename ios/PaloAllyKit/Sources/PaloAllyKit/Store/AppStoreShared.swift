@@ -26,6 +26,8 @@ final class AppStoreShared {
     var backlogFolders: [String: String] = [:]
     /// The host answers backlog.*; nil until asked.
     var backlogSupported: Bool?
+    /// Words of items changed here that the host hasn't taken yet, by item id.
+    var backlogEdits: [String: BacklogEdit] = [:]
     /// 下一件: how many times 换一件 was pressed, per agent.
     var backlogSkips: [String: Int] = [:]
     /// 下一件 put away: the day it was, per agent (also kept on the device).

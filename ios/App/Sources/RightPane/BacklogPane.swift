@@ -144,7 +144,7 @@ struct BacklogView: View {
             }
         default:
             Button {
-                store.startBacklog(item, by: palID, words: String(localized: "开始做待办里的这件", table: "Files"))
+                store.startBacklog(item, by: palID, forPal: palID, words: String(localized: "开始做待办里的这件", table: "Files"))
             } label: {
                 Label(startTitle, systemImage: "play")
             }

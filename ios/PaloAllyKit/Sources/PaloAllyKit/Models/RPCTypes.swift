@@ -177,7 +177,10 @@ public enum RPCMethod {
     public static let backlogStart = "backlog.start"
     public static let backlogDone = "backlog.done"
     public static let backlogRemove = "backlog.remove"
-    public static let backlog: [String] = [backlogList, backlogAdd, backlogMove, backlogAssign, backlogStart, backlogDone, backlogRemove]
+    public static let backlogUpdate = "backlog.update"
+    public static let backlogRestore = "backlog.restore"
+    public static let backlog: [String] = [backlogList, backlogAdd, backlogMove, backlogAssign, backlogStart, backlogDone, backlogRemove,
+                                           backlogUpdate, backlogRestore]
 
     /// Files on the computer, read-only (docs/files-prd.md): a folder's
     /// children, a file in chunks, names, the paths in a reply, and the

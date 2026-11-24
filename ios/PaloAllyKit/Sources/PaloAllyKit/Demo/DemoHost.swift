@@ -67,6 +67,8 @@ public actor DemoHost {
     var paneTabs: [String: TabsState] = [:]
     /// 待办, by folder (DemoHost+Backlog.swift).
     var backlogs: [String: Backlog] = DemoHost.seededBacklogs(now: Date().epochMillis)
+    /// false: a host from before backlog.update and backlog.restore (`-demoState backlogOld`).
+    var backlogEditing = true
     /// A Pal's turn being written, to stop (`pals.stop`).
     var palTurns: [String: Task<Void, Never>] = [:]
     /// Turns a step holds (「跑测试」, 「查网页」), by Pal: whether it can go on in the background.
@@ -254,6 +256,7 @@ public actor DemoHost {
     public func applyScenario(_ name: String) {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         if name.hasPrefix("usage") { return applyUsageScenario(name) }
+        if name.hasPrefix("backlog") { return applyBacklogScenario(name) }
         // Sessions' cards: kept for the sessions' own states; otherwise
         // settled at the computer (they leave the conversation). The helper
         // proposal stays on offer only for those and `helper`, so nothing

@@ -156,6 +156,55 @@ describe("BacklogStore", () => {
     done();
   });
 
+  test("words and note edited in place; a removed one comes back as it was, where it was", () => {
+    const { s, folder, done, events, now } = store();
+    const a = s.add(folder, { text: "首页图片懒加载", note: "首屏 3.2 MB" }, "app").item;
+    const b = s.add(folder, { text: "文章页加目录" }, "app").item;
+    const c = s.add(folder, { text: "404 页面重做" }, "app").item;
+    s.assign(folder, b.id, "pal_b", "app");
+    expect(s.list(folder).editable).toBe(true);
+    // only what's given
+    expect(s.update(folder, a.id, { text: " 首页图片\n懒加载 " }, "app").item).toMatchObject({ id: a.id, text: "首页图片 懒加载", note: "首屏 3.2 MB" });
+    expect(s.update(folder, a.id, { note: "两行\n备注" }, "app").item).toMatchObject({ text: "首页图片 懒加载", note: "两行\n备注" });
+    expect(s.update(folder, a.id, { note: "" }, "app").item.note).toBeUndefined();
+    const n = events.length;
+    expect(() => s.update(folder, a.id, { text: "  " }, "app")).toThrow("要写点内容");
+    expect(() => s.update(folder, "b_none", { text: "x" }, "app")).toThrow("待办里没有这件");
+    expect(events.length).toBe(n);
+    // an item being done and a hand-written one (its id from its words) keep their ids and places
+    s.start(folder, c.id, "pal_a", "app");
+    expect(s.update(folder, c.id, { text: "404 页面重画" }, "app").backlog.items[0]).toMatchObject({ id: c.id, state: "doing", pal: "pal_a", text: "404 页面重画" });
+    writeFileSync(s.fileOf(folder), readFileSync(s.fileOf(folder), "utf8") + "- 手写的\n");
+    const hand = s.list(folder).items.find((i) => i.text === "手写的")!;
+    expect(s.update(folder, hand.id, { text: "手写的，改过" }, "app").item.id).toBe(hand.id);
+    expect(s.list(folder).items.find((i) => i.id === hand.id)).toMatchObject({ text: "手写的，改过" });
+    // removed and put back: same id, agent, place; twice changes nothing
+    const was = s.list(folder).items;
+    for (const id of [b.id, c.id]) {
+      const item = was.find((i) => i.id === id)!;
+      const at = was.filter((i) => i.state === item.state).indexOf(item);
+      s.remove(folder, id, "app");
+      expect(s.restore(folder, item, at, "app").items).toEqual(was);
+    }
+    const sent = events.length;
+    expect(s.restore(folder, was[0], 0, "app").items).toEqual(was);
+    expect(events.length).toBe(sent);
+    // done ones too
+    now.t += 5;
+    s.done(folder, a.id, true, "app");
+    s.done(folder, b.id, true, "app");
+    const ended = s.list(folder).items;
+    s.remove(folder, a.id, "app");
+    expect(s.restore(folder, ended.find((i) => i.id === a.id)!, 0, "app").items).toEqual(ended);
+    // an odd one: an id of its own, queued
+    const odd = s.restore(folder, { id: "x --> y", text: "来路不明", state: "?", pal: "a b" }, 99, "app").items.find((i) => i.text === "来路不明")!;
+    expect(odd).toMatchObject({ state: "queued" });
+    expect(odd.id).toMatch(/^b_/);
+    expect(odd.pal).toBeUndefined();
+    expect(() => s.restore(folder, undefined, 0, "app")).toThrow("要写点内容");
+    done();
+  });
+
   test("done ones beyond 50 are dropped, the oldest first", () => {
     const { s, folder, done, now } = store();
     for (let i = 0; i < 55; i++) {
@@ -192,6 +241,10 @@ describe("Hub: 待办", () => {
     expect((await call("backlog.start", { pal: "pal_a", id: a.id, agent: "pal_a" })).backlog.items[0]).toMatchObject({ id: a.id, state: "doing", palName: "网站帮手" });
     expect((await call("backlog.done", { pal: "pal_a", id: a.id })).backlog.items.at(-1)).toMatchObject({ id: a.id, state: "done" });
     expect((await call("backlog.done", { pal: "pal_a", id: a.id, done: false })).backlog.items[0]).toMatchObject({ id: a.id, state: "queued" });
+    expect((await call("backlog.update", { pal: "pal_b", id: a.id, text: "首页图片都懒加载" })).backlog.items[0]).toMatchObject({ id: a.id, text: "首页图片都懒加载" });
+    expect((await call("backlog.update", { pal: "pal_b", id: a.id, note: "首屏大" })).item).toMatchObject({ text: "首页图片都懒加载", note: "首屏大" });
+    expect((await call("backlog.remove", { pal: "pal_a", id: b.id })).backlog.items.map((i: any) => i.id)).toEqual([a.id]);
+    expect((await call("backlog.restore", { pal: "pal_a", item: b, to: 0 })).backlog.items.map((i: any) => i.id)).toEqual([b.id, a.id]);
     expect((await call("backlog.remove", { pal: "pal_a", id: b.id })).backlog.items.map((i: any) => i.id)).toEqual([a.id]);
     await expect(call("backlog.list", { pal: "nobody" })).rejects.toThrow("没有这个 agent");
     await expect(call("backlog.done", { pal: "pal_a", id: "b_none" })).rejects.toThrow("待办里没有这件");
@@ -220,6 +273,29 @@ describe("Hub: 待办", () => {
     expect(hub.backlog.list(backlogFolder(site)).items.map((i) => i.text)).toEqual(["首页图片懒加载"]);
     expect(await session.backlog_list({})).toContain("首页图片懒加载");
     expect(await session.backlog_list({ folder: paths.home })).toContain("整理报销单");
+    // starting: a session as itself; not one another agent is doing; the assistant as no one's
+    const item = hub.backlog.list(backlogFolder(site)).items[0]!;
+    hub.backlog.assign(backlogFolder(site), item.id, "pal_b", "app");
+    expect(await session.backlog_start({ id: item.id })).toContain("已标成你在做：「首页图片懒加载」");
+    expect(hub.backlog.list(backlogFolder(site)).items[0]).toMatchObject({ state: "doing", pal: "pal_a" });
+    expect(await session.backlog_start({ id: item.id })).toContain("已标成你在做");
+    expect(await tools.backlog_start({ id: item.id, folder: site })).toContain("正在做，没有改");
+    expect(hub.backlog.list(backlogFolder(site)).items[0]!.pal).toBe("pal_a");
+    expect(await session.backlog_start({ id: "b_none" })).toBe("待办里没有这件");
+    await session.backlog_add({ text: "文章页加目录" });
+    const toc = hub.backlog.list(backlogFolder(site)).items[1]!;
+    hub.backlog.assign(backlogFolder(site), toc.id, "pal_b", "app");
+    expect(await tools.backlog_start({ id: toc.id, folder: site })).toContain("已标成你在做");
+    expect(hub.backlog.get(backlogFolder(site), toc.id)).toMatchObject({ state: "doing" });
+    expect(hub.backlog.get(backlogFolder(site), toc.id)!.pal).toBeUndefined();
+    expect(await session.backlog_start({ id: toc.id })).toContain("助理正在做");
+    // editing: what's given, in its place
+    expect(await session.backlog_edit({ id: item.id, text: "首页图片都懒加载", note: "首屏 3.2 MB" })).toBe("已改：「首页图片都懒加载」。");
+    expect(await session.backlog_edit({ id: item.id, note: "" })).toContain("首页图片都懒加载");
+    expect(hub.backlog.get(backlogFolder(site), item.id)!.note).toBeUndefined();
+    expect(await session.backlog_edit({ id: item.id })).toBe("要写点内容");
+    expect(await session.backlog_edit({ id: "b_none", text: "x" })).toBe("待办里没有这件");
+    expect(await tools.backlog_edit({ id: item.id, text: "改回来", folder: site })).toContain("改回来");
     // the line both are told
     for (const lang of ["zh", "en"] as const) expect(behaviorText(lang)).toContain(tIn(lang, "backlog.prompt"));
     expect(PAL_PROMPT("Palo")).toContain("backlog_add");
