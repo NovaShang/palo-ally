@@ -112,6 +112,15 @@ targets:
         NSLocalNetworkUsageDescription: 在同一个网络里时直接连你的主机，不绕道云端，更快。
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        # 「用 Palo 打开」 in other apps' share sheets (a file of any kind): the
+        # system puts a copy in Documents/Inbox, staged in the composer (ShareIntake).
+        LSSupportsOpeningDocumentsInPlace: false
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: File
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.data
         CFBundleURLTypes:
           - CFBundleURLName: com.novashang.paloally.pair
             CFBundleURLSchemes:
@@ -135,6 +144,15 @@ targets:
         STRING_CATALOG_GENERATE_SYMBOLS: NO
         ENABLE_PREVIEWS: YES
         CODE_SIGN_STYLE: Automatic
+    # The Mac isn't offered as an opener of every file there.
+    postBuildScripts:
+      - name: No document types on the Mac
+        script: |
+          [ "$IS_MACCATALYST" = YES ] || exit 0
+          /usr/libexec/PlistBuddy -c "Delete :CFBundleDocumentTypes" "$TARGET_BUILD_DIR/$INFOPLIST_PATH" 2>/dev/null || true
+        inputFiles:
+          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
+        basedOnDependencyAnalysis: false
   # 分享到 PaloAlly: the share sheet's extension (ShareExtension). Hands
   # what was shared to the app through the App Group (Shared/ShareInbox).
   PaloAllyShare:

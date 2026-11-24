@@ -715,6 +715,8 @@ final class WindowModel {
     /// Mail, the Camera) or tapped in a conversation: a computer's pairing
     /// link goes straight to pairing, an Ally's invite to its confirm sheet.
     func handle(url incoming: URL) {
+        // A file from another app (「用 Palo 打开」).
+        if incoming.isFileURL { return takeOpenedFile(incoming) }
         guard let url = AppLink.normalized(incoming, ownScheme: Self.urlScheme) else { return }
         // The share extension opening the app on what was just shared.
         if ShareInbox.isShareLink(url) { return app.takeShares() }

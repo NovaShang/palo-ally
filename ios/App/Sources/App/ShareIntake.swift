@@ -11,6 +11,8 @@ struct ShareRequest: Equatable {
     let conversation: WindowModel.Conversation
     let items: [Staged]
     let text: String
+    /// What to say of files that couldn't be taken.
+    var problem: String? = nil
 
     static func == (a: ShareRequest, b: ShareRequest) -> Bool { a.id == b.id }
 
@@ -49,7 +51,8 @@ extension AppModel {
                     unread += 1
                 }
             }
-            let request = ShareRequest(id: manifest.id, host: host, conversation: conversation, items: items, text: manifest.text)
+            let request = ShareRequest(id: manifest.id, host: host, conversation: conversation, items: items, text: manifest.text,
+                                       problem: unread > 0 ? String(localized: "有文件读不了") : nil)
             debugLog("[share] \(items.count) attachment(s), \(unread) unreadable, \(manifest.text.count) characters → \(conversation.storageKey)")
             inWindow(showing: host) { w in w.receiveShare(request) }
         }
@@ -93,13 +96,61 @@ extension AppModel {
 }
 
 extension WindowModel {
+    /// A file another app handed over (「用 Palo 打开」): staged in the
+    /// conversation on screen, else the assistant's. The copy the system put
+    /// in the app's Inbox is removed once read.
+    func takeOpenedFile(_ url: URL) {
+        guard mode != .unpaired, let host = activeHostID ?? app.lastHostID else {
+            debugLog("[share] a file opened with nothing paired")
+            Self.removeInboxCopy(url)
+            return
+        }
+        // Where it goes is settled now; reading it may take a moment.
+        let target: Conversation = switch (compactColumn, selection) {
+        case (.detail, .pal(let id)?): .pal(id)
+        default: .palo
+        }
+        Task {
+            let (data, tooBig) = await Task.detached(priority: .userInitiated) { () -> (Data?, Bool) in
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                // Over the composer's limit: nothing read.
+                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                return size <= ShareInbox.maxFileBytes ? (try? Data(contentsOf: url), false) : (nil, true)
+            }.value
+            Self.removeInboxCopy(url)
+            let item = data.flatMap { ComposerIntake.staged($0, name: url.lastPathComponent) }
+            debugLog("[share] opened a file: \(data?.count ?? -1) bytes, \(item == nil ? "not staged" : "staged") → \(target.storageKey)")
+            receiveShare(ShareRequest(id: UUID().uuidString, host: host, conversation: target,
+                                      items: item.map { [$0] } ?? [], text: "",
+                                      problem: item != nil ? nil : tooBig ? String(localized: "文件太大（最多 100MB）")
+                                          : String(localized: "有文件读不了")))
+        }
+    }
+
+    /// Only the system's own copy: never the owner's file.
+    private static func removeInboxCopy(_ url: URL) {
+        let inbox = URL.documentsDirectory.appendingPathComponent("Inbox", isDirectory: true).standardizedFileURL.resolvingSymlinksInPath().path
+        guard url.standardizedFileURL.resolvingSymlinksInPath().path.hasPrefix(inbox + "/") else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
     /// A share for this window (on its computer): its conversation opens and
     /// the conversation's composer takes it (ChatView).
     func receiveShare(_ request: ShareRequest) {
         if activeHostID != request.host { switchTo(request.host) }
         showManagement = false
         open(request.conversation)
-        shareRequest = request
+        // Several files come one after the other: what the conversation
+        // hasn't taken yet goes with the next.
+        if let waiting = shareRequest, waiting.host == request.host, waiting.conversation == request.conversation {
+            shareRequest = ShareRequest(id: request.id, host: request.host, conversation: request.conversation,
+                                        items: waiting.items + request.items,
+                                        text: [waiting.text, request.text].filter { !$0.isEmpty }.joined(separator: "\n"),
+                                        problem: request.problem ?? waiting.problem)
+        } else {
+            shareRequest = request
+        }
         bringToFront()
     }
 }
@@ -118,6 +169,7 @@ struct ShareTaker: ViewModifier {
             guard id != nil, let r = model.shareRequest, r.host == model.activeHostID, r.matches(store.scope) else { return }
             model.shareRequest = nil
             if !r.items.isEmpty { intake.incoming.append(contentsOf: r.items) }
+            if let problem = r.problem { intake.problem = problem }
             if !r.text.isEmpty { draft.text = draft.text.isEmpty ? r.text : draft.text + "\n" + r.text }
             debugLog("[share] staged in \(r.conversation.storageKey): \(r.items.count) attachment(s), \(r.text.count) characters")
         }
