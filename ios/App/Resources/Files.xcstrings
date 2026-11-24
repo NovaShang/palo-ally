@@ -869,50 +869,6 @@
         }
       }
     },
-    "跟 agent 说「放进待办」，它会记在这里；也可以在下面直接加一件。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tell an agent to put something in the backlog and it shows up here, or add one below."
-          }
-        }
-      }
-    },
-    "排队的都做完了" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nothing left in the queue"
-          }
-        }
-      }
-    },
-    "排队 · %lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Queued · %lld"
-          }
-        }
-      }
-    },
-    "做完 · %lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Done · %lld"
-          }
-        }
-      }
-    },
     "删除" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -968,17 +924,6 @@
         }
       }
     },
-    "交给…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Give to…"
-          }
-        }
-      }
-    },
     "放到最前" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1001,17 +946,6 @@
         }
       }
     },
-    "让助理开始做" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Have the assistant start it"
-          }
-        }
-      }
-    },
     "加一件" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1019,17 +953,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Add one"
-          }
-        }
-      }
-    },
-    "给%@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "For %@"
           }
         }
       }
@@ -1118,6 +1041,105 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Moved to the backlog"
+          }
+        }
+      }
+    },
+    "排队" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Queued"
+          }
+        }
+      }
+    },
+    "做完 %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done %lld"
+          }
+        }
+      }
+    },
+    "没有待办" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing in the backlog"
+          }
+        }
+      }
+    },
+    "删了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleted"
+          }
+        }
+      }
+    },
+    "交给了%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Given to %@"
+          }
+        }
+      }
+    },
+    "撤回" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Undo"
+          }
+        }
+      }
+    },
+    "备注" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Note"
+          }
+        }
+      }
+    },
+    "交给" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Give to"
+          }
+        }
+      }
+    },
+    "新建 agent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New agent"
           }
         }
       }

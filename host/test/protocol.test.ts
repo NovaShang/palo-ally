@@ -325,7 +325,10 @@ describe("host ↔ app protocol", () => {
     await run("backlog.assign", { pal: pal.id, id: s2.id, agent: pal.id });
     expect((await run("backlog.start", { pal: pal.id, id: s1.id, agent: pal.id })).backlog.items[0]).toMatchObject({ state: "doing", pal: pal.id, palName: "网站" });
     expect((await run("backlog.done", { pal: pal.id, id: s1.id })).backlog.items.at(-1)).toMatchObject({ state: "done" });
+    expect((await run("backlog.update", { pal: pal.id, id: s2.id, text: "404 页面重画", note: "带搜索框" })).item).toMatchObject({ text: "404 页面重画", note: "带搜索框", pal: pal.id });
     await run("backlog.remove", { id: b1.id });
+    expect((await run("backlog.restore", { item: b1, to: 2 })).backlog.items.map((i: any) => i.id).at(-1)).toBe(b1.id);
+    await call("backlog.remove", { id: b1.id });
     // 回到这里重来 in the Pal: whether its files can go back, and going back with them
     claude.transcript(site, bgId, [
       { type: "user", uuid: "p1", parentUuid: null, timestamp: "2026-10-12T11:00:00Z", message: { role: "user", content: "列表要能按日期排序" }, origin: { kind: "human" } },

@@ -122,6 +122,8 @@ private let resultTypes: [String: Check] = [
     RPCMethod.backlogStart: strict(BacklogResult.self),
     RPCMethod.backlogDone: strict(BacklogResult.self),
     RPCMethod.backlogRemove: strict(BacklogResult.self),
+    RPCMethod.backlogUpdate: strict(BacklogResult.self),
+    RPCMethod.backlogRestore: strict(BacklogResult.self),
     RPCMethod.filesList: strict(FilesListResult.self),
     RPCMethod.filesRead: strict(FileChunk.self),
     RPCMethod.filesWrite: strict(FilesWriteResult.self),

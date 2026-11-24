@@ -127,8 +127,42 @@ export class BacklogStore {
     return this.changed(folder, items);
   }
 
-  /** Being done now, by an agent (or the owner, no agent): it leads the list. */
-  start(folder: string, id: string, pal: string | undefined, by: string): Backlog {
+  /** Its words or note changed (an empty note: none); what isn't given stays. */
+  update(folder: string, id: string, patch: { text?: string; note?: string }, by: string): { item: BacklogItem; backlog: Backlog } {
+    const items = this.read(folder);
+    const item = find(items, id);
+    if (patch.text !== undefined) {
+      const text = cleanText(patch.text);
+      if (!text) throw new Error(t("backlog.err.empty"));
+      item.text = text;
+    }
+    if (patch.note !== undefined) {
+      const note = cleanNote(patch.note);
+      if (note) item.note = note;
+      else delete item.note;
+    }
+    this.write(folder, items);
+    this.d.audit?.log("backlog.updated", { id, by });
+    return { item: { ...item }, backlog: this.changed(folder, items) };
+  }
+
+  /** A removed item back as it was (its id, its agent, its state), at place `to` among the ones in its state. */
+  restore(folder: string, raw: unknown, to: number, by: string): Backlog {
+    const items = this.read(folder);
+    const item = cleanItem(raw);
+    if (items.some((i) => i.id === item.id)) return this.wire(folder, items);
+    const before = items.filter((i) => i.state === item.state);
+    const at = Math.max(0, Math.min(Number.isFinite(to) ? Math.floor(to) : before.length, before.length));
+    const next = before[at];
+    if (next) items.splice(items.indexOf(next), 0, item);
+    else items.push(item); // the list is put in order as it's written
+    this.write(folder, items);
+    this.d.audit?.log("backlog.restored", { id: item.id, to: at, by });
+    return this.changed(folder, items);
+  }
+
+  /** Being done now, by an agent (or the owner, no agent; null: the assistant, no longer anyone's): it leads the list. */
+  start(folder: string, id: string, pal: string | null | undefined, by: string): Backlog {
     const items = this.read(folder);
     const item = take(items, id);
     item.state = "doing";
@@ -138,6 +172,9 @@ export class BacklogStore {
       const name = this.d.palName?.(pal);
       if (name) item.palName = name;
       else delete item.palName;
+    } else if (pal === null) {
+      delete item.pal;
+      delete item.palName;
     }
     const doing = items.filter((i) => i.state === "doing").length;
     items.splice(doing, 0, item);
@@ -299,6 +336,7 @@ export class BacklogStore {
       folder,
       name: basename(folder) || folder,
       ...(assistant ? { assistant: true } : {}),
+      editable: true,
       items: order(items).map((i) => {
         const name = i.pal ? this.d.palName?.(i.pal) : undefined;
         return { ...i, ...(name ? { palName: name } : {}) };
@@ -435,6 +473,31 @@ function cleanNote(s: unknown): string {
     .map((l) => l.trim())
     .filter(Boolean);
   return truncate(lines.join("\n"), NOTE_MAX);
+}
+
+/** An item as an app sends it back (backlog.restore). */
+function cleanItem(raw: unknown): BacklogItem {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const text = cleanText(r.text);
+  if (!text) throw new Error(t("backlog.err.empty"));
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const num = (v: unknown) => (typeof v === "number" && v > 0 ? v : undefined);
+  const id = str(r.id);
+  const note = cleanNote(r.note);
+  const state: BacklogItem["state"] = r.state === "doing" || r.state === "done" ? r.state : "queued";
+  const pal = str(r.pal);
+  const palName = str(r.palName);
+  const addedAt = num(r.addedAt);
+  const doneAt = state === "done" ? num(r.doneAt) : undefined;
+  return {
+    id: /^b_[\w-]+$/.test(id) ? id : newId("b_"),
+    text,
+    ...(note ? { note } : {}),
+    state,
+    ...(/^[\w-]+$/.test(pal) ? { pal, ...(palName ? { palName } : {}) } : {}),
+    ...(addedAt ? { addedAt } : {}),
+    ...(doneAt ? { doneAt } : {}),
+  };
 }
 
 function find(items: BacklogItem[], id: string): BacklogItem {

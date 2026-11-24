@@ -249,6 +249,9 @@ private struct LayoutStressTest: ViewModifier {
                             if let item = store.backlog(forPal: pal)?.items.first(where: { $0.id == parts[1] }), let to = Int(parts[2]) {
                                 try? await store.moveBacklog(item, to: to, forPal: pal)
                             }
+                        // `backlog-do:<done|open|close|check|start|remove|undo|type|note|new|add>[:<id or words>]` on the list shown.
+                        case "backlog-do" where parts.count > 1:
+                            NotificationCenter.default.post(name: .demoBacklog, object: parts.dropFirst().joined(separator: ":"))
                         case "backlog-later" where parts.count == 2:
                             if let item = store.pendingItem(id: parts[1]) { try? await store.decide(item, .later) }
                         case "backlog-next" where parts.count == 2:
@@ -257,7 +260,7 @@ private struct LayoutStressTest: ViewModifier {
                                 case "skip": store.skipNextBacklog(forPal: pal)
                                 case "start":
                                     if let item = store.nextBacklog(forPal: pal) {
-                                        store.startBacklog(item, by: pal, words: String(localized: "开始做待办里的这件", table: "Files"))
+                                        store.startBacklog(item, by: pal, forPal: pal, words: String(localized: "开始做待办里的这件", table: "Files"))
                                     }
                                 default: store.dismissNextBacklog(forPal: pal)
                                 }

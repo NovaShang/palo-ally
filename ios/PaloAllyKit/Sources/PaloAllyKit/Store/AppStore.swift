@@ -570,6 +570,7 @@ public final class AppStore {
                 // A new connection starts with no presence on the host.
                 if presenceActive { sendPresence() }
                 resendQueued()
+                resendBacklogEdits()
                 Task { await self.loadSuggestions() }
                 Task { await self.loadAllies() }
                 Task { await self.loadUsage() }

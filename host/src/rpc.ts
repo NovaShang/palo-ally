@@ -40,7 +40,7 @@ export const RPC_METHODS = [
   "auth.login.start", "auth.login.code", "auth.login.cancel", "auth.logout",
   "usage.get",
   "pending.list", "pending.update", "pending.answer", "pending.surface",
-  "backlog.list", "backlog.add", "backlog.move", "backlog.assign", "backlog.start", "backlog.done", "backlog.remove",
+  "backlog.list", "backlog.add", "backlog.move", "backlog.assign", "backlog.start", "backlog.done", "backlog.remove", "backlog.update", "backlog.restore",
   "files.list", "files.read", "files.write", "files.search", "files.resolve", "files.watch", "files.unwatch", "files.folders.list", "files.folders.browse", "files.folders.add", "files.folders.remove",
 ] as const;
 
@@ -218,12 +218,18 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return { backlog: hub.backlog.assign(hub.backlogFolder(p), String(p.id ?? ""), typeof p.agent === "string" && p.agent ? p.agent : null, ctx.channel) };
     // Being done now, by `agent` (it was sent to it as the owner's words).
     case "backlog.start":
-      return { backlog: hub.backlog.start(hub.backlogFolder(p), String(p.id ?? ""), typeof p.agent === "string" && p.agent ? p.agent : undefined, ctx.channel) };
+      return { backlog: hub.backlog.start(hub.backlogFolder(p), String(p.id ?? ""), typeof p.agent === "string" && p.agent ? p.agent : p.agent === null ? null : undefined, ctx.channel) };
     // `done: false` puts it back in the queue.
     case "backlog.done":
       return { backlog: hub.backlog.done(hub.backlogFolder(p), String(p.id ?? ""), p.done !== false, ctx.channel).backlog };
     case "backlog.remove":
       return { backlog: hub.backlog.remove(hub.backlogFolder(p), String(p.id ?? ""), ctx.channel) };
+    // Its words (`text`) or its `note` ("" takes it away); what isn't given stays.
+    case "backlog.update":
+      return hub.backlog.update(hub.backlogFolder(p), String(p.id ?? ""), { ...(typeof p.text === "string" ? { text: p.text } : {}), ...(typeof p.note === "string" ? { note: p.note } : {}) }, ctx.channel);
+    // 撤回 of a removal: the `item` as it was, at place `to` among the ones in its state.
+    case "backlog.restore":
+      return { backlog: hub.backlog.restore(hub.backlogFolder(p), p.item, Number(p.to ?? 0), ctx.channel) };
     // An option picked, or the owner's own words: a blocking question or
     // prompt is answered as such; otherwise it goes to where the item came from.
     case "pending.answer":

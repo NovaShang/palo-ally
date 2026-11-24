@@ -39,7 +39,7 @@ struct NextUpBar: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button(String(localized: "开始", table: "Files")) {
                 willSend()
-                store.startBacklog(item, by: palID, words: String(localized: "开始做待办里的这件", table: "Files"))
+                store.startBacklog(item, by: palID, forPal: palID, words: String(localized: "开始做待办里的这件", table: "Files"))
             }
             .buttonStyle(.borderedProminent)
             .tint(Color.accentColor)

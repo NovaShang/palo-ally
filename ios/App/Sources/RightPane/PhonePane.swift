@@ -119,7 +119,7 @@ struct PhonePane: View {
                     .environment(\.libraryScope, libraryScope)
             case .backlog:
                 // 待办: the list runs under the glass bars as the others do; rows lift on a long press to be dragged.
-                BacklogView(palID: palID, bottomClearance: 70)
+                BacklogView(palID: palID, bottomClearance: 70, dismiss: onClose)
                     .id(palID ?? "palo")
             case .files:
                 NavigationStack {

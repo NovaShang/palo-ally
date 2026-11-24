@@ -572,5 +572,6 @@ export interface Backlog {
   folder: string; // absolute
   name: string; // the folder's name
   assistant?: boolean; // the assistant's own folder
+  editable?: boolean; // the host answers backlog.update (one from before it doesn't say)
   items: BacklogItem[];
 }

@@ -1,29 +1,38 @@
 import PaloAllyKit
 import SwiftUI
 
-/// 待办 (docs/workbench-design/backlog.html): the list of the folder the
-/// pane is for, shared by the agents working in it; in the assistant's
-/// pane the assistant's own. 正在做, then 排队 in the owner's order (the
-/// first three in full, the rest a line each), then 做完 folded. Rows are
-/// dragged to reorder (a long press first on a phone); a row's menu starts
-/// it, gives it to one of the folder's agents, marks it done or removes
-/// it. A field at the bottom adds one.
+/// 待办 (docs/workbench-design/backlog-v2.html): the list of the folder the
+/// pane is for, shared by the agents working in it; in the assistant's pane
+/// the assistant's own. 正在做, 排队 in the owner's order, 做完 folded, on
+/// 成果's cards. A row's circle says it's done, ▶ has its agent start it, a
+/// tap on its words opens it in place (BacklogRow.swift). Rows are dragged
+/// to reorder (a long press first on a phone); swiped away on a phone; a
+/// menu has the rest. A field at the bottom adds one.
 struct BacklogView: View {
     /// The agent whose folder's list it is; nil: the assistant's.
     let palID: String?
     /// The phone's pane: its glass tab bar floats over the bottom, the field sits above it.
     var bottomClearance: CGFloat = 0
+    /// The phone's pane: put away when a page opens under it.
+    var dismiss: () -> Void = {}
 
     @Environment(AppStore.self) private var store
+    @Environment(WindowModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
     @State private var draft = ""
     @State private var showDone = false
-    @State private var error: String?
+    /// The row open for editing, with what's typed in it.
+    @State private var open: BacklogDraft?
+    /// The open row's frame: a tap outside closes it. nil until it's laid out.
+    @State private var openFrame: CGRect?
+    @State private var toast: BacklogToast?
     /// The queued row a dragged one hovers over (a line shows where it lands).
     @State private var dropTarget: String?
+    /// 新建 agent for an item.
+    @State private var newAgent: NewSessionPanel.FirstWords?
+    /// The item just added: the list scrolls to it.
+    @State private var added: String?
     @FocusState private var adding: Bool
-
-    /// What a dragged row carries: its id, marked as ours (text dropped from elsewhere isn't taken).
-    private static let dragPrefix = "palo-backlog:"
 
     private var backlog: Backlog? { store.backlog(forPal: palID) }
 
@@ -38,161 +47,332 @@ struct BacklogView: View {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .overlay(alignment: .bottom) {
+            if let toast {
+                BacklogToastView(toast: toast) { self.toast = nil }
+                    .padding(.bottom, 4)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.snappy(duration: 0.2), value: toast?.id)
         .safeAreaInset(edge: .bottom, spacing: 0) { if store.backlogSupported != false { addField } }
         .task(id: "\(palID ?? "palo")|\(store.connection.isOnline)") {
             if store.connection.isOnline { await store.loadBacklog(forPal: palID) }
         }
+        .task(id: toast?.id) {
+            guard toast != nil else { return }
+            try? await Task.sleep(for: .seconds(2.6))
+            if !Task.isCancelled { toast = nil }
+        }
+        // What's typed is never only here: saved when the app goes away, the
+        // pane changes, or the open row's item is no longer in line.
+        .onChange(of: scenePhase) { _, phase in if phase != .active { open?.save() } }
+        .onDisappear { close() }
+        .onChange(of: backlog?.queued.map(\.id)) { _, ids in
+            if let open, ids?.contains(open.id) != true { close() }
+        }
+        #if DEBUG || PERF_HARNESS
+        .onReceive(NotificationCenter.default.publisher(for: .demoBacklog)) { demo($0.object as? String ?? "") }
+        #endif
+        .sheet(item: $newAgent) { first in
+            NewSessionPanel(first: first, opened: dismiss).environment(model).environment(store)
+        }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("backlog")
     }
 
     // MARK: the list
 
     private func list(_ b: Backlog) -> some View {
-        // Headings are rows of their own: a section's header would stick to the top on a white bar.
-        List {
-            if let error {
-                Text(error).font(.caption).foregroundStyle(.red).modifier(PlainRow())
-            }
-            if !b.doing.isEmpty {
-                header(String(localized: "正在做", table: "Files"))
-                ForEach(b.doing) { row($0, place: nil, queue: nil) }
-            }
-            header(String(localized: "排队 · \(b.queued.count)", table: "Files"))
-            if b.queued.isEmpty {
-                Text(b.items.isEmpty ? String(localized: "跟 agent 说「放进待办」，它会记在这里；也可以在下面直接加一件。", table: "Files")
-                                     : String(localized: "排队的都做完了", table: "Files"))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .modifier(PlainRow())
-            }
-            // Dragged onto another queued row, a row takes its place (the
-            // system's drag: the pointer on a Mac, a long press then a move
-            // on a phone or an iPad). List.onMove works in edit mode only there.
-            ForEach(Array(b.queued.enumerated()), id: \.element.id) { i, item in row(item, place: i, queue: b.queued) }
-            if !b.done.isEmpty {
-                Button {
-                    withAnimation(.snappy) { showDone.toggle() }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(String(localized: "做完 · \(b.done.count)", table: "Files"))
-                        Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
-                            .rotationEffect(.degrees(showDone ? 90 : 0))
+        ScrollViewReader { scroll in
+            List {
+                if !b.doing.isEmpty {
+                    Section {
+                        ForEach(b.doing) { item in
+                            BacklogDoingRow(item: item, agent: agent(of: item, else: nil)) { openAgent(item) }
+                                .modifier(Row(item: item))
+                                .contextMenu { menu(item) }
+                                .swipeActions(edge: .trailing) { deleteAction(item) }
+                        }
+                    } header: {
+                        BacklogHeader(String(localized: "正在做", table: "Files"), first: true)
                     }
-                    .modifier(SectionHeaderStyle())
-                    .contentShape(.rect)
                 }
-                .buttonStyle(.plain)
-                .modifier(PlainRow(top: 10))
-                .accessibilityIdentifier("backlog-done-toggle")
-                if showDone { ForEach(b.done) { row($0, place: nil, queue: nil) } }
+                if !b.queued.isEmpty {
+                    Section {
+                        ForEach(Array(b.queued.enumerated()), id: \.element.id) { i, item in
+                            queued(item, at: i, in: b)
+                        }
+                    } header: {
+                        BacklogHeader(String(localized: "排队", table: "Files"), first: b.doing.isEmpty)
+                    }
+                }
+                if !b.done.isEmpty {
+                    Section {
+                        if showDone {
+                            ForEach(b.done) { item in
+                                BacklogDoneRow(item: item) { act { try await store.moveBacklog(item, to: b.queued.count, forPal: palID) } }
+                                    .modifier(Row(item: item))
+                                    .contextMenu { menu(item) }
+                                    .swipeActions(edge: .trailing) { deleteAction(item) }
+                            }
+                        }
+                    } header: {
+                        doneHeader(b.done.count)
+                    }
+                }
             }
+            .listStyle(.insetGrouped)
+            .listSectionSpacing(0)
+            .scrollContentBackground(.hidden)
+            .environment(\.defaultMinListRowHeight, 10)
+            .environment(\.defaultMinListHeaderHeight, 10)
+            .contentMargins(.bottom, 12, for: .scrollContent)
+            .animation(.snappy(duration: 0.25), value: b.items)
+            .simultaneousGesture(tapElsewhere, including: open == nil ? .subviews : .all)
+            .overlay {
+                if b.items.isEmpty {
+                    Text(String(localized: "没有待办", table: "Files"))
+                        .font(.body)
+                        .foregroundStyle(.tertiary)
+                        .allowsHitTesting(false)
+                }
+            }
+            .onChange(of: added) { _, id in
+                guard let id else { return }
+                // Once its row is there.
+                Task {
+                    try? await Task.sleep(for: .milliseconds(60))
+                    withAnimation(.snappy) { scroll.scrollTo(id, anchor: .bottom) }
+                    added = nil
+                }
+            }
+            .accessibilityIdentifier("backlog-list")
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .environment(\.defaultMinListRowHeight, 26)
-        .animation(.snappy, value: b.items)
-        .accessibilityIdentifier("backlog-list")
     }
 
-    private func header(_ s: String) -> some View {
-        Text(s).modifier(SectionHeaderStyle()).modifier(PlainRow(top: 10))
+    @ViewBuilder private func queued(_ item: BacklogItem, at i: Int, in b: Backlog) -> some View {
+        if let open, open.id == item.id {
+            BacklogOpenRow(draft: open, item: item, editable: b.editable == true, agent: agent(of: item, else: palID),
+                           agents: choices, pick: { pick($0, for: item) }, check: { finish(item) },
+                           remove: { remove(item) }, start: { start(item) },
+                           close: { close() }, discard: { close(saving: false) })
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { openFrame = $0 }
+                .modifier(Row(item: item))
+                .id(item.id)
+        } else {
+            BacklogQueuedRow(item: item, agent: item.pal == nil ? nil : agent(of: item, else: palID),
+                             startTitle: startTitle(item),
+                             check: { finish(item) }, open: { openRow(item) }, start: { start(item) })
+                .modifier(QueueDrag(item: item, queue: b.queued, target: $dropTarget) { id, to in
+                    guard let dragged = b.queued.first(where: { $0.id == id }) else { return }
+                    act { try await store.moveBacklog(dragged, to: to, forPal: palID) }
+                })
+                .modifier(Row(item: item))
+                .contextMenu { menu(item) }
+                .swipeActions(edge: .trailing) { deleteAction(item) }
+                .id(item.id)
+        }
     }
 
-    /// `place`: its place in the queue (the first three show in full);
-    /// `queue`: the queue it is in, for a queued row (dragged and dropped on).
-    @ViewBuilder private func row(_ item: BacklogItem, place: Int?, queue: [BacklogItem]?) -> some View {
-        let full = item.state == .doing || (place ?? 0) < 3 && item.state == .queued
-        BacklogRow(item: item, place: place, full: full)
-            .modifier(QueueDrag(item: item, queue: queue, target: $dropTarget, prefix: Self.dragPrefix) { id, to in
-                guard let dragged = queue?.first(where: { $0.id == id }) else { return }
-                act { try await store.moveBacklog(dragged, to: to, forPal: palID) }
-            })
-            .listRowInsets(EdgeInsets(top: full ? 3 : 0, leading: 10, bottom: full ? 3 : 0, trailing: 10))
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
+    /// What every row has: the card edge to edge, its separator from the words on, its name.
+    private struct Row: ViewModifier {
+        let item: BacklogItem
+        func body(content: Content) -> some View {
+            content
+                .listRowInsets(EdgeInsets())
+                .alignmentGuide(.listRowSeparatorLeading) { _ in BacklogMetrics.separatorInset }
+                .alignmentGuide(.listRowSeparatorTrailing) { $0[.trailing] }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("backlog-row-\(item.id)")
+        }
+    }
+
+    private func doneHeader(_ n: Int) -> some View {
+        Button {
+            withAnimation(.snappy) { showDone.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Text(String(localized: "做完 \(n)", table: "Files"))
+                Image(systemName: "chevron.right")
+                    .font(.system(size: BacklogMetrics.mac ? 8 : 11, weight: .bold))
+                    .rotationEffect(.degrees(showDone ? 90 : 0))
+                Spacer(minLength: 0)
+            }
             .contentShape(.rect)
-            .contextMenu { menu(item) }
-            .swipeActions(edge: .trailing) {
-                Button(role: .destructive) { act { try await store.removeBacklog(item, forPal: palID) } } label: {
-                    Label(String(localized: "删除", table: "Files"), systemImage: "trash")
-                }
-            }
-            .swipeActions(edge: .leading) {
-                if item.state != .done {
-                    Button { act { try await store.doneBacklog(item, forPal: palID) } } label: {
-                        Label(String(localized: "做完了", table: "Files"), systemImage: "checkmark")
-                    }
-                    .tint(.green)
-                }
-            }
-            .accessibilityIdentifier("backlog-row-\(item.id)")
+        }
+        .buttonStyle(.plain)
+        .modifier(BacklogHeaderStyle(top: BacklogMetrics.headerTop + 2))
+        .accessibilityIdentifier("backlog-done-toggle")
+    }
+
+    /// A tap on the list that isn't in the open row.
+    private var tapElsewhere: some Gesture {
+        SpatialTapGesture(coordinateSpace: .global).onEnded { tap in
+            guard let frame = openFrame, !frame.contains(tap.location) else { return }
+            close()
+        }
+    }
+
+    // MARK: the open row
+
+    private func openRow(_ item: BacklogItem) {
+        close()
+        openFrame = nil
+        withAnimation(.snappy(duration: 0.2)) { open = BacklogDraft(item, owner: palID, store: store) }
+    }
+
+    private func close(saving: Bool = true) {
+        guard let open else { return }
+        if saving { open.save(closing: true) } else { open.discard() }
+        openFrame = nil
+        withAnimation(.snappy(duration: 0.2)) { self.open = nil }
+    }
+
+    // MARK: the owner's hand
+
+    /// The item as it is now (the words just saved).
+    private func now(_ item: BacklogItem) -> BacklogItem {
+        backlog?.items.first { $0.id == item.id } ?? item
+    }
+
+    private func finish(_ item: BacklogItem) {
+        close()
+        let item = now(item)
+        let place = item.state == .queued ? backlog?.place(of: item.id) ?? 0 : 0
+        act({ try await store.doneBacklog(item, forPal: palID) }, says: String(localized: "做完了", table: "Files")) {
+            try await store.undoDoneBacklog(item, place: place, forPal: palID)
+        }
+    }
+
+    private func remove(_ item: BacklogItem) {
+        close()
+        let item = now(item)
+        let place = backlog?.place(of: item.id) ?? 0
+        act({ try await store.removeBacklog(item, forPal: palID) }, says: String(localized: "删了", table: "Files")) {
+            try await store.restoreBacklog(item, place: place, forPal: palID)
+        }
+    }
+
+    /// To its agent, else the pane's. The words are on their way: nothing to take back.
+    private func start(_ item: BacklogItem) {
+        close()
+        let item = now(item)
+        let agent = agent(of: item, else: palID)
+        toast = BacklogToast(text: String(localized: "交给了\(agent.name)", table: "Files"))
+        store.startBacklog(item, by: agent.id, forPal: palID, words: String(localized: "开始做待办里的这件", table: "Files"))
+    }
+
+    private func pick(_ choice: BacklogAgent.Choice, for item: BacklogItem) {
+        switch choice {
+        case .agent(let id):
+            act { try await store.assignBacklog(item, to: id, forPal: palID) }
+        case .new:
+            close()
+            let item = now(item)
+            newAgent = .init(item: item, owner: palID, folder: palID == nil ? nil : backlog?.folder)
+        }
+    }
+
+    private func openAgent(_ item: BacklogItem) {
+        guard let id = item.pal else {
+            dismiss()
+            return model.openPalo()
+        }
+        guard store.pal(id: id) != nil else { return }
+        dismiss()
+        if case .workspace(let ws)? = model.selection, model.layout != .phone, store.workspace(id: ws)?.memberIds.contains(id) == true {
+            model.activate(tile: id, in: ws)
+        } else {
+            model.openPal(id)
+        }
+    }
+
+    private func act(_ work: @escaping () async throws -> Void, says: String? = nil, undo: (() async throws -> Void)? = nil) {
+        if let says { toast = BacklogToast(text: says, undo: undo.map { undo in { act(undo) } }) }
+        Task {
+            do { try await work() } catch { toast = BacklogToast(text: Friendly.message(error)) }
+        }
+    }
+
+    // MARK: who
+
+    /// Who has it: its agent, else `other` (nil: the assistant).
+    private func agent(of item: BacklogItem, else other: String?) -> BacklogAgent {
+        if let id = item.pal {
+            if let pal = store.pal(id: id) { return BacklogAgent(pal) }
+            // It's gone: its name on the one being done; the pane's agent starts a queued one.
+            if item.state != .queued { return BacklogAgent(id: id, name: item.palName ?? "", state: .idle, running: 0) }
+        }
+        if let pal = other.flatMap({ store.pal(id: $0) }) { return BacklogAgent(pal) }
+        return BacklogAgent(id: nil, name: store.assistantName, state: store.paloDot, running: 0)
+    }
+
+    /// Who it can be given to: the folder's agents (and the assistant, on its own list).
+    private var choices: [BacklogAgent] {
+        (palID == nil ? [BacklogAgent(id: nil, name: store.assistantName, state: store.paloDot, running: 0)] : [])
+            + store.backlogAgents(forPal: palID).map { BacklogAgent($0) }
+    }
+
+    // MARK: the menu
+
+    @ViewBuilder private func deleteAction(_ item: BacklogItem) -> some View {
+        // Not the destructive role: the row would leave before the list says so.
+        Button { remove(item) } label: {
+            Label(String(localized: "删除", table: "Files"), systemImage: "trash")
+        }
+        .tint(.red)
     }
 
     @ViewBuilder private func menu(_ item: BacklogItem) -> some View {
         switch item.state {
         case .done:
-            Button { act { try await store.doneBacklog(item, done: false, forPal: palID) } } label: {
+            Button { act { try await store.moveBacklog(item, to: backlog?.queued.count ?? 0, forPal: palID) } } label: {
                 Label(String(localized: "放回排队", table: "Files"), systemImage: "arrow.uturn.backward")
             }
         case .doing:
-            Button { act { try await store.doneBacklog(item, forPal: palID) } } label: {
+            Button { finish(item) } label: {
                 Label(String(localized: "做完了", table: "Files"), systemImage: "checkmark")
             }
             Button { act { try await store.moveBacklog(item, to: 0, forPal: palID) } } label: {
                 Label(String(localized: "放回排队", table: "Files"), systemImage: "arrow.uturn.backward")
             }
         default:
-            Button {
-                store.startBacklog(item, by: palID, words: String(localized: "开始做待办里的这件", table: "Files"))
-            } label: {
-                Label(startTitle, systemImage: "play")
+            Button { start(item) } label: {
+                Label(String(localized: "开始", table: "Files"), systemImage: "play")
             }
-            let agents = store.backlogAgents(forPal: palID)
-            if !agents.isEmpty {
-                Menu {
-                    Button(String(localized: "谁都行", table: "Files")) { act { try await store.assignBacklog(item, to: nil, forPal: palID) } }
-                    ForEach(agents) { a in
-                        Button { act { try await store.assignBacklog(item, to: a.id, forPal: palID) } } label: {
-                            if item.pal == a.id { Label(a.displayName, systemImage: "checkmark") } else { Text(verbatim: a.displayName) }
-                        }
+            Menu {
+                Button(String(localized: "谁都行", table: "Files")) { act { try await store.assignBacklog(item, to: nil, forPal: palID) } }
+                ForEach(store.backlogAgents(forPal: palID)) { a in
+                    Button { act { try await store.assignBacklog(item, to: a.id, forPal: palID) } } label: {
+                        if item.pal == a.id { Label(a.displayName, systemImage: "checkmark") } else { Text(verbatim: a.displayName) }
                     }
-                } label: {
-                    Label(String(localized: "交给…", table: "Files"), systemImage: "person.crop.circle")
                 }
+            } label: {
+                Label(String(localized: "交给", table: "Files"), systemImage: "person.crop.circle")
             }
             Button { act { try await store.moveBacklog(item, to: 0, forPal: palID) } } label: {
                 Label(String(localized: "放到最前", table: "Files"), systemImage: "arrow.up.to.line")
             }
-            Button { act { try await store.doneBacklog(item, forPal: palID) } } label: {
+            Button { finish(item) } label: {
                 Label(String(localized: "做完了", table: "Files"), systemImage: "checkmark")
             }
         }
-        Button(role: .destructive) { act { try await store.removeBacklog(item, forPal: palID) } } label: {
+        Button(role: .destructive) { remove(item) } label: {
             Label(String(localized: "删除", table: "Files"), systemImage: "trash")
         }
     }
 
-    /// 开始: to this agent, or the assistant.
-    private var startTitle: String {
-        if let palID, let name = store.pal(id: palID)?.displayName {
-            return String(localized: "让\(name)开始做", table: "Files")
-        }
-        return String(localized: "让助理开始做", table: "Files")
-    }
-
-    private func act(_ work: @escaping () async throws -> Void) {
-        error = nil
-        Task {
-            do { try await work() } catch { self.error = Friendly.message(error) }
-        }
+    /// 让X开始做 (what ▶ says to VoiceOver and the pointer).
+    private func startTitle(_ item: BacklogItem) -> String {
+        String(localized: "让\(agent(of: item, else: palID).name)开始做", table: "Files")
     }
 
     // MARK: adding
 
     private var addField: some View {
         HStack(spacing: 8) {
-            Image(systemName: "plus").foregroundStyle(.secondary)
+            Image(systemName: "plus").foregroundStyle(.tertiary)
             TextField(String(localized: "加一件", table: "Files"), text: $draft)
                 .textFieldStyle(.plain)
                 .focused($adding)
@@ -201,135 +381,139 @@ struct BacklogView: View {
                 .accessibilityIdentifier("backlog-add")
         }
         .padding(.horizontal, 14)
-        .frame(height: 40)
-        .background(Color.primary.opacity(0.06), in: .capsule)
-        .padding(.horizontal, 12)
+        .frame(height: BacklogMetrics.mac ? 40 : 50)
+        .contentShape(.capsule)
+        .onTapGesture { adding = true }
+        .glassEffect(.regular, in: .capsule)
+        .padding(.horizontal, 16)
         .padding(.top, 8)
-        .padding(.bottom, 8 + bottomClearance)
+        .padding(.bottom, BacklogMetrics.mac ? 12 : 8 + bottomClearance)
+        .onChange(of: adding) { _, on in if on { close() } }
     }
 
     private func add() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         draft = ""
-        act { try await store.addBacklog(text, forPal: palID) }
         // Typing on: the next one.
         adding = true
+        Task {
+            do {
+                added = try await store.addBacklog(text, forPal: palID)?.id
+            } catch {
+                toast = BacklogToast(text: Friendly.message(error))
+                if draft.isEmpty { draft = text }
+            }
+        }
     }
+
+    #if DEBUG || PERF_HARNESS
+    /// `-demoActions backlog-do:<what>[:<id>]`: the owner's hand on this list.
+    private func demo(_ step: String) {
+        let parts = step.split(separator: ":").map(String.init)
+        let item = parts.count > 1 ? backlog?.items.first { $0.id == parts[1] } : nil
+        switch parts.first {
+        case "done": showDone.toggle()
+        case "open": if let item { openRow(item) }
+        case "close": close()
+        case "check": if let item { finish(item) }
+        case "start": if let item { start(item) }
+        case "remove": if let item { remove(item) }
+        case "undo": toast?.undo?(); toast = nil
+        case "type": open?.text = parts.dropFirst().joined(separator: ":")
+        case "note": open?.note = parts.dropFirst().joined(separator: ":")
+        case "new": if let item { pick(.new, for: item) }
+        case "add": draft = parts.dropFirst().joined(separator: ":"); add()
+        default: break
+        }
+    }
+    #endif
 }
+
+#if DEBUG || PERF_HARNESS
+extension Notification.Name {
+    /// `-demoActions backlog-do:…`
+    static let demoBacklog = Notification.Name("demoBacklog")
+}
+#endif
 
 /// A queued row's drag and drop: it can be picked up, and another dropped on
 /// it takes its place (moving down: after it; up: before it). A line over
-/// the row while one hovers.
+/// the row while one hovers. The system's drag (the pointer on a Mac, a long
+/// press then a move on a phone); List.onMove works in edit mode only there.
 private struct QueueDrag: ViewModifier {
     let item: BacklogItem
-    let queue: [BacklogItem]?
+    let queue: [BacklogItem]
     @Binding var target: String?
-    let prefix: String
     let move: (_ id: String, _ to: Int) -> Void
 
-    func body(content: Content) -> some View {
-        if let queue, let at = queue.firstIndex(where: { $0.id == item.id }) {
-            content
-                .draggable(prefix + item.id)
-                .dropDestination(for: String.self) { ids, _ in
-                    target = nil
-                    guard let raw = ids.first, raw.hasPrefix(prefix) else { return false }
-                    let id = String(raw.dropFirst(prefix.count))
-                    guard id != item.id, queue.contains(where: { $0.id == id }) else { return false }
-                    move(id, at)
-                    return true
-                } isTargeted: { on in
-                    if on { target = item.id } else if target == item.id { target = nil }
-                }
-                .overlay(alignment: .top) {
-                    if target == item.id {
-                        Capsule().fill(Color.primary.opacity(0.35)).frame(height: 2).offset(y: -3)
-                    }
-                }
-        } else {
-            content
-        }
-    }
-}
+    /// What a dragged row carries: its id, marked as ours (text dropped from elsewhere isn't taken).
+    private static let prefix = "palo-backlog:"
 
-/// A row with no background, separator or drag of its own (a heading, a line of text).
-private struct PlainRow: ViewModifier {
-    var top: CGFloat = 2
+    /// Asked for as the drag begins.
+    private func payload() -> String {
+        debugLog("[backlog] drag began")
+        return Self.prefix + item.id
+    }
+
     func body(content: Content) -> some View {
         content
-            .listRowInsets(EdgeInsets(top: top, leading: 10, bottom: 2, trailing: 10))
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
+            .draggable(payload())
+            .dropDestination(for: String.self) { ids, _ in
+                target = nil
+                guard let raw = ids.first, raw.hasPrefix(Self.prefix) else { return false }
+                let id = String(raw.dropFirst(Self.prefix.count))
+                guard id != item.id, queue.contains(where: { $0.id == id }),
+                      let at = queue.firstIndex(where: { $0.id == item.id }) else { return false }
+                debugLog("[backlog] dropped at \(at)")
+                move(id, at)
+                return true
+            } isTargeted: { on in
+                if on { target = item.id } else if target == item.id { target = nil }
+            }
+            .overlay(alignment: .top) {
+                if target == item.id {
+                    Capsule().fill(Color.accentColor).frame(height: 2).padding(.horizontal, 12).offset(y: -1)
+                }
+            }
     }
 }
 
-private struct SectionHeaderStyle: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .textCase(nil)
-            .padding(.horizontal, 6)
-    }
+// MARK: - the line at the bottom
+
+/// What just happened, and 撤回 when it can be taken back.
+struct BacklogToast: Identifiable {
+    let id = UUID()
+    let text: String
+    var undo: (() -> Void)? = nil
 }
 
-/// One item: its place, its words (and note, in full rows), who does it or
-/// who it's for. Being done: a dot in the working color and the agent.
-private struct BacklogRow: View {
-    let item: BacklogItem
-    let place: Int?
-    /// The first three of the queue and the ones being done: a card with the note.
-    let full: Bool
+private struct BacklogToastView: View {
+    let toast: BacklogToast
+    let close: () -> Void
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            lead
-            VStack(alignment: .leading, spacing: 1) {
-                Text(item.text)
-                    .font(full ? .subheadline : .footnote)
-                    .foregroundStyle(item.state == .done ? .secondary : full ? .primary : .secondary)
-                    .strikethrough(item.state == .done, color: .secondary)
-                    .lineLimit(full ? 3 : 1)
-                if full, let note = item.note, !note.isEmpty {
-                    Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+        HStack(spacing: 12) {
+            Text(toast.text).lineLimit(1)
+            if let undo = toast.undo {
+                Button {
+                    close()
+                    undo()
+                } label: {
+                    Text(String(localized: "撤回", table: "Files")).fontWeight(.semibold).foregroundStyle(Color(rgb: 0xFF9AD8))
+                        .contentShape(.rect)
                 }
-                if let who = whoLine {
-                    Text(who).font(.caption2).foregroundStyle(item.state == .doing ? StatusDot.color(.working) : .secondary)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, full ? 10 : 8)
-        .padding(.vertical, full ? 8 : 5)
-        .background {
-            if full {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(item.state == .doing ? StatusDot.color(.working).opacity(0.12) : Color.primary.opacity(0.06))
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("backlog-undo")
             }
         }
-    }
-
-    @ViewBuilder private var lead: some View {
-        if item.state == .doing {
-            Circle().fill(StatusDot.color(.working)).frame(width: 7, height: 7)
-                .frame(width: 18)
-        } else if item.state == .done {
-            Image(systemName: "checkmark").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).frame(width: 18)
-        } else if let place {
-            Text(verbatim: "\(place + 1)")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 18, alignment: .trailing)
-        }
-    }
-
-    private var whoLine: String? {
-        guard let name = item.palName, !name.isEmpty else { return nil }
-        switch item.state {
-        case .doing: return name
-        case .queued: return String(localized: "给\(name)", table: "Files")
-        default: return nil
-        }
+        .font(BacklogMetrics.mac ? .system(size: 12) : .subheadline)
+        .foregroundStyle(.white)
+        .padding(.horizontal, 13)
+        .padding(.vertical, BacklogMetrics.mac ? 6 : 9)
+        .background(Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.24, alpha: 0.96) : UIColor(white: 0.11, alpha: 0.92) }), in: .capsule)
+        .padding(.horizontal, 16)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("backlog-toast")
     }
 }

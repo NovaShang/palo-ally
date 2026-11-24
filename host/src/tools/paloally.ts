@@ -23,7 +23,7 @@ export function sessionToolSpecs(send: (text: string) => Promise<string>, delive
         { text: z.string().describe("What to tell the assistant") },
         async (a) => send(a.text),
       ),
-      ...(shared ? [shared.Artifact, shared.SendUserFile, shared.notify_user, shared.copy_to_clipboard, shared.pals_list, shared.add_pending, shared.resolve_pending, shared.backlog_add, shared.backlog_list, shared.backlog_done] : []),
+      ...(shared ? [shared.Artifact, shared.SendUserFile, shared.notify_user, shared.copy_to_clipboard, shared.pals_list, shared.add_pending, shared.resolve_pending, shared.backlog_add, shared.backlog_list, shared.backlog_start, shared.backlog_edit, shared.backlog_done] : []),
   ];
 }
 
@@ -162,6 +162,8 @@ export function assistantToolSpecs(h: ToolHandlers): ToolSpec[] {
       shared.resolve_pending,
       shared.backlog_add,
       shared.backlog_list,
+      shared.backlog_start,
+      shared.backlog_edit,
       shared.backlog_done,
   ];
 }
@@ -254,6 +256,26 @@ export function deliveryTools(h: DeliveryToolHandlers, forSession = false) {
       "See the backlog (待办) of the folder you work in: the items being done (and by whom), the queue in the owner's order, the done ones; each with its id.",
       { folder: z.string().optional().describe("Absolute path of another folder (default: yours)") },
       async (a) => h.backlog_list(a),
+      ),
+    backlog_start: spec(
+      "backlog_start",
+      "Mark an item of the backlog (待办) as being done by you now (id from backlog_list), when the owner tells you to do it or take the next one; the owner sees who is on it. Not for items another agent is already doing, and not on your own initiative.",
+      {
+        id: z.string().describe("The item's id"),
+        folder: z.string().optional().describe("Absolute path of another folder (default: yours)"),
+      },
+      async (a) => h.backlog_start(a),
+      ),
+    backlog_edit: spec(
+      "backlog_edit",
+      "Change the words or the note of an item of the backlog (待办), in its place (id from backlog_list). What you leave out stays; an empty `note` takes the note away.",
+      {
+        id: z.string().describe("The item's id"),
+        text: z.string().optional().describe("One line: what to do"),
+        note: z.string().optional().describe("A few lines of detail, all of it; empty for none"),
+        folder: z.string().optional().describe("Absolute path of another folder (default: yours)"),
+      },
+      async (a) => h.backlog_edit(a),
       ),
     backlog_done: spec(
       "backlog_done",
