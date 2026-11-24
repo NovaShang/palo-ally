@@ -125,9 +125,9 @@ final class PhoneSmokeUITests: XCTestCase {
         sleep(1)
         shot(app, "\(look)-7-session-details")
         // Its depth is chosen by a bar, under its full name.
-        let deeper = app.buttons["detail-effort-xhigh"].firstMatch
+        let deeper = app.buttons["detail-effort-high"].firstMatch
         XCTAssertTrue(deeper.waitForExistence(timeout: 3), "the session's details have no 思考深度")
-        XCTAssertEqual(deeper.label, "很深")
+        XCTAssertEqual(deeper.label, "深")
         deeper.tap()
         sleep(1)
         shot(app, "\(look)-7b-session-depth")
