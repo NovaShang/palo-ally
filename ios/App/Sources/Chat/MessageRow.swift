@@ -740,18 +740,6 @@ private struct GoalCard: View {
     let message: ChatMessage
     let card: MessageCard
 
-    private enum Line: Hashable { case item(String), text(String) }
-
-    private var lines: [Line] {
-        message.text.split(separator: "\n", omittingEmptySubsequences: true).map { raw in
-            let s = raw.trimmingCharacters(in: .whitespaces)
-            for marker in ["- ", "* ", "• ", "· "] where s.hasPrefix(marker) {
-                return .item(String(s.dropFirst(marker.count)))
-            }
-            return .text(s)
-        }
-    }
-
     var body: some View {
         #if DEBUG || PERF_HARNESS
         let _ = PerfProbe.count("GoalCard")
@@ -762,29 +750,34 @@ private struct GoalCard: View {
                 Spacer()
                 Text(Copy.clock(message.ts)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
             }
-            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                switch line {
-                case .item(let text):
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("·").foregroundStyle(.secondary)
-                        Text(MarkdownBlock.attributed(text))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                        Button("聊聊") { store.quote(message, excerpt: text) }
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("聊聊：\(text)")
+            ForEach(Array(GoalCardPart.split(message.text).enumerated()), id: \.offset) { _, part in
+                switch part {
+                case .item(let text, let under):
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text("·").foregroundStyle(.secondary)
+                            Text(MarkdownBlock.attributed(text))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                            Button("聊聊") { store.quote(message, excerpt: text) }
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("聊聊：\(text)")
+                        }
+                        if !under.isEmpty { ReplyMarkdown(source: under, onQuote: { store.quote(message, excerpt: $0) }).padding(.leading, 12) }
                     }
-                case .text(let text):
-                    Text(MarkdownBlock.attributed(text))
+                case .markdown(let text):
+                    ReplyMarkdown(source: text, onQuote: { store.quote(message, excerpt: $0) })
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
                 }
             }
         }
+        // A wide table scrolls from one edge of the card to the other.
+        .environment(\.messageGutter, 14)
         .padding(14)
         .background(.background.secondary, in: .rect(cornerRadius: 18, style: .continuous))
+        .clipShape(.rect(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.quaternary, lineWidth: 0.5))
     }
 }

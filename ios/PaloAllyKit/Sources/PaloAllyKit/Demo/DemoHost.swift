@@ -392,6 +392,30 @@ public actor DemoHost {
             q2.replyTo = ReplyTo(messageId: reply.id, excerpt: "周日下午去超市")
             messages[messages.count - 1] = q2
             emit(RPCEventName.chatMessage, q2)
+        case "goalCard":
+            // A scheduled run's card with more than items: a table, a heading, numbers, nested items.
+            seq += 1
+            var m = ChatMessage(seq: seq, id: "goal-card", role: .assistant, kind: .text, text: """
+            七条线都停着等你，这期还剩 13 天。
+
+            | | 工作线 / 单子 | 现状 | 要你做的 |
+            |---|---|---|---|
+            | 🟢 | 首页修复 / 229 | #1463 已合，#1466 全绿待合 | 合 #1466 |
+            | 🔴 | 设备页读定义 / 52 | #1422 等 D37 | 定 D37，再答 DC5、DC6 |
+            | 🟡 | 框架重构 / 16 | 手上的活做完了 | 定 D36，答 DC1、3、4、7、8、10 |
+
+            ## 建议的顺序
+            1. 今天定 D37
+            2. 明天定 **D28** 和 D31
+
+            - **风险最大的是 52 和 37**：#1422 不合，#1444 就走不了
+              - 先看 `tests/list-page.spec.ts`
+              - 再定派工
+            - D25 要动派工测试，定不下来就拆出 37 顺延
+            """, channel: .schedule, ts: now, proactive: true)
+            m.card = MessageCard(title: "每周目标：定、跟、推", goalId: "w1")
+            messages.append(m)
+            emit(RPCEventName.chatMessage, m)
         case "tables":
             // Wide tables in a reply: they scroll sideways instead of squeezing.
             post("MacBook Air 和 dev 哪台更适合常驻跑助理？", role: .user)
