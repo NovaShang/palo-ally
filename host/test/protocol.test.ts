@@ -484,10 +484,16 @@ describe("host ↔ app protocol", () => {
     expect(Object.keys((await call("sync", {})).workbenchTabs)).toContain(`ws:${ws.id}`);
     await run("workspaces.delete", { id: ws.id });
     await run("pals.remove", { id: opened.id });
+    // What a used-up limit stopped comes with it.
+    hub.limits.hit({ kind: "palo", text: "整理纪要" }, { kind: "session", resetsAt: Date.now() + 3600_000 });
+    hub.limits.hit({ kind: "pal", id: "pal_1", name: "网站" }, { kind: "session", resetsAt: Date.now() + 3600_000 });
     // Claude 用量 (asked of the assistant's process when it came up)
-    expect((await run("usage.get", { refresh: true })).usage).toMatchObject({ state: "limits", limits: [{ used: 48 }, { scope: "Opus" }] });
+    expect((await run("usage.get", { refresh: true })).usage).toMatchObject({ state: "limits", limits: [{ used: 48 }, { scope: "Opus" }], stopped: { assistant: true, agents: [{ name: "网站" }] } });
+    hub.limits.forget(null);
+    hub.limits.forget("pal_1");
     // Claude Code's login ran out: signed in again from the phone.
     hub.auth.failed({ kind: "probe" });
+    hub.auth.failed({ kind: "pal", id: "pal_1", name: "网站" });
     expect((await call("auth.login.start")).auth).toMatchObject({ state: "expired", login: { state: "starting" } });
     logins[0]!.say("URL https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c250a&response_type=code");
     methods["auth.login.start"] = { params: {}, result: await call("auth.login.start") };

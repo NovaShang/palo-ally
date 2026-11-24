@@ -192,6 +192,7 @@ export class FakeMainSession implements MainSession {
       if (this.closed) break;
       this.total += this.driver.turnCost;
       this.driver.totals.set(this.sessionId, this.total);
+      if (this.driver.limit) this.opts.onEvent({ type: "limit", ...this.driver.limit });
       const failed = this.driver.resultError;
       // what Claude Code's Stop hook says the turn ran at
       if (this.driver.appliedEffort) this.opts.onEvent({ type: "effort", level: this.driver.appliedEffort });
@@ -259,6 +260,8 @@ export class FakeDriver implements HarnessDriver {
   failPalStart?: (opts: SessionOptions) => string | undefined;
   // Start a stand-in process for each Pal through the host's spawner.
   spawnPals = false;
+  /** A limit a turn's process reports before it ends (resultError with it: the turn fails). */
+  limit?: Omit<Extract<HarnessEvent, { type: "limit" }>, "type">;
   /** What its process says of the plan (a throw: the call failed). */
   plan?: () => PlanReport;
   planAsked = 0;

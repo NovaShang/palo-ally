@@ -40,6 +40,8 @@ export type HarnessEvent =
       consumedUuids?: string[]; // user messages this turn answered (absent on older CLIs)
       startupFailure?: string; // why Claude Code refused to start (e.g. session_held_by_background)
     }
+  // a limit of the plan, as the harness now knows it (blocked: used up, turns fail on it)
+  | ({ type: "limit"; blocked: boolean } & LimitHit)
   | { type: "error"; message: string }
   // the effort the turn runs at, as Claude Code's hooks report it
   | { type: "effort"; level: string }
@@ -76,6 +78,13 @@ export interface PlanReport {
   limits: PlanLimit[];
   extraUsage?: boolean; // past the limits it goes on, paid by use
   account?: LoginAccount;
+}
+
+/** A limit of the plan a turn can fail on: which (as PlanLimit has it) and when it resets. */
+export interface LimitHit {
+  kind?: string;
+  scope?: string;
+  resetsAt?: number; // ms
 }
 
 export interface ModelOption {
@@ -520,6 +529,8 @@ export interface LoginProcess {
 export interface HarnessAuth {
   /** What a failed turn or probe said means the login ran out. */
   isFailure(text?: string, category?: string): boolean;
+  /** An errored turn's words say a limit of the plan is used up (only asked when its process said nothing of limits); null: they don't. */
+  isLimit(text?: string): LimitHit | null;
   /** Whether it says it is logged in now. */
   loggedIn(): Promise<boolean>;
   /** When its stored login last changed (never the secret), or null. */

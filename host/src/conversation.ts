@@ -7,9 +7,9 @@ import type { Audit } from "./audit.ts";
 import type { WechatChannel, WechatReplyTarget } from "./channels/types.ts";
 import type { ChatLog } from "./chat.ts";
 import { type Config, type Paths, patchConfig } from "./config.ts";
-import { budgetNotice, friendlyError } from "./copy.ts";
+import { budgetNotice, friendlyError, limitNotice } from "./copy.ts";
 import { behaviorPrompt } from "./home.ts";
-import type { Harness, HarnessDriver, HarnessEvent, ImageInput, MainSession, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
+import type { Harness, HarnessDriver, HarnessEvent, ImageInput, LimitHit, MainSession, ModelOption, SlashCommandInfo, ToolHandlers } from "./harness/types.ts";
 import { PALO_NAME } from "./pals.ts";
 import type { Router } from "./router.ts";
 import type { RuntimeState } from "./runtime.ts";
@@ -20,7 +20,7 @@ import type { UsageLedger } from "./usage.ts";
 import { appendJsonl, truncate } from "./util.ts";
 import { ChatLogSink } from "./agent/outputSink.ts";
 import { TrackerTasks } from "./agent/taskProjection.ts";
-import { AgentSession, type ModelChoice, type ResultEvent, stallContinue } from "./agent/session.ts";
+import { AgentSession, type LimitEvent, type ModelChoice, type ResultEvent, stallContinue } from "./agent/session.ts";
 import { ASSISTANT_FLAGS } from "./agent/flags.ts";
 import { AllyTurn } from "./agent/allyTurn.ts";
 import { IdleCompact } from "./agent/idleCompact.ts";
@@ -81,6 +81,8 @@ export interface ConversationDeps {
   deferQuestion?: (input: Record<string, unknown>) => string | null;
   /** A turn went through (null) or failed for want of Claude Code's login (what it was for). */
   onAuth?: (failed: { text: string; watchId?: string } | null) => void;
+  /** A limit of the plan: what its process says of it; a turn that failed on one that's used up (what it was for); the owner's turn over otherwise. */
+  limits?: { heard: (e: LimitEvent) => void; failed: (f: { text: string; watchId?: string }, l: LimitHit) => void; settled: () => void };
   log: (s: string) => void;
 }
 
@@ -403,6 +405,10 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
     if (gateDone) this.ally?.end("done");
   }
 
+  protected override limitHeard(e: LimitEvent): void {
+    this.d.limits?.heard(e);
+  }
+
   protected override resultDone(): void {
     if (this.ally?.active) this.ally.watch();
   }
@@ -478,10 +484,14 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
       this.d.metric({ type: "turn", origin: turn.origin, proactive: turn.proactive, costUsd, contextTokens, error });
       // The login ran out: said once for everything (auth.ts), not after each turn.
       const noLogin = !!error && this.d.harness.auth.isFailure(error, errorCategory);
-      if (error && !noLogin) chat.message({ role: "system", kind: "notice", text: friendlyError(error, errorCategory), channel: "system" });
+      const limit = error && !noLogin ? this.usedUp(error, errorCategory) : null;
+      if (error && !noLogin) chat.message({ role: "system", kind: "notice", text: limit ? limitNotice(limit, this.d.config().settings.timezone) : friendlyError(error, errorCategory), channel: "system" });
+      const owner = answered.flatMap((m) => (m.text ? [m.text] : []));
+      const about = { text: owner.length ? owner.join("\n") : turn.label ? `${turn.label}: ${turn.text}` : turn.text || t("limit.background"), ...(turn.watchId ? { watchId: turn.watchId } : {}) };
+      if (limit) this.d.limits?.failed(about, limit);
+      else if (!turn.proactive) this.d.limits?.settled();
       if (noLogin) {
-        const owner = answered.flatMap((m) => (m.text ? [m.text] : []));
-        this.d.onAuth?.({ text: owner.length ? owner.join("\n") : turn.label ? `${turn.label}: ${turn.text}` : turn.text, ...(turn.watchId ? { watchId: turn.watchId } : {}) });
+        this.d.onAuth?.(turn.text || owner.length || turn.label ? about : { ...about, text: "" });
       } else if (!error) this.d.onAuth?.(null);
       const shown = stripSkip(this.texts.join("\n\n").trim());
       this.turnQueue?.said(turn, shown, answered, error);

@@ -54,7 +54,9 @@ extension DemoHost {
 
     func applyUsageScenario(_ name: String) {
         usageScenario = name
-        guard name != "usageOld", let u = demoUsage(for: name, now: Date().epochMillis) else { return }
+        guard name != "usageOld", var u = demoUsage(for: name, now: Date().epochMillis) else { return }
+        // Used up (extra usage off): what it stopped, to go on when it resets.
+        if u.extraUsage != true, let l = u.limits.first(where: \.isUsedUp) { u.stopped = stopDemoWork(until: l.resetsAt) }
         usage = u
         emit(RPCEventName.usageUpdated, ["usage": u])
         guard name == "usageOffline" else { return }
@@ -64,6 +66,18 @@ extension DemoHost {
             transport.unreachable = true
             transport.simulateDisconnect()
         }
+    }
+
+    /// 网站帮手 and 笔记整理 stop mid-turn (nothing of them waits on the owner), and the assistant.
+    func stopDemoWork(until: Int64?) -> StoppedWork {
+        let ids = ["pal-site", "pal-notes"].filter { id in pals.contains { $0.id == id } }
+        for id in ids {
+            settlePalCards(of: id)
+            setPal(id) { $0.status = .idle; $0.attention = .idle; $0.finishedAt = nil }
+        }
+        return StoppedWork(assistant: true, until: until, agents: ids.compactMap { id in
+            pals.first { $0.id == id }.map { StoppedWork.Agent(id: id, name: $0.name, until: until) }
+        }, schedules: 2)
     }
 
     func usageGet(_ p: JSONValue) throws -> JSONValue {

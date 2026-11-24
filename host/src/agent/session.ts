@@ -21,7 +21,7 @@
 // next) it says through the hooks below.
 import { randomUUID } from "node:crypto";
 import { ACTIVITY, activityBackground, describeActivity } from "../copy.ts";
-import type { FilesRewound, Harness, HarnessEvent, ImageInput, MainSession, RewindChain, RewindPoint, Rewinder, SessionRef } from "../harness/types.ts";
+import type { FilesRewound, Harness, HarnessEvent, ImageInput, LimitHit, MainSession, RewindChain, RewindPoint, Rewinder, SessionRef } from "../harness/types.ts";
 import { t as tr } from "../i18n/index.ts";
 import { type PendingRewind, rewindBusy, rewindNoFiles, rewindNotFound } from "../rewind.ts";
 import type { StallRecovery, StallTarget } from "../stallWatch.ts";
@@ -82,6 +82,9 @@ export interface ModelChoice {
   effort?: string | null;
 }
 
+/** Where a limit of the plan stands, as the process says. */
+export type LimitEvent = Extract<HarnessEvent, { type: "limit" }>;
+
 export type ResultEvent = Extract<HarnessEvent, { type: "result" }>;
 
 export abstract class AgentSession<P extends InFlight, T extends TaskProjection = TaskProjection, S extends OutputSink = OutputSink> {
@@ -122,6 +125,9 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
   protected interrupted = false;
   /** A stopped turn was ended here: what's left of it doesn't open a turn or say what it's doing. */
   protected windingDown = false;
+  /** The plan's limits its process says are used up, by kind; and whether it speaks of limits at all. */
+  private readonly usedUpLimits = new Map<string, LimitHit>();
+  private limitsSaid = false;
   /** When it last went from idle to busy. */
   protected workSince = 0;
   /** Ids already shown (followTranscript: a line read from the transcript isn't shown twice). */
@@ -239,6 +245,9 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
   protected switchFailed(_what: string, e: unknown): void {
     throw e;
   }
+
+  /** Its process said where a limit of the plan stands. */
+  protected limitHeard(_e: LimitEvent): void {}
 
   /** A result has settled its turn. */
   protected resultDone(_e: ResultEvent, _stopped: boolean): void {}
@@ -677,6 +686,24 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
     for (const w of this.movedWaiters.splice(0)) w();
   }
 
+  // ---------------- a limit of the plan used up ----------------
+
+  /**
+   * The used-up limit a failed turn failed on; null: it failed otherwise (a
+   * busy server says rate_limit too). What its process said of the limits
+   * decides; one that said nothing of them, the error's own words (those
+   * also when the error has no kind: a crash while a limit is used up isn't one).
+   */
+  protected usedUp(text: string, category?: string): LimitHit | null {
+    if (category && category !== "rate_limit") return null;
+    const words = this.harness.auth.isLimit(text);
+    if (!category && !words) return null;
+    if (!this.limitsSaid) return words;
+    const now = this.now();
+    for (const [key, l] of this.usedUpLimits) if (l.resetsAt !== undefined && l.resetsAt <= now) this.usedUpLimits.delete(key);
+    return [...this.usedUpLimits.values()].at(-1) ?? null;
+  }
+
   // ---------------- harness events ----------------
 
   onHarnessEvent(e: HarnessEvent): void {
@@ -685,6 +712,14 @@ export abstract class AgentSession<P extends InFlight, T extends TaskProjection 
     else if (e.type === "tool_result") this.openTools.delete(e.toolUseId);
     this.trackWaiting(e);
     if (e.type === "words") return;
+    if (e.type === "limit") {
+      this.limitsSaid = true;
+      const key = `${e.kind ?? ""}/${e.scope ?? ""}`;
+      if (e.blocked) this.usedUpLimits.set(key, { ...(e.kind ? { kind: e.kind } : {}), ...(e.scope ? { scope: e.scope } : {}), ...(e.resetsAt ? { resetsAt: e.resetsAt } : {}) });
+      else this.usedUpLimits.delete(key);
+      this.limitHeard(e);
+      return;
+    }
     if (e.type === "answering") {
       // The harness names the owner messages a turn answers on its first
       // frames: the host's turn starts with exactly those, instead of guessing.

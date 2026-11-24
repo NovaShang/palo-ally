@@ -111,6 +111,31 @@ struct UsageTests {
         #expect(!store.usageOverdue)
     }
 
+    @Test func whatALimitStoppedComesWithTheNumbers() async throws {
+        let json = #"{"state":"limits","limits":[],"stopped":{"assistant":true,"until":9,"agents":[{"id":"p1","name":"网站","until":9}],"schedules":2}}"#
+        let u = try JSONDecoder().decode(UsageStatus.self, from: Data(json.utf8))
+        #expect(u.stopped == StoppedWork(assistant: true, until: 9, agents: [.init(id: "p1", name: "网站", until: 9)], schedules: 2))
+        #expect(u.stopped?.agent("p1")?.until == 9 && u.stopped?.agent("p2") == nil)
+        // an older host says nothing of it
+        #expect(try JSONDecoder().decode(UsageStatus.self, from: Data(#"{"state":"limits","limits":[]}"#.utf8)).stopped == nil)
+
+        let host = DemoHost(speed: 0, pals: true)
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { store.usage != nil && !store.pals.isEmpty })
+        await host.applyScenario("usageHit")
+        #expect(await until { store.usage?.stopped?.agents.map(\.id) == ["pal-site", "pal-notes"] })
+        #expect(store.usage?.stopped?.until == store.usage?.limits.first?.resetsAt)
+        #expect(await until { store.pal(id: "pal-site")?.status == .idle })
+        // past it on extra usage nothing stops
+        await host.applyScenario("usageHitExtra")
+        #expect(await until { store.usage?.extraUsage == true })
+        #expect(store.usage?.stopped == nil)
+        await host.applyScenario("authExpired")
+        #expect(await until { store.status?.auth?.stopped?.agents.count == 2 })
+        #expect(store.status?.auth?.stopped?.agents.first?.until == nil)
+    }
+
     @Test func aHostFromBeforeItHasNone() async {
         let host = DemoHost(speed: 0)
         await host.applyScenario("usageOld")

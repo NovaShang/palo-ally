@@ -97,7 +97,8 @@ export class AuthWatch {
     const l = this.login;
     if (this.since === null && !l) return undefined;
     const login: LoginStatus | undefined = l ? { state: l.state, startedAt: l.startedAt, ...(l.url ? { url: l.url } : {}), ...(l.error ? { error: l.error } : {}) } : undefined;
-    return { state: this.since === null ? "ok" : "expired", ...(this.since !== null ? { since: this.since } : {}), ...(login ? { login } : {}) };
+    const stopped = { assistant: this.missed.palo.length > 0, agents: Object.entries(this.missed.pals).map(([id, name]) => ({ id, name })), schedules: this.missed.schedules.length };
+    return { state: this.since === null ? "ok" : "expired", ...(this.since !== null ? { since: this.since, stopped } : {}), ...(login ? { login } : {}) };
   }
 
   /** Something failed for want of a login. The first one marks it expired and tells the owner. */

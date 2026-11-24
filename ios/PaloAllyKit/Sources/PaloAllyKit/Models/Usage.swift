@@ -110,6 +110,48 @@ public struct UsageLimit: Codable, Sendable, Hashable {
     }
 }
 
+/// What stopped (for want of a login, or on a used-up limit) and goes on by itself.
+public struct StoppedWork: Codable, Sendable, Hashable {
+    public struct Agent: Codable, Sendable, Hashable, Identifiable {
+        public var id: String
+        public var name: String
+        /// When it goes on (ms); nil: once the login is back.
+        public var until: Int64?
+
+        public init(id: String, name: String, until: Int64? = nil) {
+            self.id = id; self.name = name; self.until = until
+        }
+
+        public init(from decoder: Decoder) throws {
+            let l = try Lenient(decoder)
+            id = l.string("id", or: "")
+            name = l.string("name", or: "")
+            until = l.millis("until")
+        }
+    }
+
+    public var assistant: Bool
+    /// When the assistant goes on (ms).
+    public var until: Int64?
+    public var agents: [Agent]
+    /// Scheduled runs that go again.
+    public var schedules: Int
+
+    public init(assistant: Bool = false, until: Int64? = nil, agents: [Agent] = [], schedules: Int = 0) {
+        self.assistant = assistant; self.until = until; self.agents = agents; self.schedules = schedules
+    }
+
+    public init(from decoder: Decoder) throws {
+        let l = try Lenient(decoder)
+        assistant = l.bool("assistant", or: false)
+        until = l.millis("until")
+        agents = l.array(Agent.self, "agents", or: [])
+        schedules = l.int("schedules", or: 0)
+    }
+
+    public func agent(_ id: String) -> Agent? { agents.first { $0.id == id } }
+}
+
 public struct UsageStatus: Codable, Sendable, Hashable {
     public var state: UsageState
     public var limits: [UsageLimit]
@@ -120,11 +162,13 @@ public struct UsageStatus: Codable, Sendable, Hashable {
     public var at: Int64?
     /// Asked since and got no answer: the numbers are from `at`.
     public var stale: Bool
+    /// What a used-up limit stopped, to go on when it resets.
+    public var stopped: StoppedWork?
 
     public init(state: UsageState, limits: [UsageLimit] = [], extraUsage: Bool? = nil, account: LoginAccount? = nil,
-                at: Int64? = nil, stale: Bool = false) {
+                at: Int64? = nil, stale: Bool = false, stopped: StoppedWork? = nil) {
         self.state = state; self.limits = limits; self.extraUsage = extraUsage
-        self.account = account; self.at = at; self.stale = stale
+        self.account = account; self.at = at; self.stale = stale; self.stopped = stopped
     }
 
     public init(from decoder: Decoder) throws {
@@ -135,6 +179,7 @@ public struct UsageStatus: Codable, Sendable, Hashable {
         account = l.decode(LoginAccount.self, "account")
         at = l.millis("at")
         stale = l.bool("stale") ?? false
+        stopped = l.decode(StoppedWork.self, "stopped")
     }
 
     /// The limit used the most: the one met first (none whose window is over).

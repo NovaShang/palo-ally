@@ -363,7 +363,8 @@ public actor DemoHost {
             usage.at = now - 42 * 60_000
             emit(RPCEventName.usageUpdated, ["usage": usage])
             s.auth = AuthStatus(state: .expired, since: now - 40 * 60_000,
-                                login: name == "authLogin" ? LoginStatus(state: .waiting, startedAt: now, url: Self.demoLoginURL) : nil)
+                                login: name == "authLogin" ? LoginStatus(state: .waiting, startedAt: now, url: Self.demoLoginURL) : nil,
+                                stopped: stopDemoWork(until: nil))
         case "longQuote":
             // `-demoState longQuote`: a reply, then the owner's words quoting a long
             // stretch of it (folds to two lines) and, below, a short quote (doesn't).
@@ -992,7 +993,8 @@ public actor DemoHost {
         case RPCMethod.authLoginStart:
             // The link comes back at once; the demo's login goes through with any code but "bad".
             status.auth = AuthStatus(state: status.auth?.state ?? .ok, since: status.auth?.since,
-                                     login: LoginStatus(state: .waiting, startedAt: Date().epochMillis, url: Self.demoLoginURL))
+                                     login: LoginStatus(state: .waiting, startedAt: Date().epochMillis, url: Self.demoLoginURL),
+                                     stopped: status.auth?.stopped)
             emit(RPCEventName.status, status)
             return ["auth": try .from(status.auth)]
         case RPCMethod.authLoginCode:
@@ -1282,15 +1284,15 @@ public actor DemoHost {
 
     /// Every Pal's card still waiting is answered in the app, and those Pals
     /// go back to idle (so nothing waits on the owner in a screenshot).
-    private func settlePalCards() {
+    func settlePalCards(of pal: String? = nil) {
         let now = Date().epochMillis
-        for i in approvals.indices where approvals[i].source?.isPal == true && approvals[i].isPending {
+        for i in approvals.indices where approvals[i].source?.isPal == true && approvals[i].isPending && (pal == nil || approvals[i].source?.id == pal) {
             approvals[i].status = .allowed
             approvals[i].decidedAt = now
             approvals[i].decidedBy = "app"
             emit(RPCEventName.approvalUpdated, approvals[i])
         }
-        for p in pals where p.status == .waiting { setPal(p.id) { $0.status = .idle } }
+        for p in pals where p.status == .waiting && (pal == nil || p.id == pal) { setPal(p.id) { $0.status = .idle } }
     }
 
     // MARK: allies

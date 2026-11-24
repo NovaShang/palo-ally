@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { LoginProcess } from "../types.ts";
+import type { LimitHit, LoginProcess } from "../types.ts";
 import { cleanSessionEnv, findClaude, loginEnv } from "./cli.ts";
 
 // Claude Code's login: what a failure says, whether it is logged in, when its
@@ -15,6 +15,19 @@ export function isAuthFailure(text?: string, category?: string): boolean {
 
 const AUTH_WORDS =
   /authentication_failed|authentication_error|failed to authenticate|oauth (session|token) (has )?expired|could not be refreshed|please run \/login|not logged in|invalid (api|x-api) key/i;
+
+/**
+ * A used-up limit by Claude Code's own error line (a process that said
+ * nothing of limits): only ever read off a turn that failed, and only at its start.
+ */
+export function isLimitFailure(text?: string): LimitHit | null {
+  const m = LIMIT_WORDS.exec((text ?? "").trim());
+  if (!m) return null;
+  const at = Number(/\|(\d{10,13})\b/.exec(text!)?.[1]);
+  return Number.isFinite(at) ? { resetsAt: at < 1e12 ? at * 1000 : at } : {};
+}
+
+const LIMIT_WORDS = /^(?:claude (?:ai )?usage limit reached|you(?:'|’)?ve (?:hit|reached) your (?:[\w-]+ ){0,3}limit\b|(?:5-hour|session|weekly|opus|sonnet|opus weekly|sonnet weekly) limit reached)/i;
 
 // ---------------- the real thing (macOS) ----------------
 

@@ -1,4 +1,4 @@
-import type { LoginAccount, PlanLimit, PlanReport } from "../types.ts";
+import type { HarnessEvent, LoginAccount, PlanLimit, PlanReport } from "../types.ts";
 
 // Claude Code's /usage data and account, as the host takes them. The SDK's
 // method is experimental: fields may be missing, null or gone, so everything
@@ -79,6 +79,30 @@ export function planReport(raw: unknown, account?: LoginAccount): PlanReport {
   if (!u.rate_limits || typeof u.rate_limits !== "object") return { plan: "unreadable", ...withAcc };
   const extra = u.rate_limits.extra_usage?.is_enabled;
   return { plan: "limits", ...withAcc, limits: limits(u.rate_limits), ...(typeof extra === "boolean" ? { extraUsage: extra } : {}) };
+}
+
+// What a turn's rate_limit_event calls the limits, as the plan's rows have them.
+const EVENT_LIMITS: Record<string, { kind: string; scope?: string }> = {
+  five_hour: { kind: "session" },
+  seven_day: { kind: "weekly_all" },
+  seven_day_opus: { kind: "weekly_scoped", scope: "Opus" },
+  seven_day_sonnet: { kind: "weekly_scoped", scope: "Sonnet" },
+  seven_day_overage_included: { kind: "weekly_scoped" },
+};
+
+/** rate_limit_event: blocked when the request was refused (past the limit on extra usage, it isn't). */
+export function limitEvent(raw: unknown): HarnessEvent | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as any;
+  const type = str(r.rateLimitType);
+  if (typeof r.status !== "string") return null;
+  const at = typeof r.resetsAt === "number" && r.resetsAt > 0 ? r.resetsAt : undefined;
+  return {
+    type: "limit",
+    blocked: r.status === "rejected" && r.isUsingOverage !== true && r.overageInUse !== true,
+    ...(type ? (EVENT_LIMITS[type] ?? { kind: type }) : {}),
+    ...(at ? { resetsAt: at < 1e12 ? at * 1000 : at } : {}),
+  };
 }
 
 /** Asks a running process: its account and, when it has the (experimental) method, its limits; never `behaviors`, which scan a week of transcripts. */

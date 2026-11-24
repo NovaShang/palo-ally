@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { AwayDetector } from "../src/away.ts";
 import type { Config, Paths } from "../src/config.ts";
 import type { HarnessEvent } from "../src/harness/types.ts";
+import type { LimitDeps } from "../src/limitWatch.ts";
 import type { PalsDeps } from "../src/pals.ts";
 import { transcriptPath } from "../src/harness/claude/paths.ts";
 import { readTranscript } from "../src/harness/claude/rewind.ts";
@@ -41,7 +42,7 @@ export function cleanupBoth(): void {
   for (const d of dirs.splice(0)) d.cleanup();
 }
 
-export function both(o: { script?: FakeScript; palScript?: FakeScript; wechat?: WechatChannel; paths?: Paths; config?: Config; claude?: FakeClaudeDir; spawn?: boolean; pals?: Partial<PalsDeps> } = {}) {
+export function both(o: { script?: FakeScript; palScript?: FakeScript; wechat?: WechatChannel; paths?: Paths; config?: Config; claude?: FakeClaudeDir; spawn?: boolean; pals?: Partial<PalsDeps>; limits?: Partial<LimitDeps> } = {}) {
   const claude = o.claude ?? new FakeClaudeDir();
   if (!o.claude) dirs.push(claude);
   const cli = new FakeCli(claude);
@@ -51,6 +52,7 @@ export function both(o: { script?: FakeScript; palScript?: FakeScript; wechat?: 
     wechat: o.wechat,
     ...(o.paths ? { paths: o.paths } : {}),
     ...(o.config ? { config: o.config } : {}),
+    ...(o.limits ? { limits: o.limits } : {}),
     sessions: { claudeDir: claude.dir, cli, away: new AwayDetector(() => null, Date.now, () => false) },
     pals: { timing: FAST, readMessages: async (sid, dir) => readTranscript(transcriptPath(claude.dir, dir, sid)), ...o.pals },
   });

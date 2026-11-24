@@ -1,4 +1,5 @@
 import type { AuthDeps } from "../src/auth.ts";
+import type { LimitDeps } from "../src/limitWatch.ts";
 import type { LoginProcess, HarnessDriver } from "../src/harness/types.ts";
 import { afterAll } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -67,6 +68,7 @@ export function makeHub(
     pals?: Partial<PalsDeps>;
     harness?: HarnessDriver; // a real one (live tests); `driver` is then unused
     auth?: Partial<AuthDeps>;
+    limits?: Partial<LimitDeps>;
   } = {},
 ) {
   const paths = opts.paths ?? tmpPaths();
@@ -81,7 +83,7 @@ export function makeHub(
   // Never this computer's login: no keychain, no `claude auth`, a pretend login process.
   const logins: FakeLogin[] = [];
   const auth: Partial<AuthDeps> = { stamp: async () => null, loggedIn: async () => true, spawnLogin: () => (logins.push(new FakeLogin()), logins.at(-1)!), ...opts.auth };
-  const hub = new Hub({ paths, config: opts.config ?? testConfig(), driver: opts.harness ?? driver, pushers: [pusher], wechat: opts.wechat, log: () => {}, allies: opts.allies, sessions, pals, auth });
+  const hub = new Hub({ paths, config: opts.config ?? testConfig(), driver: opts.harness ?? driver, pushers: [pusher], wechat: opts.wechat, log: () => {}, allies: opts.allies, sessions, pals, auth, limits: opts.limits });
   const events: { event: string; data: any }[] = [];
   hub.bus.on((event, data) => events.push({ event, data }));
   return { hub, driver, pusher, paths, events, logins };

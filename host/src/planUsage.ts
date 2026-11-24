@@ -1,4 +1,4 @@
-import type { PlanReport } from "./harness/types.ts";
+import type { LimitHit, PlanLimit, PlanReport } from "./harness/types.ts";
 import type { UsageStatus } from "./types.ts";
 import { readJson, writeJson } from "./util.ts";
 
@@ -21,6 +21,11 @@ export interface PlanUsageDeps {
   now?: () => number;
   timeoutMs?: number;
   tickMs?: number;
+}
+
+/** The plan's row a used-up limit is. */
+function matches(l: PlanLimit, hit: LimitHit): boolean {
+  return l.kind === hit.kind && (hit.scope === undefined ? hit.kind !== "weekly_scoped" || l.resetsAt === hit.resetsAt : l.scope?.toLowerCase() === hit.scope.toLowerCase());
 }
 
 const PAGE_MS = 55_000; // the page asks every minute
@@ -62,6 +67,39 @@ export class PlanUsage {
   /** The process that answers has just come up. */
   processUp(): void {
     if (this.now() - this.lastAsk >= WORKING_MS || this.s.stale) void this.refresh();
+  }
+
+  /** A turn said where a limit stands: the numbers may be old. */
+  heard(): void {
+    if (this.now() - this.lastAsk >= 60_000) void this.refresh();
+  }
+
+  /** A turn failed on a used-up limit: known at once, before the numbers say so. */
+  usedUp(hit: LimitHit): void {
+    const s = this.s;
+    if (s.state === "limits" && hit.kind) {
+      const i = s.limits.findIndex((l) => matches(l, hit));
+      const at = hit.resetsAt ? { resetsAt: hit.resetsAt } : {};
+      if (i >= 0 && s.limits[i]!.used < 100) {
+        this.s = { ...s, limits: s.limits.map((l, n) => (n === i ? { ...l, used: 100, ...at } : l)) };
+        writeJson(this.d.path, this.s);
+        this.d.changed(this.s);
+      }
+    }
+    this.heard();
+  }
+
+  /** Whether a limit is still used up, asked now: until when; null: there's room; undefined: no answer. */
+  async still(hit: LimitHit): Promise<number | null | undefined> {
+    const from = this.now();
+    await this.refresh();
+    const s = this.s;
+    if (s.state !== "limits" || s.stale || s.at === undefined || s.at < from) return undefined;
+    const now = this.now();
+    const up = s.limits.filter((l) => l.used >= 100 && (l.resetsAt === undefined || l.resetsAt > now));
+    // Its own; and one for everything stops it as well.
+    const l = up.filter((x) => matches(x, hit) || !x.scope).sort((a, b) => (b.resetsAt ?? 0) - (a.resetsAt ?? 0))[0];
+    return l ? (l.resetsAt ?? now + 30 * 60_000) : null;
   }
 
   /** Once a minute: whether it's time to ask. */

@@ -11,7 +11,7 @@ import type { RawSessionMessage } from "./harness/claude/transcript.ts";
 import type { RegistryEntry } from "./harness/claude/registry.ts";
 import type { ChatLog } from "./chat.ts";
 import type { Paths, Settings } from "./config.ts";
-import type { DeliveryToolHandlers, HarnessDriver, ModelOption } from "./harness/types.ts";
+import type { DeliveryToolHandlers, HarnessDriver, LimitHit, ModelOption } from "./harness/types.ts";
 import type { MediaStore } from "./media.ts";
 import type { ArtifactLibrary } from "./artifacts.ts";
 import { makeDeliveryTools } from "./shellTools.ts";
@@ -23,6 +23,7 @@ import { PAL_MODES } from "./harness/claude/settings.ts";
 import type { ForkSession } from "./harness/claude/rewind.ts";
 import { RECENT_MAX, type RecentEntry, RecentSessions, folderMatch, ownRoots, palNameFor, palTitle, recentWire, shortName } from "./palRecent.ts";
 import { type RecentSource } from "./harness/types.ts";
+import type { LimitEvent } from "./agent/session.ts";
 import { HeldElsewhere, type Holder } from "./agent/processHost.ts";
 import { type PalRecord, PalSession } from "./palSession.ts";
 import { type PalTask, type PastPalTask } from "./agent/taskProjection.ts";
@@ -187,6 +188,8 @@ export interface PalsDeps {
   harness: import("./harness/types.ts").Harness;
   /** A Pal's turn went through (true) or failed for want of Claude Code's login (false). */
   onAuth?: (pal: { id: string; name: string }, ok: boolean) => void;
+  /** A limit of the plan (limitWatch.ts): as PalSession tells it; and `owner`: the owner did something about this one (nothing remembered of it is resumed). */
+  limits?: { heard: (e: LimitEvent) => void; failed: (pal: { id: string; name: string }, l: LimitHit) => void; settled: (id: string) => void; owner: (id: string) => void };
   paths: Paths;
   claudeDir: string;
   bus: Bus;
@@ -397,6 +400,12 @@ export class Pals {
         if (finished) this.pushDone(pal);
       },
       onAuth: (pal, ok) => this.d.onAuth?.({ id: pal.id, name: pal.rec.name }, ok),
+      limits: {
+        heard: (e) => this.d.limits?.heard(e),
+        failed: (pal, l) => this.d.limits?.failed({ id: pal.id, name: pal.rec.name }, l),
+        settled: (pal) => this.d.limits?.settled(pal.id),
+      },
+      timezone: () => this.d.settings().timezone,
       beforeStart: (pal) => this.readTitle(pal),
       onStopped: (pal) => this.onStopped(pal),
       onWoke: (pal) => {
@@ -641,6 +650,12 @@ export class Pals {
     return pal.toWire();
   }
 
+  /** A used-up limit has reset: this one may be told to go on (here, not stopped, not open in a terminal, between turns). */
+  canGoOn(id: string): boolean {
+    const pal = this.pals.get(id);
+    return !!pal && !pal.rec.stoppedFor && !pal.busy && !this.outside(pal) && pal.status() !== "waiting";
+  }
+
   // An asleep Pal is about to be woken: said once, however many words wait.
   /** The host's own words to a Pal (a question answered after it stopped
    *  waiting): woken if asleep, as from the assistant (the page shows its name). */
@@ -849,6 +864,7 @@ export class Pals {
       if (!other) continue;
       this.d.audit.log("pal.elsewhere", { pal: pal.id, name: pal.rec.name, pid: other.pid });
       pal.stopFor("elsewhere", t("pals.elsewhere"));
+      this.d.limits?.owner(pal.id);
     }
   }
 
@@ -988,6 +1004,7 @@ export class Pals {
     this.data.pals = this.data.pals.filter((r) => r.id !== pal.id);
     this.sent.delete(pal.id);
     this.waitingPushes.forget(pal.id);
+    this.d.limits?.owner(pal.id);
     if (out) {
       // Gone back and not spoken to since: the old session is the one there is.
       const sessionId = pal.pendingRewind()?.from ?? pal.rec.sessionId;
@@ -1266,6 +1283,7 @@ export class Pals {
     rec.terminalUntil = this.now() + this.timing.terminalMs + this.timing.exitWaitMs;
     this.retried.delete(pal.id);
     pal.markStopped("elsewhere", t("pals.terminalNote"));
+    this.d.limits?.owner(pal.id);
     await pal.shutdown();
     // Archived meanwhile.
     if (!this.pals.has(pal.id)) return pal.toWire();
@@ -1688,6 +1706,7 @@ export class Pals {
     if (!words.trim() && !attachments.length) throw new Error(t("pals.emptyMessage"));
     const have = cid ? this.queueOf(sid)?.messages.find((m) => m.clientMsgId === cid) : undefined;
     if (have) return { id: have.id, seq: 0, queued: true };
+    this.d.limits?.owner(pal.id);
     if (this.outside(pal)) return this.enqueue(sid, words, cid, attachments);
     // Back a moment ago: what waited goes first.
     if (this.queueOf(sid)) await this.flushQueue(sid, pal);
@@ -1832,6 +1851,7 @@ export class Pals {
   async rewind(id: string, messageId: string, o: { restoreFiles?: boolean; by: string }): Promise<{ text: string; filesRestored: boolean }> {
     const pal = this.mustGet(id);
     const r = await pal.rewind(String(messageId ?? ""), !!o.restoreFiles);
+    this.d.limits?.owner(pal.id);
     this.d.bus.emit("chat.rewound", { id: messageId, ids: r.dropped, pal: pal.id });
     this.d.audit.log("pal.rewind", { pal: pal.id, name: pal.rec.name, messageId, from: r.from, to: pal.rec.sessionId, at: r.at, dropped: r.dropped.length, files: r.filesRestored, ...(r.copied ? { copied: true } : {}), by: o.by });
     this.log(`${pal.rec.name} went back to before ${messageId} (${r.dropped.length} message(s) out${r.filesRestored ? ", files restored" : ""})`);
@@ -1843,6 +1863,7 @@ export class Pals {
   /** pals.stop: ends the current turn. */
   async stopTurn(id: string, by: string): Promise<void> {
     const pal = this.mustGet(id);
+    this.d.limits?.owner(pal.id);
     await pal.interrupt(by);
     this.d.audit.log("pal.stop", { pal: pal.id, name: pal.rec.name, by });
   }

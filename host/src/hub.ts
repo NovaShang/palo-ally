@@ -1,5 +1,6 @@
 import { Allies, type AlliesDeps } from "./allies.ts";
 import { PlanUsage } from "./planUsage.ts";
+import { LimitWatch, type LimitDeps } from "./limitWatch.ts";
 import { AuthWatch, type AuthDeps, type Missed } from "./auth.ts";
 import { ApprovalManager } from "./approvals.ts";
 import { ArtifactLibrary } from "./artifacts.ts";
@@ -27,7 +28,7 @@ import { isLang, parseLocale, setLang, t, tIn, systemLanguage, type Lang } from 
 import { makeShellTools, restText } from "./shellTools.ts";
 import { SuggestionStore } from "./suggestions.ts";
 import { TaskTracker } from "./tasks.ts";
-import type { Attachment, CardSource, Channel, ChatMessage, PairedDevice, PendingItem, PendingLink, PendingSource, Status, Task, Watch, ReplyTo } from "./types.ts";
+import type { Attachment, CardSource, Channel, ChatMessage, PairedDevice, PendingItem, PendingLink, PendingSource, Status, Task, UsageStatus, Watch, ReplyTo } from "./types.ts";
 import { MediaStore } from "./media.ts";
 import { briefTitle, ensureMorningBrief, isBriefTitle } from "./brief.ts";
 import { HandoffTracker } from "./handoffs.ts";
@@ -71,6 +72,7 @@ export interface HubDeps {
   stallWatch?: Partial<StallWatchDeps>; // tests drive the watchdog's clock and checks
   forkSession?: ForkSession; // tests copy sessions in their own Claude Code folder
   auth?: Partial<AuthDeps>; // tests fake the login process and Claude Code's answers
+  limits?: Partial<LimitDeps>; // tests move the clock and the few seconds between those going on
 }
 
 // Hub assembles the assistant: the main conversation with the harness, the
@@ -114,6 +116,8 @@ export class Hub {
   readonly auth: AuthWatch;
   /** How much of the plan of this computer's login is used. */
   readonly planUsage: PlanUsage;
+  /** What a used-up limit stopped, to go on when it resets. */
+  readonly limits: LimitWatch;
   private readonly info: HarnessInfo;
   private readonly proactive: Proactive;
   private readonly ledger: UsageLedger;
@@ -213,8 +217,20 @@ export class Hub {
         return proc ? (proc.planReport?.() ?? Promise.resolve({ plan: "unsupported", limits: [] })) : undefined;
       },
       working: () => this.conversation.busy || !this.pals.quiet(),
-      changed: (s) => this.bus.emit("usage.updated", { usage: s }),
+      changed: () => this.emitUsage(),
       log: (s) => this.log(s),
+    });
+    this.limits = new LimitWatch({
+      path: `${this.paths.state}/limit.json`,
+      ...(deps.now ? { now: deps.now } : {}),
+      still: (l) => this.planUsage.still(l),
+      blocked: () => this.auth.expired,
+      canGoOn: (id) => this.pals.canGoOn(id),
+      resume: (m, since) => this.resumeMissed(m, "limit", since),
+      changed: () => this.emitUsage(),
+      audit: (type, data) => this.audit.log(type, data),
+      log: (s) => this.log(s),
+      ...deps.limits,
     });
     this.pending = new PendingStore(this.paths.pending, this.bus, this.audit, () => this.config.settings.assistantName || PALO_NAME);
     this.backlog = new BacklogStore({
@@ -303,6 +319,14 @@ export class Hub {
       },
       metric: (m) => this.metric(m),
       onAuth: (failed) => (failed ? this.auth.failed({ kind: "palo", ...failed }) : this.auth.worked()),
+      limits: {
+        heard: () => this.planUsage.heard(),
+        failed: (f, l) => {
+          this.planUsage.usedUp(l);
+          this.limits.hit({ kind: "palo", ...f }, l);
+        },
+        settled: () => this.limits.settled("palo"),
+      },
       deferQuestion: (input) => this.deferQuestion(input),
       log: this.log,
     });
@@ -385,7 +409,7 @@ export class Hub {
       log: (s) => this.log(`probe: ${s}`),
       audit: (type, data) => this.audit.log(type, data),
       budgetUsd: () => this.config.budget.probeDailyUsd,
-      held: () => this.auth.expired,
+      held: () => this.auth.expired || this.limits.everything,
       onAuth: (ok) => (ok ? this.auth.worked() : this.auth.failed({ kind: "probe" })),
       onPaused: (reason, due) =>
         this.chat.add({
@@ -457,6 +481,15 @@ export class Hub {
       onSent: (pal, text) => this.handoffs.sent(pal, text),
       onReply: (pal, text) => this.handoffs.replied(pal, text),
       onAuth: (pal, ok) => (ok ? this.auth.worked() : this.auth.failed({ kind: "pal", ...pal })),
+      limits: {
+        heard: () => this.planUsage.heard(),
+        failed: (pal, l) => {
+          this.planUsage.usedUp(l);
+          this.limits.hit({ kind: "pal", ...pal }, l);
+        },
+        settled: (pal) => this.limits.settled({ pal }),
+        owner: (pal) => this.limits.forget(pal),
+      },
       workspaceExists: (id) => this.workbench?.exists(id) ?? false,
       shownIds: () => this.workbench?.shownIds() ?? new Set<string>(),
       workspaceJoin: (workspaceId, palId) => this.workbench?.join(workspaceId, palId),
@@ -539,6 +572,7 @@ export class Hub {
     this.allies.start();
     this.auth.start();
     this.planUsage.start();
+    this.limits.start();
     if (opts.probe !== false) {
       // Work handed to agents: the host follows it itself.
       this.handoffs.start();
@@ -573,6 +607,7 @@ export class Hub {
     this.stallWatch.stop();
     this.auth.stop();
     this.planUsage.stop();
+    this.limits.stop();
     this.conversation.stopIdleCompact();
     if (this.suggestionTimer) clearInterval(this.suggestionTimer);
     this.artifacts.stop();
@@ -602,6 +637,17 @@ export class Hub {
       ...(auth ? { auth } : {}),
       ...(tokens > 0 ? { contextTokens: tokens, contextWindow: window, contextPct: Math.min(100, Math.round((tokens / window) * 100)) } : {}),
     };
+  }
+
+  /** usage.get: the plan's numbers, and what a used-up limit stopped. */
+  usageStatus(refresh = false): UsageStatus {
+    const stopped = this.limits.status();
+    return { ...this.planUsage.get(refresh), ...(stopped ? { stopped } : {}) };
+  }
+
+  private emitUsage(): void {
+    const stopped = this.limits.status();
+    this.bus.emit("usage.updated", { usage: { ...this.planUsage.status, ...(stopped ? { stopped } : {}) } });
   }
 
   // Resolves when nothing is in flight (tests, CLI one-shots).
@@ -649,6 +695,7 @@ export class Hub {
       if (channel === "wechat" && wechat && this.wechat) void this.wechat.reply(wechat, reply).catch(() => {});
       return msg;
     }
+    this.limits.ownerSpoke();
     const images = attachments.flatMap((a) => {
       const m = a.kind === "image" ? this.media.read(a.id) : null;
       return m ? [{ mediaType: m.mediaType, data: m.data }] : [];
@@ -689,6 +736,7 @@ export class Hub {
     if (msg.rewound) throw new Error(t("hub.err.rewound"));
     const used = new Set(this.chat.recent(2000).flatMap((m) => (m.uuid && m.id !== msg.id ? [m.uuid] : [])));
     const done = ({ point, from, to, copied }: WentBack) => {
+      this.limits.forget(null);
       const ids = this.chat.rewind(msg.seq);
       if (copied) {
         // The copy's entries have new uuids, which the log keeps for the messages it kept.
@@ -786,6 +834,7 @@ export class Hub {
   }
 
   stopAll(by: string): void {
+    this.limits.forget(null);
     this.conversation.stopAll(by);
   }
 
@@ -1190,14 +1239,19 @@ export class Hub {
    * owner what came back. With nothing of its own to finish, a note says it.
    */
   private async resumeAfterLogin(m: Missed, how: string, since: number): Promise<void> {
-    const mins = Math.max(1, Math.round((Date.now() - since) / 60_000));
     this.conversation.restartIdle();
+    await this.pals.restartIdle(Object.keys(m.pals));
+    await this.resumeMissed(m, "auth", since, how);
+  }
+
+  /** What failed for want of a login, or on a used-up limit, goes on: the agents are told to, the schedules run, the assistant gets what it didn't finish. */
+  private async resumeMissed(m: Missed, why: "auth" | "limit", since: number, how = "reset"): Promise<void> {
+    const mins = Math.max(1, Math.round((Date.now() - since) / 60_000));
     const palIds = Object.keys(m.pals);
-    await this.pals.restartIdle(palIds);
     const told: string[] = [];
     for (const id of palIds) {
       if (!this.pals.get(id)) continue;
-      await this.pals.toolSend({ name: id, text: t("auth.palResume") });
+      await this.pals.toolSend({ name: id, text: t(`${why}.palResume`) });
       told.push(m.pals[id]!);
     }
     const rerun: string[] = [];
@@ -1210,12 +1264,12 @@ export class Hub {
     void this.probe.tick();
     const quote = (xs: string[]) => xs.map((x) => t("ally.msg.quote", { text: x })).join(t("turn.listSep"));
     const done = [rerun.length ? t("auth.rerun", { list: quote(rerun) }) : "", told.length ? t("auth.palsTold", { list: quote(told) }) : ""].filter(Boolean).join(" ");
-    this.log(`after login (${how}, ${mins} min): ${m.palo.length} turn(s) to finish, ${rerun.length} schedule(s), ${told.length} Pal(s)`);
+    this.log(`after ${why === "auth" ? "login" : "a limit"} (${how}, ${mins} min): ${m.palo.length} turn(s) to finish, ${rerun.length} schedule(s), ${told.length} Pal(s)`);
     if (m.palo.length) {
       const list = m.palo.map((x) => `- ${x.text.replace(/\s+/g, " ").slice(0, 200)}`).join("\n");
       // pal: work already asked for, so the proactive budget doesn't drop it.
-      this.conversation.enqueue({ text: t("auth.resumeTurn", { mins, list, done: done ? t("auth.hostDid", { done }) : "" }), origin: "system", proactive: true, pal: true, label: t("auth.resumeLabel") });
-    } else this.chat.add({ role: "system", kind: "notice", text: t("auth.back", { mins, done }), channel: "system" });
+      this.conversation.enqueue({ text: t(`${why}.resumeTurn`, { mins, list, done: done ? t("auth.hostDid", { done }) : "" }), origin: "system", proactive: true, pal: true, label: t(`${why}.resumeLabel`) });
+    } else if (why === "auth") this.chat.add({ role: "system", kind: "notice", text: t("auth.back", { mins, done }), channel: "system" });
   }
 
   private onProbeTriggers(t: ProbeTrigger[]): void {

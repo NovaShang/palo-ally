@@ -14,7 +14,7 @@ import type {
   SessionOptions,
   ToolHandlers,
 } from "../types.ts";
-import { askPlan } from "./usage.ts";
+import { askPlan, limitEvent } from "./usage.ts";
 import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, SESSION_DISALLOWED, type DeliveryToolHandlers, type ToolSpec } from "../types.ts";
 
 // AsyncQueue is the streaming-input prompt: messages pushed here become user
@@ -160,6 +160,11 @@ export function mapMessage(msg: SDKMessage, state: { lastCost: number; contextTo
       else if (m.subtype === "compact_boundary")
         out.push({ type: "compact", trigger: m.compact_metadata?.trigger, preTokens: m.compact_metadata?.pre_tokens ?? 0, postTokens: m.compact_metadata?.post_tokens });
       break;
+    case "rate_limit_event": {
+      const e = limitEvent(m.rate_limit_info);
+      if (e) out.push(e);
+      break;
+    }
     case "stream_event": {
       const ev = m.event;
       // stamped on a turn's first stream event: which owner messages it answers

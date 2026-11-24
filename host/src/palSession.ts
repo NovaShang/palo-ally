@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 import type { ApprovalManager } from "./approvals.ts";
 import { askOwner } from "./ownerCards.ts";
 import { firstLine } from "./harness/claude/transcript.ts";
-import { ACTIVITY, friendlyError } from "./copy.ts";
-import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type Harness, type RewindChain, type RewindPoint, type SessionRef, type DeliveryToolHandlers, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
+import { ACTIVITY, friendlyError, limitNotice } from "./copy.ts";
+import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, type Harness, type RewindChain, type RewindPoint, type SessionRef, type DeliveryToolHandlers, type FilesRewound, type HarnessDriver, type HarnessEvent, type ImageInput, type LimitHit, type MainSession, type PermissionDecision, type PermissionRequest } from "./harness/types.ts";
 import type { MediaStore } from "./media.ts";
 import { type PalLaunch, makeSpawner } from "./palLauncher.ts";
 import { CARD_TOOLS, type PalMapOptions, cardKey } from "./harness/claude/history.ts";
@@ -13,7 +13,7 @@ import type { PendingRewind } from "./rewind.ts";
 import type { Attachment, CardSource, ChatMessage, Pal, PalAttention, PalStatus } from "./types.ts";
 import { stripTldrMarker } from "./tldr.ts";
 import { newId, sleep } from "./util.ts";
-import { AgentSession, type ModelChoice, type ResultEvent, type WentBack, stallContinue } from "./agent/session.ts";
+import { AgentSession, type LimitEvent, type ModelChoice, type ResultEvent, type WentBack, stallContinue } from "./agent/session.ts";
 import { AGENT_FLAGS } from "./agent/flags.ts";
 import { TranscriptSink } from "./agent/outputSink.ts";
 import { HeldElsewhere, type Holder, type OpenContext } from "./agent/processHost.ts";
@@ -99,6 +99,9 @@ export interface PalSessionDeps {
   wireExtra?: (pal: PalSession) => Partial<Pal>;
   /** A turn went through (true) or failed for want of Claude Code's login (false). */
   onAuth?: (pal: PalSession, ok: boolean) => void;
+  /** A limit of the plan: what its process says of it; a turn that failed on one that's used up; a turn that went through. */
+  limits?: { heard: (e: LimitEvent) => void; failed: (pal: PalSession, l: LimitHit) => void; settled: (pal: PalSession) => void };
+  timezone?: () => string;
   /** It was asleep and is up again. */
   onWoke?: (pal: PalSession) => void;
   /** Right before its process starts: its name is read back from Claude Code's title (§13). */
@@ -794,6 +797,10 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
     }
   }
 
+  protected override limitHeard(e: LimitEvent): void {
+    this.d.limits?.heard(e);
+  }
+
   // Its last words are its line in the list.
   protected override said(_turn: unknown, text: string): void {
     this.lastLine = firstLine(text) || this.lastLine;
@@ -802,7 +809,11 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
 
   protected override resultIn(e: ResultEvent, _turn: unknown, stopped: boolean): void {
     // (a stopped turn's error is the stop, not news)
-    if (e.isError && !stopped && !e.startupFailure) this.notice(friendlyError(e.text, e.errorCategory));
+    const limit = e.isError && !stopped && !e.startupFailure ? this.usedUp(e.text, e.errorCategory) : null;
+    if (e.isError && !stopped && !e.startupFailure) this.notice(limit ? limitNotice(limit, this.d.timezone?.()) : friendlyError(e.text, e.errorCategory));
+    // (the host's /compact isn't its work, cut off or gone on with)
+    if (limit && !this.compacting) this.d.limits?.failed(this, limit);
+    else if (!e.isError && !this.compacting) this.d.limits?.settled(this);
     if (!e.isError) this.d.onAuth?.(this, true);
     else if (!stopped && this.d.harness.auth.isFailure(e.text, e.errorCategory)) this.d.onAuth?.(this, false);
     this.noteCost(e.costUsd, e.totalCostUsd);

@@ -154,6 +154,7 @@ export type QuestionStatus = "pending" | "answered" | "expired";
 /** Claude Code's login, while it's out or being signed in again (auth.ts). */
 export interface AuthStatus {
   state: "expired" | "ok"; // ok: a sign-in started while it still worked
+  stopped?: StoppedWork; // expired: what stopped for it
   since?: number; // when it was found expired
   login?: LoginStatus;
 }
@@ -174,6 +175,15 @@ export interface UsageStatus {
   account?: import("./harness/types.ts").LoginAccount;
   at?: number; // when the numbers came
   stale?: boolean; // asked since and got no answer
+  stopped?: StoppedWork; // what a used-up limit stopped, to go on when it resets
+}
+
+/** What stopped, and goes on by itself. */
+export interface StoppedWork {
+  assistant: boolean;
+  until?: number; // when the assistant goes on
+  agents: { id: string; name: string; until?: number }[];
+  schedules: number; // scheduled runs that go again
 }
 
 export interface Question {

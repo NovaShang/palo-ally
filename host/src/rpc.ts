@@ -185,7 +185,7 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return { auth: hub.auth.cancelLogin() ?? null };
     // Claude 用量 (planUsage.ts): what's known now; `refresh` while its page is open.
     case "usage.get":
-      return { usage: hub.planUsage.get(!!p.refresh) };
+      return { usage: hub.usageStatus(!!p.refresh) };
     case "question.answer": {
       const raw = p.answers && typeof p.answers === "object" ? (p.answers as Record<string, unknown>) : {};
       const answers = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, String(v ?? "")]));

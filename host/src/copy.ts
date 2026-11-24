@@ -3,7 +3,8 @@ import { tools } from "./harness/vocabulary.ts";
 import type { DeliveryResult } from "./router.ts";
 import type { Approval, Question, Task, Watch } from "./types.ts";
 import { t } from "./i18n/index.ts";
-import { formatDuration, hhmm, truncate, zonedParts } from "./util.ts";
+import type { LimitHit } from "./harness/types.ts";
+import { dateLocale, formatDuration, hhmm, truncate, zonedParts } from "./util.ts";
 
 // Every sentence the owner (or the model, for synthetic turns) reads from the
 // shell lives here, so the voice stays consistent and is easy to change.
@@ -36,6 +37,23 @@ export function friendlyError(error: string, category?: string): string {
   if (/network|econn|timed? ?out|socket|fetch failed/.test(e)) return t("err.network");
   if (/exited with code|process/.test(e)) return t("err.crashed");
   return t("err.generic", { detail: truncate(error, 120) });
+}
+
+/** A used-up limit's name: 「5 小时额度」, 「本周 Opus 额度」. */
+export function limitName(l: LimitHit): string {
+  if (l.kind === "session") return t("limit.session");
+  if (l.kind === "weekly_all") return t("limit.week");
+  if (l.kind === "weekly_scoped" && l.scope) return t("limit.weekModel", { model: l.scope });
+  return t("limit.plan");
+}
+
+/** A turn failed on a used-up limit: which, when it's back, and that it goes on by itself. */
+export function limitNotice(l: LimitHit, tz = "UTC", now = Date.now()): string {
+  const name = limitName(l);
+  if (!l.resetsAt || l.resetsAt <= now) return t("limit.hitOpen", { name });
+  const p = zonedParts(l.resetsAt, tz);
+  const day = zonedParts(now, tz).dateKey === p.dateKey ? "" : `${new Intl.DateTimeFormat(dateLocale(), { timeZone: tz, weekday: "short" }).format(l.resetsAt)} `;
+  return t("limit.hit", { name, when: `${day}${hhmm(p)}` });
 }
 
 // Plain words for what the assistant is doing right now (shown while busy).
