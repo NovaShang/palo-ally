@@ -143,7 +143,12 @@ export class AuthWatch {
 
   /** A turn went through: the login works again (signed in at the computer, say). */
   worked(): void {
-    if (this.since !== null && !this.login) this.recover("turn");
+    if (this.since === null || this.login) return;
+    // Signed out, a turn can still end well on a login its process had in memory.
+    if (!this.signedOut) return this.recover("turn");
+    void Promise.resolve(this.d.loggedIn?.() ?? true).then((ok) => {
+      if (ok && this.since !== null && !this.login) this.recover("turn");
+    }, () => {});
   }
 
   /** Claude Code's own sign-out. False: it didn't. */

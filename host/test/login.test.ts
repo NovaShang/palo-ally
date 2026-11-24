@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { AuthWatch } from "../src/auth.ts";
-import { statusAccount, claudeLogout } from "../src/harness/claude/auth.ts";
+import { claudeLogout, maySignOut, statusAccount } from "../src/harness/claude/auth.ts";
 import type { LoginAccount, PlanReport } from "../src/harness/types.ts";
 import { handleRpc } from "../src/rpc.ts";
 import { both, cleanupBoth } from "./bothRuntimes.ts";
@@ -24,6 +24,7 @@ const script: FakeScript = async (text, ctx) => {
     const cut = await Promise.race([ctx.interrupted.then(() => true), new Promise<boolean>((r) => release.push(() => r(false)))]);
     if (cut) return;
   }
+  if (text.startsWith("问")) await ctx.useTool("Bash", { command: "ls" }, { ask: true });
   ctx.emit({ type: "assistant_text", text: `回：${text}`, parentToolUseId: null, messageId: `m_${Math.random()}` });
 };
 
@@ -72,6 +73,16 @@ describe("whose login it is", () => {
     expect(statusAccount('{"loggedIn":false}')).toBeNull();
     expect(statusAccount("not json")).toBeNull();
     expect(statusAccount(undefined)).toBeNull();
+  });
+
+  test("only a host on its own home may sign the computer out: never a test, never a second one", () => {
+    const home = "/Users/lin";
+    expect(maySignOut({}, home)).toBe(true);
+    expect(maySignOut({ PALOALLY_HOME: "/Users/lin/.paloally" }, home)).toBe(true); // as the service sets it
+    expect(maySignOut({ PALOALLY_HOME: "/Users/lin/.paloally/" }, home)).toBe(true);
+    for (const at of ["/private/tmp/usage-home", "/Users/lin/.paloally-dev", "/Users/lin/.paloally/state", "/Users/mei/.paloally", "./.paloally"]) expect(maySignOut({ PALOALLY_HOME: at }, home), at).toBe(false);
+    expect(maySignOut({ NODE_ENV: "test" }, home)).toBe(false);
+    expect(maySignOut({ NODE_ENV: "test", PALOALLY_HOME: "/Users/lin/.paloally" }, home)).toBe(false);
   });
 
   test("the real sign-out never runs in a test", async () => {
@@ -188,6 +199,57 @@ describe("signing in while the login works", () => {
     h.hub.limits.hit({ kind: "pal", id: a.id, name: a.name }, { kind: "weekly_all", resetsAt: Date.now() + 86_400_000 });
     await h.signIn(MEI);
     expect(h.hub.usageStatus().stopped!.agents[0]!.until!).toBeLessThan(Date.now() + 50_000);
+    h.end();
+  });
+});
+
+describe("one that waits on the owner", () => {
+  const cards = (h: ReturnType<typeof host>) => h.hub.approvals.listPending();
+
+  test("signed in anew: an agent's and the assistant's cards stay, their answers go on, and then they start afresh", async () => {
+    const h = host();
+    await h.up();
+    const a = await h.agent();
+    await h.call("pals.send", { id: a.id, text: "问一下" });
+    h.hub.userMessage("问问我", "app");
+    await waitFor(() => cards(h).length === 2);
+    expect(h.statusOf(a.id)).toBe("waiting");
+    const before = { main: h.driver.sessions.length, pals: h.driver.pals.length };
+    await h.signIn(MEI);
+    await tick(50);
+    expect([h.driver.sessions.length, h.driver.pals.length]).toEqual([before.main, before.pals]);
+    expect(cards(h)).toHaveLength(2);
+    expect(h.statusOf(a.id)).toBe("waiting");
+    for (const c of cards(h)) await h.call("approval.answer", { id: c.id, allow: true });
+    await h.hub.idle();
+    await waitFor(() => h.driver.pals.length === before.pals + 1 && h.driver.sessions.length === before.main + 1);
+    expect(h.said(a.id).some((x) => x.includes("回：问一下"))).toBe(true);
+    h.end();
+  });
+
+  test("signed out: their cards stay too; a turn that still ends well on a login in memory isn't a sign-in", async () => {
+    const h = host();
+    await h.up();
+    const a = await h.agent();
+    const busy = await h.agent();
+    await h.call("pals.send", { id: a.id, text: "问一下" });
+    await h.call("pals.send", { id: busy.id, text: "慢慢做" });
+    h.hub.userMessage("问问我", "app");
+    await waitFor(() => cards(h).length === 2 && h.pal(busy.id).busy);
+    const r = await h.call("auth.logout");
+    expect(r.auth.stopped).toEqual({ assistant: false, agents: [{ id: busy.id, name: busy.name }], schedules: 0 });
+    expect(cards(h)).toHaveLength(2);
+    expect(h.statusOf(a.id)).toBe("waiting");
+    h.c.loggedIn = false;
+    for (const c of cards(h)) await h.call("approval.answer", { id: c.id, allow: true });
+    await h.hub.idle();
+    await waitFor(() => !h.pal(a.id).busy);
+    await tick(30);
+    expect(h.auth()).toMatchObject({ state: "expired", signedOut: true });
+    // one that fails for want of it is remembered with the rest
+    h.driver.resultError = { text: "Not logged in · Please run /login", category: "authentication_failed" };
+    await h.call("pals.send", { id: a.id, text: "再来" });
+    await waitFor(() => h.auth()?.stopped?.agents.length === 2);
     h.end();
   });
 });

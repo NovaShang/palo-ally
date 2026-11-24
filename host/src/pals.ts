@@ -668,9 +668,9 @@ export class Pals {
     this.emitSoon();
   }
 
-  /** The ones at work (to be stopped: hub.logout). */
+  /** The ones at work (to be stopped: hub.logout); not one that waits on the owner: its card stays. */
   atWork(): PalSession[] {
-    return [...this.pals.values()].filter((p) => p.busy);
+    return [...this.pals.values()].filter((p) => p.busy && !p.waitingOnOwner());
   }
 
   /** A used-up limit has reset: this one may be told to go on (here, not stopped, not open in a terminal, between turns). */

@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import type { LimitHit, LoginAccount, LoginProcess } from "../types.ts";
 import { cleanSessionEnv, findClaude, loginEnv } from "./cli.ts";
 import { loginAccount } from "./usage.ts";
@@ -169,8 +170,14 @@ export function statusAccount(out?: string): LoginAccount | null {
   }
 }
 
+/** A host may sign this computer out only as its own: not in a test, not one on another home (a second instance, to try things on). */
+export function maySignOut(env: Record<string, string | undefined>, userHome: string): boolean {
+  if (env.NODE_ENV === "test") return false;
+  return !env.PALOALLY_HOME || resolve(env.PALOALLY_HOME) === join(userHome, ".paloally");
+}
+
 /** `claude auth logout`: every Claude Code on this computer is signed out. */
 export async function claudeLogout(): Promise<boolean> {
-  if (process.env.NODE_ENV === "test") return false; // never the login of the computer tests run on
+  if (!maySignOut(process.env, homedir())) return false;
   return (await claudeAuth(["logout"]))?.code === 0;
 }

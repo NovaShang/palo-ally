@@ -1248,19 +1248,21 @@ export class Hub {
   }
 
   /**
-   * auth.logout: the assistant and the agents at work are stopped, and
-   * remembered; Claude Code is signed out on this computer (its terminal
+   * auth.logout: the assistant and the agents at work (not those waiting on
+   * the owner) are stopped, and remembered; Claude Code is signed out on this computer (its terminal
    * sessions too). All goes on once someone signs in again. When it can't be
    * signed out, what was stopped goes on at once.
    */
   async logout(by: string): Promise<AuthStatus | undefined> {
     if (this.auth.expired) return this.auth.status();
     this.audit.log("auth.logout", { by });
-    const { texts, watches } = this.conversation.atWork();
+    // One the owner is being asked something by is left with its card: answered, its turn fails for want of a login and goes on later.
+    const asking = this.conversation.waitingOnOwner();
+    const { texts, watches } = asking ? { texts: [], watches: [] } : this.conversation.atWork();
     const busy = this.pals.atWork();
     const missed: Missed = { palo: texts.map((text) => ({ text: text.slice(0, 300), at: Date.now() })), pals: Object.fromEntries(busy.map((p) => [p.id, p.rec.name])), schedules: [...new Set(watches)] };
     const since = Date.now();
-    this.conversation.stopAll("logout");
+    if (!asking) this.conversation.stopAll("logout");
     await Promise.all(busy.map((p) => p.interrupt("logout")));
     if (!(await this.auth.signOut())) {
       this.audit.log("auth.logout.failed", {});
