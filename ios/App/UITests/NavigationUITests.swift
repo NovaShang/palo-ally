@@ -87,7 +87,8 @@ final class NavigationUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5), "设置 didn't open")
         app.navigationBars["设置"].buttons.firstMatch.tap()
         XCTAssertTrue(settings.waitForExistence(timeout: 5), "not back on the tiles")
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
+        XCTAssertTrue(app.descendants(matching: .any)["agent-detail"].firstMatch.waitForNonExistence(timeout: 5), "the details stayed")
         XCTAssertTrue(app.buttons["title-orb"].waitForExistence(timeout: 5), "not back in the conversation")
     }
 
