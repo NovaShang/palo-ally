@@ -39,6 +39,9 @@ final class AppStoreShared {
     var harnesses: [String: HarnessCapabilities] = [:]
     /// The assistant's harness id (hello); nil from an older host.
     var assistantHarness: String?
+    /// Claude 用量 (AppStore+Usage.swift); the host answers usage.get (nil until asked).
+    var usage: UsageStatus?
+    var usageSupported: Bool?
     var copiedClipboardIDs: Set<String> = []
 
     var allies: [AllyInfo] = []

@@ -166,6 +166,16 @@ export interface LoginStatus {
   error?: string;
 }
 
+/** How much of the plan of this computer's login is used (planUsage.ts). loading: not read yet; the rest as the harness says (PlanReport). */
+export interface UsageStatus {
+  state: "loading" | "limits" | "none" | "hidden" | "unsupported";
+  limits: import("./harness/types.ts").PlanLimit[];
+  extraUsage?: boolean; // past the limits it goes on, paid by use
+  account?: import("./harness/types.ts").LoginAccount;
+  at?: number; // when the numbers came
+  stale?: boolean; // asked since and got no answer
+}
+
 export interface Question {
   id: string;
   items: QuestionItem[];

@@ -1,4 +1,5 @@
 import { Allies, type AlliesDeps } from "./allies.ts";
+import { PlanUsage } from "./planUsage.ts";
 import { AuthWatch, type AuthDeps, type Missed } from "./auth.ts";
 import { ApprovalManager } from "./approvals.ts";
 import { ArtifactLibrary } from "./artifacts.ts";
@@ -111,6 +112,8 @@ export class Hub {
   readonly stallWatch: StallWatch;
   /** Claude Code's login: noticed when it runs out, signed in again from the phone (auth.ts). */
   readonly auth: AuthWatch;
+  /** How much of the plan of this computer's login is used. */
+  readonly planUsage: PlanUsage;
   private readonly info: HarnessInfo;
   private readonly proactive: Proactive;
   private readonly ledger: UsageLedger;
@@ -203,6 +206,16 @@ export class Hub {
       spawnLogin: () => this.harness.auth.spawnLogin(this.paths.state),
       ...deps.auth,
     });
+    this.planUsage = new PlanUsage({
+      path: `${this.paths.state}/plan-usage.json`,
+      ask: () => {
+        const proc = this.conversation.process;
+        return proc ? (proc.planReport?.() ?? Promise.resolve({ plan: "unsupported", limits: [] })) : undefined;
+      },
+      working: () => this.conversation.busy || !this.pals.quiet(),
+      changed: (s) => this.bus.emit("usage.updated", { usage: s }),
+      log: (s) => this.log(s),
+    });
     this.pending = new PendingStore(this.paths.pending, this.bus, this.audit, () => this.config.settings.assistantName || PALO_NAME);
     this.backlog = new BacklogStore({
       dir: this.paths.backlog,
@@ -264,6 +277,7 @@ export class Hub {
       onModels: (m) => {
         const before = JSON.stringify(this.info.models());
         this.info.saveModels(m);
+        this.planUsage.processUp();
         // The app's descriptor follows (old apps ignore the event).
         if (JSON.stringify(m) !== before) this.bus.emit("harness.updated", { id: this.harness.id, capabilities: this.harness.capabilities(m) });
       },
@@ -524,6 +538,7 @@ export class Hub {
     }
     this.allies.start();
     this.auth.start();
+    this.planUsage.start();
     if (opts.probe !== false) {
       // Work handed to agents: the host follows it itself.
       this.handoffs.start();
@@ -557,6 +572,7 @@ export class Hub {
     this.pals.stop();
     this.stallWatch.stop();
     this.auth.stop();
+    this.planUsage.stop();
     this.conversation.stopIdleCompact();
     if (this.suggestionTimer) clearInterval(this.suggestionTimer);
     this.artifacts.stop();

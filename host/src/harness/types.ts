@@ -46,6 +46,38 @@ export type HarnessEvent =
   // the permission mode it says it runs in now (a turn's end, or its status after a switch)
   | { type: "mode"; mode: string };
 
+/** The login a harness runs on, as the owner knows it: shown in the owner's own apps only. */
+export interface LoginAccount {
+  email?: string;
+  organization?: string;
+  plan?: string; // the subscription ("pro", "max", …); none for a key or another provider
+  provider?: string; // not the harness' own maker's ("bedrock", "vertex", …)
+  apiKeySource?: string; // a key instead of a login, and where it's set
+}
+
+/** One of the plan's limits. */
+export interface PlanLimit {
+  kind: string; // "session", "weekly_all", "weekly_scoped"; new ones come as they are
+  group: string; // "session" | "weekly"
+  used: number; // 0 to 100
+  resetsAt?: number; // ms
+  windowMs?: number; // how long its window is, when known
+  scope?: string; // the model (or surface) it's for, by the server's name
+}
+
+/**
+ * The plan's limits and the login they're for. plan: "limits"; "none" (this
+ * login has none: a key, another provider); "hidden" (a subscription whose
+ * login may not see them); "unreadable" (no answer this time); "unsupported"
+ * (the harness can't be asked).
+ */
+export interface PlanReport {
+  plan: "limits" | "none" | "hidden" | "unreadable" | "unsupported";
+  limits: PlanLimit[];
+  extraUsage?: boolean; // past the limits it goes on, paid by use
+  account?: LoginAccount;
+}
+
 export interface ModelOption {
   value: string; // what to pass as model
   displayName: string;
@@ -227,6 +259,8 @@ export interface MainSession {
   // Puts the files the session changed back as they were right before the
   // owner's message `uuid` (file checkpointing must have been on then).
   rewindFiles?(uuid: string, dryRun?: boolean): Promise<FilesRewound>;
+  // The plan's limits and the login, asked of this process (no turn); absent on a harness without them.
+  planReport?(): Promise<PlanReport>;
   // Resolves once Claude Code is up (it answered the SDK's first request);
   // rejects with its reason when it refused to start.
   ready(): Promise<void>;

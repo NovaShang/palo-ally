@@ -283,6 +283,11 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
     return this.streaming();
   }
 
+  /** Its process while it's up (never started for this). */
+  get process(): MainSession | null {
+    return this.host.running ? this.host.proc : null;
+  }
+
   ensureSession(): MainSession {
     return this.host.ensure();
   }

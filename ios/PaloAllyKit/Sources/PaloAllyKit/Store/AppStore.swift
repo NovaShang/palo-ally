@@ -572,6 +572,7 @@ public final class AppStore {
                 resendQueued()
                 Task { await self.loadSuggestions() }
                 Task { await self.loadAllies() }
+                Task { await self.loadUsage() }
                 // The Pals with the computer's other sessions (a host from before Pals: its sessions).
                 Task { await self.loadPals() }
                 // Each Pal's conversation catches up too.
@@ -810,6 +811,8 @@ public final class AppStore {
             if let r = try? data.decode(CommandsResult.self) { commands = r.commands }
         case RPCEventName.harnessUpdated:
             if let u = try? data.decode(HarnessUpdate.self), !u.id.isEmpty { shared.harnesses[u.id] = u.capabilities }
+        case RPCEventName.usageUpdated:
+            if let r = try? data.decode(UsageResult.self) { apply(usage: r.usage) }
         case RPCEventName.suggestionsUpdated:
             if let r = try? data.decode(SuggestionsResult.self) { suggestions = r.suggestions }
         case RPCEventName.allyUpdated:

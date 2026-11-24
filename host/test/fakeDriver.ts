@@ -7,6 +7,7 @@ import type {
   MainSessionOptions,
   PermissionDecision,
   ProbeRequest,
+  PlanReport,
   ProbeResult,
   SessionOptions,
 } from "../src/harness/types.ts";
@@ -99,6 +100,12 @@ export class FakeMainSession implements MainSession {
         ],
       });
     });
+  }
+
+  // Claude 用量 (driver.plan): no method at all when it's not set.
+  get planReport(): (() => Promise<PlanReport>) | undefined {
+    const plan = this.driver.plan;
+    return plan ? async () => (this.driver.planAsked++, plan()) : undefined;
   }
 
   async ready(): Promise<void> {
@@ -252,6 +259,9 @@ export class FakeDriver implements HarnessDriver {
   failPalStart?: (opts: SessionOptions) => string | undefined;
   // Start a stand-in process for each Pal through the host's spawner.
   spawnPals = false;
+  /** What its process says of the plan (a throw: the call failed). */
+  plan?: () => PlanReport;
+  planAsked = 0;
   probes: ProbeRequest[] = [];
   stoppedTasks: string[] = [];
   liveSwitches: string[] = [];

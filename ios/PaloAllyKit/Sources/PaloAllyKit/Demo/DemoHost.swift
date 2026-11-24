@@ -91,6 +91,11 @@ public actor DemoHost {
     /// the one asking is added from what its hello said.
     var otherDevices: [PairedDevice] = DemoHost.demoDevices()
     var helloClient = "ios"
+    /// Claude 用量 (DemoHost+Usage.swift), and the state asked for.
+    var usage: UsageStatus
+    var usageScenario = ""
+    /// The second demo computer.
+    let office: Bool
     /// Folders the owner opened from the preview pane (files.folders.*).
     var ownerFolders: [OwnerFolder] = []
     /// Files changed since the demo began (`-demoFileEditAfter`), by absolute path.
@@ -127,6 +132,8 @@ public actor DemoHost {
         self.speed = speed
         self.hostName = hostName
         self.machineId = machineId
+        self.office = office
+        self.usage = DemoHost.demoUsage(now: Date().epochMillis)
         self.palsMode = withPals
         self.sessionsMode = withSessions && !withPals
         settings.assistantName = assistantName
@@ -246,6 +253,7 @@ public actor DemoHost {
     /// background tasks running.
     public func applyScenario(_ name: String) {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
+        if name.hasPrefix("usage") { return applyUsageScenario(name) }
         // Sessions' cards: kept for the sessions' own states; otherwise
         // settled at the computer (they leave the conversation). The helper
         // proposal stays on offer only for those and `helper`, so nothing
@@ -977,6 +985,8 @@ public actor DemoHost {
             settings = try obj.decode(HostSettings.self)
             emit(RPCEventName.settingsUpdated, settings)
             return ["settings": try .from(settings)]
+        case RPCMethod.usageGet:
+            return try usageGet(p)
         case RPCMethod.authLoginStart:
             // The link comes back at once; the demo's login goes through with any code but "bad".
             status.auth = AuthStatus(state: status.auth?.state ?? .ok, since: status.auth?.since,

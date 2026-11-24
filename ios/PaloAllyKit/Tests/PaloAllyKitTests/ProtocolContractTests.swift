@@ -106,6 +106,7 @@ private let resultTypes: [String: Check] = [
     RPCMethod.pairInvite: strict(PairInviteResult.self),
     RPCMethod.deviceList: strict(DevicesResult.self),
     RPCMethod.deviceRemove: strict(OKResult.self),
+    RPCMethod.usageGet: strict(UsageResult.self),
     RPCMethod.authLoginStart: strict(AuthResult.self),
     RPCMethod.authLoginCode: strict(AuthResult.self),
     RPCMethod.authLoginCancel: strict(AuthResult.self),
@@ -226,6 +227,7 @@ private let eventTypes: [String: Check] = [
     RPCEventName.status: { strictIssues(HostStatus.self, $0["status"] ?? $0) },
     RPCEventName.commandsUpdated: strict(CommandsResult.self),
     RPCEventName.harnessUpdated: strict(HarnessUpdate.self),
+    RPCEventName.usageUpdated: strict(UsageResult.self),
     RPCEventName.suggestionsUpdated: strict(SuggestionsResult.self),
     RPCEventName.allyUpdated: { json in
         switch AllyUpdate(json: json) {

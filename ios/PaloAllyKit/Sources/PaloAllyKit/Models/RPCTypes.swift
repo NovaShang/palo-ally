@@ -156,6 +156,8 @@ public enum RPCMethod {
     public static let authLoginStart = "auth.login.start"
     public static let authLoginCode = "auth.login.code"
     public static let authLoginCancel = "auth.login.cancel"
+    /// How much of the plan is used (Models/Usage.swift).
+    public static let usageGet = "usage.get"
     public static let auth: [String] = [authLoginStart, authLoginCode, authLoginCancel]
 
     /// 等你的事 (host/src/pending.ts): the list, the owner's hand on it
@@ -203,7 +205,7 @@ public enum RPCMethod {
         approvalAnswer, questionAnswer, watchAdd, watchUpdate, watchRemove, artifactList, artifactRead, artifactPin,
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, chatHandleNow, pushRegister, pushUnregister, presence,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
-        suggestionsList, suggestionsDismiss, hostUpdate, pairInvite, deviceList, deviceRemove,
+        suggestionsList, suggestionsDismiss, hostUpdate, pairInvite, deviceList, deviceRemove, usageGet,
     ] + allies + sessions + pals + workbench + files + auth + pending + backlog
 }
 
@@ -222,6 +224,8 @@ public enum RPCEventName {
     public static let commandsUpdated = "commands.updated"
     /// A harness' capability descriptor changed (its models).
     public static let harnessUpdated = "harness.updated"
+    /// How much of the plan is used changed.
+    public static let usageUpdated = "usage.updated"
     public static let suggestionsUpdated = "suggestions.updated"
     /// The Ally list or someone's online state changed.
     public static let allyUpdated = "ally.updated"
@@ -252,7 +256,7 @@ public enum RPCEventName {
     public static let all: [String] = [
         chatMessage, chatDelta, chatRewound, taskUpdated, approvalUpdated, questionUpdated, watchUpdated, artifactUpdated, settingsUpdated,
         status, commandsUpdated, suggestionsUpdated,
-    ] + allies + sessions + pals + workbench + [filesChanged, pendingUpdated, backlogUpdated, harnessUpdated]
+    ] + allies + sessions + pals + workbench + [filesChanged, pendingUpdated, backlogUpdated, harnessUpdated, usageUpdated]
 }
 
 public struct EmptyParams: Codable, Sendable { public init() {} }

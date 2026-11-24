@@ -70,6 +70,16 @@ describe("host ↔ app protocol", () => {
       },
     }).ctx;
     const peer = net.add("家人B");
+    // What the assistant's process says of its login's plan.
+    driver.plan = () => ({
+      plan: "limits",
+      account: { email: "lin@example.com", organization: "Lin", plan: "max" },
+      limits: [
+        { kind: "session", group: "session", used: 48, resetsAt: Date.now() + 3600_000, windowMs: 5 * 3600_000 },
+        { kind: "weekly_scoped", group: "weekly", used: 44, resetsAt: Date.now() + 86400_000, windowMs: 7 * 86400_000, scope: "Opus" },
+      ],
+      extraUsage: false,
+    });
     hub.onUnpairDevice = () => {};
     // The relay's pairing window, as `paloally pair` opens it.
     hub.openPairing = async (ttl) => ({ code: "123456", ttl, link: "paloally://pair?relay=https%3A%2F%2Frelay.example.com&daemon=d-home&code=123456&hostkey=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8" });
@@ -474,6 +484,8 @@ describe("host ↔ app protocol", () => {
     expect(Object.keys((await call("sync", {})).workbenchTabs)).toContain(`ws:${ws.id}`);
     await run("workspaces.delete", { id: ws.id });
     await run("pals.remove", { id: opened.id });
+    // Claude 用量 (asked of the assistant's process when it came up)
+    expect((await run("usage.get", { refresh: true })).usage).toMatchObject({ state: "limits", limits: [{ used: 48 }, { scope: "Opus" }] });
     // Claude Code's login ran out: signed in again from the phone.
     hub.auth.failed({ kind: "probe" });
     expect((await call("auth.login.start")).auth).toMatchObject({ state: "expired", login: { state: "starting" } });

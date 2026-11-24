@@ -38,6 +38,7 @@ export const RPC_METHODS = [
   "workspaces.list", "workspaces.create", "workspaces.update", "workspaces.move", "workspaces.delete", "workbench.order.set", "workbench.tabs.get", "workbench.tabs.set",
   "pair.invite", "device.list", "device.remove",
   "auth.login.start", "auth.login.code", "auth.login.cancel",
+  "usage.get",
   "pending.list", "pending.update", "pending.answer", "pending.surface",
   "backlog.list", "backlog.add", "backlog.move", "backlog.assign", "backlog.start", "backlog.done", "backlog.remove",
   "files.list", "files.read", "files.write", "files.search", "files.resolve", "files.watch", "files.unwatch", "files.folders.list", "files.folders.browse", "files.folders.add", "files.folders.remove",
@@ -47,7 +48,7 @@ export const RPC_EVENTS = [
   "chat.message", "chat.delta", "chat.rewound", "task.updated", "approval.updated", "question.updated", "watch.updated",
   "artifact.updated", "settings.updated", "status", "commands.updated",
   "suggestions.updated", "ally.updated", "ally.entry", "sessions.updated", "pals.updated",
-  "workspaces.updated", "workbench.updated", "files.changed", "pending.updated", "backlog.updated", "harness.updated",
+  "workspaces.updated", "workbench.updated", "files.changed", "pending.updated", "backlog.updated", "harness.updated", "usage.updated",
 ] as const;
 
 // Admin methods are reachable only on the local unix socket (the owner's own
@@ -182,6 +183,9 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return { auth: hub.auth.submitCode(String(p.code ?? "")) ?? null };
     case "auth.login.cancel":
       return { auth: hub.auth.cancelLogin() ?? null };
+    // Claude 用量 (planUsage.ts): what's known now; `refresh` while its page is open.
+    case "usage.get":
+      return { usage: hub.planUsage.get(!!p.refresh) };
     case "question.answer": {
       const raw = p.answers && typeof p.answers === "object" ? (p.answers as Record<string, unknown>) : {};
       const answers = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, String(v ?? "")]));

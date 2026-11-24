@@ -8,11 +8,13 @@ import type {
   ImageInput,
   MainSession,
   MainSessionOptions,
+  PlanReport,
   ProbeRequest,
   ProbeResult,
   SessionOptions,
   ToolHandlers,
 } from "../types.ts";
+import { askPlan } from "./usage.ts";
 import { PALO_SEND_TOOL, SESSION_ALLOWED_TOOLS, SESSION_DISALLOWED, type DeliveryToolHandlers, type ToolSpec } from "../types.ts";
 
 // AsyncQueue is the streaming-input prompt: messages pushed here become user
@@ -479,6 +481,10 @@ class ClaudeMainSession implements MainSession {
   async rewindFiles(uuid: string, dryRun = false): Promise<FilesRewound> {
     const r = await this.q.rewindFiles(uuid, { dryRun });
     return { canRewind: !!r.canRewind, ...(r.error ? { error: r.error } : {}), ...(r.filesChanged ? { filesChanged: r.filesChanged } : {}) };
+  }
+
+  planReport(): Promise<PlanReport> {
+    return askPlan(this.q);
   }
 
   close(): void {
