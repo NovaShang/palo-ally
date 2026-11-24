@@ -373,7 +373,8 @@ struct ComposerView: View {
             if case .success(let urls) = result { addFiles(urls) }
         }
         // Dropped on the conversation or pasted: staged as if picked.
-        .modifier(IntakeHooks(intake: intake, staged: $staged, focused: focused, room: Self.maxStaged, addImages: addImages))
+        .modifier(IntakeHooks(intake: intake, staged: $staged, focused: focused, room: Self.maxStaged, addImages: addImages,
+                              say: { voice.dictation.errorMessage = $0 }))
         .modifier(ComputerFileSheet(shown: $showComputerFiles, draft: draftBinding))
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { image in
@@ -1181,6 +1182,7 @@ private struct IntakeHooks: ViewModifier {
     let focused: Bool
     let room: Int
     let addImages: ([Data]) -> Void
+    let say: (String) -> Void
 
     func body(content: Content) -> some View {
         #if DEBUG || PERF_HARNESS
@@ -1191,6 +1193,11 @@ private struct IntakeHooks: ViewModifier {
                 guard n > 0, let intake else { return }
                 staged.append(contentsOf: intake.incoming.prefix(max(0, room - staged.count)))
                 intake.incoming = []
+            }
+            .onChange(of: intake?.problem, initial: true) { _, problem in
+                guard let intake, let problem else { return }
+                intake.problem = nil
+                say(problem)
             }
             .onChange(of: focused, initial: true) { _, on in
                 guard let intake else { return }

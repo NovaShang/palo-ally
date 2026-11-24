@@ -12,6 +12,8 @@ import UniformTypeIdentifiers
 final class ComposerIntake {
     /// Waiting for the composer to stage (it empties this).
     var incoming: [Staged] = []
+    /// What to say of something that couldn't be taken (the composer says it and empties this).
+    var problem: String?
     /// Something is being dragged over the conversation.
     var dropTargeted = false
 
