@@ -331,17 +331,23 @@ struct ChatView: View {
                         TitleOrbSlot { frame in
                             if orbPlacement.slot != frame { orbPlacement.slot = frame }
                         } action: { model.detailShown = true }
+                        // An iPad: its details hang from the orb.
+                        .popover(isPresented: Binding(get: { model.detailShown && !AgentDetailPlacement.usesSheet(model: model) },
+                                                      set: { model.detailShown = $0 })) {
+                            AgentDetailView()
+                                .environment(model)
+                                .environment(store)
+                        }
                     } else {
                         // A session: its drop floats over the bar the same way.
                         TitleOrbSlot(session: sessionOrb) { frame in
                             if orbPlacement.slot != frame { orbPlacement.slot = frame }
                         } action: { model.detailShown.toggle() }
-                        .popover(isPresented: Binding(get: { model.detailShown && !AgentDetailPlacement.usesSheet(model: model, store: store) },
+                        .popover(isPresented: Binding(get: { model.detailShown && !AgentDetailPlacement.usesSheet(model: model) },
                                                       set: { model.detailShown = $0 })) {
                             AgentDetailView()
                                 .environment(model)
                                 .environment(store)
-                                .frame(minWidth: 360, idealWidth: 380)
                         }
                     }
                 }
@@ -796,12 +802,11 @@ private struct MacTopOrb: View {
                 Color.clear
                     .frame(width: d, height: d)
                     .allowsHitTesting(false)
-                    .popover(isPresented: Binding(get: { model.detailShown && !AgentDetailPlacement.usesSheet(model: model, store: store) },
+                    .popover(isPresented: Binding(get: { model.detailShown && !AgentDetailPlacement.usesSheet(model: model) },
                                                   set: { model.detailShown = $0 }), arrowEdge: .top) {
                         AgentDetailView()
                             .environment(model)
                             .environment(store)
-                            .frame(minWidth: 360, idealWidth: 380)
                     }
                     .padding(.top, max(0, MacTitlebar.midY - d / 2))
             }

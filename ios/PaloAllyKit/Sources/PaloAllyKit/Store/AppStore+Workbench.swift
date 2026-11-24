@@ -370,6 +370,17 @@ extension AppStore {
         return r.pal
     }
 
+    /// The assistant's 压缩: the harness' own compact command, said in its
+    /// conversation as the owner typing it would (a quote waiting in the
+    /// composer isn't sent with it).
+    public func compactAssistant() {
+        guard let prefix = harness.commandPrefix else { return }
+        let quote = replyDraft
+        replyDraft = nil
+        send(prefix + "compact")
+        replyDraft = quote
+    }
+
     /// `pals.compact`: the session summarizes its own context.
     public func compactSession(id: String) async throws {
         if let parent { return try await parent.compactSession(id: id) }

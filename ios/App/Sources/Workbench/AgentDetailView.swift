@@ -1,57 +1,78 @@
 import PaloAllyKit
 import SwiftUI
 
-/// What the title's indicator opens: the one details page (Detail/AgentDetailForm)
-/// for the assistant or an agent, as a popover or a sheet. Files and 成果 are
-/// the title bar's right button, not here. Reads the store in the environment:
-/// a session's own (`palStore`) or the assistant's.
+/// What the title's indicator opens: the one details page
+/// (Detail/DetailTiles) for the assistant or an agent, as a popover (the
+/// Mac and iPad) or a sheet as high as its tiles (a phone), and the pages
+/// they push. Files and 成果 are the title bar's right button, not here.
+/// Reads the store in the environment: a session's own (`palStore`) or the
+/// assistant's.
 struct AgentDetailView: View {
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
-    @Environment(\.tileDetail) private var tileDetail
-    /// The list's content height, so a popover fits it (nil: not measured yet).
-    @State private var contentHeight: CGFloat?
+    /// The tiles' height, so the popover or the sheet fits them (nil: not measured yet).
+    @State private var height: CGFloat?
 
-    private var asSheet: Bool { AgentDetailPlacement.usesSheet(model: model, store: store) }
+    static var width: CGFloat {
+        #if DEBUG
+        // `-demoDetailPhone YES`: a phone's card, 390 pt less its margins (snapshots).
+        if UserDefaults.standard.bool(forKey: "demoDetailPhone") { return 374 }
+        #endif
+        return 380
+    }
+    /// A pushed page's height in the popover.
+    private static let pageHeight: CGFloat = 540
+
+    private var asSheet: Bool { AgentDetailPlacement.usesSheet(model: model) }
+    private var pushed: Bool { model.detailPage != nil }
 
     /// The popover's most: 860 pt on the Mac (640 elsewhere), and on the Mac
-    /// no more than its window's height less the title bar and a margin.
+    /// no more than its window's height less the title bar and a margin (a
+    /// popover is a window of its own there: in a short one it ran past the
+    /// bottom, 11-22); it scrolls inside.
     private var tallest: CGFloat {
         guard Platform.isMac else { return 640 }
         let window = model.scene?.effectiveGeometry.coordinateSpace.bounds.height ?? 0
         return window > 0 ? min(860, max(240, window - 84)) : 860
     }
 
+    private var popoverHeight: CGFloat? {
+        if pushed { return min(max(height ?? 0, Self.pageHeight), tallest) }
+        return height.map { min($0, tallest) }
+    }
+
     var body: some View {
         NavigationStack {
             Group {
                 if store.scope == .palo {
-                    AgentDetailForm(agent: nil)
+                    DetailTiles(agent: nil) { height = $0 }
                 } else if let id = store.palID {
-                    AgentDetailForm(agent: id)
+                    DetailTiles(agent: id) { height = $0 }
                 }
             }
-            .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height + $0.contentInsets.top + $0.contentInsets.bottom } action: { _, h in
-                contentHeight = h
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if asSheet {
-                    ToolbarItem(placement: .confirmationAction) { Button("完成") { model.setDetail(false, tile: tileDetail) }.tint(.primary) }
-                }
+            .toolbarVisibility(.hidden, for: .navigationBar)
+        }
+        .modifier(Fitted(sheet: asSheet, pushed: pushed, height: height, popover: popoverHeight))
+        .accessibilityIdentifier("agent-detail")
+        // Nothing pushed the next time it opens.
+        .onDisappear { model.resetDetailPage() }
+    }
+
+    private struct Fitted: ViewModifier {
+        let sheet: Bool
+        let pushed: Bool
+        let height: CGFloat?
+        let popover: CGFloat?
+
+        func body(content: Content) -> some View {
+            if sheet {
+                content
+                    .presentationDetents(pushed ? [.large] : [height.map { .height($0) } ?? .medium])
+                    .presentationDragIndicator(.visible)
+                    .presentationCornerRadius(pushed ? nil : 42)
+            } else {
+                content.frame(width: AgentDetailView.width, height: popover)
             }
         }
-        // A popover takes its content's height with the list's own insets
-        // (the bar above, the margin below), within reason. A fixed 52 pt for
-        // the bar left the Mac's popover short: its top and bottom were cut (11-19).
-        // The Mac's windows are tall: up to 860 pt there (Palo's details run
-        // about 700, and at 640 their top or bottom was always scrolled away).
-        // On the Mac a popover is a window of its own: in a short window it
-        // ran past the bottom (设置 unfolded, 11-22), so it also stays within
-        // the window, from the title bar down, and scrolls inside.
-        .frame(height: asSheet ? nil : contentHeight.map { min(max($0, 240), tallest) })
-        .accessibilityIdentifier("agent-detail")
-        // 设置 folded and nothing pushed the next time it opens.
-        .onDisappear { model.resetDetailPage() }
     }
 }

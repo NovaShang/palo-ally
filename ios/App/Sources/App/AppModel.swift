@@ -69,14 +69,6 @@ enum AssistantTab: String, CaseIterable, Hashable {
     // they live in the conversation and the status capsule.
     case watches, history, memory
 
-    var title: String {
-        switch self {
-        case .watches: String(localized: "目标")
-        case .history: String(localized: "记录")
-        case .memory: String(localized: "记忆")
-        }
-    }
-
     /// Launch-arg / old names map to the nearest current tab.
     init?(launchName: String) {
         switch launchName {

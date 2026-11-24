@@ -3,9 +3,8 @@ import SwiftUI
 
 /// The assistant's details as a page of their own: management (the orb on a
 /// phone pushes it; ⌘1 and large screens show it as a sheet with 完成). The
-/// same page as the details popover (Detail/AgentDetailForm): 现在, 定时,
-/// 设置, 记录, 让助理停下; here with 设置 of the app (the gear) and the pages
-/// it opens (a task, all of 记录). App-only settings stay in 设置.
+/// same tiles as the details popover (Detail/DetailTiles), here with 设置 of
+/// the app (the gear) and a task opened from elsewhere.
 struct AssistantView: View {
     /// Shown as a sheet (large screens): it closes with 完成.
     var inSheet = false
@@ -14,15 +13,9 @@ struct AssistantView: View {
 
     var body: some View {
         @Bindable var model = model
-        AgentDetailForm(agent: nil)
+        DetailTiles(agent: nil)
             .navigationTitle(store.assistantName)
             .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(isPresented: $model.showHistoryPage) {
-                List { HistorySection() }
-                    .navigationTitle(AssistantTab.history.title)
-                    .navigationBarTitleDisplayMode(.inline)
-                    .modifier(InSidebarColumn())
-            }
             .toolbar {
                 if inSheet {
                     ToolbarItem(placement: .topBarLeading) {

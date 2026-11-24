@@ -395,10 +395,9 @@ final class WindowModel {
         resetDetailPage()
     }
 
-    /// The details page as it opens: 设置 folded, 记忆 not pushed.
+    /// The details page as it opens: nothing pushed.
     func resetDetailPage() {
-        detailSettingsOpen = false
-        detailMemoryOpen = false
+        detailPage = nil
     }
 
     /// ⌘1 / the Mac menu: management, or put it away.
@@ -444,9 +443,8 @@ final class WindowModel {
 
     /// 履历, from a task's detail.
     func showAllTasks() {
-        assistantTab = .history
-        showHistoryPage = true
         openTaskID = nil
+        detailPage = .history
         if layout == .phone {
             var path = NavigationPath()
             path.append(Page.manage)
@@ -483,18 +481,13 @@ final class WindowModel {
         if paneIsOpen { setPane(open: false) }
     }
 
-    var assistantTab: AssistantTab = .watches // 目标 opens first
-    /// Management: all of its 记录 pushed (a task's 履历 link).
-    var showHistoryPage = false
     var showSettings = false
     /// How much room the title bar's orb takes (kept by OrbPresenceTracking).
     var orbPresence: OrbPresence = .rest
-    /// The details page's 设置 unfolded (folded each time the page opens; demo: `detail-settings`).
-    var detailSettingsOpen = false
-    /// The details page's 记忆 pushed (demo: `detail-memory`).
-    var detailMemoryOpen = false
+    /// The page pushed over the details' tiles (demo: `detail-settings`, `detail-memory`…).
+    var detailPage: DetailPage?
     var showPairingSheet = false
-    /// The assistant's 名字和颜色 editor (its details' header and 设置).
+    /// The assistant's 名字和颜色 editor (its details' name and 设置).
     var showIdentityEditor = false
     /// Why the pairing screen is open. Most people have one computer, so it
     /// only talks about "adding" when they asked to add another one.
@@ -645,9 +638,12 @@ final class WindowModel {
         default: break
         }
         if let t = launch.tab, let tab = AssistantTab(launchName: t) {
-            assistantTab = tab
-            if tab == .history { showHistoryPage = true }
             openManagement()
+            switch tab {
+            case .history: detailPage = .history
+            case .memory: detailPage = .memory
+            case .watches: break
+            }
         }
         #if DEBUG
         // `-demoSidebar hidden`: the sidebar put away (iPad screenshots).

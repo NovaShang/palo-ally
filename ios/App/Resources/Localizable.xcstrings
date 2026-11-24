@@ -12,6 +12,16 @@
         }
       }
     },
+    "%@ · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · %@"
+          }
+        }
+      }
+    },
     "%@ · 可多选" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -232,6 +242,16 @@
         }
       }
     },
+    "停下「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop “%@”"
+          }
+        }
+      }
+    },
     "卡着它" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -239,6 +259,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "holding it up"
+          }
+        }
+      }
+    },
+    "历史" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "History"
           }
         }
       }
@@ -306,17 +336,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Day %lld"
-          }
-        }
-      }
-    },
-    "%lld 条" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld"
           }
         }
       }
@@ -685,6 +704,16 @@
         }
       }
     },
+    "权限" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permissions"
+          }
+        }
+      }
+    },
     "来自%@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -912,17 +941,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Other"
-          }
-        }
-      }
-    },
-    "住在「%@」上" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lives on “%@”"
           }
         }
       }
@@ -1187,17 +1205,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Other…"
-          }
-        }
-      }
-    },
-    "再想想" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not now"
           }
         }
       }
@@ -1675,17 +1682,6 @@
         }
       }
     },
-    "告诉它你想长期盯住或推进的事，比如「回国机票降价了告诉我」「每天早上给我一份晨报」。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tell it what you want kept an eye on or moved forward, like “Tell me when flights home get cheaper” or “Give me a briefing every morning”."
-          }
-        }
-      }
-    },
     "和%@解除？" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1880,17 +1876,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Listening… tap the mic again to finish"
-          }
-        }
-      }
-    },
-    "在对话里交代一件事，它在做和做完的都会记在这里。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ask for something in the conversation. What it’s working on and what it has finished is listed here."
           }
         }
       }
@@ -3226,17 +3211,6 @@
         }
       }
     },
-    "无" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "None"
-          }
-        }
-      }
-    },
     "时间 %lld" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3596,17 +3570,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "In progress"
-          }
-        }
-      }
-    },
-    "正在办的事会中断。之后你再说话，它照常工作。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Anything in progress will be interrupted. It carries on as usual when you next talk to it."
           }
         }
       }
@@ -5058,17 +5021,6 @@
         }
       }
     },
-    "聊得越多，它越了解你。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The more you chat, the better it knows you."
-          }
-        }
-      }
-    },
     "聊聊" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5201,25 +5153,12 @@
         }
       }
     },
-    "认识你 %lld 天" : {
-      "extractionState" : "manual",
+    "让 %@ 停下？" : {
       "localizations" : {
         "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Known you for %lld day"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Known you for %lld days"
-                }
-              }
-            }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop %@?"
           }
         }
       }
@@ -5231,17 +5170,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Let Palo keep it running, and talk to it from your phone"
-          }
-        }
-      }
-    },
-    "让助理停下手上的事？" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stop what the assistant is doing?"
           }
         }
       }
@@ -5319,6 +5247,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recognizing…"
+          }
+        }
+      }
+    },
+    "语言" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Language"
           }
         }
       }
@@ -5782,28 +5720,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This link is for another device. Send it with AirDrop, or copy it, paste it there and open it on that device."
-          }
-        }
-      }
-    },
-    "这也是 App 的颜色。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This is also the app’s color."
-          }
-        }
-      }
-    },
-    "这些每次都会带上，越短越好。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "These are included every time, so shorter is better."
           }
         }
       }
@@ -6974,17 +6890,6 @@
         }
       }
     },
-    "记录" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "History"
-          }
-        }
-      }
-    },
     "没成" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7014,17 +6919,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stopping…"
-          }
-        }
-      }
-    },
-    "正在进行 · %lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "In Progress · %lld"
           }
         }
       }
@@ -7080,17 +6974,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open in New Window"
-          }
-        }
-      }
-    },
-    "权限模式" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Permission mode"
           }
         }
       }
@@ -7422,28 +7305,6 @@
         }
       }
     },
-    "说话用的语言" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Language it speaks"
-          }
-        }
-      }
-    },
-    "颜色也是 App 和桌面图标的颜色。语言和手机的系统语言分开；自动：按第一台连上主机的设备的语言。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The color is also the app's and its icon's. The language is separate from the phone's; Automatic follows the first device that connected to the host."
-          }
-        }
-      }
-    },
     "好友" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7506,17 +7367,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "It stops. You can bring it back from Archived later."
-          }
-        }
-      }
-    },
-    "归档这个 agent" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Archive This Agent"
           }
         }
       }
@@ -7774,28 +7624,6 @@
         }
       }
     },
-    "全部定时 · %lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "All scheduled · %lld"
-          }
-        }
-      }
-    },
-    "全部记录 · %lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "All history · %lld"
-          }
-        }
-      }
-    },
     "在做" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7818,50 +7646,6 @@
         }
       }
     },
-    "它在这个文件夹里干活时会记下要点。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "It notes down what matters as it works in this folder."
-          }
-        }
-      }
-    },
-    "定时" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scheduled"
-          }
-        }
-      }
-    },
-    "工作区 %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Workspace %@"
-          }
-        }
-      }
-    },
-    "已折起" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Collapsed"
-          }
-        }
-      }
-    },
     "文件夹里的说明" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7869,72 +7653,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The folder's instructions"
-          }
-        }
-      }
-    },
-    "没做完" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not finished"
-          }
-        }
-      }
-    },
-    "现在" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Now"
-          }
-        }
-      }
-    },
-    "现在 · 后台 %lld 个任务" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Now · %lld in the background"
-          }
-        }
-      }
-    },
-    "让%@停下" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stop %@"
-          }
-        }
-      }
-    },
-    "还没有记录。交代的事做完会记在这里。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No history yet. What you hand it is listed here once done."
-          }
-        }
-      }
-    },
-    "还没有记录。它开的子 agent 和后台任务做完后会记在这里。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No history yet. Its subagents and background tasks are listed here once they end."
           }
         }
       }

@@ -255,7 +255,6 @@ private struct PaloPaneOrbButton: View {
                 .environment(model)
                 .environment(store)
                 .environment(\.tileDetail, details.binding(id))
-                .frame(minWidth: 360, idealWidth: 380)
                 .presentationCompactAdaptation(.sheet)
         }
         .accessibilityLabel(Text(verbatim: "\(store.assistantName)：\(store.agentStatusLine.text)"))
@@ -356,7 +355,6 @@ private struct PaneStatusButton: View {
         .buttonStyle(.plain)
         .popover(isPresented: details.binding(id)) {
             PaneDetail(id: id, details: details)
-                .frame(minWidth: 360, idealWidth: 380)
                 .presentationCompactAdaptation(.sheet)
         }
         .accessibilityLabel(Text(verbatim: "\(pal?.displayName ?? "")，\(StatusDot.label(dot))"))

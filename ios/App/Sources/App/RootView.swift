@@ -83,6 +83,15 @@ private struct DemoCapture: ViewModifier {
             // `-demoAppearance dark|light`: the system setting isn't reachable from a launch argument.
             if let look = d.string(forKey: "demoAppearance") {
                 for w in scene?.windows ?? [] { w.overrideUserInterfaceStyle = look == "dark" ? .dark : .light }
+                #if targetEnvironment(macCatalyst)
+                // A popover's glass is AppKit's: the app's own appearance too.
+                if let app = (NSClassFromString("NSApplication") as? NSObject.Type)?.value(forKey: "sharedApplication") as? NSObject,
+                   let named = (NSClassFromString("NSAppearance") as? NSObject.Type)?
+                    .perform(NSSelectorFromString("appearanceNamed:"), with: look == "dark" ? "NSAppearanceNameDarkAqua" : "NSAppearanceNameAqua")?
+                    .takeUnretainedValue() {
+                    app.setValue(named, forKey: "appearance")
+                }
+                #endif
             }
             if let size = d.string(forKey: "demoWindow")?.split(separator: "x").compactMap({ Double($0) }), size.count == 2 {
                 scene?.sizeRestrictions?.minimumSize = CGSize(width: min(size[0], 400), height: min(size[1], 400))
@@ -427,10 +436,16 @@ private struct LayoutStressTest: ViewModifier {
                     // `copymenu`: 编辑 → 拷贝, sent along the responder chain as the menu does.
                     // `details`: the orb's details, as a click on it opens them.
                     case "details": model.detailShown = true
-                    // `detail-settings`: the details page's 设置 unfolded, as tapping it does.
-                    case "detail-settings": w.detailSettingsOpen = true
-                    // `detail-memory`: its 记忆 page, as tapping 设置 → 记忆 does.
-                    case "detail-memory": w.detailMemoryOpen = true
+                    // `detail-settings`, `detail-memory`, `detail-history`, `detail-goals`: its pages, as tapping their tiles does.
+                    case "detail-settings": w.detailPage = .settings
+                    case "detail-memory": w.detailPage = .memory
+                    case "detail-history": w.detailPage = .history
+                    case "detail-goals": w.detailPage = .goals
+                    // `detail-rename`: its name's field; `detail-ask`: 归档 / 停下 asked; `detail-more`: 还有 N 个.
+                    case "detail-rename", "detail-ask", "detail-more":
+                        #if DEBUG
+                        NotificationCenter.default.post(name: .demoDetail, object: a)
+                        #endif
                     case "copymenu":
                         let sent = UIApplication.shared.sendAction(#selector(UIResponderStandardEditActions.copy(_:)), to: nil, from: nil, for: nil)
                         debugLog("[nav] copy sent along the responder chain: \(sent ? "taken" : "nobody took it")")

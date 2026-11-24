@@ -18,27 +18,28 @@ struct MemorySection: View {
         let auto = files.filter { $0.scope != .core }
         Group {
             if loading && files.isEmpty {
-                Section { ProgressView().frame(maxWidth: .infinity) }
+                Section { ProgressView().frame(maxWidth: .infinity).listRowBackground(Color.clear) }
             } else if let error, files.isEmpty {
-                Section { Text(error).foregroundStyle(.secondary) }
+                Section { Text(error).foregroundStyle(.secondary).detailRow() }
             } else if files.isEmpty {
                 Section {
-                    ContentUnavailableView("还没记下什么", systemImage: "brain",
-                                           description: agent == nil ? Text("聊得越多，它越了解你。") : Text("它在这个文件夹里干活时会记下要点。"))
+                    ContentUnavailableView("还没记下什么", systemImage: "brain").listRowBackground(Color.clear)
                 }
             }
             if !core.isEmpty {
                 Section {
-                    ForEach(core) { MemoryRow(file: $0, agent: agent, onSaved: reload) }
+                    ForEach(Array(core.enumerated()), id: \.element.id) { i, f in
+                        MemoryRow(file: f, agent: agent, onSaved: reload).detailRow(i, of: core.count)
+                    }
                 } header: {
                     agent == nil ? Text("关于你，它一直记着") : Text("文件夹里的说明")
-                } footer: {
-                    Text("这些每次都会带上，越短越好。")
                 }
             }
             if !auto.isEmpty {
                 Section("它随手记下的") {
-                    ForEach(auto) { MemoryRow(file: $0, agent: agent, onSaved: reload) }
+                    ForEach(Array(auto.enumerated()), id: \.element.id) { i, f in
+                        MemoryRow(file: f, agent: agent, onSaved: reload).detailRow(i, of: auto.count)
+                    }
                 }
             }
         }

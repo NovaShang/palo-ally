@@ -44,12 +44,7 @@ struct IdentityEditor: View {
                         .background(.fill.tertiary, in: .rect(cornerRadius: 14))
                         .accessibilityLabel("它的名字")
 
-                    VStack(spacing: 8) {
-                        ThemeSwatches(selection: $color)
-                        Text("这也是 App 的颜色。")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
+                    ThemeSwatches(selection: $color)
 
                     if let error {
                         Text(error).font(.footnote).foregroundStyle(.red).multilineTextAlignment(.center)

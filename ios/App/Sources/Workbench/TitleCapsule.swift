@@ -50,12 +50,11 @@ struct TitleCapsule: View {
         .tint(.primary)
         .glassEffect(.regular.interactive(), in: .capsule)
         .animation(.snappy, value: subtitle)
-        .popover(isPresented: Binding(get: { model.detailShown && !AgentDetailPlacement.usesSheet(model: model, store: store) },
+        .popover(isPresented: Binding(get: { model.detailShown && !AgentDetailPlacement.usesSheet(model: model) },
                                       set: { model.detailShown = $0 })) {
             AgentDetailView()
                 .environment(model)
                 .environment(store)
-                .frame(minWidth: 360, idealWidth: 380)
         }
         .accessibilityLabel(Text("\(name)，\(subtitle)"))
         .accessibilityHint(Text("打开详情"))
@@ -94,12 +93,11 @@ struct PageIndicator: View {
         .macTitlebarButtonStyle()
         .modifier(PaloOrbHomeIfNeeded(enabled: isPalo && restsHere, token: token))
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { onFrame?($0) }
-        .popover(isPresented: Binding(get: { model.detailShown && !AgentDetailPlacement.usesSheet(model: model, store: store) },
+        .popover(isPresented: Binding(get: { model.detailShown && !AgentDetailPlacement.usesSheet(model: model) },
                                       set: { model.detailShown = $0 })) {
             AgentDetailView()
                 .environment(model)
                 .environment(store)
-                .frame(minWidth: 360, idealWidth: 380)
         }
         .accessibilityLabel(Text(label))
         .accessibilityHint(Text("打开详情"))
@@ -158,11 +156,9 @@ private struct PaloOrbHomeIfNeeded: ViewModifier {
 }
 
 @MainActor enum AgentDetailPlacement {
-    /// iPhone, and Palo's page on an iPad (no capsule there: its orb is the
-    /// title): a sheet. Elsewhere a popover under the capsule.
-    static func usesSheet(model: WindowModel, store: AppStore) -> Bool {
-        guard !Platform.barInWindowToolbar else { return false }
-        return model.layout == .phone || store.scope == .palo
+    /// iPhone: a sheet. Elsewhere a popover under the indicator.
+    static func usesSheet(model: WindowModel) -> Bool {
+        !Platform.barInWindowToolbar && model.layout == .phone
     }
 }
 
@@ -176,7 +172,7 @@ struct PaloTitleCapsule: View {
     }
 }
 
-/// iPhone (and Palo on an iPad): the details as a sheet with a half and a full height.
+/// iPhone: the details as a sheet (as high as they are, AgentDetailView).
 struct AgentDetailSheet: ViewModifier {
     /// false inside a tile: its header opens its own details.
     var enabled = true
@@ -184,12 +180,11 @@ struct AgentDetailSheet: ViewModifier {
     @Environment(AppStore.self) private var store
 
     func body(content: Content) -> some View {
-        content.sheet(isPresented: Binding(get: { enabled && model.detailShown && AgentDetailPlacement.usesSheet(model: model, store: store) },
+        content.sheet(isPresented: Binding(get: { enabled && model.detailShown && AgentDetailPlacement.usesSheet(model: model) },
                                            set: { model.detailShown = $0 })) {
             AgentDetailView()
                 .environment(model)
                 .environment(store)
-                .presentationDetents([.medium, .large])
         }
     }
 }

@@ -72,25 +72,17 @@ public struct AgentDetail: Sendable, Equatable {
     public struct Capabilities: Sendable, Equatable {
         /// The first model is the default: picking it sends none, and 思考深度 has a 默认 row.
         public var defaultChoice: Bool
-        /// 压缩 on the context row.
+        /// 压缩 beside the context's numbers.
         public var compact: Bool
         /// A running task can be stopped one by one.
         public var stopTasks: Bool
-        /// 定时 (the assistant's watches).
+        /// 目标 (the assistant's watches).
         public var timers: Bool
-        /// 说话的语言.
-        public var language: Bool
-        /// 名字和颜色 (the assistant's color is the app's); else 名字 alone.
-        public var color: Bool
-        /// 工作区 (which one it's in).
-        public var workspace: Bool
-        /// 归档 at the bottom (else 让助理停下).
+        /// 归档 at the bottom (else 停下).
         public var archive: Bool
 
-        public static let assistant = Capabilities(defaultChoice: true, compact: false, stopTasks: false, timers: true,
-                                                   language: true, color: true, workspace: false, archive: false)
-        public static let agent = Capabilities(defaultChoice: false, compact: true, stopTasks: true, timers: false,
-                                               language: false, color: false, workspace: true, archive: true)
+        public static let assistant = Capabilities(defaultChoice: true, compact: true, stopTasks: true, timers: true, archive: false)
+        public static let agent = Capabilities(defaultChoice: false, compact: true, stopTasks: true, timers: false, archive: true)
     }
 
     public var models: [ModelChoice]
@@ -132,6 +124,41 @@ public struct AgentDetail: Sendable, Equatable {
     /// default (the first) when there is one, else what runs.
     public var selectedModel: String {
         model ?? (capabilities.defaultChoice ? models.first?.id : nil) ?? runningModel
+    }
+
+    /// The picked model's name, else what runs.
+    public var modelName: String {
+        models.first { $0.id == selectedModel }?.name ?? ModelName.short(runningModel)
+    }
+
+    /// Which of `efforts` it thinks at; nil: the default, or one not among them.
+    public var depthIndex: Int? { effort.flatMap { efforts.firstIndex(of: $0) } }
+
+    /// A depth bar's height, from 12 to 40 pt however many there are.
+    public static func barHeight(_ i: Int, of n: Int) -> Double {
+        n > 1 ? 12 + 28 * Double(i) / Double(n - 1) : 40
+    }
+
+    /// The small tiles the page ends with, in their order.
+    public enum Tile: Sendable, Hashable { case goals, history, memory, permissions, terminal, settings }
+
+    /// The ones this agent has: what its host or harness can't do is left out.
+    public func tiles(memory: Bool, terminal: Bool) -> [Tile] {
+        guard capabilities.archive else { return [.goals, .history] + (memory ? [.memory] : []) + [.settings] }
+        var out: [Tile] = [.history]
+        if memory { out.append(.memory) }
+        if permissionMode != nil, !permissionModes.isEmpty { out.append(.permissions) }
+        if terminal { out.append(.terminal) }
+        return out
+    }
+
+    /// An agent's before its host has told: what the list knows of it, with
+    /// nothing to pick from yet.
+    public init(early pal: Pal, harness: HarnessCapabilities) {
+        self.init(runningModel: pal.model ?? "", effort: pal.effort, efforts: harness.efforts, contextPct: pal.contextPct,
+                  permissionMode: pal.permissionMode, permissionModes: pal.permissionMode == nil ? [] : harness.permissionModes,
+                  capabilities: .agent)
+        self.harness = harness
     }
 
     /// The context bar's fill: from the token counts when known, else the percent.

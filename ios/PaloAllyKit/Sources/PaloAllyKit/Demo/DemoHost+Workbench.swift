@@ -134,18 +134,18 @@ extension DemoHost {
         case RPCMethod.palsDetail:
             let id = p["id"]?.stringValue ?? ""
             guard let pal = pals.first(where: { $0.id == id }) else { throw DemoError(message: "找不到这个 agent") }
+            // `-demoState detailOld`: a host from before this.
+            if detailScenario == "detailOld" { throw DemoError(message: "unknown method \(RPCMethod.palsDetail)") }
             let now = Date().epochMillis, min: Int64 = 60_000
-            // One running in the one that waits on the owner; a few that ended in each.
-            let running: JSONValue = pal.status == .waiting
-                ? [["id": "t_run", "title": "跑一遍构建和测试", "kind": "bg", "startedAt": .number(Double(now - 2 * min)), "summary": "已跑 40 个"]]
-                : []
+            // Some running in the one that waits on the owner (`-demoState detailMany`: more); a few that ended in each.
+            let running: JSONValue = pal.status == .waiting ? .array(runningTasks()) : []
             let past: JSONValue = [
                 ["id": "t_p1", "title": "查列表页的调用方", "kind": "subagent", "startedAt": .number(Double(now - 50 * min)),
                  "endedAt": .number(Double(now - 46 * min)), "status": "done", "summary": "找到 3 处，都在 ListPage.tsx 里"],
                 ["id": "t_p2", "title": "跑全部测试", "kind": "bg", "startedAt": .number(Double(now - 3 * 60 * min)),
                  "endedAt": .number(Double(now - 3 * 60 * min + 4 * min)), "status": "failed", "summary": "2 个失败：排序和分页"],
             ]
-            return ["pal": try .from(pal), "contextTokens": .number(Double((pal.contextPct ?? 42) * 2000)), "contextWindow": 200_000,
+            return ["pal": try .from(pal), "contextTokens": .number(Double((detailPct ?? pal.contextPct ?? 42) * 2000)), "contextWindow": 200_000,
                     "costTotalUsd": 3.82, "spentToday": 1.2, "model": .string(pal.model ?? "claude-opus-5-5"),
                     "effort": .string(pal.effort ?? "high"),
                     "models": [["id": "claude-opus-5-5", "name": "Opus 5.5", "efforts": ["low", "medium", "high", "xhigh", "max"]],
@@ -170,10 +170,18 @@ extension DemoHost {
             guard model != nil || effort != nil else { throw DemoError(message: "要改的内容不能是空的") }
             setPal(id) { if let model { $0.model = model }; if let effort { $0.effort = effort } }
             return ["pal": try .from(pals.first { $0.id == id })]
-        case RPCMethod.palsCompact, RPCMethod.palsStopTask, RPCMethod.palsReveal:
+        case RPCMethod.palsStopTask:
+            let tid = p["taskId"]?.stringValue ?? ""
+            guard runningTasks().contains(where: { $0["id"]?.stringValue == tid }) else { throw DemoError(message: "这个任务已经结束了") }
+            stoppedPalTasks.insert(tid)
+            return [:]
+        case RPCMethod.palsCompact, RPCMethod.palsReveal:
             let id = p["id"]?.stringValue ?? ""
             guard pals.contains(where: { $0.id == id }) else { throw DemoError(message: "找不到这个 agent") }
-            if method == RPCMethod.palsStopTask { throw DemoError(message: "这个任务已经结束了") }
+            if method == RPCMethod.palsCompact {
+                await pause(1)
+                compactedPct = 15
+            }
             return [:]
 
         case RPCMethod.workspacesList:
@@ -299,5 +307,36 @@ extension DemoHost {
             EarlierItem(kind: .recent, key: "recent:old-site", sessionId: "old-site", name: "旧官网改版",
                         cwd: "/Users/demo/code/site-old", at: now - 90 * day),
         ]
+    }
+}
+
+// What the details show beyond the ordinary (`-demoState detailMany |
+// detailNear | detailFull | detailOld`).
+extension DemoHost {
+    /// The context's fill the state asks for, or what compacting left.
+    var detailPct: Int? {
+        if let compactedPct { return compactedPct }
+        return switch detailScenario {
+        case "detailNear": 84
+        case "detailFull": 97
+        default: nil
+        }
+    }
+
+    func runningTasks() -> [JSONValue] {
+        let min: Int64 = 60_000
+        var list: [(String, String, String, Int64, String?)] = [
+            ("t_run", "跑一遍构建和测试", "bg", 2 * min, "已跑 40 个"), ("t_sub", "查列表页的调用方", "subagent", min, nil),
+        ]
+        if detailScenario == "detailMany" {
+            list += [("t_m1", "压测首页", "bg", 40_000, nil), ("t_m2", "查文章页用到的组件", "subagent", 3 * min, nil),
+                     ("t_m3", "补列表页的测试", "subagent", 5 * min, nil), ("t_m4", "对一遍设计稿", "subagent", 6 * min, nil)]
+        }
+        return list.filter { !stoppedPalTasks.contains($0.0) }.map { id, title, kind, ago, summary in
+            var o: [String: JSONValue] = ["id": .string(id), "title": .string(title), "kind": .string(kind),
+                                          "startedAt": .number(Double(demoStart - ago))]
+            if let summary { o["summary"] = .string(summary) }
+            return .object(o)
+        }
     }
 }

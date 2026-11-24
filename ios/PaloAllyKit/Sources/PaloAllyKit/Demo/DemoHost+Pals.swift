@@ -20,7 +20,7 @@ extension DemoHost {
         case RPCMethod.palsList:
             normalizePals()
             return ["pals": try .from(pals), "others": try .from(otherSessions), "hooks": .bool(hooksEnabled),
-                    "archived": .number(Double(archivedCount())), "terminal": true]
+                    "archived": .number(Double(archivedCount())), "terminal": .bool(detailScenario != "detailOld")]
         case RPCMethod.palsHistory:
             let id = p["id"]?.stringValue ?? ""
             // Not a Pal: one of the computer's other sessions, read the same way (one kind of agent).
@@ -286,7 +286,7 @@ extension DemoHost {
                                         "others": (try? JSONValue.from(otherSessions)) ?? .array([]),
                                         "hooks": .bool(hooksEnabled),
                                         "archived": .number(Double(archivedCount())),
-                                        "terminal": true] as JSONValue)
+                                        "terminal": .bool(detailScenario != "detailOld")] as JSONValue)
     }
 
     /// 已归档 N, as the host counts it: put away for lack of use, and archived by the owner.

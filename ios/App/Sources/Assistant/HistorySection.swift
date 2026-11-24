@@ -11,18 +11,17 @@ struct HistorySection: View {
         let finished = store.tasks.filter { !$0.isActive }.sorted { $0.updatedAt > $1.updatedAt }
         if store.tasks.isEmpty {
             Section {
-                ContentUnavailableView("还没有记录", systemImage: "checklist",
-                                       description: Text("在对话里交代一件事，它在做和做完的都会记在这里。"))
+                ContentUnavailableView("还没有记录", systemImage: "clock").listRowBackground(Color.clear)
             }
         }
         if !active.isEmpty {
             Section("正在做") {
-                ForEach(active) { RunningHistoryRow(task: $0) }
+                ForEach(Array(active.enumerated()), id: \.element.id) { i, t in RunningHistoryRow(task: t).detailRow(i, of: active.count) }
             }
         }
         ForEach(HistoryDay.group(finished), id: \.title) { day in
             Section(day.title) {
-                ForEach(day.tasks) { DoneHistoryRow(task: $0) }
+                ForEach(Array(day.tasks.enumerated()), id: \.element.id) { i, t in DoneHistoryRow(task: t).detailRow(i, of: day.tasks.count) }
             }
         }
     }

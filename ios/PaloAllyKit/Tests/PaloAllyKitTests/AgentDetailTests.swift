@@ -73,6 +73,54 @@ struct AgentDetailTests {
         #expect(onHaiku.selectedModel == "haiku" && onHaiku.efforts.isEmpty)
     }
 
+    @Test func theTilesItHas() {
+        let full = AgentDetail(permissionMode: "auto", permissionModes: ["auto", "plan"], capabilities: .agent)
+        #expect(full.tiles(memory: true, terminal: true) == [.history, .memory, .permissions, .terminal])
+        // what its host or harness can't do is left out
+        #expect(AgentDetail(capabilities: .agent).tiles(memory: false, terminal: false) == [.history])
+        #expect(AgentDetail(capabilities: .assistant).tiles(memory: true, terminal: true) == [.goals, .history, .memory, .settings])
+    }
+
+    @Test func theDepthBars() {
+        var d = AgentDetail(effort: "high", efforts: ["low", "medium", "high", "xhigh", "max"], capabilities: .agent)
+        #expect(d.depthIndex == 2)
+        #expect((0..<5).map { AgentDetail.barHeight($0, of: 5) } == [12, 19, 26, 33, 40])
+        #expect((0..<3).map { AgentDetail.barHeight($0, of: 3) } == [12, 26, 40])
+        #expect(AgentDetail.barHeight(0, of: 1) == 40)
+        // the default, or one it isn't offered: none filled
+        d.effort = nil
+        #expect(d.depthIndex == nil)
+        d.effort = "ultra"
+        #expect(d.depthIndex == nil)
+    }
+
+    @Test func anAgentBeforeItsHostHasTold() {
+        var pal = Pal(id: "p", name: "官网", cwd: "/x", sessionId: "s", status: .idle, model: "claude-opus-5-5", contextPct: 41)
+        pal.effort = "max"
+        let d = AgentDetail(early: pal, harness: .claudeCodeFallback)
+        #expect(d.modelName == "Opus 5.5" && d.models.isEmpty)
+        #expect(d.depthIndex == 4 && d.contextFill == 41)
+        // an older host doesn't say its permission mode
+        #expect(d.tiles(memory: true, terminal: true) == [.history, .memory, .terminal])
+    }
+
+    @Test func theAssistantIsCompactedByItsHarnessCommandAndAnAgentsTaskStops() async throws {
+        let host = DemoHost(speed: 0, pals: true)
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { store.connection == .online })
+        store.replyDraft = ReplyTo(messageId: "m1", excerpt: "引用")
+        store.compactAssistant()
+        #expect(store.replyDraft?.excerpt == "引用") // still waiting in the composer
+        #expect(await until { store.status?.contextPct == 15 })
+        #expect(await host.lastParams["chat.send"]?["text"] == .string("/compact"))
+        #expect(await host.lastParams["chat.send"]?["replyTo"] == nil)
+        let before = try await store.palDetail(id: "pal-site").tasks.map(\.id)
+        #expect(before == ["t_run", "t_sub"])
+        try await store.stopTask(id: "pal-site", taskId: "t_run")
+        #expect(try await store.palDetail(id: "pal-site").tasks.map(\.id) == ["t_sub"])
+    }
+
     @Test func anAgentsLineSaysWhatItDoesElseItsStateInTheOneVocabulary() {
         func pal(_ s: PalStatus, activity: String? = nil, note: String? = nil, pending: Int = 0) -> Pal {
             Pal(id: "p", name: "官网", cwd: "/x", sessionId: "s", status: s, pending: pending, activity: activity, note: note)

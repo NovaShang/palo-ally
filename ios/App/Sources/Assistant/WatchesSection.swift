@@ -1,14 +1,12 @@
 import PaloAllyKit
 import SwiftUI
 
-/// 定时 on the assistant's details: what it is helping with over time. Each
+/// 目标 on the assistant's details: what it is helping with over time. Each
 /// one shows a short progress line and a state; underneath it's still a watch
 /// (a probe check or a schedule). New ones are asked for in plain words (the
 /// assistant sets them up) rather than through a form.
 struct WatchesSection: View {
     @Environment(AppStore.self) private var store
-    /// How many show on the details page before 全部定时.
-    static let shown = 3
 
     /// Needs-you first, then the ones moving, then paused, then done.
     private var goals: [Watch] {
@@ -27,31 +25,12 @@ struct WatchesSection: View {
         }
     }
 
-    /// 定时: the first few (needs-you first), the whole list a row away, then
-    /// 想让它帮你盯着什么？
+    /// All of them (needs-you first), then 想让它帮你盯着什么？
     var body: some View {
         Section {
-            ForEach(goals.prefix(Self.shown)) { GoalLink(goal: $0) }
-            if goals.count > Self.shown {
-                NavigationLink {
-                    List {
-                        Section { ForEach(goals) { GoalLink(goal: $0) } }
-                    }
-                    .navigationTitle("定时")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .modifier(InSidebarColumn())
-                } label: {
-                    Text("全部定时 · \(goals.count)")
-                }
-                .accessibilityIdentifier("detail-timers")
-            }
-            AskForGoal()
-        } header: {
-            Text("定时")
-        } footer: {
-            if store.watches.isEmpty {
-                Text("告诉它你想长期盯住或推进的事，比如「回国机票降价了告诉我」「每天早上给我一份晨报」。")
-            }
+            let n = goals.count + 1
+            ForEach(Array(goals.enumerated()), id: \.element.id) { i, g in GoalLink(goal: g).detailRow(i, of: n) }
+            AskForGoal().detailRow(n - 1, of: n)
         }
     }
 }
@@ -238,7 +217,7 @@ struct GoalDetail: View {
                     }
                 }
                 .navigationTitle(g.title.isEmpty ? String(localized: "目标") : g.title)
-                .navigationBarTitleDisplayMode(.inline)
+                .detailList()
                 .sheet(isPresented: $editing) {
                     NavigationStack { WatchEditor(existing: g) }.environment(store)
                 }

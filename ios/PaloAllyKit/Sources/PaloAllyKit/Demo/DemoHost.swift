@@ -96,6 +96,11 @@ public actor DemoHost {
     /// Claude 用量 (DemoHost+Usage.swift), and the state asked for.
     var usage: UsageStatus
     var usageScenario = ""
+    /// The details' state asked for, an agent's tasks stopped, its context once compacted (DemoHost+Workbench.swift).
+    var detailScenario = ""
+    var stoppedPalTasks: Set<String> = []
+    var compactedPct: Int?
+    let demoStart = Date().epochMillis
     /// The second demo computer.
     let office: Bool
     /// Folders the owner opened from the preview pane (files.folders.*).
@@ -257,6 +262,23 @@ public actor DemoHost {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         if name.hasPrefix("usage") { return applyUsageScenario(name) }
         if name.hasPrefix("backlog") { return applyBacklogScenario(name) }
+        if name.hasPrefix("detail") {
+            detailScenario = name
+            if let pct = detailPct {
+                status.contextPct = pct
+                status.contextTokens = pct * 2000
+                emit(RPCEventName.status, status)
+                for i in pals.indices { pals[i].contextPct = pct }
+                emitPals()
+            }
+            if name == "detailMany" {
+                for (i, title) in ["盯回国机票", "整理照片", "对一遍账单"].enumerated() {
+                    upsertTask(AllyTask(id: "t-d\(i)", title: title, summary: "", status: .running, source: .auto,
+                                        createdAt: now - Int64(i + 2) * 60_000, updatedAt: now - Int64(i + 1) * 1_000))
+                }
+            }
+            return
+        }
         // Sessions' cards: kept for the sessions' own states; otherwise
         // settled at the computer (they leave the conversation). The helper
         // proposal stays on offer only for those and `helper`, so nothing
@@ -965,6 +987,7 @@ public actor DemoHost {
         // (its folder's CLAUDE.md, listed while missing, and its project memory), as the host's.
         case RPCMethod.memoryList:
             let agent = p["agent"]?.stringValue
+            if agent != nil, detailScenario == "detailOld" { throw DemoError(message: "unknown file") }
             if let agent, !pals.contains(where: { $0.id == agent }) { throw DemoError(message: "找不到这个 agent") }
             let files = agent.map { agentMemory[$0] ?? [:] } ?? memory
             var list = files.map { MemoryFile(path: $0.key, scope: $0.value.scope, size: Int64($0.value.content.utf8.count),
@@ -1507,6 +1530,15 @@ public actor DemoHost {
         status.busy = true
         emit(RPCEventName.status, status)
         await pause(0.6)
+        // The harness' own command: the context is summarized, nothing is said.
+        if text == "/compact" {
+            await pause(1)
+            status.busy = false
+            status.contextPct = 15
+            status.contextTokens = 30_000
+            emit(RPCEventName.status, status)
+            return
+        }
 
         var taskToRun: AllyTask?
         var draft: (to: String, text: String, slots: [AllySlot]?)?

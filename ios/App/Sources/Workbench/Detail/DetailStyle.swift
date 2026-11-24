@@ -1,0 +1,247 @@
+import PaloAllyKit
+import SwiftUI
+
+// What the details' tiles look like (docs/workbench-design/details-v5.html):
+// their colors, their sizes on the Mac and iPad and on a phone, their
+// surface and press, and the rows they stand in.
+
+enum DetailColors {
+    /// A tile on the popover's or the sheet's glass; under the pointer.
+    static let tile = dynamic(light: .init(white: 1, alpha: 0.72), dark: .init(red: 120 / 255, green: 120 / 255, blue: 128 / 255, alpha: 0.26))
+    static let hover = dynamic(light: .init(white: 1, alpha: 0.95), dark: .init(red: 140 / 255, green: 140 / 255, blue: 150 / 255, alpha: 0.4))
+    /// A hairline round a tile, and one between two rows in it.
+    static let edge = dynamic(light: .init(white: 1, alpha: 0.85), dark: .init(white: 1, alpha: 0.13))
+    static let line = dynamic(light: .init(white: 0, alpha: 0.07), dark: .init(white: 1, alpha: 0.09))
+    /// What isn't filled: a bar, a pill, a round button.
+    static let track = dynamic(light: .init(white: 0, alpha: 0.09), dark: .init(white: 1, alpha: 0.13))
+    /// What is: a depth bar.
+    static let ink = dynamic(light: .init(red: 0x2C / 255, green: 0x2C / 255, blue: 0x30 / 255, alpha: 1), dark: .init(red: 0xF2 / 255, green: 0xF2 / 255, blue: 0xF6 / 255, alpha: 1))
+
+    /// The context ring: the indicator's arc and its track (indicator.html).
+    static let ringTrack = dynamic(light: .init(white: 0, alpha: 0.12), dark: .init(white: 1, alpha: 0.16))
+    static func ring(_ pct: Int) -> Color {
+        switch IndicatorRules.arcTone(fraction: Double(pct) / 100) {
+        case .normal: dynamic(light: .init(red: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255, alpha: 1), dark: .init(white: 1, alpha: 0.9))
+        case .warn: Color(rgb: 0xFF9F0A)
+        case .danger: Color(rgb: 0xFF453A)
+        }
+    }
+
+    private static func dynamic(light: UIColor, dark: UIColor) -> Color {
+        Color(UIColor { $0.userInterfaceStyle == .dark ? dark : light })
+    }
+}
+
+struct DetailMetrics: Equatable {
+    var phone = false
+
+    static let gap: CGFloat = 10
+    static let radius: CGFloat = 22
+    var padding: CGFloat { phone ? 16 : 14 }
+    var ring: CGFloat { phone ? 124 : 112 }
+    var name: CGFloat { phone ? 19 : 16 }
+    var status: CGFloat { phone ? 14 : 11.5 }
+    var pill: CGFloat { phone ? 32 : 26 }
+    var pillText: CGFloat { phone ? 14 : 12 }
+    /// A tile's label and its value.
+    var label: CGFloat { phone ? 13 : 11 }
+    var value: CGFloat { phone ? 18 : 16 }
+    /// A task, and the line under it.
+    var row: CGFloat { phone ? 15 : 13 }
+    var line: CGFloat { phone ? 13.5 : 11.5 }
+    var icon: CGFloat { phone ? 25 : 21 }
+    var square: CGFloat { phone ? 13 : 11.5 }
+    var askButton: CGFloat { phone ? 42 : 32 }
+}
+
+extension EnvironmentValues {
+    @Entry var detailMetrics = DetailMetrics()
+}
+
+extension View {
+    /// A size from the drawing, growing with the owner's text size.
+    func detailFont(_ size: CGFloat, _ weight: Font.Weight = .regular) -> some View {
+        modifier(DetailFont(size: size, weight: weight))
+    }
+
+    /// A tile's fill and edge.
+    func detailTile(hovered: Bool = false) -> some View {
+        let shape = RoundedRectangle(cornerRadius: DetailMetrics.radius, style: .continuous)
+        return background(hovered ? DetailColors.hover : DetailColors.tile, in: shape)
+            .overlay { shape.strokeBorder(DetailColors.edge, lineWidth: 0.5).allowsHitTesting(false) }
+    }
+
+    /// A row of a pushed list, the `i`-th of its section's `n`: together they
+    /// are one tile.
+    func detailRow(_ i: Int = 0, of n: Int = 1) -> some View {
+        let top = i == 0 ? DetailMetrics.radius : 0, bottom = i == n - 1 ? DetailMetrics.radius : 0
+        return listRowInsets(EdgeInsets(top: 10, leading: 15, bottom: 10, trailing: 14))
+            .listRowBackground(UnevenRoundedRectangle(topLeadingRadius: top, bottomLeadingRadius: bottom, bottomTrailingRadius: bottom,
+                                                      topTrailingRadius: top, style: .continuous).fill(DetailColors.tile))
+    }
+
+    /// A list pushed from the tiles: the glass behind it showing.
+    func detailList() -> some View {
+        scrollContentBackground(.hidden)
+            .contentMargins(.top, 8, for: .scrollContent)
+            .containerBackground(.clear, for: .navigation)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(removing: .sidebarToggle)
+    }
+}
+
+private struct DetailFont: ViewModifier {
+    let size: CGFloat
+    let weight: Font.Weight
+    @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
+
+    func body(content: Content) -> some View {
+        content.font(.system(size: size * scale, weight: weight))
+    }
+}
+
+/// A tile that is pressed: brighter under the pointer, faded when it can't be.
+struct TileButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Pressed(configuration: configuration)
+    }
+
+    private struct Pressed: View {
+        let configuration: Configuration
+        @Environment(\.isEnabled) private var enabled
+        @State private var hovered = false
+
+        var body: some View {
+            configuration.label
+                .detailTile(hovered: enabled && (hovered || configuration.isPressed))
+                .contentShape(.rect(cornerRadius: DetailMetrics.radius, style: .continuous))
+                .opacity(enabled ? 1 : 0.42)
+                .onHover { hovered = $0 }
+                .animation(.easeOut(duration: 0.15), value: hovered)
+        }
+    }
+}
+
+/// Something small pressed inside a tile (the pill, a stop button).
+struct TileInnerButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(.rect)
+            .opacity(configuration.isPressed ? 0.6 : 1)
+    }
+}
+
+/// A square tile: its icon and name, a count at its corner (orange while
+/// some of them wait on the owner).
+struct SquareTileLabel: View {
+    let symbol: String
+    let name: String
+    var count: Int = 0
+    var waiting = false
+    @Environment(\.detailMetrics) private var metrics
+
+    var body: some View {
+        VStack(spacing: 7) {
+            Image(systemName: symbol)
+                .detailFont(metrics.icon, .regular)
+                .frame(height: metrics.icon + 4)
+                .accessibilityHidden(true)
+            Text(name)
+                .detailFont(metrics.square, .medium)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .topTrailing) {
+            if count > 0 {
+                if waiting {
+                    Text(verbatim: "\(count)")
+                        .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .frame(minWidth: 17, minHeight: 17)
+                        .background(StatusDot.color(.waiting), in: .capsule)
+                        .padding(6)
+                } else {
+                    Text(verbatim: "\(count)")
+                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 8)
+                        .padding(.trailing, 10)
+                }
+            }
+        }
+        .foregroundStyle(.primary)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A tile with a label at its top and its value, opening a menu or a page.
+struct ValueTileLabel: View {
+    let label: String
+    let value: String
+    var symbol = "chevron.up.chevron.down"
+    @Environment(\.detailMetrics) private var metrics
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label).detailFont(metrics.label).foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+            HStack(spacing: 6) {
+                Text(value)
+                    .detailFont(metrics.value, .semibold)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+                Image(systemName: symbol)
+                    .detailFont(metrics.label, .bold)
+                    .accessibilityHidden(true)
+            }
+            .foregroundStyle(.primary)
+        }
+        .padding(.horizontal, 15)
+        .padding(.vertical, 13)
+        .frame(maxWidth: .infinity, minHeight: 96, maxHeight: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The square tiles: four to a row (two, with large text). Fewer of them
+/// share the row, at the same height.
+struct TileRow: Layout {
+    var columns = 4
+
+    private func side(_ width: CGFloat) -> CGFloat { (width - DetailMetrics.gap * 3) / 4 }
+
+    private func rows(_ count: Int) -> [Range<Int>] {
+        stride(from: 0, to: count, by: columns).map { $0..<min($0 + columns, count) }
+    }
+
+    private func height(_ row: Range<Int>, width: CGFloat, _ subviews: Subviews) -> CGFloat {
+        let w = (width - DetailMetrics.gap * CGFloat(row.count - 1)) / CGFloat(row.count)
+        return max(side(width), row.map { subviews[$0].sizeThatFits(.init(width: w, height: nil)).height }.max() ?? 0)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.replacingUnspecifiedDimensions(by: .init(width: 352, height: 0)).width
+        let rows = rows(subviews.count)
+        let h = rows.reduce(0) { $0 + height($1, width: width, subviews) } + DetailMetrics.gap * CGFloat(max(0, rows.count - 1))
+        return CGSize(width: width, height: h)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in rows(subviews.count) {
+            let h = height(row, width: bounds.width, subviews)
+            let w = (bounds.width - DetailMetrics.gap * CGFloat(row.count - 1)) / CGFloat(row.count)
+            for (i, index) in row.enumerated() {
+                subviews[index].place(at: CGPoint(x: bounds.minX + CGFloat(i) * (w + DetailMetrics.gap), y: y),
+                                      proposal: .init(width: w, height: h))
+            }
+            y += h + DetailMetrics.gap
+        }
+    }
+}
