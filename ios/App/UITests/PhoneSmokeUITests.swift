@@ -51,6 +51,7 @@ final class PhoneSmokeUITests: XCTestCase {
         sleep(1)
         shot(app, "\(look)-3-palo-details")
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap()
+        XCTAssertTrue(app.descendants(matching: .any)["agent-detail"].firstMatch.waitForNonExistence(timeout: 5), "the details stayed")
         XCTAssertTrue(palo.waitForExistence(timeout: 5))
 
         // The pane.
@@ -131,6 +132,7 @@ final class PhoneSmokeUITests: XCTestCase {
         sleep(1)
         shot(app, "\(look)-7b-session-depth")
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap()
+        XCTAssertTrue(app.descendants(matching: .any)["agent-detail"].firstMatch.waitForNonExistence(timeout: 5), "the details stayed")
         // An ordinary session has no quick-switch strip.
         XCTAssertFalse(app.descendants(matching: .any)["quick-switch"].exists, "a session outside a workspace has the strip")
 

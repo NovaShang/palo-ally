@@ -101,6 +101,7 @@ final class SessionsUITests: XCTestCase {
         field.typeText("读书笔记\n")
         XCTAssertTrue(app.staticTexts["读书笔记"].firstMatch.waitForExistence(timeout: 5), "the page's title didn't change")
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap()
+        XCTAssertTrue(app.descendants(matching: .any)["agent-detail"].firstMatch.waitForNonExistence(timeout: 5), "the details stayed")
         // From the list: the row's menu, on the same agent.
         app.navigationBars.buttons.firstMatch.tap()
         let row = app.descendants(matching: .any)["row-pal-pal-notes"]
