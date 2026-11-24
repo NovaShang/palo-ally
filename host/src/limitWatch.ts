@@ -91,9 +91,11 @@ export class LimitWatch {
 
   // ---------------- what stops, and what the owner does ----------------
 
-  /** A turn failed on a used-up limit. */
-  hit(f: LimitFailure, l: LimitHit): void {
+  /** A turn failed on a used-up limit. True: that's news (it wasn't held by the same limit already). */
+  hit(f: LimitFailure, l: LimitHit): boolean {
     const now = this.now();
+    const before: Held | undefined = f.kind === "pal" ? this.s.agents?.[f.id] : this.s.assistant;
+    const news = !before || before.kind !== l.kind || before.scope !== l.scope || before.due <= now;
     const held: Held = { ...l, at: now, due: this.due(l) };
     if (f.kind === "pal") this.s.agents = { ...this.s.agents, [f.id]: { ...held, name: f.name } };
     else {
@@ -107,6 +109,7 @@ export class LimitWatch {
     }
     this.d.audit("limit.hit", { by: f.kind, kind: l.kind, resetsAt: l.resetsAt });
     this.save();
+    return news;
   }
 
   /** An agent's turn went through, or the owner's words to the assistant were answered (or failed some other way): nothing of it waits. */

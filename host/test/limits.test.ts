@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { limitNotice } from "../src/copy.ts";
 import { isLimitFailure } from "../src/harness/claude/auth.ts";
@@ -256,9 +257,9 @@ describe("on the host", () => {
   const BUSY = { text: "API Error: 429 rate_limit_error", category: "rate_limit" };
 
   /** A host whose limits' clock the test moves. */
-  function host() {
+  function host(o: { spawn?: boolean } = {}) {
     let shift = 0;
-    const h = both({ limits: { now: () => Date.now() + shift, random: () => 0, still: async () => null } });
+    const h = both({ ...o, limits: { now: () => Date.now() + shift, random: () => 0, still: async () => null } });
     const reset = Date.now() + 2 * HOUR;
     const limited = () => {
       h.driver.limit = { blocked: true, kind: "session", resetsAt: reset };
@@ -381,6 +382,126 @@ describe("on the host", () => {
     await h.later();
     await waitFor(() => goesOn(h.told(a.id)) === 1);
     h.end();
+  });
+
+  test("held already: a scheduled run and an agent's own turn say nothing more; the owner's words do", async () => {
+    const h = host();
+    const w = h.hub.watches.add({ title: "晨报", instruction: "写晨报", at: ["08:00"] }, "user");
+    const run = async () => {
+      (h.hub as any).onSchedule(w);
+      await h.hub.idle();
+      await tick(10);
+    };
+    const lines = () => h.notices().filter((t) => t.includes("额度用完了")).length;
+    h.limited();
+    await run(); // the first to meet it: said
+    expect(lines()).toBe(1);
+    await run();
+    await run();
+    expect(lines()).toBe(1);
+    expect(h.stopped()).toMatchObject({ assistant: true, schedules: 1 });
+    h.hub.userMessage("在吗", "app");
+    await h.hub.idle();
+    expect(lines()).toBe(2);
+    await run();
+    expect(lines()).toBe(2);
+    // another limit is news
+    h.driver.limit = { blocked: false, kind: "session" };
+    h.hub.conversation.onHarnessEvent({ type: "limit", blocked: false, kind: "session" });
+    h.driver.limit = { blocked: true, kind: "weekly_all", resetsAt: h.reset };
+    await run();
+    expect(lines()).toBe(3);
+    // an agent: the assistant's words to it, held already, add nothing; the owner's do
+    const a = await h.agent();
+    const said = () => h.said(a.id).filter((t) => t.includes("额度用完了")).length;
+    h.driver.limit = { blocked: true, kind: "session", resetsAt: h.reset };
+    await h.send(a.id, "跑测试");
+    expect(said()).toBe(1);
+    await h.hub.pals.toolSend({ name: a.id, text: "怎么样了" });
+    await waitFor(() => !h.pal(a.id).busy);
+    await tick(10);
+    expect(said()).toBe(1);
+    expect(h.stopped()?.agents).toHaveLength(1);
+    await h.send(a.id, "还在吗");
+    expect(said()).toBe(2);
+    h.end();
+  });
+
+  const at = (n: number) => new Date(Date.parse("2026-11-01T08:00:00Z") + n * 1000).toISOString();
+  const userE = (uuid: string, parentUuid: string | null, text: string, n: number) => ({ type: "user", uuid, parentUuid, timestamp: at(n), message: { role: "user", content: text }, origin: { kind: "human" } });
+  const replyE = (uuid: string, parentUuid: string, text: string, n: number) => ({ type: "assistant", uuid, parentUuid, timestamp: at(n), message: { id: `msg_${uuid}`, role: "assistant", model: "claude-haiku-4-5", content: [{ type: "text", text }] } });
+
+  test("going back in an agent's conversation, and in the assistant's: not resumed", async () => {
+    const h = host();
+    const sid = "ffff7777-0000-4000-8000-000000000001";
+    h.cli.bg({ sessionId: sid, name: "网站", cwd: h.project });
+    h.claude.transcript(h.project, sid, [userE("p1", null, "先建", 0), replyE("r1", "p1", "建好了", 1), userE("p2", "r1", "跑测试", 10)]);
+    const { pal } = await h.call("pals.adopt", { sessionId: sid });
+    h.limited();
+    await h.send(pal.id, "跑测试");
+    const msg = h.hub.userMessage("帮我整理纪要", "app")!;
+    await h.hub.idle();
+    expect(h.stopped()).toMatchObject({ assistant: true, agents: [{ id: pal.id }] });
+    await h.call("pals.rewind", { id: pal.id, messageId: "p2" });
+    expect(h.stopped()).toMatchObject({ assistant: true, agents: [] });
+    h.claude.transcript(h.paths.home, (h.hub as any).runtime.data.sessionId, [userE("a1", null, "早", 0), replyE("a2", "a1", "早", 1), userE(msg.uuid!, "a2", "帮我整理纪要", 2)]);
+    await h.call("chat.rewind", { messageId: msg.id });
+    expect(h.stopped()).toBeUndefined();
+    h.end();
+  });
+
+  test("opened in a terminal by hand: not resumed, not when it comes back either", async () => {
+    const h = host({ spawn: true });
+    const a = await h.agent();
+    h.limited();
+    await h.send(a.id, "跑测试");
+    expect(h.stopped()?.agents).toHaveLength(1);
+    const term = spawn("/bin/sleep", ["60"]);
+    h.claude.register({ sessionId: a.sessionId, name: a.name, cwd: h.project, pid: term.pid });
+    await waitFor(() => h.statusOf(a.id) === "stopped", 3_000);
+    expect(h.stopped()).toBeUndefined();
+    const gone = new Promise((r) => term.on("exit", r));
+    term.kill("SIGKILL");
+    await gone;
+    h.claude.unregister(a.sessionId);
+    await h.later();
+    expect(goesOn(h.driver.pals.flatMap((p) => p.sent))).toBe(0);
+    await h.hub.pals.stopAndWait();
+    h.end();
+  });
+
+  test("whether an agent can be told to go on, as it stands", async () => {
+    const h = host();
+    const a = await h.agent();
+    expect(h.hub.pals.canGoOn(a.id)).toBe(true);
+    expect(h.hub.pals.canGoOn("pal_none")).toBe(false);
+    h.driver.palScript = async (_t, ctx) => void (await ctx.interrupted);
+    await h.call("pals.send", { id: a.id, text: "慢慢做" });
+    await waitFor(() => h.pal(a.id).busy);
+    expect(h.hub.pals.canGoOn(a.id)).toBe(false); // at work
+    await h.call("pals.stop", { id: a.id });
+    await waitFor(() => !h.pal(a.id).busy);
+    expect(h.hub.pals.canGoOn(a.id)).toBe(true);
+    await h.call("pals.openTerminal", { id: a.id, force: true });
+    expect(h.hub.pals.canGoOn(a.id)).toBe(false);
+    h.end();
+  });
+
+  test("by its own timer", async () => {
+    const paths = tmpPaths();
+    const resumed: string[] = [];
+    const now = Date.now();
+    const w = new LimitWatch({
+      path: `${paths.state}/limit.json`, random: () => 0, now: () => now + 4_900 + (Date.now() - now), still: async () => null, blocked: () => false, canGoOn: () => true,
+      resume: (m) => void resumed.push(...Object.keys(m.pals)), changed: () => {}, audit: () => {}, log: () => {},
+    });
+    w.hit({ kind: "pal", id: "p1", name: "网站" }, { kind: "session", resetsAt: now + 4_900 + 50 });
+    (w as any).s.agents.p1.due = now + 4_900 + 120;
+    w.start();
+    await waitFor(() => resumed.length === 1, 2_000);
+    expect(w.status()).toBeUndefined();
+    w.stop();
+    cleanup(paths);
   });
 
   test("compacted meanwhile: still to go on", async () => {

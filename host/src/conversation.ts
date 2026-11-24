@@ -82,7 +82,7 @@ export interface ConversationDeps {
   /** A turn went through (null) or failed for want of Claude Code's login (what it was for). */
   onAuth?: (failed: { text: string; watchId?: string } | null) => void;
   /** A limit of the plan: what its process says of it; a turn that failed on one that's used up (what it was for); the owner's turn over otherwise. */
-  limits?: { heard: (e: LimitEvent) => void; failed: (f: { text: string; watchId?: string }, l: LimitHit) => void; settled: () => void };
+  limits?: { heard: (e: LimitEvent) => void; failed: (f: { text: string; watchId?: string }, l: LimitHit) => boolean; settled: () => void };
   log: (s: string) => void;
 }
 
@@ -485,11 +485,13 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
       // The login ran out: said once for everything (auth.ts), not after each turn.
       const noLogin = !!error && this.d.harness.auth.isFailure(error, errorCategory);
       const limit = error && !noLogin ? this.usedUp(error, errorCategory) : null;
-      if (error && !noLogin) chat.message({ role: "system", kind: "notice", text: limit ? limitNotice(limit, this.d.config().settings.timezone) : friendlyError(error, errorCategory), channel: "system" });
       const owner = answered.flatMap((m) => (m.text ? [m.text] : []));
       const about = { text: owner.length ? owner.join("\n") : turn.label ? `${turn.label}: ${turn.text}` : turn.text || t("limit.background"), ...(turn.watchId ? { watchId: turn.watchId } : {}) };
-      if (limit) this.d.limits?.failed(about, limit);
-      else if (!turn.proactive) this.d.limits?.settled();
+      const news = !limit || (this.d.limits?.failed(about, limit) ?? true);
+      if (!limit && !turn.proactive) this.d.limits?.settled();
+      // (a scheduled run that meets the limit the assistant waits for already is remembered without a word)
+      if (error && !noLogin && (news || !turn.proactive || answered.length))
+        chat.message({ role: "system", kind: "notice", text: limit ? limitNotice(limit, this.d.config().settings.timezone) : friendlyError(error, errorCategory), channel: "system" });
       if (noLogin) {
         this.d.onAuth?.(turn.text || owner.length || turn.label ? about : { ...about, text: "" });
       } else if (!error) this.d.onAuth?.(null);

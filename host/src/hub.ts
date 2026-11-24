@@ -323,7 +323,7 @@ export class Hub {
         heard: () => this.planUsage.heard(),
         failed: (f, l) => {
           this.planUsage.usedUp(l);
-          this.limits.hit({ kind: "palo", ...f }, l);
+          return this.limits.hit({ kind: "palo", ...f }, l);
         },
         settled: () => this.limits.settled("palo"),
       },
@@ -485,7 +485,7 @@ export class Hub {
         heard: () => this.planUsage.heard(),
         failed: (pal, l) => {
           this.planUsage.usedUp(l);
-          this.limits.hit({ kind: "pal", ...pal }, l);
+          return this.limits.hit({ kind: "pal", ...pal }, l);
         },
         settled: (pal) => this.limits.settled({ pal }),
         owner: (pal) => this.limits.forget(pal),

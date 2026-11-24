@@ -189,7 +189,7 @@ export interface PalsDeps {
   /** A Pal's turn went through (true) or failed for want of Claude Code's login (false). */
   onAuth?: (pal: { id: string; name: string }, ok: boolean) => void;
   /** A limit of the plan (limitWatch.ts): as PalSession tells it; and `owner`: the owner did something about this one (nothing remembered of it is resumed). */
-  limits?: { heard: (e: LimitEvent) => void; failed: (pal: { id: string; name: string }, l: LimitHit) => void; settled: (id: string) => void; owner: (id: string) => void };
+  limits?: { heard: (e: LimitEvent) => void; failed: (pal: { id: string; name: string }, l: LimitHit) => boolean; settled: (id: string) => void; owner: (id: string) => void };
   paths: Paths;
   claudeDir: string;
   bus: Bus;
@@ -402,7 +402,7 @@ export class Pals {
       onAuth: (pal, ok) => this.d.onAuth?.({ id: pal.id, name: pal.rec.name }, ok),
       limits: {
         heard: (e) => this.d.limits?.heard(e),
-        failed: (pal, l) => this.d.limits?.failed({ id: pal.id, name: pal.rec.name }, l),
+        failed: (pal, l) => this.d.limits?.failed({ id: pal.id, name: pal.rec.name }, l) ?? true,
         settled: (pal) => this.d.limits?.settled(pal.id),
       },
       timezone: () => this.d.settings().timezone,

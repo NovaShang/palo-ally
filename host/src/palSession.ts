@@ -100,7 +100,7 @@ export interface PalSessionDeps {
   /** A turn went through (true) or failed for want of Claude Code's login (false). */
   onAuth?: (pal: PalSession, ok: boolean) => void;
   /** A limit of the plan: what its process says of it; a turn that failed on one that's used up; a turn that went through. */
-  limits?: { heard: (e: LimitEvent) => void; failed: (pal: PalSession, l: LimitHit) => void; settled: (pal: PalSession) => void };
+  limits?: { heard: (e: LimitEvent) => void; failed: (pal: PalSession, l: LimitHit) => boolean; settled: (pal: PalSession) => void };
   timezone?: () => string;
   /** It was asleep and is up again. */
   onWoke?: (pal: PalSession) => void;
@@ -810,10 +810,11 @@ export class PalSession extends AgentSession<{ text: string; from?: string; imag
   protected override resultIn(e: ResultEvent, _turn: unknown, stopped: boolean): void {
     // (a stopped turn's error is the stop, not news)
     const limit = e.isError && !stopped && !e.startupFailure ? this.usedUp(e.text, e.errorCategory) : null;
-    if (e.isError && !stopped && !e.startupFailure) this.notice(limit ? limitNotice(limit, this.d.timezone?.()) : friendlyError(e.text, e.errorCategory));
     // (the host's /compact isn't its work, cut off or gone on with)
-    if (limit && !this.compacting) this.d.limits?.failed(this, limit);
-    else if (!e.isError && !this.compacting) this.d.limits?.settled(this);
+    const news = !limit || this.compacting || (this.d.limits?.failed(this, limit) ?? true);
+    // (held by the same limit already, and not spoken to by the owner since: nothing new to say)
+    if (e.isError && !stopped && !e.startupFailure && news) this.notice(limit ? limitNotice(limit, this.d.timezone?.()) : friendlyError(e.text, e.errorCategory));
+    if (!e.isError && !this.compacting) this.d.limits?.settled(this);
     if (!e.isError) this.d.onAuth?.(this, true);
     else if (!stopped && this.d.harness.auth.isFailure(e.text, e.errorCategory)) this.d.onAuth?.(this, false);
     this.noteCost(e.costUsd, e.totalCostUsd);
