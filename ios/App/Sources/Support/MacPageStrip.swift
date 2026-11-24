@@ -141,12 +141,14 @@ struct MacPageTop: ViewModifier {
     /// row itself (MacTitlebar), not in a strip below it; its menu is the
     /// window toolbar's ⋯ (`macToolbarMenu`).
     var inRow = false
+    /// The page's background (what fades under the row).
+    var background = Color(.systemBackground)
 
     func body(content: Content) -> some View {
         if Platform.barInWindowToolbar && inRow {
             content
                 .toolbar(.hidden, for: .navigationBar)
-                .macTitlebarFade()
+                .macTitlebarFade(background)
                 .macTitlebarCenter {
                     MacTitlebarTitle(title: strip.title, subtitle: strip.subtitle, dot: strip.dot)
                 }
@@ -165,9 +167,9 @@ extension View {
     /// The Mac's floating strip in place of this page's navigation bar
     /// (MacPageStrip); `inRow`: in the window's title bar row (MacTitlebar).
     func macPageTop(_ title: String, subtitle: String = "", dot: StatusDotKind? = nil, back: (() -> Void)? = nil,
-                    trailing: AnyView? = nil, inRow: Bool = false) -> some View {
+                    trailing: AnyView? = nil, inRow: Bool = false, background: Color = Color(.systemBackground)) -> some View {
         modifier(MacPageTop(strip: MacPageStrip(title: title, subtitle: subtitle, dot: dot, back: back, trailing: trailing),
-                            inRow: inRow))
+                            inRow: inRow, background: background))
     }
 
     /// The Mac: no navigation bar and nothing in its place (a page whose
@@ -260,6 +262,8 @@ struct MacTitlebarItems<Center: View>: ViewModifier {
 /// line where it meets it: the system's soft scroll edge, set explicitly
 /// (never the hard one).
 struct MacTitlebarFade: ViewModifier {
+    var color = Color(.systemBackground)
+
     func body(content: Content) -> some View {
         // With the navigation bar hidden the soft edge had nothing to sit
         // under, so it never showed: an empty bar stands in for one.
@@ -271,9 +275,9 @@ struct MacTitlebarFade: ViewModifier {
         content
             .scrollEdgeEffectHidden(true, for: .top)
             .overlay(alignment: .top) {
-                LinearGradient(stops: [.init(color: Color(.systemBackground), location: 0),
-                                       .init(color: Color(.systemBackground).opacity(0.85), location: 0.55),
-                                       .init(color: Color(.systemBackground).opacity(0), location: 1)],
+                LinearGradient(stops: [.init(color: color, location: 0),
+                                       .init(color: color.opacity(0.85), location: 0.55),
+                                       .init(color: color.opacity(0), location: 1)],
                                startPoint: .top, endPoint: .bottom)
                     .frame(height: MacTitlebar.height + 14)
                     .allowsHitTesting(false)
@@ -295,8 +299,8 @@ extension View {
     }
 
     /// The Mac: the soft scroll edge under the title bar row in place of the band (MacTitlebarFade).
-    func macTitlebarFade() -> some View {
-        modifier(MacTitlebarFade())
+    func macTitlebarFade(_ color: Color = Color(.systemBackground)) -> some View {
+        modifier(MacTitlebarFade(color: color))
     }
 }
 

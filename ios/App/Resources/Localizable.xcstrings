@@ -8235,6 +8235,457 @@
           }
         }
       }
+    },
+    "本周 · %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This week · %@"
+          }
+        }
+      }
+    },
+    "%@ 重置" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resets %@"
+          }
+        }
+      }
+    },
+    "%@ 重置，还有 %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resets %1$@, in %2$@"
+          }
+        }
+      }
+    },
+    "%lld 天 %lld 小时" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld d %2$lld h"
+          }
+        }
+      }
+    },
+    "%lld 天" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld d"
+          }
+        }
+      }
+    },
+    "%lld 小时 %lld 分" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld h %2$lld min"
+          }
+        }
+      }
+    },
+    "%lld 小时" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld h"
+          }
+        }
+      }
+    },
+    "%lld 分钟" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld min"
+          }
+        }
+      }
+    },
+    "按平均速度够用到重置" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At this pace, lasts until then"
+          }
+        }
+      }
+    },
+    "按平均速度 %@ 左右用完" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At this pace, gone around %@"
+          }
+        }
+      }
+    },
+    "登录过期了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Login expired"
+          }
+        }
+      }
+    },
+    "没拿到新的数" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No new numbers"
+          }
+        }
+      }
+    },
+    "下面是 %@ 的数，连上就更新。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These are from %@. They update once it's back."
+          }
+        }
+      }
+    },
+    "下面是 %@ 的数。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These are from %@."
+          }
+        }
+      }
+    },
+    "%@、agent 和定时安排都停着。登录好后会接着做。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, the agents and scheduled work are stopped. They go on once you've signed in."
+          }
+        }
+      }
+    },
+    "%@、agent 和定时安排 %@ 起都停着。登录好后会接着做。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, the agents and scheduled work have been stopped since %2$@. They go on once you've signed in."
+          }
+        }
+      }
+    },
+    "%@额度用完了，现在按量计费" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ limit used up, now paid by use"
+          }
+        }
+      }
+    },
+    "%@额度用完了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ limit used up"
+          }
+        }
+      }
+    },
+    "%@额度用完了，%@ 恢复" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ limit used up, back %2$@"
+          }
+        }
+      }
+    },
+    "只影响 %@，别的模型还能用" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only %@; other models still work"
+          }
+        }
+      }
+    },
+    "开着，用完后按量计费" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On: paid by use after that"
+          }
+        }
+      }
+    },
+    "没开，用完会停下" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off: stops when used up"
+          }
+        }
+      }
+    },
+    "额外用量" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extra usage"
+          }
+        }
+      }
+    },
+    "这种登录按量计费，没有套餐额度" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This login is paid by use. It has no plan limits."
+          }
+        }
+      }
+    },
+    "这次登录看不到额度，重新登录试试" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This login can't see the limits. Try signing in again."
+          }
+        }
+      }
+    },
+    "还剩多少" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What's left"
+          }
+        }
+      }
+    },
+    "%@ 的数。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From %@."
+          }
+        }
+      }
+    },
+    "条上的细线是时间走到哪儿了。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The thin line on a bar is how far its time has run. "
+          }
+        }
+      }
+    },
+    "两台主机用同一个账号，额度合在一起。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Both hosts use the same account, so its limits count for both."
+          }
+        }
+      }
+    },
+    "这些主机用同一个账号，额度合在一起。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These hosts use the same account, so its limits count for all."
+          }
+        }
+      }
+    },
+    "%@更新。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Updated %@."
+          }
+        }
+      }
+    },
+    "账号" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account"
+          }
+        }
+      }
+    },
+    "密钥在电脑上改。设着密钥时，登录 %@ 账号不起作用。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change the key on the computer. While it's set, signing in to %@ has no effect."
+          }
+        }
+      }
+    },
+    "换成另一个账号也可以，授权时选它就行。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another account works too: pick it when authorizing."
+          }
+        }
+      }
+    },
+    "「%@」上的%@和 agent 用这个登录。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@ and the agents on “%1$@” use this login."
+          }
+        }
+      }
+    },
+    "%@和所有 agent 都用这个登录。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ and all agents use this login."
+          }
+        }
+      }
+    },
+    "已重置" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset"
+          }
+        }
+      }
+    },
+    "用完了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used up"
+          }
+        }
+      }
+    },
+    "剩 %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ left"
+          }
+        }
+      }
+    },
+    "电脑上设的 %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, set on the computer"
+          }
+        }
+      }
+    },
+    "刚刚更新。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Updated just now."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

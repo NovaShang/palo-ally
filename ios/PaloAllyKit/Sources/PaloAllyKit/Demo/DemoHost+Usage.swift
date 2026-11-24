@@ -70,7 +70,7 @@ extension DemoHost {
         if usageScenario == "usageOld" { throw DemoError(message: "unknown method \(RPCMethod.usageGet)") }
         // Asked again: the same numbers, as of now.
         let now = Date().epochMillis
-        if p["refresh"] == true, let at = usage.at, !usage.stale, usageScenario != "usageOffline", now - at >= 60_000 {
+        if p["refresh"] == true, let at = usage.at, !usage.stale, status.auth == nil, usageScenario != "usageOffline", now - at >= 60_000 {
             usage.at = now
             emit(RPCEventName.usageUpdated, ["usage": usage])
         }

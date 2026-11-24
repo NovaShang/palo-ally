@@ -360,6 +360,8 @@ public actor DemoHost {
         case "authExpired", "authLogin":
             // `-demoState authExpired`: Claude Code's login ran out on the
             // computer; `authLogin`: being signed in again, the link out.
+            usage.at = now - 42 * 60_000
+            emit(RPCEventName.usageUpdated, ["usage": usage])
             s.auth = AuthStatus(state: .expired, since: now - 40 * 60_000,
                                 login: name == "authLogin" ? LoginStatus(state: .waiting, startedAt: now, url: Self.demoLoginURL) : nil)
         case "longQuote":

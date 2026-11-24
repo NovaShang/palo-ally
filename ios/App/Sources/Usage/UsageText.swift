@@ -34,6 +34,37 @@ enum UsageText {
         return Copy.spaced(String(localized: "\(name(l))用完，\(when(at, now: now)) 恢复"))
     }
 
+    /// The page's name for it: 「本周 · Opus」.
+    static func title(_ l: UsageLimit) -> String {
+        if l.group == "weekly", let scope = l.scope { return String(localized: "本周 · \(scope)") }
+        return name(l)
+    }
+
+    /// 「18:40 重置，还有 1 小时 52 分」; `left`: with how long that is.
+    static func reset(_ l: UsageLimit, now: Date, left: Bool) -> String? {
+        guard let at = l.resetsAt, !l.hasReset(now) else { return nil }
+        let when = when(at, now: now)
+        guard left else { return String(localized: "\(when) 重置") }
+        return String(localized: "\(when) 重置，还有 \(span(at.msDate.timeIntervalSince(now)))")
+    }
+
+    /// 「2 天 16 小时」, 「1 小时 52 分」, 「36 分钟」.
+    static func span(_ seconds: TimeInterval) -> String {
+        let m = max(1, Int(seconds / 60)), h = m / 60, d = h / 24
+        if d > 0 { return h % 24 > 0 ? String(localized: "\(d) 天 \(h % 24) 小时") : String(localized: "\(d) 天") }
+        if h > 0 { return m % 60 > 0 ? String(localized: "\(h) 小时 \(m % 60) 分") : String(localized: "\(h) 小时") }
+        return String(localized: "\(m) 分钟")
+    }
+
+    /// Whether it lasts, at the window's average pace so far.
+    static func pace(_ l: UsageLimit, now: Date) -> String? {
+        switch l.pace(now) {
+        case .lasts: String(localized: "按平均速度够用到重置")
+        case .runsOut(let at): String(localized: "按平均速度 \(when(at.epochMillis, now: now)) 左右用完")
+        case nil: nil
+        }
+    }
+
     /// A login with no plan limits, by what it is.
     static func keyed(_ a: LoginAccount?) -> String {
         switch a?.provider {
