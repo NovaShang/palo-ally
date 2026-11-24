@@ -511,7 +511,7 @@ private struct BacklogToastView: View {
         .foregroundStyle(.white)
         .padding(.horizontal, 13)
         .padding(.vertical, BacklogMetrics.mac ? 6 : 9)
-        .background(Color(rgb: 0x1C1C1E).opacity(0.92), in: .capsule)
+        .background(Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.24, alpha: 0.96) : UIColor(white: 0.11, alpha: 0.92) }), in: .capsule)
         .padding(.horizontal, 16)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("backlog-toast")
