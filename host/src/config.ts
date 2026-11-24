@@ -40,7 +40,6 @@ export class Paths {
   get pushTokens() { return join(this.state, "push-tokens.json"); }
   get wechat() { return join(this.state, "wechat.json"); }
   get media() { return join(this.state, "media"); }
-  get suggestions() { return join(this.state, "suggestions.json"); }
   get allies() { return join(this.state, "allies.json"); }
   get allyLogs() { return join(this.state, "allies"); }
   get alliesOutbox() { return join(this.state, "allies-outbox.json"); }

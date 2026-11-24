@@ -276,17 +276,6 @@
         }
       }
     },
-    "%lld 个" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld"
-          }
-        }
-      }
-    },
     "%lld 件等你" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -449,28 +438,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Download"
-          }
-        }
-      }
-    },
-    "不再显示" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Don’t show again"
-          }
-        }
-      }
-    },
-    "不再显示这条" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Don’t show this one again"
           }
         }
       }
@@ -1517,17 +1484,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Use the conversation as context"
-          }
-        }
-      }
-    },
-    "发给它" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Send to it"
           }
         }
       }
@@ -2914,17 +2870,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Can’t find this task"
-          }
-        }
-      }
-    },
-    "把这句话发给助理" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Send this to your assistant"
           }
         }
       }
@@ -4783,17 +4728,6 @@
         }
       }
     },
-    "直接说就行，或者试试这些：" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Just say it, or try one of these:"
-          }
-        }
-      }
-    },
     "看一下" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5389,28 +5323,6 @@
         }
       }
     },
-    "试试" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Try"
-          }
-        }
-      }
-    },
-    "试试：%@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Try: %@"
-          }
-        }
-      }
-    },
     "语音识别没连上，再试一次" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5628,17 +5540,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$lld:%2$@ left. Works once."
-          }
-        }
-      }
-    },
-    "还可以让它…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You can also ask it to…"
           }
         }
       }

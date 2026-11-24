@@ -1047,68 +1047,20 @@ describe("Hub: a link for a new device (pair_link, pair.invite)", () => {
   });
 });
 
-describe("Hub: 「试试」 suggestions", () => {
-  test("generated from what it knows about the owner; used and dismissed ones never come back; refreshes when few are left", async () => {
-    let n = 0;
-    const { hub, driver, paths } = makeHub();
-    writeFileSync(`${paths.home}/user.md`, "# 关于主人\n养了一只猫，周末喜欢爬山。");
-    hub.onHarnessEvent({ type: "init", sessionId: "s", model: "m", tools: ["Read", "mcp__claude_ai_Gmail__search_threads", "mcp__paloally__report_task", "mcp__claude_ai_Google_Calendar__list_events"] });
-    driver.probeResponder = (req) => {
-      n++;
-      const base = n * 10;
-      return {
-        output: {
-          suggestions: [
-            { chip: "试试：找出没在用的订阅", prompt: "把我在用的订阅都找出来", category: "省钱" },
-            ...Array.from({ length: 4 }, (_, i) => ({ chip: `做件事 ${base + i}`, prompt: `具体的请求 ${base + i}` })),
-            { chip: "", prompt: "没有标签的会被丢掉" },
-          ],
-        },
-        costUsd: 0.0003,
-      };
-    };
-    expect(await hub.suggestions.refresh("test")).toBe(5);
-    const req = driver.probes.at(-1)!;
-    expect(req.tools).toEqual([]);
-    expect(req.strictMcp).toBe(true);
-    const sent = JSON.parse(req.prompt);
-    expect(sent.connected_services).toEqual(["claude_ai_Gmail", "claude_ai_Google_Calendar"]);
-    expect(sent.about_owner).toContain("养了一只猫");
-    const list = hub.suggestions.list();
-    expect(list[0]!.chip).toBe("找出没在用的订阅"); // the 「试试：」 prefix is the app's job
-    expect(hub.usage().probeUsd).toBeGreaterThan(0);
-
-    // tapping one sends its prompt and uses it up
+describe("Hub: what 「试试」 left behind", () => {
+  test("an older app still gets its answers: nothing to offer, any dismissal is fine, a tapped one is just a message", async () => {
+    const { hub, paths, events } = makeHub();
     const { handleRpc } = await import("../src/rpc.ts");
     const ctx = { clientId: "app_1", deviceId: "d", channel: "app" as const, local: false };
-    await handleRpc(hub, { method: "chat.send", params: { text: list[0]!.prompt, suggestionId: list[0]!.id } }, ctx);
+    const call = async (method: string, params: unknown = {}) => JSON.parse(JSON.stringify((await handleRpc(hub, { method, params }, ctx)) ?? null));
+    expect(await call("suggestions.list")).toEqual({ suggestions: [] });
+    expect(await call("suggestions.dismiss", { id: "sg_1" })).toEqual({ ok: true });
+    const sent = await call("chat.send", { text: "把我在用的订阅都找出来", clientMsgId: "c-try", suggestionId: "sg_1" });
     await hub.idle();
-    expect(hub.suggestions.list().some((s) => s.id === list[0]!.id)).toBe(false);
-    expect(hub.suggestions.dismiss(list[1]!.id)).toBe(true);
-    expect(hub.suggestions.dismiss(list[1]!.id)).toBe(false);
-
-    // down to 3 left: no refresh yet; one more → fewer than 3 → a new batch, avoiding the old chips
-    expect(hub.suggestions.list()).toHaveLength(3);
-    expect(hub.suggestions.needsRefresh()).toBe(false);
-    hub.suggestions.dismiss(hub.suggestions.list()[0]!.id);
-    await tick(10);
-    expect(n).toBe(2);
-    expect(JSON.parse(driver.probes.at(-1)!.prompt).avoid).toContain("找出没在用的订阅");
-    expect(hub.suggestions.list().some((s) => s.chip === "找出没在用的订阅")).toBe(false); // used before: filtered out
+    expect(sent.seq).toBeGreaterThan(0);
+    expect(hub.chat.recent(10).find((m) => m.id === sent.id)).toMatchObject({ role: "user", text: "把我在用的订阅都找出来" });
+    expect(events.some((e) => e.event === "suggestions.updated")).toBe(false);
     cleanup(paths);
-  });
-
-  test("no budget, no call; a failing generation leaves the list empty", async () => {
-    const { hub, driver, paths } = makeHub({ config: testConfig((c) => (c.budget.probeDailyUsd = 0)) });
-    expect(await hub.suggestions.refresh("test")).toBe(0);
-    expect(driver.probes).toHaveLength(0);
-    cleanup(paths);
-
-    const b = makeHub();
-    b.driver.probeResponder = () => ({ output: null, costUsd: 0, error: "boom" });
-    expect(await b.hub.suggestions.refresh("test")).toBe(0);
-    expect(b.hub.suggestions.list()).toHaveLength(0);
-    cleanup(b.paths);
   });
 });
 

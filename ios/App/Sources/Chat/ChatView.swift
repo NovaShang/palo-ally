@@ -285,8 +285,6 @@ struct ChatView: View {
             if isPalo && !inTile { FlyingPaloOrb(placement: orbPlacement) }
         }
         .modifier(OrbTracking(enabled: isPalo && !inTile, scrolledUp: !scroll.following || store.viewingPast, scrolling: scroll.userScrolling))
-        // 「试试」 timing: a reply finishing counts as activity.
-        .onChange(of: store.isBusy) { _, busy in if !busy { SuggestionsGate.shared.touch() } }
         // Leaving the app, and coming back (after the catch-up).
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
@@ -448,7 +446,7 @@ private struct ConversationRows: View {
         // No room below a sent message any more (the owner, 2026-10-22: a
         // screen cleared on every send broke his reading of what's above).
         // The message lands at the end like any chat; the reply grows under it.
-        ConversationStack(spacing: 14, turnMinHeight: atTheEnd && ChatView.turnRoomOn ? scroll.turnRoom : 0,
+        ConversationStack(spacing: 14, endSpace: atTheEnd ? 14 : 0, turnMinHeight: atTheEnd && ChatView.turnRoomOn ? scroll.turnRoom : 0,
                           // (a phone's column never changes width by steps)
                           hold: UIDevice.current.userInterfaceIdiom == .phone ? nil : widthHold, settled: widthHold.settled) {
             if window.lowerBound > 0 || store.hasOlderMessages {
@@ -490,8 +488,8 @@ private struct ConversationRows: View {
                     .layoutValue(key: TurnStart.self, value: turn != nil && message.clientMsgId == turn)
             }
 
-            // The live end: approvals, the working line and 「试试」 (not
-            // while a stretch far back is laid out on its own).
+            // The live end: approvals and the working line (not while a
+            // stretch far back is laid out on its own).
             if atTheEnd {
                 Group {
                 // Pending ones, and a session's still waiting at the computer.
@@ -524,13 +522,6 @@ private struct ConversationRows: View {
                     BackgroundWorkLine(count: backgroundRunning)
                         .id("background-work")
                 }
-
-                // 「试试」: part of the conversation's end, so scrolling up
-                // leaves them behind; only on first use or after a quiet spell.
-                // Its own view: the gate changes on every keystroke, and
-                // that must not re-render the conversation.
-                SuggestionsSlot(willSend: { scroll.willSend() })
-                    .id("suggestions")
                 }
                 // 回到这里重来 being asked: the live end goes too.
                 .opacity(leaving == nil ? 1 : RewindPanel.dimmed)
@@ -1099,54 +1090,6 @@ struct EmptyChatHint: View {
         .environment(VoiceInputController())
 }
 
-/// 「试试」 at the end of the conversation. Reads the gate (which changes on
-/// every keystroke) and keeps the quiet-spell clock itself, so none of that
-/// re-renders the message list around it.
-private struct SuggestionsSlot: View {
-    /// A chip is about to be sent (its message rises like a typed one).
-    let willSend: () -> Void
-    @Environment(AppStore.self) private var store
-    @Environment(\.scenePhase) private var scenePhase
-    /// Re-read when a quiet spell may have become long enough.
-    @State private var quietClock = Date()
-
-    var body: some View {
-        #if DEBUG || PERF_HARNESS
-        let _ = PerfProbe.count("SuggestionsSlot")
-        #endif
-        let gate = SuggestionsGate.shared
-        let shows = gate.shows(store, now: quietClock)
-        VStack(alignment: .leading, spacing: 0) {
-            if shows {
-                SuggestionChips(suggestions: Array(store.suggestions.prefix(store.messages.isEmpty ? 4 : 3)),
-                                greeting: store.messages.isEmpty,
-                                use: { s in
-                                    willSend()
-                                    ChatMotion.with(ChatMotion.send) { store.use(s) }
-                                },
-                                dismiss: { s in withAnimation(.snappy) { store.dismiss(s) } })
-                    .padding(.top, 2)
-                    .transition(.opacity)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        // Animated, so for a reader on the end the end glides up with them
-        // (the bottom anchor); scrolled up, nothing moves.
-        .animation(.easeInOut(duration: 0.35), value: shows)
-        #if DEBUG
-        .onChange(of: shows) { _, shown in debugLog("[suggestions] \(shown ? "shown" : "hidden")") }
-        #endif
-        .task(id: gate.quietSince(store)) {
-            let due = gate.quietSince(store).addingTimeInterval(SuggestionsGate.quietInterval)
-            let wait = due.timeIntervalSinceNow
-            if wait > 0 { try? await Task.sleep(for: .seconds(wait + 0.5)) }
-            guard !Task.isCancelled else { return }
-            quietClock = .now
-        }
-        .onChange(of: scenePhase) { _, phase in if phase == .active { quietClock = .now } }
-    }
-}
-
 /// The hold-to-talk scrim, reading the voice controller itself: its presence
 /// changes every frame while talking, and that must not re-render the list.
 private struct VoiceScrimLayer: View {
@@ -1188,6 +1131,8 @@ private struct VoiceScrimLayer: View {
 /// list leapt a keyboard's height and slid back.)
 struct ConversationStack: Layout {
     var spacing: CGFloat
+    /// Left below the last row (the conversation's end, over the composer).
+    var endSpace: CGFloat = 0
     /// The turn's least height; 0 for none.
     var turnMinHeight: CGFloat
     /// The width the rows are laid out at (`ColumnWidthHold`).
@@ -1239,6 +1184,7 @@ struct ConversationStack: Layout {
             if turnTop == nil, subviews[i][TurnStart.self] { turnTop = y }
             y += h
         }
+        if !hs.isEmpty { y += endSpace }
         if let turnTop, turnMinHeight > 0 { y = max(y, turnTop + turnMinHeight) }
         return CGSize(width: width, height: y)
     }

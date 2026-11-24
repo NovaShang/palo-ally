@@ -26,7 +26,6 @@ import { RuntimeState } from "./runtime.ts";
 import { localizeDefaultHome, setSoulName } from "./home.ts";
 import { isLang, parseLocale, setLang, t, tIn, systemLanguage, type Lang } from "./i18n/index.ts";
 import { makeShellTools, restText } from "./shellTools.ts";
-import { SuggestionStore } from "./suggestions.ts";
 import { TaskTracker } from "./tasks.ts";
 import type { Attachment, AuthStatus, CardSource, Channel, ChatMessage, PairedDevice, PendingItem, PendingLink, PendingSource, Status, Task, UsageStatus, Watch, ReplyTo } from "./types.ts";
 import { MediaStore } from "./media.ts";
@@ -97,7 +96,6 @@ export class Hub {
   readonly memory: MemoryView;
   readonly router: Router;
   readonly probe: ProbeScheduler;
-  readonly suggestions: SuggestionStore;
   readonly conversation: Conversation;
   readonly handoffs: HandoffTracker;
   readonly power: PowerWatcher;
@@ -131,7 +129,6 @@ export class Hub {
   private clients = new Map<string, { conn: ClientConn; off: () => void }>();
   /** Which connections' apps are in front right now: no pushes while one is (presence.ts). */
   private readonly presence: Presence;
-  private suggestionTimer: ReturnType<typeof setInterval> | null = null;
   // questions sent to WeChat as text: the owner's next WeChat message answers them
   private wechatQuestions = new Set<string>();
   // set by the daemon: drops a paired device (its relay pairing)
@@ -526,17 +523,6 @@ export class Hub {
       log: (s) => this.log(s),
       ...deps.stallWatch,
     });
-    this.suggestions = new SuggestionStore(this.paths.suggestions, this.bus, {
-      driver: deps.driver,
-      probeModel: () => this.config.probeModel,
-      cwd: () => this.paths.home,
-      env: () => this.config.env,
-      context: () => this.ownerContext(),
-      budgetLeftUsd: () => this.config.budget.probeDailyUsd - this.ledger.today().probeUsd,
-      spend: (usd) => this.ledger.add("probeUsd", usd),
-      log: (s) => this.log(s),
-      now: deps.now,
-    });
     // The last process' questions and prompts are closed: so are their items.
     this.pending.reconcile((i) => (i.questionId ? this.questions.get(i.questionId)?.status === "pending" : this.approvals.get(i.approvalId ?? "")?.status === "pending"));
     // The other cards waiting on the owner are items too (pendingLinks.ts):
@@ -565,9 +551,6 @@ export class Hub {
     if (opts.probe !== false) {
       this.probe.start();
       setTimeout(() => void this.probe.tick(), 5_000);
-      // 「试试」: first batch soon after start, then refreshed daily or when few are left.
-      setTimeout(() => this.suggestions.maybeRefresh("start"), 30_000);
-      this.suggestionTimer = setInterval(() => this.suggestions.maybeRefresh("daily"), 3600_000);
     }
     if (opts.watchArtifacts !== false) {
       this.artifacts.watch();
@@ -614,7 +597,6 @@ export class Hub {
     this.planUsage.stop();
     this.limits.stop();
     this.conversation.stopIdleCompact();
-    if (this.suggestionTimer) clearInterval(this.suggestionTimer);
     this.artifacts.stop();
     this.backlog.close();
     this.fileWatches.stop();
@@ -825,7 +807,6 @@ export class Hub {
 
   // Exposed so it can be traced/wrapped; the conversation routes every harness event here.
   onHarnessEvent(e: HarnessEvent): void {
-    if (e.type === "init") this.suggestions.setConnectors(e.tools);
     this.conversation.onHarnessEvent(e);
   }
 
@@ -1336,21 +1317,6 @@ export class Hub {
     const pal = this.pals.get(agent);
     if (!pal) throw new Error(t("pals.noPal"));
     return MemoryView.forAgent(pal.rec.cwd, this.harness.memory);
-  }
-
-  // What the assistant knows about the owner, for writing 「试试」 suggestions:
-  // the core files and the auto-memory index (not the whole memory).
-  private ownerContext(): string {
-    const parts: string[] = [];
-    for (const path of ["user.md", "soul.md", "memory/MEMORY.md"]) {
-      try {
-        const text = this.memory.read(path).trim();
-        if (text) parts.push(`## ${path}\n${text}`);
-      } catch {
-        /* not there */
-      }
-    }
-    return parts.join("\n\n");
   }
 
   private emitStatus(): void {

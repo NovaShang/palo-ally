@@ -571,7 +571,6 @@ public final class AppStore {
                 if presenceActive { sendPresence() }
                 resendQueued()
                 resendBacklogEdits()
-                Task { await self.loadSuggestions() }
                 Task { await self.loadAllies() }
                 Task { await self.loadUsage() }
                 // The Pals with the computer's other sessions (a host from before Pals: its sessions).
@@ -814,8 +813,6 @@ public final class AppStore {
             if let u = try? data.decode(HarnessUpdate.self), !u.id.isEmpty { shared.harnesses[u.id] = u.capabilities }
         case RPCEventName.usageUpdated:
             if let r = try? data.decode(UsageResult.self) { apply(usage: r.usage) }
-        case RPCEventName.suggestionsUpdated:
-            if let r = try? data.decode(SuggestionsResult.self) { suggestions = r.suggestions }
         case RPCEventName.allyUpdated:
             apply(allyUpdate: AllyUpdate(json: data))
         case RPCEventName.allyEntry:
@@ -1195,36 +1192,10 @@ public final class AppStore {
         public init(data: Data, mediaType: String, name: String) { self.data = data; self.mediaType = mediaType; self.name = name }
     }
 
-    // MARK: 「试试」 suggestions
-
-    /// Unused suggestions from the host (chips above the composer; the full
-    /// list can also back a 「它能做什么」 page).
-    public private(set) var suggestions: [Suggestion] = []
-    /// clientMsgId → the suggestion that message came from.
-    private var suggestionForMessage: [String: String] = [:]
-
-    public func loadSuggestions() async {
-        if let r: SuggestionsResult = try? await rpc.call(RPCMethod.suggestionsList, params: EmptyParams()) {
-            suggestions = r.suggestions
-        }
-    }
-
-    /// Sends the suggestion's full request as the owner's message.
-    public func use(_ s: Suggestion) {
-        suggestions.removeAll { $0.id == s.id }
-        send(s.prompt, suggestionId: s.id)
-    }
-
     /// Settings → 立即更新 (or just look, with `check`): the host updates itself
     /// to the newest release once nothing is in flight.
     public func updateHost(check: Bool) async throws -> HostUpdateResult {
         try await rpc.call(RPCMethod.hostUpdate, params: HostUpdateParams(check: check), as: HostUpdateResult.self)
-    }
-
-    /// Never show this one again.
-    public func dismiss(_ s: Suggestion) {
-        suggestions.removeAll { $0.id == s.id }
-        Task { _ = try? await rpc.call(RPCMethod.suggestionsDismiss, params: SuggestionIDParams(id: s.id), as: OKResult.self) }
     }
 
     /// What the composer is replying to (set by 「回复」 / 「引用回复」 / 「聊聊」);
@@ -1245,8 +1216,8 @@ public final class AppStore {
         replyDraft = ReplyTo(messageId: message.id, excerpt: text)
     }
 
-    public func send(_ rawText: String, images picked: [OutgoingImage] = [], files pickedFiles: [OutgoingFile] = [], suggestionId: String? = nil) {
-        guard let cid = stage(rawText, images: picked, files: pickedFiles, suggestionId: suggestionId) else { return }
+    public func send(_ rawText: String, images picked: [OutgoingImage] = [], files pickedFiles: [OutgoingFile] = []) {
+        guard let cid = stage(rawText, images: picked, files: pickedFiles) else { return }
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         Task { await self.deliver(clientMsgId: cid, text: text) }
     }
@@ -1260,7 +1231,7 @@ public final class AppStore {
     /// words have flown into it).
     @discardableResult
     public func stage(_ rawText: String, images picked: [OutgoingImage] = [], files pickedFiles: [OutgoingFile] = [],
-                      suggestionId: String? = nil, cid given: String? = nil) -> String? {
+                      cid given: String? = nil) -> String? {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !picked.isEmpty || !pickedFiles.isEmpty else { return nil }
         // Sending always happens at the live end of the conversation.
@@ -1268,12 +1239,10 @@ public final class AppStore {
         let cid = given ?? UUID().uuidString.lowercased()
         var echo = ChatMessage(seq: 0, id: "local-\(cid)", role: .user, kind: .text, text: text, channel: .app,
                                ts: Date().epochMillis, clientMsgId: cid)
-        // A 「试试」 chip starts fresh; anything typed goes with the open quote.
-        if suggestionId == nil, let reply = replyDraft {
+        if let reply = replyDraft {
             echo.replyTo = reply
             replyDraft = nil
         }
-        if let suggestionId { suggestionForMessage[cid] = suggestionId }
         if !picked.isEmpty || !pickedFiles.isEmpty {
             // Shown right away from local bytes; uploaded on delivery (an image
             // per call, files in chunks).
@@ -1311,7 +1280,6 @@ public final class AppStore {
     public func unstage(_ cid: String) {
         guard let i = messages.firstIndex(where: { $0.clientMsgId == cid && $0.seq == 0 && $0.delivery == .sending }) else { return }
         messages.remove(at: i)
-        suggestionForMessage[cid] = nil
         if !messages.contains(where: { $0.role == .user && $0.seq == 0 && $0.delivery == .sending }) { awaitingReply = false }
     }
 
@@ -1340,10 +1308,8 @@ public final class AppStore {
                                        timeout: 45)
             } else {
                 r = try await rpc.call(RPCMethod.chatSend,
-                                       params: ChatSendParams(text: text, clientMsgId: cid, attachments: ids,
-                                                              suggestionId: suggestionForMessage[cid], replyTo: replyTo))
+                                       params: ChatSendParams(text: text, clientMsgId: cid, attachments: ids, replyTo: replyTo))
             }
-            suggestionForMessage[cid] = nil
             guard let i = messages.firstIndex(where: { $0.clientMsgId == cid && $0.seq == 0 }) else { return }
             if !r.id.isEmpty, let dup = messages.firstIndex(where: { $0.id == r.id }), dup != i {
                 // The broadcast already landed under the server id.

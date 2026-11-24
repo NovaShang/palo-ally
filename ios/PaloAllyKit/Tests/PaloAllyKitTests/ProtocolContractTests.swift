@@ -100,8 +100,6 @@ private let resultTypes: [String: Check] = [
     RPCMethod.mediaGet: strict(MediaData.self),
     RPCMethod.mediaUploadChunk: strict(MediaUploadChunkResult.self),
     RPCMethod.mediaRead: strict(ArtifactChunk.self),
-    RPCMethod.suggestionsList: strict(SuggestionsResult.self),
-    RPCMethod.suggestionsDismiss: strict(OKResult.self),
     RPCMethod.hostUpdate: strict(HostUpdateResult.self),
     RPCMethod.pairInvite: strict(PairInviteResult.self),
     RPCMethod.deviceList: strict(DevicesResult.self),
@@ -231,7 +229,6 @@ private let eventTypes: [String: Check] = [
     RPCEventName.commandsUpdated: strict(CommandsResult.self),
     RPCEventName.harnessUpdated: strict(HarnessUpdate.self),
     RPCEventName.usageUpdated: strict(UsageResult.self),
-    RPCEventName.suggestionsUpdated: strict(SuggestionsResult.self),
     RPCEventName.allyUpdated: { json in
         switch AllyUpdate(json: json) {
         case .list: return strictIssues(AlliesResult.self, json)

@@ -389,11 +389,6 @@ final class WindowModel {
         detailPath = path
     }
 
-    /// Done with management: back to the conversation.
-    func closeManagement() {
-        if layout == .phone { detailPath = NavigationPath() } else { showManagement = false }
-    }
-
     private func resetManagement() {
         showSettings = false
         openTaskID = nil
