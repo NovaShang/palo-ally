@@ -191,7 +191,7 @@ struct DetailTiles: View {
     }
 
     /// 「等你 · ~/code/site」; alone what stops it (offline, a limit, a
-    /// terminal), and 空闲. The assistant's own line.
+    /// terminal). The assistant's own line.
     private var status: String {
         if !online, store.connectionTrouble { return Copy.connectionShort(store.displayedConnection) }
         guard let pal else {
@@ -200,7 +200,7 @@ struct DetailTiles: View {
         }
         if let stopped = UsageText.stopped(pal, model.store ?? store) { return stopped }
         let line = AgentStatusLine.of(pal)
-        if pal.openInTerminal || pal.dot == .idle { return line.text }
+        if pal.openInTerminal { return line.text }
         return "\(line.text) · \(CCSession.shortPath(pal.cwd))"
     }
 
