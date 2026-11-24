@@ -3,6 +3,11 @@ import SwiftUI
 
 /// How 用量 says things (docs/workbench-design/usage.html).
 enum UsageText {
+    /// `Copy.spaced`, and a time's words run on in Chinese (「周四上午9:16」, 「按平均速度下午6:12 左右」).
+    static func tidy(_ text: String) -> String {
+        Copy.spaced(text).replacingOccurrences(of: #"(\p{Han}) +(?=\p{Han})"#, with: "$1", options: .regularExpression)
+    }
+
     /// 「5 小时」, 「本周」, 「本周 Opus」; a kind this app doesn't know by what it's for, or its own name.
     static func name(_ l: UsageLimit) -> String {
         switch (l.group, l.scope) {
@@ -18,9 +23,9 @@ enum UsageText {
         let date = ms.msDate, cal = Calendar.current
         if cal.isDate(date, inSameDayAs: now) { return date.formatted(.dateTime.hour().minute()) }
         if let t = cal.date(byAdding: .day, value: 1, to: now), cal.isDate(date, inSameDayAs: t) {
-            return String(localized: "明天 \(date.formatted(.dateTime.hour().minute()))")
+            return tidy(String(localized: "明天 \(date.formatted(.dateTime.hour().minute()))"))
         }
-        if date.timeIntervalSince(now) < 6.5 * 86_400 { return date.formatted(.dateTime.weekday(.abbreviated).hour().minute()) }
+        if date.timeIntervalSince(now) < 6.5 * 86_400 { return tidy(date.formatted(.dateTime.weekday(.abbreviated).hour().minute())) }
         return date.formatted(.dateTime.month().day().hour().minute())
     }
 
@@ -60,7 +65,7 @@ enum UsageText {
     static func pace(_ l: UsageLimit, now: Date) -> String? {
         switch l.pace(now) {
         case .lasts: String(localized: "按平均速度够用到重置")
-        case .runsOut(let at): String(localized: "按平均速度 \(when(at.epochMillis, now: now)) 左右用完")
+        case .runsOut(let at): tidy(String(localized: "按平均速度 \(when(at.epochMillis, now: now)) 左右用完"))
         case nil: nil
         }
     }

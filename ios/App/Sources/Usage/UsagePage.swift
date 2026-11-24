@@ -98,9 +98,9 @@ struct UsagePage: View {
         if !g.hosts.contains(where: expired), g.usage.state == .limits {
             let at = g.usage.at.map(Copy.clock) ?? ""
             if !g.hosts.contains(where: model.isOnline) {
-                Section { Notice(title: String(localized: "连不上主机"), text: Copy.spaced(String(localized: "下面是 \(at) 的数，连上就更新。"))) }
+                Section { Notice(title: String(localized: "连不上主机"), text: UsageText.tidy(String(localized: "下面是 \(at) 的数，连上就更新。"))) }
             } else if g.usage.stale {
-                Section { Notice(title: String(localized: "没拿到新的数"), text: Copy.spaced(String(localized: "下面是 \(at) 的数。"))) }
+                Section { Notice(title: String(localized: "没拿到新的数"), text: UsageText.tidy(String(localized: "下面是 \(at) 的数。"))) }
             } else if let l = usedUp(g.usage, now: now) {
                 Section { Notice(title: hitTitle(l, extra: g.usage.extraUsage == true, now: now), text: hitText(l, extra: g.usage.extraUsage == true)) }
             }
@@ -112,7 +112,7 @@ struct UsagePage: View {
         guard let since = model.stores[id]?.status?.auth?.since, since > 0 else {
             return Copy.spaced(String(localized: "\(who)、agent 和定时安排都停着。登录好后会接着做。"))
         }
-        return Copy.spaced(String(localized: "\(who)、agent 和定时安排 \(Copy.clock(since)) 起都停着。登录好后会接着做。"))
+        return UsageText.tidy(String(localized: "\(who)、agent 和定时安排 \(Copy.clock(since)) 起都停着。登录好后会接着做。"))
     }
 
     /// The limit that stops things: one for everything before one for a model.
