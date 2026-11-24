@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude 账号与用量</title>
+<style>
+*{box-sizing:border-box}
+:root{--accent:#CF53A6;--orange:#FF9F0A;--red:#FF453A;--green:#30D158;--blue:#0A85FF;--idle:#8E8E93}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:#fff;color:#1c1c1e;font:15px/1.6 -apple-system,"SF Pro Text","PingFang SC",system-ui,sans-serif}
+main{max-width:1280px;margin:0 auto;padding:28px 24px 90px}
+h1{font-size:26px;margin:0 0 6px}h2{font-size:19px;margin:52px 0 6px}h3{font-size:15px;margin:26px 0 4px}
+p{margin:6px 0;max-width:860px}.cap{font-size:13px;color:#57575c;max-width:860px}
+ul,ol{margin:6px 0;padding-left:22px;max-width:860px}li{margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:13.5px;margin-top:8px}
+th{text-align:left;font-weight:600;border-bottom:1px solid #1c1c1e;padding:6px 12px 6px 0;white-space:nowrap}
+td{border-bottom:1px solid #e3e3e6;padding:8px 12px 8px 0;vertical-align:top}
+.tw{overflow-x:auto}.tw table{min-width:760px}
+code{font:12px ui-monospace,Menlo,monospace}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+.tabs button{font:13px -apple-system,"PingFang SC",sans-serif;padding:5px 12px;border-radius:14px;border:1px solid #d1d1d6;background:#fff;color:#1c1c1e;cursor:pointer}
+.tabs button.on{background:#1c1c1e;color:#fff;border-color:#1c1c1e}
+.tabs .gap{width:14px}
+.row{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start;margin-top:14px}
+.dec{display:grid;grid-template-columns:repeat(2,1fr);gap:0 34px;max-width:1120px}
+.dec div{border-top:1px solid #1c1c1e;padding:10px 0 14px}.dec b{display:block}
+.ok{color:#1d7f3a;font-weight:600}.no{color:#b3261e;font-weight:600}.mid{color:#8a5a00;font-weight:600}
+.scale{overflow-x:auto;max-width:100%}
+figure{margin:0}figcaption{font-size:13px;color:#57575c;margin-top:8px;max-width:350px}.four figcaption{max-width:282px}.four{gap:26px 22px!important}
+@media(max-width:760px){main{padding:20px 14px 70px}.dec{grid-template-columns:1fr}h2{margin-top:40px}}
+
+/* ---------- shared tokens (from the real screenshots) ---------- */
+.L{--side:#f2f2f3;--page:#f2f2f2;--main:#fff;--card:#fff;--sep:#e6e6e6;--tx:#000;--tx2:#7f7f80;--tx3:#adadae;--hd:#6b6b6f;--sel:#dededf;--track:#e9e9eb;--fill:#a0a0a0;--tick:rgba(0,0,0,.62);--glass:rgba(234,234,236,.82);--gb:#cbcbce;--btn:#e5e5e5;--tag:#e4e4e5}
+.D{--side:#242527;--page:#1c1c1c;--main:#1c1c1c;--card:#2c2c2c;--sep:#414141;--tx:#fff;--tx2:#98999b;--tx3:#6b6c6d;--hd:#9a9a9e;--sel:#38393b;--track:#454547;--fill:#a5a5a9;--tick:rgba(255,255,255,.75);--glass:rgba(62,63,66,.82);--gb:#57585b;--btn:#3f4043;--tag:#3a3b3d}
+.ph.L{--page:#f2f2f7;--tx2:#7f7f83;--hd:#85858b;--glass:rgba(250,250,251,.86);--gb:#d0d0d3;--btn:#e3e3e8;--sep:#e8e8e8}
+.ph.D{--page:#000;--card:#1c1c1e;--sep:#38383a;--tx2:#98989f;--hd:#8d8d93;--glass:rgba(40,40,42,.86);--gb:#4a4a4d;--btn:#39393d}
+.mac,.ph{color:var(--tx);line-height:1.25;-webkit-font-smoothing:antialiased;position:relative;overflow:hidden;text-align:left}
+:where(.mac,.ph) :where(button){font:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer;text-align:inherit}
+.g{border-radius:50%;display:grid;place-items:center;flex:none}
+svg{display:block}
+
+/* ---------- Mac ---------- */
+.mac{width:1200px;height:760px;border-radius:12px;background:var(--main);display:flex;font-size:13px;box-shadow:0 0 0 1px rgba(0,0,0,.16)}
+.mac.sideonly{width:310px}.mac.sideonly .mainarea{display:none}
+.side{width:310px;flex:none;background:var(--side);position:relative;overflow:hidden}
+.lights{position:absolute;top:19px;left:19px;display:flex;gap:9px;z-index:3}.lights i{width:14px;height:14px;border-radius:7px;background:#e0e0e1;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.2)}
+.D .lights i{background:#4a4b4d}
+.circ{position:absolute;border-radius:50%;background:var(--glass);box-shadow:inset 0 0 0 1px var(--gb);display:grid;place-items:center;z-index:4}
+.list{position:absolute;top:52px;left:0;right:0;bottom:0;padding:0 10px;overflow:hidden}
+.list.end{top:auto;bottom:56px}
+.r{display:flex;align-items:center;gap:10px;height:50px;padding:0 8px;border-radius:8px;width:100%;cursor:pointer}
+.r.one{height:48px}
+.r.sel{background:var(--sel)}.r.in{padding-left:32px}
+.r .ic{width:28px;height:28px;display:grid;place-items:center;flex:none;color:var(--tx2)}
+.r .tt{flex:1;min-width:0}.r .t{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r .s{font-size:11px;color:var(--tx2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r.q .t{color:var(--tx2);font-weight:400}.r .n{color:var(--tx2)}
+.r .ch{width:22px;margin-left:-2px;margin-right:-8px;color:var(--tx2);display:grid;place-items:center}
+.lh{height:54px;padding:25px 8px 0;font-size:11px;font-weight:600;color:var(--tx3)}
+.badge{min-width:22px;height:22px;border-radius:11px;background:var(--orange);color:#fff;font-size:10px;font-weight:700;display:grid;place-items:center;padding:0 6px}
+.tag{font-size:9.5px;color:var(--tx2);background:var(--tag);border-radius:8px;padding:2px 6px;margin-left:6px;font-weight:500}
+.av{width:28px;height:28px;border-radius:50%;background:var(--tag);font-size:11px;display:grid;place-items:center;color:var(--tx2);position:relative}
+.foot{position:absolute;left:0;right:0;bottom:7px;height:34px;z-index:5}
+.fade{position:absolute;left:0;right:0;bottom:0;height:66px;z-index:4;background:linear-gradient(to top,var(--side) 45%,transparent);pointer-events:none}.ph .fade{height:128px;background:linear-gradient(to top,var(--page) 42%,transparent)}
+.pill{position:absolute;left:50%;transform:translateX(-50%);bottom:0;height:34px;border-radius:17px;background:var(--glass)!important;box-shadow:inset 0 0 0 1px var(--gb);display:flex!important;align-items:center;gap:7px;padding:0 13px 0 11px!important;font-size:12px!important;font-weight:500;white-space:nowrap;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.pill.sel{background:var(--sel)!important}.pill .mute{color:var(--tx2);font-weight:400}
+.mainarea{flex:1;position:relative;background:var(--main);min-width:0}
+.mainarea.page{background:var(--page)}
+.mt{position:absolute;top:0;left:0;right:0;height:52px;display:grid;place-items:center;font-size:13px;font-weight:700;z-index:3}
+.scroll{position:absolute;top:52px;left:0;right:0;bottom:0;overflow:auto;scrollbar-width:none}.scroll::-webkit-scrollbar{display:none}
+.content{width:664px;margin:0 auto;padding:10px 0 40px}
+.sec{margin-bottom:22px}
+.sh{font-size:11px;font-weight:600;color:var(--hd);padding:0 20px 7px;display:flex;align-items:center;gap:6px}
+.sf{font-size:11px;color:var(--hd);padding:8px 20px 0;line-height:1.45}
+.card{background:var(--card);border-radius:12px;overflow:hidden}
+.c{min-height:47px;padding:0 20px;display:flex;align-items:center;gap:12px;width:100%;position:relative}
+.c+.c::before,.lim+.lim::before,.lim+.c::before,.conf+.c::before,.c+.conf::before{content:"";position:absolute;top:0;left:20px;right:20px;height:1px;background:var(--sep)}
+.c .ci{width:20px;display:grid;place-items:center;flex:none}
+.c .v{margin-left:auto;color:var(--tx2);font-variant-numeric:tabular-nums}
+.c.red{color:#ff3b30}.D .c.red{color:#ff5a50}
+.c .cc{color:var(--tx2);font-size:11px;margin-top:2px}
+.lim{padding:13px 20px 14px;position:relative}
+.l1{display:flex;justify-content:space-between;align-items:baseline}
+.l1 b{font-weight:600;font-variant-numeric:tabular-nums}
+.bar{height:6px;border-radius:3px;background:var(--track);margin:9px 0 9px;position:relative}
+.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+.bar u{position:absolute;top:-3px;width:2px;height:12px;border-radius:1px;background:var(--tick);margin-left:-1px;box-shadow:0 0 0 1.5px var(--card)}
+.l2{display:flex;flex-wrap:wrap;gap:2px 14px;justify-content:space-between;font-size:11px;color:var(--tx2)}
+.l2 .w{color:var(--tx)}
+.c.dim{opacity:.42}.lim.dim .l1 b{color:var(--tx2);font-weight:500}.lim.dim .bar i{opacity:.6}
+.msg{padding:15px 20px 16px}.msg b{display:block;font-size:13px}.msg p{margin:4px 0 0;color:var(--tx2);font-size:11.5px;line-height:1.5}
+.bt{display:flex;gap:10px;margin-top:12px}
+.bt button{flex:1;height:28px;border-radius:14px;background:var(--btn)!important;text-align:center!important;font-size:13px!important;font-weight:500}
+.bt .pri{background:var(--accent)!important;color:#fff}.bt .del{background:#ff3b30!important;color:#fff}
+.conf{padding:14px 20px 16px;position:relative}.conf b{font-size:13px}.conf p{margin:8px 0 0;color:var(--tx2);font-size:11.5px;line-height:1.5}
+.spin{width:16px;height:16px;border-radius:50%;background:conic-gradient(from 0deg,transparent,var(--tx2));-webkit-mask:radial-gradient(circle,transparent 5px,#000 5.5px);mask:radial-gradient(circle,transparent 5px,#000 5.5px)}
+.bubbles{position:absolute;left:28px;right:28px;bottom:150px;display:flex;flex-direction:column;gap:14px}
+.bubbles .me{align-self:flex-end;background:var(--btn);border-radius:17px;padding:8px 14px}
+.comp{position:absolute;left:20px;right:20px;bottom:8px;height:57px;border-radius:28px;background:var(--glass);box-shadow:inset 0 0 0 1px var(--gb);display:flex;align-items:center;padding:0 46px;color:var(--tx2)}
+
+/* sheet */
+.veil{position:absolute;inset:0;background:rgba(0,0,0,.28);z-index:20}
+.sheet{position:absolute;left:50%;top:52px;width:560px;margin-left:-280px;background:var(--page);border-radius:14px;z-index:21;padding:0 20px 24px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.sn{height:56px;display:flex;align-items:center;justify-content:space-between;font-weight:700;margin-bottom:4px}
+.sn button{height:32px;padding:0 14px!important;border-radius:16px;background:var(--glass)!important;box-shadow:inset 0 0 0 1px var(--gb);font-weight:500}
+.sn .go{background:var(--accent)!important;color:#fff;box-shadow:none}.sn .go.off{opacity:.4}
+
+/* ---------- phone ---------- */
+.ph{width:402px;height:874px;border-radius:50px;background:var(--page);font-size:17px;box-shadow:0 0 0 1px rgba(0,0,0,.22)}
+.ph .sb{position:absolute;top:0;left:0;right:0;height:54px;padding:21px 34px 0 56px;display:flex;justify-content:space-between;font-weight:600;font-size:17px;z-index:6}
+.ph .big{position:absolute;top:120px;left:16px;font-size:34px;font-weight:700}
+.ph .list{top:168px;padding:0 16px;bottom:auto}
+.ph .grp{background:var(--card);border-radius:26px;overflow:hidden;margin-bottom:24px}
+.ph .lh{height:auto;font-size:17px;padding:0 17px 8px;color:var(--hd)}
+.ph .r{height:76px;padding:0 16px 0 15px;border-radius:0;gap:12px;position:relative}
+.ph .r.one{height:63px}
+.ph .r .t{font-size:17px;font-weight:400}.ph .r .s{font-size:15px;margin-top:3px}
+.ph .r+.r::before{content:"";position:absolute;left:54px;right:16px;top:0;height:.5px;background:var(--sep)}
+.ph .r .ch{margin:0 -6px 0 -4px}
+.ph .badge{font-size:12px}.ph .tag{font-size:11px}
+.ph .foot{bottom:41px;height:48px}
+.ph .pill{height:48px;border-radius:24px;font-size:15px!important;padding:0 18px 0 15px!important;gap:9px;box-shadow:inset 0 0 0 1px var(--gb),0 4px 16px rgba(0,0,0,.06)}
+.ph .nav{position:absolute;top:56px;left:0;right:0;height:56px;display:grid;place-items:center;font-weight:600;z-index:5}
+.ph .scroll{top:112px}
+.ph .content{width:auto;padding:16px 16px 64px}
+.ph .sec{margin-bottom:26px}
+.ph .sh{font-size:17px;padding:0 17px 9px}.ph .sf{font-size:13px;padding:8px 17px 0}
+.ph .card{border-radius:26px}
+.ph .c{min-height:52px;padding:4px 17px;gap:12px}.ph .c .cc{font-size:13px}.ph .c .ci{width:24px}
+.ph .c+.c::before,.ph .lim+.lim::before,.ph .lim+.c::before,.ph .conf+.c::before,.ph .c+.conf::before{left:17px;right:17px;height:.5px}
+.ph .lim{padding:15px 17px 16px}.ph .l2{font-size:13px}.ph .bar{margin:11px 0}
+.ph .msg{padding:17px}.ph .msg b,.ph .conf b{font-size:17px}.ph .msg p,.ph .conf p{font-size:15px}
+.ph .conf{padding:16px 17px 18px}
+.ph .bt button{height:50px;border-radius:25px;font-size:17px!important}
+.ph .sheet{left:0;right:0;width:auto;margin:0;top:64px;bottom:0;border-radius:38px 38px 0 0;padding:6px 16px}
+.ph .sn{font-size:17px;height:68px;padding:0 4px}.ph .sn button{height:44px;border-radius:22px;font-size:17px!important}
+.home{position:absolute;bottom:8px;left:50%;width:140px;height:5px;margin-left:-70px;border-radius:3px;background:var(--tx);z-index:9}
+.strip{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px}
+.st{width:310px}.st .fr{height:62px;width:310px;position:relative;border-radius:10px;overflow:hidden;background:var(--side);box-shadow:0 0 0 1px rgba(0,0,0,.1);color:var(--tx);line-height:1.25}
+:where(.st .fr) :where(button){font:inherit;color:inherit;border:0;background:none;padding:0}
+.st .fr .foot{bottom:14px}.st small{font-size:12.5px;color:#57575c;display:block;margin-top:5px;line-height:1.45}
+</style></head><body><main>
+
+<h1>Claude 账号与用量</h1>
+<p>左边栏底部中间加一项，一直看得见，直接写最紧的那条额度还剩多少。点开是一页「Claude 账号」：还剩多少、什么时候重置、会不会用完，下面是账号和登录。登录过期时，同一页最上面就是「重新登录」。</p>
+<p class="cap">稿子里的账号、数字、agent 都是编的。下面这个可以点：切状态，点底部那一项开页面，点「重新登录」「换个账号」「退出登录」。</p>
+
+<div class="tabs" id="tabs"></div>
+<div class="row" id="live"></div>
+
+<h2>要你定的（4 件）</h2>
+<p class="cap">第一步（入口、页面、重新登录、换账号）我估约 6 小时，另加选上的下面几项。</p>
+<div class="dec">
+<div><b>1. 放在哪</b>我选底栏中间（＋ 和设置之间）。它一直在，列表多长都看得见，也不占行。另一种是列表最后加一行，在「主机与设备」上面，样子最统一，但 agent 一多就要滚到底才看得见。两种在上面都能切。</div>
+<div><b>2. 额度用完后，恢复时自动接着做</b>我建议做。现在 agent 停了就停了，还会提示「模型那边太忙了」，说得不对。登录过期那套「记下没做完的，恢复后接着做」可以直接用在这里。大约多 2 小时。</div>
+<div><b>3. 「本周谁用得多」</b>我建议第二步再做。Claude 不给每个 agent 的用量，只能从对话记录估算占比，第一次扫描量大。第 5 节有图，不做也不影响这页。</div>
+<div><b>4. 退出登录</b>我建议做，放最后一行，先问再退。它会让所有东西停下，平时用不到，但换电脑、交还电脑时需要。主机上要新写，约 1.5 小时。</div>
+</div>
+
+<h2>1. 入口</h2>
+<p>名字不写「用量」两个字，直接写答案：「本周剩 43%」。圆环是已用的比例，和指示器外圈同一套颜色：平时灰，用到 80% 橙，95% 红。取已用比例最高的那条，所以它说的总是最先碰到的。</p>
+<ul><li>＋ 和设置之间本来就空着，用的是同一种玻璃、同样高度（Mac 34，手机 48）。Mac 的「有新版本」提示已经用过这种胶囊，不是新样式。</li>
+<li>不放在最上面：它一天看几次，不该压过 Palo 和工作区。不放进设置：藏起来就等于没有。</li>
+<li>底栏换成系统的软边（标题栏已经这么用）：行滑到它下面会淡掉。现在「主机与设备」滑到 ＋ 下面会叠在一起，这样也一并没了。</li>
+<li>它的页面开着时，这一项变成和选中行一样的灰。</li></ul>
+<div class="row" id="entry"></div>
+<h3>各种状态下这一项怎么写</h3>
+<div class="strip" id="pills"></div>
+
+<h2>2. 页面</h2>
+<p>Mac 在主区打开，标题在标题栏中间，和「主机与设备」一样；内容宽 664，和设置页一样，不拉满，长条才读得清。手机是推进去的一页。</p>
+<ul><li>每条额度三行：名字和剩余、进度条、重置时间和会不会用完。</li>
+<li>条填的是已用的部分，和上下文那条一个方向，也和 Claude Code 的 /usage 一致；空着的就是剩的。</li>
+<li>条上的细线是时间走到哪儿了。条没到细线，说明比时间走得慢；过了细线，就是用得偏快。</li>
+<li>「会不会用完」只按这个窗口到现在的平均速度算，算法在第 6 节。窗口刚开始（不到 10%）不写。</li></ul>
+<div class="scale"><div id="pmac"></div></div><div style="height:18px"></div><div class="scale"><div id="pmacd"></div></div>
+<div class="row" id="pph"></div>
+
+<h2>3. 各种状态</h2>
+<div class="row four" id="states"></div>
+<h3>用完了，Mac</h3>
+<p class="cap">停下的 agent 用闲着的灰色图标，不用橙色：它们没在等你。第二行写几点接着做。本来就在等你的不变。终端里开着的 agent，Palo 不会替它接着做。</p>
+<div class="scale"><div id="hitmac"></div></div>
+
+<h2>4. 登录</h2>
+<div class="row four" id="login"></div>
+<div class="tw"><table><thead><tr><th>动作</th><th>主机现在能不能</th><th>要新做的</th><th>正在干活的 agent</th><th>要不要先问</th></tr></thead><tbody>
+<tr><td>重新登录（已过期）</td><td><span class="ok">能</span>，整套都有：授权页、粘贴代码、恢复后接着做</td><td>只是多一个入口：这一页最上面</td><td>已经停了，登录好后接着做</td><td>不问</td></tr>
+<tr><td>重新登录（还没过期）</td><td><span class="mid">基本能</span>。开始登录的代码不检查是否过期（读代码）</td><td>登录页的字现在写死「过期了」「停下的事会接着做」，要按情况写；成功后主机要把空闲的进程重开</td><td>不打断，做完这一轮再重开（推断，要实测）</td><td>不问。登录成功之前一切照旧（推断，要实测）</td></tr>
+<tr><td>换个账号</td><td><span class="mid">同一套登录</span>，主机不能替你选账号，是你在授权页里换</td><td>登录前后比对邮箱，说清换成了谁；空闲的马上重开，在干的做完这一轮再换</td><td>这一轮还用旧账号，下一轮用新账号（推断，要实测）</td><td>先问</td></tr>
+<tr><td>退出登录</td><td><span class="no">还没有</span>。命令有：<code>claude auth logout</code>（只看了帮助，没有跑过）</td><td>新接口；先停下所有在跑的并记下来；「在电脑上登录了」的检测要改，它靠比对钥匙串日期，退出后那一项没了</td><td>先停下，重新登录后接着做</td><td>先问，红色</td></tr>
+<tr><td>存几个账号来回切</td><td><span class="no">做不到</span>。Claude Code 默认一台电脑只存一个登录</td><td>每次都要走一遍授权</td><td></td><td></td></tr>
+</tbody></table></div>
+<p class="cap">账号写邮箱。现在 App 里哪儿都不显示账号，主机也没读过；这页要新加。只在这页显示，不进日志和推送。</p>
+
+<h2>5. 第二步：本周谁用得多</h2>
+<div class="row" id="who"></div>
+
+<h2>6. 每个数从哪来</h2>
+<p class="cap">「看到」是 2026-11 在 SDK 0.3.322 上真的调了一次、没发任何消息，只看字段和类型。「读到」是只在类型说明里有。</p>
+<div class="tw"><table><thead><tr><th>页面上的</th><th>来自</th><th>可靠吗</th></tr></thead><tbody>
+<tr><td>有哪几条额度、顺序、名字</td><td><code>rate_limits.limits[]</code>：<code>kind</code> <code>group</code> <code>scope.model.display_name</code></td><td><span class="mid">看到有</span>，但这个方法的返回类型里没写它（只在另一个类型 <code>SDKUsageReport</code> 里）。没有时退回 <code>five_hour</code> <code>seven_day</code> <code>model_scoped</code></td></tr>
+<tr><td>剩 %</td><td>100 减 <code>percent</code>（或 <code>utilization</code>）</td><td><span class="ok">看到</span>，都是整数。<b>看到过 five_hour 是 null</b>，所以有几条画几条，不写死。<code>session</code> 那条叫「5 小时」是读说明推的</td></tr>
+<tr><td>几点重置</td><td><code>resets_at</code></td><td><span class="ok">看到</span>，标准时间。类型允许 null，空就不写这句</td></tr>
+<tr><td>时间细线、会不会用完</td><td>窗口开头 = <code>resets_at</code> 减 5 小时或 7 天；用完时刻 = 开头 + 已过时间 ÷ 已用比例</td><td><span class="mid">自己算的</span>。只是平均速度，不知道你接下来要干什么。早于重置才写时间</td></tr>
+<tr><td>圆环和条的颜色</td><td>我们自己的 80% / 95%</td><td><span class="ok">和指示器一致</span>。Claude 也给 <code>severity</code>，不用</td></tr>
+<tr><td>套餐名</td><td><code>subscription_type</code>、<code>accountInfo().subscriptionType</code></td><td><span class="ok">看到</span>。只有 pro / max / team / enterprise，分不出 Max 的档位</td></tr>
+<tr><td>邮箱、组织</td><td><code>accountInfo()</code></td><td><span class="ok">看到</span>。两台主机邮箱和组织都一样就当同一个账号</td></tr>
+<tr><td>没有套餐额度</td><td><code>rate_limits_available</code> 为 false；<code>apiProvider</code> <code>apiKeySource</code> 说是哪种</td><td><span class="mid">读到</span>。说明里写订阅账号缺权限时也会是 false，要单独写一句</td></tr>
+<tr><td>用完了（马上知道）</td><td>轮次里的 <code>rate_limit_event</code>：<code>status: rejected</code>、<code>resetsAt</code></td><td><span class="mid">读到</span>，没发消息所以没看到。主机现在直接丢掉它</td></tr>
+<tr><td>停在这里的 agent</td><td>轮次失败且 <code>errorCategory</code> 是 <code>rate_limit</code></td><td><span class="mid">读到</span>。现在和「服务器太忙」混在一起，要结合上一行分开</td></tr>
+<tr><td>额外用量开着</td><td><code>extra_usage.is_enabled</code></td><td><span class="ok">看到</span>。只写开没开，不写钱；用到 80% 才出现</td></tr>
+<tr><td>谁用得多</td><td>主机扫对话记录（<code>SpendMeter</code> 现在按价钱算每天每个会话），换成占比</td><td><span class="mid">估算</span>。SDK 的 <code>behaviors.agents</code> 只按子 agent 类型分，不认识 Palo 的 agent</td></tr>
+</tbody></table></div>
+<h3>多久更新一次</h3>
+<ul><li>向正开着的助理进程问，不另起进程。看到：第一次 0.2 秒，紧接着再问 4 毫秒，说明它自己有缓存；另起一个进程要 4 秒。</li>
+<li>页面开着每分钟问一次；有 agent 在干，每 10 分钟一次；都闲着就不问。到了重置时间问一次。轮次里带来的额度消息到了就更新。</li>
+<li>一直不问 <code>behaviors</code>：它要扫最近 7 天的全部对话，看到要 2.7 秒。</li></ul>
+<h3>拿不到的</h3>
+<ul><li>具体多少条、多少 token，Claude 只给百分比。</li>
+<li>Max 是哪一档、每天用了多少、每个 agent 占额度的真实比例。</li>
+<li>这个方法名字里就写着「实验，别依赖」，SDK 升级可能没了或改了。没了就退到只显示账号和登录，入口写「Claude 账号」。</li></ul>
+</main>
+
+<script>
+/* ---------- icons ---------- */
+const S=(d,w=18,sw=1.7)=>`<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const I={
+side:S('<rect x="2.5" y="4.5" width="19" height="15" rx="3"/><path d="M9 4.5v15M5.5 8.5h1M5.5 11.5h1"/>',20,1.5),
+pane:S('<rect x="2.5" y="4.5" width="19" height="15" rx="3"/><path d="M15 4.5v15M17.5 8.5h1M17.5 11.5h1"/>',20,1.5),
+plus:w=>S('<path d="M12 4v16M4 12h16"/>',w,2.4),
+gear:w=>S('<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7"/><path d="M12 2.2V5M12 19v2.8M2.2 12H5M19 12h2.8M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/>',w,2),
+grid:S('<rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/>',17,1.5),
+box:S('<rect x="3" y="4" width="18" height="5" rx="1.4"/><path d="M4.5 9v8.5a2.5 2.5 0 0 0 2.5 2.5h10a2.5 2.5 0 0 0 2.5-2.5V9M9.5 13h5"/>',18,1.5),
+desk:S('<rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M2.5 13.5h19M9 20.5h6M12 17v3.5"/>',18,1.5),
+down:S('<path d="M5 9l7 7 7-7"/>',13,3),right:S('<path d="M9 5l7 7-7 7"/>',12,2.6),
+back:w=>S('<path d="M15 4l-8 8 8 8"/>',w,2.4),
+again:S('<path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20.5 3v4.6h-4.6"/>',18,1.8),
+people:S('<path d="M4 8h14M14.5 4.5 18 8l-3.5 3.5M20 16H6M9.5 12.5 6 16l3.5 3.5"/>',18,1.8),
+out:S('<path d="M14 4.5H7A2.5 2.5 0 0 0 4.500 7v10A2.5 2.5 0 0 0 7 19.500h7M10.500 12H21M17.500 8.500 21 12l-3.500 3.500"/>',18,1.8),
+key:S('<circle cx="8" cy="12" r="4.500"/><path d="M12.500 12H21v3.500M17 12v2.500"/>',15,1.9),
+person:S('<circle cx="12" cy="8.500" r="4"/><path d="M4 20.500c1-4 4-6 8-6s7 2 8 6"/>',18,1.7),
+alert:c=>`<svg width="16" height="16" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="${c}"/><path d="M12 6v7.500" stroke="#fff" stroke-width="2.600" stroke-linecap="round"/><circle cx="12" cy="17.500" r="1.700" fill="#fff"/></svg>`,
+safari:S('<circle cx="12" cy="12" r="9"/><path d="M15.500 8.500 13.500 13.500 8.500 15.500 10.500 10.500z"/>',18,1.6),
+paste:S('<rect x="5" y="5" width="14" height="16" rx="2.500"/><path d="M9 5.500V4a1.500 1.500 0 0 1 1.500-1.500h3A1.500 1.500 0 0 1 15 4v1.500"/>',16,1.8),
+check:c=>`<svg width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="${c}"/><path d="M7 12.500l3.500 3.500L17 8.500" fill="none" stroke="#fff" stroke-width="2.400" stroke-linecap="round" stroke-linejoin="round"/></svg>`};
+const orb='<svg width="30" height="30" viewBox="0 0 30 30"><defs><radialGradient id="a" cx=".38" cy=".3" r=".8"><stop offset="0" stop-color="#e58fca"/><stop offset=".55" stop-color="#bf4795"/><stop offset="1" stop-color="#84306f"/></radialGradient><radialGradient id="b" cx=".4" cy=".3" r=".8"><stop offset="0" stop-color="#a99be8"/><stop offset="1" stop-color="#4c3c93"/></radialGradient></defs><ellipse cx="14" cy="28" rx="11" ry="1.600" fill="rgba(120,40,90,.18)"/><circle cx="12.500" cy="16" r="9" fill="url(#a)"/><circle cx="22" cy="10.500" r="5.500" fill="url(#b)"/></svg>';
+function glyph(st,z=22){const c={work:'#0A85FF',wait:'#FF9F0A',done:'#30D158',idle:'#8E8E93'}[st];
+ const in_={work:'<path d="M9.500 7.500 17 12l-7.500 4.500z" fill="#fff"/>',wait:'<text x="12" y="16.500" text-anchor="middle" font-size="13" font-weight="800" fill="#fff" font-family="ui-rounded,-apple-system">?</text>',done:'<path d="M7 12.500l3.500 3.500L17 8.500" fill="none" stroke="#fff" stroke-width="2.400" stroke-linecap="round" stroke-linejoin="round"/>'}[st];
+ return st==='idle'?`<svg width="${z}" height="${z}" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.500" fill="none" stroke="${c}" stroke-width="2.600"/><circle cx="12" cy="12" r="4.600" fill="${c}"/></svg>`:`<svg width="${z}" height="${z}" viewBox="0 0 24 24"><circle cx="12" cy="12" r="12" fill="${c}"/>${in_}</svg>`;}
+const tone=p=>p>=95?'#FF453A':p>=80?'#FF9F0A':null;
+function ring(p,z){const r=8.500,C=2*Math.PI*r,c=tone(p)||'var(--tx)';return `<svg width="${z}" height="${z}" viewBox="0 0 22 22"><circle cx="11" cy="11" r="${r}" fill="none" stroke="var(--tx)" stroke-opacity=".18" stroke-width="3.600"/>${p>0?`<circle cx="11" cy="11" r="${r}" fill="none" stroke="${c}" ${tone(p)?'':'stroke-opacity=".62"'} stroke-width="3.600" stroke-linecap="round" stroke-dasharray="${C*Math.min(p,100)/100} ${C}" transform="rotate(-90 11 11)"/>`:''}</svg>`;}
+
+/* ---------- data (invented) ---------- */
+const lim=(n,used,t,reset,pace,warn)=>({n,used,t,reset,pace,warn});
+const WK=[lim('本周',57,62,'周四 09:00 重置，还有 2 天 16 小时','按平均速度够用到重置'),lim('本周 · Opus',44,62,'周四 09:00 重置','按平均速度够用到重置')];
+const DATA={
+ok:[lim('5 小时',48,63,'18:40 重置，还有 1 小时 52 分','按平均速度够用到重置'),...WK],
+near:[lim('5 小时',84,63,'18:40 重置，还有 1 小时 52 分','按平均速度 17:24 左右用完',1),...WK],
+hit:[lim('5 小时',100,63,'18:40 重置，还有 1 小时 52 分',''),...WK]};
+const COMP=[lim('5 小时',31,36,'20:00 重置，还有 3 小时 12 分','按平均速度够用到重置'),lim('本周',88,83,'明天 22:00 重置，还有 1 天 5 小时','按平均速度明天 12 点左右用完',1)];
+const ST={ok:'平时',near:'快用完',hit:'用完了',loading:'还没读到',stale:'主机离线',expired:'登录过期',api:'API 密钥',diff:'两台，两个账号',same:'两台，同一账号'};
+function pillOf(s){return{
+ ok:[57,'本周剩 43%'],near:[84,'5 小时剩 16%'],hit:[100,'5 小时用完，18:40 恢复'],loading:[0,'<span class="mute">用量</span>'],stale:[57,'<span class="mute">本周剩 43% · 3 小时前</span>'],
+ expired:['!','登录过期'],api:['k','API 密钥'],diff:[88,'公司 · 本周剩 12%'],same:[57,'本周剩 43%']}[s];}
+function pill(s,sel,z){const[p,t]=pillOf(s);const ic=p==='!'?I.alert('#FF9F0A'):p==='k'?I.key:(s==='stale'?`<span style="opacity:.5">${ring(p,z)}</span>`:ring(p,z));return `<button class="pill${sel?' sel':''}" data-go="page">${ic}<span>${t}</span></button>`;}
+
+/* ---------- page sections ---------- */
+function limRow(l,dim){const c=tone(l.used)||'var(--fill)';
+ return `<div class="lim${dim?' dim':''}"><div class="l1"><span>${l.n}</span><b>${l.used>=100?'用完了':'剩 '+(100-l.used)+'%'}</b></div><div class="bar"><i style="width:${l.used}%;background:${c}"></i>${l.used<100&&l.t?`<u style="left:${l.t}%"></u>`:''}</div><div class="l2"><span>${l.reset}</span>${l.pace?`<span class="w">${l.pace}</span>`:''}</div></div>`;}
+const sec=(h,body,f)=>`<div class="sec">${h?`<div class="sh">${h}</div>`:''}<div class="card">${body}</div>${f?`<div class="sf">${f}</div>`:''}</div>`;
+const TICK='条上的细线是时间走到哪儿了。';
+const usage=(ls,f,dim,h='还剩多少')=>sec(h,ls.map(l=>limRow(l,dim)).join(''),f);
+const EXTRA='<div class="c">额外用量<span class="v" style="color:var(--tx)">没开，用完会停下</span></div>';
+function account(o={}){const u=o.ui||{},d=o.off?' dim':'';
+ const conf=k=>k==='switch'?`<div class="conf"><b>换一个 Claude 账号？</b><p>Palo、所有 agent 和电脑终端里的 claude 都会换过去。正在干的先做完这一轮再换，对话和记忆都在。新账号登录成功之前，一切照旧。</p><div class="bt"><button data-ui="none">算了</button><button class="pri" data-ui="sheet-switch">换账号</button></div></div>`
+  :`<div class="conf"><b>退出 Claude 登录？</b><p>Palo 和所有 agent 会停下，定时安排不跑，电脑终端里的 claude 也一起退出。对话和记忆都在，重新登录后接着做。</p><div class="bt"><button data-ui="none">算了</button><button class="del" data-ui="none">退出登录</button></div></div>`;
+ return sec(o.h??'账号',`<div class="c"><span class="ci" style="color:var(--tx2)">${I.person}</span><div><div>${o.mail||'lin@example.com'}</div><div class="cc">${o.plan||'Claude Max'}</div></div></div>`
+ +`<button class="c${d}" data-ui="sheet-login"><span class="ci">${I.again}</span>重新登录</button>`
+ +`<button class="c${d}" data-ui="conf-switch"><span class="ci">${I.people}</span>换个账号</button>${u.conf==='switch'?conf('switch'):''}`
+ +`<button class="c red${d}" data-ui="conf-logout"><span class="ci">${I.out}</span>退出登录</button>${u.conf==='logout'?conf('logout'):''}`,o.f??'Palo 和所有 agent 都用这个登录。');}
+const dotH=(n,on=1)=>`<i style="width:7px;height:7px;border-radius:4px;background:${on?'#30D158':'#8e8e93'};display:inline-block"></i>${n}`;
+const agentC=(st,n,v)=>`<div class="c"><span class="ci">${glyph(st,18)}</span>${n}<span class="v">${v}</span></div>`;
+function page(s,ui={}){
+ const A=(o={})=>account({...o,ui});
+ switch(s){
+ case'ok':return usage(DATA.ok,TICK+'1 分钟前更新。')+A();
+ case'near':return sec('还剩多少',DATA.near.map(l=>limRow(l)).join('')+EXTRA,TICK+'1 分钟前更新。')+A();
+ case'hit':return `<div class="sec"><div class="card"><div class="msg"><b>5 小时额度用完了，18:40 恢复</b><p>Palo 和 2 个 agent 停在这里，到点自己接着做。想现在继续，可以换个账号。</p></div>${agentC('idle','网站帮手','18:40 接着做')}${agentC('idle','笔记整理','18:40 接着做')}</div></div>`+usage(DATA.hit,TICK+'刚刚更新。')+A();
+ case'loading':return sec('还剩多少','<div class="c" style="justify-content:center"><span class="spin"></span></div>')+A({mail:'正在读取…',plan:'Claude'});
+ case'stale':return `<div class="sec"><div class="card"><div class="msg"><b>连不上主机</b><p>下面是 13:52 的数，连上就更新。</p></div></div></div>`+usage(DATA.ok.map(l=>({...l,t:0,pace:'',reset:l.reset.split('，')[0]})),'',1)+A({off:1});
+ case'expired':return `<div class="sec"><div class="card"><div class="msg"><b>登录过期了</b><p>Palo、2 个 agent 和定时安排 16:20 起都停着。登录好后会接着做。</p><div class="bt"><button class="pri" data-ui="sheet-login">重新登录</button></div></div></div></div>`+usage(DATA.ok.map(l=>({...l,t:0,pace:'',reset:l.reset.split('，')[0]})),'16:18 的数。',1)+sec('账号',`<div class="c"><span class="ci" style="color:var(--tx2)">${I.person}</span><div><div>lin@example.com</div><div class="cc">Claude Max · 已过期</div></div></div>`,'换成另一个账号也可以，授权时选它就行。');
+ case'api':return sec('还剩多少','<div class="c">这种登录按量计费，没有套餐额度</div>')+sec('账号',`<div class="c"><span class="ci" style="color:var(--tx2)">${I.key}</span><div><div>API 密钥</div><div class="cc">电脑上设的 ANTHROPIC_API_KEY</div></div></div>`,'密钥在电脑上改。设着密钥时，登录 Claude 账号不起作用。');
+ case'diff':return usage(COMP,'',0,dotH('公司'))+A({h:'',mail:'lin@company.example',plan:'Claude Team',f:'「公司」上的 Palo 和 agent 用这个登录。'})+usage(DATA.ok,TICK,0,dotH('家里'))+account({h:'',f:'「家里」上的 Palo 和 agent 用这个登录。'});
+ case'same':return usage(DATA.ok,TICK+'两台主机用同一个账号，额度合在一起。')+A({h:dotH('家里')})+account({h:dotH('公司')});
+ }}
+function sheet(k,step){
+ const sw=k==='switch',ex=k==='expired';
+ const body=step==='done'?sec('',`<div class="c" style="color:#248a3d;gap:10px">${I.check('#30D158')}<span>${sw?'已换成 mei@example.com':ex?'登录好了，停下的事会接着做':'登录好了，还是 lin@example.com'}</span></div>`,sw?'空闲的 agent 已经换好，1 个正在干的做完这一轮就换。':'')
+ :`<div class="sf" style="padding:0 20px 18px;color:var(--tx)">${sw?'在授权页里先换到你要用的账号，同意后把页面上的代码粘贴回来。':ex?'主机上的 Claude Code 登录过期了。在授权页里同意，再把页面上的代码粘贴回来。':'在授权页里同意，再把页面上的代码粘贴回来。做完之前，现在的登录照常用。'}</div>`
+ +sec('1. 授权',`<button class="c" data-ui="step-code" style="color:var(--accent)"><span class="ci">${I.safari}</span>打开授权页</button>`)
+ +sec('2. 代码',`<div class="c"><span style="color:${step==='code'?'var(--tx)':'var(--tx2)'}">${step==='code'?'k7Qx…f2Lm':'粘贴代码'}</span><span class="v">${I.paste}</span></div>`);
+ return `<div class="veil"></div><div class="sheet"><div class="sn">${step==='done'?'<span style="width:60px"></span>':'<button data-ui="none">取消</button>'}<span>${sw?'换个账号':'重新登录'}</span>${step==='done'?'<button class="go" data-ui="none">完成</button>':`<button class="go${step==='code'?'':' off'}" data-ui="${step==='code'?'step-done':''}">登录</button>`}</div>${body}</div>`;}
+function sheetHTML(ui){return ui&&ui.sheet?sheet(ui.sheet,ui.step):'';}
+
+/* ---------- frames ---------- */
+const row=(ic,t,s,o={})=>`<button class="r${o.sel?' sel':''}${o.in?' in':''}${s==null?' one':''}${o.q?' q':''}" data-go="${o.go||'chat'}">${o.ch?`<span class="ch">${I.down}</span>`:''}<span class="ic">${ic}</span><span class="tt"><span class="t" style="display:block">${t}</span>${s!=null?`<span class="s" style="display:block">${s}</span>`:''}</span>${o.b?`<span class="badge">${o.b}</span>`:''}${o.n?`<span class="n">${o.n}</span>`:''}</button>`;
+function listRowUsage(s,sel){const[p,t]=pillOf(s);const ic=p==='!'?I.alert('#FF9F0A'):p==='k'?I.key:ring(p,20);return row(ic,'Claude 用量',t.replace(/<[^>]+>/g,''),{go:'page',sel});}
+function rows(s,o,ph){
+ const hit=s==='hit',ex=s==='expired',H='额度用完，18:40 接着做',E='登录过期，停下了';
+ const sub=(x,y)=>hit?H:ex?E:x;
+ const G=ph?(h,b)=>`${h?`<div class="lh">${h}</div>`:''}<div class="grp">${b}</div>`:(h,b)=>(h?`<div class="lh">${h}</div>`:'')+b;
+ const last=(o.place==='row'?listRowUsage(s,o.page):'')+row(I.desk,'主机与设备','这台 Mac');
+ return G('',row(orb,'Palo',hit?H:ex?E:'2 个 agent 在等你',{b:9}))
+ +G('工作区',row(I.grid,'官网改版','2 个 agent',{ch:1,b:hit||ex?0:1})+row(glyph(hit||ex?'idle':'wait'),'网站帮手',sub('在跑 npm test'),{in:!ph,sel:!o.page&&!ph,b:hit||ex?0:1})+(ph?'':row(glyph('idle'),'博客改版','评论区的样式改好了，等你有空看看。',{in:1})))
+ +G('agent',row(glyph(hit||ex?'idle':'done'),'笔记整理',sub('这周的 12 篇笔记都归好类了，标签也补上了。'))+row(glyph(hit||ex?'idle':'work'),'修登录跳转','终端里开着 · 在跑登录相关的测试，还剩 3 个')+row(glyph('wait'),'问卷数据清洗','问你缺的数据怎么处理',{b:1})+row(I.box,'已归档',null,{q:1,n:1}))
+ +G('好友',row('<span class="av">家<i style="position:absolute;right:0;bottom:0;width:6px;height:6px;border-radius:3px;background:#30D158;box-shadow:0 0 0 1.5px var(--side)"></i></span>','家人<span class="tag">家人朋友</span>','Palo：收到，路上小心。')+row('<span class="av">小</span>','小林<span class="tag">家人朋友</span>','Palo：明天的资料发你邮箱了，记得看一下。'))
+ +(ph?`<div class="grp">${last}</div>`:'<div style="height:14px"></div>'+last);}
+function mac(o){const s=o.s||'ok',p=o.page;
+ const foot=`<div class="foot"><div class="circ" style="left:13px;top:0;width:34px;height:34px">${I.plus(15)}</div>${o.place==='row'?'':pill(s,p,15)}<div class="circ" style="right:13px;top:0;width:34px;height:34px">${I.gear(18)}</div></div>`;
+ return `<div class="mac ${o.d?'D':'L'}${o.side?' sideonly':''}"${o.h?` style="height:${o.h}px"`:''}><div class="side"><div class="lights"><i></i><i></i><i></i></div><div class="circ" style="left:95px;top:7px;width:38px;height:38px">${I.side}</div><div class="list${o.end?' end':''}">${rows(s,o,0)}</div><div class="fade"></div>${o.end?'<div style="position:absolute;top:0;left:0;right:0;height:74px;z-index:2;background:linear-gradient(var(--side) 55%,transparent)"></div>':''}${foot}</div>
+ <div class="mainarea${p?' page':''}"><div class="circ" style="right:7px;top:7px;width:38px;height:38px">${I.pane}</div>${p?`<div class="mt">Claude 账号</div><div class="scroll"><div class="content">${page(s,o.ui)}</div></div>${sheetHTML(o.ui)}`
+ :`<div class="bubbles"><span>明白，登录页先放着。列表页做完了，跑一下构建看看有没有报错。</span><span class="me">跑测试</span><span class="me">先把首页改回去</span></div><div class="comp">按住说话，轻点打字</div>`}</div></div>`;}
+const sb='<div class="sb"><span>16:48</span><svg width="66" height="16" viewBox="0 0 66 16" fill="currentColor"><path d="M1 12h3v3H1zM6 9h3v6H6zM11 6h3v9h-3zM16 3h3v12h-3zM34 13l-3-3a4 4 0 0 1 6 0zM28 7.500l-1.700-1.700a10.500 10.500 0 0 1 15.400 0L40 7.500a8 8 0 0 0-12 0z"/><rect x="46" y="3" width="17" height="10" rx="3"/></svg></div>';
+function ph(o){const s=o.s||'ok',T=`<div class="ph ${o.d?'D':'L'}">${sb}`;
+ if(!o.page)return T+`<div class="big">Palo</div><div class="list" style="${o.shift?`top:auto;bottom:100px`:''}">${rows(s,o,1)}</div>${o.shift?'<div style="position:absolute;top:0;left:0;right:0;height:60px;background:var(--page)"></div>'+sb:''}<div class="fade"></div><div class="foot"><div class="circ" style="left:14px;top:0;width:48px;height:48px">${I.plus(19)}</div>${o.place==='row'?'':pill(s,0,19)}<div class="circ" style="right:14px;top:0;width:48px;height:48px">${I.gear(22)}</div></div><div class="home"></div></div>`;
+ return T+`<div class="nav">Claude 账号</div><button class="circ" data-go="list" style="left:16px;top:62px;width:44px;height:44px">${I.back(20)}</button><div class="scroll"><div class="content">${page(s,o.ui)}</div></div>${sheetHTML(o.ui)}<div class="home"></div></div>`;}
+
+/* ---------- zoom ---------- */
+const vw=()=>document.documentElement.clientWidth;
+const zm=w=>{const a=Math.min(1280,vw())-(vw()<760?28:48);return vw()<760?Math.min(w<=402?1:.62,w<=402?a/w:1):Math.min(1,a/w);};
+const Z=(html,w,max=1)=>`<div style="zoom:${Math.min(zm(w),max)}">${html}</div>`;
+const fig=(html,w,cap,max)=>`<figure style="max-width:100%"><div class="scale" style="padding:2px">${Z(html,w,max)}</div><figcaption>${cap}</figcaption></figure>`;
+const $=id=>document.getElementById(id);
+
+/* ---------- live ---------- */
+const L={s:'ok',d:0,place:'foot',page:1,phpage:1,ui:{}};
+function live(){
+ $('tabs').innerHTML=Object.entries(ST).map(([k,v])=>`<button data-s="${k}" class="${L.s===k?'on':''}">${v}</button>`).join('')+`<span class="gap"></span><button data-d="0" class="${L.d?'':'on'}">浅色</button><button data-d="1" class="${L.d?'on':''}">深色</button><span class="gap"></span><button data-p="foot" class="${L.place==='foot'?'on':''}">入口在底栏</button><button data-p="row" class="${L.place==='row'?'on':''}">入口是一行</button>`;
+ const w=vw()>=1200,avail=Math.min(1280,vw())-48;const mz=w?(avail-30)/(1200+402*.87+0):zm(1200);
+ $('live').style.flexWrap=w?'nowrap':'wrap-reverse';
+ $('live').innerHTML=`<div class="scale" style="padding:2px"><div style="zoom:${w?mz:zm(1200)}">${mac({...L,end:L.place==='row'})}</div></div><div style="zoom:${w?mz*.87:zm(402)}">${ph({...L,page:L.phpage,shift:L.place==='row'})}</div>`;
+}
+document.addEventListener('click',e=>{
+ const t=e.target.closest('#tabs button');
+ if(t){if(t.dataset.s){L.s=t.dataset.s;L.ui={};}if(t.dataset.d)L.d=+t.dataset.d;if(t.dataset.p)L.place=t.dataset.p;return live();}
+ const b=e.target.closest('#live [data-ui],#live [data-go]');if(!b)return;
+ const inPh=b.closest('.ph');
+ if(b.dataset.ui!==undefined){const u=b.dataset.ui;
+  if(L.s==='stale'&&u!=='none')return;
+  if(u==='none')L.ui={};else if(u==='conf-switch')L.ui={conf:'switch'};else if(u==='conf-logout')L.ui={conf:'logout'};
+  else if(u==='sheet-login')L.ui={sheet:L.s==='expired'?'expired':'login'};else if(u==='sheet-switch')L.ui={sheet:'switch'};
+  else if(u==='step-code')L.ui.step='code';else if(u==='step-done')L.ui.step='done';else return;}
+ else{const g=b.dataset.go;if(inPh){if(g==='page')L.phpage=1;else if(g==='list')L.phpage=0;}else L.page=g==='page'?1:0;L.ui={};}
+ live();down();});
+
+/* ---------- static ---------- */
+function stat(){
+ $('entry').innerHTML=fig(mac({side:1}),310,'底栏中间（我选这个），Mac')+fig(mac({side:1,d:1}),310,'同一个，深色')+fig(mac({side:1,place:'row',end:1}),310,'另一种：列表最后一行。图里已经滚到底')
+  +fig(ph({}),402,'底栏中间，手机',.87)+fig(ph({place:'row',shift:1}),402,'另一种，手机，已经滚到底',.87);
+ const note={ok:'灰环是已用的 57%',near:'用到 80% 变橙',hit:'变红，写几点恢复',loading:'第一次打开，只写「用量」',stale:'写是多久以前的',expired:'点开就能登录',api:'没有套餐额度，点开是账号说明',diff:'写最紧的那台',same:'只算一次'};
+ $('pills').innerHTML=Object.keys(ST).map((k,i)=>`<div class="st"><div class="fr ${i%2&&0?'D':'L'}"><div class="foot"><div class="circ" style="left:13px;top:0;width:34px;height:34px">${I.plus(15)}</div>${pill(k,0,15)}<div class="circ" style="right:13px;top:0;width:34px;height:34px">${I.gear(18)}</div></div></div><small><b>${ST[k]}</b>：${note[k]}</small></div>`).join('');
+ $('pmac').innerHTML=Z(mac({page:1}),1200);$('pmacd').innerHTML=Z(mac({page:1,d:1,s:'near'}),1200);
+ $('pph').innerHTML=fig(ph({page:1}),402,'手机，平时',.87)+fig(ph({page:1,d:1,s:'near'}),402,'手机，深色，5 小时额度用到 84%',.87);
+ $('states').innerHTML=[['near','用到 80% 起，条和圆环变橙；多一行「额外用量」，说用完以后会停下还是按量计费，不写钱。'],['hit','最上面说几点恢复、谁停着。到点自己接着做是第 2 件要你定的。只有某个模型用完时写「只影响 Opus，别的模型还能用」，开着额外用量时写「现在按量计费」。'],['loading','只有第一次会这样。之后每次打开先给上次的数。'],['stale','数变淡，写是几点的，登录按钮不能点。在线但没拿到新数也是这样，标题写「没拿到新的数」。'],['expired','最上面就是重新登录，全页唯一的主题色按钮。对话里那条横幅不变。'],['api','Bedrock、Vertex 也是这样：没有套餐额度，说清楚，不给不起作用的登录按钮。订阅账号但登录缺权限时，写「这次登录看不到额度，重新登录试试」。'],['diff','按主机分开，紧的排前面。'],['same','额度只写一次，登录每台各一份。']].map(([k,c])=>fig(ph({page:1,s:k}),402,`<b>${ST[k]}</b>。${c}`,.7)).join('');
+ $('hitmac').innerHTML=Z(mac({page:1,s:'hit'}),1200);
+ $('login').innerHTML=fig(ph({page:1,ui:{conf:'switch'}}),402,'换个账号：在原地先问，说清影响谁。',.7)+fig(ph({page:1,ui:{conf:'logout'}}),402,'退出登录：原地先问，红色。',.7)+fig(ph({page:1,ui:{sheet:'switch',step:'code'}}),402,'登录页就是现在那一张，只按情况换字。',.7)+fig(ph({page:1,ui:{sheet:'switch',step:'done'}}),402,'完成：写出换成了谁。点「重新登录」却选了别的账号，也在这里说出来。',.7);
+ const who=sec('本周谁用得多',agentC('work','修登录跳转','34%')+agentC('done','笔记整理','22%')+agentC('wait','网站帮手','17%')+`<div class="c"><span class="ci">${orb.replace(/30" height="30/,'20" height="20')}</span>Palo<span class="v">15%</span></div><div class="c"><span class="ci"></span>其他 6 个<span class="v">12%</span></div>`,'按对话记录估算，加起来是 100%。不含 claude.ai 和别的电脑。');
+ $('who').innerHTML=`<div class="scale" style="padding:2px">${Z(`<div class="mac L" style="width:724px;height:auto;display:block;background:var(--page);padding:24px 30px 4px;box-shadow:0 0 0 1px rgba(0,0,0,.1)">${who}</div>`,724)}</div><p class="cap" style="max-width:420px">放在「还剩多少」和「账号」之间，点一行打开那个 agent。只说各占多少，不写钱，也不写占额度多少：额度怎么折算，Claude 没公开。</p>`;
+}
+const down=()=>document.querySelectorAll('.conf').forEach(c=>{const k=c.closest('.scroll');k.scrollTop=k.scrollHeight;});
+live();stat();down();let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{live();stat();down();},150);});
+</script></body></html>
