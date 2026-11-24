@@ -28,9 +28,16 @@ struct SessionIndicator: View {
     }
 
     /// A session.
-    init(_ pal: Pal, size: CGFloat = 38, glyphOnly: Bool = false) {
-        self.init(state: pal.dot, size: size, running: pal.tasksRunning)
+    /// `state`: in place of its own.
+    init(_ pal: Pal, size: CGFloat = 38, glyphOnly: Bool = false, state: StatusDotKind? = nil) {
+        self.init(state: state ?? pal.dot, size: size, running: pal.tasksRunning)
         self.glyphOnly = glyphOnly
+    }
+
+    /// A state's flat glyph alone.
+    init(glyph state: StatusDotKind, size: CGFloat) {
+        self.init(state: state, size: size)
+        glyphOnly = true
     }
 
     /// One of the computer's other sessions (an agent not taken over yet).

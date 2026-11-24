@@ -8390,35 +8390,13 @@
         }
       }
     },
-    "%@、agent 和定时安排都停着。登录好后会接着做。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, the agents and scheduled work are stopped. They go on once you've signed in."
-          }
-        }
-      }
-    },
-    "%@、agent 和定时安排 %@ 起都停着。登录好后会接着做。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@, the agents and scheduled work have been stopped since %2$@. They go on once you've signed in."
-          }
-        }
-      }
-    },
     "%@额度用完了，现在按量计费" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ limit used up, now paid by use"
+            "value" : "%@: limit used up, now paid by use"
           }
         }
       }
@@ -8429,7 +8407,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ limit used up"
+            "value" : "%@: limit used up"
           }
         }
       }
@@ -8440,7 +8418,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ limit used up, back %2$@"
+            "value" : "%1$@: limit used up, back %2$@"
           }
         }
       }
@@ -8683,6 +8661,138 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Updated just now."
+          }
+        }
+      }
+    },
+    "额度用完，恢复后接着做" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limit used up, carries on after"
+          }
+        }
+      }
+    },
+    "额度用完，%@ 接着做" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limit used up, carries on %@"
+          }
+        }
+      }
+    },
+    "登录过期，停下了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Login expired, stopped"
+          }
+        }
+      }
+    },
+    "额度用完了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limit used up"
+          }
+        }
+      }
+    },
+    "还有 %lld 个" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld more"
+          }
+        }
+      }
+    },
+    "%lld 个 agent 停在这里，到点自己接着做。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld agents stopped here and carry on by themselves then."
+          }
+        }
+      }
+    },
+    "%@停在这里，到点自己接着做。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ stopped here and carries on by itself then."
+          }
+        }
+      }
+    },
+    "%@和 %lld 个 agent 停在这里，到点自己接着做。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ and %2$lld agents stopped here and carry on by themselves then."
+          }
+        }
+      }
+    },
+    "%@、%@和定时安排都停着。登录好后会接着做。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, %2$@ and scheduled work are stopped. They go on once you've signed in."
+          }
+        }
+      }
+    },
+    "%@、%@和定时安排 %@ 起都停着。登录好后会接着做。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, %2$@ and scheduled work have been stopped since %3$@. They go on once you've signed in."
+          }
+        }
+      }
+    },
+    "%@ 接着做" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carries on %@"
+          }
+        }
+      }
+    },
+    "。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ". "
           }
         }
       }

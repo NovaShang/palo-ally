@@ -70,6 +70,32 @@ enum UsageText {
         }
     }
 
+    /// 「额度用完，18:40 接着做」.
+    static func goesOn(_ until: Int64?, now: Date = Date()) -> String {
+        guard let until else { return String(localized: "额度用完，恢复后接着做") }
+        return tidy(String(localized: "额度用完，\(when(until, now: now)) 接着做"))
+    }
+
+    /// What an agent that stopped, for a used-up limit or an expired login,
+    /// says in place of its last words; nil: it didn't (one at work or
+    /// waiting on the owner says that).
+    @MainActor static func stopped(_ pal: Pal, _ store: AppStore) -> String? {
+        guard pal.dot == .idle || pal.dot == .done, !pal.openInTerminal else { return nil }
+        return stopped(store) { $0.agent(pal.id) }
+    }
+
+    /// The assistant's.
+    @MainActor static func assistantStopped(_ store: AppStore) -> String? {
+        stopped(store) { $0.assistant ? StoppedWork.Agent(id: "", name: "", until: $0.until) : nil }
+    }
+
+    @MainActor private static func stopped(_ store: AppStore, _ which: (StoppedWork) -> StoppedWork.Agent?) -> String? {
+        if let auth = store.status?.auth, auth.isExpired {
+            return auth.stopped.flatMap(which).map { _ in String(localized: "登录过期，停下了") }
+        }
+        return store.usage?.stopped.flatMap(which).map { goesOn($0.until) }
+    }
+
     /// A login with no plan limits, by what it is.
     static func keyed(_ a: LoginAccount?) -> String {
         switch a?.provider {

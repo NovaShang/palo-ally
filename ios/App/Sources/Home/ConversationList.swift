@@ -670,6 +670,7 @@ private struct PaloItem: View {
     /// Sessions waiting on the owner: how many. Otherwise what it did last.
     private func secondLine(_ line: AgentStatusLine) -> String {
         if line.kind == .working || line.kind == .offline { return line.text }
+        if let stopped = UsageText.assistantStopped(store) { return stopped }
         if waitingSessions > 0 { return String(localized: "\(waitingSessions) 个 agent 在等你") }
         guard let m = lastMessage else {
             return line.kind == .needsYou ? String(localized: "等你") : line.text
@@ -816,13 +817,15 @@ private struct PalListRow: View {
     var inset = false
 
     var body: some View {
+        // For a used-up limit, or an expired login: that in place of its last words.
+        let stopped = UsageText.stopped(pal, store)
         SidebarRowLayout {
-            // The state glyph of the session's indicator, alone (no arc, no label).
-            SessionIndicator(pal, size: 28, glyphOnly: true)
+            // The state glyph of the session's indicator, alone (no arc, no label); stopped, the idle one.
+            SessionIndicator(pal, size: 28, glyphOnly: true, state: stopped == nil ? nil : .idle)
         } title: {
             Text(pal.displayName)
         } subtitle: {
-            Text(Copy.palLine(pal))
+            Text(stopped ?? Copy.palLine(pal))
         } trailing: {
             // The count opens what it counts: the 等你 tab of its pane.
             WaitingBadge(count: store.palPendingCount(pal.id))

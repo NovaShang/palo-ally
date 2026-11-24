@@ -85,7 +85,7 @@ struct AgentDetailForm: View {
         if let agent, let pal {
             let line = AgentStatusLine.of(pal)
             DetailHeader(indicator: AnyView(SessionIndicator(pal, size: 46)), name: pal.displayName,
-                         caption: agentCaption(pal), line: line.text, state: pal.dot,
+                         caption: agentCaption(pal), line: UsageText.stopped(pal, model.store ?? store) ?? line.text, state: UsageText.stopped(pal, model.store ?? store) == nil ? pal.dot : .idle,
                          editing: $editing, draft: $newName, canRename: online,
                          onRename: { Task { await rename(agent) } },
                          onBeginRename: { beginRename(pal) })

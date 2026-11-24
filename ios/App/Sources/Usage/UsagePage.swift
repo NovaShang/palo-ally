@@ -11,6 +11,8 @@ struct UsagePage: View {
     @Environment(AppStore.self) private var store
     /// The computer being signed in again.
     @State private var signingIn: SignIn?
+    /// Every agent that stopped is listed, not the first few.
+    @State private var allStopped = false
 
     private struct SignIn: Identifiable { let id: String }
 
@@ -102,17 +104,27 @@ struct UsagePage: View {
             } else if g.usage.stale {
                 Section { Notice(title: String(localized: "没拿到新的数"), text: UsageText.tidy(String(localized: "下面是 \(at) 的数。"))) }
             } else if let l = usedUp(g.usage, now: now) {
-                Section { Notice(title: hitTitle(l, extra: g.usage.extraUsage == true, now: now), text: hitText(l, extra: g.usage.extraUsage == true)) }
+                let extra = g.usage.extraUsage == true
+                hit(g, title: hitTitle(l, extra: extra, now: now), note: hitText(l, extra: extra), now: now)
             }
+        }
+        // Stopped, and no numbers that say by what.
+        if !g.hosts.contains(where: expired), g.hosts.contains(where: model.isOnline), usedUp(g.usage, now: now) == nil || g.usage.state != .limits || g.usage.stale,
+           g.hosts.contains(where: { model.stores[$0]?.usage?.stopped != nil }) {
+            hit(g, title: String(localized: "额度用完了"), note: nil, now: now)
         }
     }
 
     private func stopped(_ id: String) -> String {
         let who = assistant(id)
-        guard let since = model.stores[id]?.status?.auth?.since, since > 0 else {
-            return Copy.spaced(String(localized: "\(who)、agent 和定时安排都停着。登录好后会接着做。"))
+        let auth = model.stores[id]?.status?.auth
+        // How many were cut off, when the host says.
+        let n = auth?.stopped?.agents.count ?? 0
+        let agents = n > 0 ? String(localized: "\(n) 个 agent") : "agent"
+        guard let since = auth?.since, since > 0 else {
+            return Copy.spaced(String(localized: "\(who)、\(agents)和定时安排都停着。登录好后会接着做。"))
         }
-        return UsageText.tidy(String(localized: "\(who)、agent 和定时安排 \(Copy.clock(since)) 起都停着。登录好后会接着做。"))
+        return UsageText.tidy(String(localized: "\(who)、\(agents)和定时安排 \(Copy.clock(since)) 起都停着。登录好后会接着做。"))
     }
 
     /// The limit that stops things: one for everything before one for a model.
@@ -131,6 +143,44 @@ struct UsagePage: View {
     private func hitText(_ l: UsageLimit, extra: Bool) -> String? {
         guard !extra, let scope = l.scope else { return nil }
         return Copy.spaced(String(localized: "只影响 \(scope)，别的模型还能用"))
+    }
+
+    /// The limit's card: what it is, who stopped for it, and each of them (a tap opens it).
+    @ViewBuilder private func hit(_ g: UsageGroup, title: String, note: String?, now: Date) -> some View {
+        let stopped = g.hosts.flatMap { id in (model.stores[id]?.usage?.stopped?.agents ?? []).map { (host: id, agent: $0) } }
+        let assistants = g.hosts.filter { model.stores[$0]?.usage?.stopped?.assistant == true }
+        let shown = allStopped ? stopped : Array(stopped.prefix(Self.few))
+        let lines = [note, stoppedText(assistants, agents: stopped.count)].compactMap { $0 }
+        Section {
+            Notice(title: title, text: lines.isEmpty ? nil : lines.joined(separator: String(localized: "。")))
+                .listRowSeparator(stopped.isEmpty ? .automatic : .hidden, edges: .bottom)
+            ForEach(shown, id: \.agent.id) { s in
+                Button { model.open(.pal(s.agent.id), on: s.host) } label: {
+                    StoppedRow(agent: s.agent, host: g.hosts.count > 1 ? model.displayName(s.host) : nil, now: now)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("usage-stopped-\(s.agent.id)")
+            }
+            if stopped.count > shown.count {
+                Button { withAnimation(.snappy) { allStopped = true } } label: {
+                    Text("还有 \(stopped.count - shown.count) 个").foregroundStyle(.primary)
+                }
+                .tint(.primary)
+            }
+        }
+    }
+
+    /// How many of them are listed at first.
+    private static let few = 6
+
+    private func stoppedText(_ assistants: [String], agents: Int) -> String? {
+        let who = assistants.map(assistant).joined(separator: "、")
+        return switch (assistants.isEmpty, agents) {
+        case (true, 0): nil
+        case (true, _): Copy.spaced(String(localized: "\(agents) 个 agent 停在这里，到点自己接着做。"))
+        case (false, 0): Copy.spaced(String(localized: "\(who)停在这里，到点自己接着做。"))
+        case (false, _): Copy.spaced(String(localized: "\(who)和 \(agents) 个 agent 停在这里，到点自己接着做。"))
+        }
     }
 
     // MARK: the limits
@@ -280,6 +330,31 @@ private struct Notice<Action: View>: View {
 extension Notice where Action == EmptyView {
     init(title: String, text: String?) {
         self.init(title: title, text: text) { EmptyView() }
+    }
+}
+
+/// An agent that stopped for a limit, and when it goes on.
+private struct StoppedRow: View {
+    let agent: StoppedWork.Agent
+    /// Whose it is, with several computers.
+    let host: String?
+    let now: Date
+
+    var body: some View {
+        HStack(spacing: 12) {
+            SessionIndicator(glyph: .idle, size: 22)
+                .frame(width: Platform.isMac ? 20 : 24)
+            Text(verbatim: agent.name).lineLimit(1).truncationMode(.tail)
+            if let host { Text(verbatim: host).font(Platform.isMac ? .subheadline : .footnote).foregroundStyle(.secondary).lineLimit(1) }
+            Spacer(minLength: 12)
+            if let until = agent.until {
+                Text(UsageText.tidy(String(localized: "\(UsageText.when(until, now: now)) 接着做")))
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+            }
+        }
+        .contentShape(.rect)
+        .accessibilityElement(children: .combine)
     }
 }
 
