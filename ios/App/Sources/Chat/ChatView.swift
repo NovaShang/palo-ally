@@ -449,7 +449,8 @@ private struct ConversationRows: View {
         // screen cleared on every send broke his reading of what's above).
         // The message lands at the end like any chat; the reply grows under it.
         ConversationStack(spacing: 14, turnMinHeight: atTheEnd && ChatView.turnRoomOn ? scroll.turnRoom : 0,
-                          hold: widthHold, settled: widthHold.settled) {
+                          // (a phone's column never changes width by steps)
+                          hold: UIDevice.current.userInterfaceIdiom == .phone ? nil : widthHold, settled: widthHold.settled) {
             if window.lowerBound > 0 || store.hasOlderMessages {
                 // Reading up toward the top lays more out on its own; this
                 // is for doing it at once (and for VoiceOver). The message
@@ -1207,9 +1208,11 @@ struct ConversationStack: Layout {
         let proposal = ProposedViewSize(width: width, height: nil)
         #if DEBUG || PERF_HARNESS
         let n = subviews.count
-        MainActor.assumeIsolated {
-            PerfProbe.count("stack measure")
-            PerfProbe.add("rows measured", n)
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                PerfProbe.count("stack measure")
+                PerfProbe.add("rows measured", n)
+            }
         }
         #endif
         cache.heights = subviews.map { $0.sizeThatFits(proposal).height }
@@ -1220,6 +1223,9 @@ struct ConversationStack: Layout {
     /// The width to lay the rows out at for the one proposed.
     private func rowWidth(_ proposed: CGFloat?) -> CGFloat? {
         guard let hold else { return proposed }
+        // SwiftUI also lays out on its own renderer's thread (the phone's
+        // crashes of 11-10 to 11-22, all here): the hold is the main thread's.
+        guard Thread.isMainThread else { return proposed }
         return MainActor.assumeIsolated { hold.width(for: proposed) }
     }
 
