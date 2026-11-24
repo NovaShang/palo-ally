@@ -112,9 +112,9 @@ targets:
         NSLocalNetworkUsageDescription: 在同一个网络里时直接连你的主机，不绕道云端，更快。
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
-        # 「用 Palo 打开」 in other apps' share sheets (a file of any kind): the
-        # system puts a copy in Documents/Inbox, staged in the composer (ShareIntake).
-        LSSupportsOpeningDocumentsInPlace: false
+        # 「用 Palo 打开」 in other apps' share sheets (a file of any kind): read
+        # where it is, staged in the composer (ShareIntake). (false: no Mac build.)
+        LSSupportsOpeningDocumentsInPlace: true
         CFBundleDocumentTypes:
           - CFBundleTypeName: File
             CFBundleTypeRole: Viewer

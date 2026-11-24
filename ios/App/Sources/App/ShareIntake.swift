@@ -97,8 +97,8 @@ extension AppModel {
 
 extension WindowModel {
     /// A file another app handed over (「用 Palo 打开」): staged in the
-    /// conversation on screen, else the assistant's. The copy the system put
-    /// in the app's Inbox is removed once read.
+    /// conversation on screen, else the assistant's. Only read where it is;
+    /// a copy the system put in the app's Inbox is removed once read.
     func takeOpenedFile(_ url: URL) {
         guard mode != .unpaired, let host = activeHostID ?? app.lastHostID else {
             debugLog("[share] a file opened with nothing paired")
@@ -116,7 +116,11 @@ extension WindowModel {
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 // Over the composer's limit: nothing read.
                 let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                return size <= ShareInbox.maxFileBytes ? (try? Data(contentsOf: url), false) : (nil, true)
+                guard size <= ShareInbox.maxFileBytes else { return (nil, true) }
+                // Coordinated: one still in iCloud is brought down first.
+                var bytes: Data?
+                NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: nil) { bytes = try? Data(contentsOf: $0) }
+                return (bytes, false)
             }.value
             Self.removeInboxCopy(url)
             let item = data.flatMap { ComposerIntake.staged($0, name: url.lastPathComponent) }
