@@ -11,11 +11,12 @@ import SwiftUI
 struct DetailTiles: View {
     /// A Pal's id; nil: the assistant.
     let agent: String?
-    /// How high it all is, for the popover or the sheet round it.
-    var onHeight: (CGFloat) -> Void = { _ in }
+    /// How high it all is, for the popover (with `insets`) or the sheet round it.
+    var onHeight: (_ content: CGFloat, _ insets: CGFloat) -> Void = { _, _ in }
 
     @Environment(\.tileDetail) private var tileDetail
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.detailOnGlass) private var onGlass
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @State private var palDetail: PalDetail?
@@ -77,17 +78,18 @@ struct DetailTiles: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollIndicators(.hidden)
-        .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height + $0.contentInsets.top + $0.contentInsets.bottom } action: { _, h in
-            onHeight(h)
+        .onScrollGeometryChange(for: CGSize.self) { CGSize(width: $0.contentInsets.top + $0.contentInsets.bottom, height: $0.contentSize.height) } action: { _, s in
+            onHeight(s.height, s.width)
         }
         .environment(\.detailMetrics, metrics)
         .navigationTitle("")
-        .containerBackground(.clear, for: .navigation)
+        .detailGround()
         .task(id: refreshKey) { await load() }
         .task(id: "\(online)|\(model.memoryRevision)") { await countMemory() }
         .navigationDestination(item: Binding(get: { model.detailPage }, set: { model.detailPage = $0 })) { page in
             DetailPageView(page: page, agent: agent, past: detail?.pastTasks ?? [])
                 .environment(\.detailMetrics, metrics)
+                .environment(\.detailOnGlass, onGlass)
         }
         .sheet(isPresented: Binding(get: { agent == nil && model.showIdentityEditor }, set: { model.showIdentityEditor = $0 })) {
             IdentityEditor(purpose: .edit).environment(model).environment(store)
@@ -466,6 +468,13 @@ private struct EndButtonStyle: ButtonStyle {
 }
 
 #if DEBUG
+/// `-demoDetailType YES`: the largest text (a Mac has no setting for it; snapshots).
+struct DemoTypeSize: ViewModifier {
+    func body(content: Content) -> some View {
+        if UserDefaults.standard.bool(forKey: "demoDetailType") { content.dynamicTypeSize(.accessibility5) } else { content }
+    }
+}
+
 extension Notification.Name {
     /// Demo actions `detail-rename`, `detail-ask`, `detail-more` (RootView).
     static let demoDetail = Notification.Name("palo.demo.detail")

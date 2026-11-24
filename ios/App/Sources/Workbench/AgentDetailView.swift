@@ -36,6 +36,12 @@ struct AgentDetailView: View {
         return window > 0 ? min(860, max(240, window - 84)) : 860
     }
 
+    /// A sheet's height is over the bottom safe area (and the keyboard); a
+    /// popover's has its arrow's room too.
+    private func fit(_ content: CGFloat, _ insets: CGFloat) {
+        height = asSheet ? content : content + insets
+    }
+
     private var popoverHeight: CGFloat? {
         if pushed { return min(max(height ?? 0, Self.pageHeight), tallest) }
         return height.map { min($0, tallest) }
@@ -45,13 +51,16 @@ struct AgentDetailView: View {
         NavigationStack {
             Group {
                 if store.scope == .palo {
-                    DetailTiles(agent: nil) { height = $0 }
+                    DetailTiles(agent: nil, onHeight: fit)
                 } else if let id = store.palID {
-                    DetailTiles(agent: id) { height = $0 }
+                    DetailTiles(agent: id, onHeight: fit)
                 }
             }
             .toolbarVisibility(.hidden, for: .navigationBar)
         }
+        #if DEBUG
+        .modifier(DemoTypeSize())
+        #endif
         .modifier(Fitted(sheet: asSheet, pushed: pushed, height: height, popover: popoverHeight))
         .accessibilityIdentifier("agent-detail")
         // Nothing pushed the next time it opens.

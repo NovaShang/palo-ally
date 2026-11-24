@@ -14,6 +14,7 @@ struct AssistantView: View {
     var body: some View {
         @Bindable var model = model
         DetailTiles(agent: nil)
+            .environment(\.detailOnGlass, false)
             .navigationTitle(store.assistantName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

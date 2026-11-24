@@ -110,9 +110,11 @@ enum AppTheme: String, CaseIterable, Identifiable {
 /// preset, ringed with a check on the current one.
 struct ThemeSwatches: View {
     @Binding var selection: AppTheme
+    /// The narrowest a color may be (how many fit in a row).
+    var narrowest: CGFloat = 60
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 60), spacing: 8)], spacing: 14) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: narrowest), spacing: 8)], spacing: 14) {
             ForEach(AppTheme.allCases) { t in
                 let selected = t == selection
                 Button {

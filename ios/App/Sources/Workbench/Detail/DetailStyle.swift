@@ -49,13 +49,15 @@ struct DetailMetrics: Equatable {
     /// A task, and the line under it.
     var row: CGFloat { phone ? 15 : 13 }
     var line: CGFloat { phone ? 13.5 : 11.5 }
-    var icon: CGFloat { phone ? 25 : 21 }
+    var icon: CGFloat { phone ? 23 : 19 }
     var square: CGFloat { phone ? 13 : 11.5 }
     var askButton: CGFloat { phone ? 42 : 32 }
 }
 
 extension EnvironmentValues {
     @Entry var detailMetrics = DetailMetrics()
+    /// The tiles stand on a popover's or a sheet's glass; false: on a page of their own.
+    @Entry var detailOnGlass = true
 }
 
 extension View {
@@ -84,9 +86,25 @@ extension View {
     func detailList() -> some View {
         scrollContentBackground(.hidden)
             .contentMargins(.top, 8, for: .scrollContent)
-            .containerBackground(.clear, for: .navigation)
+            .detailGround()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(removing: .sidebarToggle)
+    }
+
+    /// What the tiles and the pages stand on: the glass round them, or the
+    /// grouped gray on a page of their own.
+    func detailGround() -> some View { modifier(DetailGround()) }
+}
+
+private struct DetailGround: ViewModifier {
+    @Environment(\.detailOnGlass) private var onGlass
+
+    func body(content: Content) -> some View {
+        if onGlass {
+            content.containerBackground(.clear, for: .navigation)
+        } else {
+            content.background(Color(.systemGroupedBackground).ignoresSafeArea())
+        }
     }
 }
 
@@ -143,7 +161,7 @@ struct SquareTileLabel: View {
     var body: some View {
         VStack(spacing: 7) {
             Image(systemName: symbol)
-                .detailFont(metrics.icon, .regular)
+                .detailFont(metrics.icon, .medium)
                 .frame(height: metrics.icon + 4)
                 .accessibilityHidden(true)
             Text(name)
@@ -197,7 +215,7 @@ struct ValueTileLabel: View {
                     .multilineTextAlignment(.leading)
                 Spacer(minLength: 0)
                 Image(systemName: symbol)
-                    .detailFont(metrics.label, .bold)
+                    .detailFont(metrics.label - 1, .semibold)
                     .accessibilityHidden(true)
             }
             .foregroundStyle(.primary)

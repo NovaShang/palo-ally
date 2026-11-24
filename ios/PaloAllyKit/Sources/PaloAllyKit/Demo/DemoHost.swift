@@ -271,6 +271,13 @@ public actor DemoHost {
                 for i in pals.indices { pals[i].contextPct = pct }
                 emitPals()
             }
+            if name == "detailLong" {
+                for i in pals.indices {
+                    pals[i].name = "把三年的照片按地点和人物重新归类并去重"
+                    pals[i].cwd = "/Users/demo/Documents/工作/2026 客户网站改版/frontend-next"
+                }
+                emitPals()
+            }
             if name == "detailMany" {
                 for (i, title) in ["盯回国机票", "整理照片", "对一遍账单"].enumerated() {
                     upsertTask(AllyTask(id: "t-d\(i)", title: title, summary: "", status: .running, source: .auto,

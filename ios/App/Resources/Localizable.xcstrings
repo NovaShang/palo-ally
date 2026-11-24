@@ -12,16 +12,6 @@
         }
       }
     },
-    "%@ · %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ · %@"
-          }
-        }
-      }
-    },
     "%@ · 可多选" : {
       "extractionState" : "manual",
       "localizations" : {

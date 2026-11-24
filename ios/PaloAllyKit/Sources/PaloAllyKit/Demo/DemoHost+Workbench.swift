@@ -311,7 +311,7 @@ extension DemoHost {
 }
 
 // What the details show beyond the ordinary (`-demoState detailMany |
-// detailNear | detailFull | detailOld`).
+// detailNear | detailFull | detailLong | detailOld`).
 extension DemoHost {
     /// The context's fill the state asks for, or what compacting left.
     var detailPct: Int? {

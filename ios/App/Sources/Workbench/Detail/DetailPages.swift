@@ -110,7 +110,7 @@ private struct AssistantSettingsPage: View {
     var body: some View {
         ScrollView {
             VStack(spacing: DetailMetrics.gap) {
-                ThemeSwatches(selection: theme)
+                ThemeSwatches(selection: theme, narrowest: 54)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 10)
                     .detailTile()
