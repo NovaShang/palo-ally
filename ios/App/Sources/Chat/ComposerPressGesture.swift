@@ -199,7 +199,7 @@ struct ComposerPressGesture: UIGestureRecognizerRepresentable {
         }
     }
 
-    private func apply(_ r: ComposerPressRecognizer) {
+    func apply(_ r: ComposerPressRecognizer) {
         r.holdThreshold = holdThreshold
         r.pointerSlop = pointerSlop
         r.shouldCommit = shouldCommit
@@ -213,6 +213,136 @@ struct ComposerPressGesture: UIGestureRecognizerRepresentable {
         // Never wait on (or block) anything else: the scroll view keeps
         // scrolling, and we still hear the touch the moment it lands.
         func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+    }
+}
+
+#if targetEnvironment(macCatalyst)
+/// The Mac's way of putting the press on the composer: the same recognizer on
+/// a real UIKit view. A SwiftUI gesture representable stays in the hover
+/// table after its view has gone, and the next hover update aborts in
+/// AttributeGraph reading it (seven quits on one Mac, 10-20 to 11-19, as a
+/// page went or the field let the keyboard go).
+private struct ComposerPressCatcher: UIViewRepresentable {
+    let press: ComposerPressGesture
+    /// Where the field's touches go: the catcher itself (over an idle
+    /// field), or the text view in front of it (the field being edited).
+    let onTextView: Bool
+    /// The catcher's corner in `press.space`.
+    let origin: CGPoint
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> CatcherView {
+        let v = CatcherView()
+        v.backgroundColor = .clear
+        v.isUserInteractionEnabled = !onTextView
+        v.onTextView = onTextView
+        let r = v.press
+        r.delegate = context.coordinator
+        r.addTarget(context.coordinator, action: #selector(Coordinator.acted(_:)))
+        context.coordinator.catcher = v
+        update(v, context)
+        return v
+    }
+
+    func updateUIView(_ v: CatcherView, context: Context) { update(v, context) }
+
+    private func update(_ v: CatcherView, _ context: Context) {
+        press.apply(v.press)
+        context.coordinator.origin = origin
+        context.coordinator.onHold = press.onHold
+    }
+
+    static func dismantleUIView(_ v: CatcherView, coordinator: Coordinator) {
+        coordinator.onHold = nil
+        v.detach()
+    }
+
+    final class CatcherView: UIView {
+        let press = ComposerPressRecognizer()
+        var onTextView = false
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil else { return detach() }
+            guard onTextView else {
+                if press.view !== self { addGestureRecognizer(press) }
+                return
+            }
+            // The hosting view holding both this and the text view.
+            var v = superview
+            while let current = v, !NSStringFromClass(type(of: current)).contains("HostingView") { v = current.superview }
+            let host = v ?? window
+            if press.view !== host {
+                detach()
+                host?.addGestureRecognizer(press)
+            }
+        }
+
+        func detach() { press.view?.removeGestureRecognizer(press) }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        weak var catcher: CatcherView?
+        var origin: CGPoint = .zero
+        var onHold: ((UIGestureRecognizer.State, CGPoint) -> Void)?
+
+        @objc func acted(_ r: UIGestureRecognizer) {
+            guard let catcher else { return }
+            switch r.state {
+            case .began, .changed, .ended, .cancelled:
+                let p = r.location(in: catcher)
+                onHold?(r.state, CGPoint(x: p.x + origin.x, y: p.y + origin.y))
+            default:
+                break
+            }
+        }
+
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard let catcher, catcher.onTextView else { return true }
+            // A press on this field's own text, not elsewhere in the page.
+            guard catcher.bounds.contains(touch.location(in: catcher)) else { return false }
+            var v = touch.view
+            while let current = v, current !== g.view {
+                if let text = current as? UITextView { return text.isEditable }
+                v = current.superview
+            }
+            return false
+        }
+
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+    }
+}
+
+private struct ComposerPressOnMac: ViewModifier {
+    let press: ComposerPressGesture
+    let onTextView: Bool
+    @State private var origin: CGPoint = .zero
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGPoint.self) { $0.frame(in: press.space).origin } action: { origin = $0 }
+            .background {
+                if onTextView { ComposerPressCatcher(press: press, onTextView: true, origin: origin) }
+            }
+            .overlay {
+                if !onTextView { ComposerPressCatcher(press: press, onTextView: false, origin: origin) }
+            }
+    }
+}
+#endif
+
+extension View {
+    /// Hold-to-talk on this view (`onTextView`: beside the gestures of the
+    /// text view it is).
+    @ViewBuilder
+    func composerPress(_ press: ComposerPressGesture, onTextView: Bool = false) -> some View {
+        #if targetEnvironment(macCatalyst)
+        modifier(ComposerPressOnMac(press: press, onTextView: onTextView))
+        #else
+        gesture(press)
+        #endif
     }
 }
 

@@ -517,7 +517,7 @@ struct ComposerView: View {
                 // While editing: a press that stays put talks, beside the
                 // text view's own gestures (a click, a drag, typing: theirs).
                 // Always attached, so the field keeps its identity (and focus).
-                .gesture(ComposerPressGesture(
+                .composerPress(ComposerPressGesture(
                     holdThreshold: Self.editHoldSeconds,
                     space: .named(Self.capsuleSpace),
                     pointerSlop: Self.editPointerSlop,
@@ -530,7 +530,7 @@ struct ComposerView: View {
                         // Only a hold this field started (another tile's voice is not ours).
                         guard pressing || voiceStarted else { return }
                         pressHeld(state, at: point)
-                    }))
+                    }), onTextView: true)
                 // Where words spoken into 编辑 land.
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
                     guard $0.isFiniteRect else { return }
@@ -587,7 +587,7 @@ struct ComposerView: View {
                 // editing it's gone so text selection works normally.
                 Color.clear
                     .contentShape(.rect)
-                    .gesture(ComposerPressGesture(
+                    .composerPress(ComposerPressGesture(
                         holdThreshold: Self.holdSeconds,
                         space: .named(Self.capsuleSpace),
                         onTouchDown: pressBegan,
