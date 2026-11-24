@@ -125,7 +125,7 @@ struct UsagePage: View {
         let name = UsageText.name(l)
         if extra { return Copy.spaced(String(localized: "\(name)额度用完了，现在按量计费")) }
         guard let at = l.resetsAt else { return Copy.spaced(String(localized: "\(name)额度用完了")) }
-        return Copy.spaced(String(localized: "\(name)额度用完了，\(UsageText.when(at, now: now)) 恢复"))
+        return UsageText.tidy(String(localized: "\(name)额度用完了，\(UsageText.when(at, now: now)) 恢复"))
     }
 
     private func hitText(_ l: UsageLimit, extra: Bool) -> String? {
@@ -195,7 +195,7 @@ struct UsagePage: View {
 
     private func foot(_ g: UsageGroup, old: Bool, expired: Bool) -> String {
         let at = g.usage.at
-        if old { return expired && at != nil ? Copy.spaced(String(localized: "\(Copy.clock(at ?? 0)) 的数。")) : "" }
+        if old { return expired && at != nil ? UsageText.tidy(String(localized: "\(Copy.clock(at ?? 0)) 的数。")) : "" }
         let line = String(localized: "条上的细线是时间走到哪儿了。")
         if g.hosts.count > 1 {
             let same = g.hosts.count == 2 ? String(localized: "两台主机用同一个账号，额度合在一起。") : String(localized: "这些主机用同一个账号，额度合在一起。")
@@ -292,6 +292,7 @@ private struct LimitRow: View {
     /// Says how long until it resets.
     let spans: Bool
     let now: Date
+    @Environment(WindowModel.self) private var model
 
     var body: some View {
         let reset = UsageText.reset(limit, now: now, left: spans && !old)
@@ -307,15 +308,23 @@ private struct LimitRow: View {
             }
             UsageBar(limit: limit, elapsed: old || limit.isUsedUp ? nil : limit.elapsed(now), reset: limit.hasReset(now), dim: old)
             if reset != nil || pace != nil {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 14) {
-                        line(reset, pace: false)
-                        Spacer(minLength: 0)
-                        line(pace, pace: true)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        line(reset, pace: false)
-                        line(pace, pace: true)
+                let stacked = VStack(alignment: .leading, spacing: 2) {
+                    line(reset, pace: false)
+                    line(pace, pace: true)
+                }
+                // Phones: stacked on every row (some would fit on one line, and look uneven).
+                Group {
+                    if model.layout == .phone {
+                        stacked
+                    } else {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 14) {
+                                line(reset, pace: false)
+                                Spacer(minLength: 0)
+                                line(pace, pace: true)
+                            }
+                            stacked
+                        }
                     }
                 }
                 .font(Platform.isMac ? .subheadline : .footnote)

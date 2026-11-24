@@ -36,7 +36,7 @@ enum UsageText {
             return Copy.spaced(String(localized: "\(name(l))剩 \(left)"))
         }
         guard let at = l.resetsAt else { return Copy.spaced(String(localized: "\(name(l))用完了")) }
-        return Copy.spaced(String(localized: "\(name(l))用完，\(when(at, now: now)) 恢复"))
+        return tidy(String(localized: "\(name(l))用完，\(when(at, now: now)) 恢复"))
     }
 
     /// The page's name for it: 「本周 · Opus」.
