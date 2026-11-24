@@ -6,6 +6,19 @@ import SwiftUI
 /// folder, ⌘↩ adds it to the workspace you're in; 选择其他文件夹… walks the
 /// computer's folders. The new session opens, named by its first words.
 struct NewSessionPanel: View {
+    /// An item of a 待办 for the new agent: its folder leads, its words are
+    /// the first message, and it's being done by the agent from then on.
+    struct FirstWords: Identifiable {
+        let item: BacklogItem
+        /// Whose list it's on (nil: the assistant's).
+        let owner: String?
+        let folder: String?
+        var id: String { item.id }
+    }
+    var first: FirstWords? = nil
+    /// The new agent's page is opening.
+    var opened: () -> Void = {}
+
     @Environment(WindowModel.self) private var model
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -25,9 +38,10 @@ struct NewSessionPanel: View {
     /// The open session's folder first, then the others as the host listed them.
     private var shown: [SessionFolder] {
         var list = folders ?? []
-        if let cwd = store.openSessionFolder(model.selection), let i = list.firstIndex(where: { $0.path == cwd }), i > 0 {
+        let lead = first?.folder ?? store.openSessionFolder(model.selection)
+        if let cwd = lead, let i = list.firstIndex(where: { $0.path == cwd }), i > 0 {
             list.insert(list.remove(at: i), at: 0)
-        } else if let cwd = store.openSessionFolder(model.selection), !list.contains(where: { $0.path == cwd }) {
+        } else if let cwd = lead, !list.contains(where: { $0.path == cwd }) {
             list.insert(SessionFolder(path: cwd, name: (cwd as NSString).lastPathComponent, lastUsedAt: 0), at: 0)
         }
         let q = query.trimmingCharacters(in: .whitespaces)
@@ -165,8 +179,10 @@ struct NewSessionPanel: View {
         Task {
             defer { starting = nil }
             do {
-                let pal = try await store.createSession(cwd: path, workspaceId: workspaceID)
+                let pal = try await store.createSession(cwd: path, text: first.map { AppStore.backlogQuote($0.item) }, workspaceId: workspaceID)
+                if let first { store.markBacklogStarted(first.item, by: pal.id, forPal: first.owner) }
                 dismiss()
+                opened()
                 if let workspaceID, model.selection == .workspace(workspaceID) {
                     // A tile in the workspace that's open: it is the one to talk to.
                     if placement != nil { try? await model.addPane(pal.id, to: workspaceID, placement: placement) }

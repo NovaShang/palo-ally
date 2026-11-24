@@ -40,6 +40,12 @@ struct SessionIndicator: View {
         glyphOnly = true
     }
 
+    /// A state's flat glyph, with its count while subagents run.
+    init(flat state: StatusDotKind, size: CGFloat, running: Int) {
+        self.init(state: state, size: size, running: running)
+        glyphOnly = true
+    }
+
     /// One of the computer's other sessions (an agent not taken over yet).
     init(_ session: CCSession, size: CGFloat = 38, glyphOnly: Bool = false) {
         self.init(state: StatusDotKind(session.status), size: size)
