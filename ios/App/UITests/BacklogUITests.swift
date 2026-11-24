@@ -120,6 +120,48 @@ final class BacklogUITests: XCTestCase {
         XCTAssertFalse(row.exists)
     }
 
+    /// With the keyboard up the open row's whole bar can be tapped: the
+    /// first item, the last of 30, and with a note of several lines. The add
+    /// field and the tab bar are away meanwhile and back after.
+    @MainActor
+    func testTheOpenRowClearsTheKeyboard() throws {
+        let app = launch("backlogMany")
+        for id in ["b_lazy", "b_many30"] {
+            let row = app.descendants(matching: .any)["backlog-row-\(id)"].firstMatch
+            let add = field(app, "backlog-add")
+            for _ in 0..<12 where !row.exists || !row.isHittable || row.frame.maxY > add.frame.minY { app.swipeUp() }
+            XCTAssertTrue(row.waitForExistence(timeout: 5), "no row \(id)")
+            row.buttons["backlog-words"].firstMatch.tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "no keyboard")
+            barIsClear(app, id)
+            let note = field(app, "backlog-edit-note")
+            note.tap()
+            note.typeText("第一行\n第二行\n第三行\n第四行")
+            barIsClear(app, "\(id), a long note")
+            XCTAssertFalse(app.buttons["pane-tab-library"].exists, "the tab bar is in the way")
+            // The trash works; undone by leaving it to 撤回.
+            app.buttons["backlog-remove"].firstMatch.tap()
+            let undo = app.buttons["backlog-undo"].firstMatch
+            XCTAssertTrue(undo.waitForExistence(timeout: 3), "the trash wasn't tapped")
+            undo.tap()
+            XCTAssertTrue(row.waitForExistence(timeout: 5), "not back")
+            XCTAssertTrue(wait(5) { !app.keyboards.firstMatch.exists }, "the keyboard stayed")
+            XCTAssertTrue(wait(5) { app.buttons["pane-tab-library"].isHittable && add.isHittable }, "the bars didn't come back")
+        }
+        // Adding: the field on the keyboard, the tab bar away.
+        field(app, "backlog-add").tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(wait(3) { !app.buttons["pane-tab-library"].exists }, "the tab bar is in the way of adding")
+    }
+
+    @MainActor
+    private func barIsClear(_ app: XCUIApplication, _ what: String) {
+        let trash = app.buttons["backlog-remove"].firstMatch, start = app.buttons["backlog-open-start"].firstMatch
+        let keys = app.keyboards.firstMatch
+        XCTAssertTrue(wait(4) { trash.exists && trash.isHittable && start.isHittable && start.frame.maxY <= keys.frame.minY },
+                      "the bar isn't clear of the keyboard: \(what), \(start.frame) over \(keys.frame)")
+    }
+
     @MainActor
     func testEmpty() throws {
         let app = launch("backlogEmpty")
