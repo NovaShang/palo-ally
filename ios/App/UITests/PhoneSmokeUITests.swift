@@ -50,11 +50,7 @@ final class PhoneSmokeUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["agent-detail"].waitForExistence(timeout: 5), "Palo's details didn't open")
         sleep(1)
         shot(app, "\(look)-3-palo-details")
-        // Pulled up to the full height: the rest of it.
-        app.descendants(matching: .any)["agent-detail"].firstMatch.swipeUp()
-        sleep(1)
-        shot(app, "\(look)-3b-palo-details-full")
-        app.buttons["完成"].firstMatch.tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap()
         XCTAssertTrue(palo.waitForExistence(timeout: 5))
 
         // The pane.
@@ -127,23 +123,14 @@ final class PhoneSmokeUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["agent-detail"].waitForExistence(timeout: 5), "the session's details didn't open")
         sleep(1)
         shot(app, "\(look)-7-session-details")
-        // Pulled up to the full height: the rest of it.
-        app.descendants(matching: .any)["agent-detail"].firstMatch.swipeUp()
+        // Its depth is chosen by a bar, under its full name.
+        let deeper = app.buttons["detail-effort-xhigh"].firstMatch
+        XCTAssertTrue(deeper.waitForExistence(timeout: 3), "the session's details have no 思考深度")
+        XCTAssertEqual(deeper.label, "很深")
+        deeper.tap()
         sleep(1)
-        shot(app, "\(look)-7b-session-details-full")
-        // Its depth can be chosen, by its full name, under 设置 (folded to one line).
-        let settings = app.descendants(matching: .any)["detail-settings"].firstMatch
-        XCTAssertTrue(settings.waitForExistence(timeout: 3), "the session's details have no 设置")
-        settings.tap()
-        let effort = app.descendants(matching: .any)["detail-effort"].firstMatch
-        XCTAssertTrue(effort.waitForExistence(timeout: 3), "the session's details have no 思考深度")
-        effort.tap()
-        let deep = app.buttons["深"].firstMatch
-        XCTAssertTrue(deep.waitForExistence(timeout: 3), "思考深度's menu didn't open with its full names")
-        shot(app, "\(look)-7c-effort-menu")
-        deep.tap()
-        sleep(1)
-        app.buttons["完成"].firstMatch.tap()
+        shot(app, "\(look)-7b-session-depth")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap()
         // An ordinary session has no quick-switch strip.
         XCTAssertFalse(app.descendants(matching: .any)["quick-switch"].exists, "a session outside a workspace has the strip")
 

@@ -15,12 +15,11 @@ final class LocalizationUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Right pane"].firstMatch.exists, "the 右侧栏 button isn't Right pane")
         XCTAssertFalse(app.buttons["右侧栏"].exists, "still Chinese")
         orb.tap()
-        // The assistant's details: 设置 folded to one line (below a half-height sheet's fold), 记录 below.
+        // The assistant's details: 设置 is one of its tiles.
         let detail = app.descendants(matching: .any)["agent-detail"].firstMatch
         XCTAssertTrue(detail.waitForExistence(timeout: 5), "the details didn't open")
         let settings = app.descendants(matching: .any)["detail-settings"].firstMatch
-        for _ in 0..<4 where !settings.isHittable { detail.swipeUp() }
-        XCTAssertTrue(settings.exists, "no Settings in the details")
+        XCTAssertTrue(settings.waitForExistence(timeout: 3) && settings.isHittable, "no Settings among the tiles")
         XCTAssertTrue(settings.label.contains("Settings"), "the details aren't in English: \(settings.label)")
         XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "设置")).firstMatch.exists, "still Chinese")
     }

@@ -72,7 +72,7 @@ final class NavigationUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["路上小心"].exists || app.staticTexts["收到，路上小心。"].exists, "the exchanges aren't there")
     }
 
-    /// The orb: the assistant's details as a sheet (现在, 定时, 设置 folded, 记录), 完成 back.
+    /// The orb: the assistant's details as a sheet of tiles, 设置 a page of it; a tap above it is back in the conversation.
     @MainActor
     func testTheOrbOpensTheAssistantsDetails() throws {
         let app = launch()
@@ -81,13 +81,13 @@ final class NavigationUITests: XCTestCase {
         orb.tap()
         let detail = app.descendants(matching: .any)["agent-detail"].firstMatch
         XCTAssertTrue(detail.waitForExistence(timeout: 5), "the details didn't open")
-        // 设置 is under 现在 and 定时: below a half-height sheet's fold.
-        let settings = app.descendants(matching: .any)["detail-settings"].firstMatch
-        for _ in 0..<4 where !settings.isHittable { detail.swipeUp() }
-        XCTAssertTrue(settings.exists, "no 设置 in the details")
+        let settings = app.buttons["detail-settings"].firstMatch
+        XCTAssertTrue(settings.waitForExistence(timeout: 3) && settings.isHittable, "no 设置 among the tiles")
         settings.tap()
-        XCTAssertEqual(app.descendants(matching: .any)["detail-settings"].firstMatch.value as? String, "已展开", "设置 didn't unfold")
-        app.buttons["完成"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5), "设置 didn't open")
+        app.navigationBars["设置"].buttons.firstMatch.tap()
+        XCTAssertTrue(settings.waitForExistence(timeout: 5), "not back on the tiles")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap()
         XCTAssertTrue(app.buttons["title-orb"].waitForExistence(timeout: 5), "not back in the conversation")
     }
 

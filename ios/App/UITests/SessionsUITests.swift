@@ -98,11 +98,9 @@ final class SessionsUITests: XCTestCase {
         XCTAssertEqual(field.value as? String, "笔记整理", "not filled in")
         attach(app, "rename-field")
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 12))
-        field.typeText("读书笔记")
-        app.buttons["好"].firstMatch.tap()
+        field.typeText("读书笔记\n")
         XCTAssertTrue(app.staticTexts["读书笔记"].firstMatch.waitForExistence(timeout: 5), "the page's title didn't change")
-        let done = app.buttons["完成"].firstMatch
-        if done.exists { done.tap() }
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap()
         // From the list: the row's menu, on the same agent.
         app.navigationBars.buttons.firstMatch.tap()
         let row = app.descendants(matching: .any)["row-pal-pal-notes"]
