@@ -28,7 +28,7 @@ export const RPC_METHODS = [
   "artifact.list", "artifact.read", "artifact.pin", "memory.list", "memory.read", "memory.write",
   "settings.update", "stop", "push.register", "push.unregister", "presence", "device.unpair", "audit.tail",
   "media.upload", "media.uploadChunk", "media.get", "media.read",
-  "suggestions.list", "suggestions.dismiss", "host.update",
+  "host.update",
   "ally.list", "ally.invite", "ally.accept", "ally.remove", "ally.log", "ally.draft.decide", "ally.say", "ally.trust",
   "sessions.list", "sessions.history", "sessions.hooks", "helper.decide",
   "pals.list", "pals.adopt", "pals.release", "pals.remove", "pals.history", "pals.send", "pals.stop", "pals.recent", "pals.wake", "pals.rename", "pals.rewind",
@@ -47,7 +47,7 @@ export const RPC_METHODS = [
 export const RPC_EVENTS = [
   "chat.message", "chat.delta", "chat.rewound", "task.updated", "approval.updated", "question.updated", "watch.updated",
   "artifact.updated", "settings.updated", "status", "commands.updated",
-  "suggestions.updated", "ally.updated", "ally.entry", "sessions.updated", "pals.updated",
+  "ally.updated", "ally.entry", "sessions.updated", "pals.updated",
   "workspaces.updated", "workbench.updated", "files.changed", "pending.updated", "backlog.updated", "harness.updated", "usage.updated",
 ] as const;
 
@@ -109,14 +109,13 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
           : undefined;
       const msg = hub.userMessage(String(p.text ?? ""), ctx.channel, undefined, cid, attachments, replyTo, hub.pendingQuoteNote(replyTo));
       if (!msg) throw new Error(t("rpc.err.empty"));
-      // Sent by tapping a 「试试」 chip: it's used up.
-      if (typeof p.suggestionId === "string") hub.suggestions.use(p.suggestionId);
       return { id: msg.id, seq: msg.seq };
     }
+    // An older app's 「试试」 (gone): nothing to offer, nothing to dismiss.
     case "suggestions.list":
-      return { suggestions: hub.suggestions.list() };
+      return { suggestions: [] };
     case "suggestions.dismiss":
-      return { ok: hub.suggestions.dismiss(String(p.id ?? "")) };
+      return { ok: true };
     case "media.upload":
       return hub.media.save(String(p.mediaType ?? ""), String(p.data ?? ""));
     case "media.uploadChunk":

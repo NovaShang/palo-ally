@@ -182,13 +182,6 @@ describe("host ↔ app protocol", () => {
     await run("push.register", { token: "a".repeat(64), env: "sandbox" });
     await run("push.unregister", { token: "a".repeat(64) });
     await run("presence", { active: true });
-    driver.probeResponder = () => ({
-      output: { suggestions: [{ chip: "找出没在用的订阅", prompt: "帮我把信用卡账单里的订阅都找出来，标出最近三个月没用过的", category: "省钱" }, { chip: "每周日给我做周报", prompt: "以后每周日晚上把我这一周做的事整理成周报" }] },
-      costUsd: 0.0002,
-    });
-    await hub.suggestions.refresh("test");
-    await run("suggestions.list");
-    await run("suggestions.dismiss", { id: hub.suggestions.list()[0]!.id });
     await run("audit.tail", { limit: 3 });
     await run("host.update", { check: true }); // a dev checkout: managed by hand
     // A link for one more of the owner's devices (5 minutes, one device).

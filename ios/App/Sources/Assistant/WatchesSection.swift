@@ -28,7 +28,7 @@ struct WatchesSection: View {
     }
 
     /// 定时: the first few (needs-you first), the whole list a row away, then
-    /// 想让它帮你盯着什么？, and the ideas a row away.
+    /// 想让它帮你盯着什么？
     var body: some View {
         Section {
             ForEach(goals.prefix(Self.shown)) { GoalLink(goal: $0) }
@@ -46,17 +46,6 @@ struct WatchesSection: View {
                 .accessibilityIdentifier("detail-timers")
             }
             AskForGoal()
-            if !store.suggestions.isEmpty {
-                NavigationLink {
-                    List { MoreIdeasSection() }
-                        .navigationTitle("还可以让它…")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .modifier(InSidebarColumn())
-                } label: {
-                    LabeledContent(String(localized: "还可以让它…"), value: String(localized: "\(store.suggestions.count) 个"))
-                }
-                .accessibilityIdentifier("detail-ideas")
-            }
         } header: {
             Text("定时")
         } footer: {
@@ -76,55 +65,6 @@ private struct GoalLink: View {
             GoalDetail(id: goal.id)
         } label: {
             GoalRow(goal: goal)
-        }
-    }
-}
-
-/// 「还可以让它…」: the full list of 「试试」 ideas the assistant drafted for
-/// the owner. Tap sends the request and slides back to the conversation.
-private struct MoreIdeasSection: View {
-    @Environment(AppStore.self) private var store
-    @Environment(WindowModel.self) private var model
-    @Environment(\.tileDetail) private var tileDetail
-
-    /// Sent: back to the conversation, from management or the details.
-    private func use(_ s: Suggestion) {
-        store.use(s)
-        model.closeManagement()
-        model.setDetail(false, tile: tileDetail)
-    }
-
-    var body: some View {
-        if !store.suggestions.isEmpty {
-            Section("还可以让它…") {
-                ForEach(store.suggestions) { s in
-                    Button {
-                        use(s)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(s.chip).font(.body).foregroundStyle(.primary)
-                            if !s.prompt.isEmpty, s.prompt != s.chip {
-                                Text(s.prompt)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                            }
-                        }
-                        .padding(.vertical, 2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .swipeActions {
-                        Button("不再显示") { withAnimation(.snappy) { store.dismiss(s) } }.tint(.gray)
-                    }
-                    .contextMenu {
-                        Button("发给它", systemImage: "paperplane") { use(s) }
-                        Button("不再显示", systemImage: "eye.slash") { withAnimation(.snappy) { store.dismiss(s) } }
-                    }
-                    .accessibilityHint("发给它")
-                }
-            }
         }
     }
 }

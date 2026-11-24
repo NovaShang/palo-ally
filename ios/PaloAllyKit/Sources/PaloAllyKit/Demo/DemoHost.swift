@@ -777,13 +777,6 @@ public actor DemoHost {
         return (rtt / 1000, (mbps > 0 ? mbps : 4) * 1024 * 1024)
     }
     private var demoModel: String?
-    /// 「试试」 the demo assistant offers.
-    private var demoSuggestions: [Suggestion] = [
-        Suggestion(id: "sg_1", chip: "找出没在用的订阅", prompt: "帮我把信用卡账单和邮箱里的订阅都找出来，标出最近三个月没用过的", category: "省钱"),
-        Suggestion(id: "sg_2", chip: "每周日给我做周报", prompt: "以后每周日晚上把我这一周做的事整理成一份周报"),
-        Suggestion(id: "sg_3", chip: "盯着十一月回国机票", prompt: "帮我每天看一下十一月从旧金山回上海的机票，低于 5000 告诉我"),
-        Suggestion(id: "sg_4", chip: "整理下载文件夹", prompt: "把我电脑上的下载文件夹按类型整理一下，删掉重复的安装包前先问我"),
-    ]
 
     func dispatch(_ method: String, _ p: JSONValue) async throws -> JSONValue {
         switch method {
@@ -820,10 +813,6 @@ public actor DemoHost {
             if !text.hasPrefix("/") { m.uuid = "u-\(m.id)" }
             messages.append(m)
             emit(RPCEventName.chatMessage, m)
-            if let sid = p["suggestionId"]?.stringValue {
-                demoSuggestions.removeAll { $0.id == sid }
-                emit(RPCEventName.suggestionsUpdated, ["suggestions": demoSuggestions])
-            }
             Task { await self.respond(to: text) }
             return ["id": .string(m.id), "seq": .number(Double(m.seq))]
         case RPCMethod.chatRewind:
@@ -1094,14 +1083,6 @@ public actor DemoHost {
             if let e = p["effort"] { status.effort = e.stringValue }
             emit(RPCEventName.status, status)
             return ["status": try .from(status)]
-        case RPCMethod.suggestionsList:
-            return ["suggestions": try .from(demoSuggestions)]
-        case RPCMethod.suggestionsDismiss:
-            let id = p["id"]?.stringValue ?? ""
-            let had = demoSuggestions.contains { $0.id == id }
-            demoSuggestions.removeAll { $0.id == id }
-            emit(RPCEventName.suggestionsUpdated, ["suggestions": demoSuggestions])
-            return ["ok": .bool(had)]
         case RPCMethod.hostUpdate:
             return ["status": .string("latest"), "current": .string("0.1.3"), "detail": .string("已经是最新版")]
         case RPCMethod.allyList:

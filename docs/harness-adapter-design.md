@@ -174,7 +174,7 @@ export interface Harness {
 
   // ---- processes ----
   start(o: StartOptions): HarnessProcess;              // spawn, resume or fork
-  probe(req: ProbeRequest): Promise<ProbeResult>;      // one-shot structured run (watches, suggestions, setup check)
+  probe(req: ProbeRequest): Promise<ProbeResult>;      // one-shot structured run (watches, setup check)
 
   // ---- conversations on disk ----
   history: HistoryStore;

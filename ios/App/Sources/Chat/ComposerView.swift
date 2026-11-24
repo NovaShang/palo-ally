@@ -206,14 +206,6 @@ struct ComposerView: View {
     /// scrolled back to check (a click focuses the field there anyway).
     private var idle: Bool { !focused && !dictating && !(model.layout != .phone && !draft.isEmpty) }
 
-    /// The owner is doing something here — typing, dictating, holding to
-    /// talk, staging attachments, quoting. The 「试试」 suggestions at the end
-    /// of the conversation stay away meanwhile (SuggestionsGate).
-    private var engaged: Bool {
-        !idle || !draft.isEmpty || !staged.isEmpty || slashQuery != nil
-            || voice.isActive || pressing || store.replyDraft != nil
-    }
-
     var body: some View {
         #if DEBUG || PERF_HARNESS
         let _ = PerfProbe.count("ComposerView")
@@ -324,9 +316,7 @@ struct ComposerView: View {
                 return
             }
             if focused { OrbInput.shared.typed() }
-            SuggestionsGate.shared.touch()
         }
-        .onChange(of: engaged, initial: true) { _, on in SuggestionsGate.shared.composer(engaged: on) }
         // 「回复」 / 「引用回复」 / 「聊聊」: open the keyboard to write the reply.
         .onChange(of: store.replyDraft) { _, reply in if reply != nil { focusToken += 1 } }
         .animation(.snappy, value: store.replyDraft)

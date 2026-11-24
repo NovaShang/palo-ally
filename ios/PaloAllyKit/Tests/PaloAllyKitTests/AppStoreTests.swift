@@ -87,13 +87,13 @@ struct AppStoreTests {
         #expect(store.recentArtifacts.map(\.id) == ["ar2", "ar20", "ar4", "ar21", "ar3", "ar5", "ar10", "ar6", "ar7", "ar8", "ar9"])
         #expect(store.settings?.probeIntervalMinutes == 10)
         #expect(store.status?.model == "glm-4.6")
-        // hello + sync first; 「试试」 suggestions, the Allies (list, then each one's log), the Pals (with
+        // hello + sync first; the Allies (list, then each one's log), the Pals (with
         // the computer's other sessions: no sessions.list as well) the workspaces and the plan's usage load right after.
         // (The right pane's tabs are asked by the pane when the app shows it, not by the store.)
         #expect(await until {
             let log = await host.requestLog
-            return Array(log.prefix(2)) == ["hello", "sync"] && log.count == 9
-                && Set(log.dropFirst(2)) == ["suggestions.list", "ally.list", "ally.log", "usage.get", "pals.list", "workspaces.list"]
+            return Array(log.prefix(2)) == ["hello", "sync"] && log.count == 8
+                && Set(log.dropFirst(2)) == ["ally.list", "ally.log", "usage.get", "pals.list", "workspaces.list"]
         })
         try await Task.sleep(for: .milliseconds(100))
         #expect(await !host.requestLog.contains("sessions.list"))
@@ -491,10 +491,6 @@ struct AppStoreTests {
         let req = try #require(host.request("chat.send"))
         #expect(req.params["replyTo"]?["messageId"]?.stringValue == "srv-a")
         #expect(req.params["replyTo"]?["excerpt"]?.stringValue == "3 点开会")
-        // A 「试试」 chip doesn't take the open quote with it.
-        store.quote(earlier)
-        store.send("找出没在用的订阅", suggestionId: "sg_1")
-        #expect(store.replyDraft != nil)
     }
 
     @Test func broadcastWithoutClientMsgIdMergesByText() async throws {

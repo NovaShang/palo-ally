@@ -50,9 +50,6 @@ public enum RPCMethod {
     public static let mediaUploadChunk = "media.uploadChunk"
     /// A file the assistant sent, in 256 KiB chunks (same shape as artifact.read).
     public static let mediaRead = "media.read"
-    /// 「试试」 chips: the unused suggestions, and dismissing one for good.
-    public static let suggestionsList = "suggestions.list"
-    public static let suggestionsDismiss = "suggestions.dismiss"
     /// The host's own update: `check` only looks; otherwise it stages the newest
     /// release and switches as soon as nothing is in flight (Settings → 立即更新).
     public static let hostUpdate = "host.update"
@@ -209,7 +206,7 @@ public enum RPCMethod {
         approvalAnswer, questionAnswer, watchAdd, watchUpdate, watchRemove, artifactList, artifactRead, artifactPin,
         memoryList, memoryRead, memoryWrite, settingsUpdate, stop, chatHandleNow, pushRegister, pushUnregister, presence,
         deviceUnpair, auditTail, mediaUpload, mediaUploadChunk, mediaGet, mediaRead,
-        suggestionsList, suggestionsDismiss, hostUpdate, pairInvite, deviceList, deviceRemove, usageGet,
+        hostUpdate, pairInvite, deviceList, deviceRemove, usageGet,
     ] + allies + sessions + pals + workbench + files + auth + pending + backlog
 }
 
@@ -230,7 +227,6 @@ public enum RPCEventName {
     public static let harnessUpdated = "harness.updated"
     /// How much of the plan is used changed.
     public static let usageUpdated = "usage.updated"
-    public static let suggestionsUpdated = "suggestions.updated"
     /// The Ally list or someone's online state changed.
     public static let allyUpdated = "ally.updated"
     /// A new exchange, or one's status changed (drafts arrive this way).
@@ -259,7 +255,7 @@ public enum RPCEventName {
 
     public static let all: [String] = [
         chatMessage, chatDelta, chatRewound, taskUpdated, approvalUpdated, questionUpdated, watchUpdated, artifactUpdated, settingsUpdated,
-        status, commandsUpdated, suggestionsUpdated,
+        status, commandsUpdated,
     ] + allies + sessions + pals + workbench + [filesChanged, pendingUpdated, backlogUpdated, harnessUpdated, usageUpdated]
 }
 
@@ -386,12 +382,10 @@ public struct ChatSendParams: Codable, Sendable {
     public var text: String
     public var clientMsgId: String?
     public var attachments: [String]?
-    /// Set when the message came from tapping a 「试试」 chip (it's used up).
-    public var suggestionId: String?
     /// The quoted part of an earlier message.
     public var replyTo: ReplyTo?
-    public init(text: String, clientMsgId: String?, attachments: [String]? = nil, suggestionId: String? = nil, replyTo: ReplyTo? = nil) {
-        self.text = text; self.clientMsgId = clientMsgId; self.attachments = attachments; self.suggestionId = suggestionId
+    public init(text: String, clientMsgId: String?, attachments: [String]? = nil, replyTo: ReplyTo? = nil) {
+        self.text = text; self.clientMsgId = clientMsgId; self.attachments = attachments
         self.replyTo = replyTo
     }
 }
