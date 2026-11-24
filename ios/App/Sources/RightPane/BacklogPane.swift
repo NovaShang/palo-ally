@@ -19,6 +19,11 @@ struct BacklogView: View {
     @Environment(AppStore.self) private var store
     @Environment(WindowModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.paneChrome) private var chrome
+    /// The on-screen keyboard is up (a phone, an iPad).
+    @State private var keyboardUp = false
+    /// Grows each time the open row is to be brought whole into sight.
+    @State private var reveal = 0
     @State private var draft = ""
     @State private var showDone = false
     /// The row open for editing, with what's typed in it.
@@ -67,7 +72,16 @@ struct BacklogView: View {
         // What's typed is never only here: saved when the app goes away, the
         // pane changes, or the open row's item is no longer in line.
         .onChange(of: scenePhase) { _, phase in if phase != .active { open?.save() } }
-        .onDisappear { close() }
+        .onDisappear {
+            close()
+            chrome?.typing = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboard(true) }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboard(false) }
+        // Up, or taller now (an input method's candidates): the open row clears it.
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in reveal += 1 }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidChangeFrameNotification)) { _ in reveal += 1 }
+        .onChange(of: typing) { _, on in chrome?.typing = on }
         .onChange(of: backlog?.queued.map(\.id)) { _, ids in
             if let open, ids?.contains(open.id) != true { close() }
         }
@@ -158,6 +172,9 @@ struct BacklogView: View {
                            remove: { remove(item) }, start: { start(item) },
                            close: { close() }, discard: { close(saving: false) })
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { openFrame = $0 }
+                // Opened, or grown by a line: all of it in sight, its buttons too.
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _ in reveal += 1 }
+                .background(RevealRow(trigger: reveal))
                 .modifier(Row(item: item))
                 .id(item.id)
         } else {
@@ -215,6 +232,15 @@ struct BacklogView: View {
     }
 
     // MARK: the open row
+
+    /// A row open to type in, or one being added: the phone's tab bar is away.
+    /// Already as the row opens, and from one open row to the next.
+    private var typing: Bool { !BacklogMetrics.mac && (keyboardUp || open != nil && backlog?.editable == true) }
+
+    private func keyboard(_ up: Bool) {
+        guard !BacklogMetrics.mac else { return }
+        keyboardUp = up
+    }
 
     private func openRow(_ item: BacklogItem) {
         close()
@@ -387,9 +413,19 @@ struct BacklogView: View {
         .glassEffect(.regular, in: .capsule)
         .padding(.horizontal, 16)
         .padding(.top, 8)
-        .padding(.bottom, BacklogMetrics.mac ? 12 : 8 + bottomClearance)
+        .padding(.bottom, BacklogMetrics.mac ? 12 : 8 + (keyboardUp ? 0 : bottomClearance))
+        // A finger's: away while a row is open, its room too once the
+        // keyboard needs it (not before: the end of the list would drop and
+        // rise again). Kept in place, so the keyboard passes on from it.
+        .opacity(addHidden ? 0 : 1)
+        .allowsHitTesting(!addHidden)
+        .accessibilityHidden(addHidden)
+        .frame(height: addHidden && keyboardUp ? 0 : nil, alignment: .top)
+        .animation(.snappy(duration: 0.2), value: addHidden)
         .onChange(of: adding) { _, on in if on { close() } }
     }
+
+    private var addHidden: Bool { !BacklogMetrics.mac && open != nil }
 
     private func add() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -421,7 +457,7 @@ struct BacklogView: View {
         case "remove": if let item { remove(item) }
         case "undo": toast?.undo?(); toast = nil
         case "type": open?.text = parts.dropFirst().joined(separator: ":")
-        case "note": open?.note = parts.dropFirst().joined(separator: ":")
+        case "note": open?.note = parts.dropFirst().joined(separator: ":").replacingOccurrences(of: "\\n", with: "\n")
         case "new": if let item { pick(.new, for: item) }
         case "add": draft = parts.dropFirst().joined(separator: ":"); add()
         default: break
@@ -477,6 +513,38 @@ private struct QueueDrag: ViewModifier {
                 }
             }
     }
+}
+
+/// Behind the open row: each `trigger` scrolls the list by as little as
+/// brings all of the row between its bars (or the keyboard).
+private struct RevealRow: UIViewRepresentable {
+    let trigger: Int
+
+    func makeUIView(context: Context) -> UIView {
+        let v = UIView()
+        v.isUserInteractionEnabled = false
+        return v
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        guard context.coordinator.seen != trigger else { return }
+        context.coordinator.seen = trigger
+        // Once this change is laid out.
+        Task { @MainActor [weak view] in
+            try? await Task.sleep(for: .milliseconds(30))
+            guard let view, view.window != nil,
+                  let scroll = sequence(first: view.superview, next: { $0?.superview }).lazy.compactMap({ $0 as? UIScrollView }).first else { return }
+            var rect = view.convert(view.bounds, to: scroll).insetBy(dx: 0, dy: -8)
+            // Taller than what shows: its lower end, where the buttons are.
+            let room = scroll.bounds.height - scroll.adjustedContentInset.top - scroll.adjustedContentInset.bottom
+            if rect.height > room, room > 0 { rect = CGRect(x: rect.minX, y: rect.maxY - room, width: rect.width, height: room) }
+            scroll.scrollRectToVisible(rect, animated: true)
+        }
+    }
+
+    func makeCoordinator() -> Seen { Seen() }
+
+    @MainActor final class Seen { var seen = 0 }
 }
 
 // MARK: - the line at the bottom

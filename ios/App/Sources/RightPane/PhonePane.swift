@@ -76,6 +76,8 @@ enum PaneModal {
 final class PaneChrome {
     var query = ""
     var onlyThisSession = true
+    /// 待办 has the keyboard (a row open, or one being added): the tab bar is out of its way.
+    var typing = false
 }
 
 extension EnvironmentValues {
@@ -139,7 +141,10 @@ struct PhonePane: View {
         .contentMargins(.bottom, 80, for: .scrollContent)
         .scrollEdgeEffectStyle(.soft, for: .all)
         .overlay(alignment: .top) { topBar(palID: palID, scope: scope) }
-        .overlay(alignment: .bottom) { bottomBar }
+        .overlay(alignment: .bottom) {
+            if !(state.segment == .backlog && chrome.typing) { bottomBar.transition(.opacity) }
+        }
+        .animation(.snappy(duration: 0.2), value: chrome.typing)
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
         // A new segment starts without a search.
         .onChange(of: state.segment) { endSearch() }
