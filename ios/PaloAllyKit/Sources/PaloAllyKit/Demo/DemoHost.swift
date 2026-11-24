@@ -988,13 +988,15 @@ public actor DemoHost {
             settings = try obj.decode(HostSettings.self)
             emit(RPCEventName.settingsUpdated, settings)
             return ["settings": try .from(settings)]
+        case RPCMethod.authLogout:
+            return try demoLogout()
         case RPCMethod.usageGet:
             return try usageGet(p)
         case RPCMethod.authLoginStart:
             // The link comes back at once; the demo's login goes through with any code but "bad".
             status.auth = AuthStatus(state: status.auth?.state ?? .ok, since: status.auth?.since,
                                      login: LoginStatus(state: .waiting, startedAt: Date().epochMillis, url: Self.demoLoginURL),
-                                     stopped: status.auth?.stopped)
+                                     stopped: status.auth?.stopped, signedOut: status.auth?.signedOut ?? false)
             emit(RPCEventName.status, status)
             return ["auth": try .from(status.auth)]
         case RPCMethod.authLoginCode:
@@ -1004,6 +1006,8 @@ public actor DemoHost {
             if p["code"]?.stringValue?.trimmingCharacters(in: .whitespaces) == "bad" {
                 status.auth?.login?.state = .invalid
             } else {
+                // Whose it is first, then that it's done (a code that begins with "mei": another account).
+                demoSignedIn(p["code"]?.stringValue?.hasPrefix("mei") == true ? Self.demoOtherAccount : nil)
                 status.auth = nil
             }
             emit(RPCEventName.status, status)

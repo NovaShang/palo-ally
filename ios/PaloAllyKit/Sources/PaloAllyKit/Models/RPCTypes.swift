@@ -156,9 +156,10 @@ public enum RPCMethod {
     public static let authLoginStart = "auth.login.start"
     public static let authLoginCode = "auth.login.code"
     public static let authLoginCancel = "auth.login.cancel"
+    public static let authLogout = "auth.logout"
     /// How much of the plan is used (Models/Usage.swift).
     public static let usageGet = "usage.get"
-    public static let auth: [String] = [authLoginStart, authLoginCode, authLoginCancel]
+    public static let auth: [String] = [authLoginStart, authLoginCode, authLoginCancel, authLogout]
 
     /// 等你的事 (host/src/pending.ts): the list, the owner's hand on it
     /// (ignore / reopen / snooze), an answer, and 聊这件.

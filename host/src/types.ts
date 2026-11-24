@@ -155,6 +155,7 @@ export type QuestionStatus = "pending" | "answered" | "expired";
 export interface AuthStatus {
   state: "expired" | "ok"; // ok: a sign-in started while it still worked
   stopped?: StoppedWork; // expired: what stopped for it
+  signedOut?: boolean; // the owner signed out from the app (state "expired", which an older app takes it for)
   since?: number; // when it was found expired
   login?: LoginStatus;
 }

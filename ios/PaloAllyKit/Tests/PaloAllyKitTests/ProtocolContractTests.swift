@@ -110,6 +110,7 @@ private let resultTypes: [String: Check] = [
     RPCMethod.authLoginStart: strict(AuthResult.self),
     RPCMethod.authLoginCode: strict(AuthResult.self),
     RPCMethod.authLoginCancel: strict(AuthResult.self),
+    RPCMethod.authLogout: strict(AuthResult.self),
     RPCMethod.pendingList: strict(PendingListResult.self),
     RPCMethod.pendingUpdate: strict(PendingItemResult.self),
     RPCMethod.pendingAnswer: strict(PendingItemResult.self),

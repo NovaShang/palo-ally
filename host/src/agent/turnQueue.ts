@@ -64,6 +64,11 @@ export class TurnQueue {
     return this.queue.find(pred);
   }
 
+  /** What's queued. */
+  all(): Turn[] {
+    return [...this.queue];
+  }
+
   /** 停止: nothing queued goes on. */
   clear(): void {
     this.queue = [];

@@ -111,6 +111,7 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
   private wechat: WechatRelay | null;
   private ally: AllyTurn | null;
   private compactor: IdleCompact | null;
+  private reopenLater = false;
   private modeChecked = false; // this process' permission mode was compared with the config
 
   constructor(private d: ConversationDeps) {
@@ -500,6 +501,7 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
       this.wechat?.turnEnded(answered.find((a) => a.wechat)?.wechat ?? (turn.proactive ? undefined : turn.wechat), shown);
     }
     this.d.statusChanged();
+    if (this.reopenLater && this.quiet) this.reopen();
     this.turnQueue?.next();
   }
 
@@ -559,6 +561,27 @@ export class Conversation extends AgentSession<InFlightOwner, TrackerTasks, Chat
    * Claude Code's login is back: an idle process ends and a new one starts
    * on the same session, so it signs in afresh. False while a turn is on.
    */
+  /** Signed in anew: a fresh process, now or at the end of the turn it's in. */
+  reopen(): void {
+    this.reopenLater = !!this.host.proc && (!this.quiet || this.d.tasks.live().length > 0);
+    if (!this.reopenLater) this.restartIdle();
+  }
+
+  /** Its process is from before the last sign-in (it's in a turn): what it says of the account is old. */
+  get outdated(): boolean {
+    return this.reopenLater;
+  }
+
+  /** What it's at, and what's queued behind it (to be stopped: hub.logout). */
+  atWork(): { texts: string[]; watches: string[] } {
+    const turns = [...(this.current ? [this.current] : []), ...(this.turnQueue?.all() ?? [])].filter((x) => !x.maintenance);
+    const owner = this.pending.values().flatMap((p) => (p.text ? [p.text] : []));
+    return {
+      texts: [...owner, ...turns.filter((x) => x.proactive && !x.watchId).map((x) => (x.label ? `${x.label}: ${x.text}` : x.text || t("limit.background")))],
+      watches: turns.flatMap((x) => (x.watchId ? [x.watchId] : [])),
+    };
+  }
+
   restartIdle(): boolean {
     if (!this.host.proc || this.current || this.pending.size || this.ally?.active) return false;
     this.host.close();

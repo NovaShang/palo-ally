@@ -82,7 +82,7 @@ export function makeHub(
   const pals: Partial<PalsDeps> = { launch: async () => ({ helper: null, env: { PATH: process.env.PATH ?? "/usr/bin:/bin" } }), usesHelper: () => false, openTerminal: async () => {}, ...opts.pals };
   // Never this computer's login: no keychain, no `claude auth`, a pretend login process.
   const logins: FakeLogin[] = [];
-  const auth: Partial<AuthDeps> = { stamp: async () => null, loggedIn: async () => true, spawnLogin: () => (logins.push(new FakeLogin()), logins.at(-1)!), ...opts.auth };
+  const auth: Partial<AuthDeps> = { stamp: async () => null, loggedIn: async () => true, account: async () => null, logout: async () => false, spawnLogin: () => (logins.push(new FakeLogin()), logins.at(-1)!), ...opts.auth };
   const hub = new Hub({ paths, config: opts.config ?? testConfig(), driver: opts.harness ?? driver, pushers: [pusher], wechat: opts.wechat, log: () => {}, allies: opts.allies, sessions, pals, auth, limits: opts.limits });
   const events: { event: string; data: any }[] = [];
   hub.bus.on((event, data) => events.push({ event, data }));

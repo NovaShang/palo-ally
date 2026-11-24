@@ -500,6 +500,10 @@ describe("host ↔ app protocol", () => {
     expect((methods["auth.login.start"] as Sample).result).toMatchObject({ auth: { login: { state: "waiting", url: expect.stringContaining("oauth/authorize") } } });
     expect((await run("auth.login.code", { code: "a1b2c3#d4e5" })).auth.login.state).toBe("checking");
     expect((await run("auth.login.cancel")).auth).toMatchObject({ state: "expired" });
+    // Signed out (a pretend one): as when it ran out, and said to be the owner's.
+    hub.auth.worked();
+    (hub.auth as any).d.logout = async () => true;
+    expect((await run("auth.logout")).auth).toMatchObject({ state: "expired", signedOut: true });
     hub.pals.stop();
     await run("stop");
     await run("device.unpair");

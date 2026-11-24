@@ -535,6 +535,10 @@ export interface HarnessAuth {
   loggedIn(): Promise<boolean>;
   /** When its stored login last changed (never the secret), or null. */
   stamp(): Promise<string | null>;
+  /** Whose login it is now, as it says; null: none, or it doesn't say. */
+  account(): Promise<LoginAccount | null>;
+  /** Signs it out on this computer (every session on it). False: it didn't. */
+  logout(): Promise<boolean>;
   /** Its own sign-in, driven for the phone (a link out, a code back); `dir` is where it may write what it needs. */
   spawnLogin(dir: string): LoginProcess;
 }

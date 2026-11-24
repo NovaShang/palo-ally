@@ -1,4 +1,4 @@
-import type { LimitHit, PlanLimit, PlanReport } from "./harness/types.ts";
+import type { LimitHit, LoginAccount, PlanLimit, PlanReport } from "./harness/types.ts";
 import type { UsageStatus } from "./types.ts";
 import { readJson, writeJson } from "./util.ts";
 
@@ -100,6 +100,15 @@ export class PlanUsage {
     // Its own; and one for everything stops it as well.
     const l = up.filter((x) => matches(x, hit) || !x.scope).sort((a, b) => (b.resetsAt ?? 0) - (a.resetsAt ?? 0))[0];
     return l ? (l.resetsAt ?? now + 30 * 60_000) : null;
+  }
+
+  /** A sign-in: whose login it is now; another account's numbers are to come. */
+  signedIn(account: LoginAccount | null, changed: boolean): void {
+    const acc = account ?? this.s.account;
+    this.s = changed ? { state: "loading", limits: [], ...(acc ? { account: acc } : {}) } : { ...this.s, ...(acc ? { account: acc } : {}) };
+    this.lastAsk = 0; // asked as soon as the fresh process is up
+    writeJson(this.d.path, this.s);
+    this.d.changed(this.s);
   }
 
   /** Once a minute: whether it's time to ask. */

@@ -137,6 +137,12 @@ export class LimitWatch {
     this.save();
   }
 
+  /** Signed in anew (another account has room, maybe): asked again in a moment. */
+  recheck(): void {
+    for (const h of this.held()) h.due = this.now() + this.moment();
+    if (this.held().length) this.save();
+  }
+
   // ---------------- going on ----------------
 
   private held(): Held[] {

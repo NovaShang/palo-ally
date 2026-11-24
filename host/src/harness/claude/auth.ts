@@ -1,8 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { LimitHit, LoginProcess } from "../types.ts";
+import type { LimitHit, LoginAccount, LoginProcess } from "../types.ts";
 import { cleanSessionEnv, findClaude, loginEnv } from "./cli.ts";
+import { loginAccount } from "./usage.ts";
 
 // Claude Code's login: what a failure says, whether it is logged in, when its
 // stored login changed, and `claude auth login` driven through expect.
@@ -118,24 +119,58 @@ export async function credentialsStamp(): Promise<string | null> {
   });
 }
 
-/** `claude auth status`: logged in or not. */
-export async function claudeLoggedIn(): Promise<boolean> {
+/** `claude auth …`: its output and how it ended (null: it couldn't be run, or took too long). */
+async function claudeAuth(args: string[]): Promise<{ out: string; code: number } | null> {
   const env = cleanSessionEnv(await loginEnv());
   const bin = findClaude(env);
-  if (!bin) return false;
+  if (!bin) return null;
   return new Promise((resolve) => {
-    const p = spawn(bin, ["auth", "status"], { env, stdio: ["ignore", "pipe", "ignore"] });
+    const p = spawn(bin, ["auth", ...args], { env, stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
     p.stdout.on("data", (d: Buffer) => (out += d.toString("utf8")));
-    const timer = setTimeout(() => p.kill("SIGKILL"), 20_000);
-    p.on("exit", () => {
+    const timer = setTimeout(() => {
+      p.kill("SIGKILL");
+      resolve(null);
+    }, 20_000);
+    p.on("exit", (code) => {
       clearTimeout(timer);
-      try {
-        resolve(JSON.parse(out).loggedIn === true);
-      } catch {
-        resolve(/"loggedIn":\s*true/.test(out));
-      }
+      resolve({ out, code: code ?? 1 });
     });
-    p.on("error", () => resolve(false));
+    p.on("error", () => resolve(null));
   });
+}
+
+/** `claude auth status`: logged in or not. */
+export async function claudeLoggedIn(): Promise<boolean> {
+  const r = await claudeAuth(["status"]);
+  return !!r && saysLoggedIn(r.out);
+}
+
+function saysLoggedIn(out: string): boolean {
+  try {
+    return JSON.parse(out).loggedIn === true;
+  } catch {
+    return /"loggedIn":\s*true/.test(out);
+  }
+}
+
+/** `claude auth status`: whose login. */
+export async function claudeAccount(): Promise<LoginAccount | null> {
+  return statusAccount((await claudeAuth(["status"]))?.out);
+}
+
+/** What `claude auth status` printed, as an account. */
+export function statusAccount(out?: string): LoginAccount | null {
+  try {
+    const j = JSON.parse(out ?? "");
+    return j.loggedIn === true ? (loginAccount({ email: j.email, organization: j.orgName, subscriptionType: j.subscriptionType, apiProvider: j.apiProvider }) ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** `claude auth logout`: every Claude Code on this computer is signed out. */
+export async function claudeLogout(): Promise<boolean> {
+  if (process.env.NODE_ENV === "test") return false; // never the login of the computer tests run on
+  return (await claudeAuth(["logout"]))?.code === 0;
 }

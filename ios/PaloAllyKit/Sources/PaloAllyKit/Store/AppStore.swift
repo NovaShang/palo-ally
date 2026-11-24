@@ -1933,6 +1933,13 @@ public final class AppStore {
         applyAuth(r.auth)
     }
 
+    /// Signs the computer's login out: what runs there is stopped first, and
+    /// goes on once someone signs in again.
+    public func logout() async throws {
+        let r: AuthResult = try await rpc.call(RPCMethod.authLogout, params: EmptyParams(), timeout: 60)
+        applyAuth(r.auth)
+    }
+
     private func applyAuth(_ auth: AuthStatus?) {
         guard var s = status else { return }
         s.auth = auth

@@ -11,7 +11,7 @@ import { ChatLog } from "./chat.ts";
 import { type Config, type Paths, type Settings, VERSION, patchConfig, validateSettings } from "./config.ts";
 import { Conversation } from "./conversation.ts";
 import { activityThinking, approvalAnswerReply, questionLineHelp, statusReply, stopReply } from "./copy.ts";
-import type { HarnessDriver, HarnessEvent, ModelOption, SlashCommandInfo, ToolHandlers, HarnessCapabilities } from "./harness/types.ts";
+import type { HarnessDriver, HarnessEvent, LoginAccount, ModelOption, SlashCommandInfo, ToolHandlers, HarnessCapabilities } from "./harness/types.ts";
 import { HarnessInfo } from "./harnessInfo.ts";
 import { MemoryView } from "./memory.ts";
 import { checkModelChoice } from "./modelChoice.ts";
@@ -28,7 +28,7 @@ import { isLang, parseLocale, setLang, t, tIn, systemLanguage, type Lang } from 
 import { makeShellTools, restText } from "./shellTools.ts";
 import { SuggestionStore } from "./suggestions.ts";
 import { TaskTracker } from "./tasks.ts";
-import type { Attachment, CardSource, Channel, ChatMessage, PairedDevice, PendingItem, PendingLink, PendingSource, Status, Task, UsageStatus, Watch, ReplyTo } from "./types.ts";
+import type { Attachment, AuthStatus, CardSource, Channel, ChatMessage, PairedDevice, PendingItem, PendingLink, PendingSource, Status, Task, UsageStatus, Watch, ReplyTo } from "./types.ts";
 import { MediaStore } from "./media.ts";
 import { briefTitle, ensureMorningBrief, isBriefTitle } from "./brief.ts";
 import { HandoffTracker } from "./handoffs.ts";
@@ -198,22 +198,27 @@ export class Hub {
         const r = await this.router.proactive(expiredNotice, { title: t("auth.expiredTitle"), whilePresent: true });
         return !r.suppressed;
       },
-      recovered: (missed, how, since) => {
+      recovered: (missed, how, since, signedOut) => {
         expiredNotice = null;
-        void this.resumeAfterLogin(missed, how, since).catch((e) => this.log(`resume after login failed: ${e}`));
+        void this.resumeAfterLogin(missed, how, since, signedOut).catch((e) => this.log(`resume after login failed: ${e}`));
       },
       changed: () => this.emitStatus(),
       audit: (type, data) => this.audit.log(type, data),
       log: (s) => this.log(s),
       stamp: () => this.harness.auth.stamp(),
       loggedIn: () => this.harness.auth.loggedIn(),
+      account: () => this.harness.auth.account(),
+      logout: () => this.harness.auth.logout(),
+      knownAccount: () => this.planUsage.status.account,
+      signedIn: (o) => this.signedIn(o),
       spawnLogin: () => this.harness.auth.spawnLogin(this.paths.state),
       ...deps.auth,
     });
     this.planUsage = new PlanUsage({
       path: `${this.paths.state}/plan-usage.json`,
       ask: () => {
-        const proc = this.conversation.process;
+        // (no login: a process would say it has no plan; one from before a sign-in: the account it was)
+        const proc = this.auth.expired || this.conversation.outdated ? null : this.conversation.process;
         return proc ? (proc.planReport?.() ?? Promise.resolve({ plan: "unsupported", limits: [] })) : undefined;
       },
       working: () => this.conversation.busy || !this.pals.quiet(),
@@ -1226,6 +1231,49 @@ export class Hub {
 
   // ---------------- internals ----------------
 
+  /**
+   * A sign-in went through (from the app). Still valid until then, or another
+   * account's now: every process starts afresh, at the end of the turn it's
+   * in; what a used-up limit stopped is looked at again. (One that had run
+   * out, same account: what failed for it goes on, resumeAfterLogin.)
+   */
+  private signedIn(o: { account: LoginAccount | null; changed: boolean; expired: boolean }): void {
+    this.planUsage.signedIn(o.account, o.changed);
+    if (!o.expired || o.changed) {
+      const told = this.auth.status()?.stopped?.agents.map((a) => a.id) ?? [];
+      this.conversation.reopen();
+      this.pals.reopen(told);
+    }
+    this.limits.recheck();
+  }
+
+  /**
+   * auth.logout: the assistant and the agents at work are stopped, and
+   * remembered; Claude Code is signed out on this computer (its terminal
+   * sessions too). All goes on once someone signs in again. When it can't be
+   * signed out, what was stopped goes on at once.
+   */
+  async logout(by: string): Promise<AuthStatus | undefined> {
+    if (this.auth.expired) return this.auth.status();
+    this.audit.log("auth.logout", { by });
+    const { texts, watches } = this.conversation.atWork();
+    const busy = this.pals.atWork();
+    const missed: Missed = { palo: texts.map((text) => ({ text: text.slice(0, 300), at: Date.now() })), pals: Object.fromEntries(busy.map((p) => [p.id, p.rec.name])), schedules: [...new Set(watches)] };
+    const since = Date.now();
+    this.conversation.stopAll("logout");
+    await Promise.all(busy.map((p) => p.interrupt("logout")));
+    if (!(await this.auth.signOut())) {
+      this.audit.log("auth.logout.failed", {});
+      void this.resumeMissed(missed, "logout", since).catch((e) => this.log(`resume after a failed logout: ${e}`));
+      throw new Error(t("auth.logoutFailed"));
+    }
+    // Nothing goes on with a login kept in a process' memory.
+    await this.auth.didSignOut(missed);
+    this.conversation.restartIdle();
+    await this.pals.restartIdle(this.pals.list().map((p) => p.id));
+    return this.auth.status();
+  }
+
   private onSchedule(w: Watch): void {
     // No login: it would fail. Held, and run once the login is back.
     if (this.auth.expired) return this.auth.hold(w.id);
@@ -1238,14 +1286,14 @@ export class Hub {
    * told to go on, and the assistant gets what it didn't finish, telling the
    * owner what came back. With nothing of its own to finish, a note says it.
    */
-  private async resumeAfterLogin(m: Missed, how: string, since: number): Promise<void> {
+  private async resumeAfterLogin(m: Missed, how: string, since: number, signedOut = false): Promise<void> {
     this.conversation.restartIdle();
     await this.pals.restartIdle(Object.keys(m.pals));
-    await this.resumeMissed(m, "auth", since, how);
+    await this.resumeMissed(m, signedOut ? "logout" : "auth", since, how);
   }
 
   /** What failed for want of a login, or on a used-up limit, goes on: the agents are told to, the schedules run, the assistant gets what it didn't finish. */
-  private async resumeMissed(m: Missed, why: "auth" | "limit", since: number, how = "reset"): Promise<void> {
+  private async resumeMissed(m: Missed, why: "auth" | "limit" | "logout", since: number, how = "reset"): Promise<void> {
     const mins = Math.max(1, Math.round((Date.now() - since) / 60_000));
     const palIds = Object.keys(m.pals);
     const told: string[] = [];
@@ -1264,12 +1312,12 @@ export class Hub {
     void this.probe.tick();
     const quote = (xs: string[]) => xs.map((x) => t("ally.msg.quote", { text: x })).join(t("turn.listSep"));
     const done = [rerun.length ? t("auth.rerun", { list: quote(rerun) }) : "", told.length ? t("auth.palsTold", { list: quote(told) }) : ""].filter(Boolean).join(" ");
-    this.log(`after ${why === "auth" ? "login" : "a limit"} (${how}, ${mins} min): ${m.palo.length} turn(s) to finish, ${rerun.length} schedule(s), ${told.length} Pal(s)`);
+    this.log(`after ${why === "limit" ? "a limit" : "login"} (${how}, ${mins} min): ${m.palo.length} turn(s) to finish, ${rerun.length} schedule(s), ${told.length} Pal(s)`);
     if (m.palo.length) {
       const list = m.palo.map((x) => `- ${x.text.replace(/\s+/g, " ").slice(0, 200)}`).join("\n");
       // pal: work already asked for, so the proactive budget doesn't drop it.
       this.conversation.enqueue({ text: t(`${why}.resumeTurn`, { mins, list, done: done ? t("auth.hostDid", { done }) : "" }), origin: "system", proactive: true, pal: true, label: t(`${why}.resumeLabel`) });
-    } else if (why === "auth") this.chat.add({ role: "system", kind: "notice", text: t("auth.back", { mins, done }), channel: "system" });
+    } else if (why !== "limit") this.chat.add({ role: "system", kind: "notice", text: t("auth.back", { mins, done }), channel: "system" });
   }
 
   private onProbeTriggers(t: ProbeTrigger[]): void {

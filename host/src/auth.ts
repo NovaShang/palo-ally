@@ -1,4 +1,4 @@
-import type { LoginProcess } from "./harness/types.ts";
+import type { LoginAccount, LoginProcess } from "./harness/types.ts";
 import { expectLogin } from "./harness/claude/auth.ts";
 
 import type { AuthStatus, LoginStatus } from "./types.ts";
@@ -33,6 +33,7 @@ interface Saved {
   missed?: Missed;
   notified?: boolean;
   stamp?: string | null;
+  signedOut?: boolean;
 }
 
 export interface AuthDeps {
@@ -42,7 +43,15 @@ export interface AuthDeps {
   /** Tells the owner (push, WeChat); true when it went out (not held for quiet hours). */
   notify: () => Promise<boolean>;
   /** The login is back: resume what was held. `how`: phone | computer | turn. */
-  recovered: (missed: Missed, how: string, since: number) => void;
+  recovered: (missed: Missed, how: string, since: number, signedOut: boolean) => void;
+  /** Whose login it is now. */
+  account?: () => Promise<LoginAccount | null>;
+  /** Signs it out. */
+  logout?: () => Promise<boolean>;
+  /** Whose it was, as far as the host knows (signed out, it doesn't say). */
+  knownAccount?: () => LoginAccount | undefined;
+  /** A sign-in went through (before anything else is told): whose it is, whether that's another account, whether it had run out. */
+  signedIn?: (o: { account: LoginAccount | null; changed: boolean; expired: boolean }) => void;
   changed: () => void;
   audit: (type: string, data?: Record<string, unknown>) => void;
   log: (s: string) => void;
@@ -63,7 +72,8 @@ export class AuthWatch {
   private missed: Missed = empty();
   private notified = false;
   private stampAtExpiry: string | null = null;
-  private login: (LoginStatus & { proc?: LoginProcess; timer?: ReturnType<typeof setTimeout> }) | null = null;
+  private signedOut = false;
+  private login: (LoginStatus & { proc?: LoginProcess; timer?: ReturnType<typeof setTimeout>; before?: LoginAccount | null }) | null = null;
   private poll: ReturnType<typeof setInterval> | null = null;
   private now: () => number;
 
@@ -75,6 +85,7 @@ export class AuthWatch {
       this.missed = { ...empty(), ...s.missed };
       this.notified = !!s.notified;
       this.stampAtExpiry = s.stamp ?? null;
+      this.signedOut = !!s.signedOut;
     }
   }
 
@@ -98,7 +109,7 @@ export class AuthWatch {
     if (this.since === null && !l) return undefined;
     const login: LoginStatus | undefined = l ? { state: l.state, startedAt: l.startedAt, ...(l.url ? { url: l.url } : {}), ...(l.error ? { error: l.error } : {}) } : undefined;
     const stopped = { assistant: this.missed.palo.length > 0, agents: Object.entries(this.missed.pals).map(([id, name]) => ({ id, name })), schedules: this.missed.schedules.length };
-    return { state: this.since === null ? "ok" : "expired", ...(this.since !== null ? { since: this.since, stopped } : {}), ...(login ? { login } : {}) };
+    return { state: this.since === null ? "ok" : "expired", ...(this.since !== null ? { since: this.since, stopped, ...(this.signedOut ? { signedOut: true } : {}) } : {}), ...(login ? { login } : {}) };
   }
 
   /** Something failed for want of a login. The first one marks it expired and tells the owner. */
@@ -135,6 +146,27 @@ export class AuthWatch {
     if (this.since !== null && !this.login) this.recover("turn");
   }
 
+  /** Claude Code's own sign-out. False: it didn't. */
+  signOut(): Promise<boolean> {
+    return this.d.logout?.().catch(() => false) ?? Promise.resolve(false);
+  }
+
+  /**
+   * The owner signed out (hub.logout: what ran was stopped, `missed`): all
+   * waits for a sign-in, as when the login runs out; nobody needs telling.
+   */
+  async didSignOut(missed: Missed): Promise<void> {
+    this.since = this.now();
+    this.signedOut = true;
+    this.notified = true;
+    this.missed = missed;
+    // Nothing is stored now; on a computer that can't say, as before.
+    this.stampAtExpiry = (await this.d.stamp?.().catch(() => null)) ?? null;
+    this.save();
+    this.startPolling();
+    this.d.changed();
+  }
+
   // ---------------- signing in from the phone ----------------
 
   /** auth.login.start: starts Claude Code's login and gives back its link. */
@@ -145,6 +177,7 @@ export class AuthWatch {
     const proc = spawnLogin();
     const login: NonNullable<AuthWatch["login"]> = { state: "starting", startedAt: this.now(), proc };
     this.login = login;
+    void this.d.account?.().then((a) => (login.before = a ?? this.d.knownAccount?.()), () => (login.before = this.d.knownAccount?.()));
     this.d.audit("auth.login.start", { by });
     proc.onLine((line) => {
       if (this.login !== login) return;
@@ -197,7 +230,12 @@ export class AuthWatch {
     const ok = this.d.loggedIn ? await this.d.loggedIn().catch(() => false) : true;
     if (this.login !== login) return;
     if (!ok) return this.loginFailed(login, "still not logged in");
-    this.d.audit("auth.login.done", {});
+    const account = (await this.d.account?.().catch(() => null)) ?? null;
+    if (this.login !== login) return;
+    const was = login.before;
+    const changed = !!was?.email && !!account?.email && (was.email !== account.email || was.organization !== account.organization);
+    this.d.audit("auth.login.done", { changed });
+    this.d.signedIn?.({ account, changed, expired: this.since !== null });
     this.endLogin();
     if (this.since !== null) this.recover("phone");
     else this.d.changed();
@@ -236,6 +274,8 @@ export class AuthWatch {
   private recover(how: string): void {
     const since = this.since ?? this.now();
     const missed = this.missed;
+    const signedOut = this.signedOut;
+    this.signedOut = false;
     this.since = null;
     this.missed = empty();
     this.notified = false;
@@ -246,7 +286,7 @@ export class AuthWatch {
     this.d.log(`Claude Code login is back (${how})`);
     this.d.audit("auth.recovered", { how, minutes: Math.round((this.now() - since) / 60_000), palo: missed.palo.length, pals: Object.keys(missed.pals).length, schedules: missed.schedules.length });
     this.d.changed();
-    this.d.recovered(missed, how, since);
+    this.d.recovered(missed, how, since, signedOut);
   }
 
   // Told once; held for quiet hours, it goes out on a later poll.
@@ -270,14 +310,15 @@ export class AuthWatch {
     if (this.since === null || this.login) return;
     if (++this.ticks % 20 === 0) void this.tell(); // every 10 minutes, if quiet hours held it
     const now = await this.d.stamp?.().catch(() => null);
-    if (!now || !this.stampAtExpiry || now === this.stampAtExpiry) return;
+    // Signed out, there was nothing stored: anything now is a sign-in.
+    if (!now || now === this.stampAtExpiry || (!this.stampAtExpiry && !this.signedOut)) return;
     const ok = this.d.loggedIn ? await this.d.loggedIn().catch(() => false) : true;
     if (ok && this.since !== null && !this.login) this.recover("computer");
   }
 
   private save(): void {
     if (this.since === null) writeJson(this.d.path, {});
-    else writeJson(this.d.path, { since: this.since, missed: this.missed, notified: this.notified, stamp: this.stampAtExpiry } satisfies Saved);
+    else writeJson(this.d.path, { since: this.since, missed: this.missed, notified: this.notified, stamp: this.stampAtExpiry, ...(this.signedOut ? { signedOut: true } : {}) } satisfies Saved);
   }
 }
 

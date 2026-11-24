@@ -136,6 +136,33 @@ struct UsageTests {
         #expect(store.status?.auth?.stopped?.agents.first?.until == nil)
     }
 
+    @Test func signingInAsAnotherAccountAndSigningOut() async throws {
+        let host = DemoHost(speed: 0, pals: true)
+        let store = AppStore(transport: host.transport)
+        store.start()
+        #expect(await until { store.usage?.account?.email == "lin@example.com" && !store.pals.isEmpty })
+        // another account: whose it is before the sign-in is said to be done
+        try await store.startLogin()
+        #expect(store.status?.auth?.state == .ok && store.status?.auth?.login?.state == .waiting)
+        try await store.submitLoginCode("mei#1")
+        #expect(store.status?.auth == nil)
+        #expect(await until { store.usage?.account?.email == "mei@example.com" })
+        #expect(await until { store.usage?.state == .limits })
+        // the same account: nothing of it changes
+        try await store.startLogin()
+        try await store.submitLoginCode("again#1")
+        #expect(store.status?.auth == nil && store.usage?.account?.email == "mei@example.com")
+        try await store.logout()
+        #expect(store.status?.auth?.isExpired == true && store.status?.auth?.signedOut == true)
+        #expect(store.status?.auth?.stopped?.agents.count == 2)
+        try await store.startLogin()
+        #expect(store.status?.auth?.isExpired == true)
+        try await store.submitLoginCode("ok#1")
+        #expect(store.status?.auth == nil)
+        // an older host says nothing of it
+        #expect(try JSONDecoder().decode(AuthStatus.self, from: Data(#"{"state":"expired"}"#.utf8)).signedOut == false)
+    }
+
     @Test func aHostFromBeforeItHasNone() async {
         let host = DemoHost(speed: 0)
         await host.applyScenario("usageOld")

@@ -920,11 +920,13 @@ public struct AuthStatus: Codable, Sendable, Hashable {
     public var login: LoginStatus?
     /// What stopped for it (nil from an older host).
     public var stopped: StoppedWork?
+    /// The owner signed out (`state` is expired then too).
+    public var signedOut: Bool
 
     public var isExpired: Bool { state == .expired }
 
-    public init(state: AuthState, since: Int64? = nil, login: LoginStatus? = nil, stopped: StoppedWork? = nil) {
-        self.state = state; self.since = since; self.login = login; self.stopped = stopped
+    public init(state: AuthState, since: Int64? = nil, login: LoginStatus? = nil, stopped: StoppedWork? = nil, signedOut: Bool = false) {
+        self.state = state; self.since = since; self.login = login; self.stopped = stopped; self.signedOut = signedOut
     }
 
     public init(from decoder: Decoder) throws {
@@ -933,6 +935,7 @@ public struct AuthStatus: Codable, Sendable, Hashable {
         since = l.millis("since")
         login = l.decode(LoginStatus.self, "login")
         stopped = l.decode(StoppedWork.self, "stopped")
+        signedOut = l.bool("signedOut") ?? false
     }
 }
 

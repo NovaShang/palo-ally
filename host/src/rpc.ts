@@ -37,7 +37,7 @@ export const RPC_METHODS = [
   "pals.detail", "pals.setModel", "pals.setMode", "pals.compact", "pals.stopTask", "pals.reveal",
   "workspaces.list", "workspaces.create", "workspaces.update", "workspaces.move", "workspaces.delete", "workbench.order.set", "workbench.tabs.get", "workbench.tabs.set",
   "pair.invite", "device.list", "device.remove",
-  "auth.login.start", "auth.login.code", "auth.login.cancel",
+  "auth.login.start", "auth.login.code", "auth.login.cancel", "auth.logout",
   "usage.get",
   "pending.list", "pending.update", "pending.answer", "pending.surface",
   "backlog.list", "backlog.add", "backlog.move", "backlog.assign", "backlog.start", "backlog.done", "backlog.remove",
@@ -183,6 +183,9 @@ export async function handleRpc(hub: Hub, req: RpcRequest, ctx: RpcContext, admi
       return { auth: hub.auth.submitCode(String(p.code ?? "")) ?? null };
     case "auth.login.cancel":
       return { auth: hub.auth.cancelLogin() ?? null };
+    // Signs Claude Code out on this computer (what runs is stopped first, and goes on after a sign-in).
+    case "auth.logout":
+      return { auth: (await hub.logout(ctx.deviceId ?? ctx.channel)) ?? null };
     // Claude 用量 (planUsage.ts): what's known now; `refresh` while its page is open.
     case "usage.get":
       return { usage: hub.usageStatus(!!p.refresh) };

@@ -316,6 +316,7 @@ export class Pals {
   private foldTimer: ReturnType<typeof setInterval> | null = null;
   private proposalTimer: ReturnType<typeof setInterval> | null = null;
   private balanceTimer: ReturnType<typeof setTimeout> | null = null;
+  private toReopen = new Set<string>(); // signed in anew while at work: a fresh process once the turn ends
   private waking = new Set<string>(); // asleep Pals being woken (said once)
   private startTimers: ReturnType<typeof setTimeout>[] = [];
   private openTimers = new Set<ReturnType<typeof setTimeout>>();
@@ -398,6 +399,7 @@ export class Pals {
         this.balanceSoon();
         void this.readTitle(pal);
         if (finished) this.pushDone(pal);
+        if (this.toReopen.has(pal.id)) void this.reopenOne(pal);
       },
       onAuth: (pal, ok) => this.d.onAuth?.({ id: pal.id, name: pal.rec.name }, ok),
       limits: {
@@ -648,6 +650,27 @@ export class Pals {
     this.balanceSoon();
     this.flushWaiting(pal);
     return pal.toWire();
+  }
+
+  /** Signed in anew: each awake one gets a fresh process, now when it's between turns, else at the end of the one it's in (`but`: these are seen to already). */
+  reopen(but: string[] = []): void {
+    for (const pal of this.pals.values()) if (pal.awake && !but.includes(pal.id)) void this.reopenOne(pal);
+  }
+
+  private async reopenOne(pal: PalSession): Promise<void> {
+    this.toReopen.delete(pal.id);
+    if (!pal.awake) return; // asleep since: it starts afresh by itself
+    if (pal.idleSince() === null) return void this.toReopen.add(pal.id);
+    this.d.audit.log("pal.reopened", { pal: pal.id, name: pal.rec.name });
+    await pal.shutdown();
+    if (this.pals.get(pal.id) !== pal) return;
+    await pal.start().catch((e) => this.log(`${pal.rec.name} couldn't start again: ${e instanceof Error ? e.message : e}`));
+    this.emitSoon();
+  }
+
+  /** The ones at work (to be stopped: hub.logout). */
+  atWork(): PalSession[] {
+    return [...this.pals.values()].filter((p) => p.busy);
   }
 
   /** A used-up limit has reset: this one may be told to go on (here, not stopped, not open in a terminal, between turns). */
