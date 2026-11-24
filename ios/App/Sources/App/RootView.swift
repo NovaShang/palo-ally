@@ -926,6 +926,8 @@ private struct ConversationDetail: View {
                     AgentPage(agent: .session(id)).id("session-\(id)")
                 case .devices:
                     DevicesPage()
+                case .usage:
+                    UsagePage()
                 }
             }
             .modifier(QuickSwitchBar(current: current))

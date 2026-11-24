@@ -173,6 +173,8 @@ final class WindowModel {
         /// 电脑与设备 (docs/devices-prd.md): the paired computers, and the
         /// devices paired with the current one.
         case devices
+        /// How much of the login's plan is used.
+        case usage
     }
     /// The conversation picked in the list. Phones: nil once back on the list.
     var selection: Conversation? = .palo {
@@ -587,6 +589,7 @@ final class WindowModel {
         case "assistant", "switcher": openManagement()
         case "settings": openSettings()
         case "hosts", "devices": open(.devices)
+        case "usage": open(.usage)
         case "pairing": if mode != .unpaired { startPairing(.replace) }
         case "identity": openManagement(); showIdentityEditor = true
         case "list", "allies", "sessions", "pals": showList()
@@ -813,6 +816,7 @@ extension WindowModel.Conversation {
         case .earlier: "earlier"
         case .session(let id): "session:\(id)"
         case .devices: "devices"
+        case .usage: "usage"
         }
     }
 
@@ -823,6 +827,7 @@ extension WindowModel.Conversation {
         case "palo": self = .palo
         case "earlier": self = .earlier
         case "devices": self = .devices
+        case "usage": self = .usage
         case "pal" where !id.isEmpty: self = .pal(id)
         case "ally" where !id.isEmpty: self = .ally(id)
         case "workspace" where !id.isEmpty: self = .workspace(id)

@@ -45,8 +45,13 @@ struct ConversationList: View {
                     HostSidebarContent(hostID: model.activeHostID, several: false, actions: actions)
                 }
 
-                // The computers and the devices paired with them: quiet, last.
+                // How much of the plan is used; the computers and the devices paired with them: quiet, last.
                 Section {
+                    if UsageSummary.of(model, now: .now) != nil {
+                        UsageListRow()
+                            .tag(WindowModel.SidebarPick(host: model.activeHostID, conversation: .usage))
+                            .accessibilityIdentifier("row-usage")
+                    }
                     DevicesListRow()
                         .tag(WindowModel.SidebarPick(host: model.activeHostID, conversation: .devices))
                         .accessibilityIdentifier("row-devices")

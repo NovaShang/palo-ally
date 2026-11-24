@@ -9,6 +9,12 @@ extension AppStore {
     /// false for a host from before usage.get; nil until asked.
     public var usageSupported: Bool? { shared.usageSupported }
 
+    /// Reading for a while and nothing yet: no longer said to be on its way (until the numbers come).
+    public var usageOverdue: Bool { shared.usageOverdue }
+
+    /// How long it's said to be reading.
+    static var usagePatience: Duration { .seconds(15) }
+
     /// `refresh`: its page is open (the host asks again when a minute has passed; the news comes as an event).
     public func loadUsage(refresh: Bool = false) async {
         do {
@@ -21,8 +27,18 @@ extension AppStore {
         }
     }
 
-    func apply(usage: UsageStatus?) {
+    func apply(usage: UsageStatus?, patience: Duration = AppStore.usagePatience) {
         guard let usage else { return }
+        if usage.state != .loading {
+            shared.usageWait?.cancel()
+            shared.usageWait = nil
+            if shared.usageOverdue { shared.usageOverdue = false }
+        } else if shared.usageWait == nil {
+            shared.usageWait = Task { [shared] in
+                try? await Task.sleep(for: patience)
+                if !Task.isCancelled { shared.usageOverdue = true }
+            }
+        }
         if shared.usageSupported != true { shared.usageSupported = true }
         if shared.usage != usage { shared.usage = usage }
     }

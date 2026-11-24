@@ -95,6 +95,22 @@ struct UsageTests {
         #expect(await host.lastParams["usage.get"]?["refresh"] == true)
     }
 
+    @Test func readingForLongIsNoLongerSaidToBeOnItsWay() async throws {
+        let store = AppStore(transport: DemoHost(speed: 0, autoConnect: false).transport)
+        store.apply(usage: UsageStatus(state: .loading), patience: .milliseconds(30))
+        #expect(!store.usageOverdue)
+        #expect(await until { store.usageOverdue })
+        store.apply(usage: UsageStatus(state: .loading), patience: .milliseconds(30))
+        #expect(store.usageOverdue) // asked again: still nothing
+        store.apply(usage: DemoHost.demoUsage(now: 0))
+        #expect(!store.usageOverdue)
+        // read in time: never said
+        store.apply(usage: UsageStatus(state: .loading), patience: .milliseconds(30))
+        store.apply(usage: UsageStatus(state: .noLimits))
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(!store.usageOverdue)
+    }
+
     @Test func aHostFromBeforeItHasNone() async {
         let host = DemoHost(speed: 0)
         await host.applyScenario("usageOld")

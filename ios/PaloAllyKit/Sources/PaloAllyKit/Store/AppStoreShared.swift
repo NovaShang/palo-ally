@@ -42,6 +42,9 @@ final class AppStoreShared {
     /// Claude 用量 (AppStore+Usage.swift); the host answers usage.get (nil until asked).
     var usage: UsageStatus?
     var usageSupported: Bool?
+    /// Still not read after a while (no process to ask).
+    var usageOverdue = false
+    var usageWait: Task<Void, Never>?
     var copiedClipboardIDs: Set<String> = []
 
     var allies: [AllyInfo] = []
