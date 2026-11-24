@@ -11,8 +11,10 @@ import SwiftUI
 extension WindowModel {
     /// Whose tabs the open page uses: `palo`, `pal:<id>`, `ws:<id>`; nil on
     /// pages without a pane (an Ally, 以前的, devices).
-    var paneKey: String? {
-        switch selection ?? .palo {
+    var paneKey: String? { Self.paneKey(of: selection) }
+
+    private static func paneKey(of page: Conversation?) -> String? {
+        switch page ?? .palo {
         case .palo: PaneTabsKey.palo
         case .pal(let id): PaneTabsKey.session(id)
         // The workspace's own, whichever pane is in use (Palo's included):
@@ -57,6 +59,33 @@ extension WindowModel {
         guard libraryBeside else { return paneCover }
         guard let key = paneKey, let hub = paneHub else { return false }
         return paneOpenHere[key] ?? hub.state(for: key).open
+    }
+
+    /// Whether the pane shows beside that page.
+    private func paneIsOpen(on page: Conversation?) -> Bool {
+        guard let key = Self.paneKey(of: page), let hub = paneHub else { return false }
+        return paneOpenHere[key] ?? hub.state(for: key).open
+    }
+
+    /// From one page to another: a pane that shows on one only is there, or
+    /// gone, at once. (The system slides the column, about 0.6 s, whatever
+    /// opens it; only its button should.)
+    func snapPane(from old: Conversation?, to new: Conversation?) {
+        guard libraryBeside, paneIsOpen(on: old) != paneIsOpen(on: new) else { return }
+        UIView.setAnimationsEnabled(false)
+        // Until the split view has it (`paneSnapped`), however long the new page takes to come up.
+        let run = Self.snapRun + 1
+        Self.snapRun = run
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { if run == Self.snapRun { UIView.setAnimationsEnabled(true) } }
+    }
+
+    private static var snapRun = 0
+
+    /// The pane of the page now open has come or gone: animations again.
+    func paneSnapped() {
+        guard !UIView.areAnimationsEnabled else { return }
+        let run = Self.snapRun
+        DispatchQueue.main.async { DispatchQueue.main.async { if run == Self.snapRun { UIView.setAnimationsEnabled(true) } } }
     }
 
     func setPane(open: Bool) {

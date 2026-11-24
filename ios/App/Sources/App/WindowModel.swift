@@ -180,6 +180,7 @@ final class WindowModel {
     var selection: Conversation? = .palo {
         didSet {
             guard selection != oldValue else { return }
+            snapPane(from: oldValue, to: selection)
             // Phones: a workspace opens straight at the session last shown in
             // it (else its first); its quick-switch strip goes to the others.
             if layout == .phone, case .workspace(let w)? = selection, let target = Self.landing(in: w, store: store) {

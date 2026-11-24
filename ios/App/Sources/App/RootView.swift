@@ -1018,10 +1018,12 @@ private struct RightPaneHost: ViewModifier {
                     }
                     // Whether it is really on screen, and how wide (the debug log).
                     .onAppear {
+                        model.paneSnapped()
                         model.inspectorShown = true
                         debugLog("[layout] \(model.traceName): inspector up")
                     }
                     .onDisappear {
+                        model.paneSnapped()
                         model.inspectorShown = false
                         debugLog("[layout] \(model.traceName): inspector gone")
                     }
