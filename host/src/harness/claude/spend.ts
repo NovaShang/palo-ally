@@ -47,17 +47,74 @@ export function usageUsd(model: string, u: any): number {
   return tokens / 1e6;
 }
 
+/** What is read at a time: a transcript with many pictures in it is hundreds of MB, and is never held whole (11-24: 4.8 GB kept). */
+export const CHUNK_BYTES = 4 << 20;
+/** A line longer than this (pictures in it) isn't put together: it has no usage. */
+const LINE_MAX = 16 << 20;
+
 interface FileCursor {
   offset: number;
+  /** The first day it holds all of (what came before wasn't read); undefined: all of it was. */
+  since?: string;
   byDay: Record<string, number>;
   // One API message is written as several entries (one per content block),
   // each with the usage so far: the last one counts.
   seen: Map<string, { day: string; usd: number }>;
-  partial: string;
+  /** The start of a line whose end isn't there yet. */
+  partial: Buffer[];
+  partialBytes: number;
+}
+
+/**
+ * Every whole line from `offset` on, a chunk at a time (never the whole
+ * file); a line over `lineMax` is skipped. `partial`: the start of a line
+ * left by an earlier read, taken up and left again.
+ */
+export function eachLine(fd: number, offset: number, partial: { partial: Buffer[]; partialBytes: number }, each: (line: Buffer) => void, lineMax = LINE_MAX): number {
+  const size = fstatSync(fd).size;
+  const chunk = Buffer.allocUnsafe(Math.min(CHUNK_BYTES, Math.max(1, size - offset)));
+  while (offset < size) {
+    const n = readSync(fd, chunk, 0, Math.min(chunk.length, size - offset), offset);
+    if (n <= 0) break;
+    offset += n;
+    let from = 0;
+    for (let nl = chunk.indexOf(10, from); nl !== -1 && nl < n; nl = chunk.indexOf(10, from)) {
+      const end = chunk.subarray(from, nl);
+      if (partial.partialBytes === 0) each(end);
+      else if (partial.partialBytes + end.length <= lineMax) each(Buffer.concat([...partial.partial, end]));
+      partial.partial = [];
+      partial.partialBytes = 0;
+      from = nl + 1;
+    }
+    if (from < n) {
+      partial.partialBytes += n - from;
+      // (copied: the chunk is read into again)
+      if (partial.partialBytes <= lineMax) partial.partial.push(Buffer.from(chunk.subarray(from, n)));
+      else partial.partial = [];
+    }
+  }
+  return offset;
+}
+
+/** Where a transcript's last `bytes` start that still reach back before `day` (0: the whole file). */
+function startBefore(fd: number, day: string, tz: string): number {
+  const size = fstatSync(fd).size;
+  const buf = Buffer.allocUnsafe(Math.min(CHUNK_BYTES, size));
+  for (let end = size; end > 0; ) {
+    const start = Math.max(0, end - buf.length);
+    const n = readSync(fd, buf, 0, end - start, start);
+    // The first entry with a time in this part.
+    const m = /"timestamp":"([^"]{10,40})"/.exec(buf.subarray(0, n).toString("latin1"));
+    const at = m ? Date.parse(m[1]!) : NaN;
+    if (at && zonedParts(at, tz).dateKey < day) return start;
+    end = start;
+  }
+  return 0;
 }
 
 // SpendMeter adds up a session's spending per day from its transcripts (and
-// its subagents'), reading only what was appended since the last look.
+// its subagents'), reading only what was appended since the last look; the
+// first time, from the end back to before the day asked for.
 export class SpendMeter {
   private files = new Map<string, FileCursor>();
 
@@ -70,60 +127,54 @@ export class SpendMeter {
     const paths = [main];
     if (existsSync(subDir)) for (const f of readdirSync(subDir)) if (f.endsWith(".jsonl")) paths.push(join(subDir, f));
     let total = 0;
-    for (const p of paths) total += this.scan(p, tz)[day] ?? 0;
+    for (const p of paths) total += this.scan(p, day, tz)[day] ?? 0;
     return total;
   }
 
-  private scan(path: string, tz: string): Record<string, number> {
-    let cur = this.files.get(path);
-    if (!cur) {
-      cur = { offset: 0, byDay: {}, seen: new Map(), partial: "" };
-      this.files.set(path, cur);
-    }
+  private scan(path: string, day: string, tz: string): Record<string, number> {
     let fd: number;
     try {
       fd = openSync(path, "r");
     } catch {
-      return cur.byDay;
+      return this.files.get(path)?.byDay ?? {};
     }
     try {
-      const size = fstatSync(fd).size;
-      if (size < cur.offset) {
-        // rewritten: start over
-        cur.offset = 0;
-        cur.byDay = {};
-        cur.seen = new Map();
-        cur.partial = "";
+      let cur = this.files.get(path);
+      const { size, mtimeMs } = fstatSync(fd);
+      // Not written to since before the day: nothing of it there.
+      if (!cur && zonedParts(mtimeMs, tz).dateKey < day) return {};
+      // Rewritten, or an earlier day than it holds: read anew.
+      if (!cur || size < cur.offset || (cur.since !== undefined && day < cur.since)) {
+        const offset = startBefore(fd, day, tz);
+        cur = { offset, ...(offset > 0 ? { since: day } : {}), byDay: {}, seen: new Map(), partial: [], partialBytes: 0 };
+        this.files.set(path, cur);
       }
-      if (size === cur.offset) return cur.byDay;
-      const buf = Buffer.alloc(size - cur.offset);
-      readSync(fd, buf, 0, buf.length, cur.offset);
-      cur.offset = size;
-      const lines = (cur.partial + buf.toString("utf8")).split("\n");
-      cur.partial = lines.pop() ?? "";
-      for (const l of lines) {
-        if (!l.includes('"usage"')) continue;
-        let e: any;
-        try {
-          e = JSON.parse(l);
-        } catch {
-          continue;
-        }
-        const m = e?.message;
-        if (e?.type !== "assistant" || !m?.usage || m.model === "<synthetic>") continue;
-        const at = Date.parse(e.timestamp ?? "");
-        if (!at) continue;
-        const day = zonedParts(at, tz).dateKey;
-        const usd = usageUsd(String(m.model ?? ""), m.usage);
-        const id = String(m.id ?? e.uuid ?? "");
-        const before = id ? cur.seen.get(id) : undefined;
-        if (before) cur.byDay[before.day] = (cur.byDay[before.day] ?? 0) - before.usd;
-        if (id) cur.seen.set(id, { day, usd });
-        cur.byDay[day] = (cur.byDay[day] ?? 0) + usd;
-      }
-      return cur.byDay;
+      const c = cur;
+      c.offset = eachLine(fd, c.offset, c, (line) => this.line(c, line, tz));
+      return c.byDay;
     } finally {
       closeSync(fd);
     }
+  }
+
+  private line(cur: FileCursor, line: Buffer, tz: string): void {
+    if (!line.includes('"usage"')) return;
+    let e: any;
+    try {
+      e = JSON.parse(line.toString("utf8"));
+    } catch {
+      return; // (the first one read may be cut off)
+    }
+    const m = e?.message;
+    if (e?.type !== "assistant" || !m?.usage || m.model === "<synthetic>") return;
+    const at = Date.parse(e.timestamp ?? "");
+    if (!at) return;
+    const day = zonedParts(at, tz).dateKey;
+    const usd = usageUsd(String(m.model ?? ""), m.usage);
+    const id = String(m.id ?? e.uuid ?? "");
+    const before = id ? cur.seen.get(id) : undefined;
+    if (before) cur.byDay[before.day] = (cur.byDay[before.day] ?? 0) - before.usd;
+    if (id) cur.seen.set(id, { day, usd });
+    cur.byDay[day] = (cur.byDay[day] ?? 0) + usd;
   }
 }

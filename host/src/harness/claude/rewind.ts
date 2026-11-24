@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, openSync } from "node:fs";
+import { eachLine } from "./spend.ts";
 
 // 回到这里重来 (docs/rewind-prd.md): what is read in a Claude Code transcript to
 // take a conversation back to just before one of the owner's messages.
@@ -6,25 +7,56 @@ import { existsSync, readFileSync } from "node:fs";
 /**
  * The transcript's entries, in the order written. Only lines naming one of
  * `only` are parsed when given (a long transcript: just the user entries).
+ * Read a piece at a time and without the pictures in it: a transcript with
+ * many is hundreds of MB, and what a rewind looks at isn't in them.
  */
 export function readTranscript(path: string | undefined, only?: string[]): any[] {
   if (!path || !existsSync(path)) return [];
-  let text: string;
+  const out: any[] = [];
+  let fd: number;
   try {
-    text = readFileSync(path, "utf8");
+    fd = openSync(path, "r");
   } catch {
     return [];
   }
-  const out: any[] = [];
-  for (const line of text.split("\n")) {
-    if (!line.trim() || (only && !only.some((s) => line.includes(s)))) continue;
+  const left = { partial: [] as Buffer[], partialBytes: 0 };
+  const take = (line: Buffer) => {
+    if (!line.length || (only && !only.some((s) => line.includes(s)))) return;
     try {
-      out.push(JSON.parse(line));
+      out.push(withoutPictures(JSON.parse(line.toString("utf8"))));
     } catch {
       /* a torn last line */
     }
+  };
+  try {
+    eachLine(fd, 0, left, take, Infinity);
+    // The last line, when it has no end yet.
+    if (left.partialBytes) take(Buffer.concat(left.partial));
+  } catch {
+    return out;
+  } finally {
+    closeSync(fd);
   }
   return out;
+}
+
+/** Long data in it (a picture's, what a tool gave, thinking) left out; the entry else as it is. */
+function withoutPictures(e: any): any {
+  const cut = (c: any) => {
+    if (!Array.isArray(c)) return;
+    for (const b of c) {
+      if (typeof b?.source?.data === "string" && b.source.data.length > 2000) b.source.data = "";
+      if (b?.type === "tool_result") {
+        if (typeof b.content === "string" && b.content.length > 2000) b.content = "";
+        else cut(b.content);
+      }
+      if (b?.type === "thinking") b.thinking = b.signature = "";
+      if (b?.type === "text" && typeof b.text === "string" && b.text.length > 200_000) b.text = "";
+    }
+  };
+  cut(e?.message?.content);
+  if (e?.toolUseResult) e.toolUseResult = {};
+  return e;
 }
 
 /** The words of a user entry the owner (or the host for them) typed; null for anything else. */
