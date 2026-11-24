@@ -4695,17 +4695,6 @@
         }
       }
     },
-    "主机上的 %@ 登录过期了。在这里打开授权页，用你的 %@ 账号同意，再把页面上显示的代码粘贴回来。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@'s login on the host has expired. Open the authorization page here, approve with your %2$@ account, then paste back the code the page shows."
-          }
-        }
-      }
-    },
     "主机上的 %@ 里也会是这个名字。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4768,17 +4757,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sign in"
-          }
-        }
-      }
-    },
-    "登录好了，停下的事会接着做。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Signed in. What stopped will carry on."
           }
         }
       }
@@ -8324,28 +8302,6 @@
         }
       }
     },
-    "按平均速度够用到重置" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "At this pace, lasts until then"
-          }
-        }
-      }
-    },
-    "按平均速度 %@ 左右用完" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "At this pace, gone around %@"
-          }
-        }
-      }
-    },
     "登录过期了" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8364,28 +8320,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No new numbers"
-          }
-        }
-      }
-    },
-    "下面是 %@ 的数，连上就更新。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "These are from %@. They update once it's back."
-          }
-        }
-      }
-    },
-    "下面是 %@ 的数。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "These are from %@."
           }
         }
       }
@@ -8434,28 +8368,6 @@
         }
       }
     },
-    "开着，用完后按量计费" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "On: paid by use after that"
-          }
-        }
-      }
-    },
-    "没开，用完会停下" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Off: stops when used up"
-          }
-        }
-      }
-    },
     "额外用量" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8463,17 +8375,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Extra usage"
-          }
-        }
-      }
-    },
-    "这种登录按量计费，没有套餐额度" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This login is paid by use. It has no plan limits."
           }
         }
       }
@@ -8500,61 +8401,6 @@
         }
       }
     },
-    "%@ 的数。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "From %@."
-          }
-        }
-      }
-    },
-    "条上的细线是时间走到哪儿了。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The thin line on a bar is how far its time has run. "
-          }
-        }
-      }
-    },
-    "两台主机用同一个账号，额度合在一起。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Both hosts use the same account, so its limits count for both."
-          }
-        }
-      }
-    },
-    "这些主机用同一个账号，额度合在一起。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "These hosts use the same account, so its limits count for all."
-          }
-        }
-      }
-    },
-    "%@更新。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Updated %@."
-          }
-        }
-      }
-    },
     "账号" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8562,50 +8408,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Account"
-          }
-        }
-      }
-    },
-    "密钥在电脑上改。设着密钥时，登录 %@ 账号不起作用。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Change the key on the computer. While it's set, signing in to %@ has no effect."
-          }
-        }
-      }
-    },
-    "换成另一个账号也可以，授权时选它就行。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Another account works too: pick it when authorizing."
-          }
-        }
-      }
-    },
-    "「%@」上的%@和 agent 用这个登录。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%2$@ and the agents on “%1$@” use this login."
-          }
-        }
-      }
-    },
-    "%@和所有 agent 都用这个登录。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ and all agents use this login."
           }
         }
       }
@@ -8650,17 +8452,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@, set on the computer"
-          }
-        }
-      }
-    },
-    "刚刚更新。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Updated just now."
           }
         }
       }
@@ -8720,61 +8511,6 @@
         }
       }
     },
-    "%lld 个 agent 停在这里，到点自己接着做。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld agents stopped here and carry on by themselves then."
-          }
-        }
-      }
-    },
-    "%@停在这里，到点自己接着做。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ stopped here and carries on by itself then."
-          }
-        }
-      }
-    },
-    "%@和 %lld 个 agent 停在这里，到点自己接着做。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ and %2$lld agents stopped here and carry on by themselves then."
-          }
-        }
-      }
-    },
-    "%@、%@和定时安排都停着。登录好后会接着做。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@, %2$@ and scheduled work are stopped. They go on once you've signed in."
-          }
-        }
-      }
-    },
-    "%@、%@和定时安排 %@ 起都停着。登录好后会接着做。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@, %2$@ and scheduled work have been stopped since %3$@. They go on once you've signed in."
-          }
-        }
-      }
-    },
     "%@ 接着做" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8793,39 +8529,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : ". "
-          }
-        }
-      }
-    },
-    "主机上的 %@ 已退出登录。在这里打开授权页，用你的 %@ 账号同意，再把页面上显示的代码粘贴回来。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ on the host is signed out. Open the authorization page here, approve with your %2$@ account, then paste back the code the page shows."
-          }
-        }
-      }
-    },
-    "在授权页里先换到你要用的账号，同意后把页面上的代码粘贴回来。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "On the authorization page, switch to the account you want first, approve, then paste back the code it shows."
-          }
-        }
-      }
-    },
-    "在授权页里同意，再把页面上的代码粘贴回来。做完之前，现在的登录照常用。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Approve on the authorization page, then paste back the code it shows. The current login works until that's done."
           }
         }
       }
@@ -8859,39 +8562,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Signed in, still as %@"
-          }
-        }
-      }
-    },
-    "停下的事会接着做。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "What stopped will carry on."
-          }
-        }
-      }
-    },
-    "agent 都已经换好。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The agents have all switched."
-          }
-        }
-      }
-    },
-    "空闲的 agent 已经换好，%lld 个正在干的做完这一轮就换。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Idle agents have switched. %lld at work switch when their turn ends."
           }
         }
       }
@@ -9017,35 +8687,145 @@
         }
       }
     },
-    "%@、所有 agent 和电脑终端里的 %@ 都会换过去。正在干的先做完这一轮再换，对话和记忆都在。新账号登录成功之前，一切照旧。" : {
+    "%@ 的数" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@, all agents and %2$@ in the computer's terminals switch to it. Those at work finish their turn first. Conversations and memory stay. Until the new account is signed in, nothing changes."
+            "value" : "From %@"
           }
         }
       }
     },
-    "%@和所有 agent 会停下，定时安排不跑，电脑终端里的 %@ 也一起退出。对话和记忆都在，重新登录后接着做。" : {
+    "按量计费，没有套餐额度" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ and all agents stop, scheduled work doesn't run, and %2$@ in the computer's terminals is signed out too. Conversations and memory stay, and everything carries on after you sign in again."
+            "value" : "Paid by use, no plan limits"
           }
         }
       }
     },
-    "想现在继续，可以换个账号。" : {
+    "%lld 个 agent 停着" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "To go on now, switch account."
+            "value" : "%lld agents stopped"
+          }
+        }
+      }
+    },
+    "%@停着" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ stopped"
+          }
+        }
+      }
+    },
+    "%@和 %lld 个 agent 停着" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ and %2$lld agents stopped"
+          }
+        }
+      }
+    },
+    "%@、%@和定时安排都停着" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, %2$@ and scheduled work are stopped"
+          }
+        }
+      }
+    },
+    "%@、%@和定时安排 %@ 起都停着" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, %2$@ and scheduled work have been stopped since %3$@"
+          }
+        }
+      }
+    },
+    "电脑终端里的 %@ 也会换过去。正在干的先做完这一轮。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ in the computer's terminals switches too. Work in progress finishes its turn first."
+          }
+        }
+      }
+    },
+    "%@和所有 agent 会停下，电脑终端里的 %@ 也会退出。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ and all agents stop, and %2$@ in the computer's terminals signs out too."
+          }
+        }
+      }
+    },
+    "1. 授权，先在页面里换账号" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1. Authorize: switch account on the page first"
+          }
+        }
+      }
+    },
+    "Agent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agents"
+          }
+        }
+      }
+    },
+    "%@ 左右用完" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gone around %@"
+          }
+        }
+      }
+    },
+    "开着" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On"
           }
         }
       }

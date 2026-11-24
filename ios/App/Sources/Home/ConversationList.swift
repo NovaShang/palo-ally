@@ -297,7 +297,7 @@ private struct HostSidebarContent: View {
                         .accessibilityIdentifier(rowID("row-archive"))
                 } header: {
                     // Also where a session dragged out of a workspace can land: the top.
-                    Text("agent").textCase(nil)
+                    Text("Agent").textCase(nil)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .sidebarRowDrag(dnd, drags: nil, conversation: nil, target: .sessionsTop, tree: tree, sessionOrder: order,
                                         perform: drop)

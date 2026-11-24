@@ -96,7 +96,7 @@ final class UsageUITests: XCTestCase {
     /// The list's row, below everything else, and the page it opens.
     @MainActor
     private func openPage(_ app: XCUIApplication) {
-        XCTAssertTrue(app.staticTexts["agent"].waitForExistence(timeout: 15), "not on the list")
+        XCTAssertTrue(app.staticTexts["Agent"].waitForExistence(timeout: 15), "not on the list")
         let row = app.descendants(matching: .any)["row-usage"].firstMatch
         reveal(app, row).tap()
         XCTAssertTrue(app.navigationBars["Claude 用量"].waitForExistence(timeout: 10), "the page didn't open")

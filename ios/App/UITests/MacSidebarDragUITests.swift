@@ -26,7 +26,7 @@ final class MacSidebarDragUITests: XCTestCase {
         XCTAssertTrue(palo.waitForExistence(timeout: 30), "no Palo in the sidebar")
         sleep(2)
         let notes = row("row-pal-pal-notes"), site = row("row-pal-pal-site"), blog = row("row-pal-pal-blog")
-        let ws = row("row-workspace-ws-site"), sessionsHeader = app.staticTexts["agent"].firstMatch
+        let ws = row("row-workspace-ws-site"), sessionsHeader = app.staticTexts["Agent"].firstMatch
         XCTAssertTrue(notes.exists && ws.exists && sessionsHeader.exists, "the demo's rows aren't there")
 
         // A click opens a session, and Palo again.

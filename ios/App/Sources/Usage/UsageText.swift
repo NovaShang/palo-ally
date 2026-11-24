@@ -3,7 +3,7 @@ import SwiftUI
 
 /// How 用量 says things (docs/workbench-design/usage.html).
 enum UsageText {
-    /// `Copy.spaced`, and a time's words run on in Chinese (「周四上午9:16」, 「按平均速度下午6:12 左右」).
+    /// `Copy.spaced`, and a time's words run on in Chinese (「周四上午9:16」, 「下午6:12 左右」).
     static func tidy(_ text: String) -> String {
         Copy.spaced(text).replacingOccurrences(of: #"(\p{Han}) +(?=\p{Han})"#, with: "$1", options: .regularExpression)
     }
@@ -64,8 +64,8 @@ enum UsageText {
     /// Whether it lasts, at the window's average pace so far.
     static func pace(_ l: UsageLimit, now: Date) -> String? {
         switch l.pace(now) {
-        case .lasts: String(localized: "按平均速度够用到重置")
-        case .runsOut(let at): tidy(String(localized: "按平均速度 \(when(at.epochMillis, now: now)) 左右用完"))
+        case .lasts: nil
+        case .runsOut(let at): tidy(String(localized: "\(when(at.epochMillis, now: now)) 左右用完"))
         case nil: nil
         }
     }

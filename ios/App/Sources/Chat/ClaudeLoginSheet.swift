@@ -35,17 +35,9 @@ struct ClaudeLoginSheet: View {
                     Section {
                         Label(doneText, systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
-                    } footer: {
-                        if let doneNote { Text(doneNote) }
                     }
                 } else {
                     Section {
-                        // The harness' name and whose account it signs in with (its descriptor; Claude Code's on an older host).
-                        Text(intro)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    Section("1. 授权") {
                         if let url = login?.url.flatMap(URL.init(string:)) {
                             Button {
                                 openURL(url)
@@ -61,6 +53,9 @@ struct ClaudeLoginSheet: View {
                                 Text("正在主机上准备登录…").foregroundStyle(.secondary)
                             }
                         }
+                    } header: {
+                        // (the page may be signed in to the old account)
+                        Text(purpose == .switching && !stopped ? String(localized: "1. 授权，先在页面里换账号") : String(localized: "1. 授权"))
                     }
                     Section {
                         HStack {
@@ -140,16 +135,6 @@ struct ClaudeLoginSheet: View {
 
     // MARK: what it says, by what it's for
 
-    private var intro: String {
-        let name = store.harness.name, account = store.harness.login.account
-        if stopped {
-            return signedOut ? String(localized: "主机上的 \(name) 已退出登录。在这里打开授权页，用你的 \(account) 账号同意，再把页面上显示的代码粘贴回来。")
-                : String(localized: "主机上的 \(name) 登录过期了。在这里打开授权页，用你的 \(account) 账号同意，再把页面上显示的代码粘贴回来。")
-        }
-        return purpose == .switching ? String(localized: "在授权页里先换到你要用的账号，同意后把页面上的代码粘贴回来。")
-            : String(localized: "在授权页里同意，再把页面上的代码粘贴回来。做完之前，现在的登录照常用。")
-    }
-
     /// The account it is now, when that's another one (said by the computer before the sign-in is done).
     private var changedTo: String? {
         guard let now = store.usage?.account, let email = now.email, before?.email != nil, before?.isSame(as: now) != true else { return nil }
@@ -158,18 +143,9 @@ struct ClaudeLoginSheet: View {
 
     private var doneText: String {
         if let changedTo { return String(localized: "已换成 \(changedTo)") }
-        if stopped { return String(localized: "登录好了，停下的事会接着做。") }
+        if stopped { return String(localized: "登录好了") }
         guard let email = store.usage?.account?.email else { return String(localized: "登录好了") }
         return String(localized: "登录好了，还是 \(email)")
-    }
-
-    /// Who goes on as the account it was, for now.
-    private var doneNote: String? {
-        if stopped { return changedTo == nil ? nil : String(localized: "停下的事会接着做。") }
-        guard changedTo != nil else { return nil }
-        let busy = store.pals.filter { $0.status == .busy || $0.status == .waiting }.count
-        return busy == 0 ? String(localized: "agent 都已经换好。")
-            : Copy.spaced(String(localized: "空闲的 agent 已经换好，\(busy) 个正在干的做完这一轮就换。"))
     }
 
     private func start() {

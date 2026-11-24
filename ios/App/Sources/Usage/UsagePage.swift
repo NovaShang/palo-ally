@@ -143,13 +143,13 @@ struct UsagePage: View {
         if !g.hosts.contains(where: expired), g.usage.state == .limits {
             let at = g.usage.at.map(Copy.clock) ?? ""
             if !g.hosts.contains(where: model.isOnline) {
-                Section { Notice(title: String(localized: "连不上主机"), text: UsageText.tidy(String(localized: "下面是 \(at) 的数，连上就更新。"))) }
+                Section { Notice(title: String(localized: "连不上主机"), text: UsageText.tidy(String(localized: "\(at) 的数"))) }
             } else if g.usage.stale {
-                Section { Notice(title: String(localized: "没拿到新的数"), text: UsageText.tidy(String(localized: "下面是 \(at) 的数。"))) }
+                Section { Notice(title: String(localized: "没拿到新的数"), text: UsageText.tidy(String(localized: "\(at) 的数"))) }
             } else if let l = usedUp(g.usage, now: now) {
                 let extra = g.usage.extraUsage == true
                 // (one model's: the others go on; on extra usage nothing stops)
-                hit(g, title: hitTitle(l, extra: extra, now: now), note: hitText(l, extra: extra), now: now, orSwitch: l.scope == nil && !extra)
+                hit(g, title: hitTitle(l, extra: extra, now: now), note: hitText(l, extra: extra), now: now)
             }
         }
         // Stopped, and no numbers that say by what.
@@ -170,9 +170,9 @@ struct UsagePage: View {
         let n = auth?.stopped?.agents.count ?? 0
         let agents = n > 0 ? String(localized: "\(n) 个 agent") : "agent"
         guard let since = auth?.since, since > 0 else {
-            return Copy.spaced(String(localized: "\(who)、\(agents)和定时安排都停着。登录好后会接着做。"))
+            return Copy.spaced(String(localized: "\(who)、\(agents)和定时安排都停着"))
         }
-        return UsageText.tidy(String(localized: "\(who)、\(agents)和定时安排 \(Copy.clock(since)) 起都停着。登录好后会接着做。"))
+        return UsageText.tidy(String(localized: "\(who)、\(agents)和定时安排 \(Copy.clock(since)) 起都停着"))
     }
 
     /// The limit that stops things: one for everything before one for a model.
@@ -194,15 +194,13 @@ struct UsagePage: View {
     }
 
     /// The limit's card: what it is, who stopped for it, and each of them (a tap opens it).
-    @ViewBuilder private func hit(_ g: UsageGroup, title: String, note: String?, now: Date, orSwitch: Bool = false) -> some View {
+    @ViewBuilder private func hit(_ g: UsageGroup, title: String, note: String?, now: Date) -> some View {
         let stopped = g.hosts.flatMap { id in (model.stores[id]?.usage?.stopped?.agents ?? []).map { (host: id, agent: $0) } }
         let assistants = g.hosts.filter { model.stores[$0]?.usage?.stopped?.assistant == true }
         let shown = allStopped ? stopped : Array(stopped.prefix(Self.few))
         let lines = [note, stoppedText(assistants, agents: stopped.count)].compactMap { $0 }
-        // Another account has limits of its own.
-        let way = orSwitch && g.hosts.contains { canSignIn($0) && !expired($0) } ? String(localized: "想现在继续，可以换个账号。") : nil
         Section {
-            Notice(title: title, text: noticeText(lines, way))
+            Notice(title: title, text: lines.isEmpty ? nil : lines.joined(separator: String(localized: "。")))
                 .listRowSeparator(stopped.isEmpty ? .automatic : .hidden, edges: .bottom)
             ForEach(shown, id: \.agent.id) { s in
                 Button { model.open(.pal(s.agent.id), on: s.host) } label: {
@@ -221,12 +219,6 @@ struct UsagePage: View {
         }
     }
 
-    private func noticeText(_ lines: [String], _ way: String?) -> String? {
-        var text = lines.joined(separator: String(localized: "。"))
-        if let way { text += (text.hasSuffix(".") ? " " : "") + way }
-        return text.isEmpty ? nil : text
-    }
-
     /// How many of them are listed at first.
     private static let few = 6
 
@@ -234,9 +226,9 @@ struct UsagePage: View {
         let who = assistants.map(assistant).joined(separator: "、")
         return switch (assistants.isEmpty, agents) {
         case (true, 0): nil
-        case (true, _): Copy.spaced(String(localized: "\(agents) 个 agent 停在这里，到点自己接着做。"))
-        case (false, 0): Copy.spaced(String(localized: "\(who)停在这里，到点自己接着做。"))
-        case (false, _): Copy.spaced(String(localized: "\(who)和 \(agents) 个 agent 停在这里，到点自己接着做。"))
+        case (true, _): Copy.spaced(String(localized: "\(agents) 个 agent 停着"))
+        case (false, 0): Copy.spaced(String(localized: "\(who)停着"))
+        case (false, _): Copy.spaced(String(localized: "\(who)和 \(agents) 个 agent 停着"))
         }
     }
 
@@ -273,7 +265,7 @@ struct UsagePage: View {
             } header: {
                 header(g, apart: apart)
             } footer: {
-                Text(foot(g, old: old, expired: expired))
+                if expired, let at = u.at { Text(UsageText.tidy(String(localized: "\(Copy.clock(at)) 的数"))) }
             }
         case .loading:
             Section {
@@ -284,7 +276,7 @@ struct UsagePage: View {
                 }
             } header: { header(g, apart: apart) }
         case .noLimits:
-            Section { Text("这种登录按量计费，没有套餐额度") } header: { header(g, apart: apart) }
+            Section { Text("按量计费，没有套餐额度") } header: { header(g, apart: apart) }
         case .hidden:
             Section { Text("这次登录看不到额度，重新登录试试") } header: { header(g, apart: apart) }
         default:
@@ -293,24 +285,11 @@ struct UsagePage: View {
     }
 
     private func extraText(_ on: Bool) -> Text {
-        Text(on ? String(localized: "开着，用完后按量计费") : String(localized: "没开，用完会停下"))
+        Text(on ? String(localized: "开着") : String(localized: "没开"))
     }
 
     @ViewBuilder private func header(_ g: UsageGroup, apart: Bool) -> some View {
         if apart { HostName(ids: g.hosts) } else { Text("还剩多少").textCase(nil) }
-    }
-
-    private func foot(_ g: UsageGroup, old: Bool, expired: Bool) -> String {
-        let at = g.usage.at
-        if old { return expired && at != nil ? UsageText.tidy(String(localized: "\(Copy.clock(at ?? 0)) 的数。")) : "" }
-        let line = String(localized: "条上的细线是时间走到哪儿了。")
-        if g.hosts.count > 1 {
-            let same = g.hosts.count == 2 ? String(localized: "两台主机用同一个账号，额度合在一起。") : String(localized: "这些主机用同一个账号，额度合在一起。")
-            return line + same
-        }
-        guard let at else { return line }
-        if Date().epochMillis - at < 60_000 { return line + String(localized: "刚刚更新。") }
-        return line + String(localized: "\(Copy.relative(at))更新。")
     }
 
     // MARK: the account
@@ -329,8 +308,6 @@ struct UsagePage: View {
                 if !apart {
                     if g.hosts.count > 1 { HostName(ids: [id]) } else { Text("账号").textCase(nil) }
                 }
-            } footer: {
-                Text(accountFoot(u.account, host: id, named: apart))
             }
         }
     }
@@ -346,7 +323,7 @@ struct UsagePage: View {
             .disabled(!online)
         if asking == .switching(id) {
             ConfirmPanel(title: named ? Copy.spaced(String(localized: "「\(model.displayName(id))」换一个 \(brand) 账号？")) : Copy.spaced(String(localized: "换一个 \(brand) 账号？")),
-                         text: Copy.spaced(String(localized: "\(who)、所有 agent 和电脑终端里的 \(cli) 都会换过去。正在干的先做完这一轮再换，对话和记忆都在。新账号登录成功之前，一切照旧。")),
+                         text: Copy.spaced(String(localized: "电脑终端里的 \(cli) 也会换过去。正在干的先做完这一轮。")),
                          action: String(localized: "换账号"), working: false, destructive: false, glass: false,
                          cancel: { ask(nil) },
                          confirm: {
@@ -361,7 +338,7 @@ struct UsagePage: View {
             .disabled(!online)
         if asking == .logout(id) {
             ConfirmPanel(title: named ? Copy.spaced(String(localized: "「\(model.displayName(id))」退出 \(brand) 登录？")) : Copy.spaced(String(localized: "退出 \(brand) 登录？")),
-                         text: Copy.spaced(String(localized: "\(who)和所有 agent 会停下，定时安排不跑，电脑终端里的 \(cli) 也一起退出。对话和记忆都在，重新登录后接着做。")),
+                         text: Copy.spaced(String(localized: "\(who)和所有 agent 会停下，电脑终端里的 \(cli) 也会退出。")),
                          action: String(localized: "退出登录"), working: leaving, glass: false,
                          cancel: { ask(nil) },
                          confirm: { Task { await logout(id) } })
@@ -403,18 +380,6 @@ struct UsagePage: View {
         do { try await s.logout() } catch { problem = (id, Copy.error(error)) }
         leaving = false
         withAnimation(.snappy) { asking = nil }
-    }
-
-    private func accountFoot(_ a: LoginAccount?, host id: String, named: Bool) -> String {
-        if a?.provider != nil { return "" }
-        if a?.apiKeySource != nil {
-            let brand = model.stores[id]?.harness.login.account ?? ""
-            return Copy.spaced(String(localized: "密钥在电脑上改。设着密钥时，登录 \(brand) 账号不起作用。"))
-        }
-        if expired(id) { return String(localized: "换成另一个账号也可以，授权时选它就行。") }
-        let who = assistant(id)
-        return Copy.spaced(named ? String(localized: "「\(model.displayName(id))」上的\(who)和 agent 用这个登录。")
-            : String(localized: "\(who)和所有 agent 都用这个登录。"))
     }
 }
 
@@ -509,7 +474,7 @@ private struct LimitRow: View {
                     .monospacedDigit()
                     .foregroundStyle(old ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
             }
-            UsageBar(limit: limit, elapsed: old || limit.isUsedUp ? nil : limit.elapsed(now), reset: limit.hasReset(now), dim: old)
+            UsageBar(limit: limit, reset: limit.hasReset(now), dim: old)
             if reset != nil || pace != nil {
                 let stacked = VStack(alignment: .leading, spacing: 2) {
                     line(reset, pace: false)
@@ -552,11 +517,9 @@ private struct LimitRow: View {
     }
 }
 
-/// How much of a limit is used, filled from the left like the context's bar;
-/// the thin line is where its window's time is.
+/// How much of a limit is used, filled from the left like the context's bar.
 private struct UsageBar: View {
     let limit: UsageLimit
-    let elapsed: Double?
     let reset: Bool
     let dim: Bool
     @Environment(\.colorScheme) private var scheme
@@ -572,17 +535,6 @@ private struct UsageBar: View {
                             .fill(UsageText.tint(limit) ?? ink.opacity(scheme == .dark ? 0.52 : 0.31))
                             .opacity(dim ? 0.6 : 1)
                             .frame(width: limit.used > 0 ? max(6, g.size.width * Double(limit.used) / 100) : 0)
-                    }
-                    if let elapsed {
-                        RoundedRectangle(cornerRadius: 1)
-                            .fill(ink.opacity(scheme == .dark ? 0.75 : 0.62))
-                            .frame(width: 2, height: 12)
-                            .background {
-                                RoundedRectangle(cornerRadius: 2.5)
-                                    .fill(Color(.secondarySystemGroupedBackground))
-                                    .padding(-1.5)
-                            }
-                            .position(x: g.size.width * elapsed, y: g.size.height / 2)
                     }
                 }
             }

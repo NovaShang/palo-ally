@@ -18,7 +18,7 @@ final class NavigationUITests: XCTestCase {
         XCTAssertTrue(app.buttons["按住说话，轻点打字"].exists, "no composer")
         XCTAssertTrue(app.buttons["page-files"].exists, "no 右侧栏 in the toolbar")
         // The list is one step back, not on screen.
-        XCTAssertFalse(app.staticTexts["agent"].exists)
+        XCTAssertFalse(app.staticTexts["Agent"].exists)
     }
 
     @MainActor
@@ -26,7 +26,7 @@ final class NavigationUITests: XCTestCase {
         let app = launch()
         XCTAssertTrue(app.buttons["title-orb"].waitForExistence(timeout: 15))
         back(app)
-        XCTAssertTrue(app.staticTexts["agent"].waitForExistence(timeout: 5), "no agent section")
+        XCTAssertTrue(app.staticTexts["Agent"].waitForExistence(timeout: 5), "no agent section")
         XCTAssertTrue(row(app, "row-palo").exists, "no row for the assistant")
         XCTAssertTrue(row(app, "row-pal-pal-notes").exists, "no 笔记整理 under agent")
         // The host's other Claude Code sessions are agents like the rest; 已归档 N ends the section.
@@ -56,13 +56,13 @@ final class NavigationUITests: XCTestCase {
         XCTAssertFalse(app.buttons["title-orb"].exists, "an agent's page has no orb")
         XCTAssertTrue(app.buttons["允许"].firstMatch.waitForExistence(timeout: 5), "its card isn't there")
         back(app)
-        XCTAssertTrue(app.staticTexts["agent"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Agent"].waitForExistence(timeout: 5))
     }
 
     @MainActor
     func testAContactOpensFromTheList() throws {
         let app = launch(["-demoScreen", "list"])
-        XCTAssertTrue(app.staticTexts["agent"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["Agent"].waitForExistence(timeout: 15))
         // Below the agents: the list scrolls to it.
         let ally = row(app, "row-ally-al-family")
         XCTAssertTrue(scrolledTo(app, ally), "no 好友 row")
