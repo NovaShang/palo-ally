@@ -14,21 +14,41 @@ struct UsagePage: View {
     /// Every agent that stopped is listed, not the first few.
     @State private var allStopped = false
 
-    private struct SignIn: Identifiable { let id: String }
+    private struct SignIn: Identifiable {
+        let id: String
+        var purpose = ClaudeLoginSheet.Purpose.again
+    }
+
+    /// 换账号 or 退出登录 asked in place, and of which computer.
+    private enum Asking: Equatable { case switching(String), logout(String) }
+    @State private var asking: Asking?
+    @State private var leaving = false
+    @State private var problem: (host: String, why: String)?
 
     /// As wide as 设置, whatever the window: a bar across all of it doesn't read.
     private static let widest: CGFloat = 664
+    private static let asked = "usage-asked"
 
     var body: some View {
         let title = String(localized: "\(store.harness.login.account) 用量")
         TimelineView(.everyMinute) { t in
-            List { content(now: t.date) }
-                .listStyle(.insetGrouped)
-                // The same background from the title down, whatever is listed.
-                .scrollContentBackground(.hidden)
-                // (by its frame: a section's own margins lose the leading one, under the sidebar)
-                .frame(maxWidth: model.layout == .phone ? .infinity : Self.widest + 40)
-                .frame(maxWidth: .infinity)
+            ScrollViewReader { scroll in
+                List { content(now: t.date) }
+                    // What's asked, in place, is seen whole.
+                    .onChange(of: asking) { _, a in
+                        guard a != nil else { return }
+                        Task {
+                            try? await Task.sleep(for: .milliseconds(300))
+                            withAnimation(.snappy) { scroll.scrollTo(Self.asked, anchor: .bottom) }
+                        }
+                    }
+                    .listStyle(.insetGrouped)
+                    // The same background from the title down, whatever is listed.
+                    .scrollContentBackground(.hidden)
+                    // (by its frame: a section's own margins lose the leading one, under the sidebar)
+                    .frame(maxWidth: model.layout == .phone ? .infinity : Self.widest + 40)
+                    .frame(maxWidth: .infinity)
+            }
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle(title)
@@ -43,9 +63,26 @@ struct UsagePage: View {
             }
         }
         .sheet(item: $signingIn) { who in
-            if let s = model.stores[who.id] { ClaudeLoginSheet().environment(s) }
+            if let s = model.stores[who.id] { ClaudeLoginSheet(purpose: who.purpose).environment(s) }
         }
         .accessibilityIdentifier("usage-page")
+        #if DEBUG
+        // `-demoUsage switch | logout | leave | again | another` (snapshots): 换账号 or 退出登录 asked; signed out;
+        // the sign-in sheet, opened for the same account or another (`-demoLoginCode <code>` types the code in, and `!` after it sends it).
+        .task {
+            guard let step = UserDefaults.standard.string(forKey: "demoUsage"), model.mode == .demo else { return }
+            try? await Task.sleep(for: .seconds(2))
+            guard let id = model.activeHostID else { return }
+            switch step {
+            case "switch": ask(.switching(id))
+            case "logout": ask(.logout(id))
+            case "leave": ask(.logout(id)); await logout(id)
+            case "again": signingIn = SignIn(id: id)
+            case "another": signingIn = SignIn(id: id, purpose: .switching)
+            default: break
+            }
+        }
+        #endif
     }
 
     private func load() async {
@@ -73,6 +110,12 @@ struct UsagePage: View {
         }
     }
 
+    /// Its login can be made anew from here.
+    private func canSignIn(_ id: String) -> Bool {
+        guard let l = model.stores[id]?.harness.login else { return false }
+        return l.fromPhone && l.kind == "oauth-code"
+    }
+
     private func expired(_ id: String) -> Bool { model.stores[id]?.status?.auth?.isExpired == true }
     private func name(_ ids: [String]) -> String { ids.map(model.displayName).joined(separator: "、") }
     private func assistant(_ id: String) -> String {
@@ -85,8 +128,8 @@ struct UsagePage: View {
     @ViewBuilder private func notices(_ g: UsageGroup, named: Bool, now: Date) -> some View {
         ForEach(g.hosts.filter(expired), id: \.self) { id in
             Section {
-                Notice(title: named ? "\(model.displayName(id)) · \(String(localized: "登录过期了"))" : String(localized: "登录过期了"), text: stopped(id)) {
-                    if let l = model.stores[id]?.harness.login, l.fromPhone, l.kind == "oauth-code" {
+                Notice(title: named ? "\(model.displayName(id)) · \(expiredTitle(id))" : expiredTitle(id), text: stopped(id)) {
+                    if canSignIn(id) {
                         Button { signingIn = SignIn(id: id) } label: { Text("重新登录").frame(maxWidth: .infinity) }
                             .buttonStyle(.borderedProminent)
                             .controlSize(.large)
@@ -105,7 +148,8 @@ struct UsagePage: View {
                 Section { Notice(title: String(localized: "没拿到新的数"), text: UsageText.tidy(String(localized: "下面是 \(at) 的数。"))) }
             } else if let l = usedUp(g.usage, now: now) {
                 let extra = g.usage.extraUsage == true
-                hit(g, title: hitTitle(l, extra: extra, now: now), note: hitText(l, extra: extra), now: now)
+                // (one model's: the others go on; on extra usage nothing stops)
+                hit(g, title: hitTitle(l, extra: extra, now: now), note: hitText(l, extra: extra), now: now, orSwitch: l.scope == nil && !extra)
             }
         }
         // Stopped, and no numbers that say by what.
@@ -113,6 +157,10 @@ struct UsagePage: View {
            g.hosts.contains(where: { model.stores[$0]?.usage?.stopped != nil }) {
             hit(g, title: String(localized: "额度用完了"), note: nil, now: now)
         }
+    }
+
+    private func expiredTitle(_ id: String) -> String {
+        model.stores[id]?.status?.auth?.signedOut == true ? String(localized: "已退出登录") : String(localized: "登录过期了")
     }
 
     private func stopped(_ id: String) -> String {
@@ -146,13 +194,15 @@ struct UsagePage: View {
     }
 
     /// The limit's card: what it is, who stopped for it, and each of them (a tap opens it).
-    @ViewBuilder private func hit(_ g: UsageGroup, title: String, note: String?, now: Date) -> some View {
+    @ViewBuilder private func hit(_ g: UsageGroup, title: String, note: String?, now: Date, orSwitch: Bool = false) -> some View {
         let stopped = g.hosts.flatMap { id in (model.stores[id]?.usage?.stopped?.agents ?? []).map { (host: id, agent: $0) } }
         let assistants = g.hosts.filter { model.stores[$0]?.usage?.stopped?.assistant == true }
         let shown = allStopped ? stopped : Array(stopped.prefix(Self.few))
         let lines = [note, stoppedText(assistants, agents: stopped.count)].compactMap { $0 }
+        // Another account has limits of its own.
+        let way = orSwitch && g.hosts.contains { canSignIn($0) && !expired($0) } ? String(localized: "想现在继续，可以换个账号。") : nil
         Section {
-            Notice(title: title, text: lines.isEmpty ? nil : lines.joined(separator: String(localized: "。")))
+            Notice(title: title, text: noticeText(lines, way))
                 .listRowSeparator(stopped.isEmpty ? .automatic : .hidden, edges: .bottom)
             ForEach(shown, id: \.agent.id) { s in
                 Button { model.open(.pal(s.agent.id), on: s.host) } label: {
@@ -166,8 +216,15 @@ struct UsagePage: View {
                     Text("还有 \(stopped.count - shown.count) 个").foregroundStyle(.primary)
                 }
                 .tint(.primary)
+                .accessibilityIdentifier("usage-more")
             }
         }
+    }
+
+    private func noticeText(_ lines: [String], _ way: String?) -> String? {
+        var text = lines.joined(separator: String(localized: "。"))
+        if let way { text += (text.hasSuffix(".") ? " " : "") + way }
+        return text.isEmpty ? nil : text
     }
 
     /// How many of them are listed at first.
@@ -266,7 +323,8 @@ struct UsagePage: View {
         let late = s?.usageOverdue == true
         if u.account != nil || (u.state == .loading && !late) {
             Section {
-                AccountRow(account: u.account, brand: brand, expired: expired(id))
+                AccountRow(account: u.account, brand: brand, out: expired(id) ? (s?.status?.auth?.signedOut == true ? String(localized: "已退出") : String(localized: "已过期")) : nil)
+                if canSignIn(id), !expired(id), u.account?.apiKeySource == nil, u.account?.provider == nil { actions(id, brand: brand, named: apart || g.hosts.count > 1) }
             } header: {
                 if !apart {
                     if g.hosts.count > 1 { HostName(ids: [id]) } else { Text("账号").textCase(nil) }
@@ -275,6 +333,76 @@ struct UsagePage: View {
                 Text(accountFoot(u.account, host: id, named: apart))
             }
         }
+    }
+
+    /// 重新登录, 换个账号, 退出登录: the last two asked in place first.
+    @ViewBuilder private func actions(_ id: String, brand: String, named: Bool) -> some View {
+        let online = model.isOnline(id)
+        let who = assistant(id)
+        let cli = model.stores[id]?.harness.terminal.newCommand ?? ""
+        action(String(localized: "重新登录"), "arrow.clockwise", "usage-again") { signingIn = SignIn(id: id) }
+            .disabled(!online)
+        action(String(localized: "换个账号"), "arrow.left.arrow.right", "usage-switch") { ask(.switching(id)) }
+            .disabled(!online)
+        if asking == .switching(id) {
+            ConfirmPanel(title: named ? Copy.spaced(String(localized: "「\(model.displayName(id))」换一个 \(brand) 账号？")) : Copy.spaced(String(localized: "换一个 \(brand) 账号？")),
+                         text: Copy.spaced(String(localized: "\(who)、所有 agent 和电脑终端里的 \(cli) 都会换过去。正在干的先做完这一轮再换，对话和记忆都在。新账号登录成功之前，一切照旧。")),
+                         action: String(localized: "换账号"), working: false, destructive: false, glass: false,
+                         cancel: { ask(nil) },
+                         confirm: {
+                             ask(nil)
+                             signingIn = SignIn(id: id, purpose: .switching)
+                         })
+                .listRowInsets(.vertical, Platform.isMac ? 14 : 16)
+                .id(Self.asked)
+                .transition(.opacity)
+        }
+        action(String(localized: "退出登录"), "rectangle.portrait.and.arrow.right", "usage-logout", role: .destructive) { ask(.logout(id)) }
+            .disabled(!online)
+        if asking == .logout(id) {
+            ConfirmPanel(title: named ? Copy.spaced(String(localized: "「\(model.displayName(id))」退出 \(brand) 登录？")) : Copy.spaced(String(localized: "退出 \(brand) 登录？")),
+                         text: Copy.spaced(String(localized: "\(who)和所有 agent 会停下，定时安排不跑，电脑终端里的 \(cli) 也一起退出。对话和记忆都在，重新登录后接着做。")),
+                         action: String(localized: "退出登录"), working: leaving, glass: false,
+                         cancel: { ask(nil) },
+                         confirm: { Task { await logout(id) } })
+                .listRowInsets(.vertical, Platform.isMac ? 14 : 16)
+                .id(Self.asked)
+                .transition(.opacity)
+        }
+        if let problem, problem.host == id {
+            Text(problem.why).font(.subheadline).foregroundStyle(.red)
+        }
+    }
+
+    private func action(_ title: String, _ icon: String, _ id: String, role: ButtonRole? = nil, act: @escaping () -> Void) -> some View {
+        let color: Color = role == .destructive ? .red : .primary
+        return Button(role: role, action: act) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 14))
+                    .frame(width: Platform.isMac ? 20 : 24)
+                    .accessibilityHidden(true)
+                Text(verbatim: title)
+            }
+            .foregroundStyle(color)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+    }
+
+    private func ask(_ a: Asking?) {
+        problem = nil
+        withAnimation(.snappy) { asking = asking == a ? nil : a }
+    }
+
+    private func logout(_ id: String) async {
+        guard let s = model.stores[id], !leaving else { return }
+        leaving = true
+        do { try await s.logout() } catch { problem = (id, Copy.error(error)) }
+        leaving = false
+        withAnimation(.snappy) { asking = nil }
     }
 
     private func accountFoot(_ a: LoginAccount?, host id: String, named: Bool) -> String {
@@ -467,7 +595,8 @@ private struct UsageBar: View {
 private struct AccountRow: View {
     let account: LoginAccount?
     let brand: String
-    let expired: Bool
+    /// 已过期, 已退出.
+    let out: String?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -502,6 +631,6 @@ private struct AccountRow: View {
         if account.provider != nil { return nil }
         if let source = account.apiKeySource { return source.hasSuffix("_KEY") ? String(localized: "电脑上设的 \(source)") : nil }
         let plan = account.planName(brand) ?? brand
-        return expired ? "\(plan) · \(String(localized: "已过期"))" : plan
+        return out.map { "\(plan) · \($0)" } ?? plan
     }
 }

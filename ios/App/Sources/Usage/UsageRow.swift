@@ -21,7 +21,8 @@ struct UsageSummary {
             groups.count > 1 ? "\(ids.map(model.displayName).joined(separator: "、")) · \(line)" : line
         }
         if let id = hosts.map(\.host).first(where: { model.stores[$0]?.status?.auth?.isExpired == true }) {
-            return UsageSummary(icon: .expired, line: said(String(localized: "登录过期"), [id]))
+            let out = model.stores[id]?.status?.auth?.signedOut == true
+            return UsageSummary(icon: .expired, line: said(out ? String(localized: "已退出登录") : String(localized: "登录过期"), [id]))
         }
         let u = first.usage
         let old = u.stale || !first.hosts.contains(where: model.isOnline)

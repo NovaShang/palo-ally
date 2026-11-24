@@ -3,7 +3,7 @@ import Foundation
 // Claude 用量 in the demo host (docs/workbench-design/usage.html), each state
 // by `-demoState`: usageNear, usageExtra (near, extra usage on), usageHit,
 // usageHitMany (12 agents), usageHitModel (one model's week), usageHitExtra (hit, extra usage on),
-// usageSignedOut, usageLoading, usageFailed (no answer lately), usageOffline (the computer
+// usageSignedOut, usageLogoutFails, usageLoading, usageFailed (no answer lately), usageOffline (the computer
 // goes away), usageNoMethod (the account alone), usageHidden, usageApi,
 // usageBedrock, usageOld (a host from before it); with `-demoHosts 2`,
 // usageDiff (two accounts) and usageSame (one). Otherwise a usual day.
@@ -49,7 +49,7 @@ extension DemoHost {
         case "usageDiff" where office:
             return UsageStatus(state: .limits, limits: [Self.session(31, inMinutes: 192, now: now), Self.week(88, inHours: 29, now: now)],
                                extraUsage: false, account: Self.demoTeamAccount, at: now - 60_000)
-        case "usage", "usageDiff", "usageSame": return Self.demoUsage(now: now)
+        case "usage", "usageDiff", "usageSame", "usageSignedOut", "usageLogoutFails": return Self.demoUsage(now: now)
         default: return nil
         }
     }
@@ -87,6 +87,7 @@ extension DemoHost {
 
     /// auth.logout: what runs stops, and all waits for a sign-in.
     func demoLogout() throws -> JSONValue {
+        if usageScenario == "usageLogoutFails" { throw DemoError(message: "没能退出登录，刚才停下的已经接着做了") }
         var s = status
         s.auth = AuthStatus(state: .expired, since: Date().epochMillis, stopped: stopDemoWork(until: nil), signedOut: true)
         setStatus(s)

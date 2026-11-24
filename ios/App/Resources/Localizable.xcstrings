@@ -8796,6 +8796,259 @@
           }
         }
       }
+    },
+    "主机上的 %@ 已退出登录。在这里打开授权页，用你的 %@ 账号同意，再把页面上显示的代码粘贴回来。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ on the host is signed out. Open the authorization page here, approve with your %2$@ account, then paste back the code the page shows."
+          }
+        }
+      }
+    },
+    "在授权页里先换到你要用的账号，同意后把页面上的代码粘贴回来。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the authorization page, switch to the account you want first, approve, then paste back the code it shows."
+          }
+        }
+      }
+    },
+    "在授权页里同意，再把页面上的代码粘贴回来。做完之前，现在的登录照常用。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approve on the authorization page, then paste back the code it shows. The current login works until that's done."
+          }
+        }
+      }
+    },
+    "已换成 %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switched to %@"
+          }
+        }
+      }
+    },
+    "登录好了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signed in"
+          }
+        }
+      }
+    },
+    "登录好了，还是 %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signed in, still as %@"
+          }
+        }
+      }
+    },
+    "停下的事会接着做。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What stopped will carry on."
+          }
+        }
+      }
+    },
+    "agent 都已经换好。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The agents have all switched."
+          }
+        }
+      }
+    },
+    "空闲的 agent 已经换好，%lld 个正在干的做完这一轮就换。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idle agents have switched. %lld at work switch when their turn ends."
+          }
+        }
+      }
+    },
+    "%@ 已退出登录，事情都停下了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is signed out; everything has stopped"
+          }
+        }
+      }
+    },
+    "已退出登录" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signed out"
+          }
+        }
+      }
+    },
+    "已退出登录，停下了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signed out, stopped"
+          }
+        }
+      }
+    },
+    "已退出" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signed out"
+          }
+        }
+      }
+    },
+    "换个账号" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch account"
+          }
+        }
+      }
+    },
+    "退出登录" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign out"
+          }
+        }
+      }
+    },
+    "换账号" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch"
+          }
+        }
+      }
+    },
+    "换一个 %@ 账号？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to another %@ account?"
+          }
+        }
+      }
+    },
+    "「%@」换一个 %@ 账号？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch “%1$@” to another %2$@ account?"
+          }
+        }
+      }
+    },
+    "退出 %@ 登录？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign out of %@?"
+          }
+        }
+      }
+    },
+    "「%@」退出 %@ 登录？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign “%1$@” out of %2$@?"
+          }
+        }
+      }
+    },
+    "%@、所有 agent 和电脑终端里的 %@ 都会换过去。正在干的先做完这一轮再换，对话和记忆都在。新账号登录成功之前，一切照旧。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, all agents and %2$@ in the computer's terminals switch to it. Those at work finish their turn first. Conversations and memory stay. Until the new account is signed in, nothing changes."
+          }
+        }
+      }
+    },
+    "%@和所有 agent 会停下，定时安排不跑，电脑终端里的 %@ 也一起退出。对话和记忆都在，重新登录后接着做。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ and all agents stop, scheduled work doesn't run, and %2$@ in the computer's terminals is signed out too. Conversations and memory stay, and everything carries on after you sign in again."
+          }
+        }
+      }
+    },
+    "想现在继续，可以换个账号。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To go on now, switch account."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

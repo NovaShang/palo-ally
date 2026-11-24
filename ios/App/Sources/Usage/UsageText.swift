@@ -91,7 +91,7 @@ enum UsageText {
 
     @MainActor private static func stopped(_ store: AppStore, _ which: (StoppedWork) -> StoppedWork.Agent?) -> String? {
         if let auth = store.status?.auth, auth.isExpired {
-            return auth.stopped.flatMap(which).map { _ in String(localized: "登录过期，停下了") }
+            return auth.stopped.flatMap(which).map { _ in auth.signedOut ? String(localized: "已退出登录，停下了") : String(localized: "登录过期，停下了") }
         }
         return store.usage?.stopped.flatMap(which).map { goesOn($0.until) }
     }

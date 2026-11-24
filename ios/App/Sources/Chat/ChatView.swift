@@ -872,7 +872,7 @@ struct StatusBanner: View {
                         .tint(.primary)
                 }
             } else if store.status?.auth?.isExpired == true {
-                banner(icon: "person.crop.circle.badge.exclamationmark", tint: .orange, text: String(localized: "\(store.harness.name) 登录过期了，事情都停下了")) {
+                banner(icon: "person.crop.circle.badge.exclamationmark", tint: .orange, text: store.status?.auth?.signedOut == true ? String(localized: "\(store.harness.name) 已退出登录，事情都停下了") : String(localized: "\(store.harness.name) 登录过期了，事情都停下了")) {
                     // Signing in from here: only a harness whose login is a link out and a code back.
                     if store.harness.login.fromPhone, store.harness.login.kind == "oauth-code" {
                         Button("重新登录") { signingIn = true }
