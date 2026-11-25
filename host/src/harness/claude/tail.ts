@@ -1,5 +1,7 @@
-import { closeSync, fstatSync, openSync, readSync } from "node:fs";
+import { closeSync, fstatSync, openSync } from "node:fs";
 import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
+import { withoutPictures } from "./rewind.ts";
+import { eachLine } from "./spend.ts";
 import type { RawSessionMessage } from "./transcript.ts";
 
 /**
@@ -16,39 +18,44 @@ import type { RawSessionMessage } from "./transcript.ts";
  * the whole file.
  */
 export async function readTranscriptTail(path: string, sessionId: string, cwd: string, bytes: number):
-  Promise<{ messages: RawSessionMessage[]; complete: boolean }> {
+  Promise<{ messages: RawSessionMessage[]; complete: boolean; compacted: boolean }> {
   const fd = openSync(path, "r");
-  let text: string;
+  const entries: any[] = [];
   let complete: boolean;
+  let compacted = false;
   try {
-    const size = fstatSync(fd).size;
-    const start = Math.max(0, size - bytes);
-    const buf = Buffer.alloc(size - start);
-    let read = 0;
-    while (read < buf.length) {
-      const n = readSync(fd, buf, read, buf.length - read, start + read);
-      if (n <= 0) break;
-      read += n;
-    }
-    text = buf.subarray(0, read).toString("utf8");
+    const start = Math.max(0, fstatSync(fd).size - bytes);
     complete = start === 0;
+    // Read a piece at a time, and each entry kept without the pictures and
+    // tool results in it, which a conversation's messages aren't made of: a
+    // whole transcript of 468 MB as one string and all its entries was 3.6 GB.
+    const left = { partial: [] as Buffer[], partialBytes: 0 };
     // A window that starts mid-line drops that partial line.
-    if (!complete) text = text.slice(text.indexOf("\n") + 1);
+    let skip = !complete;
+    const take = (line: Buffer) => {
+      if (skip) {
+        skip = false;
+        return;
+      }
+      if (!line.length) return;
+      let e: any;
+      try {
+        e = JSON.parse(line.toString("utf8"));
+      } catch {
+        return; // a line being written
+      }
+      if (e?.type === "system" && e.subtype === "compact_boundary" && !e.isSidechain) compacted = true;
+      entries.push(withoutPictures(e));
+    };
+    eachLine(fd, start, left, take, Infinity);
+    // The last line, when it has no end yet.
+    if (left.partialBytes) take(Buffer.concat(left.partial));
   } finally {
     closeSync(fd);
   }
-  const entries: any[] = [];
-  for (const line of text.split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      entries.push(JSON.parse(line));
-    } catch {
-      /* a line being written */
-    }
-  }
   const store = { load: async () => entries, append: async () => {} };
   const messages = (await getSessionMessages(sessionId, { dir: cwd, sessionStore: store as any })) as RawSessionMessage[];
-  return { messages, complete };
+  return { messages, complete, compacted };
 }
 
 /** The first window read: plenty for a page of most conversations. */
@@ -58,18 +65,41 @@ export const TAIL_FIRST_BYTES = 4 << 20;
  * A page of a conversation (`page` over the converted messages) read from
  * the transcript's end, the window growing fourfold until the page has all
  * it should: `limit` messages before `before` with room to spare (the
- * window's first messages may be cut), or the whole file read.
+ * window's first messages may be cut), or the whole file read. Past a
+ * compaction there is nothing to find: the chain starts at it, and a larger
+ * window that brings no more messages is the last one. (A session just
+ * compacted has fewer messages than a page: each look at it read the whole
+ * file, stalling the host until every app reconnected and asked again: 41 GB
+ * and the host gone, 11-24.)
  */
-export async function pageFromTail<T extends { id: string; ts: number }>(
+export function pageFromTail<T extends { id: string; ts: number }>(
   path: string, sessionId: string, cwd: string,
   convert: (raw: RawSessionMessage[]) => T[],
   page: (all: T[]) => T[],
   before: string | number | undefined, limit: number,
+  read = readTranscriptTail,
 ): Promise<T[]> {
+  // One at a time: several apps asking at once don't add up in memory.
+  const mine = reading.then(() => growing(path, sessionId, cwd, convert, page, before, limit, read));
+  reading = mine.catch(() => {});
+  return mine;
+}
+
+let reading: Promise<unknown> = Promise.resolve();
+
+async function growing<T extends { id: string; ts: number }>(
+  path: string, sessionId: string, cwd: string,
+  convert: (raw: RawSessionMessage[]) => T[],
+  page: (all: T[]) => T[],
+  before: string | number | undefined, limit: number,
+  read: typeof readTranscriptTail,
+): Promise<T[]> {
+  let last = -1;
   for (let bytes = TAIL_FIRST_BYTES; ; bytes *= 4) {
-    const { messages, complete } = await readTranscriptTail(path, sessionId, cwd, bytes);
+    const { messages, complete, compacted } = await read(path, sessionId, cwd, bytes);
     const all = convert(messages);
-    if (complete) return page(all);
+    if (complete || (compacted && messages.length === last)) return page(all);
+    last = messages.length;
     let end = all.length;
     if (typeof before === "string" && before) end = all.findIndex((m) => m.id === before);
     else if (typeof before === "number" && Number.isFinite(before)) {

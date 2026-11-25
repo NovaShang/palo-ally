@@ -41,7 +41,7 @@ export function readTranscript(path: string | undefined, only?: string[]): any[]
 }
 
 /** Long data in it (a picture's, what a tool gave, thinking) left out; the entry else as it is. */
-function withoutPictures(e: any): any {
+export function withoutPictures(e: any): any {
   const cut = (c: any) => {
     if (!Array.isArray(c)) return;
     for (const b of c) {
