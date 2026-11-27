@@ -108,6 +108,8 @@ export const zhCli = {
   "setup.modelReply": "探针模型 {model} 回复：{text}",
   "setup.authFix": "三选一：① 运行 `claude` 并 /login（claude.ai 订阅）② export ANTHROPIC_API_KEY=… ③ 第三方模型：在 ~/.paloally/config.json 的 env 里设 ANTHROPIC_BASE_URL 和 ANTHROPIC_AUTH_TOKEN，并把 model/probeModel 改成对方的模型名",
   "setup.runtime": "运行时",
+  "setup.expect": "手机登录",
+  "setup.expectMissing": "没装 expect，手机上登录不了",
   "setup.home": "home 目录",
   "setup.coreSize": "核心记忆大小",
   "setup.bytes": "{n} 字节",

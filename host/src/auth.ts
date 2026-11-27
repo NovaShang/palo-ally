@@ -59,6 +59,8 @@ export interface AuthDeps {
   stamp?: () => Promise<string | null>;
   /** Whether Claude Code says it's logged in now. */
   loggedIn?: () => Promise<boolean>;
+  /** Claude Code has no login at all (never signed in on this computer); absent: never asked. */
+  noLogin?: () => Promise<boolean>;
   /** Starts `claude auth login` under expect (tests fake it). */
   spawnLogin?: () => LoginProcess;
   pollMs?: number;
@@ -90,7 +92,14 @@ export class AuthWatch {
   }
 
   start(): void {
-    if (this.since) this.startPolling();
+    if (this.since) return this.startPolling();
+    // Never signed in on this computer: the app offers a sign-in, as after signing out.
+    void this.d.noLogin?.().then(async (none) => {
+      if (!none || this.since !== null || this.login) return;
+      this.d.log("Claude Code isn't signed in on this computer");
+      this.d.audit("auth.none", {});
+      await this.didSignOut(empty());
+    }, () => {});
   }
 
   stop(): void {

@@ -23,6 +23,8 @@ export const zhHub = {
   "approval.atComputer": "在主机上等你",
   "approval.expired": "没等到主人确认，已取消",
   "approval.denied": "主人拒绝了这个操作",
+  "auth.noExpect": "主机上缺 expect，先在主机终端运行 sudo apt install expect，再点登录",
+  "auth.unsupported": "这台主机的系统还不支持在手机上登录，请在主机终端运行 claude，再输入 /login",
   "auth.expired": "Claude Code 的登录过期了，助理、agent 和定时安排都停下了。在 App 首页点「重新登录」，用手机就能登录；登录好后我会接着做。",
   "auth.expiredTitle": "Claude Code 登录过期",
   "auth.back": "Claude Code 登录恢复了（停了 {mins} 分钟）。{done}",

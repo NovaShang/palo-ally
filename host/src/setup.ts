@@ -44,6 +44,11 @@ export async function runDoctor(paths: Paths, opts: { live?: boolean } = { live:
   const cfg = loadConfig(paths);
   checks.push({ name: t("setup.runtime"), ok: typeof Bun !== "undefined", detail: `bun ${Bun.version} · paloally ${VERSION}` });
   checks.push({ name: t("setup.home"), ok: existsSync(paths.claudeMd), detail: paths.home, fix: "paloally setup" });
+  // Signing in from the phone drives `claude auth login` through expect: part of macOS, a package on Linux.
+  if (process.platform === "linux") {
+    const expect = ["/usr/bin/expect", "/usr/local/bin/expect"].some((p) => existsSync(p));
+    checks.push({ name: t("setup.expect"), ok: expect, detail: expect ? "expect" : t("setup.expectMissing"), fix: "sudo apt install expect" });
+  }
   const core = CORE_FILES.reduce((n, f) => n + (existsSync(`${paths.home}/${f}`) ? statSync(`${paths.home}/${f}`).size : 0), 0);
   checks.push({
     name: t("setup.coreSize"),

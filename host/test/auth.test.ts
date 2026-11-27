@@ -155,3 +155,53 @@ describe("the login running out", () => {
     cleanup(paths);
   });
 });
+
+describe("a computer never signed in", () => {
+  const mk = (noLogin: () => Promise<boolean>, signedIn = false) => {
+    const paths = tmpPaths();
+    const logs: string[] = [];
+    let changed = 0;
+    let stamp: string | null = null;
+    const recovered: string[] = [];
+    const w = new AuthWatch({
+      path: `${paths.state}/auth.json`,
+      scriptDir: paths.state,
+      notify: async () => true,
+      recovered: (_m, how) => recovered.push(how),
+      changed: () => changed++,
+      audit: () => {},
+      log: (s) => logs.push(s),
+      stamp: async () => stamp,
+      loggedIn: async () => signedIn,
+      noLogin,
+      pollMs: 10,
+    });
+    return { w, paths, logs, recovered, changed: () => changed, signIn: () => ((signedIn = true), (stamp = "20261126080000Z")) };
+  };
+
+  test("waits for a sign-in as one signed out, so the app offers one; signing in at the computer ends it", async () => {
+    const t0 = mk(async () => true);
+    t0.w.start();
+    await tick(10);
+    expect(t0.w.status()).toMatchObject({ state: "expired", signedOut: true });
+    expect(t0.logs.some((l) => /isn't signed in/.test(l))).toBe(true);
+    t0.signIn();
+    await tick(60);
+    expect(t0.w.expired).toBe(false);
+    expect(t0.recovered).toHaveLength(1);
+    t0.w.stop();
+    cleanup(t0.paths);
+  });
+
+  test("signed in, a key, or a status that can't be read: nothing changes", async () => {
+    for (const no of [async () => false, async () => { throw new Error("no claude"); }]) {
+      const t1 = mk(no as () => Promise<boolean>);
+      t1.w.start();
+      await tick(10);
+      expect(t1.w.status()).toBeUndefined();
+      expect(t1.changed()).toBe(0);
+      t1.w.stop();
+      cleanup(t1.paths);
+    }
+  });
+});

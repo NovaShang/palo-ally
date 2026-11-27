@@ -204,6 +204,12 @@ export class Hub {
       log: (s) => this.log(s),
       stamp: () => this.harness.auth.stamp(),
       loggedIn: () => this.harness.auth.loggedIn(),
+      // (A key or another provider set for the harness: Claude Code's own status can't tell.)
+      noLogin: () => {
+        const env = { ...process.env, ...(this.config.env ?? {}) };
+        const keyed = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"].some((k) => env[k]);
+        return keyed ? Promise.resolve(false) : (this.harness.auth.noLogin?.() ?? Promise.resolve(false));
+      },
       account: () => this.harness.auth.account(),
       logout: () => this.harness.auth.logout(),
       knownAccount: () => this.planUsage.status.account,

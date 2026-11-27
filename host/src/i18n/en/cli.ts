@@ -108,6 +108,8 @@ export const enCli: Record<keyof typeof zhCli, string> = {
   "setup.modelReply": "Probe model {model} replied: {text}",
   "setup.authFix": "Pick one: (1) run `claude` and /login (claude.ai subscription), (2) export ANTHROPIC_API_KEY=…, (3) a third-party model: set ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN in env in ~/.paloally/config.json and change model/probeModel to that provider's model names",
   "setup.runtime": "Runtime",
+  "setup.expect": "Sign-in from the phone",
+  "setup.expectMissing": "expect isn't installed, so signing in from the phone won't work",
   "setup.home": "Home folder",
   "setup.coreSize": "Core memory size",
   "setup.bytes": "{n} bytes",

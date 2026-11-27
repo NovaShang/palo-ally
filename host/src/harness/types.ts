@@ -535,6 +535,8 @@ export interface HarnessAuth {
   isLimit(text?: string): LimitHit | null;
   /** Whether it says it is logged in now. */
   loggedIn(): Promise<boolean>;
+  /** It says it has no login of any kind (never signed in, no key); false when it can't tell. */
+  noLogin?(): Promise<boolean>;
   /** When its stored login last changed (never the secret), or null. */
   stamp(): Promise<string | null>;
   /** Whose login it is now, as it says; null: none, or it doesn't say. */

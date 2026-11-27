@@ -25,6 +25,8 @@ export const enHub: Record<keyof typeof zhHub, string> = {
   "approval.atComputer": "Waiting for you on the host",
   "approval.expired": "The owner didn't confirm in time, so it was cancelled",
   "approval.denied": "The owner declined this action",
+  "auth.noExpect": "The host is missing expect. Run sudo apt install expect in the host's terminal, then sign in again",
+  "auth.unsupported": "Signing in from the phone isn't supported on this host's system. Run claude in the host's terminal and type /login",
   "auth.expired": "Claude Code's login has expired, so the assistant, agents and schedules have stopped. Tap \"Sign in again\" on the app's home screen to sign in from your phone; I'll carry on once it's back.",
   "auth.expiredTitle": "Claude Code login expired",
   "auth.back": "Claude Code's login is back (it was out for {mins} min). {done}",

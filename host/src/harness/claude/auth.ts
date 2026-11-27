@@ -1,10 +1,11 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { LimitHit, LoginAccount, LoginProcess } from "../types.ts";
 import { cleanSessionEnv, findClaude, loginEnv } from "./cli.ts";
 import { loginAccount } from "./usage.ts";
+import { t } from "../../i18n/index.ts";
 
 // Claude Code's login: what a failure says, whether it is logged in, when its
 // stored login changed, and `claude auth login` driven through expect.
@@ -77,11 +78,13 @@ export function expectLogin(scriptDir: string): LoginProcess {
   void (async () => {
     const env = cleanSessionEnv({ ...(await loginEnv()), BROWSER: "/usr/bin/true" });
     const bin = findClaude(env);
-    if (!bin || process.platform !== "darwin") {
-      for (const f of lines) f(bin ? "ERR only on macOS" : "ERR claude not found");
+    // expect is part of macOS; on Linux it's a package of its own.
+    const expect = ["/usr/bin/expect", "/usr/local/bin/expect", "/opt/homebrew/bin/expect"].find((p) => existsSync(p));
+    if (!bin || !expect || (process.platform !== "darwin" && process.platform !== "linux")) {
+      for (const f of lines) f(!bin ? "ERR claude not found" : !expect ? `ERR ${t("auth.noExpect")}` : `ERR ${t("auth.unsupported")}`);
       return exit(1);
     }
-    proc = spawn("/usr/bin/expect", ["-f", script, bin], { env, stdio: ["pipe", "pipe", "ignore"] });
+    proc = spawn(expect, ["-f", script, bin], { env, stdio: ["pipe", "pipe", "ignore"] });
     proc.stdout!.on("data", (d: Buffer) => {
       buf += d.toString("utf8");
       let i: number;
@@ -152,6 +155,18 @@ function saysLoggedIn(out: string): boolean {
     return JSON.parse(out).loggedIn === true;
   } catch {
     return /"loggedIn":\s*true/.test(out);
+  }
+}
+
+/** `claude auth status`: no login of any kind (no subscription, no key). */
+export async function claudeNoLogin(): Promise<boolean> {
+  const r = await claudeAuth(["status"]);
+  if (!r) return false;
+  try {
+    const j = JSON.parse(r.out);
+    return j.loggedIn === false && j.authMethod === "none";
+  } catch {
+    return false;
   }
 }
 
